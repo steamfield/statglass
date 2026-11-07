@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Removed
+
+- The battery hours view and its `battery_hours` command; Battery's range history
+  replaced it.
+
 ### Changed
 
 - Timeline lanes default to °F before settings load, like the rest of the app.
@@ -28,6 +33,12 @@
   inside a collection or metrics gap no longer count as measured.
 - The Timeline range control and Containers' history toolbar share one control; the
   Docker popover card uses the module card shell.
+- Chart descriptions for screen readers change at most every 10 seconds instead of every
+  tick, and heat-matrix descriptions spell out their resolution ("15-minute average").
+- "Show as table" for Timeline lanes and container comparisons is one table: oldest
+  first, min, avg and max in their own sortable columns, gap rows last, and times with
+  seconds when buckets are shorter than a minute.
+- The popover GPU stream shows its ceiling and window labels like CPU.
 - Disk processes search matches PIDs and ports by their leading digits, like Processes;
   a PID substring ("40" for 1840) no longer matches.
 - Informational lines stop announcing as alerts; status and error lines share one size.
