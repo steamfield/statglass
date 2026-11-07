@@ -3,6 +3,7 @@ import {
   formatClockSeconds,
   formatHistoryTime,
 } from "@core/format";
+import { DAY_MS } from "@core/time-grid";
 /**
  * Relative time label for a chart's x axis: "−60s", "−5m", "−24h". Uses the
  * true minus sign.
@@ -37,27 +38,32 @@ export const PERCENT_Y_TICKS: readonly { value: number; label: string }[] = [
 ].map((v) => ({ value: v, label: String(v) }));
 
 /**
- * Gridlines at half and full height of an autoscaled ceiling. With
- * `topLabel`, also the y ticks: the ceiling with its unit ("4W") and the
- * half as a bare number.
+ * Gridlines at half and full height of an autoscaled ceiling, and with
+ * `format` the y ticks, top down. A string labels the ceiling with its unit
+ * ("4W") and leaves the half bare; a function formats both. `zero` adds a
+ * bare "0" tick at the baseline.
  */
 export function ceilingAxis(
   ceiling: number,
-  topLabel?: string
+  format?: string | ((value: number) => string),
+  { zero = false }: { zero?: boolean } = {}
 ): {
   gridlines: number[];
   yTicks?: { value: number; label: string }[];
 } {
   const half = ceiling / 2;
   const gridlines = [half, ceiling];
-  if (topLabel === undefined) return { gridlines };
-  return {
-    gridlines,
-    yTicks: [
-      { value: ceiling, label: topLabel },
-      { value: half, label: String(half) },
-    ],
-  };
+  if (format === undefined) return { gridlines };
+  const label =
+    typeof format === "string"
+      ? (value: number) => (value === ceiling ? format : String(value))
+      : format;
+  const yTicks = [
+    { value: ceiling, label: label(ceiling) },
+    { value: half, label: label(half) },
+  ];
+  if (zero) yTicks.push({ value: 0, label: "0" });
+  return { gridlines, yTicks };
 }
 
 /** Live views use the module-page relative axis; paused history names actual times. */
@@ -70,7 +76,7 @@ export function historyTicks(
   if (live) return windowTicks(to - from, count);
   const span = to - from;
   const format = (t: number) =>
-    span >= 86_400_000
+    span >= DAY_MS
       ? formatHistoryTime(t, true)
       : span <= 300_000
         ? formatClockSeconds(t)

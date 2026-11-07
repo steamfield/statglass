@@ -18,7 +18,7 @@ import {
   DASHBOARD_CHART_HEIGHT,
 } from "~/widgets/chart-frame";
 import { GapBand } from "~/widgets/gap-band";
-import { historyTicks } from "~/widgets/lib/chart-labels";
+import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import type { ComparisonSeries } from "./comparison-chart";
 import { ComparisonLines } from "./comparison-lines";
 import type { ComparisonPlotState } from "./comparison-plot-state";
@@ -85,16 +85,14 @@ export function ComparisonCanvas({
     ),
     [plotSeries, active, onFocus, plotWidth]
   );
+  const axis = ceilingAxis(ceiling, format, { zero: true });
   return (
     <ChartFrame
       height={HEIGHT}
       ceiling={ceiling}
       gutter={48}
       plotRef={plotRef}
-      yTicks={[ceiling, ceiling / 2, 0].map((value) => ({
-        value,
-        label: value === 0 ? "0" : format(value),
-      }))}
+      yTicks={axis.yTicks}
       xTicks={historyTicks(from, to, live)}
     >
       <div className="pointer-events-none absolute inset-0">
@@ -120,11 +118,7 @@ export function ComparisonCanvas({
         height={HEIGHT}
         className="block w-full overflow-visible rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <ChartGrid
-          values={[ceiling / 2, ceiling]}
-          ceiling={ceiling}
-          height={HEIGHT}
-        />
+        <ChartGrid values={axis.gridlines} ceiling={ceiling} height={HEIGHT} />
         {lines}
         {cursor !== null && (
           <line
