@@ -8,7 +8,7 @@ import {
   wattsParts,
 } from "@core/format";
 import type { ClusterInfo } from "@core/generated/bindings";
-import { sk } from "@core/series-key";
+import { parseLabels, sk } from "@core/series-key";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
@@ -35,8 +35,8 @@ export function RingCards({
   const units = useUnits();
   const source = usePowerSource();
   const layout = useLayout();
-  const fanIds = (layout?.byMetric.get("fan.rpm") ?? []).map((k) =>
-    k.slice(k.indexOf("=") + 1, -1)
+  const fanIds = (layout?.byMetric.get("fan.rpm") ?? []).map(
+    (k) => parseLabels(k).fan ?? ""
   );
   const pCluster = topology.find((c) => c.kind !== "efficiency")?.name;
   const pFreqKey = pCluster

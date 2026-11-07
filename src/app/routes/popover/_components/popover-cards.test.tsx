@@ -1,6 +1,7 @@
 import type { LiveMsg } from "@core/generated/bindings";
 import { MOCK_LOCAL_IPV4, MOCK_PUBLIC_IP } from "@core/mock-transport";
 import { act, screen, waitFor } from "@testing-library/react";
+import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { type HostStore, useHostStore } from "~/stores/host-store";
 import {
@@ -24,20 +25,8 @@ function frameWithout(missing: string[]): LiveMsg {
 /** A frame like the last one, with `overrides` replacing those series. */
 function frameWith(overrides: Record<string, number | null>): LiveMsg {
   const state = storeRef?.getState();
-  const layoutNo = state?.layoutNo;
-  if (!state || layoutNo == null) throw new Error("no layout");
-  const keys = state.layouts[layoutNo]?.keys ?? [];
-  const values = keys.map((k) =>
-    k in overrides ? (overrides[k] ?? null) : (state.held[k] ?? null)
-  );
-  return {
-    kind: "frame",
-    ts_ms: (state.lastTsMs ?? 0) + 1000,
-    layout_no: layoutNo,
-    timeline: 0,
-    values,
-    held: values,
-  };
+  if (!state) throw new Error("no store");
+  return nextFrame(state, overrides);
 }
 
 describe("popover memory card", () => {

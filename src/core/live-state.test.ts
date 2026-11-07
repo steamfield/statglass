@@ -1,4 +1,5 @@
 import type { LiveMsg, MetricKind, SeriesKey } from "@core/generated/bindings";
+import { statusMsg } from "@tests/live-frames";
 import {
   type HostLive,
   initialHostLive,
@@ -17,27 +18,17 @@ function apply(msgs: LiveMsg[], state: HostLive = initialHostLive("h1")) {
   return msgs.reduce(reduceLive, state);
 }
 
+const status = statusMsg();
 const layout: LiveMsg = {
   kind: "layout",
   layout_no: 1,
   series: SERIES,
   kinds: [],
 };
-const status = (paused = false): Extract<LiveMsg, { kind: "status" }> => ({
-  kind: "status",
-  interval_ms: 1000,
-  frame_period_ms: 1000,
-  paused,
-  display_idle: false,
-  on_battery: false,
-  performance: "off",
-  power_source: "adapter",
-  primary_iface: null,
-});
 
 describe("reduceLive", () => {
   it("renders an empty chart before a remote has reported its sampling interval", () => {
-    const state = apply([{ ...status(), interval_ms: 0, frame_period_ms: 0 }]);
+    const state = apply([statusMsg({ interval_ms: 0, frame_period_ms: 0 })]);
     const chart = seriesWindow(state, "cpu.total", 60_000);
     expect(chart.values).toHaveLength(60);
     expect(chart.values.every((value) => value === null)).toBe(true);
@@ -61,7 +52,7 @@ describe("reduceLive", () => {
 
   it("seeds readouts from the backfill's last row and goes live", () => {
     const s = apply([
-      status(),
+      status,
       layout,
       {
         kind: "backfill",
@@ -88,7 +79,7 @@ describe("reduceLive", () => {
 
   it("replaces held from a frame's held array, not its raw values", () => {
     const s = apply([
-      status(),
+      status,
       layout,
       {
         kind: "frame",
@@ -121,7 +112,7 @@ describe("reduceLive", () => {
   });
 
   it("ignores frames for an unknown layout", () => {
-    const before = apply([status()]);
+    const before = apply([status]);
     const after = reduceLive(before, {
       kind: "frame",
       ts_ms: 1,
@@ -134,8 +125,8 @@ describe("reduceLive", () => {
   });
 
   it("clears stale on a frame and on pause", () => {
-    const stale = { ...apply([status(), layout]), stale: true };
-    expect(reduceLive(stale, status(true)).stale).toBe(false);
+    const stale = { ...apply([status, layout]), stale: true };
+    expect(reduceLive(stale, statusMsg({ paused: true })).stale).toBe(false);
     expect(
       reduceLive(stale, {
         kind: "frame",
@@ -168,16 +159,13 @@ describe("reduceLive", () => {
     });
 
     it("starts at the first frame and holds while the setup is unchanged", () => {
-      const s = apply([status(), layout, frame(1000), frame(2000), status()]);
+      const s = apply([status, layout, frame(1000), frame(2000), status]);
       expect(s.statusSinceMs).toBe(1000);
     });
 
     it("restarts at the next frame after the interval changes", () => {
-      const s = apply([status(), layout, frame(1000)]);
-      const slower: LiveMsg = {
-        ...(status() as Extract<LiveMsg, { kind: "status" }>),
-        interval_ms: 30_000,
-      };
+      const s = apply([status, layout, frame(1000)]);
+      const slower = statusMsg({ interval_ms: 30_000 });
       const changed = apply([slower], s);
       expect(changed.statusSinceMs).toBeNull();
       expect(apply([frame(31_000)], changed).statusSinceMs).toBe(31_000);
@@ -185,7 +173,7 @@ describe("reduceLive", () => {
 
     it("restarts after a backfill: those rows were taken with this window hidden", () => {
       const s = apply([
-        status(),
+        status,
         layout,
         frame(1000),
         backfill(2000),
@@ -195,7 +183,7 @@ describe("reduceLive", () => {
     });
 
     it("restarts after a clock step, so earlier times are not skipped", () => {
-      const s = apply([status(), layout, frame(50_000), frame(51_000, 1)]);
+      const s = apply([status, layout, frame(50_000), frame(51_000, 1)]);
       expect(s.statusSinceMs).toBe(51_000);
       const back = apply([frame(20_000, 2)], s);
       expect(back.statusSinceMs).toBe(20_000);
@@ -217,7 +205,7 @@ describe("reduceLive", () => {
 describe("seriesWindow", () => {
   it("lays rows on the interval grid with null for missing slots", () => {
     const s = apply([
-      status(),
+      status,
       layout,
       {
         kind: "backfill",
@@ -254,7 +242,7 @@ describe("seriesWindow", () => {
   it("replaces held rows with a remote host's refilled history on a new timeline", () => {
     // A remote host no window watched: rows that measured nothing.
     const summary = apply([
-      status(),
+      status,
       layout,
       {
         kind: "backfill",
@@ -313,7 +301,7 @@ describe("seriesWindow", () => {
       held: [ts / 1000, 0, 0],
     });
     const s = apply([
-      { ...status(), frame_period_ms: 2000, performance: "setting" } as LiveMsg,
+      statusMsg({ frame_period_ms: 2000, performance: "setting" }),
       layout,
       ...[2000, 4000, 6000, 8000, 10_000].map(frame),
     ]);
@@ -342,11 +330,8 @@ describe("seriesWindow", () => {
       values: [ts / 1000, 0, 0],
       held: [ts / 1000, 0, 0],
     });
-    const at = (interval_ms: number): LiveMsg => ({
-      ...(status() as Extract<LiveMsg, { kind: "status" }>),
-      interval_ms,
-      frame_period_ms: interval_ms,
-    });
+    const at = (interval_ms: number) =>
+      statusMsg({ interval_ms, frame_period_ms: interval_ms });
     // 2 s rows on battery (held 5 s), then 1 s rows after plugging in.
     const pluggedIn = (kind: MetricKind) =>
       apply([
@@ -416,7 +401,7 @@ describe("seriesWindow", () => {
     it("covers a 10 s tray-only series without breaking the run", () => {
       // power.gpu with no window open: one sample in ten 1 s rows, held 25 s.
       const s = apply([
-        status(),
+        status,
         layoutOf("mean"),
         {
           kind: "backfill",
@@ -436,7 +421,7 @@ describe("seriesWindow", () => {
 
     it("lets a sample before the window cover the slots it averages", () => {
       const s = apply([
-        status(),
+        status,
         layoutOf("mean"),
         {
           kind: "backfill",
@@ -457,7 +442,7 @@ describe("seriesWindow", () => {
     });
 
     it("joins nothing for a row with no published hold", () => {
-      const s = apply([status(), layoutOf("mean"), ...[1000, 3000].map(frame)]);
+      const s = apply([status, layoutOf("mean"), ...[1000, 3000].map(frame)]);
       expect(seriesWindow(s, "cpu.total", 3000).values).toEqual([1, null, 3]);
     });
   });
@@ -512,7 +497,7 @@ describe("SeriesColumns", () => {
 
 describe("seriesWindow over a wrapped ring", () => {
   it("reads the window across the wrap point with gaps as null", () => {
-    let s = apply([status(), layout]);
+    let s = apply([status, layout]);
     s = { ...s, columns: new SeriesColumns(5) };
     for (let t = 1; t <= 7; t++) {
       s = reduceLive(s, {

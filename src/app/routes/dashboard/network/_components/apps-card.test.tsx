@@ -7,39 +7,17 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import {
+  NETWORK_BY_APP_FROM_MS,
+  networkByApp,
+} from "@tests/fixtures/network-by-app";
 import { renderWithProviders } from "@tests/test-utils";
 import { createElement, Fragment } from "react";
 import { BrushProvider, useBrushStore } from "~/stores/brush-store";
 import { AppsCard } from "./apps-card";
 import { AppsNowCard } from "./apps-now-card";
 
-const T = 1_700_000_000_000;
-
-function answer(over: Partial<NetworkByApp> = {}): NetworkByApp {
-  return {
-    from_ms: T,
-    to_ms: T + 90_000,
-    complete_to_ms: T + 90_000,
-    resolution_ms: 10_000,
-    measured_ms: 90_000,
-    coverage: [{ from_ms: T, to_ms: T + 90_000, tier: "s10" }],
-    apps: [
-      { name: "Docker Desktop", rx_bytes: 286e6, tx_bytes: 1.4e6 },
-      { name: "Google Chrome", rx_bytes: 64e6, tx_bytes: 3.6e6 },
-      { name: "curl", rx_bytes: 3.8e6, tx_bytes: 10e3 },
-    ],
-    other_apps_rx_bytes: 0,
-    other_apps_tx_bytes: 0,
-    iface_rx_bytes: 380e6,
-    iface_tx_bytes: 50e6,
-    overhead_rx_bytes: 18e6,
-    overhead_tx_bytes: 9e6,
-    system_rx_bytes: 8.2e6,
-    system_tx_bytes: 35.99e6,
-    clamped: false,
-    ...over,
-  };
-}
+const T = NETWORK_BY_APP_FROM_MS;
 
 const tableNames = () =>
   within(screen.getByRole("table", { name: "Network by app" }))
@@ -52,8 +30,8 @@ const header = (label: string) =>
 const clickHeader = (label: string) =>
   fireEvent.click(within(header(label)).getByRole("button"));
 function renderApps() {
-  let totals = answer({ other_apps_rx_bytes: 100 });
-  let latest = answer({
+  let totals = networkByApp({ other_apps_rx_bytes: 100 });
+  let latest = networkByApp({
     apps: [{ name: "Google Chrome", rx_bytes: 11e6, tx_bytes: 0 }],
   });
   const transport = createMockTransport({
@@ -92,12 +70,12 @@ describe("Network app identity", () => {
       { name: "é", rx_bytes: 10, tx_bytes: 0 },
       { name: "e\u0301", rx_bytes: 10, tx_bytes: 0 },
     ];
-    const unknown = answer({ measured_ms: 0, apps: [] });
-    await result.update(answer({ apps }), unknown);
+    const unknown = networkByApp({ measured_ms: 0, apps: [] });
+    await result.update(networkByApp({ apps }), unknown);
     const names = () => tableNames().slice(0, 2);
     await waitFor(() => expect(names()).toEqual(["ee\u0301", "éé"]));
     await result.update(
-      answer({
+      networkByApp({
         apps: [...apps].reverse().map((app) => ({ ...app, rx_bytes: 20 })),
       }),
       unknown
@@ -238,25 +216,25 @@ describe("Network app table headers", () => {
 
   it("keeps unknown Now values last both ways, with names breaking ties and gap pairs", async () => {
     const result = renderApps();
-    const measured = answer({
+    const measured = networkByApp({
       measured_ms: 10_000,
       apps: [{ name: "Google Chrome", rx_bytes: 50, tx_bytes: 0 }],
     });
-    const unknown = answer({ measured_ms: 0, apps: [] });
+    const unknown = networkByApp({ measured_ms: 0, apps: [] });
     await screen.findByRole("table", { name: "Network by app" });
     // A name absent from a measured bucket is idle, while an unmeasured bucket is unknown for all apps.
-    await result.update(answer(), measured);
+    await result.update(networkByApp(), measured);
     await screen.findByText("5 B/s");
     clickHeader("Now");
     expect(appNames()).toEqual(["GGoogle Chrome", "ccurl", "DDocker Desktop"]);
     await result.update(
-      answer({ apps: [...answer().apps].reverse() }),
+      networkByApp({ apps: [...networkByApp().apps].reverse() }),
       measured
     );
     expect(appNames()).toEqual(["GGoogle Chrome", "ccurl", "DDocker Desktop"]);
     clickHeader("Now");
     expect(appNames()).toEqual(["ccurl", "DDocker Desktop", "GGoogle Chrome"]);
-    await result.update(answer(), unknown);
+    await result.update(networkByApp(), unknown);
     await waitFor(() =>
       expect(
         within(screen.getByRole("table", { name: "Network by app" }))
@@ -275,14 +253,14 @@ describe("Network app table headers", () => {
     const transport = createMockTransport({ now: () => now, autoTick: false });
     transport.queryNetworkByApp = async (_host, from, to) => ({
       status: "ok",
-      data: answer({
+      data: networkByApp({
         from_ms: from,
         to_ms: to,
         complete_to_ms: to,
         measured_ms: to - from,
         apps:
           to - from > 10_000
-            ? answer().apps
+            ? networkByApp().apps
             : [
                 {
                   name: "Google Chrome",

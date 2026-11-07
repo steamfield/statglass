@@ -12,21 +12,23 @@ import { useNextBoundary } from "~/hooks/use-next-boundary";
 import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 import { type HostLiveState, useHost, useHostId } from "~/stores/host-store";
-
-const held = (s: HostLiveState, key: string) => s.held[key] ?? null;
+import { held, selectBattery } from "~/stores/live-selectors";
 
 /**
  * Battery summary values displayed beside the hourly history.
  * `null` is no current value, never 0.
  */
-const selectBatterySummary = (s: HostLiveState) => ({
-  charge: held(s, "battery.charge"),
-  timeRemainingMin: held(s, "battery.time_remaining"),
-  health: held(s, "battery.health"),
-  cycles: held(s, "battery.cycles"),
-  capacityWh: held(s, "battery.capacity_wh"),
-  designWh: held(s, "battery.design_wh"),
-});
+const selectBatterySummary = (s: HostLiveState) => {
+  const { charge, timeRemainingMin, health, cycles } = selectBattery(s);
+  return {
+    charge,
+    timeRemainingMin,
+    health,
+    cycles,
+    capacityWh: held(s, "battery.capacity_wh"),
+    designWh: held(s, "battery.design_wh"),
+  };
+};
 
 export function useBatterySummary() {
   return useHost(useShallow(selectBatterySummary));
@@ -34,9 +36,8 @@ export function useBatterySummary() {
 
 /** Every battery series' current value (catalog 6.1), for the Battery page. */
 export const selectBatteryDetail = (s: HostLiveState) => ({
+  ...selectBattery(s),
   ...selectBatterySummary(s),
-  charging: held(s, "battery.charging"),
-  external: held(s, "battery.external"),
   powerW: held(s, "battery.power"),
   tempC: held(s, "battery.temp"),
   systemW: held(s, "power.system"),

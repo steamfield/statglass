@@ -3,6 +3,7 @@ import { seriesWindow } from "@core/live-state";
 import { seriesKey } from "@core/series-key";
 import { bucketAverages, bucketIndex } from "@core/series-stats";
 import { act, screen } from "@testing-library/react";
+import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { type HostStore, useHostStore } from "~/stores/host-store";
 import { useRingBuckets } from "./use-ring";
@@ -219,32 +220,23 @@ describe("a slow series crossing a bucket boundary", () => {
       await screen.findByText("slow 1200");
       const s0 = state();
       const timeline = s0.timeline ?? 0;
-      act(() => {
-        r.transport.push({
-          kind: "layout",
-          layout_no: 99,
-          kinds: ["mean", "gauge"],
-          series: [seriesKey("slow.mean"), seriesKey("slow.gauge")],
-        });
+      const push = pushLayout(
+        r.transport,
+        99,
+        [seriesKey("slow.mean"), seriesKey("slow.gauge")],
+        { kinds: ["mean", "gauge"], timeline }
+      );
+      act(() =>
         r.transport.push({
           kind: "holds",
           layout_no: 99,
           holds_ms: [every * 1000 + 500, every * 1000 + 500],
-        });
-      });
+        })
+      );
       const t0 = s0.lastTsMs ?? 0;
       for (let i = 1; i <= 30; i++) {
         const v = i % every === 0 ? i : null;
-        act(() =>
-          r.transport.push({
-            kind: "frame",
-            layout_no: 99,
-            timeline,
-            ts_ms: t0 + i * 1000,
-            values: [v, v],
-            held: [v, v],
-          })
-        );
+        push(t0 + i * 1000, [v, v]);
         const s = state();
         const last = bucketIndex(s.lastTsMs ?? 0, 3000);
         const full = bucketAverages(s, SLOW, 3000, last - 1199, last);

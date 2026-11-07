@@ -6,6 +6,7 @@
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, render } from "@testing-library/react";
+import { statusMsg } from "@tests/live-frames";
 import { useProcessInterest } from "~/hooks/use-process-interest";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { TransportProvider } from "~/lib/transport-context";
@@ -201,17 +202,13 @@ describe("no frames by design is not stale (#13)", () => {
     const view = mount(t);
     await wait(0);
     act(() =>
-      t.push({
-        kind: "status",
-        interval_ms: 0,
-        frame_period_ms: 0,
-        paused: false,
-        display_idle: false,
-        on_battery: false,
-        performance: "off",
-        power_source: "unknown",
-        primary_iface: null,
-      })
+      t.push(
+        statusMsg({
+          interval_ms: 0,
+          frame_period_ms: 0,
+          power_source: "unknown",
+        })
+      )
     );
     await wait(1000);
     expect(subscribes(t)).toHaveLength(1);
@@ -246,19 +243,7 @@ describe("no frames by design is not stale (#13)", () => {
     await wait(0);
     await tick(t);
     // A channel thinned to one frame per 10 s (a v2 board's minimum period).
-    act(() =>
-      t.push({
-        kind: "status",
-        interval_ms: 1000,
-        frame_period_ms: 10_000,
-        paused: false,
-        display_idle: false,
-        on_battery: false,
-        performance: "off",
-        power_source: "adapter",
-        primary_iface: null,
-      })
-    );
+    act(() => t.push(statusMsg({ frame_period_ms: 10_000 })));
     await wait(29_000);
     expect(getByTestId("state").textContent).toBe("live false");
     expect(subscribes(t)).toHaveLength(1);

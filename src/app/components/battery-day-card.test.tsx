@@ -1,5 +1,6 @@
 import { seriesKey } from "@core/series-key";
-import { act, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { type HostStore, useHostStore } from "~/stores/host-store";
@@ -40,28 +41,19 @@ it("keeps fixed charge history idle on power-only frames and updates current bat
     "battery.design_wh",
     "power.system",
   ];
-  act(() =>
-    r.transport.push({
-      kind: "layout",
-      layout_no: 99,
+  const push = pushLayout(
+    r.transport,
+    99,
+    keys.map((key) => seriesKey(key)),
+    {
       kinds: keys.map((key) => (key === "power.system" ? "mean" : "gauge")),
-      series: keys.map((key) => seriesKey(key)),
-    })
+      timeline: state.timeline ?? 0,
+    }
   );
   let ts = state.lastTsMs ?? 1_800_000_000_000;
   const frame = (power: number, charge = 91) => {
-    const values = [charge, 97, 123, 90, 70, 75, power];
     ts += 1000;
-    act(() =>
-      r.transport.push({
-        kind: "frame",
-        layout_no: 99,
-        timeline: state.timeline ?? 0,
-        ts_ms: ts,
-        values,
-        held: values,
-      })
-    );
+    push(ts, [charge, 97, 123, 90, 70, 75, power]);
   };
   frame(20);
   await screen.findByText("91%");

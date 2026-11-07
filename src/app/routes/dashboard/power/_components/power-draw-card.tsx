@@ -3,6 +3,7 @@ import { cpuPowerNote } from "@core/cpu-power-source";
 import { eventLabel } from "@core/events";
 import { formatWatts, formatWattsFine } from "@core/format";
 import { windowWords } from "@core/live-window";
+import { parseLabels } from "@core/series-key";
 import { useMemo, useState } from "react";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
@@ -42,7 +43,7 @@ const HELD = [SYSTEM, ...COMPONENTS.map((c) => c.metric), "power.cpu_source"];
 const CHART = [SYSTEM];
 const HEIGHT = DASHBOARD_CHART_HEIGHT;
 /** A `power.sensor{name=…}` key's rail name, as the kernel labels it. */
-const railName = (key: string) => key.slice(key.indexOf("=") + 1, -1);
+const railName = (key: string) => parseLabels(key).name ?? "";
 /**
  * App lines cycle the lighter ramp steps; the second time round they are
  * dashed, so no two lines look the same. Legend focus tells them apart too.

@@ -1,4 +1,5 @@
 import type { LiveProcess } from "@core/generated/bindings";
+import { liveProcess } from "@tests/fixtures/processes";
 import {
   cpuCard,
   diskCard,
@@ -8,25 +9,8 @@ import {
   topProcesses,
 } from "./card-props";
 
-const proc = (p: Partial<LiveProcess> & { pid: number }): LiveProcess => ({
-  start_time_us: 1,
-  name: `p${p.pid}`,
-  cpu_pct: null,
-  mem_bytes: 0,
-  compressed_bytes: null,
-  threads: 1,
-  idle_wakeups_per_s: null,
-  energy: null,
-  disk_read_bps: null,
-  disk_write_bps: null,
-  net_rx_bps: null,
-  net_tx_bps: null,
-  gpu_pct: null,
-  ports: null,
-  user: "me",
-  refusal: null,
-  ...p,
-});
+const proc = (p: Partial<LiveProcess> & { pid: number }): LiveProcess =>
+  liveProcess({ start_time_us: 1, name: `p${p.pid}`, cpu_pct: null, ...p });
 
 const rowsOf = (card: ReturnType<typeof cpuCard>) =>
   card.body.kind === "list" ? card.body.rows : [];

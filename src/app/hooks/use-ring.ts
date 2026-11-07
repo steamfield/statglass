@@ -9,6 +9,7 @@ import {
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useHost, useHostStore } from "~/stores/host-store";
+import { currentLayout, held } from "~/stores/live-selectors";
 
 /**
  * Current values for an arbitrary list of series keys (display form), `null`
@@ -21,7 +22,7 @@ export function useHeld(
   return useHost(
     useShallow((s) => {
       const out: Record<string, number | null> = {};
-      for (const k of keys) out[k] = s.held[k] ?? null;
+      for (const k of keys) out[k] = held(s, k);
       return out;
     })
   );
@@ -32,9 +33,7 @@ export function useHeld(
  * replaced only when a new layout arrives, so it is a stable dependency.
  */
 export function useLayout(): LayoutInfo | null {
-  return useHost((s) =>
-    s.layoutNo === null ? null : (s.layouts[s.layoutNo] ?? null)
-  );
+  return useHost(currentLayout);
 }
 
 /**

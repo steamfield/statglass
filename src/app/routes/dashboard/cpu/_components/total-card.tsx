@@ -1,6 +1,7 @@
 import { seriesRange } from "@core/chart-math";
 import { fixed, formatPercent, MISSING } from "@core/format";
 import { windowWords } from "@core/live-window";
+import { sk } from "@core/series-key";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
@@ -23,7 +24,7 @@ import {
 import { StatStrip, type StatStripItem } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
 
-const LOADAVG = ["1", "5", "15"].map((w) => `cpu.loadavg{window=${w}}`);
+const LOADAVG = ["1", "5", "15"].map((window) => sk("cpu.loadavg", { window }));
 const PSI = ["cpu.psi{stall=some}", "cpu.psi{stall=full}"];
 const HELD = [
   "cpu.total",

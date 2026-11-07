@@ -1,5 +1,6 @@
 import { formatTemperature, type TemperatureUnits } from "@core/format";
 import { windowWords } from "@core/live-window";
+import { parseLabels } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
@@ -16,8 +17,10 @@ import { sensorLabel, zoneName } from "../_lib/sensors";
 /** Fixed domain for temperature (design-system.md "Y scale"), °C. */
 const TEMP_SCALE = { min: 20, max: 110 };
 
+/** A `thermal.zone{sensor}` or `thermal.sensor{name}` key's sensor name. */
 function labelValue(key: string): string {
-  return key.slice(key.indexOf("=") + 1, -1);
+  const labels = parseLabels(key);
+  return labels.sensor ?? labels.name ?? "";
 }
 
 /**

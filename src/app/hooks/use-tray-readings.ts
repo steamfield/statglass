@@ -14,6 +14,7 @@ import {
   selectNetwork,
   selectPower,
   selectSensors,
+  selectVolumeCapacity,
 } from "~/stores/live-selectors";
 import { useSettingsStore } from "~/stores/settings-store";
 import { SPARK_SAMPLES } from "~/widgets/tray-preview";
@@ -22,12 +23,7 @@ function select(s: HostLiveState, bootMount: string | null) {
   const disk = selectDisk(s);
   const read = disk.read;
   const write = disk.write;
-  const used = bootMount
-    ? (s.held[`disk.used{vol=${bootMount}}`] ?? null)
-    : null;
-  const total = bootMount
-    ? (s.held[`disk.total{vol=${bootMount}}`] ?? null)
-    : null;
+  const { used, total } = selectVolumeCapacity(s, bootMount || null);
   const net = selectNetwork(s);
   return {
     cpu: selectCpu(s).total,

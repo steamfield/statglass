@@ -11,6 +11,7 @@ import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 import { useHost, useHostId } from "~/stores/host-store";
+import { currentLayout } from "~/stores/live-selectors";
 
 /** Bounded retained-history reads. Relative ranges refresh once per displayed bucket. */
 export function useHistorySeries(
@@ -36,9 +37,7 @@ export function useHistorySeries(
     () => (keyList ? keyList.split("\n") : []),
     [keyList]
   );
-  const layout = useHost((s) =>
-    s.layoutNo === null ? null : s.layouts[s.layoutNo]
-  );
+  const layout = useHost(currentLayout);
   const query = useQuery({
     queryKey: historyKeys.moduleSeries(
       hostId,

@@ -3,6 +3,7 @@ import {
   RING_SPAN_MS,
   type SeriesKey,
 } from "@core/generated/bindings";
+import { statusMsg } from "@tests/live-frames";
 import {
   type HostLive,
   initialHostLive,
@@ -15,18 +16,6 @@ const SERIES: SeriesKey[] = [
   { metric: "cpu.total", labels: [] },
   { metric: "thermal.hottest", labels: [] },
 ];
-
-const status = (paused = false): LiveMsg => ({
-  kind: "status",
-  interval_ms: 1000,
-  frame_period_ms: 1000,
-  paused,
-  display_idle: false,
-  on_battery: false,
-  performance: "off",
-  power_source: "adapter",
-  primary_iface: null,
-});
 
 const frame = (
   ts: number,
@@ -47,7 +36,7 @@ function apply(msgs: LiveMsg[], state: HostLive = initialHostLive("h1")) {
 }
 
 const base = [
-  status(),
+  statusMsg(),
   { kind: "layout", layout_no: 1, series: SERIES, kinds: [] },
 ] as [LiveMsg, LiveMsg];
 
@@ -111,7 +100,10 @@ describe("readFailure", () => {
     const failed = apply([...base, frame(1000, [10, null], [10, null])]);
     expect(readFailure(failed, "thermal.hottest")).not.toBeNull();
     expect(
-      readFailure(reduceLive(failed, status(true)), "thermal.hottest")
+      readFailure(
+        reduceLive(failed, statusMsg({ paused: true })),
+        "thermal.hottest"
+      )
     ).toBeNull();
     expect(
       readFailure({ ...failed, stale: true }, "thermal.hottest")
