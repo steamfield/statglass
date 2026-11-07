@@ -1,4 +1,6 @@
+import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
+import { historyKeys } from "@core/query-keys";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useHistoryHealth } from "~/hooks/use-history-health";
@@ -61,9 +63,12 @@ describe("useLastWake", () => {
       autoTick: false,
       scenarios: ["history-unavailable"],
     });
-    renderWithProviders(<Wake />, { transport });
+    const { queryClient } = renderWithProviders(<Wake />, { transport });
+    // Settled, not pending: Rust refused the read.
     await vi.waitFor(() =>
-      expect(transport.calls.some((c) => c.command === "last_wake")).toBe(true)
+      expect(
+        queryClient.getQueryState(historyKeys.lastWake(MOCK_HOST_ID))?.status
+      ).toBe("error")
     );
     expect(screen.getByText("no wake")).toBeTruthy();
   });

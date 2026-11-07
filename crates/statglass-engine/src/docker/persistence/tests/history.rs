@@ -57,6 +57,117 @@ fn points_claim_no_measurement_inside_collection_or_metric_gaps() {
     );
 }
 
+/// Records `s` once a second for `secs` seconds from `t`, every container measured.
+fn record_seconds(r: &DockerRecorder, s: &mut api::DockerSnapshot, t: i64, secs: i64) {
+    for i in 1..=secs {
+        at(s, t + i * 1000, 1000);
+        r.record(s);
+    }
+}
+fn cpu_measured(page: &api::DockerHistoryPage, from: i64) -> Vec<(i64, u32, bool)> {
+    page.points
+        .iter()
+        .filter(|p| p.time_ms >= from)
+        .map(|p| (p.time_ms - from, p.cpu_measured_ms, p.cpu_covered))
+        .collect()
+}
+fn partial(start: i64, end: i64, id: Option<&str>) -> api::DockerCoverage {
+    api::DockerCoverage::new(start, Some(end), id.map(Into::into), "partial_cycle".into())
+}
+
+#[test]
+fn an_engine_wide_partial_cycle_leaves_a_measured_container_measured() {
+    let r = DockerRecorder::new(host().id);
+    let t = wall_ms().div_euclid(60_000) * 60_000;
+    let mut s = fixture(t);
+    // What earlier builds published when any one container's stats failed.
+    s.coverage = vec![
+        partial(t + 10_000, t + 20_000, None),
+        partial(t + 30_000, t + 40_000, Some("other")),
+    ];
+    r.record(&s);
+    record_seconds(&r, &mut s, t, 60);
+    let full: Vec<_> = (0..6).map(|i| (i * 10_000, 10_000, true)).collect();
+    let page = r.history(&query(t, t + 60_000, 60)).unwrap();
+    assert_eq!(cpu_measured(&page, t), full);
+    let mut aggregate = query(t, t + 60_000, 60);
+    aggregate.container_id = None;
+    assert_eq!(cpu_measured(&r.history(&aggregate).unwrap(), t), full);
+}
+
+#[test]
+fn history_counts_no_measured_time_inside_a_containers_own_partial_cycle() {
+    let r = DockerRecorder::new(host().id);
+    let t = wall_ms().div_euclid(60_000) * 60_000;
+    let mut s = fixture(t);
+    s.coverage = vec![partial(t + 20_000, t + 30_000, Some("c"))];
+    r.record(&s);
+    record_seconds(&r, &mut s, t, 60);
+    let page = r.history(&query(t, t + 60_000, 60)).unwrap();
+    let mut expected: Vec<_> = (0..6).map(|i| (i * 10_000, 10_000, true)).collect();
+    expected[2] = (20_000, 0, false);
+    assert_eq!(cpu_measured(&page, t), expected);
+}
+
+#[test]
+fn comparison_ranks_on_the_measured_time_coverage_leaves() {
+    let r = DockerRecorder::new(host().id);
+    let t = wall_ms().div_euclid(60_000) * 60_000;
+    let mut s = fixture(t);
+    let mut d = s.containers[0].clone();
+    d.id = "d".into();
+    d.name = "d".into();
+    d.metrics.cpu_pct = Some(50.);
+    s.containers.push(d);
+    // c peaked while its stats were failing: that spike was never measured.
+    s.containers[0].metrics.cpu_pct = Some(300.);
+    s.coverage = vec![
+        partial(t, t + 60_000, None),
+        partial(t - 1000, t + 30_000, Some("c")),
+    ];
+    r.record(&s);
+    record_seconds(&r, &mut s, t, 30);
+    s.containers[0].metrics.cpu_pct = Some(100.);
+    record_seconds(&r, &mut s, t + 30_000, 30);
+    let page = r
+        .comparison(&api::DockerComparisonRequest {
+            engine_id: "daemon".into(),
+            from_ms: t,
+            to_ms: t + 60_000,
+            metric: api::DockerComparisonMetric::Cpu,
+            project: None,
+            selected: None,
+            max_points: 60,
+        })
+        .unwrap();
+    let ranking: Vec<_> = page
+        .ranking
+        .iter()
+        .map(|row| {
+            (
+                row.container.id.as_str(),
+                row.peak_cpu_pct,
+                row.cpu_measured_ms,
+            )
+        })
+        .collect();
+    assert_eq!(
+        ranking,
+        [("c", Some(100.), 30_000), ("d", Some(50.), 60_000)]
+    );
+    let c = page
+        .series
+        .iter()
+        .find(|row| row.container.id == "c")
+        .unwrap();
+    assert!(
+        c.points
+            .iter()
+            .filter(|p| p.time_ms < t + 30_000)
+            .all(|p| p.cpu_measured_ms == 0 && !p.cpu_covered)
+    );
+}
+
 #[test]
 fn history_points_publish_coverage_without_client_inference() {
     let mut bucket = db::DockerBucket {

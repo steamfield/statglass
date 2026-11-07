@@ -168,6 +168,7 @@ export function mockDockerSnapshot(count: number, now: number): DockerSnapshot {
       processes: ["OrbStack (pid 710)", "OrbStack Helper (pid 712)"],
     },
     coverage: [],
+    current_coverage: [],
     observed_ms: now,
     now_ms: now,
     interval_ms: 1000,

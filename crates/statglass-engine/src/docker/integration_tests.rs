@@ -310,13 +310,15 @@ async fn partial_cycles_never_exceed_eight_requests_and_do_not_starve_the_tail()
     .await
     .unwrap();
     assert!(fixture.state.maximum.load(Ordering::SeqCst) <= 8);
-    assert!(
-        handle
-            .snapshot()
-            .coverage
-            .iter()
-            .any(|g| g.reason == "partial_cycle")
-    );
+    // Only the containers the deadline cut off lose coverage, each in its own record.
+    let partial: Vec<_> = handle
+        .snapshot()
+        .coverage
+        .into_iter()
+        .filter(|g| g.reason() == "partial_cycle")
+        .collect();
+    assert!(!partial.is_empty());
+    assert!(partial.iter().all(|g| g.container_id.is_some()));
     handle.configure(DockerSettings::default()).unwrap();
     let generation = handle.snapshot().generation;
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -891,10 +893,11 @@ async fn daemon_inventory_replaces_stopped_population_with_new_running_container
             .state
             .running_from
             .store(running_from, Ordering::SeqCst);
-        assert!(
+        assert_eq!(
             handle
                 .cycle(&mut adapter, &mut inventory, &mut samples, true, 1)
-                .await
+                .await,
+            (true, BTreeSet::new())
         );
         assert_eq!(
             inventory.rows.len(),

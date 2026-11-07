@@ -9,6 +9,7 @@ import {
 } from "@core/generated/bindings";
 import type { Transport } from "@core/transport";
 import { comparison } from "./docker-comparison";
+import { currentCoverage } from "./docker-coverage";
 import {
   aggregateContainers,
   engine,
@@ -22,6 +23,7 @@ import { retainedContainers, scenarioSnapshot } from "./docker-scenarios";
 import { createMockDockerStorage } from "./docker-storage";
 import type { ScenarioName } from "./fixtures";
 
+export { mockCoverage } from "./docker-coverage";
 export {
   MOCK_DOCKER_ENGINE,
   mockContainer,
@@ -73,7 +75,12 @@ class MockDocker {
     this.storage = this.createStorage();
   }
   private emit = () => {
-    this.snapshot = { ...this.snapshot, now_ms: this.now() };
+    // Rust re-derives the current-state records on every publish.
+    this.snapshot = {
+      ...this.snapshot,
+      now_ms: this.now(),
+      current_coverage: currentCoverage(this.snapshot),
+    };
     if (this.visible) for (const cb of this.listeners) cb(this.snapshot);
   };
   private stopContainer = (id: string) => {

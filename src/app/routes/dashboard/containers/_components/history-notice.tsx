@@ -1,10 +1,8 @@
 import { formatDateTime } from "@core/format";
 import type {
   DockerCoverage,
-  DockerCoverageKind,
   DockerPersistence,
   DockerSnapshot,
-  DockerStatus,
 } from "@core/generated/bindings";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
@@ -13,14 +11,6 @@ import {
   HistoryDetails,
   mergeCoverage,
 } from "./history-details";
-
-const STATUS_LABEL: Partial<Record<DockerStatus, string>> = {
-  unavailable: "Docker is unavailable",
-  permission_denied: "Docker refused access",
-  incompatible: "This Docker version is not supported",
-  paused: "Monitoring is paused",
-  idle_suspended: "Monitoring is paused while no containers run",
-};
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function HistoryNotice({
@@ -81,40 +71,8 @@ export function HistoryNotice({
           : partial
             ? `Monitoring ${snapshot.aggregate.expected} of ${snapshot.aggregate.running} running containers`
             : "Some container events may be missing";
-  const details = [...records];
-  // What the snapshot says now, beside Rust's coverage records.
-  const current = (
-    reason: string,
-    kind: DockerCoverageKind,
-    label: string
-  ): DockerCoverage => ({
-    start_ms: latest,
-    end_ms: null,
-    container_id: null,
-    reason,
-    kind,
-    label,
-  });
-  if (unavailable || paused)
-    details.push(
-      current(
-        snapshot.status,
-        "collection",
-        STATUS_LABEL[snapshot.status] ?? text
-      )
-    );
-  if (saving && !records.some((r) => r.reason === "write_failed"))
-    details.push(
-      current("write_failed", "saving", "Measurements could not be saved")
-    );
-  if (partial)
-    details.push(
-      current(
-        "partial_population",
-        "collection",
-        "Some running containers are not monitored"
-      )
-    );
+  // Rust's records for what the snapshot's state interrupts now.
+  const details = [...records, ...snapshot.current_coverage];
   return (
     <>
       <div

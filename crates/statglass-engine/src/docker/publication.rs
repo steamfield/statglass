@@ -87,6 +87,92 @@ pub(super) fn aggregate_rows<'a>(
     }
 }
 
+/// Open records for what the snapshot's state interrupts now, from its last
+/// observation. They describe the present and are never recorded.
+pub(super) fn current_coverage(s: &DockerSnapshot) -> Vec<DockerCoverage> {
+    let status = match s.status {
+        DockerStatus::Unavailable => Some("unavailable"),
+        DockerStatus::PermissionDenied => Some("permission_denied"),
+        DockerStatus::Incompatible => Some("incompatible"),
+        DockerStatus::Paused => Some("paused"),
+        DockerStatus::IdleSuspended => Some("idle_suspended"),
+        _ => None,
+    };
+    let saving = s.persistence.status == "write_failed";
+    let unmonitored = s.status == DockerStatus::Connected
+        && (s.aggregate.expected < s.aggregate.running || !s.aggregate.inventory_complete);
+    [
+        status,
+        saving.then_some("write_failed"),
+        unmonitored.then_some("partial_population"),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|reason| DockerCoverage::new(s.observed_ms, None, None, reason.into()))
+    .collect()
+}
+/// The engine-wide record still open; there is at most one.
+pub(super) fn open_engine_wide(coverage: &mut [DockerCoverage]) -> Option<&mut DockerCoverage> {
+    coverage
+        .iter_mut()
+        .rev()
+        .find(|g| g.container_id.is_none() && g.end_ms.is_none())
+}
+/// One open `partial_cycle` record per container whose stats failed this cycle; a
+/// container that was measured, stopped or left the population closes its record.
+pub(super) fn reconcile_partial(
+    coverage: &mut Vec<DockerCoverage>,
+    failed: &BTreeSet<String>,
+    at: i64,
+) {
+    let mut open = BTreeSet::new();
+    for g in coverage
+        .iter_mut()
+        .filter(|g| g.end_ms.is_none() && g.reason() == "partial_cycle" && g.container_id.is_some())
+    {
+        match g.container_id.as_ref().filter(|id| failed.contains(*id)) {
+            Some(id) => {
+                open.insert(id.clone());
+            }
+            None => g.end_ms = Some(at.max(g.start_ms)),
+        }
+    }
+    coverage.extend(
+        failed
+            .difference(&open)
+            .map(|id| DockerCoverage::new(at, None, Some(id.clone()), "partial_cycle".into())),
+    );
+}
+/// Past 128 records, the oldest closed ones go until 64 closed remain. Open records
+/// stay: the recorder must see them close.
+/// Opens an engine-wide `gap`, closing the one open before it. A collection
+/// interruption also ends each container's partial cycle.
+pub(super) fn open_gap(coverage: &mut Vec<DockerCoverage>, gap: DockerCoverage) {
+    let collection = gap.kind() == DockerCoverageKind::Collection;
+    for g in coverage
+        .iter_mut()
+        .filter(|g| g.end_ms.is_none() && (g.container_id.is_none() || collection))
+    {
+        g.end_ms = Some(gap.start_ms.max(g.start_ms));
+    }
+    coverage.push(gap);
+    bound_published(coverage);
+}
+pub(super) fn bound_published(coverage: &mut Vec<DockerCoverage>) {
+    if coverage.len() <= 128 {
+        return;
+    }
+    let closed = coverage.iter().filter(|g| g.end_ms.is_some()).count();
+    let mut excess = closed.saturating_sub(64);
+    coverage.retain(|g| {
+        if excess > 0 && g.end_ms.is_some() {
+            excess -= 1;
+            return false;
+        }
+        true
+    });
+}
+
 impl DockerHandle {
     pub(super) fn publish_cycle(
         &self,
@@ -95,7 +181,7 @@ impl DockerHandle {
         inventory: &mut Inventory,
         restarts: &mut BTreeMap<String, VecDeque<i64>>,
         last_observation: &mut Option<Instant>,
-        ok: bool,
+        failed: &BTreeSet<String>,
     ) {
         let interval = control
             .min_interval_ms
@@ -147,12 +233,113 @@ impl DockerHandle {
             observed,
             interval,
         );
-        if ok
-            && let Some(g) = snapshot.coverage.last_mut()
-            && g.end_ms.is_none()
-        {
-            g.end_ms = Some(observed);
+        // A published cycle ends the engine-wide interruption; containers that
+        // failed this cycle carry their own records.
+        if let Some(g) = open_engine_wide(&mut snapshot.coverage) {
+            g.end_ms = Some(observed.max(g.start_ms));
         }
+        reconcile_partial(&mut snapshot.coverage, failed, observed);
+        bound_published(&mut snapshot.coverage);
         self.publish(snapshot);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(start: i64, end: Option<i64>, id: Option<&str>, reason: &str) -> DockerCoverage {
+        DockerCoverage::new(start, end, id.map(Into::into), reason.into())
+    }
+    fn ids(ids: &[&str]) -> BTreeSet<String> {
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
+    #[test]
+    fn only_the_containers_that_failed_carry_partial_cycles() {
+        let mut coverage = vec![record(1, None, None, "events_disconnected")];
+        reconcile_partial(&mut coverage, &ids(&["a", "b"]), 10);
+        reconcile_partial(&mut coverage, &ids(&["b"]), 20);
+        reconcile_partial(&mut coverage, &ids(&["b", "c"]), 30);
+        assert_eq!(
+            coverage,
+            [
+                record(1, None, None, "events_disconnected"),
+                record(10, Some(20), Some("a"), "partial_cycle"),
+                record(10, None, Some("b"), "partial_cycle"),
+                record(30, None, Some("c"), "partial_cycle"),
+            ]
+        );
+        reconcile_partial(&mut coverage, &BTreeSet::new(), 40);
+        assert!(coverage.iter().skip(1).all(|g| g.end_ms.is_some()));
+    }
+
+    #[test]
+    fn bounding_the_published_coverage_keeps_open_records() {
+        let mut coverage: Vec<_> = (0..200)
+            .map(|i| record(i, Some(i + 1), Some("a"), "partial_cycle"))
+            .collect();
+        coverage.insert(0, record(0, None, Some("b"), "partial_cycle"));
+        bound_published(&mut coverage);
+        assert_eq!(coverage.len(), 65);
+        assert_eq!(coverage[0], record(0, None, Some("b"), "partial_cycle"));
+        assert_eq!(coverage[1].start_ms, 136);
+    }
+
+    #[test]
+    fn current_coverage_follows_status_saving_and_population() {
+        let handle = DockerHandle::new(
+            HostId(uuid::Uuid::new_v4()),
+            DockerSettings::default(),
+            std::path::PathBuf::new(),
+        );
+        let mut s = handle.snapshot();
+        s.observed_ms = 5;
+        let reasons = |s: &DockerSnapshot| {
+            current_coverage(s)
+                .into_iter()
+                .map(|g| (g.reason().to_owned(), g.start_ms, g.end_ms))
+                .collect::<Vec<_>>()
+        };
+        assert!(reasons(&s).is_empty(), "disabled is not an interruption");
+        s.status = DockerStatus::PermissionDenied;
+        s.persistence.status = "write_failed".into();
+        assert_eq!(
+            reasons(&s),
+            [
+                ("permission_denied".into(), 5, None),
+                ("write_failed".into(), 5, None)
+            ]
+        );
+        s.status = DockerStatus::Connected;
+        s.persistence.status = "recording".into();
+        s.aggregate.inventory_complete = true;
+        s.aggregate.running = 3;
+        s.aggregate.expected = 2;
+        assert_eq!(reasons(&s), [("partial_population".into(), 5, None)]);
+        assert_eq!(
+            current_coverage(&s)[0].label(),
+            "Some running containers are not monitored"
+        );
+    }
+
+    #[test]
+    fn a_collection_gap_closes_each_containers_partial_cycle() {
+        let handle = DockerHandle::new(
+            HostId(uuid::Uuid::new_v4()),
+            DockerSettings::default(),
+            std::path::PathBuf::new(),
+        );
+        handle.changed.send_modify(|s| {
+            s.coverage = vec![record(1, None, Some("a"), "partial_cycle")];
+        });
+        handle.gap("events_disconnected");
+        assert!(handle.snapshot().coverage[0].end_ms.is_none());
+        handle.gap("shutdown");
+        let coverage = handle.snapshot().coverage;
+        assert!(coverage[0].end_ms.is_some());
+        assert!(coverage[1].end_ms.is_some(), "events gap left open");
+        assert_eq!(coverage[2].reason(), "shutdown");
+        assert_eq!(coverage[2].end_ms, None);
     }
 }

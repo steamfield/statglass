@@ -102,7 +102,7 @@ fn event_coverage(
             if !coverage.iter().any(|live| {
                 live.start_ms == gap.start_ms
                     && live.container_id == gap.container_id
-                    && live.reason == gap.reason
+                    && live.reason() == gap.reason()
             }) {
                 coverage.push(gap);
             }

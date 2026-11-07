@@ -86,6 +86,8 @@ export const SCENARIOS = [
   "docker-idle",
   "docker-history-gap",
   "docker-events-gap",
+  "docker-partial-cycle",
+  "docker-crash",
   "docker-save-failed",
   "docker-stop-failed",
   "docker-rerank",

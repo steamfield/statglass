@@ -331,7 +331,7 @@ fn history_coverage(
         .collect();
     for c in coverage {
         if let Some(old) = gaps.iter_mut().find(|g| {
-            g.start_ms == c.start_ms && g.container_id == c.container_id && g.reason == c.reason
+            g.start_ms == c.start_ms && g.container_id == c.container_id && g.reason() == c.reason()
         }) {
             old.end_ms = old.end_ms.max(c.end_ms);
         } else {

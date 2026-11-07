@@ -218,3 +218,66 @@ it("counts no measured time inside a collection gap, as Rust does (D-128)", asyn
   expect(history.points).toEqual(first.points);
   t.dispose();
 });
+
+it("masks a partial cycle for its own container only, as Rust does", async () => {
+  const t = createMockTransport({
+    scenarios: ["docker-11", "docker-partial-cycle"],
+    historyRows: 1,
+  });
+  const snapshot = await unwrap(t.dockerSnapshot());
+  const [global, own] = snapshot.coverage;
+  if (!global?.end_ms || !own?.end_ms) throw new Error("No mock gaps");
+  expect([global.container_id, own.container_id]).toEqual([
+    null,
+    "container-0",
+  ]);
+  const range = {
+    ...request,
+    from_ms: global.start_ms - 60_000,
+    to_ms: own.end_ms + 60_000,
+  };
+  const comparison = await unwrap(t.dockerComparison(range));
+  const series = (id: string) =>
+    comparison.series.find((s) => s.container.id === id)?.points ?? [];
+  const inside = (id: string, from: number, to: number) =>
+    series(id).filter(
+      (p) => p.time_ms >= from && p.time_ms + p.duration_ms <= to
+    );
+  expect(
+    inside("container-0", own.start_ms, own.end_ms).length
+  ).toBeGreaterThan(0);
+  expect(
+    inside("container-0", own.start_ms, own.end_ms).every(
+      (p) => p.cpu_measured_ms === 0
+    )
+  ).toBe(true);
+  expect(
+    inside("container-1", own.start_ms, own.end_ms).every(
+      (p) => p.cpu_measured_ms > 0
+    )
+  ).toBe(true);
+  expect(
+    inside("container-0", global.start_ms, global.end_ms).every(
+      (p) => p.cpu_measured_ms > 0
+    )
+  ).toBe(true);
+  t.dispose();
+});
+
+it("derives the current-state records on every publish, as Rust does", async () => {
+  const t = createMockTransport({
+    scenarios: ["docker-11", "docker-unavailable", "docker-save-failed"],
+  });
+  const snapshot = await unwrap(t.dockerSnapshot());
+  expect(
+    snapshot.current_coverage.map((g) => [g.reason, g.kind, g.end_ms])
+  ).toEqual([
+    ["unavailable", "collection", null],
+    ["write_failed", "saving", null],
+  ]);
+  const resumed = await unwrap(t.dockerResume());
+  expect(resumed.current_coverage.map((g) => g.reason)).toEqual([
+    "write_failed",
+  ]);
+  t.dispose();
+});

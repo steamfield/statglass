@@ -920,6 +920,11 @@ export type DockerContainerSeries = {
 	points: DockerHistoryPoint[],
 };
 
+/**
+ *  One interruption of Docker coverage. `kind` and `label` are derived from `reason`
+ *  by `DockerCoverage::new`, which deserializing also goes through, and the three
+ *  fields are private in Rust, so they always agree (D-128).
+ */
 export type DockerCoverage = {
 	start_ms: number,
 	end_ms: number | null,
@@ -932,9 +937,10 @@ export type DockerCoverage = {
 
 /**
  *  What a coverage record interrupted. `Collection` and `Metrics` mean nothing was
- *  measured, so a history point counts no measured time inside them (D-128).
+ *  measured, so a history point counts no measured time inside them (D-128). `Other`
+ *  is a reason this build does not know, which says nothing about measurements.
  */
-export type DockerCoverageKind = "collection" | "saving" | "metrics" | "events";
+export type DockerCoverageKind = "collection" | "saving" | "metrics" | "events" | "other";
 
 export type DockerEngine = {
 	id: string,
@@ -1114,6 +1120,11 @@ export type DockerSnapshot = {
 	project_aggregates: DockerProjectAggregate[],
 	runtime: DockerRuntimeFootprint,
 	coverage: DockerCoverage[],
+	/**
+	 *  What the current status, saving state and monitored population interrupt, as
+	 *  open records from the last observation. Derived on every publish, never saved.
+	 */
+	current_coverage: DockerCoverage[],
 	observed_ms: number,
 	/**  Publication clock; observation time advances only when data arrives. */
 	now_ms: number,

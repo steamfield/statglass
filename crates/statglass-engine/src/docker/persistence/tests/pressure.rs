@@ -49,7 +49,7 @@ fn aggregate_eviction_does_not_gap_durable_container_history() {
         container
             .coverage
             .iter()
-            .all(|gap| gap.reason != "write_failed"),
+            .all(|gap| gap.reason() != "write_failed"),
         "aggregate eviction must not invalidate durable container measurements"
     );
     let aggregate = r
@@ -62,7 +62,7 @@ fn aggregate_eviction_does_not_gap_durable_container_history() {
         aggregate
             .coverage
             .iter()
-            .any(|gap| gap.reason == "write_failed" && gap.container_id.as_deref() == Some(""))
+            .any(|gap| gap.reason() == "write_failed" && gap.container_id.as_deref() == Some(""))
     );
     let comparison = r
         .comparison(&api::DockerComparisonRequest {
@@ -80,7 +80,7 @@ fn aggregate_eviction_does_not_gap_durable_container_history() {
         comparison
             .coverage
             .iter()
-            .all(|gap| gap.reason != "write_failed")
+            .all(|gap| gap.reason() != "write_failed")
     );
 }
 
@@ -377,4 +377,87 @@ fn a_persisting_ring_holds_minutes_not_the_hour() {
     );
     // Five minutes uncommitted plus two persisted, per container and the aggregate.
     assert!(buckets <= 31 * (30 + 12 + 2), "{buckets} buckets held");
+}
+
+#[test]
+fn bounding_coverage_never_turns_saving_or_events_records_into_a_gap() {
+    let gap = |start: i64, end: Option<i64>, id: Option<&str>, reason: &str| {
+        api::DockerCoverage::new(start, end, id.map(Into::into), reason.into())
+    };
+    let mut gaps: Vec<_> = (0..600)
+        .map(|i| {
+            let reason = if i % 2 == 0 {
+                "write_failed"
+            } else {
+                "events_disconnected"
+            };
+            gap(i * 60_000, Some(i * 60_000 + 1000), None, reason)
+        })
+        .collect();
+    // c lost two short intervals hours apart, and d's record is still open.
+    gaps.push(gap(1_000_000, Some(1_001_000), Some("c"), "partial_cycle"));
+    gaps.push(gap(
+        20_000_000,
+        Some(20_001_000),
+        Some("c"),
+        "partial_cycle",
+    ));
+    let open = gap(30_000_000, None, Some("d"), "partial_cycle");
+    gaps.push(open.clone());
+    bound_coverage(&mut gaps);
+    assert!(gaps.len() <= 512, "{}", gaps.len());
+    assert!(gaps.contains(&open));
+    // Nothing engine-wide masks, and c's masking stays c's.
+    assert!(!gaps.iter().any(|g| g.masks(None) || g.masks(Some("other"))));
+    let masking_c: Vec<_> = gaps.iter().filter(|g| g.masks(Some("c"))).collect();
+    assert!(
+        masking_c
+            .iter()
+            .all(|g| g.start_ms >= 1_000_000 && g.end_ms <= Some(20_001_000)),
+        "{masking_c:?}"
+    );
+    // The oldest records that mask nothing are the ones dropped.
+    assert!(!gaps.iter().any(|g| g.start_ms == 0));
+    // Too many of c's own records collapse into one span that masks only c.
+    let mut gaps: Vec<_> = (0..600)
+        .map(|i| gap(i * 1000, Some(i * 1000 + 500), Some("c"), "partial_cycle"))
+        .collect();
+    gaps.push(open.clone());
+    bound_coverage(&mut gaps);
+    assert_eq!(
+        gaps,
+        [open, gap(0, Some(599_500), Some("c"), "coverage_unknown")]
+    );
+}
+
+#[test]
+fn closed_coverage_leaves_memory_with_the_hour_and_is_not_readmitted() {
+    let (_dir, store, r) = setup();
+    let t = wall_ms().div_euclid(10_000) * 10_000 - 3 * HOUR;
+    let mut s = fixture(t);
+    s.coverage = vec![api::DockerCoverage::new(
+        t - 1000,
+        Some(t),
+        Some("c".into()),
+        "partial_cycle".into(),
+    )];
+    r.record(&s);
+    assert_eq!(r.state.lock_ok().coverage["daemon"].len(), 1);
+    store.writer().flush().unwrap();
+    let saved = || {
+        let mut reader = Reader::open(store.path()).unwrap();
+        let snapshot = reader.docker_snapshot(host().id, "daemon").unwrap();
+        snapshot
+            .event_coverage(Some("c"), t - HOUR, t + 3 * HOUR)
+            .unwrap()
+    };
+    let before = saved();
+    // The published snapshot still carries it two hours later.
+    for i in 0..3 {
+        at(&mut s, t + 2 * HOUR + i * 1000, 1000);
+        r.record(&s);
+    }
+    assert!(r.state.lock_ok().coverage["daemon"].is_empty());
+    store.writer().flush().unwrap();
+    assert_eq!(saved(), before, "the saved record was written again");
 }

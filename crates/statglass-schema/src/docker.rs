@@ -136,7 +136,10 @@ pub struct DockerRuntimeFootprint {
     pub observed_ms: Option<i64>,
     pub processes: Vec<String>,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+/// One interruption of Docker coverage. `kind` and `label` are derived from `reason`
+/// by `DockerCoverage::new`, which deserializing also goes through, and the three
+/// fields are private in Rust, so they always agree (D-128).
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
 pub struct DockerCoverage {
     #[specta(type = JsSafeInt)]
     pub start_ms: i64,
@@ -144,12 +147,13 @@ pub struct DockerCoverage {
     pub end_ms: Option<i64>,
     pub container_id: Option<String>,
     /// The key records merge by; `kind` and `label` are derived from it (D-128).
-    pub reason: String,
-    pub kind: DockerCoverageKind,
-    pub label: String,
+    reason: String,
+    kind: DockerCoverageKind,
+    label: String,
 }
 /// What a coverage record interrupted. `Collection` and `Metrics` mean nothing was
-/// measured, so a history point counts no measured time inside them (D-128).
+/// measured, so a history point counts no measured time inside them (D-128). `Other`
+/// is a reason this build does not know, which says nothing about measurements.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum DockerCoverageKind {
@@ -157,6 +161,7 @@ pub enum DockerCoverageKind {
     Saving,
     Metrics,
     Events,
+    Other,
 }
 impl DockerCoverageKind {
     /// Whether history points inside a record of this kind were measured.
@@ -182,6 +187,40 @@ impl DockerCoverage {
             reason,
         }
     }
+    pub fn reason(&self) -> &str {
+        &self.reason
+    }
+    pub fn kind(&self) -> DockerCoverageKind {
+        self.kind
+    }
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+    /// Whether history points of `container` (`None`: the engine aggregate) count no
+    /// measured time inside this record. A container's record masks that container
+    /// only. An engine-wide `partial_cycle`, which earlier builds wrote when any one
+    /// container failed, masks nothing: the recorder weights only fresh observations.
+    pub fn masks(&self, container: Option<&str>) -> bool {
+        self.kind.masks_measurements()
+            && match self.container_id.as_deref() {
+                None => self.reason != "partial_cycle",
+                Some(id) => container == Some(id),
+            }
+    }
+}
+impl<'de> Deserialize<'de> for DockerCoverage {
+    /// Rebuilds through [`DockerCoverage::new`]; a serialized `kind` or `label` is ignored.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Record {
+            start_ms: i64,
+            end_ms: Option<i64>,
+            container_id: Option<String>,
+            reason: String,
+        }
+        let r = Record::deserialize(deserializer)?;
+        Ok(Self::new(r.start_ms, r.end_ms, r.container_id, r.reason))
+    }
 }
 /// "write_rejected" as "Write rejected".
 fn in_words(key: &str) -> String {
@@ -192,9 +231,10 @@ fn in_words(key: &str) -> String {
         .map(|first| first.to_uppercase().chain(chars).collect())
         .unwrap_or_default()
 }
-/// A reason this build does not know is a metrics gap labelled with its key in words.
+/// A reason this build does not know (a newer build's, read after a downgrade) is
+/// `Other`, labelled with its key in words, so it never erases measured time.
 fn coverage_meaning(reason: &str) -> (DockerCoverageKind, Option<&'static str>) {
-    use DockerCoverageKind::{Collection, Events, Metrics, Saving};
+    use DockerCoverageKind::{Collection, Events, Metrics, Other, Saving};
     match reason {
         "disconnected" => (Collection, Some("Lost connection to Docker")),
         "disabled" => (Collection, Some("Docker monitoring was off")),
@@ -205,6 +245,14 @@ fn coverage_meaning(reason: &str) -> (DockerCoverageKind, Option<&'static str>) 
         ),
         "engine_switch" => (Collection, Some("Monitoring switched Docker engines")),
         "shutdown" => (Collection, Some("StatGlass was not running")),
+        // Current-state records the engine publishes beside the snapshot's status.
+        "unavailable" => (Collection, Some("Docker is unavailable")),
+        "permission_denied" => (Collection, Some("Docker refused access")),
+        "incompatible" => (Collection, Some("This Docker version is not supported")),
+        "partial_population" => (
+            Collection,
+            Some("Some running containers are not monitored"),
+        ),
         "partial_cycle" => (Metrics, Some("Some containers were not measured")),
         "clock_step" => (Metrics, Some("The Mac's clock changed")),
         "coverage_unknown" => (Metrics, Some("Too many interruptions to list")),
@@ -220,7 +268,7 @@ fn coverage_meaning(reason: &str) -> (DockerCoverageKind, Option<&'static str>) 
         ),
         "events_dropped_rate_limit" => (Events, Some("Events arrived too fast; some were dropped")),
         "restart_evidence_dropped" => (Events, Some("Some restart events were dropped")),
-        _ => (Metrics, None),
+        _ => (Other, None),
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -251,6 +299,9 @@ pub struct DockerSnapshot {
     pub project_aggregates: Vec<DockerProjectAggregate>,
     pub runtime: DockerRuntimeFootprint,
     pub coverage: Vec<DockerCoverage>,
+    /// What the current status, saving state and monitored population interrupt, as
+    /// open records from the last observation. Derived on every publish, never saved.
+    pub current_coverage: Vec<DockerCoverage>,
     #[specta(type = JsSafeInt)]
     pub observed_ms: i64,
     /// Publication clock; observation time advances only when data arrives.
@@ -448,26 +499,59 @@ mod tests {
     fn coverage_kind_and_label_follow_the_reason() {
         let gap = |reason: &str| DockerCoverage::new(1, Some(2), None, reason.into());
         let events = gap("events_dropped_rate_limit");
-        assert_eq!(events.kind, DockerCoverageKind::Events);
-        assert!(!events.kind.masks_measurements());
+        assert_eq!(events.kind(), DockerCoverageKind::Events);
+        assert!(!events.kind().masks_measurements());
         let saving = gap("write_failed");
-        assert_eq!(saving.kind, DockerCoverageKind::Saving);
-        assert_eq!(saving.label, "Measurements could not be saved");
-        assert!(!saving.kind.masks_measurements());
-        assert_eq!(gap("paused").kind, DockerCoverageKind::Collection);
-        assert!(gap("partial_cycle").kind.masks_measurements());
-        // A reason from a newer build is still a gap, in words.
+        assert_eq!(saving.kind(), DockerCoverageKind::Saving);
+        assert_eq!(saving.label(), "Measurements could not be saved");
+        assert!(!saving.kind().masks_measurements());
+        assert_eq!(gap("paused").kind(), DockerCoverageKind::Collection);
+        assert!(gap("partial_cycle").kind().masks_measurements());
+        // A newer build's reason, read after a downgrade, keeps its words but
+        // never erases measured time.
         let unknown = gap("write_rejected");
-        assert_eq!(unknown.kind, DockerCoverageKind::Metrics);
-        assert_eq!(unknown.label, "Write rejected");
-        assert_eq!(unknown.reason, "write_rejected");
+        assert_eq!(unknown.kind(), DockerCoverageKind::Other);
+        assert!(!unknown.masks(None));
+        assert_eq!(unknown.label(), "Write rejected");
+        assert_eq!(unknown.reason(), "write_rejected");
         assert_eq!(
             serde_json::to_value(&unknown).unwrap(),
             serde_json::json!({
                 "start_ms": 1, "end_ms": 2, "container_id": null,
-                "reason": "write_rejected", "kind": "metrics", "label": "Write rejected"
+                "reason": "write_rejected", "kind": "other", "label": "Write rejected"
             })
         );
+    }
+
+    #[test]
+    fn deserializing_coverage_rederives_kind_and_label() {
+        let read: DockerCoverage = serde_json::from_value(serde_json::json!({
+            "start_ms": 1, "end_ms": null, "container_id": "c",
+            "reason": "write_failed", "kind": "metrics", "label": "Anything"
+        }))
+        .unwrap();
+        assert_eq!(
+            read,
+            DockerCoverage::new(1, None, Some("c".into()), "write_failed".into())
+        );
+        assert_eq!(read.kind(), DockerCoverageKind::Saving);
+        assert!(!read.masks(Some("c")));
+    }
+
+    #[test]
+    fn a_record_masks_its_own_container_and_engine_wide_records_mask_all() {
+        let gap = |id: Option<&str>, reason: &str| {
+            DockerCoverage::new(1, Some(2), id.map(Into::into), reason.into())
+        };
+        let own = gap(Some("c"), "partial_cycle");
+        assert!(own.masks(Some("c")));
+        assert!(!own.masks(Some("other")));
+        assert!(!own.masks(None));
+        assert!(gap(None, "disconnected").masks(Some("c")));
+        assert!(gap(None, "disconnected").masks(None));
+        // Earlier builds wrote engine-wide partial cycles when one container failed.
+        assert!(!gap(None, "partial_cycle").masks(Some("c")));
+        assert!(!gap(None, "partial_cycle").masks(None));
     }
 
     #[test]

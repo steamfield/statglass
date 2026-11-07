@@ -48,7 +48,7 @@ fn rejected_content_retries_without_claiming_measurement_loss() {
         s.coverage
             .values()
             .flatten()
-            .all(|g| g.reason != "write_failed")
+            .all(|g| g.reason() != "write_failed")
     );
     let entry = s.entries.get(&key).unwrap();
     assert_eq!(entry.pins, 0);
@@ -74,7 +74,7 @@ fn assert_resumed_engine_closes_gap(reason: &str) {
     let gaps: Vec<_> = page
         .coverage
         .iter()
-        .filter(|g| g.reason == reason)
+        .filter(|g| g.reason() == reason)
         .collect();
     assert_eq!(gaps.len(), 1);
     assert_eq!(gaps[0].end_ms, Some(t + 2000));
@@ -83,7 +83,7 @@ fn assert_resumed_engine_closes_gap(reason: &str) {
             .unwrap()
             .coverage
             .iter()
-            .all(|g| g.reason != reason)
+            .all(|g| g.reason() != reason)
     );
     assert!(
         r.comparison(&api::DockerComparisonRequest {
@@ -98,7 +98,7 @@ fn assert_resumed_engine_closes_gap(reason: &str) {
         .unwrap()
         .coverage
         .iter()
-        .all(|g| g.reason != reason)
+        .all(|g| g.reason() != reason)
     );
     let comparison = r
         .comparison(&api::DockerComparisonRequest {
@@ -114,7 +114,7 @@ fn assert_resumed_engine_closes_gap(reason: &str) {
     let gaps: Vec<_> = comparison
         .coverage
         .iter()
-        .filter(|g| g.reason == reason)
+        .filter(|g| g.reason() == reason)
         .collect();
     assert_eq!(gaps.len(), 1);
     assert_eq!(gaps[0].end_ms, Some(t + 2000));
@@ -189,7 +189,7 @@ fn assert_restart_keeps_cpu_and_memory_visible(reason: &str) {
         before
             .coverage
             .iter()
-            .any(|g| g.reason == reason && g.end_ms.is_none())
+            .any(|g| g.reason() == reason && g.end_ms.is_none())
     );
     restarted.record(&fixture(resume + 1000));
     restarted.record(&fixture(resume + 2000));
@@ -220,7 +220,7 @@ fn assert_restart_keeps_cpu_and_memory_visible(reason: &str) {
             let gaps: Vec<_> = page
                 .coverage
                 .iter()
-                .filter(|g| g.reason == reason)
+                .filter(|g| g.reason() == reason)
                 .collect();
             assert_eq!(gaps.len(), 1);
             assert!(
@@ -234,7 +234,7 @@ fn assert_restart_keeps_cpu_and_memory_visible(reason: &str) {
             .history(&query(resume + 1001, resume + 10_000, 10))
             .unwrap();
         assert!(!page.points.is_empty());
-        assert!(page.coverage.iter().all(|g| g.reason != reason));
+        assert!(page.coverage.iter().all(|g| g.reason() != reason));
     }
 }
 
@@ -279,7 +279,7 @@ fn failed_writes_release_pins_and_replay_metadata_with_samples() {
         assert!(
             state.coverage["daemon"]
                 .iter()
-                .all(|g| g.reason != "write_failed")
+                .all(|g| g.reason() != "write_failed")
         );
     }
     store.writer().set_fail_commits(false);
@@ -341,6 +341,70 @@ fn shutdown_commits_latest_open_bucket_after_pending_older_revision() {
             .values()
             .all(|e| e.pins == 0 && e.durable >= e.bucket.revision)
     );
+}
+
+#[test]
+fn a_restart_after_a_crash_closes_open_records_at_the_last_observation() {
+    let (_dir, store, r) = setup();
+    let t = wall_ms().div_euclid(60_000) * 60_000 - 600_000;
+    let mut s = fixture(t);
+    r.record(&s);
+    for i in 1..=20 {
+        at(&mut s, t + i * 1000, 1000);
+        r.record(&s);
+    }
+    // c's stats start failing and the clock steps; the process dies with both open.
+    s.coverage = vec![
+        api::DockerCoverage::new(t + 20_000, None, Some("c".into()), "partial_cycle".into()),
+        api::DockerCoverage::new(t + 20_000, None, None, "clock_step".into()),
+    ];
+    for i in 21..=35 {
+        s.observed_ms = t + i * 1000;
+        r.record(&s);
+    }
+    store.writer().flush().unwrap();
+    drop(r);
+    let fresh = DockerRecorder::new(host().id);
+    fresh.attach(store.writer(), store.path().to_path_buf());
+    let mut s = fixture(t + 60_000);
+    fresh.record(&s);
+    for i in 61..=120 {
+        at(&mut s, t + i * 1000, 1000);
+        fresh.record(&s);
+    }
+    store.writer().flush().unwrap();
+    for recorder in [&fresh, &DockerRecorder::new(host().id)] {
+        recorder.attach(store.writer(), store.path().to_path_buf());
+        let page = recorder.history(&query(t, t + 120_000, 120)).unwrap();
+        let after: Vec<_> = page
+            .points
+            .iter()
+            .filter(|p| p.time_ms >= t + 70_000)
+            .map(|p| (p.cpu_measured_ms, p.cpu_covered))
+            .collect();
+        assert_eq!(after, [(10_000, true); 5]);
+        for reason in ["partial_cycle", "clock_step"] {
+            let gap = page.coverage.iter().find(|g| g.reason() == reason).unwrap();
+            // The dead process last saved an observation before the bucket it died in.
+            assert!(
+                gap.end_ms
+                    .is_some_and(|end| (t + 20_000..=t + 30_000).contains(&end)),
+                "{gap:?}"
+            );
+        }
+        let ranked = recorder
+            .comparison(&api::DockerComparisonRequest {
+                engine_id: "daemon".into(),
+                from_ms: t + 60_000,
+                to_ms: t + 120_000,
+                metric: api::DockerComparisonMetric::Cpu,
+                project: None,
+                selected: None,
+                max_points: 60,
+            })
+            .unwrap();
+        assert_eq!(ranked.ranking.len(), 1, "the crash hid every container");
+    }
 }
 
 #[test]

@@ -122,6 +122,12 @@ impl DockerReadSnapshot<'_> {
             )
             .optional()?)
     }
+    /// The end of the engine aggregate's newest population segment: when the process
+    /// that wrote this history last observed the engine.
+    pub fn last_observed(&self) -> Result<Option<i64>> {
+        self.check(0)?;
+        Ok(self.conn.query_row("SELECT max(last) FROM (SELECT max(end_ms) last FROM docker_10s_populations WHERE engine_id=?1 UNION ALL SELECT max(end_ms) FROM docker_1m_populations WHERE engine_id=?1 UNION ALL SELECT max(end_ms) FROM docker_15m_populations WHERE engine_id=?1)", [self.engine], |r| r.get(0))?)
+    }
     pub fn retained_range(&self) -> Result<Option<(i64, i64)>> {
         self.check(0)?;
         // Every candidate in a comparison shares this immutable WAL snapshot.

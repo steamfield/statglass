@@ -40,6 +40,7 @@ const SECTIONS: readonly { kind: DockerCoverageKind; title: string }[] = [
   { kind: "saving", title: "Saving" },
   { kind: "metrics", title: "Metrics" },
   { kind: "events", title: "Events" },
+  { kind: "other", title: "Other" },
 ];
 export function HistoryDetails({
   open,

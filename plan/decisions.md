@@ -4067,27 +4067,56 @@ difference).
 
 Date: 2026-11-07. Phase 5 of [rfc-shared-layers.md](rfc-shared-layers.md) (R6.1).
 
-`DockerCoverage` (`statglass-schema`) gains `kind` (`collection`, `saving`, `metrics`
-or `events`) and `label` (a sentence-case explanation). Rust derives both from the
-`reason` key in `DockerCoverage::new`, the only constructor, so every record the engine
-builds, from the live state or from the persisted `docker_coverage` rows, carries them.
-`reason` stays, as the key the record is merged and deduplicated by. A reason this build
-does not know gets kind `metrics` and the key in words as its label. The client stops
+`DockerCoverage` (`statglass-schema`) gains `kind` (`collection`, `saving`, `metrics`,
+`events` or `other`) and `label` (a sentence-case explanation). Rust derives both from
+the `reason` key in `DockerCoverage::new`. It is the only constructor: `reason`, `kind`
+and `label` are private fields with getters, and deserializing rebuilds the record
+through `new`, ignoring any serialized kind or label. So every record the engine builds,
+from the live state or from the persisted `docker_coverage` rows, carries them, and they
+cannot disagree. `reason` stays, as the key the record is merged and deduplicated by. A
+reason this build does not know (a newer build's, read after a downgrade) gets kind
+`other`, which masks nothing, and the key in words as its label. The client stops
 keeping its own reason tables: History details groups by `kind` and shows `label`, the
 comparison chart labels its gap bands with `label`, and event coverage is `kind ==
 events`. `events_dropped_rate_limit` and `restart_evidence_dropped` are now event
 coverage; the client counted them as metric gaps.
 
+What the snapshot's state interrupts now (an unavailable, refused, incompatible, paused
+or idle engine, a failing writer, running containers outside the monitored population)
+is `DockerSnapshot.current_coverage`: open records built with `DockerCoverage::new` from
+the last observation, re-derived on every publish and never recorded. History details
+lists them beside the history's records; the client no longer invents them.
+
 Rust also makes the points it returns consistent with that coverage. No history point
 (container history and each comparison series) claims more measured time than the
-`collection` and `metrics` records for its container, or for all containers, leave in
-its bucket: a bucket such a record touches is not covered, its `cpu_measured_ms` and
-`memory_measured_ms` are capped at the time outside the record, and a bucket the record
-spans has none. The comparison chart used to zero every bucket a record touched in
-TypeScript, which also hid the bucket a restart resumed in. Because the ranking is
-computed from the same points, a container's peak and average now leave fully gapped
-buckets out too, so the ranking and the chart agree. `saving` and `events` records do not mask measurements:
-a bucket that is in the answer was measured, whether or not it was saved.
+records that mask it leave in its bucket (`DockerCoverage::masks`): `collection` and
+`metrics` records for its own container, or engine-wide ones. A bucket such a record
+touches is not covered, its `cpu_measured_ms` and `memory_measured_ms` are capped at the
+time outside the record, and a bucket the record spans has none. The comparison chart
+used to zero every bucket a record touched in TypeScript, which also hid the bucket a
+restart resumed in. Because the ranking is computed from the same points, a container's
+peak and average now leave fully gapped buckets out too, so the ranking and the chart
+agree. `saving`, `events` and `other` records do not mask measurements: a bucket that is
+in the answer was measured, whether or not it was saved.
+
+A stats cycle that misses some containers opens a `partial_cycle` record for each
+container that failed or missed the 5 s deadline (every monitored running container
+when the inventory refresh failed), and closes it when that container is measured again,
+stops, or leaves the population. The cycle used to open one engine-wide `partial_cycle`
+whenever any container failed, which under these rules erased every container's
+measured time for as long as one kept failing. Earlier builds' engine-wide
+`partial_cycle` rows mask nothing: the recorder only weights fresh observations, and the
+aggregate gives no weight to a cycle that measured fewer containers than expected.
+
+An open record that no observation resumes (`partial_cycle`, `clock_step`, event loss)
+masks to the end of each query, so one left open by a crash would have hidden all later
+history. On its first observation of a daemon, the recorder closes each such persisted
+row at the end of the previous process's newest saved population segment (its last
+observation), and saves the close. The in-memory coverage list keeps open records,
+drops closed ones with the ring's hour, and past 512 records first drops the oldest
+records that mask nothing, then collapses each container's closed masking records into
+one `coverage_unknown` span for that container. It never turns non-masking records
+into a gap and never widens one container's gap to all containers.
 
 Rate metrics (network and block I/O) use `cpu_covered`. Docker reports them in the
 same stats sample as CPU, and like CPU they are deltas from the previous sample
@@ -4096,8 +4125,9 @@ absent on its own; that case is a `null` value, which the chart already breaks o
 
 This is not a wire-format change: Docker types do not cross `statglass-proto`, and
 `api::DockerCoverage` is never persisted or synced (the store keeps its own
-`db::DockerCoverage` rows, which do not change). It reaches the webview as JSON through
-tauri-specta only, so no codec skew test applies and no migration is needed.
+`db::DockerCoverage` rows, which do not change; container-scoped `partial_cycle` rows
+already fit them). It reaches the webview as JSON through tauri-specta only, so no codec
+skew test applies and no migration is needed.
 
 Cost: user-facing English in `statglass-schema`, next to the reason keys it explains.
 Revisit when the UI is localised, or when another consumer (the CLI, WidgetKit) needs
