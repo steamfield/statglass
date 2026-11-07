@@ -34,7 +34,10 @@ export function strokeHatch(
   ctx.strokeStyle = color;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let k = -height; k < width; k += spacing) {
+  // `spacing` is the pitch across the 45° stripes, as in the CSS gradient;
+  // along x that is √2 times as far.
+  const step = spacing * Math.SQRT2;
+  for (let k = -height; k < width; k += step) {
     ctx.moveTo(x + k, y + height);
     ctx.lineTo(x + k + height, y);
   }
