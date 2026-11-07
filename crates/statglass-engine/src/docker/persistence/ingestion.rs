@@ -427,24 +427,28 @@ fn record_coverage(
         .filter(|c| c.end_ms.is_none_or(|end| end >= now - HOUR))
         .collect();
     let mut changed = Vec::new();
-    let held = held_coverage(s, daemon);
+    // Only a record memory does not list needs the held set; recording adds nothing to
+    // it (the batch is not queued yet), so bounding reuses it.
+    let unlisted = current.iter().any(|c| {
+        s.coverage
+            .get(daemon)
+            .is_none_or(|gaps| !gaps.iter().any(|old| same_record(old, c)))
+    });
+    let held = unlisted.then(|| held_coverage(s, daemon));
     let gaps = s.coverage.entry(daemon.to_owned()).or_default();
     for c in current {
-        // A record is its engine, container, reason and start. It is saved again only
-        // when it is new or this snapshot moves its end; an open copy never reopens a
-        // record the recorder closed (a clock step closes them first).
-        match gaps.iter_mut().find(|old| {
-            old.start_ms == c.start_ms
-                && old.container_id == c.container_id
-                && old.reason() == c.reason()
-        }) {
+        // It is saved again only when it is new or this snapshot moves its end; an
+        // open copy never reopens a record the recorder closed (a clock step closes
+        // them first).
+        match gaps.iter_mut().find(|old| same_record(old, c)) {
             Some(old) if old.end_ms == c.end_ms || c.end_ms.is_none() => {}
             Some(old) => {
                 *old = c.clone();
                 changed.push(c.clone());
             }
             // Memory let it go because the store or a write holds it already.
-            None if coverage_key(c).is_some_and(|key| held.contains(&key)) => {}
+            None if coverage_key(c)
+                .is_some_and(|key| held.as_ref().is_some_and(|held| held.contains(&key))) => {}
             None => {
                 gaps.push(c.clone());
                 changed.push(c.clone());
@@ -454,11 +458,7 @@ fn record_coverage(
     for c in &changed {
         push_coverage(s, batch, c, now);
     }
-    let held = held_coverage(s, daemon);
-    let live_only = s.live_only;
-    if let Some(gaps) = s.coverage.get_mut(daemon) {
-        bound_coverage(gaps, &held, live_only);
-    }
+    bound_engine_coverage(s, daemon, held);
 }
 
 fn push_coverage(s: &mut State, batch: &mut db::DockerBatch, c: &api::DockerCoverage, now: i64) {

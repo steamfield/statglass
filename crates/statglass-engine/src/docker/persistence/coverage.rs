@@ -62,14 +62,26 @@ pub(super) fn written_coverage(s: &State, engine: &str) -> BTreeSet<CoverageKey>
 }
 
 /// The newest records of one scope, at most `MAX_COVERAGE_LISTED`, and how many there
-/// were. Rows arrive in start order, so the front is the oldest.
-#[derive(Default)]
+/// were. Rows arrive in start order, so the front is the oldest. A read masks from its
+/// first bucket's start, which can be before the range: a record that ends by `from`
+/// masks points but is neither listed nor counted.
 struct Listed {
     records: VecDeque<api::DockerCoverage>,
     total: usize,
+    from: i64,
 }
 impl Listed {
+    fn new(from: i64) -> Self {
+        Self {
+            records: VecDeque::new(),
+            total: 0,
+            from,
+        }
+    }
     fn push(&mut self, c: api::DockerCoverage) {
+        if c.end_ms.is_some_and(|end| end <= self.from) {
+            return;
+        }
         self.total += 1;
         self.records.push_back(c);
         if self.records.len() > api::MAX_COVERAGE_LISTED {
@@ -82,8 +94,9 @@ impl Listed {
         live: impl Iterator<Item = api::DockerCoverage>,
     ) -> (Vec<api::DockerCoverage>, usize) {
         let mut total = self.total;
+        let from = self.from;
         let mut records: Vec<_> = self.records.into();
-        for c in live {
+        for c in live.filter(|c| c.end_ms.is_none_or(|end| end > from)) {
             total += 1;
             records.push(c);
         }
@@ -105,6 +118,8 @@ impl Listed {
 pub(super) struct EngineCoverage {
     pub(super) listed: Vec<api::DockerCoverage>,
     pub(super) total: usize,
+    /// Where the range starts: records that end by it mask points but are not listed.
+    listed_from: i64,
     containers: Vec<(i64, i64)>,
     aggregate: Vec<(i64, i64)>,
 }
@@ -112,8 +127,8 @@ impl EngineCoverage {
     pub(super) fn read(
         snapshot: Option<&db::DockerReadSnapshot<'_>>,
         live: &[api::DockerCoverage],
-        from: i64,
-        to: i64,
+        (from, to): (i64, i64),
+        listed_from: i64,
     ) -> Result<Self, DockerServiceError> {
         let mut live: Vec<_> = live
             .iter()
@@ -121,7 +136,7 @@ impl EngineCoverage {
             .cloned()
             .collect();
         let index: BTreeMap<_, _> = live.iter().enumerate().map(|(i, c)| (key(c), i)).collect();
-        let mut listed = Listed::default();
+        let mut listed = Listed::new(listed_from);
         let mut containers = Vec::new();
         let mut aggregate = Vec::new();
         if let Some(snapshot) = snapshot {
@@ -145,6 +160,7 @@ impl EngineCoverage {
             total,
             containers: union(containers),
             aggregate: union(aggregate),
+            listed_from,
         })
     }
     fn spans(&self, container: Option<&str>) -> &[(i64, i64)] {
@@ -221,7 +237,7 @@ pub(super) fn mask_entity(
     pending.sort_unstable_by_key(|(s, _, _)| *s);
     let mut pending = pending.into_iter().peekable();
     let mut mask = Mask::new(points);
-    let mut listed = Listed::default();
+    let mut listed = Listed::new(engine.listed_from);
     let mut drain = |mask: &mut Mask, consumed: &[bool], before: Option<i64>| {
         while let Some(&(s, e, i)) = pending.peek() {
             if before.is_some_and(|before| s >= before) {

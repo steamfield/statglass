@@ -29,9 +29,10 @@ use observation::{metadata, observe};
 #[cfg(test)]
 use projection::point;
 #[cfg(test)]
-use retention::evict_entry;
+use retention::{bound_coverage, evict_entry};
 use retention::{
-    bound_coverage, bucket_bytes, coverage_row, evict, gap, held_coverage, recount_aux,
+    bound_engine_coverage, bucket_bytes, coverage_row, evict, gap, held_coverage, recount_aux,
+    same_record,
 };
 use writes::{drain, queue, requeue};
 #[cfg(test)]

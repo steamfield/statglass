@@ -310,7 +310,21 @@ impl DockerHandle {
         );
         // Containers whose stats failed this cycle carry their own records; the
         // aggregate's unweighted cycle gets one engine-wide record that masks nothing.
-        let holes = snapshot.aggregate.cpu_measured < snapshot.aggregate.expected
+        // A first sample (no CPU baseline yet, interval 0) is routine, not a hole.
+        let first = inventory
+            .rows
+            .iter()
+            .filter(|c| {
+                c.monitored
+                    && c.lifecycle == DockerLifecycle::Running
+                    && !unmeasured.contains(&c.id)
+                    && c.interval_ms == Some(0)
+                    && c.metrics.cpu_pct.is_none()
+            })
+            .count();
+        let first = u32::try_from(first).unwrap_or(u32::MAX);
+        let holes = snapshot.aggregate.cpu_measured.saturating_add(first)
+            < snapshot.aggregate.expected
             || snapshot.aggregate.memory_measured < snapshot.aggregate.expected;
         reconcile_cycle(&mut snapshot.coverage, listed, holes, observed);
         reconcile_partial(&mut snapshot.coverage, failed, observed);

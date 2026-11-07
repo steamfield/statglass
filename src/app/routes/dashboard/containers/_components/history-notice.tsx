@@ -51,6 +51,12 @@ export function HistoryNotice({
       record.masking !== "none" &&
       (record.container_id === null || plotted.includes(record.container_id))
   );
+  // Rust lists the newest records only; the unlisted ones may mask too, so a count
+  // of the listed ones would undercount.
+  const missing =
+    total > coverage.length
+      ? "some intervals"
+      : `${gaps.length} ${gaps.length === 1 ? "interval" : "intervals"}`;
   const partial = current.some(
     (record) => record.reason === "partial_population"
   );
@@ -80,7 +86,7 @@ export function HistoryNotice({
       : saving
         ? "Recent history is not being saved. StatGlass will retry."
         : gaps.length
-          ? `${metric === "cpu" ? "CPU" : "Memory"} history missing for ${gaps.length} ${gaps.length === 1 ? "interval" : "intervals"}`
+          ? `${metric === "cpu" ? "CPU" : "Memory"} history missing for ${missing}`
           : partial
             ? `Monitoring ${snapshot.aggregate.expected} of ${snapshot.aggregate.running} running containers`
             : "Some container events may be missing";

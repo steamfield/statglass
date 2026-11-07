@@ -289,6 +289,144 @@ fn retry_events_are_bounded_and_warning_clock_is_per_engine() {
     assert_eq!(delivered, 4096);
 }
 
+fn retry_row(reason: &str, start: i64, end: Option<i64>, revision: i64) -> db::DockerCoverage {
+    db::DockerCoverage {
+        entity: None,
+        metric: None,
+        start_ms: start,
+        end_ms: end,
+        reason: reason.into(),
+        revision,
+        sampled_ms: 0,
+        expected_ms: end.map_or(0, |end| end - start),
+    }
+}
+/// The queued (start, end, revision) of each `reason` row, in start order.
+fn queued(s: &State, reason: &str) -> Vec<(i64, Option<i64>, i64)> {
+    let mut rows: Vec<_> = s.retry["daemon"]
+        .coverage
+        .iter()
+        .filter(|c| c.reason == reason)
+        .map(|c| (c.start_ms, c.end_ms, c.revision))
+        .collect();
+    rows.sort_unstable();
+    rows
+}
+fn requeue_rows(s: &mut State, rows: Vec<db::DockerCoverage>) {
+    requeue(
+        s,
+        "daemon",
+        Retry {
+            coverage: rows,
+            ..Default::default()
+        },
+    );
+}
+
+/// A long write outage queues the close of a record the store holds open; a reconnect's
+/// lost-event span that touches it is its own record, so the open row still closes.
+#[test]
+fn a_lost_event_span_never_takes_over_a_queued_record() {
+    let r = DockerRecorder::new(host().id);
+    let mut s = r.state.lock_ok();
+    let reason = "event_replay_uncertain";
+    requeue_rows(&mut s, vec![retry_row(reason, 10_000, Some(20_000), 5)]);
+    // An older copy of the same record never undoes the newer close.
+    requeue_rows(&mut s, vec![retry_row(reason, 10_000, None, 3)]);
+    // Four events too many, dated just before the record and into it.
+    let events = (0..4100)
+        .map(|n| db::DockerEvent {
+            entity: None,
+            time_ns: 9_998_000_000 + n * 1_000_000,
+            action: "start".into(),
+            attributes: BTreeMap::new(),
+        })
+        .collect();
+    requeue(
+        &mut s,
+        "daemon",
+        Retry {
+            events,
+            ..Default::default()
+        },
+    );
+    let rows = queued(&s, reason);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!((rows[0].0, rows[0].1), (9_998, Some(10_002)));
+    assert_eq!(rows[1], (10_000, Some(20_000), 5));
+}
+
+/// Back-to-back steps leave two records: the second's close never becomes the first's.
+#[test]
+fn back_to_back_clock_steps_stay_separate_records() {
+    let r = DockerRecorder::new(host().id);
+    let mut s = r.state.lock_ok();
+    requeue_rows(
+        &mut s,
+        vec![
+            retry_row("clock_step", 10_000, Some(20_000), 1),
+            retry_row("clock_step", 20_000, None, 2),
+        ],
+    );
+    requeue_rows(
+        &mut s,
+        vec![retry_row("clock_step", 20_000, Some(30_000), 3)],
+    );
+    assert_eq!(
+        queued(&s, "clock_step"),
+        [(10_000, Some(20_000), 1), (20_000, Some(30_000), 3)]
+    );
+}
+
+/// An interruption the recorder finds that starts before its queued record of the same
+/// reason never moves that record's start; it is its own record.
+#[test]
+fn a_found_interruption_never_moves_a_queued_records_start() {
+    let r = DockerRecorder::new(host().id);
+    let mut s = r.state.lock_ok();
+    gap(&mut s, "daemon", 100_000, 200_000, "writer_disconnected");
+    gap(&mut s, "daemon", 150_000, 250_000, "writer_disconnected");
+    gap(&mut s, "daemon", 50_000, 120_000, "writer_disconnected");
+    let rows: Vec<_> = queued(&s, "writer_disconnected")
+        .into_iter()
+        .map(|(start, end, _)| (start, end))
+        .collect();
+    assert_eq!(rows, [(50_000, Some(120_000)), (100_000, Some(250_000))]);
+    let mut memory: Vec<_> = s.coverage["daemon"]
+        .iter()
+        .map(|g| (g.start_ms, g.end_ms))
+        .collect();
+    memory.sort_unstable();
+    assert_eq!(memory, rows);
+}
+
+/// In live-only mode no write saves the retry queue, so a found interruption's queued
+/// row never lets memory, the only copy, drop the record.
+#[test]
+fn live_only_memory_keeps_a_found_interruption_its_retry_cannot_save() {
+    let r = DockerRecorder::new(host().id);
+    let mut s = r.state.lock_ok();
+    assert!(s.live_only);
+    s.coverage.insert(
+        "daemon".into(),
+        (0..512)
+            .map(|i| {
+                api::DockerCoverage::new(
+                    i * 1000,
+                    Some(i * 1000 + 500),
+                    None,
+                    "events_disconnected".into(),
+                )
+            })
+            .collect(),
+    );
+    gap(&mut s, "daemon", 10_000_000, 10_001_000, "ring_capacity");
+    let gaps = &s.coverage["daemon"];
+    assert_eq!(gaps.len(), 512);
+    assert!(gaps.iter().any(|g| g.reason() == "ring_capacity"));
+    assert!(!gaps.iter().any(|g| g.start_ms == 0));
+}
+
 #[test]
 fn churn_accounts_for_metadata_and_engine_maps_and_expires_them() {
     let r = DockerRecorder::new(host().id);

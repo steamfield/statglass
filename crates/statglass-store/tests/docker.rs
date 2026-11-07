@@ -1026,8 +1026,42 @@ fn a_stale_retry_never_duplicates_or_reopens_a_record() {
     assert_eq!(rows, [(Some(T0 + 5_000), 3)]);
 }
 
+/// A store with more events-kind rows than a page keeps still answers: only the rows
+/// the read keeps count against the response byte bound.
+#[test]
+fn an_event_coverage_read_past_its_row_cap_still_answers() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
+    let dir = temp_dir("docker-event-volume");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    let ack = w.write_docker(batch(1)).unwrap();
+    w.flush().unwrap();
+    assert_eq!(ack.recv().unwrap().outcome, DockerOutcome::Persisted);
+    let conn = rusqlite::Connection::open(store.path()).unwrap();
+    // 35,000 one-second records, a second apart.
+    conn.execute(
+        "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<34999)
+         INSERT INTO docker_coverage(host_id,engine_id,entity_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms)
+         SELECT g.host_id,g.id,NULL,NULL,?1+i*2000,?1+i*2000+1000,'events_disconnected',1,0,1000 FROM docker_engines g, n",
+        [T0],
+    )
+    .unwrap();
+    drop(conn);
+    let mut reader = store.reader().unwrap();
+    let snap = reader.docker_snapshot(host(1).id, "daemon").unwrap();
+    let started = std::time::Instant::now();
+    let rows = snap
+        .event_coverage(None, T0, T0 + 86_400_000, &["events_disconnected"])
+        .unwrap();
+    println!("[volume] 35,000 rows read in {:?}", started.elapsed());
+    assert_eq!(rows.len(), 10_000);
+    assert!(rows.windows(2).all(|w| w[0].start_ms < w[1].start_ms));
+    assert_eq!(rows[0].start_ms, T0);
+}
+
 /// A version 8 file whose writer duplicated records keeps one row per record, closed
-/// where any copy closed it, and refuses a second copy afterwards.
+/// where its newest closed copy closed it, and refuses a second copy afterwards.
 #[test]
 fn v9_folds_duplicate_coverage_rows_before_the_unique_index() {
     let _readers = DOCKER_READ_TESTS.lock().unwrap();
@@ -1058,6 +1092,11 @@ fn v9_folds_duplicate_coverage_rows_before_the_unique_index() {
         (None, T0, Some(T0 + 2_000), "events_disconnected", 5),
         (Some("c"), T0 + 20_000, None, "partial_cycle", 6),
         (None, T0, None, "disconnected", 7),
+        // The newest closed copy ended earlier than an older one, and an open copy is
+        // newer still: the record ends where its newest close put it.
+        (None, T0 + 30_000, Some(T0 + 39_000), "inventory_failed", 2),
+        (None, T0 + 30_000, Some(T0 + 34_000), "inventory_failed", 8),
+        (None, T0 + 30_000, None, "inventory_failed", 9),
     ] {
         conn.execute(
             "INSERT INTO docker_coverage(host_id,engine_id,entity_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT g.host_id,g.id,(SELECT id FROM docker_entities WHERE engine_id=g.id AND external_id=?1),NULL,?2,?3,?4,?5,0,coalesce(?3-?2,0) FROM docker_engines g",
@@ -1087,6 +1126,14 @@ fn v9_folds_duplicate_coverage_rows_before_the_unique_index() {
             "events_disconnected".to_owned(),
             5,
             2_000,
+        ),
+        (
+            None,
+            T0 + 30_000,
+            Some(T0 + 34_000),
+            "inventory_failed".to_owned(),
+            9,
+            4_000,
         ),
         (
             c.clone(),

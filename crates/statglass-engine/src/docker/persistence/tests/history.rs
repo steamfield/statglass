@@ -374,3 +374,55 @@ fn review_short_history_falls_back_after_age_or_partial_fine_reclamation() {
         assert_eq!(page.points[0].metrics.cpu_pct, Some(100.));
     }
 }
+
+/// A read masks from its first 15-minute bucket, but a record that ended before the
+/// range is neither listed nor counted, so "N older records not listed" stays true.
+#[test]
+fn coverage_total_counts_only_the_records_the_range_lists() {
+    let (_dir, store, r) = setup();
+    let minute = 60_000;
+    // 10:00, 10:05 and 11:05 of some recent hour.
+    let ten = wall_ms().div_euclid(900_000) * 900_000 - 2 * HOUR;
+    r.record(&fixture(ten + 30 * minute));
+    store.writer().flush().unwrap();
+    let conn = rusqlite::Connection::open(store.path()).unwrap();
+    for (start, end) in [
+        (ten, ten + 3 * minute),
+        (ten + 20 * minute, ten + 21 * minute),
+    ] {
+        conn.execute(
+            "INSERT INTO docker_coverage(host_id,engine_id,entity_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT g.host_id,g.id,(SELECT id FROM docker_entities WHERE engine_id=g.id AND external_id='c'),NULL,?1,?2,'partial_cycle',1,0,?2-?1 FROM docker_engines g",
+            [start, end],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    {
+        let mut s = r.state.lock_ok();
+        let gaps = s.coverage.entry("daemon".into()).or_default();
+        for (start, end) in [
+            (ten, ten + 3 * minute),
+            (ten + 10 * minute, ten + 11 * minute),
+        ] {
+            gaps.push(api::DockerCoverage::new(
+                start,
+                Some(end),
+                None,
+                "disconnected".into(),
+            ));
+        }
+    }
+    let page = r
+        .history(&query(ten + 5 * minute, ten + 65 * minute, 360))
+        .unwrap();
+    let listed: Vec<_> = page
+        .coverage
+        .iter()
+        .map(|c| (c.container_id.as_deref(), c.start_ms))
+        .collect();
+    assert_eq!(
+        listed,
+        [(None, ten + 10 * minute), (Some("c"), ten + 20 * minute)]
+    );
+    assert_eq!(page.coverage_total, 2);
+}

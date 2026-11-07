@@ -307,29 +307,33 @@ pub(super) fn should_warn(s: &mut State, engine: &str, now: i64) -> bool {
     s.last_warning.insert(engine.into(), now);
     true
 }
-fn merge_retry_coverage(rows: &mut Vec<db::DockerCoverage>, mut row: db::DockerCoverage) {
-    let mut index = 0;
-    while index < rows.len() {
-        let old = &rows[index];
-        if old.entity == row.entity
+/// Queues `row`, folding it only into a queued row of the same record (container,
+/// metric, reason and start: the store's identity, V9). The newer revision wins, and an
+/// end once set stays set. Rows of different records never merge, even when they touch:
+/// a merged start would be a new record, and the store's row at the old start (an open
+/// one, say) would never close.
+fn merge_retry_coverage(rows: &mut Vec<db::DockerCoverage>, row: db::DockerCoverage) {
+    let Some(old) = rows.iter_mut().find(|old| {
+        old.entity == row.entity
             && old.metric == row.metric
             && old.reason == row.reason
-            && old.end_ms.is_some_and(|end| end >= row.start_ms)
-            && row.end_ms.is_some_and(|end| end >= old.start_ms)
-        {
-            let old = rows.remove(index);
-            row.start_ms = row.start_ms.min(old.start_ms);
-            row.end_ms = row.end_ms.max(old.end_ms);
-            row.revision = row.revision.max(old.revision);
-            row.expected_ms = row
-                .end_ms
-                .unwrap_or(row.start_ms)
-                .saturating_sub(row.start_ms);
-        } else {
-            index += 1;
-        }
+            && old.start_ms == row.start_ms
+    }) else {
+        rows.push(row);
+        return;
+    };
+    let end = if row.revision >= old.revision {
+        row.end_ms.or(old.end_ms)
+    } else {
+        old.end_ms.or(row.end_ms)
+    };
+    if row.revision >= old.revision {
+        *old = row;
     }
-    rows.push(row);
+    if old.end_ms != end {
+        old.end_ms = end;
+        old.expected_ms = end.map_or(0, |end| end.saturating_sub(old.start_ms));
+    }
 }
 pub(super) fn requeue(s: &mut State, engine: &str, mut content: Retry) {
     let revision = next(s);

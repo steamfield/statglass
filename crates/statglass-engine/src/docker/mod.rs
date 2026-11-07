@@ -54,6 +54,9 @@ pub struct DockerHandle {
     logs: Arc<Mutex<logs::LogRegistry>>,
     pub recorder: Arc<DockerRecorder>,
     storage: Arc<storage::StorageManager>,
+    /// The last clock reading, kept across sessions so a step while disconnected,
+    /// idle or backing off is still seen by the next session's first cycle.
+    clock: Arc<Mutex<Option<crate::ClockReading>>>,
 }
 struct State {
     adapter: Option<DockerAdapter>,
@@ -115,6 +118,7 @@ impl DockerHandle {
             logs: Arc::new(Mutex::new(logs::LogRegistry::default())),
             recorder: Arc::new(DockerRecorder::new(host_id)),
             storage: Arc::new(storage::StorageManager::default()),
+            clock: Arc::new(Mutex::new(None)),
         }
     }
     pub fn glance(&self) -> (DockerStatus, DockerAggregate) {

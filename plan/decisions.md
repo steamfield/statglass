@@ -4094,6 +4094,9 @@ the records). The banner reads the same snapshot: its saving state is the snapsh
 persistence, and its population notice is Rust's `partial_population` record, not the
 client's reading of the aggregate. Its count of missing intervals counts only records
 whose `masking` is not `none` and that are engine-wide or belong to a charted container.
+When the range holds more records than the page lists (`coverage_total` above the
+listed count), the unlisted ones may mask too, so the banner says history is missing
+for some intervals instead of giving a count.
 
 **Masking.** No history point (container history and each comparison series) claims
 more measured time than the records that mask it leave in its bucket
@@ -4122,13 +4125,22 @@ page streams only its own rows. A history page reads coverage once, not once per
 probe. Rows stream from the store in start order without a count cap and fold into each
 point's masked time (the union of the masking spans inside it), so the work is bounded
 by the points, not the rows. The events lane reads only events-kind reasons
-(`EVENT_COVERAGE_REASONS`). What a page lists is bounded instead: the newest
+(`EVENT_COVERAGE_REASONS`) and keeps at most 10,000 rows; only the rows it keeps count
+against the response byte bound. What a page lists is bounded instead: the newest
 `MAX_COVERAGE_LISTED` (500) records per scope (engine-wide, and each charted
 container), with `coverage_total`, the number the range holds; History details says how
-many older records it does not list. Every read merges the store's rows with the
-recorder's live ones: its in-memory list, and the rows of writes in flight and of
-retries. Rows are bounded by `end_ms > from OR end_ms IS NULL`, served by the
-`(engine_id, end_ms)` and `(entity_id, end_ms)` indexes.
+many older records it does not list. Points are masked from the first 15-minute
+bucket's start, which can be before the range, but a record that ends by the range's
+start is neither listed nor counted, so the count and the list use one overlap test.
+Every read merges the store's rows with the recorder's live ones: its in-memory list,
+and the rows of writes in flight and of retries. Each scope's rows come from two indexed
+searches, closed rows with `end_ms > from` and open rows (`end_ms IS NULL`), each also
+filtered by `start_ms < to`, then sorted by start. The start bound stays a filter
+(`+start_ms`): an `OR` or an indexable start bound makes SQLite, which has no
+statistics here, walk the start index over the scope's whole history. Engine-wide rows
+use a partial `(engine_id, end_ms) WHERE entity_id IS NULL` index, so the engine-wide
+read never walks containers' rows; a container's use `(entity_id, end_ms)`. A store
+test asserts each read's query plan.
 
 **Failed cycles.** A stats cycle that misses some containers opens a `partial_cycle`
 record for each container whose stats failed or missed the 5 s deadline, and closes it
@@ -4146,7 +4158,9 @@ reading. So `cpu_measured` and `memory_measured` fall below `expected`, `partial
 and the recorder gives that cycle's aggregate observation no weight. While a listed
 cycle's aggregate misses containers, one engine-wide `aggregate_partial` record
 (`metrics`, masking `none`) stays open to explain the aggregate's unweighted time; the
-containers it missed carry their own records.
+containers it missed carry their own records. A container's first sample (interval 0,
+no CPU baseline yet) is routine and is not a miss: it leaves the aggregate partial and
+unweighted for that cycle but opens no `aggregate_partial`.
 
 **Lanes.** The published snapshot keeps at most one open engine-wide record per lane:
 event coverage, and what interrupts measurements (collection and metrics records). An
@@ -4170,7 +4184,9 @@ daemon and attach, also for a daemon that left memory.
 
 **Clock steps.** A step is the wall clock moving more than 2 s away from the time that
 passed on a clock that counts sleep (`CLOCK_MONOTONIC_RAW` on macOS, `CLOCK_BOOTTIME` on
-Linux, `crate::clock`), so a wake is not a step. A step makes the recorder forget
+Linux, `crate::clock`), so a wake is not a step. The last reading lives on the Docker
+handle, not the session, so a step while disconnected, idle or backing off is seen by
+the next session's first cycle. A step makes the recorder forget
 everything from the step on and end every record by it, including the rows and events
 of retries and writes in flight, so a retry never re-extends a record past the step.
 Its observation marks are capped just before the step rather than cleared. The
@@ -4187,15 +4203,27 @@ the ring's hour, and past 512 records first drops closed records the store holds
 acknowledged them) or a write in flight or a retry holds, then closed records that mask
 nothing, oldest first. Every read merges the store's rows and those writes', so this
 changes no answer: a past range reports the same measured time whether or not memory
-still holds its records. A dropped record the published snapshot still carries is not
-admitted again. With a store attached nothing else goes until 4,096 records. Only past
+still holds its records. In live-only mode nothing holds a record: no write saves the
+retry queue, so its rows never let memory drop one. A dropped record the published
+snapshot still carries is not admitted again. With a store attached nothing else goes until 4,096 records. Only past
 that, or in live-only mode where memory is the only copy, do closed masking records
 collapse, into one span per container and masking scope: `coverage_unknown`, or the
 scope's own reason where `coverage_unknown` would mask more (a failed inventory's span
 never masks the aggregate). It never turns non-masking records into a gap and never
 widens one container's gap to all containers. A record the recorder finds itself (a
-full ring, oversized metadata, a lost writer) merges only into the same reason's open or
-touching record, and is saved through the retry queue.
+full ring, oversized metadata, a lost writer) extends only the same reason's open or
+touching record that starts no later than it, and is saved through the retry queue.
+
+**Record identity.** A record is its engine, container, metric, reason and start (V9's
+unique index), and nothing changes a queued or saved record's start: a moved start
+would be a new record, and the store's row at the old start (an open one, say) would
+never close. The retry queue folds a row only into a queued row of the same record, the
+newer revision winning and an end once set staying set; rows of different records stay
+apart even when they touch, as back-to-back `clock_step` records and a lost-event span
+beside a queued event record do. The one extension is a container's `write_failed` loss
+from eviction, which extends the queued loss it touches under that loss's start rather
+than adding a record per bucket. Version 9 folds a version 8 file's duplicate rows the
+same way: the end comes from the closed copy with the highest revision.
 
 Rate metrics (network and block I/O) use `cpu_covered`. Docker reports them in the
 same stats sample as CPU, and like CPU they are deltas from the previous sample
