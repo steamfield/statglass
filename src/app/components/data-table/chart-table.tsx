@@ -67,7 +67,10 @@ const byTime = (a: ChartTableRow, b: ChartTableRow) =>
 const sameDay = (a: number, b: number) =>
   new Date(a).toDateString() === new Date(b).toDateString();
 
-function statColumns(series: ChartTableSeries, i: number) {
+/** Divides one series' min/avg/max from the next when several share a table. */
+const GROUP_EDGE = "border-l border-border-subtle";
+
+function statColumns(series: ChartTableSeries, i: number, grouped: boolean) {
   return STATS.map((stat) =>
     helper.accessor(
       (row) =>
@@ -75,7 +78,14 @@ function statColumns(series: ChartTableSeries, i: number) {
       {
         id: `${series.id}:${stat}`,
         header: STAT_LABEL[stat],
-        meta: { align: "right" },
+        meta:
+          grouped && stat === STATS[0]
+            ? {
+                align: "right",
+                className: GROUP_EDGE,
+                cellClassName: GROUP_EDGE,
+              }
+            : { align: "right" },
         cell: ({ row: { original: row } }) => {
           if (row.kind !== "bucket") return null;
           const value = row.values[i];
@@ -109,15 +119,15 @@ function chartColumns(
     cell: ({ getValue }) => clock(getValue()),
   });
   if (series.length === 1 && series[0])
-    return helper.columns([time, ...statColumns(series[0], 0)]);
+    return helper.columns([time, ...statColumns(series[0], 0, false)]);
   return helper.columns([
     time,
     ...series.map((s, i) =>
       helper.group({
         id: s.id,
         header: s.label,
-        meta: { align: "right", className: "text-center" },
-        columns: helper.columns(statColumns(s, i)),
+        meta: { align: "right", className: cn("text-center", GROUP_EDGE) },
+        columns: helper.columns(statColumns(s, i, true)),
       })
     ),
   ]);
