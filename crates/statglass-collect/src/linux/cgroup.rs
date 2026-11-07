@@ -40,6 +40,7 @@ use super::cgroup_walk::{
     Counters, Rates, Walk, parse_bytes, parse_cpu_stat, parse_io_stat, parse_psi_some, rates,
 };
 use super::procfs::{kib, read_into};
+use crate::counters::secs_since;
 use crate::{
     Cadence, CollectError, Collector, CollectorId, ContainerNames, Probe, SampleBuf, Tick,
 };
@@ -311,9 +312,8 @@ impl Cgroups {
                 g.mem_max = file("memory.max", buf).and_then(|()| parse_bytes(buf));
             }
             let r = match (g.prev, now_ns) {
-                (Some((prev, at)), Some(now)) if now > at => {
-                    rates(&prev, &cur, (now - at) as f64 / 1e9)
-                }
+                (Some((prev, at)), Some(now)) => secs_since(Some(at), now)
+                    .map_or_else(Rates::default, |secs| rates(&prev, &cur, secs)),
                 _ => Rates::default(),
             };
             if let Some(now) = now_ns {

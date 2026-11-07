@@ -183,11 +183,14 @@ fn usage_error(error: statglass_engine::HistoryStoreError) -> Answer {
             code: ErrorCode::Busy,
             message: error.to_string(),
         },
-        // A damaged store cannot answer until it is reset on the host.
-        statglass_engine::HistoryStoreError::Store(error) if error.is_corrupt() => Answer::Error {
-            code: ErrorCode::HistoryUnavailable,
-            message: error.to_string(),
-        },
+        // A damaged database file cannot answer until it is reset on the host. A row that
+        // fails to decode stays `Internal`: the rest of the store still answers.
+        statglass_engine::HistoryStoreError::Store(error) if error.is_corrupt_database() => {
+            Answer::Error {
+                code: ErrorCode::HistoryUnavailable,
+                message: error.to_string(),
+            }
+        }
         error => Answer::Error {
             code: ErrorCode::Internal,
             message: error.to_string(),
@@ -211,7 +214,11 @@ mod tests {
             (StoreError::WriterGone, ErrorCode::HistoryUnavailable),
             (
                 StoreError::Corrupt("bad usage blob".into()),
-                ErrorCode::HistoryUnavailable,
+                ErrorCode::Internal,
+            ),
+            (
+                StoreError::Cbor("bad usage row".into()),
+                ErrorCode::Internal,
             ),
             (
                 StoreError::Sqlite(rusqlite::Error::SqliteFailure(

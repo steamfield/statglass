@@ -168,8 +168,24 @@ pub(crate) struct Words {
 #[derive(Debug)]
 pub(crate) struct Output {
     pub code: Option<i32>,
-    pub stdout: String,
+    /// Raw bytes: a caller that uses stdout as a path decodes it strictly.
+    pub stdout: Vec<u8>,
     pub stderr: String,
+}
+
+/// What a remote command reads on its stdin.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Stdin<'a> {
+    None,
+    Bytes(&'a [u8]),
+    /// Streamed from the file, never read into memory whole.
+    File(&'a Path),
+}
+
+impl<'a> From<Option<&'a [u8]>> for Stdin<'a> {
+    fn from(bytes: Option<&'a [u8]>) -> Self {
+        bytes.map_or(Stdin::None, Stdin::Bytes)
+    }
 }
 
 /// Runs a remote command line. SSH in production; a local or container shell in tests.
@@ -177,7 +193,7 @@ pub(crate) trait Remote {
     async fn exec(
         &self,
         command: &str,
-        stdin: Option<&[u8]>,
+        stdin: Stdin<'_>,
         timeout: Duration,
     ) -> crate::Result<Output>;
 }
@@ -189,7 +205,7 @@ impl Remote for Ssh<'_> {
     async fn exec(
         &self,
         command: &str,
-        stdin: Option<&[u8]>,
+        stdin: Stdin<'_>,
         timeout: Duration,
     ) -> crate::Result<Output> {
         let mut cmd = ssh_command(self.0)?;
@@ -212,10 +228,15 @@ pub(crate) fn ssh_status(output: Output) -> crate::Result<Output> {
 /// Spawns `cmd`, feeds it `stdin`, and collects bounded output within `timeout`.
 pub(crate) async fn collect(
     mut cmd: tokio::process::Command,
-    stdin: Option<&[u8]>,
+    stdin: Stdin<'_>,
     timeout: Duration,
 ) -> crate::Result<Output> {
-    cmd.stdin(if stdin.is_some() {
+    let mut source: Option<Box<dyn AsyncRead + Unpin + Send + '_>> = match stdin {
+        Stdin::None => None,
+        Stdin::Bytes(bytes) => Some(Box::new(bytes)),
+        Stdin::File(path) => Some(Box::new(tokio::fs::File::open(path).await?)),
+    };
+    cmd.stdin(if source.is_some() {
         Stdio::piped()
     } else {
         Stdio::null()
@@ -235,8 +256,8 @@ pub(crate) async fn collect(
         .ok_or_else(|| RemoteError::Transport("missing stderr".into()))?;
     crate::install::setup_timeout(timeout, async move {
         let feed = async move {
-            if let (Some(mut input), Some(bytes)) = (input, stdin) {
-                input.write_all(bytes).await?;
+            if let (Some(mut input), Some(source)) = (input, source.as_mut()) {
+                tokio::io::copy(source, &mut input).await?;
                 input.shutdown().await?;
             }
             Ok::<(), std::io::Error>(())
@@ -251,7 +272,7 @@ pub(crate) async fn collect(
         Ok(Output {
             code: status.code(),
             stdout: out?,
-            stderr: err?,
+            stderr: String::from_utf8_lossy(&err?).into_owned(),
         })
     })
     .await
@@ -259,7 +280,7 @@ pub(crate) async fn collect(
 
 const OUTPUT_BOUND: u64 = 64 * 1024;
 
-async fn bounded(stream: impl AsyncRead + Unpin) -> crate::Result<String> {
+async fn bounded(stream: impl AsyncRead + Unpin) -> crate::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     stream
         .take(OUTPUT_BOUND + 1)
@@ -268,22 +289,45 @@ async fn bounded(stream: impl AsyncRead + Unpin) -> crate::Result<String> {
     if bytes.len() as u64 > OUTPUT_BOUND {
         return Err(RemoteError::Protocol("setup output exceeded bound".into()));
     }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(bytes)
 }
 
-/// Runs the command line `command` on the remote and returns its stdout, or [`failed`]
+/// Runs the command line `command` on the remote and returns its output, or [`failed`]
 /// when it exits non-zero.
+async fn run_output(
+    remote: &impl Remote,
+    command: &str,
+    stdin: Stdin<'_>,
+    timeout: Duration,
+) -> crate::Result<Output> {
+    let output = remote.exec(command, stdin, timeout).await?;
+    if output.code == Some(0) {
+        return Ok(output);
+    }
+    Err(failed(&output))
+}
+
+/// [`run_output`]'s stdout, which must be UTF-8: callers use it as a path ($HOME) or
+/// parse it, so a byte that does not decode is a protocol error, not a U+FFFD.
 pub(crate) async fn run_command(
     remote: &impl Remote,
     command: &str,
-    stdin: Option<&[u8]>,
+    stdin: Stdin<'_>,
     timeout: Duration,
 ) -> crate::Result<String> {
-    let output = remote.exec(command, stdin, timeout).await?;
-    if output.code == Some(0) {
-        return Ok(output.stdout);
-    }
-    Err(failed(&output))
+    let output = run_output(remote, command, stdin, timeout).await?;
+    String::from_utf8(output.stdout).map_err(|e| RemoteError::Protocol(e.to_string()))
+}
+
+/// [`run_output`]'s stdout, with any byte that does not decode replaced.
+pub(crate) async fn run_command_lossy(
+    remote: &impl Remote,
+    command: &str,
+    stdin: Stdin<'_>,
+    timeout: Duration,
+) -> crate::Result<String> {
+    let output = run_output(remote, command, stdin, timeout).await?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Runs `script` through `/bin/sh` on the remote and returns its stdout, or its stderr
@@ -294,7 +338,7 @@ pub(crate) async fn run_script(
     stdin: Option<&[u8]>,
     timeout: Duration,
 ) -> Result<String> {
-    Ok(run_command(remote, &sh_c(script)?, stdin, timeout).await?)
+    Ok(run_command_lossy(remote, &sh_c(script)?, stdin.into(), timeout).await?)
 }
 
 /// The error for a script that exited non-zero.

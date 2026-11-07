@@ -194,7 +194,10 @@ impl From<statglass_remote::RemoteError> for CommandError {
             RemoteError::AgentNotRunning(_) => Self::RemoteAgentNotRunning { message },
             RemoteError::Busy(_) => Self::RemoteBusy { message },
             RemoteError::Unsupported(_) => Self::RemoteUnsupported { message },
-            RemoteError::HistoryUnavailable(_) => Self::history_unavailable(),
+            // The host's own text says why (its database is damaged, or it has no store).
+            RemoteError::HistoryUnavailable(message) => Self::HistoryUnavailable {
+                reason: Some(crate::error::HistoryUnavailableReason::Failed { message }),
+            },
             RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
             RemoteError::Refused(_) => Self::Internal { message },
             RemoteError::Transport(_)
@@ -409,9 +412,12 @@ mod command_regressions {
             assert!(!command.to_string().is_empty());
             let value = serde_json::to_value(command).unwrap();
             assert_eq!(value["kind"], kind);
-            if kind != "history_unavailable" {
-                assert!(!value["message"].as_str().unwrap().is_empty());
-            }
+            let message = if kind == "history_unavailable" {
+                &value["reason"]["message"]
+            } else {
+                &value["message"]
+            };
+            assert!(!message.as_str().unwrap().is_empty(), "{value}");
         }
     }
 

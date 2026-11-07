@@ -4,7 +4,7 @@ mod catalog;
 use super::*;
 use crate::{Result, StoreError};
 use rusqlite::{Connection, OptionalExtension, params};
-use statglass_schema::{HostId, TimeRange};
+use statglass_schema::{HostId, RangeError, TimeRange};
 use std::cell::OnceCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -345,7 +345,31 @@ impl DockerReadSnapshot<'_> {
     }
 }
 fn bounds(start: i64, end: i64, alignment_slop: i64) -> Result<()> {
-    TimeRange::new(start, end, MAX_RANGE_MS + alignment_slop)
-        .map_err(|e| StoreError::Docker(e.to_string()))?;
+    TimeRange::new(start, end, MAX_RANGE_MS + alignment_slop).map_err(|e| {
+        // The slop covers bucket alignment; the limit a caller can act on is 30 days.
+        let e = match e {
+            RangeError::TooLong { span_ms, .. } => RangeError::TooLong {
+                span_ms,
+                max_ms: MAX_RANGE_MS,
+            },
+            e @ RangeError::Empty { .. } => e,
+        };
+        StoreError::Docker(e.to_string())
+    })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_range_names_the_30_day_limit_not_the_alignment_slop() {
+        let error = bounds(0, MAX_RANGE_MS + 900_001, 900_000).unwrap_err();
+        assert!(
+            error.to_string().ends_with("longer than 30 days"),
+            "{error}"
+        );
+        assert!(bounds(0, MAX_RANGE_MS + 900_000, 900_000).is_ok());
+    }
 }

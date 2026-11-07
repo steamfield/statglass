@@ -184,3 +184,31 @@ fn concurrent_saves_leave_one_whole_file_with_every_host() {
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(hosts.len(), 16);
 }
+
+/// A remote whose session is in place but whose host is not registered (still being added,
+/// or being discarded) answers `unknown_host`, as it did before commands shared `route`.
+#[test]
+fn a_session_without_a_registered_host_is_unknown() {
+    let local = HostId(Uuid::new_v4());
+    let id = HostId(Uuid::new_v4());
+    let mut record = statglass_engine::host_record(id);
+    record.is_local = false;
+    let source = RemoteSource::new(
+        record.clone(),
+        local,
+        EndpointConfig {
+            lan: Some("fixture".into()),
+            tailscale: None,
+            command: RemoteCommand::default(),
+        },
+        Arc::new(|_| {}),
+        None,
+    );
+    let remotes = RemoteManager::default();
+    remotes.sources.lock_ok().insert(id, source.clone());
+    let hosts = crate::hosts::HostRegistry::new();
+    let route = |host| crate::state::route(local, &hosts, &remotes, host);
+    assert!(matches!(route(id), Err(CommandError::UnknownHost { .. })));
+    hosts.insert(record, source);
+    assert!(matches!(route(id), Ok(crate::state::Route::Remote(_))));
+}

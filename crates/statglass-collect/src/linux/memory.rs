@@ -19,6 +19,7 @@ use statglass_schema::{Entitlement, MetricId, Module, SeriesKey};
 
 use super::SysRoot;
 use super::procfs::{kib, read_into, word};
+use crate::counters::secs_since;
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
 struct Keys {
@@ -121,10 +122,9 @@ impl Memory {
             return;
         };
         if let Some((ppin, ppout, pt)) = self.prev
-            && now > pt
+            && let Some(secs) = secs_since(Some(pt), now)
             && let (Some(din), Some(dout)) = (pin.checked_sub(ppin), pout.checked_sub(ppout))
         {
-            let secs = (now - pt) as f64 / 1e9;
             out.push(&self.keys.swap_in, (din as f64 / secs) as f32);
             out.push(&self.keys.swap_out, (dout as f64 / secs) as f32);
         }

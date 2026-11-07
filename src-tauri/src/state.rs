@@ -253,11 +253,7 @@ impl AppState {
     /// Who answers a command for `host`: this Mac, or the remote host's session.
     /// `unknown_host` for a host with neither.
     pub fn route(&self, host: HostId) -> Result<Route, CommandError> {
-        if host == self.local {
-            Ok(Route::Local)
-        } else {
-            self.remotes.source(host).map(Route::Remote)
-        }
+        route(self.local, &self.hosts, &self.remotes, host)
     }
 
     /// [`Self::host`] for a command only this Mac can answer: `remote_host` for any other.
@@ -446,6 +442,23 @@ impl SettingsEffects for ShellEffects<'_> {
 /// engine seeds its alert cooldowns from so a restart does not re-fire a rule. Empty
 /// when history is unavailable or the read fails: the rules then start with no
 /// cooldown. One small indexed query at launch.
+/// [`AppState::route`] over its parts. The host registry decides whether `host` exists:
+/// a remote's session is in place before its host is registered and after it is
+/// discarded, and a host in either window is unknown.
+pub(crate) fn route(
+    local: HostId,
+    hosts: &HostRegistry,
+    remotes: &crate::remote::RemoteManager,
+    host: HostId,
+) -> Result<Route, CommandError> {
+    hosts.get(host)?;
+    if host == local {
+        Ok(Route::Local)
+    } else {
+        remotes.source(host).map(Route::Remote)
+    }
+}
+
 fn recent_alerts(history: &History, host: HostId, now: i64) -> Vec<statglass_schema::Event> {
     if !history.is_available() {
         return Vec::new();
