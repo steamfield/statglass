@@ -10,6 +10,13 @@
 - Charts and tables stop showing the previous answer once what they show changes: another
   container's history, or a longer or shorter window.
 - A failed history reset or history clear no longer leaves its button stuck.
+- Keyboard focus holds row order on every live table (Processes, Network apps, Interfaces,
+  cgroups, Disk processes, Containers and the per-app usage cards); the usage cards also
+  hold on hover. A mouse click no longer freezes order once the pointer leaves.
+- Container project groups come from the table's grouping model; markup, collapse and
+  `?collapsed=` are unchanged.
+- Host, update and cleanup confirmations no longer close on an outside click or Escape
+  while their action runs.
 - Informational lines stop announcing as alerts; status and error lines share one size.
 - Module history charts share one y-axis treatment (ticks in the gutter) and five x ticks.
   Swap and Used memory gain gutter ticks in place of the corner label, the battery chart
