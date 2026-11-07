@@ -43,6 +43,7 @@ import { Switch } from "~/components/ui/switch";
 import { Table, TableHeader } from "~/components/ui/table";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
 import { VolumeTable } from "~/components/volume-table";
+import { useSeriesFocus } from "~/hooks/use-series-focus";
 import { HostUpdateNoticeView } from "~/routes/dashboard/_components/host-update-notice";
 import { ChartChooser } from "~/routes/dashboard/containers/_components/chart-chooser";
 import { ComparisonChart } from "~/routes/dashboard/containers/_components/comparison-chart";
@@ -367,9 +368,11 @@ function ContainerComparisonSample() {
   const [ids, setIds] = useState(DOCKER_COMPARISON.map((s) => s.container.id));
   const series = DOCKER_COMPARISON.filter((s) => ids.includes(s.container.id));
   const slots = Object.fromEntries(series.map((s) => [s.container.id, s.slot]));
+  const focus = useSeriesFocus(ids);
   return (
     <>
       <ComparisonChart
+        focus={focus}
         series={series}
         metric="cpu"
         from={NOW_MS - DAY_MS}

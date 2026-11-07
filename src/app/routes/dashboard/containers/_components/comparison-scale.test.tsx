@@ -7,6 +7,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
 import { expect, it } from "vitest";
+import { useSeriesFocus } from "~/hooks/use-series-focus";
 import { ComparisonChart } from "./comparison-chart";
 
 const container = mockContainer(0, 60_000);
@@ -44,8 +45,10 @@ function Chart({
   live?: boolean;
   coverage?: DockerCoverage[];
 }) {
+  const focus = useSeriesFocus();
   return (
     <ComparisonChart
+      focus={focus}
       series={[{ container, points, slot: 1 }]}
       metric={metric}
       from={10_000}

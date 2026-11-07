@@ -16,10 +16,11 @@ import type { Column } from "@tanstack/react-table";
 import { type MouseEvent, memo, type ReactNode } from "react";
 import { Link } from "react-router";
 import { SeriesSwatch } from "~/components/charts/chart-tooltip";
-import { MeterCell, type TableFeatures } from "~/components/data-table";
+import type { TableFeatures } from "~/components/data-table";
 import { InlineMessage } from "~/components/inline-message";
 import type { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
+import { MeterTrack } from "~/widgets/meter-track";
 import {
   containerPath,
   healthLabel,
@@ -27,6 +28,7 @@ import {
   lifecycleLabel,
 } from "../_lib/presentation";
 import { ContainerActionButton } from "./container-actions";
+import { MEMORY_TRACK_INSET, MEMORY_TRACK_SLOT } from "./container-columns";
 
 export function ContainerDataRow({
   row,
@@ -300,21 +302,32 @@ function ContainerMemoryCell({
         className
       )}
     >
-      {showLimit ? (
-        <MeterCell
-          fraction={ratio(metrics.working_set_bytes, limit)}
-          fill="var(--color-mem)"
-          figure="ratio"
-        >
-          {byte(metrics.working_set_bytes)} / {byte(limit)}
-        </MeterCell>
-      ) : (
+      <span className="inline-flex items-center gap-2 align-middle">
         <span className="whitespace-nowrap">
           {byte(metrics?.working_set_bytes ?? null)}
+          {showLimit && (
+            <span className="text-muted-foreground"> / {byte(limit)}</span>
+          )}
         </span>
-      )}
+        {/* Every live row keeps the slot, so figures share one right edge. */}
+        {!historical && (
+          <span className={MEMORY_TRACK_SLOT}>
+            {showLimit && (
+              <MeterTrack
+                fraction={ratio(metrics.working_set_bytes, limit)}
+                fill="var(--color-mem)"
+              />
+            )}
+          </span>
+        )}
+      </span>
       {summary && (
-        <div className="whitespace-nowrap text-[10px] text-muted-foreground">
+        <div
+          className={cn(
+            "whitespace-nowrap text-[10px] text-muted-foreground",
+            !historical && MEMORY_TRACK_INSET
+          )}
+        >
           {byte(summary.avg_working_set_bytes)} avg
         </div>
       )}

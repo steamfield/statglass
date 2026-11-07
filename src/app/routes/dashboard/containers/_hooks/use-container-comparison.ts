@@ -32,7 +32,6 @@ export function useContainerComparison(
   const { metric, project, range, end, from, to, custom } = route;
   const engine = snapshot?.engine?.id ?? "";
   const selection = useBrushRange();
-  const focus = useContainerFocus(engine);
   const [membership, setMembership] = useState<Membership & { engine: string }>(
     {
       engine,
@@ -83,6 +82,20 @@ export function useContainerComparison(
     [ranking, metric, project]
   );
   const scope = `${engine}:${metric}:${route.windowMs ?? range}:${end}:${project}`;
+  const { slots, series, plottedSeries } = useComparisonPaint({
+    engine,
+    custom,
+    currentMembership,
+    comparisonPage,
+    project,
+    scope,
+    placeholder: comparison.isPlaceholderData,
+  });
+  const plottedIds = useMemo(
+    () => plottedSeries.map((s) => s.container.id),
+    [plottedSeries]
+  );
+  const focus = useContainerFocus(engine, plottedIds);
   const resetEvaluation = useMembershipEvaluation({
     engine,
     scope,
@@ -94,15 +107,6 @@ export function useContainerComparison(
     focused: focus.hovered,
     pinnedFocus: focus.pinned,
     setMembership,
-  });
-  const { slots, series, plottedSeries } = useComparisonPaint({
-    engine,
-    custom,
-    currentMembership,
-    comparisonPage,
-    project,
-    scope,
-    placeholder: comparison.isPlaceholderData,
   });
   const automatic = () => {
     setMembership({ engine, slots, streaks: {} });
@@ -279,9 +283,9 @@ function useMembershipEvaluation({
 }
 
 /** The chart and table's shared focus, dropped with the brush when the engine changes. */
-function useContainerFocus(engine: string) {
+function useContainerFocus(engine: string, plotted: readonly string[]) {
   const brush = useBrushStore();
-  const focus = useSeriesFocus();
+  const focus = useSeriesFocus(plotted);
   const { clear } = focus;
   const focusEngine = useRef(engine);
   useEffect(() => {

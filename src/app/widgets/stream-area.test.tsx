@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { expectJsonRoundTrip } from "@tests/widget-json";
 import { StreamArea, type StreamAreaProps } from "./stream-area";
 
@@ -17,6 +17,13 @@ const props: StreamAreaProps = {
   windowLabel: "60s",
   gridlines: [20],
 };
+
+/** An annotation's positioned box, found by its label. */
+function box(label: string): HTMLElement {
+  const found = screen.getByText(label).closest("div");
+  if (!found) throw new Error(`No box for ${label}`);
+  return found;
+}
 
 /** Runs `fn` with every ResizeObserver reporting a box `width` px wide. */
 function withWidth(width: number, fn: () => void) {
@@ -218,13 +225,13 @@ describe("StreamArea", () => {
   it("places annotations inside the window and drops ones outside it", () => {
     // Five values 1 s apart: the window is the last 4 s, 1000 px wide.
     withWidth(1000, () => {
-      const { getByText, queryByText, rerender } = render(
+      const { queryByText, rerender } = render(
         <StreamArea
           {...props}
           annotations={[{ tsMs: props.tEndMs - 2_000, label: "ANE 1.4 W" }]}
         />
       );
-      expect(getByText("ANE 1.4 W").parentElement?.style.left).toBe("500px");
+      expect(box("ANE 1.4 W").style.left).toBe("500px");
       rerender(
         <StreamArea
           {...props}
@@ -238,7 +245,7 @@ describe("StreamArea", () => {
   it("moves a colliding label to the second row, then merges it as +N", () => {
     // 100 px apart on a 1000 px plot; each label is about 70 px wide.
     withWidth(1000, () => {
-      const { getByText, queryByText } = render(
+      const { queryByText } = render(
         <StreamArea
           {...props}
           annotations={[
@@ -248,9 +255,9 @@ describe("StreamArea", () => {
           ]}
         />
       );
-      expect(getByText("Spike one").parentElement?.style.top).toBe("12px");
+      expect(box("Spike one").style.top).toBe("12px");
       // The third has no room on either row: it merges into the nearest.
-      expect(getByText("Spike two +1").parentElement?.style.top).toBe("34px");
+      expect(box("Spike two +1").style.top).toBe("34px");
       expect(queryByText(/Spike six/)).toBeNull();
     });
   });
@@ -300,9 +307,11 @@ describe("StreamArea", () => {
         />
       );
       const label = getByText("late");
-      expect(label.parentElement?.style.right).toBe("250px");
-      expect(label.parentElement?.style.left).toBe("");
-      expect(label.className).toContain("flex-row-reverse");
+      expect(label.closest("div")?.style.right).toBe("250px");
+      expect(label.closest("div")?.style.left).toBe("");
+      expect(label.closest("[data-annotation-ts]")?.className).toContain(
+        "flex-row-reverse"
+      );
     });
   });
 });

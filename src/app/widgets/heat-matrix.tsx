@@ -262,17 +262,21 @@ export function HeatScaleLegend({
       className="flex items-center gap-1"
       style={accentVars(accent)}
     >
-      <span className="figures mr-1 text-[10px] text-fg-faint">{minLabel}</span>
+      <span className="figures mr-1 text-[10px] text-muted-foreground">
+        {minLabel}
+      </span>
       {stops.map((a) => (
         <span
           key={a}
-          className="h-2 w-3.5 rounded-mark"
+          className="h-2.5 w-3.5 rounded-mark"
           style={{
             background: `color-mix(in srgb, var(--a) ${cssPercent(a, 0)}, transparent)`,
           }}
         />
       ))}
-      <span className="figures ml-1 text-[10px] text-fg-faint">{maxLabel}</span>
+      <span className="figures ml-1 text-[10px] text-muted-foreground">
+        {maxLabel}
+      </span>
     </div>
   );
 }

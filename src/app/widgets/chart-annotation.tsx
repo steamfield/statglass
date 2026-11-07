@@ -32,16 +32,17 @@ export function ChartAnnotation({
     <span
       data-annotation-ts={tsMs}
       className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-fg-subtle",
+        "inline-flex max-w-full items-center gap-1.5 whitespace-nowrap text-[11px] text-fg-subtle",
         align === "end" && "flex-row-reverse",
         variant === "pill" &&
           "rounded-mark border border-border bg-card px-1.5 py-0.5"
       )}
     >
       {variant === "marker" && (
-        <span aria-hidden className="h-5 w-px bg-border-strong" />
+        <span aria-hidden className="h-5 w-px shrink-0 bg-border-strong" />
       )}
-      {label}
+      {/* Truncates only when the layout narrowed the box to fit the plot. */}
+      <span className="min-w-0 truncate">{label}</span>
     </span>
   );
 }
@@ -50,7 +51,7 @@ export function ChartAnnotation({
 const ROW_PX = 22;
 
 /** A label's width in px, estimated from its length like the Timeline's pills. */
-const annotationWidth = (a: ChartAnnotationProps) => a.label.length * 6 + 16;
+const labelWidth = (label: string) => label.length * 6 + 16;
 
 /**
  * The annotations inside a window ending at `tEndMs`, placed by the shared
@@ -71,44 +72,50 @@ export function ChartAnnotations({
   widthPx: number;
 }) {
   if (!annotations || widthPx <= 0) return null;
-  const end = (a: ChartAnnotationProps) =>
-    (annotationFraction(a.tsMs, tEndMs, windowMs) ?? 0) > 0.5;
-  const placed = layoutMarkers(
-    annotations
-      .filter((a) => annotationFraction(a.tsMs, tEndMs, windowMs) !== null)
-      .map((a) => ({ ...a, tMs: a.tsMs }))
-      .sort((p, q) => p.tMs - q.tMs),
-    {
+  const inWindow = annotations
+    .filter((a) => annotationFraction(a.tsMs, tEndMs, windowMs) !== null)
+    .map((a) => ({ ...a, tMs: a.tsMs }))
+    .sort((p, q) => p.tMs - q.tMs);
+  const layout = (merged: ReadonlyMap<string, number>) =>
+    layoutMarkers(inWindow, {
       fromMs: tEndMs - windowMs,
       toMs: tEndMs,
       widthPx,
-      measure: annotationWidth,
-      side: (a) => (end(a) ? "end" : "start"),
+      measure: (a) => labelWidth(shown(a.label, merged.get(keyOf(a)) ?? 0)),
+      side: (a) =>
+        (annotationFraction(a.tsMs, tEndMs, windowMs) ?? 0) > 0.5
+          ? "end"
+          : "start",
       hangPx: 0,
-    }
+    });
+  // A merged label grows by its "+N": lay out again with that width reserved.
+  const first = layout(new Map());
+  const merged = new Map(
+    first.filter((p) => p.more > 0).map((p) => [keyOf(p), p.more])
   );
-  return placed.map(({ tMs: _, leftPx, row, more, ...a }) => {
-    // An end-side label is anchored by its right edge, so the marker lands
-    // on its time whatever the label's real width.
-    const right = widthPx - leftPx - annotationWidth(a);
-    return (
-      <div
-        key={`${a.tsMs}-${a.label}`}
-        className="absolute"
-        style={{
-          top: 12 + row * ROW_PX,
-          ...(end(a) ? { right } : { left: leftPx }),
-        }}
-      >
-        <ChartAnnotation
-          {...a}
-          label={more > 0 ? `${a.label} +${more}` : a.label}
-          align={end(a) ? "end" : "start"}
-        />
-      </div>
-    );
-  });
+  const placed = merged.size > 0 ? layout(merged) : first;
+  return placed.map(({ tMs: _, leftPx, row, more, side, fitPx, ...a }) => (
+    <div
+      key={keyOf(a)}
+      className="absolute"
+      style={{
+        top: 12 + row * ROW_PX,
+        maxWidth: fitPx,
+        // An end-side label is anchored by its right edge, so the marker
+        // lands on its time whatever the label's real width.
+        ...(side === "end"
+          ? { right: widthPx - leftPx - fitPx }
+          : { left: leftPx }),
+      }}
+    >
+      <ChartAnnotation {...a} label={shown(a.label, more)} align={side} />
+    </div>
+  ));
 }
+
+const keyOf = (a: ChartAnnotationProps) => `${a.tsMs}-${a.label}`;
+const shown = (label: string, more: number) =>
+  more > 0 ? `${label} +${more}` : label;
 
 /**
  * Horizontal position of `tsMs` as a fraction of a window ending at `tEndMs`,

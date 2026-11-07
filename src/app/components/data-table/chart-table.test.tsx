@@ -60,6 +60,60 @@ describe("ChartTable", () => {
       "09:00:20",
       "09:00:10",
     ]);
+    await userEvent.click(screen.getByRole("button", { name: /Max/ }));
+    expect(bodyRows().map((r) => r[0])).toEqual([
+      "09:00:20",
+      "09:00:00",
+      "09:00:10",
+    ]);
+  });
+
+  it("keeps two gaps clipped to the same start as separate rows", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(
+      <ChartTable
+        {...props}
+        rows={[
+          { kind: "gap", t: at(4, 9, 0), label: "Asleep 08:50–09:02" },
+          { kind: "gap", t: at(4, 9, 0), label: "Engine stopped 08:55–09:01" },
+        ]}
+      />
+    );
+    expect(bodyRows().map((r) => r[1])).toEqual([
+      "Asleep 08:50–09:02",
+      "Engine stopped 08:55–09:01",
+    ]);
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it("keeps the Time column in view and the scroll region reachable by keyboard", () => {
+    render(
+      <ChartTable
+        {...props}
+        series={[
+          { id: "a", label: "api", format: pct },
+          { id: "b", label: "worker", format: pct },
+        ]}
+        rows={[
+          { kind: "bucket", t: at(4, 9, 0), values: [stats(1, 2, 3), null] },
+          { kind: "gap", t: at(4, 9, 0, 10), label: "Asleep" },
+        ]}
+      />
+    );
+    const region = screen.getByRole("region", { name: "CPU values" });
+    expect(region).toHaveAttribute("tabindex", "0");
+    const time = screen.getByRole("button", { name: /Time/ }).closest("th");
+    const [, body] = screen.getAllByRole("rowgroup");
+    const firstCells = within(body as HTMLElement)
+      .getAllByRole("row")
+      .map((row) => within(row).getAllByRole("cell")[0]);
+    for (const cell of [time, ...firstCells])
+      expect(cell).toHaveClass("sticky", "left-0", "bg-card");
+    // The grouped header's upper row holds the Time column's place too.
+    const placeholder =
+      time?.parentElement?.previousElementSibling?.firstElementChild;
+    expect(placeholder).toHaveClass("sticky", "left-0", "bg-card");
   });
 
   it("dates rows when the range spans days", () => {

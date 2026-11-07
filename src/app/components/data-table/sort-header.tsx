@@ -9,9 +9,10 @@ export function SortHeader<T extends RowData>({
   header: Header<TableFeatures, T>;
 }) {
   // A placeholder holds a leaf column's place in a grouped header's upper row.
-  if (header.isPlaceholder) return <TableHead aria-hidden />;
   const { column } = header;
   const meta = column.columnDef.meta;
+  if (header.isPlaceholder)
+    return <TableHead aria-hidden className={meta?.className} />;
   const right = meta?.align !== "left";
   const ranked = meta?.ranked;
   const sortable = ranked ? false : column.getCanSort();

@@ -248,7 +248,7 @@ Mock: No mock. Compose from `04-overview-dark` card patterns (the GPU card's rin
 | Header | "GPU", subtitle "Apple M4 Pro · 20-core GPU" | `HostInfo` | once | `get_host` |
 | Usage card | Stat strip: UTILIZATION hero, RENDERER, TILER, FREQUENCY, POWER | `gpu.util`, `gpu.render`, `gpu.tiler`, `gpu.freq`, `power.gpu` | base tick | live |
 | Usage card | Area chart over the global chart window (D-091) | `gpu.util` | base tick | backfill + live |
-| Frequency card | Ring GHz of max, `ResidencyBar` of GPU frequency states over 60 s | `gpu.freq`, `gpu.residency{state}` | base tick | ring |
+| Frequency card | Ring GHz of max, `StackBar` of GPU frequency residency over 60 s | `gpu.freq`, `gpu.residency{state}` | base tick | ring |
 | Power card | 10-minute power line | `power.gpu` | base tick | ring |
 | Processes | v1.0: hidden. v1.2: table of process, PID, GPU time %, user | per-process GPU time | while visible | v1.2 collector |
 
@@ -796,7 +796,7 @@ App foundation
 - [x] TanStack Query client
 - [x] Memory router keyed by window label: `popover`, `dashboard/*`, `onboarding`
 - [x] shadcn primitives: Button, Switch, Select, ToggleGroup, Tooltip, Dialog, Checkbox, ScrollArea, Table, ContextMenu, Sonner (toast)
-- [x] Render-only components under `src/app/widgets/` with JSON-serializable props as specified in design-system.md (plain numbers, strings, booleans, `(number | null)[]`, ms timestamps; no `Date`, `Map`, typed arrays): Card, MetricCard, ModuleCard, RingGauge, ClusterFreqRing, RingStatCard, InlineBar, StackBar, Legend, StatGrid, StatStrip, StreamArea, MirrorBars, CoreTiles, CoreHeatmap, HeatMatrix (takes a `formatNow` function, so not JSON-serializable), ResidencyBar, BatteryHistoryBars, ChartAnnotation, ProcessList, InitialChip, GapBand, StatusPill
+- [x] Render-only components under `src/app/widgets/` with JSON-serializable props as specified in design-system.md (plain numbers, strings, booleans, `(number | null)[]`, ms timestamps; no `Date`, `Map`, typed arrays): Card, MetricCard, ModuleCard, RingGauge, ClusterFreqRing, RingStatCard, InlineBar, StackBar, Legend, StatGrid, StatStrip, StreamArea, MirrorBars, CoreTiles, CoreHeatmap, HeatMatrix (takes a `formatNow` function, so not JSON-serializable), ChartAnnotation, ProcessList, InitialChip, GapBand, StatusPill
 - [x] A Vitest test per widget that `JSON.parse(JSON.stringify(props))` renders identically to the original props (infra 10)
 - [x] App components outside `widgets/`: CardGrid, ProcessTable (virtualized), InterfaceTable, VolumeTable, SegmentedControl, Sidebar, MachineHeader, PopoverHeader, PopoverFooter, TrayPreview, TrayStyleOption, ModuleToggleList, SettingsRow, CollectingOverlay, UnsupportedNotice
 - [x] Dev-only `/dev/gallery` route rendering every component with mock props in both themes

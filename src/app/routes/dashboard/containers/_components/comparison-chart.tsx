@@ -27,7 +27,7 @@ import { brushScopeProps } from "~/components/brush-overlay";
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { Button } from "~/components/ui/button";
-import { type SeriesFocus, useSeriesFocus } from "~/hooks/use-series-focus";
+import type { SeriesFocus } from "~/hooks/use-series-focus";
 import { useUnits } from "~/hooks/use-units";
 import { BrushProvider, useBrushStoreOptional } from "~/stores/brush-store";
 import { Legend } from "~/widgets/legend";
@@ -61,7 +61,7 @@ function ComparisonPlot({
   controls,
   notice,
   coverage = [],
-  focus: ownerFocus,
+  focus,
   onChoose,
   more = 0,
   chooserTitle,
@@ -76,16 +76,14 @@ function ComparisonPlot({
   controls?: ReactNode;
   notice?: ReactNode;
   coverage?: readonly DockerCoverage[] | undefined;
-  /** The owner's focus when the table shares it; else the chart keeps its own. */
-  focus?: SeriesFocus | undefined;
+  /** The focus the chart shares with its owner's table. */
+  focus: SeriesFocus;
   onChoose: () => void;
   more?: number;
   chooserTitle?: string | undefined;
   loading?: boolean;
 }) {
   const [asTable, setAsTable] = useState(false);
-  const ownFocus = useSeriesFocus();
-  const focus = ownerFocus ?? ownFocus;
   const { bytes } = useUnits();
   const format = (value: number | null) =>
     metric === "cpu"

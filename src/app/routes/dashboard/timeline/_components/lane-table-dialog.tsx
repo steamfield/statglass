@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { cn } from "~/lib/utils";
 import type { Bucket } from "../_lib/buckets";
 import { formatMetric, type LaneUnits } from "../_lib/format";
 import type { Band } from "../_lib/gaps";
@@ -89,7 +90,13 @@ export function LaneTableDialog({
 
   return (
     <Dialog open={lane !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[80vh] grid-rows-[auto_minmax(0,1fr)] sm:max-w-xl">
+      <DialogContent
+        className={cn(
+          "max-h-[80vh] grid-rows-[auto_minmax(0,1fr)]",
+          // Two series need seven columns: room for all of them without scrolling.
+          series.length > 1 ? "sm:max-w-2xl" : "sm:max-w-xl"
+        )}
+      >
         <DialogHeader>
           <DialogTitle>{lane?.def.label} as a table</DialogTitle>
           <DialogDescription>

@@ -1,9 +1,19 @@
 import { mockContainer, mockHistoryPoints } from "@core/mock/docker";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import type { ComponentProps } from "react";
 import { expect, it } from "vitest";
+import { useSeriesFocus } from "~/hooks/use-series-focus";
 import { ComparisonChart } from "./comparison-chart";
 import { ContainerTable } from "./container-table";
+
+/** The route owns focus; tests own it here the same way. */
+function FocusedChart(
+  props: Omit<ComponentProps<typeof ComparisonChart>, "focus">
+) {
+  const focus = useSeriesFocus();
+  return <ComparisonChart {...props} focus={focus} />;
+}
 
 const route =
   "/dashboard/containers?project=liveoak&q=api&chart=container-0&range=1h&end=60000";
@@ -51,7 +61,7 @@ for (const via of ["tooltip", "keyboard"] as const) {
   it(`preserves comparison return state through ${via} navigation`, async () => {
     const result = renderWithProviders(
       <main>
-        <ComparisonChart
+        <FocusedChart
           series={[
             {
               container: row,

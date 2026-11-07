@@ -1,6 +1,7 @@
 import type { DockerContainer } from "@core/generated/bindings";
 import { useMemo } from "react";
 import { columnHelper, gap } from "~/components/data-table";
+import { cn } from "~/lib/utils";
 import {
   containerSortDescFirst,
   isContainerSortColumn,
@@ -9,6 +10,15 @@ import {
 } from "../_lib/presentation";
 
 const helper = columnHelper<DockerContainer>();
+
+/**
+ * Live memory draws its limit track after the figure, in a slot every live
+ * row keeps; the header and the avg line inset by the slot so they sit over
+ * the figure. The narrow layout drops the track and the inset.
+ */
+export const MEMORY_TRACK_SLOT =
+  "w-12 shrink-0 [@container(max-width:480px)]:hidden";
+export const MEMORY_TRACK_INSET = "pr-14 [@container(max-width:480px)]:pr-0";
 function extraColumns(historical: boolean) {
   return {
     io: helper.accessor(
@@ -113,7 +123,10 @@ export function useContainerColumns(
             header: historical ? "Peak memory" : "Memory",
             meta: {
               align: "right",
-              className: "[@container(max-width:480px)]:w-[92px]",
+              className: cn(
+                "[@container(max-width:480px)]:w-[92px]",
+                !historical && MEMORY_TRACK_INSET
+              ),
               cellClassName: "[@container(max-width:480px)]:w-[92px]",
             },
           }
