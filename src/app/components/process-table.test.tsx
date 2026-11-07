@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler, useState } from "react";
 import { useProcessRows } from "~/hooks/use-process-interest";
@@ -17,24 +18,10 @@ import { type ProcessSort, ProcessTable, processKey } from "./process-table";
 function proc(
   over: Partial<LiveProcess> & Pick<LiveProcess, "pid" | "name">
 ): LiveProcess {
-  return {
+  return liveProcess({
     start_time_us: 1_700_000_000_000_000 + over.pid,
-    cpu_pct: 0,
-    mem_bytes: 0,
-    compressed_bytes: null,
-    threads: 1,
-    idle_wakeups_per_s: null,
-    energy: null,
-    disk_read_bps: null,
-    disk_write_bps: null,
-    net_rx_bps: null,
-    net_tx_bps: null,
-    gpu_pct: null,
-    ports: null,
-    user: "me",
-    refusal: null,
     ...over,
-  };
+  });
 }
 
 const ROWS: LiveProcess[] = [

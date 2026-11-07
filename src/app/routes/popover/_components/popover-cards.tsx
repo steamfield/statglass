@@ -28,6 +28,7 @@ import { useScaledWindow } from "~/hooks/use-scaled-window";
 import { useTransport } from "~/lib/transport-context";
 import { useHost } from "~/stores/host-store";
 import {
+  held,
   useBattery,
   useCpu,
   useGpu,
@@ -345,8 +346,8 @@ export function LiveNetworkCard({
   const windowMs = useScaledWindow(NET_WINDOW_MS);
   const rx = useSeriesWindow(rxKey, windowMs);
   const tx = useSeriesWindow(txKey, windowMs);
-  const rxNow = useHost((s) => s.held[rxKey] ?? null);
-  const txNow = useHost((s) => s.held[txKey] ?? null);
+  const rxNow = useHost((s) => held(s, rxKey));
+  const txNow = useHost((s) => held(s, txKey));
   const rate = (bps: number | null) => {
     if (bps === null) return { value: MISSING };
     const q = rateParts(bps, { units: bits ? "Mbps" : "MBps" });

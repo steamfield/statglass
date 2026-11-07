@@ -1,6 +1,8 @@
 import {
   formatClock,
   formatClockSeconds,
+  formatDateTime,
+  formatHistoryTime,
   MISSING,
   MONTHS,
   monthName,
@@ -27,6 +29,20 @@ describe("formatClockSeconds", () => {
     expect(formatClockSeconds(at(10, 4, 9, 5, 7))).toBe("09:05:07");
     expect(formatClockSeconds(at(10, 4, 23, 59, 59))).toBe("23:59:59");
     expect(formatClockSeconds(Number.NaN)).toBe(MISSING);
+  });
+});
+
+describe("formatDateTime", () => {
+  it("is the local month, day and 24-hour time with seconds", () => {
+    expect(formatDateTime(at(10, 4, 9, 5, 7))).toBe("Oct 4, 09:05:07");
+    expect(formatDateTime(at(1, 31, 23, 59, 59))).toBe("Jan 31, 23:59:59");
+    expect(formatHistoryTime(at(10, 4, 9, 5, 7), true)).toBe("Oct 4, 09:05:07");
+    expect(formatHistoryTime(at(10, 4, 9, 5, 7), false)).toBe("09:05:07");
+  });
+
+  it("renders a missing time as a dash", () => {
+    expect(formatDateTime(null)).toBe(MISSING);
+    expect(formatDateTime(Number.NaN)).toBe(MISSING);
   });
 });
 

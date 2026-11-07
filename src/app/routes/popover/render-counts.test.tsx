@@ -1,5 +1,6 @@
 import type { LiveMsg } from "@core/generated/bindings";
 import { act, screen, waitFor } from "@testing-library/react";
+import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { type HostStore, useHostStore } from "~/stores/host-store";
@@ -20,20 +21,8 @@ function CaptureStore({ capture }: { capture: (store: HostStore) => void }) {
 function cpuFrame(store: HostStore | undefined): LiveMsg {
   if (!store) throw new Error("Missing live store");
   const state = store.getState();
-  if (state.layoutNo === null) throw new Error("Missing live layout");
-  const layout = state.layouts[state.layoutNo];
-  if (!layout) throw new Error("Missing live layout columns");
-  const values = layout.keys.map((key) =>
-    key === "cpu.total" ? (state.held[key] ?? 0) + 1 : (state.held[key] ?? null)
-  );
-  return {
-    kind: "frame",
-    layout_no: state.layoutNo,
-    timeline: 0,
-    ts_ms: (state.lastTsMs ?? 0) + 1000,
-    values,
-    held: values,
-  };
+  const cpu = (state.held["cpu.total"] ?? 0) + 1;
+  return nextFrame(state, { "cpu.total": cpu });
 }
 
 describe.each([false, true])("popover commits, compact=%s", (compact) => {

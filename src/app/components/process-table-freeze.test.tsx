@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
@@ -15,25 +16,7 @@ import { useProcessRows } from "~/hooks/use-process-interest";
 import { diskTotal, type ProcessSort, ProcessTable } from "./process-table";
 
 function proc(pid: number, name: string, cpu: number): LiveProcess {
-  return {
-    pid,
-    start_time_us: pid,
-    name,
-    cpu_pct: cpu,
-    mem_bytes: 0,
-    compressed_bytes: null,
-    threads: 1,
-    idle_wakeups_per_s: null,
-    energy: null,
-    disk_read_bps: null,
-    disk_write_bps: null,
-    net_rx_bps: null,
-    net_tx_bps: null,
-    gpu_pct: null,
-    ports: null,
-    user: "me",
-    refusal: null,
-  };
+  return liveProcess({ pid, name, cpu_pct: cpu });
 }
 
 function table(rows: LiveProcess[]) {

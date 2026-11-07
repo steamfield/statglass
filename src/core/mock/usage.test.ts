@@ -1,4 +1,5 @@
 import type { LiveProcess, SeriesStats } from "@core/generated/bindings";
+import { liveProcess } from "@tests/fixtures/processes";
 import { describe, expect, it } from "vitest";
 import { EXITED, mockUsageByApp } from "./usage";
 
@@ -9,26 +10,16 @@ function proc(
   name: string,
   over: Partial<LiveProcess> = {}
 ): LiveProcess {
-  return {
+  return liveProcess({
     pid,
     start_time_us: pid * 1_000,
     name,
-    cpu_pct: 0,
-    mem_bytes: 0,
-    compressed_bytes: null,
-    threads: 1,
     idle_wakeups_per_s: 0,
     energy: 0,
     disk_read_bps: 0,
     disk_write_bps: 0,
-    net_rx_bps: null,
-    net_tx_bps: null,
-    gpu_pct: null,
-    ports: null,
-    user: "me",
-    refusal: null,
     ...over,
-  };
+  });
 }
 
 function stats(metrics: [string, number][]): SeriesStats {

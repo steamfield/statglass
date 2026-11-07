@@ -7,6 +7,7 @@ import { useScaledWindow } from "~/hooks/use-scaled-window";
 
 import { formatPercent } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
+import { sk } from "@core/series-key";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGpuMaxMhz, useHostRecord } from "~/hooks/use-host-record";
@@ -18,6 +19,9 @@ import {
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useHost } from "~/stores/host-store";
 import {
+  held,
+  keysOf,
+  selectVolumeCapacity,
   useCpu,
   useDisk,
   useGpu,
@@ -45,12 +49,7 @@ import {
 } from "../_lib/card-props";
 import { scaleFrom } from "../_lib/history";
 import { sensorPowerCard, usedMemoryCard } from "../_lib/host-card-props";
-import {
-  ifaceRates,
-  linkRate,
-  thermalSensors,
-  volumeCapacity,
-} from "../_lib/selectors";
+import { ifaceRates, linkRate, thermalSensors } from "../_lib/selectors";
 
 const NO_PROCESSES: readonly LiveProcess[] = [];
 
@@ -81,8 +80,8 @@ export function OverviewCpuCard({ origin }: CardProps) {
   const e = topology.find((c) => c.kind === "efficiency");
   const freq = useHost(
     useShallow((s) => ({
-      p: p ? (s.held[`cpu.cluster.freq{cluster=${p.name}}`] ?? null) : null,
-      e: e ? (s.held[`cpu.cluster.freq{cluster=${e.name}}`] ?? null) : null,
+      p: p ? held(s, sk("cpu.cluster.freq", { cluster: p.name })) : null,
+      e: e ? held(s, sk("cpu.cluster.freq", { cluster: e.name })) : null,
     }))
   );
   const maxHz = (mhz: readonly number[] | undefined) => {
@@ -92,7 +91,7 @@ export function OverviewCpuCard({ origin }: CardProps) {
   // A host whose cores are all one kind (`uniform`, D-116) has one cluster.
   const only = !p || !e ? topology[0] : undefined;
   const onlyFreq = useHost((s) =>
-    only ? (s.held[`cpu.cluster.freq{cluster=${only.name}}`] ?? null) : null
+    only ? held(s, sk("cpu.cluster.freq", { cluster: only.name })) : null
   );
   const clusters: [ClusterInput, ClusterInput] | [ClusterInput] = only
     ? [{ label: "Frequency", freqHz: onlyFreq, maxHz: maxHz(only.dvfs_mhz) }]
@@ -223,9 +222,7 @@ export function OverviewPowerCard({ origin }: CardProps) {
   const fahrenheit = useSettings((s) => s.units.temperature) === "fahrenheit";
   // A layout with sensors but no fan series is a Mac without fans.
   const hasSensorLayout = useHost(
-    (s) =>
-      s.layoutNo !== null &&
-      (s.layouts[s.layoutNo]?.byMetric.has("thermal.hottest") ?? false)
+    (s) => keysOf(s, "thermal.hottest").length > 0
   );
   const energy = useProcessColumnCaps().energy;
   const processes = useHost((s) =>
@@ -307,7 +304,7 @@ export function OverviewNetworkCard({ origin }: CardProps) {
 export function OverviewDiskCard({ origin }: CardProps) {
   const disk = useDisk();
   const boot = useHostRecord()?.info.boot_mounts?.[0] ?? null;
-  const vol = useHost(useShallow((s) => volumeCapacity(s, boot)));
+  const vol = useHost(useShallow((s) => selectVolumeCapacity(s, boot)));
   const readMax = useMax24h("disk", "disk.read_total");
   const writeMax = useMax24h("disk", "disk.write_total");
   const props = diskCard({

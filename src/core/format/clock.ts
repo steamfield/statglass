@@ -59,10 +59,17 @@ export function formatClockSeconds(ms: MaybeNumber): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
+/**
+ * Local date and time with seconds, "Oct 5, 14:02:10": a moment that may not
+ * be today (a last-seen time, a process start, an observation).
+ */
+export function formatDateTime(ms: MaybeNumber): string {
+  if (!isPresent(ms)) return MISSING;
+  const d = new Date(ms);
+  return `${monthName(d)} ${d.getDate()}, ${formatClockSeconds(ms)}`;
+}
+
 /** Include a calendar date when a retained chart can span more than one day. */
 export function formatHistoryTime(ms: number, dates: boolean): string {
-  const d = new Date(ms);
-  return dates
-    ? `${monthName(d)} ${d.getDate()}, ${formatClockSeconds(ms)}`
-    : formatClockSeconds(ms);
+  return dates ? formatDateTime(ms) : formatClockSeconds(ms);
 }

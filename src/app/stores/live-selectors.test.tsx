@@ -1,5 +1,5 @@
-import type { LiveMsg } from "@core/generated/bindings";
 import { act, screen } from "@testing-library/react";
+import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { useHostStore } from "./host-store";
 import { useCpu, useMemory } from "./live-selectors";
@@ -38,32 +38,15 @@ describe("per-module selectors", () => {
       </>
     );
     await screen.findByText(/^cpu \d/);
-    const state = storeRef?.getState();
-    const layoutNo = state?.layoutNo;
-    if (!state || layoutNo == null) throw new Error("no layout");
-    const keys = state.layouts[layoutNo]?.keys ?? [];
-    const held = keys.map((k) => state.held[k] ?? null);
-    const cpuIdx = keys.indexOf("cpu.total");
-    expect(cpuIdx).toBeGreaterThanOrEqual(0);
-
-    const frame = (ts: number, cpu: number): LiveMsg => {
-      const values = [...held];
-      values[cpuIdx] = cpu;
-      return {
-        kind: "frame",
-        ts_ms: ts,
-        layout_no: layoutNo,
-        timeline: 0,
-        values,
-        held: values,
-      };
+    const state = () => {
+      const s = storeRef?.getState();
+      if (!s) throw new Error("no store");
+      return s;
     };
-
-    const base = (state.lastTsMs ?? 0) + 1000;
     renders.cpu = 0;
     renders.memory = 0;
-    act(() => transport.push(frame(base, 91)));
-    act(() => transport.push(frame(base + 1000, 92)));
+    act(() => transport.push(nextFrame(state(), { "cpu.total": 91 })));
+    act(() => transport.push(nextFrame(state(), { "cpu.total": 92 })));
 
     expect(screen.getByText("cpu 92")).toBeInTheDocument();
     expect(renders.cpu).toBe(2);

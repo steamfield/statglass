@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { BrushProvider } from "~/stores/brush-store";
 import { DiskProcesses } from "./disk-processes";
@@ -56,25 +57,8 @@ const proc = (
   read: number | null,
   write: number | null,
   name = `process${pid}`
-): LiveProcess => ({
-  pid,
-  start_time_us: pid,
-  name,
-  cpu_pct: 0,
-  mem_bytes: 0,
-  compressed_bytes: null,
-  threads: 1,
-  idle_wakeups_per_s: null,
-  energy: null,
-  disk_read_bps: read,
-  disk_write_bps: write,
-  net_rx_bps: null,
-  net_tx_bps: null,
-  gpu_pct: null,
-  ports: null,
-  user: "me",
-  refusal: null,
-});
+): LiveProcess =>
+  liveProcess({ pid, name, disk_read_bps: read, disk_write_bps: write });
 const processNames = () =>
   within(screen.getByRole("table", { name: /^Disk processes/ }))
     .queryAllByRole("link")

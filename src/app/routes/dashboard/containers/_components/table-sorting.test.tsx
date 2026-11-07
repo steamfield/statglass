@@ -13,6 +13,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
 import { useDocker } from "../_hooks/use-docker";
@@ -346,41 +347,23 @@ it.each([
 it("cgroup hover holds a pushed frame, applies header changes immediately and breaks ties by name", async () => {
   const result = renderWithProviders(<CgroupContainers />);
   await waitFor(() => expect(result.transport.subscriberCount()).toBe(1));
-  act(() => {
-    result.transport.push({
-      kind: "layout",
-      layout_no: 90,
-      series: [
-        seriesKey("cgroup.cpu", { kind: "docker", name: "zulu" }),
-        seriesKey("cgroup.cpu", { kind: "docker", name: "alpha" }),
-      ],
-      kinds: ["mean", "mean"],
-    });
-    result.transport.push({
-      kind: "frame",
-      layout_no: 90,
-      ts_ms: 1800000000000,
-      timeline: 1,
-      values: [2, 1],
-      held: [2, 1],
-    });
-  });
+  const push = pushLayout(
+    result.transport,
+    90,
+    [
+      seriesKey("cgroup.cpu", { kind: "docker", name: "zulu" }),
+      seriesKey("cgroup.cpu", { kind: "docker", name: "alpha" }),
+    ],
+    { kinds: ["mean", "mean"], timeline: 1 }
+  );
+  push(1800000000000, [2, 1]);
   const firstName = () =>
     within(screen.getByRole("table")).getAllByRole("row")[1];
   expect(firstName()).toHaveTextContent("zulu");
   fireEvent.pointerEnter(
     screen.getByRole("table").parentElement ?? document.body
   );
-  act(() =>
-    result.transport.push({
-      kind: "frame",
-      layout_no: 90,
-      ts_ms: 1800000001000,
-      timeline: 1,
-      values: [0.5, 9],
-      held: [0.5, 9],
-    })
-  );
+  push(1800000001000, [0.5, 9]);
   expect(firstName()).toHaveTextContent("zulu");
   clickHeader("Name", "ascending");
   expect(firstName()).toHaveTextContent("alpha");
@@ -391,16 +374,7 @@ it("cgroup hover holds a pushed frame, applies header changes immediately and br
   );
   clickHeader("% CPU", "descending");
   expect(firstName()).toHaveTextContent("alpha");
-  act(() =>
-    result.transport.push({
-      kind: "frame",
-      layout_no: 90,
-      ts_ms: 1800000002000,
-      timeline: 1,
-      values: [1, 1],
-      held: [1, 1],
-    })
-  );
+  push(1800000002000, [1, 1]);
   expect(firstName()).toHaveTextContent("alpha");
   clickHeader("% CPU", "ascending");
   expect(firstName()).toHaveTextContent("alpha");

@@ -1,12 +1,12 @@
 import { seriesKey, sk } from "@core/series-key";
 import {
-  act,
   fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { useHeld } from "~/hooks/use-ring";
 import { type HostStore, useHostStore } from "~/stores/host-store";
@@ -86,29 +86,17 @@ it("holds hover order across pushed frames, updates values and applies a header 
   }
   const result = renderWithProviders(<LiveInterfaces />);
   await waitFor(() => expect(result.transport.subscriberCount()).toBe(1));
-  act(() =>
-    result.transport.push({
-      kind: "layout",
-      layout_no: 99,
-      kinds: ["rate", "rate"],
-      series: [
-        seriesKey("net.rx", { iface: "en9" }),
-        seriesKey("net.rx", { iface: "en10" }),
-      ],
-    })
+  const push = pushLayout(
+    result.transport,
+    99,
+    [
+      seriesKey("net.rx", { iface: "en9" }),
+      seriesKey("net.rx", { iface: "en10" }),
+    ],
+    { kinds: ["rate", "rate"], timeline: store?.getState().timeline ?? 0 }
   );
   let ts = store?.getState().lastTsMs ?? 0;
-  const frame = (values: number[]) =>
-    act(() =>
-      result.transport.push({
-        kind: "frame",
-        layout_no: 99,
-        timeline: store?.getState().timeline ?? 0,
-        ts_ms: ++ts,
-        values,
-        held: values,
-      })
-    );
+  const frame = (values: number[]) => push(++ts, values);
   frame([20e6, 10e6]);
   fireEvent.click(screen.getByRole("button", { name: "Down" }));
   expect(names()).toEqual(["en9", "en10", "gap"]);

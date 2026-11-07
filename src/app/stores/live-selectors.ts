@@ -8,18 +8,29 @@
  * °C). `null` means no current value: a gap or a missing series, never 0.
  */
 import type { PowerSource } from "@core/generated/bindings";
-import { type SeriesWindow, seriesWindow } from "@core/live-state";
+import {
+  type HostLive,
+  type LayoutInfo,
+  type SeriesWindow,
+  seriesWindow,
+} from "@core/live-state";
+import { parseLabels, sk } from "@core/series-key";
 import { useShallow } from "zustand/react/shallow";
 import { type HostLiveState, useHost, useHostStore } from "./host-store";
 
 type S = HostLiveState;
 
-const held = (s: S, key: string): number | null => s.held[key] ?? null;
+/** The current value of series `key` (display form); null is a gap. */
+export const held = (s: HostLive, key: string): number | null =>
+  s.held[key] ?? null;
+
+/** The current layout; null before the first one. */
+export const currentLayout = (s: HostLive): LayoutInfo | null =>
+  s.layoutNo === null ? null : (s.layouts[s.layoutNo] ?? null);
 
 /** Keys of `metric` in the current layout. */
-function keysOf(s: S, metric: string): readonly string[] {
-  if (s.layoutNo === null) return [];
-  return s.layouts[s.layoutNo]?.byMetric.get(metric) ?? [];
+export function keysOf(s: HostLive, metric: string): readonly string[] {
+  return currentLayout(s)?.byMetric.get(metric) ?? [];
 }
 
 /** Max over every label set of `metric`; null when none has a value. */
@@ -32,12 +43,16 @@ function max(s: S, metric: string): number | null {
   return out;
 }
 
-/** `{ labelValue: value }` for one label of `metric`. */
-function byLabel(s: S, metric: string): Record<string, number | null> {
+/** `{ labelValue: value }` for label `name` of `metric`. */
+function byLabel(
+  s: S,
+  metric: string,
+  name: string
+): Record<string, number | null> {
   const out: Record<string, number | null> = {};
   for (const k of keysOf(s, metric)) {
-    const inner = k.slice(k.indexOf("{") + 1, -1);
-    out[inner.slice(inner.indexOf("=") + 1)] = held(s, k);
+    const v = parseLabels(k)[name];
+    if (v !== undefined) out[v] = held(s, k);
   }
   return out;
 }
@@ -48,12 +63,12 @@ export const selectCpu = (s: S) => ({
   system: held(s, "cpu.system"),
   /** Linux only (D-116): time idle with I/O outstanding. */
   iowait: held(s, "cpu.iowait"),
-  pFreqHz: held(s, "cpu.cluster.freq{cluster=P0}"),
-  eFreqHz: held(s, "cpu.cluster.freq{cluster=E0}"),
+  pFreqHz: held(s, sk("cpu.cluster.freq", { cluster: "P0" })),
+  eFreqHz: held(s, sk("cpu.cluster.freq", { cluster: "E0" })),
 });
 
 /** Per-core load keyed by core label ("P0", "E3"). */
-export const selectCpuCores = (s: S) => byLabel(s, "cpu.load");
+export const selectCpuCores = (s: S) => byLabel(s, "cpu.load", "core");
 
 export const selectGpu = (s: S) => ({
   util: held(s, "gpu.util"),
@@ -74,7 +89,7 @@ export const selectMemory = (s: S) => ({
   pressureLevel: held(s, "mem.pressure_level"),
   swapUsed: held(s, "mem.swap_used"),
   /** Linux PSI (D-116): share of time some task stalled on memory. */
-  psiSome: held(s, "mem.psi{stall=some}"),
+  psiSome: held(s, sk("mem.psi", { stall: "some" })),
   /**
    * The layout has the macOS composition (`mem.app`); a Linux agent has
    * only used, cached and free (D-116).
@@ -137,6 +152,22 @@ export const selectDisk = (s: S) => ({
   write: held(s, "disk.write_total"),
 });
 
+/**
+ * Capacity of volume `vol` (the boot volume is `HostInfo.boot_mounts[0]`,
+ * D-092). On APFS every volume reports its container's size and free space.
+ */
+export function selectVolumeCapacity(
+  s: HostLive,
+  vol: string | null
+): { total: number | null; free: number | null; used: number | null } {
+  if (vol === null) return { total: null, free: null, used: null };
+  return {
+    total: held(s, sk("disk.total", { vol })),
+    free: held(s, sk("disk.free", { vol })),
+    used: held(s, sk("disk.used", { vol })),
+  };
+}
+
 export const selectBattery = (s: S) => ({
   charge: held(s, "battery.charge"),
   charging: held(s, "battery.charging"),
@@ -175,7 +206,7 @@ export const selectPowerSource = (s: S): PowerSource | null =>
 
 /** Series in the current layout, for the history size projection; null before one. */
 export const selectSeriesCount = (s: S): number | null =>
-  s.layoutNo === null ? null : (s.layouts[s.layoutNo]?.series.length ?? null);
+  currentLayout(s)?.series.length ?? null;
 
 export const useCpu = () => useHost(useShallow(selectCpu));
 export const useCpuCores = () => useHost(useShallow(selectCpuCores));

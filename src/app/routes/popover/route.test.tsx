@@ -1,5 +1,6 @@
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor } from "@testing-library/react";
+import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { Toaster } from "~/components/ui/sonner";
 import { POPOVER_SERIES } from "./_lib/series";
@@ -158,22 +159,10 @@ it("keeps sensor failure and missing values visible when compact", async () => {
     transportOptions: { now: () => NOW, scenarios: ["popover-compact"] },
   });
   await screen.findByRole("button", { name: "Expand CPU" });
-  act(() => {
-    r.transport.push({
-      kind: "layout",
-      layout_no: 99,
-      kinds: ["gauge"],
-      series: [{ metric: "cpu.total", labels: [] }],
-    });
-    r.transport.push({
-      kind: "frame",
-      layout_no: 99,
-      timeline: 0,
-      ts_ms: NOW + 1_000,
-      values: [null],
-      held: [null],
-    });
-  });
+  const push = pushLayout(r.transport, 99, [
+    { metric: "cpu.total", labels: [] },
+  ]);
+  push(NOW + 1_000, [null]);
   await screen.findByText(/Sensor read failed/);
   expect(screen.getByRole("link", { name: "CPU" })).toHaveTextContent("—");
   expect(

@@ -30,3 +30,20 @@ export function formatPercent(
   }
   return `${fixed(value, decimals)}%`;
 }
+
+/**
+ * A difference of two percentages in percentage points, one decimal:
+ * "3.4 pp". Pair it with `formatSignedDelta` for "+3.4 pp".
+ */
+export function formatPercentPoints(points: number): string {
+  return `${fixed(points, 1)} pp`;
+}
+
+/**
+ * A layout fraction (0 to 1) as a CSS percentage for `left`, `width` or a
+ * custom property: "12.500%". Three decimals keep sub-pixel positions on a
+ * wide chart; this is styling, not a displayed figure.
+ */
+export function cssPercent(fraction: number, decimals = 3): string {
+  return `${(fraction * 100).toFixed(decimals)}%`;
+}

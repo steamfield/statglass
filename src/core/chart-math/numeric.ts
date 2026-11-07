@@ -25,3 +25,21 @@ export function percentOf(
   const r = ratio(part, whole);
   return r === null ? null : r * 100;
 }
+
+/**
+ * The sum of `values`, or null when any is missing: a total of parts with a
+ * gap among them is not the total.
+ */
+export function sumOrNull(...values: (number | null)[]): number | null {
+  let out = 0;
+  for (const v of values) {
+    if (v === null) return null;
+    out += v;
+  }
+  return out;
+}
+
+/** `v * k`, or null when `v` is missing (a unit change of a gap is a gap). */
+export function scaleOrNull(v: number | null, k: number): number | null {
+  return v === null ? null : v * k;
+}

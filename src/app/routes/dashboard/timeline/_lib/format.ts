@@ -9,7 +9,7 @@ import {
   type RateUnits,
   type TemperatureUnits,
 } from "@core/format";
-import { METRIC_UNITS, type UnitSettings } from "@core/generated/bindings";
+import { METRIC_UNITS } from "@core/generated/bindings";
 
 type Unit = (typeof METRIC_UNITS)[keyof typeof METRIC_UNITS];
 
@@ -17,15 +17,6 @@ export interface LaneUnits {
   bytes?: ByteUnits | undefined;
   rate: RateUnits;
   temperature: TemperatureUnits;
-}
-
-/** The display units from the Units settings; MB/s and °C before they load. */
-export function laneUnits(units: UnitSettings | null): LaneUnits {
-  return {
-    bytes: units?.memory === "binary" ? "GiB" : "GB",
-    rate: units?.network === "bits_per_sec" ? "Mbps" : "MBps",
-    temperature: units?.temperature === "fahrenheit" ? "F" : "C",
-  };
 }
 
 /** The catalog unit of `metric`; undefined for a metric this build does not know. */

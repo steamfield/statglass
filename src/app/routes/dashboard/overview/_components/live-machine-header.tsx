@@ -10,9 +10,9 @@ import { MachineHeader, type MachineSpec } from "~/components/machine-header";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useNow } from "~/hooks/use-now";
 import { useHost } from "~/stores/host-store";
+import { selectBattery, selectVolumeCapacity } from "~/stores/live-selectors";
 import { useLastWake } from "../_hooks/use-overview-history";
 import { coresLabel } from "../_lib/card-props";
-import { volumeCapacity } from "../_lib/selectors";
 
 /** "Apple M4 Pro" reads as "M4 Pro" inside the title's parentheses. */
 function shortChip(chip: string): string {
@@ -31,17 +31,16 @@ export function LiveMachineHeader() {
   const now = useNow(60_000);
   const lastWake = useLastWake();
   const boot = host?.info.boot_mounts?.[0] ?? null;
-  const vol = useHost(useShallow((s) => volumeCapacity(s, boot)));
+  const vol = useHost(useShallow((s) => selectVolumeCapacity(s, boot)));
   const battery = useHost(
-    useShallow((s) => ({
-      charge: s.held["battery.charge"] ?? null,
-      health: s.held["battery.health"] ?? null,
-      cycles: s.held["battery.cycles"] ?? null,
-      present:
+    useShallow((s) => {
+      const { charge, health, cycles } = selectBattery(s);
+      const present =
         s.capabilities !== null &&
         s.capabilities.modules.battery !== undefined &&
-        s.capabilities.modules.battery !== "not_present",
-    }))
+        s.capabilities.modules.battery !== "not_present";
+      return { charge, health, cycles, present };
+    })
   );
   if (!host) return null;
   const info = host.info;

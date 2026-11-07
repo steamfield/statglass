@@ -1,5 +1,8 @@
 import { formatSpan } from "@core/format";
-import type { NetworkByApp } from "@core/generated/bindings";
+import {
+  NETWORK_BY_APP_FROM_MS,
+  networkByApp,
+} from "@tests/fixtures/network-by-app";
 import {
   appRows,
   appsTitle,
@@ -11,33 +14,7 @@ import {
   unrecorded,
 } from "./apps";
 
-const T = 1_700_000_000_000;
-
-function answer(over: Partial<NetworkByApp> = {}): NetworkByApp {
-  return {
-    from_ms: T,
-    to_ms: T + 90_000,
-    complete_to_ms: T + 90_000,
-    resolution_ms: 10_000,
-    measured_ms: 90_000,
-    coverage: [{ from_ms: T, to_ms: T + 90_000, tier: "s10" }],
-    apps: [
-      { name: "Docker Desktop", rx_bytes: 286e6, tx_bytes: 1.4e6 },
-      { name: "Google Chrome", rx_bytes: 64e6, tx_bytes: 3.6e6 },
-      { name: "curl", rx_bytes: 3.8e6, tx_bytes: 10e3 },
-    ],
-    other_apps_rx_bytes: 0,
-    other_apps_tx_bytes: 0,
-    iface_rx_bytes: 380e6,
-    iface_tx_bytes: 50e6,
-    overhead_rx_bytes: 18e6,
-    overhead_tx_bytes: 9e6,
-    system_rx_bytes: 8.2e6,
-    system_tx_bytes: 35.99e6,
-    clamped: false,
-    ...over,
-  };
-}
+const T = NETWORK_BY_APP_FROM_MS;
 
 describe("Apps title", () => {
   it("names the window with nothing selected", () => {
@@ -66,12 +43,12 @@ describe("Apps title", () => {
 describe("Apps rows", () => {
   it("shares are of the interface total; now comes from the latest bucket", () => {
     const now = nowRates(
-      answer({
+      networkByApp({
         measured_ms: 10_000,
         apps: [{ name: "Google Chrome", rx_bytes: 11e6, tx_bytes: 0 }],
       })
     );
-    const rows = appRows(answer(), now);
+    const rows = appRows(networkByApp(), now);
     expect(rows.map((r) => [r.name, r.totalBytes, r.nowBps])).toEqual([
       ["Docker Desktop", 287.4e6, 0],
       ["Google Chrome", 67.6e6, 1.1e6],
@@ -81,13 +58,15 @@ describe("Apps rows", () => {
   });
 
   it("an unmeasured latest bucket leaves now unknown, not zero", () => {
-    expect(nowRates(answer({ measured_ms: 0, apps: [] }))).toBeNull();
-    expect(appRows(answer(), null).every((r) => r.nowBps === null)).toBe(true);
+    expect(nowRates(networkByApp({ measured_ms: 0, apps: [] }))).toBeNull();
+    expect(appRows(networkByApp(), null).every((r) => r.nowBps === null)).toBe(
+      true
+    );
   });
 
   it("no share when nothing moved", () => {
     const rows = appRows(
-      answer({
+      networkByApp({
         apps: [{ name: "curl", rx_bytes: 0, tx_bytes: 0 }],
         iface_rx_bytes: 0,
         iface_tx_bytes: 0,
@@ -103,7 +82,7 @@ describe("Apps rows", () => {
 
   // Regression: apps 30x the interface showed node at 1556.4%.
   it("shares add up to 100% even when the apps exceed the interface", () => {
-    const a = answer({
+    const a = networkByApp({
       apps: [
         { name: "node", rx_bytes: 1.8e6, tx_bytes: 195e6 },
         { name: "chrome-headless-shell", rx_bytes: 149e6, tx_bytes: 1.4e6 },
@@ -125,12 +104,12 @@ describe("Apps rows", () => {
   });
 
   it("remainder: other apps only when non-zero, then overhead, then System and other", () => {
-    expect(remainderRows(answer()).map((r) => r.name)).toEqual([
+    expect(remainderRows(networkByApp()).map((r) => r.name)).toEqual([
       "Protocol overhead (est.)",
       "System and other",
     ]);
     const withOther = remainderRows(
-      answer({ other_apps_rx_bytes: 5e6, other_apps_tx_bytes: 1e6 })
+      networkByApp({ other_apps_rx_bytes: 5e6, other_apps_tx_bytes: 1e6 })
     );
     expect(withOther.map((r) => [r.name, r.totalBytes])).toEqual([
       ["Other apps", 6e6],
@@ -141,7 +120,7 @@ describe("Apps rows", () => {
   });
 
   it("the parts add up to the interface", () => {
-    const a = answer();
+    const a = networkByApp();
     const all = [...appRows(a, null), ...remainderRows(a)];
     expect(all.reduce((n, r) => n + r.totalBytes, 0)).toBeCloseTo(
       a.iface_rx_bytes + a.iface_tx_bytes
@@ -151,56 +130,62 @@ describe("Apps rows", () => {
 
 describe("coverage", () => {
   it("partial: measured for 40 of 90 s", () => {
-    expect(partialCoverage(answer({ measured_ms: 40_000 }))).toEqual({
+    expect(partialCoverage(networkByApp({ measured_ms: 40_000 }))).toEqual({
       measuredS: 40,
       spanS: 90,
     });
   });
 
   it("full coverage, within jitter, is not partial", () => {
-    expect(partialCoverage(answer())).toBeNull();
-    expect(partialCoverage(answer({ measured_ms: 89_400 }))).toBeNull();
+    expect(partialCoverage(networkByApp())).toBeNull();
+    expect(partialCoverage(networkByApp({ measured_ms: 89_400 }))).toBeNull();
   });
 
   it("an open bucket still filling is not missing time", () => {
     // The last bucket is open: the interface has its 10 s, the per-app
     // stream (on its own 10 s phase) only 4 s so far.
-    const open = answer({ complete_to_ms: T + 80_000, measured_ms: 84_000 });
+    const open = networkByApp({
+      complete_to_ms: T + 80_000,
+      measured_ms: 84_000,
+    });
     expect(partialCoverage(open)).toBeNull();
     expect(openTailS(open)).toBe(10);
-    expect(openTailS(answer())).toBe(0);
+    expect(openTailS(networkByApp())).toBe(0);
   });
 
   it("time missing before the open part is reported once it closes", () => {
     // 50 s of the complete 80 s measured, and 4 s so far of the open bucket:
     // how much of the 54 s is the complete part's is not known yet.
-    const open = answer({ complete_to_ms: T + 80_000, measured_ms: 54_000 });
+    const open = networkByApp({
+      complete_to_ms: T + 80_000,
+      measured_ms: 54_000,
+    });
     expect(partialCoverage(open)).toBeNull();
-    const closed = answer({ measured_ms: 60_000 });
+    const closed = networkByApp({ measured_ms: 60_000 });
     expect(partialCoverage(closed)).toEqual({ measuredS: 60, spanS: 90 });
   });
 
   it("a range with nothing complete yet is not partial", () => {
     expect(
       partialCoverage(
-        answer({ complete_to_ms: T - 10_000, measured_ms: 2_000 })
+        networkByApp({ complete_to_ms: T - 10_000, measured_ms: 2_000 })
       )
     ).toBeNull();
-    expect(openTailS(answer({ complete_to_ms: T - 10_000 }))).toBe(90);
+    expect(openTailS(networkByApp({ complete_to_ms: T - 10_000 }))).toBe(90);
   });
 
   it("nothing recorded, and where recording starts", () => {
-    const empty = answer({
+    const empty = networkByApp({
       measured_ms: 0,
       apps: [],
       coverage: [{ from_ms: T, to_ms: T + 90_000, tier: null }],
     });
     expect(unrecorded(empty)).toBe(true);
     expect(firstRecordedMs(empty)).toBeNull();
-    expect(unrecorded(answer())).toBe(false);
+    expect(unrecorded(networkByApp())).toBe(false);
     expect(
       firstRecordedMs(
-        answer({
+        networkByApp({
           coverage: [
             { from_ms: T, to_ms: T + 40_000, tier: null },
             { from_ms: T + 40_000, to_ms: T + 90_000, tier: "s10" },

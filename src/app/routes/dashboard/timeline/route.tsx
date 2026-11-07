@@ -20,15 +20,14 @@ import { useEvents } from "~/hooks/use-events";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
 import { useSeriesStats } from "~/hooks/use-series-stats";
+import { useUnits } from "~/hooks/use-units";
 import { useHostClock } from "~/lib/host-clock";
 import { DockerTimelineLane } from "~/routes/dashboard/containers/_components/docker-surfaces";
 import { useHost } from "~/stores/host-store";
-import { useSettings } from "~/stores/settings-store";
 import { HeatmapCard } from "./_components/heatmap-card";
 import { LanesCard } from "./_components/lanes-card";
 import { useExportCsv } from "./_hooks/use-export-csv";
 import { type TimelineView, useTimelineData } from "./_hooks/use-timeline-data";
-import { laneUnits } from "./_lib/format";
 import { LANES } from "./_lib/lanes";
 import { SUMMARY_METRICS } from "./_lib/summaries";
 import { presentationSpan, SPAN_MS } from "./_lib/time";
@@ -64,8 +63,7 @@ export default function TimelineRoute() {
   const comparisonAllowed = canCompare(view);
   const comparing = compare && comparisonAllowed;
   const caps = useHost((s) => s.capabilities);
-  const unitSettings = useSettings((s) => s.units);
-  const units = useMemo(() => laneUnits(unitSettings), [unitSettings]);
+  const units = useUnits();
 
   // Lanes for modules the host has; a module switched off keeps its lane
   // and shows its gap.

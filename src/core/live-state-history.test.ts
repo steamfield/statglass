@@ -4,6 +4,7 @@
  * `layout_no` with an older frame restarting it.
  */
 import type { LiveMsg, SeriesKey } from "@core/generated/bindings";
+import { statusMsg } from "@tests/live-frames";
 import {
   type HostLive,
   initialHostLive,
@@ -28,17 +29,7 @@ const layout = (no = 1): LiveMsg => ({
   layout_no: no,
   series: SERIES,
 });
-const status: LiveMsg = {
-  kind: "status",
-  interval_ms: 1000,
-  frame_period_ms: 1000,
-  paused: false,
-  display_idle: false,
-  on_battery: false,
-  performance: "off",
-  power_source: "adapter",
-  primary_iface: null,
-};
+const status = statusMsg();
 
 /** `n` rows from `startMs`, one per second; cpu.total is the second. */
 const rowsMsg = (

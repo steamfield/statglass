@@ -27,6 +27,33 @@ export function sk(metric: string, labels: Record<string, string> = {}) {
   return seriesKeyString(seriesKey(metric, labels));
 }
 
+/** A label name as the catalog allows it (lowercase ASCII, digits, `_`). */
+const LABEL_NAME = /^[a-z0-9_]+=/;
+
+/**
+ * The labels of a display-form key, the inverse of `seriesKeyString`:
+ * `cpu.load{core=P0}` gives `{ core: "P0" }`, a key without labels `{}`.
+ * `seriesKeyString` does not escape, so a value may hold `=` or `,`; a `,`
+ * starts the next label only when a label name and `=` follow it.
+ */
+export function parseLabels(display: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const open = display.indexOf("{");
+  if (open < 0 || !display.endsWith("}")) return out;
+  const pairs: [string, string][] = [];
+  for (const part of display.slice(open + 1, -1).split(",")) {
+    const last = pairs[pairs.length - 1];
+    if (last && !LABEL_NAME.test(part)) {
+      last[1] += `,${part}`;
+      continue;
+    }
+    const eq = part.indexOf("=");
+    if (eq > 0) pairs.push([part.slice(0, eq), part.slice(eq + 1)]);
+  }
+  for (const [k, v] of pairs) out[k] = v;
+  return out;
+}
+
 /** The value of label `name` on `key`, or undefined. */
 export function labelOf(key: SeriesKey, name: string): string | undefined {
   return key.labels.find(([k]) => k === name)?.[1];
