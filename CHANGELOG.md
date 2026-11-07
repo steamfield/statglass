@@ -7,6 +7,12 @@
 - Timeline lanes default to °F before settings load, like the rest of the app.
 - History commands reject an empty time range (start not before end). Four commands that
   accepted one (usage series, usage by app, network by app, series stats) now refuse it.
+- Charts and tables stop showing the previous answer once what they show changes: another
+  container's history, or a longer or shorter window.
+- A failed history reset or history clear no longer leaves its button stuck.
+- Informational lines stop announcing as alerts; status and error lines share one size.
+- The popover power sparkline stops rescaling every second. Container history fits its axis
+  like the comparison chart and gains a 0 tick.
 
 ## [0.6.2](https://github.com/steamfield/statglass/compare/v0.6.1...v0.6.2) - 2026-11-07
 
