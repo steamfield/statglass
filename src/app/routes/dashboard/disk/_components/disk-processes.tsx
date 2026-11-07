@@ -46,6 +46,7 @@ import {
 } from "~/hooks/use-process-interest";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { useBrushRange } from "~/stores/brush-store";
+import { writeRange } from "../_lib/range-params";
 
 const EMPTY: readonly LiveProcess[] = [];
 export const requestedBytes = (
@@ -189,13 +190,7 @@ function diskBack(
   range: TimeRange | null
 ) {
   const backParams = new URLSearchParams(location.search);
-  if (range) {
-    backParams.set("from", String(range.fromMs));
-    backParams.set("to", String(range.toMs));
-  } else {
-    backParams.delete("from");
-    backParams.delete("to");
-  }
+  writeRange(backParams, range);
   const backSearch = backParams.toString();
   return `${location.pathname}${backSearch ? `?${backSearch}` : ""}`;
 }
@@ -430,10 +425,7 @@ function DiskRows({
       {ordered.map((p) => {
         const historic = "read_bytes" in p;
         const params = new URLSearchParams({ back });
-        if (range) {
-          params.set("from", String(range.fromMs));
-          params.set("to", String(range.toMs));
-        }
+        writeRange(params, range);
         return (
           <ProcessSelectionRow
             key={targetKey(p)}

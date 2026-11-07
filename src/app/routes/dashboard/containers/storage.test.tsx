@@ -1,6 +1,6 @@
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import { renderWithProviders } from "@tests/test-utils";
+import { clickOutside, renderWithProviders } from "@tests/test-utils";
 import { expect, it, vi } from "vitest";
 import ContainersRoute from "./route";
 
@@ -42,7 +42,7 @@ it("requires a separate volume data-loss acknowledgement and supports cancelling
   await result.user.click(
     screen.getByRole("button", { name: "Review cleanup" })
   );
-  await screen.findByRole("dialog", { name: "Review cleanup" });
+  await screen.findByRole("alertdialog", { name: "Review cleanup" });
   await result.user.click(
     screen.getByRole("button", { name: "Review volume deletion" })
   );
@@ -66,6 +66,30 @@ it("requires a separate volume data-loss acknowledgement and supports cancelling
   );
   await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
   expect(execute.mock.calls[0]?.[1]).toBe(true);
+  result.unmount();
+  transport.dispose();
+});
+
+it("keeps the cleanup review open on an outside click", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-32"],
+    historyRows: 1,
+  });
+  const result = renderWithProviders(<ContainersRoute />, {
+    transport,
+    route: "/dashboard/containers?view=storage",
+  });
+  await result.user.click(
+    await screen.findByRole("checkbox", { name: "Select old-database-data" })
+  );
+  await result.user.click(
+    screen.getByRole("button", { name: "Review cleanup" })
+  );
+  await screen.findByRole("alertdialog", { name: "Review cleanup" });
+  await clickOutside();
+  expect(
+    screen.getByRole("alertdialog", { name: "Review cleanup" })
+  ).toBeInTheDocument();
   result.unmount();
   transport.dispose();
 });
@@ -207,7 +231,7 @@ it("discards a prepared review from a changed engine generation", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Engine changed during review"
   );
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   result.unmount();
   transport.dispose();
 });
@@ -236,7 +260,7 @@ it("keeps unknown mutation outcomes visible without retrying the mutation", asyn
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Execution could not be confirmed"
   );
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   await act(async () => transport.tick());
   expect(execute).toHaveBeenCalledTimes(1);
   result.unmount();
@@ -291,7 +315,7 @@ it("keeps a mixed cleanup batch visible through the final volume acknowledgement
   await result.user.click(
     await screen.findByRole("button", { name: "Review volume deletion" })
   );
-  const dialog = screen.getByRole("dialog");
+  const dialog = screen.getByRole("alertdialog");
   expect(within(dialog).getByText("old-api:latest")).toBeVisible();
   expect(
     within(dialog).getByText("old-database-data", { exact: true })
@@ -424,7 +448,7 @@ it("keeps maximum-length volume batches out of the final acknowledgement label",
   await result.user.click(
     await screen.findByRole("button", { name: "Review volume deletion" })
   );
-  const dialog = screen.getByRole("dialog");
+  const dialog = screen.getByRole("alertdialog");
   expect(within(dialog).getAllByRole("listitem")).toHaveLength(128);
   const acknowledgement = within(dialog).getByRole("checkbox", {
     name: "I understand the permanent data loss and volume name reuse risk for the listed volumes.",

@@ -15,12 +15,14 @@ test("volume cleanup requires a separate confirmation and refreshes the inventor
     .getByRole("checkbox", { name: "Select old-database-data" })
     .check();
   await page.getByRole("button", { name: "Review cleanup" }).click();
-  await expect(page.getByRole("dialog")).toContainText("old-database-data");
+  await expect(page.getByRole("alertdialog")).toContainText(
+    "old-database-data"
+  );
   await page.getByRole("button", { name: "Review volume deletion" }).click();
   await expect(
     page.getByRole("button", { name: "Delete selected resources" })
   ).toBeDisabled();
-  await expect(page.getByRole("dialog")).toContainText(
+  await expect(page.getByRole("alertdialog")).toContainText(
     "Docker volume names can be reused"
   );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();

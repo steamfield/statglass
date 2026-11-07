@@ -354,7 +354,7 @@ describe("remote Mac recovery workflows", () => {
         fireEvent.click(screen.getByLabelText("Also stop sharing on that Mac"));
       fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
       await waitFor(() =>
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
       );
       expect(await source.listRemoteHosts()).toHaveLength(0);
       expect(
@@ -381,7 +381,7 @@ describe("remote Mac recovery workflows", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     );
     expect(await source.listRemoteHosts()).toHaveLength(0);
     expect(
@@ -502,13 +502,13 @@ describe("remote Mac recovery workflows", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not save host settings"
     );
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Name")).toHaveValue("Studio Mac");
     fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     );
     expect(
       screen.queryByRole("heading", { name: "Studio Mac" })

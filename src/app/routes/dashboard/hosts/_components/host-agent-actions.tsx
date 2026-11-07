@@ -4,14 +4,8 @@ import { hostKeys } from "@core/query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { Button } from "~/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from "~/components/ui/dialog";
 import { useTransport } from "~/lib/transport-context";
 import { RemoteSetupError } from "./remote-setup-error";
 import { pushable, useAgentUpdate, useAgentUpdating } from "./use-agent-update";
@@ -49,30 +43,20 @@ function RepairDialog({
     }
   };
   return (
-    <Dialog
+    <ConfirmDialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) close();
+        if (!open) close();
       }}
+      title={`Re-pair ${remote.config.name}?`}
+      description={`The host at this address now has a different identity, as after a reinstall or a replaced machine. StatGlass adds it as a new host and keeps ${remote.config.name}’s mirrored history here as an offline host.`}
+      confirmLabel={busy ? "Re-pairing…" : "Re-pair as a new host"}
+      onConfirm={() => void repair()}
+      busy={busy}
+      lockWhileBusy
     >
-      <DialogContent showCloseButton={!busy}>
-        <DialogTitle>Re-pair {remote.config.name}?</DialogTitle>
-        <DialogDescription>
-          The host at this address now has a different identity, as after a
-          reinstall or a replaced machine. StatGlass adds it as a new host and
-          keeps {remote.config.name}’s mirrored history here as an offline host.
-        </DialogDescription>
-        {error && <RemoteSetupError error={error} />}
-        <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={close}>
-            Cancel
-          </Button>
-          <Button disabled={busy} onClick={repair}>
-            {busy ? "Re-pairing…" : "Re-pair as a new host"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {error && <RemoteSetupError error={error} />}
+    </ConfirmDialog>
   );
 }
 

@@ -1,9 +1,10 @@
+import { formatClock } from "@core/format";
 import type { DockerSnapshot } from "@core/generated/bindings";
-import type { SetURLSearchParams } from "react-router";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { InlineMessage } from "~/components/inline-message";
 import { SectionCard } from "~/components/section-card";
 import { SelectionChip } from "~/components/selection-chip";
+import { useSearchParamPatch } from "~/hooks/use-search-param-patch";
 import { useBrushRange } from "~/stores/brush-store";
 import type { useContainerComparison } from "../_hooks/use-container-comparison";
 import {
@@ -20,14 +21,12 @@ export function ContainerResults({
   route,
   chart,
   set,
-  setParams,
   onSort,
 }: {
   snapshot: DockerSnapshot;
   route: ContainerRouteState;
   chart: ReturnType<typeof useContainerComparison>;
   set: (key: string, value: string | null) => void;
-  setParams: SetURLSearchParams;
   onSort: (sort: ContainerSort) => void;
 }) {
   const {
@@ -50,6 +49,7 @@ export function ContainerResults({
     focused,
     setFocused,
   } = chart;
+  const patch = useSearchParamPatch();
   const engine = snapshot.engine?.id ?? "";
   const selection = useBrushRange();
   const scopeRows = snapshot.containers.filter(
@@ -106,19 +106,11 @@ export function ContainerResults({
           columns={columns}
           collapsed={collapsed}
           onCollapse={(group) =>
-            setParams(
-              (old) => {
-                const next = new URLSearchParams(old);
-                const values = next.getAll("collapsed");
-                next.delete("collapsed");
-                for (const v of values.includes(group)
-                  ? values.filter((v) => v !== group)
-                  : [...values, group])
-                  next.append("collapsed", v);
-                return next;
-              },
-              { replace: true }
-            )
+            patch({
+              collapsed: collapsed.includes(group)
+                ? collapsed.filter((g) => g !== group)
+                : [...collapsed, group],
+            })
           }
           slots={slots}
           focused={pinnedFocus ?? focused}
@@ -133,7 +125,7 @@ export function ContainerResults({
           summaries={historical ? tableRanking : undefined}
           title={
             historical
-              ? `Containers · ${new Date(selection?.fromMs ?? from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}–${new Date(selection?.toMs ?? to).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              ? `Containers · ${formatClock(selection?.fromMs ?? from)}–${formatClock(selection?.toMs ?? to)}`
               : "Containers now"
           }
           attention={
@@ -142,23 +134,12 @@ export function ContainerResults({
                 type="button"
                 className="text-[11px] underline"
                 onClick={() => {
-                  setParams(
-                    (old) => {
-                      const next = new URLSearchParams(old);
-                      next.delete("q");
-                      next.delete("state");
-                      const targetGroup =
-                        hiddenAttention[0]?.project ?? "Standalone";
-                      const hiddenGroups = next
-                        .getAll("collapsed")
-                        .filter((group) => group !== targetGroup);
-                      next.delete("collapsed");
-                      for (const group of hiddenGroups)
-                        next.append("collapsed", group);
-                      return next;
-                    },
-                    { replace: true }
-                  );
+                  const target = hiddenAttention[0]?.project ?? "Standalone";
+                  patch({
+                    q: null,
+                    state: null,
+                    collapsed: collapsed.filter((group) => group !== target),
+                  });
                   setFocused(hiddenAttention[0]?.id ?? null);
                 }}
               >

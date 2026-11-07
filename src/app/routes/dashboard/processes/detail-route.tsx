@@ -19,7 +19,7 @@ import {
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { requestedBytes } from "../disk/_components/disk-processes";
-import { diskRange } from "../disk/_lib/disk-range";
+import { readRange } from "../disk/_lib/range-params";
 
 /** Focused I/O inspection, using the same retained batch as the Disk table. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
@@ -28,7 +28,7 @@ export default function ProcessDetailRoute() {
   const pid = Number(rawPid);
   const start = Number(startTime);
   const [params] = useSearchParams();
-  const selected = diskRange(params);
+  const selected = readRange(params);
   const windowMs = useChartWindow()?.windowMs ?? null;
   const edge = useOpenEdge();
   const range =
