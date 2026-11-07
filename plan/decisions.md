@@ -2,7 +2,7 @@
 
 This is an ADR-style log. Each entry records what was decided, why, what it costs, and the condition that should make us look at it again. Entries are appended over time and never deleted; a reversed decision gets a new entry that supersedes the old one, and the old entry's status changes to point at it.
 
-Entries D-001 to D-014 come from the decisions confirmed with the user while writing the blueprint. D-015 is the App Store question, still open. D-016 to D-024 come from the architecture review. D-025 records the move of WidgetKit from v3 to v2. D-026 to D-029 come from tooling and the answers to v1's open questions. D-030 to D-032 come from v1.0 phase 0 setup.
+Entries D-001 to D-014 come from the decisions confirmed with the user while writing the blueprint. D-015 is the App Store question, declined by the owner on 2026-11-07. D-016 to D-024 come from the architecture review. D-025 records the move of WidgetKit from v3 to v2. D-026 to D-029 come from tooling and the answers to v1's open questions. D-030 to D-032 come from v1.0 phase 0 setup.
 
 See [README](README.md) for the roadmap and [architecture.md](architecture.md) for the designs these decisions refer to.
 
@@ -24,7 +24,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-012 | CBOR wire codec with capability handshake | Accepted |
 | D-013 | Persisted per-machine host UUID | Accepted |
 | D-014 | In-process engine, single writer per DB | Accepted |
-| D-015 | App Store distribution | Open |
+| D-015 | App Store distribution | Declined by owner (2026-11-07) |
 | D-016 | Sources produce; UI reads the local store | Accepted |
 | D-017 | Per-(host, tier) cursors with a DB epoch | Accepted |
 | D-018 | One table per tier, no per-day partitions | Accepted |
@@ -432,23 +432,74 @@ WidgetKit lands in v2.2 and stale widgets with the app closed become a real comp
 
 ## D-015: App Store distribution
 
-Status: Open. Date: 2026-10-05.
+Status: Declined by owner, 2026-11-07. Opened 2026-10-05.
 
 ### Context
 
 The App Store requires the sandbox. The sandbox blocks SMC, IOReport and private IOKit/NetworkStatistics access, so a store build would lose Power & Sensors and per-process GPU and network data, which are among the main differentiators.
 
+v1 made the evaluation cheap: each collector declares the entitlements it needs, and the `appstore` Cargo feature (D-065) drops collectors that need more than `Entitlement::None`, so the UI shows "Not available in this edition" through the capabilities path.
+
+### Evaluation (2026-11-07)
+
+The appstore edition was built for the first time (`scripts/build-app.sh --debug --bundles app --features appstore` with a temporary config overlay: bundle id `com.tryopendata.statglass.appstore`, updater endpoints emptied, `bundle.macOS.entitlements` set). Tauri signed it ad hoc with hardened runtime and `com.apple.security.app-sandbox` plus `com.apple.security.network.client`, applying the same entitlements to the bundled `statglass-cli` and `statglass-remote-helper`. `codesign -d --entitlements` showed both keys, and all app data landed in `~/Library/Containers/com.tryopendata.statglass.appstore/Data/` (history, settings, logs). It ran on an M3 Max MacBook Pro, macOS 27.2, on battery. No temporary-exception entitlements were tried; the owner declined the store before that step. Pages were read through the dashboard's accessibility tree and captured with `screencapture -l`.
+
+| Module or feature | Sandboxed appstore edition | Evidence |
+|---|---|---|
+| CPU total, user/system, per core, load average | Works | CPU page live (11%, user 5.7%, system 5.0%, load 3.15) |
+| CPU cluster frequency, P/E cluster rows | Gone (IOReport dropped) | Overview CPU card shows "—" for P-cluster and E-cluster |
+| CPU by app | Gone, and the UI waits forever | "Waiting for the first process sample…" |
+| GPU utilisation (renderer, tiler) | Works | IORegistry `PerformanceStatistics` needs no entitlement: 5 to 32% live |
+| GPU frequency, power | Gone (IOReport dropped) | "No frequency residency samples", power "—" |
+| GPU per process | Gone (`IoRegistryGpuClients` dropped) | Timeline: "attribution was not recorded" |
+| Memory | Works | Composition, pressure 10%, swap, compressed all live |
+| Power & Sensors (SMC, IOReport, HID temperatures, fans) | Gone, with wrong text on its page | Overview card says "Not available in this edition", but the page itself says "Passive cooling · Fans None" on a Mac with fans, system draw "—" and an empty SoC zones chart. Timeline temperature lane: "0% measured" |
+| Network totals, interfaces, local and public IP | Works | 2.5 KB/s down on en0; public IP through `/usr/bin/curl` worked with `network.client` |
+| Network per process | Gone (NetworkStatistics dropped) | No per-app ranking |
+| Disk I/O | Works once the module is on | Read/write rates live (716 KB/s); off by default from onboarding, as in the full build |
+| Volumes | Works | Volumes table lists 995 GB with used/free |
+| Disk space scanner | Gone by design | `get_edition` reports `disk_space: false` |
+| Battery | Works | Charge, health 95%, 166 cycles, 103.7 of 109.6 Wh, 7.9 W draw from IOPowerSources; temperature "—" |
+| Processes list | Gone | `proc_listallpids` fails in the sandbox (log: `proc_listallpids failed with code 0 collector=self_cpu`); Processes page shows "0 processes · 0 threads" and "Waiting for the first process sample…" indefinitely |
+| Quit, Force Quit | Gone by design | `process_signal: false` (D-065); not exercised since no rows appear |
+| StatGlass's own CPU (`self.cpu`) | Fails | Same `proc_listallpids` warning every minute |
+| Containers (Docker/OrbStack) | Gone | Finds `~/.orbstack/run/docker.sock`, then "Permission denied accessing the local Docker socket" |
+| Remote hosts over SSH | Gone | The remote control socket never binds: `remote control socket: path must be shorter than SUN_LEN`, logged every second (401 lines in 7 minutes) because the container path is longer than 104 bytes. Not tried: launching `ssh`, which would inherit the sandbox and could not read `~/.ssh` |
+| `statglass-cli` | Gone | The query socket fails the same way (`CLI query socket cannot bind ... SUN_LEN`). Settings › Install reports success, but the link goes to `~/Library/Containers/<id>/Data/.local/bin/statglass`, where no shell looks |
+| Bundled remote helper | Not run | Signed with `app-sandbox` itself, so on a remote Mac it would get its own container and not find the app's socket |
+| Bundled Linux agents | Not run | Shipped in `Contents/Resources/agent/` |
+| Timeline, history store | Works | SQLite in the container; lanes record, pruning ran |
+| Menu bar tray and popover | Created | Log: `popover panel created`; not inspected visually |
+| Updater | Off, but its UI shows | Plugin still compiled in and registered; Settings shows "Check for updates automatically" and "Use a release build to check for updates" |
+| Single instance | Not observed | No error logged; D-065 expected `/tmp/<id>_si.sock` to fail under the sandbox |
+
+The only sandbox violation in the unified log was WebKit's `mach-lookup com.apple.Safari.SafeBrowsing.Service`.
+
+**Alternatives.** None were proven. The owner declined the store while they were being evaluated. These are untested: a user-chosen Docker socket through an open panel and security-scoped bookmark, a TCP `DOCKER_HOST`, a user-chosen `~/.ssh` folder, `NSRunningApplication.terminate()` for Quit, and `ProcessInfo.thermalState` for a coarse thermal level. Per-process network and GPU have no public API. The process list's failure is the larger gap: without `proc_listallpids` the edition loses CPU by app, Processes and Timeline attribution.
+
+**App Review risks** (debug binary, inspected with `otool -L`, `nm -u` and `strings`):
+
+- 2.5.1, private APIs. The binary still links `/usr/lib/libIOReport.dylib` and imports `IOReport*` and `IOHIDEventSystemClient*`/`IOHIDServiceClient*` symbols. It also carries `/System/Library/PrivateFrameworks/NetworkStatistics.framework` and the `NStatManager*` names it `dlopen`s, plus `AppleSMC`. The appstore feature drops those collectors at registration, not at compile time. `responsibility_get_pid_responsible_for_pid` is gone, as D-065 intended. The WebKit SPI module is compiled out.
+- 2.5.2, executable code. The bundle ships `statglass-remote-helper` for installation on other Macs, and static Linux agents for remote install.
+- 2.4.5 and sandbox rules. Docker and SSH would need home-relative temporary-exception entitlements, which App Review does not accept for new apps (D-025 note).
+- Updater. `tauri-plugin-updater` and its settings stay compiled in and visible.
+- Menu-bar-only app. Untested against review. The edition runs without a Dock icon by default.
+
 ### Decision
 
-Not decided. v1 makes the evaluation cheap: each collector declares the entitlements it needs, and an `appstore` Cargo feature drops collectors that a sandboxed build cannot hold, with the UI showing "not available in this edition" through the normal capabilities path. v3 builds that edition, lists which modules survive, and records a go/no-go here.
+Declined by the owner. StatGlass stays self-distributed on GitHub and moves to Developer ID signing and notarization (v3.0 in v3-native-distribution.md). A Developer ID app is not sandboxed, so every module, per-process attribution, Quit, Docker, SSH remote hosts, the CLI and the agents keep working. The store-build files used for the evaluation were removed. The `appstore` Cargo feature and `make appstore-check` stay as they are.
 
 ### Consequences
 
-Until decided, no feature may depend on being outside the sandbox in a way that bypasses the collector entitlement declarations.
+- v3.2 (App Store evaluation) is closed by this entry. No TestFlight build, compile-time gating of private collectors or private-symbol CI check is planned.
+- The edition's known defects stay unfixed while nothing ships it: the long socket paths, the per-second socket error log, "Passive cooling" on the Power page, the endless "Waiting for the first process sample…", the updater UI and the CLI link into the container. Fix them before any revival.
+- Features may depend on running outside the sandbox. New collectors should still declare their entitlements, which keeps the feature check honest.
 
 ### Revisit when
 
-v3 evaluation.
+- The owner wants store reach (users or employers who install only from the store) enough to ship a reduced edition, which would have no process list, sensors, power, per-app attribution, Docker or remote hosts.
+- Apple adds public, sandbox-safe APIs for process listing, SoC power and thermal sensors, or per-process network and GPU use.
+- Developer ID distribution becomes impossible or much worse, for example if notarization is withdrawn for apps outside the store.
 
 ---
 
