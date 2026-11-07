@@ -9,6 +9,7 @@ import type {
   SeriesSelector,
 } from "@core/generated/bindings";
 import { METRIC_KINDS, PERFORMANCE_VISIBLE_MS } from "@core/generated/bindings";
+import { DAY_MS, floorTo, HOUR_MS } from "@core/time-grid";
 import type {
   ProcessSignalError,
   ProcessSignalResult,
@@ -17,10 +18,55 @@ import type { CommandResult } from "../transport";
 import type { HistoryRow } from "./contracts";
 import { holdMs, matches } from "./series";
 export const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
-export const err = (error: CommandError): CommandResult<never> => ({
+export const fail = (error: CommandError): CommandResult<never> => ({
   status: "error",
   error,
 });
+export const invalid = (message: string): CommandResult<never> =>
+  fail({ kind: "invalid_argument", message });
+/**
+ * `TimeRange::new` (`statglass-schema/src/time_range.rs`): the `RangeError` text
+ * Rust's `invalid_argument` carries when `[fromMs, toMs)` is empty or spans more
+ * than `maxMs`, else null.
+ */
+export function rangeError(
+  fromMs: number,
+  toMs: number,
+  maxMs = Number.POSITIVE_INFINITY
+): string | null {
+  if (fromMs >= toMs)
+    return `the range is empty: its start (${fromMs}) is not before its end (${toMs})`;
+  if (toMs - fromMs > maxMs)
+    return `the range is longer than ${spanWords(maxMs)}`;
+  return null;
+}
+/** Rust's `Span`: whole days or hours when the limit is one, milliseconds otherwise. */
+function spanWords(ms: number): string {
+  const [n, unit] =
+    ms > 0 && ms % DAY_MS === 0
+      ? [ms / DAY_MS, "day"]
+      : ms > 0 && ms % HOUR_MS === 0
+        ? [ms / HOUR_MS, "hour"]
+        : [ms, null];
+  return unit === null ? `${n} ms` : `${n} ${unit}${n === 1 ? "" : "s"}`;
+}
+/**
+ * The store's `Slots::new` (`statglass-store/src/slots.rs`): `width` buckets from
+ * the one at or before `fromMs`, merged in runs of as few buckets as keep the
+ * count at or under `maxPoints`. `first` is the first bucket; each point is
+ * stamped with its run's first bucket and spans `step`.
+ */
+export function mockBuckets(
+  fromMs: number,
+  toMs: number,
+  width: number,
+  maxPoints: number
+): { first: number; step: number } {
+  const first = floorTo(fromMs, width);
+  const buckets = Math.ceil((toMs - first) / width);
+  const perRun = Math.ceil(buckets / Math.max(1, maxPoints));
+  return { first, step: width * Math.max(1, perRun) };
+}
 export const signalErr = (error: ProcessSignalError): ProcessSignalResult => ({
   status: "error",
   error,

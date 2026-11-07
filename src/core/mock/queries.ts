@@ -15,7 +15,7 @@ import {
 } from "./history";
 import { NET_MAX_SPAN_MS } from "./net-apps";
 import type { MockPower } from "./power";
-import { err, ok, STORE } from "./protocol";
+import { fail, invalid, ok, STORE } from "./protocol";
 import type { MockRemotes } from "./remote";
 import type { MockRing } from "./ring";
 import type { MockStore } from "./store";
@@ -49,7 +49,7 @@ export class MockQueries {
   ) => {
     if (this.remote.remotes.has(host)) {
       this.commands.record("list_disk_io_devices", host);
-      return err({ kind: "remote_host", host });
+      return fail({ kind: "remote_host", host });
     }
     return this.commands.hostCommand(
       "list_disk_io_devices",
@@ -59,17 +59,19 @@ export class MockQueries {
       () => ok(mockDiskDevices(this.options.scenarios ?? []))
     );
   };
-  readonly queryDiskIo: MockTransport["queryDiskIo"] = async (request) => {
-    const remote = this.remote.remotes.get(request.host);
-    if (remote) {
+  readonly queryDiskIo: MockTransport["queryDiskIo"] = async (request) =>
+    this.remote.forward(request.host, (peer) => {
       this.commands.record("query_disk_io", request);
-      return remote.peer.queryDiskIo({ ...request, host: MOCK_HOST_ID });
-    }
-    return this.commands.hostCommand(
+      return peer.queryDiskIo({ ...request, host: MOCK_HOST_ID });
+    }) ??
+    this.commands.hostCommand(
       "query_disk_io",
       request.host,
       [request],
-      { range: [request.from_ms, request.to_ms] },
+      {
+        range: [request.from_ms, request.to_ms],
+        maxSpanMs: NET_MAX_SPAN_MS,
+      },
       () =>
         ok(
           mockDiskIo(
@@ -79,39 +81,33 @@ export class MockQueries {
           )
         )
     );
-  };
-  readonly queryHistory: MockTransport["queryHistory"] = async (request) => {
-    const remote = this.remote.remotes.get(request.host);
-    if (remote)
-      return remote.peer.queryHistory({ ...request, host: MOCK_HOST_ID });
-    return this.commands.hostCommand(
+  readonly queryHistory: MockTransport["queryHistory"] = async (request) =>
+    this.remote.forward(request.host, (peer) =>
+      peer.queryHistory({ ...request, host: MOCK_HOST_ID })
+    ) ??
+    this.commands.hostCommand(
       "query_history",
       request.host,
       [request],
-      {},
+      { range: [request.from_ms, request.to_ms] },
       () => {
-        if (request.selectors.length === 0 || request.to_ms < request.from_ms) {
-          return err({
-            kind: "invalid_argument",
-            message: "empty selectors or negative span",
-          });
-        }
+        if (request.selectors.length === 0) return invalid("empty selectors");
         // With history unavailable Rust answers from the engine's recent
         // rows (`HISTORY_RECENT_MS`). Gaps sit where the ring has its holes:
         // fixed at start, not sliding.
         return ok(this.historyPage(request));
       }
     );
-  };
   readonly querySeriesStats: MockTransport["querySeriesStats"] = async (
     host,
     metrics,
     fromMs,
     toMs
   ) => {
-    const remote = this.remote.remotes.get(host);
-    if (remote)
-      return remote.peer.querySeriesStats(MOCK_HOST_ID, metrics, fromMs, toMs);
+    const forwarded = this.remote.forward(host, (peer) =>
+      peer.querySeriesStats(MOCK_HOST_ID, metrics, fromMs, toMs)
+    );
+    if (forwarded) return forwarded;
     const args = [host, metrics, fromMs, toMs];
     const checks = {
       range: [fromMs, toMs],
@@ -125,21 +121,16 @@ export class MockQueries {
       () => {
         // As Rust: series stats take unlabelled catalog metrics only.
         for (const m of metrics) {
-          if (!(m in METRIC_MODULES)) {
-            return err({
-              kind: "invalid_argument",
-              message: `${m} is not in the catalog`,
-            });
-          }
+          if (!(m in METRIC_MODULES))
+            return invalid(`${m} is not in the catalog`);
           if (
             this.ring.gen.keys.some(
               (k) => k.metric === m && k.labels.length > 0
             )
           ) {
-            return err({
-              kind: "invalid_argument",
-              message: `${m} has labels; series stats take unlabelled metrics`,
-            });
+            return invalid(
+              `${m} has labels; series stats take unlabelled metrics`
+            );
           }
         }
         return ok(
@@ -159,62 +150,59 @@ export class MockQueries {
     host,
     fromMs,
     toMs
-  ) => {
-    const remote = this.remote.remotes.get(host);
-    if (remote) return remote.peer.queryEvents(MOCK_HOST_ID, fromMs, toMs);
-    const args = [host, fromMs, toMs];
-    return this.commands.hostCommand("query_events", host, args, STORE, () =>
-      ok(this.store.events.filter((e) => e.ts_ms >= fromMs && e.ts_ms < toMs))
+  ) =>
+    this.remote.forward(host, (peer) =>
+      peer.queryEvents(MOCK_HOST_ID, fromMs, toMs)
+    ) ??
+    // The store's read: an empty range comes back empty.
+    this.commands.hostCommand(
+      "query_events",
+      host,
+      [host, fromMs, toMs],
+      STORE,
+      () =>
+        ok(this.store.events.filter((e) => e.ts_ms >= fromMs && e.ts_ms < toMs))
     );
-  };
-  readonly queryHeatmap: MockTransport["queryHeatmap"] = async (request) => {
-    const remote = this.remote.remotes.get(request.host);
-    if (remote)
-      return remote.peer.queryHeatmap({ ...request, host: MOCK_HOST_ID });
-    return this.commands.hostCommand(
+  readonly queryHeatmap: MockTransport["queryHeatmap"] = async (request) =>
+    this.remote.forward(request.host, (peer) =>
+      peer.queryHeatmap({ ...request, host: MOCK_HOST_ID })
+    ) ??
+    this.commands.hostCommand(
       "query_heatmap",
       request.host,
       [request],
       STORE,
       () =>
         request.days.some((d) => d.hour_starts.length !== 25)
-          ? err({
-              kind: "invalid_argument",
-              message: "every day needs 25 hour boundaries",
-            })
+          ? invalid("every day needs 25 hour boundaries")
           : ok(mockHeatmap(request, this.ring.now()))
     );
-  };
   readonly batteryHours: MockTransport["batteryHours"] = async (
     host,
     hourStartsMs
-  ) => {
-    const remote = this.remote.remotes.get(host);
-    if (remote) return remote.peer.batteryHours(MOCK_HOST_ID, hourStartsMs);
-    const args = [host, hourStartsMs];
-    return this.commands.hostCommand("battery_hours", host, args, {}, () => {
-      const hours = mockBatteryHours(host, hourStartsMs, this.historyPage);
-      return typeof hours === "string"
-        ? err({ kind: "invalid_argument", message: hours })
-        : ok(hours);
-    });
-  };
+  ) =>
+    this.remote.forward(host, (peer) =>
+      peer.batteryHours(MOCK_HOST_ID, hourStartsMs)
+    ) ??
+    this.commands.hostCommand(
+      "battery_hours",
+      host,
+      [host, hourStartsMs],
+      {},
+      () => {
+        const hours = mockBatteryHours(host, hourStartsMs, this.historyPage);
+        return typeof hours === "string" ? invalid(hours) : ok(hours);
+      }
+    );
   readonly exportCsv: MockTransport["exportCsv"] = async (request) => {
     return this.commands.hostCommand<ExportOutcome>(
       "export_csv",
       request.host,
       [request],
-      STORE,
+      { ...STORE, range: [request.from_ms, request.to_ms] },
       () => {
-        if (
-          request.selectors.length === 0 ||
-          request.to_ms <= request.from_ms
-        ) {
-          return err({
-            kind: "invalid_argument",
-            message: "empty selectors or empty range",
-          });
-        }
+        if (request.selectors.length === 0)
+          return invalid("no series selected");
         if (this.options.exportCancels) return ok({ kind: "cancelled" });
         // One row per bucket of the tier `auto` would read (D-076), gaps apart.
         const span = request.to_ms - request.from_ms;
@@ -235,24 +223,16 @@ export class MockQueries {
       }
     );
   };
-  readonly historySize: MockTransport["historySize"] = async (host) => {
-    const remote = this.remote.remotes.get(host);
-    if (remote) return remote.peer.historySize(MOCK_HOST_ID);
-    return this.commands.hostCommand("history_size", host, [host], STORE, () =>
+  readonly historySize: MockTransport["historySize"] = async (host) =>
+    this.remote.forward(host, (peer) => peer.historySize(MOCK_HOST_ID)) ??
+    this.commands.hostCommand("history_size", host, [host], STORE, () =>
       ok(this.store.historyBytes)
     );
-  };
-  readonly historyGrowth: MockTransport["historyGrowth"] = async (host) => {
-    const remote = this.remote.remotes.get(host);
-    if (remote) return remote.peer.historyGrowth(MOCK_HOST_ID);
-    return this.commands.hostCommand(
-      "history_growth",
-      host,
-      [host],
-      STORE,
-      () => ok(this.store.growth)
+  readonly historyGrowth: MockTransport["historyGrowth"] = async (host) =>
+    this.remote.forward(host, (peer) => peer.historyGrowth(MOCK_HOST_ID)) ??
+    this.commands.hostCommand("history_growth", host, [host], STORE, () =>
+      ok(this.store.growth)
     );
-  };
   readonly clearHistory: MockTransport["clearHistory"] = async (host) => {
     return this.commands.hostCommand(
       "clear_history",
@@ -274,17 +254,11 @@ export class MockQueries {
       }
     );
   };
-  readonly historyHealth: MockTransport["historyHealth"] = async (host) => {
-    const remote = this.remote.remotes.get(host);
-    if (remote) return remote.peer.historyHealth(MOCK_HOST_ID);
-    return this.commands.hostCommand(
-      "history_health",
-      host,
-      [host],
-      STORE,
-      () => ok(this.store.health)
+  readonly historyHealth: MockTransport["historyHealth"] = async (host) =>
+    this.remote.forward(host, (peer) => peer.historyHealth(MOCK_HOST_ID)) ??
+    this.commands.hostCommand("history_health", host, [host], STORE, () =>
+      ok(this.store.health)
     );
-  };
   readonly resetHistory: MockTransport["resetHistory"] = async () => {
     this.commands.record("reset_history");
     // Another StatGlass process holds the lock: a reset cannot take it.
@@ -292,7 +266,7 @@ export class MockQueries {
       this.store.unavailable?.kind === "history_unavailable" &&
       this.store.unavailable.reason?.kind === "locked"
     ) {
-      return err({
+      return fail({
         kind: "store_busy",
         message: "history.sqlite is locked by another StatGlass process",
       });

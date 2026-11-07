@@ -9,6 +9,7 @@ import type {
 } from "@core/generated/bindings";
 import { floorTo } from "@core/time-grid";
 import type { ScenarioName } from "./fixtures";
+import { mockBuckets } from "./protocol";
 
 export function mockDiskDevices(
   scenarios: readonly ScenarioName[]
@@ -45,14 +46,20 @@ export function mockDiskIo(
   scenarios: readonly ScenarioName[],
   sharedGaps: readonly Gap[] = []
 ): DiskIoPage {
-  const bucket = Math.max(
+  // `disk_io.rs`: the store's merge of 10 s buckets, widened by doubling until
+  // the epoch-aligned runs from the one holding `from_ms` fit `max_points`.
+  const maxPoints = Math.max(1, request.max_points);
+  let bucket = mockBuckets(
+    request.from_ms,
+    request.to_ms,
     10_000,
-    Math.ceil(
-      (request.to_ms - request.from_ms) /
-        Math.max(1, request.max_points) /
-        10_000
-    ) * 10_000
-  );
+    maxPoints
+  ).step;
+  while (
+    Math.ceil((request.to_ms - floorTo(request.from_ms, bucket)) / bucket) >
+    maxPoints
+  )
+    bucket *= 2;
   const first = floorTo(request.from_ms, bucket);
   const points: DiskIoPoint[] = [];
   const idle = scenarios.includes("disk-io-no-ops");

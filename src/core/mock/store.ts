@@ -6,6 +6,7 @@ import type {
   Settings,
 } from "@core/generated/bindings";
 import { HISTORY_PROJECTION } from "@core/generated/bindings";
+import { DAY_MS } from "@core/time-grid";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";
 import { mockEvents } from "./events";
@@ -33,7 +34,7 @@ export class MockStore {
     this.growth =
       options.historyGrowth === undefined
         ? {
-            measured_ms: 7 * 86_400_000,
+            measured_ms: 7 * DAY_MS,
             fixed_bytes: 36_000_000,
             minute_day_bytes: 2_050_000,
             usage: { ...HISTORY_PROJECTION.usage_fill },
@@ -41,9 +42,7 @@ export class MockStore {
         : options.historyGrowth;
     this.health = {
       low_disk_paused: flags.lowDisk,
-      trimmed_before_ms: flags.historyTrimmed
-        ? startMs - 20 * 86_400_000
-        : null,
+      trimmed_before_ms: flags.historyTrimmed ? startMs - 20 * DAY_MS : null,
       trimmed_limit_bytes: flags.historyTrimmed ? 150_000_000 : null,
       cap_met: true,
     };

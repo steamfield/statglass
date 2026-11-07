@@ -327,22 +327,34 @@ describe("host command preamble", () => {
     });
   });
 
-  it("rejects a range that ends before it starts or is too long", async () => {
+  it.each([
+    ["ends before it starts", NOW, NOW - H],
+    ["is empty", NOW, NOW],
+  ])(
+    "rejects a range that %s, as Rust's TimeRange does",
+    async (_, from, to) => {
+      const t = createMockTransport({ now: () => NOW });
+      const empty = `invalid_argument: the range is empty: its start (${from}) is not before its end (${to})`;
+      expect(await outcomes(t, MOCK_HOST_ID, from, to)).toMatchObject({
+        queryHistory: empty,
+        queryNetworkByApp: empty,
+        queryUsageByApp: empty,
+        queryUsageSeries: empty,
+        querySeriesStats: empty,
+        exportCsv: empty,
+        // The store's read: an empty range comes back empty.
+        queryEvents: "ok",
+      });
+    }
+  );
+
+  it("rejects a range longer than the command's limit, in Rust's words", async () => {
     const t = createMockTransport({ now: () => NOW });
-    expect(await outcomes(t, MOCK_HOST_ID, NOW, NOW - H)).toMatchObject({
-      queryHistory: "invalid_argument: empty selectors or negative span",
-      queryNetworkByApp: "invalid_argument: the range ends before it starts",
-      queryUsageByApp: "invalid_argument: the range ends before it starts",
-      queryUsageSeries: "invalid_argument: the range ends before it starts",
-      querySeriesStats: "invalid_argument: the range ends before it starts",
-      exportCsv: "invalid_argument: empty selectors or empty range",
-      queryEvents: "ok",
-    });
-    const tooLong = "invalid_argument: the range is longer than history keeps";
+    const tooLong = "invalid_argument: the range is longer than 90 days";
     expect(await outcomes(t, MOCK_HOST_ID, 0, NOW)).toMatchObject({
       queryNetworkByApp: tooLong,
       querySeriesStats: tooLong,
-      queryUsageSeries: tooLong,
+      queryUsageSeries: "invalid_argument: the range is longer than 3610000 ms",
       queryUsageByApp: "ok",
     });
   });

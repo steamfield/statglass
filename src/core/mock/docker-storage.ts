@@ -1,12 +1,12 @@
 import type {
-  CommandError,
   DockerSnapshot,
   DockerStorageOperation,
   DockerStorageResource,
   DockerStorageReview,
   DockerStorageSnapshot,
 } from "@core/generated/bindings";
-import type { CommandResult, Transport } from "@core/transport";
+import { DAY_MS, HOUR_MS } from "@core/time-grid";
+import type { Transport } from "@core/transport";
 
 type Methods = Pick<
   Transport,
@@ -16,19 +16,9 @@ type Methods = Pick<
   | "dockerStorageExecute"
   | "dockerStorageOperation"
 >;
-const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
-const fail = (
-  message: string,
-  kind:
-    | "invalid_argument"
-    | "docker"
-    | "docker_not_found"
-    | "docker_snapshot_expired"
-    | "docker_resource_limit" = "invalid_argument"
-): CommandResult<never> => ({
-  status: "error",
-  error: { kind, message } satisfies CommandError,
-});
+
+import { fail, invalid, ok } from "./protocol";
+
 const MiB = 1024 ** 2;
 const key = (row: { kind: string; id: string }) => `${row.kind}:${row.id}`;
 
@@ -68,7 +58,7 @@ export function mockStorageSnapshot(
         project: row.project,
         size_bytes: (index === 6 ? 840 : 20) * MiB,
         reclaimable_bytes: stopped ? 840 * MiB : null,
-        age_ms: stopped ? 9 * 86_400_000 : null,
+        age_ms: stopped ? 9 * DAY_MS : null,
         age_basis: stopped ? "stopped" : null,
         database: index === 6 ? "PostgreSQL" : null,
         mounts: [
@@ -146,7 +136,7 @@ export function mockStorageSnapshot(
       id: "cache.1",
       name: "Cached build layer",
       size_bytes: 960 * MiB,
-      age_ms: 32 * 86_400_000,
+      age_ms: 32 * DAY_MS,
       age_basis: "last_used",
       reason: "Exact cache-ID cleanup has not been verified for this engine",
       fingerprint: "cache",
@@ -224,7 +214,7 @@ export function createMockDockerStorage(
     for (const [id, operation] of operations)
       if (
         operation.finished_ms !== null &&
-        operation.finished_ms < now() - 3_600_000
+        operation.finished_ms < now() - HOUR_MS
       )
         operations.delete(id);
     while (operations.size > 20) {
@@ -238,10 +228,10 @@ export function createMockDockerStorage(
   const methods: Methods = {
     async dockerContainerAction(engineId, containerId, action) {
       if (active)
-        return fail(
-          "An operation is already running.",
-          "docker_resource_limit"
-        );
+        return fail({
+          kind: "docker_resource_limit",
+          message: "An operation is already running.",
+        });
       const snapshot = getSnapshot();
       const operation: DockerStorageOperation = {
         id: `operation-${++sequence}`,
@@ -337,19 +327,22 @@ export function createMockDockerStorage(
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
     async dockerStoragePrepare(selections) {
       if (!ready())
-        return fail("Resume monitoring before reviewing actions.", "docker");
+        return fail({
+          kind: "docker",
+          message: "Resume monitoring before reviewing actions.",
+        });
       if (active)
-        return fail(
-          "An operation is already running.",
-          "docker_resource_limit"
-        );
+        return fail({
+          kind: "docker_resource_limit",
+          message: "An operation is already running.",
+        });
       if (
         selections.some((item) => item.action === "start") ||
         !selections.length ||
         selections.length > 128 ||
         new Set(selections.map(key)).size !== selections.length
       )
-        return fail("Select between 1 and 128 unique resources.");
+        return invalid("Select between 1 and 128 unique resources.");
       cached = read();
       const resources: DockerStorageResource[] = [];
       for (const selection of selections) {
@@ -358,7 +351,7 @@ export function createMockDockerStorage(
           !row ||
           !(selection.action === "stop" ? row.can_stop : row.can_delete)
         )
-          return fail("The selection changed or is no longer eligible.");
+          return invalid("The selection changed or is no longer eligible.");
         resources.push(row);
       }
       const token = `review-${++sequence}`;
@@ -395,31 +388,32 @@ export function createMockDockerStorage(
       for (const [id, prepared] of reviews)
         if (prepared.expires_ms <= now()) reviews.delete(id);
       if (active)
-        return fail(
-          "An operation is already running.",
-          "docker_resource_limit"
-        );
+        return fail({
+          kind: "docker_resource_limit",
+          message: "An operation is already running.",
+        });
       const review = reviews.get(token);
       if (!review || review.expires_ms <= now())
-        return fail(
-          "Review expired or already consumed. Prepare another review.",
-          "docker_snapshot_expired"
-        );
+        return fail({
+          kind: "docker_snapshot_expired",
+          message:
+            "Review expired or already consumed. Prepare another review.",
+        });
       if (
         review.resources.some((row) => row.kind === "volume") &&
         !confirmVolumes
       )
-        return fail("Volume deletion requires explicit acknowledgement.");
+        return invalid("Volume deletion requires explicit acknowledgement.");
       reviews.delete(token);
       if (
         !ready() ||
         review.generation !== getSnapshot().generation ||
         review.engine_id !== getSnapshot().engine?.id
       )
-        return fail(
-          "Engine changed. Prepare another review.",
-          "docker_snapshot_expired"
-        );
+        return fail({
+          kind: "docker_snapshot_expired",
+          message: "Engine changed. Prepare another review.",
+        });
       const operation: DockerStorageOperation = {
         id: `operation-${++sequence}`,
         engine_id: review.engine_id,
@@ -486,7 +480,10 @@ export function createMockDockerStorage(
       const operation = operations.get(id);
       return operation
         ? ok(structuredClone(operation))
-        : fail("Operation is no longer retained.", "docker_not_found");
+        : fail({
+            kind: "docker_not_found",
+            message: "Operation is no longer retained.",
+          });
     },
   };
   return {

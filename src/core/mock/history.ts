@@ -17,16 +17,16 @@ import {
   type Tier,
 } from "@core/generated/bindings";
 import { seriesKeyString } from "@core/series-key";
-import { ceilTo, floorTo } from "@core/time-grid";
+import { ceilTo, DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import type { ScenarioFlags } from "./fixtures";
 import type { SeriesSpec } from "./generator";
-import { fnv1a, rng } from "./rng";
+import { mockBuckets } from "./protocol";
+import { rng, seedOf } from "./rng";
 import { holdMs, matches } from "./series";
 
-const MIN = 60_000;
-const HOUR = 60 * MIN;
-
-const DAY = 24 * HOUR;
+const MIN = MINUTE_MS;
+const HOUR = HOUR_MS;
+const DAY = DAY_MS;
 
 /**
  * The 29 nights before the last one, for the 7d and 30d ranges: each a sleep
@@ -98,10 +98,6 @@ export function mockGaps(flags: ScenarioFlags, nowMs: number): Gap[] {
     });
   }
   return gaps;
-}
-
-function hash(s: string): number {
-  return fnv1a(s) % 2147483646 || 1;
 }
 
 type StoredTier = Extract<Tier, "s10" | "m1" | "m15">;
@@ -185,16 +181,14 @@ export function mockHistory(
   nowMs: number,
   intervalMs: number
 ): HistoryPage {
-  const span = Math.max(0, req.to_ms - req.from_ms);
   const tier = mockTier(req, nowMs);
-  const base = TIER_BASE[tier];
-  // The store's merge (`Reader::history`): tier buckets from the one at or
-  // before `from_ms`, merged in runs so at most `max_points` come back,
-  // each point stamped with its run's first bucket.
-  const first = floorTo(req.from_ms, base);
-  const buckets = Math.ceil(span === 0 ? 0 : (req.to_ms - first) / base);
-  const step =
-    base * Math.max(1, Math.ceil(buckets / Math.max(1, req.max_points)));
+  // The store's merge (`Reader::history`) of the tier's buckets.
+  const { first, step } = mockBuckets(
+    req.from_ms,
+    req.to_ms,
+    TIER_BASE[tier],
+    req.max_points
+  );
   // Minutes older than the roll cut are gone (D-076): an `m1` read there
   // comes back empty, as the store's does.
   const floor = tier === "m1" ? rollCut(nowMs) : Number.NEGATIVE_INFINITY;
@@ -210,7 +204,7 @@ export function mockHistory(
   const series = specs
     .filter((s) => req.selectors.some((sel) => matches(s.key, sel)))
     .map((s) => {
-      const r = rng(hash(seriesKeyString(s.key)));
+      const r = rng(seedOf(seriesKeyString(s.key)));
       const amp = s.noise || Math.abs(s.base) * 0.05;
       const points: HistoryPoint[] = [];
       for (let t = start; t < req.to_ms && t <= nowMs; t += step) {

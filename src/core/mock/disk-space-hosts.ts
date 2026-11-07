@@ -1,7 +1,7 @@
 import type { HostId, RemoteHostRecord } from "@core/generated/bindings";
 import type { CommandResult, Transport } from "@core/transport";
 import { MOCK_HOST_ID } from "./fixtures";
-import { err } from "./protocol";
+import { fail } from "./protocol";
 
 export type SpaceMethods = Pick<
   Transport,
@@ -34,9 +34,9 @@ export function routeDiskSpace(
   const at = (host: HostId): SpaceMethods | CommandResult<never> => {
     if (host === MOCK_HOST_ID) return local;
     const remote = remotes.get(host);
-    if (!remote) return err({ kind: "unknown_host", host });
+    if (!remote) return fail({ kind: "unknown_host", host });
     if (remote.record.status.state !== "connected")
-      return err({
+      return fail({
         kind: "remote_unreachable",
         message: "the host is not connected",
       });

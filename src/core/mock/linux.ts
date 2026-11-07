@@ -7,6 +7,7 @@
  * kernel label, three block devices, cgroup v2 services and containers, and
  * no GPU or battery.
  */
+
 import type {
   Capabilities,
   ClusterInfo,
@@ -14,6 +15,7 @@ import type {
   LiveProcess,
   Module,
 } from "@core/generated/bindings";
+import { HOUR_MS } from "@core/time-grid";
 
 /** M1 cpufreq `scaling_available_frequencies`, MHz ascending. */
 const E_DVFS = [600, 972, 1332, 1704, 2064];
@@ -34,7 +36,7 @@ export const LINUX_TOPOLOGY: ClusterInfo[] = [
 export const LINUX_MEM_TOTAL_BYTES = 16_065_952 * 1024;
 
 /** Uptime on the server: 12 days 6 hours. */
-const LINUX_UPTIME_MS = (12 * 24 + 6) * 3_600_000;
+const LINUX_UPTIME_MS = (12 * 24 + 6) * HOUR_MS;
 
 export const LINUX_HOST_NAME = "linux-tailscale";
 

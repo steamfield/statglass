@@ -13,7 +13,7 @@ import {
   type ScenarioName,
   scenarioFlags,
 } from "./fixtures";
-import { err, ok } from "./protocol";
+import { fail, ok } from "./protocol";
 import {
   APP_VERSION,
   isLinuxAlias,
@@ -43,6 +43,11 @@ export class MockRemotes {
       options: MockTransportOptions
     ) => MockTransport
   ) {}
+  /** `call` on a remote host's peer, as its session forwards it; null for any other host. */
+  readonly forward = <T>(host: string, call: (peer: MockTransport) => T) => {
+    const remote = this.remotes.get(host);
+    return remote ? call(remote.peer) : null;
+  };
   /** A remote's host record: what its peer reports, under the saved name. */
   private readonly remoteRecord = (
     { flags }: { flags: ScenarioFlags },
@@ -138,9 +143,9 @@ export class MockRemotes {
     async (id) => {
       this.commands.record("get_remote_update_status", id);
       const remote = this.remotes.get(id);
-      if (!remote) return err({ kind: "unknown_host", host: id });
+      if (!remote) return fail({ kind: "unknown_host", host: id });
       if (remote.record.status.state === "error")
-        return err({
+        return fail({
           kind: "remote_unreachable",
           message: remote.record.status.error ?? "Host is offline",
         });
@@ -169,7 +174,7 @@ export class MockRemotes {
         autoInstallUpdates
       );
       const remote = this.remotes.get(id);
-      if (!remote) return err({ kind: "unknown_host", host: id });
+      if (!remote) return fail({ kind: "unknown_host", host: id });
       if (!remote.automaticUpdates || remote.record.status.state === "error")
         return this.getRemoteUpdateStatus(id);
       const result = await remote.peer.updateSettings({
@@ -187,12 +192,12 @@ export class MockRemotes {
   ) => {
     this.commands.record("prepare_remote_host", lan, tailscale);
     if (this.options.scenarios?.includes("ssh-auth"))
-      return err({
+      return fail({
         kind: "remote_auth",
         message: "Permission denied (publickey).",
       });
     if (!lan && !tailscale)
-      return err({
+      return fail({
         kind: "invalid_argument",
         message: "Enter at least one SSH alias",
       });
@@ -200,7 +205,7 @@ export class MockRemotes {
       this.options.scenarios?.includes("ssh-untrusted") &&
       !this.trustedAliases.has(lan ?? tailscale ?? "")
     )
-      return err({
+      return fail({
         kind: "host_key_unknown",
         message:
           "Host key verification failed: verify the SSH host fingerprint.",
@@ -212,7 +217,7 @@ export class MockRemotes {
         this.identityReset.has(alias) ? "linux" : alias,
         first
       );
-      return "error" in linux ? err(linux.error) : ok(linux.ok);
+      return "error" in linux ? fail(linux.error) : ok(linux.ok);
     }
     return ok({
       kind: "mac",
@@ -238,7 +243,7 @@ export class MockRemotes {
   ) => {
     this.commands.record("update_remote_agent", id);
     const remote = this.remotes.get(id);
-    if (!remote) return err({ kind: "unknown_host", host: id });
+    if (!remote) return fail({ kind: "unknown_host", host: id });
     remote.automaticUpdates = true;
     remote.record.status = {
       ...remote.record.status,
@@ -253,7 +258,7 @@ export class MockRemotes {
   readonly repairRemoteHost: MockTransport["repairRemoteHost"] = async (id) => {
     this.commands.record("repair_remote_host", id);
     const remote = this.remotes.get(id);
-    if (!remote) return err({ kind: "unknown_host", host: id });
+    if (!remote) return fail({ kind: "unknown_host", host: id });
     const { config, status, os } = remote.record;
     const newId = status.identity_changed ?? `${id}-repaired`;
     remote.record = {
@@ -313,14 +318,14 @@ export class MockRemotes {
         });
       });
       if (cancelled)
-        return err({
+        return fail({
           kind: "invalid_argument",
           message: "Setup cancelled. Remote settings were restored.",
         });
     }
     const alias = config.lan ?? config.tailscale ?? "";
     if (alias.includes("dup") && !this.identityReset.has(alias))
-      return err({
+      return fail({
         kind: "remote_identity",
         message:
           "This host reports the same identity as a host already in your host list",
@@ -336,7 +341,7 @@ export class MockRemotes {
     config
   ) => {
     const remote = this.remotes.get(config.id);
-    if (!remote) return err({ kind: "unknown_host", host: config.id });
+    if (!remote) return fail({ kind: "unknown_host", host: config.id });
     if (remote.record.status.state === "connected" && !config.enabled)
       remote.peer.endSpaceSession();
     remote.record = {
@@ -373,7 +378,7 @@ export class MockRemotes {
   readonly retryRemoteHost: MockTransport["retryRemoteHost"] = async (id) => {
     this.commands.record("retry_remote_host", id);
     const remote = this.remotes.get(id);
-    if (!remote) return err({ kind: "unknown_host", host: id });
+    if (!remote) return fail({ kind: "unknown_host", host: id });
     if (
       this.options.scenarios?.includes("host-unreachable") &&
       id === "remote-unreachable"
@@ -394,13 +399,11 @@ export class MockRemotes {
       ok(hostRecord(this.ring.flags, this.ring.startMs))
     );
   };
-  readonly getCapabilities: MockTransport["getCapabilities"] = async (host) => {
-    const remote = this.remotes.get(host);
-    if (remote) return remote.peer.getCapabilities(MOCK_HOST_ID);
-    return this.commands.hostCommand("get_capabilities", host, [host], {}, () =>
+  readonly getCapabilities: MockTransport["getCapabilities"] = async (host) =>
+    this.forward(host, (peer) => peer.getCapabilities(MOCK_HOST_ID)) ??
+    this.commands.hostCommand("get_capabilities", host, [host], {}, () =>
       ok(this.ring.caps)
     );
-  };
   readonly emitHostsChanged: MockTransport["emitHostsChanged"] = () => {
     const hosts = this.allHosts();
     this.emitters.hosts.emit({ hosts });

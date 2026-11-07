@@ -1,5 +1,4 @@
 import type {
-  CommandError,
   SpaceFile,
   SpaceKind,
   SpaceNode,
@@ -9,7 +8,6 @@ import type {
   SpaceSubtree,
   SpaceTarget,
 } from "@core/generated/bindings";
-import type { CommandResult } from "@core/transport";
 import type { MockTransport } from "./contracts";
 import {
   routeDiskSpace,
@@ -19,6 +17,7 @@ import {
 import { build, crumbs, type Node, nodes } from "./disk-space-tree";
 import { type MockVolume, mockVolumes } from "./disk-space-volumes";
 import type { ScenarioName } from "./fixtures";
+import { fail, ok } from "./protocol";
 
 /** How long a mock scan takes, start to finish. */
 export const MOCK_SCAN_MS = 8000;
@@ -28,11 +27,8 @@ const SPACE_PREVIEW = 24;
 const PREVIEW_CHAIN = 3;
 const MIN_SHARE_DIVISOR = 200;
 
-const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
-const fail = (message: string): CommandResult<never> => ({
-  status: "error",
-  error: { kind: "disk_space", message } satisfies CommandError,
-});
+/** Every space failure is `disk_space`. */
+const refuse = (message: string) => fail({ kind: "disk_space", message });
 
 interface Plan extends MockVolume {
   skipped: string[];
@@ -345,7 +341,7 @@ export function createMockDiskSpace(
   let report: Scan | null = null;
   let ended: Scan | null = null;
   const unavailable = () =>
-    fail("Space reports are not available in this edition");
+    refuse("Space reports are not available in this edition");
   const settle = () => {
     running?.settle(now());
     if (!running || running.phase === "scanning") return;
@@ -356,7 +352,7 @@ export function createMockDiskSpace(
   settle();
   const find = (id: number) =>
     [running, report].find((s) => s !== null && s.id === id) ?? null;
-  const gone = fail("this report is no longer available; scan again");
+  const gone = refuse("this report is no longer available; scan again");
   const idle: SpaceScanStatus = {
     phase: "idle",
     report_id: null,
@@ -390,11 +386,11 @@ export function createMockDiskSpace(
       diskSpaceStart: async (_host, mount, include) => {
         if (appstore) return unavailable();
         settle();
-        if (running) return fail("a scan is already running");
+        if (running) return refuse("a scan is already running");
         const spec = mockVolumes(scenarios).find(
           (v) => v.volume.mount === mount
         );
-        if (!spec) return fail(`${mount} is not a volume StatGlass can scan`);
+        if (!spec) return refuse(`${mount} is not a volume StatGlass can scan`);
         const skipped = spec.volume.protected.filter(
           (p) => !include.includes(p.key)
         );

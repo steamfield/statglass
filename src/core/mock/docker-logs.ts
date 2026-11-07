@@ -1,6 +1,6 @@
-import type { CommandResult, Transport } from "@core/transport";
+import type { Transport } from "@core/transport";
 
-const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
+import { ok } from "./protocol";
 export class MockDockerLogs {
   private logTimers = new Set<ReturnType<typeof setInterval>>();
   constructor(

@@ -4,8 +4,9 @@ import {
   type DockerHistoryPoint,
   type DockerHistoryRequest,
 } from "@core/generated/bindings";
-import { floorTo } from "@core/time-grid";
+import { DAY_MS, floorTo, HOUR_MS } from "@core/time-grid";
 import { engine, MiB } from "./docker-fixtures";
+import { seedOf } from "./rng";
 /** Shared generator: timestamp-positioned history with real gaps and partial buckets. */
 export function mockHistoryPoints(
   request: DockerHistoryRequest,
@@ -13,17 +14,13 @@ export function mockHistoryPoints(
 ): DockerHistoryPoint[] {
   const span = request.to_ms - request.from_ms;
   const tier =
-    span <= 3_600_000
-      ? DOCKER_BUCKET_MS
-      : span <= 7 * 86_400_000
-        ? 60_000
-        : 900_000;
+    span <= HOUR_MS ? DOCKER_BUCKET_MS : span <= 7 * DAY_MS ? 60_000 : 900_000;
   const duration = Math.max(
     tier,
     Math.ceil(span / Math.max(1, request.max_points) / tier) * tier
   );
   const count = Math.min(request.max_points, Math.ceil(span / duration));
-  const seed = [...container.id].reduce((n, c) => n + c.charCodeAt(0), 0);
+  const seed = seedOf(container.id);
   const base = container.metrics.cpu_pct ?? 20 + (seed % 65);
   const memory =
     container.metrics.working_set_bytes ?? (80 + (seed % 400)) * MiB;

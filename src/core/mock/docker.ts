@@ -5,7 +5,7 @@ import type {
   DockerSettings,
   DockerSnapshot,
 } from "@core/generated/bindings";
-import type { CommandResult, Transport } from "@core/transport";
+import type { Transport } from "@core/transport";
 import { comparison } from "./docker-comparison";
 import {
   aggregateContainers,
@@ -27,7 +27,7 @@ export {
 } from "./docker-fixtures";
 export { mockHistoryPoints } from "./docker-history";
 
-const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
+import { fail, ok } from "./protocol";
 export function createMockDocker(
   scenarios: readonly ScenarioName[],
   now: () => number,
@@ -259,13 +259,10 @@ class MockDocker {
       (row) => row.engine_id === engineId && row.id === containerId
     );
     if (saved) return ok(saved);
-    return {
-      status: "error",
-      error: {
-        kind: "docker_not_found",
-        message: "No retained container metadata",
-      },
-    };
+    return fail({
+      kind: "docker_not_found",
+      message: "No retained container metadata",
+    });
   };
   readonly dockerHistory: Transport["dockerHistory"] = async (request) => {
     const metadata = this.retained.filter(
