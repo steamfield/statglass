@@ -8,8 +8,8 @@ import { useModuleSeries } from "~/hooks/use-module-series";
 import type { WindowSeries } from "~/hooks/use-window-series";
 import { historyTicks } from "~/widgets/lib/chart-labels";
 
-/** Every module history chart has this many x ticks, oldest to "now". */
-const X_TICKS = 5;
+/** A module history chart's x ticks, oldest to "now", unless a card says otherwise. */
+const DEFAULT_X_TICKS = 5;
 
 /** What a module page's history chart draws over, from `useModuleChart`. */
 export interface ModuleChart {
@@ -29,12 +29,17 @@ export interface ModuleChart {
  * The series, gap bands, span words and x ticks of one module history chart
  * over the module range (D-091). With `brush` the series is read on the
  * brush's buckets (D-099); the owner wraps the card in `brushScopeProps`.
+ * A card narrower than about 400 px passes fewer `ticks`, so the dated labels
+ * of a fixed range of a day or more don't run into each other.
  */
 export function useModuleChart(
   keys: readonly string[],
   windowMs: number,
   module: Module,
-  { brush = false }: { brush?: boolean } = {}
+  {
+    brush = false,
+    ticks = DEFAULT_X_TICKS,
+  }: { brush?: boolean; ticks?: number } = {}
 ): ModuleChart {
   const endMs = useModuleEnd();
   const series = useModuleSeries(keys, windowMs, { brush });
@@ -47,7 +52,7 @@ export function useModuleChart(
     brush,
     live,
     span: spanWords(windowMs, endMs),
-    xTicks: historyTicks(fromMs, toMs, live, X_TICKS),
+    xTicks: historyTicks(fromMs, toMs, live, ticks),
     windowMs,
   };
 }
