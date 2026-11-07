@@ -43,9 +43,6 @@ fn tier_choice(tier: TierRequest) -> TierChoice {
 /// slack for the days a range starts and ends in.
 pub const MAX_HEATMAP_DAYS: usize = 92;
 
-/// The most hours one `battery_hours` request may ask for: a heatmap's days.
-pub const MAX_BATTERY_HOURS: usize = MAX_HEATMAP_DAYS * 24;
-
 impl HeatmapMetric {
     pub fn series(self) -> SeriesKey {
         let metric = match self {

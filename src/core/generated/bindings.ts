@@ -236,13 +236,6 @@ export const commands = {
 	 */
 	queryHeatmap: (request: HeatmapRequest) => typedError<HeatmapDay[], CommandError>(__TAURI_INVOKE("query_heatmap", { request })),
 	/**
-	 *  The hourly battery bars: for each local hour between consecutive `hour_starts_ms`
-	 *  (UTC ms, DST applied, as `query_heatmap` takes them), the charge in its last minute
-	 *  and whether it charged, through now. `invalid_argument` when there are fewer than 2
-	 *  boundaries, more than one per hour of 92 days, or they go backwards.
-	 */
-	batteryHours: (host: HostId, hourStartsMs: Millis[]) => typedError<BatteryHour[], CommandError>(__TAURI_INVOKE("battery_hours", { host, hourStartsMs })),
-	/**
 	 *  Asks where to save with a save dialog (a sheet on the calling window), then streams
 	 *  the range there as CSV: one row per bucket of the chosen tier, gaps as rows of their
 	 *  own. `cancelled` when the dialog is dismissed; `export` when the file cannot be
@@ -530,19 +523,6 @@ export type BarsPatch = {
 	cpu?: boolean | null,
 	gpu?: boolean | null,
 	memory?: boolean | null,
-};
-
-/**  One local hour of `battery_hours`. */
-export type BatteryHour = {
-	/**  The hour's start, as the request gave it. */
-	start_ms: number,
-	/**
-	 *  `battery.charge` in the hour's last minute that sampled it; `null` when none did,
-	 *  never 0.
-	 */
-	charge: number | null,
-	/**  Whether `battery.charging` was on in any minute of the hour. */
-	charging: boolean,
 };
 
 /**  A byte count as a plain JS `number`; exact below 2^53 (8 PiB). */

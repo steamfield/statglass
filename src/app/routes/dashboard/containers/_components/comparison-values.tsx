@@ -5,94 +5,104 @@ import {
 } from "@core/chart-math/series-lines";
 import type {
   DockerContainer,
+  DockerCoverage,
   DockerHistoryPoint,
 } from "@core/generated/bindings";
+import { useMemo } from "react";
 import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui/table";
+  ChartTable,
+  type ChartTableRow,
+  type ChartTableStats,
+} from "~/components/data-table";
 import type { ComparisonSeries } from "./comparison-chart";
+
+function stats(
+  point: DockerHistoryPoint | undefined,
+  metric: ComparisonMetric
+): ChartTableStats | null {
+  if (!point || pointValue(point, metric) === null) return null;
+  return {
+    min: pointValue(point, metric, "minimum"),
+    avg: pointValue(point, metric, "average"),
+    max: pointValue(point, metric, "maximum"),
+    partial: !pointCovered(point, metric),
+  };
+}
+
+/**
+ * Each bucket any container has, with every container's reading in it, and
+ * a row for each engine-wide gap (a container's own gaps read as missing).
+ */
+function comparisonRows(
+  series: readonly ComparisonSeries[],
+  times: readonly number[],
+  metric: ComparisonMetric,
+  gaps: readonly DockerCoverage[],
+  from: number,
+  to: number
+): ChartTableRow[] {
+  const bySeries = series.map(
+    (s) => new Map(s.points.map((p) => [p.time_ms, p]))
+  );
+  const rows: ChartTableRow[] = times.map((t) => ({
+    kind: "bucket",
+    t,
+    values: bySeries.map((points) => stats(points.get(t), metric)),
+  }));
+  for (const g of gaps) {
+    if (g.container_id !== null) continue;
+    if (g.start_ms >= to || (g.end_ms ?? Number.POSITIVE_INFINITY) <= from)
+      continue;
+    rows.push({ kind: "gap", t: Math.max(from, g.start_ms), label: g.label });
+  }
+  return rows;
+}
+
+/** The comparison chart's "Show as table", inline in its card. */
 export function ComparisonValues({
   series,
   times,
   metric,
+  gaps,
+  from,
+  to,
+  bucketMs,
   displayName,
-  clock,
-  statistics,
   format,
 }: {
   series: readonly ComparisonSeries[];
   times: readonly number[];
   metric: ComparisonMetric;
+  gaps: readonly DockerCoverage[];
+  from: number;
+  to: number;
+  bucketMs: number;
   displayName: (container: DockerContainer) => string;
-  clock: (time: number) => string;
-  statistics: (point: DockerHistoryPoint) => string;
   format: (value: number | null) => string;
 }) {
-  const pointsBySeries = new Map(
-    series.map((s) => [
-      s.container.id,
-      new Map(s.points.map((p) => [p.time_ms, p])),
-    ])
+  const columns = useMemo(
+    () =>
+      series.map((s) => ({
+        id: s.container.id,
+        label: displayName(s.container),
+        format,
+      })),
+    [series, displayName, format]
+  );
+  const rows = useMemo(
+    () => comparisonRows(series, times, metric, gaps, from, to),
+    [series, times, metric, gaps, from, to]
   );
   return (
-    <div className="h-60 overflow-auto">
-      <Table
-        className="figures w-full caption-top text-[11px]"
-        aria-label="Container history values"
-      >
-        <TableCaption className="mt-0 text-left text-[11px] text-muted-foreground">
-          Per bucket: min / avg / max
-        </TableCaption>
-        <TableHeader variant="plain" className="sticky top-0 bg-card">
-          <TableRow variant="plain">
-            <TableHead
-              variant="plain"
-              className="p-2 text-left font-bold text-inherit"
-            >
-              Time
-            </TableHead>
-            {series.map((s) => (
-              <TableHead
-                variant="plain"
-                key={s.container.id}
-                className="p-2 text-right font-bold text-inherit"
-              >
-                {displayName(s.container)}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {[...times].reverse().map((time) => (
-            <TableRow variant="plain" key={time}>
-              <TableCell className="whitespace-nowrap p-2">
-                {clock(time)}
-              </TableCell>
-              {series.map((s) => {
-                const point = pointsBySeries.get(s.container.id)?.get(time);
-                const value = point ? pointValue(point, metric) : null;
-                return (
-                  <TableCell
-                    key={s.container.id}
-                    className="whitespace-nowrap p-2 text-right"
-                  >
-                    {point && value !== null ? statistics(point) : format(null)}
-                    {value !== null && point && !pointCovered(point, metric)
-                      ? " partial"
-                      : ""}
-                  </TableCell>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <ChartTable
+      label="Container history values"
+      series={columns}
+      rows={rows}
+      bucketMs={bucketMs}
+      fromMs={from}
+      toMs={to}
+      surface="card"
+      className="h-60"
+    />
   );
 }

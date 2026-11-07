@@ -55,10 +55,9 @@ pub use error::{Result, StoreError};
 pub use lock::WriterLock;
 pub use perms::{PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, create_private_dir, restrict, write_private};
 pub use reader::{
-    BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, BucketValue, EventsRead, ExportQuery,
-    ExportSummary, HistoryGrowth, MIN_MEASURED_MS, MetricStats, RangeStats, Reader, RetainedSpan,
-    SeriesSummaries, SeriesSummary, UsageHistoryGrowth, fill_battery_hours, history_recent,
-    net_by_app_recent, range_stats, series_summary,
+    BucketValue, EventsRead, ExportQuery, ExportSummary, HistoryGrowth, MIN_MEASURED_MS,
+    MetricStats, RangeStats, Reader, RetainedSpan, SeriesSummaries, SeriesSummary,
+    UsageHistoryGrowth, history_recent, net_by_app_recent, range_stats, series_summary,
 };
 pub use rolldown::NET_TOP_APPS;
 /// The `rusqlite` behind [`StoreError::Sqlite`], so callers can match its error codes

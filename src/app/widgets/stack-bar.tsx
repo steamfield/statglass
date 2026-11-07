@@ -16,6 +16,8 @@ export interface StackBarSegment {
   fraction: number | null;
   /** `track` draws the remainder (free memory, rest of system power). */
   step: SwatchStep;
+  /** A color in place of the ramp step (frequency residency states). */
+  color?: string;
 }
 
 export interface StackBarProps {
@@ -31,7 +33,7 @@ export interface StackBarProps {
 }
 
 /**
- * Composition bar, 10 px with 1 px gaps (memory and power). A
+ * Composition bar, 10 px with 1 px gaps (memory, power, frequency residency). A
  * zero-width segment keeps its legend row so a hatched series that is often
  * zero (ANE, compressed) still has its key.
  */
@@ -69,9 +71,10 @@ export function StackBar({
               style={{
                 flexGrow: f,
                 background:
-                  s.step === "track" || s.step === "none"
+                  s.color ??
+                  (s.step === "track" || s.step === "none"
                     ? undefined
-                    : rampBackground(s.step),
+                    : rampBackground(s.step)),
               }}
             />
           );
@@ -85,6 +88,7 @@ export function StackBar({
               label: s.label,
               value: s.value,
               step: s.step,
+              color: s.color,
             })),
             ...extraLegend.map((e) => ({ ...e, step: "none" as const })),
           ]}

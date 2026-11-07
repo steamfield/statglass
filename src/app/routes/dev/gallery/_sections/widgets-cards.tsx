@@ -27,7 +27,6 @@ import {
 import { MetricCard } from "~/widgets/metric-card";
 import { ModuleCard } from "~/widgets/module-card";
 import { ProcessList } from "~/widgets/process-list";
-import { ResidencyBar } from "~/widgets/residency-bar";
 import { RingGauge } from "~/widgets/ring-gauge";
 import { RingStatCard } from "~/widgets/ring-stat-card";
 import { StackBar } from "~/widgets/stack-bar";
@@ -215,12 +214,12 @@ export function WidgetsCardsSection() {
       </GalleryItem>
 
       <div className="flex flex-wrap items-start gap-8">
-        <GalleryItem name="ResidencyBar" usedIn="CPU" width={320}>
-          <div className="flex flex-col gap-4">
-            {RESIDENCY.map((r) => (
-              <ResidencyBar key={r.cluster} {...r} />
-            ))}
-          </div>
+        <GalleryItem
+          name="StackBar (frequency residency)"
+          usedIn="GPU"
+          width={320}
+        >
+          <StackBar {...RESIDENCY} />
         </GalleryItem>
       </div>
 

@@ -18,7 +18,6 @@ export function nativeHistory(): Pick<
   | "getPublicIp"
   | "queryEvents"
   | "queryHeatmap"
-  | "batteryHours"
   | "exportCsv"
 > {
   return {
@@ -42,8 +41,6 @@ export function nativeHistory(): Pick<
     queryEvents: (host, fromMs, toMs) =>
       commands.queryEvents(host, fromMs, toMs),
     queryHeatmap: (request) => commands.queryHeatmap(request),
-    batteryHours: (host, hourStartsMs) =>
-      commands.batteryHours(host, hourStartsMs),
     exportCsv: (request) => commands.exportCsv(request),
   };
 }

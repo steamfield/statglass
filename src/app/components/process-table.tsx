@@ -19,6 +19,7 @@ import {
   DataTableCells,
   DataTableHead,
   gap,
+  MeterCell,
   useColumnSort,
   useDataTable,
 } from "~/components/data-table";
@@ -33,7 +34,6 @@ import {
 import { Table } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import { InitialChip } from "~/widgets/initial-chip";
-import { MeterTrack } from "~/widgets/meter-track";
 
 export type ProcessColumn =
   | "name"
@@ -144,30 +144,6 @@ const figure = (text: string, className?: string) => (
   <span className={cn("figures", className)}>{text}</span>
 );
 
-/** A percent with an inline bar in the module color, the bar full at `max`. */
-function PercentBar({
-  pct,
-  max,
-  fill,
-}: {
-  pct: number | null;
-  max: number;
-  fill: string;
-}) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <MeterTrack
-        fraction={ratio(pct, max)}
-        fill={fill}
-        className="inline-block w-12"
-      />
-      <span className="figures inline-block w-10 text-right text-foreground">
-        {num(pct, 1)}
-      </span>
-    </span>
-  );
-}
-
 const helper = columnHelper<LiveProcess>();
 const HEADER = "h-auto whitespace-nowrap border-border border-b";
 const NO_DESCRIPTORS: { key: string; label: string; targets: LiveProcess[] }[] =
@@ -235,7 +211,13 @@ const STATIC_COLUMNS = {
     header: "% GPU",
     meta: { align: "right", className: HEADER },
     cell: ({ row: { original: p } }) => (
-      <PercentBar pct={p.gpu_pct} max={100} fill="var(--color-gpu)" />
+      <MeterCell
+        fraction={ratio(p.gpu_pct, 100)}
+        fill="var(--color-gpu)"
+        className="text-foreground"
+      >
+        {num(p.gpu_pct, 1)}
+      </MeterCell>
     ),
   }),
   user: helper.accessor((p) => p.user, {
@@ -255,11 +237,13 @@ function processColumns(c: CellCtx) {
       header: "% CPU",
       meta: { align: "right", className: HEADER },
       cell: ({ row: { original: p } }) => (
-        <PercentBar
-          pct={p.cpu_pct}
-          max={c.cpuBarMaxPct}
+        <MeterCell
+          fraction={ratio(p.cpu_pct, c.cpuBarMaxPct)}
           fill="var(--color-cpu)"
-        />
+          className="text-foreground"
+        >
+          {num(p.cpu_pct, 1)}
+        </MeterCell>
       ),
     }),
     mem: helper.accessor((p) => p.mem_bytes, {

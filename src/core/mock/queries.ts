@@ -8,7 +8,6 @@ import type { createMockDocker } from "./docker";
 import { hostRecord, MOCK_HOST_ID } from "./fixtures";
 import { mockHeatmap } from "./heatmap";
 import {
-  mockBatteryHours,
   mockGaps,
   mockHistory,
   mockRecentHistory,
@@ -197,23 +196,6 @@ export class MockQueries {
           ? invalid("every day needs 25 hour boundaries")
           : ok(mockHeatmap(request, this.ring.now()))
     );
-  readonly batteryHours: MockTransport["batteryHours"] = async (
-    host,
-    hourStartsMs
-  ) =>
-    this.remote.forward(host, (peer) =>
-      peer.batteryHours(MOCK_HOST_ID, hourStartsMs)
-    ) ??
-    this.commands.hostCommand(
-      "battery_hours",
-      host,
-      [host, hourStartsMs],
-      {},
-      () => {
-        const hours = mockBatteryHours(host, hourStartsMs, this.historyPage);
-        return typeof hours === "string" ? invalid(hours) : ok(hours);
-      }
-    );
   readonly exportCsv: MockTransport["exportCsv"] = async (request) => {
     return this.commands.hostCommand<ExportOutcome>(
       "export_csv",
@@ -330,7 +312,6 @@ export class MockQueries {
       lastWake: this.lastWake,
       queryEvents: this.queryEvents,
       queryHeatmap: this.queryHeatmap,
-      batteryHours: this.batteryHours,
       exportCsv: this.exportCsv,
       historySize: this.historySize,
       historyGrowth: this.historyGrowth,

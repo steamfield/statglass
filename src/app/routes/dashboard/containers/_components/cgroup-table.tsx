@@ -17,13 +17,13 @@ import {
   DataTableCells,
   DataTableHead,
   gap,
+  MeterCell,
   type TableFeatures,
   useColumnSort,
   useDataTable,
 } from "~/components/data-table";
 import { cn } from "~/lib/utils";
 import { InitialChip } from "~/widgets/initial-chip";
-import { MeterTrack } from "~/widgets/meter-track";
 import {
   type CgroupColumn,
   type CgroupRow,
@@ -40,28 +40,6 @@ interface CellCtx {
 const figure = (text: string, className?: string) => (
   <span className={cn("figures", className)}>{text}</span>
 );
-
-/** A share with an inline bar, as the process table draws % CPU. */
-function Bar({
-  fraction,
-  fill,
-  children,
-}: {
-  fraction: number | null;
-  fill: string;
-  children: ReactNode;
-}) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <MeterTrack
-        fraction={fraction}
-        fill={fill}
-        className="inline-block w-12"
-      />
-      {children}
-    </span>
-  );
-}
 
 /** Row id of the pinned "N others" remainder; real rows are `kind/name`. */
 const REMAINDER_ID = "_other";
@@ -105,12 +83,13 @@ const STATIC_COLUMNS = {
     header: "% CPU",
     meta: { align: "right", className: HEADER },
     cell: ({ row: { original: r } }) => (
-      <Bar fraction={ratio(r.cpu, 100)} fill="var(--color-cpu)">
-        {figure(
-          r.cpu === null ? MISSING : fixed(r.cpu, 1),
-          "inline-block w-10 text-right text-foreground"
-        )}
-      </Bar>
+      <MeterCell
+        fraction={ratio(r.cpu, 100)}
+        fill="var(--color-cpu)"
+        className="text-foreground"
+      >
+        {r.cpu === null ? MISSING : fixed(r.cpu, 1)}
+      </MeterCell>
     ),
   }),
   memPsi: helper.accessor((r) => gap(r.memPsi), {
@@ -135,15 +114,17 @@ function cgroupColumns(c: CellCtx) {
         const used = figure(formatBytes(r.mem, { units: c.bytes }));
         if (r.memMax === null) return used;
         return (
-          <Bar fraction={ratio(r.mem, r.memMax)} fill="var(--color-mem)">
-            <span className="inline-block min-w-30 text-right">
-              {used}
-              {figure(
-                ` / ${formatBytes(r.memMax, { units: c.bytes })}`,
-                "text-muted-foreground"
-              )}
-            </span>
-          </Bar>
+          <MeterCell
+            fraction={ratio(r.mem, r.memMax)}
+            fill="var(--color-mem)"
+            figure="ratio"
+          >
+            {used}
+            {figure(
+              ` / ${formatBytes(r.memMax, { units: c.bytes })}`,
+              "text-muted-foreground"
+            )}
+          </MeterCell>
         );
       },
     }),

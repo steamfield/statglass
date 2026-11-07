@@ -270,7 +270,6 @@ describe("host command preamble", () => {
       getNetworkAddresses: () => t.getNetworkAddresses(host),
       queryEvents: () => t.queryEvents(host, from, to),
       queryHeatmap: () => t.queryHeatmap({ host, metric: "cpu", days: [] }),
-      batteryHours: () => t.batteryHours(host, [from, to]),
       exportCsv: () => t.exportCsv({ ...req, tier: "auto" }),
       historySize: () => t.historySize(host),
       historyGrowth: () => t.historyGrowth(host),

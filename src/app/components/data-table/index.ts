@@ -1,5 +1,11 @@
+export {
+  ChartTable,
+  type ChartTableRow,
+  type ChartTableSeries,
+  type ChartTableStats,
+} from "./chart-table";
 export { DataTable, type DataTableVirtual } from "./data-table";
-export { DataTableCells } from "./data-table-cells";
+export { DataTableCells, MeterCell } from "./data-table-cells";
 export { DataTableHead } from "./data-table-head";
 export { columnHelper, gap, type TableFeatures } from "./features";
 export { FullWidthRow } from "./full-width-row";

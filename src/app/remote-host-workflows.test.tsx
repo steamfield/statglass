@@ -565,8 +565,7 @@ describe("remote Mac recovery workflows", () => {
         <LaneTableDialog
           lane={lane ?? null}
           bands={[]}
-          fromMs={data.fromMs}
-          toMs={data.toMs}
+          range={data}
           units={{ rate: "MBps", temperature: "C" }}
           onClose={() => {}}
         />

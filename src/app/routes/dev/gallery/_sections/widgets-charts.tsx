@@ -1,6 +1,5 @@
 import { formatTemperature } from "@core/format";
 import { useState } from "react";
-import { BatteryHistoryBars } from "~/widgets/battery-history-bars";
 import { Card } from "~/widgets/card";
 import { ChartAnnotation } from "~/widgets/chart-annotation";
 import { CoreHeatmap } from "~/widgets/core-heatmap";
@@ -11,7 +10,6 @@ import { MirrorBars } from "~/widgets/mirror-bars";
 import { StreamArea } from "~/widgets/stream-area";
 import { GalleryItem } from "../_components/gallery-item";
 import {
-  BATTERY_HOURS,
   CORE_HEATMAP,
   CPU_TOTAL,
   CPU_WITH_GAP,
@@ -179,12 +177,6 @@ export function WidgetsChartsSection() {
         usedIn="Power & Sensors"
       >
         <PowerDrawSample />
-      </GalleryItem>
-
-      <GalleryItem name="BatteryHistoryBars" usedIn="Power & Sensors">
-        <ChartCard id="gc-batt" title="Battery, last 24 hours" accent="battery">
-          <BatteryHistoryBars {...BATTERY_HOURS} />
-        </ChartCard>
       </GalleryItem>
 
       <GalleryItem name="ChartAnnotation" usedIn="Power & Sensors">

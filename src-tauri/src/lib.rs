@@ -118,7 +118,6 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::get_public_ip,
             commands::query_events,
             commands::query_heatmap,
-            commands::battery_hours,
             commands::export_csv,
             commands::get_settings,
             commands::update_settings,

@@ -1,18 +1,5 @@
-import {
-  type BatteryHour,
-  batteryBars,
-  batteryHourStarts,
-} from "@core/battery-hours";
-import { historyKeys } from "@core/query-keys";
-import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useNextBoundary } from "~/hooks/use-next-boundary";
-import { useHostClock } from "~/lib/host-clock";
-import { MINUTE_POLL_MS } from "~/lib/queries/timing";
-import { useTransport } from "~/lib/transport-context";
-import { type HostLiveState, useHost, useHostId } from "~/stores/host-store";
+import { type HostLiveState, useHost } from "~/stores/host-store";
 import { held, selectBattery } from "~/stores/live-selectors";
 
 /**
@@ -48,42 +35,4 @@ export type BatteryDetail = ReturnType<typeof selectBatteryDetail>;
 
 export function useBatteryDetail(): BatteryDetail {
   return useHost(useShallow(selectBatteryDetail));
-}
-
-/**
- * The bars' local hour boundaries, moving on when the current hour closes.
- */
-function useHourStarts(): number[] {
-  const clock = useHostClock();
-  const read = useCallback(() => batteryHourStarts(new Date(clock())), [clock]);
-  return useNextBoundary(read, lastStart);
-}
-
-const lastStart = (starts: number[]) => starts[starts.length - 1] as number;
-
-/**
- * How often the bars refresh: Rust answers through now (D-092), and a bar is
- * its hour's last minute, so it can move once a minute.
- */
-const BATTERY_REFRESH_MS = MINUTE_POLL_MS;
-
-/**
- * Hourly charge bars for the last 24 local hours (plan 4.10) from
- * `battery_hours`: on mount, when an hour closes, and every minute.
- */
-export function useBatteryHours(): {
-  hours: BatteryHour[] | undefined;
-  error: Error | null;
-} {
-  const transport = useTransport();
-  const hostId = useHostId();
-  const starts = useHourStarts();
-  const { data, error } = useQuery({
-    queryKey: historyKeys.batteryHours(hostId, starts[starts.length - 1] ?? 0),
-    queryFn: async () =>
-      batteryBars(await unwrap(transport.batteryHours(hostId, starts))),
-    staleTime: BATTERY_REFRESH_MS,
-    refetchInterval: BATTERY_REFRESH_MS,
-  });
-  return { hours: data, error };
 }

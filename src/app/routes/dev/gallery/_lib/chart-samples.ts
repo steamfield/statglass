@@ -3,7 +3,6 @@ import {
   mockDockerSnapshot,
   mockHistoryPoints,
 } from "@core/mock/docker";
-import type { BatteryHistoryBarsProps } from "~/widgets/battery-history-bars";
 import type { CoreHeatmapProps } from "~/widgets/core-heatmap";
 import type { HeatMatrixRow } from "~/widgets/heat-matrix";
 import {
@@ -281,29 +280,6 @@ export function powerDraw(focused: string | null): StreamAreaProps {
     ],
   };
 }
-
-// Battery, 24 hours starting at 23:00 yesterday.
-const LEVELS = [
-  68, 64, 60, 66, 74, 80, 80, 90, 100, 100, 92, 83, 75, 66, 60, 78, 94, 90, 82,
-  74, 84, 96, 98, 87,
-];
-const CHARGING = [
-  0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0,
-];
-const DAY_START = new Date(2026, 9, 3, 23, 0, 0).getTime();
-export const BATTERY_HOURS: BatteryHistoryBarsProps = {
-  hours: LEVELS.map((charge, i) => ({
-    tsMs: DAY_START + i * 3_600_000,
-    charge,
-    charging: CHARGING[i] === 1,
-  })),
-  annotations: [
-    {
-      tsMs: DAY_START + 5 * 3_600_000,
-      label: "Optimized charging: held at 80%",
-    },
-  ],
-};
 
 /** Six categorical identities, a genuine gap, partial points and a one-minute peak. */
 export const DOCKER_COMPARISON = Array.from({ length: 6 }, (_, index) => {

@@ -73,9 +73,6 @@ it("keeps fixed charge history idle on power-only frames and updates current bat
     to_ms: 1_800_000_000_000,
   });
   expect(
-    r.transport.calls.some((call) => call.command === "battery_hours")
-  ).toBe(false);
-  expect(
     screen.queryByText("Charging", { exact: true })
   ).not.toBeInTheDocument();
 });

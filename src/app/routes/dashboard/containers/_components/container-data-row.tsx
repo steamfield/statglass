@@ -1,5 +1,13 @@
+import { ratio } from "@core/chart-math";
 import { seriesColor } from "@core/chart-math/series-lines";
-import { formatBytes, formatPercent, formatRate } from "@core/format";
+import {
+  formatBytes,
+  formatClock,
+  formatDateTime,
+  formatPercent,
+  formatRate,
+  MISSING,
+} from "@core/format";
 import type {
   DockerContainer,
   DockerRankedContainer,
@@ -8,7 +16,7 @@ import type { Column } from "@tanstack/react-table";
 import { type MouseEvent, memo, type ReactNode } from "react";
 import { Link } from "react-router";
 import { SeriesSwatch } from "~/components/charts/chart-tooltip";
-import type { TableFeatures } from "~/components/data-table";
+import { MeterCell, type TableFeatures } from "~/components/data-table";
 import { InlineMessage } from "~/components/inline-message";
 import type { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
@@ -225,14 +233,11 @@ const ContainerIdentityCells = memo(function ContainerIdentityCells({
       {health && (
         <div
           className="truncate text-[10px] text-muted-foreground"
-          title={`${health} · ${metadataObservedMs ? new Date(metadataObservedMs).toLocaleString() : "time unknown"}`}
+          title={`${health} · ${metadataObservedMs ? formatDateTime(metadataObservedMs) : "time unknown"}`}
         >
           {health} ·{" "}
           {metadataObservedMs
-            ? new Date(metadataObservedMs).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
+            ? formatClock(metadataObservedMs)
             : "time unknown"}
         </div>
       )}
@@ -263,11 +268,11 @@ function extraColumnValue(
     case "image":
       return row.image;
     case "ports":
-      return row.ports.join(", ") || "—";
+      return row.ports.join(", ") || MISSING;
     case "restarts":
-      return row.restart_count ?? "—";
+      return row.restart_count ?? MISSING;
     default:
-      return "—";
+      return MISSING;
   }
 }
 
@@ -295,28 +300,22 @@ function ContainerMemoryCell({
         className
       )}
     >
-      <span className="whitespace-nowrap">
-        {byte(metrics?.working_set_bytes ?? null)}
-      </span>
+      {showLimit ? (
+        <MeterCell
+          fraction={ratio(metrics.working_set_bytes, limit)}
+          fill="var(--color-mem)"
+          figure="ratio"
+        >
+          {byte(metrics.working_set_bytes)} / {byte(limit)}
+        </MeterCell>
+      ) : (
+        <span className="whitespace-nowrap">
+          {byte(metrics?.working_set_bytes ?? null)}
+        </span>
+      )}
       {summary && (
         <div className="whitespace-nowrap text-[10px] text-muted-foreground">
           {byte(summary.avg_working_set_bytes)} avg
-        </div>
-      )}
-      {showLimit && (
-        <>
-          {" "}
-          <span className="whitespace-nowrap">/ {byte(limit)}</span>
-        </>
-      )}
-      {showLimit && (
-        <div className="mt-1 ml-auto h-1 w-12 overflow-hidden rounded-mark bg-track">
-          <div
-            className="h-full origin-left bg-muted-foreground"
-            style={{
-              transform: `scaleX(${Math.min(1, (metrics.working_set_bytes ?? 0) / Math.max(1, limit))})`,
-            }}
-          />
         </div>
       )}
     </td>

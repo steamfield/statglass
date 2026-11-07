@@ -5,7 +5,6 @@
  */
 
 import {
-  type BatteryHour,
   type Gap,
   HISTORY_RECENT_MS,
   HISTORY_TIERS,
@@ -238,66 +237,6 @@ export function mockHistory(
 function clamp(v: number, s: SeriesSpec): number {
   const c = Math.min(s.max ?? Infinity, Math.max(s.min ?? -Infinity, v));
   return Math.round(c * 1000) / 1000;
-}
-
-/** `MAX_BATTERY_HOURS` in `src-tauri/src/history.rs`: one per hour of 92 days. */
-const MAX_BATTERY_HOURS = 92 * 24;
-
-/**
- * `battery_hours`: minutes from `history`, cut at the local hour
- * boundaries Rust was given. An hour's charge is its last minute's, and it
- * charged when any minute did. `null` for an hour without minutes. A string
- * is the `invalid_argument` message.
- */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
-export function mockBatteryHours(
-  host: string,
-  hourStarts: readonly number[],
-  history: (req: HistoryRequest) => HistoryPage
-): BatteryHour[] | string {
-  const hours = hourStarts.length - 1;
-  if (hours < 1 || hours > MAX_BATTERY_HOURS) {
-    return `${hourStarts.length} hour boundaries, expected 2 to ${MAX_BATTERY_HOURS + 1}`;
-  }
-  for (let i = 0; i < hours; i++) {
-    if ((hourStarts[i + 1] as number) < (hourStarts[i] as number)) {
-      return `hour boundaries go backwards at ${hourStarts[i]}`;
-    }
-  }
-  const out: BatteryHour[] = hourStarts
-    .slice(0, -1)
-    .map((start_ms) => ({ start_ms, charge: null, charging: false }));
-  const from = hourStarts[0] as number;
-  const to = hourStarts[hours] as number;
-  if (to <= from) return out;
-  const page = history({
-    host,
-    selectors: [
-      { metric: "battery.charge", labels: [] },
-      { metric: "battery.charging", labels: [] },
-    ],
-    from_ms: from,
-    to_ms: to,
-    tier: "m1",
-    max_points: Math.ceil((to - from) / M1.bucket_ms) + 2,
-  });
-  const cell = (t: number) =>
-    hourStarts.findIndex(
-      (start, i) => i < hours && t >= start && t < (hourStarts[i + 1] as number)
-    );
-  for (const s of page.series) {
-    for (const p of s.points) {
-      const hour = out[cell(p.t)];
-      if (!hour) continue;
-      if (s.key.metric === "battery.charge") {
-        // Points come oldest first: the last one in the hour wins.
-        if (p.avg !== null) hour.charge = p.avg;
-      } else if ((p.max ?? 0) >= 0.5) {
-        hour.charging = true;
-      }
-    }
-  }
-  return out;
 }
 
 /**
