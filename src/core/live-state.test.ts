@@ -1,5 +1,5 @@
 import type { LiveMsg, MetricKind, SeriesKey } from "@core/generated/bindings";
-import { statusMsg } from "@tests/live-frames";
+import { layoutMsg, statusMsg } from "@tests/live-frames";
 import {
   type HostLive,
   initialHostLive,
@@ -19,12 +19,7 @@ function apply(msgs: LiveMsg[], state: HostLive = initialHostLive("h1")) {
 }
 
 const status = statusMsg();
-const layout: LiveMsg = {
-  kind: "layout",
-  layout_no: 1,
-  series: SERIES,
-  kinds: [],
-};
+const layout = layoutMsg(1, SERIES);
 
 describe("reduceLive", () => {
   it("renders an empty chart before a remote has reported its sampling interval", () => {
@@ -311,12 +306,8 @@ describe("seriesWindow", () => {
   });
 
   describe("joins samples by the holds the host published (D-090)", () => {
-    const layoutOf = (kind: MetricKind): LiveMsg => ({
-      kind: "layout",
-      layout_no: 1,
-      series: SERIES,
-      kinds: [kind, kind, kind],
-    });
+    const layoutOf = (kind: MetricKind) =>
+      layoutMsg(1, SERIES, [kind, kind, kind]);
     const holds = (ms: number): LiveMsg => ({
       kind: "holds",
       layout_no: 1,

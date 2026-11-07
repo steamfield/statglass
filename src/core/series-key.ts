@@ -1,14 +1,25 @@
 import type { Labels, SeriesKey } from "@core/generated/bindings";
 
+/** The characters Rust's `Labels::canonical` escapes with a backslash. */
+const ESCAPED = /[\\,={}]/g;
+
+function escapeLabel(s: string): string {
+  return s.replace(ESCAPED, "\\$&");
+}
+
 /**
  * Display form of a series key, `cpu.load{core=P0}`, the same text Rust's
- * `Display` writes. Labels arrive sorted by key (bindings.ts `Labels`), so
+ * `Display` writes: `\ , = { }` inside label names and values are escaped
+ * with a backslash. Labels arrive sorted by key (bindings.ts `Labels`), so
  * equal keys always produce equal strings. Used as the map key in the live
  * store.
  */
 export function seriesKeyString(key: SeriesKey): string {
   if (key.labels.length === 0) return key.metric;
-  return `${key.metric}{${key.labels.map(([k, v]) => `${k}=${v}`).join(",")}}`;
+  const pairs = key.labels.map(
+    ([k, v]) => `${escapeLabel(k)}=${escapeLabel(v)}`
+  );
+  return `${key.metric}{${pairs.join(",")}}`;
 }
 
 /** Build a key from a metric and label pairs, sorting labels by key. */
@@ -27,30 +38,60 @@ export function sk(metric: string, labels: Record<string, string> = {}) {
   return seriesKeyString(seriesKey(metric, labels));
 }
 
-/** A label name as the catalog allows it (lowercase ASCII, digits, `_`). */
-const LABEL_NAME = /^[a-z0-9_]+=/;
+/**
+ * `(value) => sk(metric, { [name]: value })`, built once per value. For keys a
+ * selector looks up on every frame (a volume, an interface, a cluster), so the
+ * 1 Hz path doesn't allocate the string again. The cache holds one entry per
+ * value seen, which the hardware bounds.
+ */
+export function keyByLabel(
+  metric: string,
+  name: string
+): (value: string) => string {
+  const cache = new Map<string, string>();
+  return (value) => {
+    let key = cache.get(value);
+    if (key === undefined) {
+      key = sk(metric, { [name]: value });
+      cache.set(value, key);
+    }
+    return key;
+  };
+}
 
 /**
  * The labels of a display-form key, the inverse of `seriesKeyString`:
  * `cpu.load{core=P0}` gives `{ core: "P0" }`, a key without labels `{}`.
- * `seriesKeyString` does not escape, so a value may hold `=` or `,`; a `,`
- * starts the next label only when a label name and `=` follow it.
+ * Like Rust's `Labels::parse_canonical`, only an unescaped `,` separates
+ * pairs and an unescaped `=` separates name from value; the backslash escapes
+ * are removed from both.
  */
 export function parseLabels(display: string): Record<string, string> {
   const out: Record<string, string> = {};
   const open = display.indexOf("{");
   if (open < 0 || !display.endsWith("}")) return out;
-  const pairs: [string, string][] = [];
-  for (const part of display.slice(open + 1, -1).split(",")) {
-    const last = pairs[pairs.length - 1];
-    if (last && !LABEL_NAME.test(part)) {
-      last[1] += `,${part}`;
+  const inner = display.slice(open + 1, -1);
+  let name = "";
+  let value: string | undefined;
+  const flush = () => {
+    if (name && value !== undefined) out[name] = value;
+    name = "";
+    value = undefined;
+  };
+  for (let i = 0; i < inner.length; i++) {
+    let c = inner[i] ?? "";
+    if (c === "\\") c = inner[++i] ?? "";
+    else if (c === ",") {
+      flush();
+      continue;
+    } else if (c === "=" && value === undefined) {
+      value = "";
       continue;
     }
-    const eq = part.indexOf("=");
-    if (eq > 0) pairs.push([part.slice(0, eq), part.slice(eq + 1)]);
+    if (value === undefined) name += c;
+    else value += c;
   }
-  for (const [k, v] of pairs) out[k] = v;
+  flush();
   return out;
 }
 

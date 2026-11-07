@@ -2,7 +2,18 @@ use serde::{Deserialize, Serialize};
 
 /// The dashboard chart window. Longer and fixed ranges read retained history.
 #[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type,
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    specta::Type,
 )]
 pub enum ChartWindow {
     #[serde(rename = "5m")]

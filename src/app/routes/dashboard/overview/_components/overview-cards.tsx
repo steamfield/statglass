@@ -7,7 +7,6 @@ import { useScaledWindow } from "~/hooks/use-scaled-window";
 
 import { formatPercent } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
-import { sk } from "@core/series-key";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGpuMaxMhz, useHostRecord } from "~/hooks/use-host-record";
@@ -19,6 +18,7 @@ import {
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useHost } from "~/stores/host-store";
 import {
+  clusterFreqKey,
   held,
   keysOf,
   selectVolumeCapacity,
@@ -80,8 +80,8 @@ export function OverviewCpuCard({ origin }: CardProps) {
   const e = topology.find((c) => c.kind === "efficiency");
   const freq = useHost(
     useShallow((s) => ({
-      p: p ? held(s, sk("cpu.cluster.freq", { cluster: p.name })) : null,
-      e: e ? held(s, sk("cpu.cluster.freq", { cluster: e.name })) : null,
+      p: p ? held(s, clusterFreqKey(p.name)) : null,
+      e: e ? held(s, clusterFreqKey(e.name)) : null,
     }))
   );
   const maxHz = (mhz: readonly number[] | undefined) => {
@@ -91,7 +91,7 @@ export function OverviewCpuCard({ origin }: CardProps) {
   // A host whose cores are all one kind (`uniform`, D-116) has one cluster.
   const only = !p || !e ? topology[0] : undefined;
   const onlyFreq = useHost((s) =>
-    only ? held(s, sk("cpu.cluster.freq", { cluster: only.name })) : null
+    only ? held(s, clusterFreqKey(only.name)) : null
   );
   const clusters: [ClusterInput, ClusterInput] | [ClusterInput] = only
     ? [{ label: "Frequency", freqHz: onlyFreq, maxHz: maxHz(only.dvfs_mhz) }]

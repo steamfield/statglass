@@ -2,7 +2,7 @@
 //! (D-090, D-092). Each is built from the constant or function the Rust code itself runs
 //! on, so the webview and the mock transport never keep a copy that can drift.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 use statglass_engine::{
@@ -84,9 +84,10 @@ pub fn item_modes() -> BTreeMap<Module, &'static [ItemMode]> {
         .collect()
 }
 
-/// Each fixed chart window's duration in ms (`ChartWindow::preset_ms`, D-091). The
-/// bindings write it as JSON, whose object keys are sorted, so the order is stable.
-pub fn chart_window_ms() -> HashMap<ChartWindow, i64> {
+/// Each fixed chart window's duration in ms (`ChartWindow::preset_ms`, D-091). A
+/// `BTreeMap`, like [`item_modes`], so the bindings' key order is stable whether or
+/// not serde_json preserves insertion order.
+pub fn chart_window_ms() -> BTreeMap<ChartWindow, i64> {
     ChartWindow::PRESETS
         .into_iter()
         .filter_map(|w| Some((w, w.preset_ms()?)))

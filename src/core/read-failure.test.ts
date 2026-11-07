@@ -3,7 +3,7 @@ import {
   RING_SPAN_MS,
   type SeriesKey,
 } from "@core/generated/bindings";
-import { statusMsg } from "@tests/live-frames";
+import { layoutMsg, statusMsg } from "@tests/live-frames";
 import {
   type HostLive,
   initialHostLive,
@@ -35,10 +35,7 @@ function apply(msgs: LiveMsg[], state: HostLive = initialHostLive("h1")) {
   return msgs.reduce(reduceLive, state);
 }
 
-const base = [
-  statusMsg(),
-  { kind: "layout", layout_no: 1, series: SERIES, kinds: [] },
-] as [LiveMsg, LiveMsg];
+const base: LiveMsg[] = [statusMsg(), layoutMsg(1, SERIES)];
 
 describe("readFailure", () => {
   it("is fine while the series has a current value", () => {
@@ -85,12 +82,7 @@ describe("readFailure", () => {
     const s = apply([
       ...base,
       frame(1000, [10, 60]),
-      {
-        kind: "layout",
-        layout_no: 2,
-        series: [SERIES[1] as SeriesKey, SERIES[0] as SeriesKey],
-        kinds: [],
-      },
+      layoutMsg(2, [SERIES[1] as SeriesKey, SERIES[0] as SeriesKey]),
       frame(2000, [null, 11], [null, 11], 2),
     ]);
     expect(readFailureMs(s, "thermal.hottest")).toBe(1000);
@@ -118,12 +110,7 @@ describe("series disappeared", () => {
       ...base,
       frame(1000, [10, 60]),
       frame(2000, [11, 61]),
-      {
-        kind: "layout",
-        layout_no: 2,
-        series: [SERIES[0] as SeriesKey],
-        kinds: [],
-      },
+      layoutMsg(2, [SERIES[0] as SeriesKey]),
       frame(3000, [12], [12], 2),
       frame(4000, [13], [13], 2),
     ]);

@@ -1,6 +1,6 @@
-import type { LiveMsg, SeriesKey } from "@core/generated/bindings";
-import { initialHostLive, reduceLive } from "@core/live-state";
-import { frameMsg } from "@tests/live-frames";
+import type { SeriesKey } from "@core/generated/bindings";
+import { type HostLive, initialHostLive, reduceLive } from "@core/live-state";
+import { frameMsg, layoutMsg } from "@tests/live-frames";
 import { selectVolumeCapacity } from "~/stores/live-selectors";
 import { ifaceRates, linkRate } from "./selectors";
 
@@ -17,16 +17,10 @@ const SERIES: SeriesKey[] = [
 
 const VALUES = [38.4e6, 1.2e6, 1.2e9, 1e12, 600e9, 1e12, 612e9, 380e9];
 
-const layout: LiveMsg = {
-  kind: "layout",
-  layout_no: 1,
-  series: SERIES,
-  kinds: [],
-};
-const state = [layout, frameMsg(1, 1000, VALUES)].reduce(
-  reduceLive,
-  initialHostLive("h1")
-);
+const state = [
+  layoutMsg(1, SERIES),
+  frameMsg(1, 1000, VALUES),
+].reduce<HostLive>(reduceLive, initialHostLive("h1"));
 
 describe("overview selectors", () => {
   it("flattens interface rates and reads the link speed", () => {
