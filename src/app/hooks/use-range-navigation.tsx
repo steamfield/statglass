@@ -1,6 +1,7 @@
 import { chartRange, relativeWindow } from "@core/chart-range";
 import type { ChartWindow } from "@core/generated/bindings";
 import { settingsErrorText } from "@core/settings-patch";
+import { DAY_MS } from "@core/time-grid";
 import {
   createContext,
   type ReactNode,
@@ -21,7 +22,7 @@ interface NavigationSession {
 }
 const fresh = (): NavigationSession => ({
   back: [],
-  relativeMs: 86_400_000,
+  relativeMs: DAY_MS,
   initialized: false,
   busy: false,
 });

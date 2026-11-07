@@ -10,6 +10,7 @@ import {
   formatRate,
   formatRpm,
   formatTemperature,
+  formatWattHours,
   formatWatts,
   formatWattsFine,
   MISSING,
@@ -162,6 +163,14 @@ describe("formatWattsFine and formatEnergy", () => {
     expect(formatEnergy(1)).toBe("<1 mWh");
     expect(formatEnergy(3600 * 140)).toBe("140 Wh");
     expect(formatEnergy(Number.NaN)).toBe(MISSING);
+  });
+});
+
+describe("formatWattHours", () => {
+  it("is a one-decimal figure, a dash for a gap", () => {
+    expect(formatWattHours(52.44)).toBe("52.4");
+    expect(formatWattHours(0)).toBe("0.0");
+    expect(formatWattHours(null)).toBe(MISSING);
   });
 });
 

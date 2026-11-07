@@ -6,6 +6,8 @@
  * the WKWebView system locale and can give a 12-hour clock, "24:05" or a
  * translated month. StatGlass's labels are English and 24-hour everywhere.
  */
+
+import { MINUTE_MS } from "../time-grid";
 import { isPresent, type MaybeNumber, MISSING } from "./number";
 
 export const MONTHS = [
@@ -61,12 +63,21 @@ export function formatClockSeconds(ms: MaybeNumber): string {
 
 /**
  * Local date and time with seconds, "Oct 5, 14:02:10": a moment that may not
- * be today (a last-seen time, a process start, an observation).
+ * be today (a last-seen time, a process start, an observation). With
+ * `yearUnlessCurrent`, a moment from another year carries it,
+ * "Oct 5, 2025, 14:02:10", for times that can be old (a process start).
  */
-export function formatDateTime(ms: MaybeNumber): string {
+export function formatDateTime(
+  ms: MaybeNumber,
+  { yearUnlessCurrent = false }: { yearUnlessCurrent?: boolean } = {}
+): string {
   if (!isPresent(ms)) return MISSING;
   const d = new Date(ms);
-  return `${monthName(d)} ${d.getDate()}, ${formatClockSeconds(ms)}`;
+  const year =
+    yearUnlessCurrent && d.getFullYear() !== new Date().getFullYear()
+      ? `, ${d.getFullYear()}`
+      : "";
+  return `${monthName(d)} ${d.getDate()}${year}, ${formatClockSeconds(ms)}`;
 }
 
 /** Include a calendar date when a retained chart can span more than one day. */
@@ -84,7 +95,7 @@ export function formatBucketTime(
   bucketMs: number,
   dates: boolean
 ): string {
-  const time = bucketMs < 60_000 ? formatClockSeconds(ms) : formatClock(ms);
+  const time = bucketMs < MINUTE_MS ? formatClockSeconds(ms) : formatClock(ms);
   if (!dates) return time;
   const d = new Date(ms);
   return `${monthName(d)} ${d.getDate()}, ${time}`;

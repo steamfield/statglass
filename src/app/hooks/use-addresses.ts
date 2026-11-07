@@ -1,4 +1,5 @@
 import { appKeys, hostKeys } from "@core/query-keys";
+import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -12,7 +13,7 @@ import { useHostId } from "~/stores/host-store";
  */
 const LOCAL_REFRESH_MS = 10_000;
 /** The public lookup is a request to an outside service; ask rarely. */
-const PUBLIC_STALE_MS = 10 * 60_000;
+const PUBLIC_STALE_MS = 10 * MINUTE_MS;
 
 /**
  * The primary interface's addresses, read locally, and the public address

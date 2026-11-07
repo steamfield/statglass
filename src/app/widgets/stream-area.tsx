@@ -1,4 +1,5 @@
 import { splitGaps } from "@core/chart-math";
+import { cssPercent } from "@core/format";
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
 import {
@@ -140,7 +141,7 @@ export function StreamArea({
   const scrollRef = useTickScroll<HTMLDivElement>(
     tEndMs,
     intervalMs,
-    `${(100 / (n - 1)).toFixed(3)}%`
+    cssPercent(1 / (n - 1))
   );
   const [svgRef, widthPx] = useWidth<SVGSVGElement>();
   // Dashes are in screen px from the path's start, which stays at the left

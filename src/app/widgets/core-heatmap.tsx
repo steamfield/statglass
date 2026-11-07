@@ -1,3 +1,4 @@
+import { formatPercent } from "@core/format";
 import type { GapSpan } from "./gap-band";
 import { HeatMatrix } from "./heat-matrix";
 import type { Accent } from "./lib/accent";
@@ -31,7 +32,6 @@ export interface CoreHeatmapProps {
 }
 
 const LOAD_SCALE = { min: 0, max: 100 };
-const percent = (v: number) => `${Math.round(v)}%`;
 
 /**
  * Per-core load over time: `HeatMatrix` on a 0 to 100% scale, one row per
@@ -54,7 +54,7 @@ export function CoreHeatmap({
         buckets: c.buckets,
       }))}
       scale={LOAD_SCALE}
-      formatNow={percent}
+      formatNow={formatPercent}
       accent={accent}
       ariaLabel={ariaLabel}
     />

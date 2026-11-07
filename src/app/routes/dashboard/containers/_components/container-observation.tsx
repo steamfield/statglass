@@ -1,5 +1,6 @@
-import { formatBytes, formatPercent } from "@core/format";
+import { formatBytes, formatDateTime, formatPercent } from "@core/format";
 import type { DockerContainer } from "@core/generated/bindings";
+import { MINUTE_MS } from "@core/time-grid";
 import { InlineMessage } from "~/components/inline-message";
 export function ContainerObservation({
   row,
@@ -24,7 +25,9 @@ export function ContainerObservation({
           {current ? "Current observation" : "Retained observation"}
         </span>
         {" · "}
-        {new Date(row.observed_ms ?? row.last_seen_ms).toLocaleString()}
+        {formatDateTime(row.observed_ms ?? row.last_seen_ms, {
+          yearUnlessCurrent: true,
+        })}
       </p>
       <div className="figures flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
         <span>
@@ -53,7 +56,7 @@ export function ContainerObservation({
           {row.oom_killed ? "⚠ OOM recorded by Docker. " : ""}
           {row.repeated_restarts ? "Repeated restarts · " : ""}
           {row.observed_restarts} observed restarts in the last{" "}
-          {row.observed_restart_window_ms / 60_000} minutes ·{" "}
+          {row.observed_restart_window_ms / MINUTE_MS} minutes ·{" "}
           {row.restart_count ?? "Unknown"} cumulative Docker restarts. Exit code
           137 alone does not establish OOM.
         </p>

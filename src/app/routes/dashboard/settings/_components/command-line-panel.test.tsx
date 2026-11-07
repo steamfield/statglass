@@ -158,6 +158,21 @@ describe("Command line settings (D-126)", () => {
     expect(screen.getByRole("button", { name: "Install" })).toBeEnabled();
   });
 
+  it("words an install failure with no text as a sentence", async () => {
+    const transport = createMockTransport({ cliLink: LINK });
+    transport.cliInstallLink = async () => {
+      throw new Error("");
+    };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { user } = renderWithProviders(<CommandLinePanel enabled />, {
+      transport,
+    });
+    await user.click(await screen.findByRole("button", { name: "Install" }));
+    await expectLink(
+      "Couldn't install: something went wrong. Please try again."
+    );
+  });
+
   it("says a failed check as sentences, never 'Couldn't check: Please try again.'", async () => {
     const transport = createMockTransport({ cliLink: LINK });
     transport.cliLinkStatus = async () => {

@@ -2,7 +2,12 @@ import {
   dockerPersistenceLabel,
   dockerRuntimeScopeLabel,
 } from "@core/docker-labels";
-import { formatBytes, formatPercent } from "@core/format";
+import {
+  formatBytes,
+  formatClockSeconds,
+  formatDateTime,
+  formatPercent,
+} from "@core/format";
 import type { DockerSnapshot } from "@core/generated/bindings";
 import { RetainedHistory } from "./retained-history";
 
@@ -27,14 +32,14 @@ export function DockerRuntime({ snapshot }: { snapshot: DockerSnapshot }) {
           <p className="mt-2 text-muted-foreground">
             {snapshot.runtime.explanation}
             {snapshot.engine?.capacity_observed_ms != null
-              ? ` Engine capacity observed ${new Date(snapshot.engine.capacity_observed_ms).toLocaleString()}.`
+              ? ` Engine capacity observed ${formatDateTime(snapshot.engine.capacity_observed_ms, { yearUnlessCurrent: true })}.`
               : " Engine capacity measurement time unavailable."}
           </p>
           <p className="mt-1 text-muted-foreground">
             {snapshot.runtime.processes.join(" · ") ||
               "No verified runtime processes"}
             {snapshot.runtime.observed_ms !== null
-              ? ` · observed ${new Date(snapshot.runtime.observed_ms).toLocaleTimeString()}`
+              ? ` · observed ${formatClockSeconds(snapshot.runtime.observed_ms)}`
               : ""}
           </p>
         </div>
@@ -45,7 +50,7 @@ export function DockerRuntime({ snapshot }: { snapshot: DockerSnapshot }) {
           · {formatBytes(snapshot.persistence.logical_bytes)} /{" "}
           {formatBytes(snapshot.persistence.allowance_bytes)} logical allowance
           {snapshot.persistence.retained_from_ms !== null
-            ? ` · retained from ${new Date(snapshot.persistence.retained_from_ms).toLocaleString()}`
+            ? ` · retained from ${formatDateTime(snapshot.persistence.retained_from_ms, { yearUnlessCurrent: true })}`
             : ""}
         </p>
         <RetainedHistory enabled generation={snapshot.generation} />

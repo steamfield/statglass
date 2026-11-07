@@ -24,6 +24,7 @@ import { useSharedContainerRange } from "../_hooks/use-shared-container-range";
 import {
   containerPath,
   dockerErrorMessage,
+  dockerErrorNotice,
   lifecycleLabel,
 } from "../_lib/presentation";
 import { ContainerHistory } from "./container-history";
@@ -122,7 +123,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
       <QueryNotice
         query={catalog}
         loading="Loading retained engines…"
-        error={(e) => `Retained catalog unavailable: ${dockerErrorMessage(e)}`}
+        error={(e) => dockerErrorNotice("Retained catalog", e)}
         empty={engines.length === 0 && "No retained Docker history yet."}
       />
       {engine && (
@@ -186,9 +187,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
           <QueryNotice
             query={rows}
             loading="Loading retained containers…"
-            error={(e) =>
-              `Retained containers unavailable: ${dockerErrorMessage(e)}`
-            }
+            error={(e) => dockerErrorNotice("Retained containers", e)}
           />
           {rows.isSuccess && (
             <>

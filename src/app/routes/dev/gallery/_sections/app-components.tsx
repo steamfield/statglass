@@ -737,7 +737,7 @@ export function AppComponentsSection() {
             <div className="relative h-36 rounded-card border border-border bg-card">
               <div className="absolute inset-x-4 bottom-6 border-axis border-t border-dashed" />
               <CollectingOverlay
-                recordedMs={4 * 60_000}
+                recordedMs={4 * MINUTE_MS}
                 retentionDays={30}
                 className="absolute inset-0"
               />

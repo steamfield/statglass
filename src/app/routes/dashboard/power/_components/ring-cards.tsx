@@ -8,17 +8,19 @@ import {
   wattsParts,
 } from "@core/format";
 import type { ClusterInfo } from "@core/generated/bindings";
-import { parseLabels, sk } from "@core/series-key";
+import { keyByLabel, parseLabels } from "@core/series-key";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
 import { useWindowSeries } from "~/hooks/use-window-series";
-import { usePowerSource } from "~/stores/live-selectors";
+import { clusterFreqKey, usePowerSource } from "~/stores/live-selectors";
 import { RingStatCard } from "~/widgets/ring-stat-card";
 import { fanModeLabel, fanSummary } from "../_lib/sensors";
 
 /** Ring scale for SoC temperatures (plan 4.5 uses the same 105 °C top). */
 const TEMP_MAX_C = 105;
+const fanRpmKey = keyByLabel("fan.rpm", "fan");
+const fanMaxKey = keyByLabel("fan.max", "fan");
 
 /**
  * The four ring cards across the top of Power & Sensors: CPU and GPU temperature,
@@ -39,9 +41,7 @@ export function RingCards({
     (k) => parseLabels(k).fan ?? ""
   );
   const pCluster = topology.find((c) => c.kind !== "efficiency")?.name;
-  const pFreqKey = pCluster
-    ? sk("cpu.cluster.freq", { cluster: pCluster })
-    : "";
+  const pFreqKey = pCluster ? clusterFreqKey(pCluster) : "";
   const v = useHeld([
     "thermal.cpu",
     "thermal.gpu",
@@ -50,10 +50,7 @@ export function RingCards({
     "power.package",
     "fan.mode",
     pFreqKey,
-    ...fanIds.flatMap((f) => [
-      sk("fan.rpm", { fan: f }),
-      sk("fan.max", { fan: f }),
-    ]),
+    ...fanIds.flatMap((f) => [fanRpmKey(f), fanMaxKey(f)]),
   ]);
   const at = (k: string) => v[k] ?? null;
   const system = useWindowSeries(["power.system"], 600_000);
@@ -70,8 +67,8 @@ export function RingCards({
   const cpuT = temp(at("thermal.cpu"));
   const gpuT = temp(at("thermal.gpu"));
 
-  const rpms = fanIds.map((f) => at(sk("fan.rpm", { fan: f })));
-  const maxes = fanIds.map((f) => at(sk("fan.max", { fan: f })));
+  const rpms = fanIds.map((f) => at(fanRpmKey(f)));
+  const maxes = fanIds.map((f) => at(fanMaxKey(f)));
   const rpmNow = rpms.reduce<number | null>(
     (m, x) => (x === null ? m : m === null ? x : Math.max(m, x)),
     null

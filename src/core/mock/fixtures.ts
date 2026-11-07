@@ -16,6 +16,7 @@ import type {
   SignalRefusal,
 } from "@core/generated/bindings";
 import { trayStyleMenuBar } from "@core/settings-patch";
+import { MINUTE_MS } from "../time-grid";
 import { LINUX_HOST_NAME, linuxCapabilities, linuxHostInfo } from "./linux";
 
 export const BLOCKED_REMOTE_UPDATE = {
@@ -236,7 +237,7 @@ export const TOPOLOGY: ClusterInfo[] = [
 export const MEM_TOTAL_BYTES = 24 * 2 ** 30;
 
 /** Sample uptime: "up 3d 4h" (popover), "3d 4h 12m" (machine header). */
-export const UPTIME_MS = ((3 * 24 + 4) * 60 + 12) * 60_000;
+export const UPTIME_MS = ((3 * 24 + 4) * 60 + 12) * MINUTE_MS;
 
 export function hostInfo(flags: ScenarioFlags, nowMs: number): HostInfo {
   if (flags.linux) return linuxHostInfo(nowMs);

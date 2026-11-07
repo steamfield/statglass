@@ -1,5 +1,10 @@
 import { clamp01 } from "@core/chart-math";
-import { formatTemperature, formatWatts, MISSING } from "@core/format";
+import {
+  formatTemperature,
+  formatWattHours,
+  formatWatts,
+  MISSING,
+} from "@core/format";
 import { Navigate } from "react-router";
 import { BatteryDayCard } from "~/components/battery-day-card";
 import { PageHeader } from "~/components/page-header";
@@ -17,8 +22,6 @@ const TEN_MIN_MS = 600_000;
 const POWER_KEY = ["battery.power"];
 
 const frac = (pct: number | null) => (pct === null ? [] : [clamp01(pct / 100)]);
-
-const wh = (v: number | null) => (v === null ? MISSING : v.toFixed(1));
 
 /**
  * Battery (plan 4.13): a row of ring cards in the Power & Sensors style
@@ -102,8 +105,11 @@ export default function BatteryRoute() {
             items={[
               {
                 label: "Full charge",
-                value: wh(b.capacityWh),
-                unit: b.designWh === null ? "Wh" : `of ${wh(b.designWh)} Wh`,
+                value: formatWattHours(b.capacityWh),
+                unit:
+                  b.designWh === null
+                    ? "Wh"
+                    : `of ${formatWattHours(b.designWh)} Wh`,
               },
               {
                 label: "Temperature",

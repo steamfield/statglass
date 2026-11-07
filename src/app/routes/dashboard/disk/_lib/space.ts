@@ -5,6 +5,7 @@ import type {
   SpaceScanStatus,
 } from "@core/generated/bindings";
 import type { SpaceTileKind } from "@core/space-treemap";
+import { MINUTE_MS } from "@core/time-grid";
 
 /** "12.4%", "<0.1%" for a sliver that would otherwise read as nothing. */
 export function shareLabel(share: number): string {
@@ -36,7 +37,7 @@ export function countLabel(n: number | null): string {
 /** "just now", "4 min ago", "2 h ago". */
 export function agoLabel(nowMs: number, thenMs: number | null): string {
   if (thenMs === null) return "";
-  const min = Math.floor((nowMs - thenMs) / 60_000);
+  const min = Math.floor((nowMs - thenMs) / MINUTE_MS);
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
   return `${Math.floor(min / 60)} h ago`;

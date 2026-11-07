@@ -1,4 +1,9 @@
-import { formatHoursMinutes, formatPercent, MISSING } from "@core/format";
+import {
+  formatHoursMinutes,
+  formatPercent,
+  formatWattHours,
+  MISSING,
+} from "@core/format";
 import { MINUTE_MS } from "@core/time-grid";
 import type { ReactNode } from "react";
 import { useBatterySummary } from "~/hooks/use-battery";
@@ -11,8 +16,6 @@ import { HistoryNotices } from "./history-notices";
 import { InlineMessage } from "./inline-message";
 import { SectionCard } from "./section-card";
 import { WindowControl } from "./window-control";
-
-const wh = (v: number | null) => (v === null ? MISSING : v.toFixed(1));
 
 /**
  * The "Battery, last 24 hours" section, shared by Power & Sensors and
@@ -58,8 +61,11 @@ export function BatteryDayCard({
                 },
                 {
                   label: "Full charge",
-                  value: wh(b.capacityWh),
-                  unit: b.designWh === null ? "Wh" : `of ${wh(b.designWh)} Wh`,
+                  value: formatWattHours(b.capacityWh),
+                  unit:
+                    b.designWh === null
+                      ? "Wh"
+                      : `of ${formatWattHours(b.designWh)} Wh`,
                 },
               ]}
             />

@@ -1,5 +1,6 @@
 import type { TimeRange } from "@core/brush";
 import { formatHistoryTime } from "@core/format";
+import { DAY_MS } from "@core/time-grid";
 import { PLOT_INSET } from "~/components/charts/layout";
 import { useModuleEnd } from "~/hooks/use-module-end";
 import { useBrushRange } from "~/stores/brush-store";
@@ -44,7 +45,7 @@ export function SelectionSummary({
     );
   }
   const r = shown ?? range;
-  const dates = end !== null || windowMs >= 86_400_000;
+  const dates = end !== null || windowMs >= DAY_MS;
   return (
     <p
       data-testid="selection-summary"

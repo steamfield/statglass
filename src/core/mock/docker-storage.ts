@@ -5,7 +5,7 @@ import type {
   DockerStorageReview,
   DockerStorageSnapshot,
 } from "@core/generated/bindings";
-import { DAY_MS, HOUR_MS } from "@core/time-grid";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import type { Transport } from "@core/transport";
 
 type Methods = Pick<
@@ -359,7 +359,7 @@ export function createMockDockerStorage(
         token,
         engine_id: cached.engine_id,
         generation: cached.generation,
-        expires_ms: now() + 60_000,
+        expires_ms: now() + MINUTE_MS,
         resources,
         selections: structuredClone(selections),
         estimated_reclaimed_bytes:

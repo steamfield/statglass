@@ -1,4 +1,5 @@
 import { RING_SPAN_MS } from "@core/generated/bindings";
+import { MINUTE_MS } from "../time-grid";
 import type { MockChannels } from "./channels";
 import type { MockCommands } from "./commands";
 import type {
@@ -45,7 +46,7 @@ export class MockStream {
       this.stepClock(-300_000);
     if (this.ring.flags.hiddenResume && this.ticks === 11) {
       this.setWindowVisible(false);
-      this.fastForward(30 * 60_000);
+      this.fastForward(30 * MINUTE_MS);
       // Shown in a later task, so anything the hidden window was sent
       // renders before it is shown, as it would sit in a real webview.
       setTimeout(() => {
@@ -131,7 +132,7 @@ export class MockStream {
       this.commands.record(
         "subscribe_live",
         host,
-        opts.backfillMs ?? 60000,
+        opts.backfillMs ?? MINUTE_MS,
         opts.series ?? null
       );
       if (
@@ -165,7 +166,7 @@ export class MockStream {
       }
       return remote.peer.subscribeLive(MOCK_HOST_ID, onMsg, opts);
     }
-    const backfillMs = Math.min(opts.backfillMs ?? 60_000, RING_SPAN_MS);
+    const backfillMs = Math.min(opts.backfillMs ?? MINUTE_MS, RING_SPAN_MS);
     this.commands.record(
       "subscribe_live",
       host,

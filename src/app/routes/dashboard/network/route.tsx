@@ -1,6 +1,6 @@
 import { formatBytes, formatPercent, formatRate } from "@core/format";
 import type { MetricStat } from "@core/generated/bindings";
-import { labelValues, sk } from "@core/series-key";
+import { keyByLabel, labelValues } from "@core/series-key";
 import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
 import { InterfaceTable } from "~/components/interface-table";
@@ -28,6 +28,7 @@ import { SelectionSummary } from "./_components/selection-summary";
 import { interfaceRows, networkSubtitle, ofLink } from "./_lib/network";
 
 const NO_KEYS: readonly string[] = [];
+const linkRateKey = keyByLabel("net.link_rate", "iface");
 
 /** Interface bytes from the stored totals, in every edition (D-091, D-098). */
 const TOTALS: readonly RangeTotal[] = [
@@ -70,7 +71,7 @@ export default function NetworkRoute() {
     () => labelValues(layout?.series ?? [], "net.rx", "iface"),
     [layout]
   );
-  const linkKey = sk("net.link_rate", { iface: primary ?? "" });
+  const linkKey = linkRateKey(primary ?? "");
   const heldKeys = useMemo(
     () => [...rxKeys, ...txKeys, linkKey],
     [rxKeys, txKeys, linkKey]

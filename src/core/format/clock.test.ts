@@ -41,6 +41,19 @@ describe("formatDateTime", () => {
     expect(formatHistoryTime(at(10, 4, 9, 5, 7), false)).toBe("09:05:07");
   });
 
+  it("adds the year for another year only when asked", () => {
+    const year = new Date().getFullYear();
+    const old = new Date(year - 1, 9, 5, 14, 2, 10).getTime();
+    const now = new Date(year, 9, 5, 14, 2, 10).getTime();
+    expect(formatDateTime(old)).toBe("Oct 5, 14:02:10");
+    expect(formatDateTime(old, { yearUnlessCurrent: true })).toBe(
+      `Oct 5, ${year - 1}, 14:02:10`
+    );
+    expect(formatDateTime(now, { yearUnlessCurrent: true })).toBe(
+      "Oct 5, 14:02:10"
+    );
+  });
+
   it("renders a missing time as a dash", () => {
     expect(formatDateTime(null)).toBe(MISSING);
     expect(formatDateTime(Number.NaN)).toBe(MISSING);

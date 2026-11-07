@@ -6,6 +6,7 @@ import {
 import { hostClock } from "@core/host-clock";
 import { scaledWindowMs, slowestIntervalMs } from "@core/live-window";
 import { historyKeys, hostKeys } from "@core/query-keys";
+import { MINUTE_MS } from "@core/time-grid";
 import type { Transport } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -81,7 +82,7 @@ function usePopoverBackfill(enabled: boolean): number | null {
   const fixed = useRef<number | null>(null);
   if (enabled && fixed.current === null && sampling && lowPower !== null) {
     fixed.current = scaledWindowMs(
-      60_000,
+      MINUTE_MS,
       slowestIntervalMs(sampling, lowPower)
     );
   }

@@ -12,7 +12,7 @@ import {
   USAGE_HISTORY_MAX_RANGE_MS,
   USAGE_PROCESS_PAGE_MAX,
 } from "@core/generated/bindings";
-import { floorTo } from "@core/time-grid";
+import { floorTo, MINUTE_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import { mockGaps } from "./history";
@@ -257,7 +257,8 @@ export class MockDurableUsage {
             { length: Math.max(0, end - offset) },
             (_, i) => ({
               pid: 4000 + offset + i,
-              start_time_us: (this.ring.startMs - 60_000) * 1000 + offset + i,
+              start_time_us:
+                (this.ring.startMs - MINUTE_MS) * 1000 + offset + i,
               name: request.app_name,
               figures: {
                 ...this.figures(

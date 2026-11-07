@@ -5,6 +5,7 @@
 import { clamp01 } from "@core/chart-math";
 import { formatClock, monthName, weekdayName } from "@core/format";
 import { HISTORY_TIERS } from "@core/generated/bindings";
+import { DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 
 /**
  * The presets, plus "6h": not a preset, only the window a heatmap cell older
@@ -13,19 +14,15 @@ import { HISTORY_TIERS } from "@core/generated/bindings";
  */
 export type Span = "1h" | "6h" | "24h" | "7d" | "30d";
 
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
 /** The store's 10 s and 1-minute tiers (D-076, D-092). */
 const [S10, M1] = HISTORY_TIERS;
 
 export const SPAN_MS: Record<Span, number> = {
-  "1h": HOUR,
-  "6h": 6 * HOUR,
-  "24h": DAY,
-  "7d": 7 * DAY,
-  "30d": 30 * DAY,
+  "1h": HOUR_MS,
+  "6h": 6 * HOUR_MS,
+  "24h": DAY_MS,
+  "7d": 7 * DAY_MS,
+  "30d": 30 * DAY_MS,
 };
 
 /**
@@ -34,7 +31,7 @@ export const SPAN_MS: Record<Span, number> = {
  * the narrower ones come back as plain quarters from `tier_15m`.
  */
 const LONG_BUCKETS_MS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360].map(
-  (m) => m * MINUTE
+  (m) => m * MINUTE_MS
 );
 
 /** Points per plot pixel a 7d or 30d range asks the store for. */
@@ -52,16 +49,16 @@ export const durationMs = (span: Span | number): number =>
 
 /** Formatting density only; query bounds always retain the actual duration. */
 export function presentationSpan(ms: number): Span {
-  if (ms <= HOUR) return "1h";
-  if (ms <= 6 * HOUR) return "6h";
-  if (ms <= DAY) return "24h";
-  return ms <= 7 * DAY ? "7d" : "30d";
+  if (ms <= HOUR_MS) return "1h";
+  if (ms <= 6 * HOUR_MS) return "6h";
+  if (ms <= DAY_MS) return "24h";
+  return ms <= 7 * DAY_MS ? "7d" : "30d";
 }
 
 export function requestBucketMs(span: Span | number, plotPx: number): number {
   const ms = durationMs(span);
-  if (ms <= HOUR) return S10.bucket_ms;
-  if (ms <= DAY) return M1.bucket_ms;
+  if (ms <= HOUR_MS) return S10.bucket_ms;
+  if (ms <= DAY_MS) return M1.bucket_ms;
   const points = POINTS_PER_PX * (plotPx > 0 ? plotPx : 1000);
   const want = ms / points;
   return (
@@ -98,8 +95,8 @@ export function historyWindow(
   const ms = durationMs(span);
   if (fixed)
     return { fromMs: toMs - ms, toMs, maxPoints: Math.ceil(ms / bucketMs) + 2 };
-  const slack = ms <= DAY ? bucketMs : 0;
-  const fromMs = Math.floor((toMs - ms) / bucketMs) * bucketMs - slack;
+  const slack = ms <= DAY_MS ? bucketMs : 0;
+  const fromMs = floorTo(toMs - ms, bucketMs) - slack;
   return {
     fromMs,
     toMs,
@@ -299,7 +296,10 @@ export function heatmapCellView(
   hourEndMs: number,
   nowMs: number
 ): { span: Span; endMs: number | null } {
-  if (hourStartMs < nowMs - MINUTES_KEPT_MS || hourEndMs - hourStartMs > HOUR) {
+  if (
+    hourStartMs < nowMs - MINUTES_KEPT_MS ||
+    hourEndMs - hourStartMs > HOUR_MS
+  ) {
     const mid = hourStartMs + (hourEndMs - hourStartMs) / 2;
     return { span: "6h", endMs: mid + SPAN_MS["6h"] / 2 };
   }

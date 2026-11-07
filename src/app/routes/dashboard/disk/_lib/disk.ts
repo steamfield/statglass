@@ -1,5 +1,5 @@
 import { countNoun } from "@core/format";
-import { sk } from "@core/series-key";
+import { keyByLabel } from "@core/series-key";
 import type { VolumeRow } from "~/components/volume-table";
 
 /**
@@ -7,6 +7,10 @@ import type { VolumeRow } from "~/components/volume-table";
  * Rust lists them (`HostInfo.boot_mounts`, D-092), then the rest
  * alphabetically.
  */
+const usedKey = keyByLabel("disk.used", "vol");
+const freeKey = keyByLabel("disk.free", "vol");
+const totalKey = keyByLabel("disk.total", "vol");
+
 export function volumeRows(
   vols: readonly string[],
   held: Record<string, number | null>,
@@ -22,9 +26,9 @@ export function volumeRows(
     id: vol,
     // Volume names ("Macintosh HD") are not in the schema; the mount point is.
     name: vol,
-    usedBytes: held[sk("disk.used", { vol })] ?? null,
-    freeBytes: held[sk("disk.free", { vol })] ?? null,
-    totalBytes: held[sk("disk.total", { vol })] ?? null,
+    usedBytes: held[usedKey(vol)] ?? null,
+    freeBytes: held[freeKey(vol)] ?? null,
+    totalBytes: held[totalKey(vol)] ?? null,
   }));
 }
 

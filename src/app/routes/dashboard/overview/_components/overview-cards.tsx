@@ -1,3 +1,4 @@
+import { scaleOrNull } from "@core/chart-math/numeric";
 /**
  * The six Overview cards (plan 4.5), each subscribed to its
  * own slice so one module's tick does not re-render the others.
@@ -125,7 +126,7 @@ export function OverviewGpuCard({ origin }: CardProps) {
 function useGpuCardInput() {
   const gpu = useGpu();
   const maxMhz = useGpuMaxMhz();
-  const maxFreqHz = maxMhz === null ? null : maxMhz * 1e6;
+  const maxFreqHz = scaleOrNull(maxMhz, 1e6);
   const powerMax = useMax24h("power", "power.gpu");
   return {
     ...gpu,

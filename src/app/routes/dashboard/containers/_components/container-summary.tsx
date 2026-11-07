@@ -1,4 +1,4 @@
-import { formatBytes, formatPercent } from "@core/format";
+import { formatBytes, formatPercent, MISSING } from "@core/format";
 import type { DockerSnapshot } from "@core/generated/bindings";
 import { useUnits } from "~/hooks/use-units";
 import { ProjectScope } from "./project-scope";
@@ -32,7 +32,7 @@ export function ContainerSummary({
         {project !== null && <span>{project || "Standalone"}</span>}
         <span>
           CPU {formatPercent(cpu)} (
-          {cpu === null ? "—" : (cpu / 100).toFixed(1)} cores)
+          {cpu === null ? MISSING : (cpu / 100).toFixed(1)} cores)
         </span>
         <span>Memory {formatBytes(memory, { units: bytes })}</span>
         <span>

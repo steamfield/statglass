@@ -1,6 +1,6 @@
 import { formatRate, MISSING } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
-import { sk } from "@core/series-key";
+import { keyByLabel } from "@core/series-key";
 import type { InterfaceRow } from "~/components/interface-table";
 
 /**
@@ -9,6 +9,9 @@ import type { InterfaceRow } from "~/components/interface-table";
  * collector methods), so they render as missing rather than guessed from the
  * BSD name.
  */
+const rxKey = keyByLabel("net.rx", "iface");
+const txKey = keyByLabel("net.tx", "iface");
+
 export function interfaceRows(
   ifaces: readonly string[],
   held: Record<string, number | null>
@@ -16,8 +19,8 @@ export function interfaceRows(
   return ifaces.map((id) => ({
     id,
     kind: MISSING,
-    rxBps: held[sk("net.rx", { iface: id })] ?? null,
-    txBps: held[sk("net.tx", { iface: id })] ?? null,
+    rxBps: held[rxKey(id)] ?? null,
+    txBps: held[txKey(id)] ?? null,
     rxBytes: null,
     txBytes: null,
   }));

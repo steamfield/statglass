@@ -1,6 +1,6 @@
 import type { Module } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
-import { DAY_MS } from "@core/time-grid";
+import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useHistoryHealth } from "~/hooks/use-history-health";
@@ -9,7 +9,7 @@ import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
 /** Plan 4.5: the 24 h maxima refresh every 10 minutes. */
-const REFRESH_MS = 10 * 60_000;
+const REFRESH_MS = 10 * MINUTE_MS;
 
 /**
  * 24 h maximum of `metric` (an unlabelled series), one `query_series_stats`

@@ -2,6 +2,8 @@ import {
   type ByteUnits,
   formatBytes,
   formatPercent,
+  formatPercentPoints,
+  formatSignedDelta,
   formatSpan,
   formatWattsFine,
 } from "@core/format";
@@ -65,11 +67,11 @@ export function historicalDelta(
   const b = previous ? historicalValue(previous, metric) : null;
   if (a === null || b === null) return "Difference unavailable";
   const difference = a - b;
-  const number =
+  return formatSignedDelta(difference, (size) =>
     metric === "cpu" || metric === "gpu"
-      ? `${Math.abs(difference).toFixed(1)} pp`
-      : historicalFigure(Math.abs(difference), metric, units);
-  return `${difference < 0 ? "−" : difference > 0 ? "+" : ""}${number}`;
+      ? formatPercentPoints(size)
+      : historicalFigure(size, metric, units)
+  );
 }
 export function historicalCoverage(
   coverage: UsageResourceCoverage | undefined,

@@ -40,5 +40,5 @@ export function fanSummary(fans: readonly (number | null)[]): string {
 export function fanModeLabel(mode: number | null): string {
   if (mode === 0) return "Automatic";
   if (mode === 1) return "Manual";
-  return "—";
+  return MISSING;
 }

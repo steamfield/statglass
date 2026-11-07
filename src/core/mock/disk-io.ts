@@ -7,7 +7,7 @@ import type {
   DiskIoRequest,
   Gap,
 } from "@core/generated/bindings";
-import { floorTo } from "@core/time-grid";
+import { floorTo, MINUTE_MS } from "@core/time-grid";
 import type { ScenarioName } from "./fixtures";
 import { mockBuckets } from "./protocol";
 
@@ -67,7 +67,7 @@ export function mockDiskIo(
   let readBytes = 0;
   let writeBytes = 0;
   const gapFrom = request.to_ms - 90_000;
-  const gapTo = request.to_ms - 60_000;
+  const gapTo = request.to_ms - MINUTE_MS;
   const gaps = [
     ...sharedGaps.filter((g) => g.module === null || g.module === "disk"),
     ...(scenarios.includes("disk-io-gap")

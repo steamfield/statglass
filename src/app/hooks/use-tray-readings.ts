@@ -1,3 +1,4 @@
+import { sumOrNull } from "@core/chart-math/numeric";
 import type { TrayReadings, TrayUnits } from "@core/tray-layout";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
@@ -33,7 +34,7 @@ function select(s: HostLiveState, bootMount: string | null) {
     power: selectPower(s).system,
     netUp: net.tx,
     netDown: net.rx,
-    diskRate: read === null || write === null ? null : read + write,
+    diskRate: sumOrNull(read, write),
     // Rust's `disk_used_pct`: a gap unless the total is a real size.
     diskUsed:
       used === null || total === null || total <= 0

@@ -1,3 +1,4 @@
+import { cssPercent } from "@core/format";
 import type { CSSProperties, ReactNode, Ref } from "react";
 import { WindowTicks } from "./window-ticks";
 
@@ -95,19 +96,18 @@ export function ChartSelectionVeil({
   highlight?: ({ left: number; width: number } | null) | undefined;
 }) {
   if (!highlight) return null;
-  const pct = (value: number) => `${(value * 100).toFixed(3)}%`;
   return (
     <>
       <div
         aria-hidden
         data-testid="stream-veil"
         className="pointer-events-none absolute inset-y-0 left-0 bg-card/60"
-        style={{ width: pct(highlight.left) }}
+        style={{ width: cssPercent(highlight.left) }}
       />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-y-0 right-0 bg-card/60"
-        style={{ left: pct(highlight.left + highlight.width) }}
+        style={{ left: cssPercent(highlight.left + highlight.width) }}
       />
     </>
   );
