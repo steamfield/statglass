@@ -4,7 +4,7 @@ mod catalog;
 use super::*;
 use crate::{Result, StoreError};
 use rusqlite::{Connection, OptionalExtension, params};
-use statglass_schema::HostId;
+use statglass_schema::{HostId, TimeRange};
 use std::cell::OnceCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -345,10 +345,7 @@ impl DockerReadSnapshot<'_> {
     }
 }
 fn bounds(start: i64, end: i64, alignment_slop: i64) -> Result<()> {
-    if end <= start || end.saturating_sub(start) > MAX_RANGE_MS + alignment_slop {
-        return Err(StoreError::Docker(
-            "history range must be positive and at most 30 days".into(),
-        ));
-    }
+    TimeRange::new(start, end, MAX_RANGE_MS + alignment_slop)
+        .map_err(|e| StoreError::Docker(e.to_string()))?;
     Ok(())
 }

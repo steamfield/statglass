@@ -21,17 +21,18 @@ use crate::ipc::{
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
 use crate::process_signal::{Micros, ProcessSignalError, SignalKind, SystemProcessOs};
 use crate::settings::SettingsPatch;
-use crate::state::AppState;
+use crate::state::{AppState, Route};
 
 /// Runs `f` on a blocking thread; `internal` when the task fails.
-async fn spawn_blocking<T: Send + 'static>(
+pub(crate) async fn spawn_blocking<T: Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, CommandError> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| CommandError::Internal {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| {
+        tracing::error!(error = %e, "command task failed");
+        CommandError::Internal {
             message: format!("command task failed: {e}"),
-        })
+        }
+    })
 }
 
 /// Runs `f` on a blocking thread with the app state.
@@ -260,7 +261,7 @@ pub async fn query_processes_at(
 /// the last hour (the store commits every 5 minutes, and the open bucket is never
 /// stored); the ring alone when the store is unavailable. `complete_to_ms` says where the
 /// engine's buckets stop being final. `remote_host` for a host other than this Mac, since
-/// per-app bytes are not synced; `invalid_argument` when `to_ms` is before `from_ms` or
+/// per-app bytes are not synced; `invalid_argument` when `from_ms` is not before `to_ms` or
 /// the range is longer than the longest history retention.
 #[tauri::command]
 #[specta::specta]
@@ -286,7 +287,7 @@ pub async fn query_network_by_app(
 /// `other` is what the host's own series measured beyond them over the covered part.
 /// A remote host answers from its own hub (D-117); its processes have no Quit.
 /// `remote_incompatible` for a remote host too old to answer, `remote_busy` for one too
-/// busy or slow to answer now; `invalid_argument` when `to_ms` is before `from_ms`.
+/// busy or slow to answer now; `invalid_argument` when `from_ms` is not before `to_ms`.
 #[tauri::command]
 #[specta::specta]
 pub async fn query_usage_by_app(
@@ -297,19 +298,11 @@ pub async fn query_usage_by_app(
     by: UsageKey,
     limit: u32,
 ) -> Result<UsageByApp, CommandError> {
-    if to_ms.0 < from_ms.0 {
-        return Err(CommandError::InvalidArgument {
-            message: format!("to_ms {} is before from_ms {}", to_ms.0, from_ms.0),
-        });
-    }
-    let remote = {
-        let state = app.state::<AppState>();
-        if host == state.local {
-            None
-        } else {
-            let source = state.remotes.source(host)?;
-            Some(source.usage_by_app(from_ms.0, to_ms.0, by, limit).await?)
-        }
+    statglass_schema::TimeRange::new(from_ms.0, to_ms.0, i64::MAX)?;
+    let route = app.state::<AppState>().route(host)?;
+    let remote = match route {
+        Route::Local => None,
+        Route::Remote(source) => Some(source.usage_by_app(from_ms.0, to_ms.0, by, limit).await?),
     };
     blocking(app, move |state| {
         let entry = state.host(host)?;
@@ -358,7 +351,7 @@ pub async fn query_usage_by_app(
 
 /// The apps `query_usage_by_app` ranks first over `[from_ms, to_ms)` by `by`, the
 /// largest `limit`, each as one value per 10 s bucket (D-099). `remote_host` for a host
-/// other than this Mac; `invalid_argument` when `to_ms` is before `from_ms` or the range
+/// other than this Mac; `invalid_argument` when `from_ms` is not before `to_ms` or the range
 /// is longer than the hour the samples are kept.
 #[tauri::command]
 #[specta::specta]
@@ -387,7 +380,7 @@ pub async fn query_usage_series(
 /// from their rollups through now: each one's span-weighted average, largest sample and
 /// integral over the measured time (gaps that apply to its module left out). With
 /// history unavailable, the engine's last 15 minutes alone. `invalid_argument` when
-/// `to_ms` is before `from_ms`, the range is longer than the longest history retention,
+/// `from_ms` is not before `to_ms`, the range is longer than the longest history retention,
 /// or a metric is labelled or unknown.
 #[tauri::command]
 #[specta::specta]

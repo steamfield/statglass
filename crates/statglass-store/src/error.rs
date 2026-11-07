@@ -48,3 +48,68 @@ pub enum StoreError {
 }
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;
+
+impl StoreError {
+    fn sqlite_code(&self) -> Option<rusqlite::ErrorCode> {
+        match self {
+            StoreError::Sqlite(e) => e.sqlite_error_code(),
+            _ => None,
+        }
+    }
+
+    /// Another process holds the file, or SQLite gave up waiting for a lock: worth
+    /// retrying shortly.
+    pub fn is_busy(&self) -> bool {
+        matches!(self, StoreError::Locked { .. })
+            || matches!(
+                self.sqlite_code(),
+                Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+            )
+    }
+
+    /// The file or a row in it is damaged: retrying will not help.
+    pub fn is_corrupt(&self) -> bool {
+        matches!(self, StoreError::Corrupt(_) | StoreError::Cbor(_))
+            || matches!(
+                self.sqlite_code(),
+                Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
+            )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sqlite(code: i32) -> StoreError {
+        StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(code),
+            None,
+        ))
+    }
+
+    #[test]
+    fn classifies_busy_and_corrupt_failures() {
+        let locked = StoreError::Locked {
+            path: PathBuf::from("h.sqlite"),
+        };
+        for busy in [
+            locked,
+            sqlite(rusqlite::ffi::SQLITE_BUSY),
+            sqlite(rusqlite::ffi::SQLITE_LOCKED),
+        ] {
+            assert!(busy.is_busy() && !busy.is_corrupt(), "{busy}");
+        }
+        for corrupt in [
+            StoreError::Corrupt("bad blob".into()),
+            StoreError::Cbor("bad cbor".into()),
+            sqlite(rusqlite::ffi::SQLITE_CORRUPT),
+            sqlite(rusqlite::ffi::SQLITE_NOTADB),
+        ] {
+            assert!(corrupt.is_corrupt() && !corrupt.is_busy(), "{corrupt}");
+        }
+        for neither in [sqlite(rusqlite::ffi::SQLITE_FULL), StoreError::WriterGone] {
+            assert!(!neither.is_busy() && !neither.is_corrupt(), "{neither}");
+        }
+    }
+}

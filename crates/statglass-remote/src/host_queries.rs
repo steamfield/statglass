@@ -112,8 +112,8 @@ impl<H: ServedHost> HostServer<H> {
                 usize::try_from(limit).unwrap_or(usize::MAX).min(500),
             )),
             Query::HistoricalUsage(request) => {
-                if let Err(message) = request.validate() {
-                    return invalid(message);
+                if let Err(error) = request.validate() {
+                    return invalid(&error.to_string());
                 }
                 if request.host != self.host().record().id {
                     return invalid("usage query host does not match this host");
@@ -128,8 +128,8 @@ impl<H: ServedHost> HostServer<H> {
                     .unwrap_or_else(usage_error)
             }
             Query::UsageProcesses(request) => {
-                if let Err(message) = request.validate() {
-                    return invalid(message);
+                if let Err(error) = request.validate() {
+                    return invalid(&error.to_string());
                 }
                 if request.host != self.host().record().id {
                     return invalid("usage query host does not match this host");
@@ -179,20 +179,15 @@ fn usage_error(error: statglass_engine::HistoryStoreError) -> Answer {
         statglass_engine::HistoryStoreError::Store(statglass_store::StoreError::Usage(message)) => {
             invalid(&message)
         }
-        statglass_engine::HistoryStoreError::Store(statglass_store::StoreError::Sqlite(error))
-            if matches!(
-                error.sqlite_error_code(),
-                Some(
-                    statglass_store::rusqlite::ErrorCode::DatabaseBusy
-                        | statglass_store::rusqlite::ErrorCode::DatabaseLocked
-                )
-            ) =>
-        {
-            Answer::Error {
-                code: ErrorCode::Busy,
-                message: error.to_string(),
-            }
-        }
+        statglass_engine::HistoryStoreError::Store(error) if error.is_busy() => Answer::Error {
+            code: ErrorCode::Busy,
+            message: error.to_string(),
+        },
+        // A damaged store cannot answer until it is reset on the host.
+        statglass_engine::HistoryStoreError::Store(error) if error.is_corrupt() => Answer::Error {
+            code: ErrorCode::HistoryUnavailable,
+            message: error.to_string(),
+        },
         error => Answer::Error {
             code: ErrorCode::Internal,
             message: error.to_string(),
@@ -216,6 +211,26 @@ mod tests {
             (StoreError::WriterGone, ErrorCode::HistoryUnavailable),
             (
                 StoreError::Corrupt("bad usage blob".into()),
+                ErrorCode::HistoryUnavailable,
+            ),
+            (
+                StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+                    None,
+                )),
+                ErrorCode::HistoryUnavailable,
+            ),
+            (
+                StoreError::Locked {
+                    path: "history.sqlite".into(),
+                },
+                ErrorCode::Busy,
+            ),
+            (
+                StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+                    None,
+                )),
                 ErrorCode::Internal,
             ),
             (

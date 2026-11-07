@@ -2,19 +2,13 @@
 use crate::error::CommandError;
 use statglass_engine::docker::{DockerServiceError, storage::DockerStorageError};
 
-pub(super) fn task_failed(message: &'static str, source: impl std::fmt::Display) -> CommandError {
-    tracing::error!(error = %source, message, "Docker command task failed");
-    CommandError::Internal {
-        message: message.into(),
-    }
-}
-
 impl From<DockerServiceError> for CommandError {
     fn from(error: DockerServiceError) -> Self {
         match error {
             DockerServiceError::InvalidRequest(message) => Self::InvalidArgument {
                 message: message.into(),
             },
+            DockerServiceError::Range(error) => error.into(),
             DockerServiceError::NotFound(message) => Self::DockerNotFound {
                 message: message.into(),
             },

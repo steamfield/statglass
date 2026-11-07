@@ -194,15 +194,19 @@ impl Remote for Ssh<'_> {
     ) -> crate::Result<Output> {
         let mut cmd = ssh_command(self.0)?;
         cmd.arg(command);
-        let output = collect(cmd, stdin, timeout).await?;
-        // 255 is ssh's own failure: connection, host key or authentication.
-        if output.code == Some(255) {
-            return Err(crate::install::setup_ssh_error(
-                output.stderr.trim().to_string(),
-            ));
-        }
-        Ok(output)
+        ssh_status(collect(cmd, stdin, timeout).await?)
     }
+}
+
+/// `output`, unless ssh itself failed: exit 255 is ssh's own failure (connection, host key
+/// or authentication). Any other status is the remote command's own.
+pub(crate) fn ssh_status(output: Output) -> crate::Result<Output> {
+    if output.code == Some(255) {
+        return Err(crate::install::setup_ssh_error(
+            output.stderr.trim().to_string(),
+        ));
+    }
+    Ok(output)
 }
 
 /// Spawns `cmd`, feeds it `stdin`, and collects bounded output within `timeout`.
@@ -267,6 +271,21 @@ async fn bounded(stream: impl AsyncRead + Unpin) -> crate::Result<String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// Runs the command line `command` on the remote and returns its stdout, or [`failed`]
+/// when it exits non-zero.
+pub(crate) async fn run_command(
+    remote: &impl Remote,
+    command: &str,
+    stdin: Option<&[u8]>,
+    timeout: Duration,
+) -> crate::Result<String> {
+    let output = remote.exec(command, stdin, timeout).await?;
+    if output.code == Some(0) {
+        return Ok(output.stdout);
+    }
+    Err(failed(&output))
+}
+
 /// Runs `script` through `/bin/sh` on the remote and returns its stdout, or its stderr
 /// as the error when it exits non-zero.
 pub(crate) async fn run_script(
@@ -275,11 +294,7 @@ pub(crate) async fn run_script(
     stdin: Option<&[u8]>,
     timeout: Duration,
 ) -> Result<String> {
-    let output = remote.exec(&sh_c(script)?, stdin, timeout).await?;
-    if output.code == Some(0) {
-        return Ok(output.stdout);
-    }
-    Err(failed(&output).into())
+    Ok(run_command(remote, &sh_c(script)?, stdin, timeout).await?)
 }
 
 /// The error for a script that exited non-zero.

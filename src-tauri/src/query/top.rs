@@ -9,6 +9,7 @@ use std::sync::Arc;
 use statglass_query::{
     Answer, ErrorDetails, ErrorTag, Op, Range, TopAnswer, TopApp, TopProcess, UsageBy,
 };
+use statglass_schema::TimeRange;
 use statglass_schema::durable_usage::{
     HistoricalUsageMetric, HistoricalUsageReply, HistoricalUsageRequest,
 };
@@ -77,9 +78,8 @@ pub(super) async fn answer(
     else {
         return Err(err(ErrorTag::Defect));
     };
-    if from_ms >= to_ms {
-        return Err(super::map::bad_range(None, "from must be before to"));
-    }
+    TimeRange::new(from_ms, to_ms, i64::MAX)
+        .map_err(|e| super::map::bad_range(None, &e.to_string()))?;
     // Host lookup and the clock read in-memory state only, so they run here.
     let view = resolve_enabled(backend.as_ref(), host.as_deref())?;
     let now = backend.host_now(view.record.id);
@@ -143,7 +143,7 @@ fn local(backend: &dyn Backend, view: &HostView, ask: &Ask) -> Result<Answer, Fa
             let request = durable_request(view, ask);
             request
                 .validate()
-                .map_err(|m| super::map::hint(ErrorTag::Usage, m))?;
+                .map_err(|e| super::map::hint(ErrorTag::Usage, e.to_string()))?;
             let reply = backend.durable_usage(&request).map_err(from_command)?;
             from_durable(&reply, ask.by)
         }

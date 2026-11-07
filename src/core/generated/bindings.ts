@@ -178,7 +178,7 @@ export const commands = {
 	 *  the last hour (the store commits every 5 minutes, and the open bucket is never
 	 *  stored); the ring alone when the store is unavailable. `complete_to_ms` says where the
 	 *  engine's buckets stop being final. `remote_host` for a host other than this Mac, since
-	 *  per-app bytes are not synced; `invalid_argument` when `to_ms` is before `from_ms` or
+	 *  per-app bytes are not synced; `invalid_argument` when `from_ms` is not before `to_ms` or
 	 *  the range is longer than the longest history retention.
 	 */
 	queryNetworkByApp: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<NetworkByApp, CommandError>(__TAURI_INVOKE("query_network_by_app", { host, fromMs, toMs })),
@@ -192,13 +192,13 @@ export const commands = {
 	 *  `other` is what the host's own series measured beyond them over the covered part.
 	 *  A remote host answers from its own hub (D-117); its processes have no Quit.
 	 *  `remote_incompatible` for a remote host too old to answer, `remote_busy` for one too
-	 *  busy or slow to answer now; `invalid_argument` when `to_ms` is before `from_ms`.
+	 *  busy or slow to answer now; `invalid_argument` when `from_ms` is not before `to_ms`.
 	 */
 	queryUsageByApp: (host: HostId, fromMs: Millis, toMs: Millis, by: UsageKey, limit: number) => typedError<UsageByApp, CommandError>(__TAURI_INVOKE("query_usage_by_app", { host, fromMs, toMs, by, limit })),
 	/**
 	 *  The apps `query_usage_by_app` ranks first over `[from_ms, to_ms)` by `by`, the
 	 *  largest `limit`, each as one value per 10 s bucket (D-099). `remote_host` for a host
-	 *  other than this Mac; `invalid_argument` when `to_ms` is before `from_ms` or the range
+	 *  other than this Mac; `invalid_argument` when `from_ms` is not before `to_ms` or the range
 	 *  is longer than the hour the samples are kept.
 	 */
 	queryUsageSeries: (host: HostId, fromMs: Millis, toMs: Millis, by: UsageKey, limit: number) => typedError<UsageSeries, CommandError>(__TAURI_INVOKE("query_usage_series", { host, fromMs, toMs, by, limit })),
@@ -207,7 +207,7 @@ export const commands = {
 	 *  from their rollups through now: each one's span-weighted average, largest sample and
 	 *  integral over the measured time (gaps that apply to its module left out). With
 	 *  history unavailable, the engine's last 15 minutes alone. `invalid_argument` when
-	 *  `to_ms` is before `from_ms`, the range is longer than the longest history retention,
+	 *  `from_ms` is not before `to_ms`, the range is longer than the longest history retention,
 	 *  or a metric is labelled or unknown.
 	 */
 	querySeriesStats: (host: HostId, metrics: string[], fromMs: Millis, toMs: Millis) => typedError<SeriesStats, CommandError>(__TAURI_INVOKE("query_series_stats", { host, metrics, fromMs, toMs })),

@@ -374,7 +374,7 @@ fn record_coverage(
 }
 
 fn pending_buckets(s: &State, batch: &mut db::DockerBatch, daemon: &str, now: i64) -> Vec<Key> {
-    let cut = now.div_euclid(DOCKER_BUCKET_MS) * DOCKER_BUCKET_MS;
+    let cut = floor_to(now, DOCKER_BUCKET_MS);
     let keys: Vec<_> = s
         .entries
         .iter()

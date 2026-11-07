@@ -193,13 +193,8 @@ pub fn resolve_range(args: &RangeArgs, now_ms: i64) -> Result<(i64, i64), Failur
             to.saturating_sub(back)
         }
     };
-    if from >= to {
-        let input = args.from.as_deref().unwrap_or_default();
-        return Err(bad_range(
-            input,
-            "the start must be before the end".to_owned(),
-        ));
-    }
+    statglass_schema::TimeRange::new(from, to, i64::MAX)
+        .map_err(|e| bad_range(args.from.as_deref().unwrap_or_default(), e.to_string()))?;
     Ok((from, to))
 }
 

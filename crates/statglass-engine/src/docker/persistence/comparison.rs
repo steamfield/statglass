@@ -5,9 +5,8 @@ impl DockerRecorder {
         &self,
         q: &api::DockerComparisonRequest,
     ) -> Result<api::DockerComparisonPage, DockerServiceError> {
-        if q.to_ms <= q.from_ms
-            || q.to_ms.saturating_sub(q.from_ms) > db::MAX_RANGE_MS
-            || q.max_points == 0
+        TimeRange::new(q.from_ms, q.to_ms, db::MAX_RANGE_MS)?;
+        if q.max_points == 0
             || q.max_points > 360
             || q.selected.as_ref().is_some_and(|ids| ids.len() > 6)
             || q.engine_id.len() > 256
@@ -17,7 +16,7 @@ impl DockerRecorder {
                 .is_some_and(|ids| ids.iter().any(|id| id.len() > 256))
         {
             return Err(DockerServiceError::InvalidRequest(
-                "Comparison request exceeds range, six-series or 360-point bounds",
+                "Comparison request exceeds six-series or 360-point bounds",
             ));
         }
         let (attached, coord) = self.context();
@@ -94,7 +93,7 @@ impl DockerRecorder {
         q: &api::DockerComparisonRequest,
         s: &mut State,
     ) -> Result<ComparisonRead<'_>, DockerServiceError> {
-        let from = q.from_ms.div_euclid(900_000) * 900_000;
+        let from = floor_to(q.from_ms, 900_000);
         let ring: Vec<_> = s
             .entries
             .iter()

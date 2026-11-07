@@ -3,7 +3,7 @@ use super::{Op, State, Writer};
 use crate::docker::{invalid, pack, table, unpack};
 use crate::{Result, StoreError, docker::*};
 use rusqlite::{OptionalExtension, params};
-use statglass_schema::{HostId, Tier, lock::LockExt};
+use statglass_schema::{HostId, Tier, floor_to, lock::LockExt};
 use std::sync::{Arc, Mutex, mpsc};
 
 #[derive(Default)]
@@ -394,7 +394,7 @@ impl State {
         let src = table(source)?;
         let dst = table(target)?;
         let width = target.bucket_ms().ok_or(StoreError::NotPersisted(target))?;
-        let start = time.div_euclid(width) * width;
+        let start = floor_to(time, width);
         let end = start + width;
         let rows:Vec<(i64,Vec<u8>)>=self.conn.prepare(&format!("SELECT revision,payload FROM {src} WHERE entity_id=?1 AND bucket_ms>=?2 AND bucket_ms<?3 AND layout_id=?4 ORDER BY bucket_ms"))?.query_map(params![entity,start,end,layout],|r|Ok((r.get(0)?,r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
         let mut folded: Vec<WeightedMetric> = Vec::new();

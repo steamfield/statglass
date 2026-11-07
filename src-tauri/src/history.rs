@@ -7,7 +7,7 @@ use crate::ipc::{
     ProcessResolution, ProcessesAt, StoredProcess, TierRequest,
 };
 use statglass_engine::{HistoryStore, HousekeepingHandle};
-use statglass_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier};
+use statglass_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier, TimeRange};
 use statglass_store::{
     BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, BucketRow, ExportQuery, HistoryQuery,
     HistoryResult, ProcResolution, RangeStats, Reader, Retention, TierChoice, Writer,

@@ -346,6 +346,13 @@ fn network_by_app_merges_the_ring_over_the_store_and_adds_up() {
         history.network_by_app(host, NOW, NOW - 1, RecentNet::default),
         Err(CommandError::InvalidArgument { .. })
     ));
+    assert!(
+        matches!(
+            history.network_by_app(host, NOW, NOW, RecentNet::default),
+            Err(CommandError::InvalidArgument { .. })
+        ),
+        "an empty range is refused"
+    );
     history.close();
 }
 
@@ -615,6 +622,9 @@ fn series_stats_count_measured_time_through_now() {
 
     let bad = History::unavailable().series_stats(host, &net(), NOW + S, NOW, NOW, Vec::new);
     assert!(matches!(bad, Err(CommandError::InvalidArgument { .. })));
+    // An empty range is refused too, not answered with nothing.
+    let empty = History::unavailable().series_stats(host, &net(), NOW, NOW, NOW, Vec::new);
+    assert!(matches!(empty, Err(CommandError::InvalidArgument { .. })));
 }
 
 #[test]

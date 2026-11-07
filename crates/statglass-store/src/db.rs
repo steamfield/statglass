@@ -366,24 +366,24 @@ pub(crate) fn read_next_seq(conn: &Connection) -> Result<i64> {
     seq.ok_or_else(|| StoreError::Corrupt("meta has no next_seq".into()))
 }
 
-/// The tier table for a persisted tier.
-pub(crate) fn tier_table(tier: Tier) -> Result<&'static str> {
+/// `s10`, `m1` or `m15` for a persisted tier; `NotPersisted` for any other.
+pub(crate) fn per_tier<T>(tier: Tier, [s10, m1, m15]: [T; 3]) -> Result<T> {
     match tier {
-        Tier::S10 => Ok("tier_10s"),
-        Tier::M1 => Ok("tier_1m"),
-        Tier::M15 => Ok("tier_15m"),
+        Tier::S10 => Ok(s10),
+        Tier::M1 => Ok(m1),
+        Tier::M15 => Ok(m15),
         Tier::Live1s | Tier::Unknown => Err(StoreError::NotPersisted(tier)),
     }
 }
 
+/// The tier table for a persisted tier.
+pub(crate) fn tier_table(tier: Tier) -> Result<&'static str> {
+    per_tier(tier, ["tier_10s", "tier_1m", "tier_15m"])
+}
+
 /// The per-app network table of a persisted tier.
 pub(crate) fn net_table(tier: Tier) -> Result<&'static str> {
-    match tier {
-        Tier::S10 => Ok("proc_net_10s"),
-        Tier::M1 => Ok("proc_net_1m"),
-        Tier::M15 => Ok("proc_net_15m"),
-        Tier::Live1s | Tier::Unknown => Err(StoreError::NotPersisted(tier)),
-    }
+    per_tier(tier, ["proc_net_10s", "proc_net_1m", "proc_net_15m"])
 }
 
 /// Bucket width of a persisted tier.
@@ -495,12 +495,14 @@ impl HistoryTable {
 /// that the roll-down will fold them into (D-076). Each row weighs its width in minutes,
 /// so a slot holding both kinds is not tilted toward whichever has more rows.
 pub(crate) fn bucket_sources(tier: Tier) -> Result<&'static [(&'static str, u32)]> {
-    match tier {
-        Tier::S10 => Ok(&[("tier_10s", 1)]),
-        Tier::M1 => Ok(&[("tier_1m", 1)]),
-        Tier::M15 => Ok(&[("tier_15m", 15), ("tier_1m", 1)]),
-        Tier::Live1s | Tier::Unknown => Err(StoreError::NotPersisted(tier)),
-    }
+    per_tier(
+        tier,
+        [
+            &[("tier_10s", 1)],
+            &[("tier_1m", 1)],
+            &[("tier_15m", 15), ("tier_1m", 1)],
+        ],
+    )
 }
 
 /// `SELECT bucket_ts, layout_id, blob, weight` over every [`bucket_sources`] table of
@@ -545,6 +547,17 @@ mod tests {
             .unwrap();
         for table in tables {
             conn.execute_batch(&format!("DROP TABLE {table}")).unwrap();
+        }
+    }
+
+    #[test]
+    fn per_tier_picks_the_persisted_tier_and_refuses_the_rest() {
+        let pick = |tier| per_tier(tier, ["a", "b", "c"]);
+        assert_eq!(pick(Tier::S10).unwrap(), "a");
+        assert_eq!(pick(Tier::M1).unwrap(), "b");
+        assert_eq!(pick(Tier::M15).unwrap(), "c");
+        for tier in [Tier::Live1s, Tier::Unknown] {
+            assert!(matches!(pick(tier), Err(StoreError::NotPersisted(t)) if t == tier));
         }
     }
 

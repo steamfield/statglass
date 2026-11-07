@@ -14,14 +14,7 @@ impl From<statglass_engine::HistoryHealth> for HistoryHealth {
 
 impl HistoryRequest {
     pub fn to_query(&self) -> Result<HistoryQuery, CommandError> {
-        if self.from_ms >= self.to_ms {
-            return Err(CommandError::InvalidArgument {
-                message: format!(
-                    "from_ms {} is not before to_ms {}",
-                    self.from_ms, self.to_ms
-                ),
-            });
-        }
+        TimeRange::new(self.from_ms, self.to_ms, i64::MAX)?;
         if self.max_points == 0 {
             return Err(CommandError::InvalidArgument {
                 message: "max_points must be at least 1".into(),
@@ -116,14 +109,7 @@ impl HeatmapRequest {
 
 impl ExportRequest {
     pub fn to_query(&self) -> Result<ExportQuery, CommandError> {
-        if self.from_ms >= self.to_ms {
-            return Err(CommandError::InvalidArgument {
-                message: format!(
-                    "from_ms {} is not before to_ms {}",
-                    self.from_ms, self.to_ms
-                ),
-            });
-        }
+        TimeRange::new(self.from_ms, self.to_ms, i64::MAX)?;
         if self.selectors.is_empty() {
             return Err(CommandError::InvalidArgument {
                 message: "no series selected".into(),

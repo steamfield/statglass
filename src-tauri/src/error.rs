@@ -4,7 +4,6 @@
 use serde::Serialize;
 use statglass_schema::{HostId, JsSafeInt};
 use statglass_store::StoreError;
-use statglass_store::rusqlite::ErrorCode;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -132,27 +131,20 @@ impl CommandError {
 
 pub use statglass_engine::HistoryUnavailableReason;
 
-fn sqlite_code(e: &StoreError) -> Option<ErrorCode> {
-    match e {
-        StoreError::Sqlite(e) => e.sqlite_error_code(),
-        _ => None,
+impl From<statglass_schema::RangeError> for CommandError {
+    fn from(e: statglass_schema::RangeError) -> Self {
+        CommandError::InvalidArgument {
+            message: e.to_string(),
+        }
     }
 }
 
-fn is_corrupt(e: &StoreError) -> bool {
-    matches!(e, StoreError::Corrupt(_) | StoreError::Cbor(_))
-        || matches!(
-            sqlite_code(e),
-            Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase)
-        )
-}
-
-fn is_busy(e: &StoreError) -> bool {
-    matches!(e, StoreError::Locked { .. })
-        || matches!(
-            sqlite_code(e),
-            Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
-        )
+impl From<statglass_schema::durable_usage::UsageRequestError> for CommandError {
+    fn from(e: statglass_schema::durable_usage::UsageRequestError) -> Self {
+        CommandError::InvalidArgument {
+            message: e.to_string(),
+        }
+    }
 }
 
 impl From<StoreError> for CommandError {
@@ -164,10 +156,10 @@ impl From<StoreError> for CommandError {
             StoreError::TooNew { found, supported } => {
                 CommandError::StoreTooNew { found, supported }
             }
-            e if is_busy(&e) => CommandError::StoreBusy {
+            e if e.is_busy() => CommandError::StoreBusy {
                 message: e.to_string(),
             },
-            e if is_corrupt(&e) => CommandError::StoreCorrupt {
+            e if e.is_corrupt() => CommandError::StoreCorrupt {
                 message: e.to_string(),
             },
             e => CommandError::Store {

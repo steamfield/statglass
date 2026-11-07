@@ -14,6 +14,7 @@
 //! | Know what a metric is | [`Catalog::builtin`], [`Catalog::validate`], [`MetricDef`] (`persisted` decides tier storage), [`Catalog::over_cap`] (`max_cardinality`), [`bound_label_value`] |
 //! | Identify a host | [`HostId`] (UUID), [`HostRecord`] (controller side, with `is_local`), [`HostIdentity`] (on the wire), [`HostInfo`] |
 //! | Tiers and sync | [`Tier`] (`bucket_ms`, `bucket_start`/`bucket_end`, `PERSISTED`), [`floor_to`]/[`ceil_to`], [`Cursor`] (`epoch` + `seq`), [`SyncRowKind`]/[`SyncKinds`] (row kinds gated on negotiated features) |
+//! | Query ranges | [`TimeRange::new`] (non-empty, bounded), [`RangeError`] |
 //! | Gaps | [`Gap`], [`GapReason`] (`as_str`/`parse` give the `gaps.reason` text), nullable [`Gap::module`] set only for `module_disabled`, [`Module::as_str`] for `gaps.module` |
 //! | Capabilities | [`Capabilities`], [`ModuleCap`], [`UnsupportedReason`], [`Entitlement`] |
 //! | Settings | [`Settings`] with [`Settings::validate`] |
@@ -58,6 +59,7 @@ mod module;
 mod series;
 pub mod settings;
 mod snapshot;
+mod time_range;
 pub mod usage;
 
 pub use alert::{AlertRule, Cmp, Condition, ThermalState};
@@ -80,6 +82,7 @@ pub use snapshot::{
     FrameLenMismatch, FrameView, GpuView, InterfaceView, LabeledValue, MemoryView, NetworkView,
     PowerView, SensorsView, Snapshot, VolumeView,
 };
+pub use time_range::{RangeError, TimeRange};
 
 /// Crate name. The phase 0 placeholder tests in `statglass-store`, `statglass-collect` and
 /// `statglass-engine` link against it; remove it once those crates use real types.
