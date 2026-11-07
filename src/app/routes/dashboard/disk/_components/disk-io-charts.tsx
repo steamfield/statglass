@@ -1,11 +1,25 @@
 import type { TimeRange } from "@core/brush";
-import { formatHistoryTime, formatRate, MISSING } from "@core/format";
+import { indexAt } from "@core/chart-math";
+import {
+  formatHistoryTime,
+  formatRate,
+  MISSING,
+  resolutionLabel,
+} from "@core/format";
 import type { DiskIoPage, DiskIoPoint } from "@core/generated/bindings";
 import { gapBands } from "@core/history-state";
 import { spanWords } from "@core/live-window";
 import { DAY_MS, floorTo } from "@core/time-grid";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
-import { ChartTooltipShell } from "~/components/charts/chart-tooltip";
+import {
+  ChartTooltipHead,
+  ChartTooltipRow,
+  ChartTooltipRows,
+  ChartTooltipShell,
+  fillTooltip,
+  tooltipBeside,
+} from "~/components/charts/chart-tooltip";
+import { PLOT_INSET } from "~/components/charts/layout";
 import {
   MirrorChart,
   paintMirrorCrosshairs,
@@ -29,6 +43,17 @@ const milliseconds = (n: number) =>
   n > 0 && n < 0.01
     ? "<0.01 ms"
     : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} ms`;
+
+const opsText = (n: number | null | undefined) =>
+  n == null ? MISSING : operations(n);
+const TOOLTIP_ROWS = [
+  ["Read", "read"],
+  ["Write", "write"],
+  ["Read operations", "readOps"],
+  ["Write operations", "writeOps"],
+  ["Read request", "readTime"],
+  ["Write request", "writeTime"],
+] as const;
 
 /** Two views of the same backend buckets, with a shared DOM crosshair. */
 export function DiskIoCharts({
@@ -59,51 +84,38 @@ export function DiskIoCharts({
     );
   }, [page.points, page.bucket_ms, count, first]);
   const paint = useCallback(
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
     (time: number | null) => {
       hovered.current = time;
       const root = host.current;
       if (!root) return;
+      const bucket = page.bucket_ms;
       const i =
-        time === null ? -1 : Math.floor((time - first) / page.bucket_ms);
-      const point = points[i];
-      const valid = i >= 0 && i < count;
-      paintMirrorCrosshairs(root, valid ? i : null, count);
+        time === null
+          ? null
+          : indexAt((time - first) / (count * bucket), count);
+      paintMirrorCrosshairs(root, i, count);
       const tip = root.querySelector<HTMLElement>('[role="tooltip"]');
       if (!tip) return;
-      tip.hidden = !valid;
-      const set = (field: string, value: string) => {
-        const el = tip.querySelector(`[data-io-field="${field}"]`);
-        if (el) el.textContent = value;
-      };
-      set(
-        "time",
-        valid
-          ? `${formatHistoryTime(first + i * page.bucket_ms, dates)}–${formatHistoryTime(first + (i + 1) * page.bucket_ms, dates)}`
-          : ""
-      );
-      set("read", formatRate(point?.read_bps ?? null));
-      set("write", formatRate(point?.write_bps ?? null));
-      set(
-        "readOps",
-        point?.read_ops_per_sec == null
-          ? MISSING
-          : operations(point.read_ops_per_sec)
-      );
-      set(
-        "writeOps",
-        point?.write_ops_per_sec == null
-          ? MISSING
-          : operations(point.write_ops_per_sec)
-      );
-      set(
+      tip.hidden = i === null;
+      if (i === null) return;
+      const point = points[i];
+      const at = (k: number) => formatHistoryTime(first + k * bucket, dates);
+      Object.assign(tip.style, tooltipBeside((i + 0.5) / count, PLOT_INSET));
+      fillTooltip(tip, "title", `${at(i)}–${at(i + 1)}`);
+      fillTooltip(tip, "read", formatRate(point?.read_bps ?? null));
+      fillTooltip(tip, "write", formatRate(point?.write_bps ?? null));
+      fillTooltip(tip, "readOps", opsText(point?.read_ops_per_sec));
+      fillTooltip(tip, "writeOps", opsText(point?.write_ops_per_sec));
+      fillTooltip(
+        tip,
         "readTime",
         requestTime(
           point?.read_request_ms ?? null,
           point?.read_ops_per_sec ?? null
         )
       );
-      set(
+      fillTooltip(
+        tip,
         "writeTime",
         requestTime(
           point?.write_request_ms ?? null,
@@ -170,22 +182,13 @@ export function DiskIoCharts({
         Completed driver requests, not application response time or queueing
         delay. Chart ceilings adapt to the data, not drive capacity.
       </p>
-      <ChartTooltipShell hidden className="top-0 right-0 w-64 max-w-full">
-        <span data-io-field="time" className="figures text-[12px]" />
-        <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-[12px]">
-          <span>Read</span>
-          <span data-io-field="read" className="figures" />
-          <span>Write</span>
-          <span data-io-field="write" className="figures" />
-          <span>Read operations</span>
-          <span data-io-field="readOps" className="figures" />
-          <span>Write operations</span>
-          <span data-io-field="writeOps" className="figures" />
-          <span>Read request</span>
-          <span data-io-field="readTime" className="figures" />
-          <span>Write request</span>
-          <span data-io-field="writeTime" className="figures" />
-        </div>
+      <ChartTooltipShell hidden className="top-0 w-64 max-w-full">
+        <ChartTooltipHead detail={resolutionLabel(page.bucket_ms)} />
+        <ChartTooltipRows>
+          {TOOLTIP_ROWS.map(([label, field]) => (
+            <ChartTooltipRow key={field} label={label} field={field} />
+          ))}
+        </ChartTooltipRows>
       </ChartTooltipShell>
     </div>
   );

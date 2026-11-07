@@ -88,16 +88,17 @@ describe("chart brush (D-089)", () => {
     expect(range()).toBe(`${-30 * S}:${-20 * S}`);
   });
 
-  it("dims bars outside the selection", async () => {
+  it("veils the bars outside the selection, keeping every bar mounted", async () => {
     const { brush } = await setup();
     fireEvent.pointerDown(brush, { button: 0, clientX: xAt(T - 24 * S) });
     fireEvent.pointerUp(brush, { clientX: xAt(T - 24 * S) });
     const img = screen.getByRole("img", { name: /Drag to select a range/ });
-    // 60 one-second bars per side; the 10 s selected stay at full strength.
-    const bars = img.querySelectorAll("span");
-    const dim = [...bars].filter((b) => b.classList.contains("opacity-35"));
-    expect(bars.length).toBe(120);
-    expect(dim.length).toBe(100);
+    // 60 one-second bars per side over [T − 54 s, T + 6 s); the selected
+    // [T − 30 s, T − 20 s) is 40% to 56.667% along, unveiled.
+    expect(img.querySelectorAll("span").length).toBe(120);
+    const veil = screen.getByTestId("stream-veil");
+    expect(veil).toHaveStyle({ width: "40.000%" });
+    expect(veil.nextElementSibling).toHaveStyle({ left: "56.667%" });
   });
 
   it("keyboard: Enter selects the focused bucket, Shift+arrows extend, Esc clears", async () => {

@@ -11,7 +11,6 @@ import {
   monthDay,
   rangeSubtitle,
   requestBucketMs,
-  resolutionLabel,
   SPAN_MS,
   stepRange,
   stepView,
@@ -73,17 +72,6 @@ describe("historyWindow", () => {
     const w = historyWindow("30d", NOW, 30 * MIN);
     expect(w.maxPoints).toBe(Math.ceil((NOW - w.fromMs) / (30 * MIN)));
     expect(w.maxPoints * 30 * MIN).toBeGreaterThanOrEqual(NOW - w.fromMs);
-  });
-});
-
-describe("resolutionLabel", () => {
-  it("names the bucket width in the largest whole unit", () => {
-    expect(resolutionLabel(10_000)).toBe("10 s avg");
-    expect(resolutionLabel(MIN)).toBe("1 min avg");
-    expect(resolutionLabel(10 * MIN)).toBe("10 min avg");
-    expect(resolutionLabel(30 * MIN)).toBe("30 min avg");
-    expect(resolutionLabel(HOUR)).toBe("1 h avg");
-    expect(resolutionLabel(2 * HOUR)).toBe("2 h avg");
   });
 });
 

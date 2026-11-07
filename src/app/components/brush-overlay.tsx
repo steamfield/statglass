@@ -8,10 +8,9 @@ import {
   type TimeRange,
   timeAt,
 } from "@core/brush";
-import { formatClockSeconds } from "@core/format";
+import { cssPercent, formatClockSeconds } from "@core/format";
 import { floorTo } from "@core/time-grid";
 import {
-  type KeyboardEvent,
   type PointerEvent,
   useEffect,
   useId,
@@ -20,10 +19,12 @@ import {
   useState,
 } from "react";
 import { PLOT_INSET } from "~/components/charts/layout";
+import {
+  type KeyBounds,
+  sliderValues,
+  useBrushGesture,
+} from "~/hooks/use-brush-gesture";
 import { useBrush, useBrushStore } from "~/stores/brush-store";
-
-/** Pointer travel, px, below which a press is a click rather than a drag. */
-const CLICK_SLOP_PX = 3;
 
 /**
  * The chart and the views that read its selection mark themselves with this
@@ -96,7 +97,17 @@ export interface BrushOverlayProps {
   onHoverTime?: (time: number | null, fractionY: number) => void;
 }
 
-const pct = (f: number) => `${(f * 100).toFixed(3)}%`;
+/** The 10 s buckets focus can sit on: the elapsed part of the chart. */
+const focusBounds = (lo: number, hi: number): KeyBounds => ({
+  first: floorTo(lo, BRUSH_STEP_MS),
+  last: floorTo(hi - 1, BRUSH_STEP_MS),
+  step: BRUSH_STEP_MS,
+});
+const within = (t: number, b: KeyBounds) =>
+  Math.min(b.last, Math.max(b.first, t));
+/** Where focus lands: the selection's last bucket, else the newest one. */
+const restingFocus = (r: TimeRange | null, b: KeyBounds) =>
+  within(r ? r.toMs - BRUSH_STEP_MS : b.last, b);
 
 /**
  * The selection layer over a brushable live chart (D-089): a
@@ -133,22 +144,13 @@ export function BrushOverlay({
   useLayoutEffect(() => {
     geo.current = { firstMs, spanMs, toMs };
   }, [firstMs, spanMs, toMs]);
-  const drag = useRef<{ anchorMs: number; x: number; moved: boolean } | null>(
-    null
-  );
   const anchor = useRef<number | null>(null);
   const [focusMs, setFocusMs] = useState<number | null>(null);
   useDismissOutside(store.getState().clear, range !== null);
 
-  const bounds = () => {
-    const g = geo.current;
-    return { lo: g.firstMs, hi: g.toMs };
-  };
-  const clamp = (r: TimeRange) => {
-    const { lo, hi } = bounds();
-    return clampRange(r, lo, hi);
-  };
-  const timeOf = (e: PointerEvent<HTMLDivElement>) => {
+  const clamp = (r: TimeRange) =>
+    clampRange(r, geo.current.firstMs, geo.current.toMs);
+  const timeOf = (e: PointerEvent<HTMLElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
     const f = box.width > 0 ? (e.clientX - box.left) / box.width : 0;
     const g = geo.current;
@@ -156,129 +158,92 @@ export function BrushOverlay({
     // after it.
     return Math.min(timeAt(f, g.firstMs, g.spanMs), g.toMs - 1);
   };
-
-  const hideHover = () => {
-    if (hoverRef.current) hoverRef.current.hidden = true;
-  };
-  const showHover = (tMs: number) => {
+  const keyBounds = () => focusBounds(geo.current.firstMs, geo.current.toMs);
+  const showHover = (tMs: number | null) => {
     const el = hoverRef.current;
     if (!el) return;
     const g = geo.current;
-    const f = rangeFractions(bucketAt(tMs), g.firstMs, g.spanMs);
-    if (!f) {
-      el.hidden = true;
-      return;
-    }
-    el.style.left = pct(f.left);
-    el.style.width = pct(f.width);
-    el.hidden = false;
+    const f =
+      tMs === null ? null : rangeFractions(bucketAt(tMs), g.firstMs, g.spanMs);
+    el.hidden = !f;
+    if (!f) return;
+    el.style.left = cssPercent(f.left);
+    el.style.width = cssPercent(f.width);
+  };
+  const focusOn = (t: number) => {
+    setFocusMs(t);
+    onHoverTime?.(t, 0);
   };
 
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    drag.current = { anchorMs: timeOf(e), x: e.clientX, moved: false };
-  };
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    const t = timeOf(e);
-    e.currentTarget.title = gapExplanationAt?.(t) ?? "";
-    const rect = e.currentTarget.getBoundingClientRect();
-    onHoverTime?.(t, (e.clientY - rect.top) / rect.height);
-    showHover(t);
-    const d = drag.current;
-    if (!d) return;
-    if (!d.moved && Math.abs(e.clientX - d.x) < CLICK_SLOP_PX) return;
-    d.moved = true;
-    store.getState().setDraft(clamp(snapRange(d.anchorMs, t)));
-  };
-  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    drag.current = null;
-    if (!d) return;
-    const s = store.getState();
-    if (!d.moved && s.range !== null) {
-      // A click with a selection up dismisses it; a drag replaces it.
-      s.clear();
+  const gesture = useBrushGesture({
+    timeAt: timeOf,
+    onPointer: (t, e) => {
+      e.currentTarget.title = gapExplanationAt?.(t) ?? "";
+      const rect = e.currentTarget.getBoundingClientRect();
+      onHoverTime?.(t, (e.clientY - rect.top) / rect.height);
+      showHover(t);
+    },
+    onDrag: (a, t) => store.getState().setDraft(clamp(snapRange(a, t))),
+    onRelease: (a, t, dragged) => {
+      const s = store.getState();
+      if (!dragged && s.range !== null) {
+        // A click with a selection up dismisses it; a drag replaces it.
+        s.clear();
+        anchor.current = null;
+        return;
+      }
+      const picked = dragged ? clamp(snapRange(a, t ?? a)) : clamp(bucketAt(a));
+      s.select(picked);
+      anchor.current = picked.fromMs;
+    },
+    onCancel: () => store.getState().setDraft(null),
+    keyBounds,
+    position: () => within(focusMs ?? keyBounds().last, keyBounds()),
+    anchorFor: (at, dir) => {
+      // Extend from the end of the selection away from the focus, or start
+      // one at the bucket the focus was on.
+      if (anchor.current === null) {
+        const r = store.getState().range;
+        anchor.current =
+          r && at >= r.fromMs && at < r.toMs
+            ? dir > 0
+              ? r.fromMs
+              : r.toMs - BRUSH_STEP_MS
+            : at;
+      }
+      return anchor.current;
+    },
+    onMove: (to) => {
+      focusOn(to);
       anchor.current = null;
-      return;
-    }
-    const picked = d.moved
-      ? clamp(snapRange(d.anchorMs, timeOf(e)))
-      : clamp(bucketAt(d.anchorMs));
-    s.select(picked);
-    anchor.current = picked.fromMs;
-  };
-  const onPointerCancel = () => {
-    drag.current = null;
-    store.getState().setDraft(null);
-  };
-
-  const focusBounds = () => {
-    const { lo, hi } = bounds();
-    return {
-      first: floorTo(lo, BRUSH_STEP_MS),
-      last: floorTo(hi - 1, BRUSH_STEP_MS),
-    };
-  };
-  /** Where focus lands: the selection's last bucket, else the newest one. */
-  const startFocus = (r: TimeRange | null) => {
-    const { first, last } = focusBounds();
-    const start = r ? r.toMs - BRUSH_STEP_MS : last;
-    return Math.min(last, Math.max(first, start));
-  };
-  const onFocus = () => {
-    if (focusMs !== null) return;
-    // Pointer-down precedes focus. Keep its hovered bucket; only keyboard
-    // entry should move the tooltip to the selection/newest observation.
-    const pointer = drag.current;
-    const time = pointer
-      ? floorTo(pointer.anchorMs, BRUSH_STEP_MS)
-      : startFocus(store.getState().range);
-    setFocusMs(time);
-    if (!pointer) onHoverTime?.(time, 0);
-  };
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const s = store.getState();
-    if (e.key === "Escape") {
+    },
+    onExtend: (a, to) => {
+      focusOn(to);
+      store.getState().select(extendRange(a, to));
+    },
+    onEnter: (at) => {
+      store.getState().select(bucketAt(at));
+      anchor.current = at;
+      return true;
+    },
+    onEscape: (e) => {
       onHoverTime?.(null, 0);
       setFocusMs(null);
+      const s = store.getState();
       if (s.range === null && s.draft === null) return;
       e.preventDefault();
       s.clear();
       anchor.current = null;
-      return;
-    }
-    const { first, last } = focusBounds();
-    const cur = Math.min(last, Math.max(first, focusMs ?? last));
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      s.select(bucketAt(cur));
-      anchor.current = cur;
-      return;
-    }
-    const step = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : null;
-    if (step === null) return;
-    e.preventDefault();
-    const next = Math.min(last, Math.max(first, cur + step * BRUSH_STEP_MS));
-    setFocusMs(next);
-    onHoverTime?.(next, 0);
-    if (!e.shiftKey) {
-      anchor.current = null;
-      return;
-    }
-    if (anchor.current === null) {
-      // Extend from the end of the selection away from the focus, or start
-      // one at the bucket the focus was on.
-      const r = s.range;
-      anchor.current =
-        r && cur >= r.fromMs && cur < r.toMs
-          ? step > 0
-            ? r.fromMs
-            : r.toMs - BRUSH_STEP_MS
-          : cur;
-    }
-    s.select(extendRange(anchor.current, next));
+    },
+  });
+
+  const onFocus = () => {
+    if (focusMs !== null) return;
+    // Pointer-down precedes focus. Keep its hovered bucket; only keyboard
+    // entry should move the tooltip to the selection/newest observation.
+    const pressed = gesture.pressedAt();
+    if (pressed !== null) setFocusMs(floorTo(pressed, BRUSH_STEP_MS));
+    else focusOn(restingFocus(store.getState().range, keyBounds()));
   };
 
   const band = view ? rangeFractions(view, firstMs, spanMs) : null;
@@ -287,12 +252,10 @@ export function BrushOverlay({
       ? null
       : rangeFractions(bucketAt(focusMs), firstMs, spanMs);
   // The bucket the slider is on: focused, or where focus will land.
-  const first = floorTo(firstMs, BRUSH_STEP_MS);
-  const last = floorTo(toMs - 1, BRUSH_STEP_MS);
-  const at = Math.min(
-    last,
-    Math.max(first, focusMs ?? (range ? range.toMs - BRUSH_STEP_MS : last))
-  );
+  const bounds = focusBounds(firstMs, toMs);
+  const at =
+    focusMs === null ? restingFocus(range, bounds) : within(focusMs, bounds);
+  const slider = sliderValues(at, bounds);
   const span = (r: TimeRange) =>
     `${formatClockSeconds(r.fromMs)} to ${formatClockSeconds(r.toMs)}`;
   const valueText = `${span(bucketAt(at))}, ${
@@ -305,9 +268,9 @@ export function BrushOverlay({
       tabIndex={0}
       aria-label="Select a time range"
       aria-describedby={hintId}
-      aria-valuemin={0}
-      aria-valuemax={Math.max(0, (last - first) / BRUSH_STEP_MS)}
-      aria-valuenow={(at - first) / BRUSH_STEP_MS}
+      aria-valuemin={slider.min}
+      aria-valuemax={slider.max}
+      aria-valuenow={slider.now}
       aria-valuetext={[valueText, gapExplanationAt?.(at)]
         .filter(Boolean)
         .join(". ")}
@@ -315,12 +278,9 @@ export function BrushOverlay({
       data-testid="brush"
       className="group absolute top-0 right-0 cursor-crosshair touch-none select-none rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style={{ height, left: inset }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
+      {...gesture.handlers}
       onPointerLeave={() => {
-        hideHover();
+        showHover(null);
         onHoverTime?.(null, 0);
       }}
       onFocus={onFocus}
@@ -328,7 +288,6 @@ export function BrushOverlay({
         setFocusMs(null);
         onHoverTime?.(null, 0);
       }}
-      onKeyDown={onKeyDown}
     >
       <span id={hintId} className="sr-only">
         Arrow keys move, Enter selects, Shift+arrows extend, Escape clears
@@ -343,14 +302,17 @@ export function BrushOverlay({
         <div
           data-testid="brush-band"
           className="pointer-events-none absolute inset-y-0 border-foreground/35 border-x bg-foreground/5"
-          style={{ left: pct(band.left), width: pct(band.width) }}
+          style={{ left: cssPercent(band.left), width: cssPercent(band.width) }}
         />
       )}
       {focus && (
         <div
           data-testid="brush-focus"
           className="pointer-events-none absolute inset-y-0 hidden bg-foreground/6 outline outline-1 outline-ring group-focus-visible:block"
-          style={{ left: pct(focus.left), width: pct(focus.width) }}
+          style={{
+            left: cssPercent(focus.left),
+            width: cssPercent(focus.width),
+          }}
         />
       )}
     </div>

@@ -1,3 +1,4 @@
+import { resolutionLabel } from "@core/format";
 import { spanWords } from "@core/live-window";
 import { sk } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
@@ -76,7 +77,7 @@ export function CoreLoadCard({
         bucketMs={bucketMs}
         windowMs={windowMs}
         endMs={endMs}
-        ariaLabel={`Per-core load, ${span}, ${bucketMs / 1000} second columns`}
+        ariaLabel={`Per-core load, ${span}, each column a ${resolutionLabel(bucketMs)}`}
       />
     </SectionCard>
   );

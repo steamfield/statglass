@@ -56,6 +56,18 @@ export function formatHoursMinutes(ms: MaybeNumber): string {
 }
 
 /**
+ * A bucket width as the average it stands for, in the largest unit that
+ * divides it evenly: "10 s avg", "5 min avg", "2 h avg", "90 s avg". One
+ * wording for every tooltip, caption and accessible name.
+ */
+export function resolutionLabel(bucketMs: number): string {
+  const s = bucketMs / 1000;
+  if (s >= 3600 && s % 3600 === 0) return `${s / 3600} h avg`;
+  if (s >= 60 && s % 60 === 0) return `${s / 60} min avg`;
+  return `${s} s avg`;
+}
+
+/**
  * A selected span in the Apps title: "90 s" under two minutes, then "2 min",
  * "2 min 30 s", and "1 h 5 min" from an hour.
  */

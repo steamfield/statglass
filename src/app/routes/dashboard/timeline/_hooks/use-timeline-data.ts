@@ -1,3 +1,4 @@
+import { resolutionLabel } from "@core/format";
 import type {
   Gap,
   HistoryPage,
@@ -19,7 +20,7 @@ import { useHostId } from "~/stores/host-store";
 import { type Bucket, combineSeries } from "../_lib/buckets";
 import { mergeTail, tailRange } from "../_lib/history-tail";
 import type { LaneDef } from "../_lib/lanes";
-import { historyWindow, requestBucketMs, resolutionLabel } from "../_lib/time";
+import { historyWindow, requestBucketMs } from "../_lib/time";
 
 export interface TimelineView {
   windowMs: number;

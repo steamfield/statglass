@@ -76,7 +76,7 @@ describe("MirrorChart", () => {
       </>
     );
     const lines = () => [
-      ...container.querySelectorAll<HTMLElement>("[data-mirror-crosshair]"),
+      ...container.querySelectorAll<HTMLElement>('[data-crosshair="paint"]'),
     ];
     expect(lines()).toHaveLength(2);
     expect(lines().every((el) => el.hidden)).toBe(true);

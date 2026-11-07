@@ -1,6 +1,9 @@
-import type { DockerHistoryPoint } from "@core/generated/bindings";
+import type {
+  DockerCoverage,
+  DockerHistoryPoint,
+} from "@core/generated/bindings";
 import { mockContainer, mockHistoryPoints } from "@core/mock/docker";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
 import { expect, it } from "vitest";
@@ -34,10 +37,12 @@ function Chart({
   points,
   metric = "cpu",
   live = false,
+  coverage,
 }: {
   points: DockerHistoryPoint[];
   metric?: "cpu" | "memory";
   live?: boolean;
+  coverage?: DockerCoverage[];
 }) {
   return (
     <ComparisonChart
@@ -52,6 +57,7 @@ function Chart({
       onFocus={() => {}}
       onPinFocus={() => {}}
       onChoose={() => {}}
+      coverage={coverage}
     />
   );
 }
@@ -217,3 +223,34 @@ it.each(["cpu", "memory"] as const)(
     result.transport.dispose();
   }
 );
+
+it("brushes only elapsed buckets and explains an engine gap under the cursor", async () => {
+  // Live frames up to 55 s: the bucket [50 s, 60 s) has not finished.
+  const result = renderWithProviders(
+    <Chart
+      live
+      points={[point(10_000, 1), point(20_000, 2)]}
+      coverage={[
+        {
+          start_ms: 30_000,
+          end_ms: null,
+          container_id: null,
+          reason: "Sampler paused",
+        },
+      ]}
+    />,
+    { transportOptions: { now: () => 55_000 } }
+  );
+  const brush = await screen.findByRole("slider", {
+    name: "Select a time range",
+  });
+  // Buckets 10 s to 50 s are selectable: positions 0 to 3, resting on
+  // [40 s, 50 s), inside the gap.
+  await waitFor(() => expect(brush).toHaveAttribute("aria-valuemax", "3"));
+  expect(brush).toHaveAttribute(
+    "aria-valuetext",
+    expect.stringMatching(/Sampler paused$/)
+  );
+  result.unmount();
+  result.transport.dispose();
+});

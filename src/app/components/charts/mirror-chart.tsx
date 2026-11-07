@@ -1,11 +1,14 @@
-import { rangeSlots } from "@core/brush";
-import { gapExplanation } from "@core/history-state";
 import { useRef } from "react";
-import { BrushOverlay } from "~/components/brush-overlay";
+import { useBrushOverlay } from "~/components/area-brush";
+import {
+  CrosshairLine,
+  paintCrosshairs,
+  plotLeft,
+} from "~/components/charts/crosshair-line";
 import { PLOT_INSET } from "~/components/charts/layout";
 import { MirrorHover } from "~/components/mirror-hover";
-import { useChartBrush } from "~/hooks/use-chart-brush";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
+import { ChartSelectionVeil } from "~/widgets/chart-frame";
 import { GapBands, type GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
 import { historyTicks } from "~/widgets/lib/chart-labels";
@@ -45,13 +48,10 @@ export function paintMirrorCrosshairs(
   count: number
 ): void {
   const valid = index !== null && index >= 0 && index < count;
-  root
-    .querySelectorAll<HTMLElement>("[data-mirror-crosshair]")
-    .forEach((el) => {
-      el.hidden = !valid;
-      if (valid)
-        el.style.left = `calc(${PLOT_INSET}px + (100% - ${PLOT_INSET}px) * ${(index + 0.5) / count})`;
-    });
+  paintCrosshairs(
+    root,
+    valid ? plotLeft((index + 0.5) / count, PLOT_INSET) : null
+  );
 }
 
 export interface MirrorChartProps {
@@ -134,14 +134,17 @@ export function MirrorChart({
   const scope = { endMs: fixedEndMs, intervalMs: bucketMs };
   const upMax = useNiceCeiling(up, lastMs, minCeiling, windowMs, scope);
   const downMax = useNiceCeiling(down, lastMs, minCeiling, windowMs, scope);
-  const { selected, elapsedEdge } = useChartBrush(brush);
-  const slots = selected
-    ? rangeSlots(selected, firstMs, bucketMs, count)
-    : null;
-  // A selection scrolled off the chart dims nothing.
-  const highlight = slots && slots.to > slots.from ? slots : null;
   const plotRef = useRef<HTMLDivElement>(null);
   const height = upHeight + downHeight + 1;
+  const selection = useBrushOverlay({
+    firstMs,
+    spanMs: count * bucketMs,
+    height,
+    inset: PLOT_INSET,
+    gaps,
+    enabled: brush && !pending,
+    onHoverTime,
+  });
   const live = fixedEndMs === null;
 
   return (
@@ -165,7 +168,7 @@ export function MirrorChart({
             ↓ {downLabel}
           </span>
         </div>
-        <div ref={plotRef}>
+        <div ref={plotRef} className="relative">
           <MirrorBars
             up={up}
             down={down}
@@ -176,7 +179,6 @@ export function MirrorChart({
             upHeight={upHeight}
             downHeight={downHeight}
             accent={accent}
-            highlight={highlight}
             ariaLabel={mirrorAriaLabel({
               subject,
               upLabel,
@@ -185,21 +187,9 @@ export function MirrorChart({
               brush,
             })}
           />
+          <ChartSelectionVeil highlight={selection.highlight} />
         </div>
-        {brush && !pending && (
-          <BrushOverlay
-            firstMs={firstMs}
-            spanMs={count * bucketMs}
-            selectableToMs={elapsedEdge ?? undefined}
-            height={height}
-            gapExplanationAt={(time) =>
-              gapExplanation(
-                gaps?.find((gap) => gap.fromMs <= time && gap.toMs > time)
-              )
-            }
-            {...(onHoverTime && { onHoverTime })}
-          />
-        )}
+        {selection.overlay}
         {gaps && gaps.length > 0 && !pending && (
           <div
             className="pointer-events-none absolute top-0 right-0"
@@ -208,19 +198,11 @@ export function MirrorChart({
             <GapBands gaps={gaps} rangeFromMs={firstMs} rangeToMs={endMs} />
           </div>
         )}
-        {pending ? null : onHoverTime ? (
-          <div
-            data-mirror-crosshair
-            hidden
-            aria-hidden
-            className="pointer-events-none absolute top-0 w-px bg-fg-subtle"
-            style={{ height }}
-          />
-        ) : (
+        {!pending && <CrosshairLine paint height={height} />}
+        {!pending && !onHoverTime && (
           <MirrorHover
             plotRef={plotRef}
             inset={PLOT_INSET}
-            height={height}
             count={count}
             firstMs={firstMs}
             bucketMs={bucketMs}
@@ -231,7 +213,6 @@ export function MirrorChart({
             gaps={gaps}
             format={format}
             accent={accent}
-            column={!brush}
             live={live}
             dateLabels={dateLabels}
           />

@@ -142,13 +142,6 @@ export function liveView(span: Span): { span: Span; endMs: null } {
   return { span: span === "6h" ? "24h" : span, endMs: null };
 }
 
-/** "10 s avg", "1 min avg", "30 min avg", "2 h avg": the tooltip's bucket width. */
-export function resolutionLabel(bucketMs: number): string {
-  if (bucketMs < MINUTE) return `${bucketMs / 1000} s avg`;
-  if (bucketMs < HOUR) return `${bucketMs / MINUTE} min avg`;
-  return `${bucketMs / HOUR} h avg`;
-}
-
 /** "Sun Oct 4". */
 export function dayLabel(ms: number): string {
   const d = new Date(ms);

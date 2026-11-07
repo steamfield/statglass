@@ -117,7 +117,7 @@ it.each([
       route: `/dashboard/containers?metric=${metric}&chart=container-0&end=${end}`,
     });
     await waitFor(() => expect(screen.getByText(ceiling)).toBeVisible());
-    expect(screen.getByText(/10 s average · shaded min–max/)).toBeVisible();
+    expect(screen.getByText(/10 s avg · shaded min–max/)).toBeVisible();
     expect(
       screen
         .getByRole("img", { name: /by container,/ })

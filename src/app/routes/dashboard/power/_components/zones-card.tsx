@@ -1,4 +1,8 @@
-import { formatTemperature, type TemperatureUnits } from "@core/format";
+import {
+  formatTemperature,
+  resolutionLabel,
+  type TemperatureUnits,
+} from "@core/format";
 import { spanWords } from "@core/live-window";
 import { parseLabels } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
@@ -107,7 +111,7 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
         windowMs={windowMs}
         endMs={endMs}
         accent="temp"
-        ariaLabel={`${title}, ${span}, ${bucketMs / 1000} second columns. ${zoneReadings}`}
+        ariaLabel={`${title}, ${span}, each column a ${resolutionLabel(bucketMs)}.${zoneReadings}`}
       />
       <OtherSensors
         units={units}
