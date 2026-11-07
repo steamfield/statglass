@@ -1,7 +1,12 @@
-import { DropdownMenu } from "radix-ui";
 import { memo } from "react";
 import { SearchField } from "~/components/search-field";
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -48,51 +53,44 @@ function ContainerFiltersView({
           ))}
         </SelectContent>
       </Select>
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm">
             View
           </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content className="z-50 min-w-40 rounded-control border border-border bg-popover p-2 text-[12px] shadow-md">
-            <DropdownMenu.CheckboxItem
-              checked={grouped}
-              onCheckedChange={(value) =>
-                set("group", value ? "grouped" : null)
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="min-w-40">
+          <DropdownMenuCheckboxItem
+            checked={grouped}
+            onCheckedChange={(value) => set("group", value ? "grouped" : null)}
+          >
+            Group by project
+          </DropdownMenuCheckboxItem>
+          {[
+            ["io", "Block I/O"],
+            ["image", "Image"],
+            ["ports", "Ports"],
+            ["restarts", "Restarts"],
+            ["pids", "PIDs"],
+          ].map(([value, label]) => (
+            <DropdownMenuCheckboxItem
+              key={value}
+              checked={columns.includes(value ?? "")}
+              onCheckedChange={(checked) =>
+                set(
+                  "columns",
+                  (checked
+                    ? [...columns, value]
+                    : columns.filter((c) => c !== value)
+                  ).join(",") || null
+                )
               }
-              className="cursor-default rounded-control px-2 py-2 focus:bg-selected"
             >
-              {grouped ? "✓ " : ""}Group by project
-            </DropdownMenu.CheckboxItem>
-            {[
-              ["io", "Block I/O"],
-              ["image", "Image"],
-              ["ports", "Ports"],
-              ["restarts", "Restarts"],
-              ["pids", "PIDs"],
-            ].map(([value, label]) => (
-              <DropdownMenu.CheckboxItem
-                key={value}
-                checked={columns.includes(value ?? "")}
-                onCheckedChange={(checked) =>
-                  set(
-                    "columns",
-                    (checked
-                      ? [...columns, value]
-                      : columns.filter((c) => c !== value)
-                    ).join(",") || null
-                  )
-                }
-                className="cursor-default rounded-control px-2 py-2 focus:bg-selected"
-              >
-                {columns.includes(value ?? "") ? "✓ " : ""}
-                {label}
-              </DropdownMenu.CheckboxItem>
-            ))}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+              {label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 }

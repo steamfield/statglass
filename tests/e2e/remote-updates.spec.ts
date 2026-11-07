@@ -50,7 +50,7 @@ for (const theme of ["dark", "light"]) {
     });
 
     await page.getByRole("button", { name: "Update all (2)" }).click();
-    const dialog = page.getByRole("dialog");
+    const dialog = page.getByRole("alertdialog");
     await expect(dialog.getByText("Offline: not updated")).toBeVisible();
     await dialog.getByRole("button", { name: "Update agents" }).click();
     await expect(dialog.getByText(/Requested on 2 of 2/)).toBeVisible();

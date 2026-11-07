@@ -1,7 +1,7 @@
 import { relativeWindow } from "@core/chart-range";
 import { formatRate } from "@core/format";
 import type { DiskDevice } from "@core/generated/bindings";
-import { labelValues, sk } from "@core/series-key";
+import { keyByLabel, labelValues } from "@core/series-key";
 import { type ReactNode, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
 import { brushScopeProps, useDismissOutside } from "~/components/brush-overlay";
@@ -27,6 +27,7 @@ import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHeld, useLayout } from "~/hooks/use-ring";
+import { useSearchParamPatch } from "~/hooks/use-search-param-patch";
 import { useBrushRange, useBrushStore } from "~/stores/brush-store";
 import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
@@ -39,23 +40,13 @@ import { SpaceView } from "./_components/space-view";
 import { useDiskDevices, useDiskIo } from "./_hooks/use-disk-io";
 import { useSpaceVolumes } from "./_hooks/use-disk-space";
 import { volumeRows } from "./_lib/disk";
-import { diskRange } from "./_lib/disk-range";
+import { readRange, writeRange } from "./_lib/range-params";
 
 export default function DiskRoute() {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const set = useSearchParamPatch();
   const edition = useEdition();
   const space = params.get("view") === "space";
-  const set = (patch: Record<string, string | null>) =>
-    setParams(
-      (old) => {
-        const next = new URLSearchParams(old);
-        for (const [k, v] of Object.entries(patch))
-          if (v === null) next.delete(k);
-          else next.set(k, v);
-        return next;
-      },
-      { replace: true }
-    );
   // Activity keeps its own params while in Space, so switching back restores it.
   const switcher = edition?.disk_space ? (
     <SegmentedControl
@@ -77,7 +68,7 @@ export default function DiskRoute() {
       />
     );
   return (
-    <ChartRangeProvider initial={diskRange(params)}>
+    <ChartRangeProvider initial={readRange(params)}>
       <DiskActivity
         switcher={switcher}
         onAnalyze={
@@ -101,6 +92,7 @@ function DiskActivity({
   const setChartWindow = useSetChartWindow();
   const windowMs = chartWindow?.windowMs ?? null;
   const [params, setParams] = useSearchParams();
+  const patch = useSearchParamPatch();
   const hostRecord = useHostRecord();
   // Rows without measured disk rates would list every process at 0 B/s.
   const diskIo = useProcessColumnCaps().diskIo;
@@ -172,13 +164,7 @@ function DiskActivity({
       next.set("device", inventory.data.default_device ?? "all");
     if (!local && chosen === null && remote.defaultDevice !== null)
       next.set("device", remote.defaultDevice);
-    if (selection) {
-      next.set("from", String(selection.fromMs));
-      next.set("to", String(selection.toMs));
-    } else {
-      next.delete("from");
-      next.delete("to");
-    }
+    writeRange(next, selection);
     if (next.toString() !== params.toString())
       setParams(next, { replace: true });
   }, [
@@ -220,11 +206,7 @@ function DiskActivity({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Select
                 value={device ?? "all"}
-                onValueChange={(value) => {
-                  const next = new URLSearchParams(params);
-                  next.set("device", value);
-                  setParams(next, { replace: true });
-                }}
+                onValueChange={(device) => patch({ device })}
               >
                 <SelectTrigger
                   aria-label="Disk device"
@@ -290,11 +272,7 @@ function DiskActivity({
               page={chart.data}
               range={range}
               secondary={secondary}
-              onSecondary={(value) => {
-                const next = new URLSearchParams(params);
-                next.set("response", value);
-                setParams(next, { replace: true });
-              }}
+              onSecondary={(response) => patch({ response })}
             />
           ) : (
             <InlineMessage tone="status">Loading disk I/O…</InlineMessage>
@@ -370,11 +348,12 @@ function useRemoteDevices(remote: boolean) {
   };
 }
 
+const readKey = keyByLabel("disk.read", "dev");
+const writeKey = keyByLabel("disk.write", "dev");
+
 function CurrentRates({ device }: { device: string | null }) {
-  const read =
-    device === null ? "disk.read_total" : sk("disk.read", { dev: device });
-  const write =
-    device === null ? "disk.write_total" : sk("disk.write", { dev: device });
+  const read = device === null ? "disk.read_total" : readKey(device);
+  const write = device === null ? "disk.write_total" : writeKey(device);
   const values = useHeld([read, write]);
   return (
     <StatStrip

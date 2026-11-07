@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { clickOutside } from "@tests/test-utils";
 import { App } from "./app";
 
 const transports: MockTransport[] = [];
@@ -223,10 +224,31 @@ describe("Linux hosts", () => {
     fireEvent.click(purge);
     fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     );
     expect(
       source.calls.find((call) => call.command === "remove_remote_host")?.args
     ).toEqual(["remote-linux", false, false, true, true]);
+  });
+
+  it("keeps re-pair and remove confirmations open on an outside click", async () => {
+    mount(["linux-host", "linux-identity-changed"]);
+    await screen.findByRole("heading", { name: "linux-tailscale" });
+    fireEvent.click(
+      hostRow("linux-tailscale").getByRole("button", { name: "Re-pair…" })
+    );
+    await clickOutside();
+    expect(
+      screen.getByRole("alertdialog", { name: "Re-pair linux-tailscale?" })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      hostRow("linux-tailscale").getByRole("button", { name: "Settings" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    await clickOutside();
+    expect(
+      screen.getByRole("alertdialog", { name: "Remove linux-tailscale?" })
+    ).toBeInTheDocument();
   });
 });

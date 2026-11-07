@@ -1,5 +1,6 @@
 import { formatBytes } from "@core/format";
 import { memo, useEffect, useState } from "react";
+import { ReviewList } from "~/components/confirm-dialog";
 import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -94,7 +95,12 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
           if (!open) flow.dismiss();
         }}
       >
-        <DialogContent>
+        {/* A two-step review, so a Dialog, but it confirms like ConfirmDialog:
+            an alertdialog that an outside click does not dismiss. */}
+        <DialogContent
+          role="alertdialog"
+          onInteractOutside={(event) => event.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>
               {volumeStep
@@ -111,20 +117,22 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
                   : "Only the selected resources below will be removed. Container removal keeps its volumes; bind-mounted host files are never deleted."}
             </DialogDescription>
           </DialogHeader>
-          <ul className="max-h-48 min-w-0 space-y-2 overflow-y-auto break-words text-[12px]">
-            {(review?.resources ?? []).map((row) => (
-              <li key={`${row.kind}:${row.id}`}>
-                <span className="font-[590]">{row.name}</span> ·{" "}
-                {row.kind.replaceAll("_", " ")} ·{" "}
-                <span className="figures">{formatBytes(row.size_bytes)}</span>
-                <div className="text-muted-foreground">
-                  {row.references.length
-                    ? `References: ${row.references.join(", ")}`
-                    : "No container references"}
-                </div>
-              </li>
-            ))}
-          </ul>
+          <ReviewList
+            label="Resources to review"
+            items={(review?.resources ?? []).map((row) => ({
+              key: `${row.kind}:${row.id}`,
+              label: (
+                <>
+                  <span className="font-[590]">{row.name}</span> ·{" "}
+                  {row.kind.replaceAll("_", " ")} ·{" "}
+                  <span className="figures">{formatBytes(row.size_bytes)}</span>
+                </>
+              ),
+              note: row.references.length
+                ? `References: ${row.references.join(", ")}`
+                : "No container references",
+            }))}
+          />
           {!volumeStep && !stops && (
             <p className="text-[12px] text-muted-foreground">
               Estimated reclaimable:{" "}

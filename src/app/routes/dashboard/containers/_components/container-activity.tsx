@@ -2,7 +2,6 @@ import { errorTone } from "@core/command-error";
 import type { DockerSnapshot } from "@core/generated/bindings";
 import { windowWords } from "@core/live-window";
 import { useCallback, useState } from "react";
-import type { SetURLSearchParams } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { useBrushStore } from "~/stores/brush-store";
 import type { useContainerComparison } from "../_hooks/use-container-comparison";
@@ -21,7 +20,6 @@ export function ContainerActivity({
   route,
   chart,
   set,
-  setParams,
   onSort,
   onManage,
   resume,
@@ -30,7 +28,6 @@ export function ContainerActivity({
   route: ContainerRouteState;
   chart: ReturnType<typeof useContainerComparison>;
   set: (key: string, value: string | null) => void;
-  setParams: SetURLSearchParams;
   onSort: (sort: ContainerSort) => void;
   onManage: () => void;
   resume: () => void;
@@ -148,7 +145,6 @@ export function ContainerActivity({
         route={route}
         chart={chart}
         set={set}
-        setParams={setParams}
         onSort={onSort}
       />
       <DockerRuntime snapshot={snapshot} />

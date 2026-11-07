@@ -11,6 +11,56 @@ import {
 } from "~/components/ui/dialog";
 import { cn } from "~/lib/utils";
 
+/** One row of a review list: what the action touches, and its state. */
+export interface ReviewItem {
+  key: string;
+  label: ReactNode;
+  /** A second muted line under the label. */
+  note?: ReactNode;
+  /** Right-aligned state: an exclusion, a result. */
+  status?: ReactNode;
+  tone?: "muted" | "error";
+}
+
+/** The bounded, scrolling list of what a confirmation acts on. */
+export function ReviewList({
+  items,
+  label,
+}: {
+  items: readonly ReviewItem[];
+  label: string;
+}) {
+  return (
+    <ul
+      aria-label={label}
+      className="m-0 max-h-60 min-w-0 list-none divide-y divide-border-subtle overflow-y-auto border-border-subtle border-y p-0 text-[12px]"
+    >
+      {items.map((item) => (
+        <li key={item.key} className="flex justify-between gap-3 py-2">
+          <span className="min-w-0 break-words">
+            {item.label}
+            {item.note && (
+              <span className="block text-muted-foreground">{item.note}</span>
+            )}
+          </span>
+          {item.status && (
+            <span
+              className={cn(
+                "shrink-0",
+                item.tone === "error"
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              )}
+            >
+              {item.status}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export interface ConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -25,8 +75,17 @@ export interface ConfirmDialogProps {
   onConfirm: () => void;
   /** Disables the confirm button while the action runs. */
   busy?: boolean;
-  /** Disables Cancel too while busy (a signal already sent cannot be taken back). */
+  /**
+   * Keeps the dialog open while busy: Cancel and Escape do nothing (a signal
+   * already sent cannot be taken back).
+   */
   lockWhileBusy?: boolean;
+  /** "Cancel" by default; `null` leaves only the confirm button (a done state). */
+  cancelLabel?: ReactNode;
+  /** What the action touches, listed under the description. */
+  items?: readonly ReviewItem[];
+  /** The review list's accessible name. */
+  itemsLabel?: string;
   /** Width override for the content ("sm:max-w-sm"). */
   className?: string;
   children?: ReactNode;
@@ -36,7 +95,8 @@ export interface ConfirmDialogProps {
 /**
  * A yes/no confirmation before an action: an `alertdialog`, so a click
  * outside does not dismiss it and Cancel takes the initial focus. Escape
- * and Cancel close it. Dialog look (ui/dialog.tsx) with no close button.
+ * and Cancel close it unless it is locked while busy. Dialog look
+ * (ui/dialog.tsx) with no close button.
  */
 export function ConfirmDialog({
   open,
@@ -48,12 +108,21 @@ export function ConfirmDialog({
   onConfirm,
   busy = false,
   lockWhileBusy = false,
+  cancelLabel = "Cancel",
+  items,
+  itemsLabel = "Items to review",
   className,
   children,
   confirmDisabled = false,
 }: ConfirmDialogProps) {
+  const locked = lockWhileBusy && busy;
   return (
-    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
+    <AlertDialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (next || !locked) onOpenChange(next);
+      }}
+    >
       <AlertDialog.Portal>
         <AlertDialog.Overlay className={dialogOverlayClass} />
         <AlertDialog.Content className={cn(dialogContentClass, className)}>
@@ -65,13 +134,16 @@ export function ConfirmDialog({
               {description}
             </AlertDialog.Description>
           </DialogHeader>
+          {items && <ReviewList items={items} label={itemsLabel} />}
           {children}
           <DialogFooter>
-            <AlertDialog.Cancel asChild>
-              <Button variant="outline" disabled={lockWhileBusy && busy}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
+            {cancelLabel !== null && (
+              <AlertDialog.Cancel asChild>
+                <Button variant="outline" disabled={locked}>
+                  {cancelLabel}
+                </Button>
+              </AlertDialog.Cancel>
+            )}
             <Button
               variant={confirmVariant}
               disabled={busy || confirmDisabled}

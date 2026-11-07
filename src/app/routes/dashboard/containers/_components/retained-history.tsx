@@ -1,4 +1,5 @@
 import { errorTone } from "@core/command-error";
+import { formatDateTime } from "@core/format";
 import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { useSearchParamPatch } from "~/hooks/use-search-param-patch";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { useDockerHistory } from "../_hooks/use-docker";
@@ -34,7 +36,8 @@ export const RetainedHistory = memo(function RetainedHistory({
   enabled: boolean;
   generation: number;
 }) {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const patch = useSearchParamPatch();
   const open = !enabled || params.get("retained") === "1";
   return (
     <section
@@ -46,17 +49,7 @@ export const RetainedHistory = memo(function RetainedHistory({
           variant="ghost"
           size="sm"
           aria-expanded={open}
-          onClick={() =>
-            setParams(
-              (previous) => {
-                const next = new URLSearchParams(previous);
-                if (open) next.delete("retained");
-                else next.set("retained", "1");
-                return next;
-              },
-              { replace: true }
-            )
-          }
+          onClick={() => patch({ retained: open ? null : "1" })}
         >
           Browse retained history
         </Button>
@@ -72,7 +65,8 @@ function RetainedBrowser({ generation }: { generation: number }) {
   const transport = useTransport();
   const host = useHostId();
   const location = useLocation();
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const patch = useSearchParamPatch("retainedOffset");
   const [now] = useState(() => Date.now());
   const selected = params.get("retainedEngine");
   const search = params.get("retainedQuery") ?? "";
@@ -80,18 +74,8 @@ function RetainedBrowser({ generation }: { generation: number }) {
   const sharedRange = useSharedContainerRange(now, "retained");
   const validRange = sharedRange.preset;
   const end = sharedRange.endMs;
-  const set = (key: string, value: string | null, resetPage = false) =>
-    setParams(
-      (previous) => {
-        const next = new URLSearchParams(previous);
-        next.set("retained", "1");
-        if (value === null) next.delete(key);
-        else next.set(key, value);
-        if (resetPage) next.delete("retainedOffset");
-        return next;
-      },
-      { replace: true }
-    );
+  const set = (key: string, value: string) =>
+    patch({ retained: "1", [key]: value });
   const catalog = useQuery({
     queryKey: dockerKeys.retained(host, null, "", 0, generation),
     queryFn: () =>
@@ -146,7 +130,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
           <div className="flex flex-wrap items-center gap-3">
             <Select
               value={engine}
-              onValueChange={(id) => set("retainedEngine", id, true)}
+              onValueChange={(id) => set("retainedEngine", id)}
             >
               <SelectTrigger aria-label="Retained engine" size="sm">
                 <SelectValue />
@@ -196,7 +180,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
           </div>
           <SearchField
             value={search}
-            onChange={(value) => set("retainedQuery", value, true)}
+            onChange={(value) => set("retainedQuery", value)}
             placeholder="Find retained containers"
           />
           <QueryNotice
@@ -236,7 +220,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
                     </Link>
                     <span className="ml-3 text-muted-foreground">
                       {lifecycleLabel[row.lifecycle]} ·{" "}
-                      {new Date(row.last_seen_ms).toLocaleString()}
+                      {formatDateTime(row.last_seen_ms)}
                     </span>
                     <div className="truncate text-[11px] text-muted-foreground">
                       {row.image}

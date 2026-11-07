@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import { formatBytes } from "@core/format";
+import { formatBytes, formatDateTime, formatPercent } from "@core/format";
 import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { remoteErrorText, sshEndpointError } from "@core/remote-errors";
@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { QueryNotice } from "~/components/query-notice";
@@ -101,35 +102,26 @@ function HostSettings({
       setBusy(false);
     }
   };
+  const named =
+    config.name.trim() !== "" &&
+    Boolean(config.lan?.trim() || config.tailscale?.trim());
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) close();
-      }}
-    >
-      <DialogContent
-        showCloseButton={!busy}
-        className="max-h-[calc(100svh-2rem)] overflow-y-auto"
+    <>
+      <Dialog
+        open={!removing}
+        onOpenChange={(open) => {
+          if (!open && !busy) close();
+        }}
       >
-        <DialogTitle>
-          {removing ? `Remove ${config.name}?` : config.name}
-        </DialogTitle>
-        <DialogDescription>
-          {removing
-            ? linux
-              ? "This disconnects the server. Unless you uninstall it, the agent keeps running and recording history there."
-              : "This disconnects the Mac. StatGlass on that Mac keeps running and its start-at-login setting stays the same."
-            : "Connection and mirrored history are saved on this Mac. Update preferences save immediately on the host."}
-        </DialogDescription>
-        {removing ? (
-          <RemoveHostOptions
-            linux={linux}
-            choices={choices}
-            setChoices={setChoices}
-            busy={busy}
-          />
-        ) : (
+        <DialogContent
+          showCloseButton={!busy}
+          className="max-h-[calc(100svh-2rem)] overflow-y-auto"
+        >
+          <DialogTitle>{config.name}</DialogTitle>
+          <DialogDescription>
+            Connection and mirrored history are saved on this Mac. Update
+            preferences save immediately on the host.
+          </DialogDescription>
           <fieldset disabled={busy} className="grid gap-3">
             <label className="grid gap-1 text-[12px]">
               Name
@@ -204,30 +196,18 @@ function HostSettings({
               />
             </div>
           </fieldset>
-        )}
-        {!removing && <RemoteUpdateSettings hostId={remote.config.id} />}
-        {!removing && endpointError && (
-          <InlineMessage tone="error">{endpointError}</InlineMessage>
-        )}
-        {error && <RemoteSetupError error={error} />}
-        {!removing && (
+          <RemoteUpdateSettings hostId={remote.config.id} />
+          {endpointError && (
+            <InlineMessage tone="error">{endpointError}</InlineMessage>
+          )}
+          {error && <RemoteSetupError error={error} />}
           <SshSetupHelp
             saved
             lan={config.lan}
             tailscale={config.tailscale}
             busy={busy}
           />
-        )}
-        <div className="flex justify-between gap-2">
-          {removing ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => setRemoving(false)}
-            >
-              Back
-            </Button>
-          ) : (
+          <div className="flex justify-between gap-2">
             <Button
               variant="ghost"
               disabled={busy}
@@ -235,21 +215,42 @@ function HostSettings({
             >
               Remove host…
             </Button>
-          )}
-          <Button
-            disabled={
-              busy ||
-              !config.name.trim() ||
-              !(config.lan?.trim() || config.tailscale?.trim()) ||
-              (!removing && (!validBudget || !!endpointError))
-            }
-            onClick={() => run(removing)}
-          >
-            {busy ? "Saving…" : removing ? "Remove host" : "Save"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <Button
+              disabled={busy || !named || !validBudget || !!endpointError}
+              onClick={() => run(false)}
+            >
+              {busy ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={removing}
+        onOpenChange={(open) => {
+          if (!open) setRemoving(false);
+        }}
+        title={`Remove ${config.name}?`}
+        description={
+          linux
+            ? "This disconnects the server. Unless you uninstall it, the agent keeps running and recording history there."
+            : "This disconnects the Mac. StatGlass on that Mac keeps running and its start-at-login setting stays the same."
+        }
+        cancelLabel="Back"
+        confirmLabel={busy ? "Saving…" : "Remove host"}
+        confirmDisabled={!named}
+        onConfirm={() => void run(true)}
+        busy={busy}
+        lockWhileBusy
+      >
+        <RemoveHostOptions
+          linux={linux}
+          choices={choices}
+          setChoices={setChoices}
+          busy={busy}
+        />
+        {error && <RemoteSetupError error={error} />}
+      </ConfirmDialog>
+    </>
   );
 }
 
@@ -328,8 +329,7 @@ export default function HostsRoute() {
               {remote.status.last_seen_ms !== null &&
                 remote.status.state !== "connected" && (
                   <p className="text-[12px] text-muted-foreground">
-                    Last seen{" "}
-                    {new Date(remote.status.last_seen_ms).toLocaleString()}
+                    Last seen {formatDateTime(remote.status.last_seen_ms)}
                   </p>
                 )}
               {remote.status.identity_changed !== null ? (
@@ -349,19 +349,21 @@ export default function HostsRoute() {
               <div>
                 <dt className="text-muted-foreground">CPU</dt>
                 <dd className="min-w-10">
-                  {remote.status.state === "connected" &&
-                  remote.status.cpu_pct != null
-                    ? `${Math.round(remote.status.cpu_pct)}%`
-                    : "—"}
+                  {formatPercent(
+                    remote.status.state === "connected"
+                      ? remote.status.cpu_pct
+                      : null
+                  )}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Memory</dt>
                 <dd className="min-w-10">
-                  {remote.status.state === "connected" &&
-                  remote.status.memory_pct != null
-                    ? `${Math.round(remote.status.memory_pct)}%`
-                    : "—"}
+                  {formatPercent(
+                    remote.status.state === "connected"
+                      ? remote.status.memory_pct
+                      : null
+                  )}
                 </dd>
               </div>
             </dl>

@@ -247,7 +247,7 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   );
   await page.getByRole("button", { name: "Remove host…", exact: true }).click();
   await page.getByRole("button", { name: "Remove host", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Work Mac", exact: true })
   ).toHaveCount(0);

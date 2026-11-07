@@ -1,16 +1,16 @@
 import type { DockerSettings, DockerSnapshot } from "@core/generated/bindings";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import {
-  type SetURLSearchParams,
-  useLocation,
-  useSearchParams,
-} from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { SegmentedControl } from "~/components/segmented-control";
 import { Button } from "~/components/ui/button";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import {
+  type SearchParamPatch,
+  useSearchParamPatch,
+} from "~/hooks/use-search-param-patch";
 import { BrushProvider } from "~/stores/brush-store";
 import { useCgroups } from "~/stores/live-selectors";
 import { CgroupContainers } from "./_components/cgroup-containers";
@@ -49,7 +49,8 @@ function LocalContainersRoute() {
   const { snapshot, error, setSnapshot } = useDocker();
   const { monitoring, setMonitoring, actionError, configure, resume } =
     useDockerConfiguration(snapshot, setSnapshot);
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const patch = useSearchParamPatch();
   const location = useLocation();
   const connected =
     snapshot?.status === "connected" || snapshot?.status === "idle_suspended";
@@ -80,7 +81,7 @@ function LocalContainersRoute() {
     sharedRange.ready ? snapshot : null,
     routeState
   );
-  const set = useContainerRouteSetter(setParams, sharedRange);
+  const set = useContainerRouteSetter(patch, sharedRange);
   const viewControl = useMemo(
     () => (
       <SegmentedControl
@@ -153,19 +154,9 @@ function LocalContainersRoute() {
               route={routeState}
               chart={chart}
               set={set}
-              setParams={setParams}
               onSort={(value) => {
                 sortOverride.current = value;
-                setParams(
-                  (old) => {
-                    const next = new URLSearchParams(old);
-                    next.set("sort", value.by);
-                    next.set("dir", value.dir);
-                    next.delete("page");
-                    return next;
-                  },
-                  { replace: true }
-                );
+                patch({ sort: value.by, dir: value.dir });
               }}
               onManage={() => setMonitoring(true)}
               resume={resume}
@@ -215,7 +206,7 @@ function MonitoringContent({
 }
 
 function useContainerRouteSetter(
-  setParams: SetURLSearchParams,
+  patch: (values: SearchParamPatch, options?: { push?: boolean }) => void,
   sharedRange: ReturnType<typeof useSharedContainerRange>
 ) {
   const { setRange, setEnd } = sharedRange;
@@ -229,18 +220,9 @@ function useContainerRouteSetter(
         setEnd(value === null ? null : Number(value));
         return;
       }
-      setParams(
-        (old) => {
-          const next = new URLSearchParams(old);
-          if (value === null) next.delete(key);
-          else next.set(key, value);
-          next.delete("page");
-          return next;
-        },
-        { replace: key !== "chart" }
-      );
+      patch({ [key]: value }, { push: key === "chart" });
     },
-    [setParams, setRange, setEnd]
+    [patch, setRange, setEnd]
   );
   return set;
 }

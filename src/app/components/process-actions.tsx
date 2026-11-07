@@ -142,32 +142,19 @@ export function QuitDialog({ flow }: { flow: QuitFlow }) {
       onConfirm={() => void flow.confirm()}
       busy={flow.busy}
       lockWhileBusy
-    >
-      {many && (
-        <ul
-          aria-label="Processes to review"
-          className="max-h-64 divide-y divide-border-subtle overflow-auto text-[12px]"
-        >
-          {shown.targets.map((p) => (
-            <li
-              key={`${p.pid}:${p.start_time_us}`}
-              className="flex justify-between gap-3 py-2"
-            >
-              <span className="min-w-0 break-words">
-                {p.name}{" "}
-                <span className="figures text-muted-foreground">
-                  PID {p.pid}
-                </span>
-              </span>
-              {quitExclusion(p) && (
-                <span className="text-muted-foreground">
-                  {quitExclusion(p)}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </ConfirmDialog>
+      {...(many && {
+        itemsLabel: "Processes to review",
+        items: shown.targets.map((p) => ({
+          key: `${p.pid}:${p.start_time_us}`,
+          label: (
+            <>
+              {p.name}{" "}
+              <span className="figures text-muted-foreground">PID {p.pid}</span>
+            </>
+          ),
+          status: quitExclusion(p),
+        })),
+      })}
+    />
   );
 }

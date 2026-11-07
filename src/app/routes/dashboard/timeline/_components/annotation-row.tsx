@@ -1,7 +1,12 @@
 import { eventId, eventLabel } from "@core/events";
 import { formatClock } from "@core/format";
 import type { Event } from "@core/generated/bindings";
-import { Popover } from "radix-ui";
+import {
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
 import { cn } from "~/lib/utils";
 import { eventPriority, groupEvents } from "../_lib/events";
 import { layoutMarkers, type Marker } from "../_lib/gaps";
@@ -61,12 +66,12 @@ export function AnnotationRow({
               onPointerEnter={() => onActiveEvents?.(group.members)}
               onPointerLeave={() => onActiveEvents?.([])}
             >
-              <Popover.Root
+              <Popover
                 onOpenChange={(open) =>
                   onActiveEvents?.(open ? group.members : [])
                 }
               >
-                <Popover.Trigger asChild>
+                <PopoverTrigger asChild>
                   <button
                     type="button"
                     data-event-ts={group.representative.ts_ms}
@@ -101,38 +106,35 @@ export function AnnotationRow({
                       <span>{group.members.length}</span>
                     )}
                   </button>
-                </Popover.Trigger>
-                <Popover.Portal>
-                  <Popover.Content
-                    align="start"
-                    sideOffset={6}
-                    collisionPadding={12}
-                    className="z-50 max-h-72 w-80 overflow-y-auto rounded-card border bg-popover p-2 text-popover-foreground shadow-sm"
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  collisionPadding={12}
+                  className="max-h-72 w-80 p-2"
+                >
+                  <ul
+                    aria-label="Events in group"
+                    className="flex flex-col gap-1"
                   >
-                    <ul
-                      aria-label="Events in group"
-                      className="flex flex-col gap-1"
-                    >
-                      {group.members.map((event) => (
-                        <li key={eventId(event)}>
-                          <Popover.Close asChild>
-                            <button
-                              type="button"
-                              onClick={() => onSelectEvents?.([event])}
-                              className="w-full rounded-control px-2 py-1.5 text-left text-[11px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                            >
-                              <span className="figures text-muted-foreground">
-                                {formatClock(event.ts_ms)}
-                              </span>{" "}
-                              {eventLabel(event)}
-                            </button>
-                          </Popover.Close>
-                        </li>
-                      ))}
-                    </ul>
-                  </Popover.Content>
-                </Popover.Portal>
-              </Popover.Root>
+                    {group.members.map((event) => (
+                      <li key={eventId(event)}>
+                        <PopoverClose asChild>
+                          <button
+                            type="button"
+                            onClick={() => onSelectEvents?.([event])}
+                            className="w-full rounded-control px-2 py-1.5 text-left text-[11px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <span className="figures text-muted-foreground">
+                              {formatClock(event.ts_ms)}
+                            </span>{" "}
+                            {eventLabel(event)}
+                          </button>
+                        </PopoverClose>
+                      </li>
+                    ))}
+                  </ul>
+                </PopoverContent>
+              </Popover>
             </li>
           );
         })}

@@ -13,7 +13,12 @@ import {
   type MockTransportOptions,
 } from "@core/mock-transport";
 import { QueryClient } from "@tanstack/react-query";
-import { type RenderOptions, render } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  type RenderOptions,
+  render,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -77,4 +82,17 @@ export function renderWithProviders(
     renderOptions
   );
   return { ...result, transport, queryClient, router, user: userEvent.setup() };
+}
+
+/**
+ * A primary press on the page behind an open modal. user-event refuses it
+ * (the modal sets `pointer-events: none` on the body), and Radix listens for
+ * outside presses only from the task after the layer opens, then dismisses
+ * on the click that follows.
+ */
+export async function clickOutside() {
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  fireEvent.pointerDown(document.body, { button: 0 });
+  fireEvent.pointerUp(document.body, { button: 0 });
+  fireEvent.click(document.body, { button: 0 });
 }

@@ -1,13 +1,6 @@
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "~/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from "~/components/ui/dialog";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { reachable, useAgentUpdate } from "./use-agent-update";
 
 type Outcome = { id: string; result: string };
@@ -60,62 +53,43 @@ export function UpdateAllDialog({
   };
   const requested = outcomes?.filter((o) => o.result === "Update requested");
   const attempted = remotes.filter(reachable).length;
+  const finished = outcomes !== null && !running;
   return (
-    <Dialog
+    <ConfirmDialog
       open
       onOpenChange={(open) => {
-        if (!open && !running) close();
+        if (!open) close();
       }}
-    >
-      <DialogContent showCloseButton={!running}>
-        <DialogTitle>Update agents</DialogTitle>
-        <DialogDescription>
-          {outcomes && !running
-            ? `Requested on ${requested?.length ?? 0} of ${attempted}. Each host finishes the update on its own and reconnects.`
-            : "StatGlass installs this Mac’s agent on each host below. Each host’s service restarts, so its live readings pause briefly."}
-        </DialogDescription>
-        <ul className="m-0 max-h-60 list-none divide-y divide-border-subtle overflow-y-auto border-border-subtle border-y p-0 text-[13px]">
-          {remotes.map((remote) => {
-            const outcome = outcomes?.find((o) => o.id === remote.config.id);
-            return (
-              <li
-                key={remote.config.id}
-                className="flex justify-between gap-4 py-2"
-              >
-                <span className="truncate">{remote.config.name}</span>
-                <span
-                  className={
-                    outcome && outcome.result !== "Update requested"
-                      ? "text-destructive"
-                      : "text-muted-foreground"
-                  }
-                >
-                  {outcome?.result ??
-                    (current === remote.config.id
-                      ? "Updating…"
-                      : reachable(remote)
-                        ? ""
-                        : "Offline: not updated")}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        <DialogFooter>
-          {outcomes && !running ? (
-            <Button onClick={close}>Done</Button>
-          ) : (
-            <>
-              <Button variant="outline" disabled={running} onClick={close}>
-                Cancel
-              </Button>
-              <Button disabled={running} onClick={() => void run()}>
-                {running ? "Updating…" : "Update agents"}
-              </Button>
-            </>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      title="Update agents"
+      description={
+        finished
+          ? `Requested on ${requested?.length ?? 0} of ${attempted}. Each host finishes the update on its own and reconnects.`
+          : "StatGlass installs this Mac’s agent on each host below. Each host’s service restarts, so its live readings pause briefly."
+      }
+      itemsLabel="Hosts to update"
+      items={remotes.map((remote) => {
+        const outcome = outcomes?.find((o) => o.id === remote.config.id);
+        return {
+          key: remote.config.id,
+          label: remote.config.name,
+          status:
+            outcome?.result ??
+            (current === remote.config.id
+              ? "Updating…"
+              : reachable(remote)
+                ? null
+                : "Offline: not updated"),
+          tone:
+            outcome && outcome.result !== "Update requested"
+              ? "error"
+              : "muted",
+        };
+      })}
+      cancelLabel={finished ? null : "Cancel"}
+      confirmLabel={finished ? "Done" : running ? "Updating…" : "Update agents"}
+      onConfirm={finished ? close : () => void run()}
+      busy={running}
+      lockWhileBusy
+    />
   );
 }
