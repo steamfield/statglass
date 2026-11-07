@@ -1,4 +1,5 @@
 import type { DockerContainer, DockerSnapshot } from "@core/generated/bindings";
+import { HOUR_MS } from "@core/time-grid";
 import {
   aggregateContainers,
   mockContainer,
@@ -25,7 +26,7 @@ export function retainedContainers(
       lifecycle: "removed" as const,
     },
     {
-      ...mockContainer(0, now() - 3_600_000),
+      ...mockContainer(0, now() - HOUR_MS),
       engine_id: "retained-colima",
       id: "old-worker",
       name: "Previous worker",

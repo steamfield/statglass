@@ -8,8 +8,8 @@ import type { CommandResult } from "@core/transport";
 import { MiB } from "./docker-fixtures";
 import { mockHistoryPoints } from "./docker-history";
 import type { ScenarioName } from "./fixtures";
+import { invalid, ok, rangeError } from "./protocol";
 
-const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
 function comparisonRow(
   container: DockerContainer,
   request: DockerComparisonRequest,
@@ -77,20 +77,17 @@ export function comparison(
   now: () => number,
   startedAt: number
 ): CommandResult<DockerComparisonPage> {
+  // Rust also caps the span at 30 days, a store constant the bindings do not publish.
+  const badRange = rangeError(request.from_ms, request.to_ms);
+  if (badRange) return invalid(badRange);
   if (
     request.max_points < 1 ||
     request.max_points > 360 ||
-    (request.selected?.length ?? 0) > 6 ||
-    request.from_ms >= request.to_ms
+    (request.selected?.length ?? 0) > 6
   )
-    return {
-      status: "error",
-      error: {
-        kind: "invalid_argument",
-        message:
-          "Comparison requires 1–360 points, at most six containers and a valid range.",
-      },
-    };
+    return invalid(
+      "Comparison requires 1–360 points and at most six containers."
+    );
   const candidates = retained.filter(
     (row) =>
       row.engine_id === request.engine_id &&

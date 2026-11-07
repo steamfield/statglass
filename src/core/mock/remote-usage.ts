@@ -8,7 +8,7 @@ import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import { validateUsageRequest } from "./durable-usage";
 import { MOCK_HOST_ID } from "./fixtures";
-import { err, ok } from "./protocol";
+import { fail, ok } from "./protocol";
 
 export type UsageQueries = Pick<
   MockTransport,
@@ -54,7 +54,7 @@ export function remoteUsage<T extends UsageQueries>(
         remote.record,
         options.remoteUsageHistorySupported
       );
-      if (error) return err(error);
+      if (error) return fail(error);
       return remote.peer.queryHistoricalUsage({
         ...request,
         host: MOCK_HOST_ID,
@@ -69,7 +69,7 @@ export function remoteUsage<T extends UsageQueries>(
         remote.record,
         options.remoteUsageHistorySupported
       );
-      if (error) return err(error);
+      if (error) return fail(error);
       return remote.peer.queryUsageProcesses({
         ...request,
         host: MOCK_HOST_ID,
@@ -80,7 +80,7 @@ export function remoteUsage<T extends UsageQueries>(
       if (!remote) return local.queryUsageByApp(host, fromMs, toMs, by, limit);
       commands.record("query_usage_by_app", host, fromMs, toMs, by, limit);
       if (remote.record.status.state !== "connected")
-        return err({
+        return fail({
           kind: "remote_unreachable",
           message: "the host is not connected",
         });

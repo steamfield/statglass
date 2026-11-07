@@ -3,6 +3,7 @@ import type {
   DockerEngine,
   DockerSnapshot,
 } from "@core/generated/bindings";
+import { DAY_MS } from "@core/time-grid";
 
 import { MOCK_HOST_ID } from "./fixtures";
 
@@ -176,7 +177,7 @@ export function mockDockerSnapshot(count: number, now: number): DockerSnapshot {
       error: null,
       logical_bytes: 8_000_000,
       allowance_bytes: 37_500_000,
-      retained_from_ms: now - 86_400_000,
+      retained_from_ms: now - DAY_MS,
     },
   };
 }

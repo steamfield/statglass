@@ -7,7 +7,7 @@ import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";
 import type { MockPower } from "./power";
-import { ok } from "./protocol";
+import { fail, invalid, ok } from "./protocol";
 import type { MockRing } from "./ring";
 import type { MockSettings } from "./settings";
 
@@ -79,13 +79,7 @@ export class MockShell {
   readonly cliInstallLink: MockTransport["cliInstallLink"] = async () => {
     this.commands.record("cli_install_link");
     if (this.cliLink.target === null)
-      return {
-        status: "error",
-        error: {
-          kind: "invalid_argument",
-          message: "This build has no bundled command-line tool",
-        },
-      };
+      return invalid("This build has no bundled command-line tool");
     if (this.cliLink.state !== "blocked")
       this.cliLink = {
         ...this.cliLink,
@@ -114,10 +108,7 @@ export class MockShell {
         message: "The update signature could not be verified.",
       };
       this.emitters.updates.emit(this.updateStatus);
-      return {
-        status: "error",
-        error: { kind: "update", message: this.updateStatus.message },
-      };
+      return fail({ kind: "update", message: this.updateStatus.message });
     }
     this.updateStatus = { kind: "ready", version };
     this.emitters.updates.emit(this.updateStatus);

@@ -9,7 +9,7 @@ import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";
 import { defaultSettings, type ScenarioFlags } from "./fixtures";
-import { err, ok } from "./protocol";
+import { fail, ok } from "./protocol";
 export class MockSettings {
   snapshot: SettingsSnapshot;
   onChanged: (before: Settings, after: Settings) => void = () => {};
@@ -50,12 +50,12 @@ export class MockSettings {
   readonly updateSettings: MockTransport["updateSettings"] = async (patch) => {
     this.commands.record("update_settings", patch);
     if (this.options.settingsNotSaved) {
-      return err({ kind: "settings_not_saved", message: "disk full" });
+      return fail({ kind: "settings_not_saved", message: "disk full" });
     }
     const next = applyPatch(this.snapshot.settings, patch);
     const chartWindow = next.general.chart_window;
     if (chartWindow !== undefined && !validChartRange(chartWindow)) {
-      return err({
+      return fail({
         kind: "invalid_settings",
         message: `chart window ${chartWindow}`,
       });
@@ -63,7 +63,7 @@ export class MockSettings {
     if (
       !(INTERVALS_MS as readonly number[]).includes(next.sampling.interval_ms)
     ) {
-      return err({
+      return fail({
         kind: "invalid_settings",
         message: `interval ${next.sampling.interval_ms} ms`,
       });
@@ -73,7 +73,7 @@ export class MockSettings {
         next.history.size_limit_mb
       )
     ) {
-      return err({
+      return fail({
         kind: "invalid_settings",
         message: `size limit ${next.history.size_limit_mb} MB`,
       });

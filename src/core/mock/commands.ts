@@ -2,7 +2,7 @@ import type { CommandError, HostId } from "@core/generated/bindings";
 import type { CommandResult } from "../transport";
 import type { MockCall } from "./contracts";
 import { MOCK_HOST_ID } from "./fixtures";
-import { err } from "./protocol";
+import { fail, invalid, rangeError } from "./protocol";
 export class MockCommands {
   readonly calls: MockCall[] = [];
   unavailable: () => CommandError | null = () => null;
@@ -10,7 +10,7 @@ export class MockCommands {
     this.calls.push({ command, args });
   };
   readonly unknownHost = (host: HostId) =>
-    host === MOCK_HOST_ID ? null : err({ kind: "unknown_host", host });
+    host === MOCK_HOST_ID ? null : fail({ kind: "unknown_host", host });
   readonly hostCommand = <T>(
     name: string,
     host: HostId,
@@ -26,21 +26,10 @@ export class MockCommands {
     const bad = this.unknownHost(host);
     if (bad) return bad;
     const unavailable = this.unavailable();
-    if (checks.needsHistory && unavailable) return err(unavailable);
+    if (checks.needsHistory && unavailable) return fail(unavailable);
     if (checks.range) {
-      const [fromMs, toMs] = checks.range;
-      if (toMs < fromMs) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range ends before it starts",
-        });
-      }
-      if (checks.maxSpanMs !== undefined && toMs - fromMs > checks.maxSpanMs) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range is longer than history keeps",
-        });
-      }
+      const refused = rangeError(...checks.range, checks.maxSpanMs);
+      if (refused) return invalid(refused);
     }
     return body();
   };

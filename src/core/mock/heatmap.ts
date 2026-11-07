@@ -14,12 +14,7 @@ import type {
   HeatmapMetric,
   HeatmapRequest,
 } from "@core/generated/bindings";
-import { fnv1a, rng } from "./rng";
-
-/** FNV-1a of `s`, as a Lehmer seed (1 to 2^31 - 2). */
-function hash(s: string): number {
-  return (fnv1a(s) % 2147483646) + 1;
-}
+import { rng, seedOf } from "./rng";
 
 /** Average CPU % per local hour of `date` (`YYYY-MM-DD`), by the rules above. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
@@ -27,9 +22,9 @@ export function mockCpuHours(date: string): (number | null)[] {
   const [y, m, d] = date.split("-").map(Number);
   const weekday = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).getDay();
   const weekend = weekday === 0 || weekday === 6;
-  const r = rng(hash(date));
+  const r = rng(seedOf(date));
   // A busy day: one in about 30, picked by date.
-  const spike = hash(`${date}#spike`) % 30 === 0;
+  const spike = seedOf(`${date}#spike`) % 30 === 0;
   const hours: (number | null)[] = [];
   for (let h = 0; h < 24; h++) {
     const awake = h >= 7 || (h <= 1 && r() < 0.55);

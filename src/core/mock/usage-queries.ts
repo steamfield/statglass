@@ -1,5 +1,6 @@
 import type { HostId, UsageKey } from "@core/generated/bindings";
 import { USAGE_KEEP_MS } from "@core/generated/bindings";
+import { HOUR_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import { MockDurableUsage } from "./durable-usage";
@@ -97,7 +98,7 @@ export class MockUsageQueries {
     const latestMs =
       this.ring.rows[this.ring.rows.length - 1]?.ts ?? this.ring.startMs;
     // The engine keeps an hour; the mock's ring is its whole run.
-    const sinceMs = Math.max(this.ring.ringStartMs, latestMs - 3_600_000);
+    const sinceMs = Math.max(this.ring.ringStartMs, latestMs - HOUR_MS);
     // GPU per process is measured always, except in Performance mode, where
     // only a view asking for it measures it (D-099). The mock has no record
     // of past interest: a view asking now stands for the whole range.

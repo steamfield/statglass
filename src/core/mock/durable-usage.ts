@@ -16,7 +16,7 @@ import { floorTo } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import { mockGaps } from "./history";
-import { err, ok } from "./protocol";
+import { invalid, ok, rangeError } from "./protocol";
 import type { MockRing } from "./ring";
 import type { MockStore } from "./store";
 
@@ -29,9 +29,6 @@ const METRICS: HistoricalUsageMetric[] = [
 ];
 const APPS = ["Compiler", "Browser", "Editor"];
 const MAX_RANGE = USAGE_HISTORY_MAX_RANGE_MS;
-function invalid(message: string) {
-  return err({ kind: "invalid_argument", message });
-}
 function validName(name: string) {
   return (
     name.length > 0 &&
@@ -44,11 +41,11 @@ export function validateUsageRequest(
 ) {
   if (
     !Number.isSafeInteger(request.from_ms) ||
-    !Number.isSafeInteger(request.to_ms) ||
-    request.to_ms <= request.from_ms ||
-    request.to_ms - request.from_ms > MAX_RANGE
+    !Number.isSafeInteger(request.to_ms)
   )
-    return "usage interval must be nonempty, JS-safe and at most thirty days";
+    return "usage interval must be JS-safe";
+  const badRange = rangeError(request.from_ms, request.to_ms, MAX_RANGE);
+  if (badRange) return badRange;
   if ("app_names" in request) {
     if (
       request.app_names.length > 10 ||
