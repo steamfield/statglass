@@ -1,7 +1,7 @@
 # RFC: Shared layers for charts, queries, UI states and Rust collectors
 
 Status: Accepted 2026-11-07, revised after a devil's-advocate review (see "Review outcome"); open
-questions decided by the owner. Phase 0 in progress.
+questions decided by the owner. Phase 0 done (2026-11-07, see PROGRESS); phase 1 next.
 Date: 2026-11-07.
 
 ## Problem

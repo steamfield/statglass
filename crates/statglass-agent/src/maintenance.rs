@@ -67,17 +67,7 @@ mod tests {
 
     #[test]
     fn concurrent_maintenance_is_excluded_and_purge_cannot_replace_the_lock() {
-        // Isolate OS lock lifetime from other tests forking between our lock and
-        // drop: a child briefly inherits CLOEXEC descriptors until its exec.
-        if std::env::var_os("STATGLASS_TEST_LOCK_CHILD").is_none() {
-            let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "maintenance::tests::concurrent_maintenance_is_excluded_and_purge_cannot_replace_the_lock", "--nocapture"])
-                .env("STATGLASS_TEST_LOCK_CHILD", "1").output().unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stdout)
-            );
+        if crate::test_support::reexec_for_lock_test() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

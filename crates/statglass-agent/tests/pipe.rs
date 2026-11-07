@@ -16,6 +16,8 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 const AGENT: &str = env!("CARGO_BIN_EXE_statglass-agent");
 
+#[path = "support/lock_test.rs"]
+mod test_support;
 #[path = "support/update_reconnect.rs"]
 mod update_reconnect;
 

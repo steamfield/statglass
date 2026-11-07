@@ -19,6 +19,9 @@ fn installation(dir: &Path) -> AgentPaths {
 
 #[test]
 fn failed_trial_cannot_serve_and_restores_the_whole_snapshot() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let paths = installation(dir.path());
     let mut journal = begin(&paths, "2.0.0").unwrap();
@@ -40,6 +43,9 @@ fn failed_trial_cannot_serve_and_restores_the_whole_snapshot() {
 
 #[test]
 fn crash_after_commit_before_public_start_never_rolls_back_history() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let paths = installation(dir.path());
     let mut journal = begin(&paths, "2.0.0").unwrap();
@@ -58,6 +64,9 @@ fn crash_after_commit_before_public_start_never_rolls_back_history() {
 
 #[test]
 fn incomplete_backup_does_not_overwrite_original_history() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let paths = installation(dir.path());
     begin(&paths, "2.0.0").unwrap();
@@ -83,6 +92,9 @@ fn assert_database(paths: &AgentPaths, seq: i64, schema: i64) {
 
 #[test]
 fn recovery_refuses_to_restore_while_a_trial_writer_survives() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let paths = installation(dir.path());
     let mut journal = begin(&paths, "2.0.0").unwrap();
@@ -102,6 +114,9 @@ fn recovery_refuses_to_restore_while_a_trial_writer_survives() {
 
 #[test]
 fn rollback_restores_units_and_committed_recovery_refreshes_the_preserved_executable() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let paths = installation(dir.path());
     fs::create_dir_all(paths.unit.parent().unwrap()).unwrap();
@@ -134,6 +149,9 @@ fn rollback_restores_units_and_committed_recovery_refreshes_the_preserved_execut
 
 #[test]
 fn death_after_cleanup_before_start_preserves_restart_intent() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let paths = installation(dir.path());
     let mut journal = begin(&paths, "2.0.0").unwrap();

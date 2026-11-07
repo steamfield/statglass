@@ -1,11 +1,8 @@
 use super::*;
+use statglass_agent::transaction;
 use statglass_remote::AgentPaths;
 use statglass_schema::Cursor;
 use statglass_store::rusqlite::Connection;
-
-#[allow(dead_code)]
-#[path = "../../src/update/transaction.rs"]
-mod transaction;
 
 async fn stop(child: &mut Child) {
     rustix::process::kill_process(
@@ -101,6 +98,9 @@ fn append_gap(paths: &AgentPaths, jump: i64) -> i64 {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reconnect_after_failed_trial_cannot_skip_or_observe_rolled_back_sequences() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
     let mut initial = Daemon::start().await;
     stop(&mut initial.child).await;
     let paths = AgentPaths {

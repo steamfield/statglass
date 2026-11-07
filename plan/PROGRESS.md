@@ -4,6 +4,27 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Shared layers RFC phase 0: agent test lock flake (2026-11-07)
+
+`plan/rfc-shared-layers.md` R0. The `pipe` integration test included production
+`src/update/transaction.rs` by `#[path]`, so the transaction unit tests (which take the
+history flock) compiled a second time into a binary whose sibling tests spawn processes; a
+child holds the locked descriptor between fork and exec, and a later `try_lock` failed on
+Linux CI. `statglass-agent` now has a lib target (`src/lib.rs`, the old `main.rs` moved
+verbatim) that exports only `transaction::{begin, directory, prepare, recover}` and `main`.
+The maintenance test's hard-coded re-exec became `reexec_for_lock_test()`
+(`tests/support/lock_test.rs`), which takes the test path from the libtest thread name and
+requires the child to report `1 passed`. All seven lock-taking tests use it; the rule is in
+`.claude/rules/rust/testing.md`.
+
+Verified: `cargo test -p statglass-agent` (32 unit, 5 integration), `make rust-check`,
+`make architecture-check`, `make check` from main, and 50 consecutive clean Linux runs of the
+crate in the `rust-linux-test` container (arm64). The flake did not reproduce on the base
+commit in 50 Linux runs either, so the fix rests on the root-cause analysis, not an observed
+before/after. Implemented by a Codex sol delegate; reviewed by a Codex review and
+`ce:code-reviewer` (three findings fixed: the last unwrapped `recover()` test, the helper
+dropping child output under `--nocapture`, and the unwritten wrap rule).
+
 ## Shared table layer, sortable by default (2026-11-06)
 
 Every frontend table now goes through one shared layer on TanStack Table v9
