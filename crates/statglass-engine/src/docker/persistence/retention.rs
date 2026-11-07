@@ -35,7 +35,7 @@ pub(super) fn gap(s: &mut State, engine: &str, start: i64, end: i64, reason: &st
     let gaps = s.coverage.entry(engine.into()).or_default();
     if let Some(old) = gaps
         .iter_mut()
-        .find(|g| g.reason == reason && g.container_id.is_none())
+        .find(|g| g.reason() == reason && g.container_id.is_none())
     {
         old.start_ms = old.start_ms.min(start);
         old.end_ms = Some(old.end_ms.unwrap_or(end).max(end));
@@ -49,18 +49,47 @@ pub(super) fn gap(s: &mut State, engine: &str, start: i64, end: i64, reason: &st
     }
     bound_coverage(gaps);
 }
+/// Keep at most 512 records where possible: room for the published snapshot's own bound
+/// (128 closed plus an open record per monitored container) and the recorder's own
+/// saving records, so this only acts on a pathological hour. Open records are never
+/// touched: they still have to close. Closed records that mask nothing go first, oldest
+/// first; they are already on disk when a store is attached. Closed masking records then
+/// collapse into one `coverage_unknown` span per container scope, so a collapse only
+/// masks time its own scope already lost somewhere in that span, and the open records
+/// plus one span per monitored container bound the rest.
 pub(super) fn bound_coverage(gaps: &mut Vec<api::DockerCoverage>) {
-    if gaps.len() > 128 {
-        let start = gaps.iter().map(|g| g.start_ms).min().unwrap_or(0);
-        let end = gaps.iter().filter_map(|g| g.end_ms).max();
-        gaps.clear();
-        gaps.push(api::DockerCoverage::new(
-            start,
-            end,
-            None,
-            "coverage_unknown".into(),
-        ));
+    const LIMIT: usize = 512;
+    if gaps.len() <= LIMIT {
+        return;
     }
+    let masking = |g: &api::DockerCoverage| g.masks(g.container_id.as_deref());
+    let mut excess = gaps.len() - LIMIT;
+    let mut by_start: Vec<_> = gaps
+        .iter()
+        .filter(|g| g.end_ms.is_some() && !masking(g))
+        .map(|g| (g.start_ms, g.clone()))
+        .collect();
+    by_start.sort_by_key(|(start, _)| *start);
+    let dropped: Vec<_> = by_start.into_iter().take(excess).map(|(_, g)| g).collect();
+    excess -= dropped.len();
+    gaps.retain(|g| !dropped.contains(g));
+    if excess == 0 {
+        return;
+    }
+    let mut spans: BTreeMap<Option<String>, (i64, i64)> = BTreeMap::new();
+    gaps.retain(|g| {
+        let (Some(end), true) = (g.end_ms, masking(g)) else {
+            return true;
+        };
+        let span = spans
+            .entry(g.container_id.clone())
+            .or_insert((g.start_ms, end));
+        *span = (span.0.min(g.start_ms), span.1.max(end));
+        false
+    });
+    gaps.extend(spans.into_iter().map(|(container, (start, end))| {
+        api::DockerCoverage::new(start, Some(end), container, "coverage_unknown".into())
+    }));
 }
 fn retry_bytes(retry: &Retry) -> usize {
     retry
@@ -175,6 +204,10 @@ pub(super) fn evict(s: &mut State, now: i64) {
         evict_entry(s, &key);
     }
     s.events.retain(|e| e.time_ms >= now - HOUR);
+    // Closed coverage leaves memory with the ring's hour; the store keeps its copy.
+    for gaps in s.coverage.values_mut() {
+        gaps.retain(|g| g.end_ms.is_none_or(|end| end >= now - HOUR));
+    }
     let active: BTreeSet<_> = s
         .entries
         .keys()

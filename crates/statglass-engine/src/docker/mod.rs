@@ -9,9 +9,9 @@ mod publication;
 mod sampling;
 mod worker;
 use event_lane::admit_event;
-use publication::unavailable_runtime;
 #[cfg(test)]
 use publication::{aggregate, project_aggregates};
+use publication::{current_coverage, open_engine_wide, open_gap, unavailable_runtime};
 use sampling::{Inventory, Samples};
 mod normalize;
 mod persistence;
@@ -87,6 +87,7 @@ impl DockerHandle {
             project_aggregates: Vec::new(),
             runtime: unavailable_runtime(""),
             coverage: Vec::new(),
+            current_coverage: Vec::new(),
             observed_ms: now_ms(),
             now_ms: now_ms(),
             interval_ms: 10000,
@@ -141,7 +142,7 @@ impl DockerHandle {
                 c.settings = settings.clone();
                 false
             });
-            self.changed.send_modify(|s| {
+            self.update(|s| {
                 s.now_ms = now_ms();
                 s.settings = settings;
             });
@@ -158,7 +159,7 @@ impl DockerHandle {
             c.generation = c.generation.wrapping_add(1);
         });
         let c = self.control.borrow().clone();
-        self.changed.send_modify(|s| {
+        self.update(|s| {
             s.now_ms = now_ms();
             s.settings = settings;
             s.generation = c.generation;
@@ -185,7 +186,7 @@ impl DockerHandle {
             .send_modify(|c| c.generation = c.generation.wrapping_add(1));
         let generation = self.control.borrow().generation;
         self.inner.lock_ok().events.clear();
-        self.changed.send_modify(|s| {
+        self.update(|s| {
             s.now_ms = now_ms();
             s.generation = generation;
             s.containers.clear();
@@ -334,7 +335,7 @@ impl DockerHandle {
             ));
         }
         let mut reconciled = inspected.clone();
-        self.changed.send_modify(|s| {
+        self.update(|s| {
             s.now_ms = now_ms();
             if let Some(live) = s
                 .containers
@@ -407,28 +408,26 @@ impl DockerHandle {
         drop(current);
         self.recorder.record(&snapshot);
         snapshot.persistence = self.recorder.status();
+        snapshot.current_coverage = current_coverage(&snapshot);
         self.changed.send_replace(snapshot);
     }
-    fn gap(&self, reason: &str) {
+    /// Every change re-derives the current-state records from the state it changed.
+    fn update(&self, change: impl FnOnce(&mut DockerSnapshot)) {
         self.changed.send_modify(|s| {
+            change(s);
+            s.current_coverage = current_coverage(s);
+        });
+    }
+    fn gap(&self, reason: &str) {
+        self.update(|s| {
             s.now_ms = now_ms();
-            if s.coverage
-                .last()
-                .is_some_and(|g| g.reason == reason && g.end_ms.is_none())
-            {
+            if open_engine_wide(&mut s.coverage).is_some_and(|g| g.reason() == reason) {
                 return;
             }
-            let now = now_ms();
-            if let Some(g) = s.coverage.last_mut()
-                && g.end_ms.is_none()
-            {
-                g.end_ms = Some(now.max(g.start_ms));
-            }
-            s.coverage
-                .push(DockerCoverage::new(now, None, None, reason.into()));
-            if s.coverage.len() > 128 {
-                s.coverage.drain(0..64);
-            }
+            open_gap(
+                &mut s.coverage,
+                DockerCoverage::new(now_ms(), None, None, reason.into()),
+            );
         });
         self.recorder.record(&self.snapshot());
     }
@@ -449,7 +448,7 @@ impl DockerHandle {
         if self.control.borrow().generation != generation {
             return false;
         }
-        self.changed.send_modify(|s| {
+        self.update(|s| {
             s.now_ms = now_ms();
             s.status = status;
             s.message = message;
@@ -523,6 +522,7 @@ mod tests {
             s.observed_ms = 123;
             s.aggregate.running = 5;
             s.aggregate.expected = 5;
+            s.aggregate.inventory_complete = true;
             s.coverage.push(DockerCoverage::new(
                 10,
                 Some(20),

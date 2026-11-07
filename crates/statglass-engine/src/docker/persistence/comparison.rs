@@ -327,10 +327,16 @@ impl DockerRecorder {
             .filter_map(|id| pages.remove(&id))
             .collect();
         all_coverage.sort_by(|a, b| {
-            (a.start_ms, &a.container_id, &a.reason).cmp(&(b.start_ms, &b.container_id, &b.reason))
+            (a.start_ms, &a.container_id, a.reason()).cmp(&(
+                b.start_ms,
+                &b.container_id,
+                b.reason(),
+            ))
         });
         all_coverage.dedup_by(|a, b| {
-            if a.start_ms == b.start_ms && a.container_id == b.container_id && a.reason == b.reason
+            if a.start_ms == b.start_ms
+                && a.container_id == b.container_id
+                && a.reason() == b.reason()
             {
                 b.end_ms = b.end_ms.max(a.end_ms);
                 true

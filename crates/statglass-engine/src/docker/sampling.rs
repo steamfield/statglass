@@ -8,7 +8,7 @@ impl DockerHandle {
         samples: &mut Samples,
         refresh: bool,
         generation: u32,
-    ) -> bool {
+    ) -> (bool, BTreeSet<String>) {
         let deadline = Instant::now() + Duration::from_secs(5);
         if (refresh || inventory.refreshed_at.elapsed() >= Duration::from_secs(30))
             && !self
@@ -21,10 +21,17 @@ impl DockerHandle {
                 )
                 .await
         {
-            return false;
+            // No stats were requested: every container that should have been measured failed.
+            let failed = inventory
+                .rows
+                .iter()
+                .filter(|c| c.monitored && c.lifecycle == DockerLifecycle::Running)
+                .map(|c| c.id.clone())
+                .collect();
+            return (false, failed);
         }
         inventory.select_population(&mut samples.baseline);
-        collect_stats(
+        let failed = collect_stats(
             adapter,
             &mut inventory.rows,
             &mut samples.baseline,
@@ -32,7 +39,8 @@ impl DockerHandle {
             refresh,
             deadline,
         )
-        .await
+        .await;
+        (true, failed)
     }
 }
 
@@ -178,15 +186,16 @@ async fn collect_stats(
     cursor: &mut usize,
     refresh: bool,
     deadline: Instant,
-) -> bool {
+) -> BTreeSet<String> {
     let ids: Vec<_> = rows
         .iter()
         .enumerate()
         .filter(|(_, c)| c.monitored)
         .map(|(i, _)| i)
         .collect();
+    let mut failed = BTreeSet::new();
     if ids.is_empty() {
-        return true;
+        return failed;
     }
     let offset = *cursor % ids.len();
     let mut ordered = ids.clone();
@@ -194,6 +203,12 @@ async fn collect_stats(
     let jobs: Vec<_> = ordered
         .into_iter()
         .filter_map(|index| rows.get(index).cloned().map(|row| (index, row)))
+        .collect();
+    // Running containers whose stats have not come back; the deadline fails them.
+    let mut unserved: BTreeSet<String> = jobs
+        .iter()
+        .filter(|(_, row)| row.lifecycle == DockerLifecycle::Running)
+        .map(|(_, row)| row.id.clone())
         .collect();
     let pending = stream::iter(jobs)
         .map(|(index, row)| async move {
@@ -212,9 +227,12 @@ async fn collect_stats(
         .buffer_unordered(8);
     tokio::pin!(pending);
     let mut served = 0;
-    let mut all_ok = true;
     loop {
-        match tokio::time::timeout_at(deadline, pending.next()).await {
+        let next = tokio::time::timeout_at(deadline, pending.next()).await;
+        if let Ok(Some((_, row, _, _, _))) = &next {
+            unserved.remove(&row.id);
+        }
+        match next {
             Ok(Some((index, mut row, Some(Ok(raw)), mono, wall))) => {
                 let previous = baseline.get(&row.id);
                 let elapsed = previous
@@ -233,11 +251,11 @@ async fn collect_stats(
                 baseline.remove(&row.id);
                 row.metrics = DockerMetrics::default();
                 row.observed_ms = None;
+                failed.insert(row.id.clone());
                 if let Some(target) = rows.get_mut(index) {
                     *target = row;
                 }
                 served += 1;
-                all_ok = false;
             }
             Ok(Some((index, mut row, None, _, _))) => {
                 baseline.remove(&row.id);
@@ -251,11 +269,11 @@ async fn collect_stats(
             }
             Ok(None) => break,
             Err(_) => {
-                all_ok = false;
+                failed.append(&mut unserved);
                 break;
             }
         }
     }
     *cursor = (offset + served.max(1)) % ids.len();
-    all_ok
+    failed
 }

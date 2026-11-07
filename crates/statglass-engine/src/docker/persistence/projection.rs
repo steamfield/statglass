@@ -165,9 +165,10 @@ pub(super) fn display_points(
     }
     Ok(points)
 }
-/// No point claims more measured time than the collection and metrics gaps of its
-/// container, or of all containers, leave in its bucket (D-128). A bucket a gap touches
-/// is not covered; one a gap spans has no measured time. Open gaps run to `to_ms`.
+/// No point claims more measured time than the gaps that mask its container
+/// (`DockerCoverage::masks`) leave in its bucket (D-128). A bucket a gap touches is not
+/// covered; one a gap spans has no measured time. Open gaps run to `to_ms`: the
+/// recorder closes a crashed process's open rows when it restarts.
 pub(super) fn mask_uncovered(
     points: &mut [api::DockerHistoryPoint],
     gaps: &[api::DockerCoverage],
@@ -176,10 +177,7 @@ pub(super) fn mask_uncovered(
 ) {
     let masking: Vec<(i64, i64)> = gaps
         .iter()
-        .filter(|g| {
-            g.kind.masks_measurements()
-                && (g.container_id.is_none() || g.container_id.as_deref() == container)
-        })
+        .filter(|g| g.masks(container))
         .map(|g| (g.start_ms, g.end_ms.unwrap_or(to_ms)))
         .collect();
     for p in points {

@@ -174,7 +174,7 @@ impl DockerHandle {
             self.check_clock(&mut clock, &mut samples, generation);
             let cycle_start = Instant::now();
             let mut event_refresh = false;
-            let ok = {
+            let (listed, failed) = {
                 let cycle = self.cycle(
                     &mut adapter,
                     &mut inventory,
@@ -192,6 +192,7 @@ impl DockerHandle {
                 }
             };
             refresh = event_refresh;
+            let ok = listed && failed.is_empty();
             if ok && event_live {
                 if healthy_since.get_or_insert_with(Instant::now).elapsed()
                     >= Duration::from_secs(60)
@@ -200,9 +201,6 @@ impl DockerHandle {
                 }
             } else {
                 healthy_since = None;
-            }
-            if !ok {
-                self.gap_for(generation, "partial_cycle");
             }
             if inventory.rows.is_empty()
                 && inventory.refreshed_at.elapsed() > Duration::from_secs(30)
@@ -215,7 +213,7 @@ impl DockerHandle {
                 &mut inventory,
                 &mut restarts,
                 &mut last_observation,
-                ok,
+                &failed,
             );
             if !inventory
                 .rows
@@ -249,7 +247,7 @@ impl DockerHandle {
             return false;
         }
         self.inner.lock_ok().adapter = Some(adapter.clone());
-        self.changed.send_modify(|s| {
+        self.update(|s| {
             s.now_ms = now_ms();
             if s.engine.as_ref().is_none_or(|e| e.id != adapter.engine.id) {
                 s.coverage.clear();

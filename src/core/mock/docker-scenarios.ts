@@ -1,5 +1,6 @@
 import type { DockerContainer, DockerSnapshot } from "@core/generated/bindings";
 import { HOUR_MS } from "@core/time-grid";
+import { currentCoverage, mockCoverage } from "./docker-coverage";
 import {
   aggregateContainers,
   mockContainer,
@@ -80,22 +81,32 @@ export function scenarioSnapshot(
       error: "History storage is temporarily full",
     };
   if (scenarios.includes("docker-history-gap"))
-    snapshot.coverage.push({
-      start_ms: now() - 300_000,
-      end_ms: now() - 240_000,
-      container_id: null,
-      reason: "shutdown",
-      kind: "collection",
-      label: "StatGlass was not running",
-    });
+    snapshot.coverage.push(
+      mockCoverage(now() - 300_000, now() - 240_000, null, "shutdown")
+    );
   if (scenarios.includes("docker-events-gap"))
-    snapshot.coverage.push({
-      start_ms: now() - 180_000,
-      end_ms: now() - 120_000,
-      container_id: null,
-      reason: "events_disconnected",
-      kind: "events",
-      label: "Lost connection to Docker events",
-    });
+    snapshot.coverage.push(
+      mockCoverage(
+        now() - 180_000,
+        now() - 120_000,
+        null,
+        "events_disconnected"
+      )
+    );
+  const first = snapshot.containers[0]?.id ?? null;
+  if (scenarios.includes("docker-partial-cycle"))
+    snapshot.coverage.push(
+      // An earlier build's engine-wide record masks nothing; the container's own does.
+      mockCoverage(now() - 780_000, now() - 720_000, null, "partial_cycle"),
+      mockCoverage(now() - 300_000, now() - 180_000, first, "partial_cycle")
+    );
+  if (scenarios.includes("docker-crash"))
+    snapshot.coverage.push(
+      // Left open by a crashed process; the restart closed both at its last reading.
+      mockCoverage(now() - 420_000, now() - 400_000, first, "partial_cycle"),
+      mockCoverage(now() - 420_000, now() - 400_000, null, "clock_step"),
+      mockCoverage(now() - 400_000, now() - 330_000, null, "shutdown")
+    );
+  snapshot.current_coverage = currentCoverage(snapshot);
   return snapshot;
 }

@@ -1,6 +1,7 @@
 import { formatDateTime } from "@core/format";
 import {
   mockContainer,
+  mockCoverage,
   mockDockerSnapshot,
   mockHistoryPoints,
 } from "@core/mock/docker";
@@ -173,6 +174,10 @@ it("shows one prioritized notice and separates metrics from events in details", 
           status: "write_failed",
           error: "Database is locked; close the other writer and retry.",
         },
+        current_coverage: [
+          mockCoverage(30000, null, null, "unavailable"),
+          mockCoverage(30000, null, null, "write_failed"),
+        ],
       }}
       coverage={[
         {
@@ -206,6 +211,36 @@ it("shows one prioritized notice and separates metrics from events in details", 
   expect(
     within(dialog).getByText("Lost connection to Docker events")
   ).toBeVisible();
+  result.unmount();
+  result.transport.dispose();
+});
+
+it("lists the current-state records Rust publishes, in Rust's words", async () => {
+  const snapshot = mockDockerSnapshot(1, 30000);
+  const result = renderWithProviders(
+    <HistoryNotice
+      snapshot={{
+        ...snapshot,
+        aggregate: { ...snapshot.aggregate, running: 2 },
+        current_coverage: [
+          {
+            ...mockCoverage(30000, null, null, "partial_population"),
+            label: "Wording from Rust",
+          },
+        ],
+      }}
+      coverage={[]}
+      metric="cpu"
+      onManage={() => {}}
+      onResume={() => {}}
+    />
+  );
+  await result.user.click(screen.getByRole("button", { name: "Details (1)" }));
+  const dialog = screen.getByRole("dialog", { name: "History details" });
+  expect(within(dialog).getByText("Wording from Rust")).toBeVisible();
+  expect(
+    within(dialog).queryByText("Some running containers are not monitored")
+  ).toBeNull();
   result.unmount();
   result.transport.dispose();
 });

@@ -153,21 +153,25 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
 
 /// Writes the TypeScript bindings for `builder` to [`BINDINGS_PATH`], and the tray rate
 /// table to [`TRAY_RATES_PATH`].
-pub fn export_bindings(builder: &Builder<tauri::Wry>) -> Result<(), specta_typescript::Error> {
-    builder.export(Typescript::default(), BINDINGS_PATH)?;
+pub fn export_bindings(builder: &Builder<tauri::Wry>) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let bindings = || format!("exporting bindings to {BINDINGS_PATH}");
+    builder
+        .export(Typescript::default(), BINDINGS_PATH)
+        .with_context(bindings)?;
     // Specta emits spaces after union separators. Normalize generation itself so
     // freshly added variants pass the repository whitespace gate reproducibly.
-    let exported = std::fs::read_to_string(BINDINGS_PATH)?;
+    let exported = std::fs::read_to_string(BINDINGS_PATH).with_context(bindings)?;
     let clean = exported
         .lines()
         .map(str::trim_end)
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    std::fs::write(BINDINGS_PATH, clean)?;
-    let golden =
-        serde_json::to_string_pretty(&tray::model::rate_golden()).map_err(std::io::Error::other)?;
-    std::fs::write(TRAY_RATES_PATH, golden + "\n")?;
+    std::fs::write(BINDINGS_PATH, clean).with_context(bindings)?;
+    let rates = || format!("writing the tray rate table to {TRAY_RATES_PATH}");
+    let golden = serde_json::to_string_pretty(&tray::model::rate_golden()).with_context(rates)?;
+    std::fs::write(TRAY_RATES_PATH, golden + "\n").with_context(rates)?;
     Ok(())
 }
 
@@ -183,7 +187,7 @@ pub fn run() {
     // without starting the app, and CI diffs its output against the commit.
     #[cfg(debug_assertions)]
     if let Err(err) = export_bindings(&builder) {
-        eprintln!("failed to export TypeScript bindings to {BINDINGS_PATH}: {err}");
+        eprintln!("failed to refresh generated files: {err:#}");
     }
 
     let app = tauri::Builder::default()

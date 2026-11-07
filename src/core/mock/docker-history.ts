@@ -86,7 +86,8 @@ function historyCpu(
 
 /**
  * `mask_uncovered` in Rust's `projection.rs`: no point claims measured time
- * inside a collection or metrics gap of its container or of all containers.
+ * inside a collection or metrics gap of its container or of all containers
+ * (`DockerCoverage::masks`; an engine-wide partial cycle masks nothing).
  */
 export function maskUncovered(
   points: readonly DockerHistoryPoint[],
@@ -98,7 +99,9 @@ export function maskUncovered(
     .filter(
       (g) =>
         (g.kind === "collection" || g.kind === "metrics") &&
-        (g.container_id === null || g.container_id === containerId)
+        (g.container_id === null
+          ? g.reason !== "partial_cycle"
+          : g.container_id === containerId)
     )
     .map((g) => [g.start_ms, g.end_ms ?? toMs] as const)
     .sort((a, b) => a[0] - b[0]);
