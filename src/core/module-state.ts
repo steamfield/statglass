@@ -10,7 +10,6 @@ import type {
   ModuleCap,
   Settings,
 } from "@core/generated/bindings";
-import type { ModulePresence } from "@core/settings-patch";
 
 /** The seven modules the sidebar, popover and Overview list, in order. */
 export const UI_MODULES = [
@@ -39,13 +38,35 @@ export type ModuleState =
   /** Any other unsupported or unknown capability: "Not available". */
   | "unavailable";
 
-function capState(cap: ModuleCap | undefined): ModuleState | "available" {
+function capState(
+  cap: ModuleCap | undefined
+): Exclude<ModuleState, "on" | "disabled"> | "available" {
   if (cap === undefined || cap === "not_present") return "absent";
   if (cap === "unknown") return "unavailable";
   if ("available" in cap) return "available";
   if (cap.unsupported === "missing_entitlement") return "edition";
   if (cap.unsupported === "unknown_chip") return "unknown_chip";
   return "unavailable";
+}
+
+/**
+ * Whether a module's settings row can be used: the host has it, lacks the
+ * hardware, cannot run it, or this build leaves it out (`missing_entitlement`).
+ */
+export type ModulePresence = "present" | "absent" | "unavailable" | "edition";
+
+/**
+ * The settings rows' view of {@link capState}. Until capabilities arrive
+ * (`known` false) the row stays usable.
+ */
+export function modulePresence(
+  cap: ModuleCap | undefined,
+  known: boolean
+): ModulePresence {
+  if (!known) return "present";
+  const state = capState(cap);
+  if (state === "available") return "present";
+  return state === "unknown_chip" ? "unavailable" : state;
 }
 
 /**

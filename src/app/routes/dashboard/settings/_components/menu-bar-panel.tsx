@@ -4,15 +4,17 @@ import type {
   Settings,
 } from "@core/generated/bindings";
 import { READOUTS } from "@core/generated/bindings";
-import { unavailableText } from "@core/module-state";
+import {
+  type ModulePresence,
+  modulePresence,
+  unavailableText,
+} from "@core/module-state";
 import {
   barPatch,
   itemModeLabel,
   itemModes,
   itemPatch,
-  type ModulePresence,
   menuBarOf,
-  modulePresence,
   readoutPatch,
   SETTINGS_MODULES,
   type SettingsModule,

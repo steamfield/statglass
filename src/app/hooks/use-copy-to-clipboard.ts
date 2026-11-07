@@ -18,12 +18,15 @@ export function useCopyToClipboard(context: string) {
     text: string | null;
   }>({ status: "idle", text: null });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
+  // A copy can settle after unmount; it then leaves no state or timer behind.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       if (timer.current) clearTimeout(timer.current);
-    },
-    []
-  );
+    };
+  }, []);
   const copy = useCallback(
     async (text: string): Promise<boolean> => {
       let status: CopyStatus;
@@ -34,6 +37,7 @@ export function useCopyToClipboard(context: string) {
         console.error(`[${context}] copy failed`, err);
         status = "failed";
       }
+      if (!mounted.current) return status === "copied";
       setState({ status, text });
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(
