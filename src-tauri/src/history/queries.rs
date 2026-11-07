@@ -14,7 +14,7 @@ impl History {
         to_ms: i64,
         recent: impl FnOnce() -> statglass_engine::RecentNet,
     ) -> Result<NetworkByApp, CommandError> {
-        validate_range(from_ms, to_ms, MAX_NET_SPAN_MS)?;
+        TimeRange::new(from_ms, to_ms, MAX_NET_SPAN_MS)?;
         let (read, complete_to_ms) = self.storage.network_by_app(host, from_ms, to_ms, recent)?;
         let mut out: NetworkByApp = read.into();
         // The engine always has an edge once it has started; before that, nothing is
@@ -50,10 +50,9 @@ impl History {
         now_ms: i64,
         recent: impl Fn() -> Vec<BucketRow>,
     ) -> Result<statglass_schema::disk_io::DiskIoPage, CommandError> {
+        TimeRange::new(request.from_ms, request.to_ms, MAX_NET_SPAN_MS)?;
         if request.from_ms < 0
-            || request.to_ms <= request.from_ms
             || request.to_ms > statglass_schema::JS_SAFE_INT_MAX
-            || request.to_ms.saturating_sub(request.from_ms) > MAX_NET_SPAN_MS
             || !(1..=2000).contains(&request.max_points)
             || request.device.as_ref().is_some_and(|dev| {
                 dev.is_empty()
@@ -134,7 +133,7 @@ impl History {
         now_ms: i64,
         recent: impl Fn() -> Vec<BucketRow>,
     ) -> Result<RangeStats, CommandError> {
-        validate_range(from_ms, to_ms, MAX_NET_SPAN_MS)?;
+        TimeRange::new(from_ms, to_ms, MAX_NET_SPAN_MS)?;
         let catalog = statglass_schema::Catalog::builtin();
         let defs = metrics
             .iter()
@@ -242,26 +241,6 @@ impl History {
             .collect())
     }
 }
-/// `invalid_argument` unless `[from_ms, to_ms)` runs forwards and spans at most `max_ms`
-/// (whole days).
-fn validate_range(from_ms: i64, to_ms: i64, max_ms: i64) -> Result<(), CommandError> {
-    if to_ms < from_ms {
-        return Err(CommandError::InvalidArgument {
-            message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
-        });
-    }
-    if to_ms - from_ms > max_ms {
-        return Err(CommandError::InvalidArgument {
-            message: format!(
-                "the range is {} days long; history keeps at most {} days",
-                (to_ms - from_ms) / Retention::DAY_MS,
-                max_ms / Retention::DAY_MS
-            ),
-        });
-    }
-    Ok(())
-}
-
 /// A read of the unlabelled `metrics` with room for one point per `bucket_ms` bucket of
 /// `[from_ms, to_ms)`, so none are merged.
 fn per_bucket_query(

@@ -1,7 +1,7 @@
 //! Bounded Docker ring and SQLite coordination. Persistence failures release write pins;
 //! immutable reader snapshots own their own copies until the bounded query completes.
 use super::DockerServiceError;
-use statglass_schema::{HostId, Tier, docker as api, lock::LockExt};
+use statglass_schema::{HostId, Tier, TimeRange, ceil_to, docker as api, floor_to, lock::LockExt};
 use statglass_store::{Reader, Writer, docker as db};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},

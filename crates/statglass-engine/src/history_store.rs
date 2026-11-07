@@ -6,7 +6,6 @@
 use crate::{HistoryHealth, Housekeeping, HousekeepingHandle, Schedule};
 use serde::Serialize;
 use statglass_schema::{HostRecord, JsSafeInt, lock::LockExt};
-use statglass_store::rusqlite::ErrorCode;
 use statglass_store::{Reader, Retention, Store, StoreConfig, StoreError, Writer};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -55,7 +54,7 @@ impl From<&StoreError> for HistoryUnavailableReason {
                 found: *found,
                 supported: *supported,
             },
-            e if is_corrupt(e) => HistoryUnavailableReason::Corrupt {
+            e if e.is_corrupt() => HistoryUnavailableReason::Corrupt {
                 message: e.to_string(),
             },
             e => HistoryUnavailableReason::Failed {
@@ -63,21 +62,6 @@ impl From<&StoreError> for HistoryUnavailableReason {
             },
         }
     }
-}
-
-fn sqlite_code(e: &StoreError) -> Option<ErrorCode> {
-    match e {
-        StoreError::Sqlite(e) => e.sqlite_error_code(),
-        _ => None,
-    }
-}
-
-fn is_corrupt(e: &StoreError) -> bool {
-    matches!(e, StoreError::Corrupt(_) | StoreError::Cbor(_))
-        || matches!(
-            sqlite_code(e),
-            Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase)
-        )
 }
 
 // Keep the command-facing diagnostic text stable while retaining the typed source.
@@ -88,15 +72,8 @@ fn store_error_message(error: &StoreError) -> String {
         StoreError::TooNew { found, supported } => {
             format!("history store schema {found} is newer than this build supports ({supported})")
         }
-        e if matches!(e, StoreError::Locked { .. })
-            || matches!(
-                sqlite_code(e),
-                Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
-            ) =>
-        {
-            format!("history store is busy: {e}")
-        }
-        e if is_corrupt(e) => format!("history store is corrupt: {e}"),
+        e if e.is_busy() => format!("history store is busy: {e}"),
+        e if e.is_corrupt() => format!("history store is corrupt: {e}"),
         e => format!("history store: {e}"),
     }
 }

@@ -166,22 +166,10 @@ pub fn usage_series(e: statglass_engine::UsageSeries) -> UsageSeries {
     }
 }
 
-/// `query_usage_series`'s range check: `invalid_argument` when `to_ms` is before
-/// `from_ms` or the range is longer than the samples are kept.
+/// `query_usage_series`'s range check: `invalid_argument` unless `from_ms` is before `to_ms`
+/// and the range is no longer than the samples are kept.
 pub fn check_series_range(from_ms: i64, to_ms: i64) -> Result<(), CommandError> {
-    if to_ms < from_ms {
-        return Err(CommandError::InvalidArgument {
-            message: format!("to_ms {to_ms} is before from_ms {from_ms}"),
-        });
-    }
-    if to_ms - from_ms > statglass_engine::USAGE_KEEP_MS {
-        return Err(CommandError::InvalidArgument {
-            message: format!(
-                "the range is longer than the {} ms of samples kept",
-                statglass_engine::USAGE_KEEP_MS
-            ),
-        });
-    }
+    statglass_schema::TimeRange::new(from_ms, to_ms, statglass_engine::USAGE_KEEP_MS)?;
     Ok(())
 }
 
@@ -464,7 +452,10 @@ mod tests {
             check_series_range(10_000, 0),
             Err(CommandError::InvalidArgument { .. })
         ));
-        assert!(check_series_range(0, 0).is_ok());
+        assert!(matches!(
+            check_series_range(0, 0),
+            Err(CommandError::InvalidArgument { .. })
+        ));
         assert!(check_series_range(0, keep).is_ok());
         assert!(matches!(
             check_series_range(0, keep + 1),

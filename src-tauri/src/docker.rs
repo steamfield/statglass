@@ -1,6 +1,6 @@
 //! Typed Docker shell. No arbitrary endpoint or command crosses IPC.
 mod error;
-use crate::{AppState, error::CommandError, settings::SettingsPatch};
+use crate::{AppState, commands::spawn_blocking, error::CommandError, settings::SettingsPatch};
 use statglass_schema::{docker::*, lock::LockExt};
 use std::{collections::HashMap, sync::Mutex};
 use tauri::{AppHandle, Manager, State, ipc::Channel};
@@ -229,9 +229,8 @@ pub async fn docker_retained(
     request: DockerRetainedRequest,
 ) -> Result<DockerRetainedPage, CommandError> {
     let handle = state.docker.clone();
-    tauri::async_runtime::spawn_blocking(move || handle.retained(&request))
-        .await
-        .map_err(|source| error::task_failed("Retained Docker catalog task failed", source))?
+    spawn_blocking(move || handle.retained(&request))
+        .await?
         .map_err(CommandError::from)
 }
 #[tauri::command]
@@ -241,9 +240,8 @@ pub async fn docker_comparison(
     request: DockerComparisonRequest,
 ) -> Result<DockerComparisonPage, CommandError> {
     let handle = state.docker.clone();
-    tauri::async_runtime::spawn_blocking(move || handle.comparison(&request))
-        .await
-        .map_err(|source| error::task_failed("Docker comparison task failed", source))?
+    spawn_blocking(move || handle.comparison(&request))
+        .await?
         .map_err(CommandError::from)
 }
 #[tauri::command]
@@ -253,9 +251,8 @@ pub async fn docker_history(
     request: DockerHistoryRequest,
 ) -> Result<DockerHistoryPage, CommandError> {
     let handle = state.docker.clone();
-    tauri::async_runtime::spawn_blocking(move || handle.history(&request))
-        .await
-        .map_err(|source| error::task_failed("Docker history task failed", source))?
+    spawn_blocking(move || handle.history(&request))
+        .await?
         .map_err(CommandError::from)
 }
 #[tauri::command]
@@ -265,9 +262,8 @@ pub async fn docker_events(
     request: DockerEventsRequest,
 ) -> Result<DockerEventsPage, CommandError> {
     let handle = state.docker.clone();
-    tauri::async_runtime::spawn_blocking(move || handle.query_events(&request))
-        .await
-        .map_err(|source| error::task_failed("Docker events task failed", source))?
+    spawn_blocking(move || handle.query_events(&request))
+        .await?
         .map_err(CommandError::from)
 }
 #[tauri::command]

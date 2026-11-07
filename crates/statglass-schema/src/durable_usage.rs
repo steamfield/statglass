@@ -192,14 +192,20 @@ pub struct UsageNetworkUncertainty {
 pub const USAGE_HISTORY_MAX_RANGE_MS: i64 = 30 * 86_400_000;
 pub const USAGE_PROCESS_PAGE_MAX: u16 = 100;
 
-fn validate_range(from: i64, to: i64) -> Result<(), &'static str> {
-    if !crate::is_js_safe(from)
-        || !crate::is_js_safe(to)
-        || to <= from
-        || to.saturating_sub(from) > USAGE_HISTORY_MAX_RANGE_MS
-    {
-        return Err("usage interval must be nonempty, JS-safe and at most thirty days");
+/// Why a durable usage request was refused before any read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum UsageRequestError {
+    #[error(transparent)]
+    Range(#[from] crate::RangeError),
+    #[error("{0}")]
+    Invalid(&'static str),
+}
+
+fn validate_range(from: i64, to: i64) -> Result<(), UsageRequestError> {
+    if !crate::is_js_safe(from) || !crate::is_js_safe(to) {
+        return Err(UsageRequestError::Invalid("usage interval must be JS-safe"));
     }
+    crate::TimeRange::new(from, to, USAGE_HISTORY_MAX_RANGE_MS)?;
     Ok(())
 }
 
@@ -209,10 +215,12 @@ fn valid_name(name: &str) -> bool {
 
 impl HistoricalUsageRequest {
     /// Validate at each command/remote boundary before a store read or allocation.
-    pub fn validate(&self) -> Result<(), &'static str> {
+    pub fn validate(&self) -> Result<(), UsageRequestError> {
         validate_range(self.from_ms, self.to_ms)?;
         if self.app_names.len() > 10 || self.app_names.iter().any(|n| !valid_name(n)) {
-            return Err("comparison membership must contain at most ten valid app identities");
+            return Err(UsageRequestError::Invalid(
+                "comparison membership must contain at most ten valid app identities",
+            ));
         }
         if self
             .app_names
@@ -220,26 +228,30 @@ impl HistoricalUsageRequest {
             .enumerate()
             .any(|(i, name)| self.app_names[..i].contains(name))
         {
-            return Err("comparison membership contains duplicate app identities");
+            return Err(UsageRequestError::Invalid(
+                "comparison membership contains duplicate app identities",
+            ));
         }
         Ok(())
     }
 }
 
 impl UsageProcessRequest {
-    pub fn validate(&self) -> Result<(), &'static str> {
+    pub fn validate(&self) -> Result<(), UsageRequestError> {
         validate_range(self.from_ms, self.to_ms)?;
         if !valid_name(&self.app_name) || !(1..=USAGE_PROCESS_PAGE_MAX).contains(&self.page_size) {
-            return Err(
+            return Err(UsageRequestError::Invalid(
                 "process expansion needs a valid app identity and page size between one and one hundred",
-            );
+            ));
         }
         if self
             .cursor
             .as_ref()
             .is_some_and(|c| c.is_empty() || c.len() > 4096)
         {
-            return Err("process continuation is invalid or too large");
+            return Err(UsageRequestError::Invalid(
+                "process continuation is invalid or too large",
+            ));
         }
         Ok(())
     }

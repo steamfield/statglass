@@ -21,7 +21,7 @@ impl Reader {
     ) -> Result<HistoricalUsageReply> {
         request
             .validate()
-            .map_err(|e| StoreError::Usage(e.into()))?;
+            .map_err(|e| StoreError::Usage(e.to_string()))?;
         let host = self.host_ref(request.host)?;
         let tx = self.conn.unchecked_transaction()?;
         // Establish the durable snapshot before taking recent data. New commits can
@@ -105,7 +105,7 @@ impl Reader {
     ) -> Result<UsageProcessReply> {
         request
             .validate()
-            .map_err(|e| StoreError::Usage(e.into()))?;
+            .map_err(|e| StoreError::Usage(e.to_string()))?;
         let host = self.host_ref(request.host)?;
         let epoch = self.epoch;
         let tx = self.conn.unchecked_transaction()?;

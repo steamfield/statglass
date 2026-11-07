@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use statglass_collect::{ProcessSample, SampleBuf, Tick};
 use statglass_schema::durable_usage::{UsageIncompleteCause, UsageNetworkUncertainty};
+use statglass_schema::floor_to;
 use statglass_store::usage::{
     USAGE_BUCKET_MS, UsageAppFacts, UsageBucket, UsageFacts, UsageProcessFacts,
     UsageSourceCoverage, cause_mask,
@@ -160,7 +161,7 @@ impl UsageRecorder {
     }
     fn ranges(&self, from: i64, to: i64) -> impl Iterator<Item = (i64, i64, i64)> + use<> {
         let from = from.max(self.minimum_ms);
-        let first = from.div_euclid(USAGE_BUCKET_MS) * USAGE_BUCKET_MS;
+        let first = floor_to(from, USAGE_BUCKET_MS);
         let count = if to > from {
             (to - 1 - first) / USAGE_BUCKET_MS + 1
         } else {
@@ -357,8 +358,7 @@ impl UsageRecorder {
                 let since = buf.net_session_from_ns().unwrap_or(interval.prev_ns);
                 let ago = i64::try_from(tick.continuous_ns.saturating_sub(since) / 1_000_000)
                     .unwrap_or(i64::MAX);
-                let start =
-                    tick.wall_ms.saturating_sub(1).div_euclid(USAGE_BUCKET_MS) * USAGE_BUCKET_MS;
+                let start = floor_to(tick.wall_ms.saturating_sub(1), USAGE_BUCKET_MS);
                 self.slot(start)
                     .bucket
                     .uncertain_network

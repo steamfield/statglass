@@ -10,8 +10,9 @@ use statglass_schema::disk_space::{
 };
 use tauri::State;
 
+use crate::commands::spawn_blocking;
 use crate::error::CommandError;
-use crate::state::AppState;
+use crate::state::{AppState, Route};
 
 impl From<SpaceError> for CommandError {
     fn from(e: SpaceError) -> Self {
@@ -62,16 +63,11 @@ pub async fn disk_space_volumes(
     host: HostId,
 ) -> Result<Vec<SpaceVolume>, CommandError> {
     guard()?;
-    if host != state.local {
-        let source = state.remotes.source(host)?;
+    if let Route::Remote(source) = state.route(host)? {
         return source.space_volumes().await.map_err(remote_error);
     }
     let service = state.disk_space.clone();
-    tauri::async_runtime::spawn_blocking(move || service.volumes())
-        .await
-        .map_err(|e| CommandError::Internal {
-            message: e.to_string(),
-        })
+    spawn_blocking(move || service.volumes()).await
 }
 
 #[tauri::command]
@@ -83,17 +79,13 @@ pub async fn disk_space_start(
     include: Vec<String>,
 ) -> Result<SpaceScanStatus, CommandError> {
     guard()?;
-    if host != state.local {
+    if let Route::Remote(source) = state.route(host)? {
         // A remote scan never enters protected locations (D-117).
-        let source = state.remotes.source(host)?;
         return source.space_start(volume).await.map_err(remote_error);
     }
     let service = state.disk_space.clone();
-    tauri::async_runtime::spawn_blocking(move || service.start(&volume, &include))
-        .await
-        .map_err(|e| CommandError::Internal {
-            message: e.to_string(),
-        })?
+    spawn_blocking(move || service.start(&volume, &include))
+        .await?
         .map_err(CommandError::from)
 }
 
@@ -103,8 +95,7 @@ pub async fn disk_space_status(
     state: State<'_, AppState>,
     host: HostId,
 ) -> Result<SpaceScanStatus, CommandError> {
-    if host != state.local {
-        let source = state.remotes.source(host)?;
+    if let Route::Remote(source) = state.route(host)? {
         return source.space_status().await.map_err(remote_error);
     }
     Ok(state.disk_space.status())
@@ -116,8 +107,7 @@ pub async fn disk_space_cancel(
     state: State<'_, AppState>,
     host: HostId,
 ) -> Result<(), CommandError> {
-    if host != state.local {
-        let source = state.remotes.source(host)?;
+    if let Route::Remote(source) = state.route(host)? {
         return source.space_cancel().await.map_err(remote_error);
     }
     state.disk_space.cancel();
@@ -130,8 +120,7 @@ pub async fn disk_space_report(
     state: State<'_, AppState>,
     host: HostId,
 ) -> Result<Option<SpaceReport>, CommandError> {
-    if host != state.local {
-        let source = state.remotes.source(host)?;
+    if let Route::Remote(source) = state.route(host)? {
         return source.space_report().await.map_err(remote_error);
     }
     Ok(state.disk_space.report())
@@ -145,8 +134,7 @@ pub async fn disk_space_subtree(
     report: u32,
     node: Option<u32>,
 ) -> Result<SpaceSubtree, CommandError> {
-    if host != state.local {
-        let source = state.remotes.source(host)?;
+    if let Route::Remote(source) = state.route(host)? {
         return source
             .space_subtree(report, node)
             .await
@@ -162,8 +150,7 @@ pub async fn disk_space_largest_files(
     host: HostId,
     report: u32,
 ) -> Result<Vec<SpaceFile>, CommandError> {
-    if host != state.local {
-        let source = state.remotes.source(host)?;
+    if let Route::Remote(source) = state.route(host)? {
         return source
             .space_largest_files(report)
             .await
@@ -181,8 +168,7 @@ pub async fn disk_space_path(
     report: u32,
     target: SpaceTarget,
 ) -> Result<String, CommandError> {
-    if host != state.local {
-        let source = state.remotes.source(host)?;
+    if let Route::Remote(source) = state.route(host)? {
         return source
             .space_path(report, target)
             .await

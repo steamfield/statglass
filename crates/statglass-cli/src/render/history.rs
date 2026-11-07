@@ -182,7 +182,7 @@ fn points(
         let at = ms(&p.t);
         if let (Some(w), Some(due_ms), Some(at_ms)) = (slot_ms, due, at) {
             // Slots are on the point grid, so step back to the slot holding `due_ms`.
-            let first = at_ms - (at_ms - due_ms).div_euclid(w) * w;
+            let first = at_ms - statglass_schema::floor_to(at_ms - due_ms, w);
             let missing = (at_ms - first) / w;
             if missing > 0 {
                 rows.push(empty(first, missing));

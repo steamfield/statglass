@@ -59,7 +59,7 @@ impl RemoteSource {
     ) -> Result<statglass_schema::durable_usage::HistoricalUsageReply> {
         request
             .validate()
-            .map_err(|message| RemoteError::InvalidArgument(message.into()))?;
+            .map_err(|e| RemoteError::InvalidArgument(e.to_string()))?;
         if request.host != self.record.id {
             return Err(RemoteError::InvalidArgument(
                 "usage query host does not match the source".into(),
@@ -78,7 +78,7 @@ impl RemoteSource {
     ) -> Result<statglass_schema::durable_usage::UsageProcessReply> {
         request
             .validate()
-            .map_err(|message| RemoteError::InvalidArgument(message.into()))?;
+            .map_err(|e| RemoteError::InvalidArgument(e.to_string()))?;
         if request.host != self.record.id {
             return Err(RemoteError::InvalidArgument(
                 "usage query host does not match the source".into(),

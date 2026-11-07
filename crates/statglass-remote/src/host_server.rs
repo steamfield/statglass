@@ -10,7 +10,7 @@ use statglass_proto::{
     Answer, Hello, Message, Query, RemoteInterest, SourceStatus, SyncRequest, WireBucket,
     WireLayout,
 };
-use statglass_schema::{Capabilities, HostRecord, SyncKinds, Tier};
+use statglass_schema::{Capabilities, HostRecord, SyncKinds, Tier, floor_to};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -138,7 +138,7 @@ impl<H: ServedHost> ServerProvider for HostServer<H> {
         let message = Message::RecentRows {
             epoch: self.hello().db_instance_uuid,
             tier: Tier::S10,
-            complete_to_ms: now.div_euclid(10_000) * 10_000,
+            complete_to_ms: floor_to(now, 10_000),
             layouts,
             rows: wire,
         };

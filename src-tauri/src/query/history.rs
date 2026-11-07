@@ -9,7 +9,7 @@ use statglass_query::{
     suggest::closest,
 };
 use statglass_remote::SyncWatermark;
-use statglass_schema::{Module, SeriesKey, SeriesSelector};
+use statglass_schema::{Module, RangeError, SeriesKey, SeriesSelector, TimeRange};
 use statglass_store::{HistoryQuery, HistoryResult, SeriesSummary, TierChoice, series_summary};
 
 use super::gaps::{self, Span};
@@ -38,14 +38,13 @@ pub(super) struct Ask<'a> {
     pub points: Option<u32>,
 }
 
-/// `BadRange` unless `from < to` within [`MAX_RANGE_DAYS`].
+/// `BadRange` unless `from < to` within `max_days` (`max_days` is reported only for a
+/// range that is too long).
 pub(super) fn check_range(from_ms: i64, to_ms: i64, max_days: u32) -> Result<(), Fail> {
-    if from_ms >= to_ms {
-        return Err(bad_range(None, "from must be before to"));
-    }
-    if to_ms.saturating_sub(from_ms) > i64::from(max_days) * DAY_MS {
-        return Err(bad_range(Some(max_days), "the range is too long"));
-    }
+    TimeRange::new(from_ms, to_ms, i64::from(max_days) * DAY_MS).map_err(|e| {
+        let max = matches!(e, RangeError::TooLong { .. }).then_some(max_days);
+        bad_range(max, &e.to_string())
+    })?;
     Ok(())
 }
 

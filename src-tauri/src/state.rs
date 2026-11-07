@@ -56,6 +56,12 @@ use crate::settings::{
     network_history_affecting, prune_affecting,
 };
 
+/// Where [`AppState::route`] sends a host's command.
+pub enum Route {
+    Local,
+    Remote(Arc<statglass_remote::RemoteSource>),
+}
+
 pub struct AppState {
     pub docker: statglass_engine::docker::DockerHandle,
     pub docker_streams: crate::docker::DockerStreams,
@@ -242,6 +248,16 @@ impl AppState {
 
     pub fn host(&self, host: HostId) -> Result<Arc<HostEntry>, CommandError> {
         self.hosts.get(host)
+    }
+
+    /// Who answers a command for `host`: this Mac, or the remote host's session.
+    /// `unknown_host` for a host with neither.
+    pub fn route(&self, host: HostId) -> Result<Route, CommandError> {
+        if host == self.local {
+            Ok(Route::Local)
+        } else {
+            self.remotes.source(host).map(Route::Remote)
+        }
     }
 
     /// [`Self::host`] for a command only this Mac can answer: `remote_host` for any other.

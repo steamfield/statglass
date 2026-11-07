@@ -6,6 +6,8 @@ use statglass_store::StoreError;
 pub enum DockerServiceError {
     #[error("{0}")]
     InvalidRequest(&'static str),
+    #[error(transparent)]
+    Range(#[from] statglass_schema::RangeError),
     #[error("{0}")]
     NotFound(&'static str),
     #[error("{0}")]

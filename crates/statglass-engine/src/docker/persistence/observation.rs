@@ -93,7 +93,7 @@ pub(super) fn observe(
     let start = time.saturating_sub(span);
     let mut at = start;
     while at < time {
-        let bucket = at.div_euclid(10_000) * 10_000;
+        let bucket = floor_to(at, 10_000);
         let end = (bucket + 10_000).min(time);
         let duration = (end - at) as u64;
         let key = (engine.into(), entity.into(), bucket);

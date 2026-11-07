@@ -3,7 +3,7 @@
 use crate::{Result, StoreError};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use statglass_schema::{HostId, Tier};
+use statglass_schema::{HostId, Tier, floor_to};
 use std::collections::BTreeMap;
 
 pub(crate) mod read;
@@ -41,7 +41,7 @@ pub(crate) fn resumed_after(
         let observed: Option<i64> = conn
             .query_row(
                 &sql,
-                rusqlite::params![engine, start.div_euclid(width) * width, start],
+                rusqlite::params![engine, floor_to(start, width), start],
                 |r| r.get(0),
             )
             .optional()?;
@@ -284,12 +284,7 @@ pub(crate) fn invalid(reason: &str) -> StoreError {
     StoreError::Docker(reason.into())
 }
 pub(crate) fn table(tier: Tier) -> Result<&'static str> {
-    match tier {
-        Tier::S10 => Ok("docker_10s"),
-        Tier::M1 => Ok("docker_1m"),
-        Tier::M15 => Ok("docker_15m"),
-        _ => Err(StoreError::NotPersisted(tier)),
-    }
+    crate::db::per_tier(tier, ["docker_10s", "docker_1m", "docker_15m"])
 }
 pub(crate) fn pack(value: &impl Serialize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();

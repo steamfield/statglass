@@ -1,5 +1,7 @@
 //! Source-owned durable attribution. Remote answers never come from the metric mirror.
-use crate::{commands::blocking, error::CommandError, state::AppState};
+use crate::commands::blocking;
+use crate::error::CommandError;
+use crate::state::{AppState, Route};
 use statglass_schema::durable_usage::{
     HistoricalUsageReply, HistoricalUsageRequest, UsageProcessReply, UsageProcessRequest,
 };
@@ -11,15 +13,9 @@ pub async fn query_historical_usage(
     app: AppHandle,
     request: HistoricalUsageRequest,
 ) -> Result<HistoricalUsageReply, CommandError> {
-    request.validate().map_err(invalid)?;
-    let remote = {
-        let state = app.state::<AppState>();
-        state.host(request.host)?;
-        (request.host != state.local)
-            .then(|| state.remotes.source(request.host))
-            .transpose()?
-    };
-    if let Some(source) = remote {
+    request.validate()?;
+    let route = app.state::<AppState>().route(request.host)?;
+    if let Route::Remote(source) = route {
         return Ok(source.historical_usage(request).await?);
     }
     blocking(app, move |state| {
@@ -37,15 +33,9 @@ pub async fn query_usage_processes(
     app: AppHandle,
     request: UsageProcessRequest,
 ) -> Result<UsageProcessReply, CommandError> {
-    request.validate().map_err(invalid)?;
-    let remote = {
-        let state = app.state::<AppState>();
-        state.host(request.host)?;
-        (request.host != state.local)
-            .then(|| state.remotes.source(request.host))
-            .transpose()?
-    };
-    if let Some(source) = remote {
+    request.validate()?;
+    let route = app.state::<AppState>().route(request.host)?;
+    if let Route::Remote(source) = route {
         return Ok(source.usage_processes(request).await?);
     }
     blocking(app, move |state| {
@@ -55,10 +45,4 @@ pub async fn query_usage_processes(
         })?)
     })
     .await
-}
-
-fn invalid(message: &'static str) -> CommandError {
-    CommandError::InvalidArgument {
-        message: message.into(),
-    }
 }

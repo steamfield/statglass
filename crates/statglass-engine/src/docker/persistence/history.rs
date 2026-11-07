@@ -7,17 +7,14 @@ impl DockerRecorder {
         &self,
         q: &api::DockerHistoryRequest,
     ) -> Result<api::DockerHistoryPage, DockerServiceError> {
-        if q.to_ms <= q.from_ms
-            || q.to_ms.saturating_sub(q.from_ms) > db::MAX_RANGE_MS
-            || q.max_points == 0
-            || q.max_points > 10_000
-        {
+        TimeRange::new(q.from_ms, q.to_ms, db::MAX_RANGE_MS)?;
+        if q.max_points == 0 || q.max_points > 10_000 {
             return Err(DockerServiceError::InvalidRequest(
-                "History request exceeds range or point bounds",
+                "History request exceeds point bounds",
             ));
         }
         // Capture enough predecessor ring data for a retained coarser tier too.
-        let from = q.from_ms.div_euclid(900_000) * 900_000;
+        let from = floor_to(q.from_ms, 900_000);
         let (a, coord) = self.context();
         let mut reader = a.as_ref().map(|a| Reader::open(&a.path)).transpose()?;
         let guard = coord.lock_ok();
@@ -148,8 +145,7 @@ fn select_history(
         Tier::M15
     };
     let entity = q.container_id.as_deref().unwrap_or("");
-    let mut from = q.from_ms.div_euclid(tier.bucket_ms().unwrap_or(10_000))
-        * tier.bucket_ms().unwrap_or(10_000);
+    let mut from = floor_to(q.from_ms, tier.bucket_ms().unwrap_or(10_000));
     let mut persisted = if let Some(snapshot) = &snapshot {
         snapshot.history(&db::DockerHistoryQuery {
             entity: entity.into(),
@@ -170,7 +166,7 @@ fn select_history(
             if width <= tier.bucket_ms().unwrap_or(10_000) {
                 continue;
             }
-            let start = q.from_ms.div_euclid(width) * width;
+            let start = floor_to(q.from_ms, width);
             let older = snapshot.history(&db::DockerHistoryQuery {
                 entity: entity.into(),
                 start_ms: start,
@@ -178,7 +174,7 @@ fn select_history(
                 tier: candidate,
                 max_points: 10_000,
             })?;
-            let end = (q.to_ms - 1).div_euclid(width).saturating_add(1) * width;
+            let end = ceil_to(q.to_ms, width);
             let fine_width = tier.bucket_ms().unwrap_or(10000);
             let comparable = if (end - start) / fine_width <= 10000 {
                 snapshot
@@ -238,12 +234,12 @@ fn merge_buckets(
     if tier != Tier::S10 && !ring.is_empty() {
         let left = ring
             .iter()
-            .map(|b| b.bucket_ms.div_euclid(width) * width)
+            .map(|b| floor_to(b.bucket_ms, width))
             .min()
             .unwrap_or(from);
         let right = ring
             .iter()
-            .map(|b| (b.bucket_ms.div_euclid(width) + 1) * width)
+            .map(|b| floor_to(b.bucket_ms, width) + width)
             .max()
             .unwrap_or(q.to_ms);
         if let Some(snapshot) = &snapshot {

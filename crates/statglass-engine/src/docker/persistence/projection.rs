@@ -5,7 +5,7 @@ pub(super) fn fold_ring(ring: &[Arc<db::DockerBucket>], tier: Tier) -> Vec<db::D
     let width = tier.bucket_ms().unwrap_or(10_000);
     let mut out: BTreeMap<i64, db::DockerBucket> = BTreeMap::new();
     for b in ring {
-        let time = b.bucket_ms.div_euclid(width) * width;
+        let time = floor_to(b.bucket_ms, width);
         let dst = out.entry(time).or_insert_with(|| db::DockerBucket {
             entity: b.entity.clone(),
             tier,
@@ -125,7 +125,7 @@ pub(super) fn display_points(
         display_width = display_width.saturating_mul(2);
         let mut coarse: BTreeMap<i64, db::DockerBucket> = BTreeMap::new();
         for b in buckets.into_values() {
-            let at = b.bucket_ms.div_euclid(display_width) * display_width;
+            let at = floor_to(b.bucket_ms, display_width);
             let target = coarse.entry(at).or_insert_with(|| db::DockerBucket {
                 entity: b.entity.clone(),
                 tier,

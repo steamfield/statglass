@@ -20,9 +20,7 @@ impl DockerRecorder {
         &self,
         q: &api::DockerEventsRequest,
     ) -> Result<api::DockerEventsPage, DockerServiceError> {
-        if q.to_ms <= q.from_ms || q.to_ms.saturating_sub(q.from_ms) > db::MAX_RANGE_MS {
-            return Err(DockerServiceError::InvalidRequest("Invalid events range"));
-        }
+        TimeRange::new(q.from_ms, q.to_ms, db::MAX_RANGE_MS)?;
         let (a, coord) = self.context();
         let mut reader = a.as_ref().map(|a| Reader::open(&a.path)).transpose()?;
         let _g = coord.lock_ok();
