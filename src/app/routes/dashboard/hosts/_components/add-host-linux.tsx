@@ -4,6 +4,7 @@ import type {
   RemoteHostPreparation,
 } from "@core/generated/bindings";
 import { linuxSystemLine } from "@core/remote-hosts";
+import { InlineMessage } from "~/components/inline-message";
 import { Command } from "./ssh-setup-help";
 
 /** What setup will do on a Linux host, in the Mac status line's place (D-105). */
@@ -47,12 +48,12 @@ export function AddHostLinux({
         </p>
       )}
       {linux.duplicate_of !== null && (
-        <p role="alert" className="text-destructive">
+        <InlineMessage tone="error">
           This server’s agent has the same identity as {linux.duplicate_of},
           which is already in your hosts. If it is a copy of that server, give
           it a new identity to add it separately; {linux.duplicate_of} keeps its
           history.
-        </p>
+        </InlineMessage>
       )}
       {!linux.linger_ok && (
         <div className="grid gap-1 text-[12px]">

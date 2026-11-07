@@ -1,5 +1,5 @@
+import { commandErrorText } from "@core/command-error";
 import type {
-  CommandError,
   DockerContainer,
   DockerHealth,
   DockerLifecycle,
@@ -95,6 +95,6 @@ export function filterContainers(
 }
 
 /** Keep bounded, actionable errors supplied by Rust visible at the UI seam. */
-export function dockerErrorMessage(error: CommandError): string {
-  return "message" in error ? error.message : error.kind.replaceAll("_", " ");
+export function dockerErrorMessage(error: unknown): string {
+  return commandErrorText(error, "Docker didn't answer. Try again.");
 }

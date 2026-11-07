@@ -15,9 +15,8 @@ import {
   SIZE_LIMITS_MB,
 } from "@core/settings-patch";
 import { unwrap } from "@core/transport";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { toast } from "sonner";
 import { ConfirmDialog } from "~/components/confirm-dialog";
 import { HistoryNotices } from "~/components/history-notices";
 import { SegmentedControl } from "~/components/segmented-control";
@@ -31,6 +30,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
+import { useCommandMutation } from "~/hooks/use-command-mutation";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useWriteSettings } from "~/hooks/use-write-settings";
@@ -286,32 +286,27 @@ function PerformanceChanges({
 function HistoryOnDisk() {
   const transport = useTransport();
   const hostId = useHostId();
-  const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
-  const [clearing, setClearing] = useState(false);
   const size = useQuery({
     queryKey: hostKeys.historySize(hostId),
     queryFn: () => unwrap(transport.historySize(hostId)),
     refetchInterval: MINUTE_POLL_MS,
   });
+  const clearing = useCommandMutation(
+    (host: string) => transport.clearHistory(host),
+    {
+      name: "clear_history",
+      errorText: () => "Couldn't clear history. Nothing was deleted.",
+      invalidate: (host) => [
+        historyKeys.host(host),
+        hostKeys.historySize(host),
+      ],
+    }
+  );
 
   const clear = async () => {
-    setClearing(true);
-    const result = await transport.clearHistory(hostId);
-    setClearing(false);
+    await clearing.mutateAsync(hostId).catch(() => undefined);
     setConfirming(false);
-    if (result.status === "error") {
-      console.error("[settings] clear_history failed", {
-        hostId,
-        error: result.error,
-      });
-      toast.error("Couldn't clear history. Nothing was deleted.");
-      return;
-    }
-    void queryClient.invalidateQueries({ queryKey: historyKeys.host(hostId) });
-    void queryClient.invalidateQueries({
-      queryKey: hostKeys.historySize(hostId),
-    });
   };
 
   const sizeText = size.data === undefined ? MISSING : MB(size.data);
@@ -341,7 +336,7 @@ function HistoryOnDisk() {
         confirmLabel="Clear history"
         confirmVariant="destructive"
         onConfirm={clear}
-        busy={clearing}
+        busy={clearing.isPending}
       />
     </SettingsRow>
   );

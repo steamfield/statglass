@@ -1,5 +1,6 @@
 import { formatBytes, formatPercent } from "@core/format";
 import type { DockerContainer } from "@core/generated/bindings";
+import { InlineMessage } from "~/components/inline-message";
 export function ContainerObservation({
   row,
   current,
@@ -12,10 +13,10 @@ export function ContainerObservation({
   return (
     <>
       {row.lifecycle === "removed" && (
-        <p role="status" className="text-[12px] text-muted-foreground">
+        <InlineMessage tone="status">
           Removed container · retained history. Opening this page does not
           switch or reconnect the live engine.
-        </p>
+        </InlineMessage>
       )}
       <p className="text-[12px] text-muted-foreground">
         <span role="status">

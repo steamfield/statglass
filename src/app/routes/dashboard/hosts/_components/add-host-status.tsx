@@ -2,6 +2,7 @@ import type {
   CommandError,
   RemoteHostPreparation,
 } from "@core/generated/bindings";
+import { InlineMessage } from "~/components/inline-message";
 import { AddHostLinux } from "./add-host-linux";
 import { RemoteSetupError } from "./remote-setup-error";
 import type { SetupPhase } from "./use-add-host-connection";
@@ -46,9 +47,7 @@ export function AddHostStatus({
     <>
       {" "}
       {endpointError && (
-        <p role="alert" className="text-[12px] text-destructive">
-          {endpointError}
-        </p>
+        <InlineMessage tone="error">{endpointError}</InlineMessage>
       )}
       {prepared &&
         !error &&
@@ -64,9 +63,9 @@ export function AddHostStatus({
           </div>
         ))}
       {busy && (
-        <p role="status" className="text-[13px] text-fg-subtle">
+        <InlineMessage tone="status">
           {busyStatus(phase, prepared)}
-        </p>
+        </InlineMessage>
       )}
       {error && <RemoteSetupError error={error} />}
     </>

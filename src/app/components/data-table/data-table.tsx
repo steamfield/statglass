@@ -14,6 +14,7 @@ import {
 import { TableBody, TableCell, TableRow } from "~/components/ui/table";
 import { DataTableCells } from "./data-table-cells";
 import type { TableFeatures } from "./features";
+import { FullWidthRow } from "./full-width-row";
 
 export interface DataTableVirtual {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -30,21 +31,43 @@ interface DataTableProps<T extends RowData> {
   table: Table<TableFeatures, T>;
   rows: readonly Row<TableFeatures, T>[];
   renderRow?: (row: Row<TableFeatures, T>) => ReactNode;
+  /** Unsorted rows after the body: remainders and synthetic rows. */
   after?: ReactNode;
-  /** A complete empty-state row, including its cells. */
+  /** What an empty source says, as one full-width row. */
   empty?: ReactNode;
+  /** A full-width note under every other row. */
+  footnote?: ReactNode;
+  /** Cells the owner renders outside the model, such as a selection gutter. */
+  extraColumns?: number;
   virtual?: DataTableVirtual;
 }
 
 export function DataTable<T extends RowData>(props: DataTableProps<T>) {
+  const colSpan =
+    props.table.getAllLeafColumns().length + (props.extraColumns ?? 0);
   return props.virtual ? (
-    <VirtualBody {...props} virtual={props.virtual} />
+    <VirtualBody {...props} colSpan={colSpan} virtual={props.virtual} />
   ) : (
     <TableBody className={props.className}>
-      <BodyRows {...props} />
+      <BodyRows {...props} colSpan={colSpan} />
       {props.after}
+      <Footnote colSpan={colSpan}>{props.footnote}</Footnote>
     </TableBody>
   );
+}
+
+function Footnote({
+  colSpan,
+  children,
+}: {
+  colSpan: number;
+  children: ReactNode;
+}) {
+  return children ? (
+    <FullWidthRow colSpan={colSpan} tone="footnote">
+      {children}
+    </FullWidthRow>
+  ) : null;
 }
 
 function VirtualBody<T extends RowData>({
@@ -53,9 +76,11 @@ function VirtualBody<T extends RowData>({
   renderRow,
   after,
   empty,
+  footnote,
   virtual,
   className,
-}: DataTableProps<T> & { virtual: DataTableVirtual }) {
+  colSpan,
+}: DataTableProps<T> & { colSpan: number; virtual: DataTableVirtual }) {
   const virtualizer = useVirtualizer({
     enabled: virtual?.enabled ?? false,
     count: rows.length,
@@ -84,7 +109,6 @@ function VirtualBody<T extends RowData>({
         return row ? [row] : [];
       })
     : rows;
-  const colSpan = table.getAllLeafColumns().length;
   return (
     <TableBody className={className}>
       {virtual?.enabled && padTop > 0 && (
@@ -95,11 +119,13 @@ function VirtualBody<T extends RowData>({
         rows={visible}
         {...(renderRow ? { renderRow } : {})}
         empty={rows.length === 0 && empty}
+        colSpan={colSpan}
       />
       {virtual?.enabled && padBottom > 0 && (
         <Spacer height={padBottom} colSpan={colSpan} />
       )}
       {after}
+      <Footnote colSpan={colSpan}>{footnote}</Footnote>
     </TableBody>
   );
 }
@@ -108,7 +134,8 @@ function BodyRows<T extends RowData>({
   rows,
   renderRow,
   empty,
-}: DataTableProps<T>) {
+  colSpan,
+}: DataTableProps<T> & { colSpan: number }) {
   return (
     <>
       {rows.map((row) =>
@@ -120,7 +147,9 @@ function BodyRows<T extends RowData>({
           </TableRow>
         )
       )}
-      {rows.length === 0 && empty}
+      {rows.length === 0 && empty ? (
+        <FullWidthRow colSpan={colSpan}>{empty}</FullWidthRow>
+      ) : null}
     </>
   );
 }

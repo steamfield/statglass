@@ -1,8 +1,7 @@
 import type { CommandError } from "@core/generated/bindings";
-import { CommandFailure } from "./transport/query";
+import { commandError, commandErrorText } from "./command-error";
 
 export function remoteErrorText(error: CommandError): string {
-  if ("message" in error) return error.message;
   switch (error.kind) {
     case "unknown_host":
       return "This host is no longer in your host list.";
@@ -12,6 +11,8 @@ export function remoteErrorText(error: CommandError): string {
       return "History is unavailable.";
     case "store_too_new":
       return "This history was saved by a newer StatGlass version.";
+    default:
+      return commandErrorText(error, "Please try again.");
   }
 }
 
@@ -21,8 +22,7 @@ export function remoteErrorText(error: CommandError): string {
  * `null` for any other failure, which the caller words itself.
  */
 export function remoteQueryText(error: unknown, what: string): string | null {
-  if (!(error instanceof CommandFailure)) return null;
-  switch (error.error.kind) {
+  switch (commandError(error)?.kind) {
     case "remote_incompatible":
       return `This host's StatGlass is too old to share ${what}. Update StatGlass on it, then try again.`;
     case "remote_unreachable":

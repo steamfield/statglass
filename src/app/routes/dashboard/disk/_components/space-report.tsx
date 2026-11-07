@@ -8,6 +8,7 @@ import type {
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { useSearchParams } from "react-router";
+import { InlineMessage } from "~/components/inline-message";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -91,9 +92,9 @@ export function SpaceReportView({
           onCrumb={(c, i) => setFolder(i === 0 ? null : c.id)}
         />
         {subtree.isError ? (
-          <p role="status" className="text-[12px] text-muted-foreground">
+          <InlineMessage tone="status">
             Couldn't load this folder. Scan again to refresh the report.
-          </p>
+          </InlineMessage>
         ) : data ? (
           <SpaceMap
             subtree={data}
@@ -105,14 +106,12 @@ export function SpaceReportView({
           <div className="h-[220px]" aria-hidden />
         )}
         {actions.error ? (
-          <p role="alert" className="text-[12px] text-destructive">
-            {actions.error}
-          </p>
+          <InlineMessage tone="error">{actions.error}</InlineMessage>
         ) : (
           actions.copied && (
-            <p role="status" className="truncate text-[12px] text-fg-subtle">
+            <InlineMessage tone="status" className="truncate">
               Copied {actions.copied}
-            </p>
+            </InlineMessage>
           )
         )}
       </SectionCard>
@@ -197,9 +196,9 @@ function Largest({
 }) {
   if (files) return <LargestFilesTable files={files} actions={actions} />;
   return (
-    <p className="text-[12px] text-muted-foreground">
+    <InlineMessage tone="status">
       {failed ? "Couldn't load the largest files." : "Loading largest files…"}
-    </p>
+    </InlineMessage>
   );
 }
 

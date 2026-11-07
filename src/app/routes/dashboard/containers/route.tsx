@@ -6,6 +6,7 @@ import {
   useLocation,
   useSearchParams,
 } from "react-router";
+import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { SegmentedControl } from "~/components/segmented-control";
 import { Button } from "~/components/ui/button";
@@ -125,9 +126,7 @@ function LocalContainersRoute() {
         />
         <ContainerRangeNotice />
         {(actionError || error) && (
-          <p role="alert" className="text-[12px] text-destructive">
-            {actionError ?? error}
-          </p>
+          <InlineMessage tone="error">{actionError ?? error}</InlineMessage>
         )}
         {monitoring && (
           <MonitoringDialog

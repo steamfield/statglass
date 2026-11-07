@@ -258,3 +258,19 @@ describe("HeatmapCard while loading", () => {
     ).toBe(true);
   });
 });
+
+describe("HeatmapCard when the call itself fails", () => {
+  it("says the heatmap could not be read instead of drawing the grid", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    vi.spyOn(transport, "queryHeatmap").mockRejectedValue(
+      new Error("ipc closed")
+    );
+    renderWithProviders(<HeatmapCard units={UNITS} onOpen={vi.fn()} />, {
+      transport,
+    });
+    expect(
+      await screen.findByText("The heatmap could not be read (ipc closed).")
+    ).toBeVisible();
+    expect(screen.queryByRole("grid")).toBeNull();
+  });
+});

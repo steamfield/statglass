@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type {
   CommandError,
   RemoteHostPreparation,
@@ -72,7 +73,7 @@ export function AddHostDialog({
         tailscale,
         error: e,
       });
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
     } finally {
       setPhase("idle");
     }
@@ -94,7 +95,7 @@ export function AddHostDialog({
         tailscale,
         error: e,
       });
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
     } finally {
       setPhase("idle");
     }
@@ -120,7 +121,7 @@ export function AddHostDialog({
       });
       setTrust(null);
       setHostKeyError(true);
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
     } finally {
       setPhase("idle");
     }

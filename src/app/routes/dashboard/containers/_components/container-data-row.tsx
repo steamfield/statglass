@@ -9,6 +9,7 @@ import { type MouseEvent, memo, type ReactNode } from "react";
 import { Link } from "react-router";
 import { SeriesSwatch } from "~/components/charts/chart-tooltip";
 import type { TableFeatures } from "~/components/data-table";
+import { InlineMessage } from "~/components/inline-message";
 import type { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
 import {
@@ -209,11 +210,7 @@ const ContainerIdentityCells = memo(function ContainerIdentityCells({
           {project ? ` · ${project}` : ""}
         </span>
       </Link>
-      {failure && (
-        <p role="alert" className="text-[11px] text-destructive">
-          {failure}
-        </p>
-      )}
+      {failure && <InlineMessage tone="error">{failure}</InlineMessage>}
       <span
         className="hidden truncate text-[10px] text-muted-foreground [@container(max-width:480px)]:block"
         title={`${lifecycleLabel[lifecycle]} · ${health}`}

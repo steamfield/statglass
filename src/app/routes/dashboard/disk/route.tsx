@@ -5,6 +5,7 @@ import { labelValues, sk } from "@core/series-key";
 import { type ReactNode, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
 import { brushScopeProps, useDismissOutside } from "~/components/brush-overlay";
+import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
@@ -270,20 +271,20 @@ function DiskActivity({
                 selected={selection !== null}
               />
               {selection && selectedTotals.isError && (
-                <p role="status" className="text-[12px] text-muted-foreground">
+                <InlineMessage tone="status">
                   Couldn't load byte totals for the selected interval.
-                </p>
+                </InlineMessage>
               )}
             </div>
           </div>
           {local && inventory.isError ? (
-            <p role="status" className="text-[12px] text-muted-foreground">
+            <InlineMessage tone="status">
               Couldn't load disk devices.
-            </p>
+            </InlineMessage>
           ) : chart.isError ? (
-            <p role="status" className="text-[12px] text-muted-foreground">
+            <InlineMessage tone="status">
               Couldn't load disk I/O history.
-            </p>
+            </InlineMessage>
           ) : chart.data && range ? (
             <DiskIoCharts
               page={chart.data}
@@ -296,9 +297,7 @@ function DiskActivity({
               }}
             />
           ) : (
-            <p className="text-[12px] text-muted-foreground">
-              Loading disk I/O…
-            </p>
+            <InlineMessage tone="status">Loading disk I/O…</InlineMessage>
           )}
           {device === null && (
             <p className="text-[11px] text-muted-foreground">
@@ -307,9 +306,9 @@ function DiskActivity({
             </p>
           )}
           {missing && (
-            <p role="status" className="text-[12px] text-muted-foreground">
+            <InlineMessage tone="status">
               This device is unavailable. Recorded history remains selected.
-            </p>
+            </InlineMessage>
           )}
           {windowMs !== null && (
             <SelectionSummary windowMs={windowMs} inset={0} />

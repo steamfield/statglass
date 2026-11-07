@@ -3,6 +3,7 @@ import type { SpaceVolume } from "@core/generated/bindings";
 import { remoteQueryText } from "@core/remote-errors";
 import type { ComponentProps, ReactNode } from "react";
 import { useState } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useHostId } from "~/stores/host-store";
@@ -137,18 +138,13 @@ function SpaceMessage({
   kept: boolean;
 }) {
   const alert = error ?? (lost && remoteQueryText(lost, "space reports"));
-  if (alert)
-    return (
-      <p role="alert" className="text-[12px] text-destructive">
-        {alert}
-      </p>
-    );
+  if (alert) return <InlineMessage tone="error">{alert}</InlineMessage>;
   if (!ended) return null;
   return (
-    <p role="status" className="text-[12px] text-muted-foreground">
+    <InlineMessage tone="status">
       {ended}
       {kept ? " The previous report is shown." : ""}
-    </p>
+    </InlineMessage>
   );
 }
 
@@ -161,13 +157,13 @@ function VolumeList({
   const noun = useHostNoun();
   if (query.data) return <SpaceVolumes volumes={query.data} {...props} />;
   return (
-    <p role="status" className="text-[12px] text-muted-foreground">
+    <InlineMessage tone="status">
       {!query.isError
         ? "Loading volumes…"
         : query.error.message.includes("edition")
           ? "Space reports are not available in this edition."
           : (remoteQueryText(query.error, "space reports") ??
             `Couldn't list the volumes on this ${noun}.`)}
-    </p>
+    </InlineMessage>
   );
 }

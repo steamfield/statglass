@@ -1,5 +1,6 @@
 import { formatBytes } from "@core/format";
 import type { DockerStorageSnapshot } from "@core/generated/bindings";
+import { InlineMessage } from "~/components/inline-message";
 import { storageKindLabel } from "../_lib/storage-presentation";
 export function StorageInventorySummary({
   snapshot,
@@ -32,10 +33,10 @@ export function StorageInventorySummary({
         additional space. Unreferenced does not mean disposable.
       </p>
       {!snapshot.complete && (
-        <p role="status" className="text-[12px] text-muted-foreground">
+        <InlineMessage tone="status">
           Incomplete inventory. Cleanup is unavailable until references can be
           verified.
-        </p>
+        </InlineMessage>
       )}
       {snapshot.warnings.map((warning) => (
         <p key={warning} className="text-[12px] text-muted-foreground">

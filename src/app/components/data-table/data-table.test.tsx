@@ -91,11 +91,7 @@ describe("Virtual DataTable", () => {
               initialHeight: 0,
               enabled: true,
             }}
-            empty={
-              <TableRow>
-                <TableCell colSpan={3}>No items</TableCell>
-              </TableRow>
-            }
+            empty="No items"
           />
         </Table>
       );
@@ -104,6 +100,45 @@ describe("Virtual DataTable", () => {
     expect(screen.queryByText("No items")).toBeNull();
     rerender(<Unmeasured data={[]} />);
     expect(screen.getByRole("cell", { name: "No items" })).toBeVisible();
+  });
+});
+
+describe("DataTable full-width rows", () => {
+  function Rows({ data, extra }: { data: Item[]; extra?: number }) {
+    const model = useDataTable({ data, columns, getRowId });
+    return (
+      <Table>
+        <DataTable
+          table={model.table}
+          rows={model.rows}
+          empty="No items"
+          footnote="Sampled every 10 s."
+          {...(extra === undefined ? {} : { extraColumns: extra })}
+        />
+      </Table>
+    );
+  }
+
+  it("spans every column, including the owner's own cells", () => {
+    const { rerender } = render(<Rows data={[]} />);
+    expect(screen.getByRole("cell", { name: "No items" })).toHaveAttribute(
+      "colspan",
+      "3"
+    );
+    rerender(<Rows data={[]} extra={2} />);
+    expect(screen.getByRole("cell", { name: "No items" })).toHaveAttribute(
+      "colspan",
+      "5"
+    );
+  });
+
+  it("keeps the footnote last and drops the empty row once there is data", () => {
+    render(<Rows data={[a, b]} />);
+    expect(screen.queryByText("No items")).toBeNull();
+    const cells = screen
+      .getAllByRole("row")
+      .map((row) => within(row).getAllByRole("cell")[0]?.textContent);
+    expect(cells).toEqual(["proc9", "Proc10", "Sampled every 10 s."]);
   });
 });
 

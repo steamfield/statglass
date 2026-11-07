@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { useQueryClient } from "@tanstack/react-query";
@@ -42,7 +43,7 @@ function RepairDialog({
         hostId: remote.config.id,
         error: e,
       });
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
     } finally {
       setBusy(false);
     }

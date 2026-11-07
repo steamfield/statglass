@@ -1,5 +1,6 @@
 import type { TimeRange } from "@core/brush";
 import { recordedDate, relativeWindow, windowEnding } from "@core/chart-range";
+import { commandError, commandErrorText } from "@core/command-error";
 import type { ModuleCap } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import {
@@ -14,6 +15,7 @@ import {
   type HistoricalUsageSort,
 } from "~/components/historical-usage-card";
 import { HistoryNotices } from "~/components/history-notices";
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { WindowControl } from "~/components/window-control";
 import { useEvents } from "~/hooks/use-events";
@@ -86,7 +88,7 @@ export default function TimelineRoute() {
   const events = useEvents(view.windowMs, view.endMs);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const history = useHistoryHealth();
-  const queryError = data.error?.error ?? null;
+  const queryError = commandError(data.error);
   // An unavailable store shows the banner; any other read error says so.
   const otherError = nonHistoryError(data.error);
 
@@ -213,8 +215,8 @@ export default function TimelineRoute() {
           role="alert"
           className="rounded-tile border border-border bg-card px-4 py-3 font-normal text-[13px] text-fg-subtle"
         >
-          History could not be read ({otherError.message}). Live values still
-          work.{" "}
+          History could not be read (
+          {commandErrorText(otherError, "no details")}). Live values still work.{" "}
           <Button
             variant="ghost"
             size="sm"
@@ -294,7 +296,7 @@ function TimelineSummaryNotes({
     <>
       {" "}
       {comparing && previousSummaries.isError && (
-        <p role="alert" className="text-[12px] text-muted-foreground">
+        <InlineMessage tone="status">
           Previous summaries could not be read.{" "}
           <Button
             variant="ghost"
@@ -303,7 +305,7 @@ function TimelineSummaryNotes({
           >
             Retry previous summaries
           </Button>
-        </p>
+        </InlineMessage>
       )}
       {current && (current.from_ms !== fromMs || current.to_ms !== toMs) && (
         <p className="text-[11px] text-muted-foreground">
@@ -322,10 +324,10 @@ function TimelineSummaryNotes({
   );
 }
 
-function nonHistoryError<
-  T extends { error: Parameters<typeof historyUnavailable>[0] },
->(error: T | null | undefined) {
-  return error && !historyUnavailable(error.error) ? error : null;
+/** A read failure other than an unavailable store, including a rejected call. */
+function nonHistoryError(error: Error | null): Error | null {
+  const typed = commandError(error);
+  return error && !(typed && historyUnavailable(typed)) ? error : null;
 }
 
 function canCompare(view: TimelineView) {

@@ -30,7 +30,7 @@ import {
   SharedProcessActions,
   useProcessSelection,
 } from "~/components/process-selection";
-import { Table, TableCell, TableRow } from "~/components/ui/table";
+import { Table } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import { InitialChip } from "~/widgets/initial-chip";
 import { MeterTrack } from "~/widgets/meter-track";
@@ -384,7 +384,6 @@ export function ProcessTable(props: ProcessTableProps) {
 const byPid = (a: LiveProcess, b: LiveProcess) => a.pid - b.pid;
 
 function ProcessTableBody({
-  columns,
   height,
   freezeOrderOnHover = false,
   growOnly = false,
@@ -408,7 +407,6 @@ function ProcessTableBody({
       })
     : data.rows;
   const hasActions = Boolean(selection);
-  const colSpan = columns.length + (hasActions ? 2 : 0);
   const showEmpty = rows.length === 0 && empty !== undefined;
   const bodyPx = Math.min((showEmpty ? 1 : rows.length) * ROW_H, height);
   const [tallestPx, setTallestPx] = useState(bodyPx);
@@ -474,18 +472,8 @@ function ProcessTableBody({
             enabled: true,
             ref: virtualizer,
           }}
-          empty={
-            showEmpty && (
-              <TableRow className="h-[29px] border-0 transition-none hover:bg-transparent">
-                <TableCell
-                  colSpan={colSpan}
-                  className="px-3 py-0 text-muted-foreground"
-                >
-                  {empty}
-                </TableCell>
-              </TableRow>
-            )
-          }
+          empty={showEmpty && empty}
+          extraColumns={hasActions ? 2 : 0}
           renderRow={(row) => {
             const { original: p, id } = row;
             return (

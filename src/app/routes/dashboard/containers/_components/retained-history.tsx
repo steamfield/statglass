@@ -3,6 +3,8 @@ import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { memo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
+import { InlineMessage } from "~/components/inline-message";
+import { QueryNotice } from "~/components/query-notice";
 import { SearchField } from "~/components/search-field";
 import { Button } from "~/components/ui/button";
 import {
@@ -16,7 +18,11 @@ import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { useDockerHistory } from "../_hooks/use-docker";
 import { useSharedContainerRange } from "../_hooks/use-shared-container-range";
-import { containerPath, lifecycleLabel } from "../_lib/presentation";
+import {
+  containerPath,
+  dockerErrorMessage,
+  lifecycleLabel,
+} from "../_lib/presentation";
 import { ContainerHistory } from "./container-history";
 import { DOCKER_RANGES, HistoryControls } from "./history-controls";
 
@@ -61,7 +67,6 @@ export const RetainedHistory = memo(function RetainedHistory({
   );
 });
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 function RetainedBrowser({ generation }: { generation: number }) {
   const transport = useTransport();
   const host = useHostId();
@@ -129,17 +134,12 @@ function RetainedBrowser({ generation }: { generation: number }) {
         Browse saved engines and containers without enabling collection or
         reconnecting an engine. Values and states are last observed.
       </p>
-      {catalog.error && (
-        <p role="alert">
-          Retained catalog unavailable: {catalog.error.message}
-        </p>
-      )}
-      {catalog.isPending && <p role="status">Loading retained engines…</p>}
-      {catalog.isSuccess && engines.length === 0 && (
-        <p className="text-[12px] text-muted-foreground">
-          No retained Docker history yet.
-        </p>
-      )}
+      <QueryNotice
+        query={catalog}
+        loading="Loading retained engines…"
+        error={(e) => `Retained catalog unavailable: ${dockerErrorMessage(e)}`}
+        empty={engines.length === 0 && "No retained Docker history yet."}
+      />
       {engine && (
         <>
           <div className="flex flex-wrap items-center gap-3">
@@ -168,9 +168,10 @@ function RetainedBrowser({ generation }: { generation: number }) {
             />
           </div>
           {history.error && (
-            <p role="alert">
-              Retained measurements unavailable: {history.error.message}
-            </p>
+            <InlineMessage tone="error">
+              Retained measurements unavailable:{" "}
+              {dockerErrorMessage(history.error)}
+            </InlineMessage>
           )}
           <div className="grid min-w-0 gap-3 lg:grid-cols-2">
             <ContainerHistory
@@ -197,12 +198,13 @@ function RetainedBrowser({ generation }: { generation: number }) {
             onChange={(value) => set("retainedQuery", value, true)}
             placeholder="Find retained containers"
           />
-          {rows.error && (
-            <p role="alert">
-              Retained containers unavailable: {rows.error.message}
-            </p>
-          )}
-          {rows.isPending && <p role="status">Loading retained containers…</p>}
+          <QueryNotice
+            query={rows}
+            loading="Loading retained containers…"
+            error={(e) =>
+              `Retained containers unavailable: ${dockerErrorMessage(e)}`
+            }
+          />
           {rows.isSuccess && (
             <>
               <p className="text-[11px] text-muted-foreground">
@@ -211,9 +213,9 @@ function RetainedBrowser({ generation }: { generation: number }) {
                 observed state
               </p>
               {rows.data.containers.length === 0 && (
-                <p className="text-[12px] text-muted-foreground">
+                <InlineMessage tone="status">
                   No retained containers match this search.
-                </p>
+                </InlineMessage>
               )}
               <ul
                 aria-label="Retained containers"

@@ -1,11 +1,16 @@
 import type { DockerSnapshot } from "@core/generated/bindings";
 import type { SetURLSearchParams } from "react-router";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { InlineMessage } from "~/components/inline-message";
 import { SectionCard } from "~/components/section-card";
 import { SelectionChip } from "~/components/selection-chip";
 import { useBrushRange } from "~/stores/brush-store";
 import type { useContainerComparison } from "../_hooks/use-container-comparison";
-import { type ContainerSort, filterContainers } from "../_lib/presentation";
+import {
+  type ContainerSort,
+  dockerErrorMessage,
+  filterContainers,
+} from "../_lib/presentation";
 import type { ContainerRouteState } from "../_lib/route-state";
 import { ContainerFilters } from "./container-filters";
 import { ContainerTable, needsAttention } from "./container-table";
@@ -84,9 +89,10 @@ export function ContainerResults({
   return (
     <div {...brushScopeProps}>
       {selection && selectedComparison.error && (
-        <p role="alert" className="text-[11px] text-muted-foreground">
-          Selected history could not be read: {selectedComparison.error.message}
-        </p>
+        <InlineMessage tone="status">
+          Selected history could not be read:{" "}
+          {dockerErrorMessage(selectedComparison.error)}
+        </InlineMessage>
       )}
       <SectionCard accent="cpu" title="Containers now" hiddenTitle flush>
         <ContainerTable

@@ -8,7 +8,7 @@ import type {
 import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys, type RangeSpec } from "@core/query-keys";
 import { DAY_MS, floorTo } from "@core/time-grid";
-import { asCommandFailure, type CommandFailure, unwrap } from "@core/transport";
+import { unwrap } from "@core/transport";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -46,7 +46,8 @@ export interface TimelineData {
   lanes: LaneData[];
   gaps: Gap[];
   loading: boolean;
-  error: CommandFailure | null;
+  /** A typed `CommandFailure` or a rejected call; both show as a failure. */
+  error: Error | null;
   retry: () => void;
 }
 
@@ -264,7 +265,7 @@ export function useTimelineData(
     retry: () => {
       for (const query of queries) if (query.isError) void query.refetch();
     },
-    error: asCommandFailure(failed?.error),
+    error: failed?.error ?? null,
   };
 }
 

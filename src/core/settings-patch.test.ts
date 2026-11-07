@@ -133,4 +133,10 @@ describe("settingsErrorText", () => {
       settingsErrorText({ kind: "settings_not_saved", message: "disk full" })
     ).toBe("Couldn't save settings. Nothing changed.");
   });
+
+  it("words a rejected call like any other failure", () => {
+    expect(settingsErrorText(new Error("ipc closed"))).toBe(
+      "Couldn't change settings. Nothing changed."
+    );
+  });
 });

@@ -14,6 +14,7 @@ import type {
   Module,
 } from "@core/generated/bindings";
 import { sizeLimitLabel } from "@core/history-projection";
+import { commandError } from "./command-error";
 
 /**
  * How often the store's writer commits (`statglass_store::DEFAULT_COMMIT_INTERVAL`,
@@ -287,10 +288,11 @@ export function networkByAppFailure(error: CommandError): string {
 }
 
 /** The toast after `reset_history` fails, by error kind. */
-export function resetHistoryFailure(error: CommandError): string {
+export function resetHistoryFailure(error: unknown): string {
+  const typed = commandError(error);
   const locked =
-    error.kind === "store_busy" ||
-    (error.kind === "history_unavailable" && error.reason?.kind === "locked");
+    typed?.kind === "store_busy" ||
+    (typed?.kind === "history_unavailable" && typed.reason?.kind === "locked");
   if (locked) {
     return "Another copy of StatGlass has the history file open. Quit it and try again.";
   }

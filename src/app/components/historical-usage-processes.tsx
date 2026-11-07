@@ -4,6 +4,7 @@ import type { ByteUnits } from "@core/format";
 import type { HistoricalUsageMetric } from "@core/generated/bindings";
 import { remoteQueryText } from "@core/remote-errors";
 import { APP_CELL } from "~/components/app-table";
+import { FullWidthRow } from "~/components/data-table";
 import { HistoricalUsageCells } from "~/components/historical-usage-cells";
 import { Button } from "~/components/ui/button";
 import { TableCell, TableRow } from "~/components/ui/table";
@@ -27,44 +28,29 @@ export function HistoricalUsageProcesses({
   const pages = query.data?.pages ?? [];
   if (query.isError)
     return (
-      <TableRow>
-        <TableCell colSpan={count} className={APP_CELL}>
-          <span role="alert">
-            {remoteQueryText(query.error, "recorded processes") ??
-              "This process listing could not be read."}
-          </span>{" "}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void query.restart()}
-          >
-            Reload processes
-          </Button>
-        </TableCell>
-      </TableRow>
+      <FullWidthRow colSpan={count}>
+        <span role="alert">
+          {remoteQueryText(query.error, "recorded processes") ??
+            "This process listing could not be read."}
+        </span>{" "}
+        <Button variant="ghost" size="sm" onClick={() => void query.restart()}>
+          Reload processes
+        </Button>
+      </FullWidthRow>
     );
   if (!query.data)
     return (
-      <TableRow>
-        <TableCell colSpan={count} className={APP_CELL}>
-          Loading recorded processes…
-        </TableCell>
-      </TableRow>
+      <FullWidthRow colSpan={count}>Loading recorded processes…</FullWidthRow>
     );
   return (
     <>
-      <TableRow>
-        <TableCell
-          colSpan={count}
-          className={`${APP_CELL} whitespace-normal pl-13 text-muted-foreground`}
-        >
-          {pages.some((page) => page.processes.length > 0)
-            ? "Instances that were active in the current interval. Idle ones are not kept, so these need not add up to the app, and RAM peaks need not add to the app peak."
-            : "No instance was active enough in the current interval to keep its own detail."}
-          {pages[0]?.network_app_level_only &&
-            " Network is recorded at app level only."}
-        </TableCell>
-      </TableRow>
+      <FullWidthRow colSpan={count} tone="footnote" className="pl-13">
+        {pages.some((page) => page.processes.length > 0)
+          ? "Instances that were active in the current interval. Idle ones are not kept, so these need not add up to the app, and RAM peaks need not add to the app peak."
+          : "No instance was active enough in the current interval to keep its own detail."}
+        {pages[0]?.network_app_level_only &&
+          " Network is recorded at app level only."}
+      </FullWidthRow>
       {pages
         .flatMap((page) => page.processes)
         .map((process) => (

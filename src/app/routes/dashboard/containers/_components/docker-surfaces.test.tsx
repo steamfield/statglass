@@ -61,9 +61,9 @@ it("provides memory history and distinguishes failed event queries from absent e
       name: /Container workload · Working-set memory/,
     })
   ).toBeVisible();
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Events unavailable while storage is paused"
-  );
+  expect(
+    await screen.findByText(/Events unavailable while storage is paused/)
+  ).toHaveAttribute("role", "status");
   result.unmount();
   transport.dispose();
 });

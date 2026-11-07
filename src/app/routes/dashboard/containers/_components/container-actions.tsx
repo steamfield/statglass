@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type {
   DockerContainer,
   DockerContainerAction,
@@ -15,6 +16,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "~/components/confirm-dialog";
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { ContextMenuItem } from "~/components/ui/context-menu";
 import {
@@ -147,7 +149,10 @@ export function ContainerActionProvider({
       if (result.data.finished_ms !== null) finish(result.data);
       else setOperation(result.data);
     } catch (error) {
-      fail(row.id, `Action outcome unknown: ${String(error)}`);
+      fail(
+        row.id,
+        `Action outcome unknown: ${commandErrorText(error, "no answer")}`
+      );
       busy.current = false;
       setPending(null);
     }
@@ -174,7 +179,7 @@ export function ContainerActionProvider({
         if (!cancelled) {
           fail(
             pending?.row.id ?? "",
-            `Action outcome unknown: ${String(error)}`
+            `Action outcome unknown: ${commandErrorText(error, "no answer")}`
           );
           busy.current = false;
           setPending(null);
@@ -296,9 +301,5 @@ export function ContainerActionMenuItem({ row }: { row: DockerContainer }) {
 
 export function ContainerActionFailure({ id }: { id: string }) {
   const message = useContainerActions().failures[id];
-  return message ? (
-    <p role="alert" className="text-[11px] text-destructive">
-      {message}
-    </p>
-  ) : null;
+  return message ? <InlineMessage tone="error">{message}</InlineMessage> : null;
 }

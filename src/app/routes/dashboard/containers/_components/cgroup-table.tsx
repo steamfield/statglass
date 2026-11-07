@@ -243,16 +243,7 @@ export function CgroupTable({
               <DataTableCells row={row} className={CELL} />
             </tr>
           )}
-          empty={
-            <tr className="h-[29px]">
-              <td
-                colSpan={columns.length}
-                className="px-3 py-0 text-muted-foreground"
-              >
-                {empty}
-              </td>
-            </tr>
-          }
+          empty={empty}
           after={
             other && (
               <OtherRow

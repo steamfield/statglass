@@ -7,6 +7,7 @@ import {
 } from "@core/format";
 import { FULL_TABLE } from "@core/process-interest";
 import { Link, useParams, useSearchParams } from "react-router";
+import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { diskTotal } from "~/components/process-table";
 import { SectionCard } from "~/components/section-card";
@@ -69,15 +70,15 @@ export default function ProcessDetailRoute() {
         }
       >
         {history.isError ? (
-          <p className="text-[12px] text-muted-foreground">
+          <InlineMessage tone="status">
             Couldn't load process history.
-          </p>
+          </InlineMessage>
         ) : !process ? (
-          <p className="text-[12px] text-muted-foreground">
+          <InlineMessage tone="status">
             {history.isPending
               ? "Loading process history…"
               : "This process identity has no retained measurements in this interval. A reused PID does not identify the same process."}
-          </p>
+          </InlineMessage>
         ) : (
           <>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[12px] sm:grid-cols-3">

@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type { UpdateStatus } from "@core/generated/bindings";
 import { useEffect, useState } from "react";
 import { useTransport } from "~/lib/transport-context";
@@ -19,8 +20,15 @@ export function useLocalUpdateStatus() {
         if (active && !receivedEvent) setStatus(next);
       })
       .catch((error: unknown) => {
+        console.error("[update] get_update_status rejected", error);
         if (active && !receivedEvent)
-          setStatus({ kind: "failed", message: String(error) });
+          setStatus({
+            kind: "failed",
+            message: commandErrorText(
+              error,
+              "Couldn't read the update status."
+            ),
+          });
       });
     return () => {
       active = false;

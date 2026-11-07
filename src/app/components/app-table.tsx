@@ -1,12 +1,12 @@
 import { formatPercent } from "@core/format";
 import type { UsageRow } from "@core/usage-rows";
-import { Info } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import {
   columnHelper,
   DataTableHead,
   useDataTable,
 } from "~/components/data-table";
+import { InlineMessage } from "~/components/inline-message";
 import { ProcessSelectionHead } from "~/components/process-selection";
 import { SectionCard } from "~/components/section-card";
 import { TableCell, TableHead, TableRow } from "~/components/ui/table";
@@ -57,10 +57,7 @@ export function AppsShell({
 export function AppsNote({ children }: { children: ReactNode }) {
   return (
     <div className="px-4 pb-2">
-      <p className="m-0 flex items-start gap-2 font-normal text-[12px] text-muted-foreground leading-normal">
-        <Info aria-hidden className="mt-0.5 size-3.5 flex-none" />
-        <span>{children}</span>
-      </p>
+      <InlineMessage tone="note">{children}</InlineMessage>
     </div>
   );
 }
