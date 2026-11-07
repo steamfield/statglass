@@ -29,6 +29,19 @@ export function fixed(v: number, decimals: number): string {
 }
 
 /**
+ * A signed difference: `format` renders its size, and the sign is a
+ * typographic minus, "+", or nothing for no change ("−3.4 pp", "+1.2 GB",
+ * "0.0 pp").
+ */
+export function formatSignedDelta(
+  difference: number,
+  format: (size: number) => string
+): string {
+  const sign = difference < 0 ? "−" : difference > 0 ? "+" : "";
+  return `${sign}${format(Math.abs(difference))}`;
+}
+
+/**
  * Figure precision: one decimal below 100, none from 100 up
  * ("6.0 GB", "38.4 MB/s", "220 MB/s", "330 GB"). Decided after rounding, so
  * 99.96 reads "100", not "100.0".
