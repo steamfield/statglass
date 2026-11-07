@@ -1106,6 +1106,23 @@ async fn visible_transition_resumes_idle_without_waiting_for_probe() {
     }
 }
 
+/// A container's first sample has no CPU baseline yet: routine, not a hole the
+/// aggregate has to explain.
+#[tokio::test]
+async fn a_first_sample_opens_no_aggregate_record() {
+    let fixture = Fixture::new(2, 0).await;
+    let handle = fixture.handle();
+    let mut cycles = Cycles::new(&fixture).await;
+    let first = cycles.run(&handle, true).await;
+    assert!(first.containers.iter().all(|c| c.interval_ms == Some(0)));
+    assert!(first.aggregate.partial);
+    assert!(
+        records(&first, "aggregate_partial").is_empty(),
+        "{:?}",
+        first.coverage
+    );
+}
+
 #[tokio::test]
 async fn a_stats_failure_keeps_the_baseline_and_explains_the_aggregate() {
     let fixture = Fixture::new(2, 0).await;

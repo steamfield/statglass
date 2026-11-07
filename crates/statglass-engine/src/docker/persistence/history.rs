@@ -65,7 +65,7 @@ impl DockerRecorder {
         let coverage = live_coverage(&s, &q.engine_id);
         drop(s);
         drop(guard);
-        let result = EngineCoverage::read(snapshot.as_ref(), &coverage, from, q.to_ms)
+        let result = EngineCoverage::read(snapshot.as_ref(), &coverage, (from, q.to_ms), q.from_ms)
             .and_then(|engine| {
                 self.history_page(
                     q,

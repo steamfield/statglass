@@ -160,7 +160,6 @@ impl DockerHandle {
         let mut refresh = true;
         let mut event_rate = (Instant::now(), 0usize);
         let mut restarts: BTreeMap<String, VecDeque<i64>> = BTreeMap::new();
-        let mut clock = crate::clock::now();
         let mut last_observation: Option<Instant> = None;
         loop {
             let control = controls.borrow_and_update().clone();
@@ -171,7 +170,7 @@ impl DockerHandle {
                 control
                     .min_interval_ms
                     .max(if control.visible > 0 { 1000 } else { 10000 });
-            self.check_clock(&mut clock, &mut samples, generation);
+            self.check_clock(crate::clock::now(), &mut samples, generation);
             let cycle_start = Instant::now();
             let mut event_refresh = false;
             let (listed, failed) = {
@@ -345,16 +344,22 @@ impl DockerHandle {
         })
     }
 
-    fn check_clock(&self, clock: &mut crate::ClockReading, samples: &mut Samples, generation: u32) {
-        let now = crate::clock::now();
-        if clock_stepped(clock, &now) {
+    /// Compares `now` with the handle's last reading, which outlives the session, so
+    /// a step between sessions is a step too.
+    pub(super) fn check_clock(
+        &self,
+        now: crate::ClockReading,
+        samples: &mut Samples,
+        generation: u32,
+    ) {
+        let before = self.clock.lock_ok().replace(now);
+        if before.is_some_and(|before| clock_stepped(&before, &now)) {
             samples.baseline.clear();
             let _gate = self.gate.lock_ok();
             if self.control.borrow().generation == generation {
                 self.step_clock(now.wall_ms);
             }
         }
-        *clock = now;
     }
     /// The recorder and the published records forget the same span, so the
     /// recorder sees no record it does not already hold, and the step opens one

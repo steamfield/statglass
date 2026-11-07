@@ -11,16 +11,33 @@ pub(super) fn evict_entry(s: &mut State, key: &Key) {
         s.bytes = s.bytes.saturating_sub(e.bytes);
         if e.bucket.revision > e.durable {
             let revision = next(s);
+            // A loss that touches a queued loss extends that record (same start, so the
+            // same record) rather than adding one per bucket.
+            let end = key.2 + DOCKER_BUCKET_MS;
+            let (start, end) = s
+                .retry
+                .get(&key.0)
+                .and_then(|retry| {
+                    retry.coverage.iter().find_map(|c| {
+                        let old = c.end_ms.filter(|old| *old >= key.2)?;
+                        (c.entity.as_deref() == Some(key.1.as_str())
+                            && c.metric.is_none()
+                            && c.reason == "write_failed"
+                            && c.start_ms <= key.2)
+                            .then_some((c.start_ms, old.max(end)))
+                    })
+                })
+                .unwrap_or((key.2, end));
             let coverage = db::DockerCoverage {
                 // Empty ID is the engine aggregate, not engine-wide coverage.
                 entity: Some(key.1.clone()),
                 metric: None,
-                start_ms: key.2,
-                end_ms: Some(key.2 + DOCKER_BUCKET_MS),
+                start_ms: start,
+                end_ms: Some(end),
                 reason: "write_failed".into(),
                 revision,
                 sampled_ms: 0,
-                expected_ms: DOCKER_BUCKET_MS,
+                expected_ms: end - start,
             };
             let mut retry = Retry::default();
             if let Some(fact) = s.facts.get(&(key.0.clone(), key.1.clone())) {
@@ -32,19 +49,20 @@ pub(super) fn evict_entry(s: &mut State, key: &Key) {
     }
 }
 /// Records a closed engine-wide interruption the recorder found itself (a full ring,
-/// oversized metadata, a lost writer). It merges only into the same reason's record
-/// when that one is open or touches it, never across an hour of good time, and it is
-/// saved through the retry queue, since no batch is at hand.
+/// oversized metadata, a lost writer). It extends only the same reason's record when
+/// that one is open or touches it and starts no later, never across an hour of good
+/// time, and it is saved through the retry queue, since no batch is at hand.
 pub(super) fn gap(s: &mut State, engine: &str, start: i64, end: i64, reason: &str) {
     let gaps = s.coverage.entry(engine.into()).or_default();
     let record = match gaps.iter_mut().find(|g| {
+        // A record's start is its identity once queued or saved, so only a record that
+        // starts no later than this interruption extends; an earlier one is its own.
         g.reason() == reason
             && g.container_id.is_none()
-            && g.start_ms <= end
+            && g.start_ms <= start
             && g.end_ms.is_none_or(|old| old >= start)
     }) {
         Some(old) => {
-            old.start_ms = old.start_ms.min(start);
             old.end_ms = old.end_ms.map(|old| old.max(end));
             old.clone()
         }
@@ -63,7 +81,22 @@ pub(super) fn gap(s: &mut State, engine: &str, start: i64, end: i64, reason: &st
             ..Retry::default()
         },
     );
-    let held = held_coverage(s, engine);
+    bound_engine_coverage(s, engine, None);
+}
+/// Bounds `engine`'s in-memory records (`bound_coverage`). The held set is built only
+/// when memory is over its bound, unless the caller already built it (`held`).
+pub(super) fn bound_engine_coverage(
+    s: &mut State,
+    engine: &str,
+    held: Option<BTreeSet<CoverageKey>>,
+) {
+    if s.coverage
+        .get(engine)
+        .is_none_or(|gaps| gaps.len() <= COVERAGE_LIMIT)
+    {
+        return;
+    }
+    let held = held.unwrap_or_else(|| held_coverage(s, engine));
     let live_only = s.live_only;
     if let Some(gaps) = s.coverage.get_mut(engine) {
         bound_coverage(gaps, &held, live_only);
@@ -84,13 +117,22 @@ pub(super) fn coverage_row(s: &mut State, c: &api::DockerCoverage, now: i64) -> 
         expected_ms: c.end_ms.unwrap_or(now).saturating_sub(c.start_ms).max(0),
     }
 }
+/// Whether two copies are one record: its engine, container, reason and start.
+pub(super) fn same_record(a: &api::DockerCoverage, b: &api::DockerCoverage) -> bool {
+    a.start_ms == b.start_ms && a.container_id == b.container_id && a.reason() == b.reason()
+}
 /// Closed records memory need not list: the store acknowledged them, or a write in
-/// flight or a retry holds them, and every read merges both (`live_coverage`).
+/// flight or a retry holds them, and every read merges both (`live_coverage`). In
+/// live-only mode nothing holds them: no write saves a retry, and memory is the only copy.
 pub(super) fn held_coverage(s: &State, engine: &str) -> BTreeSet<CoverageKey> {
+    if s.live_only {
+        return BTreeSet::new();
+    }
     let mut held = written_coverage(s, engine);
     held.extend(s.saved_coverage.get(engine).into_iter().flatten().cloned());
     held
 }
+const COVERAGE_LIMIT: usize = 512;
 /// Keep at most 512 records where possible: room for the published snapshot's own bound
 /// (128 closed plus an open record per monitored container) and the recorder's own
 /// saving records. Open records are never touched: they still have to close. Closed
@@ -105,14 +147,13 @@ pub(super) fn bound_coverage(
     held: &BTreeSet<CoverageKey>,
     live_only: bool,
 ) {
-    const LIMIT: usize = 512;
     const ATTACHED_LIMIT: usize = 4096;
-    if gaps.len() <= LIMIT {
+    if gaps.len() <= COVERAGE_LIMIT {
         return;
     }
     let masking = |g: &api::DockerCoverage| g.masking() != api::DockerCoverageMasking::None;
     let is_held = |g: &api::DockerCoverage| coverage_key(g).is_some_and(|key| held.contains(&key));
-    let excess = gaps.len() - LIMIT;
+    let excess = gaps.len() - COVERAGE_LIMIT;
     let mut by_start: Vec<_> = gaps
         .iter()
         .filter(|g| g.end_ms.is_some() && (is_held(g) || !masking(g)))
@@ -121,7 +162,11 @@ pub(super) fn bound_coverage(
     by_start.sort_by_key(|(order, _)| *order);
     let dropped: Vec<_> = by_start.into_iter().take(excess).map(|(_, g)| g).collect();
     gaps.retain(|g| !dropped.contains(g));
-    let limit = if live_only { LIMIT } else { ATTACHED_LIMIT };
+    let limit = if live_only {
+        COVERAGE_LIMIT
+    } else {
+        ATTACHED_LIMIT
+    };
     if gaps.len() <= limit {
         return;
     }

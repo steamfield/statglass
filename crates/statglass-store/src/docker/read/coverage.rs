@@ -3,13 +3,52 @@
 use super::*;
 
 /// The columns every coverage read selects, joined to the container's external ID.
-const COLUMNS: &str = "SELECT c.start_ms,c.end_ms,c.metric,c.reason,c.revision,c.sampled_ms,c.expected_ms,e.external_id FROM docker_coverage c LEFT JOIN docker_entities e ON e.id=c.entity_id";
-/// Rows that overlap `(?2, ?3)`: the `(engine_id|entity_id, end_ms)` indexes serve the
-/// end bound, and an open row overlaps every later range.
-const OVERLAPS: &str = "c.start_ms<?3 AND (c.end_ms>?2 OR c.end_ms IS NULL)";
+const COLUMNS: &str = "SELECT c.start_ms,c.end_ms,c.metric,c.reason,c.revision,c.sampled_ms,c.expected_ms,e.external_id";
+/// What every coverage read joins its rows `c` to.
+const JOIN: &str = "c LEFT JOIN docker_entities e ON e.id=c.entity_id";
 /// At most this many event-coverage rows are returned; events-kind rows are a handful
 /// per reconnect, so the bound only keeps a pathological store from growing a page.
 const MAX_EVENT_ROWS: usize = 10_000;
+/// The engine-wide scope. The partial `docker_coverage_engine_end` index holds only
+/// these rows, so an engine-wide read never walks the containers' rows.
+const ENGINE: &str = "engine_id=?1 AND entity_id IS NULL";
+
+/// The rows of each `scope` that overlap `(?2, ?3)`, each from its scope's end index:
+/// closed rows ending after `?2`, and open rows. Each half is its own indexed search: an
+/// `OR`, or an indexable start bound, makes SQLite walk the start index (the scope's
+/// whole history), so `+start_ms` keeps the start bound a filter. Callers order by start.
+fn overlapping(scopes: &[&str]) -> String {
+    let halves = scopes
+        .iter()
+        .flat_map(|scope| {
+            ["end_ms>?2", "end_ms IS NULL"].map(|end| {
+                format!("SELECT * FROM docker_coverage WHERE {scope} AND {end} AND +start_ms<?3")
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+    format!("{COLUMNS} FROM ({halves}) {JOIN}")
+}
+fn engine_sql() -> String {
+    format!("{} ORDER BY c.start_ms,c.id", overlapping(&[ENGINE]))
+}
+fn entity_sql() -> String {
+    format!(
+        "{} ORDER BY c.start_ms,c.id",
+        overlapping(&["entity_id=?1"])
+    )
+}
+/// Placeholders: `?4` is the container (or none), and the `reasons` start at `?5`.
+fn event_sql(reasons: usize) -> String {
+    let list = (0..reasons)
+        .map(|i| format!("?{}", i + 5))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{} WHERE c.reason IN ({list}) ORDER BY c.start_ms,c.id",
+        overlapping(&[ENGINE, "entity_id=?4"])
+    )
+}
 
 impl DockerReadSnapshot<'_> {
     /// Each engine-wide row overlapping `[start, end)`, in start order.
@@ -20,10 +59,12 @@ impl DockerReadSnapshot<'_> {
         visit: impl FnMut(DockerCoverage) -> Result<()>,
     ) -> Result<()> {
         bounds(start, end, 900_000)?;
-        let sql = format!(
-            "{COLUMNS} WHERE c.engine_id=?1 AND c.entity_id IS NULL AND {OVERLAPS} ORDER BY c.start_ms,c.id"
-        );
-        self.stream(&sql, params![self.engine, start, end], Some(start), visit)
+        self.stream(
+            &engine_sql(),
+            params![self.engine, start, end],
+            Some(start),
+            visit,
+        )
     }
     /// Each row of one container (or the aggregate, `""`) overlapping `[start, end)`,
     /// in start order. Engine-wide rows are not included.
@@ -38,8 +79,7 @@ impl DockerReadSnapshot<'_> {
         let Some(id) = self.entity(entity)? else {
             return Ok(());
         };
-        let sql = format!("{COLUMNS} WHERE c.entity_id=?1 AND {OVERLAPS} ORDER BY c.start_ms,c.id");
-        self.stream(&sql, params![id, start, end], Some(start), visit)
+        self.stream(&entity_sql(), params![id, start, end], Some(start), visit)
     }
     /// Rows with one of `reasons` (the events-kind keys) overlapping `[start, end)`:
     /// engine-wide ones, and `entity`'s own when given.
@@ -57,21 +97,17 @@ impl DockerReadSnapshot<'_> {
         let entity = entity
             .map(|id| self.entity(id).map(|id| id.unwrap_or(-1)))
             .transpose()?;
-        let list = (0..reasons.len())
-            .map(|i| format!("?{}", i + 5))
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!(
-            "{COLUMNS} WHERE c.engine_id=?1 AND (c.entity_id IS NULL OR c.entity_id=?4) AND {OVERLAPS} AND c.reason IN ({list}) ORDER BY c.start_ms,c.id"
-        );
+        let sql = event_sql(reasons.len());
         let mut values: Vec<&dyn rusqlite::ToSql> = vec![&self.engine, &start, &end, &entity];
         values.extend(reasons.iter().map(|r| r as &dyn rusqlite::ToSql));
         let mut out = Vec::new();
         let mut bytes = 0;
         self.stream(&sql, values.as_slice(), Some(start), |c| {
-            bytes += c.reason.len() + 256;
-            self.check(bytes)?;
+            // Only the rows kept count against the byte bound; `stream` checks the
+            // read's lifetime for every row.
             if out.len() < MAX_EVENT_ROWS {
+                bytes += c.reason.len() + 256;
+                self.check(bytes)?;
                 out.push(c);
             }
             Ok(())
@@ -83,7 +119,7 @@ impl DockerReadSnapshot<'_> {
     /// Restore reads only these, never the closed rows of the retained range.
     pub fn open_coverage(&self) -> Result<Vec<DockerCoverage>> {
         let sql = format!(
-            "{COLUMNS} WHERE c.engine_id=?1 AND c.end_ms IS NULL AND c.metric IS NULL ORDER BY c.start_ms,c.id LIMIT 10001"
+            "{COLUMNS} FROM docker_coverage {JOIN} WHERE c.engine_id=?1 AND c.end_ms IS NULL AND c.metric IS NULL ORDER BY c.start_ms,c.id LIMIT 10001"
         );
         let mut result = Vec::new();
         let mut bytes = 0;
@@ -143,5 +179,66 @@ impl DockerReadSnapshot<'_> {
             c.expected_ms = end - c.start_ms;
         }
         Ok(c)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each plan step's detail for `sql` on a freshly migrated file.
+    fn plan(sql: &str) -> Vec<String> {
+        let dir = crate::test_dir("coverage-plan");
+        let (conn, _) = crate::db::open_writer(&dir.path().join("h.sqlite"), 0).unwrap();
+        // The engine-wide end index holds no container's rows.
+        let partial: bool = conn
+            .query_row(
+                "SELECT partial FROM pragma_index_list('docker_coverage') WHERE name='docker_coverage_engine_end'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(partial);
+        let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+        // Unbound placeholders plan as NULL.
+        let mut rows = stmt.raw_query();
+        let mut steps = Vec::new();
+        while let Some(r) = rows.next().unwrap() {
+            steps.push(r.get::<_, String>(3).unwrap());
+        }
+        steps
+    }
+    /// Every coverage-table step of `sql`'s plan searches one of `indexes` by the end
+    /// bound; none walks a scope's history by start.
+    fn assert_searches(sql: &str, indexes: &[&str]) -> Vec<String> {
+        let plan = plan(sql);
+        let searches: Vec<_> = plan
+            .iter()
+            .filter(|step| step.contains("docker_coverage"))
+            .collect();
+        assert!(!searches.is_empty(), "{plan:#?}");
+        for step in searches {
+            assert!(
+                step.starts_with("SEARCH docker_coverage USING INDEX")
+                    && indexes.iter().any(|index| step.contains(index))
+                    && step.contains("end_ms"),
+                "{plan:#?}"
+            );
+        }
+        plan
+    }
+
+    #[test]
+    fn every_coverage_read_searches_its_scope_end_index() {
+        let plans = [
+            assert_searches(&engine_sql(), &["docker_coverage_engine_end "]),
+            assert_searches(&entity_sql(), &["docker_coverage_entity_end "]),
+            assert_searches(
+                &event_sql(3),
+                &["docker_coverage_engine_end ", "docker_coverage_entity_end "],
+            ),
+        ];
+        // `--nocapture` prints them for review.
+        println!("{plans:#?}");
     }
 }

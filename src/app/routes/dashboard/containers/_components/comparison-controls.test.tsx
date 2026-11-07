@@ -431,19 +431,19 @@ it.each([0, 3])(
   }
 );
 
-it("counts only masking records of the engine or the charted containers", async () => {
-  const snapshot = mockDockerSnapshot(1, 30000);
+const bannerCoverage = [
+  mockCoverage(0, 1000, "charted", "partial_cycle"),
+  mockCoverage(2000, 3000, "charted", "partial_cycle"),
+  mockCoverage(0, 1000, "elsewhere", "partial_cycle"),
+  mockCoverage(0, 5000, null, "aggregate_partial"),
+  mockCoverage(0, 5000, null, "write_failed"),
+];
+
+it("counts only masking records of the engine or the charted containers", () => {
   const result = renderWithProviders(
     <HistoryNotice
-      snapshot={snapshot}
-      coverage={[
-        mockCoverage(0, 1000, "charted", "partial_cycle"),
-        mockCoverage(2000, 3000, "charted", "partial_cycle"),
-        mockCoverage(0, 1000, "elsewhere", "partial_cycle"),
-        mockCoverage(0, 5000, null, "aggregate_partial"),
-        mockCoverage(0, 5000, null, "write_failed"),
-      ]}
-      total={12}
+      snapshot={mockDockerSnapshot(1, 30000)}
+      coverage={bannerCoverage}
       plotted={["charted"]}
       metric="cpu"
       onManage={() => {}}
@@ -452,6 +452,25 @@ it("counts only masking records of the engine or the charted containers", async 
   );
   expect(screen.getByRole("status")).toHaveTextContent(
     "CPU history missing for 2 intervals"
+  );
+  result.unmount();
+  result.transport.dispose();
+});
+
+it("gives no count when the range holds records Rust did not list", async () => {
+  const result = renderWithProviders(
+    <HistoryNotice
+      snapshot={mockDockerSnapshot(1, 30000)}
+      coverage={bannerCoverage}
+      total={12}
+      plotted={["charted"]}
+      metric="cpu"
+      onManage={() => {}}
+      onResume={() => {}}
+    />
+  );
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "CPU history missing for some intervals"
   );
   await result.user.click(screen.getByRole("button", { name: /Details/ }));
   const dialog = screen.getByRole("dialog", { name: "History details" });

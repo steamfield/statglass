@@ -63,6 +63,34 @@ fn a_sleep_is_not_a_clock_step() {
     assert!(!clock_stepped(&before, &at(1_001_500, 101)));
 }
 
+/// The clock baseline outlives a session: a step while disconnected, idle or backing
+/// off is seen by the next session's first cycle.
+#[test]
+fn a_step_between_sessions_is_still_a_step() {
+    let handle = handle();
+    let t = wall_ms().div_euclid(10_000) * 10_000 - HOUR + 5_000;
+    let at = |wall_ms: i64, continuous_s: u64| crate::ClockReading {
+        wall_ms,
+        continuous_ns: continuous_s * 1_000_000_000,
+    };
+    // The last cycle of one session.
+    handle.check_clock(at(t, 100), &mut crate::docker::sampling::Samples::new(), 1);
+    // A minute later the next session's first cycle reads a clock set back 30 s.
+    handle.check_clock(
+        at(t + 30_000, 160),
+        &mut crate::docker::sampling::Samples::new(),
+        1,
+    );
+    let steps: Vec<_> = handle
+        .snapshot()
+        .coverage
+        .iter()
+        .filter(|c| c.reason() == "clock_step")
+        .map(|c| c.start_ms)
+        .collect();
+    assert_eq!(steps, [t + 30_000]);
+}
+
 #[test]
 fn a_step_truncates_retried_and_in_flight_writes() {
     let r = DockerRecorder::new(host().id);

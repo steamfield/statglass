@@ -242,12 +242,14 @@ CREATE UNIQUE INDEX events_source ON events(host_id, source_epoch, source_id);
 const V7: &str = "DELETE FROM docker_coverage WHERE reason IN ('write_failed', 'loss_scope_overflow') AND entity_id IS NULL;";
 /// Version 9: a Docker coverage record has one row (D-128). A retry of an older batch
 /// once inserted a second open row beside the closed one; duplicates fold into the
-/// earliest row (the latest end that was set, the highest revision) before the unique
-/// index goes on. Reads bound rows by their end, so both scopes get an end index.
+/// earliest row (the end of the newest closed copy, the highest revision) before the
+/// unique index goes on. Reads bound rows by their end, so both scopes get an end
+/// index; the engine-wide one holds only engine-wide rows, so the engine-wide read
+/// never walks every container's rows.
 /// Idempotent: a file whose `user_version` was set back reruns it harmlessly.
 const V9: &str = "
 UPDATE docker_coverage AS keep SET
-  end_ms=(SELECT max(d.end_ms) FROM docker_coverage d WHERE d.engine_id=keep.engine_id AND d.entity_id IS keep.entity_id AND d.metric IS keep.metric AND d.reason=keep.reason AND d.start_ms=keep.start_ms),
+  end_ms=(SELECT d.end_ms FROM docker_coverage d WHERE d.engine_id=keep.engine_id AND d.entity_id IS keep.entity_id AND d.metric IS keep.metric AND d.reason=keep.reason AND d.start_ms=keep.start_ms AND d.end_ms IS NOT NULL ORDER BY d.revision DESC,d.id DESC LIMIT 1),
   revision=(SELECT max(d.revision) FROM docker_coverage d WHERE d.engine_id=keep.engine_id AND d.entity_id IS keep.entity_id AND d.metric IS keep.metric AND d.reason=keep.reason AND d.start_ms=keep.start_ms),
   sampled_ms=(SELECT max(d.sampled_ms) FROM docker_coverage d WHERE d.engine_id=keep.engine_id AND d.entity_id IS keep.entity_id AND d.metric IS keep.metric AND d.reason=keep.reason AND d.start_ms=keep.start_ms)
 WHERE keep.id IN (SELECT min(id) FROM docker_coverage GROUP BY engine_id,coalesce(entity_id,-1),coalesce(metric,''),reason,start_ms HAVING count(*)>1);
@@ -255,7 +257,7 @@ UPDATE docker_coverage SET expected_ms=end_ms-start_ms
 WHERE end_ms IS NOT NULL AND id IN (SELECT min(id) FROM docker_coverage GROUP BY engine_id,coalesce(entity_id,-1),coalesce(metric,''),reason,start_ms HAVING count(*)>1);
 DELETE FROM docker_coverage WHERE id NOT IN (SELECT min(id) FROM docker_coverage GROUP BY engine_id,coalesce(entity_id,-1),coalesce(metric,''),reason,start_ms);
 CREATE UNIQUE INDEX IF NOT EXISTS docker_coverage_identity ON docker_coverage(engine_id,coalesce(entity_id,-1),coalesce(metric,''),reason,start_ms);
-CREATE INDEX IF NOT EXISTS docker_coverage_engine_end ON docker_coverage(engine_id,end_ms);
+CREATE INDEX IF NOT EXISTS docker_coverage_engine_end ON docker_coverage(engine_id,end_ms) WHERE entity_id IS NULL;
 CREATE INDEX IF NOT EXISTS docker_coverage_entity_end ON docker_coverage(entity_id,end_ms);
 ";
 const MIGRATIONS: &[&str] = &[

@@ -180,8 +180,8 @@ impl DockerRecorder {
         let engine = EngineCoverage::read(
             snapshot,
             &read.coverage,
-            floor_to(q.from_ms, 900_000),
-            q.to_ms,
+            (floor_to(q.from_ms, 900_000), q.to_ms),
+            q.from_ms,
         )?;
         for (id, fact) in candidates {
             if q.project
