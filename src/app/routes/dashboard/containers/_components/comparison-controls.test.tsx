@@ -76,6 +76,7 @@ it("labels comparison gap bands with Rust's label, never the reason key", () => 
           container_id: null,
           reason: "shutdown",
           kind: "collection",
+          masking: "all",
           label: "StatGlass was not running",
         },
         {
@@ -84,6 +85,7 @@ it("labels comparison gap bands with Rust's label, never the reason key", () => 
           container_id: null,
           reason: "events_dropped_rate_limit",
           kind: "events",
+          masking: "none",
           label: "Events arrived too fast; some were dropped",
         },
       ]}
@@ -112,6 +114,7 @@ it("groups history details by Rust's kind", async () => {
           container_id: null,
           reason: "events_dropped_rate_limit",
           kind: "events",
+          masking: "none",
           label: "Events arrived too fast; some were dropped",
         },
       ]}
@@ -141,6 +144,7 @@ it("merges touching equal-scope coverage without merging events into metrics", (
       container_id: "a",
       reason: "write_failed",
       kind: "saving",
+      masking: "none",
       label: "Measurements could not be saved",
     },
     {
@@ -149,6 +153,7 @@ it("merges touching equal-scope coverage without merging events into metrics", (
       container_id: "a",
       reason: "write_failed",
       kind: "saving",
+      masking: "none",
       label: "Measurements could not be saved",
     },
     {
@@ -157,6 +162,7 @@ it("merges touching equal-scope coverage without merging events into metrics", (
       container_id: null,
       reason: "events_disconnected",
       kind: "events",
+      masking: "none",
       label: "Lost connection to Docker events",
     },
     {
@@ -165,6 +171,7 @@ it("merges touching equal-scope coverage without merging events into metrics", (
       container_id: "b",
       reason: "write_failed",
       kind: "saving",
+      masking: "none",
       label: "Measurements could not be saved",
     },
   ]);
@@ -196,6 +203,7 @@ it("shows one prioritized notice and separates metrics from events in details", 
           container_id: null,
           reason: "events_disconnected",
           kind: "events",
+          masking: "none",
           label: "Lost connection to Docker events",
         },
       ]}
@@ -353,6 +361,34 @@ it("keeps the unavailable last-reading time at the newest measured container obs
   result.transport.dispose();
 });
 
+it("reads the population notice from Rust's current records, as the details do", () => {
+  // A cycle that missed a container is partial, but every running container is
+  // monitored: Rust publishes no partial_population record, so neither says so.
+  const snapshot = mockDockerSnapshot(3, 30_000);
+  const result = renderWithProviders(
+    <HistoryNotice
+      snapshot={{
+        ...snapshot,
+        aggregate: {
+          ...snapshot.aggregate,
+          expected: 3,
+          running: 3,
+          cpu_measured: 2,
+          partial: true,
+        },
+        current_coverage: [],
+      }}
+      coverage={[]}
+      metric="cpu"
+      onManage={() => {}}
+      onResume={() => {}}
+    />
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+  result.unmount();
+  result.transport.dispose();
+});
+
 it.each([0, 3])(
   "reports %s active collectors against the current running population",
   (expected) => {
@@ -368,6 +404,9 @@ it.each([0, 3])(
             running: 5,
             partial: true,
           },
+          current_coverage: [
+            mockCoverage(30_000, null, null, "partial_population"),
+          ],
         }}
         coverage={[]}
         metric="cpu"

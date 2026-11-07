@@ -11,7 +11,9 @@ mod worker;
 use event_lane::admit_event;
 #[cfg(test)]
 use publication::{aggregate, project_aggregates};
-use publication::{current_coverage, open_engine_wide, open_gap, unavailable_runtime};
+use publication::{
+    current_coverage, open_engine_wide, open_gap, step_coverage, unavailable_runtime,
+};
 use sampling::{Inventory, Samples};
 mod normalize;
 mod persistence;
@@ -419,6 +421,9 @@ impl DockerHandle {
         });
     }
     fn gap(&self, reason: &str) {
+        self.gap_at(reason, now_ms());
+    }
+    fn gap_at(&self, reason: &str, start: i64) {
         self.update(|s| {
             s.now_ms = now_ms();
             if open_engine_wide(&mut s.coverage).is_some_and(|g| g.reason() == reason) {
@@ -426,7 +431,7 @@ impl DockerHandle {
             }
             open_gap(
                 &mut s.coverage,
-                DockerCoverage::new(now_ms(), None, None, reason.into()),
+                DockerCoverage::new(start, None, None, reason.into()),
             );
         });
         self.recorder.record(&self.snapshot());
@@ -587,7 +592,7 @@ mod tests {
     }
     #[test]
     fn aggregate_counts_missing_values_without_inventing_zero() {
-        let total = aggregate(&[], None, false, 0, 1000);
+        let total = aggregate(&[], &BTreeSet::new(), None, false, 0, 1000);
         assert!(total.partial);
         assert_eq!(total.cpu_cores, None);
         assert_eq!(total.working_set_bytes, None);

@@ -112,7 +112,6 @@ export function ContainerActivity({
           ) : (
             <HistoryNotice
               snapshot={snapshot}
-              persistence={comparisonPage?.persistence}
               coverage={comparisonPage?.coverage ?? []}
               metric={metric}
               onManage={() => onManage()}

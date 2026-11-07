@@ -213,7 +213,7 @@ impl DockerHandle {
                 &mut inventory,
                 &mut restarts,
                 &mut last_observation,
-                &failed,
+                (listed, &failed),
             );
             if !inventory
                 .rows
@@ -355,14 +355,19 @@ impl DockerHandle {
             > 2000
         {
             samples.baseline.clear();
-            {
-                let _gate = self.gate.lock_ok();
-                if self.control.borrow().generation == generation {
-                    self.recorder.clock_step(wall);
-                    self.gap("clock_step");
-                }
+            let _gate = self.gate.lock_ok();
+            if self.control.borrow().generation == generation {
+                self.step_clock(wall);
             }
         }
         *clock = (wall, mono);
+    }
+    /// The recorder and the published records forget the same span, so the
+    /// recorder sees no record it does not already hold, and the step opens one
+    /// engine-wide `clock_step` at the new time.
+    pub(super) fn step_clock(&self, wall: i64) {
+        self.recorder.clock_step(wall);
+        self.update(|s| step_coverage(&mut s.coverage, wall));
+        self.gap_at("clock_step", wall);
     }
 }

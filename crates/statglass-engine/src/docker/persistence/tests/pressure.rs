@@ -404,7 +404,7 @@ fn bounding_coverage_never_turns_saving_or_events_records_into_a_gap() {
     ));
     let open = gap(30_000_000, None, Some("d"), "partial_cycle");
     gaps.push(open.clone());
-    bound_coverage(&mut gaps);
+    bound_coverage(&mut gaps, None);
     assert!(gaps.len() <= 512, "{}", gaps.len());
     assert!(gaps.contains(&open));
     // Nothing engine-wide masks, and c's masking stays c's.
@@ -423,7 +423,7 @@ fn bounding_coverage_never_turns_saving_or_events_records_into_a_gap() {
         .map(|i| gap(i * 1000, Some(i * 1000 + 500), Some("c"), "partial_cycle"))
         .collect();
     gaps.push(open.clone());
-    bound_coverage(&mut gaps);
+    bound_coverage(&mut gaps, None);
     assert_eq!(
         gaps,
         [open, gap(0, Some(599_500), Some("c"), "coverage_unknown")]
@@ -460,4 +460,90 @@ fn closed_coverage_leaves_memory_with_the_hour_and_is_not_readmitted() {
     assert!(r.state.lock_ok().coverage["daemon"].is_empty());
     store.writer().flush().unwrap();
     assert_eq!(saved(), before, "the saved record was written again");
+}
+
+#[test]
+fn collapsing_failed_inventories_never_masks_the_aggregate() {
+    let mut gaps: Vec<_> = (0..600)
+        .map(|i| {
+            api::DockerCoverage::new(
+                i * 1000,
+                Some(i * 1000 + 500),
+                None,
+                "inventory_failed".into(),
+            )
+        })
+        .collect();
+    bound_coverage(&mut gaps, None);
+    assert_eq!(
+        gaps,
+        [api::DockerCoverage::new(
+            0,
+            Some(599_500),
+            None,
+            "inventory_failed".into()
+        )]
+    );
+    assert!(gaps[0].masks(Some("c")) && !gaps[0].masks(None));
+}
+
+#[test]
+fn bounding_saved_coverage_never_changes_a_past_ranges_measured_time() {
+    let (_dir, store, r) = setup();
+    let t = wall_ms().div_euclid(60_000) * 60_000 - 2 * HOUR;
+    let mut s = fixture(t);
+    r.record(&s);
+    for i in 1..=60 {
+        at(&mut s, t + i * 1000, 1000);
+        r.record(&s);
+    }
+    // c loses half of every 100 ms, in 600 records saved 100 at a time.
+    for chunk in 0..6 {
+        s.coverage = (chunk * 100..(chunk + 1) * 100)
+            .map(|i| {
+                let start = t + i * 100;
+                api::DockerCoverage::new(
+                    start,
+                    Some(start + 50),
+                    Some("c".into()),
+                    "partial_cycle".into(),
+                )
+            })
+            .collect();
+        s.observed_ms = t + 61_000 + chunk;
+        r.record(&s);
+        store.writer().flush().unwrap();
+    }
+    s.coverage.clear();
+    s.observed_ms = t + 62_000;
+    r.record(&s);
+    let measured = |recorder: &DockerRecorder| -> Vec<_> {
+        recorder
+            .history(&query(t, t + 60_000, 6))
+            .unwrap()
+            .points
+            .iter()
+            .map(|p| (p.time_ms, p.cpu_measured_ms, p.memory_measured_ms))
+            .collect()
+    };
+    let store_only = DockerRecorder::new(host().id);
+    store_only.attach(store.writer(), store.path().to_path_buf());
+    let expected = measured(&store_only);
+    assert!(
+        expected.iter().all(|(_, cpu, _)| *cpu <= 5000),
+        "{expected:?}"
+    );
+    assert!(expected.iter().any(|(_, cpu, _)| *cpu > 0), "{expected:?}");
+    assert_eq!(measured(&r), expected, "bounding changed the measured time");
+    let held = r.state.lock_ok().coverage["daemon"].clone();
+    assert!(held.len() <= 512, "{}", held.len());
+    assert!(held.len() < 600, "nothing was bounded");
+    assert!(
+        held.iter().all(|g| g.reason() == "partial_cycle"),
+        "a saved record collapsed"
+    );
+    s.observed_ms = t + 2 * HOUR;
+    r.record(&s);
+    assert!(r.state.lock_ok().coverage["daemon"].is_empty());
+    assert_eq!(measured(&r), expected, "eviction changed the measured time");
 }

@@ -901,17 +901,19 @@ export type DockerContainerSeries = {
 };
 
 /**
- *  One interruption of Docker coverage. `kind` and `label` are derived from `reason`
- *  by `DockerCoverage::new`, which deserializing also goes through, and the three
- *  fields are private in Rust, so they always agree (D-128).
+ *  One interruption of Docker coverage. `kind`, `masking` and `label` are derived from
+ *  `reason` and the scope by `DockerCoverage::new`, which deserializing also goes
+ *  through, and those fields are private in Rust, so they always agree (D-128).
  */
 export type DockerCoverage = {
 	start_ms: number,
 	end_ms: number | null,
 	container_id: string | null,
-	/**  The key records merge by; `kind` and `label` are derived from it (D-128). */
+	/**  The key records merge by; `kind`, `masking` and `label` derive from it (D-128). */
 	reason: string,
 	kind: DockerCoverageKind,
+	/**  Whose history points count no measured time inside this record (D-128). */
+	masking: DockerCoverageMasking,
 	label: string,
 };
 
@@ -921,6 +923,13 @@ export type DockerCoverage = {
  *  is a reason this build does not know, which says nothing about measurements.
  */
 export type DockerCoverageKind = "collection" | "saving" | "metrics" | "events" | "other";
+
+/**
+ *  Which history points a record erases measured time from. A record with a
+ *  `container_id` only ever masks that container's points; an engine-wide one masks
+ *  every container's (`containers`) or those and the engine aggregate's (`all`).
+ */
+export type DockerCoverageMasking = "none" | "containers" | "all";
 
 export type DockerEngine = {
 	id: string,

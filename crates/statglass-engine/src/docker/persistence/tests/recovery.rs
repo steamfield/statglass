@@ -499,3 +499,147 @@ fn review_failed_reset_resumes_detached_ring_history_and_events() {
     );
     assert_eq!(r.status().status, "live_only");
 }
+
+/// A process observed c until `t + 10 s` and died with c's partial cycle open; the
+/// store also holds `closed` older closed records.
+fn crashed_with_open_record(closed: i64) -> (DatabaseFixture, Store, i64) {
+    let (dir, store, r) = setup();
+    let t = wall_ms().div_euclid(60_000) * 60_000 - 600_000;
+    let mut s = fixture(t);
+    r.record(&s);
+    for i in 1..=10 {
+        at(&mut s, t + i * 1000, 1000);
+        r.record(&s);
+    }
+    s.coverage = vec![api::DockerCoverage::new(
+        t + 5_000,
+        None,
+        Some("c".into()),
+        "partial_cycle".into(),
+    )];
+    s.observed_ms = t + 11_000;
+    r.record(&s);
+    store.writer().flush().unwrap();
+    drop(r);
+    let conn = rusqlite::Connection::open(store.path()).unwrap();
+    conn.execute("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<?2) INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT e.host_id,e.id,?1+i,?1+i+1,'events_disconnected',1,0,1 FROM n, docker_engines e", rusqlite::params![t - 300_000, closed]).unwrap();
+    (dir, store, t)
+}
+fn restored_end(store: &Store, now: i64) -> Option<i64> {
+    let fresh = DockerRecorder::new(host().id);
+    fresh.attach(store.writer(), store.path().to_path_buf());
+    fresh.record(&fixture(now));
+    let s = fresh.state.lock_ok();
+    assert_eq!(s.error, None);
+    s.coverage["daemon"]
+        .iter()
+        .find(|g| g.reason() == "partial_cycle")
+        .and_then(|g| g.end_ms)
+}
+
+#[test]
+fn restore_finds_open_records_behind_more_closed_rows_than_a_read_returns() {
+    let (_dir, store, t) = crashed_with_open_record(10_001);
+    let end = restored_end(&store, t + 60_000);
+    // The dead process last saved the bucket before the one it died in.
+    assert!(
+        end.is_some_and(|end| (t + 5_000..=t + 11_000).contains(&end)),
+        "{end:?}"
+    );
+}
+
+#[test]
+fn a_crashed_record_never_closes_after_the_restarted_process_observes() {
+    // The clock went back between the processes: the last saved observation is later
+    // than the restarted process's first.
+    let (_dir, store, t) = crashed_with_open_record(0);
+    assert_eq!(restored_end(&store, t + 7_000), Some(t + 7_000));
+}
+
+#[test]
+fn a_failed_restore_waits_for_its_backoff_or_the_next_attach() {
+    let (dir, store, r) = setup();
+    r.attach(store.writer(), dir.path().join("missing").join("h.sqlite"));
+    let t = wall_ms();
+    let mut s = fixture(t);
+    r.record(&s);
+    let first = r.state.lock_ok().restore_retry.get("daemon").copied();
+    assert_eq!(first.map(|(_, backoff)| backoff), Some(RESTORE_RETRY_MIN));
+    at(&mut s, t + 1000, 1000);
+    r.record(&s);
+    assert_eq!(
+        r.state.lock_ok().restore_retry.get("daemon").copied(),
+        first,
+        "restore read the store again before its backoff"
+    );
+    r.attach(store.writer(), store.path().to_path_buf());
+    at(&mut s, t + 2000, 1000);
+    r.record(&s);
+    let state = r.state.lock_ok();
+    assert!(state.restore_retry.is_empty());
+    assert!(state.restored_coverage.contains("daemon"));
+}
+
+#[test]
+fn a_clock_step_saves_each_record_once_then_nothing_while_it_holds() {
+    let (_dir, store, _) = setup();
+    let handle = super::super::super::DockerHandle::new(
+        host().id,
+        api::DockerSettings::default(),
+        PathBuf::new(),
+    );
+    handle
+        .recorder
+        .attach(store.writer(), store.path().to_path_buf());
+    let t = wall_ms().div_euclid(60_000) * 60_000 - 600_000;
+    let mut s = fixture(t);
+    s.coverage = vec![api::DockerCoverage::new(
+        t,
+        None,
+        Some("c".into()),
+        "partial_cycle".into(),
+    )];
+    handle.publish(s);
+    handle.step_clock(t + 5_000);
+    // c keeps failing; each cycle publishes as `publish_cycle` does.
+    let failed: BTreeSet<String> = ["c".to_owned()].into();
+    let cycle = |i: i64| {
+        let mut s = handle.snapshot();
+        s.observed_ms = t + 6_000 + i * 1000;
+        crate::docker::publication::reconcile_inventory(&mut s.coverage, true, s.observed_ms);
+        crate::docker::publication::reconcile_partial(&mut s.coverage, &failed, s.observed_ms);
+        handle.publish(s);
+    };
+    let saved = || {
+        store.writer().flush().unwrap();
+        let conn = rusqlite::Connection::open(store.path()).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT start_ms,end_ms,reason,revision FROM docker_coverage ORDER BY start_ms,reason")
+            .unwrap();
+        stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<i64>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+    };
+    cycle(0);
+    let settled = saved();
+    let has = |start: i64, end: Option<i64>| {
+        settled
+            .iter()
+            .any(|(s, e, reason, _)| (*s, *e, reason.as_str()) == (start, end, "partial_cycle"))
+    };
+    // The step closed c's record, and the next cycle reopened it at its own time.
+    assert!(has(t, Some(t + 5_000)), "{settled:?}");
+    assert!(has(t + 6_000, None), "{settled:?}");
+    for i in 1..=4 {
+        cycle(i);
+    }
+    assert_eq!(saved(), settled, "a record was saved again every cycle");
+}

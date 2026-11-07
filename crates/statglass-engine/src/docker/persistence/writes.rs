@@ -264,8 +264,15 @@ pub(super) fn drain_at(s: &mut State, now: i64) {
                         tracing::warn!(engine = %p.engine, reason = ?s.error, "Docker history write will retry");
                     }
                     requeue(s, &p.engine, p.retry);
-                } else if ack.outcome == db::DockerOutcome::Persisted && s.retry.is_empty() {
-                    s.error = None;
+                } else if ack.outcome == db::DockerOutcome::Persisted {
+                    if s.retry.is_empty() {
+                        s.error = None;
+                    }
+                    let saved = s.saved_coverage.entry(p.engine.clone()).or_default();
+                    saved.extend(p.retry.coverage.iter().filter_map(|c| {
+                        c.end_ms
+                            .map(|end| (c.entity.clone(), c.reason.clone(), c.start_ms, end))
+                    }));
                 }
                 for key in p.keys {
                     if let Some(e) = s.entries.get_mut(&key) {

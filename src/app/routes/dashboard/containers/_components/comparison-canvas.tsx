@@ -25,6 +25,7 @@ import type { ComparisonSeries } from "./comparison-chart";
 import { ComparisonLines } from "./comparison-lines";
 import type { ComparisonPlotState } from "./comparison-plot-state";
 import { ComparisonTooltip } from "./comparison-tooltip";
+import { masksEveryContainer } from "./history-details";
 
 const HEIGHT = DASHBOARD_CHART_HEIGHT;
 export function ComparisonCanvas({
@@ -86,16 +87,18 @@ export function ComparisonCanvas({
     [plotSeries, active, onFocus, plotWidth]
   );
   const axis = ceilingAxis(ceiling, format, { zero: true });
+  const bands = useMemo(
+    () => metricGaps.filter(masksEveryContainer),
+    [metricGaps]
+  );
   const engineGaps = useMemo(
     () =>
-      metricGaps
-        .filter((gap) => gap.container_id === null)
-        .map((gap) => ({
-          fromMs: gap.start_ms,
-          toMs: gap.end_ms ?? to,
-          label: gap.label,
-        })),
-    [metricGaps, to]
+      bands.map((gap) => ({
+        fromMs: gap.start_ms,
+        toMs: gap.end_ms ?? to,
+        label: gap.label,
+      })),
+    [bands, to]
   );
   const brush = useBrushOverlay({
     firstMs: from,
@@ -137,19 +140,17 @@ export function ComparisonCanvas({
       xTicks={historyTicks(from, to, live)}
     >
       <div className="pointer-events-none absolute inset-0">
-        {metricGaps
-          .filter((gap) => gap.container_id === null)
-          .map((gap) => (
-            <GapBand
-              key={`${gap.reason}:${gap.start_ms}`}
-              fromMs={gap.start_ms}
-              toMs={gap.end_ms ?? to}
-              rangeFromMs={from}
-              rangeToMs={to}
-              label={gap.label}
-              labelPosition="none"
-            />
-          ))}
+        {bands.map((gap) => (
+          <GapBand
+            key={`${gap.reason}:${gap.start_ms}`}
+            fromMs={gap.start_ms}
+            toMs={gap.end_ms ?? to}
+            rangeFromMs={from}
+            rangeToMs={to}
+            label={gap.label}
+            labelPosition="none"
+          />
+        ))}
       </div>
       <svg
         role="img"

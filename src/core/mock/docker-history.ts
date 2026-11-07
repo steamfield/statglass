@@ -6,6 +6,7 @@ import {
   type DockerHistoryRequest,
 } from "@core/generated/bindings";
 import { DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
+import { mockMasks } from "./docker-coverage";
 import { engine, MiB } from "./docker-fixtures";
 import { seedOf } from "./rng";
 /** Shared generator: timestamp-positioned history with real gaps and partial buckets. */
@@ -90,8 +91,7 @@ function historyCpu(
 
 /**
  * `mask_uncovered` in Rust's `projection.rs`: no point claims measured time
- * inside a collection or metrics gap of its container or of all containers
- * (`DockerCoverage::masks`; an engine-wide partial cycle masks nothing).
+ * inside a record that masks it (`DockerCoverage::masks`).
  */
 export function maskUncovered(
   points: readonly DockerHistoryPoint[],
@@ -100,13 +100,7 @@ export function maskUncovered(
   toMs: number
 ): DockerHistoryPoint[] {
   const spans = coverage
-    .filter(
-      (g) =>
-        (g.kind === "collection" || g.kind === "metrics") &&
-        (g.container_id === null
-          ? g.reason !== "partial_cycle"
-          : g.container_id === containerId)
-    )
+    .filter((g) => mockMasks(g, containerId))
     .map((g) => [g.start_ms, g.end_ms ?? toMs] as const)
     .sort((a, b) => a[0] - b[0]);
   return points.map((p) => {

@@ -15,6 +15,7 @@ import {
   type ChartTableStats,
 } from "~/components/data-table";
 import type { ComparisonSeries } from "./comparison-chart";
+import { masksEveryContainer } from "./history-details";
 
 function stats(
   point: DockerHistoryPoint | undefined,
@@ -31,7 +32,8 @@ function stats(
 
 /**
  * Each bucket any container has, with every container's reading in it, and
- * a row for each engine-wide gap (a container's own gaps read as missing).
+ * a row for each engine-wide record that masks every container (a container's
+ * own gaps read as missing).
  */
 function comparisonRows(
   series: readonly ComparisonSeries[],
@@ -50,7 +52,7 @@ function comparisonRows(
     values: bySeries.map((points) => stats(points.get(t), metric)),
   }));
   for (const g of gaps) {
-    if (g.container_id !== null) continue;
+    if (!masksEveryContainer(g)) continue;
     if (g.start_ms >= to || (g.end_ms ?? Number.POSITIVE_INFINITY) <= from)
       continue;
     rows.push({ kind: "gap", t: Math.max(from, g.start_ms), label: g.label });

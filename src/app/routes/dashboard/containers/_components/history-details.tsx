@@ -13,6 +13,12 @@ import {
 
 /** Rust's kind: lost events say nothing about measurements (D-128). */
 export const eventCoverage = (gap: DockerCoverage) => gap.kind === "events";
+/**
+ * An engine-wide record that Rust says erases every container's measured time.
+ * A container's own records show as that container's missing readings instead.
+ */
+export const masksEveryContainer = (gap: DockerCoverage) =>
+  gap.container_id === null && gap.masking !== "none";
 export function mergeCoverage(
   records: readonly DockerCoverage[]
 ): DockerCoverage[] {
