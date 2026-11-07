@@ -17,6 +17,15 @@
   `?collapsed=` are unchanged.
 - Host, update and cleanup confirmations no longer close on an outside click or Escape
   while their action runs.
+- Module absence text names the actual host ("this host", a remote host's name) instead
+  of "this Mac", and says when a module isn't in this edition.
+- One crosshair look on every chart; resolution labels read the same everywhere
+  ("10 s avg"), and container clocks no longer follow the system locale.
+- The selected range in network and disk bars uses the shared selection veil.
+- Disk I/O x ticks end at "now" and follow the shared axis rule; popover network bars
+  stop rescaling every second.
+- Container comparison gap bands and history details use Rust's coverage labels; points
+  inside a collection or metrics gap no longer count as measured.
 - Informational lines stop announcing as alerts; status and error lines share one size.
 - Module history charts share one y-axis treatment (ticks in the gutter) and five x ticks.
   Swap and Used memory gain gutter ticks in place of the corner label, the battery chart
