@@ -1,5 +1,5 @@
 //! Narrow setup operations. Endpoints and paths are never interpolated unquoted.
-use crate::agent_install::{Remote, Ssh, run_command};
+use crate::agent_install::{Remote, Ssh, Stdin, run_command};
 use crate::{
     ControlRequest, ControlResponse, RemoteError, Result,
     transport::{helper_command, shell_quote},
@@ -25,7 +25,7 @@ pub async fn run_remote(alias: &str, command: &str) -> Result<String> {
 }
 
 async fn run_remote_with_timeout(alias: &str, command: &str, timeout: Duration) -> Result<String> {
-    run_command(&Ssh(alias), command, None, timeout).await
+    run_command(&Ssh(alias), command, Stdin::None, timeout).await
 }
 
 pub(crate) async fn setup_timeout<T>(
@@ -364,16 +364,21 @@ async fn transfer_app(
         r#"set -eu; dest={destination}; parent=$(/usr/bin/dirname "$dest"); mkdir -p "$parent"; stage=$(mktemp -d "$parent/.statglass-install.XXXXXX"); trap 'rm -rf "$stage"' EXIT; cat > "$stage/app.zip"; actual=$(/usr/bin/shasum -a 256 "$stage/app.zip"); test "${{actual%% *}}" = {}; /usr/bin/ditto -x -k "$stage/app.zip" "$stage"; test -x "$stage/StatGlass.app/Contents/MacOS/statglass-remote-helper"; /usr/bin/codesign --verify --deep --strict "$stage/StatGlass.app"; {replace}"#,
         shell_quote(&hash)
     );
-    let package = tokio::fs::read(&archive).await?;
-    install_package(&Ssh(alias), &script, &package).await
+    install_package(&Ssh(alias), &script, Stdin::File(&archive)).await
 }
 
 /// Streams `package` into the install `script` on the remote. Its output is bounded, and
 /// only ssh's own exit status reads as a login or host-key failure.
-async fn install_package(remote: &impl Remote, script: &str, package: &[u8]) -> Result<()> {
-    run_command(remote, script, Some(package), INSTALL_TIMEOUT)
-        .await
-        .map(drop)
+async fn install_package(remote: &impl Remote, script: &str, package: Stdin<'_>) -> Result<()> {
+    // This limit, not the command's own (which never fires first), names the step that
+    // ran out of time; dropping the command kills it.
+    tokio::time::timeout(
+        INSTALL_TIMEOUT,
+        run_command(remote, script, package, Duration::MAX),
+    )
+    .await
+    .map_err(|_| RemoteError::Transport("installation timed out".into()))?
+    .map(drop)
 }
 struct ArchiveCleanup(std::path::PathBuf);
 impl Drop for ArchiveCleanup {
@@ -391,12 +396,7 @@ mod tests {
     struct LocalShell;
 
     impl Remote for LocalShell {
-        async fn exec(
-            &self,
-            command: &str,
-            stdin: Option<&[u8]>,
-            timeout: Duration,
-        ) -> Result<Output> {
+        async fn exec(&self, command: &str, stdin: Stdin<'_>, timeout: Duration) -> Result<Output> {
             let mut cmd = tokio::process::Command::new("/bin/sh");
             cmd.arg("-c").arg(command);
             ssh_status(collect(cmd, stdin, timeout).await?)
@@ -404,7 +404,37 @@ mod tests {
     }
 
     async fn run(command: &str) -> Result<String> {
-        run_command(&LocalShell, command, None, Duration::from_secs(10)).await
+        run_command(&LocalShell, command, Stdin::None, Duration::from_secs(10)).await
+    }
+
+    #[tokio::test]
+    async fn setup_output_must_be_utf8() {
+        assert!(matches!(
+            run("printf '/home/\\377'").await,
+            Err(RemoteError::Protocol(_))
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stalled_installation_says_so() {
+        assert!(matches!(
+            install_package(&LocalShell, "cat >/dev/null; sleep 600", Stdin::Bytes(b"package")).await,
+            Err(RemoteError::Transport(m)) if m == "installation timed out"
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_installer_streams_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("app.zip");
+        std::fs::write(&archive, b"package").unwrap();
+        install_package(
+            &LocalShell,
+            "test \"$(cat)\" = package",
+            Stdin::File(&archive),
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -425,16 +455,16 @@ mod tests {
     async fn the_installer_bounds_what_the_remote_prints() {
         let flood = "cat >/dev/null; head -c 70000 /dev/zero | tr '\\0' x >&2; exit 1";
         assert!(matches!(
-            install_package(&LocalShell, flood, b"package").await,
+            install_package(&LocalShell, flood, Stdin::Bytes(b"package")).await,
             Err(RemoteError::Protocol(m)) if m.contains("exceeded bound")
         ));
         let refused = "cat >/dev/null; echo 'Quit StatGlass before updating' >&2; exit 1";
         assert!(matches!(
-            install_package(&LocalShell, refused, b"package").await,
+            install_package(&LocalShell, refused, Stdin::Bytes(b"package")).await,
             Err(RemoteError::Transport(m)) if m == "Quit StatGlass before updating"
         ));
         let accepted = "test \"$(cat)\" = package";
-        install_package(&LocalShell, accepted, b"package")
+        install_package(&LocalShell, accepted, Stdin::Bytes(b"package"))
             .await
             .unwrap();
     }

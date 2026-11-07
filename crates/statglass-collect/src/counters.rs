@@ -29,7 +29,21 @@ impl PartSum {
 /// Seconds between two continuous-clock readings, `None` without a previous one
 /// (`prev_ns == 0`) or when the clock did not advance.
 pub(crate) fn span_secs(prev_ns: u64, now_ns: u64) -> Option<f64> {
-    (prev_ns > 0 && now_ns > prev_ns).then(|| (now_ns - prev_ns) as f64 / 1e9)
+    secs_since((prev_ns > 0).then_some(prev_ns), now_ns)
+}
+
+/// Seconds from the previous continuous-clock reading to `now_ns`, `None` without one or
+/// when the clock did not advance. Unlike [`span_secs`], a reading at 0 is a real one.
+pub(crate) fn secs_since(prev_ns: Option<u64>, now_ns: u64) -> Option<f64> {
+    prev_ns
+        .filter(|&prev| now_ns > prev)
+        .map(|prev| (now_ns - prev) as f64 / 1e9)
+}
+
+/// Whole milliseconds from the previous continuous-clock reading to `now_ns`: 0 without
+/// one or when the clock did not advance.
+pub(crate) fn span_ms(prev_ns: Option<u64>, now_ns: u64) -> u64 {
+    prev_ns.map_or(0, |prev| now_ns.saturating_sub(prev) / 1_000_000)
 }
 
 /// How wide a cumulative counter may be, which decides what a decrease means.
@@ -117,6 +131,17 @@ mod tests {
         assert_eq!(span_secs(0, 5), None);
         assert_eq!(span_secs(5, 5), None);
         assert_eq!(span_secs(7, 5), None);
+    }
+
+    #[test]
+    fn a_previous_reading_at_zero_still_counts() {
+        assert_eq!(secs_since(Some(0), 2_000_000_000), Some(2.0));
+        assert_eq!(secs_since(None, 5), None);
+        assert_eq!(secs_since(Some(5), 5), None);
+        assert_eq!(secs_since(Some(7), 5), None);
+        assert_eq!(span_ms(Some(0), 2_500_000_000), 2_500);
+        assert_eq!(span_ms(None, 5_000_000), 0);
+        assert_eq!(span_ms(Some(7_000_000), 5_000_000), 0);
     }
 
     #[test]

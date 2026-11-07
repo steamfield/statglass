@@ -312,7 +312,7 @@ impl Remote for Shell {
     async fn exec(
         &self,
         command: &str,
-        stdin: Option<&[u8]>,
+        stdin: super::Stdin<'_>,
         timeout: Duration,
     ) -> crate::Result<Output> {
         let command = tokio::process::Command::from(self.command(command, false));

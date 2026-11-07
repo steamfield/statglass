@@ -8,6 +8,7 @@ use statglass_schema::{Entitlement, MetricId, Module, SeriesKey};
 
 use super::SysRoot;
 use super::procfs::read_into;
+use crate::counters::secs_since;
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
 /// utime + stime from a `stat` line, after the last `)` (comm may hold one).
@@ -91,14 +92,11 @@ impl Collector for SelfCpu {
             detail: "unreadable or no utime/stime",
         })?;
         if let Some((pticks, pt)) = self.prev
-            && now > pt
+            && let Some(secs) = secs_since(Some(pt), now)
             && let Some(d) = ticks.checked_sub(pticks)
         {
             let cpu_s = d as f64 / self.clk_tck as f64;
-            out.push(
-                &self.key,
-                (cpu_s / ((now - pt) as f64 / 1e9) * 100.0) as f32,
-            );
+            out.push(&self.key, (cpu_s / secs * 100.0) as f32);
         }
         self.prev = Some((ticks, now));
         Ok(())

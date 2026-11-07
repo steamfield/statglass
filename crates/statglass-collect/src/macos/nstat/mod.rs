@@ -73,6 +73,7 @@ use statglass_schema::{Entitlement, Module, UnsupportedReason};
 use self::ffi::{Session, api};
 use self::ledger::{Breaker, PID_ROOM, SettleMap};
 use super::{libproc, network};
+use crate::counters::{secs_since, span_ms};
 use crate::{
     Cadence, CollectError, Collector, CollectorId, Every, Interest, Interval, Probe, ProcessNet,
     SampleBuf, Tick,
@@ -220,9 +221,7 @@ impl Collector for NetPerProcess {
         self.breaker.succeeded();
         use statglass_schema::durable_usage::UsageIncompleteCause;
         let ledger = session.ledger.lock_ok();
-        let span_ms = self
-            .last_ns
-            .map_or(0, |prev| now.saturating_sub(prev) / 1_000_000);
+        let span_ms = span_ms(self.last_ns, now);
         let causes = [
             Some(UsageIncompleteCause::UnreadableProcess),
             (ledger.unresolved() > 0).then_some(UsageIncompleteCause::UnresolvedIdentity),
@@ -242,10 +241,9 @@ impl Collector for NetPerProcess {
         let (true, Some(prev)) = (measured, prev) else {
             return Ok(());
         };
-        let secs = tick.continuous_ns.saturating_sub(prev) as f64 / 1e9;
-        if secs <= 0.0 {
+        let Some(secs) = secs_since(Some(prev), tick.continuous_ns) else {
             return Ok(());
-        }
+        };
         out.set_process_net_measured(Interval {
             prev_ns: prev,
             now_ns: tick.continuous_ns,

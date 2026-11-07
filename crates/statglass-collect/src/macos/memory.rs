@@ -23,6 +23,7 @@
 use statglass_schema::{Entitlement, MetricCode, MetricId, Module, PressureLevel, SeriesKey};
 
 use super::sysctl;
+use crate::counters::secs_since;
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
 struct Keys {
@@ -245,9 +246,8 @@ impl Collector for Memory {
 
         let now = tick.continuous_ns;
         if let Some((pin, pout, pt)) = self.prev
-            && now > pt
+            && let Some(secs) = secs_since(Some(pt), now)
         {
-            let secs = (now - pt) as f64 / 1e9;
             let rate = |a: u64, b: u64| (a.saturating_sub(b) as f64 / secs) as f32;
             out.push(&k.swap_in, rate(s.swapins, pin));
             out.push(&k.swap_out, rate(s.swapouts, pout));

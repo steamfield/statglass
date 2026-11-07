@@ -69,11 +69,16 @@ impl StoreError {
 
     /// The file or a row in it is damaged: retrying will not help.
     pub fn is_corrupt(&self) -> bool {
-        matches!(self, StoreError::Corrupt(_) | StoreError::Cbor(_))
-            || matches!(
-                self.sqlite_code(),
-                Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
-            )
+        matches!(self, StoreError::Corrupt(_) | StoreError::Cbor(_)) || self.is_corrupt_database()
+    }
+
+    /// SQLite reports the file itself as damaged or not a database, as opposed to one row
+    /// that failed to decode: nothing in the store can be read until it is reset.
+    pub fn is_corrupt_database(&self) -> bool {
+        matches!(
+            self.sqlite_code(),
+            Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
+        )
     }
 }
 
@@ -107,6 +112,18 @@ mod tests {
             sqlite(rusqlite::ffi::SQLITE_NOTADB),
         ] {
             assert!(corrupt.is_corrupt() && !corrupt.is_busy(), "{corrupt}");
+        }
+        for database in [
+            sqlite(rusqlite::ffi::SQLITE_CORRUPT),
+            sqlite(rusqlite::ffi::SQLITE_NOTADB),
+        ] {
+            assert!(database.is_corrupt_database(), "{database}");
+        }
+        for row in [
+            StoreError::Corrupt("bad blob".into()),
+            StoreError::Cbor("bad cbor".into()),
+        ] {
+            assert!(!row.is_corrupt_database(), "{row}");
         }
         for neither in [sqlite(rusqlite::ffi::SQLITE_FULL), StoreError::WriterGone] {
             assert!(!neither.is_busy() && !neither.is_corrupt(), "{neither}");

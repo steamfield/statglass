@@ -37,6 +37,7 @@ use statglass_schema::Entitlement;
 use super::SysRoot;
 use super::cgroup_names::{Kind, Resolved, Unit, classify, proc_cgroup_path, resolve};
 use super::procfs::{PidDir, field, read_into, user_name, word};
+use crate::counters::{secs_since, span_ms};
 use crate::{
     Cadence, CollectError, Collector, CollectorId, ContainerNames, Interest, Probe, ProcessSample,
     SampleBuf, Tick,
@@ -347,9 +348,8 @@ impl Processes {
             known.app = self.container(*kind, id, Some(*asked));
         }
         if let Some(prev) = known.prev
-            && now > prev.at_ns
+            && let Some(secs) = secs_since(Some(prev.at_ns), now)
         {
-            let secs = (now - prev.at_ns) as f64 / 1e9;
             let cpu_s = cpu_ticks.saturating_sub(prev.cpu_ticks) as f64 / self.clk_tck as f64;
             let (read_bps, write_bps) = match (prev.io, io) {
                 (Some((r0, w0)), Some((r1, w1))) => (
@@ -454,10 +454,7 @@ impl Collector for Processes {
             });
         }
         let now = tick.continuous_ns;
-        let span_ms = self
-            .last_usage_ns
-            .replace(now)
-            .map_or(0, |prev| now.saturating_sub(prev) / 1_000_000);
+        let span_ms = span_ms(self.last_usage_ns.replace(now), now);
         self.visibility = Visibility {
             listed: u32::try_from(self.pids.len()).unwrap_or(u32::MAX),
             ..Visibility::default()

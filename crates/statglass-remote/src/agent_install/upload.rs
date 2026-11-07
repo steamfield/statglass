@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use super::{
-    AgentInstallError, AgentTarget, Remote, Result, Ssh, UPLOAD_TIMEOUT, failed, run_command,
-    run_script,
+    AgentInstallError, AgentTarget, Remote, Result, Ssh, Stdin, UPLOAD_TIMEOUT, failed,
+    run_command_lossy, run_script,
 };
 use crate::transport::sh_c;
 
@@ -19,7 +19,7 @@ pub async fn run_remote_with_stdin(
     bytes: &[u8],
     timeout: Duration,
 ) -> crate::Result<String> {
-    run_command(&Ssh(alias), command, Some(bytes), timeout).await
+    run_command_lossy(&Ssh(alias), command, Stdin::Bytes(bytes), timeout).await
 }
 
 /// The upload script for `target`, checking the bytes against `sha256_hex`.
@@ -77,7 +77,7 @@ pub(crate) async fn upload_with(
 ) -> Result<()> {
     let script = upload_script(target, sha256_hex)?;
     let output = remote
-        .exec(&sh_c(&script)?, Some(bytes), UPLOAD_TIMEOUT)
+        .exec(&sh_c(&script)?, Stdin::Bytes(bytes), UPLOAD_TIMEOUT)
         .await?;
     match output.code {
         Some(0) => Ok(()),

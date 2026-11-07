@@ -50,6 +50,7 @@ use std::sync::Arc;
 use statglass_schema::Entitlement;
 
 use super::libproc;
+use crate::counters::{secs_since, span_ms};
 use crate::{
     Cadence, CollectError, Collector, CollectorId, Interest, Probe, ProcessSample, SampleBuf, Tick,
 };
@@ -199,10 +200,7 @@ struct Rates {
 }
 
 fn rates(prev: &Prev, cur: &Prev, ticks_to_ns: f64) -> Option<Rates> {
-    if cur.at_ns <= prev.at_ns {
-        return None;
-    }
-    let secs = (cur.at_ns - prev.at_ns) as f64 / 1e9;
+    let secs = secs_since(Some(prev.at_ns), cur.at_ns)?;
     let d = |a: u64, b: u64| a.saturating_sub(b) as f64;
     let cpu_ns = d(cur.cpu_ticks, prev.cpu_ticks) * ticks_to_ns;
     let cpu_pct = cpu_ns / (secs * 1e9) * 100.0;
@@ -276,10 +274,7 @@ impl Collector for Processes {
             });
         }
         let now = tick.continuous_ns;
-        let span_ms = self
-            .last_usage_ns
-            .replace(now)
-            .map_or(0, |prev| now.saturating_sub(prev) / 1_000_000);
+        let span_ms = span_ms(self.last_usage_ns.replace(now), now);
         let mut vis = Visibility {
             listed: self.pids.len() as u32,
             readable: 0,

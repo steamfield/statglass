@@ -193,8 +193,16 @@ pub fn resolve_range(args: &RangeArgs, now_ms: i64) -> Result<(i64, i64), Failur
             to.saturating_sub(back)
         }
     };
-    statglass_schema::TimeRange::new(from, to, i64::MAX)
-        .map_err(|e| bad_range(args.from.as_deref().unwrap_or_default(), e.to_string()))?;
+    statglass_schema::TimeRange::new(from, to, i64::MAX).map_err(|e| {
+        let hint = match e {
+            // The raw epoch milliseconds mean nothing to someone who typed `--since`.
+            statglass_schema::RangeError::Empty { .. } => {
+                "the start must be before the end".to_owned()
+            }
+            e @ statglass_schema::RangeError::TooLong { .. } => e.to_string(),
+        };
+        bad_range(args.from.as_deref().unwrap_or_default(), hint)
+    })?;
     Ok((from, to))
 }
 
@@ -254,6 +262,11 @@ mod tests {
             let f = resolve_range(&r, NOW).unwrap_err();
             assert_eq!(f.error.tag, ErrorTag::BadRange);
         }
+        let inverted = resolve_range(&range(None, Some("1h"), Some("3h")), NOW).unwrap_err();
+        assert_eq!(
+            inverted.error.details.unwrap().hint.as_deref(),
+            Some("the start must be before the end")
+        );
     }
 
     #[test]

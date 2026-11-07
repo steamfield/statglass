@@ -1,14 +1,12 @@
 //! Recorder lifecycle and writes; collector cadences and interests stay unchanged.
 use super::Engine;
 use statglass_collect::{ProcessSample, Tick};
-use statglass_schema::Module;
+use statglass_schema::{Module, ceil_to};
 use statglass_store::Writer;
 use statglass_store::usage::{USAGE_BUCKET_MS, UsageBucket};
 
 pub(super) fn next_bucket(at: i64) -> i64 {
-    at.saturating_add(USAGE_BUCKET_MS - 1)
-        .div_euclid(USAGE_BUCKET_MS)
-        * USAGE_BUCKET_MS
+    ceil_to(at, USAGE_BUCKET_MS)
 }
 impl Engine {
     pub(super) fn account_usage(&mut self, tick: Tick, rows: &[ProcessSample], persist: bool) {

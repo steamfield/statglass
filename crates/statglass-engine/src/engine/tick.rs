@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use statglass_collect::{Cadence, Interest, Interests, ProcessSample, Tick};
-use statglass_schema::{Gap, GapReason};
+use statglass_schema::{Gap, GapReason, ceil_to};
 
 use super::cadence::{
     PERFORMANCE_IDLE_PROCESS_MS, PERFORMANCE_VISIBLE_MS, performance_period, performance_slowdown,
@@ -498,11 +498,7 @@ impl Engine {
             let written_to = written_to.unwrap_or(ts).max(ts);
             // Hold for at most an hour, ending on a minute boundary so the first minute
             // written again is whole (D-070).
-            let cap = ts
-                .saturating_add(MAX_PERSIST_HOLD_MS - 1)
-                .div_euclid(MINUTE_MS)
-                .saturating_mul(MINUTE_MS)
-                .saturating_add(MINUTE_MS);
+            let cap = ceil_to(ts + MAX_PERSIST_HOLD_MS, MINUTE_MS);
             let until = written_to.min(cap);
             if written_to > until {
                 // The old clock wrote past the hold: drop those rows so the new timeline
