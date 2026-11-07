@@ -235,7 +235,9 @@ it("brushes only elapsed buckets and explains an engine gap under the cursor", a
           start_ms: 30_000,
           end_ms: null,
           container_id: null,
-          reason: "Sampler paused",
+          reason: "sampler_paused",
+          kind: "collection",
+          label: "Sampler paused",
         },
       ]}
     />,

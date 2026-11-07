@@ -93,7 +93,7 @@ export function ComparisonCanvas({
         .map((gap) => ({
           fromMs: gap.start_ms,
           toMs: gap.end_ms ?? to,
-          label: gap.reason,
+          label: gap.label,
         })),
     [metricGaps, to]
   );
