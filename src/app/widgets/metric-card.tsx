@@ -3,7 +3,7 @@ import { cn } from "~/lib/utils";
 import { LinkCard } from "./card";
 import { CardNotice } from "./card-notice";
 import { InlineBar, type InlineBarProps } from "./inline-bar";
-import { Legend, type LegendItem } from "./legend";
+import { Legend, type LegendItem, Swatch } from "./legend";
 import type { Accent, Corner } from "./lib/accent";
 import { ProcessList, type ProcessListRow } from "./process-list";
 import { RingGauge, type RingGaugeProps } from "./ring-gauge";
@@ -63,7 +63,7 @@ export function MetricCard({
     <>
       <header className="flex items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span aria-hidden className="size-2 rounded-mark bg-(--a)" />
+          <Swatch step={1} />
           <h3 id={titleId} className="font-[590] text-[13px]">
             {title}
           </h3>

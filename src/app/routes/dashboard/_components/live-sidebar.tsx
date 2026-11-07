@@ -1,4 +1,5 @@
 import { ratio } from "@core/chart-math";
+import { scaleOrNull, sumOrNull } from "@core/chart-math/numeric";
 import { formatPercent, formatWatts } from "@core/format";
 import type { UiModule } from "@core/module-state";
 import { hostsNeedingUpdate } from "@core/remote-hosts";
@@ -23,6 +24,7 @@ import {
   useSampling,
 } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
+import { MODULE_META } from "~/widgets/lib/module-meta";
 import { version } from "../../../../../package.json";
 import { batteryBackoff } from "../_lib/sampling-status";
 
@@ -91,12 +93,6 @@ export function compactRate(bps: number | null): string | undefined {
   return `${mb >= 100 ? mb.toFixed(0) : mb.toFixed(1)}M`;
 }
 
-const mul = (a: number | null, k: number) => (a === null ? null : a * k);
-
-/** Both directions, or null when either is missing (a part is not the total). */
-export const sum = (a: number | null, b: number | null) =>
-  a === null || b === null ? null : a + b;
-
 /**
  * Dashboard sidebar with live values (plan 4.4). Modules the host
  * lacks are omitted, and so is Power & Sensors on an unknown chip (4.17).
@@ -130,7 +126,7 @@ export function LiveSidebar() {
   // A host without macOS memory pressure (a Linux agent) shows memory used.
   const memValue = mem.hasPressure
     ? mem.pressure
-    : mul(ratio(mem.used, memTotal), 100);
+    : scaleOrNull(ratio(mem.used, memTotal), 100);
   const performanceLabel =
     sampling.performance === "low_power_mode"
       ? "Performance mode · Low Power"
@@ -138,7 +134,6 @@ export function LiveSidebar() {
 
   const module = (
     id: UiModule,
-    label: string,
     icon: SidebarEntry["icon"],
     value: string | undefined
   ): SidebarEntry[] => {
@@ -149,7 +144,7 @@ export function LiveSidebar() {
       {
         id,
         href: `/dashboard/${id}`,
-        label,
+        label: MODULE_META[id].name,
         icon,
         value: on ? value : undefined,
         disabled: !on,
@@ -165,33 +160,21 @@ export function LiveSidebar() {
     {
       id: "modules",
       entries: [
-        ...module("cpu", "CPU", "cpu", formatPercent(cpu.total)),
-        ...module("gpu", "GPU", "gpu", formatPercent(gpu.util)),
-        ...module("memory", "Memory", "memory", formatPercent(memValue)),
+        ...module("cpu", "cpu", formatPercent(cpu.total)),
+        ...module("gpu", "gpu", formatPercent(gpu.util)),
+        ...module("memory", "memory", formatPercent(memValue)),
         ...module(
           "power",
-          "Power & Sensors",
           "power",
           formatWatts(power.system, { compact: true })
         ),
-        ...module(
-          "network",
-          "Network",
-          "network",
-          compactRate(sum(net.rx, net.tx))
-        ),
+        ...module("network", "network", compactRate(sumOrNull(net.rx, net.tx))),
         ...module(
           "disk",
-          "Disk",
           "disk",
-          compactRate(sum(disk.read, disk.write))
+          compactRate(sumOrNull(disk.read, disk.write))
         ),
-        ...module(
-          "battery",
-          "Battery",
-          "battery",
-          formatPercent(battery.charge)
-        ),
+        ...module("battery", "battery", formatPercent(battery.charge)),
       ],
     },
     {

@@ -1,7 +1,7 @@
 import { ArrowUpRight, ChevronDown, ChevronRight } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { cn } from "~/lib/utils";
-import { LinkCard } from "./card";
+import { Card, LinkCard } from "./card";
 import { CardNotice } from "./card-notice";
 import type { Accent, Corner } from "./lib/accent";
 import { FIELD_LABEL } from "./lib/classes";
@@ -35,6 +35,11 @@ export interface ModuleCardProps {
   href?: string | undefined;
   /** Called instead of following `href` (the popover opens the dashboard). */
   onOpen?: (href: string) => void;
+  /**
+   * Controls under the body that open something else (a container). They
+   * sit outside the card's link, which then covers the header and body only.
+   */
+  footer?: ReactNode;
   children?: ReactNode;
 }
 
@@ -57,6 +62,7 @@ export function ModuleCard({
   notice,
   href,
   onOpen,
+  footer,
   children,
 }: ModuleCardProps) {
   const titleId = useId();
@@ -78,25 +84,44 @@ export function ModuleCard({
       {children}
     </>
   );
-  const card = (
-    <LinkCard
-      accent={accent}
-      origin={origin}
-      variant="chart"
-      labelledBy={titleId}
-      href={href}
-      onOpen={onOpen}
-      className={cn(
-        "flex flex-col",
-        compact ? "min-h-14 gap-1 p-2" : "gap-2 p-3",
-        // No focus ring: Card focus-visible already lifts the glow and
-        // border, and WebKit keeps a ring on the card after it is clicked.
-        href !== undefined && "group text-inherit no-underline outline-none"
-      )}
-    >
-      {content}
-    </LinkCard>
-  );
+  const padding = compact ? "min-h-14 gap-1 p-2" : "gap-2 p-3";
+  const card =
+    footer === undefined ? (
+      <LinkCard
+        accent={accent}
+        origin={origin}
+        variant="chart"
+        labelledBy={titleId}
+        href={href}
+        onOpen={onOpen}
+        className={cn(
+          "flex flex-col",
+          padding,
+          // No focus ring: Card focus-visible already lifts the glow and
+          // border, and WebKit keeps a ring on the card after it is clicked.
+          href !== undefined && "group text-inherit no-underline outline-none"
+        )}
+      >
+        {content}
+      </LinkCard>
+    ) : (
+      <Card
+        accent={accent}
+        origin={origin}
+        variant="chart"
+        labelledBy={titleId}
+        className={cn("flex flex-col", padding)}
+      >
+        <LinkArea
+          href={href}
+          onOpen={onOpen}
+          className={compact ? "gap-1" : "gap-2"}
+        >
+          {content}
+        </LinkArea>
+        {footer}
+      </Card>
+    );
   if (aside === undefined && !onToggle) return card;
   return (
     <div className="relative">
@@ -128,6 +153,44 @@ export function ModuleCard({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The header and body as one link inside a card that has a footer: a ring
+ * on keyboard focus, since the card itself is not the link.
+ */
+function LinkArea({
+  href,
+  onOpen,
+  className,
+  children,
+}: {
+  href: string | undefined;
+  onOpen: ((href: string) => void) | undefined;
+  className: string;
+  children: ReactNode;
+}) {
+  const body = cn("flex flex-col", className);
+  if (href === undefined) return <div className={body}>{children}</div>;
+  return (
+    <a
+      href={href}
+      onClick={
+        onOpen
+          ? (event) => {
+              event.preventDefault();
+              onOpen(href);
+            }
+          : undefined
+      }
+      className={cn(
+        body,
+        "group rounded-control text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      )}
+    >
+      {children}
+    </a>
   );
 }
 

@@ -5,6 +5,7 @@
  */
 
 import { ratio } from "@core/chart-math";
+import { scaleOrNull, sumOrNull } from "@core/chart-math/numeric";
 import {
   formatBytes,
   formatGhz,
@@ -19,6 +20,7 @@ import {
   type TemperatureUnits,
 } from "@core/format";
 import type { LiveProcess, PowerSource } from "@core/generated/bindings";
+import { topBy } from "@core/top-by";
 import { netTotal } from "~/components/process-table";
 import type { MetricCardProps } from "~/widgets/metric-card";
 import type { ProcessListRow } from "~/widgets/process-list";
@@ -36,17 +38,12 @@ export function topProcesses(
   format: (v: number) => string,
   n = 5
 ): ProcessListRow[] {
-  return rows
-    .map((p) => ({ p, v: value(p) }))
-    .filter((r): r is { p: LiveProcess; v: number } => r.v !== null)
-    .sort((a, b) => b.v - a.v)
-    .slice(0, n)
-    .map(({ p, v }) => ({
-      id: `${p.pid}:${p.start_time_us}`,
-      initial: p.name.slice(0, 1),
-      name: p.name,
-      value: format(v),
-    }));
+  return topBy(rows, value, n).map(({ row: p, value: v }) => ({
+    id: `${p.pid}:${p.start_time_us}`,
+    initial: p.name.slice(0, 1),
+    name: p.name,
+    value: format(v),
+  }));
 }
 
 export interface ClusterInput {
@@ -279,8 +276,7 @@ export function powerCard(input: {
   temperature: TemperatureUnits;
   processes: readonly LiveProcess[];
 }): CardBase {
-  const gpuDram =
-    input.gpu === null || input.dram === null ? null : input.gpu + input.dram;
+  const gpuDram = sumOrNull(input.gpu, input.dram);
   return {
     accent: "power",
     title: "Power & Sensors",
@@ -351,7 +347,7 @@ export function networkCard(input: {
   processes: readonly LiveProcess[] | null;
 }): CardBase {
   const { rx, tx } = input.total;
-  const bits = (v: number | null) => (v === null ? null : v * 8);
+  const bits = (v: number | null) => scaleOrNull(v, 8);
   // The ring is the primary interface against its own link; the figures
   // and bars are every interface's traffic.
   const ringDown = ratio(bits(input.primary?.rx ?? null), input.linkBps);
@@ -409,22 +405,16 @@ function interfacesBody(
   interfaces: readonly IfaceRate[],
   rate: RateUnits
 ): CardBase["body"] {
-  const total = (i: IfaceRate) =>
-    i.rx === null || i.tx === null ? null : i.rx + i.tx;
+  const total = (i: IfaceRate) => sumOrNull(i.rx, i.tx);
   return {
     kind: "list",
     ariaLabel: "Interfaces by total rate",
-    rows: interfaces
-      .map((i) => ({ i, v: total(i) }))
-      .filter((r): r is { i: IfaceRate; v: number } => r.v !== null)
-      .sort((a, b) => b.v - a.v)
-      .slice(0, 5)
-      .map(({ i, v }) => ({
-        id: i.iface,
-        initial: i.iface.slice(0, 1),
-        name: i.iface,
-        value: formatRate(v, { units: rate }),
-      })),
+    rows: topBy(interfaces, total, 5).map(({ row: i, value: v }) => ({
+      id: i.iface,
+      initial: i.iface.slice(0, 1),
+      name: i.iface,
+      value: formatRate(v, { units: rate }),
+    })),
   };
 }
 

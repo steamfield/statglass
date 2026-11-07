@@ -4,6 +4,7 @@ import type {
   Settings,
   TemperatureUnit,
 } from "@core/generated/bindings";
+import { PageHeader } from "~/components/page-header";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Switch } from "~/components/ui/switch";
@@ -71,7 +72,7 @@ export default function SettingsRoute() {
   const write = useWriteSettings();
   return (
     <div className="flex flex-col gap-5">
-      <h1 className="font-[590] text-[22px] tracking-[-0.022em]">Settings</h1>
+      <PageHeader title="Settings" />
       {settings && (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] items-start gap-5">
           <div className="flex flex-col gap-5">

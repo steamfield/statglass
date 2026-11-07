@@ -167,21 +167,11 @@ describe("ModuleToggleList", () => {
       <ModuleToggleList
         onToggle={onToggle}
         modules={[
-          {
-            id: "cpu",
-            label: "CPU",
-            description: "Load, clusters, per-core",
-            accent: "cpu",
-            enabled: true,
-            available: true,
-          },
+          { id: "cpu", enabled: true, absence: null },
           {
             id: "battery",
-            label: "Battery",
-            description: "Charge, health, cycles",
-            accent: "battery",
             enabled: true,
-            available: false,
+            absence: "Not present on this Mac",
           },
         ]}
       />

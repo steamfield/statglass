@@ -25,6 +25,7 @@ import { useLocalUpdateStatus } from "~/hooks/use-local-update-status";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
+import { StatList } from "~/widgets/stat-list";
 import { version } from "../../../../../package.json";
 import { AddHostDialog, HOST_INPUT } from "./_components/add-host-dialog";
 import { HostAgentActions } from "./_components/host-agent-actions";
@@ -345,28 +346,27 @@ export default function HostsRoute() {
               )}
               <HostVersion remote={remote} localTarget={localTarget} />
             </div>
-            <dl className="figures flex gap-5 text-[12px]">
-              <div>
-                <dt className="text-muted-foreground">CPU</dt>
-                <dd className="min-w-10">
-                  {formatPercent(
+            <StatList
+              layout="grid"
+              items={[
+                {
+                  label: "CPU",
+                  value: formatPercent(
                     remote.status.state === "connected"
                       ? remote.status.cpu_pct
                       : null
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Memory</dt>
-                <dd className="min-w-10">
-                  {formatPercent(
+                  ),
+                },
+                {
+                  label: "Memory",
+                  value: formatPercent(
                     remote.status.state === "connected"
                       ? remote.status.memory_pct
                       : null
-                  )}
-                </dd>
-              </div>
-            </dl>
+                  ),
+                },
+              ]}
+            />
             <div className="flex gap-2">
               <HostAgentActions remote={remote} onError={setError} />
               {remote.status.state !== "connected" &&

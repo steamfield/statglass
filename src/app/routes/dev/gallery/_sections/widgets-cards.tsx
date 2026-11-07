@@ -31,8 +31,7 @@ import { ResidencyBar } from "~/widgets/residency-bar";
 import { RingGauge } from "~/widgets/ring-gauge";
 import { RingStatCard } from "~/widgets/ring-stat-card";
 import { StackBar } from "~/widgets/stack-bar";
-import { StatGrid } from "~/widgets/stat-grid";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import { StatusPill } from "~/widgets/status-pill";
 import { StreamArea } from "~/widgets/stream-area";
 import { GalleryItem } from "../_components/gallery-item";
@@ -110,7 +109,7 @@ export function WidgetsCardsSection() {
             </ModuleCard>
             <ModuleCard accent="gpu" title="GPU" value="36%">
               <StreamArea {...POPOVER_GPU_STREAM} />
-              <StatGrid {...GPU_STAT_GRID} />
+              <StatList {...GPU_STAT_GRID} />
             </ModuleCard>
             <ModuleCard
               accent="power"
@@ -119,7 +118,7 @@ export function WidgetsCardsSection() {
               unit=" system"
             >
               <StackBar {...POWER_STACK_BAR} />
-              <StatGrid {...POWER_STAT_GRID} />
+              <StatList {...POWER_STAT_GRID} />
             </ModuleCard>
             <ModuleCard accent="battery" title="Battery" value="87%">
               <InlineBar
@@ -128,7 +127,7 @@ export function WidgetsCardsSection() {
                 fraction={0.87}
                 layout="wide"
               />
-              <StatGrid {...BATTERY_STAT_GRID} />
+              <StatList {...BATTERY_STAT_GRID} />
             </ModuleCard>
           </div>
         </GalleryItem>
@@ -208,10 +207,10 @@ export function WidgetsCardsSection() {
         </div>
       </div>
 
-      <GalleryItem name="StatStrip" usedIn="CPU · Power & Sensors">
+      <GalleryItem name="StatList" usedIn="CPU · Power & Sensors">
         <div className="flex flex-col gap-6">
-          <StatStrip {...CPU_STAT_STRIP} />
-          <StatStrip {...BATTERY_STAT_STRIP} />
+          <StatList {...CPU_STAT_STRIP} />
+          <StatList {...BATTERY_STAT_STRIP} />
         </div>
       </GalleryItem>
 

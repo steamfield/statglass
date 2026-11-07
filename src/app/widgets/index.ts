@@ -72,15 +72,10 @@ export {
   type StackBarSegment,
 } from "./stack-bar";
 export {
-  StatGrid,
-  type StatGridItem,
-  type StatGridProps,
-} from "./stat-grid";
-export {
-  StatStrip,
-  type StatStripItem,
-  type StatStripProps,
-} from "./stat-strip";
+  StatList,
+  type StatListItem,
+  type StatListProps,
+} from "./stat-list";
 export { StatusPill, type StatusPillProps } from "./status-pill";
 export { StreamArea, type StreamAreaProps } from "./stream-area";
 export { TrayPreview, type TrayPreviewProps } from "./tray-preview";

@@ -1,4 +1,5 @@
 import { type ReactNode, useId } from "react";
+import { cn } from "~/lib/utils";
 
 export interface SettingsRowProps {
   label: string;
@@ -44,10 +45,17 @@ export function SettingsRow({
 export function SettingsPanel({
   title,
   after,
+  overflow = "clip",
   children,
 }: {
   title: string;
   after?: ReactNode;
+  /**
+   * `visible` leaves the panel unclipped, so a `sticky` row inside it can
+   * stick to the page scroll (the menu bar preview); that row rounds its
+   * own top corners.
+   */
+  overflow?: "clip" | "visible";
   children?: ReactNode;
 }) {
   const titleId = useId();
@@ -56,7 +64,12 @@ export function SettingsPanel({
       <h2 id={titleId} className="font-[590] text-[14px]">
         {title}
       </h2>
-      <div className="overflow-hidden rounded-card border border-border bg-card">
+      <div
+        className={cn(
+          "rounded-card border border-border bg-card",
+          overflow === "clip" && "overflow-hidden"
+        )}
+      >
         {children}
       </div>
       {after}

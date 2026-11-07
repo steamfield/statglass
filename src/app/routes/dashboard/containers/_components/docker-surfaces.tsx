@@ -1,6 +1,10 @@
 import { errorTone } from "@core/command-error";
-import { formatBytes, formatPercent } from "@core/format";
-import { ChevronDown } from "lucide-react";
+import {
+  formatBytes,
+  formatClockSeconds,
+  formatPercent,
+  MISSING,
+} from "@core/format";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -52,7 +56,7 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
       >
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
           <span className="figures whitespace-nowrap">
-            {snapshot.aggregate.cpu_cores?.toFixed(2) ?? "—"} cores ·{" "}
+            {snapshot.aggregate.cpu_cores?.toFixed(2) ?? MISSING} cores ·{" "}
             {formatBytes(snapshot.aggregate.working_set_bytes)}
           </span>
           <MeterTrack
@@ -67,60 +71,43 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
       </ModuleCard>
     );
   return (
-    <section
-      aria-label="Container glance"
-      className="relative rounded-card border border-border bg-card-vibrant p-3"
+    <ModuleCard
+      onToggle={toggle}
+      accent="cpu"
+      title="Containers"
+      href="/dashboard/containers"
+      onOpen={(route) => void transport.openDashboard(route)}
+      value={`${snapshot.aggregate.running} running`}
+      footer={
+        leader && (
+          <button
+            type="button"
+            className="block self-start rounded-control text-left text-[11px] text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() =>
+              void transport.openDashboard(
+                containerPath(leader.engine_id, leader.id)
+              )
+            }
+          >
+            {snapshot.status === "connected"
+              ? "Highest CPU"
+              : "Last observed highest CPU"}{" "}
+            among monitored: {leader.name} ·{" "}
+            {formatPercent(leader.metrics.cpu_pct)}
+          </button>
+        )
+      }
     >
-      <button
-        type="button"
-        onClick={() => void transport.openDashboard("/dashboard/containers")}
-        className="block w-full rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span className="flex justify-between text-[12px]">
-          <span className="pl-5">Containers</span>
-          <span className="figures">{snapshot.aggregate.running} running</span>
+      <span className="figures block text-[11px] text-muted-foreground">
+        {snapshot.aggregate.cpu_cores?.toFixed(2) ?? MISSING} cores ·{" "}
+        {formatBytes(snapshot.aggregate.working_set_bytes)} ·{" "}
+        {statusLabel[snapshot.status]} ·{" "}
+        {snapshot.aggregate.partial ? "Partial coverage" : "Complete coverage"}
+        <span className="mt-1 block">
+          Observed {formatClockSeconds(snapshot.observed_ms)}
         </span>
-        <span className="figures mt-1 block text-[11px] text-muted-foreground">
-          {snapshot.aggregate.cpu_cores?.toFixed(2) ?? "—"} cores ·{" "}
-          {formatBytes(snapshot.aggregate.working_set_bytes)} ·{" "}
-          {statusLabel[snapshot.status]} ·{" "}
-          {snapshot.aggregate.partial
-            ? "Partial coverage"
-            : "Complete coverage"}
-          <span className="mt-1 block">
-            Observed {new Date(snapshot.observed_ms).toLocaleTimeString()}
-          </span>
-        </span>
-      </button>
-      {toggle && (
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label="Collapse Containers"
-          aria-expanded
-          className="absolute top-3 left-2 flex size-5 items-center justify-center rounded-control text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ChevronDown className="size-3.5" />
-        </button>
-      )}
-      {leader && (
-        <button
-          type="button"
-          className="mt-2 block rounded-control text-left text-[11px] text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() =>
-            void transport.openDashboard(
-              containerPath(leader.engine_id, leader.id)
-            )
-          }
-        >
-          {snapshot.status === "connected"
-            ? "Highest CPU"
-            : "Last observed highest CPU"}{" "}
-          among monitored: {leader.name} ·{" "}
-          {formatPercent(leader.metrics.cpu_pct)}
-        </button>
-      )}
-    </section>
+      </span>
+    </ModuleCard>
   );
 }
 /** Expanded Docker's action buttons use a different shell, so restore its toggle after swapping. */

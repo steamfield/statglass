@@ -1,5 +1,17 @@
-import { matchProcessQuery } from "@core/app-search";
+import { matchProcessQuery, matchText } from "@core/app-search";
 import { countNoun } from "@core/format";
+
+describe("matchText", () => {
+  it("matches a case-insensitive substring of any field", () => {
+    expect(matchText(" WEB ", "nginx", "my-web-app")).toBe(true);
+    expect(matchText("redis", "nginx", null, undefined)).toBe(false);
+  });
+
+  it("matches everything for a blank query", () => {
+    expect(matchText("  ", "nginx")).toBe(true);
+    expect(matchText("", null)).toBe(true);
+  });
+});
 
 describe("matchProcessQuery", () => {
   const xcode = { name: "Xcode", pid: 1840, ports: [5432, 8080] };

@@ -1,4 +1,6 @@
+import { formatPercent } from "@core/format";
 import type { ProcessesAt } from "@core/generated/bindings";
+import { topBy } from "@core/top-by";
 import type { CSSProperties } from "react";
 import {
   ChartTooltipShell,
@@ -44,9 +46,7 @@ export function CrosshairTooltip({
   style,
 }: CrosshairTooltipProps) {
   const local = useIsLocalHost();
-  const top = [...(processes?.rows ?? [])]
-    .sort((a, b) => (b.cpu_pct ?? -1) - (a.cpu_pct ?? -1))
-    .slice(0, TOP);
+  const top = topBy(processes?.rows ?? [], (p) => p.cpu_pct, TOP);
   return (
     <ChartTooltipShell className="top-0.5 w-[276px]" style={style}>
       <div className="flex items-baseline justify-between">
@@ -87,7 +87,7 @@ export function CrosshairTooltip({
             </span>
           ) : (
             <div className="flex flex-col gap-[5px]">
-              {top.map((p) => (
+              {top.map(({ row: p, value: cpu }) => (
                 <div
                   key={`${p.pid}:${p.name}`}
                   className="flex items-center gap-2 text-[12px]"
@@ -96,9 +96,7 @@ export function CrosshairTooltip({
                   <span className="flex-1 truncate font-normal text-fg-subtle">
                     {p.name}
                   </span>
-                  <span className="figures">
-                    {p.cpu_pct === null ? "—" : `${Math.round(p.cpu_pct)}%`}
-                  </span>
+                  <span className="figures">{formatPercent(cpu)}</span>
                 </div>
               ))}
             </div>

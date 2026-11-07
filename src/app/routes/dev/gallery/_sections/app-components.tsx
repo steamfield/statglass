@@ -272,62 +272,13 @@ const PROCESS_ROWS: LiveProcess[] = PROCS.map(
 
 // Onboarding modules (Battery shown as absent to exercise that state).
 const MODULES: ModuleToggleItem[] = [
-  {
-    id: "cpu",
-    label: "CPU",
-    description: "Load, clusters, per-core",
-    accent: "cpu",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "gpu",
-    label: "GPU",
-    description: "Utilization and frequency",
-    accent: "gpu",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "memory",
-    label: "Memory",
-    description: "Pressure, composition, swap",
-    accent: "mem",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "power",
-    label: "Power & Sensors",
-    description: "Watts, SoC zones, fans",
-    accent: "power",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "network",
-    label: "Network",
-    description: "Rates per interface",
-    accent: "net",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "disk",
-    label: "Disk",
-    description: "Throughput and capacity",
-    accent: "disk",
-    enabled: false,
-    available: true,
-  },
-  {
-    id: "battery",
-    label: "Battery",
-    description: "Charge, health, cycles",
-    accent: "battery",
-    enabled: true,
-    available: false,
-  },
+  { id: "cpu", enabled: true, absence: null },
+  { id: "gpu", enabled: true, absence: null },
+  { id: "memory", enabled: true, absence: null },
+  { id: "power", enabled: true, absence: null },
+  { id: "network", enabled: true, absence: null },
+  { id: "disk", enabled: false, absence: null },
+  { id: "battery", enabled: true, absence: "Not present on this Mac" },
 ];
 
 const TRAY: TrayReadings = {

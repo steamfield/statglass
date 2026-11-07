@@ -76,8 +76,11 @@ describe("modulePresence", () => {
   });
 
   it("tells absent hardware from a collector that cannot run", () => {
-    expect(modulePresence("not_present", true)).toBe("not_present");
-    expect(modulePresence(undefined, true)).toBe("not_present");
+    expect(modulePresence("not_present", true)).toBe("absent");
+    expect(modulePresence(undefined, true)).toBe("absent");
+    expect(modulePresence({ unsupported: "missing_entitlement" }, true)).toBe(
+      "edition"
+    );
     expect(modulePresence({ unsupported: "no_hardware" }, true)).toBe(
       "unavailable"
     );

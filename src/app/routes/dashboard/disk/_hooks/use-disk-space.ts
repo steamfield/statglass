@@ -8,6 +8,7 @@ import { diskSpaceKeys, sameSpaceReport } from "@core/query-keys";
 import { CommandFailure, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { holdWhile } from "~/lib/queries/hold";
 import { HALF_MINUTE_POLL_MS } from "~/lib/queries/timing";
@@ -201,12 +202,11 @@ export function useSpaceItemActions(report: number | null, local: boolean) {
   const transport = useTransport();
   const host = useHostId();
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const { copy, text: copied } = useCopyToClipboard("disk-space");
   const reveal = useCallback(
     async (target: SpaceTarget) => {
       if (report === null) return;
       setError(null);
-      setCopied(null);
       const r = await transport.diskSpaceReveal(report, target);
       if (r.status === "error") setError(message(new CommandFailure(r.error)));
     },
@@ -216,18 +216,21 @@ export function useSpaceItemActions(report: number | null, local: boolean) {
     async (target: SpaceTarget) => {
       if (report === null) return;
       setError(null);
-      setCopied(null);
+      let path: string;
       try {
-        const path = await unwrap(
-          transport.diskSpacePath(host, report, target)
-        );
-        await navigator.clipboard.writeText(path);
-        setCopied(path);
+        path = await unwrap(transport.diskSpacePath(host, report, target));
       } catch (e) {
         setError(message(e));
+        return;
       }
+      if (!(await copy(path))) setError("Couldn't copy the path.");
     },
-    [host, report, transport]
+    [copy, host, report, transport]
   );
-  return { reveal: local ? reveal : null, copyPath, error, copied };
+  return {
+    reveal: local ? reveal : null,
+    copyPath,
+    error,
+    copied,
+  };
 }

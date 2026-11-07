@@ -44,7 +44,7 @@ import { MeterTrack } from "~/widgets/meter-track";
 import { MirrorBars } from "~/widgets/mirror-bars";
 import { ModuleCard } from "~/widgets/module-card";
 import { StackBar } from "~/widgets/stack-bar";
-import { StatGrid } from "~/widgets/stat-grid";
+import { StatList } from "~/widgets/stat-list";
 import { StreamArea } from "~/widgets/stream-area";
 
 import { CompactBattery, CompactPower } from "./compact-battery";
@@ -237,7 +237,8 @@ export function LiveGpuCard({ compact = false, onToggle }: PresentationProps) {
         ariaLabel={`GPU, last ${windowWords(windowMs)}, ${formatPercent(gpu.util)}`}
       />
       {!compact && (
-        <StatGrid
+        <StatList
+          layout="grid"
           items={[
             { label: "Freq", value: formatGhz(gpu.freqHz) },
             { label: "Power", value: formatWatts(gpu.powerW) },
@@ -290,17 +291,18 @@ export function LivePowerCard({
               seg2("rest", "Rest of system", rest, frac(rest), "track"),
             ]}
           />
-          <StatGrid
+          <StatList
+            layout="grid"
             items={[
-              { label: "CPU", value: formatWatts(p.cpu), step: 1 },
-              { label: "GPU", value: formatWatts(p.gpu), step: 2 },
+              { label: "CPU", value: formatWatts(p.cpu), swatch: 1 },
+              { label: "GPU", value: formatWatts(p.gpu), swatch: 2 },
               {
                 label: "ANE",
                 value: formatWatts(p.ane),
-                step: "hatch",
+                swatch: "hatch",
                 muted: !p.ane,
               },
-              { label: "DRAM", value: formatWatts(p.dram), step: 3 },
+              { label: "DRAM", value: formatWatts(p.dram), swatch: 3 },
             ]}
           />
           {showBattery && <BatteryDetails />}
@@ -380,7 +382,8 @@ export function LiveNetworkCard({
       aside={compact ? undefined : networkAddresses(lan, publicIp)}
     >
       {!compact && (
-        <StatGrid
+        <StatList
+          layout="grid"
           items={[
             { label: "↑ Upload", ...rate(txNow) },
             { label: "↓ Download", ...rate(rxNow) },
@@ -448,7 +451,8 @@ function BatteryDetails() {
         fill="var(--color-battery)"
         height="h-1.5"
       />
-      <StatGrid
+      <StatList
+        layout="grid"
         items={[
           { label: "Remaining", value: remaining },
           { label: "Health", value: formatPercent(b.health) },

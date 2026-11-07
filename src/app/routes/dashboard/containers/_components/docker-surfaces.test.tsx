@@ -24,7 +24,7 @@ it("shows unavailable state independently of partial coverage and opens the moni
   const open = vi.spyOn(transport, "openDashboard");
   const result = renderWithProviders(<DockerPopoverSummary />, { transport });
   const glance = await screen.findByRole("region", {
-    name: "Container glance",
+    name: "Containers",
   });
   expect(glance).toHaveTextContent("Unavailable · Partial coverage");
   expect(glance).toHaveTextContent("Observed");

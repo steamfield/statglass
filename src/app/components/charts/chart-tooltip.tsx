@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode, Ref } from "react";
 import { cn } from "~/lib/utils";
+import { Swatch } from "~/widgets/legend";
 
 export interface ChartTooltipShellProps {
   ref?: Ref<HTMLDivElement>;
@@ -40,11 +41,5 @@ export function ChartTooltipShell({
 
 /** The 8 px color mark in front of a series row. */
 export function SeriesSwatch({ color }: { color: string }) {
-  return (
-    <span
-      aria-hidden
-      className="inline-block size-2 shrink-0 rounded-mark"
-      style={{ background: color }}
-    />
-  );
+  return <Swatch step="none" color={color} />;
 }

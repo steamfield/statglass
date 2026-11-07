@@ -8,7 +8,7 @@ import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 
 const KEY = "mem.swap_used";
 const KEYS = [KEY];
@@ -38,7 +38,7 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
         compactHeader
         className="gap-3"
       >
-        <StatStrip
+        <StatList
           items={[
             { label: "Used", value: fmt(v[KEY]) },
             { label: "In", value: pages(v["mem.swap_in"]), unit: "pages/s" },

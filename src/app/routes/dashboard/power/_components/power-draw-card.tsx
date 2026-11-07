@@ -21,7 +21,7 @@ import { useHeld, useLayout } from "~/hooks/use-ring";
 import { usePowerComponents } from "~/stores/live-selectors";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { Legend, type LegendItem } from "~/widgets/legend";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import type { StreamAreaProps } from "~/widgets/stream-area";
 import {
   type AppLine,
@@ -121,7 +121,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
     <div {...brushScopeProps} className="contents">
       <SectionCard accent="power" title={`Power draw, ${span}`} hiddenTitle>
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
-          <StatStrip
+          <StatList
             hero={{ label: "System", value: formatWatts(system) }}
             items={
               components

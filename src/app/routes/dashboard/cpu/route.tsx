@@ -1,14 +1,11 @@
 import { formatPercent } from "@core/format";
 import { useNavigate } from "react-router";
-import { PageHeader } from "~/components/page-header";
+import { ModulePage } from "~/components/module-page";
 import {
   UsageAppsCard,
   type UsageTableConfig,
 } from "~/components/usage-apps-card";
-import { WindowControl } from "~/components/window-control";
-import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
-import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { CoreLoadCard } from "./_components/core-load-card";
 import { TotalCard } from "./_components/total-card";
 import { clusterViews, coreCounts } from "./_lib/clusters";
@@ -24,47 +21,40 @@ export default function CpuRoute() {
   const clusters = clusterViews(info?.cpu_topology ?? []);
   const counts = info ? coreCounts(info) : null;
   const coreCount = counts ? counts.performance + counts.efficiency : null;
-  const windowMs = useChartWindow()?.windowMs ?? null;
 
   return (
-    <ChartRangeProvider>
-      <div className="flex flex-col gap-4">
-        <PageHeader
-          title="CPU"
-          subtitle={
-            info &&
-            counts &&
-            (counts.efficiency === 0 ? (
-              // One kind of core (`uniform`, D-116) has no split to name.
-              <>
-                {info.chip ?? "Unknown chip"} ·{" "}
-                <span className="figures">{counts.performance}</span> cores
-              </>
-            ) : (
-              <>
-                {info.chip ?? "Unknown chip"} ·{" "}
-                <span className="figures">{counts.performance}</span>{" "}
-                performance +{" "}
-                <span className="figures">{counts.efficiency}</span> efficiency
-                cores
-              </>
-            ))
-          }
-          actions={<WindowControl />}
-        />
-        <ChartRangeNotice />
-        {windowMs !== null && (
+    <ModulePage
+      title="CPU"
+      subtitle={
+        info &&
+        counts &&
+        (counts.efficiency === 0 ? (
+          // One kind of core (`uniform`, D-116) has no split to name.
           <>
-            <TotalCard windowMs={windowMs} />
-            <CoreLoadCard clusters={clusters} windowMs={windowMs} />
-            <UsageAppsCard
-              windowMs={windowMs}
-              config={cpuTable(coreCount || null)}
-            />
+            {info.chip ?? "Unknown chip"} ·{" "}
+            <span className="figures">{counts.performance}</span> cores
           </>
-        )}
-      </div>
-    </ChartRangeProvider>
+        ) : (
+          <>
+            {info.chip ?? "Unknown chip"} ·{" "}
+            <span className="figures">{counts.performance}</span> performance +{" "}
+            <span className="figures">{counts.efficiency}</span> efficiency
+            cores
+          </>
+        ))
+      }
+    >
+      {(windowMs) => (
+        <>
+          <TotalCard windowMs={windowMs} />
+          <CoreLoadCard clusters={clusters} windowMs={windowMs} />
+          <UsageAppsCard
+            windowMs={windowMs}
+            config={cpuTable(coreCount || null)}
+          />
+        </>
+      )}
+    </ModulePage>
   );
 }
 

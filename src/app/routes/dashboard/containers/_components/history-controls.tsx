@@ -1,4 +1,5 @@
 import { HistoryRangeControl } from "~/components/history-range-control";
+import { SegmentedControl } from "~/components/segmented-control";
 import { DOCKER_RANGES, type DockerRange } from "../_lib/history-params";
 
 export { DOCKER_RANGES, type DockerRange } from "../_lib/history-params";
@@ -24,11 +25,15 @@ export function HistoryControls({
 }) {
   return (
     <HistoryRangeControl
-      options={RANGES}
-      value={windowMs === DOCKER_RANGES[range] ? range : ""}
-      onChange={(value) => onRange(value as DockerRange)}
+      picker={
+        <SegmentedControl
+          options={RANGES}
+          value={windowMs === DOCKER_RANGES[range] ? range : ""}
+          onChange={(value) => onRange(value as DockerRange)}
+          ariaLabel="Container history range"
+        />
+      }
       live={end === null}
-      ariaLabel="Container history range"
       previousLabel="Previous container range"
       nextLabel="Next container range"
       onPrevious={() => onEnd((end ?? now) - windowMs)}

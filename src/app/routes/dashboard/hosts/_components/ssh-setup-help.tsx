@@ -4,36 +4,24 @@ import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
+import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
 import { useTransport } from "~/lib/transport-context";
 
 export function Command({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState(false);
+  const { status, copy } = useCopyToClipboard("ssh-setup");
   return (
     <div className="grid gap-1">
       <pre className="select-text whitespace-pre-wrap break-all rounded-control bg-muted p-2 font-sans text-[12px]">
         {text}
       </pre>
       <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(text);
-              setCopied(true);
-              setError(false);
-            } catch {
-              setError(true);
-            }
-          }}
-        >
-          {copied ? "Copy again" : "Copy"}
+        <Button size="sm" variant="ghost" onClick={() => void copy(text)}>
+          Copy
         </Button>
         <span role="status">
-          {error
+          {status === "failed"
             ? "Could not copy. Select the text and copy it manually."
-            : copied
+            : status === "copied"
               ? "Copied"
               : ""}
         </span>

@@ -1,3 +1,4 @@
+import { matchText } from "@core/app-search";
 import type {
   DockerStorageKind,
   DockerStorageResource,
@@ -20,15 +21,19 @@ export function storageRows(
   category: string,
   age: string
 ) {
-  const needle = query.trim().toLocaleLowerCase();
   return (
     resources
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
       .filter((row) => {
         if (
-          !`${row.name} ${row.id} ${row.project ?? ""} ${row.database ?? ""} ${row.references.join(" ")}`
-            .toLocaleLowerCase()
-            .includes(needle)
+          !matchText(
+            query,
+            row.name,
+            row.id,
+            row.project,
+            row.database,
+            ...row.references
+          )
         )
           return false;
         if (category !== "all" && row.kind !== category) return false;

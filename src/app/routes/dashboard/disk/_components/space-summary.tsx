@@ -5,7 +5,7 @@ import { Button } from "~/components/ui/button";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useNow } from "~/hooks/use-now";
 import { MeterTrack } from "~/widgets/meter-track";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import {
   agoLabel,
   elapsedLabel,
@@ -101,7 +101,7 @@ export function SpaceSummary({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <StatStrip
+        <StatList
           accent="disk"
           hero={{
             label: "Used",

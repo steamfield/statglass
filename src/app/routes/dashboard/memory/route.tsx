@@ -1,15 +1,12 @@
 import { formatBytes, MISSING, marketingGb } from "@core/format";
 import { useMemo } from "react";
-import { PageHeader } from "~/components/page-header";
+import { ModulePage } from "~/components/module-page";
 import {
   UsageAppsCard,
   type UsageTableConfig,
 } from "~/components/usage-apps-card";
-import { WindowControl } from "~/components/window-control";
-import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useUnits } from "~/hooks/use-units";
-import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { CompositionCard } from "./_components/composition-card";
 import { PressureCard } from "./_components/pressure-card";
 import { SwapCard } from "./_components/swap-card";
@@ -26,7 +23,6 @@ export default function MemoryRoute() {
   const info = useHostRecord()?.info;
   const mac = info === undefined || info.os === "mac_os";
   const totalGb = info ? marketingGb(info.mem_total_bytes) : null;
-  const windowMs = useChartWindow()?.windowMs ?? null;
   const bytes = useUnits().bytes;
   // A Linux host's MemTotal as measured, not a marketing size.
   const totalLabel =
@@ -65,45 +61,37 @@ export default function MemoryRoute() {
   }, [bytes, mac]);
 
   return (
-    <ChartRangeProvider>
-      <div className="flex flex-col gap-4">
-        <PageHeader
-          title="Memory"
-          subtitle={
-            totalGb !== null &&
-            (mac ? (
-              <>
-                <span className="figures">{totalGb}</span> GB unified
-              </>
-            ) : (
-              <span className="figures">{totalLabel}</span>
-            ))
-          }
-          actions={<WindowControl />}
-        />
-        <ChartRangeNotice />
-        {windowMs !== null && (
+    <ModulePage
+      title="Memory"
+      subtitle={
+        totalGb !== null &&
+        (mac ? (
           <>
-            <CompositionCard
-              totalLabel={totalLabel}
-              totalBytes={info?.mem_total_bytes ?? null}
-              windowMs={windowMs}
-            />
-            <div className="flex flex-col gap-4">
-              {mac || !info ? (
-                <PressureCard windowMs={windowMs} />
-              ) : (
-                <UsedCard
-                  windowMs={windowMs}
-                  totalBytes={info.mem_total_bytes}
-                />
-              )}
-              <SwapCard windowMs={windowMs} />
-            </div>
-            <UsageAppsCard windowMs={windowMs} config={table} />
+            <span className="figures">{totalGb}</span> GB unified
           </>
-        )}
-      </div>
-    </ChartRangeProvider>
+        ) : (
+          <span className="figures">{totalLabel}</span>
+        ))
+      }
+    >
+      {(windowMs) => (
+        <>
+          <CompositionCard
+            totalLabel={totalLabel}
+            totalBytes={info?.mem_total_bytes ?? null}
+            windowMs={windowMs}
+          />
+          <div className="flex flex-col gap-4">
+            {mac || !info ? (
+              <PressureCard windowMs={windowMs} />
+            ) : (
+              <UsedCard windowMs={windowMs} totalBytes={info.mem_total_bytes} />
+            )}
+            <SwapCard windowMs={windowMs} />
+          </div>
+          <UsageAppsCard windowMs={windowMs} config={table} />
+        </>
+      )}
+    </ModulePage>
   );
 }

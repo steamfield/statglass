@@ -99,6 +99,34 @@ it("sorts the complete process set before slicing the top ten and searching", as
   expect(processNames()).toEqual(["process1", "process10", "process11"]);
 });
 
+it("searches like Processes: a PID or listening port by its leading digits", async () => {
+  const r = list();
+  await screen.findByRole("table", { name: "Disk processes · Live" });
+  act(() =>
+    r.transport.push({
+      kind: "processes",
+      ts_ms: NOW,
+      rows: [
+        liveProcess({ pid: 1840, name: "Xcode", disk_read_bps: 1 }),
+        liveProcess({
+          pid: 77,
+          name: "postgres",
+          disk_read_bps: 1,
+          ports: [5432],
+        }),
+      ],
+    })
+  );
+  const search = (value: string) =>
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value } });
+  search("18");
+  expect(processNames()).toEqual(["Xcode"]);
+  search("40");
+  expect(processNames()).toEqual([]);
+  search("543");
+  expect(processNames()).toEqual(["postgres"]);
+});
+
 it.each(["pointer", "focus"])(
   "holds live order through %s, updates values and applies sorting immediately",
   async (gesture) => {

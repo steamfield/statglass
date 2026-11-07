@@ -10,6 +10,7 @@ import {
 } from "@core/format";
 import { constructRow, type Table } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
+import { OtherChip } from "~/components/app-table";
 import {
   columnHelper,
   DataTable,
@@ -289,10 +290,7 @@ function OtherRow({
 function OtherName({ label }: { label: string }) {
   return (
     <span className="inline-flex items-center gap-2">
-      <span
-        aria-hidden
-        className="inline-block size-4 flex-none rounded-[4px] border border-border-strong/50 border-dashed"
-      />
+      <OtherChip />
       <span className="truncate">{label}</span>
     </span>
   );

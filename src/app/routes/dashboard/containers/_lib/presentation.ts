@@ -1,3 +1,4 @@
+import { matchText } from "@core/app-search";
 import { commandError, commandErrorText } from "@core/command-error";
 import type {
   DockerContainer,
@@ -86,13 +87,10 @@ export function filterContainers(
   query: string,
   state: string
 ) {
-  const needle = query.trim().toLocaleLowerCase();
   return rows.filter(
     (row) =>
       (state === "all" || row.lifecycle === state) &&
-      `${row.name}\n${row.image}\n${row.project ?? ""}`
-        .toLocaleLowerCase()
-        .includes(needle)
+      matchText(query, row.name, row.image, row.project)
   );
 }
 

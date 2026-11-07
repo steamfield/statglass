@@ -9,16 +9,13 @@ import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
 import { dockerErrorMessage } from "../_lib/presentation";
 
+/** The engine list inside the Monitoring dialog. */
 export function EngineChooser({
   settings,
   onChange,
-  onClose,
-  embedded = false,
 }: {
-  embedded?: boolean;
   settings: DockerSettings;
   onChange: (snapshot: DockerSnapshot) => void;
-  onClose: () => void;
 }) {
   const transport = useTransport();
   const [engines, setEngines] = useState<DockerEngine[] | null>(null);
@@ -51,10 +48,8 @@ export function EngineChooser({
         enabled: true,
         selected_engine: engine.socket,
       });
-      if (result.status === "ok") {
-        onChange(result.data);
-        onClose();
-      } else setError(dockerErrorMessage(result.error));
+      if (result.status === "ok") onChange(result.data);
+      else setError(dockerErrorMessage(result.error));
     } catch (e) {
       console.error("[docker] docker_configure rejected", e);
       setError(dockerErrorMessage(e));
@@ -63,20 +58,8 @@ export function EngineChooser({
     }
   };
   return (
-    <section
-      aria-label="Choose Docker engine"
-      className={
-        embedded ? "" : "rounded-card border border-border bg-card p-4"
-      }
-    >
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[14px]">Local Docker engines</h2>
-        {!embedded && (
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        )}
-      </div>
+    <section aria-label="Choose Docker engine">
+      <h2 className="mb-3 text-[14px]">Local Docker engines</h2>
       <p className="mb-3 text-[12px] text-muted-foreground">
         Selection is independent of the Docker CLI context. Switching preserves
         the previous engine's history.

@@ -3,7 +3,7 @@ import type { MetricStat } from "@core/generated/bindings";
 import { useMemo } from "react";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useSeriesStats } from "~/hooks/use-series-stats";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 
 export interface RangeTotal {
   /** An unlabelled catalog metric (`cpu.total`). */
@@ -55,7 +55,7 @@ export function RangeTotalsStrip({
   );
   return (
     <div data-testid={testId}>
-      <StatStrip
+      <StatList
         items={totals.map((t) => {
           const stat = shown?.metrics.find((m) => m.metric === t.metric);
           const short =

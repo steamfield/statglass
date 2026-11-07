@@ -75,8 +75,17 @@ describe("moduleState", () => {
     });
     expect(moduleState(c, settings(), "power")).toBe("edition");
     expect(moduleState(c, settings(), "disk")).toBe("unavailable");
-    expect(unavailableText("edition")).toBe("Not available in this edition");
-    expect(unavailableText("unavailable")).toBe("Not available on this Mac");
-    expect(unavailableText("on")).toBeNull();
+    expect(unavailableText("edition", "host")).toBe(
+      "Not available in this edition"
+    );
+    expect(unavailableText("unavailable", "Mac")).toBe(
+      "Not available on this Mac"
+    );
+    expect(unavailableText("unavailable", "host")).toBe(
+      "Not available on this host"
+    );
+    expect(unavailableText("absent", "host")).toBe("Not present on this host");
+    expect(unavailableText("on", "Mac")).toBeNull();
+    expect(unavailableText("present", "Mac")).toBeNull();
   });
 });

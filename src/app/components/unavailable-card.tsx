@@ -1,22 +1,11 @@
 import {
-  MODULE_NAMES,
   type ModuleState,
   type UiModule,
   unavailableText,
 } from "@core/module-state";
 import { useHostNoun } from "~/hooks/use-host-record";
-import type { Accent } from "~/widgets/lib/accent";
+import { MODULE_META } from "~/widgets/lib/module-meta";
 import { ModuleCard } from "~/widgets/module-card";
-
-export const MODULE_ACCENT: Record<UiModule, Accent> = {
-  cpu: "cpu",
-  gpu: "gpu",
-  memory: "mem",
-  power: "power",
-  network: "net",
-  disk: "disk",
-  battery: "battery",
-};
 
 /**
  * A module the build cannot run here (plan 4.17): "Not available in this
@@ -39,8 +28,8 @@ export function UnavailableCard({
     <ModuleCard
       compact={compact ?? false}
       onToggle={onToggle}
-      accent={MODULE_ACCENT[module]}
-      title={MODULE_NAMES[module]}
+      accent={MODULE_META[module].accent}
+      title={MODULE_META[module].name}
     >
       <p className="m-0 font-normal text-[12px] text-muted-foreground">
         {unavailableText(state, noun) ?? "Not available"}

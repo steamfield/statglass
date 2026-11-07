@@ -19,11 +19,7 @@ it("shows the reason a selected engine could not be configured", async () => {
     },
   });
   const result = renderWithProviders(
-    <EngineChooser
-      settings={snapshot.data.settings}
-      onChange={() => {}}
-      onClose={() => {}}
-    />,
+    <EngineChooser settings={snapshot.data.settings} onChange={() => {}} />,
     { transport }
   );
   await result.user.click(
