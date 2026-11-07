@@ -7,6 +7,7 @@ import type {
 } from "@core/generated/bindings";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys, type RangeSpec } from "@core/query-keys";
+import { floorTo } from "@core/time-grid";
 import { type CommandFailure, unwrap } from "@core/transport";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -136,8 +137,7 @@ export function useTimelineData(
   // The start of the open bucket: changes once per bucket, not per frame.
   const liveEdge = useOpenEdge(true, bucketMs);
   const [mountedAt] = useState(() => clock());
-  const toMs =
-    view.endMs ?? liveEdge ?? Math.floor(mountedAt / bucketMs) * bucketMs;
+  const toMs = view.endMs ?? liveEdge ?? floorTo(mountedAt, bucketMs);
   const fromMs = toMs - spanMs;
 
   // Following Live, a bucket closing reads the newest slots again (Rust has

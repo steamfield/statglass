@@ -9,6 +9,7 @@ import { act } from "@testing-library/react";
 type Msg<K extends LiveMsg["kind"]> = Extract<LiveMsg, { kind: K }>;
 export type FrameMsg = Msg<"frame">;
 export type StatusMsg = Msg<"status">;
+export type LayoutMsg = Msg<"layout">;
 
 /** A sampling `status` at 1 s, running on an adapter; `over` replaces fields. */
 export function statusMsg(over: Partial<Omit<StatusMsg, "kind">> = {}) {
@@ -47,6 +48,15 @@ export function frameMsg(
   };
 }
 
+/** Layout `layoutNo` of `series`, every kind `gauge` unless `kinds` says otherwise. */
+export function layoutMsg(
+  layoutNo: number,
+  series: SeriesKey[],
+  kinds: MetricKind[] = series.map(() => "gauge")
+): LayoutMsg {
+  return { kind: "layout", layout_no: layoutNo, kinds, series };
+}
+
 /**
  * Push layout `layoutNo` of `series` (every kind `gauge` unless `kinds` says
  * otherwise) and return a pusher for frames on it. Each push runs in `act()`.
@@ -60,9 +70,7 @@ export function pushLayout(
     timeline = 0,
   }: { kinds?: MetricKind[]; timeline?: number } = {}
 ) {
-  act(() =>
-    transport.push({ kind: "layout", layout_no: layoutNo, kinds, series })
-  );
+  act(() => transport.push(layoutMsg(layoutNo, series, kinds)));
   return (tsMs: number, values: (number | null)[], held = values) =>
     act(() =>
       transport.push(frameMsg(layoutNo, tsMs, values, { held, timeline }))

@@ -14,7 +14,7 @@ import {
   type SeriesWindow,
   seriesWindow,
 } from "@core/live-state";
-import { parseLabels, sk } from "@core/series-key";
+import { keyByLabel, parseLabels, sk } from "@core/series-key";
 import { useShallow } from "zustand/react/shallow";
 import { type HostLiveState, useHost, useHostStore } from "./host-store";
 
@@ -57,14 +57,23 @@ function byLabel(
   return out;
 }
 
+/** `cpu.cluster.freq` of cluster `name`. */
+export const clusterFreqKey = keyByLabel("cpu.cluster.freq", "cluster");
+const P0_FREQ = clusterFreqKey("P0");
+const E0_FREQ = clusterFreqKey("E0");
+const PSI_SOME = sk("mem.psi", { stall: "some" });
+const volTotal = keyByLabel("disk.total", "vol");
+const volFree = keyByLabel("disk.free", "vol");
+const volUsed = keyByLabel("disk.used", "vol");
+
 export const selectCpu = (s: S) => ({
   total: held(s, "cpu.total"),
   user: held(s, "cpu.user"),
   system: held(s, "cpu.system"),
   /** Linux only (D-116): time idle with I/O outstanding. */
   iowait: held(s, "cpu.iowait"),
-  pFreqHz: held(s, sk("cpu.cluster.freq", { cluster: "P0" })),
-  eFreqHz: held(s, sk("cpu.cluster.freq", { cluster: "E0" })),
+  pFreqHz: held(s, P0_FREQ),
+  eFreqHz: held(s, E0_FREQ),
 });
 
 /** Per-core load keyed by core label ("P0", "E3"). */
@@ -89,7 +98,7 @@ export const selectMemory = (s: S) => ({
   pressureLevel: held(s, "mem.pressure_level"),
   swapUsed: held(s, "mem.swap_used"),
   /** Linux PSI (D-116): share of time some task stalled on memory. */
-  psiSome: held(s, sk("mem.psi", { stall: "some" })),
+  psiSome: held(s, PSI_SOME),
   /**
    * The layout has the macOS composition (`mem.app`); a Linux agent has
    * only used, cached and free (D-116).
@@ -162,9 +171,9 @@ export function selectVolumeCapacity(
 ): { total: number | null; free: number | null; used: number | null } {
   if (vol === null) return { total: null, free: null, used: null };
   return {
-    total: held(s, sk("disk.total", { vol })),
-    free: held(s, sk("disk.free", { vol })),
-    used: held(s, sk("disk.used", { vol })),
+    total: held(s, volTotal(vol)),
+    free: held(s, volFree(vol)),
+    used: held(s, volUsed(vol)),
   };
 }
 

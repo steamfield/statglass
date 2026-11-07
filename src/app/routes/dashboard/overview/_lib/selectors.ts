@@ -4,7 +4,7 @@
  * move them from re-rendering the card.
  */
 import type { HostLive } from "@core/live-state";
-import { parseLabels, sk } from "@core/series-key";
+import { keyByLabel, parseLabels } from "@core/series-key";
 import { held, keysOf } from "~/stores/live-selectors";
 
 /** `{ "rx|en0": 38.4e6, "tx|en0": 1.2e6, … }` for every interface. */
@@ -19,10 +19,12 @@ export function ifaceRates(s: HostLive): Record<string, number | null> {
   return out;
 }
 
+const linkRateKey = keyByLabel("net.link_rate", "iface");
+
 /** `net.link_rate` of `iface`, bits/s. */
 export function linkRate(s: HostLive, iface: string | null): number | null {
   if (iface === null) return null;
-  return held(s, sk("net.link_rate", { iface }));
+  return held(s, linkRateKey(iface));
 }
 
 /** `{ "NAND Flash Temperature": 40, … }`: every `thermal.sensor{name}`. */
