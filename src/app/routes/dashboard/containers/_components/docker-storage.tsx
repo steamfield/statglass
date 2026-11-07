@@ -1,3 +1,4 @@
+import { formatDateTime } from "@core/format";
 import type { DockerStorageResource } from "@core/generated/bindings";
 import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
@@ -88,7 +89,6 @@ export const DockerStorage = memo(function DockerStorage({
     staleTime: 300_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    retry: false,
   });
   const snapshot = storage.data?.snapshot;
   const filtered = useMemo(
@@ -138,7 +138,7 @@ export const DockerStorage = memo(function DockerStorage({
           <h2 className="font-[590] text-[16px]">Docker-managed storage</h2>
           <p className="mt-1 text-[11px] text-muted-foreground">
             {snapshot
-              ? `Measured ${new Date(snapshot.observed_ms).toLocaleString()}`
+              ? `Measured ${formatDateTime(snapshot.observed_ms)}`
               : "Scan images, writable layers, volumes and daemon build cache on demand."}
           </p>
         </div>

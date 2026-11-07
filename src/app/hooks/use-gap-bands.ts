@@ -1,15 +1,17 @@
 import { type Gap, type Module, RING_SPAN_MS } from "@core/generated/bindings";
 import { probeHistory } from "@core/history-probe";
 import { type GapBandSpec, gapBands } from "@core/history-state";
-import { historyKeys } from "@core/query-keys";
+import { historyKeys, sameRingGaps } from "@core/query-keys";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { holdWhile } from "~/lib/queries/hold";
+import { MINUTE_POLL_MS } from "~/lib/queries/timing";
 import { useTransport } from "~/lib/transport-context";
 import { useModuleRange } from "~/stores/chart-range";
 import { useHost, useHostId, useHostStore } from "~/stores/host-store";
 
 /** Refetch period: a gap that closed shows its end within this long. */
-const REFRESH_MS = 60_000;
+const REFRESH_MS = MINUTE_POLL_MS;
 const NO_GAPS: readonly Gap[] = [];
 
 /**
@@ -27,8 +29,9 @@ function useRingGaps(windowMs: number, endMs: number | null): readonly Gap[] {
   const store = useHostStore();
   const paused = useHost((s) => s.status?.paused ?? false);
   const started = useHost((s) => s.lastTsMs !== null);
+  const queryKey = historyKeys.ringGaps(hostId, paused, windowMs, endMs);
   const { data } = useQuery({
-    queryKey: historyKeys.ringGaps(hostId, paused, windowMs, endMs),
+    queryKey,
     queryFn: async () => {
       // The ring's clock: gaps and chart axes are both host time.
       const now = endMs ?? store.getState().lastTsMs ?? 0;
@@ -45,13 +48,7 @@ function useRingGaps(windowMs: number, endMs: number | null): readonly Gap[] {
     enabled: started || endMs !== null,
     staleTime: REFRESH_MS,
     refetchInterval: endMs === null ? REFRESH_MS : false,
-    placeholderData: (previous, query) =>
-      endMs === null &&
-      query?.queryKey[1] === hostId &&
-      query.queryKey[4] === windowMs &&
-      query.queryKey[5] === null
-        ? previous
-        : undefined,
+    placeholderData: holdWhile(queryKey, sameRingGaps),
   });
   return data ?? NO_GAPS;
 }

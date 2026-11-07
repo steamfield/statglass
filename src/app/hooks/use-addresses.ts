@@ -47,7 +47,6 @@ export function useAddresses(primary: string | null) {
     staleTime: PUBLIC_STALE_MS,
     gcTime: PUBLIC_STALE_MS,
     refetchInterval: PUBLIC_STALE_MS,
-    retry: false,
   });
   return { lan, publicIp };
 }

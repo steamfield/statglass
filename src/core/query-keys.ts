@@ -39,8 +39,7 @@ export const historyKeys = {
     fixed = false
   ) =>
     [
-      "history",
-      hostId,
+      ...historyKeys.host(hostId),
       "module-series",
       keys,
       windowMs,
@@ -54,7 +53,15 @@ export const historyKeys = {
     fromMs: number,
     toMs: number,
     maxPoints: number
-  ) => ["history", hostId, "disk-io", device, fromMs, toMs, maxPoints] as const,
+  ) =>
+    [
+      ...historyKeys.host(hostId),
+      "disk-io",
+      device,
+      fromMs,
+      toMs,
+      maxPoints,
+    ] as const,
   host: (hostId: HostId) => [...historyKeys.all, hostId] as const,
   range: (hostId: HostId, module: Module, range: RangeSpec, tier: TierKey) =>
     [...historyKeys.host(hostId), module, range, tier] as const,
@@ -88,9 +95,16 @@ export const historyKeys = {
     by: HistoricalUsageMetric,
     appNames: readonly string[]
   ) =>
-    ["history", hostId, "durable-usage", fromMs, toMs, by, appNames] as const,
+    [
+      ...historyKeys.host(hostId),
+      "durable-usage",
+      fromMs,
+      toMs,
+      by,
+      appNames,
+    ] as const,
   usageProcessRange: (hostId: HostId, fromMs: number, toMs: number) =>
-    ["history", hostId, "durable-processes", fromMs, toMs] as const,
+    [...historyKeys.host(hostId), "durable-processes", fromMs, toMs] as const,
   usageProcesses: (
     hostId: HostId,
     fromMs: number,
@@ -99,8 +113,7 @@ export const historyKeys = {
     appName: string
   ) =>
     [
-      "history",
-      hostId,
+      ...historyKeys.host(hostId),
       "durable-processes",
       fromMs,
       toMs,
@@ -234,7 +247,7 @@ export const hostKeys = {
 };
 
 export const appKeys = {
-  updates: ["app", "updates"] as const,
+  /** `get_window_appearance`, kept current by its event. */
   appearance: ["app", "appearance"] as const,
   /** Build-time features (D-065); fixed for the life of the app. */
   edition: ["app", "edition"] as const,
@@ -249,7 +262,8 @@ export const appKeys = {
     iface: string | null,
     local: string | null,
     egress: string | null
-  ) => ["app", "public-ip", iface, local, egress] as const,
+  ) => [...appKeys.publicIpAll, iface, local, egress] as const,
+  publicIpAll: ["app", "public-ip"] as const,
 };
 
 /** True for a query key that starts with `prefix`. */
@@ -277,9 +291,8 @@ const enabled = (s: Settings) =>
  *   and history size. Only `enabled` counts; the menu bar style does not.
  * - `sampling` (interval, slow on battery): rows per hour, so the size
  *   projection only; recorded history does not change.
- * - `general.check_updates`: the update check.
  *
- * Units, appearance, the other general switches and onboarding change no
+ * Units, appearance, the general switches and onboarding change no
  * fetched data. With no previous settings to compare against, every section
  * counts as changed.
  */
@@ -290,8 +303,6 @@ export function settingsInvalidation(
   const history = prev === null || !same(prev.history, next.history);
   const modules = prev === null || !same(enabled(prev), enabled(next));
   const sampling = prev === null || !same(prev.sampling, next.sampling);
-  const updates =
-    prev === null || prev.general.check_updates !== next.general.check_updates;
   return (key) => {
     if (startsWith(key, historyKeys.all)) return history || modules;
     if (startsWith(key, hostKeys.all)) {
@@ -300,25 +311,29 @@ export function settingsInvalidation(
       if (part === "history-health") return history;
       return false;
     }
-    if (startsWith(key, appKeys.updates)) return updates;
     return false;
   };
 }
 
+/**
+ * Docker reads. Stored container history sits in the history family under
+ * the host (`[...historyKeys.host(host), "docker", engine, …]`); storage and
+ * cleanup operations belong to the local engine, under `dockerKeys.all`.
+ */
 export const dockerKeys = {
+  all: ["docker"] as const,
   comparison: (
+    host: HostId,
     engine: string,
     from: number,
     to: number,
     metric: "cpu" | "memory",
     project: string | null,
     selected: readonly string[] | null,
-    host: string,
     generation: number
   ) =>
     [
-      "history",
-      host,
+      ...historyKeys.host(host),
       "docker",
       engine,
       "comparison",
@@ -330,20 +345,20 @@ export const dockerKeys = {
       generation,
     ] as const,
   storage: (engine: string, generation: number) =>
-    ["docker", "storage", engine, generation] as const,
+    [...dockerKeys.all, "storage", engine, generation] as const,
   operationRefresh: (engine: string) =>
-    ["docker", "operation-refresh", engine] as const,
-  operation: (engine: string) => ["docker", "operation", engine] as const,
+    [...dockerKeys.all, "operation-refresh", engine] as const,
+  operation: (engine: string) =>
+    [...dockerKeys.all, "operation", engine] as const,
   retained: (
-    host: string,
+    host: HostId,
     engine: string | null,
     search: string,
     offset: number,
     generation: number
   ) =>
     [
-      "history",
-      host,
+      ...historyKeys.host(host),
       "docker",
       "retained",
       engine,
@@ -352,14 +367,13 @@ export const dockerKeys = {
       generation,
     ] as const,
   detail: (
-    host: string,
+    host: HostId,
     engine: string,
     container: string,
     generation: number
   ) =>
     [
-      "history",
-      host,
+      ...historyKeys.host(host),
       "docker",
       engine,
       container,
@@ -367,16 +381,15 @@ export const dockerKeys = {
       generation,
     ] as const,
   history: (
+    host: HostId,
     engine: string,
     container: string | null,
     from: number,
     to: number,
-    host: string,
     generation: number
   ) =>
     [
-      "history",
-      host,
+      ...historyKeys.host(host),
       "docker",
       engine,
       container,
@@ -386,17 +399,16 @@ export const dockerKeys = {
       generation,
     ] as const,
   events: (
+    host: HostId,
     engine: string,
     container: string | null,
     from: number,
     to: number,
-    host: string,
     generation: number,
     beforeId: string | null
   ) =>
     [
-      "history",
-      host,
+      ...historyKeys.host(host),
       "docker",
       engine,
       container,
@@ -432,3 +444,51 @@ export const diskSpaceKeys = {
   largest: (hostId: HostId, report: number) =>
     ["disk-space", hostId, "largest", report] as const,
 };
+
+/*
+ * Identity predicates for a held placeholder: `(previous, next)` says whether
+ * the answer under `previous` may stand in while `next` loads. Every key
+ * starts with its family and host, so each predicate checks the host first;
+ * a held answer never crosses a host switch. Positions are read only here,
+ * beside the builders that set them.
+ */
+type Key = readonly unknown[];
+
+/** Same value at each of `at` (arrays by content). */
+function sameAt(previous: Key, next: Key, at: readonly number[]): boolean {
+  return at.every((i) => same(previous[i], next[i]));
+}
+
+/** Same family and host: what every hold needs. */
+export const sameHost = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1]);
+
+/** A live module chart whose end moved: same series, window and points. */
+export const sameModuleSeries = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 3, 4, 6]) &&
+  previous[7] === false &&
+  next[7] === false;
+
+/** Live ring gaps over the same window; a pause or resume may hold. */
+export const sameRingGaps = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 4]) &&
+  previous[5] === null &&
+  next[5] === null;
+
+/** The same device's I/O over a window of the same span. */
+export const sameDiskIo = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 3]) &&
+  Number(previous[5]) - Number(previous[4]) ===
+    Number(next[5]) - Number(next[4]);
+
+/** The same heatmap metric; another metric is drawn on another scale. */
+export const sameHeatmapMetric = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 3]);
+
+/** Another folder of the same disk space report. */
+export const sameSpaceReport = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 3]);
+
+/** The same Docker engine's history (comparison, history or events). */
+export const sameDockerEngine = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 3]);

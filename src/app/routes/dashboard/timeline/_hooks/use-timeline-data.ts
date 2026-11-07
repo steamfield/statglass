@@ -7,7 +7,8 @@ import type {
 } from "@core/generated/bindings";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys, type RangeSpec } from "@core/query-keys";
-import { type CommandFailure, unwrap } from "@core/transport";
+import { DAY_MS, floorTo } from "@core/time-grid";
+import { asCommandFailure, type CommandFailure, unwrap } from "@core/transport";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -80,7 +81,7 @@ export function useTimelineData(
   const queryClient = useQueryClient();
   const live = view.endMs === null;
   const spanMs = view.windowMs;
-  const long = spanMs > 86_400_000;
+  const long = spanMs > DAY_MS;
   const requestBucket = requestBucketMs(view.windowMs, plotPx);
   // The bucket is part of the range: a window resized across a step of the
   // bucket ladder reads again at the new width. Not the pixel width itself,
@@ -136,8 +137,7 @@ export function useTimelineData(
   // The start of the open bucket: changes once per bucket, not per frame.
   const liveEdge = useOpenEdge(true, bucketMs);
   const [mountedAt] = useState(() => clock());
-  const toMs =
-    view.endMs ?? liveEdge ?? Math.floor(mountedAt / bucketMs) * bucketMs;
+  const toMs = view.endMs ?? liveEdge ?? floorTo(mountedAt, bucketMs);
   const fromMs = toMs - spanMs;
 
   // Following Live, a bucket closing reads the newest slots again (Rust has
@@ -264,7 +264,7 @@ export function useTimelineData(
     retry: () => {
       for (const query of queries) if (query.isError) void query.refetch();
     },
-    error: (failed?.error as CommandFailure | undefined) ?? null,
+    error: asCommandFailure(failed?.error),
   };
 }
 
