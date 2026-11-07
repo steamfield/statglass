@@ -1,7 +1,7 @@
-import type { Appearance, WindowAppearance } from "@core/generated/bindings";
+import type { Appearance } from "@core/generated/bindings";
 import { isPerformanceOn } from "@core/performance";
 import { useEffect, useLayoutEffect, useState } from "react";
-import { useTransport } from "~/lib/transport-context";
+import { useWindowAppearanceFlags } from "~/lib/queries/appearance";
 import { useSettings } from "~/stores/settings-store";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
@@ -31,28 +31,9 @@ function useSystemDark(): boolean {
  * `override` pins the theme (the gallery's `?theme=`).
  */
 export function useWindowAppearance(override?: "light" | "dark" | null) {
-  const transport = useTransport();
   const appearance = useSettings((s) => s.general.appearance) ?? "system";
   const systemDark = useSystemDark();
-  const [flags, setFlags] = useState<WindowAppearance | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    transport.getWindowAppearance().then(
-      (a) => {
-        if (!cancelled) setFlags(a);
-      },
-      (err: unknown) =>
-        console.error("[appearance] get_window_appearance failed", err)
-    );
-    const unsubscribe = transport.onWindowAppearanceChanged((e) =>
-      setFlags(e.appearance)
-    );
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [transport]);
+  const flags = useWindowAppearanceFlags().data;
 
   const dark = override
     ? override === "dark"

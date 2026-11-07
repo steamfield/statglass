@@ -10,6 +10,7 @@ import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useNextBoundary } from "~/hooks/use-next-boundary";
 import { useHostClock } from "~/lib/host-clock";
+import { MINUTE_POLL_MS } from "~/lib/queries/timing";
 import { useTransport } from "~/lib/transport-context";
 import { type HostLiveState, useHost, useHostId } from "~/stores/host-store";
 import { held, selectBattery } from "~/stores/live-selectors";
@@ -64,7 +65,7 @@ const lastStart = (starts: number[]) => starts[starts.length - 1] as number;
  * How often the bars refresh: Rust answers through now (D-092), and a bar is
  * its hour's last minute, so it can move once a minute.
  */
-const BATTERY_REFRESH_MS = 60_000;
+const BATTERY_REFRESH_MS = MINUTE_POLL_MS;
 
 /**
  * Hourly charge bars for the last 24 local hours (plan 4.10) from

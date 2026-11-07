@@ -4,7 +4,7 @@ import { historyKeys } from "@core/query-keys";
 import { ceilTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
-import { useRangeQuery } from "~/lib/range-query";
+import { useRangeQuery } from "~/lib/queries/range";
 
 /** An answer whose buckets through the range's end no longer change. */
 export const usageSeriesFinal = (data: UsageSeries | undefined, toMs: number) =>

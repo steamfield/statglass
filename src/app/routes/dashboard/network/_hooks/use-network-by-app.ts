@@ -2,7 +2,7 @@ import { BRUSH_STEP_MS, type TimeRange } from "@core/brush";
 import type { NetworkByApp } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
-import { type RangePoll, useRangeQuery } from "~/lib/range-query";
+import { type RangePoll, useRangeQuery } from "~/lib/queries/range";
 
 /**
  * An answer is final once every bucket in it is complete: both the per-app

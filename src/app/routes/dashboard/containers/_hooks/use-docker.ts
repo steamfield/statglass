@@ -1,45 +1,30 @@
 import type { DockerSnapshot } from "@core/generated/bindings";
-import { dockerKeys } from "@core/query-keys";
+import { dockerKeys, sameDockerEngine } from "@core/query-keys";
 import { unwrap } from "@core/transport";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
-import { dockerErrorMessage } from "../_lib/presentation";
+import {
+  type DockerOpen,
+  useDockerSubscription,
+} from "./use-docker-subscription";
 
 export function useDocker() {
   const transport = useTransport();
   const local = useIsLocalHost();
   const [snapshot, setSnapshot] = useState<DockerSnapshot | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!local) return;
-    let cancelled = false;
-    let stop: (() => void) | undefined;
-    transport
-      .dockerSubscribe((next) => {
-        if (!cancelled)
-          setSnapshot((previous) =>
-            previous && previous.generation > next.generation ? previous : next
-          );
-      })
-      .then((subscription) => {
-        if (cancelled) subscription.unsubscribe();
-        else {
-          stop = subscription.unsubscribe;
-          if (subscription.info.status === "error")
-            setError(dockerErrorMessage(subscription.info.error));
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(String(e));
-      });
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
-  }, [transport, local]);
+  const open = useCallback<DockerOpen<DockerSnapshot>>(
+    (onSnapshot) => transport.dockerSubscribe(onSnapshot),
+    [transport]
+  );
+  const error = useDockerSubscription(local ? open : null, (next) =>
+    setSnapshot((previous) =>
+      previous && previous.generation > next.generation ? previous : next
+    )
+  );
   return { snapshot: local ? snapshot : null, error, setSnapshot };
 }
 
@@ -53,9 +38,17 @@ export function useDockerHistory(
   const transport = useTransport();
   const local = useIsLocalHost();
   const host = useHostId();
+  const queryKey = dockerKeys.history(
+    host,
+    engine,
+    container,
+    from,
+    to,
+    generation
+  );
   return useQuery({
-    queryKey: dockerKeys.history(engine, container, from, to, host, generation),
-    placeholderData: keepPreviousData,
+    queryKey,
+    placeholderData: holdWhile(queryKey, sameDockerEngine),
     enabled: local && Boolean(engine),
     queryFn: () =>
       unwrap(
@@ -82,11 +75,11 @@ export function useDockerEvents(
   const host = useHostId();
   return useQuery({
     queryKey: dockerKeys.events(
+      host,
       engine,
       container,
       from,
       to,
-      host,
       generation,
       beforeId
     ),

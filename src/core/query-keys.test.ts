@@ -3,8 +3,17 @@ import { defaultSettings, scenarioFlags } from "@core/mock/fixtures";
 import { menuBarOf } from "@core/settings-patch";
 import {
   appKeys,
+  diskSpaceKeys,
+  dockerKeys,
   historyKeys,
   hostKeys,
+  sameDiskIo,
+  sameDockerEngine,
+  sameHeatmapMetric,
+  sameHost,
+  sameModuleSeries,
+  sameRingGaps,
+  sameSpaceReport,
   settingsInvalidation,
 } from "./query-keys";
 
@@ -20,7 +29,6 @@ const KEYS = {
   hostDetail: hostKeys.detail(H),
   capabilities: hostKeys.capabilities(H),
   sensorDump: hostKeys.sensorDump(H),
-  updates: appKeys.updates,
   appearance: appKeys.appearance,
 };
 
@@ -68,12 +76,12 @@ describe("settingsInvalidation", () => {
     expect(stale(next)).toEqual(["historySize"]);
   });
 
-  it("the update switch: the update check only", () => {
+  it("the update switch invalidates nothing: the update check is not a query", () => {
     const next = {
       ...base,
       general: { ...base.general, check_updates: false },
     };
-    expect(stale(next)).toEqual(["updates"]);
+    expect(stale(next)).toEqual([]);
   });
 
   it("appearance, units and onboarding invalidate nothing", () => {
@@ -110,7 +118,155 @@ describe("settingsInvalidation", () => {
       "maxima",
       "historySize",
       "historyHealth",
-      "updates",
     ]);
+  });
+});
+
+describe("history keys", () => {
+  it("every history key, Docker history included, starts with the host", () => {
+    const keys = [
+      historyKeys.moduleSeries(H, ["cpu.total"], 60_000, 0, 60),
+      historyKeys.diskIo(H, null, 0, 1, 10),
+      historyKeys.historicalUsage(H, 0, 1, "cpu", []),
+      historyKeys.usageProcessRange(H, 0, 1),
+      historyKeys.usageProcesses(H, 0, 1, "cpu", "app"),
+      dockerKeys.history(H, "e", null, 0, 1, 0),
+      dockerKeys.comparison(H, "e", 0, 1, "cpu", null, null, 0),
+      dockerKeys.events(H, "e", null, 0, 1, 0, null),
+      dockerKeys.retained(H, null, "", 0, 0),
+      dockerKeys.detail(H, "e", "c", 0),
+    ];
+    for (const key of keys)
+      expect(key.slice(0, 2)).toEqual(historyKeys.host(H));
+  });
+});
+
+describe("hold identity predicates", () => {
+  const OTHER = "h2";
+
+  it("never hold across a host switch", () => {
+    const pairs: [readonly unknown[], readonly unknown[], typeof sameHost][] = [
+      [
+        historyKeys.events(H, 1, null),
+        historyKeys.events(OTHER, 1, null),
+        sameHost,
+      ],
+      [
+        historyKeys.moduleSeries(H, ["a"], 60, 10, 6),
+        historyKeys.moduleSeries(OTHER, ["a"], 60, 20, 6),
+        sameModuleSeries,
+      ],
+      [
+        historyKeys.ringGaps(H, false),
+        historyKeys.ringGaps(OTHER, false),
+        sameRingGaps,
+      ],
+      [
+        historyKeys.diskIo(H, "disk0", 0, 10, 5),
+        historyKeys.diskIo(OTHER, "disk0", 10, 20, 5),
+        sameDiskIo,
+      ],
+      [
+        historyKeys.heatmap(H, "cpu", 0, 30),
+        historyKeys.heatmap(OTHER, "cpu", 1, 30),
+        sameHeatmapMetric,
+      ],
+      [
+        diskSpaceKeys.subtree(H, 1, null, false),
+        diskSpaceKeys.subtree(OTHER, 1, 2, false),
+        sameSpaceReport,
+      ],
+      [
+        dockerKeys.history(H, "e", null, 0, 1, 0),
+        dockerKeys.history(OTHER, "e", null, 1, 2, 0),
+        sameDockerEngine,
+      ],
+    ];
+    for (const [a, b, same] of pairs) {
+      expect(same(a, a)).toBe(true);
+      expect(same(a, b)).toBe(false);
+    }
+  });
+
+  it("a live module chart holds while its end moves, not for a fixed end or other series", () => {
+    const live = historyKeys.moduleSeries(H, ["a"], 60, 10, 6);
+    expect(
+      sameModuleSeries(live, historyKeys.moduleSeries(H, ["a"], 60, 20, 6))
+    ).toBe(true);
+    expect(
+      sameModuleSeries(live, historyKeys.moduleSeries(H, ["b"], 60, 20, 6))
+    ).toBe(false);
+    expect(
+      sameModuleSeries(live, historyKeys.moduleSeries(H, ["a"], 60, 20, 7))
+    ).toBe(false);
+    expect(
+      sameModuleSeries(
+        live,
+        historyKeys.moduleSeries(H, ["a"], 60, 20, 6, true)
+      )
+    ).toBe(false);
+  });
+
+  it("ring gaps hold across a pause, not for a fixed end or another window", () => {
+    const live = historyKeys.ringGaps(H, false, 60);
+    expect(sameRingGaps(live, historyKeys.ringGaps(H, true, 60))).toBe(true);
+    expect(sameRingGaps(live, historyKeys.ringGaps(H, false, 120))).toBe(false);
+    expect(sameRingGaps(live, historyKeys.ringGaps(H, false, 60, 5))).toBe(
+      false
+    );
+  });
+
+  it("disk I/O holds for the same device and span only", () => {
+    const key = historyKeys.diskIo(H, "disk0", 0, 10, 5);
+    expect(sameDiskIo(key, historyKeys.diskIo(H, "disk0", 10, 20, 5))).toBe(
+      true
+    );
+    expect(sameDiskIo(key, historyKeys.diskIo(H, "disk1", 10, 20, 5))).toBe(
+      false
+    );
+    expect(sameDiskIo(key, historyKeys.diskIo(H, "disk0", 10, 30, 5))).toBe(
+      false
+    );
+  });
+
+  it("the heatmap, a report and a Docker engine hold within their own identity", () => {
+    expect(
+      sameHeatmapMetric(
+        historyKeys.heatmap(H, "cpu", 0, 30),
+        historyKeys.heatmap(H, "temp", 0, 30)
+      )
+    ).toBe(false);
+    expect(
+      sameSpaceReport(
+        diskSpaceKeys.subtree(H, 1, null, false),
+        diskSpaceKeys.subtree(H, 1, 4, true)
+      )
+    ).toBe(true);
+    expect(
+      sameSpaceReport(
+        diskSpaceKeys.subtree(H, 1, null, false),
+        diskSpaceKeys.subtree(H, 2, null, false)
+      )
+    ).toBe(false);
+    expect(
+      sameDockerEngine(
+        dockerKeys.comparison(H, "e", 0, 1, "cpu", null, null, 0),
+        dockerKeys.comparison(H, "e", 1, 2, "memory", "p", ["c"], 1)
+      )
+    ).toBe(true);
+    expect(
+      sameDockerEngine(
+        dockerKeys.history(H, "e", null, 0, 1, 0),
+        dockerKeys.history(H, "f", null, 0, 1, 0)
+      )
+    ).toBe(false);
+  });
+
+  it("the public address and Docker operations sit under their family prefixes", () => {
+    expect(appKeys.publicIp("en0", null, null).slice(0, 2)).toEqual(
+      appKeys.publicIpAll
+    );
+    expect(dockerKeys.storage("e", 0)[0]).toBe(dockerKeys.all[0]);
+    expect(dockerKeys.operation("e")[0]).toBe(dockerKeys.all[0]);
   });
 });

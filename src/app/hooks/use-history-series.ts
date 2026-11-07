@@ -1,6 +1,6 @@
 import { HISTORY_TIERS, RING_SPAN_MS } from "@core/generated/bindings";
 import { historyGrid } from "@core/history-grid";
-import { historyKeys } from "@core/query-keys";
+import { historyKeys, sameModuleSeries } from "@core/query-keys";
 import { seriesKeyString } from "@core/series-key";
 import { floorTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";
@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { useModuleEnd } from "~/hooks/use-module-end";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
+import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 import { useHost, useHostId } from "~/stores/host-store";
 import { currentLayout } from "~/stores/live-selectors";
@@ -38,15 +39,16 @@ export function useHistorySeries(
     [keyList]
   );
   const layout = useHost(currentLayout);
+  const queryKey = historyKeys.moduleSeries(
+    hostId,
+    stableKeys,
+    windowMs,
+    toMs,
+    points,
+    end !== null
+  );
   const query = useQuery({
-    queryKey: historyKeys.moduleSeries(
-      hostId,
-      stableKeys,
-      windowMs,
-      toMs,
-      points,
-      end !== null
-    ),
+    queryKey,
     queryFn: () => {
       const selectors = stableKeys.map((key) => {
         const known = layout?.series.find(
@@ -67,15 +69,7 @@ export function useHistorySeries(
       );
     },
     enabled: enabled && stableKeys.length > 0,
-    placeholderData: (previous, query) =>
-      end === null &&
-      query?.queryKey[1] === hostId &&
-      JSON.stringify(query.queryKey[3]) === JSON.stringify(stableKeys) &&
-      query.queryKey[4] === windowMs &&
-      query.queryKey[6] === points &&
-      query.queryKey[7] === false
-        ? previous
-        : undefined,
+    placeholderData: holdWhile(queryKey, sameModuleSeries),
   });
   const grid = useMemo(
     () =>

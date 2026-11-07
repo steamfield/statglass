@@ -34,6 +34,7 @@ import { Switch } from "~/components/ui/switch";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useWriteSettings } from "~/hooks/use-write-settings";
+import { MINUTE_POLL_MS } from "~/lib/queries/timing";
 import { useTransport } from "~/lib/transport-context";
 import { useHost, useHostId } from "~/stores/host-store";
 import { useSampling, useSeriesCount } from "~/stores/live-selectors";
@@ -291,7 +292,7 @@ function HistoryOnDisk() {
   const size = useQuery({
     queryKey: hostKeys.historySize(hostId),
     queryFn: () => unwrap(transport.historySize(hostId)),
-    refetchInterval: 60_000,
+    refetchInterval: MINUTE_POLL_MS,
   });
 
   const clear = async () => {

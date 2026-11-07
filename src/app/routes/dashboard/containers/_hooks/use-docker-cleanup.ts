@@ -4,6 +4,7 @@ import type {
   DockerStorageSelection,
 } from "@core/generated/bindings";
 import { dockerKeys } from "@core/query-keys";
+import { HOUR_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -53,9 +54,8 @@ export function useDockerCleanup(
       query.state.data?.finished_ms === null ? 1000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
-    retry: false,
     staleTime: 0,
-    gcTime: 3_600_000,
+    gcTime: HOUR_MS,
   });
   const storage = useQuery({
     queryKey: dockerKeys.storage(engine, generation),

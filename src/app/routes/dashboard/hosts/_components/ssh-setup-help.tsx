@@ -58,7 +58,6 @@ export function SshSetupHelp({
   const config = useQuery({
     queryKey: hostKeys.sshConfig(),
     queryFn: () => unwrap(transport.remoteSshConfigStatus()),
-    retry: false,
     staleTime: 0,
   });
   const [expanded, setExpanded] = useState<boolean | null>(null);

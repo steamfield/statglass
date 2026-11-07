@@ -4,11 +4,13 @@ import type {
   SpaceScanStatus,
   SpaceTarget,
 } from "@core/generated/bindings";
-import { diskSpaceKeys } from "@core/query-keys";
+import { diskSpaceKeys, sameSpaceReport } from "@core/query-keys";
 import { CommandFailure, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import { holdWhile } from "~/lib/queries/hold";
+import { HALF_MINUTE_POLL_MS } from "~/lib/queries/timing";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -22,8 +24,7 @@ export function useSpaceVolumes(enabled: boolean) {
     queryKey: diskSpaceKeys.volumes(host),
     queryFn: () => unwrap(transport.diskSpaceVolumes(host)),
     enabled,
-    staleTime: 30_000,
-    retry: false,
+    staleTime: HALF_MINUTE_POLL_MS,
   });
 }
 
@@ -38,7 +39,6 @@ export function useSpaceStatus(enabled: boolean) {
     refetchInterval: (q) =>
       q.state.data?.phase === "scanning" ? SPACE_POLL_MS : false,
     refetchOnWindowFocus: false,
-    retry: false,
   });
 }
 
@@ -51,7 +51,6 @@ export function useSpaceReport(enabled: boolean, settledScan: number | null) {
     queryFn: () => unwrap(transport.diskSpaceReport(host)),
     enabled,
     refetchOnWindowFocus: false,
-    retry: false,
   });
 }
 
@@ -121,19 +120,16 @@ export function useSpaceSubtree(
 ) {
   const transport = useTransport();
   const host = useHostId();
+  const queryKey = diskSpaceKeys.subtree(host, report ?? -1, node, scanning);
   const query = useQuery({
-    queryKey: diskSpaceKeys.subtree(host, report ?? -1, node, scanning),
+    queryKey,
     queryFn: () => unwrap(transport.diskSpaceSubtree(host, report ?? -1, node)),
     enabled: report !== null,
     refetchInterval: scanning ? SPACE_POLL_MS : false,
     // Keep the previous folder's map on screen while the next one loads.
-    placeholderData: (prev, prevQuery) =>
-      prevQuery?.queryKey[1] === host && prevQuery.queryKey[3] === report
-        ? prev
-        : undefined,
+    placeholderData: holdWhile(queryKey, sameSpaceReport),
     staleTime: scanning ? 0 : Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
-    retry: false,
   });
   useRecheckOnError(query.isError);
   return query;
@@ -148,7 +144,6 @@ export function useSpaceLargest(report: number | null, enabled: boolean) {
     enabled: enabled && report !== null,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
-    retry: false,
   });
   useRecheckOnError(query.isError);
   return query;

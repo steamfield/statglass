@@ -1,14 +1,11 @@
 import { mergeEvent, RecentEvents } from "@core/events";
 import type { Event } from "@core/generated/bindings";
-import { historyKeys } from "@core/query-keys";
+import { historyKeys, sameHost } from "@core/query-keys";
 import { type Transport, unwrap } from "@core/transport";
-import {
-  keepPreviousData,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useHostClock } from "~/lib/host-clock";
+import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -53,8 +50,9 @@ export function useEvents(
   const hostId = useHostId();
   const queryClient = useQueryClient();
   const live = endMs === null;
+  const queryKey = historyKeys.events(hostId, spanMs, endMs);
   const { data } = useQuery({
-    queryKey: historyKeys.events(hostId, spanMs, endMs),
+    queryKey,
     queryFn: async () => {
       const recent = recentEvents(transport);
       const from = (endMs ?? now()) - spanMs;
@@ -66,7 +64,7 @@ export function useEvents(
     },
     staleTime: live ? LIVE_REFETCH_MS : Number.POSITIVE_INFINITY,
     refetchInterval: live ? LIVE_REFETCH_MS : false,
-    placeholderData: keepPreviousData,
+    placeholderData: holdWhile(queryKey, sameHost),
     retry: false,
   });
 

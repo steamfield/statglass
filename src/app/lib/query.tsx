@@ -6,9 +6,11 @@
  * `CommandFailure`s from the transport instead of HTTP errors. Live data is
  * never put in this cache.
  */
+import { appKeys, diskSpaceKeys, dockerKeys, hostKeys } from "@core/query-keys";
 import { CommandFailure } from "@core/transport";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+import { HISTORY_STALE_MS, QUERY_GC_MS } from "~/lib/queries/timing";
 
 /** Command errors that a retry cannot fix. */
 const PERMANENT_ERRORS = new Set([
@@ -40,18 +42,33 @@ export function getRetryDelay(attemptIndex: number): number {
   return 250 * 2 ** attemptIndex;
 }
 
+/**
+ * Families that never retry, whatever the error (v5's `retry` callback never
+ * sees the query, so the policy goes by key prefix). Disk space reads and
+ * Docker storage and cleanup are polled or re-read on their own; the public
+ * address asks an outside service and shows "unavailable" until its next
+ * read; the SSH config check and the window appearance answer once.
+ */
+const NO_RETRY: readonly (readonly unknown[])[] = [
+  diskSpaceKeys.all,
+  dockerKeys.all,
+  appKeys.publicIpAll,
+  appKeys.appearance,
+  hostKeys.sshConfig(),
+];
+
 export function makeQueryClient() {
-  return new QueryClient({
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
         // History below the last closed bucket does not change; the Timeline
         // appends new buckets itself while following Live.
-        staleTime: 60 * 1000,
+        staleTime: HISTORY_STALE_MS,
         // Kept only long enough for Back to return to the same rows and scroll
         // position, not the library's 5 minutes: a read is a local IPC call, and
         // ranges left behind are what grew the dashboard's WebContent
         // (plan/rfc-memory-footprint.md, D-127). Queries that cost more opt in.
-        gcTime: 30_000,
+        gcTime: QUERY_GC_MS,
         // A window regaining focus is not a reason to re-read history.
         refetchOnWindowFocus: false,
         retry: shouldRetry,
@@ -59,6 +76,9 @@ export function makeQueryClient() {
       },
     },
   });
+  for (const family of NO_RETRY)
+    client.setQueryDefaults(family, { retry: false });
+  return client;
 }
 
 export function QueryProvider({

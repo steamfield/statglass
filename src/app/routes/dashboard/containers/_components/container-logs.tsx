@@ -1,9 +1,13 @@
 import { appendLogLines, emptyLogBuffer } from "@core/docker-log-buffer";
-import { useEffect, useRef, useState } from "react";
+import type { DockerLogBatch } from "@core/generated/bindings";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { useTransport } from "~/lib/transport-context";
-import { dockerErrorMessage } from "../_lib/presentation";
+import {
+  type DockerOpen,
+  useDockerSubscription,
+} from "../_hooks/use-docker-subscription";
 
 export function ContainerLogs({
   engine,
@@ -18,50 +22,37 @@ export function ContainerLogs({
   const [follow, setFollow] = useState(false);
   const [retry, setRetry] = useState(0);
   const [buffer, setBuffer] = useState(emptyLogBuffer);
-  const [error, setError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const [newLines, setNewLines] = useState(0);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
   const scroll = useRef<HTMLElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: retry explicitly starts a fresh request after a failed subscription
-  useEffect(() => {
-    let cancelled = false;
-    let stop: (() => void) | undefined;
-    setBuffer(emptyLogBuffer());
-    setError(null);
-    setComplete(false);
-    setTruncated(false);
-    setNewLines(0);
-    transport
-      .dockerLogs(
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry explicitly starts a fresh request after a failed subscription, and a new generation drops the old one's lines
+  const open = useCallback<DockerOpen<DockerLogBatch>>(
+    (onBatch) => {
+      setBuffer(emptyLogBuffer());
+      setStreamError(null);
+      setComplete(false);
+      setTruncated(false);
+      setNewLines(0);
+      return transport.dockerLogs(
         { engine_id: engine, container_id: container, follow },
-        (batch) => {
-          if (cancelled || batch.generation !== generation) return;
-          setBuffer((current) => appendLogLines(current, batch.lines));
-          if (pausedRef.current) setNewLines((n) => n + batch.lines.length);
-          if (batch.error) setError(batch.error);
-          if (batch.truncated) setTruncated(true);
-          setComplete(batch.complete);
-        }
-      )
-      .then((subscription) => {
-        if (cancelled) subscription.unsubscribe();
-        else {
-          stop = subscription.unsubscribe;
-          if (subscription.info.status === "error")
-            setError(dockerErrorMessage(subscription.info.error));
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(String(e));
-      });
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
-  }, [transport, engine, container, follow, retry, generation]);
+        onBatch
+      );
+    },
+    [transport, engine, container, follow, retry, generation]
+  );
+  const subscriptionError = useDockerSubscription(open, (batch) => {
+    if (batch.generation !== generation) return;
+    setBuffer((current) => appendLogLines(current, batch.lines));
+    if (pausedRef.current) setNewLines((n) => n + batch.lines.length);
+    if (batch.error) setStreamError(batch.error);
+    if (batch.truncated) setTruncated(true);
+    setComplete(batch.complete);
+  });
+  const error = subscriptionError ?? streamError;
   useEffect(() => {
     if (!paused && scroll.current && buffer.lines.length)
       scroll.current.scrollTop = scroll.current.scrollHeight;

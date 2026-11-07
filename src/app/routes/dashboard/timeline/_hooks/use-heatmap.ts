@@ -1,12 +1,13 @@
 import type { HeatmapMetric } from "@core/generated/bindings";
 import { heatmapDays } from "@core/heatmap-days";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
-import { historyKeys } from "@core/query-keys";
-import { type CommandFailure, unwrap } from "@core/transport";
+import { historyKeys, sameHeatmapMetric } from "@core/query-keys";
+import { asCommandFailure, type CommandFailure, unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useNextBoundary } from "~/hooks/use-next-boundary";
 import { useHostClock } from "~/lib/host-clock";
+import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { currentCell, type HeatmapRow, heatmapRows } from "../_lib/heatmap";
@@ -64,16 +65,16 @@ export function useHeatmap(metric: HeatmapMetric): HeatmapData {
     [hour]
   );
 
+  const queryKey = historyKeys.heatmap(hostId, metric, hour, HEATMAP_DAYS);
   const query = useQuery({
-    queryKey: historyKeys.heatmap(hostId, metric, hour, HEATMAP_DAYS),
+    queryKey,
     queryFn: () =>
       unwrap(transport.queryHeatmap({ host: hostId, metric, days: specs })),
     staleTime: HISTORY_COMMIT_MS,
     refetchInterval: HISTORY_COMMIT_MS,
     // The previous hour's cells stay up while the next hour's load; another
     // metric's do not, they would be drawn on the wrong scale.
-    placeholderData: (prev, prevQuery) =>
-      prevQuery?.queryKey[3] === metric ? prev : undefined,
+    placeholderData: holdWhile(queryKey, sameHeatmapMetric),
   });
 
   const rows = useMemo(
@@ -86,6 +87,6 @@ export function useHeatmap(metric: HeatmapMetric): HeatmapData {
     current,
     hourMs: hour,
     loading: query.isPending,
-    error: (query.error as CommandFailure | null) ?? null,
+    error: asCommandFailure(query.error),
   };
 }

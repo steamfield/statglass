@@ -15,6 +15,7 @@ import { TooltipProvider } from "~/components/ui/tooltip";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { HostClockContext } from "~/lib/host-clock";
 import { HostSelectionContext } from "~/lib/host-selection";
+import { useWindowAppearanceFlags } from "~/lib/queries/appearance";
 import { QueryProvider } from "~/lib/query";
 import { TransportProvider, useTransport } from "~/lib/transport-context";
 import { type AppRouterOptions, createAppRouter } from "~/router";
@@ -69,26 +70,15 @@ function useHostsChanged() {
  * interval without being a setting (D-088).
  */
 function usePopoverBackfill(enabled: boolean): number | null {
-  const transport = useTransport();
   const sampling = useSettings((s) => s.sampling);
-  const [lowPower, setLowPower] = useState<boolean | null>(null);
+  const appearance = useWindowAppearanceFlags(enabled);
+  // A failed read counts as not in Low Power Mode rather than waiting forever.
+  const lowPower = appearance.isError
+    ? false
+    : appearance.data
+      ? appearance.data.performance === "low_power_mode"
+      : null;
   const fixed = useRef<number | null>(null);
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    transport.getWindowAppearance().then(
-      (a) => {
-        if (!cancelled) setLowPower(a.performance === "low_power_mode");
-      },
-      (err: unknown) => {
-        console.error("[app] get_window_appearance failed", err);
-        if (!cancelled) setLowPower(false);
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, transport]);
   if (enabled && fixed.current === null && sampling && lowPower !== null) {
     fixed.current = scaledWindowMs(
       60_000,

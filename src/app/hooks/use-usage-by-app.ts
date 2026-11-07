@@ -3,7 +3,7 @@ import type { UsageByApp, UsageKey } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { usageFinal } from "@core/usage-rows";
-import { useRangeQuery } from "~/lib/range-query";
+import { useRangeQuery } from "~/lib/queries/range";
 
 /** Apps a usage table asks for: every app a search could find, in practice. */
 export const USAGE_LIMIT = 200;
