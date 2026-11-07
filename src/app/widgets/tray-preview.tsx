@@ -1,3 +1,4 @@
+import { splitGaps } from "@core/chart-math";
 import type {
   TrayLayout,
   TrayMarker,
@@ -160,19 +161,15 @@ export const HIST_SAMPLES = 9;
 export function sparkPath(samples: readonly (number | null)[]): string {
   const recent = samples.slice(-SPARK_SAMPLES);
   const offset = SPARK_SAMPLES - recent.length;
-  let d = "";
-  let open = false;
-  recent.forEach((v, i) => {
-    if (v == null || !Number.isFinite(v)) {
-      open = false;
-      return;
-    }
-    const x = (2 + (offset + i) * 1.47).toFixed(1);
-    const y = (14 - (Math.min(100, Math.max(0, v)) / 100) * 12).toFixed(1);
-    d += `${open ? "L" : "M"}${x} ${y} `;
-    open = true;
-  });
-  return d.trim();
+  return splitGaps(recent)
+    .flatMap((run) =>
+      run.values.map((v, j) => {
+        const x = (2 + (offset + run.start + j) * 1.47).toFixed(1);
+        const y = (14 - (Math.min(100, Math.max(0, v)) / 100) * 12).toFixed(1);
+        return `${j === 0 ? "M" : "L"}${x} ${y}`;
+      })
+    )
+    .join(" ");
 }
 
 const BoxOutline = () => (

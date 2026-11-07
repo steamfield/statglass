@@ -1,22 +1,13 @@
-import { brushBucketMs, rangeSlots } from "@core/brush";
+import { brushBucketMs } from "@core/brush";
 import { spanWords } from "@core/live-window";
 import { DAY_MS } from "@core/time-grid";
-import { useRef } from "react";
-import { BrushOverlay } from "~/components/brush-overlay";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
-import { PLOT_INSET } from "~/components/charts/layout";
-import { MirrorHover } from "~/components/mirror-hover";
-import { useChartBrush } from "~/hooks/use-chart-brush";
+import { MirrorChart } from "~/components/charts/mirror-chart";
 import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
 import { useModuleEnd } from "~/hooks/use-module-end";
-import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
-import { GapBands, type GapSpan } from "~/widgets/gap-band";
+import type { GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
-import { historyTicks } from "~/widgets/lib/chart-labels";
-import { FIELD_LABEL } from "~/widgets/lib/classes";
-import { MirrorBars } from "~/widgets/mirror-bars";
-import { WindowTicks } from "~/widgets/window-ticks";
 
 /** Bars across the chart: one per interval up to this, then wider buckets. */
 const MAX_BARS = 120;
@@ -47,6 +38,8 @@ export interface LiveMirrorChartProps {
   upKey: string;
   /** Series drawn below the axis (download, write). */
   downKey: string;
+  /** What the chart shows, leading its accessible name ("Network"). */
+  subject: string;
   /** "Upload", "Read". */
   upLabel: string;
   downLabel: string;
@@ -69,14 +62,13 @@ export interface LiveMirrorChartProps {
 }
 
 /**
- * Module-page mirrored chart (plan 4.11, 4.12): `MirrorBars` from the
- * popover at page size, fed from the live ring. Each side autoscales on its
- * own with the 60 s shrink hysteresis and states its ceiling, so a small
- * upload next to a large download stays readable.
+ * Module-page mirrored chart (plan 4.11, 4.12): `MirrorChart` fed from the
+ * module range's buckets, with the history loading line above it.
  */
 export function LiveMirrorChart({
   upKey,
   downKey,
+  subject,
   upLabel,
   downLabel,
   windowMs,
@@ -94,9 +86,7 @@ export function LiveMirrorChart({
     intervalMs,
     brush
   );
-  const { selected, elapsedEdge } = useChartBrush(brush);
   const fixedEnd = useModuleEnd();
-  const spanLabel = spanWords(windowMs, fixedEnd);
   const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
     [upKey, downKey],
     requestedBucketMs,
@@ -106,100 +96,31 @@ export function LiveMirrorChart({
   const count = values[upKey]?.length ?? Math.ceil(windowMs / bucketMs);
   const pick = (key: string) =>
     Array.from({ length: count }, (_, i) => values[key]?.[i] ?? null);
-  const up = pick(upKey);
-  const down = pick(downKey);
-  const now = endMs ?? 0;
-  const upMax = useNiceCeiling(up, now, minCeiling, windowMs);
-  const downMax = useNiceCeiling(down, now, minCeiling, windowMs);
-  const firstMs = now - (count - 1) * bucketMs;
-  const ticks = historyTicks(firstMs, now + bucketMs, fixedEnd === null, 5);
-  const slots =
-    selected && endMs !== null
-      ? rangeSlots(selected, firstMs, bucketMs, count)
-      : null;
-  // A selection scrolled off the chart dims nothing.
-  const highlight = slots && slots.to > slots.from ? slots : null;
-  const plotRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex flex-col gap-1.5">
       <ChartHistoryStatus loading={loading} error={error} />
-      <div className="relative" style={{ paddingLeft: PLOT_INSET }}>
-        <div
-          aria-hidden
-          className="absolute top-0 left-0 flex w-22 flex-col justify-between"
-          style={{ height: upHeight + downHeight + 1 }}
-        >
-          <span className={FIELD_LABEL}>
-            ↑ {upLabel}
-            <span className="block normal-case tracking-normal">
-              {format(upMax)}
-            </span>
-          </span>
-          <span className={FIELD_LABEL}>
-            <span className="block normal-case tracking-normal">
-              {format(downMax)}
-            </span>
-            ↓ {downLabel}
-          </span>
-        </div>
-        <div ref={plotRef}>
-          <MirrorBars
-            up={up}
-            down={down}
-            intervalMs={bucketMs}
-            tEndMs={endMs ?? undefined}
-            upMax={upMax}
-            downMax={downMax}
-            upHeight={upHeight}
-            downHeight={downHeight}
-            accent={accent}
-            highlight={highlight}
-            ariaLabel={`${upLabel} above the line, ${downLabel.toLowerCase()} below, ${spanLabel}${brush ? ". Drag to select a range." : ""}`}
-          />
-        </div>
-        {brush && endMs !== null && (
-          <BrushOverlay
-            firstMs={firstMs}
-            spanMs={count * bucketMs}
-            selectableToMs={elapsedEdge ?? undefined}
-            height={upHeight + downHeight + 1}
-          />
-        )}
-        {gaps && gaps.length > 0 && endMs !== null && (
-          <div
-            className="pointer-events-none absolute top-0 right-0"
-            style={{ left: PLOT_INSET, height: upHeight + downHeight + 1 }}
-          >
-            <GapBands
-              gaps={gaps}
-              rangeFromMs={firstMs}
-              rangeToMs={endMs + bucketMs}
-            />
-          </div>
-        )}
-        {endMs !== null && (
-          <MirrorHover
-            plotRef={plotRef}
-            inset={PLOT_INSET}
-            height={upHeight + downHeight + 1}
-            count={count}
-            firstMs={firstMs}
-            bucketMs={bucketMs}
-            up={up}
-            down={down}
-            upLabel={upLabel}
-            downLabel={downLabel}
-            gaps={gaps}
-            format={format}
-            accent={accent}
-            column={!brush}
-            live={fixedEnd === null}
-            dateLabels={fixedEnd !== null || windowMs >= DAY_MS}
-          />
-        )}
-      </div>
-      <WindowTicks ticks={ticks} style={{ paddingLeft: PLOT_INSET }} />
+      <MirrorChart
+        up={pick(upKey)}
+        down={pick(downKey)}
+        firstMs={(endMs ?? 0) - (count - 1) * bucketMs}
+        bucketMs={bucketMs}
+        windowMs={windowMs}
+        fixedEndMs={fixedEnd}
+        subject={subject}
+        upLabel={upLabel}
+        downLabel={downLabel}
+        span={spanWords(windowMs, fixedEnd)}
+        format={format}
+        minCeiling={minCeiling}
+        accent={accent}
+        upHeight={upHeight}
+        downHeight={downHeight}
+        gaps={gaps}
+        brush={brush}
+        dateLabels={fixedEnd !== null || windowMs >= DAY_MS}
+        pending={endMs === null}
+      />
     </div>
   );
 }

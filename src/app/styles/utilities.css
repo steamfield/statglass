@@ -1,0 +1,20 @@
+/*
+ * The gap hatch (design-system.md "Gaps"): 1 px `--color-grid` stripes at
+ * 135 degrees, 7 px apart. The dense variant, 4 px apart, is for cells too
+ * small to show the 7 px pitch (heat-matrix cells, the calendar canvas).
+ */
+@utility bg-gap-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-grid) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+@utility bg-gap-hatch-dense {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-grid) 0 1px,
+    transparent 1px 4px
+  );
+}

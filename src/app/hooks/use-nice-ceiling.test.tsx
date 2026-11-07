@@ -52,4 +52,33 @@ describe("useNiceCeiling", () => {
     rerender({ values: [3], nowMs: 1000, windowMs: 900_000 });
     expect(result.current).toBe(4);
   });
+
+  it("shrinks a 6 h history-backed window whose updates arrive a bucket (18 s) apart", () => {
+    const BUCKET_MS = 18_000;
+    const { result, rerender } = renderHook(
+      ({ values, nowMs }: { values: number[]; nowMs: number }) =>
+        useNiceCeiling(values, nowMs, 1, 21_600_000, {
+          intervalMs: BUCKET_MS,
+        }),
+      { initialProps: { values: [3, 75], nowMs: 0 } }
+    );
+    expect(result.current).toBe(80);
+    // The peak has left the window; every later update reads 3.
+    for (let k = 1; k <= 5; k++)
+      rerender({ values: [3], nowMs: k * BUCKET_MS });
+    expect(result.current).toBe(4);
+  });
+
+  it("refits when a fixed range moves its end with the same window", () => {
+    type Range = { values: number[]; endMs: number | null };
+    const live: Range = { values: [75], endMs: null };
+    const { result, rerender } = renderHook(
+      ({ values, endMs }: Range) =>
+        useNiceCeiling(values, 1000, 1, 300_000, { endMs }),
+      { initialProps: live }
+    );
+    expect(result.current).toBe(80);
+    rerender({ values: [3], endMs: 500_000 });
+    expect(result.current).toBe(4);
+  });
 });

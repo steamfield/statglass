@@ -1,5 +1,6 @@
-import { fittedCeiling } from "@core/chart-math";
+import { fittedCeiling, splitRuns } from "@core/chart-math";
 import {
+  cssPercent,
   formatBytes,
   formatDateTime,
   formatPercent,
@@ -13,7 +14,57 @@ import type {
 import { memo, useMemo } from "react";
 import { SectionCard } from "~/components/section-card";
 import { ChartFrame, ChartGrid, chartY } from "~/widgets/chart-frame";
+import { GapEdgeDot } from "~/widgets/gap-edge-dot";
 import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
+
+interface Vertex {
+  x: number;
+  y: number;
+  /** The allowance line's y at this bucket, or null without one. */
+  limitY: number | null;
+}
+
+const at = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
+
+/** One segment per run of two or more buckets; a lone bucket is a dot. */
+function linePath(runs: readonly Vertex[][]): string {
+  return runs
+    .filter((run) => run.length > 1)
+    .map((run) =>
+      run.map((v, i) => `${i ? "L" : "M"}${at(v.x, v.y)}`).join(" ")
+    )
+    .join(" ");
+}
+
+/** The allowance as a step line, broken wherever the run or the limit is. */
+function limitPath(runs: readonly Vertex[][]): string {
+  let d = "";
+  for (const run of runs) {
+    let open = false;
+    for (const v of run) {
+      if (v.limitY === null) {
+        open = false;
+        continue;
+      }
+      d += open
+        ? `H${v.x.toFixed(2)} V${v.limitY.toFixed(2)} `
+        : `M${at(v.x, v.limitY)} `;
+      open = true;
+    }
+  }
+  return d;
+}
+
+/** Hollow dots: each lone bucket, and each line end that meets a gap. */
+function edgeDots(runs: readonly Vertex[][]): Vertex[] {
+  return runs.flatMap((run, k) => {
+    const first = run[0];
+    const last = run.at(-1);
+    if (!first || !last) return [];
+    if (run.length === 1) return [first];
+    return [...(k > 0 ? [first] : []), ...(k < runs.length - 1 ? [last] : [])];
+  });
+}
 
 /** Draw true timestamp positions; uncovered buckets break the path. */
 export const ContainerHistory = memo(function ContainerHistory({
@@ -44,57 +95,50 @@ export const ContainerHistory = memo(function ContainerHistory({
       ? (value: number) => formatPercent(value, { significantDigits: 3 })
       : (value: number) =>
           formatRate(value, value > 0 && value < 1 ? { decimals: 1 } : {});
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
   const chart = useMemo(() => {
-    const points = page?.points ?? [];
+    // Only buckets the line draws: measured and covered (Rust's flag).
+    const drawn = (page?.points ?? []).map((p) => {
+      const value = p.metrics[metric];
+      if (value === null || !(memory ? p.memory_covered : p.cpu_covered))
+        return null;
+      const allowance = aggregate
+        ? p.engine_capacity_bytes
+        : p.explicit_limit_bytes;
+      return { p, value, allowance: memory ? allowance : null };
+    });
+    const measured = drawn.filter((d) => d !== null);
     // Fit the range like the comparison chart (design-system.md "Y scale"),
     // including the memory allowance line.
     const ceiling = fittedCeiling(
       Math.max(
         0,
-        ...points.map((p) => p.metrics[metric] ?? 0),
-        ...(memory
-          ? points.map(
-              (p) =>
-                (aggregate
-                  ? p.engine_capacity_bytes
-                  : p.explicit_limit_bytes) ?? 0
-            )
-          : [])
+        ...measured.map((d) => d.value),
+        ...measured.map((d) => d.allowance ?? 0)
       ),
       memory ? 1024 * 1024 : metric === "cpu_pct" ? 0.1 : 1
     );
-    let path = "";
-    let limit = "";
-    let contiguous = false;
-    let limitContiguous = false;
-    let previousEnd: number | null = null;
-    for (const p of points) {
-      const value = p.metrics[metric];
-      const x = ((p.time_ms - from) / Math.max(1, to - from)) * 1000;
-      if (value === null || !(memory ? p.memory_covered : p.cpu_covered)) {
-        contiguous = false;
-        limitContiguous = false;
-        previousEnd = null;
-        continue;
-      }
-      if (previousEnd !== null && p.time_ms > previousEnd) contiguous = false;
-      path += `${contiguous ? "L" : "M"}${x.toFixed(2)},${chartY(value, ceiling, height).toFixed(2)} `;
-      contiguous = true;
-      previousEnd = p.time_ms + p.duration_ms;
-      const allowance = aggregate
-        ? p.engine_capacity_bytes
-        : p.explicit_limit_bytes;
-      if (memory && allowance !== null) {
-        const y = chartY(allowance, ceiling, height).toFixed(2);
-        limit += limitContiguous
-          ? `H${x.toFixed(2)} V${y} `
-          : `M${x.toFixed(2)},${y} `;
-        limitContiguous = true;
-      } else limitContiguous = false;
-    }
-    return { path, limit, ceiling };
+    const x = (t: number) => ((t - from) / Math.max(1, to - from)) * 1000;
+    // A run breaks at a missing or uncovered bucket and where buckets don't touch.
+    const runs = splitRuns(
+      drawn,
+      (d) => d !== null,
+      (a, b) => b.p.time_ms <= a.p.time_ms + a.p.duration_ms
+    ).map((run) =>
+      run.items.map((d) => ({
+        x: x(d.p.time_ms),
+        y: chartY(d.value, ceiling, height),
+        limitY:
+          d.allowance === null ? null : chartY(d.allowance, ceiling, height),
+      }))
+    );
+    const path = linePath(runs);
+    const limit = limitPath(runs);
+    const dots = edgeDots(runs);
+    return { path, limit, dots, ceiling };
   }, [page, metric, memory, from, to, aggregate, height]);
+  const ink = memory
+    ? "var(--color-mem-ink, var(--color-mem))"
+    : "var(--color-cpu-ink, var(--color-cpu))";
   const axis = ceilingAxis(chart.ceiling, format, { zero: true });
   return (
     <SectionCard accent={memory ? "mem" : "cpu"} title={title}>
@@ -124,11 +168,7 @@ export const ContainerHistory = memo(function ContainerHistory({
                 data-line
                 d={chart.path}
                 fill="none"
-                stroke={
-                  memory
-                    ? "var(--color-mem-ink, var(--color-mem))"
-                    : "var(--color-cpu-ink, var(--color-cpu))"
-                }
+                stroke={ink}
                 strokeWidth="1.5"
                 vectorEffect="non-scaling-stroke"
               />
@@ -157,6 +197,14 @@ export const ContainerHistory = memo(function ContainerHistory({
                 </line>
               ))}
             </svg>
+            {chart.dots.map((dot) => (
+              <GapEdgeDot
+                key={dot.x}
+                left={cssPercent(dot.x / 1000)}
+                top={dot.y}
+                color={ink}
+              />
+            ))}
           </ChartFrame>
           {memory && (
             <p className="text-[11px] text-muted-foreground">

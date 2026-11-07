@@ -16,6 +16,7 @@ import {
 } from "./chart-annotation";
 import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
 import { GapBands, type GapSpan } from "./gap-band";
+import { GapEdgeDot } from "./gap-edge-dot";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
 import styles from "./lib/scroll-layer.module.css";
 import { useTickScroll } from "./lib/use-tick-scroll";
@@ -284,16 +285,11 @@ export function StreamArea({
       <ChartSelectionVeil highlight={highlight} />
       {drawn.flatMap(({ s, edges, stroke }) =>
         edges.map((p) => (
-          <span
+          <GapEdgeDot
             key={`${s.key}-${p.x}`}
-            data-gap-edge
-            aria-hidden
-            className="absolute -mt-[3.5px] -ml-[3.5px] size-[7px] rounded-full border-[1.5px] bg-card"
-            style={{
-              left: `${(p.x / VB_W) * 100}%`,
-              top: p.y,
-              borderColor: stroke,
-            }}
+            left={`${(p.x / VB_W) * 100}%`}
+            top={p.y}
+            color={stroke}
           />
         ))
       )}

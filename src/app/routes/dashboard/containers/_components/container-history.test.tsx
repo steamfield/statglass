@@ -8,7 +8,7 @@ it.each([true, false])(
   "renders Rust's covered flag (%s), independent of duration fields",
   (covered) => {
     const page = history(covered);
-    render(
+    const { container } = render(
       <ContainerHistory
         page={page}
         metric="cpu_pct"
@@ -17,10 +17,35 @@ it.each([true, false])(
         to={10000}
       />
     );
-    const path = screen.getByRole("img").querySelector("[data-line]");
-    expect(Boolean(path?.getAttribute("d"))).toBe(covered);
+    // One covered bucket is a run of one: a dot, never an invisible line.
+    expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(
+      covered ? 1 : 0
+    );
   }
 );
+
+it("breaks the line at a skipped bucket and marks each edge with a hollow dot", () => {
+  const page = history(true);
+  const [first] = page.points;
+  if (!first) throw new Error("no point");
+  page.points = [0, 10_000, 30_000, 40_000].map((time_ms) => ({
+    ...first,
+    time_ms,
+  }));
+  const { container } = render(
+    <ContainerHistory
+      page={page}
+      metric="cpu_pct"
+      title="Two runs"
+      from={0}
+      to={50_000}
+    />
+  );
+  const d = container.querySelector("[data-line]")?.getAttribute("d") ?? "";
+  expect(d.match(/M/g)).toHaveLength(2);
+  const dots = [...container.querySelectorAll<HTMLElement>("[data-gap-edge]")];
+  expect(dots.map((dot) => dot.style.left)).toEqual(["20.000%", "60.000%"]);
+});
 
 function history(covered: boolean): DockerHistoryPage {
   return {
@@ -98,4 +123,31 @@ it("fits the axis like the comparison chart, with a zero tick", () => {
   expect(screen.getByText("150%")).toBeVisible();
   expect(screen.getByText("75%")).toBeVisible();
   expect(screen.getByText("0")).toBeVisible();
+});
+
+it("fits the axis to the buckets it draws, not to uncovered ones", () => {
+  const page = history(true);
+  const [first] = page.points;
+  if (!first) throw new Error("no point");
+  page.points = [
+    { ...first, metrics: { ...first.metrics, cpu_pct: 10 } },
+    {
+      ...first,
+      time_ms: 10_000,
+      cpu_covered: false,
+      metrics: { ...first.metrics, cpu_pct: 140 },
+    },
+  ];
+  render(
+    <ContainerHistory
+      page={page}
+      metric="cpu_pct"
+      title="Partial spike"
+      from={0}
+      to={20_000}
+    />
+  );
+  expect(screen.queryByText("150%")).toBeNull();
+  // 10% plus 5% headroom, on the two-significant-digit step.
+  expect(screen.getByText("11%")).toBeVisible();
 });

@@ -8,6 +8,7 @@ import {
   ratio,
   ringArcs,
   splitGaps,
+  splitRuns,
   stackRemainder,
   stackSum,
   stepBelow,
@@ -74,6 +75,35 @@ describe("splitGaps", () => {
   it("returns nothing for an all-gap or empty series", () => {
     expect(splitGaps([null, null])).toEqual([]);
     expect(splitGaps([])).toEqual([]);
+  });
+});
+
+describe("splitRuns", () => {
+  const spans = [
+    { t: 0, end: 10 },
+    { t: 10, end: 20 },
+    { t: 30, end: 40 },
+    { t: 40, end: 50 },
+  ];
+  type Span = (typeof spans)[number];
+  const all = (_s: Span): _s is Span => true;
+  const touching = (a: Span, b: Span) => a.end === b.t;
+
+  it("breaks between present neighbours that are not contiguous", () => {
+    const runs = splitRuns(spans, all, touching);
+    expect(runs.map((r) => [r.start, r.items.map((s) => s.t)])).toEqual([
+      [0, [0, 10]],
+      [2, [30, 40]],
+    ]);
+  });
+
+  it("keeps a one-item run between a gap and a break", () => {
+    const runs = splitRuns(spans, (s): s is Span => s.t !== 10, touching);
+    expect(runs.map((r) => r.items.length)).toEqual([1, 2]);
+  });
+
+  it("joins every present neighbour by default", () => {
+    expect(splitRuns([1, 2, 3], (n): n is number => n > 0)).toHaveLength(1);
   });
 });
 

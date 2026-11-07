@@ -156,7 +156,7 @@ export const NETWORK_BARS: MirrorBarsProps = {
   intervalMs: 1000,
   tEndMs: NOW_MS,
   accent: "net",
-  ariaLabel: "Upload above the line, download below, last 48 seconds",
+  ariaLabel: "Network: upload above the line, download below, last 48 seconds.",
   // Raw pixel heights: 18 px and 30 px are the ceilings.
   upMax: 18,
   downMax: 30,

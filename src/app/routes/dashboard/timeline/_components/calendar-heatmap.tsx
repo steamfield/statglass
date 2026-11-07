@@ -1,4 +1,5 @@
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
+import { DENSE_HATCH_PX, strokeHatch } from "~/components/charts/canvas-hatch";
 import { useThemeVersion, withAlpha } from "~/components/charts/theme";
 import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
@@ -91,7 +92,6 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
       if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
       else ctx.rect(x, y, w, h);
     };
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
     rows.forEach((row, r) => {
       const y = r * (CELL_H + GAP);
       for (let h = 0; h < 24; h++) {
@@ -114,18 +114,12 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
           ctx.fill();
           continue;
         }
-        // The hatch: 1 px lines every 4 px at 135 degrees.
-        ctx.save();
-        ctx.clip();
-        ctx.strokeStyle = hatch;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let k = -CELL_H; k < colW; k += 4) {
-          ctx.moveTo(x + k, y + CELL_H);
-          ctx.lineTo(x + k + CELL_H, y);
-        }
-        ctx.stroke();
-        ctx.restore();
+        strokeHatch(
+          ctx,
+          { x, y, width: colW, height: CELL_H },
+          hatch,
+          DENSE_HATCH_PX
+        );
       }
     });
     if (curRow !== undefined && curHour !== undefined) {

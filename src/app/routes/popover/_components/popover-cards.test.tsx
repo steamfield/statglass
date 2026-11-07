@@ -136,4 +136,31 @@ describe("popover network card", () => {
     await user.click(screen.getByRole("link", { name: /Network/ }));
     expect(opened()).toBe(1);
   });
+
+  it("holds the bars' ceiling across ticks instead of rescaling to each tick's peak", async () => {
+    const { transport } = renderWithProviders(
+      <>
+        <GrabStore />
+        <LiveNetworkCard />
+      </>
+    );
+    await screen.findByRole("img", { name: /^Network: upload above the line/ });
+    await waitFor(() => expect(storeRef?.getState().layoutNo).not.toBeNull());
+    // Upload bar heights (the row above the axis), tallest first.
+    const upHeights = () => {
+      const row = screen.getByRole("img", {
+        name: /^Network: upload/,
+      }).firstElementChild;
+      return [...(row?.querySelectorAll<HTMLElement>("span") ?? [])]
+        .map((bar) => Number.parseFloat(bar.style.height))
+        .filter((h) => h > 0)
+        .sort((a, b) => b - a);
+    };
+    // Both peaks sit under the same nice step (10 GB/s), far above the mock's.
+    act(() => transport.push(frameWith({ "net.tx_total": 7e9 })));
+    const before = upHeights()[0];
+    act(() => transport.push(frameWith({ "net.tx_total": 8e9 })));
+    // The 7 GB/s bar keeps its height; a per-tick maximum would stretch it.
+    expect(upHeights()[1]).toBeCloseTo(before ?? Number.NaN);
+  });
 });

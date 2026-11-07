@@ -29,6 +29,7 @@ function Probe() {
 const chart = (
   <LiveMirrorChart
     brush
+    subject="Network"
     upKey="net.tx_total"
     downKey="net.rx_total"
     upLabel="Upload"

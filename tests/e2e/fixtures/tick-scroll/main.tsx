@@ -47,6 +47,8 @@ function Fixture() {
           down={[3, 2, 1]}
           intervalMs={interval}
           tEndMs={time}
+          upMax={3}
+          downMax={3}
           accent="net"
           ariaLabel="Network test chart"
         />

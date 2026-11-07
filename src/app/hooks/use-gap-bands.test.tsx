@@ -19,6 +19,7 @@ function Charts({ windowMs }: { windowMs: number }) {
       <TotalCard windowMs={windowMs} />
       <CoreLoadCard clusters={[]} windowMs={windowMs} />
       <LiveMirrorChart
+        subject="Network"
         upKey="net.tx_total"
         downKey="net.rx_total"
         upLabel="Upload"

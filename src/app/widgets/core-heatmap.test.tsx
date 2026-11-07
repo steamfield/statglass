@@ -47,7 +47,8 @@ describe("CoreHeatmap", () => {
     const gaps = container.querySelectorAll<HTMLElement>("[data-gap]");
     expect(gaps).toHaveLength(2);
     for (const g of gaps) {
-      expect(g.style.background).toContain("repeating-linear-gradient");
+      expect(g).toHaveClass("bg-gap-hatch-dense");
+      expect(g.style.background).toBe("");
     }
   });
 
