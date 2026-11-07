@@ -8,6 +8,7 @@ import {
   uniqueTargets,
 } from "@core/process-selection";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useRowHold } from "~/components/data-table";
 import { QuitDialog } from "~/components/process-actions";
 import { useProcessDrag } from "~/hooks/use-process-drag";
 import { useQuitFlow } from "~/hooks/use-quit-flow";
@@ -59,16 +60,12 @@ function SelectionSession({
   const [state, setState] = useState<ProcessSelection>(EMPTY);
   const [only, setOnly] = useState(false);
   const [focused, setFocused] = useState<string | null>(null);
-  const [interacting, setInteracting] = useState(false);
-  const [focusWithin, setFocusWithin] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const reveal = useRef<((key: string) => void) | null>(null);
   const flow = useQuitFlow();
-  const held =
-    interacting ||
-    focusWithin ||
-    state.targets.length > 0 ||
-    flow.pending !== null;
+  const { held, holdProps } = useRowHold({
+    when: state.targets.length > 0 || flow.pending !== null,
+  });
   useEffect(() => {
     onHoldChange?.(held);
   }, [held, onHoldChange]);
@@ -220,12 +217,7 @@ function SelectionSession({
         ref={root}
         className="flex min-h-0 flex-col"
         style={height === undefined ? undefined : { height }}
-        onPointerEnter={() => setInteracting(true)}
-        onPointerLeave={() => setInteracting(false)}
-        onFocusCapture={() => setFocusWithin(true)}
-        onBlurCapture={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false);
-        }}
+        {...holdProps}
       >
         <span className="sr-only" aria-live="polite">
           {selected.length > 0

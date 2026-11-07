@@ -52,7 +52,7 @@ function Harness({
     sorting,
     ...(manualSorting ? {} : { onSortingChange: setSorting }),
     manualSorting,
-    hold: { paused },
+    hold: { when: paused },
   });
   if (suspend) throw pending;
   return (

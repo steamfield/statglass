@@ -28,6 +28,8 @@ export interface DataTableVirtual {
 /** Body only, so selection and grouped bodies can share the same table model. */
 interface DataTableProps<T extends RowData> {
   className?: string | undefined;
+  /** `plain` keeps the last row's border, for rows that draw their own. */
+  variant?: "default" | "plain";
   table: Table<TableFeatures, T>;
   rows: readonly Row<TableFeatures, T>[];
   renderRow?: (row: Row<TableFeatures, T>) => ReactNode;
@@ -48,7 +50,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   return props.virtual ? (
     <VirtualBody {...props} colSpan={colSpan} virtual={props.virtual} />
   ) : (
-    <TableBody className={props.className}>
+    <TableBody className={props.className} variant={props.variant}>
       <BodyRows {...props} colSpan={colSpan} />
       {props.after}
       <Footnote colSpan={colSpan}>{props.footnote}</Footnote>
@@ -79,6 +81,7 @@ function VirtualBody<T extends RowData>({
   footnote,
   virtual,
   className,
+  variant,
   colSpan,
 }: DataTableProps<T> & { colSpan: number; virtual: DataTableVirtual }) {
   const virtualizer = useVirtualizer({
@@ -110,7 +113,7 @@ function VirtualBody<T extends RowData>({
       })
     : rows;
   return (
-    <TableBody className={className}>
+    <TableBody className={className} variant={variant}>
       {virtual?.enabled && padTop > 0 && (
         <Spacer height={padTop} colSpan={colSpan} />
       )}

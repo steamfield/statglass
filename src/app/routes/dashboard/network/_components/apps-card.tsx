@@ -208,23 +208,22 @@ function AppsTable({
   sorting: SortingState;
   onSortingChange: OnChangeFn<SortingState>;
 }) {
-  const [paused, setPaused] = useState(false);
-  const { table, rows: sorted } = useDataTable({
+  const {
+    table,
+    rows: sorted,
+    holdProps,
+  } = useDataTable({
     data: rows,
     columns: APP_COLUMNS,
     getRowId: appKey,
     tiebreak: byName,
     sorting,
     onSortingChange,
-    hold: { paused },
+    hold: {},
   });
   const bytes = (n: number) => formatBytes(n);
   return (
-    <div
-      className="overflow-x-auto"
-      onPointerEnter={() => setPaused(true)}
-      onPointerLeave={() => setPaused(false)}
-    >
+    <div className="overflow-x-auto" {...holdProps}>
       <Table aria-label="Network by app">
         <TableHeader>
           <DataTableHead table={table} />

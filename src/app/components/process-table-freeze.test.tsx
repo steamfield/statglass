@@ -117,6 +117,32 @@ describe("ProcessTable order freeze", () => {
     expect(names()).toEqual(["c", "b", "a"]);
   });
 
+  it("holds row order while keyboard focus is inside, with no hover hold", () => {
+    const view = (rows: LiveProcess[]) => (
+      <ProcessTable
+        rows={rows}
+        columns={["name", "cpu"]}
+        sort={{ by: "cpu", dir: "desc" }}
+        onSort={() => {}}
+        height={300}
+        ariaLabel="Processes"
+      />
+    );
+    const { container, rerender } = render(
+      view([proc(1, "a", 50), proc(2, "b", 10)])
+    );
+    fireEvent.pointerEnter(container.firstElementChild as HTMLElement);
+    rerender(view([proc(1, "a", 5), proc(2, "b", 90)]));
+    expect(names()).toEqual(["b", "a"]);
+
+    act(() => screen.getByRole("button", { name: /Process/ }).focus());
+    rerender(view([proc(1, "a", 95), proc(2, "b", 90)]));
+    expect(names()).toEqual(["b", "a"]);
+
+    act(() => screen.getByRole("button", { name: /Process/ }).blur());
+    expect(names()).toEqual(["a", "b"]);
+  });
+
   it("re-sorts at once when a header is clicked while hovering", () => {
     let sort = { by: "cpu" as const, dir: "desc" as "asc" | "desc" };
     const rows = [proc(1, "a", 50), proc(2, "b", 10)];

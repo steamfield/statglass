@@ -1,10 +1,11 @@
 import { formatPercent } from "@core/format";
 import type { UsageRow } from "@core/usage-rows";
-import { type ReactNode, useMemo } from "react";
+import type { Table } from "@tanstack/react-table";
+import type { ReactNode } from "react";
 import {
   columnHelper,
   DataTableHead,
-  useDataTable,
+  type TableFeatures,
 } from "~/components/data-table";
 import { InlineMessage } from "~/components/inline-message";
 import { ProcessSelectionHead } from "~/components/process-selection";
@@ -151,44 +152,39 @@ export function ShareCell({
   );
 }
 
-const headerHelper = columnHelper<UsageRow>();
-const headerRows: UsageRow[] = [];
-const usageId = (row: UsageRow) => row.app.name;
+const usageHelper = columnHelper<UsageRow>();
+export const usageRowId = (row: UsageRow) => row.app.name;
+
+/** The app, then the page's figures; Rust ranks the rows, so none sorts. */
+export function usageColumns(
+  columns: readonly { label: string; ranked?: boolean }[]
+) {
+  return usageHelper.columns([
+    usageHelper.display({
+      id: "app",
+      header: "App",
+      meta: { align: "left" },
+    }),
+    ...columns.map((column) =>
+      usageHelper.display({
+        id: column.label,
+        header: column.label,
+        meta: {
+          align: "right",
+          ...(column.ranked ? { ranked: true } : {}),
+        },
+      })
+    ),
+  ]);
+}
 
 export function UsageHead({
-  columns,
+  table,
   share,
 }: {
-  columns: readonly { label: string; ranked?: boolean }[];
+  table: Table<TableFeatures, UsageRow>;
   share: boolean;
 }) {
-  const definitions = useMemo(
-    () =>
-      headerHelper.columns([
-        headerHelper.display({
-          id: "app",
-          header: "App",
-          meta: { align: "left" },
-        }),
-        ...columns.map((column) =>
-          headerHelper.display({
-            id: column.label,
-            header: column.label,
-            meta: {
-              align: "right",
-              ...(column.ranked ? { ranked: true } : {}),
-            },
-          })
-        ),
-      ]),
-    [columns]
-  );
-  const { table } = useDataTable({
-    data: headerRows,
-    columns: definitions,
-    getRowId: usageId,
-    manualSorting: true,
-  });
   return (
     <DataTableHead
       table={table}

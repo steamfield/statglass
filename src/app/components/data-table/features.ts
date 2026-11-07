@@ -1,10 +1,14 @@
 import {
   type CellData,
   type TableFeatures as CoreTableFeatures,
+  columnGroupingFeature,
   constructSortFn,
   createColumnHelper,
+  createExpandedRowModel,
+  createGroupedRowModel,
   createSortedRowModel,
   type RowData,
+  rowExpandingFeature,
   rowSortingFeature,
   sortFn_alphanumeric,
   sortFn_text,
@@ -24,7 +28,12 @@ declare module "@tanstack/table-core" {
   }
 }
 
+/** Grouping and expansion stay idle until a table sets `grouping`. */
 export const features = tableFeatures({
+  columnGroupingFeature,
+  groupedRowModel: createGroupedRowModel(),
+  rowExpandingFeature,
+  expandedRowModel: createExpandedRowModel(),
   rowSortingFeature,
   sortedRowModel: createSortedRowModel(),
   sortFns: {

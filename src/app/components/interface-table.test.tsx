@@ -1,5 +1,6 @@
 import { seriesKey, sk } from "@core/series-key";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -64,6 +65,20 @@ it.each([
     expect(names()).toEqual(second);
   }
 );
+
+it("holds order while keyboard focus is inside and resumes on blur", () => {
+  const { rerender } = render(<InterfaceTable rows={rows} units="MBps" />);
+  fireEvent.click(screen.getByRole("button", { name: "Down" }));
+  expect(names()).toEqual(["en9", "en10", "gap"]);
+  const interfaceHeader = () =>
+    screen.getByRole("button", { name: /Interface/ });
+  act(() => interfaceHeader().focus());
+  const swapped = rows.map((r) => (r.id === "en10" ? { ...r, rxBps: 90 } : r));
+  rerender(<InterfaceTable rows={swapped} units="MBps" />);
+  expect(names()).toEqual(["en9", "en10", "gap"]);
+  act(() => interfaceHeader().blur());
+  expect(names()).toEqual(["en10", "en9", "gap"]);
+});
 
 it("holds hover order across pushed frames, updates values and applies a header change immediately", async () => {
   const keys = [

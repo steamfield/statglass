@@ -72,6 +72,7 @@ export interface ProcessTableProps {
    * Keep row order while the pointer is over the table so a row does not move
    * under the cursor; values keep updating, new rows go last, and order
    * resumes when the pointer leaves (plan 4.14). Sorting re-orders at once.
+   * Keyboard focus inside the table holds the order either way.
    */
   freezeOrderOnHover?: boolean;
   /**
@@ -332,7 +333,6 @@ function processColumns(c: CellCtx) {
  */
 export function ProcessTable(props: ProcessTableProps) {
   const { rows, columns, sort, onSort } = props;
-  const [paused, setPaused] = useState(false);
   const { by, dir } = sort;
   const { sorting, onSortingChange } = useColumnSort(sort, onSort, columns);
   const { cpuBarMaxPct = 100, memUnits = "GB", rateUnits = "MBps" } = props;
@@ -347,7 +347,7 @@ export function ProcessTable(props: ProcessTableProps) {
     tiebreak: byPid,
     sorting,
     onSortingChange,
-    hold: { paused },
+    hold: { pointer: props.freezeOrderOnHover ?? false },
   });
   const descriptors = useMemo(
     () =>
@@ -364,7 +364,6 @@ export function ProcessTable(props: ProcessTableProps) {
     <ProcessTableBody
       {...props}
       data={data}
-      setPaused={setPaused}
       height={props.height + (props.selectable ? SELECTION_BAR_PX : 0)}
     />
   );
@@ -385,20 +384,18 @@ const byPid = (a: LiveProcess, b: LiveProcess) => a.pid - b.pid;
 
 function ProcessTableBody({
   height,
-  freezeOrderOnHover = false,
   growOnly = false,
   empty,
   ariaLabel,
   data,
-  setPaused,
 }: ProcessTableProps & {
   data: ReturnType<typeof useDataTable<LiveProcess>>;
-  setPaused: (paused: boolean) => void;
 }) {
   const selection = useProcessSelection();
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element>>(null);
-  useEffect(() => () => setPaused(false), [setPaused]);
+  const { release } = data;
+  useEffect(() => release, [release]);
   const byKey = new Map(data.rows.map((row) => [row.id, row]));
   const rows = selection
     ? selection.rows.flatMap((r) => {
@@ -433,8 +430,7 @@ function ProcessTableBody({
           ? { height: Math.max(tallestPx, bodyPx) + ROW_H + 4 }
           : { maxHeight: height + ROW_H + 4 }
       }
-      onPointerEnter={freezeOrderOnHover ? () => setPaused(true) : undefined}
-      onPointerLeave={freezeOrderOnHover ? () => setPaused(false) : undefined}
+      {...data.holdProps}
     >
       <Table
         aria-label={ariaLabel}

@@ -21,7 +21,7 @@ import {
   usageWhole,
 } from "@core/usage-rows";
 import { ChevronRight } from "lucide-react";
-import { memo, type ReactNode, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useMemo, useState } from "react";
 import {
   APP_CELL,
   AppsNote,
@@ -30,9 +30,11 @@ import {
   ShareCell,
   UnrecordedRange,
   UsageHead,
+  usageColumns,
+  usageRowId,
 } from "~/components/app-table";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { FullWidthRow } from "~/components/data-table";
+import { FullWidthRow, useDataTable } from "~/components/data-table";
 import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import {
   ProcessSelectionRow,
@@ -213,19 +215,20 @@ function UsageBody({
 }) {
   const { by } = config;
   const ranked = useMemo(() => usageRows(data, by, query), [data, by, query]);
+  // The selection surface holds for a selection or a pending quit too.
   const [held, setHeld] = useState(false);
-  const prior = useRef<string[]>([]);
-  const rows = useMemo(() => {
-    const order = held ? prior.current : [];
-    const rank = new Map(order.map((key, i) => [key, i]));
-    const next = [...ranked].sort(
-      (a, b) =>
-        (rank.get(a.app.name) ?? order.length) -
-        (rank.get(b.app.name) ?? order.length)
-    );
-    prior.current = next.map((r) => r.app.name);
-    return next;
-  }, [ranked, held]);
+  const columns = useMemo(() => usageColumns(config.columns), [config.columns]);
+  const model = useDataTable({
+    data: ranked,
+    columns,
+    getRowId: usageRowId,
+    manualSorting: true,
+    hold: { when: held },
+  });
+  const rows = useMemo(
+    () => model.rows.map((row) => row.original),
+    [model.rows]
+  );
   const rest = useMemo(() => remainderRows(data, by), [data, by]);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
@@ -277,10 +280,10 @@ function UsageBody({
           are sampled differently), so System and other reads low there.
         </AppsNote>
       )}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" {...model.holdProps}>
         <Table aria-label={`${config.noun} by app`}>
           <TableHeader>
-            <UsageHead columns={config.columns} share={share} />
+            <UsageHead table={model.table} share={share} />
           </TableHeader>
           <TableBody>
             {shown.length === 0 && (
@@ -375,16 +378,7 @@ function UsageAppRows({
   expanded: ReadonlySet<string>;
   toggle: (name: string) => void;
 }) {
-  const selection = useProcessSelection();
-  const order = new Map(selection?.rows.map((r, i) => [r.key, i]));
-  const ordered = selection
-    ? [...rows].sort(
-        (a, b) =>
-          (order.get(`app:${a.app.name}`) ?? 0) -
-          (order.get(`app:${b.app.name}`) ?? 0)
-      )
-    : rows;
-  return ordered.map((r) => (
+  return rows.map((r) => (
     <AppRows
       key={r.app.name}
       row={r}
