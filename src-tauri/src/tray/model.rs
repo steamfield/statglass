@@ -17,6 +17,7 @@ use statglass_engine::FrameLayout;
 use statglass_schema::settings::{BarSettings, ItemMode, NetworkUnit, Readout};
 use statglass_schema::{Module, Settings};
 
+pub use self::format::{RateGolden, rate_golden};
 use self::format::{pct_text, rate_line, rate_text, rate_words, temp_text, watts_text, words_name};
 pub use self::items::{ItemChange, ItemChanges, ItemState, RETRY_AFTER, Retries, item_change};
 pub use self::pacer::{Pacer, REDRAW_PERIOD};

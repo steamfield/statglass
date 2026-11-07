@@ -146,7 +146,7 @@ export function ComparisonCanvas({
               toMs={gap.end_ms ?? to}
               rangeFromMs={from}
               rangeToMs={to}
-              label={gap.reason}
+              label={gap.label}
               labelPosition="none"
             />
           ))}

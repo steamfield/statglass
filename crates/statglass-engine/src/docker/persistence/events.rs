@@ -98,12 +98,7 @@ fn event_coverage(
     let mut coverage = coverage;
     if let Some(snapshot) = &snapshot {
         for c in snapshot.event_coverage(q.container_id.as_deref(), q.from_ms, q.to_ms)? {
-            let gap = api::DockerCoverage {
-                start_ms: c.start_ms,
-                end_ms: c.end_ms,
-                container_id: c.entity,
-                reason: c.reason,
-            };
+            let gap = api::DockerCoverage::new(c.start_ms, c.end_ms, c.entity, c.reason);
             if !coverage.iter().any(|live| {
                 live.start_ms == gap.start_ms
                     && live.container_id == gap.container_id

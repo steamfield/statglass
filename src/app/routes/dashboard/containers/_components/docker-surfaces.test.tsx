@@ -101,6 +101,8 @@ it("shows event coverage gaps beside Timeline annotations", async () => {
           end_ms: 2000,
           container_id: null,
           reason: "runtime_disconnected",
+          kind: "metrics",
+          label: "Runtime disconnected",
         },
       ],
     },

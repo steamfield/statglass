@@ -1,5 +1,6 @@
 import type { ExportOutcome, HistoryRequest } from "@core/generated/bindings";
 import { HISTORY_TIERS, METRIC_MODULES } from "@core/generated/bindings";
+import { DAY_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import { mockDiskDevices, mockDiskIo } from "./disk-io";
@@ -96,6 +97,25 @@ export class MockQueries {
         // rows (`HISTORY_RECENT_MS`). Gaps sit where the ring has its holes:
         // fixed at start, not sliding.
         return ok(this.historyPage(request));
+      }
+    );
+  /** As `History::last_wake`: the latest closed sleep in the past week. */
+  readonly lastWake: MockTransport["lastWake"] = async (host) =>
+    this.remote.forward(host, (peer) => peer.lastWake(MOCK_HOST_ID)) ??
+    this.commands.hostCommand(
+      "last_wake",
+      host,
+      [host],
+      { needsHistory: true },
+      () => {
+        const now = this.ring.now();
+        let wake: number | null = null;
+        for (const g of mockGaps(this.ring.flags, this.ring.startMs)) {
+          if (g.reason !== "sleep" || g.end_ms === null) continue;
+          if (g.end_ms < now - 7 * DAY_MS || g.start_ms > now) continue;
+          wake = Math.max(wake ?? g.end_ms, g.end_ms);
+        }
+        return ok(wake);
       }
     );
   readonly querySeriesStats: MockTransport["querySeriesStats"] = async (
@@ -307,6 +327,7 @@ export class MockQueries {
       queryDiskIo: this.queryDiskIo,
       queryHistory: this.queryHistory,
       querySeriesStats: this.querySeriesStats,
+      lastWake: this.lastWake,
       queryEvents: this.queryEvents,
       queryHeatmap: this.queryHeatmap,
       batteryHours: this.batteryHours,

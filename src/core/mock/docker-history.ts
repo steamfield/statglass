@@ -1,6 +1,7 @@
 import {
   DOCKER_BUCKET_MS,
   type DockerContainer,
+  type DockerCoverage,
   type DockerHistoryPoint,
   type DockerHistoryRequest,
 } from "@core/generated/bindings";
@@ -81,4 +82,46 @@ function historyCpu(
   if (i === 1) return 0;
   if (id === "removed-spike" && i === Math.floor(count / 4)) return 420;
   return Math.max(0, base * (0.75 + 0.25 * Math.sin(i / 6 + seed)));
+}
+
+/**
+ * `mask_uncovered` in Rust's `projection.rs`: no point claims measured time
+ * inside a collection or metrics gap of its container or of all containers.
+ */
+export function maskUncovered(
+  points: readonly DockerHistoryPoint[],
+  coverage: readonly DockerCoverage[],
+  containerId: string | null,
+  toMs: number
+): DockerHistoryPoint[] {
+  const spans = coverage
+    .filter(
+      (g) =>
+        (g.kind === "collection" || g.kind === "metrics") &&
+        (g.container_id === null || g.container_id === containerId)
+    )
+    .map((g) => [g.start_ms, g.end_ms ?? toMs] as const)
+    .sort((a, b) => a[0] - b[0]);
+  return points.map((p) => {
+    const end = p.time_ms + p.duration_ms;
+    let gap = 0;
+    let cursor = p.time_ms;
+    for (const [s0, e0] of spans) {
+      const s = Math.max(s0, cursor);
+      const e = Math.min(e0, end);
+      if (e > s) {
+        gap += e - s;
+        cursor = e;
+      }
+    }
+    if (gap === 0) return p;
+    const left = end - p.time_ms - gap;
+    return {
+      ...p,
+      cpu_measured_ms: Math.min(p.cpu_measured_ms, left),
+      memory_measured_ms: Math.min(p.memory_measured_ms, left),
+      cpu_covered: false,
+      memory_covered: false,
+    };
+  });
 }

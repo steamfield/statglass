@@ -1,5 +1,5 @@
 //! Choose retained tiers and merge immutable history evidence for presentation.
-use super::projection::{display_points, fold_ring};
+use super::projection::{display_points, fold_ring, mask_uncovered};
 use super::*;
 
 impl DockerRecorder {
@@ -104,6 +104,7 @@ impl DockerRecorder {
         let mut points = display_points(q, tier, buckets)?;
         let metas = history_metadata(q, &mut points, persisted.metadata, metadata);
         let gaps = history_coverage(q, persisted.coverage, coverage);
+        mask_uncovered(&mut points, &gaps, q.container_id.as_deref(), q.to_ms);
         if started.elapsed() > Duration::from_secs(2) {
             return Err(DockerServiceError::SnapshotExpired(
                 "History snapshot expired",
@@ -326,12 +327,7 @@ fn history_coverage(
 ) -> Vec<api::DockerCoverage> {
     let mut gaps: Vec<_> = persisted
         .into_iter()
-        .map(|c| api::DockerCoverage {
-            start_ms: c.start_ms,
-            end_ms: c.end_ms,
-            container_id: c.entity,
-            reason: c.reason,
-        })
+        .map(|c| api::DockerCoverage::new(c.start_ms, c.end_ms, c.entity, c.reason))
         .collect();
     for c in coverage {
         if let Some(old) = gaps.iter_mut().find(|g| {

@@ -1,4 +1,9 @@
-import type { DockerContainer, DockerCoverage } from "@core/generated/bindings";
+import { formatDateTime } from "@core/format";
+import type {
+  DockerContainer,
+  DockerCoverage,
+  DockerCoverageKind,
+} from "@core/generated/bindings";
 import {
   Dialog,
   DialogContent,
@@ -6,18 +11,8 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 
-export const eventCoverage = (gap: DockerCoverage) =>
-  gap.reason === "events_disconnected" ||
-  gap.reason === "event_replay_uncertain";
-export const historyReason: Record<string, string> = {
-  write_failed: "Measurements could not be saved",
-  write_rejected: "History storage was full or the disk was low",
-  writer_disconnected: "History writer stopped",
-  events_disconnected: "Lost connection to Docker events",
-  event_replay_uncertain: "Some events may be missing after reconnecting",
-  app_not_running: "StatGlass was not running",
-  engine_switch: "Monitoring switched Docker engines",
-};
+/** Rust's kind: lost events say nothing about measurements (D-128). */
+export const eventCoverage = (gap: DockerCoverage) => gap.kind === "events";
 export function mergeCoverage(
   records: readonly DockerCoverage[]
 ): DockerCoverage[] {
@@ -40,23 +35,12 @@ export function mergeCoverage(
   }
   return rows;
 }
-const group = (row: DockerCoverage) =>
-  eventCoverage(row)
-    ? "Events"
-    : ["write_failed", "write_rejected", "writer_disconnected"].includes(
-          row.reason
-        )
-      ? "Saving"
-      : [
-            "unavailable",
-            "paused",
-            "idle_suspended",
-            "permission_denied",
-            "incompatible",
-            "partial_population",
-          ].includes(row.reason)
-        ? "Collection"
-        : "Metrics";
+const SECTIONS: readonly { kind: DockerCoverageKind; title: string }[] = [
+  { kind: "collection", title: "Collection" },
+  { kind: "saving", title: "Saving" },
+  { kind: "metrics", title: "Metrics" },
+  { kind: "events", title: "Events" },
+];
 export function HistoryDetails({
   open,
   onOpenChange,
@@ -79,28 +63,25 @@ export function HistoryDetails({
           Collection, saving and coverage for this range.
         </DialogDescription>
         <div className="max-h-88 overflow-y-auto">
-          {["Collection", "Saving", "Metrics", "Events"].map((label) => {
-            const items = merged.filter((row) => group(row) === label);
+          {SECTIONS.map(({ kind, title }) => {
+            const items = merged.filter((row) => row.kind === kind);
             return items.length ? (
-              <section key={label} className="mb-4">
-                <h3 className="mb-2 text-[13px]">{label}</h3>
-                {/** biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H. */}
+              <section key={kind} className="mb-4">
+                <h3 className="mb-2 text-[13px]">{title}</h3>
                 {items.map((row, index) => (
                   <div
                     key={`${row.reason}:${row.container_id}:${row.start_ms}`}
                     className="border-border-subtle border-b py-2 text-[12px]"
                   >
-                    <div>{historyReason[row.reason] ?? row.reason}</div>
-                    {label === "Saving" && index === 0 && savingError && (
+                    <div>{row.label}</div>
+                    {kind === "saving" && index === 0 && savingError && (
                       <p className="mt-1 break-words text-[12px] text-muted-foreground">
                         {savingError}
                       </p>
                     )}
                     <div className="text-[11px] text-muted-foreground">
-                      {new Date(row.start_ms).toLocaleTimeString()}–
-                      {row.end_ms === null
-                        ? "now"
-                        : new Date(row.end_ms).toLocaleTimeString()}{" "}
+                      {formatDateTime(row.start_ms)}–
+                      {row.end_ms === null ? "now" : formatDateTime(row.end_ms)}{" "}
                       ·{" "}
                       {row.container_id === null
                         ? "All containers"

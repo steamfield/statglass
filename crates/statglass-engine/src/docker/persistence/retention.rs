@@ -40,12 +40,12 @@ pub(super) fn gap(s: &mut State, engine: &str, start: i64, end: i64, reason: &st
         old.start_ms = old.start_ms.min(start);
         old.end_ms = Some(old.end_ms.unwrap_or(end).max(end));
     } else {
-        gaps.push(api::DockerCoverage {
-            start_ms: start,
-            end_ms: Some(end),
-            container_id: None,
-            reason: reason.into(),
-        });
+        gaps.push(api::DockerCoverage::new(
+            start,
+            Some(end),
+            None,
+            reason.into(),
+        ));
     }
     bound_coverage(gaps);
 }
@@ -54,12 +54,12 @@ pub(super) fn bound_coverage(gaps: &mut Vec<api::DockerCoverage>) {
         let start = gaps.iter().map(|g| g.start_ms).min().unwrap_or(0);
         let end = gaps.iter().filter_map(|g| g.end_ms).max();
         gaps.clear();
-        gaps.push(api::DockerCoverage {
-            start_ms: start,
-            end_ms: end,
-            container_id: None,
-            reason: "coverage_unknown".into(),
-        });
+        gaps.push(api::DockerCoverage::new(
+            start,
+            end,
+            None,
+            "coverage_unknown".into(),
+        ));
     }
 }
 fn retry_bytes(retry: &Retry) -> usize {

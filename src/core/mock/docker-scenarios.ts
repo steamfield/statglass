@@ -84,7 +84,9 @@ export function scenarioSnapshot(
       start_ms: now() - 300_000,
       end_ms: now() - 240_000,
       container_id: null,
-      reason: "app_not_running",
+      reason: "shutdown",
+      kind: "collection",
+      label: "StatGlass was not running",
     });
   if (scenarios.includes("docker-events-gap"))
     snapshot.coverage.push({
@@ -92,6 +94,8 @@ export function scenarioSnapshot(
       end_ms: now() - 120_000,
       container_id: null,
       reason: "events_disconnected",
+      kind: "events",
+      label: "Lost connection to Docker events",
     });
   return snapshot;
 }

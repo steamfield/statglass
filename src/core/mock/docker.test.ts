@@ -182,3 +182,39 @@ it("keeps collection and container state when only display preferences change", 
   expect((await t.getSettings()).settings.docker).toEqual(settings);
   t.dispose();
 });
+
+it("counts no measured time inside a collection gap, as Rust does (D-128)", async () => {
+  const t = createMockTransport({
+    scenarios: ["docker-11", "docker-history-gap", "docker-events-gap"],
+    historyRows: 1,
+  });
+  const snapshot = await unwrap(t.dockerSnapshot());
+  const gap = snapshot.coverage.find((g) => g.kind === "collection");
+  const events = snapshot.coverage.find((g) => g.kind === "events");
+  if (!gap?.end_ms || !events?.end_ms) throw new Error("No mock gaps");
+  const range = {
+    ...request,
+    from_ms: gap.start_ms - 600_000,
+    to_ms: gap.end_ms + 600_000,
+  };
+  const comparison = await unwrap(t.dockerComparison(range));
+  const first = comparison.series.find((s) => s.container.id === "container-0");
+  if (!first) throw new Error("No mock series");
+  const inside = (from: number, to: number) =>
+    first.points.filter(
+      (p) => p.time_ms >= from && p.time_ms + p.duration_ms <= to
+    );
+  expect(inside(gap.start_ms, gap.end_ms).length).toBeGreaterThan(0);
+  for (const p of inside(gap.start_ms, gap.end_ms)) {
+    expect([p.cpu_measured_ms, p.cpu_covered]).toEqual([0, false]);
+  }
+  // Lost events say nothing about measurements.
+  expect(
+    inside(events.start_ms, events.end_ms).some((p) => p.cpu_measured_ms > 0)
+  ).toBe(true);
+  const history = await unwrap(
+    t.dockerHistory({ ...range, container_id: first.container.id })
+  );
+  expect(history.points).toEqual(first.points);
+  t.dispose();
+});

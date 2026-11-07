@@ -177,12 +177,9 @@ impl DockerRecorder {
         let mut all_coverage = read.coverage.clone();
         if let Some(snapshot) = &snapshot {
             for c in snapshot.event_coverage(None, q.from_ms, q.to_ms)? {
-                all_coverage.push(api::DockerCoverage {
-                    start_ms: c.start_ms,
-                    end_ms: c.end_ms,
-                    container_id: c.entity,
-                    reason: c.reason,
-                });
+                all_coverage.push(api::DockerCoverage::new(
+                    c.start_ms, c.end_ms, c.entity, c.reason,
+                ));
             }
         }
         for (id, fact) in candidates {

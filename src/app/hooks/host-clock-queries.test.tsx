@@ -32,13 +32,10 @@ describe("remote history clock", () => {
         (call) => call.command === "query_events"
       );
       expect(events?.args[1]).toBe(sourceNow - 60000);
-      const history = transport.calls.find(
-        (call) => call.command === "query_history"
+      const stats = transport.calls.find(
+        (call) => call.command === "query_series_stats"
       );
-      expect(history?.args[0]).toMatchObject({
-        to_ms: sourceNow,
-        from_ms: sourceNow - 86400000,
-      });
+      expect(stats?.args.slice(2)).toEqual([sourceNow - 86400000, sourceNow]);
       view.unmount();
       transport.dispose();
     }
