@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## [0.7.0](https://github.com/steamfield/statglass/compare/v0.6.2...v0.7.0) - 2026-11-07
+
+0.6.2 was tagged but not published; 0.7.0 includes its changes.
 
 ### Removed
 
