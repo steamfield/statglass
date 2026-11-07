@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use statglass_remote::AgentPaths;
+use statglass_store::{StoreError, WriterLock};
 
 const FILES: &[&str] = &[
     "history.sqlite",
@@ -216,13 +217,15 @@ pub fn recover(paths: &AgentPaths) -> anyhow::Result<Option<Journal>> {
     Ok(Some(journal))
 }
 
-fn history_lock(paths: &AgentPaths) -> anyhow::Result<File> {
-    let file = statglass_store::open_private(&statglass_store::lock_path(
-        &paths.data_dir.join("history.sqlite"),
-    ))?;
-    file.try_lock()
-        .context("collector still owns history; refusing to back up or restore a live database")?;
-    Ok(file)
+fn history_lock(paths: &AgentPaths) -> anyhow::Result<WriterLock> {
+    let db = paths.data_dir.join("history.sqlite");
+    match WriterLock::acquire(&db) {
+        Ok(lock) => Ok(lock),
+        Err(StoreError::Locked { .. }) => anyhow::bail!(
+            "collector still owns history; refusing to back up or restore a live database"
+        ),
+        Err(e) => Err(e).with_context(|| format!("taking the history lock for {}", db.display())),
+    }
 }
 
 pub fn public_starting(paths: &AgentPaths) -> anyhow::Result<()> {

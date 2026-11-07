@@ -1,6 +1,7 @@
 //! Per-interface network rates from `/sys/class/net/<iface>/statistics`: `net.rx`,
 //! `net.tx` (bytes/s) and `net.link_rate` (bits/s), labelled `iface`, plus the
-//! `net.rx_total`/`net.tx_total` sums and the exact [`IfaceNet`] counter deltas.
+//! `net.rx_total`/`net.tx_total` sums and the exact [`IfaceNet`](crate::IfaceNet)
+//! counter deltas, all through the shared [`crate::net::emit`].
 //!
 //! Which interfaces: those with a `device` link (backed by a NIC: `end0`, `wlp1s0f0`,
 //! a VM's virtio NIC), plus tunnels of type 65534 (`ARPHRD_NONE`: `tailscale0`,
@@ -10,10 +11,10 @@
 //! reported whether they are up or down, so a link going down does not change the
 //! series set.
 //!
-//! The totals and [`IfaceNet`] count only the NIC-backed interfaces. Tunnel traffic is
-//! encapsulated on a NIC as well, so adding the tunnel would count it twice. This is the
-//! one difference from the macOS totals, which sum every reported interface (macOS
-//! reports no tunnels).
+//! The totals and [`IfaceNet`](crate::IfaceNet) count only the NIC-backed interfaces.
+//! Tunnel traffic is encapsulated on a NIC as well, so adding the tunnel would count it
+//! twice. This is the one difference from the macOS totals, which sum every reported
+//! interface (macOS reports no tunnels).
 //!
 //! The sysfs statistics are 64-bit (`rtnl_link_stats64`) on 64-bit kernels, so every
 //! decrease is a reset, such as `tailscale0` restarting: no rate that sample, and the
@@ -37,18 +38,15 @@ use std::sync::Arc;
 use statglass_schema::{Entitlement, Labels, MetricId, Module, SeriesKey};
 
 use super::SysRoot;
-use super::counters::{PartSum, read_u64_at, span_secs};
-use crate::{
-    Cadence, CollectError, Collector, CollectorId, Every, IfaceNet, Interval, Probe, SampleBuf,
-    Tick,
-};
+use super::counters::read_u64_at;
+use crate::counters::CounterWidth;
+use crate::net::{NetCounters, NetIface};
+use crate::{Cadence, CollectError, Collector, CollectorId, Every, Probe, SampleBuf, Tick};
 
 /// `ARPHRD_NONE`: L3 tunnels (tun, WireGuard, Tailscale).
 const TUNNEL_TYPE: u64 = 65534;
 const LINK_RATE_MS: u32 = 60_000;
 const RESCAN_MS: u32 = 30_000;
-/// Rates above this are a counter glitch, not traffic (about 400 Gbit/s).
-const MAX_PLAUSIBLE_BPS: f64 = 50e9;
 
 /// Whether `/sys/class/net/<iface>/device` exists. A seam so fixture trees, which
 /// cannot hold symlinks, can say which interfaces have one.
@@ -96,25 +94,8 @@ pub(super) fn scan(root: &SysRoot, link: &DeviceLink) -> Vec<Iface> {
     out
 }
 
-/// Counter delta; `None` for any decrease, which is a reset (the interface was
-/// recreated or its driver reloaded), so that sample has no rate and the next one
-/// starts from the new value.
-fn counter_delta(prev: u64, cur: u64) -> Option<u64> {
-    cur.checked_sub(prev)
-}
-
-/// rx bytes, tx bytes, rx packets, tx packets.
-type Totals = [u64; 4];
+/// The [`NetCounters`] order.
 const STATS: [&str; 4] = ["rx_bytes", "tx_bytes", "rx_packets", "tx_packets"];
-
-fn since(prev: &Totals, cur: &Totals) -> Option<Totals> {
-    Some([
-        counter_delta(prev[0], cur[0])?,
-        counter_delta(prev[1], cur[1])?,
-        counter_delta(prev[2], cur[2])?,
-        counter_delta(prev[3], cur[3])?,
-    ])
-}
 
 /// The interface of the lowest-metric default route in `/proc/net/route` text.
 fn default_route_v4(text: &str) -> Option<&str> {
@@ -157,11 +138,11 @@ struct Slot {
     rx: SeriesKey,
     tx: SeriesKey,
     link: SeriesKey,
-    prev: Option<Totals>,
+    prev: Option<NetCounters>,
 }
 
 impl Slot {
-    fn read(&self) -> Option<Totals> {
+    fn read(&self) -> Option<NetCounters> {
         let [a, b, c, d] = &self.stats;
         Some([
             read_u64_at(a)?,
@@ -217,7 +198,7 @@ impl Network {
         }
     }
 
-    fn slot(&self, iface: &Iface, prev: Option<Totals>) -> Slot {
+    fn slot(&self, iface: &Iface, prev: Option<NetCounters>) -> Slot {
         let n = &iface.name;
         let key = |id| SeriesKey::new(MetricId::from_static(id), Labels::single("iface", n));
         Slot {
@@ -247,67 +228,24 @@ impl Network {
     }
 
     fn emit(&mut self, now: u64, link_tick: bool, out: &mut SampleBuf) {
-        let secs = span_secs(self.prev_ns, now);
-        let mut sum: Totals = [0; 4];
-        let mut summed = false;
-        let mut rx_total = PartSum::default();
-        let mut tx_total = PartSum::default();
-        for slot in &mut self.slots {
-            let cur = slot.read();
-            let mut rates = [None, None];
-            if let (Some(prev), Some(cur), Some(secs)) = (slot.prev, cur, secs) {
-                for (i, rate) in rates.iter_mut().enumerate() {
-                    *rate = counter_delta(prev[i], cur[i])
-                        .map(|d| d as f64 / secs)
-                        .filter(|r| *r <= MAX_PLAUSIBLE_BPS)
-                        .map(|r| r as f32);
-                }
-                let plausible = |d: &Totals| (d[0].max(d[1]) as f64 / secs) <= MAX_PLAUSIBLE_BPS;
-                if slot.physical
-                    && let Some(d) = since(&prev, &cur).filter(plausible)
-                {
-                    for (s, d) in sum.iter_mut().zip(d) {
-                        *s = s.saturating_add(d);
-                    }
-                    summed = true;
-                }
+        let ifaces = self.slots.iter_mut().map(|slot| {
+            let link = link_tick
+                .then(|| read_u64_at(&slot.speed))
+                .flatten()
+                .filter(|&mbps| mbps > 0)
+                .map(|mbps| (&slot.link, (mbps as f64 * 1e6) as f32));
+            NetIface {
+                cur: slot.read(),
+                rx: &slot.rx,
+                tx: &slot.tx,
+                prev: &mut slot.prev,
+                counted: slot.physical,
+                link,
             }
-            let [rx, tx] = rates;
-            if let Some(r) = rx {
-                out.push(&slot.rx, r);
-            }
-            if let Some(r) = tx {
-                out.push(&slot.tx, r);
-            }
-            if slot.physical {
-                rx_total.add(rx);
-                tx_total.add(tx);
-            }
-            if link_tick && let Some(mbps) = read_u64_at(&slot.speed).filter(|&s| s > 0) {
-                out.push(&slot.link, (mbps as f64 * 1e6) as f32);
-            }
-            slot.prev = cur;
-        }
-        if self.slots.iter().any(|s| s.physical) {
-            if let Some(v) = rx_total.total() {
-                out.push(&self.rx_total, v);
-            }
-            if let Some(v) = tx_total.total() {
-                out.push(&self.tx_total, v);
-            }
-        }
-        if summed {
-            out.set_iface_net(IfaceNet {
-                interval: Interval {
-                    prev_ns: self.prev_ns,
-                    now_ns: now,
-                },
-                rx_bytes: sum[0],
-                tx_bytes: sum[1],
-                rx_packets: sum[2],
-                tx_packets: sum[3],
-            });
-        }
+        });
+        // 64-bit sysfs counters: every decrease is a reset (module docs).
+        let totals = [&self.rx_total, &self.tx_total];
+        crate::net::emit(ifaces, totals, CounterWidth::Bits64, self.prev_ns, now, out);
         self.prev_ns = now;
     }
 
@@ -385,6 +323,7 @@ impl Collector for Network {
 mod tests {
     use super::super::blockdev::tests::fixture;
     use super::*;
+    use crate::Interval;
 
     fn fixture_links() -> DeviceLink {
         let text = fixture("t0").read("/net_device_links.txt").unwrap();
@@ -589,14 +528,6 @@ mod tests {
         mk("veth10", "1");
         c.sample(&tick(3, 61), &mut buf).unwrap();
         assert_eq!(c.series_revision(), 1, "veth churn is filtered out");
-    }
-
-    #[test]
-    fn any_decrease_is_a_reset() {
-        assert_eq!(counter_delta(100, 150), Some(50));
-        assert_eq!(counter_delta(u64::from(u32::MAX) - 9, 5), None);
-        assert_eq!(counter_delta(1 << 40, 5), None);
-        assert_eq!(since(&[1 << 40, 0, 0, 0], &[5, 0, 0, 0]), None);
     }
 
     /// A tunnel restarting (tailscale0) zeroes its counters from a small value. That is

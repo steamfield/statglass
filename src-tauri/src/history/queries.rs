@@ -78,7 +78,7 @@ impl History {
             tier: TierChoice::Auto,
             max_points: ((request.to_ms - request.from_ms) / 10_000 + 2) as u32,
             selectors: (if request.device.is_some() {
-                &statglass_store::disk_io::DISK_IO_METRICS
+                &statglass_schema::disk_io::DEVICE_METRICS
             } else {
                 &statglass_schema::disk_io::TOTAL_METRICS
             })

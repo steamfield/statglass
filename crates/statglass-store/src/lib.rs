@@ -52,10 +52,8 @@ pub use disk::{
     low_disk_threshold, resume_threshold,
 };
 pub use error::{Result, StoreError};
-pub use lock::lock_path;
-pub use perms::{
-    PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, create_private_dir, open_private, restrict, write_private,
-};
+pub use lock::WriterLock;
+pub use perms::{PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, create_private_dir, restrict, write_private};
 pub use reader::{
     BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, BucketValue, EventsRead, ExportQuery,
     ExportSummary, HistoryGrowth, MIN_MEASURED_MS, MetricStats, RangeStats, Reader, RetainedSpan,

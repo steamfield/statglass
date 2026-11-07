@@ -4,7 +4,6 @@
 crates/statglass-collect/src/docker.rs 700
 crates/statglass-collect/src/lib.rs 550
 crates/statglass-collect/src/macos/libproc.rs 550
-crates/statglass-collect/src/macos/network.rs 550
 crates/statglass-collect/src/macos/nstat/ffi.rs 550
 crates/statglass-engine/src/docker/storage.rs 600
 crates/statglass-engine/src/engine/tick.rs 550

@@ -19,8 +19,8 @@ use std::path::PathBuf;
 use statglass_schema::{Entitlement, Labels, MetricId, Module, SeriesKey};
 
 use super::SysRoot;
-use super::counters::span_secs;
 use super::procfs::read_into;
+use crate::counters::span_secs;
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
 const PERIOD_MS: u32 = 5_000;

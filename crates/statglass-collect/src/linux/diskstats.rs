@@ -25,20 +25,9 @@ use std::path::PathBuf;
 use statglass_schema::{DiskDevice, Entitlement, Labels, MetricId, Module, SeriesKey};
 
 use super::blockdev::{self, BlockLink};
-use super::counters::{PartSum, span_secs};
 use super::{SysRoot, mountinfo};
+use crate::counters::{PartSum, counter_rates, span_secs};
 use crate::{Cadence, CollectError, Collector, CollectorId, Every, Probe, SampleBuf, Tick};
-
-const IO_METRICS: [&str; 8] = [
-    "disk.read",
-    "disk.write",
-    "disk.read_ops",
-    "disk.write_ops",
-    "disk.read_timed_ops",
-    "disk.write_timed_ops",
-    "disk.read_time",
-    "disk.write_time",
-];
 
 /// How often the disk set is re-checked for attached or removed disks.
 const RESCAN_MS: u32 = 30_000;
@@ -70,34 +59,6 @@ fn parse_line(line: &str) -> Option<(&str, Counters)> {
             ms_w,
         ],
     ))
-}
-
-fn rate(prev: u64, cur: u64, secs: f64) -> Option<f32> {
-    (cur >= prev && secs > 0.0).then(|| ((cur - prev) as f64 / secs) as f32)
-}
-
-/// The eight per-disk values in [`IO_METRICS`] order. Read and write pair
-/// independently; a timing pair needs both of its counters valid and, when time
-/// moved, at least one completed request.
-fn counter_rates(
-    prev: Option<Counters>,
-    cur: Option<Counters>,
-    secs: Option<f64>,
-) -> [Option<f32>; 8] {
-    let (Some(prev), Some(cur), Some(secs)) = (prev, cur, secs) else {
-        return [None; 8];
-    };
-    let v: [Option<f32>; 6] = std::array::from_fn(|i| rate(prev[i], cur[i], secs));
-    let mut out = [v[0], v[1], v[2], v[3], None, None, None, None];
-    for side in 0..2 {
-        if let (Some(ops), Some(ms)) = (v[2 + side], v[4 + side])
-            && (ops > 0. || ms == 0.)
-        {
-            out[4 + side] = Some(ops);
-            out[6 + side] = Some(ms);
-        }
-    }
-    out
 }
 
 struct Device {
@@ -184,8 +145,10 @@ impl DiskStats {
     fn emit(&mut self, now: u64, out: &mut SampleBuf) {
         let secs = span_secs(self.prev_ns, now);
         let mut totals = [PartSum::default(); 8];
+        // No reading is six unknown counters, so no value at all. Times are already ms.
+        let counters = |c: Option<Counters>| c.map_or([None; 6], |c| c.map(Some));
         for d in &mut self.devices {
-            let values = counter_rates(d.prev, d.cur, secs);
+            let values = counter_rates(counters(d.prev), counters(d.cur), secs, 1.);
             for ((key, value), total) in d.keys.iter().zip(values).zip(&mut totals) {
                 if let Some(v) = value {
                     out.push(key, v);
@@ -263,7 +226,7 @@ impl Collector for DiskStats {
                 .and_then(|o| o.prev);
             let d = Device {
                 dev: disk.dev.clone(),
-                keys: IO_METRICS.map(key),
+                keys: statglass_schema::disk_io::DEVICE_METRICS.map(key),
                 prev,
                 cur: None,
             };
@@ -389,40 +352,6 @@ mod tests {
         assert!(!v.iter().any(|(k, _)| k.contains("nvme0n1}")), "{v:?}");
         assert!(v.iter().any(|(k, v)| k == "disk.read{dev=sda}" && *v == 0.));
         assert!(!v.iter().any(|(k, _)| k.ends_with("_total")), "{v:?}");
-    }
-
-    #[test]
-    fn timing_pairs_need_completed_requests() {
-        let p = [0, 0, 10, 10, 100, 100];
-        // Reads: 2 ops, 5 ms. Writes: time moved with no completion, so no pair.
-        let c = [512, 0, 12, 10, 105, 103];
-        assert_eq!(
-            counter_rates(Some(p), Some(c), Some(1.)),
-            [
-                Some(512.),
-                Some(0.),
-                Some(2.),
-                Some(0.),
-                Some(2.),
-                None,
-                Some(5.),
-                None
-            ]
-        );
-        // Idle: zero ops and zero time is a valid zero pair.
-        assert_eq!(
-            counter_rates(Some(p), Some(p), Some(1.))[4..],
-            [Some(0.); 4]
-        );
-        assert_eq!(counter_rates(None, Some(c), Some(1.)), [None; 8]);
-        assert_eq!(counter_rates(Some(p), Some(c), None), [None; 8]);
-        // A read-side reset leaves the write side.
-        let reset = [0, 0, 1, 11, 1, 101];
-        let r = counter_rates(Some(p), Some(reset), Some(1.));
-        assert_eq!(
-            (r[2], r[3], r[4], r[5], r[7]),
-            (None, Some(1.), None, Some(1.), Some(1.))
-        );
     }
 
     #[test]

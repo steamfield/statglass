@@ -10,8 +10,9 @@
 //! noise; the per-tick rate is accurate to 1 KiB per sample.
 //!
 //! Besides the rates, each measured sample records the exact counter deltas, bytes and
-//! packets summed over the reported interfaces, as [`IfaceNet`] on the [`SampleBuf`],
-//! so network history can split integer totals across buckets.
+//! packets summed over the reported interfaces, as [`IfaceNet`](crate::IfaceNet) on the
+//! [`SampleBuf`], so network history can split integer totals across buckets. The
+//! emitting itself is the shared [`crate::net::emit`].
 //!
 //! Interface kind comes from SystemConfiguration (`SCNetworkInterfaceGetInterfaceType`,
 //! public API), with name-prefix fallbacks for interfaces SystemConfiguration does not
@@ -49,16 +50,13 @@ use core_foundation_sys::base::CFTypeRef;
 use core_foundation_sys::string::{CFStringGetCString, CFStringRef, kCFStringEncodingUTF8};
 use statglass_schema::{Entitlement, Labels, MetricId, Module, SeriesKey};
 
-use super::{PartSum, sysctl};
-use crate::{
-    Cadence, CollectError, Collector, CollectorId, Every, IfaceNet, Interval, Probe, SampleBuf,
-    Tick,
-};
+use super::sysctl;
+use crate::counters::CounterWidth;
+use crate::net::{NetCounters, NetIface};
+use crate::{Cadence, CollectError, Collector, CollectorId, Every, Probe, SampleBuf, Tick};
 
 /// `net.link_rate` changes only on reassociation: at most every 60 s.
 const LINK_RATE_MS: u32 = 60_000;
-/// Rates above this are a counter glitch, not traffic (about 400 Gbit/s).
-const MAX_PLAUSIBLE_BPS: f64 = 50e9;
 
 /// What kind of link an interface is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -102,41 +100,8 @@ struct IfCounters {
 }
 
 impl IfCounters {
-    fn totals(&self) -> Totals {
-        Totals {
-            ibytes: self.ibytes,
-            obytes: self.obytes,
-            ipackets: self.ipackets,
-            opackets: self.opackets,
-        }
-    }
-}
-
-/// Cumulative counters of one interface, or deltas between two readings.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Totals {
-    ibytes: u64,
-    obytes: u64,
-    ipackets: u64,
-    opackets: u64,
-}
-
-impl Totals {
-    /// The deltas since `prev`, `None` if any counter reset.
-    fn since(&self, prev: &Totals) -> Option<Totals> {
-        Some(Totals {
-            ibytes: counter_delta(prev.ibytes, self.ibytes)?,
-            obytes: counter_delta(prev.obytes, self.obytes)?,
-            ipackets: counter_delta(prev.ipackets, self.ipackets)?,
-            opackets: counter_delta(prev.opackets, self.opackets)?,
-        })
-    }
-
-    fn add(&mut self, d: &Totals) {
-        self.ibytes = self.ibytes.saturating_add(d.ibytes);
-        self.obytes = self.obytes.saturating_add(d.obytes);
-        self.ipackets = self.ipackets.saturating_add(d.ipackets);
-        self.opackets = self.opackets.saturating_add(d.opackets);
+    fn totals(&self) -> NetCounters {
+        [self.ibytes, self.obytes, self.ipackets, self.opackets]
     }
 }
 
@@ -195,19 +160,6 @@ fn read_iflist2(buf: &mut Vec<u8>) -> Result<(), CollectError> {
         call: "sysctl(NET_RT_IFLIST2)",
         code: i64::from(std::io::Error::last_os_error().raw_os_error().unwrap_or(0)),
     })
-}
-
-/// Counter delta with 32-bit wrap handling. `None` means a reset. Unprivileged byte
-/// counters are 32-bit (see the module docs); packet counters get the same treatment
-/// in case a driver keeps them in 32 bits too.
-fn counter_delta(prev: u64, cur: u64) -> Option<u64> {
-    if cur >= prev {
-        Some(cur - prev)
-    } else if prev <= u64::from(u32::MAX) {
-        Some(cur + (1u64 << 32) - prev)
-    } else {
-        None
-    }
 }
 
 fn if_name(index: u16) -> Option<String> {
@@ -361,7 +313,7 @@ struct Slot {
     rx: SeriesKey,
     tx: SeriesKey,
     link: SeriesKey,
-    prev: Option<Totals>,
+    prev: Option<NetCounters>,
 }
 
 pub struct Network {
@@ -494,84 +446,27 @@ impl Collector for Network {
 impl Network {
     /// Rates, totals and link rates from `self.counters`, read at `now` (continuous ns).
     fn emit(&mut self, now: u64, link_tick: bool, out: &mut SampleBuf) {
-        let secs = if self.prev_ns > 0 && now > self.prev_ns {
-            Some((now - self.prev_ns) as f64 / 1e9)
-        } else {
-            None
-        };
-        // Exact deltas over the interfaces with a valid delta this tick. An interface
-        // that reset or just appeared adds nothing: its bytes in this interval are
-        // unknown, the same as the rate series' missing value. These are counter facts
-        // the per-app remainder splits (D-089): an interface with no delta has no bytes
-        // to attribute, so unlike `net.rx_total` the sum keeps the other interfaces'
-        // bytes instead of turning into a gap (D-092).
-        let mut sum = Totals::default();
-        let mut summed = false;
-        let mut rx_total = PartSum::default();
-        let mut tx_total = PartSum::default();
-        for slot in &mut self.slots {
-            let Some(c) = self.counters.iter().find(|c| c.index == slot.index) else {
-                // The interface went away; the engine's re-probe drops the series. Until
-                // then it is a reported part with no value.
-                slot.prev = None;
-                rx_total.add(None);
-                tx_total.add(None);
-                continue;
-            };
-            let cur = c.totals();
-            let mut rates = [None, None];
-            if let (Some(prev), Some(secs)) = (slot.prev, secs) {
-                let deltas = [
-                    counter_delta(prev.ibytes, cur.ibytes),
-                    counter_delta(prev.obytes, cur.obytes),
-                ];
-                for (rate, d) in rates.iter_mut().zip(deltas) {
-                    *rate = d
-                        .map(|d| d as f64 / secs)
-                        .filter(|r| *r <= MAX_PLAUSIBLE_BPS)
-                        .map(|r| r as f32);
-                }
-                let plausible =
-                    |d: &Totals| (d.ibytes.max(d.obytes) as f64 / secs) <= MAX_PLAUSIBLE_BPS;
-                if let Some(d) = cur.since(&prev).filter(plausible) {
-                    sum.add(&d);
-                    summed = true;
-                }
+        let counters = &self.counters;
+        let ifaces = self.slots.iter_mut().map(|slot| {
+            // An interface the dump no longer lists went away; the engine's re-probe
+            // drops its series. Until then it is a reported part with no value.
+            let c = counters.iter().find(|c| c.index == slot.index);
+            let link = c
+                .filter(|c| link_tick && c.baudrate > 0)
+                .map(|c| (&slot.link, c.baudrate as f32));
+            NetIface {
+                rx: &slot.rx,
+                tx: &slot.tx,
+                prev: &mut slot.prev,
+                cur: c.map(IfCounters::totals),
+                counted: true,
+                link,
             }
-            let [rx, tx] = rates;
-            if let Some(r) = rx {
-                out.push(&slot.rx, r);
-            }
-            if let Some(r) = tx {
-                out.push(&slot.tx, r);
-            }
-            rx_total.add(rx);
-            tx_total.add(tx);
-            if link_tick && c.baudrate > 0 {
-                out.push(&slot.link, c.baudrate as f32);
-            }
-            slot.prev = Some(cur);
-        }
-        if !self.slots.is_empty() {
-            if let Some(v) = rx_total.total() {
-                out.push(&self.rx_total, v);
-            }
-            if let Some(v) = tx_total.total() {
-                out.push(&self.tx_total, v);
-            }
-        }
-        if summed {
-            out.set_iface_net(IfaceNet {
-                interval: Interval {
-                    prev_ns: self.prev_ns,
-                    now_ns: now,
-                },
-                rx_bytes: sum.ibytes,
-                tx_bytes: sum.obytes,
-                rx_packets: sum.ipackets,
-                tx_packets: sum.opackets,
-            });
-        }
+        });
+        // Unprivileged byte counters are 32-bit (module docs); packet counters get the
+        // same treatment in case a driver keeps them in 32 bits too.
+        let totals = [&self.rx_total, &self.tx_total];
+        crate::net::emit(ifaces, totals, CounterWidth::Bits32, self.prev_ns, now, out);
         self.prev_ns = now;
     }
 }
@@ -579,13 +474,6 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn counter_wraps_at_32_bits_and_resets_otherwise() {
-        assert_eq!(counter_delta(100, 150), Some(50));
-        assert_eq!(counter_delta(u64::from(u32::MAX) - 9, 5), Some(15));
-        assert_eq!(counter_delta(1 << 40, 5), None);
-    }
 
     #[test]
     fn classify_prefers_system_configuration() {
@@ -631,26 +519,6 @@ mod tests {
         assert_eq!((out[0].index, out[0].ibytes, out[0].obytes), (3, 1000, 500));
         assert_eq!((out[0].ipackets, out[0].opackets), (1, 0));
         assert_eq!(out[1].index, 4);
-    }
-
-    #[test]
-    fn totals_wrap_per_counter_and_reset_as_a_whole() {
-        let t = |ib, ob, ip, op| Totals {
-            ibytes: ib,
-            obytes: ob,
-            ipackets: ip,
-            opackets: op,
-        };
-        let prev = t(u64::from(u32::MAX) - 1023, 10, 100, 5);
-        assert_eq!(
-            t(1024, 2058, 160, 9).since(&prev),
-            Some(t(2048, 2048, 60, 4)),
-            "a 32-bit byte wrap"
-        );
-        assert_eq!(t(0, 0, 0, 0).since(&t(1 << 40, 0, 0, 0)), None);
-        let mut sum = t(1, 2, 3, 4);
-        sum.add(&t(10, 20, 30, 40));
-        assert_eq!(sum, t(11, 22, 33, 44));
     }
 
     fn info(name: &str, kind: InterfaceKind) -> InterfaceInfo {
@@ -752,12 +620,7 @@ mod tests {
         // en7's rx counter reset (a decrease above 32 bits); its tx moved normally.
         buf.clear();
         n.counters = vec![counters(1, 2_000, 200), counters(2, 5_000, 600)];
-        n.slots[1].prev = Some(Totals {
-            ibytes: 1 << 40,
-            obytes: 500,
-            ipackets: 0,
-            opackets: 0,
-        });
+        n.slots[1].prev = Some([1 << 40, 500, 0, 0]);
         n.emit(2 * SEC, false, &mut buf);
         assert_eq!(totals(&buf), (None, Some(200.0)), "rx and tx gated apart");
         // en7 went away: both totals are gaps until the re-probe drops it.

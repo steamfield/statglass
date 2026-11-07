@@ -78,6 +78,19 @@ pub fn request_ms(time_ms_per_sec: Option<f64>, timed_ops_per_sec: Option<f64>) 
     Some(time / ops)
 }
 
+/// The per-device series the disk collectors emit, labelled `dev`, in the order the
+/// collectors compute them.
+pub const DEVICE_METRICS: [&str; 8] = [
+    "disk.read",
+    "disk.write",
+    "disk.read_ops",
+    "disk.write_ops",
+    "disk.read_timed_ops",
+    "disk.write_timed_ops",
+    "disk.read_time",
+    "disk.write_time",
+];
+
 /// Authoritative sums over the collector population at each observation.
 pub const TOTAL_METRICS: [&str; 8] = [
     "disk.read_total",
