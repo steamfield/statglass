@@ -229,6 +229,8 @@ export function BrushOverlay({
     onEscape: (e) => {
       onHoverTime?.(null, 0);
       setFocusMs(null);
+      // A drag in progress ends here: its next move or release does nothing.
+      gesture.reset();
       const s = store.getState();
       if (s.range === null && s.draft === null) return;
       e.preventDefault();

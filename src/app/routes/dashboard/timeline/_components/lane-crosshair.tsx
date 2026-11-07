@@ -9,7 +9,7 @@ import type { Band } from "../_lib/gaps";
 import type { buildLaneModel } from "../_lib/lane-model";
 import { LANE_GAP, LANE_HEIGHT } from "../_lib/lanes";
 import { dayLabel, fractionAt } from "../_lib/time";
-import { CrosshairTooltip } from "./crosshair-tooltip";
+import { CROSSHAIR_TOOLTIP_WIDTH, CrosshairTooltip } from "./crosshair-tooltip";
 import { laneTooltipRows, laneValue } from "./lane-tooltip-rows";
 
 export function LaneCrosshair({
@@ -71,7 +71,7 @@ export function LaneCrosshair({
         rows={rows}
         processes={gapHere ? null : processes}
         note={gapHere ? (gapExplanation(gapHere) ?? undefined) : undefined}
-        style={tooltipBeside(frac)}
+        style={tooltipBeside(frac, CROSSHAIR_TOOLTIP_WIDTH)}
       />
     </>
   );

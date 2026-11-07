@@ -9,6 +9,17 @@ import {
 import { paintCrosshairs, plotLeft } from "./crosshair-line";
 import { useChartCursor } from "./use-chart-cursor";
 
+/** A `tooltipBeside` length in px, for a positioned parent `parent` px wide. */
+function resolve(css: string, parent: number): number {
+  const js = css
+    .replaceAll("calc(", "(")
+    .replaceAll("max(", "Math.max(")
+    .replaceAll("min(", "Math.min(")
+    .replaceAll("100%", String(parent))
+    .replaceAll("px", "");
+  return Number(new Function(`return ${js}`)());
+}
+
 describe("tooltip placement", () => {
   it("flips at the middle of the plot", () => {
     expect(tooltipSide(0.2)).toBe("right");
@@ -17,14 +28,30 @@ describe("tooltip placement", () => {
   });
 
   it("sits beside the crosshair and clears the side it does not use", () => {
-    expect(tooltipBeside(0.25, 96)).toEqual({
-      left: "calc(96px + (100% - 96px) * 0.25 + 12px)",
+    expect(tooltipBeside(0.25, 200, 96)).toEqual({
+      width: "200px",
+      left: "max(96px, min(96px + (100% - 96px) * 0.25 + 12px, 100% - 200px))",
       right: "",
     });
-    expect(tooltipBeside(0.75)).toEqual({
+    expect(tooltipBeside(0.75, 200)).toEqual({
+      width: "200px",
       left: "",
-      right: "calc((100% - 0px) * 0.25 + 12px)",
+      right: "max(0px, min((100% - 0px) * 0.25 + 12px, (100% - 0px) - 200px))",
     });
+  });
+
+  it("stays inside a plot too narrow for it beside the crosshair", () => {
+    // A 400 px parent with a 96 px label column, so a 304 px plot. Unclamped,
+    // a 276 px tooltip right of a crosshair 40% in would end at 505.6 px.
+    const PARENT = 400;
+    for (const f of [0.1, 0.4, 0.5, 0.6, 0.9]) {
+      const { left, right } = tooltipBeside(f, 276, 96);
+      const start = left
+        ? resolve(left, PARENT)
+        : PARENT - resolve(right, PARENT) - 276;
+      expect(start, `at ${f}`).toBeGreaterThanOrEqual(96);
+      expect(start + 276, `at ${f}`).toBeLessThanOrEqual(PARENT);
+    }
   });
 });
 

@@ -3,6 +3,7 @@ import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
+import { BrushProvider } from "~/stores/brush-store";
 import { ChartRangeProvider } from "~/stores/chart-range";
 import { type HostStore, useHostStore } from "~/stores/host-store";
 import {
@@ -102,6 +103,22 @@ describe("MirrorChart", () => {
     expect(
       screen.getByText("Asleep 11:02–11:31 · not interpolated")
     ).not.toHaveClass("translate-y-1/2");
+  });
+
+  it("veils along bar edges, never through a 30 s bar", () => {
+    // 10 s inside the second of four 30 s bars.
+    const selected = {
+      fromMs: plot.firstMs + 40_000,
+      toMs: plot.firstMs + 50_000,
+    };
+    renderWithProviders(
+      <BrushProvider initial={selected}>
+        <MirrorChart {...plot} bucketMs={30_000} windowMs={120_000} brush />
+      </BrushProvider>
+    );
+    const veil = screen.getByTestId("stream-veil");
+    expect(veil).toHaveStyle({ width: "25.000%" });
+    expect(veil.nextElementSibling).toHaveStyle({ left: "50.000%" });
   });
 
   it("paints one crosshair across sibling plots at the hovered bar", () => {

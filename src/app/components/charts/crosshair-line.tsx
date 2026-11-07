@@ -30,7 +30,7 @@ export function paintCrosshairs(root: ParentNode, left: string | null): void {
  * Positioned inside the plot's `relative` box at `left`, a px value or a
  * CSS length; `top` and `height` let it run past the plot (the Timeline's
  * reaches into the annotation row). With `paint`, it starts hidden and is
- * moved by `paintMirrorCrosshairs`, without React.
+ * moved by `paintCrosshairs`, without React.
  */
 export function CrosshairLine({
   left,

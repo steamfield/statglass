@@ -72,11 +72,11 @@ describe("chart brush (D-089)", () => {
   it("a drag selects the snapped range, drawn while dragging", async () => {
     const { brush } = await setup();
     fireEvent.pointerDown(brush, { button: 0, clientX: xAt(T - 24 * S) });
-    fireEvent.pointerMove(brush, { clientX: xAt(T - 15 * S) });
+    fireEvent.pointerMove(brush, { buttons: 1, clientX: xAt(T - 15 * S) });
     // Drawn, not committed: the band follows, the table does not query.
     expect(screen.getByTestId("brush-band")).toBeInTheDocument();
     expect(range()).toBe("none");
-    fireEvent.pointerMove(brush, { clientX: xAt(T - 9 * S) });
+    fireEvent.pointerMove(brush, { buttons: 1, clientX: xAt(T - 9 * S) });
     fireEvent.pointerUp(brush, { clientX: xAt(T - 9 * S) });
     expect(range()).toBe(`${-30 * S}:0`);
   });
@@ -117,6 +117,38 @@ describe("chart brush (D-089)", () => {
     expect(range()).toBe(`${-10 * S}:0`);
     await user.keyboard("{Escape}");
     expect(range()).toBe("none");
+  });
+
+  it("Esc during a drag cancels it: no band, and the release selects nothing", async () => {
+    const { brush } = await setup();
+    fireEvent.pointerDown(brush, { button: 0, clientX: xAt(T - 24 * S) });
+    fireEvent.pointerMove(brush, { buttons: 1, clientX: xAt(T - 15 * S) });
+    fireEvent.keyDown(brush, { key: "Escape" });
+    fireEvent.pointerMove(brush, { buttons: 1, clientX: xAt(T - 9 * S) });
+    expect(screen.queryByTestId("brush-band")).toBeNull();
+    fireEvent.pointerUp(brush, { clientX: xAt(T - 9 * S) });
+    expect(range()).toBe("none");
+  });
+
+  it("a drag whose button came up off the chart is dropped, not committed", async () => {
+    const { brush } = await setup();
+    fireEvent.pointerDown(brush, { button: 0, clientX: xAt(T - 24 * S) });
+    fireEvent.pointerMove(brush, { buttons: 1, clientX: xAt(T - 15 * S) });
+    fireEvent.pointerMove(brush, { buttons: 0, clientX: xAt(T - 9 * S) });
+    expect(screen.queryByTestId("brush-band")).toBeNull();
+    fireEvent.pointerUp(brush, { clientX: xAt(T - 9 * S) });
+    expect(range()).toBe("none");
+  });
+
+  it("Shift+End from inside a selection keeps its start", async () => {
+    const { user } = await setup();
+    await user.tab();
+    // Select [T − 30 s, T), then move the focus inside it to [T − 20 s, T − 10 s).
+    await user.keyboard("{Enter}{Shift>}{ArrowLeft}{ArrowLeft}{/Shift}");
+    await user.keyboard("{ArrowRight}");
+    expect(range()).toBe(`${-30 * S}:0`);
+    await user.keyboard("{Shift>}{End}{/Shift}");
+    expect(range()).toBe(`${-30 * S}:0`);
   });
 
   it("a click on the chart clears a selection rather than picking a bucket", async () => {
@@ -221,7 +253,7 @@ describe("chart brush (D-089)", () => {
     fireEvent.pointerUp(brush, { clientX: xAt(T + 3 * S) + 1 });
     expect(range()).toBe(`${-10 * S}:0`);
     fireEvent.pointerDown(brush, { button: 0, clientX: xAt(T - 24 * S) });
-    fireEvent.pointerMove(brush, { clientX: xAt(T + 5 * S) });
+    fireEvent.pointerMove(brush, { buttons: 1, clientX: xAt(T + 5 * S) });
     fireEvent.pointerUp(brush, { clientX: WIDTH });
     expect(range()).toBe(`${-30 * S}:0`);
   });

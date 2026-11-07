@@ -1,4 +1,4 @@
-import { rangeFractions } from "@core/brush";
+import { rangeFractions, rangeSlots, type TimeRange } from "@core/brush";
 import { seriesRange } from "@core/chart-math";
 import { gapExplanation } from "@core/history-state";
 import type { ReactNode } from "react";
@@ -25,13 +25,16 @@ const OFF: BrushWiring = { highlight: null, overlay: null };
  * selection's veil fractions and a `BrushOverlay` that stops at the newest
  * elapsed 10 s edge and explains the gap under the pointer. Bar, area and
  * canvas charts wire it the same way. Off when `enabled` is false, outside
- * a `BrushProvider`, or before the chart has a span.
+ * a `BrushProvider`, or before the chart has a span. A bar chart passes
+ * `barMs`, so the veil runs along bar edges and never cuts a bar wider than
+ * a selection's 10 s bucket.
  */
 export function useBrushOverlay({
   firstMs,
   spanMs,
   height,
   inset,
+  barMs,
   gaps = [],
   enabled = true,
   onHoverTime,
@@ -40,6 +43,8 @@ export function useBrushOverlay({
   spanMs: number;
   height: number;
   inset: number;
+  /** Width of each bar, for a bar chart. */
+  barMs?: number;
   gaps?: readonly GapSpan[] | undefined;
   enabled?: boolean;
   onHoverTime?: BrushOverlayProps["onHoverTime"];
@@ -49,7 +54,7 @@ export function useBrushOverlay({
   const { selected, elapsedEdge } = useChartBrush(on);
   if (!on || spanMs <= 0) return OFF;
   return {
-    highlight: selected ? rangeFractions(selected, firstMs, spanMs) : null,
+    highlight: selected && veilFractions(selected, firstMs, spanMs, barMs),
     overlay: (
       <BrushOverlay
         firstMs={firstMs}
@@ -66,6 +71,19 @@ export function useBrushOverlay({
       />
     ),
   };
+}
+
+/** The selection's veil fractions: exact, or widened to whole bars. */
+function veilFractions(
+  r: TimeRange,
+  firstMs: number,
+  spanMs: number,
+  barMs: number | undefined
+): { left: number; width: number } | null {
+  if (barMs === undefined) return rangeFractions(r, firstMs, spanMs);
+  const count = Math.round(spanMs / barMs);
+  const { from, to } = rangeSlots(r, firstMs, barMs, count);
+  return to > from ? { left: from / count, width: (to - from) / count } : null;
 }
 
 /**
