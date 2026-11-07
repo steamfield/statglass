@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Timeline lanes default to °F before settings load, like the rest of the app.
+- History commands reject an empty time range (start not before end). Four commands that
+  accepted one (usage series, usage by app, network by app, series stats) now refuse it.
+
 ## [0.6.2](https://github.com/steamfield/statglass/compare/v0.6.1...v0.6.2) - 2026-11-07
 
 ### Changed

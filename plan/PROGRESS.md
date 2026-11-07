@@ -4,6 +4,24 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Shared layers RFC phase 1: core helpers and generated constants (2026-11-07)
+
+`plan/rfc-shared-layers.md` Q6, Q7, Q8 helpers, Q10, R6.2, R6.3. Rust now publishes the
+Docker bucket width (`DOCKER_BUCKET_MS`) and the chart-window presets and default
+(`ChartWindow::PRESETS`/`preset_ms`), and `live-window.ts` derives from them. New helpers:
+`@core/time-grid` span constants, `windowEnding`/`usageHistorical` in `@core/chart-range`,
+`useModuleEnd`, `useGridInterval`, `useUsageHistorical`, `useOpenEdge(enabled, step)`; exported
+live selectors (`held`, `keysOf`, `currentLayout`, `selectVolumeCapacity`), `parseLabels`, `sk()`
+for every series key, `selectBattery` composed by its consumers; Q8's `sumOrNull`/`scaleOrNull`,
+`displayUnits` (one °F default, so Timeline lanes now default to °F), `formatSignedDelta`,
+`formatPercentPoints`, `cssPercent`, `formatDateTime`; test builders in `tests/live-frames.ts` and
+`tests/fixtures/`. One-line call-site swaps were migrated too; the other Q6/Q8 sites move with
+the phases that own their files. Q6's four preset tables stay separate (different members and
+purposes). Verified: `bun run check` (237 files), `bun run test:e2e` (512), Rust crate tests,
+`make rust-check`, `make architecture-check`. A code review found the series-key text didn't
+escape like Rust's `Display`, a HashMap-ordered generated constant, and `sk()` allocations in
+1 Hz selectors; those are fixed in a follow-up.
+
 ## Shared layers RFC phase 0: agent test lock flake (2026-11-07)
 
 `plan/rfc-shared-layers.md` R0. The `pipe` integration test included production

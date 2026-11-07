@@ -1,7 +1,9 @@
 # RFC: Shared layers for charts, queries, UI states and Rust collectors
 
 Status: Accepted 2026-11-07, revised after a devil's-advocate review (see "Review outcome"); open
-questions decided by the owner. Phase 0 done (2026-11-07, see PROGRESS); phase 1 next.
+questions decided by the owner. Phases 0 and 1 done (2026-11-07, see PROGRESS); 2a and 2b in progress.
+From phase 1 on, implementation runs on Claude subagents in isolated worktrees instead of Codex
+(owner's decision, 2026-11-07).
 Date: 2026-11-07.
 
 ## Problem
@@ -744,6 +746,14 @@ were probably merged by other means. Confirm this, then delete them before phase
 | 3d | C8 | 3c | |
 | 4 | U3–U11 | 2a, and strictly after 2a for `data-table/*` | Migrates Q8 call sites in its files |
 | 5 | R6.1, R6.4, R6.5 and the C5 comparison labels | 2b | R6.1 decision entry first |
+
+As landed, phase 1 also migrated the call sites that were one-line swaps (`useModuleEnd`,
+`useGridInterval`, `useUsageHistorical`, `windowEnding`, `DOCKER_BUCKET_MS`, `sk()`, the Timeline
+units), so later phases find those files already migrated. Q6's four preset tables stay separate:
+they have different members and purposes (settings presets, the range menu, container URL keys,
+timeline spans); only the settings presets come from Rust. The remaining inline floors, raw ms
+literals and Q8 call sites are migrated by whichever later phase owns the file, plus a final
+sweep.
 
 2a and 2b run in parallel. Within a phase, runs are cut by file ownership, as in the table work, and
 each shared file is owned by exactly one run.
