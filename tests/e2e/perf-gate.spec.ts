@@ -32,6 +32,7 @@ interface FrontendBudget {
   longTaskMs: number;
   popover: ScreenBudget;
   overview: ScreenBudget;
+  overview1h: ScreenBudget;
   cpu1h: ScreenBudget;
   gpu1h: ScreenBudget;
   power1h: ScreenBudget;
@@ -236,6 +237,28 @@ const CONTAINER_SCREENS = [
   ],
 ] as const;
 
+async function overviewHour({ page }: { page: Page }) {
+  await page.setViewportSize({ width: 1280, height: 833 });
+  const r = await measure(
+    page,
+    "/?window=dashboard&theme=dark&chart_window=1h",
+    async () => {
+      await expect(
+        page.getByRole("radio", { name: "1h", exact: true })
+      ).toBeChecked();
+      await expect(
+        page.getByRole("img", { name: /CPU total and system, last hour/ })
+      ).toBeVisible();
+    }
+  );
+  console.log(`[perf] overview1h ${JSON.stringify(r)}`);
+  expect(r.seconds).toBeGreaterThan(budget.sampleMs / 1000 - 1);
+  expect(r.longTasks).toEqual([]);
+  expect(r.mainThreadMsPerSec).toBeLessThan(
+    budget.overview1h.mainThreadMsPerSec
+  );
+}
+
 test.describe("performance gate", () => {
   test.skip(
     ({ browserName }) => browserName !== "chromium",
@@ -333,6 +356,8 @@ test.describe("performance gate", () => {
     expect(perf.longTasks).toEqual([]);
     expect(perf.mainThreadMsPerSec).toBeLessThan(plain.mainThreadMsPerSec);
   });
+
+  test("Overview, 1 h window, at 1 Hz", overviewHour);
 
   test("CPU page, 1 h window, at 1 Hz", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 833 });

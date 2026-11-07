@@ -2,7 +2,7 @@ import { isUnknownChip, type UiModule } from "@core/module-state";
 import type { ProcessView } from "@core/process-interest";
 import type { ReactNode } from "react";
 import { CardGrid } from "~/components/card-grid";
-import { PageHeader } from "~/components/page-header";
+import { ModulePage } from "~/components/module-page";
 import {
   SensorDumpDialog,
   useSensorDumpDialog,
@@ -62,7 +62,10 @@ function overviewView(network: boolean, gpu: boolean): ProcessView {
 }
 
 /** The six Overview modules in display order. Battery has no card. */
-const CARDS: readonly [UiModule, (p: { origin: Corner }) => ReactNode][] = [
+const CARDS: readonly [
+  UiModule,
+  (p: { origin: Corner; windowMs: number }) => ReactNode,
+][] = [
   ["cpu", OverviewCpuCard],
   ["gpu", OverviewGpuCard],
   ["memory", OverviewMemoryCard],
@@ -96,21 +99,24 @@ export default function OverviewRoute() {
   });
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
+    <>
+      <ModulePage
         title="Overview"
         actions={<StatusPill {...samplingStatus(sampling)} />}
-      />
-      <LiveMachineHeader />
-      <CardGrid items={items} getKey={([m]) => m}>
-        {([m, Card], origin) =>
-          states[m] === "on" ? (
-            <Card origin={origin} />
-          ) : (
-            <UnavailableCard module={m} state={states[m]} />
-          )
-        }
-      </CardGrid>
+        header={<LiveMachineHeader />}
+      >
+        {(windowMs) => (
+          <CardGrid items={items} getKey={([m]) => m}>
+            {([m, Card], origin) =>
+              states[m] === "on" ? (
+                <Card origin={origin} windowMs={windowMs} />
+              ) : (
+                <UnavailableCard module={m} state={states[m]} />
+              )
+            }
+          </CardGrid>
+        )}
+      </ModulePage>
       {unknownChip && (
         <UnsupportedNotice
           modelId={host?.info.model ?? "this Mac"}
@@ -118,6 +124,6 @@ export default function OverviewRoute() {
         />
       )}
       <SensorDumpDialog open={dump.open} onOpenChange={dump.setOpen} />
-    </div>
+    </>
   );
 }

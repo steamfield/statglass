@@ -10,6 +10,9 @@
     "overview": {
       "mainThreadMsPerSec": 50
     },
+    "overview1h": {
+      "mainThreadMsPerSec": 50
+    },
     "cpu1h": {
       "mainThreadMsPerSec": 35
     },

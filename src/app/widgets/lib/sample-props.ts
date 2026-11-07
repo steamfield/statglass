@@ -2,6 +2,7 @@
  * Sample props for the Overview, CPU, Power and popover widgets. Used by the
  * widget tests and the dev gallery only.
  */
+import { createElement } from "react";
 import type { CoreTilesProps } from "../core-tiles";
 import type { InlineBarProps } from "../inline-bar";
 import type { LegendProps } from "../legend";
@@ -11,6 +12,7 @@ import type { RingGaugeProps } from "../ring-gauge";
 import type { RingStatCardProps } from "../ring-stat-card";
 import type { StackBarProps } from "../stack-bar";
 import type { StatListProps } from "../stat-list";
+import { StreamArea } from "../stream-area";
 import { residencyLabel, residencySegments } from "./residency";
 
 function procs(rows: [string, string, string][]): ProcessListRow[] {
@@ -41,79 +43,100 @@ function walk(n: number, seed: number, base: number, noise: number) {
 
 const T_END = 1_759_617_600_000; // Sun Oct 4 2026 22:40 UTC-ish; any fixed ms epoch
 
-export const OVERVIEW_CARDS: MetricCardProps[] = [
-  {
-    accent: "cpu",
-    origin: "tl",
-    title: "CPU",
-    subtitle: "10P + 4E",
-    ring: { fractions: [0.124, 0.056], value: "18%", label: "Load" },
-    bars: [
-      { label: "P-cluster", value: "3.2 GHz", fraction: 0.71 },
-      { label: "E-cluster", value: "1.0 GHz", fraction: 0.34 },
-    ],
-    legend: [
-      { label: "User", value: "12.4%", step: 1 },
-      { label: "System", value: "5.6%", step: 2 },
-    ],
-    body: {
-      kind: "list",
-      ariaLabel: "Top processes by CPU",
-      rows: procs([
-        ["X", "Xcode", "6.2%"],
-        ["k", "kernel_task", "3.1%"],
-        ["W", "WindowServer", "2.4%"],
-        ["S", "Safari", "1.8%"],
-        ["n", "node", "1.1%"],
-      ]),
-    },
-    href: "/dashboard/cpu",
+function sampleChart(
+  accent: MetricCardProps["accent"],
+  label: string,
+  base: number
+) {
+  return createElement(StreamArea, {
+    accent,
+    series: [{ key: accent, values: walk(60, 9, base, 10), step: 1 }],
+    tEndMs: T_END,
+    intervalMs: 5000,
+    height: 88,
+    yMax: 100,
+    ariaLabel: `${label}, last 5 minutes`,
+    xTicks: ["5m", "2m", "now"],
+  });
+}
+
+const CPU_CARD: MetricCardProps = {
+  accent: "cpu",
+  title: "CPU",
+  value: "18%",
+  chart: sampleChart("cpu", "CPU total and system", 18),
+  stats: [
+    { label: "User", value: "12.4%" },
+    { label: "System", value: "5.6%" },
+    { label: "P GHz", value: "3.2 GHz" },
+    { label: "E GHz", value: "1.0 GHz" },
+  ],
+  list: {
+    caption: "Now",
+    ariaLabel: "Top processes by CPU",
+    rows: procs([
+      ["X", "Xcode", "6.2%"],
+      ["k", "kernel_task", "3.1%"],
+      ["W", "WindowServer", "2.4%"],
+      ["S", "Safari", "1.8%"],
+      ["n", "node", "1.1%"],
+    ]),
   },
+  href: "/dashboard/cpu",
+};
+const POWER_CARD: MetricCardProps = {
+  accent: "power",
+  title: "Power & Sensors",
+  value: "14.8 W",
+  unit: " on battery",
+  chart: sampleChart("power", "System power", 15),
+  stats: [
+    { label: "Hottest zone", value: "61 °C" },
+    { label: "Fans", value: "1,850 RPM" },
+    { label: "CPU", value: "6.4 W" },
+    { label: "GPU + DRAM", value: "4.0 W" },
+  ],
+  list: {
+    caption: "Now",
+    ariaLabel: "Top processes by energy impact",
+    rows: procs([
+      ["X", "Xcode", "412 EI"],
+      ["k", "kernel_task", "188 EI"],
+      ["S", "Safari", "96 EI"],
+      ["F", "Figma", "74 EI"],
+      ["W", "WindowServer", "61 EI"],
+    ]),
+  },
+  href: "/dashboard/power",
+};
+export const OVERVIEW_CARDS: MetricCardProps[] = [
+  CPU_CARD,
   {
     accent: "gpu",
-    origin: "tr",
     title: "GPU",
-    subtitle: "20-core",
-    ring: { fractions: [0.28, 0.08], value: "36%", label: "Load" },
-    bars: [
-      { label: "Frequency", value: "1.1 GHz", fraction: 0.69 },
-      { label: "Power", value: "3.1 W", fraction: 0.16 },
+    value: "36%",
+    chart: sampleChart("gpu", "GPU utilization", 36),
+    stats: [
+      { label: "Frequency", value: "1.1 GHz" },
+      { label: "Power", value: "3.1 W" },
+      { label: "Render", value: "28%" },
+      { label: "Tiler", value: "8%" },
     ],
-    legend: [
-      { label: "Render", value: "28%", step: 1 },
-      { label: "Tiler", value: "8%", step: 2 },
-    ],
-    body: {
-      kind: "stream",
-      stream: {
-        series: [{ key: "gpu.util", values: walk(60, 9, 36, 10), step: 1 }],
-        tEndMs: T_END,
-        intervalMs: 1000,
-        yMax: 100,
-        accent: "gpu",
-        height: 96,
-        ariaLabel: "GPU, last 60 seconds, 36%",
-        windowLabel: "60s",
-      },
-    },
     href: "/dashboard/gpu",
   },
   {
     accent: "mem",
-    origin: "bl",
     title: "Memory",
-    subtitle: "24 GB",
-    ring: { fractions: [0.48, 0.25], value: "17.6", label: "GB used" },
-    bars: [
-      { label: "Pressure", value: "42%", fraction: 0.42 },
-      { label: "Swap", value: "512 MB", fraction: 0.25 },
+    value: "17.6 GB",
+    chart: sampleChart("mem", "Memory pressure", 42),
+    stats: [
+      { label: "Pressure", value: "normal" },
+      { label: "Swap", value: "512 MB" },
+      { label: "App", value: "11.6 GB" },
+      { label: "Wired + comp.", value: "6.0 GB" },
     ],
-    legend: [
-      { label: "App", value: "11.6 GB", step: 1 },
-      { label: "Wired + comp.", value: "6.0 GB", step: 2 },
-    ],
-    body: {
-      kind: "list",
+    list: {
+      caption: "Now",
       ariaLabel: "Top processes by memory",
       rows: procs([
         ["X", "Xcode", "3.8 GB"],
@@ -125,76 +148,34 @@ export const OVERVIEW_CARDS: MetricCardProps[] = [
     },
     href: "/dashboard/memory",
   },
-  {
-    accent: "power",
-    origin: "br",
-    title: "Power & Sensors",
-    subtitle: "on battery",
-    ring: { fractions: [0.43, 0.27], value: "14.8", label: "Watts" },
-    bars: [
-      { label: "Hottest SoC zone", value: "61 °C", fraction: 0.58 },
-      { label: "Fans", value: "1,850 RPM", fraction: 0.32 },
-    ],
-    legend: [
-      { label: "CPU", value: "6.4 W", step: 1 },
-      { label: "GPU + DRAM", value: "4.0 W", step: 2 },
-    ],
-    body: {
-      kind: "list",
-      ariaLabel: "Top processes by energy impact",
-      rows: procs([
-        ["X", "Xcode", "412 EI"],
-        ["k", "kernel_task", "188 EI"],
-        ["S", "Safari", "96 EI"],
-        ["F", "Figma", "74 EI"],
-        ["W", "WindowServer", "61 EI"],
-      ]),
-    },
-    href: "/dashboard/power",
-  },
+  POWER_CARD,
   {
     accent: "net",
-    origin: "tl",
     title: "Network",
-    subtitle: "Wi‑Fi 7 · en0",
-    ring: { fractions: [0.256, 0.008], value: "26%", label: "Of link" },
-    bars: [
-      { label: "Download", value: "38.4 MB/s", fraction: 0.64 },
-      { label: "Upload", value: "1.2 MB/s", fraction: 0.06 },
+    value: "↓ 38.4 MB/s ↑ 1.2 MB/s",
+    chart: sampleChart("net", "Network", 38),
+    stats: [
+      { label: "Of link", value: "26%" },
+      { label: "Interface", value: "en0" },
     ],
-    legend: [
-      { label: "Down", value: "307 Mb/s", step: 1 },
-      { label: "Up", value: "9.6 Mb/s", step: 2 },
-    ],
-    body: {
-      kind: "list",
+    list: {
+      caption: "Now",
       ariaLabel: "Interfaces by total rate",
       rows: procs([
-        ["e", "Wi‑Fi · en0", "39.6 MB/s"],
+        ["e", "en0", "39.6 MB/s"],
         ["u", "utun4", "1.1 MB/s"],
-        ["b", "bridge100", "0.2 MB/s"],
-        ["l", "lo0", "0.1 MB/s"],
-        ["e", "Ethernet · en6", "0.0 MB/s"],
       ]),
     },
     href: "/dashboard/network",
   },
   {
     accent: "disk",
-    origin: "tr",
     title: "Disk",
-    subtitle: "APPLE SSD · 1 TB",
-    ring: { fractions: [0.33, 0.06], value: "39%", label: "Used" },
-    bars: [
-      { label: "Read", value: "220 MB/s", fraction: 0.37 },
-      { label: "Write", value: "48 MB/s", fraction: 0.08 },
-    ],
-    legend: [
-      { label: "Data", value: "330 GB", step: 1 },
-      { label: "System", value: "58 GB", step: 2 },
-    ],
-    body: {
-      kind: "list",
+    value: "↓ 220 MB/s ↑ 48 MB/s",
+    chart: sampleChart("disk", "Disk I/O", 22),
+    stats: [{ label: "Used", value: "388 GB of 1.0 TB" }],
+    list: {
+      caption: "Now",
       ariaLabel: "Top processes by disk I/O",
       rows: procs([
         ["X", "Xcode", "142 MB/s"],
@@ -208,13 +189,14 @@ export const OVERVIEW_CARDS: MetricCardProps[] = [
   },
 ];
 
-/** Power card on a Mac without fans (v1-local-monitor.md 4.5). */
 export const PASSIVE_COOLING_CARD: MetricCardProps = {
-  ...(OVERVIEW_CARDS[3] as MetricCardProps),
-  subtitle: "on power adapter",
-  bars: [
-    { label: "Hottest SoC zone", value: "61 °C", fraction: 0.58 },
-    { label: "Fans", value: "Passive cooling", fraction: "none" },
+  ...POWER_CARD,
+  unit: " on adapter",
+  stats: [
+    { label: "Hottest zone", value: "61 °C" },
+    { label: "Fans", value: "Passive cooling" },
+    { label: "CPU", value: "6.4 W" },
+    { label: "GPU + DRAM", value: "4.0 W" },
   ],
 };
 
@@ -223,7 +205,7 @@ export const RING_GAUGE: RingGaugeProps = {
   value: "18%",
   label: "Load",
   accent: "cpu",
-  size: 72,
+  size: 88,
 };
 
 export const INLINE_BAR: InlineBarProps = {

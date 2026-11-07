@@ -17,8 +17,12 @@ it("heads the page with the window control and draws the cards for the chart win
 
 it("waits for settings before drawing any card", () => {
   renderWithProviders(
-    <ModulePage title="GPU">{() => <p>Cards</p>}</ModulePage>
+    <ModulePage title="GPU" actions={<span>Live</span>} header={<p>Machine</p>}>
+      {() => <p>Cards</p>}
+    </ModulePage>
   );
   expect(screen.getByRole("heading", { name: "GPU" })).toBeVisible();
   expect(screen.queryByText("Cards")).toBeNull();
+  expect(screen.getByText("Live")).toBeVisible();
+  expect(screen.getByText("Machine")).toBeVisible();
 });

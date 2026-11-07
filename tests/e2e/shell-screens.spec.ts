@@ -159,3 +159,58 @@ test("paused and stale", async ({ page }, info) => {
   });
   await shot(page, "state-stale-popover", info.project.name);
 });
+
+test("fixed-range Overview headers stay aligned at 300 px through live ticks", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.setViewportSize({ width: 1200, height: 833 });
+  await page.goto("/?window=dashboard&theme=dark&chart_window=1h");
+  await page.getByRole("button", { name: /^Time range:/ }).click();
+  await page.getByRole("radio", { name: "Date range", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "From", exact: true })
+    .fill("2026-11-06 12:00");
+  await page
+    .getByRole("textbox", { name: "To", exact: true })
+    .fill("2026-11-06 13:00");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(
+    page.getByRole("img", { name: /^CPU total and system, selected dates/ })
+  ).toBeVisible();
+  const network = page.getByRole("link", { name: "Network", exact: true });
+  const position = () =>
+    network
+      .getByRole("img")
+      .evaluate((chart) => chart.getBoundingClientRect().top);
+  const top = await position();
+  // Substitute formatted ticker text to exercise layout independently of the
+  // generator's rate magnitudes; the live ticks below restore real readings.
+  for (const text of ["↑ 0 B/s ↓ 0 B/s", "↑ 999 MB/s ↓ 999 MB/s", "↑ — ↓ —"]) {
+    await network
+      .locator("header .figures-display > span")
+      .first()
+      .evaluate((ticker, text) => {
+        ticker.textContent = text;
+      }, text);
+    expect(await position()).toBe(top);
+  }
+  const headlines = () =>
+    page.locator("main a header").evaluateAll((headers) =>
+      headers.map((header) => ({
+        height: header.getBoundingClientRect().height,
+        overflow: header.scrollWidth > header.clientWidth,
+        text: header.textContent,
+      }))
+    );
+  for (const elapsed of [0, 3000]) {
+    await page.clock.runFor(elapsed);
+    const readings = await headlines();
+    expect(readings).toHaveLength(6);
+    expect(new Set(readings.map((reading) => reading.height)).size).toBe(1);
+    for (const reading of readings) {
+      expect(reading.text).toMatch(/ now$/);
+      expect(reading.overflow, reading.text ?? "").toBe(false);
+    }
+  }
+});

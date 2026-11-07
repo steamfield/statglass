@@ -49,7 +49,7 @@ export type { Accent, Corner, RampStep } from "./lib/accent";
 export { MeterTrack, type MeterTrackProps } from "./meter-track";
 export {
   MetricCard,
-  type MetricCardBody,
+  type MetricCardList,
   type MetricCardProps,
 } from "./metric-card";
 export { MirrorBars, type MirrorBarsProps } from "./mirror-bars";

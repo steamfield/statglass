@@ -3,20 +3,13 @@ import { NumberTicker } from "~/lib/motion/number-ticker";
 import { cn } from "~/lib/utils";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
 
-/** Sizes: 72 (Overview), 88 (Power rings), 112 (CPU clusters). */
-export type RingSize = 72 | 88 | 112;
+/** Sizes: 88 (Power rings), 112 (CPU clusters). */
+export type RingSize = 88 | 112;
 
 const GEOMETRY: Record<
   RingSize,
   { r: number; stroke: number; value: string; label: string; round: boolean }
 > = {
-  72: {
-    r: 30,
-    stroke: 6,
-    value: "text-[14px]",
-    label: "text-[9px]",
-    round: false,
-  },
   88: {
     r: 38,
     stroke: 7,

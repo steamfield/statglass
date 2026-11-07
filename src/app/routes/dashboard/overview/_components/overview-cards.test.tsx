@@ -1,16 +1,26 @@
 import type { LiveProcess } from "@core/generated/bindings";
 import type { ScenarioName } from "@core/mock/fixtures";
-import { PROCESSES, withGpuPct, withNetRates } from "@core/mock/fixtures";
+import {
+  MOCK_HOST_ID,
+  PROCESSES,
+  withGpuPct,
+  withNetRates,
+} from "@core/mock/fixtures";
+import { createMockTransport } from "@core/mock-transport";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
-import { OverviewGpuCard, OverviewNetworkCard } from "./overview-cards";
+import {
+  OverviewDiskCard,
+  OverviewGpuCard,
+  OverviewNetworkCard,
+} from "./overview-cards";
 
 function renderCard(scenarios: ScenarioName[]) {
   const renders = { n: 0 };
   const view = renderWithProviders(
     <Profiler id="net" onRender={() => renders.n++}>
-      <OverviewNetworkCard origin="tl" />
+      <OverviewNetworkCard origin="tl" windowMs={300000} />
     </Profiler>,
     { transportOptions: { scenarios } }
   );
@@ -57,7 +67,7 @@ function renderGpuCard(scenarios: ScenarioName[]) {
   const renders = { n: 0 };
   const view = renderWithProviders(
     <Profiler id="gpu" onRender={() => renders.n++}>
-      <OverviewGpuCard origin="tl" />
+      <OverviewGpuCard origin="tl" windowMs={300000} />
     </Profiler>,
     { transportOptions: { scenarios, autoTick: false } }
   );
@@ -89,13 +99,17 @@ describe("Overview GPU card (D-085)", () => {
       "ccom.docker.backend0.6%",
     ]);
     expect(screen.getByText("Your processes only")).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: /GPU, last/ })).toBeNull();
+    expect(
+      screen.getByRole("img", { name: /GPU utilization, last 5 minutes/ })
+    ).toBeInTheDocument();
   });
 
-  it("keeps the 60 s chart, and ignores process batches, without it", async () => {
+  it("keeps the history chart, and ignores process batches, without it", async () => {
     const { transport, renders } = renderGpuCard(["no-process-gpu"]);
     await screen.findByRole("heading", { name: "GPU" });
-    expect(screen.getByRole("img", { name: /GPU, last/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /GPU utilization, last 5 minutes/ })
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("list", { name: "Top processes by GPU" })
     ).toBeNull();
@@ -104,4 +118,17 @@ describe("Overview GPU card (D-085)", () => {
     act(() => transport.push(batch(2, PROCESSES)));
     expect(renders.n).toBe(before);
   });
+});
+
+it("shows a failed disk inventory instead of loading indefinitely", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  transport.listDiskIoDevices = async () => ({
+    status: "error",
+    error: { kind: "unknown_host", host: MOCK_HOST_ID },
+  });
+  renderWithProviders(<OverviewDiskCard origin="tl" windowMs={300000} />, {
+    transport,
+  });
+  expect(await screen.findByText("Couldn't load disk devices.")).toBeVisible();
+  expect(screen.queryByText("Loading chart history…")).toBeNull();
 });

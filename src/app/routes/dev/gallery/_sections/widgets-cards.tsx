@@ -36,7 +36,7 @@ import { StreamArea } from "~/widgets/stream-area";
 import { GalleryItem } from "../_components/gallery-item";
 
 const POPOVER_W = 340;
-const cpuList = OVERVIEW_CARDS[0]?.body;
+const cpuList = OVERVIEW_CARDS[0]?.list;
 
 /** Cards, gauges, bars, legends, stat cells, lists and pills (widgets/). */
 export function WidgetsCardsSection() {
@@ -132,10 +132,7 @@ export function WidgetsCardsSection() {
         </GalleryItem>
 
         <div className="flex flex-col gap-8">
-          <GalleryItem
-            name="RingGauge"
-            usedIn="Overview · Power & Sensors · CPU"
-          >
+          <GalleryItem name="RingGauge" usedIn="Power & Sensors · CPU">
             <div className="flex items-center gap-6">
               <RingGauge {...RING_GAUGE} />
               <RingGauge
@@ -154,15 +151,15 @@ export function WidgetsCardsSection() {
               />
             </div>
           </GalleryItem>
-          <GalleryItem name="InlineBar" usedIn="Overview" width={240}>
+          <GalleryItem name="InlineBar" usedIn="Popover" width={240}>
             <InlineBar {...INLINE_BAR} />
             <InlineBar label="Fans" value="Passive cooling" fraction="none" />
           </GalleryItem>
-          <GalleryItem name="Legend" usedIn="Overview">
+          <GalleryItem name="Legend" usedIn="Module pages">
             <Legend {...LEGEND} />
           </GalleryItem>
           <GalleryItem name="ProcessList" usedIn="Overview" width={300}>
-            {cpuList?.kind === "list" && (
+            {cpuList && (
               <ProcessList rows={cpuList.rows} ariaLabel={cpuList.ariaLabel} />
             )}
           </GalleryItem>

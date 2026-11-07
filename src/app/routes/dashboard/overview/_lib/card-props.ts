@@ -1,15 +1,9 @@
-/**
- * Overview card props from live values (plan 4.5). Pure, so
- * the ring, bar and legend math is tested without rendering. Every input is
- * a raw catalog unit; `null` is a gap and renders "—", never 0.
- */
-
+/** Current figures and compact facts for Overview. Null readings remain gaps. */
 import { ratio } from "@core/chart-math";
 import { scaleOrNull, sumOrNull } from "@core/chart-math/numeric";
 import {
   formatBytes,
   formatGhz,
-  formatMarketingMemory,
   formatPercent,
   formatRate,
   formatRpm,
@@ -22,16 +16,16 @@ import {
 import type { LiveProcess, PowerSource } from "@core/generated/bindings";
 import { topBy } from "@core/top-by";
 import { netTotal } from "~/components/process-table";
+import { pressureState } from "~/routes/dashboard/memory/_lib/pressure";
 import type { MetricCardProps } from "~/widgets/metric-card";
 import type { ProcessListRow } from "~/widgets/process-list";
-import type { StreamAreaProps } from "~/widgets/stream-area";
 
-export type CardBase = Omit<MetricCardProps, "origin" | "href" | "onOpen">;
+export type CardBase = Omit<
+  MetricCardProps,
+  "origin" | "href" | "onOpen" | "chart"
+>;
 
-/**
- * Top `n` processes by `value`, highest first. Rows without a value drop out;
- * the id is pid plus start time, which survives pid reuse.
- */
+/** Rank live rows, dropping unmeasured values; pid plus start time survives pid reuse. */
 export function topProcesses(
   rows: readonly LiveProcess[],
   value: (p: LiveProcess) => number | null,
@@ -47,151 +41,82 @@ export function topProcesses(
 }
 
 export interface ClusterInput {
-  /** "P-cluster", "E-cluster". */
   label: string;
   freqHz: number | null;
-  /** The cluster's top DVFS state, Hz. */
-  maxHz: number | null;
 }
 
 export function cpuCard(input: {
   total: number | null;
   user: number | null;
   system: number | null;
-  /** "10P + 4E", from the topology. */
-  coresLabel: string;
-  /** Logical cores; Overview shows process CPU as a share of the machine. */
   coreCount: number;
-  /**
-   * P then E; one cluster on a host whose cores are all one kind (`uniform`,
-   * D-116), whose second bar is then `cpu.iowait`.
-   */
   clusters: [ClusterInput, ClusterInput] | [ClusterInput];
   iowait?: number | null;
   processes: readonly LiveProcess[];
 }): CardBase {
-  const cores = Math.max(1, input.coreCount);
-  const freqBar = (c: ClusterInput) => ({
-    label: c.label,
-    value: formatGhz(c.freqHz),
-    fraction: ratio(c.freqHz, c.maxHz),
-  });
   const [first, second] = input.clusters;
-  const iowait = input.iowait ?? null;
   return {
     accent: "cpu",
     title: "CPU",
-    subtitle:
-      input.coresLabel ||
-      (input.coreCount > 0 ? `${input.coreCount}-core` : ""),
-    ring: {
-      fractions: [ratio(input.user, 100), ratio(input.system, 100)],
-      value: formatPercent(input.total),
-      label: "Load",
-    },
-    bars: [
-      freqBar(first),
+    value: formatPercent(input.total),
+    stats: [
+      { label: "User", value: formatPercent(input.user, { decimals: 1 }) },
+      { label: "System", value: formatPercent(input.system, { decimals: 1 }) },
+      { label: first.label, value: formatGhz(first.freqHz) },
       second
-        ? freqBar(second)
+        ? { label: second.label, value: formatGhz(second.freqHz) }
         : {
             label: "I/O wait",
-            value: formatPercent(iowait, { decimals: 1 }),
-            fraction: ratio(iowait, 100),
+            value: formatPercent(input.iowait ?? null, { decimals: 1 }),
           },
     ],
-    legend: [
-      {
-        label: "User",
-        value: formatPercent(input.user, { decimals: 1 }),
-        step: 1,
-      },
-      {
-        label: "System",
-        value: formatPercent(input.system, { decimals: 1 }),
-        step: 2,
-      },
-    ],
-    body: {
-      kind: "list",
+    list: {
+      caption: "Now",
       ariaLabel: "Top processes by CPU",
       rows: topProcesses(
         input.processes,
-        (p) => (p.cpu_pct === null ? null : p.cpu_pct / cores),
+        (p) =>
+          p.cpu_pct === null ? null : p.cpu_pct / Math.max(1, input.coreCount),
         (v) => formatPercent(v, { decimals: 1 })
       ),
     },
   };
 }
 
-/**
- * GPU card. The legend is Render and Tiler, what IOAccelerator reports (plan
- * 4.5, in place of "Compute"). With per-process GPU time (D-085) the
- * body is the top 5 processes by GPU share; without it,
- * a 60 s utilization chart.
- */
 export function gpuCard(input: {
   util: number | null;
   render: number | null;
   tiler: number | null;
   freqHz: number | null;
-  maxFreqHz: number | null;
   powerW: number | null;
-  /** 24 h maximum of `power.gpu`, floored at 5 W. */
-  powerScaleW: number;
-  /** "20-core" when the host reports GPU cores; empty until it does. */
-  subtitle: string;
-  /**
-   * Process rows when the host has per-process GPU time (D-085), else the
-   * chart. Rows without a measured share (the first sample is a baseline)
-   * and rows with none drop out.
-   */
-  body: { processes: readonly LiveProcess[] } | { stream: StreamAreaProps };
+  processes: readonly LiveProcess[] | null;
 }): CardBase {
   return {
     accent: "gpu",
     title: "GPU",
-    subtitle: input.subtitle,
-    ring: {
-      fractions: [ratio(input.render, 100), ratio(input.tiler, 100)],
-      value: formatPercent(input.util),
-      label: "Load",
-    },
-    bars: [
-      {
-        label: "Frequency",
-        value: formatGhz(input.freqHz),
-        fraction: ratio(input.freqHz, input.maxFreqHz),
-      },
-      {
-        label: "Power",
-        value: formatWatts(input.powerW),
-        fraction: ratio(input.powerW, input.powerScaleW),
-      },
+    value: formatPercent(input.util),
+    stats: [
+      { label: "Frequency", value: formatGhz(input.freqHz) },
+      { label: "Power", value: formatWatts(input.powerW) },
+      { label: "Render", value: formatPercent(input.render) },
+      { label: "Tiler", value: formatPercent(input.tiler) },
     ],
-    legend: [
-      { label: "Render", value: formatPercent(input.render), step: 1 },
-      { label: "Tiler", value: formatPercent(input.tiler), step: 2 },
-    ],
-    body:
-      "processes" in input.body
-        ? gpuProcessesBody(input.body.processes)
-        : { kind: "stream", stream: input.body.stream },
-  };
-}
-
-function gpuProcessesBody(rows: readonly LiveProcess[]): CardBase["body"] {
-  const measured = rows.some((p) => p.gpu_pct !== null);
-  return {
-    kind: "list",
-    ariaLabel: "Top processes by GPU",
-    rows: topProcesses(
-      rows,
-      (p) => (p.gpu_pct === null || p.gpu_pct <= 0 ? null : p.gpu_pct),
-      (v) => formatPercent(v, { decimals: 1 })
-    ),
-    // Rows are the user's processes only (D-045); the first sample after
-    // the view opens is a baseline.
-    note: measured ? "Your processes only" : "Measuring GPU by process…",
+    ...(input.processes === null
+      ? {}
+      : {
+          list: {
+            caption: "Now",
+            ariaLabel: "Top processes by GPU",
+            rows: topProcesses(
+              input.processes,
+              (p) => (p.gpu_pct === null || p.gpu_pct <= 0 ? null : p.gpu_pct),
+              (v) => formatPercent(v, { decimals: 1 })
+            ),
+            note: input.processes.some((p) => p.gpu_pct !== null)
+              ? "Your processes only"
+              : "Measuring GPU by process…",
+          },
+        }),
   };
 }
 
@@ -200,54 +125,37 @@ export function memoryCard(input: {
   app: number | null;
   wired: number | null;
   compressed: number | null;
-  pressure: number | null;
+  pressureLevel: number | null;
   swapUsed: number | null;
-  totalBytes: number | null;
   binary: boolean;
   processes: readonly LiveProcess[];
 }): CardBase {
   const units = input.binary ? "GiB" : "GB";
-  const div = input.binary ? 2 ** 30 : 1e9;
-  const wiredComp =
-    input.wired === null || input.compressed === null
-      ? null
-      : input.wired + input.compressed;
+  const state = pressureState(input.pressureLevel);
   return {
     accent: "mem",
     title: "Memory",
-    subtitle:
-      input.totalBytes === null ? "" : formatMarketingMemory(input.totalBytes),
-    ring: {
-      fractions: [
-        ratio(input.app, input.totalBytes),
-        ratio(wiredComp, input.totalBytes),
-      ],
-      value: input.used === null ? MISSING : (input.used / div).toFixed(1),
-      label: `${units} used`,
-    },
-    bars: [
+    ...((state === "warn" || state === "critical") && {
+      alert: { tone: state, text: `Pressure ${state}` },
+    }),
+    value: formatBytes(input.used, { units, decimals: 1 }),
+    stats: [
       {
         label: "Pressure",
-        value: formatPercent(input.pressure),
-        fraction: ratio(input.pressure, 100),
+        value: state ?? MISSING,
       },
-      // Swap allocated is not a catalog series, so the bar has no scale.
-      { label: "Swap", value: formatBytes(input.swapUsed), fraction: "none" },
-    ],
-    legend: [
-      {
-        label: "App",
-        value: formatBytes(input.app, { units, decimals: 1 }),
-        step: 1,
-      },
+      { label: "Swap", value: formatBytes(input.swapUsed, { units }) },
+      { label: "App", value: formatBytes(input.app, { units, decimals: 1 }) },
       {
         label: "Wired + comp.",
-        value: formatBytes(wiredComp, { units, decimals: 1 }),
-        step: 2,
+        value: formatBytes(sumOrNull(input.wired, input.compressed), {
+          units,
+          decimals: 1,
+        }),
       },
     ],
-    body: {
-      kind: "list",
+    list: {
+      caption: "Now",
       ariaLabel: "Top processes by memory",
       rows: topProcesses(
         input.processes,
@@ -258,9 +166,6 @@ export function memoryCard(input: {
   };
 }
 
-/** Plan 4.5: the hottest SoC zone bar runs to 105 °C. */
-export const THERMAL_CEILING_C = 105;
-
 export function powerCard(input: {
   system: number | null;
   cpu: number | null;
@@ -268,49 +173,37 @@ export function powerCard(input: {
   dram: number | null;
   hottestC: number | null;
   fanRpm: number | null;
-  fanMax: number | null;
-  /** No fans on this Mac (MacBook Air): the bar becomes "Passive cooling". */
   passive: boolean;
-  /** `LiveStatus.power_source`; null before the first status. */
   powerSource: PowerSource | null;
   temperature: TemperatureUnits;
   processes: readonly LiveProcess[];
 }): CardBase {
-  const gpuDram = sumOrNull(input.gpu, input.dram);
   return {
     accent: "power",
     title: "Power & Sensors",
-    subtitle:
-      input.powerSource === null
-        ? ""
-        : input.powerSource === "battery"
-          ? "on battery"
-          : "on power adapter",
-    ring: {
-      fractions: [ratio(input.cpu, input.system), ratio(gpuDram, input.system)],
-      value: input.system === null ? MISSING : input.system.toFixed(1),
-      label: "Watts",
-    },
-    bars: [
+    value: formatWatts(input.system),
+    ...(input.powerSource === null
+      ? {}
+      : {
+          unit: input.powerSource === "battery" ? " on battery" : " on adapter",
+        }),
+    stats: [
       {
-        label: "Hottest SoC zone",
+        label: "Hottest zone",
         value: formatTemperature(input.hottestC, { units: input.temperature }),
-        fraction: ratio(input.hottestC, THERMAL_CEILING_C),
       },
-      input.passive
-        ? { label: "Fans", value: "Passive cooling", fraction: "none" }
-        : {
-            label: "Fans",
-            value: formatRpm(input.fanRpm),
-            fraction: ratio(input.fanRpm, input.fanMax),
-          },
+      {
+        label: "Fans",
+        value: input.passive ? "Passive cooling" : formatRpm(input.fanRpm),
+      },
+      { label: "CPU", value: formatWatts(input.cpu) },
+      {
+        label: "GPU + DRAM",
+        value: formatWatts(sumOrNull(input.gpu, input.dram)),
+      },
     ],
-    legend: [
-      { label: "CPU", value: formatWatts(input.cpu), step: 1 },
-      { label: "GPU + DRAM", value: formatWatts(gpuDram), step: 2 },
-    ],
-    body: {
-      kind: "list",
+    list: {
+      caption: "Now",
       ariaLabel: "Top processes by energy impact",
       rows: topProcesses(
         input.processes,
@@ -328,143 +221,78 @@ export interface IfaceRate {
 }
 
 export function networkCard(input: {
-  /**
-   * The primary interface's name and rates; null when no reported interface
-   * carries the default route (a full-tunnel VPN, D-092).
-   */
   primary: IfaceRate | null;
-  /** `net.link_rate` of the primary interface, bits/s. */
   linkBps: number | null;
-  /** `net.rx_total` / `net.tx_total`: every reported interface, bytes/s. */
   total: { rx: number | null; tx: number | null };
   interfaces: readonly IfaceRate[];
   rate: RateUnits;
-  /**
-   * Process rows when the host has per-process network (D-081), else null
-   * and the list shows interfaces. Rows without measured rates (the first
-   * sample is a baseline) and rows with no traffic drop out.
-   */
   processes: readonly LiveProcess[] | null;
 }): CardBase {
-  const { rx, tx } = input.total;
-  const bits = (v: number | null) => scaleOrNull(v, 8);
-  // The ring is the primary interface against its own link; the figures
-  // and bars are every interface's traffic.
-  const ringDown = ratio(bits(input.primary?.rx ?? null), input.linkBps);
-  const ringUp = ratio(bits(input.primary?.tx ?? null), input.linkBps);
+  const fraction = ratio(
+    scaleOrNull(input.primary?.rx ?? null, 8),
+    input.linkBps
+  );
   return {
     accent: "net",
     title: "Network",
-    subtitle:
-      input.primary === null
-        ? "All interfaces"
-        : `All interfaces · ${input.primary.iface}`,
-    ring: {
-      fractions: [ringDown, ringUp],
-      value: ringDown === null ? MISSING : formatPercent(ringDown * 100),
-      label: "Of link",
-    },
-    bars: [
-      {
-        label: "Download",
-        value: formatRate(rx, { units: input.rate }),
-        fraction: ratio(bits(rx), input.linkBps),
-      },
-      {
-        label: "Upload",
-        value: formatRate(tx, { units: input.rate }),
-        fraction: ratio(bits(tx), input.linkBps),
-      },
+    // Upload first, as the chart draws it above the axis.
+    value: `↑ ${formatRate(input.total.tx, { units: input.rate })} ↓ ${formatRate(input.total.rx, { units: input.rate })}`,
+    stats: [
+      { label: "Of link", value: formatPercent(scaleOrNull(fraction, 100)) },
+      { label: "Interface", value: input.primary?.iface ?? MISSING },
     ],
-    legend: [
-      { label: "Down", value: formatRate(rx, { units: "Mbps" }), step: 1 },
-      { label: "Up", value: formatRate(tx, { units: "Mbps" }), step: 2 },
-    ],
-    body:
+    list:
       input.processes === null
-        ? interfacesBody(input.interfaces, input.rate)
+        ? {
+            caption: "Now",
+            ariaLabel: "Interfaces by total rate",
+            rows: topBy(input.interfaces, (i) => sumOrNull(i.rx, i.tx), 5).map(
+              ({ row: i, value: v }) => ({
+                id: i.iface,
+                initial: i.iface.slice(0, 1),
+                name: i.iface,
+                value: formatRate(v, { units: input.rate }),
+              })
+            ),
+          }
         : {
-            kind: "list",
+            caption: "Now",
             ariaLabel: "Top processes by network rate",
+            note: "Your processes only",
             rows: topProcesses(
               input.processes,
               (p) => {
-                const t = netTotal(p);
-                return t === null || t <= 0 ? null : t;
+                const total = netTotal(p);
+                return total === null || total <= 0 ? null : total;
               },
               (v) => formatRate(v, { units: input.rate })
             ),
-            // NetworkStatistics sees only the user's own flows (D-081).
-            note: "Your processes only",
           },
   };
 }
 
-/** Without per-process network: interfaces by total rate. */
-function interfacesBody(
-  interfaces: readonly IfaceRate[],
-  rate: RateUnits
-): CardBase["body"] {
-  const total = (i: IfaceRate) => sumOrNull(i.rx, i.tx);
-  return {
-    kind: "list",
-    ariaLabel: "Interfaces by total rate",
-    rows: topBy(interfaces, total, 5).map(({ row: i, value: v }) => ({
-      id: i.iface,
-      initial: i.iface.slice(0, 1),
-      name: i.iface,
-      value: formatRate(v, { units: rate }),
-    })),
-  };
-}
-
-/**
- * Disk card for the boot volume. On APFS every volume reports its
- * container's size, free and used space (`disk.used`, total − free in
- * Rust). A Data and System split is not measured; the legend
- * shows used and free instead.
- */
 export function diskCard(input: {
   read: number | null;
   write: number | null;
   totalBytes: number | null;
-  freeBytes: number | null;
   usedBytes: number | null;
-  /** 24 h maxima of read and write, floored at 500 MB/s. */
-  readScale: number;
-  writeScale: number;
+  bytes: "GB" | "GiB";
   rate: RateUnits;
   processes: readonly LiveProcess[];
 }): CardBase {
-  const used = input.usedBytes;
-  const usedFrac = ratio(used, input.totalBytes);
   return {
     accent: "disk",
     title: "Disk",
-    subtitle: input.totalBytes === null ? "" : formatBytes(input.totalBytes),
-    ring: {
-      fractions: [usedFrac],
-      value: usedFrac === null ? MISSING : formatPercent(usedFrac * 100),
-      label: "Used",
-    },
-    bars: [
+    // Read first and up, write down, as the chart draws them.
+    value: `↑ ${formatRate(input.read, { units: input.rate })} ↓ ${formatRate(input.write, { units: input.rate })}`,
+    stats: [
       {
-        label: "Read",
-        value: formatRate(input.read, { units: input.rate }),
-        fraction: ratio(input.read, input.readScale),
-      },
-      {
-        label: "Write",
-        value: formatRate(input.write, { units: input.rate }),
-        fraction: ratio(input.write, input.writeScale),
+        label: "Used",
+        value: `${formatBytes(input.usedBytes, { units: input.bytes })} of ${formatBytes(input.totalBytes, { units: input.bytes })}`,
       },
     ],
-    legend: [
-      { label: "Used", value: formatBytes(used), step: 1 },
-      { label: "Free", value: formatBytes(input.freeBytes), step: "track" },
-    ],
-    body: {
-      kind: "list",
+    list: {
+      caption: "Now",
       ariaLabel: "Top processes by disk I/O",
       rows: topProcesses(
         input.processes,

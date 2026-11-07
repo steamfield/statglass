@@ -17,9 +17,14 @@ export function ModulePage({
   title,
   subtitle,
   children,
+  actions,
+  header,
 }: {
   title: string;
   subtitle?: ReactNode;
+  actions?: ReactNode;
+  /** Content that remains visible while the chart window loads. */
+  header?: ReactNode;
   /** The page's cards for the chart window, once settings have loaded. */
   children: (windowMs: number) => ReactNode;
 }) {
@@ -29,9 +34,15 @@ export function ModulePage({
         <PageHeader
           title={title}
           subtitle={subtitle}
-          actions={<WindowControl />}
+          actions={
+            <div className="flex flex-wrap items-center gap-3">
+              {actions}
+              <WindowControl />
+            </div>
+          }
         />
         <ChartRangeNotice />
+        {header}
         <ModulePageBody>{children}</ModulePageBody>
       </div>
     </ChartRangeProvider>

@@ -24,7 +24,7 @@ describe("RingGauge", () => {
       <RingGauge {...RING_GAUGE} fractions={[0.8, 0.7]} />
     );
     const [, first, second] = Array.from(container.querySelectorAll("circle"));
-    const c = 2 * Math.PI * 30;
+    const c = 2 * Math.PI * 38;
     const shown = (el: Element | undefined) =>
       c - Number(el?.getAttribute("stroke-dashoffset"));
     expect(shown(first) + shown(second)).toBeCloseTo(c, 0);

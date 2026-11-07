@@ -17,16 +17,17 @@ const MAX_BARS = 120;
 
 /**
  * Bucket width and count for a mirrored chart over `windowMs`: one bar per
- * sample for short windows, at most `MAX_BARS` bars otherwise, each the
+ * sample for short windows, at most `maxBars` bars otherwise, each the
  * average of its bucket.
  */
 export function mirrorBuckets(
   windowMs: number,
   intervalMs: number,
-  brush = false
+  brush = false,
+  maxBars = MAX_BARS
 ): { bucketMs: number; count: number } {
   const samples = Math.max(1, Math.round(windowMs / intervalMs));
-  const per = Math.max(1, Math.ceil(samples / MAX_BARS));
+  const per = Math.max(1, Math.ceil(samples / maxBars));
   const bucketMs = brush
     ? brushBucketMs(per * intervalMs, intervalMs)
     : per * intervalMs;
@@ -35,6 +36,11 @@ export function mirrorBuckets(
 
 export interface LiveMirrorChartProps
   extends Pick<MirrorChartProps, "hover" | "ticks" | "inset"> {
+  /**
+   * Most bars drawn (default 120). A narrow card needs fewer: each bar
+   * keeps a 2 px gap, so 120 bars in a 220 px plot have no width left.
+   */
+  maxBars?: number;
   /**
    * Series drawn above the axis (upload, read). Pages pass a Rust total
    * (`net.tx_total`, D-092), so the chart never adds interfaces itself.
@@ -86,12 +92,14 @@ export function LiveMirrorChart({
   hover,
   ticks,
   inset,
+  maxBars,
 }: LiveMirrorChartProps) {
   const intervalMs = useGridInterval();
   const { bucketMs: requestedBucketMs, count: requestedCount } = mirrorBuckets(
     windowMs,
     intervalMs,
-    brush
+    brush,
+    maxBars
   );
   const fixedEnd = useModuleEnd();
   const { values, endMs, bucketMs, loading, error } = useModuleBuckets(

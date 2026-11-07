@@ -34,8 +34,8 @@ for (const theme of THEMES) {
     );
     await expect(gpuCard(page)).toContainText("Your processes only");
     await expect(
-      gpuCard(page).getByRole("img", { name: /GPU, last/ })
-    ).toHaveCount(0);
+      gpuCard(page).getByRole("img", { name: /GPU utilization, last/ })
+    ).toBeVisible();
     await gpuCard(page).screenshot({
       path: `test-results/screens/overview-gpu-card-${theme}-${info.project.name}.png`,
     });
@@ -97,7 +97,7 @@ test("without per-process GPU the chart stays and no GPU columns show", async ({
     "/?window=dashboard&theme=dark&ticks=0&scenario=no-process-gpu"
   );
   await expect(
-    gpuCard(page).getByRole("img", { name: /GPU, last/ })
+    gpuCard(page).getByRole("img", { name: /GPU utilization, last/ })
   ).toBeVisible();
   await expect(
     page.getByRole("list", { name: "Top processes by GPU" })
