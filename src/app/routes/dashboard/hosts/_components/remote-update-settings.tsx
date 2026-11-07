@@ -151,7 +151,8 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
       )}
       {(error || status.error) && (
         <InlineMessage tone="error">
-          {error ?? String(status.error)}
+          {error ??
+            commandErrorText(status.error, "Couldn't read update settings.")}
         </InlineMessage>
       )}
     </div>

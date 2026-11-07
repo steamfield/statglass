@@ -1,6 +1,7 @@
 import { commandErrorText } from "@core/command-error";
 import type { CliLinkStatus } from "@core/generated/bindings";
 import { appKeys } from "@core/query-keys";
+import { failureReason } from "@core/remote-errors";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -89,7 +90,7 @@ function CliLinkRow() {
     : link
       ? linkMessage(link)
       : status.isError
-        ? `Couldn't check: ${commandErrorText(status.error, "Please try again.")}`
+        ? `Couldn't check the command. ${failureReason(status.error, "Please try again.")}`
         : "Checking…";
   return (
     <SettingsRow

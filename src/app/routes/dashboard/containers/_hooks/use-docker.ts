@@ -1,5 +1,5 @@
 import type { DockerSnapshot } from "@core/generated/bindings";
-import { dockerKeys, sameDockerEngine } from "@core/query-keys";
+import { dockerKeys, sameDockerContainer } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
@@ -48,7 +48,7 @@ export function useDockerHistory(
   );
   return useQuery({
     queryKey,
-    placeholderData: holdWhile(queryKey, sameDockerEngine),
+    placeholderData: holdWhile(queryKey, sameDockerContainer),
     enabled: local && Boolean(engine),
     queryFn: () =>
       unwrap(

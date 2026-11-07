@@ -31,6 +31,19 @@ describe("remote update settings", () => {
     );
     expect(transport.openUrl).toHaveBeenCalledWith(COORDINATED_UPGRADE_GUIDE);
   });
+  it("words a failed read from the typed error, not its kind-prefixed text", async () => {
+    const transport = createMockTransport({ scenarios: ["multi-host"] });
+    transport.getRemoteUpdateStatus = async () => ({
+      status: "error",
+      error: { kind: "unknown_host", host: "remote-studio" },
+    });
+    renderWithProviders(<RemoteUpdateSettings hostId="remote-studio" />, {
+      transport,
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /^Couldn't read update settings\.$/
+    );
+  });
   it("reads and changes the host policy independently of this Mac", async () => {
     const transport = createMockTransport({ scenarios: ["multi-host"] });
     await transport.updateSettings({

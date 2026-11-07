@@ -489,6 +489,13 @@ export const sameHeatmapMetric = (previous: Key, next: Key) =>
 export const sameSpaceReport = (previous: Key, next: Key) =>
   sameAt(previous, next, [0, 1, 2, 3]);
 
-/** The same Docker engine's history (comparison, history or events). */
-export const sameDockerEngine = (previous: Key, next: Key) =>
-  sameAt(previous, next, [0, 1, 2, 3]);
+/** The same Docker container's history or events (engine, container, kind). */
+export const sameDockerContainer = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 3, 4, 5]);
+
+/**
+ * The same engine's comparison of one metric; CPU and memory are drawn on
+ * different scales. Another project or selection may hold.
+ */
+export const sameDockerComparison = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 3, 4, 7]);

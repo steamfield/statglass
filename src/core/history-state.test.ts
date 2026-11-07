@@ -4,6 +4,7 @@ import type {
   HistoryHealth,
 } from "@core/generated/bindings";
 import {
+  clearHistoryFailure,
   collectingHeader,
   dedupeGaps,
   gapBands,
@@ -248,6 +249,17 @@ describe("historyUnavailable", () => {
     expect(
       historyUnavailable({ kind: "store_busy", message: "locked" })
     ).toBeNull();
+  });
+});
+
+describe("clearHistoryFailure", () => {
+  it("says nothing was deleted only when Rust answered with an error", () => {
+    expect(clearHistoryFailure({ kind: "store", message: "io" })).toBe(
+      "Couldn't clear history. Nothing was deleted."
+    );
+    expect(clearHistoryFailure(new Error("ipc closed"))).toBe(
+      "Couldn't confirm history was cleared. Check its size on disk."
+    );
   });
 });
 

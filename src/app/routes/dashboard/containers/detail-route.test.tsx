@@ -121,7 +121,7 @@ it.each([false, true])(
     );
     expect(
       await screen.findByText(/Inspection socket disconnected/)
-    ).toHaveAttribute("role", "status");
+    ).toHaveAttribute("role", "alert");
     expect(
       screen.getByText(/Charged memory/, { selector: "span" })
     ).toHaveTextContent("4.0 MB");
@@ -200,7 +200,7 @@ it("invalidates retained detail with history reset and removes erased metadata",
   await waitFor(() => expect(reads).toBeGreaterThan(1));
   expect(
     await screen.findByText(/Container metadata no longer retained/)
-  ).toHaveAttribute("role", "status");
+  ).toHaveAttribute("role", "alert");
   expect(screen.queryByRole("heading", { name: "Retained worker" })).toBeNull();
   result.unmount();
   transport.dispose();
@@ -246,7 +246,7 @@ it("drops retained detail when the Docker generation changes", async () => {
   });
   expect(
     await screen.findByText(/Metadata belongs to the previous generation/)
-  ).toHaveAttribute("role", "status");
+  ).toHaveAttribute("role", "alert");
   expect(
     screen.queryByRole("heading", { name: "Old generation worker" })
   ).toBeNull();

@@ -1,10 +1,12 @@
-import { commandErrorText } from "@core/command-error";
+import { commandError, commandErrorText } from "@core/command-error";
 import type {
   DockerContainer,
   DockerHealth,
   DockerLifecycle,
   DockerStatus,
 } from "@core/generated/bindings";
+import { historyUnavailable } from "@core/history-state";
+import { remoteErrorText } from "@core/remote-errors";
 import type { ColumnSort } from "~/components/data-table";
 export const statusLabel: Record<DockerStatus, string> = {
   disabled: "Monitoring off",
@@ -94,7 +96,21 @@ export function filterContainers(
   );
 }
 
-/** Keep bounded, actionable errors supplied by Rust visible at the UI seam. */
+const DOCKER_FALLBACK = "Docker didn't answer. Try again.";
+
+/**
+ * Keep bounded, actionable errors supplied by Rust visible at the UI seam.
+ * A kind without a message reads as the store or host problem it names;
+ * only what is left says Docker didn't answer.
+ */
 export function dockerErrorMessage(error: unknown): string {
-  return commandErrorText(error, "Docker didn't answer. Try again.");
+  const typed = commandError(error);
+  if (typed === null || ("message" in typed && typed.message)) {
+    return commandErrorText(error, DOCKER_FALLBACK);
+  }
+  const store = historyUnavailable(typed);
+  if (store) return store.message;
+  return typed.kind === "unknown_host" || typed.kind === "remote_host"
+    ? remoteErrorText(typed)
+    : DOCKER_FALLBACK;
 }

@@ -8,7 +8,8 @@ import {
   historyKeys,
   hostKeys,
   sameDiskIo,
-  sameDockerEngine,
+  sameDockerComparison,
+  sameDockerContainer,
   sameHeatmapMetric,
   sameHost,
   sameModuleSeries,
@@ -179,7 +180,12 @@ describe("hold identity predicates", () => {
       [
         dockerKeys.history(H, "e", null, 0, 1, 0),
         dockerKeys.history(OTHER, "e", null, 1, 2, 0),
-        sameDockerEngine,
+        sameDockerContainer,
+      ],
+      [
+        dockerKeys.comparison(H, "e", 0, 1, "cpu", null, null, 0),
+        dockerKeys.comparison(OTHER, "e", 1, 2, "cpu", null, null, 0),
+        sameDockerComparison,
       ],
     ];
     for (const [a, b, same] of pairs) {
@@ -229,7 +235,7 @@ describe("hold identity predicates", () => {
     );
   });
 
-  it("the heatmap, a report and a Docker engine hold within their own identity", () => {
+  it("the heatmap and a report hold within their own identity", () => {
     expect(
       sameHeatmapMetric(
         historyKeys.heatmap(H, "cpu", 0, 30),
@@ -248,16 +254,51 @@ describe("hold identity predicates", () => {
         diskSpaceKeys.subtree(H, 2, null, false)
       )
     ).toBe(false);
+  });
+
+  it("Docker history holds within one container; a comparison within one metric", () => {
+    const history = dockerKeys.history(H, "e", "a", 0, 1, 0);
     expect(
-      sameDockerEngine(
-        dockerKeys.comparison(H, "e", 0, 1, "cpu", null, null, 0),
-        dockerKeys.comparison(H, "e", 1, 2, "memory", "p", ["c"], 1)
+      sameDockerContainer(history, dockerKeys.history(H, "e", "a", 1, 2, 1))
+    ).toBe(true);
+    expect(
+      sameDockerContainer(history, dockerKeys.history(H, "e", "b", 0, 1, 0))
+    ).toBe(false);
+    expect(
+      sameDockerContainer(history, dockerKeys.history(H, "f", "a", 0, 1, 0))
+    ).toBe(false);
+    expect(
+      sameDockerContainer(
+        dockerKeys.events(H, "e", "a", 0, 1, 0, null),
+        dockerKeys.events(H, "e", "b", 0, 1, 0, null)
+      )
+    ).toBe(false);
+    const comparison = dockerKeys.comparison(
+      H,
+      "e",
+      0,
+      1,
+      "cpu",
+      null,
+      null,
+      0
+    );
+    expect(
+      sameDockerComparison(
+        comparison,
+        dockerKeys.comparison(H, "e", 1, 2, "cpu", "p", ["c"], 1)
       )
     ).toBe(true);
     expect(
-      sameDockerEngine(
-        dockerKeys.history(H, "e", null, 0, 1, 0),
-        dockerKeys.history(H, "f", null, 0, 1, 0)
+      sameDockerComparison(
+        comparison,
+        dockerKeys.comparison(H, "e", 0, 1, "memory", null, null, 0)
+      )
+    ).toBe(false);
+    expect(
+      sameDockerComparison(
+        comparison,
+        dockerKeys.comparison(H, "f", 0, 1, "cpu", null, null, 0)
       )
     ).toBe(false);
   });

@@ -1,3 +1,4 @@
+import { errorTone } from "@core/command-error";
 import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
@@ -168,7 +169,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
             />
           </div>
           {history.error && (
-            <InlineMessage tone="error">
+            <InlineMessage tone={errorTone(history.error)}>
               Retained measurements unavailable:{" "}
               {dockerErrorMessage(history.error)}
             </InlineMessage>

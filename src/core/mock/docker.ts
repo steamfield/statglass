@@ -1,9 +1,10 @@
-import type {
-  DockerContainer,
-  DockerEvent,
-  DockerHistoryPage,
-  DockerSettings,
-  DockerSnapshot,
+import {
+  DOCKER_MAX_RANGE_MS,
+  type DockerContainer,
+  type DockerEvent,
+  type DockerHistoryPage,
+  type DockerSettings,
+  type DockerSnapshot,
 } from "@core/generated/bindings";
 import type { Transport } from "@core/transport";
 import { comparison } from "./docker-comparison";
@@ -27,7 +28,11 @@ export {
 } from "./docker-fixtures";
 export { mockHistoryPoints } from "./docker-history";
 
-import { fail, ok } from "./protocol";
+import { fail, invalid, ok, rangeError } from "./protocol";
+
+/** Rust's check on a Docker history, events or comparison range. */
+const badRange = (request: { from_ms: number; to_ms: number }) =>
+  rangeError(request.from_ms, request.to_ms, DOCKER_MAX_RANGE_MS);
 export function createMockDocker(
   scenarios: readonly ScenarioName[],
   now: () => number,
@@ -265,6 +270,8 @@ class MockDocker {
     });
   };
   readonly dockerHistory: Transport["dockerHistory"] = async (request) => {
+    const refused = badRange(request);
+    if (refused) return invalid(refused);
     const metadata = this.retained.filter(
       (row) =>
         row.engine_id === request.engine_id &&
@@ -280,6 +287,8 @@ class MockDocker {
     return ok(page);
   };
   readonly dockerEvents: Transport["dockerEvents"] = async (request) => {
+    const refused = badRange(request);
+    if (refused) return invalid(refused);
     const events: DockerEvent[] = ["start", "oom", "die", "restart"].map(
       (action, i) => ({
         id: `docker-event-${i}`,

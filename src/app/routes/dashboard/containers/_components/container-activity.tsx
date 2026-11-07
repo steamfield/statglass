@@ -1,3 +1,4 @@
+import { errorTone } from "@core/command-error";
 import type { DockerSnapshot } from "@core/generated/bindings";
 import { windowWords } from "@core/live-window";
 import { useCallback, useState } from "react";
@@ -119,7 +120,7 @@ export function ContainerActivity({
         }
         notice={
           comparison.error ? (
-            <InlineMessage tone="status">
+            <InlineMessage tone={errorTone(comparison.error)}>
               History could not be read: {dockerErrorMessage(comparison.error)}
             </InlineMessage>
           ) : (

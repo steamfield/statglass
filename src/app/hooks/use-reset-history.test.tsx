@@ -30,7 +30,7 @@ it("settles resetting and resolves false when the reset call rejects", async () 
   vi.spyOn(transport, "resetHistory").mockRejectedValue(
     new Error("ipc closed")
   );
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
   const error = vi.spyOn(toast, "error");
   const { user } = renderWithProviders(<ResetProbe />, { transport });
   await user.click(screen.getByRole("button", { name: "Reset history" }));
@@ -39,6 +39,10 @@ it("settles resetting and resolves false when the reset call rejects", async () 
   );
   expect(screen.getByRole("button", { name: "Reset history" })).toBeEnabled();
   expect(error).toHaveBeenCalledWith("Couldn't reset history.");
+  expect(log).toHaveBeenCalledWith(
+    "[command] reset_history failed",
+    expect.objectContaining({ hostId: expect.any(String) })
+  );
 });
 
 it("names the other StatGlass when the store is busy", async () => {

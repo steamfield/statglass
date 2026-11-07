@@ -205,15 +205,19 @@ export function onboardingSkipPatch(): SettingsPatch {
 }
 
 /**
- * What a failed `update_settings` tells the user, for a typed error or a
- * rejected call. Nothing changed in any case.
+ * What a failed `update_settings` tells the user. A typed error means Rust
+ * changed nothing; a rejected call never reached an answer, so whether the
+ * change landed is unknown.
  */
 export function settingsErrorText(error: unknown): string {
   const typed = commandError(error);
-  if (typed?.kind === "settings_not_saved") {
+  if (typed === null) {
+    return "Couldn't confirm the settings change. Check the setting and try again.";
+  }
+  if (typed.kind === "settings_not_saved") {
     return "Couldn't save settings. Nothing changed.";
   }
-  if (typed?.kind === "invalid_settings") {
+  if (typed.kind === "invalid_settings") {
     return `StatGlass rejected that setting: ${typed.message}`;
   }
   return "Couldn't change settings. Nothing changed.";

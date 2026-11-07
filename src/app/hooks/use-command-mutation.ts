@@ -9,6 +9,8 @@ import { toast } from "sonner";
 export interface CommandMutationOptions<TData, TVars> {
   /** The command's name in the failure log, such as `reset_history`. */
   name: string;
+  /** Extra fields for the failure log, such as `{ hostId }`. */
+  context?: Record<string, unknown>;
   /** The toast for a failure: a typed `CommandFailure` or a rejected call. */
   errorText: (error: Error) => string;
   /** Queries a success makes stale; refetched without being awaited. */
@@ -25,6 +27,7 @@ export function useCommandMutation<TData, TVars = void>(
   fn: (variables: TVars) => Promise<CommandResult<TData>>,
   {
     name,
+    context,
     errorText,
     invalidate,
     onSuccess,
@@ -40,7 +43,11 @@ export function useCommandMutation<TData, TVars = void>(
       onSuccess?.(data, variables);
     },
     onError: (error, variables) => {
-      console.error(`[command] ${name} failed`, { variables, error });
+      console.error(`[command] ${name} failed`, {
+        ...context,
+        variables,
+        error,
+      });
       toast.error(errorText(error));
     },
   });

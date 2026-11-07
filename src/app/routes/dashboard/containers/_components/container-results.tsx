@@ -1,3 +1,4 @@
+import { errorTone } from "@core/command-error";
 import type { DockerSnapshot } from "@core/generated/bindings";
 import type { SetURLSearchParams } from "react-router";
 import { brushScopeProps } from "~/components/brush-overlay";
@@ -89,7 +90,7 @@ export function ContainerResults({
   return (
     <div {...brushScopeProps}>
       {selection && selectedComparison.error && (
-        <InlineMessage tone="status">
+        <InlineMessage tone={errorTone(selectedComparison.error)}>
           Selected history could not be read:{" "}
           {dockerErrorMessage(selectedComparison.error)}
         </InlineMessage>

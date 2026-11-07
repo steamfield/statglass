@@ -30,7 +30,7 @@ it("says why when the settings call rejects", async () => {
   await user.click(screen.getByRole("button", { name: "Write" }));
   await waitFor(() =>
     expect(error).toHaveBeenCalledWith(
-      "Couldn't change settings. Nothing changed."
+      "Couldn't confirm the settings change. Check the setting and try again."
     )
   );
   expect(log).toHaveBeenCalledWith("[settings] update_settings failed", {

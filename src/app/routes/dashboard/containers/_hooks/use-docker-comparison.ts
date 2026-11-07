@@ -1,5 +1,5 @@
 import type { DockerComparisonRequest } from "@core/generated/bindings";
-import { dockerKeys, sameDockerEngine } from "@core/query-keys";
+import { dockerKeys, sameDockerComparison } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -25,7 +25,7 @@ export function useDockerComparison(
   );
   return useQuery({
     queryKey,
-    placeholderData: holdWhile(queryKey, sameDockerEngine),
+    placeholderData: holdWhile(queryKey, sameDockerComparison),
     enabled: local && Boolean(request.engine_id),
     queryFn: () => unwrap(transport.dockerComparison(request)),
   });

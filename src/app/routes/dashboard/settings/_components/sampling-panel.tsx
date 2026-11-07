@@ -6,6 +6,7 @@ import {
   retentionProjection,
   sizeLimitLabel,
 } from "@core/history-projection";
+import { clearHistoryFailure } from "@core/history-state";
 import { slowestIntervalMs } from "@core/live-window";
 import { performanceChanges, performanceNextLever } from "@core/performance";
 import { historyKeys, hostKeys } from "@core/query-keys";
@@ -296,7 +297,7 @@ function HistoryOnDisk() {
     (host: string) => transport.clearHistory(host),
     {
       name: "clear_history",
-      errorText: () => "Couldn't clear history. Nothing was deleted.",
+      errorText: clearHistoryFailure,
       invalidate: (host) => [
         historyKeys.host(host),
         hostKeys.historySize(host),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandError, commandErrorText } from "./command-error";
+import { commandError, commandErrorText, errorTone } from "./command-error";
 import { CommandFailure } from "./transport/query";
 
 describe("commandErrorText", () => {
@@ -45,5 +45,23 @@ describe("commandError", () => {
     expect(commandError(new CommandFailure(error))).toEqual(error);
     expect(commandError(new Error("m"))).toBeNull();
     expect(commandError(null)).toBeNull();
+  });
+});
+
+describe("errorTone", () => {
+  it("reads an expected absence as status and any other failure as an error", () => {
+    expect(errorTone({ kind: "history_unavailable" })).toBe("status");
+    expect(errorTone({ kind: "store_too_new", found: 9, supported: 8 })).toBe(
+      "status"
+    );
+    expect(
+      errorTone(new CommandFailure({ kind: "remote_host", host: "h" }))
+    ).toBe("status");
+    expect(errorTone({ kind: "remote_unsupported", message: "m" })).toBe(
+      "status"
+    );
+    expect(errorTone({ kind: "docker", message: "m" })).toBe("error");
+    expect(errorTone({ kind: "unknown_host", host: "h" })).toBe("error");
+    expect(errorTone(new Error("ipc closed"))).toBe("error");
   });
 });

@@ -1,3 +1,4 @@
+import { errorTone } from "@core/command-error";
 import { formatBytes, formatPercent } from "@core/format";
 import { ChevronDown } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
@@ -185,7 +186,7 @@ function LiveTimelineLane({ from, to }: { from: number; to: number }) {
         events={events.data?.events}
       />
       {events.error && (
-        <InlineMessage tone="status">
+        <InlineMessage tone={errorTone(events.error)}>
           Container events unavailable: {dockerErrorMessage(events.error)}
         </InlineMessage>
       )}
@@ -195,7 +196,7 @@ function LiveTimelineLane({ from, to }: { from: number; to: number }) {
         </p>
       )}
       {history.error && (
-        <InlineMessage tone="status">
+        <InlineMessage tone={errorTone(history.error)}>
           Container history unavailable: {dockerErrorMessage(history.error)}
         </InlineMessage>
       )}
