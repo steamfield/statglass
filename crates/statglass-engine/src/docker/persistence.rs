@@ -41,6 +41,21 @@ const HOUR: i64 = 3_600_000;
 /// Width of a ring bucket: the S10 tier's. The client snaps Docker ranges to it.
 pub const DOCKER_BUCKET_MS: i64 = Tier::S10.bucket_ms().expect("S10 has a bucket width");
 type Key = (String, String, i64);
+/// A closed coverage record: container, reason, start and end.
+type CoverageKey = (Option<String>, String, i64, i64);
+fn coverage_key(g: &api::DockerCoverage) -> Option<CoverageKey> {
+    g.end_ms.map(|end| {
+        (
+            g.container_id.clone(),
+            g.reason().to_owned(),
+            g.start_ms,
+            end,
+        )
+    })
+}
+/// How soon restore reads the store again after it failed, doubling up to the cap.
+const RESTORE_RETRY_MIN: Duration = Duration::from_secs(30);
+const RESTORE_RETRY_MAX: Duration = Duration::from_secs(30 * 60);
 #[derive(Clone)]
 struct Attached {
     writer: Writer,
@@ -99,6 +114,10 @@ struct State {
     error: Option<String>,
     runtime: BTreeMap<String, String>,
     restored_coverage: BTreeSet<String>,
+    /// When a failed restore may read the store again, and the backoff it used.
+    restore_retry: BTreeMap<String, (Instant, Duration)>,
+    /// Closed records in `coverage` the store has acknowledged saving.
+    saved_coverage: BTreeMap<String, BTreeSet<CoverageKey>>,
 }
 struct ReadPin<'a> {
     state: &'a Mutex<State>,
@@ -163,6 +182,8 @@ impl DockerRecorder {
                 error: None,
                 runtime: BTreeMap::new(),
                 restored_coverage: BTreeSet::new(),
+                restore_retry: BTreeMap::new(),
+                saved_coverage: BTreeMap::new(),
             }),
         }
     }
@@ -204,6 +225,9 @@ impl DockerRecorder {
             let mut state = self.state.lock_ok();
             state.suspended = false;
             state.restored_coverage.clear();
+            state.restore_retry.clear();
+            // Another store may not hold what this one saved.
+            state.saved_coverage.clear();
         }
         *self.attached.lock_ok() = Some(Attached {
             writer,
@@ -262,6 +286,8 @@ impl DockerRecorder {
             s.events.clear();
             s.coverage.clear();
             s.restored_coverage.clear();
+            s.restore_retry.clear();
+            s.saved_coverage.clear();
             s.pending.clear();
             s.retry.clear();
             s.last_warning.clear();

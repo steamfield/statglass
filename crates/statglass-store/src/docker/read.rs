@@ -271,26 +271,7 @@ impl DockerReadSnapshot<'_> {
         let mut rows = stmt.query(params![self.engine, start, end, entity])?;
         let mut result = Vec::new();
         while let Some(r) = rows.next()? {
-            let mut c = DockerCoverage {
-                start_ms: r.get(0)?,
-                end_ms: r.get(1)?,
-                metric: r.get(2)?,
-                reason: r.get(3)?,
-                revision: r.get(4)?,
-                sampled_ms: r.get(5)?,
-                expected_ms: r.get(6)?,
-                entity: r.get(7)?,
-            };
-            if super::resumes_on_observation(&c.reason)
-                && c.end_ms.is_none()
-                && c.entity.is_none()
-                && c.metric.is_none()
-                && let Some(engine) = self.engine
-                && let Some(end) = super::resumed_after(self.conn, engine, c.start_ms)?
-            {
-                c.end_ms = Some(end);
-                c.expected_ms = end - c.start_ms;
-            }
+            let c = self.coverage_row(r)?;
             if c.end_ms.is_some_and(|closed| closed <= start) {
                 continue;
             }
@@ -302,6 +283,50 @@ impl DockerReadSnapshot<'_> {
             result.push(c);
         }
         Ok(result)
+    }
+    /// The engine's coverage rows without a metric that are still open, at any age,
+    /// after the reads' resumption rule closes those a later observation ended.
+    /// Restore reads only these, never the closed rows of the retained range.
+    pub fn open_coverage(&self) -> Result<Vec<DockerCoverage>> {
+        let mut stmt=self.conn.prepare_cached("SELECT c.start_ms,c.end_ms,c.metric,c.reason,c.revision,c.sampled_ms,c.expected_ms,e.external_id FROM docker_coverage c LEFT JOIN docker_entities e ON e.id=c.entity_id WHERE c.engine_id=?1 AND c.end_ms IS NULL AND c.metric IS NULL ORDER BY c.start_ms,c.id LIMIT 10001")?;
+        let mut rows = stmt.query([self.engine])?;
+        let mut result = Vec::new();
+        let mut bytes = 0;
+        while let Some(r) = rows.next()? {
+            let c = self.coverage_row(r)?;
+            bytes += pack(&c)?.len();
+            self.check(bytes)?;
+            if result.len() >= 10_000 {
+                return Err(invalid("coverage response count exceeded"));
+            }
+            if c.end_ms.is_none() {
+                result.push(c);
+            }
+        }
+        Ok(result)
+    }
+    fn coverage_row(&self, r: &rusqlite::Row<'_>) -> Result<DockerCoverage> {
+        let mut c = DockerCoverage {
+            start_ms: r.get(0)?,
+            end_ms: r.get(1)?,
+            metric: r.get(2)?,
+            reason: r.get(3)?,
+            revision: r.get(4)?,
+            sampled_ms: r.get(5)?,
+            expected_ms: r.get(6)?,
+            entity: r.get(7)?,
+        };
+        if super::resumes_on_observation(&c.reason)
+            && c.end_ms.is_none()
+            && c.entity.is_none()
+            && c.metric.is_none()
+            && let Some(engine) = self.engine
+            && let Some(end) = super::resumed_after(self.conn, engine, c.start_ms)?
+        {
+            c.end_ms = Some(end);
+            c.expected_ms = end - c.start_ms;
+        }
+        Ok(c)
     }
     pub fn events(&self, q: &DockerEventQuery) -> Result<Vec<DockerEventRow>> {
         bounds(q.start_ms, q.end_ms, 0)?;

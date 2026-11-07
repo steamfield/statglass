@@ -162,24 +162,20 @@ impl DockerRecorder {
         let mut closed = Vec::new();
         if !s.restored_coverage.contains(daemon)
             && let Some(attached) = attached
+            && s.restore_retry
+                .get(daemon)
+                .is_none_or(|(at, _)| Instant::now() >= *at)
         {
             let restored = (|| -> Result<_, statglass_store::StoreError> {
                 let mut reader = Reader::open(&attached.path)?;
                 let snapshot = reader.docker_snapshot(self.host, daemon)?;
-                let gaps = snapshot.event_coverage(
-                    None,
-                    now.saturating_sub(db::MAX_RANGE_MS - 1),
-                    now + 1,
-                )?;
-                Ok((gaps, snapshot.last_observed()?))
+                Ok((snapshot.open_coverage()?, snapshot.last_observed()?))
             })();
             match restored {
                 Ok((gaps, last_observed)) => {
+                    s.restore_retry.remove(daemon);
                     let coverage = s.coverage.entry(daemon.to_owned()).or_default();
-                    for gap in gaps
-                        .into_iter()
-                        .filter(|g| g.metric.is_none() && g.end_ms.is_none())
-                    {
+                    for gap in gaps {
                         if coverage.iter().any(|g| {
                             g.start_ms == gap.start_ms
                                 && g.container_id == gap.entity
@@ -197,8 +193,11 @@ impl DockerRecorder {
                         } else {
                             // No observation resumes this record and the process that
                             // opened it stopped without closing it (a crash): it ends
-                            // where that process's observations do.
-                            let end = last_observed.unwrap_or(gap.start_ms).max(gap.start_ms);
+                            // where that process's observations do, never in the future.
+                            let end = last_observed
+                                .unwrap_or(gap.start_ms)
+                                .min(now)
+                                .max(gap.start_ms);
                             let record = api::DockerCoverage::new(
                                 gap.start_ms,
                                 Some(end),
@@ -211,7 +210,16 @@ impl DockerRecorder {
                     }
                     s.restored_coverage.insert(daemon.to_owned());
                 }
-                Err(error) => s.error = Some(error.to_string()),
+                Err(error) => {
+                    // Retry on a doubling backoff, or at once on the next attach.
+                    let backoff = s
+                        .restore_retry
+                        .get(daemon)
+                        .map_or(RESTORE_RETRY_MIN, |(_, d)| (*d * 2).min(RESTORE_RETRY_MAX));
+                    s.restore_retry
+                        .insert(daemon.to_owned(), (Instant::now() + backoff, backoff));
+                    s.error = Some(error.to_string());
+                }
             }
         }
         closed
@@ -369,27 +377,35 @@ fn record_coverage(
         .iter()
         .filter(|c| c.end_ms.is_none_or(|end| end >= now - HOUR))
         .collect();
-    let old_coverage = s.coverage.get(daemon).cloned().unwrap_or_default();
-    for &c in &current {
-        if !old_coverage.contains(c) {
-            push_coverage(s, batch, c, now);
-        }
-    }
+    let mut changed = Vec::new();
     let gaps = s.coverage.entry(daemon.to_owned()).or_default();
     for c in current {
-        if let Some(old) = gaps.iter_mut().find(|old| {
+        // A record is its engine, container, reason and start. It is saved again only
+        // when it is new or this snapshot moves its end; an open copy never reopens a
+        // record the recorder closed (a clock step closes them first).
+        match gaps.iter_mut().find(|old| {
             old.start_ms == c.start_ms
                 && old.container_id == c.container_id
                 && old.reason() == c.reason()
         }) {
-            if old.end_ms.is_none() || c.end_ms.is_some() {
+            Some(old) if old.end_ms == c.end_ms || c.end_ms.is_none() => {}
+            Some(old) => {
                 *old = c.clone();
+                changed.push(c.clone());
             }
-        } else {
-            gaps.push(c.clone());
+            None => {
+                gaps.push(c.clone());
+                changed.push(c.clone());
+            }
         }
     }
-    bound_coverage(gaps);
+    for c in &changed {
+        push_coverage(s, batch, c, now);
+    }
+    let saved = s.saved_coverage.get(daemon);
+    if let Some(gaps) = s.coverage.get_mut(daemon) {
+        bound_coverage(gaps, saved);
+    }
 }
 
 fn push_coverage(s: &mut State, batch: &mut db::DockerBatch, c: &api::DockerCoverage, now: i64) {

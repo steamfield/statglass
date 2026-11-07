@@ -96,9 +96,11 @@ export function scenarioSnapshot(
   const first = snapshot.containers[0]?.id ?? null;
   if (scenarios.includes("docker-partial-cycle"))
     snapshot.coverage.push(
-      // An earlier build's engine-wide record masks nothing; the container's own does.
+      // An earlier build's engine-wide record masks nothing; the container's own
+      // does, and a failed inventory masks every container.
       mockCoverage(now() - 780_000, now() - 720_000, null, "partial_cycle"),
-      mockCoverage(now() - 300_000, now() - 180_000, first, "partial_cycle")
+      mockCoverage(now() - 300_000, now() - 180_000, first, "partial_cycle"),
+      mockCoverage(now() - 600_000, now() - 540_000, null, "inventory_failed")
     );
   if (scenarios.includes("docker-crash"))
     snapshot.coverage.push(

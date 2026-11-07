@@ -118,7 +118,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-120 | Durable interval usage keeps facts before ranking | Accepted |
 | D-125 | Rename Kelvo to StatGlass with fresh installation identities | Accepted |
 | D-126 | Agents query StatGlass through a bundled, read-only CLI | Accepted |
-| D-128 | Docker coverage records carry a Rust-derived kind and label | Accepted |
+| D-128 | Docker coverage records carry a Rust-derived kind, masking and label | Accepted |
 
 ---
 
@@ -4063,59 +4063,94 @@ range after 30 s refetches it. Revisit if a cold dashboard open becomes visibly 
 stops honouring the feature (the bench's `STATGLASS_BENCH_WK_DEFAULTS=0` measures the
 difference).
 
-## D-128: Docker coverage records carry a Rust-derived kind and label
+## D-128: Docker coverage records carry a Rust-derived kind, masking and label
 
 Date: 2026-11-07. Phase 5 of [rfc-shared-layers.md](rfc-shared-layers.md) (R6.1).
 
 `DockerCoverage` (`statglass-schema`) gains `kind` (`collection`, `saving`, `metrics`,
-`events` or `other`) and `label` (a sentence-case explanation). Rust derives both from
-the `reason` key in `DockerCoverage::new`. It is the only constructor: `reason`, `kind`
-and `label` are private fields with getters, and deserializing rebuilds the record
-through `new`, ignoring any serialized kind or label. So every record the engine builds,
-from the live state or from the persisted `docker_coverage` rows, carries them, and they
-cannot disagree. `reason` stays, as the key the record is merged and deduplicated by. A
-reason this build does not know (a newer build's, read after a downgrade) gets kind
-`other`, which masks nothing, and the key in words as its label. The client stops
-keeping its own reason tables: History details groups by `kind` and shows `label`, the
+`events` or `other`), `masking` (`none`, `containers` or `all`) and `label` (a
+sentence-case explanation). Rust derives all three from the `reason` key and the
+record's scope in `DockerCoverage::new`. It is the only constructor: `reason`, `kind`,
+`masking` and `label` are private fields with getters, and deserializing rebuilds the
+record through `new`, ignoring any serialized kind, masking or label. So every record
+the engine builds, from the live state or from the persisted `docker_coverage` rows,
+carries them, and they cannot disagree. `reason` stays, as the key the record is merged
+and deduplicated by. A reason this build does not know (a newer build's, read after a
+downgrade) gets kind `other` and masking `none`, and the key in words as its label. The
+client keeps no reason tables: History details groups by `kind` and shows `label`, the
 comparison chart labels its gap bands with `label`, and event coverage is `kind ==
-events`. `events_dropped_rate_limit` and `restart_evidence_dropped` are now event
-coverage; the client counted them as metric gaps.
+events`. `events_dropped_rate_limit` and `restart_evidence_dropped` are event coverage.
 
 What the snapshot's state interrupts now (an unavailable, refused, incompatible, paused
 or idle engine, a failing writer, running containers outside the monitored population)
 is `DockerSnapshot.current_coverage`: open records built with `DockerCoverage::new` from
-the last observation, re-derived on every publish and never recorded. History details
-lists them beside the history's records; the client no longer invents them.
+the last observation, re-derived on every publish and never recorded. They describe the
+present, so a paused or idle engine uses its own keys, `monitoring_paused` ("Monitoring
+is paused") and `monitoring_idle` ("Monitoring is paused while no containers run"), not
+the recorded `paused` and `idle_suspended` intervals ("Monitoring was paused"). History
+details lists them with the history's records, merged by reason and container so one
+interruption shows once, from its earlier start. The banner reads the same snapshot:
+its saving state is the snapshot's persistence, and its population notice is Rust's
+`partial_population` record, not the client's reading of the aggregate.
 
-Rust also makes the points it returns consistent with that coverage. No history point
-(container history and each comparison series) claims more measured time than the
-records that mask it leave in its bucket (`DockerCoverage::masks`): `collection` and
-`metrics` records for its own container, or engine-wide ones. A bucket such a record
-touches is not covered, its `cpu_measured_ms` and `memory_measured_ms` are capped at the
-time outside the record, and a bucket the record spans has none. The comparison chart
-used to zero every bucket a record touched in TypeScript, which also hid the bucket a
-restart resumed in. Because the ranking is computed from the same points, a container's
-peak and average now leave fully gapped buckets out too, so the ranking and the chart
-agree. `saving`, `events` and `other` records do not mask measurements: a bucket that is
-in the answer was measured, whether or not it was saved.
+**Masking.** No history point (container history and each comparison series) claims
+more measured time than the records that mask it leave in its bucket
+(`DockerCoverage::masks`). `masking` says whose points a record masks:
 
-A stats cycle that misses some containers opens a `partial_cycle` record for each
-container that failed or missed the 5 s deadline (every monitored running container
-when the inventory refresh failed), and closes it when that container is measured again,
-stops, or leaves the population. The cycle used to open one engine-wide `partial_cycle`
-whenever any container failed, which under these rules erased every container's
-measured time for as long as one kept failing. Earlier builds' engine-wide
-`partial_cycle` rows mask nothing: the recorder only weights fresh observations, and the
-aggregate gives no weight to a cycle that measured fewer containers than expected.
+- A container's own record (`container_id` set) of kind `collection` or `metrics` masks
+  that container only (`containers`).
+- An engine-wide `collection` or `metrics` record masks every container and the engine
+  aggregate (`all`), except `inventory_failed`, which masks every container but not the
+  aggregate (`containers`), and an earlier build's engine-wide `partial_cycle`, which
+  masks nothing (`none`).
+- `saving`, `events` and `other` records mask nothing: a bucket that is in the answer
+  was measured, whether or not it was saved.
 
-An open record that no observation resumes (`partial_cycle`, `clock_step`, event loss)
-masks to the end of each query, so one left open by a crash would have hidden all later
-history. On its first observation of a daemon, the recorder closes each such persisted
-row at the end of the previous process's newest saved population segment (its last
-observation), and saves the close. The in-memory coverage list keeps open records,
-drops closed ones with the ring's hour, and past 512 records first drops the oldest
-records that mask nothing, then collapses each container's closed masking records into
-one `coverage_unknown` span for that container. It never turns non-masking records
+A bucket a masking record touches is not covered, its `cpu_measured_ms` and
+`memory_measured_ms` are capped at the time outside the record, and a bucket the record
+spans has none. Because the ranking is computed from the same points, a container's peak
+and average leave fully gapped buckets out, so the ranking and the chart agree. The
+comparison chart draws a band, and its table a gap row, only for engine-wide records
+whose `masking` is not `none`; a container's own records read as its missing readings.
+The client never re-derives which records mask.
+
+**Failed cycles.** A stats cycle that misses some containers opens a `partial_cycle`
+record for each container whose stats failed or missed the 5 s deadline, and closes it
+when that container is measured again, stops, or leaves the population. A failed
+inventory refresh requests no stats; it opens one engine-wide `inventory_failed` record,
+kept open while refreshes keep failing and closed by the next listed cycle, not one
+`partial_cycle` per container. The aggregate is handled by measurement, not by masking:
+a container that failed this cycle (every monitored running one when the inventory
+failed) does not count as fresh, even though its row still holds an earlier cycle's
+reading. So `cpu_measured` and `memory_measured` fall below `expected`, `partial` is set,
+and the recorder gives that cycle's aggregate observation no weight.
+
+**Crashes and restore.** An open record that no observation resumes (`partial_cycle`,
+`inventory_failed`, `clock_step`, event loss) masks to the end of each query, so one
+left open by a crash would hide all later history. On its first observation of a daemon,
+the recorder reads the store's open rows with their own `end_ms IS NULL` query (not the
+retained range's closed rows, which could exceed a read's 10,000-row cap) and closes each
+such row at the previous process's newest saved population segment, clamped to
+`[start, now]` so a clock that went back between the processes never closes it in the
+future, and saves the close. A restore whose read fails is retried on a doubling backoff
+from 30 s to 30 min, or at once on the next attach, not on every observation.
+
+**Clock steps.** A wall-clock step makes the recorder forget everything from the step
+on and end every record by it. The published snapshot does the same to its own records
+in the same step, then opens one engine-wide `clock_step` at the step time, so the
+recorder never sees a record it does not already hold; the next cycle reopens a
+still-failing container's record at its own time. The recorder matches published records
+by engine, container, reason and start, and saves one again only when it is new or its
+end moves; an open copy never reopens a record the recorder closed.
+
+**Memory bound.** The in-memory coverage list keeps open records, drops closed ones with
+the ring's hour, and past 512 records first drops closed records the store has
+acknowledged saving and closed records that mask nothing, oldest first. Every read
+merges the store's rows, so this changes no answer: a past range reports the same
+measured time whether or not memory still holds its records. Only closed masking records
+the store does not hold yet collapse, into one span per container and masking scope:
+`coverage_unknown`, or the scope's own reason where `coverage_unknown` would mask more (a
+failed inventory's span never masks the aggregate). It never turns non-masking records
 into a gap and never widens one container's gap to all containers.
 
 Rate metrics (network and block I/O) use `cpu_covered`. Docker reports them in the
@@ -4123,11 +4158,19 @@ same stats sample as CPU, and like CPU they are deltas from the previous sample
 (`normalize.rs`), so they are missing exactly when CPU is, apart from a counter that is
 absent on its own; that case is a `null` value, which the chart already breaks on.
 
+Coverage row volume: one row per failure episode per container, so a container whose
+stats alternate between failing and succeeding writes a row every two cycles: 43,200 a
+day at the visible 1 s cadence, 4,320 at the background 10 s cadence. Such a container
+fills a history or comparison read's 10,000-row cap in about 5.6 hours visible, or 2.3
+days in the background, of the 30-day range. A failed inventory used to write up to 128
+rows per episode and now writes one. Revisit the cap, or merge adjacent episodes, if
+flapping containers turn out to be common.
+
 This is not a wire-format change: Docker types do not cross `statglass-proto`, and
 `api::DockerCoverage` is never persisted or synced (the store keeps its own
-`db::DockerCoverage` rows, which do not change; container-scoped `partial_cycle` rows
-already fit them). It reaches the webview as JSON through tauri-specta only, so no codec
-skew test applies and no migration is needed.
+`db::DockerCoverage` rows, which do not change; container-scoped `partial_cycle` and
+engine-wide `inventory_failed` rows already fit them). It reaches the webview as JSON
+through tauri-specta only, so no codec skew test applies and no migration is needed.
 
 Cost: user-facing English in `statglass-schema`, next to the reason keys it explains.
 Revisit when the UI is localised, or when another consumer (the CLI, WidgetKit) needs

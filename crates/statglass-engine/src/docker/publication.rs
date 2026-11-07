@@ -3,17 +3,28 @@ use super::*;
 pub(super) fn unavailable_runtime(runtime: &str) -> DockerRuntimeFootprint {
     DockerRuntimeFootprint{scope:if runtime=="OrbStack"{"shared"}else{"unavailable"}.into(),explanation:if runtime=="OrbStack"{"OrbStack shares its runtime with other workloads. Docker-only process attribution has not been verified."}else{"Runtime process attribution is unavailable; container metrics do not measure the Mac runtime's footprint."}.into(),cpu_pct:None,footprint_bytes:None,observed_ms:None,processes:Vec::new()}
 }
+/// `unmeasured` are the containers this cycle failed to measure: their rows still hold
+/// an earlier cycle's reading, which is not fresh.
 pub(super) fn aggregate(
     rows: &[DockerContainer],
+    unmeasured: &BTreeSet<String>,
     capacity: Option<f64>,
     inventory_complete: bool,
     now: i64,
     interval: u32,
 ) -> DockerAggregate {
-    aggregate_rows(rows.iter(), capacity, inventory_complete, now, interval)
+    aggregate_rows(
+        rows.iter(),
+        unmeasured,
+        capacity,
+        inventory_complete,
+        now,
+        interval,
+    )
 }
 pub(super) fn project_aggregates(
     rows: &[DockerContainer],
+    unmeasured: &BTreeSet<String>,
     capacity: Option<f64>,
     inventory_complete: bool,
     now: i64,
@@ -29,6 +40,7 @@ pub(super) fn project_aggregates(
             project,
             aggregate: aggregate_rows(
                 rows.iter().copied(),
+                unmeasured,
                 capacity,
                 inventory_complete,
                 now,
@@ -39,6 +51,7 @@ pub(super) fn project_aggregates(
 }
 pub(super) fn aggregate_rows<'a>(
     rows: impl Iterator<Item = &'a DockerContainer> + Clone,
+    unmeasured: &BTreeSet<String>,
     capacity: Option<f64>,
     inventory_complete: bool,
     now: i64,
@@ -55,6 +68,7 @@ pub(super) fn aggregate_rows<'a>(
     let fresh = |c: &&DockerContainer| {
         c.monitored
             && c.lifecycle == DockerLifecycle::Running
+            && !unmeasured.contains(&c.id)
             && c.observed_ms
                 .is_some_and(|t| now.saturating_sub(t) <= interval.max(5000) as i64 * 2)
     };
@@ -94,8 +108,9 @@ pub(super) fn current_coverage(s: &DockerSnapshot) -> Vec<DockerCoverage> {
         DockerStatus::Unavailable => Some("unavailable"),
         DockerStatus::PermissionDenied => Some("permission_denied"),
         DockerStatus::Incompatible => Some("incompatible"),
-        DockerStatus::Paused => Some("paused"),
-        DockerStatus::IdleSuspended => Some("idle_suspended"),
+        // Not the recorded "paused" and "idle_suspended", which are past intervals.
+        DockerStatus::Paused => Some("monitoring_paused"),
+        DockerStatus::IdleSuspended => Some("monitoring_idle"),
         _ => None,
     };
     let saving = s.persistence.status == "write_failed";
@@ -117,6 +132,36 @@ pub(super) fn open_engine_wide(coverage: &mut [DockerCoverage]) -> Option<&mut D
         .iter_mut()
         .rev()
         .find(|g| g.container_id.is_none() && g.end_ms.is_none())
+}
+/// A published cycle ends the engine-wide interruption, unless it is a failed
+/// inventory that this cycle's refresh failed again. A failed refresh opens one
+/// `inventory_failed` record for the whole engine, not one per container.
+pub(super) fn reconcile_inventory(coverage: &mut Vec<DockerCoverage>, listed: bool, at: i64) {
+    if let Some(g) = open_engine_wide(coverage) {
+        if !listed && g.reason() == "inventory_failed" {
+            return;
+        }
+        g.end_ms = Some(at.max(g.start_ms));
+    }
+    if !listed {
+        coverage.push(DockerCoverage::new(
+            at,
+            None,
+            None,
+            "inventory_failed".into(),
+        ));
+    }
+}
+/// The published records as the recorder keeps them after a clock step to `at`
+/// (`DockerRecorder::clock_step`): records that start at or after the step are gone,
+/// and every other record ends by it. The next cycle reopens what still fails.
+pub(super) fn step_coverage(coverage: &mut Vec<DockerCoverage>, at: i64) {
+    coverage.retain(|g| g.start_ms < at);
+    for g in coverage {
+        if g.end_ms.is_none_or(|end| end > at) {
+            g.end_ms = Some(at);
+        }
+    }
 }
 /// One open `partial_cycle` record per container whose stats failed this cycle; a
 /// container that was measured, stopped or left the population closes its record.
@@ -143,8 +188,6 @@ pub(super) fn reconcile_partial(
             .map(|id| DockerCoverage::new(at, None, Some(id.clone()), "partial_cycle".into())),
     );
 }
-/// Past 128 records, the oldest closed ones go until 64 closed remain. Open records
-/// stay: the recorder must see them close.
 /// Opens an engine-wide `gap`, closing the one open before it. A collection
 /// interruption also ends each container's partial cycle.
 pub(super) fn open_gap(coverage: &mut Vec<DockerCoverage>, gap: DockerCoverage) {
@@ -158,6 +201,8 @@ pub(super) fn open_gap(coverage: &mut Vec<DockerCoverage>, gap: DockerCoverage) 
     coverage.push(gap);
     bound_published(coverage);
 }
+/// Past 128 records, the oldest closed ones go until 64 closed remain. Open records
+/// stay: the recorder must see them close.
 pub(super) fn bound_published(coverage: &mut Vec<DockerCoverage>) {
     if coverage.len() <= 128 {
         return;
@@ -181,7 +226,7 @@ impl DockerHandle {
         inventory: &mut Inventory,
         restarts: &mut BTreeMap<String, VecDeque<i64>>,
         last_observation: &mut Option<Instant>,
-        failed: &BTreeSet<String>,
+        (listed, failed): (bool, &BTreeSet<String>),
     ) {
         let interval = control
             .min_interval_ms
@@ -219,8 +264,20 @@ impl DockerHandle {
         snapshot.population_revision = inventory.revision;
         // Receipt time differs per request; preserve it and publish source intervals.
         snapshot.containers = inventory.rows.clone();
+        // A failed inventory refresh requested no stats: nothing running was measured.
+        let unmeasured = if listed {
+            failed.clone()
+        } else {
+            inventory
+                .rows
+                .iter()
+                .filter(|c| c.monitored && c.lifecycle == DockerLifecycle::Running)
+                .map(|c| c.id.clone())
+                .collect()
+        };
         snapshot.aggregate = aggregate(
             &inventory.rows,
+            &unmeasured,
             adapter.engine.capacity_bytes,
             inventory.complete,
             observed,
@@ -228,16 +285,14 @@ impl DockerHandle {
         );
         snapshot.project_aggregates = project_aggregates(
             &inventory.rows,
+            &unmeasured,
             adapter.engine.capacity_bytes,
             inventory.complete,
             observed,
             interval,
         );
-        // A published cycle ends the engine-wide interruption; containers that
-        // failed this cycle carry their own records.
-        if let Some(g) = open_engine_wide(&mut snapshot.coverage) {
-            g.end_ms = Some(observed.max(g.start_ms));
-        }
+        // Containers whose stats failed this cycle carry their own records.
+        reconcile_inventory(&mut snapshot.coverage, listed, observed);
         reconcile_partial(&mut snapshot.coverage, failed, observed);
         bound_published(&mut snapshot.coverage);
         self.publish(snapshot);
@@ -302,6 +357,12 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert!(reasons(&s).is_empty(), "disabled is not an interruption");
+        // The present state reads in the present tense, unlike the recorded interval.
+        let label = |s: &DockerSnapshot| current_coverage(s)[0].label().to_owned();
+        s.status = DockerStatus::Paused;
+        assert_eq!(label(&s), "Monitoring is paused");
+        s.status = DockerStatus::IdleSuspended;
+        assert_eq!(label(&s), "Monitoring is paused while no containers run");
         s.status = DockerStatus::PermissionDenied;
         s.persistence.status = "write_failed".into();
         assert_eq!(

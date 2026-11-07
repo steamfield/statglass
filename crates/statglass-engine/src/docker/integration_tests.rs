@@ -12,7 +12,8 @@ struct Fixture {
 struct FixtureState {
     count: AtomicUsize,
     running_from: AtomicUsize,
-    delay_ms: u64,
+    delay_ms: std::sync::atomic::AtomicU64,
+    inventory_fails: AtomicBool,
     active: AtomicUsize,
     maximum: AtomicUsize,
     stats: Mutex<BTreeSet<String>>,
@@ -43,7 +44,8 @@ impl Fixture {
         let state = Arc::new(FixtureState {
             count: AtomicUsize::new(count),
             running_from: AtomicUsize::new(0),
-            delay_ms,
+            delay_ms: std::sync::atomic::AtomicU64::new(delay_ms),
+            inventory_fails: AtomicBool::new(false),
             active: AtomicUsize::new(0),
             maximum: AtomicUsize::new(0),
             stats: Mutex::new(BTreeSet::new()),
@@ -210,12 +212,17 @@ async fn serve(mut socket: UnixStream, state: Arc<FixtureState>) {
             );
             state.probe_requests.fetch_add(1, Ordering::SeqCst);
         }
+        if state.inventory_fails.load(Ordering::SeqCst) {
+            reply(&mut socket, b"not an inventory").await;
+            return;
+        }
         let rows:Vec<_>=(0..state.count.load(Ordering::SeqCst)).map(|n|serde_json::json!({"Id":format!("c{n:04}"),"Names":[format!("/container-{n}")],"Image":"fixture","State":if n >= state.running_from.load(Ordering::SeqCst) { "running" } else { "exited" }})).collect();
         serde_json::to_string(&rows).unwrap()
     } else if path.contains("/stats") {
         state.stats.lock_ok().insert(id.clone());
-        if state.delay_ms > 0 {
-            tokio::select! {_=tokio::time::sleep(Duration::from_millis(state.delay_ms))=>{},_=socket.read(&mut one)=>return}
+        let delay = state.delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            tokio::select! {_=tokio::time::sleep(Duration::from_millis(delay))=>{},_=socket.read(&mut one)=>return}
         }
         r#"{"cpu_stats":{"cpu_usage":{"total_usage":1000},"system_cpu_usage":10000,"online_cpus":8},"memory_stats":{"usage":1000,"limit":10000,"stats":{"inactive_file":100}},"networks":{"eth0":{"rx_bytes":100,"tx_bytes":200}}}"#.into()
     } else {
@@ -905,7 +912,14 @@ async fn daemon_inventory_replaces_stopped_population_with_new_running_container
             "all provisioned containers remain visible"
         );
         assert_eq!(inventory.population.len(), 128);
-        let live = aggregate(&inventory.rows, None, inventory.complete, now_ms(), 1000);
+        let live = aggregate(
+            &inventory.rows,
+            &BTreeSet::new(),
+            None,
+            inventory.complete,
+            now_ms(),
+            1000,
+        );
         assert_eq!(live.expected, (count - running_from).min(128) as u32);
         assert_eq!(live.running, (count - running_from) as u32);
         if count == 130 {
@@ -921,6 +935,114 @@ async fn daemon_inventory_replaces_stopped_population_with_new_running_container
         }
     }
     assert_eq!(inventory.revision, 3);
+}
+
+struct Cycles {
+    adapter: DockerAdapter,
+    inventory: Inventory,
+    samples: Samples,
+    restarts: BTreeMap<String, VecDeque<i64>>,
+    last: Option<Instant>,
+}
+impl Cycles {
+    async fn new(fixture: &Fixture) -> Self {
+        Self {
+            adapter: fixture.adapter().await,
+            inventory: Inventory::new(0),
+            samples: Samples::new(),
+            restarts: BTreeMap::new(),
+            last: None,
+        }
+    }
+    /// One worker cycle and its publication.
+    async fn run(&mut self, handle: &DockerHandle, refresh: bool) -> DockerSnapshot {
+        let (listed, failed) = handle
+            .cycle(
+                &mut self.adapter,
+                &mut self.inventory,
+                &mut self.samples,
+                refresh,
+                1,
+            )
+            .await;
+        let control = handle.control.borrow().clone();
+        handle.publish_cycle(
+            &self.adapter,
+            &control,
+            &mut self.inventory,
+            &mut self.restarts,
+            &mut self.last,
+            (listed, &failed),
+        );
+        handle.snapshot()
+    }
+}
+fn records<'a>(s: &'a DockerSnapshot, reason: &str) -> Vec<&'a DockerCoverage> {
+    s.coverage.iter().filter(|g| g.reason() == reason).collect()
+}
+
+#[tokio::test]
+async fn a_failed_inventory_is_one_record_and_measures_no_container() {
+    let fixture = Fixture::new(2, 0).await;
+    let handle = fixture.handle();
+    let mut cycles = Cycles::new(&fixture).await;
+    cycles.run(&handle, true).await;
+    let measured = cycles.run(&handle, true).await;
+    assert_eq!(measured.aggregate.memory_measured, 2);
+    assert_eq!(measured.aggregate.expected, 2);
+    fixture.state.inventory_fails.store(true, Ordering::SeqCst);
+    for _ in 0..2 {
+        let failed = cycles.run(&handle, true).await;
+        // The rows keep the last cycle's readings, but this cycle measured none of them.
+        assert!(failed.containers.iter().all(|c| c.observed_ms.is_some()));
+        assert_eq!(failed.aggregate.expected, 2);
+        assert_eq!(failed.aggregate.memory_measured, 0);
+        assert_eq!(failed.aggregate.cpu_measured, 0);
+        assert!(failed.aggregate.partial);
+        assert!(records(&failed, "partial_cycle").is_empty());
+        let inventory = records(&failed, "inventory_failed");
+        assert_eq!(inventory.len(), 1, "{:?}", failed.coverage);
+        assert_eq!(inventory[0].container_id, None);
+        assert_eq!(inventory[0].end_ms, None);
+        assert!(inventory[0].masks(Some("c0000")) && !inventory[0].masks(None));
+    }
+    fixture.state.inventory_fails.store(false, Ordering::SeqCst);
+    let resumed = cycles.run(&handle, true).await;
+    assert_eq!(resumed.aggregate.memory_measured, 2);
+    let inventory = records(&resumed, "inventory_failed");
+    assert_eq!(inventory.len(), 1);
+    assert!(inventory[0].end_ms.is_some());
+}
+
+#[tokio::test]
+async fn containers_the_deadline_cuts_off_are_not_measured_this_cycle() {
+    let fixture = Fixture::new(40, 0).await;
+    let handle = fixture.handle();
+    let mut cycles = Cycles::new(&fixture).await;
+    cycles.run(&handle, true).await;
+    assert_eq!(
+        cycles.run(&handle, false).await.aggregate.memory_measured,
+        40
+    );
+    // Each request now answers inside its own 2 s timeout, but eight at a time
+    // cannot all answer before the 5 s cycle deadline.
+    fixture.state.delay_ms.store(1900, Ordering::SeqCst);
+    let late = cycles.run(&handle, false).await;
+    let partial = records(&late, "partial_cycle");
+    assert!(
+        !partial.is_empty() && partial.len() < 40,
+        "{}",
+        partial.len()
+    );
+    assert!(partial.iter().all(|g| g.end_ms.is_none()));
+    // The rows the deadline cut off keep their last cycle's reading, which is not fresh.
+    assert_eq!(late.aggregate.expected, 40);
+    assert_eq!(
+        late.aggregate.memory_measured as usize,
+        40 - partial.len(),
+        "a container the deadline cut off counted as measured"
+    );
+    assert!(late.aggregate.partial);
 }
 
 #[tokio::test(start_paused = true)]

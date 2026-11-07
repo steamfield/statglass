@@ -21,14 +21,9 @@ impl DockerHandle {
                 )
                 .await
         {
-            // No stats were requested: every container that should have been measured failed.
-            let failed = inventory
-                .rows
-                .iter()
-                .filter(|c| c.monitored && c.lifecycle == DockerLifecycle::Running)
-                .map(|c| c.id.clone())
-                .collect();
-            return (false, failed);
+            // No stats were requested. The publication opens one engine-wide record
+            // for this, not one per container.
+            return (false, BTreeSet::new());
         }
         inventory.select_population(&mut samples.baseline);
         let failed = collect_stats(

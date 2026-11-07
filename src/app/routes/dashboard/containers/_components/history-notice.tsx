@@ -1,9 +1,5 @@
 import { formatDateTime } from "@core/format";
-import type {
-  DockerCoverage,
-  DockerPersistence,
-  DockerSnapshot,
-} from "@core/generated/bindings";
+import type { DockerCoverage, DockerSnapshot } from "@core/generated/bindings";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
@@ -15,14 +11,12 @@ import {
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function HistoryNotice({
   snapshot,
-  persistence = snapshot.persistence,
   coverage,
   metric,
   onManage,
   onResume,
 }: {
   snapshot: DockerSnapshot;
-  persistence?: DockerPersistence | undefined;
   coverage: readonly DockerCoverage[];
   metric: "cpu" | "memory";
   onManage: () => void;
@@ -30,6 +24,11 @@ export function HistoryNotice({
 }) {
   const [open, setOpen] = useState(false);
   const records = mergeCoverage(coverage);
+  // The banner and the details read the snapshot's persistence, through Rust's
+  // current-state records; one interruption in both lists shows once.
+  const current = snapshot.current_coverage;
+  const details = mergeCoverage([...coverage, ...current]);
+  const persistence = snapshot.persistence;
   const unavailable = [
     "unavailable",
     "permission_denied",
@@ -38,9 +37,9 @@ export function HistoryNotice({
   const paused = ["paused", "idle_suspended"].includes(snapshot.status);
   const saving = persistence.status === "write_failed";
   const gaps = records.filter((record) => !eventCoverage(record));
-  const partial =
-    snapshot.aggregate.partial ||
-    snapshot.aggregate.expected < snapshot.aggregate.running;
+  const partial = current.some(
+    (record) => record.reason === "partial_population"
+  );
   const events = records.some(eventCoverage);
   const matches = [
     unavailable,
@@ -71,8 +70,6 @@ export function HistoryNotice({
           : partial
             ? `Monitoring ${snapshot.aggregate.expected} of ${snapshot.aggregate.running} running containers`
             : "Some container events may be missing";
-  // Rust's records for what the snapshot's state interrupts now.
-  const details = [...records, ...snapshot.current_coverage];
   return (
     <>
       <div
@@ -90,7 +87,7 @@ export function HistoryNotice({
           </Button>
         )}
         <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
-          Details ({mergeCoverage(details).length})
+          Details ({details.length})
         </Button>
       </div>
       <HistoryDetails

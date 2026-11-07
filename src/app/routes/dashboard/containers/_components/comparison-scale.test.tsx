@@ -233,6 +233,7 @@ it("brushes only elapsed buckets and explains an engine gap under the cursor", a
           container_id: null,
           reason: "sampler_paused",
           kind: "collection",
+          masking: "all",
           label: "Sampler paused",
         },
       ]}
@@ -249,6 +250,34 @@ it("brushes only elapsed buckets and explains an engine gap under the cursor", a
     "aria-valuetext",
     expect.stringMatching(/Sampler paused$/)
   );
+  result.unmount();
+  result.transport.dispose();
+});
+
+it("draws no gap for an engine-wide record that Rust says masks nothing", async () => {
+  const result = renderWithProviders(
+    <Chart
+      live
+      points={[point(10_000, 1), point(20_000, 2)]}
+      coverage={[
+        {
+          start_ms: 30_000,
+          end_ms: null,
+          container_id: null,
+          reason: "write_failed",
+          kind: "saving",
+          masking: "none",
+          label: "Measurements could not be saved",
+        },
+      ]}
+    />,
+    { transportOptions: { now: () => 55_000 } }
+  );
+  const brush = await screen.findByRole("slider", {
+    name: "Select a time range",
+  });
+  await waitFor(() => expect(brush).toHaveAttribute("aria-valuemax", "3"));
+  expect(brush.getAttribute("aria-valuetext")).not.toMatch(/saved/);
   result.unmount();
   result.transport.dispose();
 });

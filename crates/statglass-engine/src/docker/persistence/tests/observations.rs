@@ -16,7 +16,7 @@ fn aggregate_running_selection_excludes_selected_stopped_containers() {
             row
         })
         .collect();
-    let total = crate::docker::aggregate(&rows, None, true, 2000, 1000);
+    let total = crate::docker::aggregate(&rows, &BTreeSet::new(), None, true, 2000, 1000);
     assert_eq!(total.expected, 0);
     assert_eq!(total.running, 5);
     assert_eq!(total.monitored, 9);
@@ -99,7 +99,8 @@ fn project_aggregates_exclude_stale_unmonitored_and_stopped_metrics() {
     standalone.id = "standalone".into();
     standalone.project = None;
     rows.push(standalone);
-    let projects = crate::docker::project_aggregates(&rows, Some(1024.), true, 30_000, 1000);
+    let projects =
+        crate::docker::project_aggregates(&rows, &BTreeSet::new(), Some(1024.), true, 30_000, 1000);
     assert_eq!(projects.len(), 2);
     let project = &projects
         .iter()
@@ -127,7 +128,7 @@ fn project_aggregates_exclude_stale_unmonitored_and_stopped_metrics() {
     assert!(!standalone.partial);
     assert_eq!(standalone.capacity_bytes, Some(1024.));
     assert!(
-        crate::docker::project_aggregates(&rows, None, false, 30_000, 1000)
+        crate::docker::project_aggregates(&rows, &BTreeSet::new(), None, false, 30_000, 1000)
             .iter()
             .all(|p| p.aggregate.partial)
     );

@@ -261,6 +261,23 @@ it("masks a partial cycle for its own container only, as Rust does", async () =>
       (p) => p.cpu_measured_ms > 0
     )
   ).toBe(true);
+  const inventory = snapshot.coverage.find(
+    (g) => g.reason === "inventory_failed"
+  );
+  if (!inventory?.end_ms) throw new Error("No failed inventory");
+  expect(inventory.masking).toBe("containers");
+  // No container claims measured time inside it (the mock leaves fully masked
+  // buckets out); the buckets around it still do.
+  expect(
+    inside("container-1", inventory.start_ms - 30_000, inventory.start_ms)
+      .length
+  ).toBeGreaterThan(0);
+  for (const id of ["container-0", "container-1"])
+    expect(
+      inside(id, inventory.start_ms, inventory.end_ms).every(
+        (p) => p.cpu_measured_ms === 0
+      )
+    ).toBe(true);
   t.dispose();
 });
 
