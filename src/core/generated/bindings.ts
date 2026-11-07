@@ -362,6 +362,8 @@ export const DEFAULT_SIZE_LIMIT_MB = 750 as const;
 
 export const DOCKER_BUCKET_MS = 10000 as const;
 
+export const DOCKER_MAX_RANGE_MS = 2592000000 as const;
+
 export const HEADER_BYTES_PER_PACKET = 66 as const;
 
 export const HISTORY_COMMIT_MS = 300000 as const;

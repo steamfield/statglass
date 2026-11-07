@@ -17,6 +17,7 @@ export function useResetHistory() {
   const hostId = useHostId();
   const mutation = useCommandMutation(() => transport.resetHistory(), {
     name: "reset_history",
+    context: { hostId },
     errorText: resetHistoryFailure,
     invalidate: () => [
       historyKeys.all,

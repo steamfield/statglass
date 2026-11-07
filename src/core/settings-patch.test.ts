@@ -134,8 +134,11 @@ describe("settingsErrorText", () => {
     ).toBe("Couldn't save settings. Nothing changed.");
   });
 
-  it("words a rejected call like any other failure", () => {
+  it("never claims nothing changed when the call itself was rejected", () => {
     expect(settingsErrorText(new Error("ipc closed"))).toBe(
+      "Couldn't confirm the settings change. Check the setting and try again."
+    );
+    expect(settingsErrorText({ kind: "internal", message: "m" })).toBe(
       "Couldn't change settings. Nothing changed."
     );
   });

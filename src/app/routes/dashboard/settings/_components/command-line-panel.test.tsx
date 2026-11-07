@@ -158,6 +158,15 @@ describe("Command line settings (D-126)", () => {
     expect(screen.getByRole("button", { name: "Install" })).toBeEnabled();
   });
 
+  it("says a failed check as sentences, never 'Couldn't check: Please try again.'", async () => {
+    const transport = createMockTransport({ cliLink: LINK });
+    transport.cliLinkStatus = async () => {
+      throw new Error("");
+    };
+    renderWithProviders(<CommandLinePanel enabled />, { transport });
+    await expectLink("Couldn't check the command. Please try again.");
+  });
+
   it("checks the link again after a failed install, which may have changed it", async () => {
     const transport = createMockTransport({ cliLink: LINK });
     transport.cliInstallLink = async () => ({

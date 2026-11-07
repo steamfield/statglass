@@ -1,3 +1,4 @@
+import { errorTone } from "@core/command-error";
 import type {
   ChartWindow,
   DockerContainer,
@@ -156,7 +157,7 @@ function LocalContainerDetailRoute() {
         <ContainerRangeNotice />
         {row && <ContainerActionFailure id={row.id} />}
         {detail.error && (
-          <InlineMessage tone="status">
+          <InlineMessage tone={errorTone(detail.error)}>
             Inspection unavailable: {dockerErrorMessage(detail.error)}
           </InlineMessage>
         )}
@@ -168,7 +169,7 @@ function LocalContainerDetailRoute() {
           />
         )}
         {history.error && (
-          <InlineMessage tone="status">
+          <InlineMessage tone={errorTone(history.error)}>
             History unavailable: {dockerErrorMessage(history.error)}
           </InlineMessage>
         )}

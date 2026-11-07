@@ -269,8 +269,24 @@ describe("HeatmapCard when the call itself fails", () => {
       transport,
     });
     expect(
-      await screen.findByText("The heatmap could not be read (ipc closed).")
+      await screen.findByText("The heatmap could not be read. ipc closed")
     ).toBeVisible();
     expect(screen.queryByRole("grid")).toBeNull();
+  });
+
+  it("words a host that left the list as a sentence, not as missing details", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    vi.spyOn(transport, "queryHeatmap").mockResolvedValue({
+      status: "error",
+      error: { kind: "unknown_host", host: "gone" },
+    });
+    renderWithProviders(<HeatmapCard units={UNITS} onOpen={vi.fn()} />, {
+      transport,
+    });
+    expect(
+      await screen.findByText(
+        "The heatmap could not be read. This host is no longer in your host list."
+      )
+    ).toBeVisible();
   });
 });

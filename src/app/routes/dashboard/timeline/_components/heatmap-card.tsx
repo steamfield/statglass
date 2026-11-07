@@ -1,6 +1,7 @@
-import { commandError, commandErrorText } from "@core/command-error";
+import { commandError } from "@core/command-error";
 import type { HeatmapMetric } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
+import { failureReason } from "@core/remote-errors";
 import { memo, useCallback, useState } from "react";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useHostClock } from "~/lib/host-clock";
@@ -121,7 +122,7 @@ export const HeatmapCard = memo(function HeatmapCard({
         <p className="font-normal text-[13px] text-fg-subtle">
           {unavailable(error)
             ? "No history is being kept, so there are no past hours to show."
-            : `The heatmap could not be read (${commandErrorText(error, "no details")}).`}
+            : `The heatmap could not be read. ${failureReason(error, "Please try again.")}`}
         </p>
       ) : (
         <CalendarHeatmap

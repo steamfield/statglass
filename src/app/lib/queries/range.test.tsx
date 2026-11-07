@@ -31,9 +31,9 @@ function renderRolling(answers: Record<string, Promise<string>>) {
     </TransportProvider>
   );
   const view = renderHook(
-    ({ toMs }: { toMs: number }) =>
+    ({ toMs, spanMs = 10 }: { toMs: number; spanMs?: number }) =>
       useRangeQuery<string>(
-        { fromMs: toMs - 10, toMs },
+        { fromMs: toMs - spanMs, toMs },
         {
           key: (hostId, fromMs, to) => ["history", hostId, "test", fromMs, to],
           fetch: (_transport, hostId) =>
@@ -42,7 +42,7 @@ function renderRolling(answers: Record<string, Promise<string>>) {
           keepPrevious: true,
         }
       ),
-    { wrapper, initialProps: { toMs: 10 } }
+    { wrapper, initialProps: { toMs: 10 } as { toMs: number; spanMs?: number } }
   );
   return { ...view, host };
 }
@@ -68,6 +68,16 @@ it("clears the held answer when the host switches", async () => {
   await waitFor(() => expect(result.current.data).toBe("first host"));
   host.current = "other";
   rerender({ toMs: 20 });
+  expect(result.current.isPlaceholderData).toBe(false);
+  expect(result.current.data).toBeUndefined();
+});
+
+it("clears the held answer when the window's span changes", async () => {
+  const answers = { [MOCK_HOST_ID]: Promise.resolve("one hour") };
+  const { result, rerender } = renderRolling(answers);
+  await waitFor(() => expect(result.current.data).toBe("one hour"));
+  answers[MOCK_HOST_ID] = pending();
+  rerender({ toMs: 20, spanMs: 20 });
   expect(result.current.isPlaceholderData).toBe(false);
   expect(result.current.data).toBeUndefined();
 });

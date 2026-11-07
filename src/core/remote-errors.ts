@@ -17,6 +17,16 @@ export function remoteErrorText(error: CommandError): string {
 }
 
 /**
+ * Why a read failed, as a sentence to follow "… could not be read.": a typed
+ * error's wording (`remoteErrorText`), or a rejected call's own text, or
+ * `fallback` when there is none.
+ */
+export function failureReason(error: unknown, fallback: string): string {
+  const typed = commandError(error);
+  return typed ? remoteErrorText(typed) : commandErrorText(error, fallback);
+}
+
+/**
  * Why a remote host did not answer an on-demand query (D-117), such as a
  * space report or use by app: `what` names the data ("space reports").
  * `null` for any other failure, which the caller words itself.

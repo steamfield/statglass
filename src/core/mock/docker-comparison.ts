@@ -1,8 +1,9 @@
-import type {
-  DockerComparisonPage,
-  DockerComparisonRequest,
-  DockerContainer,
-  DockerSnapshot,
+import {
+  DOCKER_MAX_RANGE_MS,
+  type DockerComparisonPage,
+  type DockerComparisonRequest,
+  type DockerContainer,
+  type DockerSnapshot,
 } from "@core/generated/bindings";
 import type { CommandResult } from "@core/transport";
 import { MiB } from "./docker-fixtures";
@@ -77,8 +78,11 @@ export function comparison(
   now: () => number,
   startedAt: number
 ): CommandResult<DockerComparisonPage> {
-  // Rust also caps the span at 30 days, a store constant the bindings do not publish.
-  const badRange = rangeError(request.from_ms, request.to_ms);
+  const badRange = rangeError(
+    request.from_ms,
+    request.to_ms,
+    DOCKER_MAX_RANGE_MS
+  );
   if (badRange) return invalid(badRange);
   if (
     request.max_points < 1 ||

@@ -21,6 +21,24 @@ export function commandError(error: unknown): CommandError | null {
 }
 
 /**
+ * How an inline line words a failed read (plan/design-system.md,
+ * `InlineMessage`): `status` when the data is unavailable for an expected
+ * reason (history off or written by a newer version, data this host does
+ * not share or offer), `error` for a read or command that failed.
+ */
+export function errorTone(error: unknown): "status" | "error" {
+  switch (commandError(error)?.kind) {
+    case "history_unavailable":
+    case "store_too_new":
+    case "remote_host":
+    case "remote_unsupported":
+      return "status";
+    default:
+      return "error";
+  }
+}
+
+/**
  * What a failed command tells the user: the bounded message Rust attached
  * (never a `CommandFailure`'s kind-prefixed text), or `fallback` for a kind
  * without one. A rejected IPC call keeps its own text, since that is the only

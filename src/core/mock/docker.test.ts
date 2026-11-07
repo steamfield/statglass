@@ -1,3 +1,4 @@
+import { DOCKER_MAX_RANGE_MS } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
 import { unwrap } from "@core/transport";
 import { afterEach, expect, it, vi } from "vitest";
@@ -49,6 +50,31 @@ it("provides eleven containers, five measured, and shared realistic history", as
         p.time_ms - (first.points[i - 1]?.time_ms ?? p.time_ms) > 10_000
     )
   ).toBe(true);
+  t.dispose();
+});
+
+it("refuses Docker history, events and comparisons longer than Rust's cap", async () => {
+  const t = createMockTransport({ scenarios: ["docker-11"], historyRows: 1 });
+  const tooLong = {
+    ...request,
+    from_ms: request.to_ms - DOCKER_MAX_RANGE_MS - 1,
+    container_id: null,
+    limit: 200,
+    before_id: null,
+  };
+  const refused = {
+    status: "error",
+    error: {
+      kind: "invalid_argument",
+      message: "the range is longer than 30 days",
+    },
+  };
+  expect(await t.dockerComparison(tooLong)).toEqual(refused);
+  expect(await t.dockerHistory(tooLong)).toEqual(refused);
+  expect(await t.dockerEvents(tooLong)).toEqual(refused);
+  const full = { ...tooLong, from_ms: request.to_ms - DOCKER_MAX_RANGE_MS };
+  expect((await t.dockerHistory(full)).status).toBe("ok");
+  expect((await t.dockerEvents(full)).status).toBe("ok");
   t.dispose();
 });
 

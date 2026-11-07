@@ -63,6 +63,23 @@ it("provides memory history and distinguishes failed event queries from absent e
   ).toBeVisible();
   expect(
     await screen.findByText(/Events unavailable while storage is paused/)
+  ).toHaveAttribute("role", "alert");
+  result.unmount();
+  transport.dispose();
+});
+
+it("says history that is off as a status line, not an alert", async () => {
+  const transport = createMockTransport({ scenarios: ["docker-32"] });
+  transport.dockerHistory = async () => ({
+    status: "error",
+    error: { kind: "history_unavailable" },
+  });
+  const result = renderWithProviders(
+    <DockerTimelineLane from={1000} to={1000000} />,
+    { transport }
+  );
+  expect(
+    await screen.findByText(/Container history unavailable: History is/)
   ).toHaveAttribute("role", "status");
   result.unmount();
   transport.dispose();

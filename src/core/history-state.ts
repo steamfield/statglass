@@ -287,6 +287,16 @@ export function networkByAppFailure(error: CommandError): string {
   }
 }
 
+/**
+ * The toast after `clear_history` fails. A typed error means nothing was
+ * deleted; a rejected call never answered, so the outcome is unknown.
+ */
+export function clearHistoryFailure(error: unknown): string {
+  return commandError(error) === null
+    ? "Couldn't confirm history was cleared. Check its size on disk."
+    : "Couldn't clear history. Nothing was deleted.";
+}
+
 /** The toast after `reset_history` fails, by error kind. */
 export function resetHistoryFailure(error: unknown): string {
   const typed = commandError(error);

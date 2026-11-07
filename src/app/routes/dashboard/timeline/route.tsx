@@ -1,8 +1,9 @@
 import type { TimeRange } from "@core/brush";
 import { recordedDate, relativeWindow, windowEnding } from "@core/chart-range";
-import { commandError, commandErrorText } from "@core/command-error";
+import { commandError, errorTone } from "@core/command-error";
 import type { ModuleCap } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
+import { failureReason } from "@core/remote-errors";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -212,11 +213,12 @@ export default function TimelineRoute() {
       />
       {otherError && (
         <p
-          role="alert"
+          role={errorTone(otherError) === "error" ? "alert" : "status"}
           className="rounded-tile border border-border bg-card px-4 py-3 font-normal text-[13px] text-fg-subtle"
         >
-          History could not be read (
-          {commandErrorText(otherError, "no details")}). Live values still work.{" "}
+          History could not be read.{" "}
+          {failureReason(otherError, "Please try again.")} Live values still
+          work.{" "}
           <Button
             variant="ghost"
             size="sm"
@@ -296,7 +298,7 @@ function TimelineSummaryNotes({
     <>
       {" "}
       {comparing && previousSummaries.isError && (
-        <InlineMessage tone="status">
+        <InlineMessage tone={errorTone(previousSummaries.error)}>
           Previous summaries could not be read.{" "}
           <Button
             variant="ghost"

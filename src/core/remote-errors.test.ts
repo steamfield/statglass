@@ -1,9 +1,26 @@
 import {
+  failureReason,
   remoteQueryText,
   sshTestCommand,
   sshVerificationCommand,
 } from "./remote-errors";
 import { CommandFailure } from "./transport/query";
+
+it("words a failure's reason as a sentence, typed or not", () => {
+  expect(
+    failureReason(new CommandFailure({ kind: "unknown_host", host: "h" }), "x")
+  ).toBe("This host is no longer in your host list.");
+  expect(failureReason({ kind: "remote_host", host: "h" }, "x")).toBe(
+    "This host does not share this data."
+  );
+  expect(failureReason({ kind: "store", message: "Locked." }, "x")).toBe(
+    "Locked."
+  );
+  expect(failureReason(new Error("ipc closed"), "Try again.")).toBe(
+    "ipc closed"
+  );
+  expect(failureReason(undefined, "Try again.")).toBe("Try again.");
+});
 
 it("keeps shell syntax inside a quoted SSH destination", () => {
   expect(sshTestCommand("o'brien@$(whoami)")).toBe(

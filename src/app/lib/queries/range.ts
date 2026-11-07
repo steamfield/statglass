@@ -45,8 +45,9 @@ export function rangeQueryOptions<T>(
  * A history command over `range`, with `rangeQueryOptions` freshness.
  * Disabled while `range` is null. `isFinal` gets the range's end, for
  * answers that are final once they reach it. With `keepPrevious`, the last
- * rolling answer holds while the key moves, when `same` (default: the same
- * host) says the previous key is the same view.
+ * rolling answer holds while the key moves, when it covered a window of
+ * the same span (a 1 h total never stands in under a 24 h label) and `same`
+ * (default: the same host) says the previous key is the same view.
  */
 export function useRangeQuery<T>(
   range: TimeRange | null,
@@ -76,15 +77,24 @@ export function useRangeQuery<T>(
   const fromMs = range?.fromMs ?? 0;
   const toMs = range?.toMs ?? 0;
   const queryKey = key(hostId, fromMs, toMs);
+  const spanMs = toMs - fromMs;
   const hold = holdWhile(queryKey, same);
+  const options = rangeQueryOptions<T>(
+    (d) => isFinal(d, toMs),
+    keepPrevious,
+    pollMs
+  );
   return useQuery({
     queryKey,
     queryFn: () => fetch(transport, hostId, fromMs, toMs),
     enabled: range !== null,
-    ...rangeQueryOptions<T>((d) => isFinal(d, toMs), keepPrevious, pollMs),
+    ...options,
+    meta: { ...options.meta, spanMs },
     // Only a rolling answer stands in for a rolling view, never a selection's.
     placeholderData: (previous, query) =>
-      keepPrevious && query?.meta?.rolling === true
+      keepPrevious &&
+      query?.meta?.rolling === true &&
+      query.meta.spanMs === spanMs
         ? hold(previous, query)
         : undefined,
   });

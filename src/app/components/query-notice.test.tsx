@@ -1,3 +1,4 @@
+import { CommandFailure } from "@core/transport";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { InlineMessage } from "./inline-message";
@@ -26,6 +27,30 @@ describe("QueryNotice", () => {
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load: lost");
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("keeps a failed refetch visible beside held data, before any empty line", () => {
+    render(
+      <QueryNotice
+        query={failed}
+        loading="Loading…"
+        error="Stale."
+        empty="None."
+      />
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Stale.");
+    expect(screen.queryByText("None.")).toBeNull();
+  });
+
+  it("words an expected absence as status, not an alert", () => {
+    const off = {
+      isPending: false,
+      isError: true,
+      error: new CommandFailure({ kind: "history_unavailable" }),
+    };
+    render(<QueryNotice query={off} loading="Loading…" error="History off." />);
+    expect(screen.getByRole("status")).toHaveTextContent("History off.");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows the empty line after success, and nothing when there is data", () => {
