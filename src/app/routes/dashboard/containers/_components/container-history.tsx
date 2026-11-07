@@ -1,4 +1,10 @@
-import { formatBytes, formatPercent, formatRate } from "@core/format";
+import { fittedCeiling } from "@core/chart-math";
+import {
+  formatBytes,
+  formatDateTime,
+  formatPercent,
+  formatRate,
+} from "@core/format";
 import type {
   DockerEvent,
   DockerHistoryPage,
@@ -7,7 +13,7 @@ import type {
 import { memo, useMemo } from "react";
 import { SectionCard } from "~/components/section-card";
 import { ChartFrame, ChartGrid, chartY } from "~/widgets/chart-frame";
-import { historyTicks } from "~/widgets/lib/chart-labels";
+import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 
 /** Draw true timestamp positions; uncovered buckets break the path. */
 export const ContainerHistory = memo(function ContainerHistory({
@@ -35,22 +41,28 @@ export const ContainerHistory = memo(function ContainerHistory({
     ? (value: number) =>
         formatBytes(value, value > 0 && value < 1 ? { decimals: 1 } : {})
     : metric === "cpu_pct"
-      ? (value: number) => formatPercent(value, { decimals: 1 })
+      ? (value: number) => formatPercent(value, { significantDigits: 3 })
       : (value: number) =>
           formatRate(value, value > 0 && value < 1 ? { decimals: 1 } : {});
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
   const chart = useMemo(() => {
     const points = page?.points ?? [];
-    const ceiling = Math.max(
-      1,
-      ...points.map((p) => p.metrics[metric] ?? 0),
-      ...(memory
-        ? points.map(
-            (p) =>
-              (aggregate ? p.engine_capacity_bytes : p.explicit_limit_bytes) ??
-              0
-          )
-        : [])
+    // Fit the range like the comparison chart (design-system.md "Y scale"),
+    // including the memory allowance line.
+    const ceiling = fittedCeiling(
+      Math.max(
+        0,
+        ...points.map((p) => p.metrics[metric] ?? 0),
+        ...(memory
+          ? points.map(
+              (p) =>
+                (aggregate
+                  ? p.engine_capacity_bytes
+                  : p.explicit_limit_bytes) ?? 0
+            )
+          : [])
+      ),
+      memory ? 1024 * 1024 : metric === "cpu_pct" ? 0.1 : 1
     );
     let path = "";
     let limit = "";
@@ -83,6 +95,7 @@ export const ContainerHistory = memo(function ContainerHistory({
     }
     return { path, limit, ceiling };
   }, [page, metric, memory, from, to, aggregate, height]);
+  const axis = ceilingAxis(chart.ceiling, format, { zero: true });
   return (
     <SectionCard accent={memory ? "mem" : "cpu"} title={title}>
       {page?.points.length ? (
@@ -91,10 +104,7 @@ export const ContainerHistory = memo(function ContainerHistory({
             height={height}
             ceiling={chart.ceiling}
             gutter={48}
-            yTicks={[chart.ceiling, chart.ceiling / 2].map((value) => ({
-              value,
-              label: format(value),
-            }))}
+            yTicks={axis.yTicks}
             xTicks={historyTicks(from, to, false, 3)}
           >
             <svg
@@ -106,7 +116,7 @@ export const ContainerHistory = memo(function ContainerHistory({
               preserveAspectRatio="none"
             >
               <ChartGrid
-                values={[chart.ceiling, chart.ceiling / 2]}
+                values={axis.gridlines}
                 ceiling={chart.ceiling}
                 height={height}
               />
@@ -142,8 +152,7 @@ export const ContainerHistory = memo(function ContainerHistory({
                   vectorEffect="non-scaling-stroke"
                 >
                   <title>
-                    {event.action} ·{" "}
-                    {new Date(event.time_ms).toLocaleTimeString()}
+                    {event.action} · {formatDateTime(event.time_ms)}
                   </title>
                 </line>
               ))}

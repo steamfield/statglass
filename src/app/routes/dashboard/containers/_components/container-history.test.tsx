@@ -56,7 +56,7 @@ function history(covered: boolean): DockerHistoryPage {
 }
 
 it.each([
-  { metric: "cpu_pct" as const, half: "0.5%" },
+  { metric: "cpu_pct" as const, half: "0.05%" },
   { metric: "network_rx_bps" as const, half: "0.5 B/s" },
 ])(
   "labels a quiet $metric axis without rounding its midpoint to its maximum",
@@ -78,3 +78,24 @@ it.each([
     expect(screen.getByText(half)).toBeVisible();
   }
 );
+
+it("fits the axis like the comparison chart, with a zero tick", () => {
+  const page = history(true);
+  page.points = page.points.map((point) => ({
+    ...point,
+    metrics: { ...point.metrics, cpu_pct: 140 },
+  }));
+  render(
+    <ContainerHistory
+      page={page}
+      metric="cpu_pct"
+      title="Busy container"
+      from={0}
+      to={10000}
+    />
+  );
+  // 140% plus 5% headroom, rounded up on the two-significant-digit step.
+  expect(screen.getByText("150%")).toBeVisible();
+  expect(screen.getByText("75%")).toBeVisible();
+  expect(screen.getByText("0")).toBeVisible();
+});

@@ -14,6 +14,24 @@ describe("ceilingAxis", () => {
       ],
     });
   });
+
+  it("formats every tick with a format function", () => {
+    expect(ceilingAxis(40, (v) => `${v}%`).yTicks).toEqual([
+      { value: 40, label: "40%" },
+      { value: 20, label: "20%" },
+    ]);
+  });
+
+  it("adds a bare zero tick at the baseline on request", () => {
+    expect(ceilingAxis(40, (v) => `${v}%`, { zero: true })).toEqual({
+      gridlines: [20, 40],
+      yTicks: [
+        { value: 40, label: "40%" },
+        { value: 20, label: "20%" },
+        { value: 0, label: "0" },
+      ],
+    });
+  });
 });
 
 describe("PERCENT_Y_TICKS", () => {

@@ -1,6 +1,7 @@
 import { ratio } from "@core/chart-math";
 import { formatPercent } from "@core/format";
 import { windowWords } from "@core/live-window";
+import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import {
@@ -45,10 +46,7 @@ export function CompactBattery() {
 export function CompactPower({ showBattery }: { showBattery: boolean }) {
   const windowMs = useScaledWindow(60_000);
   const history = useSeriesWindow("power.system", windowMs);
-  const ceiling = Math.max(
-    1,
-    ...history.values.filter((v): v is number => v !== null)
-  );
+  const ceiling = useNiceCeiling(history.values, history.tEndMs, 1, windowMs);
   return (
     <div className="flex items-center gap-2">
       <div className="min-w-10 flex-1">
