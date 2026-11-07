@@ -11,6 +11,10 @@
   container's history, or a longer or shorter window.
 - A failed history reset or history clear no longer leaves its button stuck.
 - Informational lines stop announcing as alerts; status and error lines share one size.
+- Module history charts share one y-axis treatment (ticks in the gutter) and five x ticks.
+  Swap and Used memory gain gutter ticks in place of the corner label, the battery chart
+  gains a percent grid and a live label, and Swap gains a selection summary.
+- Chart labels share one span wording ("last 15 minutes" or "selected dates").
 - The popover power sparkline stops rescaling every second. Container history fits its axis
   like the comparison chart and gains a 0 tick.
 

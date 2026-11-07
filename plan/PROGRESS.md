@@ -4,6 +4,40 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Shared layers RFC phases 2 and 3a: queries, UI states, Rust helpers, module charts (2026-11-07)
+
+Phase 2b (R1-R5): the agent's history lock goes through the store's `WriterLock` and reports
+I/O errors as I/O; collectors share `statglass-collect/src/counters.rs` (with a width-aware
+`counter_delta`: macOS keeps the D-089 32-bit wrap, Linux treats any decrease as a reset) and
+one network emit; the disk I/O metric list lives in `statglass_schema::disk_io`;
+`TimeRange::new` replaces ~14 range checks and four commands now reject empty ranges;
+`AppState::route`, one `spawn_blocking`, `StoreError::is_busy`/`is_corrupt_database`,
+`floor_to`/`ceil_to`, `db::per_tier`; SSH commands run on `Ssh::exec` (only exit 255 is a login
+failure, installer output bounded and the bundle streamed); test infrastructure uses
+`tempfile`, per-crate `eventually` helpers and shared host fixtures. A remote store whose
+database file is damaged answers `HistoryUnavailable` with its message; row-level decode
+failures stay `Internal`.
+
+Phase 2a (Q1-Q5, Q9, U1, U2): `src/app/lib/queries/` holds `useRangeQuery`, `holdWhile` and
+host-, container-, metric- and span-aware hold predicates in `@core/query-keys`; retry policy is
+per family through `setQueryDefaults`; appearance is one query; `useDockerSubscription`;
+`commandError`/`commandErrorText`/`errorTone` in `@core`, `useCommandMutation`; `InlineMessage`
+and `QueryNotice` (a failed read is an alert, an expected absence a status); `DataTable`
+builds empty and footnote rows; the mock transport shares `ok`/`fail`, Rust's range rule and
+caps, `forward`, `mockBuckets` and `seedOf`.
+
+Phase 3a (C1, C2, C6): `useModuleChart` and `ModuleHistoryChart` back the eight module history
+cards (the y axis is a prop on the component, not a hook option, because power-draw fits its
+ceiling to app lines the hook produces); `spanWords`; `ceilingAxis(ceiling, format, { zero })`;
+stable ceilings for the popover power sparkline and fitted ceilings for container history.
+
+Verified per merge: `bun run check` (1,637+ tests), `bun run test:e2e` (512), `make e2e-perf`
+(agents), Rust crate tests, `make rust-check`, `make architecture-check`, Linux Docker runs for
+collect, store, schema, agent and remote. Code reviews ran on each phase; their findings were
+fixed in follow-up merges (3a's ceiling-shrink and tick-count findings are in progress).
+Not yet verified: `make check` and the engine perf gates on a quiet machine; the processes
+collector's allocation budget failed under parallel build load in every agent run.
+
 ## Shared layers RFC phase 1: core helpers and generated constants (2026-11-07)
 
 `plan/rfc-shared-layers.md` Q6, Q7, Q8 helpers, Q10, R6.2, R6.3. Rust now publishes the
