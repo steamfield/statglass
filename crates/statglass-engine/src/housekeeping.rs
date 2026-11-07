@@ -391,8 +391,10 @@ mod tests {
         assert!(cleared.cap_met && cleared.low_disk_paused);
     }
 
-    fn wait_until(what: &str, f: impl Fn() -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(10);
+    const WAIT: Duration = Duration::from_secs(10);
+
+    fn eventually(what: &str, timeout: Duration, f: impl Fn() -> bool) {
+        let deadline = Instant::now() + timeout;
         while !f() {
             assert!(Instant::now() < deadline, "timed out waiting for {what}");
             std::thread::sleep(Duration::from_millis(5));
@@ -403,13 +405,8 @@ mod tests {
     /// with no store open is skipped, and dropping the handle ends the thread.
     #[test]
     fn prune_now_runs_a_round_and_dropping_the_handle_ends_the_thread() {
-        let dir = std::env::temp_dir().join(format!(
-            "statglass-engine-housekeeping-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("history.sqlite");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.sqlite");
         let store = Store::open(StoreConfig::new(&path)).unwrap();
         let writer = store.writer();
         let open = Arc::new(Mutex::new(false));
@@ -444,17 +441,19 @@ mod tests {
         .unwrap();
 
         handle.prune_now();
-        wait_until("the skipped round", || asked.load(Ordering::SeqCst) == 1);
+        eventually("the skipped round", WAIT, || {
+            asked.load(Ordering::SeqCst) == 1
+        });
         assert_eq!(rounds.load(Ordering::SeqCst), 0, "no store, no round");
 
         *open.lock().unwrap() = true;
         handle.prune_now();
-        wait_until("the round", || rounds.load(Ordering::SeqCst) == 1);
+        eventually("the round", WAIT, || rounds.load(Ordering::SeqCst) == 1);
 
         drop(handle);
         // The thread holds the writer closure; once it ends, `asked` is its only owner
         // besides this test.
-        wait_until("the thread to end", || Arc::strong_count(&asked) == 1);
+        eventually("the thread to end", WAIT, || Arc::strong_count(&asked) == 1);
         store.close().unwrap();
     }
 }

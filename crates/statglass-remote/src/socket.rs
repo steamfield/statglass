@@ -458,14 +458,12 @@ mod tests {
             }),
             rx,
         ));
-        for _ in 0..30 {
-            if paths.control.exists() {
-                break;
-            }
-            if task.is_finished() {
-                panic!("server failed: {:?}", task.await);
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        crate::test_support::eventually("the control socket", crate::test_support::WAIT, || {
+            paths.control.exists() || task.is_finished()
+        })
+        .await;
+        if !paths.control.exists() {
+            panic!("server failed: {:?}", task.await);
         }
         let reply = control_request(&paths.control, &ControlRequest::Status)
             .await

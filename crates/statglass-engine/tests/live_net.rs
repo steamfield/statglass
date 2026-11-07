@@ -19,6 +19,8 @@
 #![cfg(target_os = "macos")]
 #![allow(clippy::unwrap_used, clippy::print_stdout)]
 
+mod common;
+
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -26,7 +28,7 @@ use std::time::{Duration, Instant, SystemTime};
 use statglass_engine::{
     EngineParts, LiveHub, LocalSource, NetAttribution, Source, SourceSink, attribute, wall_ms,
 };
-use statglass_schema::{HostId, HostInfo, HostRecord, OsKind, Settings};
+use statglass_schema::{HostId, HostRecord, OsKind, Settings};
 use statglass_store::{Store, StoreConfig};
 
 /// Longer than LEAD_MS + TAIL_MS apart, so one phase's padded range holds none of the
@@ -39,24 +41,7 @@ const LEAD_MS: i64 = 10_000;
 const TAIL_MS: i64 = 20_000;
 
 fn record() -> HostRecord {
-    HostRecord {
-        id: HostId(uuid::Uuid::from_u128(0x6b65_6c76_6f2d_6c69_7665)),
-        is_local: true,
-        display_name: "live-net".into(),
-        info: HostInfo {
-            os: OsKind::MacOs,
-            os_version: String::new(),
-            model: None,
-            chip: None,
-            chip_known: false,
-            cpu_topology: Vec::new(),
-            mem_total_bytes: 0,
-            boot_time_ms: 0,
-            gpu_dvfs_mhz: Vec::new(),
-            kernel: None,
-            boot_mounts: Vec::new(),
-        },
-    }
+    common::bare_host(0x6b65_6c76_6f2d_6c69_7665, "live-net", OsKind::MacOs)
 }
 
 struct Live {
@@ -209,9 +194,8 @@ fn buckets(live: &Live, from_ms: i64, to_ms: i64, name: &str) {
 fn live_network_attribution() {
     let url = std::env::var("STATGLASS_LIVE_URL")
         .unwrap_or_else(|_| "https://ash-speed.hetzner.com/1GB.bin".into());
-    let dir = std::env::temp_dir().join(format!("statglass-live-net-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let store = Store::open(StoreConfig::new(dir.join("history.sqlite"))).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(StoreConfig::new(dir.path().join("history.sqlite"))).unwrap();
     let rec = record();
     let host = rec.id;
     let writer = store.writer();
@@ -340,6 +324,5 @@ fn live_network_attribution() {
     );
     let Live { store, .. } = live;
     store.close().unwrap();
-    let _ = std::fs::remove_dir_all(&dir);
     assert!(fails.is_empty(), "{fails:#?}");
 }

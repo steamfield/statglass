@@ -17,14 +17,28 @@ use statglass_schema::durable_usage::{HistoricalUsageReply, HistoricalUsageReque
 use statglass_schema::lock::LockExt;
 use statglass_schema::usage::{UsageByApp, UsageKey};
 use statglass_schema::{
-    Event, EventDetail, Gap, GapReason, HostId, HostInfo, HostRecord, Module, OsKind, SeriesKey,
-    Tier,
+    Event, EventDetail, Gap, GapReason, HostId, HostRecord, Module, OsKind, SeriesKey, Tier,
 };
 use statglass_store::BucketRow;
 
 use super::server::{Limits, answer};
 use super::*;
 use crate::remote::{RemoteState, RemoteSync};
+
+/// A ceiling for `eventually` on a loaded machine; a condition that holds returns at once.
+const WAIT: Duration = Duration::from_secs(10);
+
+/// Polls `f` every 5 ms until it holds, panicking with `what` after `timeout`.
+async fn eventually(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while !f() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
 
 const S: i64 = 1_000;
 const MIN: i64 = 60 * S;
@@ -34,24 +48,13 @@ const NOW: i64 = 1_800_000_000_000;
 const SYNCED: i64 = NOW - 30 * MIN;
 
 fn record(n: u128, name: &str, is_local: bool, os: OsKind) -> HostRecord {
-    HostRecord {
-        id: HostId(uuid::Uuid::from_u128(n)),
-        is_local,
-        display_name: name.into(),
-        info: HostInfo {
-            os,
-            os_version: "27.0".into(),
-            model: Some("Mac15,8".into()),
-            chip: Some("Apple M3 Max".into()),
-            chip_known: true,
-            cpu_topology: Vec::new(),
-            mem_total_bytes: 0,
-            boot_time_ms: 0,
-            gpu_dvfs_mhz: Vec::new(),
-            kernel: None,
-            boot_mounts: Vec::new(),
-        },
-    }
+    let mut record = crate::test_support::mac_host(n);
+    record.is_local = is_local;
+    record.display_name = name.into();
+    record.info.os = os;
+    record.info.model = Some("Mac15,8".into());
+    record.info.chip = Some("Apple M3 Max".into());
+    record
 }
 
 fn remote(record: HostRecord, enabled: bool, state: RemoteState) -> HostView {
@@ -829,13 +832,7 @@ async fn a_fifth_request_is_busy_and_a_slot_outlives_its_deadline() {
         "the stuck read still holds its slot"
     );
     drop(stalled);
-    for _ in 0..200 {
-        if limits.free_slots() == 4 {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("the slot was not released when the work ended");
+    eventually("the slot to be released", WAIT, || limits.free_slots() == 4).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -851,12 +848,7 @@ async fn the_cli_client_round_trips_over_the_socket() {
         stopped,
     ));
     let socket = AppPaths::new(&app_data).query_socket();
-    for _ in 0..200 {
-        if socket.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    eventually("the query socket", WAIT, || socket.exists()).await;
     let response = tokio::task::spawn_blocking(move || {
         Client::new(AppPaths::new(app_data))
             .request(&QueryRequest::new(Op::Hosts), Duration::from_secs(5))
@@ -886,13 +878,10 @@ async fn turning_access_off_unbinds_the_socket_and_leaves_the_marker() {
     let settle = |want_socket: bool| {
         let (socket, marker) = (socket.clone(), marker.clone());
         async move {
-            for _ in 0..200 {
-                if socket.exists() == want_socket && marker.exists() != want_socket {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-            panic!("socket {}, marker {}", socket.exists(), marker.exists());
+            eventually("the socket and marker to settle", WAIT, || {
+                socket.exists() == want_socket && marker.exists() != want_socket
+            })
+            .await;
         }
     };
     settle(false).await;
@@ -1114,12 +1103,7 @@ async fn serving(
         Arc::new(Limits::default()),
         stopped,
     ));
-    for _ in 0..200 {
-        if socket.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    eventually("the query socket", WAIT, || socket.exists()).await;
     (stop, server)
 }
 
@@ -1225,12 +1209,7 @@ async fn the_cli_always_finds_the_socket_or_the_access_disabled_marker() {
     let (desired, rx) = tokio::sync::watch::channel(false);
     let backend: Arc<dyn Backend> = fake.clone();
     let owner = tokio::spawn(own_socket(paths, backend, rx));
-    for _ in 0..200 {
-        if marker.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    eventually("the access-disabled marker", WAIT, || marker.exists()).await;
     for _ in 0..20 {
         let watch = never_neither(socket.clone(), marker.clone(), true, |s, m| s && !m);
         desired.send(true).unwrap();
@@ -1258,35 +1237,30 @@ async fn a_bind_failure_is_recorded_for_the_cli_until_the_socket_binds() {
     let backend: Arc<dyn Backend> = fake.clone();
     let owner = tokio::spawn(own_socket(paths.clone(), backend, rx));
     let mut text = String::new();
-    for _ in 0..200 {
+    eventually("the bind failure to be recorded", WAIT, || {
         text = std::fs::read_to_string(&failed).unwrap_or_default();
-        if !text.is_empty() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+        !text.is_empty()
+    })
+    .await;
     assert!(text.contains("already serving"), "{text:?}");
     // Off, then on again while the squatter stays: the CLI must read the bind failure,
     // not a stale access-disabled marker.
     let disabled = paths.access_disabled_marker();
     desired.send(false).unwrap();
-    for _ in 0..200 {
-        if disabled.exists() && !failed.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    eventually("access off to be recorded", WAIT, || {
+        disabled.exists() && !failed.exists()
+    })
+    .await;
     assert!(
         disabled.exists() && !failed.exists(),
         "access off was not recorded"
     );
     desired.send(true).unwrap();
-    for _ in 0..200 {
-        if failed.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    // `BindFailures::failed` writes the failure marker, then clears the disabled one.
+    eventually("the second bind failure", WAIT, || {
+        failed.exists() && !disabled.exists()
+    })
+    .await;
     assert!(failed.exists(), "the second bind failure was not recorded");
     assert!(
         !disabled.exists(),
@@ -1294,20 +1268,16 @@ async fn a_bind_failure_is_recorded_for_the_cli_until_the_socket_binds() {
     );
     // The squatter goes; the next attempt, after the first back-off, binds.
     drop(squatter);
-    let mut answered = None;
-    for _ in 0..400 {
-        if !failed.exists() {
-            let paths = paths.clone();
-            answered = tokio::task::spawn_blocking(move || {
-                Client::new(paths).request(&QueryRequest::new(Op::Hosts), Duration::from_secs(5))
-            })
-            .await
-            .unwrap()
-            .ok();
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    eventually("the failure marker to clear", WAIT, || !failed.exists()).await;
+    let answered = {
+        let paths = paths.clone();
+        tokio::task::spawn_blocking(move || {
+            Client::new(paths).request(&QueryRequest::new(Op::Hosts), Duration::from_secs(5))
+        })
+        .await
+        .unwrap()
+        .ok()
+    };
     assert!(!failed.exists(), "the marker outlived the failure");
     let answered = answered.expect("the socket answers once bound");
     assert!(matches!(answered.body, Body::Ok(Answer::Hosts(_))));

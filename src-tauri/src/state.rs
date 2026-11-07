@@ -624,11 +624,8 @@ mod tests {
     fn recent_alerts_seed_the_cooldown_from_the_store() {
         const NOW: i64 = 1_800_000_000_000;
         const MIN: i64 = 60_000;
-        let data_dir = std::env::temp_dir().join(format!(
-            "statglass-shell-recent-alerts-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
+        let tmp = tempfile::tempdir().unwrap();
+        let data_dir = tmp.path().join("StatGlass");
         let (history, id) = open_data_dir(&data_dir, |_| None);
         let writer = history
             .register_host(&statglass_engine::host_record(id.id))
@@ -711,11 +708,8 @@ mod tests {
         const MIN: i64 = 60_000;
         // Launch lands between ticks, as it always does in the field.
         const LAUNCH: i64 = 1_800_000_000_000 + 4_321;
-        let data_dir = std::env::temp_dir().join(format!(
-            "statglass-shell-warm-ring-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
+        let tmp = tempfile::tempdir().unwrap();
+        let data_dir = tmp.path().join("StatGlass");
         let (history, id) = open_data_dir(&data_dir, |_| None);
         let record = statglass_engine::host_record(id.id);
         let writer = history.register_host(&record).unwrap();
@@ -787,11 +781,8 @@ mod tests {
     /// No history yet (first launch) leaves the ring empty, so the first frame starts it.
     #[test]
     fn the_live_ring_stays_empty_without_history() {
-        let data_dir = std::env::temp_dir().join(format!(
-            "statglass-shell-warm-empty-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
+        let tmp = tempfile::tempdir().unwrap();
+        let data_dir = tmp.path().join("StatGlass");
         let (history, id) = open_data_dir(&data_dir, |_| None);
         let record = statglass_engine::host_record(id.id);
         history.register_host(&record).unwrap();
@@ -811,12 +802,8 @@ mod tests {
     /// history is unavailable with the reason and the host id lives in memory.
     #[test]
     fn an_unusable_data_dir_runs_live_only_with_an_in_memory_id() {
-        let parent = std::env::temp_dir().join(format!(
-            "statglass-shell-data-dir-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&parent).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path();
         std::fs::write(parent.join("file"), "").unwrap();
         let data_dir = parent.join("file").join("StatGlass");
 
@@ -850,11 +837,8 @@ mod tests {
     /// are owner-only, and a directory from before is tightened on launch.
     #[test]
     fn the_data_dir_and_its_files_are_owner_only() {
-        let parent = std::env::temp_dir().join(format!(
-            "statglass-shell-data-perms-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path();
         let data_dir = parent.join("StatGlass");
         let (history, id) = open_data_dir(&data_dir, |_| None);
         assert!(history.is_available() && id.persisted);

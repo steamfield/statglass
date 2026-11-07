@@ -19,6 +19,8 @@ mod server;
 mod socket;
 mod source;
 mod stdio;
+#[cfg(test)]
+mod test_support;
 mod transport;
 pub mod trust;
 

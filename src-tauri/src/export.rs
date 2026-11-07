@@ -106,8 +106,7 @@ mod tests {
     use std::sync::Arc;
 
     use statglass_schema::{
-        Gap, GapReason, HostId, HostInfo, HostRecord, Labels, MetricId, OsKind, SeriesKey,
-        SeriesSelector, Tier,
+        Gap, GapReason, HostId, HostRecord, Labels, MetricId, SeriesKey, SeriesSelector, Tier,
     };
     use statglass_store::{BucketRow, TierChoice};
 
@@ -124,24 +123,7 @@ mod tests {
     }
 
     fn record() -> HostRecord {
-        HostRecord {
-            id: HostId(uuid::Uuid::from_u128(7)),
-            is_local: true,
-            display_name: "Mac".into(),
-            info: HostInfo {
-                os: OsKind::MacOs,
-                os_version: "27.0".into(),
-                model: None,
-                chip: None,
-                chip_known: true,
-                cpu_topology: Vec::new(),
-                mem_total_bytes: 0,
-                boot_time_ms: 0,
-                gpu_dvfs_mhz: Vec::new(),
-                kernel: None,
-                boot_mounts: Vec::new(),
-            },
-        }
+        crate::test_support::mac_host(7)
     }
 
     /// Ten minutes of `cpu.total`, then a sleep gap.

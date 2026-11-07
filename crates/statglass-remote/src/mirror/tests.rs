@@ -220,24 +220,7 @@ fn per_page_budget_check_reports_an_unmet_cap_before_catchup_completes() {
 }
 
 fn local_record() -> statglass_schema::HostRecord {
-    statglass_schema::HostRecord {
-        id: statglass_schema::HostId(uuid::Uuid::from_u128(7)),
-        is_local: true,
-        display_name: "Mac".into(),
-        info: statglass_schema::HostInfo {
-            os: statglass_schema::OsKind::MacOs,
-            os_version: "27.0".into(),
-            model: None,
-            chip: None,
-            chip_known: true,
-            cpu_topology: Vec::new(),
-            mem_total_bytes: 0,
-            boot_time_ms: 0,
-            gpu_dvfs_mhz: Vec::new(),
-            kernel: None,
-            boot_mounts: Vec::new(),
-        },
-    }
+    crate::test_support::mac_host(7)
 }
 
 #[test]

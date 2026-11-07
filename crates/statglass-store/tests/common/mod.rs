@@ -19,6 +19,20 @@ pub const DAY: i64 = 24 * HOUR;
 
 pub use tempfile::TempDir;
 
+/// Polls `f` every 5 ms until it returns true, panicking with `what` after `timeout`.
+/// The timeout is a ceiling for a loaded machine, not a delay: the call returns as soon
+/// as the condition holds.
+pub fn eventually(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + timeout;
+    while !f() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for {what}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 /// A fresh, empty directory under the system temp dir, removed on drop.
 pub fn temp_dir(name: &str) -> TempDir {
     tempfile::Builder::new()
