@@ -8,3 +8,5 @@ export {
   useColumnSort,
 } from "./use-column-sort";
 export { useDataTable } from "./use-data-table";
+export { useGroupedRows } from "./use-grouped-rows";
+export { useRowHold } from "./use-row-hold";

@@ -105,8 +105,7 @@ function DiskProcessList({
   // Quit is this Mac's only; a remote host's processes are listed (D-117).
   const edition = useEdition();
   const canSignal = local && edition?.process_signal === true;
-  const { data, live, history, orderKey, setPointer, setFocus } =
-    useDiskProcessTable(range);
+  const { data, live, history, orderKey } = useDiskProcessTable(range);
   const [query, setQuery] = useState("");
   const [all, setAll] = useState(false);
   const location = useLocation();
@@ -154,8 +153,6 @@ function DiskProcessList({
                 shown={shown}
                 range={range}
                 back={back}
-                setPointer={setPointer}
-                setFocus={setFocus}
                 canSignal={canSignal}
                 scope={scope}
                 waiting={waiting}
@@ -219,8 +216,6 @@ function useDiskProcessTable(range: TimeRange | null) {
   useProcessInterest(range === null ? FULL_TABLE : null);
   const live = useProcessRows();
   const history = useUsageByApp(range, "disk");
-  const [pointer, setPointer] = useState(false);
-  const [focus, setFocus] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([
     { id: "total", desc: true },
   ]);
@@ -238,9 +233,9 @@ function useDiskProcessTable(range: TimeRange | null) {
     tiebreak: byPid,
     sorting,
     onSortingChange: setSorting,
-    hold: { paused: pointer || focus },
+    hold: {},
   });
-  return { data, live, history, orderKey, setPointer, setFocus };
+  return { data, live, history, orderKey };
 }
 
 type DiskProcess = LiveProcess | ProcessUsage;
@@ -303,8 +298,6 @@ function DiskProcessTable({
   shown,
   range,
   back,
-  setPointer,
-  setFocus,
   canSignal,
   scope,
   waiting,
@@ -315,31 +308,16 @@ function DiskProcessTable({
   shown: DiskProcess[];
   range: TimeRange | null;
   back: string;
-  setPointer: (value: boolean) => void;
-  setFocus: (value: boolean) => void;
   canSignal: boolean;
   scope: string;
   waiting: boolean;
   unrecorded: boolean;
   query: string;
 }) {
-  useEffect(
-    () => () => {
-      setPointer(false);
-      setFocus(false);
-    },
-    [setPointer, setFocus]
-  );
+  const { release } = data;
+  useEffect(() => release, [release]);
   return (
-    <div
-      className="max-h-96 overflow-auto"
-      onPointerEnter={() => setPointer(true)}
-      onPointerLeave={() => setPointer(false)}
-      onFocusCapture={() => setFocus(true)}
-      onBlurCapture={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setFocus(false);
-      }}
-    >
+    <div className="max-h-96 overflow-auto" {...data.holdProps}>
       <Table aria-label={`Disk processes · ${scope}`} className="table-fixed">
         <TableHeader>
           <DataTableHead

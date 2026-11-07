@@ -99,6 +99,37 @@ it("holds row order while focused, updates values, and resumes on blur without a
   result.transport.dispose();
 });
 
+it("stops holding after a mouse click focuses a row and the pointer leaves", () => {
+  let update: (rows: DockerContainer[]) => void = () => {};
+  function Harness() {
+    const [rows, setRows] = useState<DockerContainer[]>([first, second]);
+    update = setRows;
+    return <ContainerTable {...defaults} rows={rows} />;
+  }
+  const result = renderWithProviders(<Harness />);
+  const table = screen.getByRole("table");
+  const scroller = table.parentElement;
+  if (!scroller) throw new Error("Expected table scroller");
+  fireEvent.pointerEnter(scroller);
+  // A pointer focus: the browser draws no ring, so `:focus-visible` misses.
+  const link = screen.getByRole("link", { name: /api/ });
+  const matches = link.matches.bind(link);
+  vi.spyOn(link, "matches").mockImplementation(
+    (selector) => selector !== ":focus-visible" && matches(selector)
+  );
+  act(() => link.focus());
+  fireEvent.pointerLeave(scroller);
+  act(() =>
+    update([
+      { ...first, metrics: { ...first.metrics, cpu_pct: 10 } },
+      { ...second, metrics: { ...second.metrics, cpu_pct: 300 } },
+    ])
+  );
+  expect(within(table).getAllByRole("link")[0]).toHaveTextContent("web");
+  result.unmount();
+  result.transport.dispose();
+});
+
 it("resumes live sorting after a header context click and pointer leave", () => {
   let update: (rows: DockerContainer[]) => void = () => {};
   function Harness() {

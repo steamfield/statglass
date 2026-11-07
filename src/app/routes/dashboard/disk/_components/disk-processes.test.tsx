@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
+import { vi } from "vitest";
 import { BrushProvider } from "~/stores/brush-store";
 import { DiskProcesses } from "./disk-processes";
 
@@ -269,6 +270,35 @@ it.each(["Read", "Written", "Total", "Process"])(
     ).toHaveAttribute("href", expect.stringContaining(`from=${RANGE.fromMs}`));
   }
 );
+
+it("stops holding after a mouse click focuses a row and the pointer leaves", async () => {
+  const r = list();
+  await screen.findByRole("table", { name: "Disk processes · Live" });
+  const push = (a: number, b: number) =>
+    act(() =>
+      r.transport.push({
+        kind: "processes",
+        ts_ms: NOW,
+        rows: [proc(1, a, 0, "Alpha"), proc(2, b, 0, "Beta")],
+      })
+    );
+  push(20e6, 10e6);
+  const surface = screen.getByRole("table", {
+    name: /^Disk processes/,
+  }).parentElement;
+  if (!surface) throw new Error("Missing process viewport");
+  fireEvent.pointerEnter(surface);
+  // A pointer focus: the browser draws no ring, so `:focus-visible` misses.
+  const link = screen.getByRole("link", { name: "Inspect Alpha, PID 1" });
+  const matches = link.matches.bind(link);
+  vi.spyOn(link, "matches").mockImplementation(
+    (selector) => selector !== ":focus-visible" && matches(selector)
+  );
+  act(() => link.focus());
+  fireEvent.pointerLeave(surface);
+  push(5e6, 90e6);
+  expect(processNames()).toEqual(["Beta", "Alpha"]);
+});
 
 it("breaks equal names and rates by numeric pid in both directions", async () => {
   const r = list();

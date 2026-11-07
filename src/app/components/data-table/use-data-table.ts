@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { features, type TableFeatures } from "./features";
+import { type RowHoldOptions, useRowHold } from "./use-row-hold";
 
 interface DataTableOptions<T extends RowData> {
   data: readonly T[];
@@ -18,7 +19,8 @@ interface DataTableOptions<T extends RowData> {
   onSortingChange?: OnChangeFn<SortingState>;
   initialSorting?: SortingState;
   manualSorting?: boolean;
-  hold?: { paused: boolean };
+  /** Keep row order while the reader is in the table (see `useRowHold`). */
+  hold?: RowHoldOptions;
 }
 
 export function useDataTable<T extends RowData>({
@@ -74,21 +76,25 @@ export function useDataTable<T extends RowData>({
       enableMultiSort: false,
       enableSortingRemoval: false,
       sortDescFirst: true,
+      // Grouping runs in its own model (`useGroupedRows`); expansion here
+      // would only reset on every frame.
+      autoResetExpanded: false,
     },
     (state) => ({ sorting: state.sorting })
   );
+  const { held: paused, ...holding } = useRowHold(hold ?? {});
   const sorted = table.getRowModel().rows;
   const resetKey = JSON.stringify(activeSorting);
   const [held, setHeld] = useState<{ resetKey: string; ids: string[] } | null>(
     null
   );
   let snapshot = held;
-  if (!hold?.paused) snapshot = null;
+  if (!hold || !paused) snapshot = null;
   else if (held?.resetKey !== resetKey)
     snapshot = { resetKey, ids: sorted.map((row) => row.id) };
   if (snapshot !== held) setHeld(snapshot);
   const rows = snapshot
     ? holdOrder(sorted, snapshot.ids, (row) => row.id)
     : sorted;
-  return { table, rows };
+  return { table, rows, ...holding };
 }

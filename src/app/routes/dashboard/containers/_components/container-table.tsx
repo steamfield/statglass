@@ -2,7 +2,8 @@ import type {
   DockerContainer,
   DockerRankedContainer,
 } from "@core/generated/bindings";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import type { Row } from "@tanstack/react-table";
+import type { Virtualizer } from "@tanstack/react-virtual";
 import {
   type MouseEvent,
   type ReactNode,
@@ -14,9 +15,12 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "react-router";
 import {
+  DataTable,
   DataTableHead,
+  type TableFeatures,
   useColumnSort,
   useDataTable,
+  useGroupedRows,
 } from "~/components/data-table";
 import {
   ContextMenu,
@@ -45,6 +49,10 @@ import {
   useContainerColumns,
 } from "./container-columns";
 import { ContainerDataRow } from "./container-data-row";
+
+/** `max-h-88`: the scroller's height before layout measures it. */
+const TABLE_MAX_PX = 352;
+const projectOf = (row: DockerContainer) => row.project ?? "Standalone";
 export const needsAttention = (row: DockerContainer) =>
   row.health === "unhealthy" || row.oom_killed || row.repeated_restarts;
 export function ContainerTable({
@@ -88,8 +96,7 @@ export function ContainerTable({
   const { bytes, rate } = useUnits();
   const summaryById = new Map(summaries?.map((row) => [row.container.id, row]));
   const scroller = useRef<HTMLDivElement>(null);
-  const [hovered, setHovered] = useState(false);
-  const [keyboard, setKeyboard] = useState(false);
+  const virtual = useRef<Virtualizer<HTMLDivElement, Element>>(null);
   const [contextId, setContextId] = useState<string | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const contextRow = (liveRows ?? (historical ? [] : rows)).find(
@@ -119,45 +126,16 @@ export function ContainerTable({
     tiebreak: containerTiebreak,
     sorting,
     onSortingChange,
-    hold: {
-      paused: hovered || keyboard || contextOpen || actions.pendingIds.size > 0,
-    },
+    hold: { when: contextOpen || actions.pendingIds.size > 0 },
   });
-  const ordered = model.rows.map((row) => row.original);
+  const { hovered, holdProps } = model;
   const visibleColumns = model.table.getAllLeafColumns();
-  const groups = grouped
-    ? [...new Set(ordered.map((row) => row.project ?? "Standalone"))]
-    : [""];
-  const items: (
-    | { kind: "group"; group: string; count: number }
-    | { kind: "row"; row: DockerContainer }
-  )[] = groups.flatMap((group) => {
-    const members = grouped
-      ? ordered.filter((row) => (row.project ?? "Standalone") === group)
-      : ordered;
-    return [
-      ...(grouped
-        ? [{ kind: "group" as const, group, count: members.length }]
-        : []),
-      ...(!grouped || !collapsed.includes(group)
-        ? members.map((row) => ({ kind: "row" as const, row }))
-        : []),
-    ];
-  });
-  const virtual = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => scroller.current,
-    estimateSize: () => 44,
-    overscan: 5,
-    enabled: rows.length > 100,
-    getItemKey: (index) => {
-      const item = items[index];
-      return !item
-        ? index
-        : item.kind === "group"
-          ? `group:${item.group}`
-          : item.row.id;
-    },
+  const items = useGroupedRows({
+    rows: model.rows,
+    grouped,
+    groupOf: projectOf,
+    getRowId: containerRowId,
+    collapsed,
   });
   useEffect(() => {
     const saved =
@@ -169,14 +147,15 @@ export function ContainerTable({
   useEffect(() => {
     if (!focused || hovered) return;
     const index = items.findIndex(
-      (item) => item.kind === "row" && item.row.id === focused
+      (item) => !item.getIsGrouped() && item.id === focused
     );
     if (index < 0) return;
-    if (rows.length > 100) virtual.scrollToIndex(index, { align: "auto" });
+    if (rows.length > 100)
+      virtual.current?.scrollToIndex(index, { align: "auto" });
     else {
       scrollFocusedRow(scroller.current, focused);
     }
-  }, [focused, hovered, items, rows.length, virtual]);
+  }, [focused, hovered, items, rows.length]);
   const count = visibleColumns.length;
   const openDetail = useCallback(
     (event: MouseEvent<HTMLAnchorElement>, engine: string, id: string) => {
@@ -188,26 +167,28 @@ export function ContainerTable({
     },
     [navigate, location]
   );
-  const render = (item: (typeof items)[number]) => {
-    if (item.kind === "group")
+  const render = (item: Row<TableFeatures, DockerContainer>) => {
+    if (item.getIsGrouped()) {
+      const group = projectOf(item.original);
       return (
-        <tr key={`group:${item.group}`} className="h-11 bg-raised/40">
+        <tr key={item.id} className="h-11 bg-raised/40">
           <th colSpan={count} className="px-3 text-left">
             <button
               className="w-full text-left text-[12px]"
               type="button"
-              aria-expanded={!collapsed.includes(item.group)}
-              onClick={() => onCollapse(item.group)}
+              aria-expanded={!collapsed.includes(group)}
+              onClick={() => onCollapse(group)}
             >
-              {collapsed.includes(item.group) ? "›" : "⌄"} {item.group}
+              {collapsed.includes(group) ? "›" : "⌄"} {group}
               <span className="ml-2 font-normal text-muted-foreground">
-                {item.count} containers
+                {item.subRows.length} containers
               </span>
             </button>
           </th>
         </tr>
       );
-    const row = item.row;
+    }
+    const row = item.original;
     return (
       <ContainerDataRow
         key={row.id}
@@ -228,9 +209,6 @@ export function ContainerTable({
       />
     );
   };
-  const virtualItems = virtual.getVirtualItems();
-  const top = virtualItems[0]?.start ?? 0;
-  const bottom = virtual.getTotalSize() - (virtualItems.at(-1)?.end ?? 0);
   return (
     <div className="@container">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
@@ -262,17 +240,15 @@ export function ContainerTable({
             data-container-table-scroll
             ref={scroller}
             className="max-h-88 overflow-y-scroll"
-            onPointerEnter={() => setHovered(true)}
+            {...holdProps}
             onPointerLeave={() => {
-              setHovered(false);
+              holdProps.onPointerLeave();
               onFocus?.(null);
             }}
-            onFocusCapture={() => setKeyboard(true)}
             onBlurCapture={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) {
-                setKeyboard(false);
+              holdProps.onBlurCapture(event);
+              if (!event.currentTarget.contains(event.relatedTarget))
                 onFocus?.(null);
-              }
             }}
           >
             <table
@@ -282,28 +258,20 @@ export function ContainerTable({
               <thead className="sticky top-0 z-10 border-border border-y bg-card text-[11px] text-muted-foreground">
                 <DataTableHead table={model.table} />
               </thead>
-              <tbody>
-                {rows.length > 100 ? (
-                  <>
-                    {top > 0 && (
-                      <tr aria-hidden>
-                        <td colSpan={count} style={{ height: top }} />
-                      </tr>
-                    )}
-                    {virtualItems.map((item) => {
-                      const entry = items[item.index];
-                      return entry ? render(entry) : null;
-                    })}
-                    {bottom > 0 && (
-                      <tr aria-hidden>
-                        <td colSpan={count} style={{ height: bottom }} />
-                      </tr>
-                    )}
-                  </>
-                ) : (
-                  items.map(render)
-                )}
-              </tbody>
+              <DataTable
+                variant="plain"
+                table={model.table}
+                rows={items}
+                renderRow={render}
+                virtual={{
+                  scrollRef: scroller,
+                  estimateSize: 44,
+                  overscan: 5,
+                  initialHeight: TABLE_MAX_PX,
+                  enabled: rows.length > 100,
+                  ref: virtual,
+                }}
+              />
             </table>
             {!rows.length && (
               <p className="px-3 py-8 text-[12px] text-muted-foreground">

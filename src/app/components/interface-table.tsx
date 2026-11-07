@@ -35,7 +35,6 @@ export interface InterfaceTableProps {
  * process table). No IP addresses: they are personal data in screenshots.
  */
 export function InterfaceTable({ rows, units }: InterfaceTableProps) {
-  const [paused, setPaused] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([]);
   const data = useDataTable({
     data: rows,
@@ -43,13 +42,10 @@ export function InterfaceTable({ rows, units }: InterfaceTableProps) {
     getRowId,
     sorting,
     onSortingChange: setSorting,
-    hold: { paused },
+    hold: {},
   });
   return (
-    <Table
-      onPointerEnter={() => setPaused(true)}
-      onPointerLeave={() => setPaused(false)}
-    >
+    <Table {...data.holdProps}>
       <TableHeader>
         <DataTableHead table={data.table} />
       </TableHeader>

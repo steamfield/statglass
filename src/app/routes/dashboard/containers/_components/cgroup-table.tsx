@@ -9,7 +9,7 @@ import {
   type RateUnits,
 } from "@core/format";
 import { constructRow, type Table } from "@tanstack/react-table";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 import {
   columnHelper,
   DataTable,
@@ -192,7 +192,6 @@ export function CgroupTable({
   rate,
   empty,
 }: CgroupTableProps) {
-  const [paused, setPaused] = useState(false);
   const activeSort = columns.includes(sort.by) ? sort : DEFAULT_SORT;
   const { sorting, onSortingChange } = useColumnSort(
     activeSort,
@@ -210,14 +209,10 @@ export function CgroupTable({
     tiebreak: byName,
     sorting,
     onSortingChange,
-    hold: { paused },
+    hold: {},
   });
   return (
-    <div
-      className="min-h-0 overflow-auto"
-      onPointerEnter={() => setPaused(true)}
-      onPointerLeave={() => setPaused(false)}
-    >
+    <div className="min-h-0 overflow-auto" {...data.holdProps}>
       <table
         aria-label="Services and containers"
         className="w-full border-collapse text-[12px]"
