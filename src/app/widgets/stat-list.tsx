@@ -18,19 +18,35 @@ export interface StatListItem {
   swatch?: SwatchStep;
 }
 
-export interface StatListProps {
+interface StatListBase {
   items: StatListItem[];
-  /**
-   * `strip` (default): a page's KPI strip above a chart, 15 px figures that
-   * count to their next value, wrapping. `grid`: two to four compact 12 px
-   * cells in equal columns (popover GPU, battery, power; a host row).
-   */
-  layout?: "strip" | "grid";
-  /** The page's headline figure at hero size (CPU "Total 18%"); strip only. */
-  hero?: { label: string; value: string; unit?: string | undefined };
   /** Defaults to the accent in scope; only used by swatches. */
   accent?: Accent;
 }
+
+/**
+ * `strip` (default): a page's KPI strip above a chart, 15 px figures that
+ * count to their next value, wrapping. `grid`: two to four compact 12 px
+ * cells in equal columns (popover GPU, battery, power; a host row).
+ */
+export type StatListProps = StatListBase &
+  (
+    | {
+        layout?: "strip";
+        /** The page's headline figure at hero size (CPU "Total 18%"). */
+        hero?: { label: string; value: string; unit?: string | undefined };
+        valueClassName?: never;
+      }
+    | {
+        layout: "grid";
+        hero?: never;
+        /**
+         * Extra classes on each value cell, such as a min width so a grid
+         * that sizes to its content doesn't reflow when 9% becomes 10%.
+         */
+        valueClassName?: string;
+      }
+  );
 
 /** Labelled figures: a field label over each value. */
 export function StatList({
@@ -38,6 +54,7 @@ export function StatList({
   layout = "strip",
   hero,
   accent,
+  valueClassName,
 }: StatListProps) {
   const grid = layout === "grid";
   const style: CSSProperties = {
@@ -58,7 +75,7 @@ export function StatList({
       )}
       style={style}
     >
-      {hero && !grid && (
+      {hero && (
         <div className="flex flex-col gap-0.5">
           <dt className={FIELD_LABEL}>{hero.label}</dt>
           <dd className="figures-display text-[32px] leading-none tracking-[-0.022em]">
@@ -81,7 +98,8 @@ export function StatList({
           <dd
             className={cn(
               grid ? "figures text-[12px]" : "figures-display text-[15px]",
-              item.muted && "text-muted-foreground"
+              item.muted && "text-muted-foreground",
+              valueClassName
             )}
           >
             {grid ? (

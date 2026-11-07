@@ -38,4 +38,18 @@ describe("StatList", () => {
       "3.1 W"
     );
   });
+
+  it("puts the grid's value classes on every value cell", () => {
+    render(
+      <StatList
+        layout="grid"
+        items={GPU_STAT_GRID.items}
+        valueClassName="min-w-10"
+      />
+    );
+    for (const label of ["Freq", "Power", "Cores"])
+      expect(screen.getByText(label).nextElementSibling).toHaveClass(
+        "min-w-10"
+      );
+  });
 });

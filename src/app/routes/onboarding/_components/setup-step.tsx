@@ -1,7 +1,6 @@
 import type { HostInfo } from "@core/generated/bindings";
-import { unavailableText } from "@core/module-state";
+import { modulePresence, unavailableText } from "@core/module-state";
 import {
-  modulePresence,
   type OnboardingChoices,
   SETTINGS_MODULES,
   type SettingsModule,

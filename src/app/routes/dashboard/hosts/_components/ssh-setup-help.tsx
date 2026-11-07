@@ -9,14 +9,22 @@ import { useTransport } from "~/lib/transport-context";
 
 export function Command({ text }: { text: string }) {
   const { status, copy } = useCopyToClipboard("ssh-setup");
+  // The label remembers a copy after the status line has reset.
+  const [copiedOnce, setCopiedOnce] = useState(false);
   return (
     <div className="grid gap-1">
       <pre className="select-text whitespace-pre-wrap break-all rounded-control bg-muted p-2 font-sans text-[12px]">
         {text}
       </pre>
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="ghost" onClick={() => void copy(text)}>
-          Copy
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={async () => {
+            if (await copy(text)) setCopiedOnce(true);
+          }}
+        >
+          {copiedOnce ? "Copy again" : "Copy"}
         </Button>
         <span role="status">
           {status === "failed"

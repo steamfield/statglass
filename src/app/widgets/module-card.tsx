@@ -38,8 +38,10 @@ export interface ModuleCardProps {
   /**
    * Controls under the body that open something else (a container). They
    * sit outside the card's link, which then covers the header and body only.
+   * Passing the prop opts into this layout; pass `null` while there is
+   * nothing to show so the shell (and keyboard focus) survives the change.
    */
-  footer?: ReactNode;
+  footer?: Exclude<ReactNode, undefined>;
   children?: ReactNode;
 }
 
@@ -113,6 +115,7 @@ export function ModuleCard({
         className={cn("flex flex-col", padding)}
       >
         <LinkArea
+          titleId={titleId}
           href={href}
           onOpen={onOpen}
           className={compact ? "gap-1" : "gap-2"}
@@ -123,9 +126,9 @@ export function ModuleCard({
       </Card>
     );
   if (aside === undefined && !onToggle) return card;
+  // The toggle precedes the card in DOM order, matching where it sits.
   return (
     <div className="relative">
-      {card}
       {onToggle && (
         <button
           type="button"
@@ -147,6 +150,7 @@ export function ModuleCard({
           )}
         </button>
       )}
+      {card}
       {aside !== undefined && (
         <div className="absolute top-3 right-3 font-normal text-[11px] text-muted-foreground">
           {aside}
@@ -161,11 +165,13 @@ export function ModuleCard({
  * on keyboard focus, since the card itself is not the link.
  */
 function LinkArea({
+  titleId,
   href,
   onOpen,
   className,
   children,
 }: {
+  titleId: string;
   href: string | undefined;
   onOpen: ((href: string) => void) | undefined;
   className: string;
@@ -176,6 +182,7 @@ function LinkArea({
   return (
     <a
       href={href}
+      aria-labelledby={titleId}
       onClick={
         onOpen
           ? (event) => {

@@ -1,10 +1,6 @@
 import type { Settings } from "@core/generated/bindings";
-import { unavailableText } from "@core/module-state";
-import {
-  modulePatch,
-  modulePresence,
-  SETTINGS_MODULES,
-} from "@core/settings-patch";
+import { modulePresence, unavailableText } from "@core/module-state";
+import { modulePatch, SETTINGS_MODULES } from "@core/settings-patch";
 import { ModuleToggleRow } from "~/components/module-toggle-list";
 import { SettingsPanel } from "~/components/settings-row";
 import { useHostNoun } from "~/hooks/use-host-record";

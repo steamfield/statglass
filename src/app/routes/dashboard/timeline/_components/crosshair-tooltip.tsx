@@ -50,6 +50,15 @@ export function CrosshairTooltip({
 }: CrosshairTooltipProps) {
   const local = useIsLocalHost();
   const top = topBy(processes?.rows ?? [], (p) => p.cpu_pct, TOP);
+  // Stored rows whose CPU is null are not "nothing stored".
+  const empty =
+    processes === undefined
+      ? "Looking up processes…"
+      : !processes?.rows.length
+        ? "No processes stored near this time"
+        : top.length === 0
+          ? "No CPU readings for processes then"
+          : null;
   return (
     <ChartTooltipShell className="top-0.5 w-[276px]" style={style}>
       <ChartTooltipHead title={title} detail={resolution} />
@@ -74,12 +83,8 @@ export function CrosshairTooltip({
             <span className={FIELD_LABEL}>Top processes then</span>
             <span className={FIELD_LABEL}>% of 1 core</span>
           </div>
-          {processes === undefined ? (
-            <ChartTooltipNote>Looking up processes…</ChartTooltipNote>
-          ) : top.length === 0 ? (
-            <ChartTooltipNote>
-              No processes stored near this time
-            </ChartTooltipNote>
+          {empty ? (
+            <ChartTooltipNote>{empty}</ChartTooltipNote>
           ) : (
             <div className="flex flex-col gap-[5px]">
               {top.map(({ row: p, value: cpu }) => (
