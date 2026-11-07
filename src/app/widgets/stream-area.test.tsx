@@ -298,3 +298,16 @@ describe("StreamArea", () => {
     expect(label.className).toContain("flex-row-reverse");
   });
 });
+
+describe("StreamArea one-bucket runs", () => {
+  it("draws the dot alone when a series' only run is one bucket", () => {
+    const { container } = render(
+      <StreamArea
+        {...props}
+        series={[{ key: "total", values: [null, null, 12, null], step: 1 }]}
+      />
+    );
+    expect(container.querySelector("[data-line]")?.getAttribute("d")).toBe("");
+    expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(1);
+  });
+});

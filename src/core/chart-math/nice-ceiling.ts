@@ -11,11 +11,24 @@ const LADDER = [1, 2, 4, 5, 6, 8, 10] as const;
 export const SHRINK_AFTER_MS = 60_000;
 
 /**
+ * Which steps a ceiling snaps to. `decimal`: the mantissas above times powers
+ * of ten. `binary`, for bytes shown in KiB/MiB/GiB: powers of two (1, 2, 4,
+ * 8 … 512 × 1024^n), so the ceiling and its half read as whole binary units
+ * ("512 MiB", "256 MiB") instead of "572 MiB".
+ */
+export type CeilingLadder = "decimal" | "binary";
+
+/**
  * Smallest ladder step `>= value`. Values at or below zero (and missing ones)
  * get `minCeiling`, so an idle chart still has a labelled scale.
  */
-export function niceCeiling(value: number, minCeiling = 1): number {
+export function niceCeiling(
+  value: number,
+  minCeiling = 1,
+  ladder: CeilingLadder = "decimal"
+): number {
   if (!Number.isFinite(value) || value <= minCeiling) return minCeiling;
+  if (ladder === "binary") return 2 ** Math.ceil(Math.log2(value));
   const exp = Math.floor(Math.log10(value));
   const base = 10 ** exp;
   for (const m of LADDER) {
@@ -39,8 +52,13 @@ export function fittedCeiling(value: number, minCeiling = 1): number {
 }
 
 /** The ladder step just below `ceiling`, or 0 when `ceiling` is the floor. */
-export function stepBelow(ceiling: number, minCeiling = 1): number {
+export function stepBelow(
+  ceiling: number,
+  minCeiling = 1,
+  ladder: CeilingLadder = "decimal"
+): number {
   if (ceiling <= minCeiling) return 0;
+  if (ladder === "binary") return Math.max(ceiling / 2, minCeiling);
   const exp = Math.floor(Math.log10(ceiling));
   const base = 10 ** exp;
   const m = Number((ceiling / base).toPrecision(12));
@@ -70,6 +88,8 @@ export interface CeilingOptions {
    * not count as time below. Default 10 s, above the slowest 5 s interval.
    */
   maxTickGapMs?: number;
+  /** The steps the ceiling snaps to; default decimal. */
+  ladder?: CeilingLadder;
 }
 
 /**
@@ -85,13 +105,14 @@ export function nextCeiling(
     minCeiling = 1,
     shrinkAfterMs = SHRINK_AFTER_MS,
     maxTickGapMs = 10_000,
+    ladder = "decimal",
   }: CeilingOptions = {}
 ): CeilingState {
   const present = max != null && Number.isFinite(max);
 
   if (prev === null) {
     return {
-      ceiling: niceCeiling(present ? max : 0, minCeiling),
+      ceiling: niceCeiling(present ? max : 0, minCeiling, ladder),
       belowSinceMs: null,
       belowPeak: 0,
       lastMs: nowMs,
@@ -104,14 +125,14 @@ export function nextCeiling(
 
   if (max > prev.ceiling) {
     return {
-      ceiling: niceCeiling(max, minCeiling),
+      ceiling: niceCeiling(max, minCeiling, ladder),
       belowSinceMs: null,
       belowPeak: 0,
       lastMs: nowMs,
     };
   }
 
-  if (max > stepBelow(prev.ceiling, minCeiling)) {
+  if (max > stepBelow(prev.ceiling, minCeiling, ladder)) {
     return { ...prev, belowSinceMs: null, belowPeak: 0, lastMs: nowMs };
   }
 
@@ -123,7 +144,7 @@ export function nextCeiling(
 
   if (nowMs - belowSinceMs >= shrinkAfterMs) {
     return {
-      ceiling: niceCeiling(belowPeak, minCeiling),
+      ceiling: niceCeiling(belowPeak, minCeiling, ladder),
       belowSinceMs: null,
       belowPeak: 0,
       lastMs: nowMs,

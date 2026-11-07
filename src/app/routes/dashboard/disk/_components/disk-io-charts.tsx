@@ -169,7 +169,10 @@ export function DiskIoCharts({
             : `Read ${last?.read_ops_per_sec == null ? MISSING : operations(last.read_ops_per_sec)} · Write ${last?.write_ops_per_sec == null ? MISSING : operations(last.write_ops_per_sec)}`}
         </p>
       </div>
+      {/* A new series fits its own ceiling: a fixed range never advances
+          time, so a held ceiling from the other series would never shrink. */}
       <IoPlot
+        key={secondary}
         {...plot}
         subject={secondary === "time" ? "Average request time" : "Operations/s"}
         up={secondary === "time" ? "read_request_ms" : "read_ops_per_sec"}

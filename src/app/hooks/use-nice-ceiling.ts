@@ -1,4 +1,8 @@
-import { type CeilingState, nextCeiling } from "@core/chart-math";
+import {
+  type CeilingLadder,
+  type CeilingState,
+  nextCeiling,
+} from "@core/chart-math";
 import { useRef } from "react";
 
 /** Below this, updates count as continuous whatever the interval (nextCeiling's default). */
@@ -25,12 +29,18 @@ export function useNiceCeiling(
   {
     endMs = null,
     intervalMs = 0,
-  }: { endMs?: number | null; intervalMs?: number } = {}
+    ladder = "decimal",
+  }: {
+    endMs?: number | null;
+    intervalMs?: number;
+    /** The steps it snaps to (`niceCeiling`); a change refits at once. */
+    ladder?: CeilingLadder;
+  } = {}
 ): number {
   const state = useRef<CeilingState | null>(null);
   const lastMs = useRef<number | null>(null);
   const lastMax = useRef<number | null>(null);
-  const scope = `${windowMs}:${endMs}`;
+  const scope = `${windowMs}:${endMs}:${ladder}`;
   const lastScope = useRef(scope);
   if (lastScope.current !== scope) {
     state.current = null;
@@ -44,6 +54,7 @@ export function useNiceCeiling(
     state.current = nextCeiling(state.current, max, nowMs, {
       minCeiling,
       maxTickGapMs: Math.max(MIN_TICK_GAP_MS, 2 * intervalMs),
+      ladder,
     });
     lastMs.current = nowMs;
     lastMax.current = max;

@@ -47,6 +47,34 @@ it("breaks the line at a skipped bucket and marks each edge with a hollow dot", 
   expect(dots.map((dot) => dot.style.left)).toEqual(["20.000%", "60.000%"]);
 });
 
+it("drops a bucket Rust floored to before the range start, dot and fit", () => {
+  const page = history(true);
+  const [first] = page.points;
+  if (!first) throw new Error("no point");
+  page.points = [
+    // A lone bucket starting 5 s before `from`, with a spike.
+    { ...first, time_ms: -5_000, metrics: { ...first.metrics, cpu_pct: 140 } },
+    ...[20_000, 30_000].map((time_ms) => ({
+      ...first,
+      time_ms,
+      metrics: { ...first.metrics, cpu_pct: 10 },
+    })),
+  ];
+  const { container } = render(
+    <ContainerHistory
+      page={page}
+      metric="cpu_pct"
+      title="Floored start"
+      from={0}
+      to={50_000}
+    />
+  );
+  const dots = [...container.querySelectorAll<HTMLElement>("[data-gap-edge]")];
+  expect(dots.map((dot) => dot.style.left)).toEqual([]);
+  expect(screen.queryByText("150%")).toBeNull();
+  expect(screen.getByText("11%")).toBeVisible();
+});
+
 function history(covered: boolean): DockerHistoryPage {
   return {
     generation: 1,

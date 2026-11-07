@@ -177,12 +177,14 @@ export function StreamArea({
     (s.edges !== false ? runs : []).forEach((pts, k) => {
       const first = pts[0];
       const last = pts[pts.length - 1];
-      if (k > 0 && first) edges.push(first);
-      // A one-point run is its own first and last: one dot, not two with
-      // the same key (React then leaves stale dots behind).
-      if (k < runs.length - 1 && last && (k === 0 || pts.length > 1)) {
-        edges.push(last);
+      // A one-point run draws its dot alone, even as the series' only run;
+      // one dot, not two with the same key (React then leaves stale dots).
+      if (pts.length === 1 && first) {
+        edges.push(first);
+        return;
       }
+      if (k > 0 && first) edges.push(first);
+      if (k < runs.length - 1 && last) edges.push(last);
     });
     const stroke =
       s.step === 1 ? "var(--a-ink)" : rampColor(s.step, "var(--a-ink)");

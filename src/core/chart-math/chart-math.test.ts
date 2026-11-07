@@ -141,6 +141,41 @@ describe("niceCeiling", () => {
   });
 });
 
+describe("binary ceiling ladder", () => {
+  const MiB = 1024 ** 2;
+  const GiB = 1024 ** 3;
+
+  it.each([
+    [600e6, GiB],
+    [488 * MiB, 512 * MiB],
+    [512 * MiB, 512 * MiB],
+    [3 * GiB, 4 * GiB],
+    [700, 1024],
+    [9 * 1024, 16 * 1024],
+  ])("snaps %d up to a power of two, %d", (v, want) => {
+    expect(niceCeiling(v, 1, "binary")).toBe(want);
+  });
+
+  it("keeps the floor for idle data and steps down by halves", () => {
+    expect(niceCeiling(0, 128 * MiB, "binary")).toBe(128 * MiB);
+    expect(stepBelow(GiB, 1, "binary")).toBe(512 * MiB);
+    expect(stepBelow(256 * MiB, 128 * MiB, "binary")).toBe(128 * MiB);
+    expect(stepBelow(128 * MiB, 128 * MiB, "binary")).toBe(0);
+  });
+
+  it("grows and shrinks on the binary ladder", () => {
+    const opts = { ladder: "binary" as const, minCeiling: 128 * MiB };
+    let s = nextCeiling(null, 488 * MiB, 0, opts);
+    expect(s.ceiling).toBe(512 * MiB);
+    s = nextCeiling(s, 600 * MiB, 1000, opts);
+    expect(s.ceiling).toBe(GiB);
+    // Under half the ceiling for a minute: shrink to the peak's step.
+    for (let t = 2000; t <= 62_000; t += 1000)
+      s = nextCeiling(s, 300 * MiB, t, opts);
+    expect(s.ceiling).toBe(512 * MiB);
+  });
+});
+
 describe("nextCeiling", () => {
   // Drive the clock explicitly, one call per tick, like the 1 Hz sampler.
   function run(

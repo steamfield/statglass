@@ -94,16 +94,20 @@ export interface GapSpan {
 /**
  * The gaps that overlap a chart's x range, as positioned bands. Render it
  * inside the chart's `relative` plot box; a band that runs past either edge
- * is clipped to it, and its label centres on the visible part.
+ * is clipped to it, and its label centres on the visible part. A chart
+ * whose tick row sits close under the plot puts the label in the band's
+ * middle (`labelPosition="center"`); ranges wider than a day drop it.
  */
 export function GapBands({
   gaps,
   rangeFromMs,
   rangeToMs,
+  labelPosition = "bottom",
 }: {
   gaps: readonly GapSpan[];
   rangeFromMs: number;
   rangeToMs: number;
+  labelPosition?: "bottom" | "center";
 }) {
   if (rangeToMs <= rangeFromMs) return null;
   return gaps
@@ -116,7 +120,9 @@ export function GapBands({
         label={g.label}
         reason={g.reason}
         showCaption={g.showCaption}
-        labelPosition={rangeToMs - rangeFromMs > DAY_MS ? "none" : "bottom"}
+        labelPosition={
+          rangeToMs - rangeFromMs > DAY_MS ? "none" : labelPosition
+        }
         rangeFromMs={rangeFromMs}
         rangeToMs={rangeToMs}
       />
