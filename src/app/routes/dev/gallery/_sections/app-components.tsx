@@ -19,6 +19,7 @@ import {
   gap,
   useDataTable,
 } from "~/components/data-table";
+import { InlineMessage } from "~/components/inline-message";
 import { InterfaceTable } from "~/components/interface-table";
 import { MachineHeader } from "~/components/machine-header";
 import {
@@ -37,7 +38,7 @@ import {
 } from "~/components/tray-style-option";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
-import { Table, TableCell, TableHeader, TableRow } from "~/components/ui/table";
+import { Table, TableHeader } from "~/components/ui/table";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
 import { VolumeTable } from "~/components/volume-table";
 import { HostUpdateNoticeView } from "~/routes/dashboard/_components/host-update-notice";
@@ -96,13 +97,7 @@ function DataTableSample() {
       <DataTable
         table={table}
         rows={rows}
-        after={
-          <TableRow>
-            <TableCell colSpan={2} className="text-muted-foreground">
-              Other processes stay below sorted rows.
-            </TableCell>
-          </TableRow>
-        }
+        footnote="Footnotes span every column and stay below sorted rows."
       />
     </Table>
   );
@@ -471,6 +466,21 @@ export function AppComponentsSection() {
     <div className="flex flex-col gap-8">
       <GalleryItem name="DataTable" usedIn="Shared sortable tables">
         <DataTableSample />
+      </GalleryItem>
+      <GalleryItem
+        name="InlineMessage · status, error, note"
+        usedIn="Status, failure and note lines on every page"
+        width={420}
+      >
+        <div className="flex flex-col gap-2">
+          <InlineMessage tone="status">Reading Docker storage…</InlineMessage>
+          <InlineMessage tone="error">
+            Couldn't list the volumes on this Mac.
+          </InlineMessage>
+          <InlineMessage tone="note">
+            Network is measured per process every 10 s.
+          </InlineMessage>
+        </div>
       </GalleryItem>
       <GalleryItem
         name="Container comparison, chooser & history notice"

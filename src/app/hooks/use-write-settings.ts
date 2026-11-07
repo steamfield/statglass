@@ -7,21 +7,19 @@ import { useUpdateSettings } from "~/stores/settings-store";
 /**
  * Send one `update_settings` patch (D-050). The mirror takes the returned
  * snapshot, so the control shows the saved value; a rejected patch leaves
- * the control where it was and says why in a toast.
+ * the control where it was and says why in a toast, as does a rejected call.
  */
 export function useWriteSettings(): (patch: SettingsPatch) => void {
   const update = useUpdateSettings();
   return useCallback(
     (patch) => {
+      const fail = (error: unknown) => {
+        console.error("[settings] update_settings failed", { patch, error });
+        toast.error(settingsErrorText(error));
+      };
       void update(patch).then((result) => {
-        if (result.status === "error") {
-          console.error("[settings] update_settings failed", {
-            patch,
-            error: result.error,
-          });
-          toast.error(settingsErrorText(result.error));
-        }
-      });
+        if (result.status === "error") fail(result.error);
+      }, fail);
     },
     [update]
   );

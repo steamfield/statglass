@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
 
@@ -101,9 +102,7 @@ export function HostConnectionNotice({ remote }: { remote: RemoteHostRecord }) {
             </Button>
           </div>
           {retryError && (
-            <p role="alert" className="text-[12px] text-destructive">
-              {retryError}
-            </p>
+            <InlineMessage tone="error">{retryError}</InlineMessage>
           )}
           {status.error && (
             <details className="text-[12px] text-muted-foreground">

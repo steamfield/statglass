@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type { UpdateStatus } from "@core/generated/bindings";
 import { useState } from "react";
 import { SettingsRow } from "~/components/settings-row";
@@ -57,16 +58,17 @@ export function UpdateRow() {
       if (result.status === "error") {
         setStatus({
           kind: "failed",
-          message:
-            "message" in result.error
-              ? result.error.message
-              : "Please try again.",
+          message: commandErrorText(result.error, "Please try again."),
         });
       } else if (result.data) {
         setStatus(result.data);
       }
     } catch (error) {
-      setStatus({ kind: "failed", message: String(error) });
+      console.error("[settings] update action rejected", error);
+      setStatus({
+        kind: "failed",
+        message: commandErrorText(error, "Please try again."),
+      });
     } finally {
       setPending(false);
     }

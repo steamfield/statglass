@@ -1,3 +1,4 @@
+import { commandError, commandErrorText } from "@core/command-error";
 import type { HeatmapMetric } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import { memo, useCallback, useState } from "react";
@@ -30,6 +31,12 @@ const GRID_LABELS: Record<HeatmapMetric, string> = {
   cpu: "Average CPU by hour, last 30 days",
   temp: "Average temperature by hour, last 30 days",
 };
+
+/** The store is off or unreadable, which the history banner already says. */
+function unavailable(error: Error): boolean {
+  const typed = commandError(error);
+  return typed !== null && historyUnavailable(typed) !== null;
+}
 
 export interface HeatmapCardProps {
   units: LaneUnits;
@@ -112,9 +119,9 @@ export const HeatmapCard = memo(function HeatmapCard({
       </div>
       {error ? (
         <p className="font-normal text-[13px] text-fg-subtle">
-          {historyUnavailable(error.error)
+          {unavailable(error)
             ? "No history is being kept, so there are no past hours to show."
-            : `The heatmap could not be read (${error.message}).`}
+            : `The heatmap could not be read (${commandErrorText(error, "no details")}).`}
         </p>
       ) : (
         <CalendarHeatmap

@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import { formatBytes } from "@core/format";
 import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
@@ -8,7 +9,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
+import { QueryNotice } from "~/components/query-notice";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -93,7 +96,7 @@ function HostSettings({
         remove,
         error: e,
       });
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
     } finally {
       setBusy(false);
     }
@@ -188,9 +191,9 @@ function HostSettings({
               />
             </label>
             {!validBudget && (
-              <p role="alert" className="text-[13px] text-destructive">
+              <InlineMessage tone="error">
                 Enter a whole number from 10 to 10,000 MB.
-              </p>
+              </InlineMessage>
             )}
             <div className="flex justify-between text-[13px]">
               Connect automatically
@@ -204,9 +207,7 @@ function HostSettings({
         )}
         {!removing && <RemoteUpdateSettings hostId={remote.config.id} />}
         {!removing && endpointError && (
-          <p role="alert" className="text-[12px] text-destructive">
-            {endpointError}
-          </p>
+          <InlineMessage tone="error">{endpointError}</InlineMessage>
         )}
         {error && <RemoteSetupError error={error} />}
         {!removing && (
@@ -277,7 +278,7 @@ export default function HostsRoute() {
       if (result.status === "error") setError(remoteErrorText(result.error));
       await cache.invalidateQueries({ queryKey: hostKeys.remote() });
     } catch (e) {
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
     }
   };
   const local = selection?.hosts.find((host) => host.is_local);
@@ -395,23 +396,16 @@ export default function HostsRoute() {
           </div>
         ))}
       </div>
-      {remotes.isPending ? (
-        <p role="status" className="text-[13px] text-muted-foreground">
-          Loading saved hosts…
-        </p>
-      ) : (
-        remotes.data?.length === 0 && (
-          <p className="text-[13px] text-muted-foreground">
-            Add a Linux server or another Mac over SSH to view its live metrics
-            and keep a copy of its history here.
-          </p>
-        )
-      )}
-      {(error || remotes.error) && (
-        <p role="alert" className="text-[13px] text-destructive">
-          {error ?? String(remotes.error)}
-        </p>
-      )}
+      <QueryNotice
+        query={remotes}
+        loading="Loading saved hosts…"
+        error={(e) => commandErrorText(e, "Couldn't load saved hosts.")}
+        empty={
+          remotes.data?.length === 0 &&
+          "Add a Linux server or another Mac over SSH to view its live metrics and keep a copy of its history here."
+        }
+      />
+      {error && <InlineMessage tone="error">{error}</InlineMessage>}
       {adding && <AddHostDialog open onOpenChange={setAdding} />}
       {updatingAll && (
         <UpdateAllDialog remotes={behind} close={() => setUpdatingAll(false)} />

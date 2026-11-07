@@ -1,6 +1,7 @@
 import { appendLogLines, emptyLogBuffer } from "@core/docker-log-buffer";
 import type { DockerLogBatch } from "@core/generated/bindings";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { useTransport } from "~/lib/transport-context";
@@ -83,7 +84,7 @@ export function ContainerLogs({
         </label>
       </div>
       {error && (
-        <p role="alert" className="text-[12px] text-destructive">
+        <InlineMessage tone="error">
           {error}{" "}
           <Button
             variant="outline"
@@ -92,7 +93,7 @@ export function ContainerLogs({
           >
             {follow ? "Resume logs" : "Retry logs"}
           </Button>
-        </p>
+        </InlineMessage>
       )}
       {paused && (
         <Button

@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import { formatDateTime } from "@core/format";
 import type { DockerStorageResource } from "@core/generated/bindings";
 import { dockerKeys } from "@core/query-keys";
@@ -10,6 +11,7 @@ import {
   useColumnSort,
   useDataTable,
 } from "~/components/data-table";
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
 import {
@@ -125,7 +127,7 @@ export const DockerStorage = memo(function DockerStorage({
         await unwrap(transport.dockerStorageScan(true))
       );
     } catch (e) {
-      setRefreshError(String(e));
+      setRefreshError(commandErrorText(e, "Please try again."));
     } finally {
       setRefreshing(false);
     }
@@ -152,21 +154,19 @@ export const DockerStorage = memo(function DockerStorage({
         </Button>
       </div>
       {!connected && (
-        <p role="status" className="text-[12px] text-muted-foreground">
+        <InlineMessage tone="status">
           Storage scanning requires a connected engine. Resume monitoring if it
           is paused.
-        </p>
+        </InlineMessage>
       )}
       {error && (
-        <p role="alert" className="text-[12px] text-destructive">
+        <InlineMessage tone="error">
           {error}
           {snapshot ? " The previous measurement is retained." : ""}
-        </p>
+        </InlineMessage>
       )}
       {storage.isPending && connected && (
-        <p role="status" className="text-[12px] text-muted-foreground">
-          Reading Docker storage…
-        </p>
+        <InlineMessage tone="status">Reading Docker storage…</InlineMessage>
       )}
       {snapshot && (
         <>

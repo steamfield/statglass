@@ -1,5 +1,6 @@
 import { formatBytes } from "@core/format";
 import { memo, useEffect, useState } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -46,9 +47,9 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
   return (
     <>
       {(flow.error || flow.operationError) && (
-        <p role="alert" className="text-[12px] text-destructive">
+        <InlineMessage tone="error">
           {flow.error ?? String(flow.operationError)}
-        </p>
+        </InlineMessage>
       )}
       {flow.operation && (
         <section
@@ -163,9 +164,9 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
             </>
           )}
           {expired && (
-            <p role="alert" className="text-[12px] text-destructive">
+            <InlineMessage tone="error">
               This review expired. Cancel and review the selection again.
-            </p>
+            </InlineMessage>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={flow.dismiss} autoFocus>

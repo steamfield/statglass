@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type { CliLinkStatus } from "@core/generated/bindings";
 import { appKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
@@ -67,16 +68,14 @@ function CliLinkRow() {
       const result = await transport.cliInstallLink();
       if (result.status === "error") {
         console.error("[settings] cli_install_link failed", result.error);
-        setFailure(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
+        setFailure(commandErrorText(result.error, "Please try again."));
         recheck();
       } else {
         client.setQueryData(appKeys.cliLink, result.data);
       }
     } catch (error) {
       console.error("[settings] cli_install_link rejected", error);
-      setFailure(String(error));
+      setFailure(commandErrorText(error, "Please try again."));
       recheck();
     } finally {
       setPending(false);
@@ -90,7 +89,7 @@ function CliLinkRow() {
     : link
       ? linkMessage(link)
       : status.isError
-        ? `Couldn't check: ${status.error.message}`
+        ? `Couldn't check: ${commandErrorText(status.error, "Please try again.")}`
         : "Checking…";
   return (
     <SettingsRow

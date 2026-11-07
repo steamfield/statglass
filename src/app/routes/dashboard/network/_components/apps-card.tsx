@@ -23,6 +23,7 @@ import {
   columnHelper,
   DataTable,
   DataTableHead,
+  FullWidthRow,
   gap,
   useDataTable,
 } from "~/components/data-table";
@@ -288,15 +289,14 @@ function AppsTable({
                   </TableCell>
                 </OtherAppsRow>
               ))}
-              <TableRow className="hover:bg-transparent">
-                <TableCell
-                  colSpan={6}
-                  className="whitespace-normal px-3 pt-0 pb-2.5 pl-9 font-normal text-[11px] text-muted-foreground leading-[1.45]"
-                >
-                  macOS services (updates, backups, DNS). StatGlass can't see
-                  these without a helper.
-                </TableCell>
-              </TableRow>
+              <FullWidthRow
+                colSpan={table.getAllLeafColumns().length}
+                tone="footnote"
+                className="pt-0 pl-9"
+              >
+                macOS services (updates, backups, DNS). StatGlass can't see
+                these without a helper.
+              </FullWidthRow>
             </>
           }
         />

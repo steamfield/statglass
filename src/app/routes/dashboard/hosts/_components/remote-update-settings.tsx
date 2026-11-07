@@ -1,8 +1,10 @@
+import { commandErrorText } from "@core/command-error";
 import type { RemoteUpdateStatus } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
@@ -79,7 +81,7 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
       );
       cache.setQueryData(key, next);
     } catch (cause) {
-      setError(String(cause));
+      setError(commandErrorText(cause, "Please try again."));
     } finally {
       setSaving(false);
     }
@@ -108,7 +110,9 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
             onClick={() =>
               void transport
                 .openUrl(COORDINATED_UPGRADE_GUIDE)
-                .catch((cause: unknown) => setError(String(cause)))
+                .catch((cause: unknown) =>
+                  setError(commandErrorText(cause, "Please try again."))
+                )
             }
           >
             Upgrade guide
@@ -146,9 +150,9 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
         </>
       )}
       {(error || status.error) && (
-        <p role="alert" className="text-[12px] text-destructive">
+        <InlineMessage tone="error">
           {error ?? String(status.error)}
-        </p>
+        </InlineMessage>
       )}
     </div>
   );

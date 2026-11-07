@@ -86,16 +86,9 @@ export function AppsNowCard() {
           table={data.table}
           rows={data.rows}
           empty={
-            <TableRow className="hover:bg-transparent">
-              <TableCell
-                colSpan={2}
-                className="px-3 py-2 font-normal text-[12px] text-muted-foreground"
-              >
-                {live === null
-                  ? "Measuring network by process…"
-                  : "None of your processes sent or received anything."}
-              </TableCell>
-            </TableRow>
+            live === null
+              ? "Measuring network by process…"
+              : "None of your processes sent or received anything."
           }
           renderRow={({ original: r }) => (
             <TableRow key={r.pid} className="text-[12px]">

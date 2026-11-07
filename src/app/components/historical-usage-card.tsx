@@ -335,17 +335,12 @@ function HistoricalUsageTable({
               toggle={() => toggle(app.name)}
             />
           )}
-          after={
-            <TableRow className="hover:bg-transparent">
-              <TableCell
-                colSpan={columns.length + 1}
-                className={`${APP_CELL} whitespace-normal text-[11px] text-muted-foreground`}
-              >
-                Up to ten recorded apps for{" "}
-                {HISTORICAL_LABELS[sort.by].toLowerCase()}; reversing the order
-                keeps those same apps. CPU power estimates CPU energy only.
-              </TableCell>
-            </TableRow>
+          footnote={
+            <>
+              Up to ten recorded apps for{" "}
+              {HISTORICAL_LABELS[sort.by].toLowerCase()}; reversing the order
+              keeps those same apps. CPU power estimates CPU energy only.
+            </>
           }
         />
       </Table>

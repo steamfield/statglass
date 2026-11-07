@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { remoteErrorText } from "@core/remote-errors";
@@ -40,7 +41,7 @@ export function useAgentUpdate() {
           hostId: id,
           error: e,
         });
-        return String(e);
+        return commandErrorText(e, "Please try again.");
       } finally {
         await cache.invalidateQueries({ queryKey: hostKeys.remote() });
         await cache.invalidateQueries({ queryKey: hostKeys.updates(id) });

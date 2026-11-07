@@ -10,6 +10,7 @@ import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
+import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { Button } from "~/components/ui/button";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
@@ -35,7 +36,12 @@ import {
 } from "./_hooks/use-docker";
 import { useSharedContainerRange } from "./_hooks/use-shared-container-range";
 import { DOCKER_RANGES } from "./_lib/history-params";
-import { healthLabel, lifecycleLabel, statusLabel } from "./_lib/presentation";
+import {
+  dockerErrorMessage,
+  healthLabel,
+  lifecycleLabel,
+  statusLabel,
+} from "./_lib/presentation";
 
 export default function ContainerDetailRoute() {
   return (
@@ -150,9 +156,9 @@ function LocalContainerDetailRoute() {
         <ContainerRangeNotice />
         {row && <ContainerActionFailure id={row.id} />}
         {detail.error && (
-          <p role="alert" className="text-[12px] text-muted-foreground">
-            Inspection unavailable: {detail.error.message}
-          </p>
+          <InlineMessage tone="status">
+            Inspection unavailable: {dockerErrorMessage(detail.error)}
+          </InlineMessage>
         )}
         {row && (
           <ContainerObservation
@@ -162,9 +168,9 @@ function LocalContainerDetailRoute() {
           />
         )}
         {history.error && (
-          <p role="alert" className="text-[12px] text-muted-foreground">
-            History unavailable: {history.error.message}
-          </p>
+          <InlineMessage tone="status">
+            History unavailable: {dockerErrorMessage(history.error)}
+          </InlineMessage>
         )}
         <ContainerHistory
           page={history.data}

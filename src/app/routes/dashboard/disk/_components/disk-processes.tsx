@@ -12,6 +12,7 @@ import { brushScopeProps } from "~/components/brush-overlay";
 import {
   columnHelper,
   DataTableHead,
+  FullWidthRow,
   gap,
   useDataTable,
 } from "~/components/data-table";
@@ -30,7 +31,6 @@ import {
   TableBody,
   TableCell,
   TableHeader,
-  TableRow,
 } from "~/components/ui/table";
 import {
   UsageAppsCard,
@@ -350,22 +350,19 @@ function DiskProcessTable({
         <TableBody>
           <DiskRows shown={shown} range={range} back={back} />
           {shown.length === 0 && (
-            <TableRow>
-              <TableCell
-                colSpan={
-                  data.table.getAllLeafColumns().length + (canSignal ? 1 : 0)
-                }
-                className="px-4 py-3 text-muted-foreground"
-              >
-                {waiting
-                  ? "Waiting for process samples…"
-                  : unrecorded
-                    ? "No process data for this range."
-                    : query
-                      ? `No process matches “${query.trim()}”.`
-                      : "No recorded process I/O in this interval."}
-              </TableCell>
-            </TableRow>
+            <FullWidthRow
+              colSpan={
+                data.table.getAllLeafColumns().length + (canSignal ? 1 : 0)
+              }
+            >
+              {waiting
+                ? "Waiting for process samples…"
+                : unrecorded
+                  ? "No process data for this range."
+                  : query
+                    ? `No process matches “${query.trim()}”.`
+                    : "No recorded process I/O in this interval."}
+            </FullWidthRow>
           )}
         </TableBody>
       </Table>

@@ -2,9 +2,10 @@ import type { DockerSnapshot } from "@core/generated/bindings";
 import { windowWords } from "@core/live-window";
 import { useCallback, useState } from "react";
 import type { SetURLSearchParams } from "react-router";
+import { InlineMessage } from "~/components/inline-message";
 import { useBrushStore } from "~/stores/brush-store";
 import type { useContainerComparison } from "../_hooks/use-container-comparison";
-import type { ContainerSort } from "../_lib/presentation";
+import { type ContainerSort, dockerErrorMessage } from "../_lib/presentation";
 import type { ContainerRouteState } from "../_lib/route-state";
 import { ComparisonChart } from "./comparison-chart";
 import { ComparisonControls } from "./comparison-controls";
@@ -118,9 +119,9 @@ export function ContainerActivity({
         }
         notice={
           comparison.error ? (
-            <p role="alert" className="text-[11px] text-muted-foreground">
-              History could not be read: {comparison.error.message}
-            </p>
+            <InlineMessage tone="status">
+              History could not be read: {dockerErrorMessage(comparison.error)}
+            </InlineMessage>
           ) : (
             <HistoryNotice
               snapshot={snapshot}

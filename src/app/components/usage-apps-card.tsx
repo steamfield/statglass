@@ -32,6 +32,7 @@ import {
   UsageHead,
 } from "~/components/app-table";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { FullWidthRow } from "~/components/data-table";
 import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import {
   ProcessSelectionRow,
@@ -283,16 +284,11 @@ function UsageBody({
           </TableHeader>
           <TableBody>
             {shown.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell
-                  colSpan={span}
-                  className="px-3 py-3 font-normal text-[12px] text-muted-foreground"
-                >
-                  {searching
-                    ? `No app or process matches “${query.trim()}”.`
-                    : "No app used a measurable amount in this range."}
-                </TableCell>
-              </TableRow>
+              <FullWidthRow colSpan={span}>
+                {searching
+                  ? `No app or process matches “${query.trim()}”.`
+                  : "No app used a measurable amount in this range."}
+              </FullWidthRow>
             )}
             <UsageAppRows
               rows={shown}
@@ -318,14 +314,9 @@ function UsageBody({
               </TableRow>
             )}
             <RestRows rows={rest} config={config} searching={searching} />
-            <TableRow className="hover:bg-transparent">
-              <TableCell
-                colSpan={span}
-                className="whitespace-normal px-3 pt-1 pb-2.5 font-normal text-[11px] text-muted-foreground leading-[1.45]"
-              >
-                {config.footnote}
-              </TableCell>
-            </TableRow>
+            <FullWidthRow colSpan={span} tone="footnote">
+              {config.footnote}
+            </FullWidthRow>
           </TableBody>
         </Table>
       </div>

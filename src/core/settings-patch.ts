@@ -5,7 +5,6 @@
  * control never overwrites another window's change.
  */
 import {
-  type CommandError,
   ITEM_MODES,
   type ItemMode,
   type MenuBarSettings,
@@ -17,6 +16,7 @@ import {
   SETTINGS_MODULES as SETTINGS_MODULE_ORDER,
   type SettingsPatch,
 } from "@core/generated/bindings";
+import { commandError } from "./command-error";
 
 export { RETENTION_DAYS, SIZE_LIMITS_MB } from "@core/generated/bindings";
 
@@ -204,13 +204,17 @@ export function onboardingSkipPatch(): SettingsPatch {
   return { onboarding: { completed: true } };
 }
 
-/** What a failed `update_settings` tells the user. Nothing changed in either case. */
-export function settingsErrorText(error: CommandError): string {
-  if (error.kind === "settings_not_saved") {
+/**
+ * What a failed `update_settings` tells the user, for a typed error or a
+ * rejected call. Nothing changed in any case.
+ */
+export function settingsErrorText(error: unknown): string {
+  const typed = commandError(error);
+  if (typed?.kind === "settings_not_saved") {
     return "Couldn't save settings. Nothing changed.";
   }
-  if (error.kind === "invalid_settings") {
-    return `StatGlass rejected that setting: ${error.message}`;
+  if (typed?.kind === "invalid_settings") {
+    return `StatGlass rejected that setting: ${typed.message}`;
   }
   return "Couldn't change settings. Nothing changed.";
 }

@@ -1,6 +1,7 @@
 import { formatBytes, formatPercent } from "@core/format";
 import { ChevronDown } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import type { PresentationProps } from "~/routes/popover/_components/popover-cards";
@@ -12,7 +13,12 @@ import {
   useDockerEvents,
   useDockerHistory,
 } from "../_hooks/use-docker";
-import { containerPath, cpuLeader, statusLabel } from "../_lib/presentation";
+import {
+  containerPath,
+  cpuLeader,
+  dockerErrorMessage,
+  statusLabel,
+} from "../_lib/presentation";
 import { ContainerHistory } from "./container-history";
 
 function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
@@ -179,9 +185,9 @@ function LiveTimelineLane({ from, to }: { from: number; to: number }) {
         events={events.data?.events}
       />
       {events.error && (
-        <p role="alert" className="text-[12px] text-muted-foreground">
-          Container events unavailable: {events.error.message}
-        </p>
+        <InlineMessage tone="status">
+          Container events unavailable: {dockerErrorMessage(events.error)}
+        </InlineMessage>
       )}
       {!!events.data?.coverage.length && (
         <p className="text-[11px] text-muted-foreground">
@@ -189,9 +195,9 @@ function LiveTimelineLane({ from, to }: { from: number; to: number }) {
         </p>
       )}
       {history.error && (
-        <p role="alert" className="text-[12px] text-muted-foreground">
-          Container history unavailable: {history.error.message}
-        </p>
+        <InlineMessage tone="status">
+          Container history unavailable: {dockerErrorMessage(history.error)}
+        </InlineMessage>
       )}
     </section>
   );

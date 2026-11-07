@@ -1,5 +1,7 @@
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import type { useDockerEvents } from "../_hooks/use-docker";
+import { dockerErrorMessage } from "../_lib/presentation";
 export function ContainerLifecycle({
   events,
   eventCursor,
@@ -13,9 +15,9 @@ export function ContainerLifecycle({
     <section aria-label="Lifecycle events" className="flex flex-col gap-2">
       <h2 className="text-[14px]">Lifecycle evidence</h2>
       {events.error && (
-        <p role="alert" className="text-[12px]">
-          Events unavailable: {events.error.message}
-        </p>
+        <InlineMessage tone="status">
+          Events unavailable: {dockerErrorMessage(events.error)}
+        </InlineMessage>
       )}
       {events.data?.events.map((event) => (
         <div
@@ -36,9 +38,9 @@ export function ContainerLifecycle({
         </div>
       ))}
       {events.data?.events.length === 0 && (
-        <p className="text-[12px] text-muted-foreground">
+        <InlineMessage tone="status">
           No recorded lifecycle events in this range.
-        </p>
+        </InlineMessage>
       )}
       <div className="flex gap-2">
         {eventCursor && (

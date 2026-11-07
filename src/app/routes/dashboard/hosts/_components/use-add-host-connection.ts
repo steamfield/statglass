@@ -1,3 +1,4 @@
+import { commandErrorText } from "@core/command-error";
 import type {
   CommandError,
   RemoteHostConfig,
@@ -78,7 +79,7 @@ export function useAddHostConnection({
       }
     } catch (e) {
       console.error("[remote setup] add failed", { lan, tailscale, error: e });
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
     } finally {
       setupId.current = null;
       setPhase("idle");
@@ -106,7 +107,7 @@ export function useAddHostConnection({
         tailscale,
         error: e,
       });
-      setError(String(e));
+      setError(commandErrorText(e, "Please try again."));
       setPhase("idle");
     }
   };
@@ -128,7 +129,8 @@ export function useAddHostConnection({
         tailscale,
         error: e,
       });
-      if (setupId.current === attempt) setError(String(e));
+      if (setupId.current === attempt)
+        setError(commandErrorText(e, "Please try again."));
     }
     // The original add response owns completion: its rollback must finish first.
   };

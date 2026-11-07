@@ -4,6 +4,7 @@ import type {
   DockerSnapshot,
 } from "@core/generated/bindings";
 import { useEffect, useState } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
 import { dockerErrorMessage } from "../_lib/presentation";
@@ -34,7 +35,8 @@ export function EngineChooser({
         }
       })
       .catch((e: unknown) => {
-        if (active) setError(String(e));
+        console.error("[docker] docker_discover rejected", e);
+        if (active) setError(dockerErrorMessage(e));
       });
     return () => {
       active = false;
@@ -54,7 +56,8 @@ export function EngineChooser({
         onClose();
       } else setError(dockerErrorMessage(result.error));
     } catch (e) {
-      setError(String(e));
+      console.error("[docker] docker_configure rejected", e);
+      setError(dockerErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -78,19 +81,17 @@ export function EngineChooser({
         Selection is independent of the Docker CLI context. Switching preserves
         the previous engine's history.
       </p>
-      {error && (
-        <p role="alert" className="text-[12px] text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <InlineMessage tone="error">{error}</InlineMessage>}
       {engines === null && !error && (
-        <p role="status">Discovering local Unix sockets…</p>
+        <InlineMessage tone="status">
+          Discovering local Unix sockets…
+        </InlineMessage>
       )}
       {engines?.length === 0 && (
-        <p>
+        <InlineMessage tone="status">
           No local engine found. Start Docker Desktop, OrbStack or Colima, then
           reopen the chooser.
-        </p>
+        </InlineMessage>
       )}
       {engines?.map((engine) => (
         <div

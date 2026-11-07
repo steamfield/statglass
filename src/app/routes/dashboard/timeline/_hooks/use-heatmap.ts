@@ -2,7 +2,7 @@ import type { HeatmapMetric } from "@core/generated/bindings";
 import { heatmapDays } from "@core/heatmap-days";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys, sameHeatmapMetric } from "@core/query-keys";
-import { asCommandFailure, type CommandFailure, unwrap } from "@core/transport";
+import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useNextBoundary } from "~/hooks/use-next-boundary";
@@ -46,7 +46,8 @@ export interface HeatmapData {
   hourMs: number;
   /** No cells for this metric yet: neither data nor gaps to draw. */
   loading: boolean;
-  error: CommandFailure | null;
+  /** A typed `CommandFailure` or a rejected call; both show as a failure. */
+  error: Error | null;
 }
 
 /**
@@ -87,6 +88,6 @@ export function useHeatmap(metric: HeatmapMetric): HeatmapData {
     current,
     hourMs: hour,
     loading: query.isPending,
-    error: asCommandFailure(query.error),
+    error: query.error,
   };
 }

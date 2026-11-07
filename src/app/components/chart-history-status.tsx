@@ -1,3 +1,4 @@
+import { InlineMessage } from "~/components/inline-message";
 export function ChartHistoryStatus({
   loading,
   error,
@@ -7,10 +8,10 @@ export function ChartHistoryStatus({
 }) {
   if (!loading && !error) return null;
   return (
-    <p role="status" className="text-[11px] text-muted-foreground">
+    <InlineMessage tone="status">
       {error
         ? "Couldn't load chart history. Change the range to try again."
         : "Loading chart history…"}
-    </p>
+    </InlineMessage>
   );
 }

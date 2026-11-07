@@ -480,3 +480,14 @@ describe("useProcessesAt", () => {
     expect(askedAt()).toEqual([start + 5_000, next + 7.5 * MIN]);
   });
 });
+
+describe("useTimelineData when the call itself fails", () => {
+  it("reports a rejected history call as an error, not as no error", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    vi.spyOn(transport, "queryHistory").mockRejectedValue(
+      new Error("ipc closed")
+    );
+    renderWithProviders(<TimelineProbe />, { transport });
+    await waitFor(() => expect(latest?.error?.message).toBe("ipc closed"));
+  });
+});

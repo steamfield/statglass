@@ -6,6 +6,7 @@ import type {
   SeriesStats,
 } from "@core/generated/bindings";
 import { useEffect, useMemo, useState } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
 import { useHostId } from "~/stores/host-store";
@@ -355,10 +356,10 @@ export function LanesCard({
       </div>
 
       {zoom.preview && (
-        <p role="status" className="text-[11px] text-muted-foreground">
+        <InlineMessage tone="status">
           {failed ? "Recorded detail unavailable" : "Loading recorded detail"} ·
           preview at {zoom.preview.resolution}
-        </p>
+        </InlineMessage>
       )}
       <LaneTableDialog
         lane={tableLane}
