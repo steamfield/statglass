@@ -49,14 +49,15 @@ describe("layoutMarkers", () => {
     ]);
   });
 
-  it("ends an end-side pill at its time, pulled inside at the left edge", () => {
+  it("ends an end-side pill at its time, flipped to start near the left edge", () => {
     const placed = layout([
       ev(5 * MIN, "early"),
       ev(50 * MIN, "e1"),
       ev(55 * MIN, "e2"),
     ]);
     expect(placed.map((p) => [p.label, p.leftPx, p.row])).toEqual([
-      ["early", 0, 0],
+      // No room left of x = 50: it begins there instead, still on its time.
+      ["early", 46, 0],
       // The dot sits on the time: the pill ends 4 px past x = 500.
       ["e1", 404, 0],
       ["e2", 454, 1],
@@ -87,5 +88,22 @@ describe("layoutMarkers", () => {
   it("pulls a pill at the right edge back inside", () => {
     const [p] = layout([m(100 * MIN, "end")]);
     expect(p?.leftPx).toBe(900);
+  });
+
+  it("keeps a long label's rule on its time near the right edge by flipping side", () => {
+    const [p] = layout([m(95 * MIN, "long")]);
+    // x = 950: no room to begin there, so it ends there (4 px hang).
+    expect(p).toMatchObject({ side: "end", leftPx: 854, fitPx: 100 });
+  });
+
+  it("narrows a label that fits neither side, keeping it anchored on its time", () => {
+    const [p] = layoutMarkers([m(50 * MIN, "wide")], {
+      fromMs: 0,
+      toMs: 100 * MIN,
+      widthPx: 1000,
+      measure: () => 600,
+      side: () => "start",
+    });
+    expect(p).toMatchObject({ side: "start", leftPx: 496, fitPx: 504 });
   });
 });

@@ -183,6 +183,43 @@ it("separates chart swatches from recording and reports null stopped metrics", (
   result.transport.dispose();
 });
 
+it("draws the memory limit track after its own figure, with the limit muted", () => {
+  const result = renderWithProviders(
+    <ContainerTable
+      {...defaults}
+      rows={[
+        {
+          ...first,
+          explicit_limit_bytes: 1_000_000_000,
+          metrics: { ...first.metrics, working_set_bytes: 500_000_000 },
+        },
+        { ...second, explicit_limit_bytes: null },
+      ]}
+    />
+  );
+  const [limited, unlimited] = within(screen.getByRole("table"))
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => row.querySelector("td:nth-child(5)"));
+  const limit = within(limited as HTMLElement).getByText(/^\s*\/ /);
+  expect(limit).toHaveClass("text-muted-foreground");
+  const track = limited?.querySelector(
+    "[aria-hidden][data-missing], [aria-hidden].bg-track"
+  );
+  expect(track).not.toBeNull();
+  // The track follows the figure, and every live row keeps the same slot.
+  expect(
+    limit.compareDocumentPosition(track as Node) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+  for (const cell of [limited, unlimited])
+    expect(cell?.querySelector(".w-12")).toHaveClass(
+      "[@container(max-width:480px)]:hidden"
+    );
+  result.unmount();
+  result.transport.dispose();
+});
+
 it("shows every unpaged row below the virtualization threshold and links row hover to its chart", () => {
   const focus = vi.fn();
   const rows = Array.from({ length: 40 }, (_, i) => ({

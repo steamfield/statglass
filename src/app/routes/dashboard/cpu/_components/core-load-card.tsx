@@ -56,8 +56,8 @@ export function CoreLoadCard({
   );
   const ariaLabel = useChartLabel({
     subject: "Per-core load",
-    span,
-    now: `each column a ${resolutionWords(bucketMs)}`,
+    // A static clause, so the label takes no live figures and no 10 s edge.
+    span: `${span}, each column a ${resolutionWords(bucketMs)}`,
   });
 
   return (

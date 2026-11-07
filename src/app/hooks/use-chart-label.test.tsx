@@ -75,6 +75,28 @@ describe("useChartLabel", () => {
     expect(fresh?.match(/now \d+/)?.[0]).not.toBe(held?.match(/now \d+/)?.[0]);
   });
 
+  it("takes the first real figures at once while frames are stalled", async () => {
+    let setNow: (now: string) => void = () => {};
+    function HistoryProbe() {
+      const [now, set] = useState("now —");
+      setNow = set;
+      return (
+        <span data-testid="label">
+          {useChartLabel({ subject: "GPU", span: "last 15 minutes", now })}
+        </span>
+      );
+    }
+    const { transport } = renderWithProviders(<HistoryProbe />);
+    await act(async () => transport.tick());
+    expect(label()).toBe("GPU, last 15 minutes, now —.");
+    // The history read lands with no new frame: the figures replace the dash.
+    act(() => setNow("now 34%"));
+    expect(label()).toBe("GPU, last 15 minutes, now 34%.");
+    // Real figures hold for the bucket again.
+    act(() => setNow("now 40%"));
+    expect(label()).toBe("GPU, last 15 minutes, now 34%.");
+  });
+
   it("reads without figures and without the stream", () => {
     renderWithProviders(
       <Probe

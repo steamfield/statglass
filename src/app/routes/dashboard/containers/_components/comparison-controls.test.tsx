@@ -7,12 +7,22 @@ import {
 } from "@core/mock/docker";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import type { ComponentProps } from "react";
 import { expect, it, vi } from "vitest";
+import { useSeriesFocus } from "~/hooks/use-series-focus";
 import { ChartChooser } from "./chart-chooser";
 import { ComparisonChart } from "./comparison-chart";
 import { mergeCoverage } from "./history-details";
 import { HistoryNotice } from "./history-notice";
 import { MonitoringDialog } from "./monitoring-dialog";
+
+/** The route owns focus; tests own it here the same way. */
+function FocusedChart(
+  props: Omit<ComponentProps<typeof ComparisonChart>, "focus">
+) {
+  const focus = useSeriesFocus();
+  return <ComparisonChart {...props} focus={focus} />;
+}
 
 it("blocks a seventh chart choice and never changes recording", async () => {
   const candidates = Array.from({ length: 7 }, (_, i) => ({
@@ -52,7 +62,7 @@ it("blocks a seventh chart choice and never changes recording", async () => {
 it("labels comparison gap bands with Rust's label, never the reason key", () => {
   const container = mockContainer(0, 3_600_000);
   const result = renderWithProviders(
-    <ComparisonChart
+    <FocusedChart
       series={[{ container, points: [], slot: 1 }]}
       metric="cpu"
       from={0}
@@ -285,7 +295,7 @@ it("provides partial values, interval min/avg/max, keyboard focus and pinned det
     container
   );
   const result = renderWithProviders(
-    <ComparisonChart
+    <FocusedChart
       series={[{ container, points, slot: 1 }]}
       metric="cpu"
       from={0}

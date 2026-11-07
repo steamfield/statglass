@@ -458,3 +458,67 @@ it("uses the shared keyboard selection and dismissal contract", async () => {
   result.unmount();
   transport.dispose();
 });
+
+const dimmedLines = () =>
+  screen
+    .getByRole("img", { name: /^(CPU|Memory) by container/ })
+    .querySelectorAll('g[opacity="0.3"]').length;
+
+it("syncs focus between the chart and Containers now in both directions", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-11"],
+    historyRows: 1,
+  });
+  const result = renderWithProviders(<ContainersRoute />, { transport });
+  try {
+    await result.user.click(await screen.findByRole("button", { name: "api" }));
+    const table = screen.getByRole("table", { name: "Containers now" });
+    const row = (id: string) => {
+      const found = table.querySelector(`[data-container-id="${id}"]`);
+      if (!found) throw new Error(`Missing row ${id}`);
+      return found;
+    };
+    expect(row("container-0")).toHaveClass("bg-selected");
+    await result.user.click(screen.getByRole("button", { name: "api" }));
+    await result.user.unhover(screen.getByRole("button", { name: "api" }));
+    fireEvent.blur(screen.getByRole("button", { name: "api" }));
+    expect(row("container-0")).not.toHaveClass("bg-selected");
+    expect(dimmedLines()).toBe(0);
+
+    fireEvent.pointerEnter(row("container-1"));
+    expect(dimmedLines()).toBeGreaterThan(0);
+    fireEvent.pointerLeave(row("container-1"));
+    expect(dimmedLines()).toBe(0);
+  } finally {
+    result.unmount();
+    transport.dispose();
+  }
+});
+
+it("does not dim every line when the pinned container leaves the chart", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-11"],
+    historyRows: 1,
+  });
+  const result = renderWithProviders(<ContainersRoute />, { transport });
+  try {
+    await result.user.click(await screen.findByRole("button", { name: "api" }));
+    expect(dimmedLines()).toBeGreaterThan(0);
+    await result.user.click(
+      screen.getByRole("button", { name: /Choose…|\+\d+ more/ })
+    );
+    await result.user.click(
+      screen.getByRole("checkbox", { name: "Chart api" })
+    );
+    await result.user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("img", { name: /^CPU by container/ })
+      ).not.toHaveAttribute("aria-label", expect.stringContaining("api"))
+    );
+    expect(dimmedLines()).toBe(0);
+  } finally {
+    result.unmount();
+    transport.dispose();
+  }
+});

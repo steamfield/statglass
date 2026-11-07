@@ -1,6 +1,10 @@
 import { useRef } from "react";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 
+/** Whether a figures clause carries a reading: a digit, not just a dash. */
+const hasReading = (now: string | undefined) =>
+  now !== undefined && /[0-9]/.test(now);
+
 export interface ChartLabel {
   /** What the chart shows: "CPU", "GPU power", "Network: upload above the line, download below". */
   subject: string;
@@ -30,10 +34,17 @@ export function useChartLabel({
   // The figures are read again on a new bucket, or when the chart itself
   // changes (another subject or span re-reads them at once). A render-time
   // latch: the same inputs always give the same text, where state would
-  // cost a second render on every new bucket.
+  // cost a second render on every new bucket. Figures that never arrived
+  // (only "—" while a history read is in flight) don't hold: frames may be
+  // stalled, and the edge with them.
   const key = `${edge}|${subject}|${span}`;
   const held = useRef({ key, now });
-  if (edge === null || held.current.key !== key) held.current = { key, now };
+  if (
+    edge === null ||
+    held.current.key !== key ||
+    !hasReading(held.current.now)
+  )
+    held.current = { key, now };
   const figures = held.current.now;
   const label = `${subject}, ${span}${figures ? `, ${figures}` : ""}.`;
   return brushable ? `${label} Drag to select a range.` : label;

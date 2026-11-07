@@ -48,7 +48,20 @@ export interface ChartTableProps {
 const STATS = ["min", "avg", "max"] as const;
 const STAT_LABEL = { min: "Min", avg: "Avg", max: "Max" } as const;
 const helper = columnHelper<ChartTableRow>();
-const rowId = (row: ChartTableRow) => `${row.kind}-${row.t}`;
+/** Two gaps clipped to the same range start differ by label. */
+const rowId = (row: ChartTableRow) =>
+  row.kind === "gap" ? `gap-${row.t}-${row.label}` : `bucket-${row.t}`;
+/**
+ * The Time column stays in view while value columns scroll under it, on the
+ * surface's fill so scrolled cells don't show through.
+ */
+const STICKY = {
+  card: "sticky left-0 z-[1] bg-card",
+  popover: "sticky left-0 z-[1] bg-popover",
+} as const;
+/** A body cell's fill hides the row's hover tint, so it layers the tint on. */
+const ROW_HOVER =
+  "[tr:hover>&]:bg-[image:linear-gradient(var(--color-selected),var(--color-selected))]";
 const byTime = (a: ChartTableRow, b: ChartTableRow) =>
   a.t - b.t || (a.kind === b.kind ? 0 : a.kind === "gap" ? -1 : 1);
 const sameDay = (a: number, b: number) =>
@@ -82,12 +95,17 @@ function statColumns(series: ChartTableSeries, i: number) {
 
 function chartColumns(
   series: readonly ChartTableSeries[],
-  clock: (t: number) => string
+  clock: (t: number) => string,
+  sticky: string
 ) {
   const time = helper.accessor((row) => row.t, {
     id: "time",
     header: "Time",
-    meta: { align: "left" },
+    meta: {
+      align: "left",
+      className: sticky,
+      cellClassName: cn(sticky, ROW_HOVER),
+    },
     cell: ({ getValue }) => clock(getValue()),
   });
   if (series.length === 1 && series[0])
@@ -122,9 +140,11 @@ export function ChartTable({
   className,
 }: ChartTableProps) {
   const dates = !sameDay(fromMs, Math.max(fromMs, toMs - 1));
+  const sticky = STICKY[surface];
   const columns = useMemo(
-    () => chartColumns(series, (t) => formatBucketTime(t, bucketMs, dates)),
-    [series, bucketMs, dates]
+    () =>
+      chartColumns(series, (t) => formatBucketTime(t, bucketMs, dates), sticky),
+    [series, bucketMs, dates, sticky]
   );
   const { table, rows: sorted } = useDataTable({
     data: rows,
@@ -137,7 +157,9 @@ export function ChartTable({
   const renderRow = (row: Row<TableFeatures, ChartTableRow>) =>
     row.original.kind === "gap" ? (
       <TableRow className="text-[12px]">
-        <TableCell className="figures whitespace-nowrap">
+        <TableCell
+          className={cn("figures whitespace-nowrap", sticky, ROW_HOVER)}
+        >
           {formatBucketTime(row.original.t, bucketMs, dates)}
         </TableCell>
         <TableCell
@@ -153,7 +175,15 @@ export function ChartTable({
       </TableRow>
     );
   return (
-    <div className={cn("overflow-auto", className)}>
+    <section
+      aria-label={label}
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard scrolling needs a focusable table viewport
+      tabIndex={0}
+      className={cn(
+        "overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        className
+      )}
+    >
       <Table aria-label={label}>
         <TableHeader
           className={cn(
@@ -165,6 +195,6 @@ export function ChartTable({
         </TableHeader>
         <DataTable table={table} rows={sorted} renderRow={renderRow} />
       </Table>
-    </div>
+    </section>
   );
 }

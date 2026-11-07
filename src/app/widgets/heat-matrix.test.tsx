@@ -84,4 +84,14 @@ describe("HeatMatrix", () => {
     expect(getByText("68 °F")).toBeTruthy();
     expect(getByText("230 °F")).toBeTruthy();
   });
+
+  it("draws its end labels in the 4.5:1 muted text, not the faint tone", () => {
+    const { getByText } = render(
+      <HeatScaleLegend minLabel="0%" maxLabel="80%+" />
+    );
+    for (const label of ["0%", "80%+"]) {
+      expect(getByText(label)).toHaveClass("text-muted-foreground");
+      expect(getByText(label)).not.toHaveClass("text-fg-faint");
+    }
+  });
 });
