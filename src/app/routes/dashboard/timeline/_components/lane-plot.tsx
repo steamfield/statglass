@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { cssVar, useThemeVersion, withAlpha } from "~/components/charts/theme";
+import { gapEdgePoints } from "~/widgets/gap-edge-dot";
 import type { PlotSeries } from "../_lib/lane-model";
 
 export interface LanePlotProps {
@@ -99,14 +100,11 @@ export const LanePlot = memo(function LanePlot({
                     return g;
                   },
               }),
-          points: {
-            show: true,
-            size: 7,
-            width: 1.5,
-            stroke: ink,
-            fill: background,
-            filter: () => edgesRef.current[k] ?? [],
-          },
+          points: gapEdgePoints(
+            ink,
+            background,
+            () => edgesRef.current[k] ?? []
+          ),
         }
       );
       if (s.envelope) {

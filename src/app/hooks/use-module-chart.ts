@@ -19,6 +19,8 @@ export interface ModuleChart {
   brush: boolean;
   /** The range follows now; false once its end is fixed. */
   live: boolean;
+  /** The range's fixed end, or null while it follows now. */
+  endMs: number | null;
   /** "last 15 minutes" or "selected dates", for titles and labels. */
   span: string;
   xTicks: string[];
@@ -51,6 +53,7 @@ export function useModuleChart(
     gaps,
     brush,
     live,
+    endMs,
     span: spanWords(windowMs, endMs),
     xTicks: historyTicks(fromMs, toMs, live, ticks),
     windowMs,

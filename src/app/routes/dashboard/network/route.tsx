@@ -133,6 +133,7 @@ export default function NetworkRoute() {
                   <LiveMirrorChart
                     brush={brush}
                     gaps={gaps}
+                    subject="Network"
                     upKey="net.tx_total"
                     downKey="net.rx_total"
                     upLabel="Upload"

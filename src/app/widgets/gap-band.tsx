@@ -1,4 +1,6 @@
+import { cssPercent } from "@core/format";
 import { PAUSE_EXPLANATION } from "@core/history-state";
+import { DAY_MS } from "@core/time-grid";
 import { Pause } from "lucide-react";
 import { cn } from "~/lib/utils";
 
@@ -16,8 +18,11 @@ export interface GapBandProps {
    */
   rangeFromMs?: number;
   rangeToMs?: number;
-  /** Where the label sits: straddling the bottom edge, or hidden. */
-  labelPosition?: "bottom" | "none";
+  /**
+   * Where the label sits: straddling the bottom edge, in the middle of the
+   * band (Timeline lanes, where the edge is the next lane), or hidden.
+   */
+  labelPosition?: "bottom" | "center" | "none";
 }
 
 /**
@@ -41,8 +46,8 @@ export function GapBand({
     const span = Math.max(1, rangeToMs - rangeFromMs);
     const a = Math.max(0, (fromMs - rangeFromMs) / span);
     const b = Math.min(1, (toMs - rangeFromMs) / span);
-    left = `${(a * 100).toFixed(2)}%`;
-    width = `${(Math.max(0, b - a) * 100).toFixed(2)}%`;
+    left = cssPercent(a, 2);
+    width = cssPercent(Math.max(0, b - a), 2);
   }
   const positioned = left !== undefined;
   return (
@@ -52,16 +57,18 @@ export function GapBand({
       data-gap-from={fromMs}
       data-gap-to={toMs}
       className={cn(
-        "pointer-events-none flex items-end justify-center border-border-strong border-x border-dashed bg-[repeating-linear-gradient(135deg,var(--color-grid)_0_1px,transparent_1px_7px)]",
+        "pointer-events-none flex justify-center border-border-strong border-x border-dashed bg-gap-hatch",
+        labelPosition === "center" ? "items-center" : "items-end",
         positioned ? "absolute inset-y-0" : "relative h-full min-h-12 w-full"
       )}
       style={positioned ? { left, width } : undefined}
     >
-      {labelPosition === "bottom" && showCaption && (
+      {labelPosition !== "none" && showCaption && (
         <span
           title={reason === "paused" ? PAUSE_EXPLANATION : label}
           className={cn(
-            "inline-flex translate-y-1/2 items-center gap-1 whitespace-nowrap text-[11px] text-fg-subtle",
+            "inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-fg-subtle",
+            labelPosition === "bottom" && "translate-y-1/2",
             reason !== "paused" &&
               "rounded-control border border-border bg-card px-2 py-1"
           )}
@@ -109,7 +116,7 @@ export function GapBands({
         label={g.label}
         reason={g.reason}
         showCaption={g.showCaption}
-        labelPosition={rangeToMs - rangeFromMs > 86_400_000 ? "none" : "bottom"}
+        labelPosition={rangeToMs - rangeFromMs > DAY_MS ? "none" : "bottom"}
         rangeFromMs={rangeFromMs}
         rangeToMs={rangeToMs}
       />

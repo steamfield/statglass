@@ -1,5 +1,5 @@
 import { heatmapAlpha } from "@core/chart-math";
-import { MISSING } from "@core/format";
+import { cssPercent, MISSING } from "@core/format";
 import { type CSSProperties, memo, type ReactElement, useRef } from "react";
 import { cn } from "~/lib/utils";
 import { GapBands, type GapSpan } from "./gap-band";
@@ -49,9 +49,6 @@ export interface HeatMatrixProps {
   gaps?: readonly GapSpan[];
 }
 
-const HATCH =
-  "repeating-linear-gradient(135deg, var(--color-grid) 0 1px, transparent 1px 4px)";
-
 interface CellProps {
   v: number | null;
   min: number;
@@ -63,12 +60,12 @@ const Cell = memo(function Cell({ v, min, max }: CellProps) {
   return (
     <span
       data-gap={a === null || undefined}
-      className="h-2.5 rounded-hair"
+      className={cn("h-2.5 rounded-hair", a === null && "bg-gap-hatch-dense")}
       style={
         a === null
-          ? { background: HATCH }
+          ? undefined
           : ({
-              "--t": `${(a * 100).toFixed(0)}%`,
+              "--t": cssPercent(a, 0),
               background: "color-mix(in srgb, var(--a) var(--t), transparent)",
             } as CSSProperties)
       }

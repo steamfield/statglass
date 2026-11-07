@@ -1,5 +1,5 @@
+import { cssPercent } from "@core/format";
 import type { Event } from "@core/generated/bindings";
-import { Pause } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { GapBand } from "~/widgets/gap-band";
 import type { LaneData } from "../_hooks/use-timeline-data";
@@ -31,7 +31,7 @@ export function LaneOverlays({
           key={t.tMs}
           aria-hidden
           className="pointer-events-none absolute inset-y-0 w-px bg-border-subtle"
-          style={{ left: `${fractionAt(t.tMs, fromMs, toMs) * 100}%` }}
+          style={{ left: cssPercent(fractionAt(t.tMs, fromMs, toMs)) }}
         />
       ))}
 
@@ -39,7 +39,6 @@ export function LaneOverlays({
         const lane = lanes.findIndex((l) => l.def.module === b.module);
         if (b.module !== null && lane === -1) return null;
         const wide = (b.toMs - b.fromMs) / (toMs - fromMs) > 0.12;
-        const mid = fractionAt((b.fromMs + b.toMs) / 2, fromMs, toMs);
         return (
           <div
             key={`${b.fromMs}-${b.module ?? "all"}`}
@@ -63,22 +62,9 @@ export function LaneOverlays({
               reason={b.reason}
               rangeFromMs={fromMs}
               rangeToMs={toMs}
-              labelPosition="none"
+              labelPosition="center"
+              showCaption={wide && b.showCaption}
             />
-            {wide && b.showCaption && (
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap font-normal text-[11px] text-muted-foreground",
-                  b.reason !== "paused" &&
-                    "rounded-control border border-border bg-card px-2 py-[3px]"
-                )}
-                style={{ left: `${mid * 100}%` }}
-              >
-                {b.reason === "paused" && <Pause className="size-3" />}
-                {b.label}
-              </span>
-            )}
           </div>
         );
       })}

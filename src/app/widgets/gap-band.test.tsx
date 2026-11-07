@@ -38,6 +38,14 @@ describe("GapBand", () => {
     expect(queryByText(props.label)).toBeNull();
     expect(getByRole("note", { name: props.label })).toBeTruthy();
   });
+
+  it("centres the label inside the band instead of on its bottom edge", () => {
+    const { getByRole, getByText, rerender } = render(<GapBand {...props} />);
+    expect(getByText(props.label)).toHaveClass("translate-y-1/2");
+    rerender(<GapBand {...props} labelPosition="center" />);
+    expect(getByRole("note")).toHaveClass("items-center");
+    expect(getByText(props.label)).not.toHaveClass("translate-y-1/2");
+  });
 });
 
 describe("GapBands", () => {

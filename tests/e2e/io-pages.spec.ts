@@ -48,7 +48,7 @@ for (const theme of THEMES) {
 for (const p of [
   {
     route: "/dashboard/network",
-    chart: /^Upload above the line/,
+    chart: /^Network: upload above the line/,
     row: "Upload",
   },
   { route: "/dashboard/disk", chart: /^Disk I\/O: read above/, row: "Read" },

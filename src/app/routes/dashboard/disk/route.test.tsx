@@ -243,6 +243,16 @@ describe("Disk and Memory pages over a range (D-099)", () => {
     expect(screen.queryByRole("button", { name: /^Quit / })).toBeNull();
   });
 
+  it("Disk I/O x ticks follow the module axis rule while live, ending at now", async () => {
+    render(<DiskRoute />);
+    await screen.findByRole("img", {
+      name: "Disk I/O: read above the line, write below, last 5 minutes. Drag to select a range.",
+    });
+    // One tick row under both plots: five relative ticks, the last "now".
+    expect(screen.getByText("now")).toBeVisible();
+    expect(screen.getAllByText(/^−\d+(s|m)$/)).toHaveLength(4);
+  });
+
   it("reports a selected totals failure while leaving the chart and brush usable", async () => {
     const transport = createMockTransport({
       now: () => NOW,

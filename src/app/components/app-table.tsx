@@ -70,7 +70,7 @@ export function AppsNote({ children }: { children: ReactNode }) {
 export function UnrecordedRange({ children }: { children: ReactNode }) {
   return (
     <div className="px-4 pt-1 pb-3.5">
-      <div className="flex h-33 items-center justify-center rounded-lg border border-border-strong/40 border-dashed bg-[repeating-linear-gradient(135deg,var(--color-grid)_0_1px,transparent_1px_7px)]">
+      <div className="flex h-33 items-center justify-center rounded-lg border border-border-strong/40 border-dashed bg-gap-hatch">
         <span className="rounded-md border border-border bg-card px-2 py-1 font-normal text-[11px] text-fg-subtle">
           {children}
         </span>

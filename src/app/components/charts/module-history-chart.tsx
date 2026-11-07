@@ -34,7 +34,16 @@ export type ModuleYAxis =
 
 const NO_VALUES: readonly (number | null)[] = [];
 
-/** The values an auto ceiling fits: every drawn line, app lines included. */
+function maxOf(values: readonly (number | null)[]): number | null {
+  let max: number | null = null;
+  for (const v of values) if (v !== null && (max === null || v > max)) max = v;
+  return max;
+}
+
+/**
+ * What an auto ceiling fits: every drawn line, app lines included. Several
+ * lines reduce to their maxima, so a 1 Hz render does not copy every point.
+ */
 function fitted(
   axis: ModuleYAxis,
   lines: StreamAreaProps["series"]
@@ -42,33 +51,26 @@ function fitted(
   if (axis === "percent" || axis.ceiling !== "auto") return NO_VALUES;
   return lines.length === 1
     ? (lines[0]?.values ?? NO_VALUES)
-    : lines.flatMap((l) => l.values);
+    : lines.map((l) => maxOf(l.values));
 }
 
 function useYAxis(
   axis: ModuleYAxis,
   lines: StreamAreaProps["series"],
-  tEndMs: number,
-  windowMs: number
+  chart: ModuleChart
 ) {
   const auto = useNiceCeiling(
     fitted(axis, lines),
-    tEndMs,
+    chart.series.tEndMs,
     axis === "percent" ? 1 : (axis.min ?? 1),
-    windowMs
+    chart.windowMs,
+    { endMs: chart.endMs, intervalMs: chart.series.intervalMs }
   );
   if (axis === "percent")
     return { yMax: 100, gridlines: PERCENT_GRID, yTicks: PERCENT_Y_TICKS };
   const yMax = axis.ceiling === "auto" ? auto : axis.ceiling;
-  const { gridlines } = ceilingAxis(yMax);
-  return {
-    yMax,
-    gridlines,
-    yTicks: [...gridlines]
-      .reverse()
-      .map((value) => ({ value, label: axis.format(value) })),
-    gutter: axis.gutter,
-  };
+  const { gridlines, yTicks } = ceilingAxis(yMax, axis.format);
+  return { yMax, gridlines, yTicks, gutter: axis.gutter };
 }
 
 /**
@@ -96,7 +98,7 @@ export function ModuleHistoryChart({
   annotations?: StreamAreaProps["annotations"];
 }) {
   const { series, gaps } = chart;
-  const y = useYAxis(yAxis, lines, series.tEndMs, chart.windowMs);
+  const y = useYAxis(yAxis, lines, chart);
   const brush = useAreaBrush(series, height, chart.brush, gaps);
   return (
     <div className="flex flex-col gap-1.5">

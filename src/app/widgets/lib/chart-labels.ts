@@ -43,6 +43,12 @@ export const PERCENT_Y_TICKS: readonly { value: number; label: string }[] = [
  * ("4W") and leaves the half bare; a function formats both. `zero` adds a
  * bare "0" tick at the baseline.
  */
+export function ceilingAxis(ceiling: number): { gridlines: number[] };
+export function ceilingAxis(
+  ceiling: number,
+  format: string | ((value: number) => string),
+  options?: { zero?: boolean }
+): { gridlines: number[]; yTicks: { value: number; label: string }[] };
 export function ceilingAxis(
   ceiling: number,
   format?: string | ((value: number) => string),

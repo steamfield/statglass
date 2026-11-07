@@ -271,6 +271,9 @@ function DiskActivity({
             <DiskIoCharts
               page={chart.data}
               range={range}
+              fixedEndMs={
+                selection === null && fixedEnd === null ? null : range.toMs
+              }
               secondary={secondary}
               onSecondary={(response) => patch({ response })}
             />

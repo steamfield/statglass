@@ -43,7 +43,9 @@ test("fixed dates and Live work across Disk, Network and Power", async ({
   await page.getByRole("button", { name: "Apply", exact: true }).click();
   await page.locator("[data-sidebar-item][href='/dashboard/network']").click();
   await expect(
-    page.getByRole("img", { name: /Upload above the line.*selected dates/ })
+    page.getByRole("img", {
+      name: /Network: upload above the line.*selected dates/,
+    })
   ).toBeVisible();
   await expect(page.getByText("Loading chart history…")).toHaveCount(0);
   await page.locator("[data-sidebar-item][href='/dashboard/power']").click();

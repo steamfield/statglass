@@ -18,6 +18,8 @@ import {
 } from "@core/format";
 import { METRIC_CODES } from "@core/generated/bindings";
 import { windowLabel, windowWords } from "@core/live-window";
+import { MINUTE_MS } from "@core/time-grid";
+import { mirrorAriaLabel } from "~/components/charts/mirror-chart";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
 import { useHostRecord } from "~/hooks/use-host-record";
@@ -25,6 +27,7 @@ import { useModuleStates } from "~/hooks/use-module-states";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
+import { useUnits } from "~/hooks/use-units";
 import { useTransport } from "~/lib/transport-context";
 import { useHost } from "~/stores/host-store";
 import {
@@ -38,7 +41,6 @@ import {
   usePrimaryIface,
   useSeriesWindow,
 } from "~/stores/live-selectors";
-import { useSettings } from "~/stores/settings-store";
 import { InlineBar } from "~/widgets/inline-bar";
 import { MeterTrack } from "~/widgets/meter-track";
 import { MirrorBars } from "~/widgets/mirror-bars";
@@ -61,8 +63,10 @@ function useOpen() {
 }
 
 /** The charts' window at 1 s; slower intervals keep the 60 samples (plan 4.15). */
-const WINDOW_MS = 60_000;
+const WINDOW_MS = MINUTE_MS;
 const NET_WINDOW_MS = 48_000;
+/** Smallest ceiling the network bars autoscale to, B/s (as on the Network page). */
+const NET_MIN_CEILING = 100_000;
 
 export function LiveCpuCard({ compact = false, onToggle }: PresentationProps) {
   const open = useOpen();
@@ -129,7 +133,7 @@ export function LiveMemoryCard({
   const notice = useReadFailure("mem.used");
   const total = host?.info.mem_total_bytes ?? null;
   // Used follows the GB/GiB setting; the total is the marketing size (plan 4.9).
-  const bytes = useSettings((s) => s.units.memory) === "binary" ? "GiB" : "GB";
+  const bytes = useUnits().bytes;
   const frac = (v: number | null) => ratio(v, total);
   const codes = METRIC_CODES["mem.pressure_level"];
   const level =
@@ -340,7 +344,7 @@ export function LiveNetworkCard({
   const open = useOpen();
   const iface = usePrimaryIface();
   const { lan, publicIp } = useAddresses(compact ? null : iface);
-  const bits = useSettings((s) => s.units.network) === "bits_per_sec";
+  const { rate: rateUnits } = useUnits();
   const rxKey = "net.rx_total";
   const txKey = "net.tx_total";
   const windowMs = useScaledWindow(NET_WINDOW_MS);
@@ -350,9 +354,17 @@ export function LiveNetworkCard({
   const txNow = useHost((s) => held(s, txKey));
   const rate = (bps: number | null) => {
     if (bps === null) return { value: MISSING };
-    const q = rateParts(bps, { units: bits ? "Mbps" : "MBps" });
+    const q = rateParts(bps, { units: rateUnits });
     return { value: q.value, unit: q.unit };
   };
+  // Held ceilings: per-tick maxima would rescale the bars every second.
+  const upMax = useNiceCeiling(tx.values, tx.tEndMs, NET_MIN_CEILING, windowMs);
+  const downMax = useNiceCeiling(
+    rx.values,
+    rx.tEndMs,
+    NET_MIN_CEILING,
+    windowMs
+  );
   const rxNotice = useReadFailure("net.rx_total");
   const txNotice = useReadFailure("net.tx_total");
   return (
@@ -393,7 +405,14 @@ export function LiveNetworkCard({
         intervalMs={rx.intervalMs}
         tEndMs={rx.tEndMs}
         accent="net"
-        ariaLabel={`Upload above the line, download below, last ${windowWords(windowMs)}`}
+        ariaLabel={mirrorAriaLabel({
+          subject: "Network",
+          upLabel: "Upload",
+          downLabel: "Download",
+          span: `last ${windowWords(windowMs)}`,
+        })}
+        upMax={upMax}
+        downMax={downMax}
         upHeight={compact ? 6 : 18}
         downHeight={compact ? 8 : 30}
       />
@@ -431,7 +450,7 @@ function BatteryDetails() {
       ? source === "adapter" || source === "charging"
         ? "On power"
         : MISSING
-      : formatHoursMinutes(b.timeRemainingMin * 60_000);
+      : formatHoursMinutes(b.timeRemainingMin * MINUTE_MS);
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">

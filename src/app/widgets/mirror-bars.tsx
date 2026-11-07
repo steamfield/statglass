@@ -1,4 +1,5 @@
 import { clamp01 } from "@core/chart-math";
+import { cssPercent } from "@core/format";
 import { cn } from "~/lib/utils";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
 import styles from "./lib/scroll-layer.module.css";
@@ -6,17 +7,20 @@ import { useTickScroll } from "./lib/use-tick-scroll";
 
 export interface MirrorBarsProps {
   /** Upload (or read) per interval, drawn above the baseline. `null` is a gap. */
-  up: (number | null)[];
+  up: readonly (number | null)[];
   /** Download (or write), drawn below. Same length as `up`. */
-  down: (number | null)[];
+  down: readonly (number | null)[];
   intervalMs: number;
   /** Timestamp of the last bar; when it advances by one interval the bars slide. */
   tEndMs?: number | undefined;
   accent: Accent;
   ariaLabel: string;
-  /** Scale ceilings per side. Default: the largest value on that side. */
-  upMax?: number;
-  downMax?: number;
+  /**
+   * Scale ceilings per side. The owner holds them steady across ticks
+   * (`useNiceCeiling`), so the bars never rescale every second.
+   */
+  upMax: number;
+  downMax: number;
   /** Heights in px of the two halves (18 above, 30 below). */
   upHeight?: number;
   downHeight?: number;
@@ -27,16 +31,10 @@ export interface MirrorBarsProps {
   highlight?: { from: number; to: number } | null;
 }
 
-function heights(values: (number | null)[], max: number, h: number) {
+function heights(values: readonly (number | null)[], max: number, h: number) {
   return values.map((v) =>
     v == null || !Number.isFinite(v) || max <= 0 ? null : clamp01(v / max) * h
   );
-}
-
-function maxOf(values: (number | null)[]): number {
-  let m = 0;
-  for (const v of values) if (v != null && Number.isFinite(v) && v > m) m = v;
-  return m;
 }
 
 /**
@@ -59,9 +57,9 @@ export function MirrorBars({
   highlight,
 }: MirrorBarsProps) {
   const n = Math.max(up.length, down.length, 1);
-  const upH = heights(up, upMax ?? maxOf(up), upHeight);
-  const downH = heights(down, downMax ?? maxOf(down), downHeight);
-  const shift = `${(100 / n).toFixed(3)}%`;
+  const upH = heights(up, upMax, upHeight);
+  const downH = heights(down, downMax, downHeight);
+  const shift = cssPercent(1 / n);
   const upRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
   const downRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
   const slots = Array.from({ length: n }, (_, i) => i);

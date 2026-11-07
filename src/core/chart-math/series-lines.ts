@@ -1,4 +1,5 @@
 import type { DockerHistoryPoint } from "@core/generated/bindings";
+import { splitRuns } from "./gaps";
 
 export type ComparisonMetric = "cpu" | "memory";
 export interface SeriesVertex {
@@ -39,7 +40,6 @@ export function pointCovered(
   return metric === "cpu" ? point.cpu_covered : point.memory_covered;
 }
 /** Timestamp geometry only: quality and metric semantics arrive from Rust (R-11/R-46). */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function buildSeriesRuns(
   points: readonly DockerHistoryPoint[],
   metric: ComparisonMetric,
@@ -49,58 +49,51 @@ export function buildSeriesRuns(
   height: number,
   ceiling: number
 ) {
-  const runs: SeriesVertex[][] = [];
-  const dots: SeriesVertex[] = [];
+  const span = Math.max(1, to - from);
   const bands: SeriesBand[] = [];
-  let run: SeriesVertex[] = [];
-  let previousEnd: number | null = null;
-  const flush = () => {
-    if (run.length === 1 && run[0]) dots.push(run[0]);
-    else if (run.length > 1) runs.push(run);
-    run = [];
-  };
+  // A missing value is a gap: null, so the runs break there.
+  const vertices: ((SeriesVertex & { end: number }) | null)[] = [];
   for (const point of points) {
     if (point.time_ms < from || point.time_ms >= to) continue;
     const value = pointValue(point, metric);
     if (value === null) {
-      flush();
-      previousEnd = null;
+      vertices.push(null);
       continue;
     }
     const partial = !pointCovered(point, metric);
-    const vertex = {
-      x: ((point.time_ms - from) / Math.max(1, to - from)) * width,
+    const x = ((point.time_ms - from) / span) * width;
+    vertices.push({
+      x,
       y: height - (value / ceiling) * height,
       time: point.time_ms,
       value,
       partial,
-    };
+      end: point.time_ms + point.duration_ms,
+    });
     const minimum = pointValue(point, metric, "minimum");
     const maximum = pointValue(point, metric, "maximum");
     if (minimum !== null && maximum !== null) {
       bands.push({
-        x: vertex.x,
+        x,
         width: partial
           ? 0
           : ((Math.min(to, point.time_ms + point.duration_ms) - point.time_ms) /
-              Math.max(1, to - from)) *
+              span) *
             width,
         minimumY: height - (minimum / ceiling) * height,
         maximumY: height - (maximum / ceiling) * height,
         partial,
       });
     }
-    if (partial) {
-      flush();
-      dots.push(vertex);
-      previousEnd = null;
-      continue;
-    }
-    if (previousEnd !== point.time_ms) flush();
-    run.push(vertex);
-    previousEnd = point.time_ms + point.duration_ms;
   }
-  flush();
+  // A partial bucket stands alone; covered ones join only where they touch.
+  const split = splitRuns(
+    vertices,
+    (v) => v !== null,
+    (a, b) => !a.partial && !b.partial && a.end === b.time
+  ).map((run) => run.items.map(({ end: _end, ...vertex }) => vertex));
+  const runs = split.filter((run) => run.length > 1);
+  const dots = split.flatMap((run) => (run.length === 1 ? run : []));
   return { runs, dots, bands };
 }
 export interface RankedCandidate {

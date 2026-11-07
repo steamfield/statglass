@@ -10,3 +10,4 @@
 /* Design system utilities */
 @import "./effects.css" layer(components);
 @import "./cards.css";
+@import "./utilities.css";

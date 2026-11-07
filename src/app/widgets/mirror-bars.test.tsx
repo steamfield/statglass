@@ -9,6 +9,8 @@ const props: MirrorBarsProps = {
   tEndMs: 1_760_000_000_000,
   accent: "net",
   ariaLabel: "Upload above the line, download below, last 4 seconds",
+  upMax: 12,
+  downMax: 26,
 };
 
 describe("MirrorBars", () => {
@@ -28,7 +30,7 @@ describe("MirrorBars", () => {
     expect(container.querySelectorAll("[data-gap]")).toHaveLength(2);
   });
 
-  it("scales each side to its own max by default", () => {
+  it("scales each side to its own ceiling", () => {
     const { container } = render(<MirrorBars {...props} />);
     const heights = [...container.querySelectorAll("span")].map(
       (s) => (s as HTMLElement).style.height

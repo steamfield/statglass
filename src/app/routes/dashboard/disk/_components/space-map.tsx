@@ -23,8 +23,6 @@ import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
 import { canOpen, itemsLabel, kindLabel, shareLabel } from "../_lib/space";
 
-const HATCH =
-  "repeating-linear-gradient(135deg,var(--color-grid) 0 1px,transparent 1px 7px)";
 const ramp = (step: 2 | 3 | 4) =>
   `color-mix(in srgb, var(--color-disk) var(--ramp-${step}), transparent)`;
 
@@ -216,7 +214,7 @@ function fill(t: SpaceTile, active: boolean): CSSProperties {
     case "volume":
       return { background: "var(--color-track)" };
     default:
-      return { background: HATCH };
+      return {};
   }
 }
 
@@ -271,7 +269,8 @@ const Tile = memo(function Tile({
               : "px-2 py-1.5",
         opens ? "cursor-pointer" : "cursor-default",
         active && "outline outline-1 outline-ring -outline-offset-1",
-        gap && "border border-border-strong border-dashed"
+        gap && "border border-border-strong border-dashed",
+        gap && !t.frame && !t.live && "bg-gap-hatch"
       )}
       style={{
         left: t.x,
