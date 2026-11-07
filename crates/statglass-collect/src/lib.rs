@@ -35,7 +35,9 @@ mod cadence;
 pub mod calib;
 pub mod calls;
 mod container_names;
+mod counters;
 pub mod host_info;
+mod net;
 mod process;
 pub mod process_control;
 

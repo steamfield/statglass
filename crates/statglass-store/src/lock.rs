@@ -17,21 +17,24 @@ use rustix::io::Errno;
 use crate::error::{Result, StoreError};
 
 /// `history.sqlite` -> `history.sqlite.lock`.
-pub fn lock_path(db_path: &Path) -> PathBuf {
+fn lock_path(db_path: &Path) -> PathBuf {
     let mut p = db_path.as_os_str().to_owned();
     p.push(".lock");
     PathBuf::from(p)
 }
 
-/// Held exclusive lock; released when dropped.
+/// Held exclusive lock; released when dropped. The agent takes it directly to keep a
+/// collector from writing while it backs up or restores the database file.
 #[derive(Debug)]
-pub(crate) struct WriterLock {
+pub struct WriterLock {
     _file: File,
 }
 
 impl WriterLock {
-    /// Takes the lock for the database at `db_path` without waiting.
-    pub(crate) fn acquire(db_path: &Path) -> Result<WriterLock> {
+    /// Takes the lock for the database at `db_path` without waiting:
+    /// [`StoreError::Locked`] when another process holds it, [`StoreError::Io`] when the
+    /// lock file cannot be opened or locked.
+    pub fn acquire(db_path: &Path) -> Result<WriterLock> {
         let path = lock_path(db_path);
         let file = crate::perms::open_private(&path)?;
         match flock(&file, FlockOperation::NonBlockingLockExclusive) {

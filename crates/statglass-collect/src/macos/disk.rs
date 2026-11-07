@@ -19,20 +19,9 @@
 
 use statglass_schema::{Entitlement, Labels, MetricId, Module, SeriesKey};
 
-use super::PartSum;
 use super::iokit::{self, IoObject, Key, matching_services};
+use crate::counters::{PartSum, counter_rates, span_secs};
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
-
-const IO_METRICS: [&str; 8] = [
-    "disk.read",
-    "disk.write",
-    "disk.read_ops",
-    "disk.write_ops",
-    "disk.read_timed_ops",
-    "disk.write_timed_ops",
-    "disk.read_time",
-    "disk.write_time",
-];
 const IO_COUNTERS: [&str; 6] = [
     "Bytes (Read)",
     "Bytes (Write)",
@@ -42,6 +31,8 @@ const IO_COUNTERS: [&str; 6] = [
     "Total Time (Write)",
 ];
 type Counters = [Option<u64>; 6];
+/// The `Total Time` counters are nanoseconds.
+const NS_PER_MS: f32 = 1e6;
 struct Device {
     driver: IoObject,
     keys: [SeriesKey; 8],
@@ -102,37 +93,17 @@ impl DiskIo {
     }
 }
 
-/// Bytes per second between two cumulative readings; `None` on a reset.
-fn rate(prev: u64, cur: u64, secs: f64) -> Option<f32> {
-    (cur >= prev && secs > 0.0).then(|| ((cur - prev) as f64 / secs) as f32)
-}
-
 /// One device's read and write rates from its previous and current `(read, write)` byte
 /// counters; each side `None` without both readings or on a reset.
 #[cfg(test)]
 fn device_rates(prev: Option<(u64, u64)>, cur: Option<(u64, u64)>, secs: f64) -> [Option<f32>; 2] {
     match (prev, cur) {
-        (Some((pr, pw)), Some((r, w))) => [rate(pr, r, secs), rate(pw, w, secs)],
+        (Some((pr, pw)), Some((r, w))) => [
+            crate::counters::rate(pr, r, secs),
+            crate::counters::rate(pw, w, secs),
+        ],
         _ => [None, None],
     }
-}
-
-/// Read/write pairing is independent. An unsupported timing counter never masks
-/// known operations/s, and an invalid timing pair never fabricates request time.
-fn counter_rates(prev: Counters, cur: Counters, secs: f64) -> [Option<f32>; 8] {
-    let values: [Option<f32>; 6] = std::array::from_fn(|i| rate(prev[i]?, cur[i]?, secs));
-    let mut out = [
-        values[0], values[1], values[2], values[3], None, None, None, None,
-    ];
-    for side in 0..2 {
-        if let (Some(ops), Some(ns)) = (values[2 + side], values[4 + side])
-            && (ops > 0. || ns == 0.)
-        {
-            out[4 + side] = Some(ops);
-            out[6 + side] = Some(ns / 1_000_000.);
-        }
-    }
-    out
 }
 
 fn fixed_internal(
@@ -255,7 +226,7 @@ impl Collector for DiskIo {
             let key = |id| SeriesKey::new(MetricId::from_static(id), Labels::single("dev", &name));
             let dev = Device {
                 driver,
-                keys: IO_METRICS.map(key),
+                keys: statglass_schema::disk_io::DEVICE_METRICS.map(key),
                 prev: [None; 6],
             };
             series.extend(dev.keys.iter().cloned());
@@ -277,11 +248,7 @@ impl Collector for DiskIo {
 
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         let now = tick.continuous_ns;
-        let secs = if self.prev_ns > 0 && now > self.prev_ns {
-            (now - self.prev_ns) as f64 / 1e9
-        } else {
-            0.0
-        };
+        let secs = span_secs(self.prev_ns, now);
         let mut totals: [PartSum; 8] = std::array::from_fn(|_| PartSum::default());
         for i in 0..self.devices.len() {
             let Some(dev) = self.devices.get(i) else {
@@ -291,7 +258,7 @@ impl Collector for DiskIo {
             let Some(dev) = self.devices.get_mut(i) else {
                 continue;
             };
-            let values = counter_rates(dev.prev, cur, secs);
+            let values = counter_rates(dev.prev, cur, secs, NS_PER_MS);
             for (key, value) in dev.keys.iter().zip(values) {
                 if let Some(value) = value {
                     out.push(key, value);
@@ -608,64 +575,6 @@ mod tests {
         assert_eq!(whole_disk("disk0").as_deref(), Some("disk0"));
         assert_eq!(whole_disk("map auto_home"), None);
         assert_eq!(whole_disk("disks"), None);
-    }
-
-    #[test]
-    fn request_pairs_handle_idle_unsupported_reset_and_one_sided_failure() {
-        let baseline = [Some(100); 6];
-        let current = [
-            Some(300),
-            Some(200),
-            Some(110),
-            Some(100),
-            Some(10_000_100),
-            Some(100),
-        ];
-        let rates = counter_rates(baseline, current, 2.);
-        assert_eq!(
-            rates,
-            [
-                Some(100.),
-                Some(50.),
-                Some(5.),
-                Some(0.),
-                Some(5.),
-                Some(0.),
-                Some(5.),
-                Some(0.)
-            ]
-        );
-        assert_eq!(
-            statglass_schema::disk_io::request_ms(rates[6].map(f64::from), rates[4].map(f64::from)),
-            Some(1.)
-        );
-        assert_eq!(
-            statglass_schema::disk_io::request_ms(rates[7].map(f64::from), rates[5].map(f64::from)),
-            None
-        );
-        let mut missing = current;
-        missing[4] = None;
-        let missing_rates = counter_rates(baseline, missing, 2.);
-        assert_eq!(
-            (missing_rates[2], missing_rates[4], missing_rates[6]),
-            (Some(5.), None, None)
-        );
-        assert_eq!(missing_rates[5], Some(0.));
-        let mut reset = current;
-        reset[4] = Some(1);
-        assert_eq!(counter_rates(baseline, reset, 2.)[4], None);
-        reset[2] = Some(1);
-        reset[4] = current[4];
-        assert_eq!(counter_rates(baseline, reset, 2.)[6], None);
-        assert_eq!(counter_rates([None; 6], current, 2.), [None; 8]);
-        assert_eq!(counter_rates(baseline, current, 0.), [None; 8]);
-        assert_eq!(counter_rates(current, current, 1.)[4..], [Some(0.); 4]);
-    }
-    #[test]
-    fn reset_yields_no_rate() {
-        assert_eq!(rate(100, 300, 2.0), Some(100.0));
-        assert_eq!(rate(300, 100, 1.0), None);
-        assert_eq!(rate(100, 300, 0.0), None);
     }
 
     #[test]

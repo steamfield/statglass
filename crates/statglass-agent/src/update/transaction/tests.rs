@@ -113,6 +113,25 @@ fn recovery_refuses_to_restore_while_a_trial_writer_survives() {
 }
 
 #[test]
+fn history_lock_reports_an_unopenable_lock_file_as_io_not_a_live_collector() {
+    if crate::test_support::reexec_for_lock_test() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let paths = installation(dir.path());
+    // The lock file's parent is a regular file, so opening the lock fails with ENOTDIR.
+    fs::remove_dir_all(&paths.data_dir).unwrap();
+    fs::write(&paths.data_dir, "not a directory").unwrap();
+    let message = format!("{:#}", history_lock(&paths).unwrap_err());
+    assert!(message.contains("taking the history lock"), "{message}");
+    assert!(message.contains("i/o:"), "{message}");
+    assert!(
+        !message.contains("collector still owns history"),
+        "{message}"
+    );
+}
+
+#[test]
 fn rollback_restores_units_and_committed_recovery_refreshes_the_preserved_executable() {
     if crate::test_support::reexec_for_lock_test() {
         return;

@@ -15,7 +15,8 @@ use std::path::{Path, PathBuf};
 use statglass_schema::{Entitlement, MetricId, Module, SeriesKey, UnsupportedReason};
 
 use super::SysRoot;
-use super::counters::{PartSum, read_u64_at, span_secs};
+use super::counters::read_u64_at;
+use crate::counters::{PartSum, span_secs};
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
 /// Watts above this are a counter glitch.

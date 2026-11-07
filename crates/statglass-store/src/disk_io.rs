@@ -2,20 +2,9 @@
 use crate::{HistoryResult, Point, SeriesPoints, range_stats};
 use statglass_schema::{
     Catalog, MetricId, Module, SeriesKey,
-    disk_io::{DiskIoPage, DiskIoPoint, request_ms},
+    disk_io::{DEVICE_METRICS, DiskIoPage, DiskIoPoint, request_ms},
 };
 use std::collections::{BTreeMap, BTreeSet};
-
-pub const DISK_IO_METRICS: [&str; 8] = [
-    "disk.read",
-    "disk.write",
-    "disk.read_ops",
-    "disk.write_ops",
-    "disk.read_timed_ops",
-    "disk.write_timed_ops",
-    "disk.read_time",
-    "disk.write_time",
-];
 
 /// Each paired average is normalized by its whole output slot. Summing numerators
 /// and denominators therefore weights both devices and time by completed operations.
@@ -35,7 +24,7 @@ pub fn disk_io_page(
     let mut slots: BTreeMap<i64, BTreeMap<String, [Option<f64>; 8]>> = BTreeMap::new();
     for series in &read.series {
         let metrics = if device.is_some() {
-            &DISK_IO_METRICS
+            &DEVICE_METRICS
         } else {
             &statglass_schema::disk_io::TOTAL_METRICS
         };

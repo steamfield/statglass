@@ -48,30 +48,6 @@ pub fn gpu_dvfs_mhz() -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// A `*_total` series being summed over one sample's parts (`net.rx_total`,
-/// `disk.read_total`, D-092): the parts are the series the collector reports on that
-/// sample, and the total is a gap when any of them is.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct PartSum {
-    sum: f64,
-    gap: bool,
-}
-
-impl PartSum {
-    /// Adds one reported part's value for this sample; `None` is that part's gap.
-    pub(crate) fn add(&mut self, part: Option<f32>) {
-        match part {
-            Some(v) => self.sum += f64::from(v),
-            None => self.gap = true,
-        }
-    }
-
-    /// The total, `None` when any part was a gap.
-    pub(crate) fn total(self) -> Option<f32> {
-        (!self.gap).then_some(self.sum as f32)
-    }
-}
-
 /// Which collector supplies `power.cpu` and `cpu.cluster.power` (D-054). The SMC power
 /// collector sets it when its probe finds this chip's CPU power keys. The IOReport
 /// collector is probed after it and then leaves those series to the SMC, keeping the PMP
@@ -229,17 +205,6 @@ mod tests {
             let j = if moved { slow_w * 300.0 } else { 0.0 };
             src.slow(j, moved, S, t * S);
         }
-    }
-
-    #[test]
-    fn part_sum_is_a_gap_when_any_part_is() {
-        let mut s = PartSum::default();
-        s.add(Some(1.5));
-        s.add(Some(2.5));
-        assert_eq!(s.total(), Some(4.0));
-        s.add(None);
-        s.add(Some(1.0));
-        assert_eq!(s.total(), None);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! One installation lock, outside the purgeable state directory. OS release on process
 //! death lets the recovery service make progress after an interrupted transaction.
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 
@@ -23,9 +23,15 @@ pub fn lock(paths: &AgentPaths) -> anyhow::Result<File> {
         .mode(0o600)
         .open(&path)
         .with_context(|| format!("opening installation lock {}", path.display()))?;
-    file.try_lock()
-        .context("another agent installation or maintenance operation is running")?;
-    Ok(file)
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) => {
+            anyhow::bail!("another agent installation or maintenance operation is running")
+        }
+        Err(TryLockError::Error(e)) => {
+            Err(e).with_context(|| format!("locking installation lock {}", path.display()))
+        }
+    }
 }
 
 pub async fn systemctl(layout: statglass_remote::AgentLayout, args: &[&str]) -> anyhow::Result<()> {
