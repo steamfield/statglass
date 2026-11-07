@@ -110,3 +110,12 @@ export function windowWords(ms: number): string {
   const h = Math.round(ms / RING_SPAN_MS);
   return h === 1 ? "hour" : `${h} hours`;
 }
+
+/**
+ * A module chart's span in words, for titles and accessible names: "last
+ * 15 minutes" while the range follows now, "selected dates" once its end is
+ * fixed.
+ */
+export function spanWords(windowMs: number, endMs: number | null): string {
+  return endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
+}

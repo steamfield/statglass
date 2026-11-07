@@ -1,31 +1,28 @@
-import { seriesRange } from "@core/chart-math";
 import { cpuPowerNote } from "@core/cpu-power-source";
 import { eventLabel } from "@core/events";
 import { formatWatts, formatWattsFine } from "@core/format";
-import { windowWords } from "@core/live-window";
 import { parseLabels } from "@core/series-key";
 import { useMemo, useState } from "react";
-import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { ChartHistoryStatus } from "~/components/chart-history-status";
+import {
+  ModuleHistoryChart,
+  type ModuleYAxis,
+} from "~/components/charts/module-history-chart";
+import { InlineMessage } from "~/components/inline-message";
 import {
   type RangeTotal,
   RangeTotalsStrip,
 } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
-import { SelectionSummary } from "~/components/selection-summary";
 import { useEvents } from "~/hooks/use-events";
-import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleChart } from "~/hooks/use-module-chart";
 import { useModuleEnd } from "~/hooks/use-module-end";
-import { useModuleSeries } from "~/hooks/use-module-series";
-import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { usePowerComponents } from "~/stores/live-selectors";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { Legend, type LegendItem } from "~/widgets/legend";
-import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
-import { StreamArea, type StreamAreaProps } from "~/widgets/stream-area";
+import type { StreamAreaProps } from "~/widgets/stream-area";
 import {
   type AppLine,
   type AppLines,
@@ -42,6 +39,15 @@ const COMPONENTS = [
 const HELD = [SYSTEM, ...COMPONENTS.map((c) => c.metric), "power.cpu_source"];
 const CHART = [SYSTEM];
 const HEIGHT = DASHBOARD_CHART_HEIGHT;
+/**
+ * App lines share the scale: macOS's per-process estimate can top the
+ * system reading, and a line pinned at the ceiling would misstate it.
+ */
+const WATTS_AXIS: ModuleYAxis = {
+  ceiling: "auto",
+  min: 5,
+  format: (w) => `${w}W`,
+};
 /** A `power.sensor{name=…}` key's rail name, as the kernel labels it. */
 const railName = (key: string) => parseLabels(key).name ?? "";
 /**
@@ -80,13 +86,9 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const rails = components ? [] : railKeys;
   const v = useHeld([...HELD, ...rails]);
   const system = v[SYSTEM] ?? null;
-  const endMs = useModuleEnd();
-  const span =
-    endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
-  const series = useModuleSeries(CHART, windowMs, { brush: true });
+  const chart = useModuleChart(CHART, windowMs, "power", { brush: true });
+  const { series, span } = chart;
   const values = series.values[SYSTEM] ?? [];
-  const gaps = useGapBands("power");
-  const brush = useAreaBrush(series, HEIGHT, true, gaps);
   const lines = useAppLines(windowMs, {
     tEndMs: series.tEndMs,
     intervalMs: series.intervalMs,
@@ -96,14 +98,6 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const [pinned, setPinned] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const apps = lines.kind === "ok" ? lines.apps : [];
-  // App lines share the scale: macOS's per-process estimate can top the
-  // system reading, and a line pinned at the ceiling would misstate it.
-  const ceiling = useNiceCeiling(
-    apps.length > 0 ? [...values, ...apps.map((a) => a.peak)] : values,
-    series.tEndMs,
-    5,
-    windowMs
-  );
   const focused = apps.some((a) => a.name === (hovered ?? pinned))
     ? (hovered ?? pinned)
     : null;
@@ -149,36 +143,19 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
         </div>
         <div className="flex flex-col gap-2.5">
           <Legend items={legend} />
-          <div className="flex flex-col gap-1.5">
-            <ChartHistoryStatus loading={series.loading} error={series.error} />
-            <StreamArea
-              gaps={gaps}
-              series={chartSeries(values, apps, focused)}
-              tEndMs={series.tEndMs}
-              intervalMs={series.intervalMs}
-              yMax={ceiling}
-              accent="power"
-              height={HEIGHT}
-              ariaLabel={ariaLabel(span, system, apps)}
-              {...ceilingAxis(ceiling, `${ceiling}W`)}
-              xTicks={historyTicks(
-                seriesRange(series).fromMs,
-                seriesRange(series).toMs,
-                endMs === null,
-                5
-              )}
-              highlight={brush.highlight}
-              overlay={brush.overlay}
-              annotations={annotations}
-            />
-            <SelectionSummary windowMs={windowMs} inset={32} />
-          </div>
+          <ModuleHistoryChart
+            chart={chart}
+            lines={chartSeries(values, apps, focused)}
+            yAxis={WATTS_AXIS}
+            accent="power"
+            height={HEIGHT}
+            ariaLabel={ariaLabel(span, system, apps)}
+            annotations={annotations}
+          />
         </div>
         <div className="flex flex-col gap-1">
           <AppsNote lines={lines} />
-          {cpuNote && (
-            <p className="m-0 text-[11px] text-muted-foreground">{cpuNote}</p>
-          )}
+          {cpuNote && <InlineMessage tone="note">{cpuNote}</InlineMessage>}
         </div>
       </SectionCard>
     </div>
@@ -225,22 +202,32 @@ function ariaLabel(
     apps.length > 0
       ? ` Top apps by energy: ${apps.map((a) => `${a.name} ${formatWattsFine(a.avg)}`).join(", ")}.`
       : "";
-  return `System power, ${span}, now ${formatWatts(system)}.${top} Drag to select a range.`;
+  return `System power, ${span}, now ${formatWatts(system)}.${top}`;
 }
 
 /** What the app lines are, or why there are none. */
 function AppsNote({ lines }: { lines: AppLines }) {
-  const messages: Partial<Record<AppLines["kind"], string>> = {
-    long_range: "App power lines are available for ranges up to 1 hour.",
-    ok: "App lines are CPU energy as macOS estimates it, for your own processes, so they add up to less than system draw.",
-    empty:
+  const messages: Partial<
+    Record<AppLines["kind"], [tone: "note" | "status" | "error", text: string]>
+  > = {
+    long_range: [
+      "note",
+      "App power lines are available for ranges up to 1 hour.",
+    ],
+    ok: [
+      "note",
+      "App lines are CPU energy as macOS estimates it, for your own processes, so they add up to less than system draw.",
+    ],
+    empty: [
+      "status",
       "Per-app power appears after StatGlass has sampled processes for a while.",
-    remote: "Per-app power isn't available for remote hosts.",
-    error: "Couldn't load per-app power.",
+    ],
+    remote: ["note", "Per-app power isn't available for remote hosts."],
+    error: ["error", "Couldn't load per-app power."],
   };
-  const text = messages[lines.kind];
+  const message = messages[lines.kind];
   return (
-    text && <p className="m-0 text-[11px] text-muted-foreground">{text}</p>
+    message && <InlineMessage tone={message[0]}>{message[1]}</InlineMessage>
   );
 }
 

@@ -1,24 +1,12 @@
-import { seriesRange } from "@core/chart-math";
 import { formatPercent } from "@core/format";
-import { windowWords } from "@core/live-window";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
-import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { ChartHistoryStatus } from "~/components/chart-history-status";
+import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
 import { SectionCard } from "~/components/section-card";
-import { SelectionSummary } from "~/components/selection-summary";
-import { useGapBands } from "~/hooks/use-gap-bands";
-import { useModuleEnd } from "~/hooks/use-module-end";
-import { useModuleSeries } from "~/hooks/use-module-series";
+import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
 import { Swap } from "~/lib/motion/swap";
 import { cn } from "~/lib/utils";
-import {
-  historyTicks,
-  PERCENT_GRID,
-  PERCENT_Y_TICKS,
-} from "~/widgets/lib/chart-labels";
-import { StreamArea } from "~/widgets/stream-area";
 import { pressureState } from "../_lib/pressure";
 
 const HEIGHT = 160;
@@ -34,10 +22,7 @@ const KEYS = [KEY];
  */
 export function PressureCard({ windowMs }: { windowMs: number }) {
   const v = useHeld([...KEYS, "mem.pressure_level"]);
-  const endMs = useModuleEnd();
-  const series = useModuleSeries(KEYS, windowMs, { brush: true });
-  const gaps = useGapBands("memory");
-  const brush = useAreaBrush(series, HEIGHT, true, gaps);
+  const chart = useModuleChart(KEYS, windowMs, "memory", { brush: true });
   const pressure = v[KEY] ?? null;
   const state = pressureState(v["mem.pressure_level"] ?? null);
 
@@ -89,30 +74,16 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
           </span>
         }
       >
-        <div className="flex flex-col gap-1.5">
-          <ChartHistoryStatus loading={series.loading} error={series.error} />
-          <StreamArea
-            gaps={gaps}
-            series={[{ key: KEY, values: series.values[KEY] ?? [], step: 1 }]}
-            tEndMs={series.tEndMs}
-            intervalMs={series.intervalMs}
-            yMax={100}
-            accent="mem"
-            height={HEIGHT}
-            ariaLabel={`Memory pressure, ${endMs === null ? `last ${windowWords(windowMs)}` : "selected dates"}, now ${formatPercent(pressure)}. Drag to select a range.`}
-            gridlines={PERCENT_GRID}
-            yTicks={PERCENT_Y_TICKS}
-            xTicks={historyTicks(
-              seriesRange(series).fromMs,
-              seriesRange(series).toMs,
-              endMs === null,
-              5
-            )}
-            highlight={brush.highlight}
-            overlay={brush.overlay}
-          />
-          <SelectionSummary windowMs={windowMs} inset={32} />
-        </div>
+        <ModuleHistoryChart
+          chart={chart}
+          lines={[
+            { key: KEY, values: chart.series.values[KEY] ?? [], step: 1 },
+          ]}
+          yAxis="percent"
+          accent="mem"
+          height={HEIGHT}
+          ariaLabel={`Memory pressure, ${chart.span}, now ${formatPercent(pressure)}.`}
+        />
       </SectionCard>
     </div>
   );

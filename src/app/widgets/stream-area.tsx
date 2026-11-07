@@ -73,6 +73,8 @@ export interface StreamAreaProps {
   gridlines?: readonly number[];
   /** Y tick labels in a 32 px gutter on the left (100, 75, 50, 25). */
   yTicks?: readonly { value: number; label: string }[];
+  /** Width of the y tick gutter, px (default 32; 48 for byte labels). */
+  gutter?: number | undefined;
   /** X tick labels spread under the plot, oldest first ("−60s" … "now"). */
   xTicks?: readonly string[];
   /**
@@ -118,6 +120,7 @@ export function StreamArea({
   windowLabel,
   gridlines = [],
   yTicks,
+  gutter,
   xTicks,
   gaps,
   highlight,
@@ -193,6 +196,7 @@ export function StreamArea({
       ceiling={yMax}
       yTicks={yTicks}
       xTicks={xTicks}
+      gutter={gutter}
       style={accentVars(accent)}
     >
       <div className="relative overflow-hidden">

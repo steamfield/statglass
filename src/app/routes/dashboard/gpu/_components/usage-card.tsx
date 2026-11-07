@@ -1,26 +1,14 @@
-import { seriesRange } from "@core/chart-math";
 import { formatGhz, formatPercent, formatWatts } from "@core/format";
-import { windowWords } from "@core/live-window";
-import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { ChartHistoryStatus } from "~/components/chart-history-status";
+import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
 import {
   type RangeTotal,
   RangeTotalsStrip,
 } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
-import { SelectionSummary } from "~/components/selection-summary";
-import { useGapBands } from "~/hooks/use-gap-bands";
-import { useModuleEnd } from "~/hooks/use-module-end";
-import { useModuleSeries } from "~/hooks/use-module-series";
+import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
-import {
-  historyTicks,
-  PERCENT_GRID,
-  PERCENT_Y_TICKS,
-} from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
-import { StreamArea } from "~/widgets/stream-area";
 
 const HELD = ["gpu.util", "gpu.render", "gpu.tiler", "gpu.freq", "power.gpu"];
 const CHART = ["gpu.util"];
@@ -42,10 +30,7 @@ const TOTALS: readonly RangeTotal[] = [
  */
 export function UsageCard({ windowMs }: { windowMs: number }) {
   const v = useHeld(HELD);
-  const endMs = useModuleEnd();
-  const series = useModuleSeries(CHART, windowMs, { brush: true });
-  const gaps = useGapBands("gpu");
-  const brush = useAreaBrush(series, HEIGHT, true, gaps);
+  const chart = useModuleChart(CHART, windowMs, "gpu", { brush: true });
   const util = v["gpu.util"] ?? null;
 
   return (
@@ -70,36 +55,20 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
             testId="gpu-range-totals"
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <ChartHistoryStatus loading={series.loading} error={series.error} />
-          <StreamArea
-            gaps={gaps}
-            series={[
-              {
-                key: "gpu.util",
-                values: series.values["gpu.util"] ?? [],
-                step: 1,
-              },
-            ]}
-            tEndMs={series.tEndMs}
-            intervalMs={series.intervalMs}
-            yMax={100}
-            accent="gpu"
-            height={HEIGHT}
-            ariaLabel={`GPU utilization, ${endMs === null ? `last ${windowWords(windowMs)}` : "selected dates"}, now ${formatPercent(util)}. Drag to select a range.`}
-            gridlines={PERCENT_GRID}
-            yTicks={PERCENT_Y_TICKS}
-            xTicks={historyTicks(
-              seriesRange(series).fromMs,
-              seriesRange(series).toMs,
-              endMs === null,
-              5
-            )}
-            highlight={brush.highlight}
-            overlay={brush.overlay}
-          />
-          <SelectionSummary windowMs={windowMs} inset={32} />
-        </div>
+        <ModuleHistoryChart
+          chart={chart}
+          lines={[
+            {
+              key: "gpu.util",
+              values: chart.series.values["gpu.util"] ?? [],
+              step: 1,
+            },
+          ]}
+          yAxis="percent"
+          accent="gpu"
+          height={HEIGHT}
+          ariaLabel={`GPU utilization, ${chart.span}, now ${formatPercent(util)}.`}
+        />
       </SectionCard>
     </div>
   );

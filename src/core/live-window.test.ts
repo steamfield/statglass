@@ -4,6 +4,7 @@ import {
   effectiveWindow,
   scaledWindowMs,
   slowestIntervalMs,
+  spanWords,
   windowAllowed,
   windowLabel,
   windowWords,
@@ -72,6 +73,11 @@ describe("window labels", () => {
     expect(windowWords(48_000)).toBe("48 seconds");
     expect(windowWords(1_800_000)).toBe("30 minutes");
     expect(windowWords(3_600_000)).toBe("hour");
+  });
+
+  it("words a following range as its window and a fixed one as dates", () => {
+    expect(spanWords(900_000, null)).toBe("last 15 minutes");
+    expect(spanWords(900_000, 1_700_000_000_000)).toBe("selected dates");
   });
 });
 

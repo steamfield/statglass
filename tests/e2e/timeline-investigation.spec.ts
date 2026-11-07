@@ -91,7 +91,7 @@ for (const theme of ["light", "dark"]) {
     if (!dates) throw new Error("Selected dates not visible");
     await page.getByRole("link", { name: /^Battery / }).click();
     await expect(
-      page.getByRole("img", { name: "Battery charge, selected range" })
+      page.getByRole("img", { name: /^Battery charge, selected dates, now / })
     ).toBeVisible();
     await expect(page.getByText(dates, { exact: false }).first()).toBeVisible();
     await page.getByRole("link", { name: "Containers", exact: true }).click();
