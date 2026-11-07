@@ -22,6 +22,7 @@ import {
 import { PLOT_INSET } from "~/components/charts/layout";
 import {
   MirrorChart,
+  type MirrorChartProps,
   paintMirrorCrosshairs,
 } from "~/components/charts/mirror-chart";
 import { SegmentedControl } from "~/components/segmented-control";
@@ -95,17 +96,8 @@ export function DiskIoCharts({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const hovered = useRef<number | null>(null);
-  const first = floorTo(range.fromMs, page.bucket_ms);
-  const count = Math.max(1, Math.ceil((range.toMs - first) / page.bucket_ms));
-  const windowMs = range.toMs - range.fromMs;
-  const dates = windowMs >= DAY_MS;
-  const points = useMemo(() => {
-    const byTime = new Map(page.points.map((p) => [p.t, p]));
-    return Array.from(
-      { length: count },
-      (_, i) => byTime.get(first + i * page.bucket_ms) ?? null
-    );
-  }, [page.points, page.bucket_ms, count, first]);
+  const { points, first, count, windowMs, dates, gaps, chart } =
+    useDiskIoReadWriteChart(page, range, fixedEndMs);
   const paint = useCallback(
     (time: number | null) => {
       hovered.current = time;
@@ -140,10 +132,6 @@ export function DiskIoCharts({
     [count, first, page.bucket_ms, points, dates, fixedEndMs]
   );
   useLayoutEffect(() => paint(hovered.current), [paint]);
-  const gap = useMemo(
-    () => gapBands(page.gaps, first, range.toMs, { module: "disk" }),
-    [page.gaps, first, range.toMs]
-  );
   const last = points.at(-1);
   const plot = {
     points,
@@ -153,20 +141,12 @@ export function DiskIoCharts({
     fixedEndMs,
     span: spanWords(windowMs, fixedEndMs),
     dates,
-    gaps: gap,
+    gaps,
     onHover: paint,
   };
   return (
     <div ref={host} className="relative flex flex-col gap-3">
-      <IoPlot
-        {...plot}
-        subject="Disk I/O"
-        up="read_bps"
-        down="write_bps"
-        format={formatRate}
-        minimum={1e6}
-        axis={false}
-      />
+      <MirrorChart {...chart} brush onHoverTime={paint} axis={false} />
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <SegmentedControl
           options={OPTIONS}
@@ -209,6 +189,54 @@ export function DiskIoCharts({
       </ChartTooltipShell>
     </div>
   );
+}
+
+/**
+ * The read/write plot for a `useDiskIo` answer, including the page's bucket
+ * alignment and gaps. A compact caller queries its default device with
+ * `useDiskIo(device, range, 40)` and overrides hover, ticks and inset on `chart`.
+ */
+export function useDiskIoReadWriteChart(
+  page: DiskIoPage,
+  range: TimeRange,
+  fixedEndMs: number | null
+) {
+  const first = floorTo(range.fromMs, page.bucket_ms);
+  const count = Math.max(1, Math.ceil((range.toMs - first) / page.bucket_ms));
+  const windowMs = range.toMs - range.fromMs;
+  const dates = windowMs >= DAY_MS;
+  const points = useMemo(() => {
+    const byTime = new Map(page.points.map((p) => [p.t, p]));
+    return Array.from(
+      { length: count },
+      (_, i) => byTime.get(first + i * page.bucket_ms) ?? null
+    );
+  }, [page.points, page.bucket_ms, count, first]);
+  const gaps = useMemo(
+    () => gapBands(page.gaps, first, range.toMs, { module: "disk" }),
+    [page.gaps, first, range.toMs]
+  );
+  const chart: MirrorChartProps = {
+    up: points.map((p) => p?.read_bps ?? null),
+    down: points.map((p) => p?.write_bps ?? null),
+    firstMs: first,
+    bucketMs: page.bucket_ms,
+    windowMs,
+    fixedEndMs,
+    subject: "Disk I/O",
+    upLabel: "Read",
+    downLabel: "Write",
+    span: spanWords(windowMs, fixedEndMs),
+    format: formatRate,
+    minCeiling: 1e6,
+    accent: "disk",
+    upHeight: 48,
+    downHeight: 48,
+    gaps,
+    brush: false,
+    dateLabels: dates,
+  };
+  return { points, first, count, windowMs, dates, gaps, chart };
 }
 
 /** One mirrored view of the buckets: read above the line, write below. */

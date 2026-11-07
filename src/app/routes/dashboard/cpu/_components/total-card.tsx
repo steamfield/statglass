@@ -1,11 +1,9 @@
 import { fixed, formatPercent, MISSING } from "@core/format";
 import { sk } from "@core/series-key";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { CPU_HERO } from "~/components/charts/module-hero";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
-import {
-  type RangeTotal,
-  RangeTotalsStrip,
-} from "~/components/range-totals-strip";
+import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld, useLayout } from "~/hooks/use-ring";
@@ -23,17 +21,7 @@ const HELD = [
   ...LOADAVG,
   ...PSI,
 ];
-const CHART = ["cpu.total", "cpu.system"];
 const HEIGHT = DASHBOARD_CHART_HEIGHT;
-/** Over the window or the selection (D-099): `cpu.total` averaged and its peak. */
-const TOTALS: readonly RangeTotal[] = [
-  {
-    metric: "cpu.total",
-    label: "Avg",
-    format: (s) => formatPercent(s.avg, { decimals: 1 }),
-  },
-  { metric: "cpu.total", label: "Peak", format: (s) => formatPercent(s.max) },
-];
 
 const load = (v: number | null | undefined) =>
   v == null ? MISSING : fixed(v, 2);
@@ -88,8 +76,9 @@ function useStripItems(): { total: number | null; items: StatListItem[] } {
  */
 export function TotalCard({ windowMs }: { windowMs: number }) {
   const { total, items } = useStripItems();
-  const chart = useModuleChart(CHART, windowMs, "cpu", { brush: true });
-  const { values } = chart.series;
+  const chart = useModuleChart(CPU_HERO.keys, windowMs, CPU_HERO.module, {
+    brush: true,
+  });
 
   return (
     <div {...brushScopeProps} className="contents">
@@ -106,20 +95,17 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
           />
           <RangeTotalsStrip
             windowMs={windowMs}
-            totals={TOTALS}
+            totals={CPU_HERO.totals}
             testId="cpu-range-totals"
           />
         </div>
         <ModuleHistoryChart
           chart={chart}
-          lines={[
-            { key: "cpu.total", values: values["cpu.total"] ?? [], step: 1 },
-            { key: "cpu.system", values: values["cpu.system"] ?? [], step: 2 },
-          ]}
-          yAxis="percent"
+          lines={CPU_HERO.lines(chart.series.values)}
+          yAxis={CPU_HERO.yAxis}
           accent="cpu"
           height={HEIGHT}
-          subject="CPU total and system"
+          subject={CPU_HERO.subject}
           now={`total ${formatPercent(total)}`}
         />
       </SectionCard>

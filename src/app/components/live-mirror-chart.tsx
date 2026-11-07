@@ -2,7 +2,10 @@ import { brushBucketMs } from "@core/brush";
 import { spanWords } from "@core/live-window";
 import { DAY_MS } from "@core/time-grid";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
-import { MirrorChart } from "~/components/charts/mirror-chart";
+import {
+  MirrorChart,
+  type MirrorChartProps,
+} from "~/components/charts/mirror-chart";
 import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
 import { useModuleEnd } from "~/hooks/use-module-end";
@@ -30,7 +33,8 @@ export function mirrorBuckets(
   return { bucketMs, count: Math.max(1, Math.round(windowMs / bucketMs)) };
 }
 
-export interface LiveMirrorChartProps {
+export interface LiveMirrorChartProps
+  extends Pick<MirrorChartProps, "hover" | "ticks" | "inset"> {
   /**
    * Series drawn above the axis (upload, read). Pages pass a Rust total
    * (`net.tx_total`, D-092), so the chart never adds interfaces itself.
@@ -79,6 +83,9 @@ export function LiveMirrorChart({
   downHeight = 120,
   gaps,
   brush = false,
+  hover,
+  ticks,
+  inset,
 }: LiveMirrorChartProps) {
   const intervalMs = useGridInterval();
   const { bucketMs: requestedBucketMs, count: requestedCount } = mirrorBuckets(
@@ -118,6 +125,9 @@ export function LiveMirrorChart({
         downHeight={downHeight}
         gaps={gaps}
         brush={brush}
+        hover={hover}
+        ticks={ticks}
+        inset={inset}
         dateLabels={fixedEnd !== null || windowMs >= DAY_MS}
         pending={endMs === null}
       />

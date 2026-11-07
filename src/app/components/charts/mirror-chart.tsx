@@ -37,18 +37,17 @@ export function mirrorSubject({
 /**
  * Moves the crosshair of every `MirrorChart` under `root` to the centre of
  * bar `index` (of `count`), or hides them all: one crosshair across sibling
- * plots, written to the DOM so a pointer move re-renders nothing.
+ * plots, written to the DOM so a pointer move re-renders nothing. Pass the
+ * charts' inset when their label column uses a custom width.
  */
 export function paintMirrorCrosshairs(
   root: ParentNode,
   index: number | null,
-  count: number
+  count: number,
+  inset = PLOT_INSET
 ): void {
   const valid = index !== null && index >= 0 && index < count;
-  paintCrosshairs(
-    root,
-    valid ? plotLeft((index + 0.5) / count, PLOT_INSET) : null
-  );
+  paintCrosshairs(root, valid ? plotLeft((index + 0.5) / count, inset) : null);
 }
 
 /**
@@ -99,6 +98,12 @@ interface MirrorChartData {
   dateLabels: boolean;
   /** The x tick row under the plot (default on; off for an upper sibling). */
   axis?: boolean;
+  /** Hover readout and crosshair (default on). */
+  hover?: boolean | undefined;
+  /** Number of x tick labels (default 5). */
+  ticks?: number | undefined;
+  /** Left label column and plot gap, px (default PLOT_INSET). */
+  inset?: number | undefined;
   /** No bucket yet: the empty frame, without brush, gaps or hover. */
   pending?: boolean;
 }
@@ -131,6 +136,9 @@ export function MirrorChart({
   onHoverTime,
   dateLabels,
   axis = true,
+  hover = true,
+  ticks = 5,
+  inset = PLOT_INSET,
   pending = false,
 }: MirrorChartProps) {
   const count = Math.max(1, up.length);
@@ -150,21 +158,21 @@ export function MirrorChart({
     firstMs,
     spanMs: count * bucketMs,
     height,
-    inset: PLOT_INSET,
+    inset,
     barMs: bucketMs,
     gaps,
     enabled: brush && !pending,
-    onHoverTime,
+    onHoverTime: hover ? onHoverTime : undefined,
   });
   const live = fixedEndMs === null;
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="relative" style={{ paddingLeft: PLOT_INSET }}>
+      <div className="relative" style={{ paddingLeft: inset }}>
         <div
           aria-hidden
-          className="absolute top-0 left-0 flex w-22 flex-col justify-between"
-          style={{ height }}
+          className="absolute top-0 left-0 flex flex-col justify-between"
+          style={{ height, width: inset - 8 }}
         >
           <span className={FIELD_LABEL}>
             ↑ {upLabel}
@@ -198,7 +206,7 @@ export function MirrorChart({
         {gaps && gaps.length > 0 && !pending && (
           <div
             className="pointer-events-none absolute top-0 right-0"
-            style={{ left: PLOT_INSET, height }}
+            style={{ left: inset, height }}
           >
             {/* Centred: a caption straddling the bottom edge would cover
                 the tick row just under the plot. */}
@@ -210,11 +218,11 @@ export function MirrorChart({
             />
           </div>
         )}
-        {!pending && <CrosshairLine paint height={height} />}
-        {!pending && !onHoverTime && (
+        {hover && !pending && <CrosshairLine paint height={height} />}
+        {hover && !pending && !onHoverTime && (
           <MirrorHover
             plotRef={plotRef}
-            inset={PLOT_INSET}
+            inset={inset}
             count={count}
             firstMs={firstMs}
             bucketMs={bucketMs}
@@ -236,10 +244,10 @@ export function MirrorChart({
           // the bars run up to a bucket past it.
           ticks={
             live
-              ? windowTicks(windowMs, 5)
-              : historyTicks(firstMs, endMs, false, 5)
+              ? windowTicks(windowMs, ticks)
+              : historyTicks(firstMs, endMs, false, ticks)
           }
-          style={{ paddingLeft: PLOT_INSET }}
+          style={{ paddingLeft: inset }}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import { formatPercent } from "@core/format";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { MEMORY_PRESSURE_HERO } from "~/components/charts/module-hero";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
@@ -10,8 +11,6 @@ import { cn } from "~/lib/utils";
 import { pressureState } from "../_lib/pressure";
 
 const HEIGHT = 160;
-const KEY = "mem.pressure";
-const KEYS = [KEY];
 
 /**
  * Memory pressure over the chart window (D-091). The state word comes from
@@ -21,9 +20,14 @@ const KEYS = [KEY];
  * its page shows `UsedCard` here instead.
  */
 export function PressureCard({ windowMs }: { windowMs: number }) {
-  const v = useHeld([...KEYS, "mem.pressure_level"]);
-  const chart = useModuleChart(KEYS, windowMs, "memory", { brush: true });
-  const pressure = v[KEY] ?? null;
+  const v = useHeld([...MEMORY_PRESSURE_HERO.keys, "mem.pressure_level"]);
+  const chart = useModuleChart(
+    MEMORY_PRESSURE_HERO.keys,
+    windowMs,
+    MEMORY_PRESSURE_HERO.module,
+    { brush: true }
+  );
+  const pressure = v["mem.pressure"] ?? null;
   const state = pressureState(v["mem.pressure_level"] ?? null);
 
   return (
@@ -76,13 +80,11 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
       >
         <ModuleHistoryChart
           chart={chart}
-          lines={[
-            { key: KEY, values: chart.series.values[KEY] ?? [], step: 1 },
-          ]}
-          yAxis="percent"
+          lines={MEMORY_PRESSURE_HERO.lines(chart.series.values)}
+          yAxis={MEMORY_PRESSURE_HERO.yAxis}
           accent="mem"
           height={HEIGHT}
-          subject="Memory pressure"
+          subject={MEMORY_PRESSURE_HERO.subject}
           now={`now ${formatPercent(pressure)}`}
         />
       </SectionCard>
