@@ -1,8 +1,12 @@
+import { formatPercent } from "@core/format";
 import type { ProcessesAt } from "@core/generated/bindings";
 import type { CSSProperties } from "react";
 import {
+  ChartTooltipHead,
+  ChartTooltipNote,
+  ChartTooltipRow,
+  ChartTooltipRows,
   ChartTooltipShell,
-  SeriesSwatch,
 } from "~/components/charts/chart-tooltip";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { InitialChip } from "~/widgets/initial-chip";
@@ -18,7 +22,7 @@ export interface TooltipRow {
 export interface CrosshairTooltipProps {
   /** "Sun Oct 4 · 14:02:00". */
   title: string;
-  /** "1 min avg" or "10 s avg". */
+  /** `resolutionLabel` of the drawn buckets: "1 min avg". */
   resolution: string;
   rows: TooltipRow[];
   /** `undefined` while the query is in flight; `null` when nothing was stored then. */
@@ -49,26 +53,20 @@ export function CrosshairTooltip({
     .slice(0, TOP);
   return (
     <ChartTooltipShell className="top-0.5 w-[276px]" style={style}>
-      <div className="flex items-baseline justify-between">
-        <span className="figures text-[12px]">{title}</span>
-        <span className={FIELD_LABEL}>{resolution}</span>
-      </div>
+      <ChartTooltipHead title={title} detail={resolution} />
       {note ? (
-        <span className="font-normal text-[12px] text-muted-foreground">
-          {note}
-        </span>
+        <ChartTooltipNote>{note}</ChartTooltipNote>
       ) : (
-        <div className="flex flex-col gap-[5px]">
+        <ChartTooltipRows>
           {rows.map((r) => (
-            <div key={r.label} className="flex items-center gap-2 text-[12px]">
-              <SeriesSwatch color={`var(--color-${r.accent})`} />
-              <span className="flex-1 font-normal text-fg-subtle">
-                {r.label}
-              </span>
-              <span className="figures">{r.value}</span>
-            </div>
+            <ChartTooltipRow
+              key={r.label}
+              color={`var(--color-${r.accent})`}
+              label={r.label}
+              value={r.value}
+            />
           ))}
-        </div>
+        </ChartTooltipRows>
       )}
       {!note && local && (
         <>
@@ -78,13 +76,11 @@ export function CrosshairTooltip({
             <span className={FIELD_LABEL}>% of 1 core</span>
           </div>
           {processes === undefined ? (
-            <span className="font-normal text-[12px] text-muted-foreground">
-              Looking up processes…
-            </span>
+            <ChartTooltipNote>Looking up processes…</ChartTooltipNote>
           ) : top.length === 0 ? (
-            <span className="font-normal text-[12px] text-muted-foreground">
+            <ChartTooltipNote>
               No processes stored near this time
-            </span>
+            </ChartTooltipNote>
           ) : (
             <div className="flex flex-col gap-[5px]">
               {top.map((p) => (
@@ -96,9 +92,7 @@ export function CrosshairTooltip({
                   <span className="flex-1 truncate font-normal text-fg-subtle">
                     {p.name}
                   </span>
-                  <span className="figures">
-                    {p.cpu_pct === null ? "—" : `${Math.round(p.cpu_pct)}%`}
-                  </span>
+                  <span className="figures">{formatPercent(p.cpu_pct)}</span>
                 </div>
               ))}
             </div>

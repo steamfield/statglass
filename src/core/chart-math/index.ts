@@ -1,3 +1,4 @@
+export * from "./cursor";
 export * from "./gaps";
 export * from "./heatmap";
 export * from "./nice-ceiling";

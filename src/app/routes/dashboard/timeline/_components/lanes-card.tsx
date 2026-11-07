@@ -129,6 +129,7 @@ export function LanesCard({
     preview,
     selecting,
     sliderProps,
+    slider,
     selectEvent,
     focusAfterRange,
   } = useTimelineSelection({
@@ -195,7 +196,6 @@ export function LanesCard({
     lanes.length * LANE_HEIGHT + Math.max(0, lanes.length - 1) * LANE_GAP;
 
   const processes = useProcessesAt(selecting ? null : cursor, bucketMs);
-  const lastBucket = Math.max(fromMs, toMs - bucketMs);
 
   return (
     <Card
@@ -321,9 +321,9 @@ export function LanesCard({
             aria-description="Arrow keys inspect. Hold Shift and use arrows to select a range, then Enter to zoom. Escape cancels."
             aria-busy={loading}
             style={{ pointerEvents: zoom.preview ? "none" : undefined }}
-            aria-valuemin={fromMs}
-            aria-valuemax={lastBucket}
-            aria-valuenow={cursor ?? lastBucket}
+            aria-valuemin={slider.min}
+            aria-valuemax={slider.max}
+            aria-valuenow={slider.now}
             aria-valuetext={
               cursor === null
                 ? "No time selected"

@@ -24,11 +24,6 @@ export interface MirrorBarsProps {
   /** Heights in px of the two halves (18 above, 30 below). */
   upHeight?: number;
   downHeight?: number;
-  /**
-   * Bar slots `[from, to)` that are selected; the others dim. Absent or
-   * null: nothing is selected and every bar draws at full strength.
-   */
-  highlight?: { from: number; to: number } | null;
 }
 
 function heights(values: readonly (number | null)[], max: number, h: number) {
@@ -54,7 +49,6 @@ export function MirrorBars({
   downMax,
   upHeight = 18,
   downHeight = 30,
-  highlight,
 }: MirrorBarsProps) {
   const n = Math.max(up.length, down.length, 1);
   const upH = heights(up, upMax, upHeight);
@@ -63,8 +57,6 @@ export function MirrorBars({
   const upRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
   const downRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
   const slots = Array.from({ length: n }, (_, i) => i);
-  const dim = (i: number) =>
-    highlight != null && (i < highlight.from || i >= highlight.to);
   // Slot keys are positions in the window, not data identity: the window
   // scrolls by a transform, so the same slot index is reused each tick.
   return (
@@ -83,7 +75,7 @@ export function MirrorBars({
           <span
             key={i}
             data-gap={upH[i] == null || undefined}
-            className={cn("flex-1 rounded-t-hair", dim(i) && "opacity-35")}
+            className="flex-1 rounded-t-hair"
             style={{
               height: upH[i] ?? 0,
               background: rampColor(2),
@@ -101,10 +93,7 @@ export function MirrorBars({
           <span
             key={i}
             data-gap={downH[i] == null || undefined}
-            className={cn(
-              "flex-1 rounded-b-hair bg-(--a)",
-              dim(i) && "opacity-35"
-            )}
+            className="flex-1 rounded-b-hair bg-(--a)"
             style={{ height: downH[i] ?? 0 }}
           />
         ))}

@@ -15,6 +15,7 @@ import {
   MISSING,
   marketingGb,
   rateParts,
+  resolutionLabel,
   rpmParts,
   temperatureParts,
   wattsParts,
@@ -208,6 +209,23 @@ describe("formatDuration", () => {
 
   it("rejects negative spans", () => {
     expect(formatDuration(-1)).toBe(MISSING);
+  });
+});
+
+describe("resolutionLabel", () => {
+  it("names a bucket width in the largest unit that divides it evenly", () => {
+    expect(resolutionLabel(1000)).toBe("1 s avg");
+    expect(resolutionLabel(10_000)).toBe("10 s avg");
+    expect(resolutionLabel(60_000)).toBe("1 min avg");
+    expect(resolutionLabel(300_000)).toBe("5 min avg");
+    expect(resolutionLabel(900_000)).toBe("15 min avg");
+    expect(resolutionLabel(3_600_000)).toBe("1 h avg");
+    expect(resolutionLabel(7_200_000)).toBe("2 h avg");
+  });
+
+  it("stays in a smaller unit rather than reading a fraction", () => {
+    expect(resolutionLabel(90_000)).toBe("90 s avg");
+    expect(resolutionLabel(5_400_000)).toBe("90 min avg");
   });
 });
 

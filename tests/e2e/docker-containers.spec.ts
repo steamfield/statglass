@@ -483,7 +483,8 @@ test("historical mode includes a removed spike and opens its retained detail", a
     name: "retired-worker",
     exact: true,
   });
-  await expect(removedLink.locator("..")).toContainText("420%");
+  // The link sits in the row's label; the row holds the value.
+  await expect(removedLink.locator("../..")).toContainText("420%");
   const href = await removedLink.getAttribute("href");
   if (!href) throw new Error("Missing retained detail link");
   expect(new URL(href, "http://localhost").searchParams.get("end")).toBe(
@@ -991,7 +992,7 @@ for (const metric of ["cpu", "memory"] as const) {
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("d")));
     await expect.poll(async () => (await paths()).length).toBeGreaterThan(0);
     const before = await paths();
-    await expect(page.getByText(/10 s average · shaded min–max/)).toBeVisible();
+    await expect(page.getByText(/10 s avg · shaded min–max/)).toBeVisible();
     await expect(chart.locator("path[fill-opacity]")).toBeVisible();
     const brush = page.getByRole("slider", { name: "Select a time range" });
     const box = await brush.boundingBox();

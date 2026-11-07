@@ -8,14 +8,11 @@ import type {
   DockerContainer,
   DockerHistoryPoint,
 } from "@core/generated/bindings";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useDismissOutside } from "~/components/brush-overlay";
+import { useChartCursor } from "~/components/charts/use-chart-cursor";
 import { useElementSize } from "~/hooks/use-element-size";
-import {
-  useBrush,
-  useBrushRange,
-  useBrushStoreOptional,
-} from "~/stores/brush-store";
+import { useBrushRange } from "~/stores/brush-store";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { containerPath } from "../_lib/presentation";
 import type { ComparisonSeries } from "./comparison-chart";
@@ -31,11 +28,8 @@ export function useComparisonPlotState(
   onFocus: (id: string | null) => void,
   onPinFocus: (id: string | null) => void
 ) {
-  const brushStore = useBrushStoreOptional();
   const [plotRef, plotWidth] = useElementSize("width", 1000);
-  const [hoverTime, setHoverTime] = useState<number | null>(null);
   const selection = useBrushRange();
-  const highlight = useBrush((state) => state.draft ?? state.range);
   const pinned = selection !== null;
   const times = useMemo(
     () =>
@@ -44,13 +38,10 @@ export function useComparisonPlotState(
         .sort((a, b) => a - b),
     [series, from, to]
   );
-  const time = hoverTime ?? selection?.fromMs ?? null;
-  const cursor =
-    time === null || !times.length
-      ? null
-      : times.reduce((a, b) =>
-          Math.abs(a - time) < Math.abs(b - time) ? a : b
-        );
+  const { hoverTime, setHoverTime, cursor } = useChartCursor(
+    times,
+    selection?.fromMs ?? null
+  );
   const values = useMemo(
     () =>
       series.flatMap((s) =>
@@ -101,17 +92,15 @@ export function useComparisonPlotState(
     setHoverTime(null);
     onPinFocus(null);
     onFocus(null);
-  }, [onPinFocus, onFocus]);
+  }, [onPinFocus, onFocus, setHoverTime]);
   useDismissOutside(dismiss, hoverTime !== null || pinnedFocus !== null);
 
   return {
-    brushStore,
     plotRef,
     plotWidth,
     hoverTime,
     setHoverTime,
     selection,
-    highlight,
     pinned,
     times,
     cursor,

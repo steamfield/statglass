@@ -3,7 +3,13 @@ import {
   pointValue,
   seriesColor,
 } from "@core/chart-math/series-lines";
-import { formatBytes, formatPercent } from "@core/format";
+import {
+  formatBytes,
+  formatClock,
+  formatClockSeconds,
+  formatPercent,
+  resolutionLabel,
+} from "@core/format";
 import type {
   DockerContainer,
   DockerCoverage,
@@ -135,18 +141,7 @@ function ComparisonPlot({
     DOCKER_BUCKET_MS,
     ...series.flatMap((s) => s.points.map((p) => p.duration_ms))
   );
-  const durationLabel =
-    duration < 60_000
-      ? `${duration / 1000} s`
-      : duration < 3_600_000
-        ? `${duration / 60_000} min`
-        : `${duration / 3_600_000} h`;
-  const clock = (time: number) =>
-    new Date(time).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: duration < 60_000 ? "2-digit" : undefined,
-    });
+  const clock = duration < 60_000 ? formatClockSeconds : formatClock;
   const legend = useMemo(
     () => (
       <Legend
@@ -175,7 +170,7 @@ function ComparisonPlot({
         <div className="min-w-0">
           <div className="mb-1.5 text-[11px] text-muted-foreground">
             {metric === "cpu" ? "% of one core" : "Working set"}
-            {` · ${durationLabel} average · shaded min–max`}
+            {` · ${resolutionLabel(duration)} · shaded min–max`}
           </div>
           {asTable ? (
             <ComparisonValues

@@ -192,11 +192,11 @@ describe("Network page Apps card (D-089)", () => {
       )
     );
     expect(screen.queryByTestId("brush-band")).toBeNull();
-    // Nothing on the chart is selected, so nothing on it dims.
-    const bars = screen.getByRole("img", {
-      name: /last 5 minutes\. Drag to select/,
-    });
-    expect(bars.querySelectorAll(".opacity-35")).toHaveLength(0);
+    // Nothing on the chart is selected, so nothing on it is veiled.
+    expect(
+      screen.getByRole("img", { name: /last 5 minutes\. Drag to select/ })
+    ).toBeVisible();
+    expect(screen.queryByTestId("stream-veil")).toBeNull();
     expect(
       screen.getByRole("heading", { name: "Apps, selected 20 s" })
     ).toBeVisible();

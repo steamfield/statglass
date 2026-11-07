@@ -10,6 +10,7 @@
  * put a `null` between them, so no line or area is drawn across a hole
  * (error-handling.md).
  */
+import { lastAtOrBefore } from "@core/chart-math";
 import type { HistoryPoint } from "@core/generated/bindings";
 
 export type Bucket = HistoryPoint;
@@ -142,21 +143,14 @@ export function alignColumns(
 
 /**
  * The bucket containing `tMs`: the last bucket starting at or before it,
- * if `tMs` falls inside its width. Binary search; buckets are sorted.
+ * if `tMs` falls inside its width. Buckets are sorted.
  */
 export function bucketAt(
   buckets: readonly Bucket[],
   tMs: number,
   bucketMs: number
 ): Bucket | null {
-  let lo = 0;
-  let hi = buckets.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if ((buckets[mid] as Bucket).t <= tMs) lo = mid + 1;
-    else hi = mid;
-  }
-  const b = buckets[lo - 1];
+  const b = buckets[lastAtOrBefore(buckets, tMs, (x) => x.t)];
   return b && tMs < b.t + bucketMs ? b : null;
 }
 

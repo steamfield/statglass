@@ -1,7 +1,8 @@
-import { rangeFractions } from "@core/brush";
+import { nearestTime } from "@core/chart-math";
 import {
   type ComparisonMetric,
   pointValue,
+  seriesColor,
 } from "@core/chart-math/series-lines";
 import type {
   DockerContainer,
@@ -9,7 +10,8 @@ import type {
   DockerHistoryPoint,
 } from "@core/generated/bindings";
 import { useMemo } from "react";
-import { BrushOverlay } from "~/components/brush-overlay";
+import { useBrushOverlay } from "~/components/area-brush";
+import { CrosshairLine } from "~/components/charts/crosshair-line";
 import {
   ChartFrame,
   ChartGrid,
@@ -59,12 +61,10 @@ export function ComparisonCanvas({
   format: (value: number | null) => string;
 }) {
   const {
-    brushStore,
     plotRef,
     plotWidth,
     setHoverTime,
     selection,
-    highlight,
     pinned,
     times,
     cursor,
@@ -86,6 +86,47 @@ export function ComparisonCanvas({
     [plotSeries, active, onFocus, plotWidth]
   );
   const axis = ceilingAxis(ceiling, format, { zero: true });
+  const engineGaps = useMemo(
+    () =>
+      metricGaps
+        .filter((gap) => gap.container_id === null)
+        .map((gap) => ({
+          fromMs: gap.start_ms,
+          toMs: gap.end_ms ?? to,
+          label: gap.reason,
+        })),
+    [metricGaps, to]
+  );
+  const brush = useBrushOverlay({
+    firstMs: from,
+    spanMs: to - from,
+    height: HEIGHT,
+    inset: 0,
+    gaps: engineGaps,
+    onHoverTime: (time, fractionY) => {
+      const nearest = time === null ? null : nearestTime(times, time);
+      if (time === null || nearest === null) {
+        setHoverTime(null);
+        onFocus(null);
+        return;
+      }
+      setHoverTime(time);
+      const line = series
+        .map((s) => {
+          const point = s.points.find((p) => p.time_ms === nearest);
+          const value = point ? pointValue(point, metric) : null;
+          return {
+            id: s.container.id,
+            distance:
+              value === null
+                ? Infinity
+                : Math.abs(chartY(value, ceiling, HEIGHT) - fractionY * HEIGHT),
+          };
+        })
+        .sort((a, b) => a.distance - b.distance)[0];
+      onFocus(line && line.distance < 8 ? line.id : null);
+    },
+  });
   return (
     <ChartFrame
       height={HEIGHT}
@@ -120,57 +161,25 @@ export function ComparisonCanvas({
       >
         <ChartGrid values={axis.gridlines} ceiling={ceiling} height={HEIGHT} />
         {lines}
-        {cursor !== null && (
-          <line
-            x1={((cursor - from) / (to - from)) * 1000}
-            x2={((cursor - from) / (to - from)) * 1000}
-            y1={0}
-            y2={HEIGHT}
-            stroke="var(--color-muted-foreground)"
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
       </svg>
-      <ChartSelectionVeil
-        highlight={
-          highlight ? rangeFractions(highlight, from, to - from) : null
-        }
-      />
-      {brushStore && (
-        <BrushOverlay
-          firstMs={from}
-          spanMs={to - from}
-          height={HEIGHT}
-          inset={0}
-          onHoverTime={(time, fractionY) => {
-            if (time === null || !times.length) {
-              setHoverTime(null);
-              onFocus(null);
-              return;
-            }
-            const nearest = times.reduce((a, b) =>
-              Math.abs(a - time) < Math.abs(b - time) ? a : b
-            );
-            setHoverTime(time);
-            const line = series
-              .map((s) => {
-                const point = s.points.find((p) => p.time_ms === nearest);
-                const value = point ? pointValue(point, metric) : null;
-                return {
-                  id: s.container.id,
-                  distance:
-                    value === null
-                      ? Infinity
-                      : Math.abs(
-                          chartY(value, ceiling, HEIGHT) - fractionY * HEIGHT
-                        ),
-                };
-              })
-              .sort((a, b) => a.distance - b.distance)[0];
-            onFocus(line && line.distance < 8 ? line.id : null);
-          }}
+      {cursor !== null && (
+        <CrosshairLine
+          left={`${((cursor - from) / (to - from)) * 100}%`}
+          dots={rows.flatMap((row) =>
+            row.value === null
+              ? []
+              : [
+                  {
+                    key: row.container.id,
+                    top: chartY(row.value, ceiling, HEIGHT),
+                    color: seriesColor(row.slot),
+                  },
+                ]
+          )}
         />
       )}
+      <ChartSelectionVeil highlight={brush.highlight} />
+      {brush.overlay}
       {!times.length && (
         <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-muted-foreground">
           {loading
