@@ -2,6 +2,7 @@ import { countNoun, pad2 } from "@core/format";
 import type { CommandError, ExportOutcome } from "@core/generated/bindings";
 import { localDateIso } from "@core/heatmap-days";
 import { historyUnavailable } from "@core/history-state";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import type { Span } from "./time";
 
 /**
@@ -12,11 +13,11 @@ import type { Span } from "./time";
 export function exportFileName(span: Span | number, fromMs: number): string {
   const duration =
     typeof span === "number"
-      ? span % 86_400_000 === 0
-        ? `${span / 86_400_000}d`
-        : span % 3_600_000 === 0
-          ? `${span / 3_600_000}h`
-          : `${span / 60_000}m`
+      ? span % DAY_MS === 0
+        ? `${span / DAY_MS}d`
+        : span % HOUR_MS === 0
+          ? `${span / HOUR_MS}h`
+          : `${span / MINUTE_MS}m`
       : span;
   const d = new Date(fromMs);
   return `statglass-${localDateIso(d)}-${pad2(d.getHours())}${pad2(d.getMinutes())}-${duration}.csv`;

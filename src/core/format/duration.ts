@@ -1,6 +1,6 @@
+import { MINUTE_MS } from "../time-grid";
 import { isPresent, type MaybeNumber, MISSING } from "./number";
 
-const MINUTE = 60_000;
 const UNITS = [
   { suffix: "d", minutes: 24 * 60 },
   { suffix: "h", minutes: 60 },
@@ -24,7 +24,7 @@ export function formatDuration(
   { parts = 2 }: DurationOptions = {}
 ): string {
   if (!isPresent(ms) || ms < 0) return MISSING;
-  let rest = Math.floor(ms / MINUTE);
+  let rest = Math.floor(ms / MINUTE_MS);
   if (rest < 1) return "<1 min";
   if (rest < 60) return `${rest} min`;
 
@@ -49,7 +49,7 @@ export function formatDuration(
  */
 export function formatHoursMinutes(ms: MaybeNumber): string {
   if (!isPresent(ms) || ms < 0) return MISSING;
-  const total = Math.floor(ms / MINUTE);
+  const total = Math.floor(ms / MINUTE_MS);
   const h = Math.floor(total / 60);
   const m = total % 60;
   return `${h}:${String(m).padStart(2, "0")}`;

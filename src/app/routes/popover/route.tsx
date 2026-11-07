@@ -1,4 +1,5 @@
 import { windowMean } from "@core/series-stats";
+import { MINUTE_MS } from "@core/time-grid";
 import { useState } from "react";
 import { PopoverFooter } from "~/components/popover-footer";
 import { PopoverHeader } from "~/components/popover-header";
@@ -47,7 +48,7 @@ const CARDS: Record<
  */
 function LiveFooter() {
   const transport = useTransport();
-  const windowMs = useScaledWindow(60_000);
+  const windowMs = useScaledWindow(MINUTE_MS);
   const selfCpu = useHost((s) => windowMean(s, "self.cpu", windowMs));
   return (
     <PopoverFooter
@@ -71,7 +72,7 @@ export default function PopoverRoute() {
   const sampling = useSampling();
   const slots = popoverSlots(useModuleStates());
   const [scrolled, setScrolled] = useState(false);
-  const now = useNow(60_000);
+  const now = useNow(MINUTE_MS);
   const stale = sampling.stale && !sampling.paused;
   const density = usePopoverDensity();
   const ready = useSettingsStatus() !== "loading";

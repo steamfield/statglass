@@ -3,6 +3,7 @@ import {
   mockDockerSnapshot,
   mockHistoryPoints,
 } from "@core/mock/docker";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import type { CoreHeatmapProps } from "~/widgets/core-heatmap";
 import type { HeatMatrixRow } from "~/widgets/heat-matrix";
 import {
@@ -105,7 +106,7 @@ export const CPU_TOTAL: StreamAreaProps = {
   ariaLabel: "CPU user and system, last 60 seconds",
   gridlines: PERCENT_GRID,
   yTicks: PERCENT_Y_TICKS,
-  xTicks: windowTicks(60_000, 5),
+  xTicks: windowTicks(MINUTE_MS, 5),
 };
 
 // CPU over an hour with a sleep gap between samples 22 and 51.
@@ -113,10 +114,10 @@ const SLEEP_FROM = 22;
 const SLEEP_TO = 51;
 const hourCpu = series(61, 13, 22, 14);
 export const SLEEP_WINDOW = {
-  fromMs: NOW_MS - 60 * 60_000,
+  fromMs: NOW_MS - HOUR_MS,
   toMs: NOW_MS,
-  gapFromMs: NOW_MS - (60 - SLEEP_FROM) * 60_000,
-  gapToMs: NOW_MS - (60 - SLEEP_TO) * 60_000,
+  gapFromMs: NOW_MS - (60 - SLEEP_FROM) * MINUTE_MS,
+  gapToMs: NOW_MS - (60 - SLEEP_TO) * MINUTE_MS,
 };
 
 export const CPU_WITH_GAP: StreamAreaProps = {
@@ -130,7 +131,7 @@ export const CPU_WITH_GAP: StreamAreaProps = {
     },
   ],
   tEndMs: NOW_MS,
-  intervalMs: 60_000,
+  intervalMs: MINUTE_MS,
   yMax: 100,
   accent: "cpu",
   height: 72,
@@ -291,7 +292,7 @@ export const DOCKER_COMPARISON = Array.from({ length: 6 }, (_, index) => {
       {
         engine_id: container.engine_id,
         container_id: container.id,
-        from_ms: NOW_MS - 86_400_000,
+        from_ms: NOW_MS - DAY_MS,
         to_ms: NOW_MS,
         max_points: 360,
       },

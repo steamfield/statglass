@@ -13,6 +13,7 @@ import type {
   Tier,
   UsageKey,
 } from "@core/generated/bindings";
+import { HOUR_MS } from "./time-grid";
 
 /**
  * A history window. `endMs: null` follows now (Live); a number is a window
@@ -203,7 +204,7 @@ export const historyKeys = {
   ringGaps: (
     hostId: HostId,
     paused: boolean,
-    windowMs = 3_600_000,
+    windowMs = HOUR_MS,
     endMs: number | null = null
   ) =>
     [

@@ -1,9 +1,10 @@
 import type { HostLive } from "@core/live-state";
 import { windowMean } from "@core/series-stats";
 import { INTERVALS_MS } from "@core/settings-patch";
+import { MINUTE_MS } from "@core/time-grid";
 
 /** The overhead sentence averages StatGlass's own CPU over this window (plan 4.15). */
-export const OVERHEAD_WINDOW_MS = 10 * 60_000;
+export const OVERHEAD_WINDOW_MS = 10 * MINUTE_MS;
 
 /** Readings under the current sampling setup before the sentence quotes one. */
 export const MIN_READINGS = 2;

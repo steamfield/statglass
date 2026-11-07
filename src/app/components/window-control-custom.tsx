@@ -1,5 +1,6 @@
 import { chartRange, customRange, dateInput } from "@core/chart-range";
 import type { ChartWindow } from "@core/generated/bindings";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { useId, useState } from "react";
 import { SegmentedControl } from "~/components/segmented-control";
 import { Button } from "~/components/ui/button";
@@ -14,7 +15,7 @@ import { useHostClock } from "~/lib/host-clock";
 
 const INPUT =
   "figures h-8 min-w-0 rounded-md border border-input bg-transparent px-2 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive";
-const UNITS = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
+const UNITS = { minutes: MINUTE_MS, hours: HOUR_MS, days: DAY_MS };
 
 export function CustomRangeForm({
   value,

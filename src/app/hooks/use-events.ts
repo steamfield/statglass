@@ -1,6 +1,7 @@
 import { mergeEvent, RecentEvents } from "@core/events";
 import type { Event } from "@core/generated/bindings";
 import { historyKeys, sameHost } from "@core/query-keys";
+import { MINUTE_MS } from "@core/time-grid";
 import { type Transport, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -10,7 +11,7 @@ import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
 /** A live list is read again this often, for anything a push missed. */
-const LIVE_REFETCH_MS = 5 * 60_000;
+const LIVE_REFETCH_MS = 5 * MINUTE_MS;
 const NONE: readonly Event[] = [];
 
 /**

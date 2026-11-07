@@ -19,6 +19,7 @@ import {
   reduceLive,
 } from "@core/live-state";
 import { ProcessInterest } from "@core/process-interest";
+import { MINUTE_MS } from "@core/time-grid";
 import type { LiveSubscription, Transport } from "@core/transport";
 import {
   createContext,
@@ -92,7 +93,7 @@ const STALE_INTERVALS = 3;
  * per attempt without a frame, capped at `MAX_RECONNECT_MS`.
  */
 export const RECONNECT_INTERVALS = 3;
-const MAX_RECONNECT_MS = 60_000;
+const MAX_RECONNECT_MS = MINUTE_MS;
 /**
  * What Rust sends before `subscribe_live` returns (D-066). A missed span
  * longer than this would arrive partly as earlier chunks, which go in front
@@ -336,7 +337,7 @@ function useLiveSubscription(
  */
 export function HostStoreProvider({
   hostId,
-  backfillMs = 60_000,
+  backfillMs = MINUTE_MS,
   series,
   children,
 }: {

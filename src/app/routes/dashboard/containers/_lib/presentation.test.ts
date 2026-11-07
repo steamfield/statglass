@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   cpuLeader,
   dockerErrorMessage,
+  dockerErrorNotice,
   filterContainers,
 } from "./presentation";
 
@@ -50,5 +51,22 @@ describe("dockerErrorMessage", () => {
     expect(dockerErrorMessage(new Error(""))).toBe(
       "Docker didn't answer. Try again."
     );
+  });
+});
+
+describe("dockerErrorNotice", () => {
+  it("prefixes an ordinary failure with what was being read", () => {
+    expect(
+      dockerErrorNotice("Retained catalog", {
+        kind: "docker",
+        message: "socket closed",
+      })
+    ).toBe("Retained catalog unavailable: socket closed");
+  });
+
+  it("does not say unavailable twice for a store error", () => {
+    expect(
+      dockerErrorNotice("Retained catalog", { kind: "history_unavailable" })
+    ).toBe("History is unavailable. Live values still work.");
   });
 });

@@ -1,6 +1,7 @@
 import {
   formatBytes,
   formatClockSeconds,
+  formatDateTime,
   formatPercent,
   formatRate,
   formatSpan,
@@ -59,7 +60,7 @@ export default function ProcessDetailRoute() {
       </Link>
       <PageHeader
         title={process?.name ?? "Process unavailable"}
-        subtitle={`PID ${pid} · Started ${Number.isSafeInteger(start) ? new Date(start / 1000).toLocaleString() : "—"}`}
+        subtitle={`PID ${pid} · Started ${formatDateTime(Number.isSafeInteger(start) ? start / 1000 : null, { yearUnlessCurrent: true })}`}
       />
       <SectionCard
         accent="disk"

@@ -180,7 +180,7 @@ export function liveBucketCount(
 }
 
 /** Live heatmap steps; retained ranges continue in whole-minute steps. */
-const HEATMAP_BUCKETS_MS = [5000, 15_000, 30_000, 60_000];
+const HEATMAP_BUCKETS_MS = [5000, 15_000, 30_000, MINUTE_MS];
 
 /** Columns a heatmap aims for across its window. */
 const HEATMAP_COLUMNS = 60;

@@ -1,3 +1,5 @@
+import { MINUTE_MS } from "../time-grid";
+
 /**
  * Autoscaled chart ceilings (network, power, the popover CPU chart): snap the
  * data max up to a nice step, grow at once, and shrink only after the data has
@@ -8,7 +10,7 @@
 /** Mantissas of the nice ladder, times powers of ten: …, 8, 10, 20, 40, 50, … */
 const LADDER = [1, 2, 4, 5, 6, 8, 10] as const;
 
-export const SHRINK_AFTER_MS = 60_000;
+export const SHRINK_AFTER_MS = MINUTE_MS;
 
 /**
  * Which steps a ceiling snaps to. `decimal`: the mantissas above times powers

@@ -4,6 +4,7 @@ import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { remoteErrorText, sshEndpointError } from "@core/remote-errors";
 import { connectionLabel, localUpdateTarget } from "@core/remote-hosts";
+import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -54,7 +55,7 @@ function HostSettings({
   const size = useQuery({
     queryKey: hostKeys.historySize(remote.config.id),
     queryFn: () => unwrap(transport.historySize(remote.config.id)),
-    refetchInterval: 60000,
+    refetchInterval: MINUTE_MS,
   });
   const linux = remote.os === "linux";
   const [choices, setChoices] = useState<RemoveChoices>({

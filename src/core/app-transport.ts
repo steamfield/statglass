@@ -3,6 +3,7 @@ import { relativeWindow } from "./chart-range";
 import { CHART_WINDOWS } from "./live-window";
 import type { ScenarioName } from "./mock/fixtures";
 import { SCENARIOS } from "./mock/fixtures";
+import { DAY_MS } from "./time-grid";
 import type { Transport } from "./transport";
 
 const CLI_LINK_STATES: readonly CliLinkState[] = [
@@ -15,9 +16,9 @@ const CLI_LINK_STATES: readonly CliLinkState[] = [
 
 /** Timeline spans a preview can open on; they are relative windows, not presets. */
 const LONG_CHART_WINDOWS_MS: Record<string, number> = {
-  "24h": 86_400_000,
-  "7d": 604_800_000,
-  "30d": 2_592_000_000,
+  "24h": DAY_MS,
+  "7d": 7 * DAY_MS,
+  "30d": 30 * DAY_MS,
 };
 
 function parseChartWindow(value: string | null): ChartWindow | undefined {

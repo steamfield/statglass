@@ -1,6 +1,7 @@
 import { ratio } from "@core/chart-math";
 import { formatPercent } from "@core/format";
 import { spanWords } from "@core/live-window";
+import { MINUTE_MS } from "@core/time-grid";
 import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
@@ -45,7 +46,7 @@ export function CompactBattery() {
 }
 
 export function CompactPower({ showBattery }: { showBattery: boolean }) {
-  const windowMs = useScaledWindow(60_000);
+  const windowMs = useScaledWindow(MINUTE_MS);
   const history = useSeriesWindow("power.system", windowMs);
   const ceiling = useNiceCeiling(history.values, history.tEndMs, 1, windowMs);
   const ariaLabel = useChartLabel({

@@ -1,5 +1,6 @@
 import { eventId } from "@core/events";
 import type { Event } from "@core/generated/bindings";
+import { MINUTE_MS } from "@core/time-grid";
 import { selectedRange } from "./selection";
 
 export function eventPriority(event: Event): number {
@@ -67,7 +68,9 @@ export function eventRange(
   );
   const detection = Math.max(...events.map((event) => event.ts_ms));
   const padding =
-    detection === start ? 300_000 : Math.max(60_000, (detection - start) * 0.2);
+    detection === start
+      ? 300_000
+      : Math.max(MINUTE_MS, (detection - start) * 0.2);
   return selectedRange(
     start - padding,
     detection + padding,

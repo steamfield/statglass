@@ -1,4 +1,5 @@
 import { errorTone } from "@core/command-error";
+import { formatDateTime } from "@core/format";
 import type {
   ChartWindow,
   DockerContainer,
@@ -275,6 +276,6 @@ function containerObservation(
 
 function containerSubtitle(row: DockerContainer | undefined) {
   return row
-    ? `${row.image} · ${row.project ?? "Standalone"} · ${lifecycleLabel[row.lifecycle]} / ${healthLabel[row.health]} · last seen ${new Date(row.last_seen_ms).toLocaleString()}`
+    ? `${row.image} · ${row.project ?? "Standalone"} · ${lifecycleLabel[row.lifecycle]} / ${healthLabel[row.health]} · last seen ${formatDateTime(row.last_seen_ms, { yearUnlessCurrent: true })}`
     : "Loading retained container metadata…";
 }

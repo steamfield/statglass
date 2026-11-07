@@ -6,6 +6,7 @@ import {
   formatWattsFine,
 } from "@core/format";
 import { moduleState } from "@core/module-state";
+import { MINUTE_MS } from "@core/time-grid";
 import { useState } from "react";
 import { BatteryDayCard } from "~/components/battery-day-card";
 import { ModulePage } from "~/components/module-page";
@@ -122,7 +123,7 @@ function PowerSubtitle() {
           {" "}
           ·{" "}
           <span className="figures">
-            {formatHoursMinutes(remaining * 60_000)}
+            {formatHoursMinutes(remaining * MINUTE_MS)}
           </span>{" "}
           remaining
         </>

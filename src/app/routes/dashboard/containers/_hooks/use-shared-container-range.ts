@@ -1,7 +1,7 @@
 import { chartRange, validChartRange, windowEnding } from "@core/chart-range";
 import type { ChartWindow } from "@core/generated/bindings";
 import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
-import { floorTo } from "@core/time-grid";
+import { floorTo, MINUTE_MS } from "@core/time-grid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
@@ -120,7 +120,7 @@ function containerLinkRange(
   prefix: string
 ): ChartWindow | null {
   const duration = DOCKER_RANGES[dockerRange(rawRange, prefix ? "1h" : "15m")];
-  const end = historyEnd(rawEnd) ?? historyEnd(rawAt, 60_000);
+  const end = historyEnd(rawEnd) ?? historyEnd(rawAt, MINUTE_MS);
   const next = windowEnding(end, duration);
   return validChartRange(next) ? next : null;
 }

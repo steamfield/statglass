@@ -5,7 +5,7 @@ import {
   type DockerHistoryPoint,
   type DockerHistoryRequest,
 } from "@core/generated/bindings";
-import { DAY_MS, floorTo, HOUR_MS } from "@core/time-grid";
+import { DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { engine, MiB } from "./docker-fixtures";
 import { seedOf } from "./rng";
 /** Shared generator: timestamp-positioned history with real gaps and partial buckets. */
@@ -15,7 +15,11 @@ export function mockHistoryPoints(
 ): DockerHistoryPoint[] {
   const span = request.to_ms - request.from_ms;
   const tier =
-    span <= HOUR_MS ? DOCKER_BUCKET_MS : span <= 7 * DAY_MS ? 60_000 : 900_000;
+    span <= HOUR_MS
+      ? DOCKER_BUCKET_MS
+      : span <= 7 * DAY_MS
+        ? MINUTE_MS
+        : 900_000;
   const duration = Math.max(
     tier,
     Math.ceil(span / Math.max(1, request.max_points) / tier) * tier
@@ -29,7 +33,7 @@ export function mockHistoryPoints(
   const gapStart = from + Math.floor(count / 3) * duration;
   return Array.from({ length: count }, (_, i): DockerHistoryPoint | null => {
     const time = from + i * duration;
-    if (time >= gapStart && time < gapStart + 60_000) return null;
+    if (time >= gapStart && time < gapStart + MINUTE_MS) return null;
     if (container.lifecycle === "removed" && i >= count / 2) return null;
     const cpu = historyCpu(container.id, i, count, base, seed);
     const working = memory * (0.9 + 0.1 * Math.sin(i / 13 + seed));

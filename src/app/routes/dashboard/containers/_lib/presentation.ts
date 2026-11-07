@@ -112,3 +112,16 @@ export function dockerErrorMessage(error: unknown): string {
     ? remoteErrorText(typed)
     : DOCKER_FALLBACK;
 }
+
+/**
+ * `${subject} unavailable: <reason>`, except for a store error, whose message
+ * already says history is unavailable ("History is unavailable. Live values
+ * still work."); prefixing it would say so twice.
+ */
+export function dockerErrorNotice(subject: string, error: unknown): string {
+  const message = dockerErrorMessage(error);
+  const typed = commandError(error);
+  return typed !== null && historyUnavailable(typed)
+    ? message
+    : `${subject} unavailable: ${message}`;
+}

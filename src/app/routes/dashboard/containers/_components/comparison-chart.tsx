@@ -16,6 +16,7 @@ import type {
   DockerHistoryPoint,
 } from "@core/generated/bindings";
 import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+import { MINUTE_MS } from "@core/time-grid";
 import {
   type ComponentProps,
   type ReactNode,
@@ -33,7 +34,6 @@ import { BrushProvider, useBrushStoreOptional } from "~/stores/brush-store";
 import { Legend } from "~/widgets/legend";
 import { ComparisonCanvas } from "./comparison-canvas";
 import { useComparisonPlotState } from "./comparison-plot-state";
-
 import { ComparisonValues } from "./comparison-values";
 import { eventCoverage } from "./history-details";
 export interface ComparisonSeries {
@@ -119,7 +119,7 @@ function ComparisonPlot({
     DOCKER_BUCKET_MS,
     ...series.flatMap((s) => s.points.map((p) => p.duration_ms))
   );
-  const clock = duration < 60_000 ? formatClockSeconds : formatClock;
+  const clock = duration < MINUTE_MS ? formatClockSeconds : formatClock;
   const legend = useMemo(
     () => (
       <Legend

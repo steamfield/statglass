@@ -3,8 +3,10 @@ import {
   formatClock,
   formatDuration,
   formatPercent,
+  MISSING,
 } from "@core/format";
 import { hostNoun, memoryTotalLabel, osLabel } from "@core/host-os";
+import { MINUTE_MS } from "@core/time-grid";
 import { useShallow } from "zustand/react/shallow";
 import { MachineHeader, type MachineSpec } from "~/components/machine-header";
 import { useHostRecord } from "~/hooks/use-host-record";
@@ -28,7 +30,7 @@ function shortChip(chip: string): string {
  */
 export function LiveMachineHeader() {
   const host = useHostRecord();
-  const now = useNow(60_000);
+  const now = useNow(MINUTE_MS);
   const lastWake = useLastWake();
   const boot = host?.info.boot_mounts?.[0] ?? null;
   const vol = useHost(useShallow((s) => selectVolumeCapacity(s, boot)));
@@ -54,23 +56,23 @@ export function LiveMachineHeader() {
     cores > 0 ? `${cores}-core CPU${kinds ? ` (${kinds})` : ""}` : null,
   ].filter((p): p is string => Boolean(p));
   const specs: MachineSpec[] = [
-    { label: "Chip", value: chipParts.join(" · ") || "—" },
+    { label: "Chip", value: chipParts.join(" · ") || MISSING },
     { label: "Memory", value: memoryTotalLabel(info) },
     {
       label: "Storage",
       value:
         vol.total === null
-          ? "—"
+          ? MISSING
           : `${formatBytes(vol.total)} · ${formatBytes(vol.free)} available`,
     },
   ];
   if (battery.present) {
     specs.push({
       label: "Battery",
-      value: `${formatPercent(battery.charge)} · health ${formatPercent(battery.health)} · ${battery.cycles === null ? "—" : Math.round(battery.cycles)} cycles`,
+      value: `${formatPercent(battery.charge)} · health ${formatPercent(battery.health)} · ${battery.cycles === null ? MISSING : Math.round(battery.cycles)} cycles`,
     });
   }
-  specs.push({ label: "Model", value: info.model ?? "—" });
+  specs.push({ label: "Model", value: info.model ?? MISSING });
   // A Linux host's kernel says as much as its distribution; a Mac's Darwin
   // release adds nothing to the macOS version.
   if (info.os !== "mac_os" && info.kernel) {

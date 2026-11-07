@@ -1,9 +1,10 @@
+import { DAY_MS, HOUR_MS } from "@core/time-grid";
 export const DOCKER_RANGES = {
   "15m": 900_000,
-  "1h": 3_600_000,
-  "24h": 86_400_000,
-  "7d": 604_800_000,
-  "30d": 2_592_000_000,
+  "1h": HOUR_MS,
+  "24h": DAY_MS,
+  "7d": 7 * DAY_MS,
+  "30d": 30 * DAY_MS,
 } as const;
 export type DockerRange = keyof typeof DOCKER_RANGES;
 

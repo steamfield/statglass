@@ -16,6 +16,9 @@ import { useTransport } from "~/lib/transport-context";
 const SKILL_COMMAND = "statglass skill install";
 
 /** `/Users/name/...` paths in `text` as a shell user writes them. */
+/** Shown after "Couldn't install: " when the failure carries no text. */
+const INSTALL_FALLBACK = "something went wrong. Please try again.";
+
 const tilde = (text: string) => text.replace(/\/Users\/[^/\s]+\//g, "~/");
 
 function linkMessage(link: CliLinkStatus): string {
@@ -70,14 +73,14 @@ function CliLinkRow() {
       const result = await transport.cliInstallLink();
       if (result.status === "error") {
         console.error("[settings] cli_install_link failed", result.error);
-        setFailure(commandErrorText(result.error, "Please try again."));
+        setFailure(commandErrorText(result.error, INSTALL_FALLBACK));
         recheck();
       } else {
         client.setQueryData(appKeys.cliLink, result.data);
       }
     } catch (error) {
       console.error("[settings] cli_install_link rejected", error);
-      setFailure(commandErrorText(error, "Please try again."));
+      setFailure(commandErrorText(error, INSTALL_FALLBACK));
       recheck();
     } finally {
       setPending(false);

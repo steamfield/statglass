@@ -3,6 +3,7 @@
  * and the Power chart, and merging a pushed `event-recorded` into a list
  * already fetched.
  */
+import { formatPercent } from "@core/format";
 import type { Event, HostId, ThermalState } from "@core/generated/bindings";
 
 const THERMAL: Record<ThermalState, string> = {
@@ -12,7 +13,7 @@ const THERMAL: Record<ThermalState, string> = {
   critical: "Critical",
 };
 
-const pct = (v: number | null) => (v === null ? "?" : `${Math.round(v)}%`);
+const pct = (v: number | null) => (v === null ? "?" : formatPercent(v));
 const watts = (v: number | null) => (v === null ? "?" : `${v.toFixed(1)} W`);
 
 function duration(secs: number): string {

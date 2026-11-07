@@ -1,5 +1,5 @@
 import type { DockerContainer, DockerSnapshot } from "@core/generated/bindings";
-import { HOUR_MS } from "@core/time-grid";
+import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { currentCoverage, mockCoverage } from "./docker-coverage";
 import {
   aggregateContainers,
@@ -14,13 +14,13 @@ export function retainedContainers(
   return [
     ...snapshot.containers,
     {
-      ...mockContainer(0, now() - 60_000),
+      ...mockContainer(0, now() - MINUTE_MS),
       id: "removed",
       name: "Removed worker",
       lifecycle: "removed" as const,
     },
     {
-      ...mockContainer(2, now() - 60_000),
+      ...mockContainer(2, now() - MINUTE_MS),
       id: "removed-spike",
       name: "retired-worker",
       project: "liveoak",

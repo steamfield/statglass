@@ -1,5 +1,10 @@
 import type { TimeRange } from "@core/brush";
-import { formatBytes, formatClockSeconds, formatSpan } from "@core/format";
+import {
+  formatBytes,
+  formatClockSeconds,
+  formatSpan,
+  MISSING,
+} from "@core/format";
 import type { DiskIoPage } from "@core/generated/bindings";
 
 /** Totals describe the server's source buckets, which can outsize the brush. */
@@ -17,7 +22,7 @@ export function DiskRangeTotals({
     : requested
       ? requested.toMs - requested.fromMs
       : null;
-  const scope = span === null ? "—" : formatSpan(span);
+  const scope = span === null ? MISSING : formatSpan(span);
   const differs =
     page &&
     requested &&

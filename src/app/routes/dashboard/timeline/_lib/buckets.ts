@@ -11,6 +11,7 @@
  * (error-handling.md).
  */
 import { lastAtOrBefore } from "@core/chart-math";
+import { sumOrNull } from "@core/chart-math/numeric";
 import type { HistoryPoint } from "@core/generated/bindings";
 
 export type Bucket = HistoryPoint;
@@ -18,8 +19,6 @@ export type Bucket = HistoryPoint;
 /** How the label sets of one metric merge: network sums, fans take the max. */
 export type Combine = "sum" | "max";
 
-const addOrNull = (a: number | null, b: number | null) =>
-  a === null || b === null ? null : a + b;
 const maxOrNull = (a: number | null, b: number | null) =>
   a === null ? b : b === null ? a : Math.max(a, b);
 
@@ -46,8 +45,8 @@ export function combineSeries(
         byT.set(p.t, { ...p });
       } else if (combine === "sum") {
         cur.avg = (cur.avg ?? 0) + p.avg;
-        cur.min = addOrNull(cur.min, p.min);
-        cur.max = addOrNull(cur.max, p.max);
+        cur.min = sumOrNull(cur.min, p.min);
+        cur.max = sumOrNull(cur.max, p.max);
       } else {
         cur.avg = Math.max(cur.avg ?? -Infinity, p.avg);
         cur.min = maxOrNull(cur.min, p.min);

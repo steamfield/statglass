@@ -60,3 +60,8 @@ export function formatEnergy(joules: MaybeNumber): string {
   if (Math.abs(mwh) < 1) return "<1 mWh";
   return `${Math.round(mwh)} mWh`;
 }
+
+/** Watt-hours as a bare figure, one decimal ("52.4"); the unit sits beside it. */
+export function formatWattHours(wh: MaybeNumber): string {
+  return isPresent(wh) ? fixed(wh, 1) : MISSING;
+}

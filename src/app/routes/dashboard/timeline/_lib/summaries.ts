@@ -1,4 +1,10 @@
-import { formatBytes, formatPercent, MISSING } from "@core/format";
+import {
+  formatBytes,
+  formatPercent,
+  formatPercentPoints,
+  formatSignedDelta,
+  MISSING,
+} from "@core/format";
 import type { MetricStat, SeriesStats } from "@core/generated/bindings";
 import { formatMetric, type LaneUnits } from "./format";
 import type { LaneId } from "./lanes";
@@ -39,18 +45,18 @@ export function laneComparison(
       coverage: summary.coverage,
     };
   const difference = a - b;
-  const abs = Math.abs(difference);
-  const formatted = comparisonDifference(id, abs, units);
   return {
     previous: summary.value,
-    delta: `${difference < 0 ? "−" : difference > 0 ? "+" : ""}${formatted}`,
+    delta: formatSignedDelta(difference, (abs) =>
+      comparisonDifference(id, abs, units)
+    ),
     coverage: summary.coverage,
   };
 }
 
 function comparisonDifference(id: LaneId, abs: number, units: LaneUnits) {
   return id === "cpu" || id === "gpu"
-    ? `${abs.toFixed(1)} pp`
+    ? formatPercentPoints(abs)
     : id === "memory" || id === "network"
       ? formatBytes(abs, { units: units.bytes ?? "GB" })
       : id === "temp"

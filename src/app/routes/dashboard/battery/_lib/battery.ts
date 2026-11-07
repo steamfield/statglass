@@ -1,5 +1,6 @@
 import { formatHoursMinutes, MISSING, wattsParts } from "@core/format";
 import type { PowerSource } from "@core/generated/bindings";
+import { MINUTE_MS } from "@core/time-grid";
 import type { BatteryDetail } from "~/hooks/use-battery";
 
 /** `LiveStatus.power_source` (D-092), "unknown" before the first status. */
@@ -24,7 +25,7 @@ export function timeField(
   const value =
     b.timeRemainingMin === null || state === "adapter"
       ? MISSING
-      : formatHoursMinutes(b.timeRemainingMin * 60_000);
+      : formatHoursMinutes(b.timeRemainingMin * MINUTE_MS);
   return { label: state === "charging" ? "To full" : "Remaining", value };
 }
 
