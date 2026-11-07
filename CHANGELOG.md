@@ -26,6 +26,8 @@
   stop rescaling every second.
 - Container comparison gap bands and history details use Rust's coverage labels; points
   inside a collection or metrics gap no longer count as measured.
+- The Timeline range control and Containers' history toolbar share one control; the
+  Docker popover card uses the module card shell.
 - Disk processes search matches PIDs and ports by their leading digits, like Processes;
   a PID substring ("40" for 1840) no longer matches.
 - Informational lines stop announcing as alerts; status and error lines share one size.
