@@ -1,3 +1,4 @@
+import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import {
   chartRange,
   chartRangeLabel,
@@ -7,7 +8,9 @@ import {
   parseDateInput,
   recordedDate,
   recordedProcessStart,
+  usageHistorical,
   validChartRange,
+  windowEnding,
 } from "./chart-range";
 
 describe("chart ranges", () => {
@@ -74,4 +77,28 @@ it("preserves selected seconds and distinguishes process starts within a millise
   expect(recordedProcessStart(ms * 1000 + 2)).toBe(
     "2026-10-26 12:34:50.123002"
   );
+});
+
+describe("windowEnding", () => {
+  it("ends a fixed window at the given end", () => {
+    expect(windowEnding(10_000_000, 3_600_000)).toEqual({
+      absolute: { from_ms: 6_400_000, to_ms: 10_000_000 },
+    });
+  });
+  it("follows now without an end, naming a preset when one matches", () => {
+    expect(windowEnding(null, 3_600_000)).toBe("1h");
+    expect(windowEnding(null, 5_400_000)).toEqual({ relative: 5_400_000 });
+  });
+});
+
+describe("usageHistorical", () => {
+  it("reads retained usage for a fixed end or a window past the live ring", () => {
+    expect(usageHistorical({ windowMs: USAGE_KEEP_MS, endMs: null })).toBe(
+      false
+    );
+    expect(usageHistorical({ windowMs: USAGE_KEEP_MS + 1, endMs: null })).toBe(
+      true
+    );
+    expect(usageHistorical({ windowMs: 60_000, endMs: 1_000_000 })).toBe(true);
+  });
 });

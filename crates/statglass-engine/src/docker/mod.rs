@@ -17,7 +17,7 @@ mod normalize;
 mod persistence;
 pub mod storage;
 use futures_util::{StreamExt, stream};
-pub use persistence::DockerRecorder;
+pub use persistence::{DOCKER_BUCKET_MS, DockerRecorder};
 use statglass_collect::docker::{DockerAdapter, DockerCounters, DockerError, candidates, now_ms};
 use statglass_schema::{HostId, docker::*, lock::LockExt};
 use std::{

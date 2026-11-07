@@ -3,13 +3,13 @@ import {
   bucketAt,
   clampRange,
   extendRange,
-  floorTo,
   rangeFractions,
   snapRange,
   type TimeRange,
   timeAt,
 } from "@core/brush";
 import { formatClockSeconds } from "@core/format";
+import { floorTo } from "@core/time-grid";
 import {
   type KeyboardEvent,
   type PointerEvent,
@@ -215,7 +215,10 @@ export function BrushOverlay({
 
   const focusBounds = () => {
     const { lo, hi } = bounds();
-    return { first: floorTo(lo), last: floorTo(hi - 1) };
+    return {
+      first: floorTo(lo, BRUSH_STEP_MS),
+      last: floorTo(hi - 1, BRUSH_STEP_MS),
+    };
   };
   /** Where focus lands: the selection's last bucket, else the newest one. */
   const startFocus = (r: TimeRange | null) => {
@@ -229,7 +232,7 @@ export function BrushOverlay({
     // entry should move the tooltip to the selection/newest observation.
     const pointer = drag.current;
     const time = pointer
-      ? floorTo(pointer.anchorMs)
+      ? floorTo(pointer.anchorMs, BRUSH_STEP_MS)
       : startFocus(store.getState().range);
     setFocusMs(time);
     if (!pointer) onHoverTime?.(time, 0);
@@ -284,8 +287,8 @@ export function BrushOverlay({
       ? null
       : rangeFractions(bucketAt(focusMs), firstMs, spanMs);
   // The bucket the slider is on: focused, or where focus will land.
-  const first = floorTo(firstMs);
-  const last = floorTo(toMs - 1);
+  const first = floorTo(firstMs, BRUSH_STEP_MS);
+  const last = floorTo(toMs - 1, BRUSH_STEP_MS);
   const at = Math.min(
     last,
     Math.max(first, focusMs ?? (range ? range.toMs - BRUSH_STEP_MS : last))

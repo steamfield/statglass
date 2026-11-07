@@ -2,12 +2,14 @@ import { HISTORY_TIERS, RING_SPAN_MS } from "@core/generated/bindings";
 import { historyGrid } from "@core/history-grid";
 import { historyKeys } from "@core/query-keys";
 import { seriesKeyString } from "@core/series-key";
+import { floorTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { useModuleEnd } from "~/hooks/use-module-end";
+import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
-import { useModuleRange } from "~/stores/chart-range";
 import { useHost, useHostId } from "~/stores/host-store";
 
 /** Bounded retained-history reads. Relative ranges refresh once per displayed bucket. */
@@ -17,8 +19,7 @@ export function useHistorySeries(
   points: number,
   breakAtGaps = true
 ) {
-  const range = useModuleRange();
-  const end = range?.endMs ?? null;
+  const end = useModuleEnd();
   const enabled = windowMs > RING_SPAN_MS || end !== null;
   const clock = useHostClock();
   const hostId = useHostId();
@@ -27,15 +28,9 @@ export function useHistorySeries(
     HISTORY_TIERS[0].bucket_ms,
     Math.min(60_000, Math.ceil(windowMs / points))
   );
-  const edge = useHost((s) =>
-    enabled && end === null && s.lastTsMs !== null
-      ? Math.floor(s.lastTsMs / width) * width
-      : null
-  );
+  const edge = useOpenEdge(enabled && end === null, width);
   // A disabled history observer must not rotate cache entries as the live clock moves.
-  const toMs = enabled
-    ? (end ?? edge ?? Math.floor(clock() / width) * width)
-    : 0;
+  const toMs = enabled ? (end ?? edge ?? floorTo(clock(), width)) : 0;
   const keyList = keys.join("\n");
   const stableKeys = useMemo(
     () => (keyList ? keyList.split("\n") : []),

@@ -7,10 +7,10 @@ import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useModuleSeries } from "~/hooks/use-module-series";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { useModuleRange } from "~/stores/chart-range";
 import { Legend } from "~/widgets/legend";
 import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import { StreamArea } from "~/widgets/stream-area";
@@ -53,7 +53,7 @@ export function UsedCard({
 }) {
   const units = useUnits();
   const v = useHeld(KEYS);
-  const endMs = useModuleRange()?.endMs ?? null;
+  const endMs = useModuleEnd();
   const series = useModuleSeries(KEYS, windowMs, { brush: true });
   const gaps = useGapBands("memory");
   const brush = useAreaBrush(series, HEIGHT, true, gaps);

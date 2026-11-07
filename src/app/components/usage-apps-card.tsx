@@ -6,7 +6,6 @@ import type {
   UsageByApp,
   UsageKey,
 } from "@core/generated/bindings";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { targetKey } from "@core/process-selection";
 import { remoteQueryText } from "@core/remote-errors";
 import {
@@ -52,10 +51,10 @@ import {
 import { useEdition } from "~/hooks/use-edition";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { cn } from "~/lib/utils";
-import { useModuleRange } from "~/stores/chart-range";
 import { InitialChip } from "~/widgets/initial-chip";
 import type { Accent } from "~/widgets/lib/accent";
 
@@ -99,8 +98,8 @@ interface UsageAppsCardProps {
  * "System and other", so additive columns add up to the host's figure.
  */
 export function UsageAppsCard(props: UsageAppsCardProps) {
-  const fixed = useModuleRange()?.endMs != null;
-  return fixed || props.windowMs > USAGE_KEEP_MS ? (
+  const historical = useUsageHistorical(props.windowMs);
+  return historical ? (
     <MemoHistoricalUsageApps {...props} />
   ) : (
     <LiveUsageAppsCard {...props} />
@@ -133,7 +132,7 @@ function LiveUsageAppsCard({
   config,
   viewControl,
 }: UsageAppsCardProps) {
-  const fixedEnd = useModuleRange()?.endMs ?? null;
+  const fixedEnd = useModuleEnd();
   const { selection, range, keepPrevious } = useRangeScope(windowMs);
   const q = useUsageByApp(range, config.by, { keepPrevious });
   const [query, setQuery] = useState("");

@@ -9,6 +9,7 @@ import type {
   DockerRankedContainer,
   DockerSnapshot,
 } from "@core/generated/bindings";
+import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
 import {
   type Dispatch,
   type SetStateAction,
@@ -248,7 +249,7 @@ function useMembershipEvaluation({
   const previousScope = useRef("");
   useEffect(() => {
     if (custom !== null || !hasRanking || placeholder) return;
-    const key = `${scope}:${Math.floor((observedMs ?? 0) / 10_000)}`;
+    const key = `${scope}:${Math.floor((observedMs ?? 0) / DOCKER_BUCKET_MS)}`;
     if (evaluation.current === key) return;
     const immediate = previousScope.current !== scope;
     evaluation.current = key;

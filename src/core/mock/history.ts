@@ -3,6 +3,7 @@
  * series' sample value, with the scenario's gaps cut out (slots inside a gap
  * are absent, never zero).
  */
+
 import {
   type BatteryHour,
   type Gap,
@@ -16,6 +17,7 @@ import {
   type Tier,
 } from "@core/generated/bindings";
 import { seriesKeyString } from "@core/series-key";
+import { ceilTo, floorTo } from "@core/time-grid";
 import type { ScenarioFlags } from "./fixtures";
 import type { SeriesSpec } from "./generator";
 import { fnv1a, rng } from "./rng";
@@ -115,7 +117,7 @@ const TIER_BASE: Record<StoredTier, number> = {
 /** The store's `m1_rolled` cut: the quarter at or before the minutes' window. */
 function rollCut(nowMs: number): number {
   const q = M15.bucket_ms;
-  return Math.floor((nowMs - M1.kept_ms) / q) * q;
+  return floorTo(nowMs - M1.kept_ms, q);
 }
 
 /**
@@ -189,7 +191,7 @@ export function mockHistory(
   // The store's merge (`Reader::history`): tier buckets from the one at or
   // before `from_ms`, merged in runs so at most `max_points` come back,
   // each point stamped with its run's first bucket.
-  const first = Math.floor(req.from_ms / base) * base;
+  const first = floorTo(req.from_ms, base);
   const buckets = Math.ceil(span === 0 ? 0 : (req.to_ms - first) / base);
   const step =
     base * Math.max(1, Math.ceil(buckets / Math.max(1, req.max_points)));
@@ -330,7 +332,7 @@ export function mockSeriesStats(
   });
   const width = Math.max(1, page.bucket_ms);
   const from = fromMs - (fromMs % width);
-  const to = Math.max(from, Math.min(Math.ceil(toMs / width) * width, now));
+  const to = Math.max(from, Math.min(ceilTo(toMs, width), now));
   return {
     from_ms: from,
     to_ms: to,

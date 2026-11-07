@@ -350,9 +350,17 @@ export const events = {
 };
 
 /* Constants */
+export const CHART_WINDOWS = ["5m","15m","30m","1h"] as const;
+
+export const CHART_WINDOW_MS = {"15m":900000,"1h":3600000,"30m":1800000,"5m":300000} as const;
+
 export const CLAMP_SLACK_BYTES = 8192 as const;
 
+export const DEFAULT_CHART_WINDOW = "15m" as const;
+
 export const DEFAULT_SIZE_LIMIT_MB = 750 as const;
+
+export const DOCKER_BUCKET_MS = 10000 as const;
 
 export const HEADER_BYTES_PER_PACKET = 66 as const;
 

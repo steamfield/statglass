@@ -11,9 +11,9 @@ import {
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useModuleSeries } from "~/hooks/use-module-series";
 import { useHeld, useLayout } from "~/hooks/use-ring";
-import { useModuleRange } from "~/stores/chart-range";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import {
   historyTicks,
@@ -99,7 +99,7 @@ function useStripItems(): { total: number | null; items: StatStripItem[] } {
  */
 export function TotalCard({ windowMs }: { windowMs: number }) {
   const { total, items } = useStripItems();
-  const endMs = useModuleRange()?.endMs ?? null;
+  const endMs = useModuleEnd();
   const series = useModuleSeries(CHART, windowMs, { brush: true });
   const gaps = useGapBands("cpu");
   const brush = useAreaBrush(series, HEIGHT, true, gaps);

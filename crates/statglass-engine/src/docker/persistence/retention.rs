@@ -16,11 +16,11 @@ pub(super) fn evict_entry(s: &mut State, key: &Key) {
                 entity: Some(key.1.clone()),
                 metric: None,
                 start_ms: key.2,
-                end_ms: Some(key.2 + 10_000),
+                end_ms: Some(key.2 + DOCKER_BUCKET_MS),
                 reason: "write_failed".into(),
                 revision,
                 sampled_ms: 0,
-                expected_ms: 10_000,
+                expected_ms: DOCKER_BUCKET_MS,
             };
             let mut retry = Retry::default();
             if let Some(fact) = s.facts.get(&(key.0.clone(), key.1.clone())) {
@@ -163,7 +163,7 @@ fn expired(s: &State, now: i64) -> Vec<Key> {
     s.entries
         .iter()
         .filter(|((_, _, t), e)| {
-            let end = t.saturating_add(10_000);
+            let end = t.saturating_add(DOCKER_BUCKET_MS);
             let persisted = e.bucket.revision <= e.durable;
             e.pins == 0 && (end <= now - HOUR || persisted && end <= now - PERSISTED_KEEP_MS)
         })

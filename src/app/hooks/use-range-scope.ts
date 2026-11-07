@@ -1,17 +1,22 @@
-import { floorTo, type TimeRange, windowRange } from "@core/brush";
+import { BRUSH_STEP_MS, type TimeRange, windowRange } from "@core/brush";
+import { floorTo } from "@core/time-grid";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useBrushRange } from "~/stores/brush-store";
-import { useModuleRange } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 
 /**
- * Start of the 10 s bucket the newest sample is in, or null before the
- * first sample. Changes once every 10 s, so a component reading it
- * re-renders at that cadence, not at 1 Hz. Always null while `enabled` is
- * false, so a reader that has it off does not re-render at all.
+ * Start of the `stepMs` bucket (the brush's 10 s unless given) the newest
+ * sample is in, or null before the first sample. Changes once per bucket,
+ * so a component reading it re-renders at that cadence, not at 1 Hz.
+ * Always null while `enabled` is false, so a reader that has it off does
+ * not re-render at all.
  */
-export function useOpenEdge(enabled = true): number | null {
+export function useOpenEdge(
+  enabled = true,
+  stepMs: number = BRUSH_STEP_MS
+): number | null {
   return useHost((s) =>
-    enabled && s.lastTsMs !== null ? floorTo(s.lastTsMs) : null
+    enabled && s.lastTsMs !== null ? floorTo(s.lastTsMs, stepMs) : null
   );
 }
 
@@ -35,7 +40,7 @@ export function useRangeScope(
   edgeMs?: number | null
 ): RangeScope {
   const selection = useBrushRange();
-  const fixedEnd = useModuleRange()?.endMs ?? null;
+  const fixedEnd = useModuleEnd();
   const open = useOpenEdge(
     selection === null && fixedEnd === null && edgeMs === undefined
   );

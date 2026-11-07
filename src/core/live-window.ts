@@ -5,8 +5,15 @@
  * Faster intervals keep the window (more samples), and no window exceeds the
  * engine's one-hour ring.
  */
-import { type ChartWindow, RING_SPAN_MS } from "@core/generated/bindings";
+import {
+  type ChartWindow,
+  CHART_WINDOW_MS as PRESET_MS,
+  CHART_WINDOWS as PRESETS,
+  RING_SPAN_MS,
+  DEFAULT_CHART_WINDOW as RUST_DEFAULT,
+} from "@core/generated/bindings";
 import { samplingPlan } from "@core/sampling-plans";
+import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 
 /**
  * Fewest samples a fixed window choice (5m, 15m, 30m, 1h) must hold to be
@@ -29,23 +36,18 @@ export function windowAllowed(windowMs: number, intervalMs: number): boolean {
 /**
  * The module pages' chart window (D-091), shortest first. One choice, saved
  * in settings, applies to every windowed chart on every module page.
+ * Rust's `ChartWindow::PRESETS`.
  */
-export const CHART_WINDOWS: readonly Extract<ChartWindow, string>[] = [
-  "5m",
-  "15m",
-  "30m",
-  "1h",
-];
+export const CHART_WINDOWS: readonly Extract<ChartWindow, string>[] = PRESETS;
 
 /** The chart window when none is saved or settings could not be read (Rust's default). */
-export const DEFAULT_CHART_WINDOW: ChartWindow = "15m";
+export const DEFAULT_CHART_WINDOW: ChartWindow = RUST_DEFAULT;
 
-export const CHART_WINDOW_MS: Record<Extract<ChartWindow, string>, number> = {
-  "5m": 300_000,
-  "15m": 900_000,
-  "30m": 1_800_000,
-  "1h": 3_600_000,
-};
+/** Each fixed choice's duration (`ChartWindow::preset_ms`). */
+export const CHART_WINDOW_MS: Record<
+  Extract<ChartWindow, string>,
+  number
+> = PRESET_MS;
 
 /**
  * The window the pages show for the `saved` choice at `intervalMs`: the
@@ -92,19 +94,19 @@ export function slowestIntervalMs(
 /** Corner label for a window: "48s", "60s", "30m", "1h". */
 export function windowLabel(ms: number): string {
   if (ms < 120_000) return `${Math.round(ms / 1000)}s`;
-  if (ms % 86_400_000 === 0) return `${ms / 86_400_000}d`;
+  if (ms % DAY_MS === 0) return `${ms / DAY_MS}d`;
   if (ms % RING_SPAN_MS === 0) return `${ms / RING_SPAN_MS}h`;
-  return `${Math.round(ms / 60_000)}m`;
+  return `${Math.round(ms / MINUTE_MS)}m`;
 }
 
 /** The same window in words, for accessible names: "60 seconds", "30 minutes", "hour". */
 export function windowWords(ms: number): string {
   if (ms < 120_000) return `${Math.round(ms / 1000)} seconds`;
-  if (ms % 86_400_000 === 0) {
-    const days = ms / 86_400_000;
+  if (ms % DAY_MS === 0) {
+    const days = ms / DAY_MS;
     return days === 1 ? "day" : `${days} days`;
   }
-  if (ms % RING_SPAN_MS !== 0) return `${Math.round(ms / 60_000)} minutes`;
+  if (ms % RING_SPAN_MS !== 0) return `${Math.round(ms / MINUTE_MS)} minutes`;
   const h = Math.round(ms / RING_SPAN_MS);
   return h === 1 ? "hour" : `${h} hours`;
 }

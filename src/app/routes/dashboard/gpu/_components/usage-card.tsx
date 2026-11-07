@@ -11,9 +11,9 @@ import {
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useModuleSeries } from "~/hooks/use-module-series";
 import { useHeld } from "~/hooks/use-ring";
-import { useModuleRange } from "~/stores/chart-range";
 import {
   historyTicks,
   PERCENT_GRID,
@@ -42,7 +42,7 @@ const TOTALS: readonly RangeTotal[] = [
  */
 export function UsageCard({ windowMs }: { windowMs: number }) {
   const v = useHeld(HELD);
-  const endMs = useModuleRange()?.endMs ?? null;
+  const endMs = useModuleEnd();
   const series = useModuleSeries(CHART, windowMs, { brush: true });
   const gaps = useGapBands("gpu");
   const brush = useAreaBrush(series, HEIGHT, true, gaps);

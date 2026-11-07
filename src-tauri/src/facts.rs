@@ -2,7 +2,7 @@
 //! (D-090, D-092). Each is built from the constant or function the Rust code itself runs
 //! on, so the webview and the mock transport never keep a copy that can drift.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::Serialize;
 use statglass_engine::{
@@ -10,7 +10,7 @@ use statglass_engine::{
     performance_period,
 };
 use statglass_schema::settings::{
-    HistorySettings, ItemMode, Readout, SETTINGS_MODULES, SamplingSettings,
+    ChartWindow, HistorySettings, ItemMode, Readout, SETTINGS_MODULES, SamplingSettings,
 };
 use statglass_schema::{MetricKind, Module, PerformanceReason, Tier, Unit};
 use statglass_store::{FILL_MINUTES, FILL_ROLLED, FillMeasurement, Retention};
@@ -81,6 +81,15 @@ pub fn item_modes() -> BTreeMap<Module, &'static [ItemMode]> {
     SETTINGS_MODULES
         .into_iter()
         .map(|m| (m, ItemMode::allowed_for(m)))
+        .collect()
+}
+
+/// Each fixed chart window's duration in ms (`ChartWindow::preset_ms`, D-091). The
+/// bindings write it as JSON, whose object keys are sorted, so the order is stable.
+pub fn chart_window_ms() -> HashMap<ChartWindow, i64> {
+    ChartWindow::PRESETS
+        .into_iter()
+        .filter_map(|w| Some((w, w.preset_ms()?)))
         .collect()
 }
 
@@ -324,6 +333,7 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .constant("PERFORMANCE_VISIBLE_MS", statglass_engine::PERFORMANCE_VISIBLE_MS)
         .constant("NET_BUCKET_MS", statglass_engine::NET_BUCKET_MS)
         .constant("USAGE_BUCKET_MS", statglass_engine::USAGE_BUCKET_MS)
+        .constant("DOCKER_BUCKET_MS", statglass_engine::docker::DOCKER_BUCKET_MS)
         // The longest range `query_usage_series` answers.
         .constant("USAGE_KEEP_MS", statglass_engine::USAGE_KEEP_MS)
         .constant("USAGE_HISTORY_MAX_RANGE_MS", statglass_schema::durable_usage::USAGE_HISTORY_MAX_RANGE_MS)
@@ -337,6 +347,9 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .constant("DEFAULT_SIZE_LIMIT_MB", statglass_schema::settings::HistorySettings::DEFAULT_SIZE_LIMIT_MB)
         .constant("SETTINGS_MODULES", statglass_schema::settings::SETTINGS_MODULES)
         .constant("ITEM_MODES", item_modes())
+        .constant("CHART_WINDOWS", ChartWindow::PRESETS)
+        .constant("CHART_WINDOW_MS", chart_window_ms())
+        .constant("DEFAULT_CHART_WINDOW", ChartWindow::default())
         .constant("READOUTS", READOUTS)
         .constant("HISTORY_TIERS", history_tiers())
         .constant("HISTORY_PROJECTION", history_projection())
@@ -466,6 +479,15 @@ mod tests {
         let p = history_projection();
         assert_eq!((p.minute_days, p.quarter_factor), (7, 15));
         assert!((p.trim_low_water - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn chart_window_ms_covers_every_preset() {
+        let ms = chart_window_ms();
+        assert_eq!(ms.len(), ChartWindow::PRESETS.len());
+        assert_eq!(ms[&ChartWindow::default()], 900_000);
+        let json = serde_json::to_value(&ms).unwrap();
+        assert_eq!(json["1h"], 3_600_000);
     }
 
     #[test]

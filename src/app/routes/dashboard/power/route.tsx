@@ -1,10 +1,10 @@
+import { usageHistorical } from "@core/chart-range";
 import {
   formatEnergy,
   formatHoursMinutes,
   formatWatts,
   formatWattsFine,
 } from "@core/format";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { moduleState } from "@core/module-state";
 import { useState } from "react";
 import { BatteryDayCard } from "~/components/battery-day-card";
@@ -68,9 +68,7 @@ export default function PowerRoute() {
     caps !== null && moduleState(caps, null, "power") === "unknown_chip";
   const chartWindow = useChartWindow();
   const windowMs = chartWindow?.windowMs ?? null;
-  const historical =
-    chartWindow !== null &&
-    (chartWindow.endMs !== null || chartWindow.windowMs > USAGE_KEEP_MS);
+  const historical = chartWindow !== null && usageHistorical(chartWindow);
   // A Linux agent (D-116) attributes no energy to processes.
   const energy = useProcessColumnCaps().energy;
 

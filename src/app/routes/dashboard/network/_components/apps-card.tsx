@@ -7,7 +7,6 @@ import {
   type RateUnits,
 } from "@core/format";
 import type { NetworkByApp } from "@core/generated/bindings";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { networkByAppFailure } from "@core/history-state";
 import { CommandFailure } from "@core/transport";
 import type { OnChangeFn, SortingState } from "@tanstack/react-table";
@@ -30,10 +29,10 @@ import {
 import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import { SelectionChip } from "~/components/selection-chip";
 import { Table, TableCell, TableHeader, TableRow } from "~/components/ui/table";
+import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
 import { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
-import { useModuleRange } from "~/stores/chart-range";
 import { InitialChip } from "~/widgets/initial-chip";
 import {
   useCompleteEdge,
@@ -62,8 +61,8 @@ import {
  * other".
  */
 export function AppsCard({ windowMs }: { windowMs: number }) {
-  const fixed = useModuleRange()?.endMs != null;
-  return fixed || windowMs > USAGE_KEEP_MS ? (
+  const historical = useUsageHistorical(windowMs);
+  return historical ? (
     <MemoHistoricalNetworkApps windowMs={windowMs} />
   ) : (
     <LiveAppsCard windowMs={windowMs} />
@@ -85,7 +84,7 @@ function HistoricalNetworkApps({ windowMs }: { windowMs: number }) {
 const MemoHistoricalNetworkApps = memo(HistoricalNetworkApps);
 
 function LiveAppsCard({ windowMs }: { windowMs: number }) {
-  const fixed = useModuleRange()?.endMs != null;
+  const fixed = useModuleEnd() !== null;
   const complete = useCompleteEdge(useOpenEdge());
   const { selection, range, keepPrevious } = useRangeScope(windowMs, complete);
   const totals = useNetworkByApp(range, { keepPrevious });

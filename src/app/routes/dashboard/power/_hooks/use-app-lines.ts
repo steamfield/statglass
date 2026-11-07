@@ -3,10 +3,10 @@ import { resampleBuckets, type SlotGrid } from "@core/chart-math";
 import { RING_SPAN_MS } from "@core/generated/bindings";
 import { useMemo } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useUsageSeries } from "~/hooks/use-usage-series";
-import { useModuleRange } from "~/stores/chart-range";
 
 /** Apps drawn as lines under the system draw. */
 export const APP_LINES = 5;
@@ -43,7 +43,7 @@ export type AppLines =
 export function useAppLines(windowMs: number, grid: SlotGrid): AppLines {
   const local = useIsLocalHost();
   const energy = useProcessColumnCaps().energy;
-  const fixedEnd = useModuleRange()?.endMs ?? null;
+  const fixedEnd = useModuleEnd();
   const liveEdge = useOpenEdge(fixedEnd === null);
   const edge = fixedEnd ?? liveEdge;
   const long = windowMs > RING_SPAN_MS;

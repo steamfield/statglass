@@ -38,6 +38,8 @@ const RING_BYTES: usize = 64 * 1024 * 1024;
 /// observations, with slack.
 const PERSISTED_KEEP_MS: i64 = 120_000;
 const HOUR: i64 = 3_600_000;
+/// Width of a ring bucket: the S10 tier's. The client snaps Docker ranges to it.
+pub const DOCKER_BUCKET_MS: i64 = Tier::S10.bucket_ms().expect("S10 has a bucket width");
 type Key = (String, String, i64);
 #[derive(Clone)]
 struct Attached {

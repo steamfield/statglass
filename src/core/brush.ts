@@ -9,7 +9,7 @@ import { clamp01 } from "@core/chart-math";
 import { formatSpan } from "@core/format";
 import { NET_BUCKET_MS } from "@core/generated/bindings";
 import { windowWords } from "@core/live-window";
-import { ceilTo as ceilToGrid, floorTo as floorToGrid } from "@core/time-grid";
+import { ceilTo, floorTo } from "@core/time-grid";
 
 /** Width of the buckets a selection snaps to: the per-app network bucket. */
 export const BRUSH_STEP_MS: number = NET_BUCKET_MS;
@@ -23,12 +23,6 @@ export interface TimeRange {
 const BRUSH_BAR_LADDER_MS = [
   1000, 2000, 5000, 10_000, 30_000, 60_000, 300_000, 600_000,
 ] as const;
-
-/** `time-grid` snapping on the brush's 10 s grid unless a step is given. */
-export const floorTo = (t: number, step = BRUSH_STEP_MS) =>
-  floorToGrid(t, step);
-
-export const ceilTo = (t: number, step = BRUSH_STEP_MS) => ceilToGrid(t, step);
 
 /**
  * Bar width for a brushable chart: the smallest width on the ladder that is

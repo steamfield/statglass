@@ -6,8 +6,8 @@ import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useHistorySeries } from "~/hooks/use-history-series";
 import { useGpuMaxMhz } from "~/hooks/use-host-record";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useHeld, useLayout, useRingStats } from "~/hooks/use-ring";
-import { useModuleRange } from "~/stores/chart-range";
 import { ResidencyBar } from "~/widgets/residency-bar";
 import { RingGauge } from "~/widgets/ring-gauge";
 
@@ -18,7 +18,7 @@ import { RingGauge } from "~/widgets/ring-gauge";
  * MHz, as for CPU clusters.
  */
 export function FrequencyCard({ windowMs }: { windowMs: number }) {
-  const pinned = useModuleRange()?.endMs != null;
+  const pinned = useModuleEnd() !== null;
   const span = pinned ? "selected dates" : `last ${windowWords(windowMs)}`;
   const layout = useLayout();
   const states: { key: string; state: string }[] = [];

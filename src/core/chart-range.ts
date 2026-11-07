@@ -1,18 +1,19 @@
 import type { ChartWindow } from "@core/generated/bindings";
-import { RETENTION_DAYS } from "@core/generated/bindings";
+import { RETENTION_DAYS, USAGE_KEEP_MS } from "@core/generated/bindings";
 import {
   CHART_WINDOW_MS,
   windowAllowed,
   windowLabel,
   windowWords,
 } from "@core/live-window";
+import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 
-export const MAX_RANGE_MS = Math.max(...RETENTION_DAYS) * 86_400_000;
+export const MAX_RANGE_MS = Math.max(...RETENTION_DAYS) * DAY_MS;
 export const RANGE_PRESETS = [
   5, 15, 30, 60, 180, 360, 720, 1440, 2880, 10080, 20160, 43200, 129600,
 ].map((minutes) => ({
-  ms: minutes * 60_000,
-  label: `Last ${minutes === 60 ? "1 hour" : minutes === 1440 ? "1 day" : windowWords(minutes * 60_000)}`,
+  ms: minutes * MINUTE_MS,
+  label: `Last ${minutes === 60 ? "1 hour" : minutes === 1440 ? "1 day" : windowWords(minutes * MINUTE_MS)}`,
 }));
 
 export function chartRange(value: ChartWindow): {
@@ -37,11 +38,35 @@ export function relativeWindow(ms: number): ChartWindow {
     : { relative: ms };
 }
 
+/**
+ * The window of `durationMs` ending at `endMs`; with no end, the rolling
+ * window of that duration (a preset when one matches).
+ */
+export function windowEnding(
+  endMs: number | null,
+  durationMs: number
+): ChartWindow {
+  return endMs === null
+    ? relativeWindow(durationMs)
+    : { absolute: { from_ms: endMs - durationMs, to_ms: endMs } };
+}
+
+/**
+ * Whether per-app usage for this range comes from retained history: a fixed
+ * end, or a window longer than the live usage ring keeps (`USAGE_KEEP_MS`).
+ */
+export function usageHistorical(range: {
+  windowMs: number;
+  endMs: number | null;
+}): boolean {
+  return range.endMs !== null || range.windowMs > USAGE_KEEP_MS;
+}
+
 export function validChartRange(value: ChartWindow): boolean {
   const { windowMs, endMs } = chartRange(value);
   return (
     Number.isSafeInteger(windowMs) &&
-    windowMs >= 60_000 &&
+    windowMs >= MINUTE_MS &&
     windowMs <= MAX_RANGE_MS &&
     (endMs === null ||
       (Number.isSafeInteger(endMs) &&
@@ -98,7 +123,7 @@ export function customRange(draft: {
 }): { value: ChartWindow } | { error: string } {
   if (draft.mode === "relative") {
     const ms = Number(draft.amount) * draft.unitMs;
-    if (!Number.isSafeInteger(ms) || ms < 60_000 || ms > MAX_RANGE_MS)
+    if (!Number.isSafeInteger(ms) || ms < MINUTE_MS || ms > MAX_RANGE_MS)
       return { error: "Choose a duration from 1 minute to 90 days." };
     if (!windowAllowed(ms, draft.intervalMs))
       return {

@@ -3,7 +3,9 @@ import type {
   DockerContainer,
   DockerSnapshot,
 } from "@core/generated/bindings";
+import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
 import { dockerKeys } from "@core/query-keys";
+import { floorTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -51,7 +53,7 @@ function LocalContainerDetailRoute() {
   const location = useLocation();
   const navigation = useRangeNavigation();
   const { snapshot } = useDocker();
-  const now = Math.floor((snapshot?.now_ms ?? Date.now()) / 10_000) * 10_000;
+  const now = floorTo(snapshot?.now_ms ?? Date.now(), DOCKER_BUCKET_MS);
   const sharedRange = useSharedContainerRange(now);
   const range = sharedRange.preset;
   const end = sharedRange.endMs;

@@ -1,3 +1,5 @@
+import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+import { floorTo } from "@core/time-grid";
 import { DOCKER_RANGES, dockerRange, historyEnd } from "./history-params";
 import {
   type ContainerSort,
@@ -17,7 +19,7 @@ export function containerRouteState(
     params.get("metric") === "memory" ? "memory" : "cpu";
   const range = dockerRange(params.get("range"), "15m");
   const end = historyEnd(params.get("end"));
-  const now = Math.floor(nowMs / 10_000) * 10_000;
+  const now = floorTo(nowMs, DOCKER_BUCKET_MS);
   const to = end ?? now;
   const rawSort = params.get("sort");
   const by = rawSort && isContainerSortColumn(rawSort) ? rawSort : null;

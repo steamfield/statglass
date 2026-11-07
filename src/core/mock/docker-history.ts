@@ -1,8 +1,10 @@
-import type {
-  DockerContainer,
-  DockerHistoryPoint,
-  DockerHistoryRequest,
+import {
+  DOCKER_BUCKET_MS,
+  type DockerContainer,
+  type DockerHistoryPoint,
+  type DockerHistoryRequest,
 } from "@core/generated/bindings";
+import { floorTo } from "@core/time-grid";
 import { engine, MiB } from "./docker-fixtures";
 /** Shared generator: timestamp-positioned history with real gaps and partial buckets. */
 export function mockHistoryPoints(
@@ -11,7 +13,11 @@ export function mockHistoryPoints(
 ): DockerHistoryPoint[] {
   const span = request.to_ms - request.from_ms;
   const tier =
-    span <= 3_600_000 ? 10_000 : span <= 7 * 86_400_000 ? 60_000 : 900_000;
+    span <= 3_600_000
+      ? DOCKER_BUCKET_MS
+      : span <= 7 * 86_400_000
+        ? 60_000
+        : 900_000;
   const duration = Math.max(
     tier,
     Math.ceil(span / Math.max(1, request.max_points) / tier) * tier
@@ -21,7 +27,7 @@ export function mockHistoryPoints(
   const base = container.metrics.cpu_pct ?? 20 + (seed % 65);
   const memory =
     container.metrics.working_set_bytes ?? (80 + (seed % 400)) * MiB;
-  const from = Math.floor(request.from_ms / duration) * duration;
+  const from = floorTo(request.from_ms, duration);
   const gapStart = from + Math.floor(count / 3) * duration;
   return Array.from({ length: count }, (_, i): DockerHistoryPoint | null => {
     const time = from + i * duration;
@@ -38,7 +44,7 @@ export function mockHistoryPoints(
       working_set_bytes: working,
     };
     const multiplier =
-      duration > 10_000 && i === Math.floor(count / 4)
+      duration > DOCKER_BUCKET_MS && i === Math.floor(count / 4)
         ? 3
         : 1.05 + ((seed + i) % 36) / 100;
     return {

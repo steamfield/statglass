@@ -13,6 +13,7 @@
  * bucket or window with no value is `null`, never 0 (error-handling.md
  * "Missing data is not an error").
  */
+import { ceilTo, MINUTE_MS } from "@core/time-grid";
 import {
   gridIntervalMs,
   visitWindow,
@@ -192,10 +193,7 @@ const HEATMAP_COLUMNS = 60;
  */
 export function heatmapBucketMs(windowMs: number, intervalMs: number): number {
   const floor = Math.max(windowMs / HEATMAP_COLUMNS, intervalMs);
-  return (
-    HEATMAP_BUCKETS_MS.find((b) => b >= floor) ??
-    Math.ceil(floor / 60_000) * 60_000
-  );
+  return HEATMAP_BUCKETS_MS.find((b) => b >= floor) ?? ceilTo(floor, MINUTE_MS);
 }
 
 /** The bucket index holding `tsMs`. */

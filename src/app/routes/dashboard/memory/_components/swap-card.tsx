@@ -6,11 +6,11 @@ import { brushScopeProps } from "~/components/brush-overlay";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useModuleSeries } from "~/hooks/use-module-series";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { useModuleRange } from "~/stores/chart-range";
 import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
@@ -28,7 +28,7 @@ const pages = (v: number | null | undefined) =>
 export function SwapCard({ windowMs }: { windowMs: number }) {
   const units = useUnits();
   const v = useHeld([KEY, "mem.swap_in", "mem.swap_out"]);
-  const endMs = useModuleRange()?.endMs ?? null;
+  const endMs = useModuleEnd();
   const span =
     endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const series = useModuleSeries([KEY], windowMs, { brush: true });

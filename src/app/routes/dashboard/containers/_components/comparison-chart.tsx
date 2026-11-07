@@ -9,6 +9,7 @@ import type {
   DockerCoverage,
   DockerHistoryPoint,
 } from "@core/generated/bindings";
+import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
 import {
   type ComponentProps,
   type ReactNode,
@@ -131,7 +132,7 @@ function ComparisonPlot({
   );
   const { selection, times } = plot;
   const duration = Math.max(
-    10_000,
+    DOCKER_BUCKET_MS,
     ...series.flatMap((s) => s.points.map((p) => p.duration_ms))
   );
   const durationLabel =
