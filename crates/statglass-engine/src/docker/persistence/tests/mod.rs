@@ -7,27 +7,13 @@ mod pressure;
 mod recovery;
 
 use super::*;
-use statglass_schema::{HostInfo, HostRecord, OsKind};
+use statglass_schema::{HostRecord, OsKind};
 use statglass_store::{Store, StoreConfig};
 fn host() -> HostRecord {
-    HostRecord {
-        id: HostId(uuid::Uuid::from_u128(1)),
-        is_local: true,
-        display_name: "test".into(),
-        info: HostInfo {
-            os: OsKind::MacOs,
-            os_version: "test".into(),
-            model: None,
-            chip: None,
-            chip_known: false,
-            cpu_topology: Vec::new(),
-            mem_total_bytes: 1,
-            boot_time_ms: 0,
-            gpu_dvfs_mhz: Vec::new(),
-            kernel: None,
-            boot_mounts: Vec::new(),
-        },
-    }
+    let mut record = crate::test_support::bare_host(1, "test", OsKind::MacOs);
+    record.info.os_version = "test".into();
+    record.info.mem_total_bytes = 1;
+    record
 }
 // The product admits four history readers per process, including readers of
 // different files. Keep independent database fixtures from consuming one

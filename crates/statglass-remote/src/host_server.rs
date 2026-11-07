@@ -200,7 +200,7 @@ mod tests {
     use super::*;
     use statglass_schema::disk_space::SpacePhase;
     use statglass_schema::lock::LockExt;
-    use statglass_schema::{HostId, HostInfo, OsKind};
+    use statglass_schema::{HostId, OsKind};
     use std::sync::Mutex;
 
     struct Host {
@@ -225,24 +225,7 @@ mod tests {
 
     fn host() -> Arc<Host> {
         Arc::new(Host {
-            record: HostRecord {
-                id: HostId(Uuid::from_u128(7)),
-                is_local: true,
-                display_name: "Server".into(),
-                info: HostInfo {
-                    os: OsKind::Linux,
-                    os_version: String::new(),
-                    model: None,
-                    chip: None,
-                    chip_known: false,
-                    cpu_topology: Vec::new(),
-                    mem_total_bytes: 0,
-                    boot_time_ms: 0,
-                    gpu_dvfs_mhz: Vec::new(),
-                    kernel: None,
-                    boot_mounts: Vec::new(),
-                },
-            },
+            record: crate::test_support::bare_host(7, "Server", OsKind::Linux),
             hub: LiveHub::default(),
             interests: Mutex::default(),
         })

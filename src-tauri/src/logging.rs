@@ -72,12 +72,8 @@ mod tests {
 
     #[test]
     fn an_unusable_log_dir_is_an_error_not_a_panic() {
-        let parent = std::env::temp_dir().join(format!(
-            "statglass-shell-logs-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&parent).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path();
         std::fs::write(parent.join("file"), "").unwrap();
         assert!(file_appender(&parent.join("file").join("logs")).is_err());
         assert!(file_appender(&parent.join("logs")).is_ok());

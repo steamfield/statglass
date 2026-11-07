@@ -72,6 +72,8 @@ mod power;
 mod procview;
 mod ring;
 mod source;
+#[cfg(test)]
+mod test_support;
 mod ticker;
 mod usage;
 

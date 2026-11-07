@@ -1797,12 +1797,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        for _ in 0..30 {
-            if mirror.pages.load(Ordering::SeqCst) == 12 {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        crate::test_support::eventually("all 12 pages", crate::test_support::WAIT, || {
+            mirror.pages.load(Ordering::SeqCst) == 12
+        })
+        .await;
         assert_eq!(mirror.pages.load(Ordering::SeqCst), 12);
         assert_eq!(mirror.budgets.load(Ordering::SeqCst), 12);
         assert_eq!(mirror.truncated.load(Ordering::SeqCst), 1);

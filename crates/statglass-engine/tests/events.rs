@@ -8,7 +8,7 @@
 mod common;
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::*;
 use statglass_collect::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
@@ -62,14 +62,12 @@ fn bus_events(h: &mut Harness) -> Vec<Arc<Event>> {
 /// engine's commit is queued, not awaited.
 fn committed_events(h: &Harness, n: usize) -> Vec<Event> {
     let store = h.store.as_ref().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        let got = store.reader().unwrap().events(h.host, 0, i64::MAX).unwrap();
-        if got.len() >= n || Instant::now() > deadline {
-            return got;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    let mut got = Vec::new();
+    common::eventually("the events to commit", Duration::from_secs(5), || {
+        got = store.reader().unwrap().events(h.host, 0, i64::MAX).unwrap();
+        got.len() >= n
+    });
+    got
 }
 
 #[test]

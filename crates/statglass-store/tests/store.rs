@@ -8,7 +8,7 @@
 mod common;
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::*;
 use statglass_schema::{
@@ -186,11 +186,9 @@ fn writer_batches_until_flush_or_interval() {
     w.upsert_host(h.clone()).unwrap();
     w.write_bucket(bucket(h.id, Tier::M1, T0, &l, 1.0)).unwrap();
     let db = raw(&store);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while count(&db, "SELECT count(*) FROM tier_1m") == 0 {
-        assert!(Instant::now() < deadline, "interval commit never happened");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    common::eventually("the interval commit", Duration::from_secs(5), || {
+        count(&db, "SELECT count(*) FROM tier_1m") != 0
+    });
 }
 
 /// D-083: an event is readable as soon as the engine asks for a commit, not at the
@@ -1023,11 +1021,9 @@ fn shutdown_ends_a_long_prune_early() {
         .unwrap()
     };
     let pruner = std::thread::spawn(move || w.prune(T0, Retention::with_days(1)));
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while old(&conn) == OLD {
-        assert!(Instant::now() < deadline, "prune never started");
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    common::eventually("the prune to start", Duration::from_secs(30), || {
+        old(&conn) != OLD
+    });
     store.close().unwrap();
     assert!(matches!(
         pruner.join().unwrap(),

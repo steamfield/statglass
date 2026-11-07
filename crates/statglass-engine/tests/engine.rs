@@ -1580,11 +1580,9 @@ fn local_source_runs_the_engine_on_its_own_thread() {
         "starts once"
     );
     // Wait for the engine thread to start the ticker, then tick it.
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while !clock.is_running() {
-        assert!(std::time::Instant::now() < deadline, "engine never started");
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    common::eventually("the engine to start", Duration::from_secs(5), || {
+        clock.is_running()
+    });
     clock.tick();
     let frame = loop {
         match sub.blocking_recv() {
@@ -2243,11 +2241,9 @@ fn the_flush_before_sleep_does_not_wait_for_a_long_prune() {
         )
     });
     // The first batch is gone: the prune is under way.
-    let deadline = std::time::Instant::now() + Duration::from_secs(30);
-    while old(&conn) == OLD {
-        assert!(std::time::Instant::now() < deadline, "prune never started");
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    common::eventually("the prune to start", Duration::from_secs(30), || {
+        old(&conn) != OLD
+    });
     let ack = h.power.will_sleep(h.clock.now());
     h.pump(); // flushes the store, then acks
     assert!(ack.recv_timeout(Duration::from_secs(1)).is_ok());

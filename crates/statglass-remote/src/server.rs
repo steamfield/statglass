@@ -480,9 +480,7 @@ pub(crate) fn process_from_wire(p: WireProcess) -> ProcessSample {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use statglass_schema::{
-        Capabilities, HostId, HostIdentity, HostInfo, MetricId, OsKind, SeriesKey, lock::LockExt,
-    };
+    use statglass_schema::{Capabilities, MetricId, OsKind, SeriesKey, lock::LockExt};
     use std::sync::Mutex;
     pub(crate) struct Provider {
         hub: LiveHub,
@@ -496,22 +494,11 @@ pub(crate) mod tests {
                 proto_version: statglass_proto::PROTO_VERSION,
                 min_compatible: statglass_proto::MIN_COMPATIBLE,
                 app_version: "test".into(),
-                host: HostIdentity {
-                    id: HostId(uuid::Uuid::from_u128(1)),
-                    display_name: "Remote Mac".into(),
-                    info: HostInfo {
-                        os: OsKind::MacOs,
-                        os_version: "15".into(),
-                        model: None,
-                        chip: None,
-                        chip_known: false,
-                        cpu_topology: vec![],
-                        mem_total_bytes: 1,
-                        boot_time_ms: 0,
-                        gpu_dvfs_mhz: vec![],
-                        kernel: None,
-                        boot_mounts: vec![],
-                    },
+                host: {
+                    let mut record = crate::test_support::bare_host(1, "Remote Mac", OsKind::MacOs);
+                    record.info.os_version = "15".into();
+                    record.info.mem_total_bytes = 1;
+                    record.identity()
                 },
                 db_instance_uuid: uuid::Uuid::from_u128(2),
                 capabilities: Capabilities::default(),
@@ -717,14 +704,10 @@ pub(crate) mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         drop(client);
         assert!(task.await.unwrap().is_err());
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !p.log.lock_ok().contains(&"ended".to_string()) {
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "the session never ended"
-            );
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
+        crate::test_support::eventually("the session to end", crate::test_support::WAIT, || {
+            p.log.lock_ok().contains(&"ended".to_string())
+        })
+        .await;
         assert_eq!(
             *p.log.lock_ok(),
             [

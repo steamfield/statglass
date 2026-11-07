@@ -31,6 +31,8 @@ pub mod remote_network;
 pub mod settings;
 pub mod startup;
 pub mod state;
+#[cfg(test)]
+mod test_support;
 pub mod tray;
 mod updates;
 mod usage;
