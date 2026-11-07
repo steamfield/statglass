@@ -8,7 +8,6 @@
  * callers branch on `status` instead of catching (error-handling.md).
  */
 import type {
-  BatteryHour,
   ByteCount,
   Capabilities,
   CapabilitiesChanged,
@@ -315,15 +314,6 @@ export interface Transport {
    * no samples, never 0.
    */
   queryHeatmap(request: HeatmapRequest): Promise<CommandResult<HeatmapDay[]>>;
-  /**
-   * The hourly battery bars, one per local hour between consecutive
-   * `hourStartsMs` (build them with `batteryHourStarts`), through now. `null`
-   * charge is an hour without samples, never 0.
-   */
-  batteryHours(
-    host: HostId,
-    hourStartsMs: Millis[]
-  ): Promise<CommandResult<BatteryHour[]>>;
   /**
    * Detector and alert events (v1.2) with `fromMs <= ts_ms < toMs`, oldest
    * first. A live view adds new ones from `onEventRecorded` instead of

@@ -13,10 +13,10 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::error::CommandError;
 use crate::ipc::{
-    BatteryHour, ByteCount, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest,
-    HistoryGrowth, HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkAddresses,
-    NetworkByApp, ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats,
-    SettingsSnapshot, SubscriptionInfo, UsageByApp, UsageKey, WindowAppearance,
+    ByteCount, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest, HistoryGrowth,
+    HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkAddresses, NetworkByApp,
+    ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats, SettingsSnapshot,
+    SubscriptionInfo, UsageByApp, UsageKey, WindowAppearance,
 };
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
 use crate::process_signal::{Micros, ProcessSignalError, SignalKind, SystemProcessOs};
@@ -186,29 +186,6 @@ fn disk_devices() -> statglass_schema::disk_io::DiskIoDevices {
         devices: Vec::new(),
         default_device: None,
     }
-}
-
-/// The hourly battery bars: for each local hour between consecutive `hour_starts_ms`
-/// (UTC ms, DST applied, as `query_heatmap` takes them), the charge in its last minute
-/// and whether it charged, through now. `invalid_argument` when there are fewer than 2
-/// boundaries, more than one per hour of 92 days, or they go backwards.
-#[tauri::command]
-#[specta::specta]
-pub async fn battery_hours(
-    app: AppHandle,
-    host: HostId,
-    hour_starts_ms: Vec<Millis>,
-) -> Result<Vec<BatteryHour>, CommandError> {
-    blocking(app, move |state| {
-        state.host(host)?;
-        let starts: Vec<i64> = hour_starts_ms.iter().map(|m| m.0).collect();
-        let from_ms = recent_from(starts.first().copied().unwrap_or(0));
-        let to_ms = starts.last().copied().unwrap_or(0);
-        state
-            .history_for(host)?
-            .battery_hours(host, &starts, || state.recent_rows(host, from_ms, to_ms))
-    })
-    .await
 }
 
 /// Where the engine's recent rows a read starting at `from_ms` needs begin: the read

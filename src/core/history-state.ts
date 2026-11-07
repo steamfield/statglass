@@ -19,8 +19,7 @@ import { commandError } from "./command-error";
 /**
  * How often the store's writer commits (`statglass_store::DEFAULT_COMMIT_INTERVAL`,
  * D-070), generated from Rust. Stored processes and heatmap hours newer than
- * this may not be readable yet; `query_history` and `battery_hours` answer
- * through now (D-092).
+ * this may not be readable yet; `query_history` answers through now (D-092).
  */
 export { HISTORY_COMMIT_MS } from "@core/generated/bindings";
 

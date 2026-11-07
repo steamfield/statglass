@@ -7,11 +7,11 @@ import type { InlineBarProps } from "../inline-bar";
 import type { LegendProps } from "../legend";
 import type { MetricCardProps } from "../metric-card";
 import type { ProcessListRow } from "../process-list";
-import type { ResidencyBarProps } from "../residency-bar";
 import type { RingGaugeProps } from "../ring-gauge";
 import type { RingStatCardProps } from "../ring-stat-card";
 import type { StackBarProps } from "../stack-bar";
 import type { StatListProps } from "../stat-list";
+import { residencyLabel, residencySegments } from "./residency";
 
 function procs(rows: [string, string, string][]): ProcessListRow[] {
   return rows.map(([initial, name, value], i) => ({
@@ -469,28 +469,19 @@ export const PASSIVE_FANS_CARD: RingStatCardProps = {
   kv: { label: "Mode", value: "No fans" },
 };
 
-export const RESIDENCY: ResidencyBarProps[] = [
-  {
-    cluster: "P-cluster",
-    activePct: 41,
-    accent: "cpu",
-    states: [
-      { label: "4.51 GHz", pct: 4 },
-      { label: "3.86 GHz", pct: 9 },
-      { label: "3.20 GHz", pct: 18 },
-      { label: "2.42 GHz", pct: 10 },
-      { label: "idle", pct: 59 },
-    ],
-  },
-  {
-    cluster: "E-cluster",
-    activePct: 59,
-    accent: "cpu",
-    states: [
-      { label: "2.89 GHz", pct: 6 },
-      { label: "2.16 GHz", pct: 11 },
-      { label: "1.02 GHz", pct: 42 },
-      { label: "idle", pct: 41 },
-    ],
-  },
+const GPU_RESIDENCY = [
+  { label: "1.40 GHz", pct: 4 },
+  { label: "1.13 GHz", pct: 9 },
+  { label: "0.86 GHz", pct: 18 },
+  { label: "0.44 GHz", pct: 10 },
+  { label: "idle", pct: 59 },
 ];
+
+/** GPU frequency residency over the chart window (Frequency card). */
+export const RESIDENCY: StackBarProps = {
+  segments: residencySegments(GPU_RESIDENCY),
+  accent: "gpu",
+  showLegend: true,
+  legendColumns: 1,
+  ariaLabel: residencyLabel("last 15 minutes residency", GPU_RESIDENCY),
+};

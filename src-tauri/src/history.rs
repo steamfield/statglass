@@ -2,22 +2,20 @@
 //! query adapters and IPC conversion remain beside their command-facing owner.
 use crate::error::{CommandError, HistoryUnavailableReason};
 use crate::ipc::{
-    BatteryHour, ExportRequest, HeatmapDay, HeatmapMetric, HeatmapRequest, HistoryHealth,
-    HistoryPage, HistoryPoint, HistoryRequest, HistorySeries, NetworkByApp, NetworkSpan,
-    ProcessResolution, ProcessesAt, StoredProcess, TierRequest,
+    ExportRequest, HeatmapDay, HeatmapMetric, HeatmapRequest, HistoryHealth, HistoryPage,
+    HistoryPoint, HistoryRequest, HistorySeries, NetworkByApp, NetworkSpan, ProcessResolution,
+    ProcessesAt, StoredProcess, TierRequest,
 };
 use statglass_engine::{HistoryStore, HousekeepingHandle};
 use statglass_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier, TimeRange};
 use statglass_store::{
-    BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, BucketRow, ExportQuery, HistoryQuery,
-    HistoryResult, ProcResolution, RangeStats, Reader, Retention, TierChoice, Writer,
-    fill_battery_hours,
+    BucketRow, ExportQuery, HistoryQuery, HistoryResult, ProcResolution, RangeStats, Reader,
+    Retention, TierChoice, Writer,
 };
 use std::path::Path;
 use std::sync::Arc;
 mod ipc;
 mod queries;
-use ipc::MAX_BATTERY_HOURS;
 #[cfg(test)]
 use ipc::MAX_HEATMAP_DAYS;
 use ipc::history_page;

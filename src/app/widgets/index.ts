@@ -12,10 +12,6 @@ export {
   type TrayUnits,
   trayLayout,
 } from "@core/tray-layout";
-export {
-  BatteryHistoryBars,
-  type BatteryHistoryBarsProps,
-} from "./battery-history-bars";
 export { Card, type CardProps, LinkCard, type LinkCardProps } from "./card";
 export { CardNotice, type CardNoticeProps } from "./card-notice";
 export {
@@ -63,7 +59,6 @@ export {
   type ProcessListProps,
   type ProcessListRow,
 } from "./process-list";
-export { ResidencyBar, type ResidencyBarProps } from "./residency-bar";
 export { RingGauge, type RingGaugeProps, type RingSize } from "./ring-gauge";
 export { RingStatCard, type RingStatCardProps } from "./ring-stat-card";
 export {

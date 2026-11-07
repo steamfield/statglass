@@ -339,19 +339,6 @@ pub struct HistoryPoint {
     pub avg: f32,
 }
 
-/// One local hour of `battery_hours`.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, specta::Type)]
-pub struct BatteryHour {
-    /// The hour's start, as the request gave it.
-    #[specta(type = JsSafeInt)]
-    pub start_ms: i64,
-    /// `battery.charge` in the hour's last minute that sampled it; `null` when none did,
-    /// never 0.
-    pub charge: Option<f32>,
-    /// Whether `battery.charging` was on in any minute of the hour.
-    pub charging: bool,
-}
-
 /// The series a heatmap shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]

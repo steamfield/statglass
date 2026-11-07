@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import { formatClockSeconds } from "@core/format";
+import { cssPercent, formatClockSeconds } from "@core/format";
 import type {
   Event,
   HistoricalUsageMetric,
@@ -80,6 +80,10 @@ const covers = (band: Band, def: LaneDef) =>
  * follows the pointer (or arrow keys) across every lane with a dot per series
  * and a single tooltip.
  */
+/** The width of `a..b` on a `from..to` axis, as a CSS percentage. */
+const spanPercent = (a: number, b: number, from: number, to: number) =>
+  cssPercent(fractionAt(b, from, to) - fractionAt(a, from, to));
+
 export function LanesCard({
   lanes,
   gaps,
@@ -308,8 +312,8 @@ export function LanesCard({
               aria-hidden
               className="pointer-events-none absolute inset-y-0 border-primary border-x bg-primary/14"
               style={{
-                left: `${fractionAt(preview.fromMs, fromMs, toMs) * 100}%`,
-                width: `${(fractionAt(preview.toMs, fromMs, toMs) - fractionAt(preview.fromMs, fromMs, toMs)) * 100}%`,
+                left: cssPercent(fractionAt(preview.fromMs, fromMs, toMs)),
+                width: spanPercent(preview.fromMs, preview.toMs, fromMs, toMs),
               }}
             />
           )}
@@ -344,7 +348,7 @@ export function LanesCard({
             <span
               key={t.tMs}
               className="figures absolute top-1.5 -translate-x-1/2 text-[10px] text-fg-faint"
-              style={{ left: `${fractionAt(t.tMs, fromMs, toMs) * 100}%` }}
+              style={{ left: cssPercent(fractionAt(t.tMs, fromMs, toMs)) }}
             >
               {t.label}
             </span>
@@ -364,8 +368,7 @@ export function LanesCard({
       <LaneTableDialog
         lane={tableLane}
         bands={bands}
-        fromMs={fromMs}
-        toMs={toMs}
+        range={{ fromMs, toMs, bucketMs }}
         units={units}
         onClose={() => setTableLane(null)}
       />

@@ -8,17 +8,20 @@ export function SortHeader<T extends RowData>({
 }: {
   header: Header<TableFeatures, T>;
 }) {
+  // A placeholder holds a leaf column's place in a grouped header's upper row.
+  if (header.isPlaceholder) return <TableHead aria-hidden />;
   const { column } = header;
   const meta = column.columnDef.meta;
   const right = meta?.align !== "left";
   const ranked = meta?.ranked;
   const sortable = ranked ? false : column.getCanSort();
   const dir = ranked ? "desc" : column.getIsSorted();
-  const label = header.isPlaceholder ? null : <FlexRender header={header} />;
+  const label = <FlexRender header={header} />;
   const arrow = <SortArrow dir={dir} />;
   return (
     <TableHead
-      scope="col"
+      scope={header.subHeaders.length > 0 ? "colgroup" : "col"}
+      colSpan={header.colSpan}
       aria-sort={!dir ? undefined : dir === "asc" ? "ascending" : "descending"}
       className={cn(
         right && "text-right",

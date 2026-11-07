@@ -1,4 +1,4 @@
-import { fixed, MISSING } from "@core/format";
+import { fixed, formatPercent, MISSING } from "@core/format";
 import { spanWords } from "@core/live-window";
 import { residencyRows } from "@core/residency";
 import { labelOf, seriesKeyString } from "@core/series-key";
@@ -8,8 +8,9 @@ import { useHistorySeries } from "~/hooks/use-history-series";
 import { useGpuMaxMhz } from "~/hooks/use-host-record";
 import { useModuleEnd } from "~/hooks/use-module-end";
 import { useHeld, useLayout, useRingStats } from "~/hooks/use-ring";
-import { ResidencyBar } from "~/widgets/residency-bar";
+import { residencyLabel, residencySegments } from "~/widgets/lib/residency";
 import { RingGauge } from "~/widgets/ring-gauge";
+import { StackBar } from "~/widgets/stack-bar";
 
 /**
  * GPU frequency as a ring of the top DVFS state, and time per state over the
@@ -75,12 +76,21 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
         </figure>
         <div className="min-w-0 flex-1">
           {rows ? (
-            <ResidencyBar
-              cluster={span}
-              activePct={idle === undefined ? 100 : 100 - idle}
-              states={rows}
-              accent="gpu"
-            />
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between">
+                <span className="text-[12px]">{span}</span>
+                <span className="figures text-[11px] text-muted-foreground">
+                  active {formatPercent(idle === undefined ? 100 : 100 - idle)}
+                </span>
+              </div>
+              <StackBar
+                segments={residencySegments(rows)}
+                accent="gpu"
+                showLegend
+                legendColumns={1}
+                ariaLabel={residencyLabel(`${span} residency`, rows)}
+              />
+            </div>
           ) : (
             <p className="m-0 font-normal text-[12px] text-muted-foreground">
               No frequency residency samples in the {span}

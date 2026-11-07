@@ -68,9 +68,6 @@ export const historyKeys = {
   /** 24 h maxima that scale Overview bars (GPU power, disk rates). */
   maxima: (hostId: HostId, module: Module, metric: string) =>
     [...historyKeys.host(hostId), module, "max24h", metric] as const,
-  /** Hourly battery bars, by the end of the current local hour. */
-  batteryHours: (hostId: HostId, endHourMs: number) =>
-    [...historyKeys.host(hostId), "battery", "hours", endHourMs] as const,
   /**
    * Stored processes for one Timeline bucket. 10 s, 1 min and 15 min buckets
    * can share a start, so the width is part of the key.

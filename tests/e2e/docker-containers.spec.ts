@@ -526,7 +526,7 @@ test("chart keyboard table alternative preserves real gaps and partial readings"
     values.getByRole("cell", { name: "—", exact: true }).first()
   ).toBeAttached();
   await expect(
-    values.getByRole("cell", { name: "0% / 0% / 0%", exact: true }).first()
+    values.getByRole("cell", { name: "0%", exact: true }).first()
   ).toBeAttached();
   await page
     .getByRole("button", { name: "Show as chart", exact: true })

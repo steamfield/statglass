@@ -1,4 +1,5 @@
 import {
+  formatBucketTime,
   formatClock,
   formatClockSeconds,
   formatDateTime,
@@ -43,6 +44,21 @@ describe("formatDateTime", () => {
   it("renders a missing time as a dash", () => {
     expect(formatDateTime(null)).toBe(MISSING);
     expect(formatDateTime(Number.NaN)).toBe(MISSING);
+  });
+});
+
+describe("formatBucketTime", () => {
+  it("shows seconds only for buckets under a minute, and the date when asked", () => {
+    expect(formatBucketTime(at(10, 4, 9, 5, 10), 10_000, false)).toBe(
+      "09:05:10"
+    );
+    expect(formatBucketTime(at(10, 4, 9, 5), 60_000, false)).toBe("09:05");
+    expect(formatBucketTime(at(10, 4, 9, 0), 3_600_000, true)).toBe(
+      "Oct 4, 09:00"
+    );
+    expect(formatBucketTime(at(10, 4, 9, 5, 10), 10_000, true)).toBe(
+      "Oct 4, 09:05:10"
+    );
   });
 });
 

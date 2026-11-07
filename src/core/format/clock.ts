@@ -73,3 +73,19 @@ export function formatDateTime(ms: MaybeNumber): string {
 export function formatHistoryTime(ms: number, dates: boolean): string {
   return dates ? formatDateTime(ms) : formatClockSeconds(ms);
 }
+
+/**
+ * A history bucket's start in a chart's table: seconds only when buckets are
+ * shorter than a minute (10 s rows would otherwise repeat "14:02"), and the
+ * date when the table spans more than one local day.
+ */
+export function formatBucketTime(
+  ms: number,
+  bucketMs: number,
+  dates: boolean
+): string {
+  const time = bucketMs < 60_000 ? formatClockSeconds(ms) : formatClock(ms);
+  if (!dates) return time;
+  const d = new Date(ms);
+  return `${monthName(d)} ${d.getDate()}, ${time}`;
+}

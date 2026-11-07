@@ -168,9 +168,11 @@ function ComparisonPlot({
               series={series}
               times={times}
               metric={metric}
+              gaps={metricGaps}
+              from={from}
+              to={to}
+              bucketMs={duration}
               displayName={displayName}
-              clock={clock}
-              statistics={statistics}
               format={format}
             />
           ) : (

@@ -145,11 +145,18 @@ it.each([
     await result.user.click(
       screen.getByRole("button", { name: "Show as table" })
     );
-    expect(
-      within(
-        screen.getByRole("table", { name: "Container history values" })
-      ).getByText(statistics)
-    ).toBeVisible();
+    // The table splits min / avg / max into a column each.
+    const values = within(
+      screen.getByRole("table", { name: "Container history values" })
+    )
+      .getAllByRole("row")
+      .map((row) =>
+        within(row)
+          .queryAllByRole("cell")
+          .map((cell) => cell.textContent)
+          .join(" / ")
+      );
+    expect(values.some((row) => row.includes(statistics))).toBe(true);
     result.unmount();
     transport.dispose();
   }

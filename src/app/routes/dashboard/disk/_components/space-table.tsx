@@ -13,6 +13,7 @@ import {
   DataTable,
   DataTableHead,
   gap,
+  MeterCell,
   useDataTable,
 } from "~/components/data-table";
 import {
@@ -26,7 +27,6 @@ import {
 import { Table, TableCell, TableHeader, TableRow } from "~/components/ui/table";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { cn } from "~/lib/utils";
-import { MeterTrack } from "~/widgets/meter-track";
 import {
   canOpen,
   countLabel,
@@ -193,7 +193,13 @@ const NodeRow = memo(function NodeRow({
       >
         {sizeText}
       </TableCell>
-      <TableCell>{!pending && <ShareCell share={share} />}</TableCell>
+      <TableCell className="text-fg-subtle">
+        {!pending && (
+          <MeterCell fraction={share} fill="var(--color-disk)">
+            {shareLabel(share)}
+          </MeterCell>
+        )}
+      </TableCell>
       <TableCell className="figures text-right text-fg-subtle">
         {COUNTED.has(node.kind) && (node.items ?? 0) > 0
           ? countLabel(node.items)
@@ -246,15 +252,6 @@ function NameCell({ node, mac }: { node: SpaceNode; mac: boolean }) {
         )}
       </div>
     </TableCell>
-  );
-}
-
-function ShareCell({ share }: { share: number }) {
-  return (
-    <div className="flex items-center gap-2">
-      <MeterTrack fraction={share} fill="var(--color-disk)" className="w-20" />
-      <span className="figures w-12 text-fg-subtle">{shareLabel(share)}</span>
-    </div>
   );
 }
 

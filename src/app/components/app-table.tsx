@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import {
   columnHelper,
   DataTableHead,
+  MeterCell,
   type TableFeatures,
 } from "~/components/data-table";
 import { InlineMessage } from "~/components/inline-message";
@@ -13,7 +14,6 @@ import { SectionCard } from "~/components/section-card";
 import { TableCell, TableHead, TableRow } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import type { Accent } from "~/widgets/lib/accent";
-import { MeterTrack } from "~/widgets/meter-track";
 
 /**
  * Parts of the per-app tables: the Network Apps card and the Power
@@ -135,7 +135,7 @@ export function OtherAppsRow({
   );
 }
 
-/** A share of the whole, percent: a 40 px bar in the card accent and the figure. */
+/** A share of the whole, percent: a meter in the card accent and the figure. */
 export function ShareCell({
   share,
   muted,
@@ -145,16 +145,12 @@ export function ShareCell({
 }) {
   return (
     <TableCell className={cn(APP_CELL, "text-right")}>
-      <span className="inline-flex items-center gap-2">
-        <MeterTrack
-          fraction={share === null ? null : share / 100}
-          fill={muted ? "var(--color-fg-faint)" : "var(--a)"}
-          className="inline-block w-10"
-        />
-        <span className="figures inline-block w-11 text-right">
-          {formatPercent(share, { decimals: 1 })}
-        </span>
-      </span>
+      <MeterCell
+        fraction={share === null ? null : share / 100}
+        fill={muted ? "var(--color-fg-faint)" : "var(--a)"}
+      >
+        {formatPercent(share, { decimals: 1 })}
+      </MeterCell>
     </TableCell>
   );
 }
