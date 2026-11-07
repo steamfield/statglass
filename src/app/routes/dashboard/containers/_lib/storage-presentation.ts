@@ -3,6 +3,7 @@ import type {
   DockerStorageKind,
   DockerStorageResource,
 } from "@core/generated/bindings";
+import { DAY_MS } from "@core/time-grid";
 import type { ColumnSort } from "~/components/data-table";
 
 export const storageKindLabel: Record<DockerStorageKind, string> = {
@@ -54,7 +55,7 @@ export function storageRows(
             (row.can_delete || row.age_basis === "stopped"));
         if (hasAgeScope && age !== "all") {
           if (age === "unknown") return row.age_ms === null;
-          if (row.age_ms === null || row.age_ms < Number(age) * 86_400_000)
+          if (row.age_ms === null || row.age_ms < Number(age) * DAY_MS)
             return false;
         }
         return true;
@@ -68,6 +69,6 @@ export function storageAgeLabel(row: DockerStorageResource) {
   if (row.kind === "image" || row.kind === "volume")
     return "Unused age unknown";
   if (row.age_ms === null) return "Age unknown";
-  const days = Math.floor(row.age_ms / 86_400_000);
+  const days = Math.floor(row.age_ms / DAY_MS);
   return `${row.age_basis === "stopped" ? "Stopped" : "Last used"} ${days < 1 ? "under 1 day" : `${days} days`} ago`;
 }

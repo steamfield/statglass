@@ -1,4 +1,4 @@
-import { bytesParts, formatBytes, formatSpan } from "@core/format";
+import { bytesParts, formatBytes, formatSpan, MISSING } from "@core/format";
 import type { SpaceReport, SpaceScanStatus } from "@core/generated/bindings";
 import { ChevronRight } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -89,7 +89,7 @@ export function SpaceSummary({
     {
       label: "Other",
       value:
-        report.other_bytes === null ? "—" : formatBytes(report.other_bytes),
+        report.other_bytes === null ? MISSING : formatBytes(report.other_bytes),
       swatch: "hatch" as const,
     },
     {

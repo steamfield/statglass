@@ -1,9 +1,11 @@
+import { MISSING } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
 import {
   DEFAULT_MENU_BAR,
   type TrayStyle,
   trayStyleMenuBar,
 } from "@core/settings-patch";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import {
   type TrayReadings,
   type TrayUnits,
@@ -72,7 +74,7 @@ const DATA_COLUMNS = dataHelper.columns([
     id: "value",
     header: "% CPU",
     meta: { align: "right" },
-    cell: (cell) => cell.getValue() ?? "—",
+    cell: (cell) => cell.getValue() ?? MISSING,
   }),
 ]);
 const DATA_ROWS = [
@@ -372,7 +374,7 @@ function ContainerComparisonSample() {
       <ComparisonChart
         series={series}
         metric="cpu"
-        from={NOW_MS - 86_400_000}
+        from={NOW_MS - DAY_MS}
         to={NOW_MS}
         live={false}
         range="24h"
@@ -463,7 +465,7 @@ export function AppComponentsSection() {
           >
             <PopoverHeader
               hostName="MacBook Pro"
-              uptimeMs={(3 * 24 + 4) * 3_600_000 + 12 * 60_000}
+              uptimeMs={(3 * 24 + 4) * HOUR_MS + 12 * MINUTE_MS}
               status={{ state: "live", label: "1s" }}
               paused={false}
               onPause={noop}
@@ -484,7 +486,7 @@ export function AppComponentsSection() {
           >
             <PopoverHeader
               hostName="MacBook Pro"
-              uptimeMs={(3 * 24 + 4) * 3_600_000}
+              uptimeMs={(3 * 24 + 4) * HOUR_MS}
               status={{ state: "paused", label: "Paused" }}
               paused
               scrolled
