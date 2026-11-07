@@ -1,5 +1,4 @@
 import { brushBucketMs, rangeSlots } from "@core/brush";
-import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { useRef } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
@@ -7,10 +6,10 @@ import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { PLOT_INSET } from "~/components/charts/layout";
 import { MirrorHover } from "~/components/mirror-hover";
 import { useChartBrush } from "~/hooks/use-chart-brush";
+import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
-import { useModuleRange } from "~/stores/chart-range";
-import { useHost } from "~/stores/host-store";
 import { GapBands, type GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
 import { historyTicks } from "~/widgets/lib/chart-labels";
@@ -88,14 +87,14 @@ export function LiveMirrorChart({
   gaps,
   brush = false,
 }: LiveMirrorChartProps) {
-  const intervalMs = useHost((s) => gridIntervalMs(s.status));
+  const intervalMs = useGridInterval();
   const { bucketMs: requestedBucketMs, count: requestedCount } = mirrorBuckets(
     windowMs,
     intervalMs,
     brush
   );
   const { selected, elapsedEdge } = useChartBrush(brush);
-  const fixedEnd = useModuleRange()?.endMs ?? null;
+  const fixedEnd = useModuleEnd();
   const spanLabel =
     fixedEnd === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const { values, endMs, bucketMs, loading, error } = useModuleBuckets(

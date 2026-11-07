@@ -1,4 +1,3 @@
-import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { sk } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
@@ -6,10 +5,10 @@ import { useDeferredValue } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useHeld } from "~/hooks/use-ring";
-import { useModuleRange } from "~/stores/chart-range";
-import { useHost } from "~/stores/host-store";
 import { CoreHeatmap } from "~/widgets/core-heatmap";
 import { HeatScaleLegend } from "~/widgets/heat-matrix";
 import type { ClusterView } from "../_lib/clusters";
@@ -34,11 +33,8 @@ export function CoreLoadCard({
   // redo it synchronously; if the perf gate flakes here, keep cells mounted
   // across a window change instead (the Cell keys in core-heatmap.tsx).
   const windowMs = useDeferredValue(windowProp);
-  const end = useModuleRange()?.endMs ?? null;
-  const desiredBucketMs = heatmapBucketMs(
-    windowMs,
-    useHost((s) => gridIntervalMs(s.status))
-  );
+  const end = useModuleEnd();
+  const desiredBucketMs = heatmapBucketMs(windowMs, useGridInterval());
   const span =
     end === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const cores = clusters.flatMap((c) =>

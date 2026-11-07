@@ -15,10 +15,10 @@ import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useEvents } from "~/hooks/use-events";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useModuleSeries } from "~/hooks/use-module-series";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld, useLayout } from "~/hooks/use-ring";
-import { useModuleRange } from "~/stores/chart-range";
 import { usePowerComponents } from "~/stores/live-selectors";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { Legend, type LegendItem } from "~/widgets/legend";
@@ -79,7 +79,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const rails = components ? [] : railKeys;
   const v = useHeld([...HELD, ...rails]);
   const system = v[SYSTEM] ?? null;
-  const endMs = useModuleRange()?.endMs ?? null;
+  const endMs = useModuleEnd();
   const span =
     endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const series = useModuleSeries(CHART, windowMs, { brush: true });
@@ -248,7 +248,7 @@ function AppsNote({ lines }: { lines: AppLines }) {
  * have scrolled out of its window.
  */
 function useSpikeAnnotations(windowMs: number) {
-  const end = useModuleRange()?.endMs ?? null;
+  const end = useModuleEnd();
   const events = useEvents(windowMs, end);
   return useMemo(
     () =>

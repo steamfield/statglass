@@ -3,6 +3,10 @@
  * negative times too (`%` alone keeps the sign of `t`).
  */
 
+export const MINUTE_MS = 60_000;
+export const HOUR_MS = 60 * MINUTE_MS;
+export const DAY_MS = 24 * HOUR_MS;
+
 /** The grid line at or before `t`. */
 export const floorTo = (t: number, step: number): number =>
   t - (((t % step) + step) % step);

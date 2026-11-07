@@ -1,10 +1,9 @@
 import { chartRange } from "@core/chart-range";
 import type { ChartWindow } from "@core/generated/bindings";
-import { gridIntervalMs } from "@core/live-state";
 import { DEFAULT_CHART_WINDOW, effectiveWindow } from "@core/live-window";
 import { useCallback, useMemo } from "react";
+import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useWriteSettings } from "~/hooks/use-write-settings";
-import { useHost } from "~/stores/host-store";
 import { useSettings, useSettingsStatus } from "~/stores/settings-store";
 
 export interface ChartWindowState {
@@ -25,7 +24,7 @@ export function useChartWindow(): ChartWindowState | null {
     (s) => s.general.chart_window ?? DEFAULT_CHART_WINDOW
   );
   const failed = useSettingsStatus() === "failed";
-  const intervalMs = useHost((s) => gridIntervalMs(s.status));
+  const intervalMs = useGridInterval();
   const chosen = saved ?? (failed ? DEFAULT_CHART_WINDOW : null);
   const window = chosen === null ? null : effectiveWindow(chosen, intervalMs);
   return useMemo(

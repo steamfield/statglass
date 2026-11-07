@@ -12,6 +12,7 @@ import {
   USAGE_HISTORY_MAX_RANGE_MS,
   USAGE_PROCESS_PAGE_MAX,
 } from "@core/generated/bindings";
+import { floorTo } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import { mockGaps } from "./history";
@@ -236,10 +237,7 @@ export class MockDurableUsage {
           request.from_ms,
           request.to_ms,
           request.by,
-          Math.min(
-            request.to_ms,
-            Math.floor(this.ring.now() / USAGE_BUCKET_MS) * USAGE_BUCKET_MS
-          ),
+          Math.min(request.to_ms, floorTo(this.ring.now(), USAGE_BUCKET_MS)),
         ]);
         const cursor =
           request.cursor === null ? null : this.cursors.get(request.cursor);

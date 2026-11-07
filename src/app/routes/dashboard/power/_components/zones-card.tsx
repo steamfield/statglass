@@ -1,16 +1,15 @@
 import { formatTemperature, type TemperatureUnits } from "@core/format";
-import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { useModuleRange } from "~/stores/chart-range";
-import { useHost } from "~/stores/host-store";
 import { HeatMatrix, HeatScaleLegend } from "~/widgets/heat-matrix";
 import { sensorLabel, zoneName } from "../_lib/sensors";
 
@@ -31,11 +30,8 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
   // Deferred for the same reason as CoreLoadCard: a window change remounts
   // every cell, which React can then split across frames.
   const windowMs = useDeferredValue(windowProp);
-  const end = useModuleRange()?.endMs ?? null;
-  const desiredBucketMs = heatmapBucketMs(
-    windowMs,
-    useHost((s) => gridIntervalMs(s.status))
-  );
+  const end = useModuleEnd();
+  const desiredBucketMs = heatmapBucketMs(windowMs, useGridInterval());
   const units = useUnits().temperature;
   const layout = useLayout();
   const zoneList = layout?.byMetric.get("thermal.zone") ?? [];

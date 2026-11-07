@@ -1,6 +1,5 @@
-import { gridIntervalMs } from "@core/live-state";
 import { scaledWindowMs } from "@core/live-window";
-import { useHost } from "~/stores/host-store";
+import { useGridInterval } from "~/hooks/use-grid-interval";
 
 /**
  * A live chart window designed at 1 s, stretched to keep its sample count at
@@ -8,6 +7,6 @@ import { useHost } from "~/stores/host-store";
  * 2 s frames). Re-renders only when it changes.
  */
 export function useScaledWindow(baseMs: number): number {
-  const intervalMs = useHost((s) => gridIntervalMs(s.status));
+  const intervalMs = useGridInterval();
   return scaledWindowMs(baseMs, intervalMs);
 }

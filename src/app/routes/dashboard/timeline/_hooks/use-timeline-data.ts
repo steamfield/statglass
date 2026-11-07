@@ -11,9 +11,10 @@ import { type CommandFailure, unwrap } from "@core/transport";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
-import { useHost, useHostId } from "~/stores/host-store";
+import { useHostId } from "~/stores/host-store";
 import { type Bucket, combineSeries } from "../_lib/buckets";
 import { mergeTail, tailRange } from "../_lib/history-tail";
 import type { LaneDef } from "../_lib/lanes";
@@ -133,9 +134,7 @@ export function useTimelineData(
   const bucketMs = first?.bucket_ms || requestBucket;
 
   // The start of the open bucket: changes once per bucket, not per frame.
-  const liveEdge = useHost((s) =>
-    s.lastTsMs === null ? null : Math.floor(s.lastTsMs / bucketMs) * bucketMs
-  );
+  const liveEdge = useOpenEdge(true, bucketMs);
   const [mountedAt] = useState(() => clock());
   const toMs =
     view.endMs ?? liveEdge ?? Math.floor(mountedAt / bucketMs) * bucketMs;

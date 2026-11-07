@@ -1,6 +1,5 @@
 import { formatBytes, formatPercent, formatRate } from "@core/format";
 import type { MetricStat } from "@core/generated/bindings";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { labelValues, sk } from "@core/series-key";
 import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
@@ -16,14 +15,11 @@ import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useUsageHistorical } from "~/hooks/use-module-end";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import {
-  ChartRangeNotice,
-  ChartRangeProvider,
-  useModuleRange,
-} from "~/stores/chart-range";
+import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useNetwork, usePrimaryIface } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
 import { StatStrip } from "~/widgets/stat-strip";
@@ -185,9 +181,8 @@ function NetworkApps({
   perProcess: boolean;
   history: boolean | null;
 }) {
-  const fixed = useModuleRange()?.endMs != null;
-  if (fixed || windowMs > USAGE_KEEP_MS)
-    return <AppsCard windowMs={windowMs} />;
+  const historical = useUsageHistorical(windowMs);
+  if (historical) return <AppsCard windowMs={windowMs} />;
   if (!perProcess || history === null) return null;
   return history && local ? <AppsCard windowMs={windowMs} /> : <AppsNowCard />;
 }

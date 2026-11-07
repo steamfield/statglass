@@ -4,10 +4,10 @@ import { windowWords } from "@core/live-window";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useModuleSeries } from "~/hooks/use-module-series";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld } from "~/hooks/use-ring";
-import { useModuleRange } from "~/stores/chart-range";
 import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import { StreamArea } from "~/widgets/stream-area";
 
@@ -18,7 +18,7 @@ const KEY = "power.gpu";
  */
 export function PowerCard({ windowMs }: { windowMs: number }) {
   const now = useHeld([KEY])[KEY] ?? null;
-  const endMs = useModuleRange()?.endMs ?? null;
+  const endMs = useModuleEnd();
   const span =
     endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const series = useModuleSeries([KEY], windowMs);

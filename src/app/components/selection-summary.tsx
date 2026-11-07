@@ -1,8 +1,8 @@
 import type { TimeRange } from "@core/brush";
 import { formatHistoryTime } from "@core/format";
 import { PLOT_INSET } from "~/components/charts/layout";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import { useBrushRange } from "~/stores/brush-store";
-import { useModuleRange } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 
 /**
@@ -25,7 +25,7 @@ export function SelectionSummary({
   inset?: number;
 }) {
   const range = useBrushRange();
-  const end = useModuleRange()?.endMs ?? null;
+  const end = useModuleEnd();
   const start = fromMs ?? (end === null ? undefined : end - windowMs);
   // A boolean, so the line re-renders when the range leaves the chart, not per tick.
   const offChart = useHost(

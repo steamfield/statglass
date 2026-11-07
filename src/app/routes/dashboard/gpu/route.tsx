@@ -1,5 +1,5 @@
+import { usageHistorical } from "@core/chart-range";
 import { formatPercent } from "@core/format";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import type { ProcessView } from "@core/process-interest";
 import { PageHeader } from "~/components/page-header";
 import {
@@ -65,9 +65,7 @@ export default function GpuRoute() {
   const perProcess = useProcessGpu();
   const chartWindow = useChartWindow();
   const windowMs = chartWindow?.windowMs ?? null;
-  const historical =
-    chartWindow !== null &&
-    (chartWindow.endMs !== null || chartWindow.windowMs > USAGE_KEEP_MS);
+  const historical = chartWindow !== null && usageHistorical(chartWindow);
   useProcessInterest(perProcess && !historical ? GPU_VIEW : null);
   return (
     <ChartRangeProvider>

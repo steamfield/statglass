@@ -1,4 +1,5 @@
 import type { LiveMsg, ProcessView } from "@core/generated/bindings";
+import { floorTo } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import { MOCK_HOST_ID, withGpuPct, withNetRates, withPorts } from "./fixtures";
@@ -118,7 +119,7 @@ export class MockProcesses {
       {},
       () =>
         ok({
-          ts_ms: Math.floor(tMs / 10_000) * 10_000,
+          ts_ms: floorTo(tMs, 10_000),
           resolution: "snapshot",
           rows: this.processRows().map((p) => ({
             name: p.name,

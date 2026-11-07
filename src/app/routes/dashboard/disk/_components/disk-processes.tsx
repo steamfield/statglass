@@ -1,7 +1,6 @@
 import { scopeWords, type TimeRange } from "@core/brush";
 import { formatBytes, formatRate, formatSpan } from "@core/format";
 import type { LiveProcess, ProcessUsage } from "@core/generated/bindings";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { FULL_TABLE } from "@core/process-interest";
 import { targetKey } from "@core/process-selection";
 import { remoteQueryText } from "@core/remote-errors";
@@ -40,13 +39,13 @@ import {
 import { useEdition } from "~/hooks/use-edition";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useUsageHistorical } from "~/hooks/use-module-end";
 import {
   useProcessInterest,
   useProcessRows,
 } from "~/hooks/use-process-interest";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { useBrushRange } from "~/stores/brush-store";
-import { useModuleRange } from "~/stores/chart-range";
 
 const EMPTY: readonly LiveProcess[] = [];
 export const requestedBytes = (
@@ -74,8 +73,7 @@ const appConfig = (mac: boolean): UsageTableConfig => ({
 
 export function DiskProcesses({ windowMs }: { windowMs: number }) {
   const [apps, setApps] = useState(false);
-  const historical =
-    useModuleRange()?.endMs != null || windowMs > USAGE_KEEP_MS;
+  const historical = useUsageHistorical(windowMs);
   const mac = useHostNoun() === "Mac";
   const config = useMemo(() => appConfig(mac), [mac]);
   const viewControl = (

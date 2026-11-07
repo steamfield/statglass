@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import { recordedDate, relativeWindow } from "@core/chart-range";
+import { recordedDate, relativeWindow, windowEnding } from "@core/chart-range";
 import type { ModuleCap } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import {
@@ -105,13 +105,7 @@ export default function TimelineRoute() {
     span: keyof typeof SPAN_MS;
     endMs: number | null;
   }) => {
-    if (next.endMs === null)
-      void navigation.apply(relativeWindow(SPAN_MS[next.span]));
-    else
-      selectRange({
-        fromMs: next.endMs - SPAN_MS[next.span],
-        toMs: next.endMs,
-      });
+    void navigation.apply(windowEnding(next.endMs, SPAN_MS[next.span]));
     topRef.current?.scrollIntoView({ block: "start" });
     headingRef.current?.focus({ preventScroll: true });
   };

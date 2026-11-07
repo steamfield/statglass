@@ -4,7 +4,6 @@ import {
   relativeWindow,
 } from "@core/chart-range";
 import type { ChartWindow } from "@core/generated/bindings";
-import { gridIntervalMs } from "@core/live-state";
 import { windowAllowed } from "@core/live-window";
 import { Check, ChevronDown } from "lucide-react";
 import { Popover } from "radix-ui";
@@ -12,9 +11,9 @@ import { useState } from "react";
 import { SegmentedControl } from "~/components/segmented-control";
 import { CustomRangeForm } from "~/components/window-control-custom";
 import { useChartWindow } from "~/hooks/use-chart-window";
+import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
 import { cn } from "~/lib/utils";
-import { useHost } from "~/stores/host-store";
 
 /** Shared module range picker: two shortcuts and retained/custom ranges. */
 export function WindowControl({
@@ -22,7 +21,7 @@ export function WindowControl({
 }: {
   onApply?: (value: ChartWindow) => void;
 }) {
-  const intervalMs = useHost((s) => gridIntervalMs(s.status));
+  const intervalMs = useGridInterval();
   const current = useChartWindow();
   const navigation = useRangeNavigation();
   const [open, setOpen] = useState(false);

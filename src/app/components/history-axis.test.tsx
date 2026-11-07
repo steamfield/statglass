@@ -1,7 +1,8 @@
-import { floorTo } from "@core/brush";
+import { BRUSH_STEP_MS } from "@core/brush";
 import { seriesRange } from "@core/chart-math";
 import { formatHistoryTime } from "@core/format";
 import { createMockTransport } from "@core/mock-transport";
+import { floorTo } from "@core/time-grid";
 import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { TotalCard } from "~/routes/dashboard/cpu/_components/total-card";
@@ -52,6 +53,6 @@ it("uses the actual nonaligned grid endpoints for historical ticks and keyboard 
   await user.keyboard("{Enter}");
   expect(slider).toHaveAttribute("aria-valuemax", "5");
   expect(await screen.findByTestId("selection-summary")).toHaveTextContent(
-    formatHistoryTime(floorTo(bounds.toMs - 1), true)
+    formatHistoryTime(floorTo(bounds.toMs - 1, BRUSH_STEP_MS), true)
   );
 });

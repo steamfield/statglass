@@ -6,6 +6,7 @@
  * sample read `null` (unmeasured), GPU reads `null` where it was never
  * measured, and every value is a rate in the key's unit.
  */
+
 import type {
   AppUsage,
   UsageByApp,
@@ -13,6 +14,7 @@ import type {
   UsageSeries,
 } from "@core/generated/bindings";
 import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/bindings";
+import { floorTo } from "@core/time-grid";
 
 /** An app's range average in the series' unit for `by`. */
 function averageOf(by: UsageKey, a: AppUsage, coveredMs: number): number {
@@ -57,7 +59,7 @@ export function mockUsageSeries({
     from_ms: from,
     bucket_ms: BUCKET_MS,
     since_ms: sinceMs,
-    complete_to_ms: Math.floor(latestMs / BUCKET_MS) * BUCKET_MS,
+    complete_to_ms: floorTo(latestMs, BUCKET_MS),
     latest_ms: latestMs,
     apps: byApp.apps.map((a, k) => {
       const avg = averageOf(by, a, byApp.covered_ms);

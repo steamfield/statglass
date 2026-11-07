@@ -1,5 +1,7 @@
-import { chartRange, relativeWindow, validChartRange } from "@core/chart-range";
+import { chartRange, validChartRange, windowEnding } from "@core/chart-range";
 import type { ChartWindow } from "@core/generated/bindings";
+import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+import { floorTo } from "@core/time-grid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
@@ -83,27 +85,17 @@ export function useSharedContainerRange(nowMs: number, prefix = "") {
   ]);
   const windowMs = navigation.range?.windowMs ?? 900_000;
   const endMs = navigation.range?.endMs ?? null;
-  const toMs = endMs ?? Math.floor(nowMs / 10_000) * 10_000;
+  const toMs = endMs ?? floorTo(nowMs, DOCKER_BUCKET_MS);
   const preset =
     (Object.keys(DOCKER_RANGES) as DockerRange[]).find(
       (key) => DOCKER_RANGES[key] === windowMs
     ) ?? "15m";
   const setRange = useCallback(
-    (duration: number) =>
-      void apply(
-        endMs === null
-          ? relativeWindow(duration)
-          : { absolute: { from_ms: endMs - duration, to_ms: endMs } }
-      ),
+    (duration: number) => void apply(windowEnding(endMs, duration)),
     [apply, endMs]
   );
   const setEnd = useCallback(
-    (end: number | null) =>
-      void apply(
-        end === null
-          ? relativeWindow(windowMs)
-          : { absolute: { from_ms: end - windowMs, to_ms: end } }
-      ),
+    (end: number | null) => void apply(windowEnding(end, windowMs)),
     [apply, windowMs]
   );
   return {
@@ -129,10 +121,7 @@ function containerLinkRange(
 ): ChartWindow | null {
   const duration = DOCKER_RANGES[dockerRange(rawRange, prefix ? "1h" : "15m")];
   const end = historyEnd(rawEnd) ?? historyEnd(rawAt, 60_000);
-  const next: ChartWindow =
-    end === null
-      ? relativeWindow(duration)
-      : { absolute: { from_ms: end - duration, to_ms: end } };
+  const next = windowEnding(end, duration);
   return validChartRange(next) ? next : null;
 }
 

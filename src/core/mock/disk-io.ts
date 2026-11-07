@@ -1,4 +1,5 @@
 /** Typed command fixture: models server-side weighted request aggregation. */
+
 import type {
   DiskIoDevices,
   DiskIoPage,
@@ -6,6 +7,7 @@ import type {
   DiskIoRequest,
   Gap,
 } from "@core/generated/bindings";
+import { floorTo } from "@core/time-grid";
 import type { ScenarioName } from "./fixtures";
 
 export function mockDiskDevices(
@@ -51,7 +53,7 @@ export function mockDiskIo(
         10_000
     ) * 10_000
   );
-  const first = Math.floor(request.from_ms / bucket) * bucket;
+  const first = floorTo(request.from_ms, bucket);
   const points: DiskIoPoint[] = [];
   const idle = scenarios.includes("disk-io-no-ops");
   const unsupported = scenarios.includes("disk-io-unavailable");
