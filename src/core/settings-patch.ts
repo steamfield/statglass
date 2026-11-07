@@ -8,7 +8,6 @@ import {
   ITEM_MODES,
   type ItemMode,
   type MenuBarSettings,
-  type ModuleCap,
   type Module as ModuleId,
   type ModulePatch,
   type Readout,
@@ -85,30 +84,6 @@ export function modulePatch(
   change: ModulePatch
 ): SettingsPatch {
   return { modules: { [module]: change } };
-}
-
-/**
- * Whether a module can be switched on here. Until capabilities arrive
- * (`known` false) the row stays usable.
- */
-/**
- * Whether a module's settings row can be used: the host has it, lacks the
- * hardware, cannot run it, or this build leaves it out (`missing_entitlement`).
- */
-export type ModulePresence = "present" | "absent" | "unavailable" | "edition";
-
-export function modulePresence(
-  cap: ModuleCap | undefined,
-  known: boolean
-): ModulePresence {
-  if (!known) return "present";
-  if (cap === undefined || cap === "not_present") return "absent";
-  if (cap === "unknown") return "unavailable";
-  if ("unsupported" in cap)
-    return cap.unsupported === "missing_entitlement"
-      ? "edition"
-      : "unavailable";
-  return "present";
 }
 
 /** Menu bar styles onboarding offers: combined and values, and graph per module. */

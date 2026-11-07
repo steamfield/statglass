@@ -5,7 +5,7 @@ import {
   formatPercent,
   MISSING,
 } from "@core/format";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
@@ -27,7 +27,6 @@ import {
 import { ContainerHistory } from "./container-history";
 
 function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
-  const toggle = useContainerDensityFocus(compact, onToggle);
   const { snapshot } = useDocker();
   const transport = useTransport();
   const rows = snapshot?.containers;
@@ -37,7 +36,7 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
     return (
       <ModuleCard
         compact
-        onToggle={toggle}
+        onToggle={onToggle}
         accent="cpu"
         title="Containers"
         href="/dashboard/containers"
@@ -72,14 +71,14 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
     );
   return (
     <ModuleCard
-      onToggle={toggle}
+      onToggle={onToggle}
       accent="cpu"
       title="Containers"
       href="/dashboard/containers"
       onOpen={(route) => void transport.openDashboard(route)}
       value={`${snapshot.aggregate.running} running`}
       footer={
-        leader && (
+        leader ? (
           <button
             type="button"
             className="block self-start rounded-control text-left text-[11px] text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -95,7 +94,7 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
             among monitored: {leader.name} ·{" "}
             {formatPercent(leader.metrics.cpu_pct)}
           </button>
-        )
+        ) : null
       }
     >
       <span className="figures block text-[11px] text-muted-foreground">
@@ -110,29 +109,6 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
     </ModuleCard>
   );
 }
-/** Expanded Docker's action buttons use a different shell, so restore its toggle after swapping. */
-function useContainerDensityFocus(
-  compact: boolean,
-  onToggle: (() => void) | undefined
-) {
-  const requested = useRef(false);
-  useLayoutEffect(() => {
-    if (!requested.current) return;
-    document
-      .querySelector<HTMLButtonElement>(
-        `button[aria-label="${compact ? "Expand" : "Collapse"} Containers"]`
-      )
-      ?.focus({ preventScroll: true });
-    requested.current = false;
-  }, [compact]);
-  return onToggle
-    ? () => {
-        requested.current = true;
-        onToggle();
-      }
-    : undefined;
-}
-
 export function DockerPopoverSummary(props: PresentationProps) {
   const local = useIsLocalHost();
   const shown = useSettings(

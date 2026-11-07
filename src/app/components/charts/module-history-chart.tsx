@@ -1,3 +1,4 @@
+import type { CeilingLadder } from "@core/chart-math";
 import { useAreaBrush } from "~/components/area-brush";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SelectionSummary } from "~/components/selection-summary";
@@ -22,13 +23,15 @@ export const BYTES_GUTTER = 48;
  * A ceiling is fixed (MemTotal) or `auto`: a nice step over every drawn
  * line, from `min` up, shrinking only after 60 s below the next step down
  * (design-system.md "Y scale"). Its ticks at the ceiling and half of it
- * read through `format`; byte labels need a wider `gutter`.
+ * read through `format`; byte labels need a wider `gutter`, and bytes shown
+ * in binary units snap on the `binary` ladder.
  */
 export type ModuleYAxis =
   | "percent"
   | {
       ceiling: number | "auto";
       min?: number;
+      ladder?: CeilingLadder;
       format: (value: number) => string;
       gutter?: number;
     };
@@ -65,7 +68,11 @@ function useYAxis(
     chart.series.tEndMs,
     axis === "percent" ? 1 : (axis.min ?? 1),
     chart.windowMs,
-    { endMs: chart.endMs, intervalMs: chart.series.intervalMs }
+    {
+      endMs: chart.endMs,
+      intervalMs: chart.series.intervalMs,
+      ladder: axis === "percent" ? "decimal" : (axis.ladder ?? "decimal"),
+    }
   );
   if (axis === "percent")
     return { yMax: 100, gridlines: PERCENT_GRID, yTicks: PERCENT_Y_TICKS };

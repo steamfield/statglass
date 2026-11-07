@@ -98,3 +98,26 @@ it("labels a fixed ceiling and its half through the format, with five x ticks", 
     paddingLeft: "48px",
   });
 });
+
+it("snaps an auto ceiling on the binary ladder when the axis asks for it", async () => {
+  // The mock's CPU fits a decimal 5 here; the binary ladder gives a power of two.
+  renderWithProviders(
+    <ChartRangeProvider>
+      <Card
+        yAxis={{
+          ceiling: "auto",
+          min: 1,
+          ladder: "binary",
+          format: (v) => `${v} u`,
+        }}
+      />
+    </ChartRangeProvider>
+  );
+  await screen.findByRole("img", { name: /^CPU, last / });
+  const ceiling = Number(
+    (await screen.findAllByText(/^\d+(\.\d+)? u$/))[0]?.textContent?.split(
+      " "
+    )[0]
+  );
+  expect(Math.log2(ceiling) % 1).toBe(0);
+});

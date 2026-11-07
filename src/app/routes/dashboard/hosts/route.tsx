@@ -348,6 +348,7 @@ export default function HostsRoute() {
             </div>
             <StatList
               layout="grid"
+              valueClassName="min-w-10"
               items={[
                 {
                   label: "CPU",

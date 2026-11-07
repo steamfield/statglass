@@ -96,8 +96,13 @@ export const ContainerHistory = memo(function ContainerHistory({
       : (value: number) =>
           formatRate(value, value > 0 && value < 1 ? { decimals: 1 } : {});
   const chart = useMemo(() => {
-    // Only buckets the line draws: measured and covered (Rust's flag).
-    const drawn = (page?.points ?? []).map((p) => {
+    // Only buckets the line draws: measured and covered (Rust's flag), and
+    // starting inside the range. Rust floors the start to a bucket, so the
+    // first can begin before `from` and would land in the y gutter.
+    const inRange = (page?.points ?? []).filter(
+      (p) => p.time_ms >= from && p.time_ms < to
+    );
+    const drawn = inRange.map((p) => {
       const value = p.metrics[metric];
       if (value === null || !(memory ? p.memory_covered : p.cpu_covered))
         return null;

@@ -2,9 +2,32 @@ import type { Capabilities, Settings } from "@core/generated/bindings";
 import {
   isListed,
   isUnknownChip,
+  modulePresence,
   moduleState,
   unavailableText,
 } from "./module-state";
+
+describe("modulePresence", () => {
+  it("keeps rows usable until capabilities are known", () => {
+    expect(modulePresence(undefined, false)).toBe("present");
+  });
+
+  it("tells absent hardware from a collector that cannot run", () => {
+    expect(modulePresence("not_present", true)).toBe("absent");
+    expect(modulePresence(undefined, true)).toBe("absent");
+    expect(modulePresence("unknown", true)).toBe("unavailable");
+    expect(modulePresence({ unsupported: "missing_entitlement" }, true)).toBe(
+      "edition"
+    );
+    expect(modulePresence({ unsupported: "no_hardware" }, true)).toBe(
+      "unavailable"
+    );
+    expect(modulePresence({ unsupported: "unknown_chip" }, true)).toBe(
+      "unavailable"
+    );
+    expect(modulePresence({ available: { series: 4 } }, true)).toBe("present");
+  });
+});
 
 const on = { available: { series: 1 } } as const;
 

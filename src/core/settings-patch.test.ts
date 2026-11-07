@@ -6,7 +6,6 @@ import {
   itemPatch,
   menuBarOf,
   modulePatch,
-  modulePresence,
   onboardingChoicesPatch,
   onboardingDonePatch,
   onboardingSkipPatch,
@@ -67,24 +66,6 @@ describe("modulePatch", () => {
     expect(modulePatch("disk", { enabled: true })).toEqual({
       modules: { disk: { enabled: true } },
     });
-  });
-});
-
-describe("modulePresence", () => {
-  it("keeps rows usable until capabilities are known", () => {
-    expect(modulePresence(undefined, false)).toBe("present");
-  });
-
-  it("tells absent hardware from a collector that cannot run", () => {
-    expect(modulePresence("not_present", true)).toBe("absent");
-    expect(modulePresence(undefined, true)).toBe("absent");
-    expect(modulePresence({ unsupported: "missing_entitlement" }, true)).toBe(
-      "edition"
-    );
-    expect(modulePresence({ unsupported: "no_hardware" }, true)).toBe(
-      "unavailable"
-    );
-    expect(modulePresence({ available: { series: 4 } }, true)).toBe("present");
   });
 });
 

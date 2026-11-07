@@ -12,7 +12,7 @@ import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { ChartSelectionVeil } from "~/widgets/chart-frame";
 import { GapBands, type GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
-import { historyTicks } from "~/widgets/lib/chart-labels";
+import { historyTicks, windowTicks } from "~/widgets/lib/chart-labels";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { MirrorBars } from "~/widgets/mirror-bars";
 import { WindowTicks } from "~/widgets/window-ticks";
@@ -51,7 +51,24 @@ export function paintMirrorCrosshairs(
   );
 }
 
-export interface MirrorChartProps {
+/**
+ * Range selection (D-089; needs a `BrushProvider` above) and the hover
+ * contract. Without `onHoverTime` the chart shows its own readout
+ * (`MirrorHover`). With it the owner paints its own readout from the hovered
+ * time and moves the crosshairs with `paintMirrorCrosshairs`, so stacked
+ * plots share one crosshair and one tooltip without re-rendering React. The
+ * hovered time comes from the brush overlay, so it needs `brush`.
+ */
+export type MirrorChartBrush =
+  | {
+      brush: true;
+      onHoverTime?: ((time: number | null) => void) | undefined;
+    }
+  | { brush: false; onHoverTime?: never };
+
+export type MirrorChartProps = MirrorChartData & MirrorChartBrush;
+
+interface MirrorChartData {
   /** Per bar, oldest first; `null` is a gap. Same length as `down`. */
   up: readonly (number | null)[];
   down: readonly (number | null)[];
@@ -78,15 +95,6 @@ export interface MirrorChartProps {
   downHeight: number;
   /** Labelled gaps drawn as hatched bands over the bars. */
   gaps?: readonly GapSpan[] | undefined;
-  /** Range selection (D-089); needs a `BrushProvider` above. */
-  brush: boolean;
-  /**
-   * Hover contract. Absent: the chart's own readout (`MirrorHover`). Given
-   * (with `brush`): the owner paints its own readout from the hovered time
-   * and moves the crosshairs with `paintMirrorCrosshairs`, so stacked plots
-   * share one crosshair and one tooltip without re-rendering React.
-   */
-  onHoverTime?: ((time: number | null) => void) | undefined;
   /** Hover times carry dates (multi-day or fixed ranges). */
   dateLabels: boolean;
   /** The x tick row under the plot (default on; off for an upper sibling). */
@@ -191,7 +199,14 @@ export function MirrorChart({
             className="pointer-events-none absolute top-0 right-0"
             style={{ left: PLOT_INSET, height }}
           >
-            <GapBands gaps={gaps} rangeFromMs={firstMs} rangeToMs={endMs} />
+            {/* Centred: a caption straddling the bottom edge would cover
+                the tick row just under the plot. */}
+            <GapBands
+              gaps={gaps}
+              rangeFromMs={firstMs}
+              rangeToMs={endMs}
+              labelPosition="center"
+            />
           </div>
         )}
         {!pending && <CrosshairLine paint height={height} />}
@@ -216,7 +231,13 @@ export function MirrorChart({
       </div>
       {axis && (
         <WindowTicks
-          ticks={historyTicks(firstMs, endMs, live, 5)}
+          // Live ticks name the window: when its start is off a bucket edge
+          // the bars run up to a bucket past it.
+          ticks={
+            live
+              ? windowTicks(windowMs, 5)
+              : historyTicks(firstMs, endMs, false, 5)
+          }
           style={{ paddingLeft: PLOT_INSET }}
         />
       )}

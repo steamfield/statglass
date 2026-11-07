@@ -52,7 +52,10 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
           ]}
           yAxis={{
             ceiling: "auto",
-            min: 100e6,
+            // The floor sits on the ladder the units read in: 128 MiB or 100 MB.
+            ...(units.bytes === "GiB"
+              ? { min: 128 * 1024 ** 2, ladder: "binary" }
+              : { min: 100e6, ladder: "decimal" }),
             format: fmt,
             gutter: BYTES_GUTTER,
           }}

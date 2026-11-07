@@ -1,9 +1,6 @@
 import type { Capabilities, HostInfo } from "@core/generated/bindings";
-import {
-  modulePresence,
-  SETTINGS_MODULES,
-  type SettingsModule,
-} from "@core/settings-patch";
+import { modulePresence } from "@core/module-state";
+import { SETTINGS_MODULES, type SettingsModule } from "@core/settings-patch";
 
 /** Disk starts off; every other present module starts on. */
 const DEFAULT_OFF: ReadonlySet<SettingsModule> = new Set(["disk"]);

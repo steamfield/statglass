@@ -45,3 +45,32 @@ it("says failed when the clipboard refuses, then resets", async () => {
   act(() => vi.advanceTimersByTime(COPIED_MS));
   expect(result.current.status).toBe("idle");
 });
+
+it("leaves no timer behind when unmounted while the copy is pending", async () => {
+  let resolve = () => {};
+  writeText.mockReturnValue(
+    new Promise<void>((done) => {
+      resolve = done;
+    })
+  );
+  const { result, unmount } = renderHook(() => useCopyToClipboard("test"));
+  let copying: Promise<boolean> = Promise.resolve(false);
+  act(() => {
+    copying = result.current.copy("x");
+  });
+  unmount();
+  resolve();
+  await expect(copying).resolves.toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("clears its timer when unmounted after a copy", async () => {
+  writeText.mockResolvedValue();
+  const { result, unmount } = renderHook(() => useCopyToClipboard("test"));
+  await act(async () => {
+    await result.current.copy("x");
+  });
+  expect(vi.getTimerCount()).toBe(1);
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});

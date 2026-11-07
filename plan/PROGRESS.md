@@ -4,6 +4,42 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Shared layers RFC phases 3b, 3c, 4 and 5 (2026-11-07)
+
+Phase 3b (C3, C5): `MirrorChart` backs Network and Disk I/O (Disk keeps imperative hover
+painting across its two plots); MirrorBars ceilings are required, and the popover network
+card uses `useNiceCeiling`; `bg-gap-hatch` and the documented 4 px `bg-gap-hatch-dense`
+utilities, `strokeHatch` for canvas, `GapBand labelPosition="center"`, `splitRuns` under every
+gap-run builder, and one hollow `GapEdgeDot` (plus `gapEdgePoints` for uPlot).
+
+Phase 3c (C4, C7): `indexAt`/`nearestTime` in `@core/chart-math/cursor.ts`, `resolutionLabel`
+in `@core/format`, `CrosshairLine`/`paintCrosshairs`, shared tooltip pieces and side rule,
+`useChartCursor`; `useBrushGesture` under BrushOverlay and the Timeline selection, with
+`useBrushOverlay` as the adapter for bar and canvas charts. Container clocks use
+`@core/format/clock`.
+
+Phase 4 (U3-U11): `useRowHold` (pointer plus `:focus-visible` keyboard focus, released when
+the focused row disappears) in every live table; containers group through a grouping-only
+TanStack table fed with the sorted, held rows (TanStack groups before it sorts, so grouping
+inside the main table would reorder groups); `useSearchParamPatch`, `readRange`/`writeRange`;
+`ConfirmDialog` with review lists for host, update and cleanup confirmations, and a 10 s
+signal timeout so a quit dialog can't trap the window; shadcn `ui/popover` and
+`ui/dropdown-menu`; `PageHeader.headingRef`, `ModulePage` (five module routes; Disk keeps its
+own provider), `HistoryRangeControl` for Timeline and Containers; `MODULE_META` and one
+absence wording that names the host; `useCopyToClipboard`, `useCanSignal`, `matchText`,
+`topBy`, `StatList`, `OtherChip`. The docker-128 perf gate now also runs grouped.
+
+Phase 5 (R6.1, R6.4, R6.5): D-128 gives `DockerCoverage` a Rust-derived `kind` and `label`
+and moves coverage masking of history points into Rust (`mask_uncovered`); the client's
+reason tables and `measured_ms` rewrite are gone. `make bindings` writes a tray rate golden
+table that `tray-layout.test.ts` checks (it caught three f32 rounding differences). New
+`last_wake` command; Overview's 24 h maximum uses `query_series_stats`. The phase 5 review
+found the masking erasing real measurements (engine-wide partial cycles, stale open rows
+after a crash, collapsed coverage); fixes are in progress.
+
+Code reviews ran on every phase; findings for 3b, 3c, 4c and 5 are being fixed in follow-up
+runs. Phase 3d (C8) is in progress.
+
 ## Shared layers RFC phases 2 and 3a: queries, UI states, Rust helpers, module charts (2026-11-07)
 
 Phase 2b (R1-R5): the agent's history lock goes through the store's `WriterLock` and reports

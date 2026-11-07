@@ -1,4 +1,5 @@
 import type { UiModule } from "@core/module-state";
+import { useId } from "react";
 import { Switch } from "~/components/ui/switch";
 import { cn } from "~/lib/utils";
 import { Swatch } from "~/widgets/legend";
@@ -37,7 +38,7 @@ export function ModuleToggleRow({
   const meta = MODULE_META[module];
   const on = absence === null && checked;
   const line = absence ?? sub;
-  const switchId = `module-toggle-${module}`;
+  const switchId = useId();
   const Row = dense ? "li" : "div";
   return (
     <Row
@@ -54,7 +55,11 @@ export function ModuleToggleRow({
       <div className={cn("flex min-w-0 flex-1 flex-col", !dense && "py-2")}>
         <label
           htmlFor={switchId}
-          className={cn(dense && "text-[13px]", !on && "text-muted-foreground")}
+          className={cn(
+            dense && "text-[13px]",
+            // Onboarding mutes only an absent module; settings, any that is off.
+            (dense ? absence !== null : !on) && "text-muted-foreground"
+          )}
         >
           {meta.name}
         </label>

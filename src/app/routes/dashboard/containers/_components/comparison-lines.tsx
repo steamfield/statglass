@@ -3,7 +3,12 @@ import {
   seriesColor,
 } from "@core/chart-math/series-lines";
 import { seriesFocusStyle } from "~/hooks/use-series-focus";
+import { GAP_EDGE_DOT } from "~/widgets/gap-edge-dot";
 import type { ComparisonSeries } from "./comparison-chart";
+
+/** `GapEdgeDot` in SVG: the ring's centre radius, so its outer edge is 7 px. */
+const EDGE_R = (GAP_EDGE_DOT.size - GAP_EDGE_DOT.stroke) / 2;
+
 export function ComparisonLines({
   plotSeries,
   active,
@@ -64,17 +69,36 @@ export function ComparisonLines({
               vectorEffect="non-scaling-stroke"
             />
           ))}
-          {s.geometry.dots.map((dot) => (
-            <ellipse
-              key={dot.time}
-              cx={dot.x}
-              cy={dot.y + 1}
-              rx={(3 * 1000) / plotWidth}
-              ry={3}
-              fill={seriesColor(s.slot)}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
+          {s.geometry.dots.map((dot) =>
+            dot.partial ? (
+              // A partial bucket's average: filled, beside its range marker
+              // (design-system.md "Gaps" exception).
+              <ellipse
+                key={dot.time}
+                data-partial-dot
+                cx={dot.x}
+                cy={dot.y + 1}
+                rx={(3 * 1000) / plotWidth}
+                ry={3}
+                fill={seriesColor(s.slot)}
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : (
+              // A covered one-bucket run: the hollow gap-edge dot.
+              <ellipse
+                key={dot.time}
+                data-gap-edge
+                cx={dot.x}
+                cy={dot.y + 1}
+                rx={(EDGE_R * 1000) / plotWidth}
+                ry={EDGE_R}
+                fill="var(--color-card)"
+                stroke={seriesColor(s.slot)}
+                strokeWidth={GAP_EDGE_DOT.stroke}
+                vectorEffect="non-scaling-stroke"
+              />
+            )
+          )}
         </g>
       ))}
     </>

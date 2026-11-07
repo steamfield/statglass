@@ -6,8 +6,8 @@ import { Button } from "~/components/ui/button";
  * The retained-history toolbar for Timeline and Containers: the range
  * picker, previous and next range (next only while not live), and Live.
  * `pending` holds the steps while a range change is loading and marks the
- * toolbar busy; `disabled` holds them for any other reason. The picker
- * stays usable either way.
+ * toolbar busy. The steps stay focusable (aria-disabled, clicks ignored) so a
+ * keyboard user stepping with Enter keeps focus; the picker stays usable.
  */
 export function HistoryRangeControl({
   picker,
@@ -15,7 +15,6 @@ export function HistoryRangeControl({
   onPrevious,
   onNext,
   onLive,
-  disabled = false,
   pending = false,
   previousLabel = "Previous range",
   nextLabel = "Next range",
@@ -26,12 +25,17 @@ export function HistoryRangeControl({
   onPrevious: () => void;
   onNext: () => void;
   onLive: () => void;
-  disabled?: boolean;
   pending?: boolean;
   previousLabel?: string;
   nextLabel?: string;
 }) {
-  const held = disabled || pending;
+  const hold = (action: () => void) => () => {
+    if (!pending) action();
+  };
+  const held = {
+    "aria-disabled": pending || undefined,
+    className: "aria-disabled:opacity-50",
+  };
   return (
     <div
       className="flex flex-wrap items-center gap-3"
@@ -43,8 +47,8 @@ export function HistoryRangeControl({
           variant="outline"
           size="icon"
           aria-label={previousLabel}
-          disabled={held}
-          onClick={onPrevious}
+          {...held}
+          onClick={hold(onPrevious)}
         >
           <ChevronLeft />
         </Button>
@@ -53,8 +57,8 @@ export function HistoryRangeControl({
             variant="outline"
             size="icon"
             aria-label={nextLabel}
-            disabled={held}
-            onClick={onNext}
+            {...held}
+            onClick={hold(onNext)}
           >
             <ChevronRight />
           </Button>
@@ -64,8 +68,8 @@ export function HistoryRangeControl({
         variant="outline"
         size="sm"
         aria-pressed={live}
-        disabled={held}
-        onClick={onLive}
+        {...held}
+        onClick={hold(onLive)}
       >
         Live
       </Button>

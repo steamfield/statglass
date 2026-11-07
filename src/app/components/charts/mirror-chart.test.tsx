@@ -59,15 +59,56 @@ describe("MirrorChart", () => {
     expect(screen.queryByText("now")).toBeNull();
   });
 
-  it("moves one crosshair across sibling plots without rendering", () => {
-    const onHoverTime = vi.fn();
+  it("starts a live axis at the window when the bars start off a bucket edge", () => {
+    // An hour of minute bars from an unaligned start: the first bar is
+    // floored, so 61 bars span up to a bucket more than the window.
+    const minute = 60_000;
+    renderWithProviders(
+      <MirrorChart
+        {...plot}
+        up={Array.from({ length: 61 }, () => 1)}
+        down={Array.from({ length: 61 }, () => 1)}
+        bucketMs={minute}
+        windowMs={60 * minute}
+        span="last hour"
+      />
+    );
+    expect(screen.getByText("−60m")).toBeVisible();
+    expect(screen.queryByText("−61m")).toBeNull();
+    expect(screen.getByText("now")).toBeVisible();
+  });
+
+  it("keeps a gap caption inside the band, clear of the tick row", () => {
+    renderWithProviders(
+      <MirrorChart
+        {...plot}
+        gaps={[
+          {
+            fromMs: plot.firstMs + 10_000,
+            toMs: plot.firstMs + 30_000,
+            label: "Asleep 11:02–11:31 · not interpolated",
+          },
+        ]}
+      />
+    );
+    const band = screen.getByRole("note", {
+      name: "Asleep 11:02–11:31 · not interpolated",
+    });
+    expect(band).toHaveClass("items-center");
+    expect(
+      screen.getByText("Asleep 11:02–11:31 · not interpolated")
+    ).not.toHaveClass("translate-y-1/2");
+  });
+
+  it("paints one crosshair across sibling plots at the hovered bar", () => {
     const { container } = renderWithProviders(
       <>
-        <MirrorChart {...plot} onHoverTime={onHoverTime} axis={false} />
+        <MirrorChart {...plot} brush onHoverTime={vi.fn()} axis={false} />
         <MirrorChart
           {...plot}
           subject="Operations/s"
-          onHoverTime={onHoverTime}
+          brush
+          onHoverTime={vi.fn()}
         />
       </>
     );
