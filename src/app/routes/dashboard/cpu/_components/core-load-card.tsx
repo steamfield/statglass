@@ -1,10 +1,11 @@
-import { resolutionLabel } from "@core/format";
+import { resolutionWords } from "@core/format";
 import { spanWords } from "@core/live-window";
 import { sk } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
+import { useChartLabel } from "~/hooks/use-chart-label";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
@@ -53,6 +54,11 @@ export function CoreLoadCard({
     Math.ceil(windowMs / desiredBucketMs),
     windowMs
   );
+  const ariaLabel = useChartLabel({
+    subject: "Per-core load",
+    span,
+    now: `each column a ${resolutionWords(bucketMs)}`,
+  });
 
   return (
     <SectionCard
@@ -77,7 +83,7 @@ export function CoreLoadCard({
         bucketMs={bucketMs}
         windowMs={windowMs}
         endMs={endMs}
-        ariaLabel={`Per-core load, ${span}, each column a ${resolutionLabel(bucketMs)}`}
+        ariaLabel={ariaLabel}
       />
     </SectionCard>
   );

@@ -27,6 +27,7 @@ import { brushScopeProps } from "~/components/brush-overlay";
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { Button } from "~/components/ui/button";
+import { type SeriesFocus, useSeriesFocus } from "~/hooks/use-series-focus";
 import { useUnits } from "~/hooks/use-units";
 import { BrushProvider, useBrushStoreOptional } from "~/stores/brush-store";
 import { Legend } from "~/widgets/legend";
@@ -60,10 +61,7 @@ function ComparisonPlot({
   controls,
   notice,
   coverage = [],
-  focused,
-  pinnedFocus,
-  onFocus,
-  onPinFocus,
+  focus: ownerFocus,
   onChoose,
   more = 0,
   chooserTitle,
@@ -78,16 +76,16 @@ function ComparisonPlot({
   controls?: ReactNode;
   notice?: ReactNode;
   coverage?: readonly DockerCoverage[] | undefined;
-  focused: string | null;
-  pinnedFocus: string | null;
-  onFocus: (id: string | null) => void;
-  onPinFocus: (id: string | null) => void;
+  /** The owner's focus when the table shares it; else the chart keeps its own. */
+  focus?: SeriesFocus | undefined;
   onChoose: () => void;
   more?: number;
   chooserTitle?: string | undefined;
   loading?: boolean;
 }) {
   const [asTable, setAsTable] = useState(false);
+  const ownFocus = useSeriesFocus();
+  const focus = ownerFocus ?? ownFocus;
   const { bytes } = useUnits();
   const format = (value: number | null) =>
     metric === "cpu"
@@ -117,16 +115,7 @@ function ComparisonPlot({
       `${container.name}${series.filter((s) => s.container.name === container.name).length > 1 ? ` · ${container.id.slice(0, 6)}` : ""}`,
     [series]
   );
-  const plot = useComparisonPlotState(
-    series,
-    metric,
-    from,
-    to,
-    focused,
-    pinnedFocus,
-    onFocus,
-    onPinFocus
-  );
+  const plot = useComparisonPlotState(series, metric, from, to, focus);
   const { selection, times } = plot;
   const duration = Math.max(
     DOCKER_BUCKET_MS,
@@ -141,15 +130,11 @@ function ComparisonPlot({
           value: "",
           step: "none",
           color: seriesColor(s.slot),
-          pressed: pinnedFocus === s.container.id,
-          onFocus: () => onFocus(s.container.id),
-          onBlur: () => onFocus(null),
-          onClick: () =>
-            onPinFocus(pinnedFocus === s.container.id ? null : s.container.id),
+          ...focus.legendItemProps(s.container.id),
         }))}
       />
     ),
-    [series, displayName, pinnedFocus, onFocus, onPinFocus]
+    [series, displayName, focus]
   );
   return (
     <div {...brushScopeProps}>
@@ -183,7 +168,7 @@ function ComparisonPlot({
               range={range}
               metricGaps={metricGaps}
               plot={plot}
-              onFocus={onFocus}
+              onFocus={focus.setHovered}
               loading={loading}
               duration={duration}
               clock={clock}

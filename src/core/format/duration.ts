@@ -68,6 +68,18 @@ export function resolutionLabel(bucketMs: number): string {
 }
 
 /**
+ * `resolutionLabel` spoken, for accessible names, where a screen reader can
+ * read "min" as minimum: "10-second average", "15-minute average",
+ * "2-hour average".
+ */
+export function resolutionWords(bucketMs: number): string {
+  const s = bucketMs / 1000;
+  if (s >= 3600 && s % 3600 === 0) return `${s / 3600}-hour average`;
+  if (s >= 60 && s % 60 === 0) return `${s / 60}-minute average`;
+  return `${s}-second average`;
+}
+
+/**
  * A selected span in the Apps title: "90 s" under two minutes, then "2 min",
  * "2 min 30 s", and "1 h 5 min" from an hour.
  */

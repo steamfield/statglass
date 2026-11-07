@@ -18,6 +18,27 @@ const props: StreamAreaProps = {
   gridlines: [20],
 };
 
+/** Runs `fn` with every ResizeObserver reporting a box `width` px wide. */
+function withWidth(width: number, fn: () => void) {
+  const original = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(private cb: ResizeObserverCallback) {}
+    observe() {
+      this.cb(
+        [{ contentRect: { width } } as ResizeObserverEntry],
+        this as unknown as ResizeObserver
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  try {
+    fn();
+  } finally {
+    globalThis.ResizeObserver = original;
+  }
+}
+
 function moveCount(d: string | null | undefined): number {
   return (d ?? "").match(/M/g)?.length ?? 0;
 }
@@ -195,58 +216,43 @@ describe("StreamArea", () => {
   });
 
   it("places annotations inside the window and drops ones outside it", () => {
-    // Five values 1 s apart: the window is the last 4 s.
-    const { getByText, queryByText, rerender } = render(
-      <StreamArea
-        {...props}
-        annotations={[{ tsMs: props.tEndMs - 2_000, label: "ANE 1.4 W" }]}
-      />
-    );
-    expect(getByText("ANE 1.4 W").parentElement?.style.left).toBe("50.00%");
-    rerender(
-      <StreamArea
-        {...props}
-        annotations={[{ tsMs: props.tEndMs - 60_000, label: "old" }]}
-      />
-    );
-    expect(queryByText("old")).toBeNull();
+    // Five values 1 s apart: the window is the last 4 s, 1000 px wide.
+    withWidth(1000, () => {
+      const { getByText, queryByText, rerender } = render(
+        <StreamArea
+          {...props}
+          annotations={[{ tsMs: props.tEndMs - 2_000, label: "ANE 1.4 W" }]}
+        />
+      );
+      expect(getByText("ANE 1.4 W").parentElement?.style.left).toBe("500px");
+      rerender(
+        <StreamArea
+          {...props}
+          annotations={[{ tsMs: props.tEndMs - 60_000, label: "old" }]}
+        />
+      );
+      expect(queryByText("old")).toBeNull();
+    });
   });
 
-  it("drops an annotation too close to a newer one, keeping the newer", () => {
-    // The window is the last 4 s: 0.25 s apart is 0.0625 of it.
-    const { getByText, queryByText } = render(
-      <StreamArea
-        {...props}
-        annotations={[
-          { tsMs: props.tEndMs - 2_250, label: "older" },
-          { tsMs: props.tEndMs - 2_000, label: "newer" },
-          { tsMs: props.tEndMs - 3_000, label: "apart" },
-        ]}
-      />
-    );
-    expect(getByText("newer")).toBeInTheDocument();
-    expect(queryByText("older")).toBeNull();
-    expect(getByText("apart")).toBeInTheDocument();
-  });
-
-  it("drops labels that would meet, by the side each hangs on", () => {
-    // Window 4 s. 0.12 apart on one side, and 0.2 apart facing each other
-    // across the middle: both pairs overlap at about a quarter plot wide.
-    const { getByText, queryByText } = render(
-      <StreamArea
-        {...props}
-        annotations={[
-          { tsMs: props.tEndMs - 4_000, label: "left old" },
-          { tsMs: props.tEndMs - 3_520, label: "left new" },
-          { tsMs: props.tEndMs - 2_200, label: "facing old" },
-          { tsMs: props.tEndMs - 1_400, label: "facing new" },
-        ]}
-      />
-    );
-    expect(getByText("facing new")).toBeInTheDocument();
-    expect(queryByText("facing old")).toBeNull();
-    expect(getByText("left new")).toBeInTheDocument();
-    expect(queryByText("left old")).toBeNull();
+  it("moves a colliding label to the second row, then merges it as +N", () => {
+    // 100 px apart on a 1000 px plot; each label is about 70 px wide.
+    withWidth(1000, () => {
+      const { getByText, queryByText } = render(
+        <StreamArea
+          {...props}
+          annotations={[
+            { tsMs: props.tEndMs - 2_600, label: "Spike one" },
+            { tsMs: props.tEndMs - 2_500, label: "Spike two" },
+            { tsMs: props.tEndMs - 2_400, label: "Spike six" },
+          ]}
+        />
+      );
+      expect(getByText("Spike one").parentElement?.style.top).toBe("12px");
+      // The third has no room on either row: it merges into the nearest.
+      expect(getByText("Spike two +1").parentElement?.style.top).toBe("34px");
+      expect(queryByText(/Spike six/)).toBeNull();
+    });
   });
 
   it("moves the dash pattern with the data as the window scrolls", () => {
@@ -286,15 +292,17 @@ describe("StreamArea", () => {
   });
 
   it("anchors an annotation past the middle by its right edge", () => {
-    const { getByText } = render(
-      <StreamArea
-        {...props}
-        annotations={[{ tsMs: props.tEndMs - 1_000, label: "late" }]}
-      />
-    );
-    const label = getByText("late");
-    expect(label.parentElement?.style.right).toBe("25.00%");
-    expect(label.parentElement?.style.left).toBe("");
-    expect(label.className).toContain("flex-row-reverse");
+    withWidth(1000, () => {
+      const { getByText } = render(
+        <StreamArea
+          {...props}
+          annotations={[{ tsMs: props.tEndMs - 1_000, label: "late" }]}
+        />
+      );
+      const label = getByText("late");
+      expect(label.parentElement?.style.right).toBe("250px");
+      expect(label.parentElement?.style.left).toBe("");
+      expect(label.className).toContain("flex-row-reverse");
+    });
   });
 });

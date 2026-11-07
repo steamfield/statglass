@@ -1,3 +1,4 @@
+import { layoutMarkers } from "@core/chart-math";
 import { eventId, eventLabel } from "@core/events";
 import { formatClock } from "@core/format";
 import type { Event } from "@core/generated/bindings";
@@ -9,7 +10,7 @@ import {
 } from "~/components/ui/popover";
 import { cn } from "~/lib/utils";
 import { eventPriority, groupEvents } from "../_lib/events";
-import { layoutMarkers, type Marker } from "../_lib/gaps";
+import type { Marker } from "../_lib/gaps";
 
 export interface AnnotationRowProps {
   markers: readonly Marker[];
@@ -38,10 +39,13 @@ export function AnnotationRow({
     widthPx > 0
       ? layoutMarkers(
           markers.filter((m) => m.kind !== "event"),
-          fromMs,
-          toMs,
-          widthPx,
-          (m) => m.label.length * 6 + 16
+          {
+            fromMs,
+            toMs,
+            widthPx,
+            measure: (m) => m.label.length * 6 + 16,
+            side: () => "start",
+          }
         )
       : [];
   return (

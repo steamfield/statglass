@@ -17,11 +17,13 @@ import {
   rateParts,
 } from "@core/format";
 import { METRIC_CODES } from "@core/generated/bindings";
-import { windowLabel, windowWords } from "@core/live-window";
+import { spanWords } from "@core/live-window";
 import { MINUTE_MS } from "@core/time-grid";
-import { mirrorAriaLabel } from "~/components/charts/mirror-chart";
+import { mirrorSubject } from "~/components/charts/mirror-chart";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
+import { useChartLabel } from "~/hooks/use-chart-label";
+import { useCompactStream } from "~/hooks/use-compact-stream";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
@@ -62,8 +64,6 @@ function useOpen() {
   return (href: string) => void transport.openDashboard(href);
 }
 
-/** The charts' window at 1 s; slower intervals keep the 60 samples (plan 4.15). */
-const WINDOW_MS = MINUTE_MS;
 const NET_WINDOW_MS = 48_000;
 /** Smallest ceiling the network bars autoscale to, B/s (as on the Network page). */
 const NET_MIN_CEILING = 100_000;
@@ -71,9 +71,14 @@ const NET_MIN_CEILING = 100_000;
 export function LiveCpuCard({ compact = false, onToggle }: PresentationProps) {
   const open = useOpen();
   const cpu = useCpu();
-  const windowMs = useScaledWindow(WINDOW_MS);
-  const total = useSeriesWindow("cpu.total", windowMs);
-  const ceiling = useNiceCeiling(total.values, total.tEndMs, 10, windowMs);
+  const stream = useCompactStream({
+    seriesKey: "cpu.total",
+    accent: "cpu",
+    subject: "CPU",
+    now: formatPercent(cpu.total),
+    height: compact ? 14 : 52,
+    bare: compact,
+  });
   const notice = useReadFailure("cpu.total");
   return (
     <ModuleCard
@@ -86,22 +91,7 @@ export function LiveCpuCard({ compact = false, onToggle }: PresentationProps) {
       value={formatPercent(cpu.total)}
       notice={notice}
     >
-      <StreamArea
-        series={[{ key: "cpu.total", values: total.values, step: 1 }]}
-        tEndMs={total.tEndMs}
-        intervalMs={total.intervalMs}
-        yMax={ceiling}
-        accent="cpu"
-        height={compact ? 14 : 52}
-        ariaLabel={`CPU, last ${windowWords(windowMs)}, ${formatPercent(cpu.total)}`}
-        {...(compact
-          ? {}
-          : {
-              ceilingLabel: `${ceiling}%`,
-              windowLabel: windowLabel(windowMs),
-            })}
-        gridlines={compact ? [] : [ceiling / 2]}
-      />
+      <StreamArea {...stream} />
       {!compact && (
         <div className="flex flex-col gap-[5px] pt-1.5">
           <InlineBar
@@ -217,8 +207,15 @@ function seg(
 export function LiveGpuCard({ compact = false, onToggle }: PresentationProps) {
   const open = useOpen();
   const gpu = useGpu();
-  const windowMs = useScaledWindow(WINDOW_MS);
-  const util = useSeriesWindow("gpu.util", windowMs);
+  const stream = useCompactStream({
+    seriesKey: "gpu.util",
+    accent: "gpu",
+    subject: "GPU",
+    now: formatPercent(gpu.util),
+    height: compact ? 14 : 40,
+    yMax: 100,
+    bare: compact,
+  });
   const notice = useReadFailure("gpu.util");
   return (
     <ModuleCard
@@ -231,15 +228,7 @@ export function LiveGpuCard({ compact = false, onToggle }: PresentationProps) {
       value={formatPercent(gpu.util)}
       notice={notice}
     >
-      <StreamArea
-        series={[{ key: "gpu.util", values: util.values, step: 1 }]}
-        tEndMs={util.tEndMs}
-        intervalMs={util.intervalMs}
-        yMax={100}
-        accent="gpu"
-        height={compact ? 14 : 40}
-        ariaLabel={`GPU, last ${windowWords(windowMs)}, ${formatPercent(gpu.util)}`}
-      />
+      <StreamArea {...stream} />
       {!compact && (
         <StatList
           layout="grid"
@@ -367,6 +356,14 @@ export function LiveNetworkCard({
     NET_MIN_CEILING,
     windowMs
   );
+  const ariaLabel = useChartLabel({
+    subject: mirrorSubject({
+      subject: "Network",
+      upLabel: "Upload",
+      downLabel: "Download",
+    }),
+    span: spanWords(windowMs, null),
+  });
   const rxNotice = useReadFailure("net.rx_total");
   const txNotice = useReadFailure("net.tx_total");
   return (
@@ -408,12 +405,7 @@ export function LiveNetworkCard({
         intervalMs={rx.intervalMs}
         tEndMs={rx.tEndMs}
         accent="net"
-        ariaLabel={mirrorAriaLabel({
-          subject: "Network",
-          upLabel: "Upload",
-          downLabel: "Download",
-          span: `last ${windowWords(windowMs)}`,
-        })}
+        ariaLabel={ariaLabel}
         upMax={upMax}
         downMax={downMax}
         upHeight={compact ? 6 : 18}

@@ -52,10 +52,6 @@ function Chart({
       to={60_000}
       live={live}
       range="15m"
-      focused={null}
-      pinnedFocus={null}
-      onFocus={() => {}}
-      onPinFocus={() => {}}
       onChoose={() => {}}
       coverage={coverage}
     />
@@ -236,6 +232,8 @@ it("brushes only elapsed buckets and explains an engine gap under the cursor", a
           end_ms: null,
           container_id: null,
           reason: "Sampler paused",
+          kind: "collection",
+          label: "Sampler paused",
         },
       ]}
     />,

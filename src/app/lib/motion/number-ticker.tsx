@@ -1,18 +1,7 @@
 import { type Figure, figureAt, parseFigure, tickPath } from "@core/format";
 import { createTween, type Tween } from "@core/tween";
 import { useEffect, useLayoutEffect, useRef } from "react";
-
-/**
- * `--motion-count` in ms: 0 under reduced motion and Performance mode. Read
- * from the root, where the tokens and `data-performance` live.
- */
-function countMs(el: Element): number {
-  const v = getComputedStyle(el.ownerDocument.documentElement).getPropertyValue(
-    "--motion-count"
-  );
-  const ms = Number.parseFloat(v);
-  return Number.isFinite(ms) ? ms : 0;
-}
+import { motionMs } from "./tokens";
 
 /**
  * A formatted number that counts to its next value instead of jumping
@@ -63,7 +52,7 @@ export function NumberTicker({
     }
     if (r.text === text && r.unit === unit) return;
     const path = r.unit === unit ? tickPath(r.shown, to) : null;
-    const duration = path ? countMs(el) : 0;
+    const duration = path ? motionMs("count", el) : 0;
     r.text = text;
     r.unit = unit;
     if (!path || !to || duration <= 0) {

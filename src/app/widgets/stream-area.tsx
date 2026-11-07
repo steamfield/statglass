@@ -10,9 +10,8 @@ import {
 } from "react";
 import { cn } from "~/lib/utils";
 import {
-  annotationFraction,
-  ChartAnnotation,
   type ChartAnnotationProps,
+  ChartAnnotations,
 } from "./chart-annotation";
 import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
 import { GapBands, type GapSpan } from "./gap-band";
@@ -23,12 +22,6 @@ import { useTickScroll } from "./lib/use-tick-scroll";
 
 /** Width of the drawing in viewBox units; the SVG stretches to its box. */
 const VB_W = 1000;
-/** Annotations closer than this fraction of the width would overlap. */
-/**
- * Width a spike label is taken to cover, as a fraction of the plot
- * ("ANE 1.4 W · Photos face analysis" is about 170 px on a ~900 px plot).
- */
-const ANNOTATION_SPAN = 0.25;
 /** The dash pattern's length in screen px ("3 2"). */
 const DASH = [3, 2] as const;
 const DASH_PERIOD = DASH[0] + DASH[1];
@@ -293,24 +286,12 @@ export function StreamArea({
           />
         ))
       )}
-      {placeAnnotations(annotations, tEndMs, windowMs).map(({ a, f }) => {
-        // Past the middle the label hangs left of its marker, so it stays
-        // inside the plot.
-        const end = f > 0.5;
-        return (
-          <div
-            key={`${a.tsMs}-${a.label}`}
-            className="absolute top-3"
-            style={
-              end
-                ? { right: `${((1 - f) * 100).toFixed(2)}%` }
-                : { left: `${(f * 100).toFixed(2)}%` }
-            }
-          >
-            <ChartAnnotation {...a} align={end ? "end" : "start"} />
-          </div>
-        );
-      })}
+      <ChartAnnotations
+        annotations={annotations}
+        tEndMs={tEndMs}
+        windowMs={windowMs}
+        widthPx={widthPx}
+      />
       {ceilingLabel && (
         <span
           aria-hidden
@@ -330,40 +311,6 @@ export function StreamArea({
       {overlay}
     </ChartFrame>
   );
-}
-
-/**
- * Annotations inside the window with their fractions, newest first. A label
- * hangs right of its marker in the left half and left of it past the middle;
- * one whose span (`ANNOTATION_SPAN`) would overlap a newer label's is dropped.
- */
-function placeAnnotations(
-  annotations: readonly ChartAnnotationProps[] | undefined,
-  tEndMs: number,
-  windowMs: number
-): { a: ChartAnnotationProps; f: number }[] {
-  const placed: { a: ChartAnnotationProps; f: number }[] = [];
-  const newest = [...(annotations ?? [])].sort((p, q) => q.tsMs - p.tsMs);
-  for (const a of newest) {
-    const f = annotationFraction(a.tsMs, tEndMs, windowMs);
-    if (f === null) continue;
-    const [lo, hi] = labelSpan(f);
-    if (
-      placed.some((p) => {
-        const [plo, phi] = labelSpan(p.f);
-        return lo < phi && plo < hi;
-      })
-    ) {
-      continue;
-    }
-    placed.push({ a, f });
-  }
-  return placed;
-}
-
-/** The plot fractions a label at `f` covers, by the side it hangs on. */
-function labelSpan(f: number): [number, number] {
-  return f > 0.5 ? [f - ANNOTATION_SPAN, f] : [f, f + ANNOTATION_SPAN];
 }
 
 /** The element's rendered width in px, 0 until measured. */

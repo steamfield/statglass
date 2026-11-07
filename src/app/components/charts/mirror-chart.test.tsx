@@ -8,7 +8,7 @@ import { type HostStore, useHostStore } from "~/stores/host-store";
 import {
   MirrorChart,
   type MirrorChartProps,
-  mirrorAriaLabel,
+  mirrorSubject,
   paintMirrorCrosshairs,
 } from "./mirror-chart";
 
@@ -32,19 +32,15 @@ const plot: MirrorChartProps = {
   dateLabels: false,
 };
 
-describe("mirrorAriaLabel", () => {
-  it("names the subject, both directions and the span in one wording", () => {
+describe("mirrorSubject", () => {
+  it("names the subject and both directions in one wording", () => {
     expect(
-      mirrorAriaLabel({
+      mirrorSubject({
         subject: "Network",
         upLabel: "Upload",
         downLabel: "Download",
-        span: "last 15 minutes",
-        brush: true,
       })
-    ).toBe(
-      "Network: upload above the line, download below, last 15 minutes. Drag to select a range."
-    );
+    ).toBe("Network: upload above the line, download below");
   });
 });
 

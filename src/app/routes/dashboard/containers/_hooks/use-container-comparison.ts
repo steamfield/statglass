@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSeriesFocus } from "~/hooks/use-series-focus";
 import { useBrushRange, useBrushStore } from "~/stores/brush-store";
 import type { ComparisonSeries } from "../_components/comparison-chart";
 import type { ContainerRouteState } from "../_lib/route-state";
@@ -31,8 +32,7 @@ export function useContainerComparison(
   const { metric, project, range, end, from, to, custom } = route;
   const engine = snapshot?.engine?.id ?? "";
   const selection = useBrushRange();
-  const { focused, setFocused, pinnedFocus, setPinnedFocus } =
-    useContainerFocus(engine);
+  const focus = useContainerFocus(engine);
   const [membership, setMembership] = useState<Membership & { engine: string }>(
     {
       engine,
@@ -91,8 +91,8 @@ export function useContainerComparison(
     observedMs: snapshot?.observed_ms,
     placeholder: comparison.isPlaceholderData,
     candidates,
-    focused,
-    pinnedFocus,
+    focused: focus.hovered,
+    pinnedFocus: focus.pinned,
     setMembership,
   });
   const { slots, series, plottedSeries } = useComparisonPaint({
@@ -109,10 +109,7 @@ export function useContainerComparison(
     resetEvaluation();
   };
   return {
-    focused,
-    setFocused,
-    pinnedFocus,
-    setPinnedFocus,
+    focus,
     selected,
     comparison,
     selectedComparison,
@@ -281,17 +278,17 @@ function useMembershipEvaluation({
   };
 }
 
+/** The chart and table's shared focus, dropped with the brush when the engine changes. */
 function useContainerFocus(engine: string) {
   const brush = useBrushStore();
-  const [focused, setFocused] = useState<string | null>(null);
-  const [pinnedFocus, setPinnedFocus] = useState<string | null>(null);
+  const focus = useSeriesFocus();
+  const { clear } = focus;
   const focusEngine = useRef(engine);
   useEffect(() => {
     if (focusEngine.current === engine) return;
     focusEngine.current = engine;
     brush.getState().clear();
-    setFocused(null);
-    setPinnedFocus(null);
-  }, [engine, brush]);
-  return { focused, setFocused, pinnedFocus, setPinnedFocus };
+    clear();
+  }, [engine, brush, clear]);
+  return focus;
 }

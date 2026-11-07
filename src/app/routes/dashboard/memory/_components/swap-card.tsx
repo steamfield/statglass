@@ -58,7 +58,8 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
           }}
           accent="mem"
           height={HEIGHT}
-          ariaLabel={`Swap used, ${chart.span}, now ${fmt(v[KEY])}.`}
+          subject="Swap used"
+          now={`now ${fmt(v[KEY])}`}
         />
       </SectionCard>
     </div>

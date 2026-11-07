@@ -39,15 +39,6 @@ export const HEATMAP_SCALES: Record<HeatmapMetric, HeatmapScale> = {
 /** The five legend swatches, faint to strong. */
 export const LEGEND_ALPHAS = [0.08, 0.28, 0.5, 0.72, 0.95] as const;
 
-/**
- * A cell's fill opacity: `0.06 + (v / 80) * 0.89` for CPU, capped at
- * 0.95, generalised to the scale's `lo` and `hi`.
- */
-export function cellAlpha(value: number, scale: HeatmapScale): number {
-  const f = (value - scale.lo) / (scale.hi - scale.lo);
-  return Math.min(0.95, 0.06 + Math.max(0, f) * 0.89);
-}
-
 /** The legend's ends: "0%" and "80%+", or "40°C" and "90°C+". */
 export function legendEnds(
   metric: HeatmapMetric,

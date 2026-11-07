@@ -1,5 +1,3 @@
-import { windowLabel, windowWords } from "@core/live-window";
-import { useScaledWindow } from "~/hooks/use-scaled-window";
 /**
  * The six Overview cards (plan 4.5), each subscribed to its
  * own slice so one module's tick does not re-render the others.
@@ -9,6 +7,7 @@ import { formatPercent } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
+import { useCompactStream } from "~/hooks/use-compact-stream";
 import { useGpuMaxMhz, useHostRecord } from "~/hooks/use-host-record";
 import {
   useProcessColumnCaps,
@@ -16,6 +15,7 @@ import {
   useProcessNetwork,
 } from "~/hooks/use-process-interest";
 import { useReadFailure } from "~/hooks/use-read-failure";
+import { useUnits } from "~/hooks/use-units";
 import { useHost } from "~/stores/host-store";
 import {
   clusterFreqKey,
@@ -31,9 +31,7 @@ import {
   usePowerSource,
   usePrimaryIface,
   useSensors,
-  useSeriesWindow,
 } from "~/stores/live-selectors";
-import { useSettings } from "~/stores/settings-store";
 import type { Corner } from "~/widgets/lib/accent";
 import { MetricCard } from "~/widgets/metric-card";
 import { useMax24h } from "../_hooks/use-overview-history";
@@ -55,12 +53,6 @@ const NO_PROCESSES: readonly LiveProcess[] = [];
 
 function useProcesses(): readonly LiveProcess[] {
   return useHost((s) => s.processes?.rows ?? NO_PROCESSES);
-}
-
-function useRateUnits() {
-  return useSettings((s) => s.units.network) === "bits_per_sec"
-    ? ("Mbps" as const)
-    : ("MBps" as const);
 }
 
 interface CardProps {
@@ -145,23 +137,15 @@ function useGpuCardInput() {
 
 function GpuChartCard({ origin }: CardProps) {
   const input = useGpuCardInput();
-  const windowMs = useScaledWindow(60_000);
-  const util = useSeriesWindow("gpu.util", windowMs);
-  const props = gpuCard({
-    ...input,
-    body: {
-      stream: {
-        series: [{ key: "gpu.util", values: util.values, step: 1 }],
-        tEndMs: util.tEndMs,
-        intervalMs: util.intervalMs,
-        yMax: 100,
-        accent: "gpu",
-        height: 98,
-        ariaLabel: `GPU, last ${windowWords(windowMs)}, ${formatPercent(input.util)}`,
-        windowLabel: windowLabel(windowMs),
-      },
-    },
+  const stream = useCompactStream({
+    seriesKey: "gpu.util",
+    accent: "gpu",
+    subject: "GPU",
+    now: formatPercent(input.util),
+    height: 98,
+    yMax: 100,
   });
+  const props = gpuCard({ ...input, body: { stream } });
   return (
     <MetricCard
       {...props}
@@ -192,7 +176,7 @@ function GpuProcessesCard({ origin }: CardProps) {
 export function OverviewMemoryCard({ origin }: CardProps) {
   const mem = useMemory();
   const host = useHostRecord();
-  const binary = useSettings((s) => s.units.memory) === "binary";
+  const binary = useUnits().bytes === "GiB";
   const input = {
     ...mem,
     totalBytes: host?.info.mem_total_bytes ?? null,
@@ -219,7 +203,7 @@ export function OverviewPowerCard({ origin }: CardProps) {
   const p = usePower();
   const sensors = useSensors();
   const powerSource = usePowerSource();
-  const fahrenheit = useSettings((s) => s.units.temperature) === "fahrenheit";
+  const { temperature } = useUnits();
   // A layout with sensors but no fan series is a Mac without fans.
   const hasSensorLayout = useHost(
     (s) => keysOf(s, "thermal.hottest").length > 0
@@ -235,7 +219,7 @@ export function OverviewPowerCard({ origin }: CardProps) {
     fanMax: sensors.fanMax,
     passive: hasSensorLayout && sensors.fanCount === 0,
     powerSource,
-    temperature: fahrenheit ? "F" : "C",
+    temperature,
   } as const;
   // Without a component split or process energy (a Linux agent, D-116) the
   // card is built from the system draw and the temperature sensors.
@@ -269,7 +253,7 @@ export function OverviewNetworkCard({ origin }: CardProps) {
   const net = useNetwork();
   const rates = useHost(useShallow(ifaceRates));
   const link = useHost((s) => linkRate(s, primary));
-  const rate = useRateUnits();
+  const { rate } = useUnits();
   const perProcess = useProcessNetwork();
   // Without per-process network a process batch does not touch this card.
   const processes = useHost((s) =>
@@ -315,7 +299,7 @@ export function OverviewDiskCard({ origin }: CardProps) {
     usedBytes: vol.used,
     readScale: scaleFrom(readMax, 500e6),
     writeScale: scaleFrom(writeMax, 500e6),
-    rate: useRateUnits(),
+    rate: useUnits().rate,
     processes: useProcesses(),
   });
   // Rows without measured disk rates (`process_disk_io` false, D-116) hold

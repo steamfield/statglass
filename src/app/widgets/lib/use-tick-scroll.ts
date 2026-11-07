@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { motionEase, motionMs } from "~/lib/motion/tokens";
 
 /**
  * Streaming scroll (design-system.md "Motion"): when the window advances by
@@ -27,12 +28,11 @@ export function useTickScroll<T extends HTMLElement | SVGGElement>(
     if (!el || tEndMs === undefined || last === undefined) return;
     const step = tEndMs - last;
     if (Math.abs(step - intervalMs) > intervalMs / 2) return;
-    const style = getComputedStyle(el.ownerDocument.documentElement);
-    const duration = Number.parseFloat(style.getPropertyValue("--motion-tick"));
+    const duration = motionMs("tick", el);
     if (!(duration > 0) || typeof el.animate !== "function") return;
     const animation = el.animate(
       [{ transform: `translateX(${shift})` }, { transform: "translateX(0)" }],
-      { duration, easing: style.getPropertyValue("--ease-tick").trim() }
+      { duration, easing: motionEase("tick", el) }
     );
     return () => animation.cancel();
   }, [tEndMs, intervalMs, shift]);

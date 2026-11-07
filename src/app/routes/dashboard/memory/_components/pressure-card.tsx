@@ -82,7 +82,8 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
           yAxis="percent"
           accent="mem"
           height={HEIGHT}
-          ariaLabel={`Memory pressure, ${chart.span}, now ${formatPercent(pressure)}.`}
+          subject="Memory pressure"
+          now={`now ${formatPercent(pressure)}`}
         />
       </SectionCard>
     </div>

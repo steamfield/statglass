@@ -1,6 +1,7 @@
 export * from "./cursor";
 export * from "./gaps";
 export * from "./heatmap";
+export * from "./markers";
 export * from "./nice-ceiling";
 export * from "./numeric";
 export * from "./resample";

@@ -67,7 +67,8 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
           yAxis="percent"
           accent="gpu"
           height={HEIGHT}
-          ariaLabel={`GPU utilization, ${chart.span}, now ${formatPercent(util)}.`}
+          subject="GPU utilization"
+          now={`now ${formatPercent(util)}`}
         />
       </SectionCard>
     </div>

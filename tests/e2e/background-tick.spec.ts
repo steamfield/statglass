@@ -42,10 +42,12 @@ test("the popover reopens on the 1 s tick with its 60 s charts", async ({
     );
   const atResume = (await labels()).length;
 
-  // Fresh numbers: the CPU value moves on after the resume.
+  // Fresh numbers: the CPU value moves on after the resume. The name holds
+  // its figure per 10 s bucket (design-system.md "Accessibility"), so the
+  // next one lands within a bucket.
   await expect
-    .poll(async () => (await labels()).length, { timeout: 5000 })
-    .toBeGreaterThan(atResume + 1);
+    .poll(async () => (await labels()).length, { timeout: 15_000 })
+    .toBeGreaterThan(atResume);
   const all = await labels();
   expect(all.length).toBeGreaterThan(0);
   expect(all.filter((l) => !l.startsWith("CPU, last 60 seconds,"))).toEqual([]);

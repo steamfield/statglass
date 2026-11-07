@@ -1,6 +1,6 @@
 import {
   formatTemperature,
-  resolutionLabel,
+  resolutionWords,
   type TemperatureUnits,
 } from "@core/format";
 import { spanWords } from "@core/live-window";
@@ -9,6 +9,7 @@ import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
+import { useChartLabel } from "~/hooks/use-chart-label";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
@@ -71,6 +72,11 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
         : `${rowLabel(k, i)} ${compact(now[k] ?? null)}`
     )
     .join(", ");
+  const ariaLabel = useChartLabel({
+    subject: title,
+    span,
+    now: `each column a ${resolutionWords(bucketMs)}. ${zoneReadings}`,
+  });
 
   return (
     <SectionCard
@@ -111,7 +117,7 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
         windowMs={windowMs}
         endMs={endMs}
         accent="temp"
-        ariaLabel={`${title}, ${span}, each column a ${resolutionLabel(bucketMs)}.${zoneReadings}`}
+        ariaLabel={ariaLabel}
       />
       <OtherSensors
         units={units}

@@ -105,7 +105,8 @@ test("popover charts cover 30 minutes at a 30 s interval", async ({
   await page.goto("/?window=popover&theme=dark&ticks=0&interval=30000");
   await expect(page.getByText("Open dashboard")).toBeVisible();
   await expect(page.getByLabel(/^CPU, last 30 minutes/)).toBeVisible();
-  await expect(page.getByText("30m", { exact: true })).toBeVisible();
+  // The CPU and GPU streams both name their window.
+  await expect(page.getByText("30m", { exact: true })).toHaveCount(2);
   await shot(page, "popover-30s", info.project.name);
   expect(errors).toEqual([]);
 });

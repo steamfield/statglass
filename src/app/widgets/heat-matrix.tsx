@@ -238,15 +238,23 @@ export function HeatMatrix({
   );
 }
 
-/** The min-to-max swatch legend that sits in a heat matrix card header. */
+/** Swatch alphas, faint to strong, when the caller doesn't pass its own. */
+const DEFAULT_STOPS = [0.08, 0.35, 0.65, 0.95] as const;
+
+/**
+ * The min-to-max swatch legend that sits in a heat matrix card header.
+ * `stops` are swatch alphas (0 to 1) on the `heatmapAlpha` ramp.
+ */
 export function HeatScaleLegend({
   accent = "cpu",
   minLabel = "0%",
   maxLabel = "100%",
+  stops = DEFAULT_STOPS,
 }: {
   accent?: Accent;
   minLabel?: string;
   maxLabel?: string;
+  stops?: readonly number[];
 }) {
   return (
     <div
@@ -255,12 +263,12 @@ export function HeatScaleLegend({
       style={accentVars(accent)}
     >
       <span className="figures mr-1 text-[10px] text-fg-faint">{minLabel}</span>
-      {[8, 35, 65, 95].map((p) => (
+      {stops.map((a) => (
         <span
-          key={p}
+          key={a}
           className="h-2 w-3.5 rounded-mark"
           style={{
-            background: `color-mix(in srgb, var(--a) ${p}%, transparent)`,
+            background: `color-mix(in srgb, var(--a) ${cssPercent(a, 0)}, transparent)`,
           }}
         />
       ))}

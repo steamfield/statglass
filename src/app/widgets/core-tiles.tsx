@@ -1,4 +1,5 @@
-import { MISSING } from "@core/format";
+import { heatmapAlpha } from "@core/chart-math";
+import { cssPercent, MISSING } from "@core/format";
 import { cn } from "~/lib/utils";
 import { type Accent, accentVars } from "./lib/accent";
 
@@ -23,7 +24,8 @@ const DARK_TEXT_FROM = 55;
 
 /**
  * Per-core load tiles grouped by cluster. Tile background
- * alpha follows load (10% to 95% of the accent); the number is always printed,
+ * alpha follows load on the shared heatmap ramp (`heatmapAlpha`, 6% to 95% of
+ * the accent); the number is always printed,
  * so the reading never rests on color.
  */
 export function CoreTiles({ clusters, accent = "cpu" }: CoreTilesProps) {
@@ -67,7 +69,7 @@ export function CoreTiles({ clusters, accent = "cpu" }: CoreTilesProps) {
                     load === null
                       ? undefined
                       : {
-                          background: `color-mix(in srgb, var(--a) ${(10 + load * 0.85).toFixed(1)}%, transparent)`,
+                          background: `color-mix(in srgb, var(--a) ${cssPercent(heatmapAlpha(load, 100) ?? 0, 1)}, transparent)`,
                         }
                   }
                 >

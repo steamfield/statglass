@@ -363,8 +363,6 @@ const panel = "overflow-hidden rounded-card border border-border bg-card";
 
 /** App components outside widgets/: tables, navigation, settings, states. */
 function ContainerComparisonSample() {
-  const [focused, setFocused] = useState<string | null>(null);
-  const [pinned, setPinned] = useState<string | null>(null);
   const [chooser, setChooser] = useState(false);
   const [ids, setIds] = useState(DOCKER_COMPARISON.map((s) => s.container.id));
   const series = DOCKER_COMPARISON.filter((s) => ids.includes(s.container.id));
@@ -378,10 +376,6 @@ function ContainerComparisonSample() {
         to={NOW_MS}
         live={false}
         range="24h"
-        focused={focused}
-        pinnedFocus={pinned}
-        onFocus={setFocused}
-        onPinFocus={setPinned}
         onChoose={() => setChooser(true)}
         notice={
           <HistoryNotice

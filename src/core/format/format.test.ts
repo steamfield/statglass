@@ -16,6 +16,7 @@ import {
   marketingGb,
   rateParts,
   resolutionLabel,
+  resolutionWords,
   rpmParts,
   temperatureParts,
   wattsParts,
@@ -226,6 +227,15 @@ describe("resolutionLabel", () => {
   it("stays in a smaller unit rather than reading a fraction", () => {
     expect(resolutionLabel(90_000)).toBe("90 s avg");
     expect(resolutionLabel(5_400_000)).toBe("90 min avg");
+  });
+});
+
+describe("resolutionWords", () => {
+  it("speaks the same width without abbreviations", () => {
+    expect(resolutionWords(10_000)).toBe("10-second average");
+    expect(resolutionWords(900_000)).toBe("15-minute average");
+    expect(resolutionWords(7_200_000)).toBe("2-hour average");
+    expect(resolutionWords(90_000)).toBe("90-second average");
   });
 });
 
