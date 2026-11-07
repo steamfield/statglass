@@ -271,6 +271,23 @@ it.each(["Read", "Written", "Total", "Process"])(
   }
 );
 
+it("resumes live order when the keyboard-focused process exits", async () => {
+  const r = list();
+  await screen.findByRole("table", { name: "Disk processes · Live" });
+  const push = (rows: LiveProcess[]) =>
+    act(() => r.transport.push({ kind: "processes", ts_ms: NOW, rows }));
+  push([proc(1, 30e6, 0, "Alpha"), proc(2, 20e6, 0, "Beta")]);
+  push([
+    proc(1, 30e6, 0, "Alpha"),
+    proc(2, 20e6, 0, "Beta"),
+    proc(3, 10e6, 0, "Gamma"),
+  ]);
+  act(() => screen.getByRole("link", { name: "Inspect Alpha, PID 1" }).focus());
+  // Alpha exits: its focused link unmounts, which WebKit reports with no blur.
+  push([proc(2, 10e6, 0, "Beta"), proc(3, 90e6, 0, "Gamma")]);
+  expect(processNames()).toEqual(["Gamma", "Beta"]);
+});
+
 it("stops holding after a mouse click focuses a row and the pointer leaves", async () => {
   const r = list();
   await screen.findByRole("table", { name: "Disk processes · Live" });

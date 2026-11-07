@@ -22,9 +22,13 @@ const items: Item[] = [
   { id: "b2", group: "b", value: 3 },
 ];
 
-function useGrouped(collapsed: readonly string[], grouped = true) {
+function useGrouped(
+  collapsed: readonly string[],
+  grouped = true,
+  data: readonly Item[] = items
+) {
   const model = useDataTable({
-    data: items,
+    data,
     columns,
     getRowId,
     initialSorting: [{ id: "value", desc: true }],
@@ -69,5 +73,27 @@ describe("useGroupedRows", () => {
   it("passes rows through when grouping is off", () => {
     const { result } = renderHook(() => useGrouped([], false));
     expect(shape(result.current)).toEqual(["b1", "a2", "b2", "a1"]);
+  });
+
+  it("keeps a group collapsed across new data and expands a group that appears", () => {
+    const { result, rerender } = renderHook(
+      ({ data }) => useGrouped(["b"], true, data),
+      { initialProps: { data: items } }
+    );
+    rerender({
+      data: [
+        ...items,
+        { id: "b3", group: "b", value: 7 },
+        { id: "c1", group: "c", value: 4 },
+      ],
+    });
+    expect(shape(result.current)).toEqual([
+      "group:b (3)",
+      "group:a (2)",
+      "a2",
+      "a1",
+      "group:c (1)",
+      "c1",
+    ]);
   });
 });

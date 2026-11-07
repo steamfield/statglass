@@ -36,6 +36,24 @@ export interface QuitResult {
   message: string;
 }
 
+/**
+ * How long one `process_signal` may take before the batch gives up on it.
+ * Rust answers with a process lookup and one `kill`, a few syscalls with no
+ * waiting; an answer this late means the IPC is stuck, and the dialog, locked
+ * while busy, must still let the user go.
+ */
+export const SIGNAL_TIMEOUT_MS = 10_000;
+
+class SignalTimeout extends Error {}
+
+function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new SignalTimeout()), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
 export const quitExclusion = (p: Quittable): string | null =>
   p.running === false ? "Already exited" : refusalReason(p);
 
@@ -138,11 +156,9 @@ export function useQuitFlow(): QuitFlow {
         });
       } else {
         try {
-          const result: ProcessSignalResult = await transport.processSignal(
-            req.host,
-            p.pid,
-            p.start_time_us,
-            req.kind
+          const result: ProcessSignalResult = await within(
+            transport.processSignal(req.host, p.pid, p.start_time_us, req.kind),
+            SIGNAL_TIMEOUT_MS
           );
           const outcome = signalOutcome(result, signalTarget(p), req.kind);
           out.push({
@@ -171,8 +187,7 @@ export function useQuitFlow(): QuitFlow {
             target: p,
             state: "unknown",
             tone: "error",
-            message:
-              "Connection failed; whether the request arrived is unknown",
+            message: `${err instanceof SignalTimeout ? "No answer" : "Connection failed"}; whether the request arrived is unknown`,
           });
           stopped = true;
         }

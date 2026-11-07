@@ -221,6 +221,21 @@ async function powerHourReady(page: Page) {
   ).toBeVisible();
 }
 
+/**
+ * Run name, budget, route. The grouped list shares the flat list's budget:
+ * 128 containers is past the virtualization threshold, so both row models
+ * are gated virtualized.
+ */
+const CONTAINER_SCREENS = [
+  ["containers", "containers", "/dashboard/containers"],
+  ["containersGrouped", "containers", "/dashboard/containers?group=grouped"],
+  [
+    "containerDetail",
+    "containerDetail",
+    "/dashboard/containers/mock-orbstack/container-0",
+  ],
+] as const;
+
 test.describe("performance gate", () => {
   test.skip(
     ({ browserName }) => browserName !== "chromium",
@@ -229,16 +244,12 @@ test.describe("performance gate", () => {
   // Three samples at most per measure, and the Performance mode case measures twice.
   test.setTimeout(6 * (budget.warmupMs + budget.sampleMs) + 30_000);
 
-  for (const screen of ["containers", "containerDetail"] as const) {
-    test(`${screen} at 1 Hz`, async ({ page }) => {
+  for (const [name, screen, route] of CONTAINER_SCREENS) {
+    test(`${name} at 1 Hz`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 900 });
-      const route =
-        screen === "containers"
-          ? "/dashboard/containers"
-          : "/dashboard/containers/mock-orbstack/container-0";
       const result = await measure(
         page,
-        `/?route=${route}&scenario=docker-128&theme=dark`,
+        `/?route=${encodeURIComponent(route)}&scenario=docker-128&theme=dark`,
         async () => {
           await expect(
             page.getByRole("heading", {
@@ -246,9 +257,13 @@ test.describe("performance gate", () => {
               exact: true,
             })
           ).toBeVisible();
+          if (name === "containersGrouped")
+            await expect(
+              page.locator("button[aria-expanded]", { hasText: "containers" })
+            ).not.toHaveCount(0);
         }
       );
-      console.log(`[perf] ${screen} ${JSON.stringify(result)}`);
+      console.log(`[perf] ${name} ${JSON.stringify(result)}`);
       expect(result.longTasks).toEqual([]);
       expect(result.mainThreadMsPerSec).toBeLessThan(
         budget[screen].mainThreadMsPerSec
