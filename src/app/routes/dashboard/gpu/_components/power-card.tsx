@@ -1,59 +1,44 @@
-import { seriesRange } from "@core/chart-math";
 import { formatWatts } from "@core/format";
-import { windowWords } from "@core/live-window";
-import { ChartHistoryStatus } from "~/components/chart-history-status";
+import {
+  ModuleHistoryChart,
+  type ModuleYAxis,
+} from "~/components/charts/module-history-chart";
 import { SectionCard } from "~/components/section-card";
-import { useGapBands } from "~/hooks/use-gap-bands";
-import { useModuleEnd } from "~/hooks/use-module-end";
-import { useModuleSeries } from "~/hooks/use-module-series";
-import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
+import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
-import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
-import { StreamArea } from "~/widgets/stream-area";
 
 const KEY = "power.gpu";
+const KEYS = [KEY];
+const WATTS_AXIS: ModuleYAxis = {
+  ceiling: "auto",
+  format: (w) => `${w}W`,
+};
 
 /**
  * GPU power over the chart window (D-091) on an autoscaled ceiling.
  */
 export function PowerCard({ windowMs }: { windowMs: number }) {
   const now = useHeld([KEY])[KEY] ?? null;
-  const endMs = useModuleEnd();
-  const span =
-    endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
-  const series = useModuleSeries([KEY], windowMs);
-  const gaps = useGapBands("gpu");
-  const values = series.values[KEY] ?? [];
-  const ceiling = useNiceCeiling(values, series.tEndMs, 1, windowMs);
+  const chart = useModuleChart(KEYS, windowMs, "gpu");
 
   return (
     <SectionCard
       accent="gpu"
       origin="tr"
-      title={`Power, ${span}`}
+      title={`Power, ${chart.span}`}
       aside={<span className="figures text-[13px]">{formatWatts(now)}</span>}
       headerAlign="baseline"
       compactHeader
       headerWrap={false}
       className="gap-3"
     >
-      <ChartHistoryStatus loading={series.loading} error={series.error} />
-      <StreamArea
-        gaps={gaps}
-        series={[{ key: KEY, values, step: 1 }]}
-        tEndMs={series.tEndMs}
-        intervalMs={series.intervalMs}
-        yMax={ceiling}
+      <ModuleHistoryChart
+        chart={chart}
+        lines={[{ key: KEY, values: chart.series.values[KEY] ?? [], step: 1 }]}
+        yAxis={WATTS_AXIS}
         accent="gpu"
         height={140}
-        ariaLabel={`GPU power, ${span}, now ${formatWatts(now)}`}
-        {...ceilingAxis(ceiling, `${ceiling}W`)}
-        xTicks={historyTicks(
-          seriesRange(series).fromMs,
-          seriesRange(series).toMs,
-          endMs === null,
-          3
-        )}
+        ariaLabel={`GPU power, ${chart.span}, now ${formatWatts(now)}.`}
       />
     </SectionCard>
   );

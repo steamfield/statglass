@@ -1,4 +1,4 @@
-import { windowWords } from "@core/live-window";
+import { spanWords } from "@core/live-window";
 import { sk } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
@@ -35,8 +35,7 @@ export function CoreLoadCard({
   const windowMs = useDeferredValue(windowProp);
   const end = useModuleEnd();
   const desiredBucketMs = heatmapBucketMs(windowMs, useGridInterval());
-  const span =
-    end === null ? `last ${windowWords(windowMs)}` : "selected dates";
+  const span = spanWords(windowMs, end);
   const cores = clusters.flatMap((c) =>
     c.cores.map((id) => ({
       id,

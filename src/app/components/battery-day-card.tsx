@@ -1,4 +1,5 @@
 import { formatHoursMinutes, formatPercent, MISSING } from "@core/format";
+import { MINUTE_MS } from "@core/time-grid";
 import type { ReactNode } from "react";
 import { useBatterySummary } from "~/hooks/use-battery";
 import { useHistoryHealth } from "~/hooks/use-history-health";
@@ -7,6 +8,7 @@ import type { Corner } from "~/widgets/lib/accent";
 import { StatStrip } from "~/widgets/stat-strip";
 import { BatteryRangeHistory } from "./battery-range-history";
 import { HistoryNotices } from "./history-notices";
+import { InlineMessage } from "./inline-message";
 import { SectionCard } from "./section-card";
 import { WindowControl } from "./window-control";
 
@@ -52,7 +54,7 @@ export function BatteryDayCard({
                   value:
                     b.timeRemainingMin === null
                       ? MISSING
-                      : formatHoursMinutes(b.timeRemainingMin * 60_000),
+                      : formatHoursMinutes(b.timeRemainingMin * MINUTE_MS),
                 },
                 {
                   label: "Full charge",
@@ -74,9 +76,9 @@ export function BatteryDayCard({
         </div>
         <ChartRangeNotice />
         <BatteryRangeHistory />
-        <p className="text-[11px] text-muted-foreground">
+        <InlineMessage tone="note">
           Charge, health and battery details above are current.
-        </p>
+        </InlineMessage>
       </SectionCard>
     </ChartRangeProvider>
   );

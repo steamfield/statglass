@@ -1,5 +1,5 @@
 import { fixed, MISSING } from "@core/format";
-import { windowWords } from "@core/live-window";
+import { spanWords } from "@core/live-window";
 import { residencyRows } from "@core/residency";
 import { labelOf, seriesKeyString } from "@core/series-key";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
@@ -18,8 +18,7 @@ import { RingGauge } from "~/widgets/ring-gauge";
  * MHz, as for CPU clusters.
  */
 export function FrequencyCard({ windowMs }: { windowMs: number }) {
-  const pinned = useModuleEnd() !== null;
-  const span = pinned ? "selected dates" : `last ${windowWords(windowMs)}`;
+  const span = spanWords(windowMs, useModuleEnd());
   const layout = useLayout();
   const states: { key: string; state: string }[] = [];
   layout?.series.forEach((s, i) => {

@@ -1,5 +1,5 @@
 import { formatTemperature, type TemperatureUnits } from "@core/format";
-import { windowWords } from "@core/live-window";
+import { spanWords } from "@core/live-window";
 import { parseLabels } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
@@ -52,8 +52,7 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
     windowMs
   );
   const title = zones ? "SoC thermal zones" : "Temperature sensors";
-  const span =
-    end === null ? `last ${windowWords(windowMs)}` : "selected dates";
+  const span = spanWords(windowMs, end);
   const temp = (c: number) => formatTemperature(c, { units });
   const compact = (c: number | null) =>
     formatTemperature(c, { units, compact: true });

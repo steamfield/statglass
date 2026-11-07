@@ -27,7 +27,7 @@ export function ChartFrame({
   ceiling: number;
   yTicks?: readonly ChartTick[] | undefined;
   xTicks?: readonly string[] | undefined;
-  gutter?: number;
+  gutter?: number | undefined;
   plotRef?: Ref<HTMLDivElement>;
   style?: CSSProperties;
   children: ReactNode;

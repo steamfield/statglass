@@ -1,19 +1,15 @@
-import { seriesRange, stackSum } from "@core/chart-math";
+import { stackSum } from "@core/chart-math";
 import { formatBytes } from "@core/format";
-import { windowWords } from "@core/live-window";
-import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { ChartHistoryStatus } from "~/components/chart-history-status";
+import {
+  BYTES_GUTTER,
+  ModuleHistoryChart,
+} from "~/components/charts/module-history-chart";
 import { SectionCard } from "~/components/section-card";
-import { SelectionSummary } from "~/components/selection-summary";
-import { useGapBands } from "~/hooks/use-gap-bands";
-import { useModuleEnd } from "~/hooks/use-module-end";
-import { useModuleSeries } from "~/hooks/use-module-series";
+import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
 import { Legend } from "~/widgets/legend";
-import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
-import { StreamArea } from "~/widgets/stream-area";
 
 const HEIGHT = 160;
 const USED = "mem.used";
@@ -53,11 +49,8 @@ export function UsedCard({
 }) {
   const units = useUnits();
   const v = useHeld(KEYS);
-  const endMs = useModuleEnd();
-  const series = useModuleSeries(KEYS, windowMs, { brush: true });
-  const gaps = useGapBands("memory");
-  const brush = useAreaBrush(series, HEIGHT, true, gaps);
-  const used = series.values[USED] ?? [];
+  const chart = useModuleChart(KEYS, windowMs, "memory", { brush: true });
+  const used = chart.series.values[USED] ?? [];
   const fmt = (x: number | null | undefined) =>
     formatBytes(x, { units: units.bytes });
 
@@ -80,37 +73,21 @@ export function UsedCard({
           />
         }
       >
-        <div className="flex flex-col gap-1.5">
-          <ChartHistoryStatus loading={series.loading} error={series.error} />
-          <StreamArea
-            gaps={gaps}
-            series={[
-              {
-                key: CACHED,
-                values: stackOnto(used, series.values[CACHED] ?? []),
-                step: 4,
-              },
-              { key: USED, values: used, step: 1 },
-            ]}
-            tEndMs={series.tEndMs}
-            intervalMs={series.intervalMs}
-            yMax={totalBytes}
-            accent="mem"
-            height={HEIGHT}
-            ariaLabel={`Memory used and cached files, ${endMs === null ? `last ${windowWords(windowMs)}` : "selected dates"}, of ${fmt(totalBytes)}, used ${fmt(v[USED])}, cached ${fmt(v[CACHED])}. Drag to select a range.`}
-            ceilingLabel={fmt(totalBytes)}
-            {...ceilingAxis(totalBytes)}
-            xTicks={historyTicks(
-              seriesRange(series).fromMs,
-              seriesRange(series).toMs,
-              endMs === null,
-              5
-            )}
-            highlight={brush.highlight}
-            overlay={brush.overlay}
-          />
-          <SelectionSummary windowMs={windowMs} inset={0} />
-        </div>
+        <ModuleHistoryChart
+          chart={chart}
+          lines={[
+            {
+              key: CACHED,
+              values: stackOnto(used, chart.series.values[CACHED] ?? []),
+              step: 4,
+            },
+            { key: USED, values: used, step: 1 },
+          ]}
+          yAxis={{ ceiling: totalBytes, format: fmt, gutter: BYTES_GUTTER }}
+          accent="mem"
+          height={HEIGHT}
+          ariaLabel={`Memory used and cached files, ${chart.span}, of ${fmt(totalBytes)}, used ${fmt(v[USED])}, cached ${fmt(v[CACHED])}.`}
+        />
       </SectionCard>
     </div>
   );

@@ -1,5 +1,6 @@
 import { brushBucketMs, rangeSlots } from "@core/brush";
-import { windowWords } from "@core/live-window";
+import { spanWords } from "@core/live-window";
+import { DAY_MS } from "@core/time-grid";
 import { useRef } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
@@ -95,8 +96,7 @@ export function LiveMirrorChart({
   );
   const { selected, elapsedEdge } = useChartBrush(brush);
   const fixedEnd = useModuleEnd();
-  const spanLabel =
-    fixedEnd === null ? `last ${windowWords(windowMs)}` : "selected dates";
+  const spanLabel = spanWords(windowMs, fixedEnd);
   const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
     [upKey, downKey],
     requestedBucketMs,
@@ -195,7 +195,7 @@ export function LiveMirrorChart({
             accent={accent}
             column={!brush}
             live={fixedEnd === null}
-            dateLabels={fixedEnd !== null || windowMs >= 86_400_000}
+            dateLabels={fixedEnd !== null || windowMs >= DAY_MS}
           />
         )}
       </div>

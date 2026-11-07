@@ -79,3 +79,11 @@ it("keeps fixed charge history idle on power-only frames and updates current bat
     screen.queryByText("Charging", { exact: true })
   ).not.toBeInTheDocument();
 });
+
+it("names the charge chart's live window and the charge now, on the percent grid", async () => {
+  renderWithProviders(<BatteryDayCard />);
+  await screen.findByRole("img", {
+    name: /^Battery charge, last \d+ minutes, now \d+%\.$/,
+  });
+  expect(screen.getByText("75")).toBeInTheDocument();
+});
