@@ -165,49 +165,65 @@ pub(super) fn display_points(
     }
     Ok(points)
 }
-/// No point claims more measured time than the gaps that mask its container
-/// (`DockerCoverage::masks`) leave in its bucket (D-128). A bucket a gap touches is not
-/// covered; one a gap spans has no measured time. Open gaps run to `to_ms`: the
-/// recorder closes a crashed process's open rows when it restarts.
-pub(super) fn mask_uncovered(
-    points: &mut [api::DockerHistoryPoint],
-    gaps: &[api::DockerCoverage],
-    container: Option<&str>,
-    to_ms: i64,
-) {
-    let masking: Vec<(i64, i64)> = gaps
-        .iter()
-        .filter(|g| g.masks(container))
-        .map(|g| (g.start_ms, g.end_ms.unwrap_or(to_ms)))
-        .collect();
-    for p in points {
-        let end = p.time_ms.saturating_add(i64::from(p.duration_ms));
-        let gap_ms = overlap_ms(&masking, p.time_ms, end);
-        if gap_ms == 0 {
-            continue;
-        }
-        let left = u32::try_from(end - p.time_ms - gap_ms).unwrap_or(0);
-        p.cpu_measured_ms = p.cpu_measured_ms.min(left);
-        p.memory_measured_ms = p.memory_measured_ms.min(left);
-        p.cpu_covered = false;
-        p.memory_covered = false;
-    }
+/// No point claims more measured time than the records that mask its container
+/// (`DockerCoverage::masks`) leave in its bucket (D-128). A bucket a record touches is
+/// not covered; one a record spans has no measured time. Open records run to the end of
+/// the range: the recorder closes a crashed process's open rows when it restarts.
+/// Each point's masked time, the union of the spans added to it. Spans must arrive in
+/// start order: then a span's part inside a point starts no earlier than any earlier
+/// span's part, so the union is a running total past the furthest end so far, and the
+/// fold holds two numbers per point however many records a read streams.
+pub(super) struct Mask {
+    spans: Vec<(i64, i64)>,
+    masked: Vec<i64>,
+    reached: Vec<i64>,
 }
-/// How much of `[from, to)` the spans cover, counting overlapping spans once.
-fn overlap_ms(spans: &[(i64, i64)], from: i64, to: i64) -> i64 {
-    let mut clipped: Vec<(i64, i64)> = spans
-        .iter()
-        .map(|&(s, e)| (s.max(from), e.min(to)))
-        .filter(|(s, e)| e > s)
-        .collect();
-    clipped.sort_unstable();
-    let (mut total, mut cursor) = (0, from);
-    for (s, e) in clipped {
-        let s = s.max(cursor);
-        if e > s {
-            total += e - s;
-            cursor = e;
+impl Mask {
+    pub(super) fn new(points: &[api::DockerHistoryPoint]) -> Self {
+        let spans: Vec<_> = points
+            .iter()
+            .map(|p| {
+                (
+                    p.time_ms,
+                    p.time_ms.saturating_add(i64::from(p.duration_ms)),
+                )
+            })
+            .collect();
+        Self {
+            masked: vec![0; spans.len()],
+            reached: spans.iter().map(|(start, _)| *start).collect(),
+            spans,
         }
     }
-    total
+    /// Adds `[start, end)`; `start` is no earlier than any span added before.
+    pub(super) fn add(&mut self, start: i64, end: i64) {
+        let first = self.spans.partition_point(|(_, to)| *to <= start);
+        for (i, &(from, to)) in self.spans.iter().enumerate().skip(first) {
+            if from >= end {
+                break;
+            }
+            let (Some(masked), Some(reached)) = (self.masked.get_mut(i), self.reached.get_mut(i))
+            else {
+                break;
+            };
+            let clipped = start.max(*reached);
+            let stop = end.min(to);
+            if stop > clipped {
+                *masked += stop - clipped;
+                *reached = stop;
+            }
+        }
+    }
+    pub(super) fn apply(self, points: &mut [api::DockerHistoryPoint]) {
+        for ((p, masked), (from, to)) in points.iter_mut().zip(self.masked).zip(self.spans) {
+            if masked == 0 {
+                continue;
+            }
+            let left = u32::try_from(to - from - masked).unwrap_or(0);
+            p.cpu_measured_ms = p.cpu_measured_ms.min(left);
+            p.memory_measured_ms = p.memory_measured_ms.min(left);
+            p.cpu_covered = false;
+            p.memory_covered = false;
+        }
+    }
 }

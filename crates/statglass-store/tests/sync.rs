@@ -911,6 +911,9 @@ fn mirror_budget_can_trim_recent_data_without_changing_local_retention() {
     w.upsert_host(h.clone()).unwrap();
     w.flush().unwrap();
     let mut retention = Retention::mirror_default();
+    // A prune checkpoints the WAL, so the budget measures the file and not however
+    // many duplicate frames the migrations left in the WAL.
+    w.prune_mirror(T0, retention).unwrap();
     // Fixed SQLite tables cannot be shrunk, but the imported payload can be.
     retention.max_bytes = statglass_store::size_on_disk(store.path()).unwrap() + 32_768;
     let page = CursorPage {

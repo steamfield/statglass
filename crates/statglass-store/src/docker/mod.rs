@@ -253,7 +253,6 @@ pub struct DockerHistoryQuery {
 pub struct DockerHistory {
     pub buckets: Vec<DockerBucket>,
     pub metadata: Vec<DockerEntity>,
-    pub coverage: Vec<DockerCoverage>,
 }
 #[derive(Clone, Debug)]
 pub struct DockerEventRow {

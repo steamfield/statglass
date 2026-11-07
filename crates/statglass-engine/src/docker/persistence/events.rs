@@ -1,4 +1,5 @@
 //! Merge durable and live events with stable pagination and coverage.
+use super::coverage::live_coverage;
 use super::*;
 
 impl DockerRecorder {
@@ -42,7 +43,11 @@ impl DockerRecorder {
             })
             .cloned()
             .collect();
-        let coverage = s.coverage.get(&q.engine_id).cloned().unwrap_or_default();
+        // Event coverage only: what masks measurements is not this lane's.
+        let coverage: Vec<_> = live_coverage(&s, &q.engine_id)
+            .into_iter()
+            .filter(|c| c.kind() == api::DockerCoverageKind::Events)
+            .collect();
         let held = ring
             .iter()
             .map(|e| serde_json::to_vec(e).map_or(db::MAX_QUERY_BYTES, |v| v.len() + 128))
@@ -97,14 +102,20 @@ fn event_coverage(
 ) -> Result<Vec<api::DockerCoverage>, DockerServiceError> {
     let mut coverage = coverage;
     if let Some(snapshot) = &snapshot {
-        for c in snapshot.event_coverage(q.container_id.as_deref(), q.from_ms, q.to_ms)? {
+        for c in snapshot.event_coverage(
+            q.container_id.as_deref(),
+            q.from_ms,
+            q.to_ms,
+            &api::EVENT_COVERAGE_REASONS,
+        )? {
             let gap = api::DockerCoverage::new(c.start_ms, c.end_ms, c.entity, c.reason);
-            if !coverage.iter().any(|live| {
+            match coverage.iter_mut().find(|live| {
                 live.start_ms == gap.start_ms
                     && live.container_id == gap.container_id
                     && live.reason() == gap.reason()
             }) {
-                coverage.push(gap);
+                Some(live) => live.end_ms = live.end_ms.max(gap.end_ms),
+                None => coverage.push(gap),
             }
         }
     }
@@ -115,11 +126,6 @@ fn event_coverage(
                 .as_ref()
                 .is_none_or(|id| c.container_id.as_ref().is_none_or(|owner| owner == id))
     });
-    if coverage.len() > 10_000 {
-        return Err(DockerServiceError::ResourceLimit(
-            "Events coverage count exceeded",
-        ));
-    }
     Ok(coverage)
 }
 

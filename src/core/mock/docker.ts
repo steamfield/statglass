@@ -290,6 +290,7 @@ class MockDocker {
     const page: DockerHistoryPage = {
       generation: this.snapshot.generation,
       coverage,
+      coverage_total: coverage.length,
       metadata,
       persistence: this.snapshot.persistence,
       points: metadata[0]

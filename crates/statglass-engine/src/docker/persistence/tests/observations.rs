@@ -223,3 +223,26 @@ fn metadata_receipt_refresh_does_not_write_duplicate_semantic_facts() {
         snapshot.containers[0].metadata_observed_ms
     );
 }
+
+/// A container's first sample after its baseline was lost has no CPU, but its memory
+/// gauge was measured and stands for the publish interval.
+#[test]
+fn a_first_sample_records_its_memory() {
+    let r = DockerRecorder::new(host().id);
+    let t = wall_ms().div_euclid(10_000) * 10_000 - HOUR + 5_000;
+    let mut s = fixture(t);
+    s.containers[0].interval_ms = Some(0);
+    s.containers[0].metrics.cpu_pct = None;
+    r.record(&s);
+    let state = r.state.lock_ok();
+    let bucket = &state.entries[&("daemon".to_owned(), "c".to_owned(), t - 5_000)].bucket;
+    let weight = |key: &str| {
+        bucket
+            .metrics
+            .iter()
+            .find(|m| m.key == key)
+            .map(|m| m.weight_ms)
+    };
+    assert_eq!(weight("memory_working_set"), Some(1000));
+    assert_eq!(weight("cpu_percent"), Some(0));
+}

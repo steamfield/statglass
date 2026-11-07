@@ -46,6 +46,29 @@ fn batch(revision: i64) -> DockerBatch {
         populations: vec![],
     }
 }
+fn engine_rows(snap: &DockerReadSnapshot<'_>, start: i64, end: i64) -> Vec<DockerCoverage> {
+    let mut rows = Vec::new();
+    snap.engine_coverage(start, end, |c| {
+        rows.push(c);
+        Ok(())
+    })
+    .unwrap();
+    rows
+}
+fn entity_rows(
+    snap: &DockerReadSnapshot<'_>,
+    entity: &str,
+    start: i64,
+    end: i64,
+) -> Vec<DockerCoverage> {
+    let mut rows = Vec::new();
+    snap.entity_coverage(entity, start, end, |c| {
+        rows.push(c);
+        Ok(())
+    })
+    .unwrap();
+    rows
+}
 fn query(tier: Tier) -> DockerHistoryQuery {
     DockerHistoryQuery {
         entity: "c".into(),
@@ -185,10 +208,7 @@ fn events_deduplicate_full_identity_and_cursor_is_atomic() {
     let snap = reader.docker_snapshot(host(1).id, "daemon").unwrap();
     assert_eq!(snap.cursor().unwrap().unwrap().time_ns, event.time_ns);
     assert!(
-        !snap
-            .history(&query(Tier::S10))
-            .unwrap()
-            .coverage
+        !entity_rows(&snap, "c", T0, T0 + 900_000)
             .iter()
             .any(|g| g.reason == "write_failed")
     );
@@ -829,7 +849,7 @@ fn assert_open_interruption_recovers(reason: &str) {
     conn.execute("INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,?1,NULL,?2,1,0,0 FROM docker_engines", rusqlite::params![T0+15000, reason]).unwrap();
     let mut reader = store.reader().unwrap();
     let snapshot = reader.docker_snapshot(host(1).id, "daemon").unwrap();
-    let coverage = snapshot.event_coverage(None, T0, T0 + 20000).unwrap();
+    let coverage = engine_rows(&snapshot, T0, T0 + 20000);
     assert_eq!(coverage[0].end_ms, Some(T0 + 2000));
     assert_eq!(
         coverage[1].end_ms, None,
@@ -840,7 +860,7 @@ fn assert_open_interruption_recovers(reason: &str) {
         .unwrap();
     let snapshot = reader.docker_snapshot(host(1).id, "daemon").unwrap();
     assert_eq!(
-        snapshot.event_coverage(None, T0, T0 + 20000).unwrap()[0].end_ms,
+        engine_rows(&snapshot, T0, T0 + 20000)[0].end_ms,
         Some(T0 + 2000),
         "coarse tiers preserve the exact observation boundary"
     );
@@ -963,5 +983,145 @@ fn v7_removes_only_legacy_engine_wide_save_loss_records() {
             "SELECT count(*) FROM docker_coverage WHERE reason='sleep'"
         ),
         2
+    );
+}
+
+/// A retried batch older than the one that closed a record must not insert a second,
+/// open row beside it (the unique record identity, V9).
+#[test]
+fn a_stale_retry_never_duplicates_or_reopens_a_record() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
+    let dir = temp_dir("docker-stale-retry");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    let row = |revision: i64, end: Option<i64>| DockerCoverage {
+        entity: Some("c".into()),
+        metric: None,
+        start_ms: T0,
+        end_ms: end,
+        reason: "partial_cycle".into(),
+        revision,
+        sampled_ms: 0,
+        expected_ms: end.map_or(0, |end| end - T0),
+    };
+    // Batch N was rejected, so it is retried after N+1 closed the record.
+    let mut closing = batch(3);
+    closing.coverage.push(row(3, Some(T0 + 5_000)));
+    let mut stale = batch(2);
+    stale.coverage.push(row(2, None));
+    for b in [closing, stale] {
+        let ack = w.write_docker(b).unwrap();
+        w.flush().unwrap();
+        assert_eq!(ack.recv().unwrap().outcome, DockerOutcome::Persisted);
+    }
+    let conn = raw(&store);
+    let rows: Vec<(Option<i64>, i64)> = conn
+        .prepare("SELECT end_ms,revision FROM docker_coverage WHERE reason='partial_cycle'")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rows, [(Some(T0 + 5_000), 3)]);
+}
+
+/// A version 8 file whose writer duplicated records keeps one row per record, closed
+/// where any copy closed it, and refuses a second copy afterwards.
+#[test]
+fn v9_folds_duplicate_coverage_rows_before_the_unique_index() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
+    let dir = temp_dir("docker-v9");
+    let path = dir.path().join("h.sqlite");
+    {
+        let store = open(&dir, "h.sqlite");
+        let w = store.writer();
+        w.upsert_host(host(1)).unwrap();
+        let rx = w.write_docker(batch(1)).unwrap();
+        w.flush().unwrap();
+        assert_eq!(rx.recv().unwrap().outcome, DockerOutcome::Persisted);
+    }
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "DROP INDEX docker_coverage_identity; DROP INDEX docker_coverage_engine_end;
+         DROP INDEX docker_coverage_entity_end;
+         PRAGMA user_version=8; UPDATE meta SET value=8 WHERE key='schema_version';",
+    )
+    .unwrap();
+    // What the version 8 writer left: an open copy beside the closed record, a
+    // twice-written engine-wide record, and distinct records that must survive.
+    for (entity, start, end, reason, revision) in [
+        (Some("c"), T0, Some(T0 + 5_000), "partial_cycle", 3),
+        (Some("c"), T0, None, "partial_cycle", 2),
+        (Some("c"), T0, None, "partial_cycle", 1),
+        (None, T0, Some(T0 + 1_000), "events_disconnected", 4),
+        (None, T0, Some(T0 + 2_000), "events_disconnected", 5),
+        (Some("c"), T0 + 20_000, None, "partial_cycle", 6),
+        (None, T0, None, "disconnected", 7),
+    ] {
+        conn.execute(
+            "INSERT INTO docker_coverage(host_id,engine_id,entity_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT g.host_id,g.id,(SELECT id FROM docker_entities WHERE engine_id=g.id AND external_id=?1),NULL,?2,?3,?4,?5,0,coalesce(?3-?2,0) FROM docker_engines g",
+            rusqlite::params![entity, start, end, reason, revision],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    let store = open(&dir, "h.sqlite");
+    let conn = raw(&store);
+    // Container, start, end, reason, revision, expected.
+    type Row = (Option<String>, i64, Option<i64>, String, i64, i64);
+    let rows: Vec<Row> = conn
+        .prepare("SELECT e.external_id,c.start_ms,c.end_ms,c.reason,c.revision,c.expected_ms FROM docker_coverage c LEFT JOIN docker_entities e ON e.id=c.entity_id ORDER BY c.reason,c.start_ms")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let c = Some("c".to_owned());
+    let expected = vec![
+        (None, T0, None, "disconnected".to_owned(), 7, 0),
+        (
+            None,
+            T0,
+            Some(T0 + 2_000),
+            "events_disconnected".to_owned(),
+            5,
+            2_000,
+        ),
+        (
+            c.clone(),
+            T0,
+            Some(T0 + 5_000),
+            "partial_cycle".to_owned(),
+            3,
+            5_000,
+        ),
+        (c, T0 + 20_000, None, "partial_cycle".to_owned(), 6, 0),
+    ];
+    assert_eq!(rows, expected);
+    drop(conn);
+    drop(store);
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let duplicate = conn.execute(
+        "INSERT INTO docker_coverage(host_id,engine_id,entity_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,engine_id,entity_id,metric,start_ms,NULL,reason,9,0,0 FROM docker_coverage WHERE reason='events_disconnected'",
+        [],
+    );
+    let error = duplicate.unwrap_err().to_string();
+    assert!(error.contains("UNIQUE"), "{error}");
+    // The migration is idempotent: rerunning it changes nothing.
+    conn.execute_batch(
+        "PRAGMA user_version=8; UPDATE meta SET value=8 WHERE key='schema_version';",
+    )
+    .unwrap();
+    drop(conn);
+    let store = open(&dir, "h.sqlite");
+    let conn = raw(&store);
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM docker_coverage"),
+        rows.len() as i64
+    );
+    assert_eq!(
+        count(&conn, "PRAGMA user_version"),
+        statglass_store::SCHEMA_VERSION
     );
 }

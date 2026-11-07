@@ -4089,9 +4089,11 @@ present, so a paused or idle engine uses its own keys, `monitoring_paused` ("Mon
 is paused") and `monitoring_idle` ("Monitoring is paused while no containers run"), not
 the recorded `paused` and `idle_suspended` intervals ("Monitoring was paused"). History
 details lists them with the history's records, merged by reason and container so one
-interruption shows once, from its earlier start. The banner reads the same snapshot:
-its saving state is the snapshot's persistence, and its population notice is Rust's
-`partial_population` record, not the client's reading of the aggregate.
+interruption shows once, from its earlier start (one pass in start order, memoized on
+the records). The banner reads the same snapshot: its saving state is the snapshot's
+persistence, and its population notice is Rust's `partial_population` record, not the
+client's reading of the aggregate. Its count of missing intervals counts only records
+whose `masking` is not `none` and that are engine-wide or belong to a charted container.
 
 **Masking.** No history point (container history and each comparison series) claims
 more measured time than the records that mask it leave in its bucket
@@ -4101,8 +4103,8 @@ more measured time than the records that mask it leave in its bucket
   that container only (`containers`).
 - An engine-wide `collection` or `metrics` record masks every container and the engine
   aggregate (`all`), except `inventory_failed`, which masks every container but not the
-  aggregate (`containers`), and an earlier build's engine-wide `partial_cycle`, which
-  masks nothing (`none`).
+  aggregate (`containers`), and `aggregate_partial` and an earlier build's engine-wide
+  `partial_cycle`, which mask nothing (`none`).
 - `saving`, `events` and `other` records mask nothing: a bucket that is in the answer
   was measured, whether or not it was saved.
 
@@ -4114,44 +4116,86 @@ comparison chart draws a band, and its table a gap row, only for engine-wide rec
 whose `masking` is not `none`; a container's own records read as its missing readings.
 The client never re-derives which records mask.
 
+**Reads.** A read never fails because a scope has many records. The comparison reads
+the engine-wide rows once (`entity_id IS NULL`), not every container's; each candidate's
+page streams only its own rows. A history page reads coverage once, not once per tier
+probe. Rows stream from the store in start order without a count cap and fold into each
+point's masked time (the union of the masking spans inside it), so the work is bounded
+by the points, not the rows. The events lane reads only events-kind reasons
+(`EVENT_COVERAGE_REASONS`). What a page lists is bounded instead: the newest
+`MAX_COVERAGE_LISTED` (500) records per scope (engine-wide, and each charted
+container), with `coverage_total`, the number the range holds; History details says how
+many older records it does not list. Every read merges the store's rows with the
+recorder's live ones: its in-memory list, and the rows of writes in flight and of
+retries. Rows are bounded by `end_ms > from OR end_ms IS NULL`, served by the
+`(engine_id, end_ms)` and `(entity_id, end_ms)` indexes.
+
 **Failed cycles.** A stats cycle that misses some containers opens a `partial_cycle`
 record for each container whose stats failed or missed the 5 s deadline, and closes it
-when that container is measured again, stops, or leaves the population. A failed
+when that container is measured again, stops, or leaves the population. A failed stats
+request keeps the container's counter baseline (the counters are cumulative; a restart
+shows as counters going back), so the next good sample spans the failure and is
+recorded. A first sample, which has no baseline and so no CPU or rates, still records
+its gauges (memory) over the publish interval. A failed
 inventory refresh requests no stats; it opens one engine-wide `inventory_failed` record,
 kept open while refreshes keep failing and closed by the next listed cycle, not one
 `partial_cycle` per container. The aggregate is handled by measurement, not by masking:
 a container that failed this cycle (every monitored running one when the inventory
 failed) does not count as fresh, even though its row still holds an earlier cycle's
 reading. So `cpu_measured` and `memory_measured` fall below `expected`, `partial` is set,
-and the recorder gives that cycle's aggregate observation no weight.
+and the recorder gives that cycle's aggregate observation no weight. While a listed
+cycle's aggregate misses containers, one engine-wide `aggregate_partial` record
+(`metrics`, masking `none`) stays open to explain the aggregate's unweighted time; the
+containers it missed carry their own records.
+
+**Lanes.** The published snapshot keeps at most one open engine-wide record per lane:
+event coverage, and what interrupts measurements (collection and metrics records). An
+event record opening never closes the measurement record, or the reverse. A published
+cycle closes the open event record, and closes the measurement record unless the cycle
+still needs it (`inventory_failed`, `aggregate_partial`). A collection interruption
+closes everything open, both lanes and each container's partial cycle.
 
 **Crashes and restore.** An open record that no observation resumes (`partial_cycle`,
 `inventory_failed`, `clock_step`, event loss) masks to the end of each query, so one
 left open by a crash would hide all later history. On its first observation of a daemon,
 the recorder reads the store's open rows with their own `end_ms IS NULL` query (not the
-retained range's closed rows, which could exceed a read's 10,000-row cap) and closes each
-such row at the previous process's newest saved population segment, clamped to
-`[start, now]` so a clock that went back between the processes never closes it in the
-future, and saves the close. A restore whose read fails is retried on a doubling backoff
-from 30 s to 30 min, or at once on the next attach, not on every observation.
+retained range's closed rows) and closes each such row at the previous process's newest
+saved population segment, clamped to `[start, min(now, first observation)]`: a clock
+that went back between the processes never closes it in the future, and a restore that
+succeeds only after this process saved its own observations never closes it inside this
+session. It saves the close. A restore whose read fails is retried on a doubling backoff
+from 30 s to 30 min, or at once on the next attach, not on every observation; the
+failure is logged and is not a saving failure (`write_failed`). Restore runs once per
+daemon and attach, also for a daemon that left memory.
 
-**Clock steps.** A wall-clock step makes the recorder forget everything from the step
-on and end every record by it. The published snapshot does the same to its own records
-in the same step, then opens one engine-wide `clock_step` at the step time, so the
-recorder never sees a record it does not already hold; the next cycle reopens a
+**Clock steps.** A step is the wall clock moving more than 2 s away from the time that
+passed on a clock that counts sleep (`CLOCK_MONOTONIC_RAW` on macOS, `CLOCK_BOOTTIME` on
+Linux, `crate::clock`), so a wake is not a step. A step makes the recorder forget
+everything from the step on and end every record by it, including the rows and events
+of retries and writes in flight, so a retry never re-extends a record past the step.
+Its observation marks are capped just before the step rather than cleared. The
+published snapshot does the same to its own records in the same update, and clears its
+rows' observation times and interval, which carry the old clock: the step's own record
+never re-records them. Then it opens one engine-wide `clock_step` at the step time, so
+the recorder never sees a record it does not already hold; the next cycle reopens a
 still-failing container's record at its own time. The recorder matches published records
 by engine, container, reason and start, and saves one again only when it is new or its
 end moves; an open copy never reopens a record the recorder closed.
 
 **Memory bound.** The in-memory coverage list keeps open records, drops closed ones with
-the ring's hour, and past 512 records first drops closed records the store has
-acknowledged saving and closed records that mask nothing, oldest first. Every read
-merges the store's rows, so this changes no answer: a past range reports the same
-measured time whether or not memory still holds its records. Only closed masking records
-the store does not hold yet collapse, into one span per container and masking scope:
-`coverage_unknown`, or the scope's own reason where `coverage_unknown` would mask more (a
-failed inventory's span never masks the aggregate). It never turns non-masking records
-into a gap and never widens one container's gap to all containers.
+the ring's hour, and past 512 records first drops closed records the store holds (it
+acknowledged them) or a write in flight or a retry holds, then closed records that mask
+nothing, oldest first. Every read merges the store's rows and those writes', so this
+changes no answer: a past range reports the same measured time whether or not memory
+still holds its records. A dropped record the published snapshot still carries is not
+admitted again. With a store attached nothing else goes until 4,096 records. Only past
+that, or in live-only mode where memory is the only copy, do closed masking records
+collapse, into one span per container and masking scope: `coverage_unknown`, or the
+scope's own reason where `coverage_unknown` would mask more (a failed inventory's span
+never masks the aggregate). It never turns non-masking records into a gap and never
+widens one container's gap to all containers. A record the recorder finds itself (a
+full ring, oversized metadata, a lost writer) merges only into the same reason's open or
+touching record, and is saved through the retry queue.
 
 Rate metrics (network and block I/O) use `cpu_covered`. Docker reports them in the
 same stats sample as CPU, and like CPU they are deltas from the previous sample
@@ -4160,17 +4204,22 @@ absent on its own; that case is a `null` value, which the chart already breaks o
 
 Coverage row volume: one row per failure episode per container, so a container whose
 stats alternate between failing and succeeding writes a row every two cycles: 43,200 a
-day at the visible 1 s cadence, 4,320 at the background 10 s cadence. Such a container
-fills a history or comparison read's 10,000-row cap in about 5.6 hours visible, or 2.3
-days in the background, of the 30-day range. A failed inventory used to write up to 128
-rows per episode and now writes one. Revisit the cap, or merge adjacent episodes, if
-flapping containers turn out to be common.
+day at the visible 1 s cadence, 4,320 at the background 10 s cadence. Reads stream
+these rows, so volume costs time, not correctness: a 30-day comparison over a store
+holding 12,002 rows for one container took 5.4 ms (release build, dev machine),
+where the earlier capped read failed above 10,000 rows. Revisit, or merge adjacent
+episodes in the writer, if flapping containers make reads slow.
 
 This is not a wire-format change: Docker types do not cross `statglass-proto`, and
-`api::DockerCoverage` is never persisted or synced (the store keeps its own
-`db::DockerCoverage` rows, which do not change; container-scoped `partial_cycle` and
-engine-wide `inventory_failed` rows already fit them). It reaches the webview as JSON
-through tauri-specta only, so no codec skew test applies and no migration is needed.
+`api::DockerCoverage` is never persisted or synced. It reaches the webview as JSON
+through tauri-specta only, so no codec skew test applies. The store's
+`db::DockerCoverage` rows keep their columns. Schema version 9 gives a record one row:
+a unique index on `(engine_id, coalesce(entity_id,-1), coalesce(metric,''), reason,
+start_ms)`, after folding existing duplicates into the earliest row (the latest end that
+was set, the highest revision), plus the two end indexes. The writer upserts on that
+identity: an older revision never moves the row, and an end once set never goes back to
+open, so a retried stale batch can no longer add a second, open row. The migration is
+idempotent.
 
 Cost: user-facing English in `statglass-schema`, next to the reason keys it explains.
 Revisit when the UI is localised, or when another consumer (the CLI, WidgetKit) needs

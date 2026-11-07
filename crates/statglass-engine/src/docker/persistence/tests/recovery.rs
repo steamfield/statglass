@@ -416,7 +416,7 @@ fn review_event_coverage_survives_recorder_restart() {
         t - 1000,
         Some(t),
         None,
-        "replay_uncertain".into(),
+        "event_replay_uncertain".into(),
     )];
     r.record(&s);
     store.writer().flush().unwrap();
@@ -606,7 +606,7 @@ fn a_clock_step_saves_each_record_once_then_nothing_while_it_holds() {
     let cycle = |i: i64| {
         let mut s = handle.snapshot();
         s.observed_ms = t + 6_000 + i * 1000;
-        crate::docker::publication::reconcile_inventory(&mut s.coverage, true, s.observed_ms);
+        crate::docker::publication::reconcile_cycle(&mut s.coverage, true, false, s.observed_ms);
         crate::docker::publication::reconcile_partial(&mut s.coverage, &failed, s.observed_ms);
         handle.publish(s);
     };

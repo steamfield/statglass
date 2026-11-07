@@ -31,56 +31,98 @@ pub(super) fn evict_entry(s: &mut State, key: &Key) {
         }
     }
 }
+/// Records a closed engine-wide interruption the recorder found itself (a full ring,
+/// oversized metadata, a lost writer). It merges only into the same reason's record
+/// when that one is open or touches it, never across an hour of good time, and it is
+/// saved through the retry queue, since no batch is at hand.
 pub(super) fn gap(s: &mut State, engine: &str, start: i64, end: i64, reason: &str) {
     let gaps = s.coverage.entry(engine.into()).or_default();
-    if let Some(old) = gaps
-        .iter_mut()
-        .find(|g| g.reason() == reason && g.container_id.is_none())
-    {
-        old.start_ms = old.start_ms.min(start);
-        old.end_ms = Some(old.end_ms.unwrap_or(end).max(end));
-    } else {
-        gaps.push(api::DockerCoverage::new(
-            start,
-            Some(end),
-            None,
-            reason.into(),
-        ));
+    let record = match gaps.iter_mut().find(|g| {
+        g.reason() == reason
+            && g.container_id.is_none()
+            && g.start_ms <= end
+            && g.end_ms.is_none_or(|old| old >= start)
+    }) {
+        Some(old) => {
+            old.start_ms = old.start_ms.min(start);
+            old.end_ms = old.end_ms.map(|old| old.max(end));
+            old.clone()
+        }
+        None => {
+            let record = api::DockerCoverage::new(start, Some(end), None, reason.into());
+            gaps.push(record.clone());
+            record
+        }
+    };
+    let row = coverage_row(s, &record, end);
+    requeue(
+        s,
+        engine,
+        Retry {
+            coverage: vec![row],
+            ..Retry::default()
+        },
+    );
+    let held = held_coverage(s, engine);
+    let live_only = s.live_only;
+    if let Some(gaps) = s.coverage.get_mut(engine) {
+        bound_coverage(gaps, &held, live_only);
     }
-    bound_coverage(gaps, s.saved_coverage.get(engine));
+}
+/// The store row for a record.
+pub(super) fn coverage_row(s: &mut State, c: &api::DockerCoverage, now: i64) -> db::DockerCoverage {
+    db::DockerCoverage {
+        entity: c.container_id.clone(),
+        metric: None,
+        start_ms: c.start_ms,
+        end_ms: c.end_ms,
+        reason: c.reason().to_owned(),
+        revision: next(s),
+        sampled_ms: 0,
+        // A transition can open a gap after the last metric snapshot.
+        // Its still-open duration is zero until a newer observation.
+        expected_ms: c.end_ms.unwrap_or(now).saturating_sub(c.start_ms).max(0),
+    }
+}
+/// Closed records memory need not list: the store acknowledged them, or a write in
+/// flight or a retry holds them, and every read merges both (`live_coverage`).
+pub(super) fn held_coverage(s: &State, engine: &str) -> BTreeSet<CoverageKey> {
+    let mut held = written_coverage(s, engine);
+    held.extend(s.saved_coverage.get(engine).into_iter().flatten().cloned());
+    held
 }
 /// Keep at most 512 records where possible: room for the published snapshot's own bound
 /// (128 closed plus an open record per monitored container) and the recorder's own
-/// saving records, so this only acts on a pathological hour. Open records are never
-/// touched: they still have to close. Closed records the store has saved (`saved`) go
-/// first, then closed ones that mask nothing, oldest first: every read merges the
-/// store's rows, so dropping them changes no answer. Only closed masking records the
-/// store does not hold yet collapse, into one `coverage_unknown` span per container
-/// scope, so a collapse only masks time its own scope already lost somewhere in that
-/// span, and the open records plus one span per monitored container bound the rest.
+/// saving records. Open records are never touched: they still have to close. Closed
+/// records the store or a write holds (`held`) go first, then closed ones that mask
+/// nothing, oldest first: every read merges the store's rows and the writes', so
+/// dropping them changes no answer. With a store attached nothing else goes until
+/// 4,096. Only then, or in live-only mode where memory is the only copy, do closed
+/// masking records collapse, into one `coverage_unknown` span per container scope, so
+/// a collapse only masks time its own scope already lost somewhere in that span.
 pub(super) fn bound_coverage(
     gaps: &mut Vec<api::DockerCoverage>,
-    saved: Option<&BTreeSet<CoverageKey>>,
+    held: &BTreeSet<CoverageKey>,
+    live_only: bool,
 ) {
     const LIMIT: usize = 512;
+    const ATTACHED_LIMIT: usize = 4096;
     if gaps.len() <= LIMIT {
         return;
     }
     let masking = |g: &api::DockerCoverage| g.masking() != api::DockerCoverageMasking::None;
-    let is_saved = |g: &api::DockerCoverage| {
-        coverage_key(g).is_some_and(|key| saved.is_some_and(|saved| saved.contains(&key)))
-    };
-    let mut excess = gaps.len() - LIMIT;
+    let is_held = |g: &api::DockerCoverage| coverage_key(g).is_some_and(|key| held.contains(&key));
+    let excess = gaps.len() - LIMIT;
     let mut by_start: Vec<_> = gaps
         .iter()
-        .filter(|g| g.end_ms.is_some() && (is_saved(g) || !masking(g)))
-        .map(|g| ((!is_saved(g), g.start_ms), g.clone()))
+        .filter(|g| g.end_ms.is_some() && (is_held(g) || !masking(g)))
+        .map(|g| ((!is_held(g), g.start_ms), g.clone()))
         .collect();
     by_start.sort_by_key(|(order, _)| *order);
     let dropped: Vec<_> = by_start.into_iter().take(excess).map(|(_, g)| g).collect();
-    excess -= dropped.len();
     gaps.retain(|g| !dropped.contains(g));
-    if excess == 0 {
+    let limit = if live_only { LIMIT } else { ATTACHED_LIMIT };
+    if gaps.len() <= limit {
         return;
     }
     // A scope is the container (or the whole engine) and whose points it masks.
@@ -304,7 +346,8 @@ pub(super) fn evict(s: &mut State, now: i64) {
     s.last_warning
         .retain(|e, _| engines.contains(e) || s.retry.contains_key(e));
     s.coverage.retain(|e, _| engines.contains(e));
-    s.restored_coverage.retain(|e| engines.contains(e));
+    // Restore runs once per daemon and attach, never again for a daemon that left
+    // memory: its open rows are this process's own by then (`first_observed`).
     s.restore_retry.retain(|e, _| engines.contains(e));
     recount_aux(s);
     while s.bytes + s.aux_bytes + s.reader_bytes > RING_BYTES {

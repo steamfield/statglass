@@ -1,6 +1,6 @@
 import { formatDateTime } from "@core/format";
 import type { DockerCoverage, DockerSnapshot } from "@core/generated/bindings";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
   eventCoverage,
@@ -12,22 +12,31 @@ import {
 export function HistoryNotice({
   snapshot,
   coverage,
+  total = coverage.length,
+  plotted,
   metric,
   onManage,
   onResume,
 }: {
   snapshot: DockerSnapshot;
   coverage: readonly DockerCoverage[];
+  /** How many records the range holds; Rust lists the newest. */
+  total?: number | undefined;
+  /** The charted containers: only their own records and engine-wide ones count. */
+  plotted: readonly string[];
   metric: "cpu" | "memory";
   onManage: () => void;
   onResume: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const records = mergeCoverage(coverage);
+  const records = useMemo(() => mergeCoverage(coverage), [coverage]);
   // The banner and the details read the snapshot's persistence, through Rust's
   // current-state records; one interruption in both lists shows once.
   const current = snapshot.current_coverage;
-  const details = mergeCoverage([...coverage, ...current]);
+  const details = useMemo(
+    () => mergeCoverage([...coverage, ...current]),
+    [coverage, current]
+  );
   const persistence = snapshot.persistence;
   const unavailable = [
     "unavailable",
@@ -36,7 +45,12 @@ export function HistoryNotice({
   ].includes(snapshot.status);
   const paused = ["paused", "idle_suspended"].includes(snapshot.status);
   const saving = persistence.status === "write_failed";
-  const gaps = records.filter((record) => !eventCoverage(record));
+  // Missing history is what Rust says masks the charted points.
+  const gaps = records.filter(
+    (record) =>
+      record.masking !== "none" &&
+      (record.container_id === null || plotted.includes(record.container_id))
+  );
   const partial = current.some(
     (record) => record.reason === "partial_population"
   );
@@ -95,6 +109,7 @@ export function HistoryNotice({
         onOpenChange={setOpen}
         savingError={saving ? persistence.error : null}
         records={details}
+        unlisted={Math.max(0, total - coverage.length)}
         containers={snapshot.containers}
       />
     </>

@@ -130,14 +130,21 @@ export function comparison(
     ranking
       .slice(0, ranking.length <= 6 ? 6 : 5)
       .map((row) => row.container.id);
+  const series = selected.flatMap((id) => {
+    const row = all.find((row) => row.container.id === id);
+    return row ? [{ container: row.container, points: row.points }] : [];
+  });
+  // Rust lists engine-wide records and the charted containers' own.
+  const charted = new Set(series.map((s) => s.container.id));
+  const coverage = snapshot.coverage.filter(
+    (g) => g.container_id === null || charted.has(g.container_id)
+  );
   const page: DockerComparisonPage = {
     generation: snapshot.generation,
     ranking: ranking.map(({ points: _points, ...row }) => row),
-    series: selected.flatMap((id) => {
-      const row = all.find((row) => row.container.id === id);
-      return row ? [{ container: row.container, points: row.points }] : [];
-    }),
-    coverage: snapshot.coverage,
+    series,
+    coverage,
+    coverage_total: coverage.length,
     persistence: snapshot.persistence,
   };
   return ok(page);

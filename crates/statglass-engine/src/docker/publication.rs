@@ -126,30 +126,44 @@ pub(super) fn current_coverage(s: &DockerSnapshot) -> Vec<DockerCoverage> {
     .map(|reason| DockerCoverage::new(s.observed_ms, None, None, reason.into()))
     .collect()
 }
-/// The engine-wide record still open; there is at most one.
-pub(super) fn open_engine_wide(coverage: &mut [DockerCoverage]) -> Option<&mut DockerCoverage> {
-    coverage
-        .iter_mut()
-        .rev()
-        .find(|g| g.container_id.is_none() && g.end_ms.is_none())
+/// The engine-wide record still open in a record's lane: event coverage, or what
+/// interrupts measurements. Each lane holds at most one, and neither closes the other.
+pub(super) fn open_engine_wide(
+    coverage: &mut [DockerCoverage],
+    events: bool,
+) -> Option<&mut DockerCoverage> {
+    coverage.iter_mut().rev().find(|g| {
+        g.container_id.is_none()
+            && g.end_ms.is_none()
+            && (g.kind() == DockerCoverageKind::Events) == events
+    })
 }
-/// A published cycle ends the engine-wide interruption, unless it is a failed
-/// inventory that this cycle's refresh failed again. A failed refresh opens one
-/// `inventory_failed` record for the whole engine, not one per container.
-pub(super) fn reconcile_inventory(coverage: &mut Vec<DockerCoverage>, listed: bool, at: i64) {
-    if let Some(g) = open_engine_wide(coverage) {
-        if !listed && g.reason() == "inventory_failed" {
+/// A published cycle ends the open event record and the open measurement record,
+/// unless that is still true: a failed inventory refresh opens one `inventory_failed`
+/// record for the whole engine, not one per container, and a listed cycle whose
+/// aggregate missed containers (`holes`) keeps one `aggregate_partial` open.
+pub(super) fn reconcile_cycle(
+    coverage: &mut Vec<DockerCoverage>,
+    listed: bool,
+    holes: bool,
+    at: i64,
+) {
+    if let Some(g) = open_engine_wide(coverage, true) {
+        g.end_ms = Some(at.max(g.start_ms));
+    }
+    let wanted = if !listed {
+        Some("inventory_failed")
+    } else {
+        holes.then_some("aggregate_partial")
+    };
+    if let Some(g) = open_engine_wide(coverage, false) {
+        if wanted == Some(g.reason()) {
             return;
         }
         g.end_ms = Some(at.max(g.start_ms));
     }
-    if !listed {
-        coverage.push(DockerCoverage::new(
-            at,
-            None,
-            None,
-            "inventory_failed".into(),
-        ));
+    if let Some(reason) = wanted {
+        coverage.push(DockerCoverage::new(at, None, None, reason.into()));
     }
 }
 /// The published records as the recorder keeps them after a clock step to `at`
@@ -188,14 +202,17 @@ pub(super) fn reconcile_partial(
             .map(|id| DockerCoverage::new(at, None, Some(id.clone()), "partial_cycle".into())),
     );
 }
-/// Opens an engine-wide `gap`, closing the one open before it. A collection
-/// interruption also ends each container's partial cycle.
+/// Opens an engine-wide `gap`, closing the one open before it in its lane. A
+/// collection interruption ends everything open: both lanes and each container's
+/// partial cycle.
 pub(super) fn open_gap(coverage: &mut Vec<DockerCoverage>, gap: DockerCoverage) {
     let collection = gap.kind() == DockerCoverageKind::Collection;
-    for g in coverage
-        .iter_mut()
-        .filter(|g| g.end_ms.is_none() && (g.container_id.is_none() || collection))
-    {
+    let events = gap.kind() == DockerCoverageKind::Events;
+    for g in coverage.iter_mut().filter(|g| {
+        g.end_ms.is_none()
+            && (collection
+                || g.container_id.is_none() && (g.kind() == DockerCoverageKind::Events) == events)
+    }) {
         g.end_ms = Some(gap.start_ms.max(g.start_ms));
     }
     coverage.push(gap);
@@ -291,8 +308,11 @@ impl DockerHandle {
             observed,
             interval,
         );
-        // Containers whose stats failed this cycle carry their own records.
-        reconcile_inventory(&mut snapshot.coverage, listed, observed);
+        // Containers whose stats failed this cycle carry their own records; the
+        // aggregate's unweighted cycle gets one engine-wide record that masks nothing.
+        let holes = snapshot.aggregate.cpu_measured < snapshot.aggregate.expected
+            || snapshot.aggregate.memory_measured < snapshot.aggregate.expected;
+        reconcile_cycle(&mut snapshot.coverage, listed, holes, observed);
         reconcile_partial(&mut snapshot.coverage, failed, observed);
         bound_published(&mut snapshot.coverage);
         self.publish(snapshot);
@@ -327,6 +347,41 @@ mod tests {
         );
         reconcile_partial(&mut coverage, &BTreeSet::new(), 40);
         assert!(coverage.iter().skip(1).all(|g| g.end_ms.is_some()));
+    }
+
+    #[test]
+    fn event_and_measurement_records_keep_their_own_open_slot() {
+        let mut coverage = vec![record(0, None, None, "inventory_failed")];
+        open_gap(
+            &mut coverage,
+            record(5, None, None, "events_dropped_rate_limit"),
+        );
+        assert_eq!(
+            coverage[0].end_ms, None,
+            "an event record closed the inventory's"
+        );
+        // The inventory fails again: one record, and the cycle ends the event record.
+        reconcile_cycle(&mut coverage, false, true, 10);
+        assert_eq!(
+            coverage,
+            [
+                record(0, None, None, "inventory_failed"),
+                record(5, Some(10), None, "events_dropped_rate_limit"),
+            ]
+        );
+        // Listed, but the aggregate missed containers; then it measured them all.
+        reconcile_cycle(&mut coverage, true, true, 20);
+        reconcile_cycle(&mut coverage, true, true, 25);
+        reconcile_cycle(&mut coverage, true, false, 30);
+        assert_eq!(
+            coverage[2..],
+            [record(20, Some(30), None, "aggregate_partial")]
+        );
+        assert_eq!(coverage[0].end_ms, Some(20));
+        // A collection interruption still ends everything open.
+        open_gap(&mut coverage, record(40, None, None, "events_disconnected"));
+        open_gap(&mut coverage, record(50, None, None, "disconnected"));
+        assert_eq!(coverage.iter().filter(|g| g.end_ms.is_none()).count(), 1);
     }
 
     #[test]

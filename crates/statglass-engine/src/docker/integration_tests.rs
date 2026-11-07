@@ -14,6 +14,9 @@ struct FixtureState {
     running_from: AtomicUsize,
     delay_ms: std::sync::atomic::AtomicU64,
     inventory_fails: AtomicBool,
+    stats_fail: AtomicBool,
+    /// Every stats answer advances the CPU counters, so a second sample has a rate.
+    stats_served: AtomicUsize,
     active: AtomicUsize,
     maximum: AtomicUsize,
     stats: Mutex<BTreeSet<String>>,
@@ -46,6 +49,8 @@ impl Fixture {
             running_from: AtomicUsize::new(0),
             delay_ms: std::sync::atomic::AtomicU64::new(delay_ms),
             inventory_fails: AtomicBool::new(false),
+            stats_fail: AtomicBool::new(false),
+            stats_served: AtomicUsize::new(1),
             active: AtomicUsize::new(0),
             maximum: AtomicUsize::new(0),
             stats: Mutex::new(BTreeSet::new()),
@@ -220,11 +225,20 @@ async fn serve(mut socket: UnixStream, state: Arc<FixtureState>) {
         serde_json::to_string(&rows).unwrap()
     } else if path.contains("/stats") {
         state.stats.lock_ok().insert(id.clone());
+        if state.stats_fail.load(Ordering::SeqCst) {
+            reply(&mut socket, b"not stats").await;
+            return;
+        }
         let delay = state.delay_ms.load(Ordering::SeqCst);
         if delay > 0 {
             tokio::select! {_=tokio::time::sleep(Duration::from_millis(delay))=>{},_=socket.read(&mut one)=>return}
         }
-        r#"{"cpu_stats":{"cpu_usage":{"total_usage":1000},"system_cpu_usage":10000,"online_cpus":8},"memory_stats":{"usage":1000,"limit":10000,"stats":{"inactive_file":100}},"networks":{"eth0":{"rx_bytes":100,"tx_bytes":200}}}"#.into()
+        let n = state.stats_served.fetch_add(1, Ordering::SeqCst);
+        format!(
+            r#"{{"cpu_stats":{{"cpu_usage":{{"total_usage":{}}},"system_cpu_usage":{},"online_cpus":8}},"memory_stats":{{"usage":1000,"limit":10000,"stats":{{"inactive_file":100}}}},"networks":{{"eth0":{{"rx_bytes":100,"tx_bytes":200}}}}}}"#,
+            1000 * n,
+            10000 * n
+        )
     } else {
         state.inspect_requests.fetch_add(1, Ordering::SeqCst);
         let status = state.inspect_status.load(Ordering::SeqCst);
@@ -1090,4 +1104,58 @@ async fn visible_transition_resumes_idle_without_waiting_for_probe() {
         handle.shutdown();
         worker.await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn a_stats_failure_keeps_the_baseline_and_explains_the_aggregate() {
+    let fixture = Fixture::new(2, 0).await;
+    let handle = fixture.handle();
+    let mut cycles = Cycles::new(&fixture).await;
+    // Real cycles are a second apart; a rate needs at least a millisecond between them.
+    let pause = || tokio::time::sleep(Duration::from_millis(5));
+    cycles.run(&handle, true).await;
+    pause().await;
+    cycles.run(&handle, false).await;
+    fixture.state.stats_fail.store(true, Ordering::SeqCst);
+    let measured = handle.snapshot();
+    assert_eq!(
+        measured.aggregate.cpu_measured, 2,
+        "the fixture gives no CPU rate"
+    );
+    assert!(
+        records(&measured, "aggregate_partial")
+            .iter()
+            .all(|g| g.end_ms.is_some())
+    );
+    let failed = cycles.run(&handle, false).await;
+    assert_eq!(failed.aggregate.memory_measured, 0);
+    let explained: Vec<_> = records(&failed, "aggregate_partial")
+        .into_iter()
+        .filter(|g| g.end_ms.is_none())
+        .collect();
+    assert_eq!(explained.len(), 1, "{:?}", failed.coverage);
+    assert!(!explained[0].masks(Some("c0000")) && !explained[0].masks(None));
+    fixture.state.stats_fail.store(false, Ordering::SeqCst);
+    pause().await;
+    let resumed = cycles.run(&handle, false).await;
+    // The next good sample spans the failure from the kept baseline, so it is recorded.
+    assert!(
+        resumed
+            .containers
+            .iter()
+            .all(|c| c.interval_ms.is_some_and(|ms| ms > 0)),
+        "{:?}",
+        resumed
+            .containers
+            .iter()
+            .map(|c| c.interval_ms)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(resumed.aggregate.memory_measured, 2);
+    assert_eq!(resumed.aggregate.cpu_measured, 2);
+    assert!(
+        records(&resumed, "aggregate_partial")
+            .iter()
+            .all(|g| g.end_ms.is_some())
+    );
 }

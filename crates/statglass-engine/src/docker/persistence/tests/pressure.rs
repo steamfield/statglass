@@ -404,7 +404,7 @@ fn bounding_coverage_never_turns_saving_or_events_records_into_a_gap() {
     ));
     let open = gap(30_000_000, None, Some("d"), "partial_cycle");
     gaps.push(open.clone());
-    bound_coverage(&mut gaps, None);
+    bound_coverage(&mut gaps, &BTreeSet::new(), true);
     assert!(gaps.len() <= 512, "{}", gaps.len());
     assert!(gaps.contains(&open));
     // Nothing engine-wide masks, and c's masking stays c's.
@@ -423,7 +423,7 @@ fn bounding_coverage_never_turns_saving_or_events_records_into_a_gap() {
         .map(|i| gap(i * 1000, Some(i * 1000 + 500), Some("c"), "partial_cycle"))
         .collect();
     gaps.push(open.clone());
-    bound_coverage(&mut gaps, None);
+    bound_coverage(&mut gaps, &BTreeSet::new(), true);
     assert_eq!(
         gaps,
         [open, gap(0, Some(599_500), Some("c"), "coverage_unknown")]
@@ -447,9 +447,14 @@ fn closed_coverage_leaves_memory_with_the_hour_and_is_not_readmitted() {
     let saved = || {
         let mut reader = Reader::open(store.path()).unwrap();
         let snapshot = reader.docker_snapshot(host().id, "daemon").unwrap();
+        let mut rows = Vec::new();
         snapshot
-            .event_coverage(Some("c"), t - HOUR, t + 3 * HOUR)
-            .unwrap()
+            .entity_coverage("c", t - HOUR, t + 3 * HOUR, |c| {
+                rows.push(c);
+                Ok(())
+            })
+            .unwrap();
+        rows
     };
     let before = saved();
     // The published snapshot still carries it two hours later.
@@ -474,7 +479,7 @@ fn collapsing_failed_inventories_never_masks_the_aggregate() {
             )
         })
         .collect();
-    bound_coverage(&mut gaps, None);
+    bound_coverage(&mut gaps, &BTreeSet::new(), true);
     assert_eq!(
         gaps,
         [api::DockerCoverage::new(

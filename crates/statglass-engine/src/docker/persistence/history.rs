@@ -1,5 +1,6 @@
 //! Choose retained tiers and merge immutable history evidence for presentation.
-use super::projection::{display_points, fold_ring, mask_uncovered};
+use super::coverage::{EngineCoverage, live_coverage, mask_entity};
+use super::projection::{display_points, fold_ring};
 use super::*;
 
 impl DockerRecorder {
@@ -61,11 +62,20 @@ impl DockerRecorder {
             })
             .map(|(_, e)| e.clone())
             .collect();
-        let coverage = s.coverage.get(&q.engine_id).cloned().unwrap_or_default();
+        let coverage = live_coverage(&s, &q.engine_id);
         drop(s);
         drop(guard);
-        let result = self
-            .history_page(q, snapshot.as_ref(), &ring, metadata, coverage, generation)
+        let result = EngineCoverage::read(snapshot.as_ref(), &coverage, from, q.to_ms)
+            .and_then(|engine| {
+                self.history_page(
+                    q,
+                    snapshot.as_ref(),
+                    &ring,
+                    metadata,
+                    (&coverage, &engine),
+                    generation,
+                )
+            })
             .and_then(|page| {
                 if serde_json::to_vec(&page)?.len() > db::MAX_QUERY_BYTES {
                     return Err(DockerServiceError::ResourceLimit(
@@ -90,7 +100,7 @@ impl DockerRecorder {
         snapshot: Option<&db::DockerReadSnapshot<'_>>,
         ring: &[Arc<db::DockerBucket>],
         metadata: Vec<db::DockerEntity>,
-        coverage: Vec<api::DockerCoverage>,
+        (live, engine): (&[api::DockerCoverage], &EngineCoverage),
         generation: u32,
     ) -> Result<api::DockerHistoryPage, DockerServiceError> {
         let started = Instant::now();
@@ -103,8 +113,18 @@ impl DockerRecorder {
         let buckets = merge_buckets(q, snapshot, &ring, tier, from, persisted.buckets)?;
         let mut points = display_points(q, tier, buckets)?;
         let metas = history_metadata(q, &mut points, persisted.metadata, metadata);
-        let gaps = history_coverage(q, persisted.coverage, coverage);
-        mask_uncovered(&mut points, &gaps, q.container_id.as_deref(), q.to_ms);
+        let (own, own_total) = mask_entity(
+            snapshot,
+            live,
+            engine,
+            q.container_id.as_deref().unwrap_or(""),
+            q.container_id.as_deref(),
+            (floor_to(q.from_ms, 900_000), q.to_ms),
+            &mut points,
+        )?;
+        let mut coverage = engine.listed.clone();
+        coverage.extend(own);
+        coverage.retain(|c| c.start_ms < q.to_ms && c.end_ms.is_none_or(|end| end > q.from_ms));
         if started.elapsed() > Duration::from_secs(2) {
             return Err(DockerServiceError::SnapshotExpired(
                 "History snapshot expired",
@@ -124,7 +144,8 @@ impl DockerRecorder {
         let page = api::DockerHistoryPage {
             generation,
             points,
-            coverage: gaps,
+            coverage,
+            coverage_total: u32::try_from(engine.total + own_total).unwrap_or(u32::MAX),
             metadata: metas,
             persistence,
         };
@@ -318,26 +339,4 @@ fn history_metadata(
         .filter_map(|e| serde_json::from_slice(&e.extras).ok())
         .collect();
     metas
-}
-
-fn history_coverage(
-    q: &api::DockerHistoryRequest,
-    persisted: Vec<db::DockerCoverage>,
-    coverage: Vec<api::DockerCoverage>,
-) -> Vec<api::DockerCoverage> {
-    let mut gaps: Vec<_> = persisted
-        .into_iter()
-        .map(|c| api::DockerCoverage::new(c.start_ms, c.end_ms, c.entity, c.reason))
-        .collect();
-    for c in coverage {
-        if let Some(old) = gaps.iter_mut().find(|g| {
-            g.start_ms == c.start_ms && g.container_id == c.container_id && g.reason() == c.reason()
-        }) {
-            old.end_ms = old.end_ms.max(c.end_ms);
-        } else {
-            gaps.push(c);
-        }
-    }
-    gaps.retain(|c| c.start_ms < q.to_ms && c.end_ms.is_none_or(|end| end > q.from_ms));
-    gaps
 }

@@ -384,6 +384,7 @@ function ContainerComparisonSample() {
           <HistoryNotice
             snapshot={DOCKER_NOTICE}
             coverage={[]}
+            plotted={[]}
             metric="cpu"
             onManage={noop}
             onResume={noop}
