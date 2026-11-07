@@ -41,7 +41,7 @@ async function open(page: Page, theme: string) {
   );
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
   await chooseTimelinePreset(page, "Last 1 day");
-  const card = page.getByRole("region", { name: "30-day heatmap" });
+  const card = page.getByRole("region", { name: "Last 30 days, by hour" });
   await expect(card.getByRole("gridcell")).toHaveCount(720);
   await expect(
     card.getByRole("gridcell", { name: /average CPU \d+%$/ }).first()

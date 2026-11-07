@@ -5,7 +5,7 @@ import { useBatterySummary } from "~/hooks/use-battery";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import type { Corner } from "~/widgets/lib/accent";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import { BatteryRangeHistory } from "./battery-range-history";
 import { HistoryNotices } from "./history-notices";
 import { InlineMessage } from "./inline-message";
@@ -41,7 +41,7 @@ export function BatteryDayCard({
         title="Battery charge"
         aside={
           aside ?? (
-            <StatStrip
+            <StatList
               items={[
                 { label: "Charge", value: formatPercent(b.charge) },
                 { label: "Health", value: formatPercent(b.health) },

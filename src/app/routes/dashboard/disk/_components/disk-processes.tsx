@@ -1,3 +1,4 @@
+import { matchProcessQuery } from "@core/app-search";
 import { scopeWords, type TimeRange } from "@core/brush";
 import { formatBytes, formatRate, formatSpan } from "@core/format";
 import type { LiveProcess, ProcessUsage } from "@core/generated/bindings";
@@ -36,9 +37,8 @@ import {
   UsageAppsCard,
   type UsageTableConfig,
 } from "~/components/usage-apps-card";
-import { useEdition } from "~/hooks/use-edition";
+import { useCanSignal } from "~/hooks/use-edition";
 import { useHostNoun } from "~/hooks/use-host-record";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useUsageHistorical } from "~/hooks/use-module-end";
 import {
   useProcessInterest,
@@ -101,19 +101,16 @@ function DiskProcessList({
   viewControl: ReactNode;
 }) {
   const range = useBrushRange();
-  const local = useIsLocalHost();
   const noun = useHostNoun();
   // Quit is this Mac's only; a remote host's processes are listed (D-117).
-  const edition = useEdition();
-  const canSignal = local && edition?.process_signal === true;
+  const canSignal = useCanSignal();
   const { data, live, history, orderKey } = useDiskProcessTable(range);
   const [query, setQuery] = useState("");
   const [all, setAll] = useState(false);
   const location = useLocation();
   const rows = data.rows.map((r) => r.original);
-  const filtered = rows.filter((p) =>
-    `${p.name} ${p.pid}`.toLowerCase().includes(query.toLowerCase().trim())
-  );
+  const matches = matchProcessQuery(query);
+  const filtered = matches ? rows.filter(matches) : rows;
   const shown = all || query ? filtered : filtered.slice(0, 10);
   const scope = range ? scopeWords(range, windowMs) : "Live";
   const waiting = range ? history.isPending : live === null;

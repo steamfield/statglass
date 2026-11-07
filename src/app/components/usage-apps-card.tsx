@@ -51,9 +51,8 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { useEdition } from "~/hooks/use-edition";
+import { useCanSignal } from "~/hooks/use-edition";
 import { useHostNoun } from "~/hooks/use-host-record";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
@@ -141,9 +140,7 @@ function LiveUsageAppsCard({
   const [query, setQuery] = useState("");
   // The App Store edition has no Quit or Force Quit (D-065), and a remote
   // host's processes are never signalled from here (D-117).
-  const local = useIsLocalHost();
-  const edition = useEdition();
-  const canSignal = local && edition?.process_signal === true;
+  const canSignal = useCanSignal();
   const data = heldFor(q, windowMs);
   const shown: TimeRange | null = data
     ? { fromMs: data.from_ms, toMs: data.to_ms }

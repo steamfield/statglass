@@ -1,3 +1,4 @@
+import { matchText } from "@core/app-search";
 import { seriesColor } from "@core/chart-math/series-lines";
 import { formatBytes, formatPercent } from "@core/format";
 import type { DockerContainer } from "@core/generated/bindings";
@@ -12,6 +13,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { useUnits } from "~/hooks/use-units";
+import { Swatch } from "~/widgets/legend";
 
 export function ChartChooser({
   open,
@@ -58,11 +60,7 @@ export function ChartChooser({
         />
         <div className="max-h-88 overflow-y-auto">
           {candidates
-            .filter((row) =>
-              `${row.name} ${row.project ?? ""}`
-                .toLowerCase()
-                .includes(query.toLowerCase())
-            )
+            .filter((row) => matchText(query, row.name, row.project))
             .map((row) => (
               <label
                 key={row.id}
@@ -84,7 +82,7 @@ export function ChartChooser({
                 {slots[row.id] ? (
                   <SeriesSwatch color={seriesColor(slots[row.id] ?? 1)} />
                 ) : (
-                  <span className="size-2" />
+                  <Swatch step="none" />
                 )}
                 <span className="min-w-0 flex-1 truncate">
                   {row.name}

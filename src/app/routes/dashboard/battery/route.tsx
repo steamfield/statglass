@@ -10,7 +10,7 @@ import { useWindowSeries } from "~/hooks/use-window-series";
 import { useHost } from "~/stores/host-store";
 import { usePowerSource } from "~/stores/live-selectors";
 import { RingStatCard } from "~/widgets/ring-stat-card";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import { batterySubtitle, powerText, timeField } from "./_lib/battery";
 
 const TEN_MIN_MS = 600_000;
@@ -98,7 +98,7 @@ export default function BatteryRoute() {
       <BatteryDayCard
         origin="br"
         aside={
-          <StatStrip
+          <StatList
             items={[
               {
                 label: "Full charge",

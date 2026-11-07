@@ -2,6 +2,7 @@ import type { Edition } from "@core/generated/bindings";
 import { appKeys } from "@core/query-keys";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 
 /**
@@ -18,6 +19,17 @@ export function useEdition(): Edition | null {
     staleTime: Number.POSITIVE_INFINITY,
   });
   return data ?? null;
+}
+
+/**
+ * Whether this view can quit processes: only on this Mac (a remote host's
+ * processes are listed, D-117) and only in a build with `process_signal`
+ * (the App Store edition has no Quit or Force Quit, D-065).
+ */
+export function useCanSignal(): boolean {
+  const local = useIsLocalHost();
+  const edition = useEdition();
+  return local && edition?.process_signal === true;
 }
 
 /**

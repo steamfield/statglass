@@ -4,6 +4,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
+import { Swatch } from "~/widgets/legend";
 import { LANE_HEIGHT, type LaneDef } from "../_lib/lanes";
 import type { LaneComparison, LaneSummary } from "../_lib/summaries";
 
@@ -34,11 +35,7 @@ export function LaneLabel({
       style={{ height: LANE_HEIGHT }}
     >
       <div className="flex items-center gap-1.5">
-        <span
-          aria-hidden
-          className="size-2 rounded-mark"
-          style={{ background: `var(--color-${def.accent})` }}
-        />
+        <Swatch step="none" color={`var(--color-${def.accent})`} />
         {onRank ? (
           <button
             type="button"

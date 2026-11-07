@@ -1,19 +1,17 @@
 import { usageHistorical } from "@core/chart-range";
 import { formatPercent } from "@core/format";
 import type { ProcessView } from "@core/process-interest";
-import { PageHeader } from "~/components/page-header";
+import { ModulePage } from "~/components/module-page";
 import {
   UsageAppsCard,
   type UsageTableConfig,
 } from "~/components/usage-apps-card";
-import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
 import {
   useProcessGpu,
   useProcessInterest,
 } from "~/hooks/use-process-interest";
-import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { FrequencyCard } from "./_components/frequency-card";
 import { PowerCard } from "./_components/power-card";
 import { UsageCard } from "./_components/usage-card";
@@ -64,31 +62,22 @@ export default function GpuRoute() {
   const info = useHostRecord()?.info;
   const perProcess = useProcessGpu();
   const chartWindow = useChartWindow();
-  const windowMs = chartWindow?.windowMs ?? null;
   const historical = chartWindow !== null && usageHistorical(chartWindow);
   useProcessInterest(perProcess && !historical ? GPU_VIEW : null);
   return (
-    <ChartRangeProvider>
-      <div className="flex flex-col gap-4">
-        <PageHeader
-          title="GPU"
-          subtitle={info?.chip ?? undefined}
-          actions={<WindowControl />}
-        />
-        <ChartRangeNotice />
-        {windowMs !== null && (
-          <>
-            <UsageCard windowMs={windowMs} />
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
-              <FrequencyCard windowMs={windowMs} />
-              <PowerCard windowMs={windowMs} />
-            </div>
-            {(perProcess || historical) && (
-              <UsageAppsCard windowMs={windowMs} config={TABLE} />
-            )}
-          </>
-        )}
-      </div>
-    </ChartRangeProvider>
+    <ModulePage title="GPU" subtitle={info?.chip ?? undefined}>
+      {(windowMs) => (
+        <>
+          <UsageCard windowMs={windowMs} />
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
+            <FrequencyCard windowMs={windowMs} />
+            <PowerCard windowMs={windowMs} />
+          </div>
+          {(perProcess || historical) && (
+            <UsageAppsCard windowMs={windowMs} config={TABLE} />
+          )}
+        </>
+      )}
+    </ModulePage>
   );
 }

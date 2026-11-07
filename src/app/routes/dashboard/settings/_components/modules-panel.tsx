@@ -1,44 +1,28 @@
 import type { Settings } from "@core/generated/bindings";
+import { unavailableText } from "@core/module-state";
 import {
   modulePatch,
   modulePresence,
   SETTINGS_MODULES,
-  type SettingsModule,
 } from "@core/settings-patch";
+import { ModuleToggleRow } from "~/components/module-toggle-list";
 import { SettingsPanel } from "~/components/settings-row";
-import { Switch } from "~/components/ui/switch";
+import { useHostNoun } from "~/hooks/use-host-record";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { cn } from "~/lib/utils";
 import { useHost } from "~/stores/host-store";
-import type { Accent } from "~/widgets/lib/accent";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
-
-export const MODULE_ROWS: Record<
-  SettingsModule,
-  { name: string; accent: Accent }
-> = {
-  cpu: { name: "CPU", accent: "cpu" },
-  gpu: { name: "GPU", accent: "gpu" },
-  memory: { name: "Memory", accent: "mem" },
-  power: { name: "Power & Sensors", accent: "power" },
-  network: { name: "Network", accent: "net" },
-  disk: { name: "Disk", accent: "disk" },
-  battery: { name: "Battery", accent: "battery" },
-};
-
-export const ABSENT_TEXT = {
-  not_present: "Not present on this Mac",
-  unavailable: "Not available on this Mac",
-} as const;
+import { MODULE_META } from "~/widgets/lib/module-meta";
 
 /**
  * "Modules": swatch, name and the On switch. A module the host lacks stays
- * listed, disabled. What a module shows in the menu bar is the Menu bar
- * panel's (D-102); switching a module off keeps those choices for when it
- * comes back.
+ * listed, disabled, saying why for this host. What a module shows in the
+ * menu bar is the Menu bar panel's (D-102); switching a module off keeps
+ * those choices for when it comes back.
  */
 export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
   const caps = useHost((s) => s.capabilities);
+  const noun = useHostNoun();
   const write = useWriteSettings();
 
   return (
@@ -47,49 +31,19 @@ export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
         <span className={cn(FIELD_LABEL, "flex-1")}>Module</span>
         <span className={cn(FIELD_LABEL, "w-[30px]")}>On</span>
       </div>
-      {SETTINGS_MODULES.map((m) => {
-        const row = MODULE_ROWS[m];
-        const setting = modules[m];
-        const presence = modulePresence(caps?.modules[m], caps !== null);
-        const present = presence === "present";
-        const on = present && (setting?.enabled ?? false);
-        const switchId = `settings-module-${m}`;
-        return (
-          <div
-            key={m}
-            className="flex min-h-12 items-center gap-3 border-border-subtle border-b px-4 text-[13px] last:border-b-0"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "size-2 shrink-0 rounded-mark",
-                !present && "opacity-40"
-              )}
-              style={{ background: `var(--color-${row.accent})` }}
-            />
-            <div className="flex min-w-0 flex-1 flex-col py-2">
-              <label
-                htmlFor={switchId}
-                className={cn(!on && "text-muted-foreground")}
-              >
-                {row.name}
-              </label>
-              {!present && (
-                <span className="font-normal text-[12px] text-muted-foreground">
-                  {ABSENT_TEXT[presence]}
-                </span>
-              )}
-            </div>
-            <Switch
-              id={switchId}
-              checked={on}
-              disabled={!present}
-              aria-label={`${row.name} enabled`}
-              onCheckedChange={(enabled) => write(modulePatch(m, { enabled }))}
-            />
-          </div>
-        );
-      })}
+      {SETTINGS_MODULES.map((m) => (
+        <ModuleToggleRow
+          key={m}
+          module={m}
+          checked={modules[m]?.enabled ?? false}
+          absence={unavailableText(
+            modulePresence(caps?.modules[m], caps !== null),
+            noun
+          )}
+          switchLabel={`${MODULE_META[m].name} enabled`}
+          onCheckedChange={(enabled) => write(modulePatch(m, { enabled }))}
+        />
+      ))}
     </SettingsPanel>
   );
 }

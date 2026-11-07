@@ -9,6 +9,7 @@ import { ConfirmDialog } from "~/components/confirm-dialog";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
+import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { useTransport } from "~/lib/transport-context";
 
@@ -134,16 +135,7 @@ function CliLinkRow() {
 }
 
 function SkillRow() {
-  const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(SKILL_COMMAND);
-      setCopied("copied");
-    } catch (error) {
-      console.error("[settings] copy failed", error);
-      setCopied("failed");
-    }
-  };
+  const { status: copied, copy } = useCopyToClipboard("settings");
   return (
     <SettingsRow
       label="Coding agents"
@@ -160,7 +152,11 @@ function SkillRow() {
         </span>
       }
     >
-      <Button variant="outline" size="sm" onClick={copy}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => void copy(SKILL_COMMAND)}
+      >
         {copied === "copied" ? "Copied" : "Copy command"}
       </Button>
     </SettingsRow>

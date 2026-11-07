@@ -10,6 +10,7 @@ import MemoryRoute from "~/routes/dashboard/memory/route";
 import OverviewRoute from "~/routes/dashboard/overview/route";
 import PowerRoute from "~/routes/dashboard/power/route";
 import ProcessesRoute from "~/routes/dashboard/processes/route";
+import { ModulesPanel } from "~/routes/dashboard/settings/_components/modules-panel";
 import { HostStoreProvider } from "~/stores/host-store";
 
 const NOW = 1_800_000_000_000;
@@ -164,6 +165,23 @@ describe("a Linux host (D-116)", () => {
     expect(
       screen.getByRole("option", { name: "WDC WD40EFRX-68N · sdb" })
     ).toBeVisible();
+  });
+});
+
+describe("module absence on a Linux host (D-116)", () => {
+  it("names the host, not this Mac", async () => {
+    const r = renderWithProviders(
+      <ModulesPanel modules={{ cpu: { enabled: true } }} />,
+      { transportOptions: { now: () => NOW, scenarios: ["linux"] } }
+    );
+    act(() => r.transport.tick());
+    const battery = await screen.findByRole("switch", {
+      name: "Battery enabled",
+    });
+    await waitFor(() => expect(battery).toBeDisabled());
+    expect(screen.getByText("Not present on this host")).toBeVisible();
+    expect(screen.getByText("Not available on this host")).toBeVisible();
+    expect(screen.queryByText(/this Mac/)).toBeNull();
   });
 });
 

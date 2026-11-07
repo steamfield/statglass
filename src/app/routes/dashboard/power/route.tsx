@@ -8,6 +8,7 @@ import {
 import { moduleState } from "@core/module-state";
 import { useState } from "react";
 import { BatteryDayCard } from "~/components/battery-day-card";
+import { ModulePage } from "~/components/module-page";
 import { PageHeader } from "~/components/page-header";
 import { SensorDumpDialog } from "~/components/sensor-dump-dialog";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
@@ -15,13 +16,11 @@ import {
   UsageAppsCard,
   type UsageTableConfig,
 } from "~/components/usage-apps-card";
-import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld } from "~/hooks/use-ring";
-import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 import { usePowerSource } from "~/stores/live-selectors";
 import { PowerDrawCard } from "./_components/power-draw-card";
@@ -67,7 +66,6 @@ export default function PowerRoute() {
   const unknownChip =
     caps !== null && moduleState(caps, null, "power") === "unknown_chip";
   const chartWindow = useChartWindow();
-  const windowMs = chartWindow?.windowMs ?? null;
   const historical = chartWindow !== null && usageHistorical(chartWindow);
   // A Linux agent (D-116) attributes no energy to processes.
   const energy = useProcessColumnCaps().energy;
@@ -86,30 +84,22 @@ export default function PowerRoute() {
   }
 
   return (
-    <ChartRangeProvider>
-      <div className="flex flex-col gap-4">
-        <PageHeader
-          title="Power & Sensors"
-          subtitle={<PowerSubtitle />}
-          actions={<WindowControl />}
-        />
-        <ChartRangeNotice />
-        {windowMs !== null && (
-          <>
-            <RingCards
-              topology={info?.cpu_topology ?? []}
-              hasBattery={hasBattery}
-            />
-            <PowerDrawCard windowMs={windowMs} />
-            <ZonesCard windowMs={windowMs} />
-            {(energy || historical) && (
-              <UsageAppsCard windowMs={windowMs} config={ENERGY_TABLE} />
-            )}
-            {hasBattery && <BatteryDayCard origin="tl" />}
-          </>
-        )}
-      </div>
-    </ChartRangeProvider>
+    <ModulePage title="Power & Sensors" subtitle={<PowerSubtitle />}>
+      {(windowMs) => (
+        <>
+          <RingCards
+            topology={info?.cpu_topology ?? []}
+            hasBattery={hasBattery}
+          />
+          <PowerDrawCard windowMs={windowMs} />
+          <ZonesCard windowMs={windowMs} />
+          {(energy || historical) && (
+            <UsageAppsCard windowMs={windowMs} config={ENERGY_TABLE} />
+          )}
+          {hasBattery && <BatteryDayCard origin="tl" />}
+        </>
+      )}
+    </ModulePage>
   );
 }
 

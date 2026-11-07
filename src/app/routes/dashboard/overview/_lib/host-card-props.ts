@@ -6,6 +6,7 @@
  */
 import { ratio } from "@core/chart-math";
 import { formatBytes, formatPercent, formatTemperature } from "@core/format";
+import { topBy } from "@core/top-by";
 import { type CardBase, memoryCard, powerCard } from "./card-props";
 
 /**
@@ -73,15 +74,13 @@ export function sensorPowerCard(
     "cpu" | "gpu" | "dram" | "hottestC" | "processes"
   > & { sensors: readonly { name: string; c: number | null }[] }
 ): CardBase {
-  const measured = input.sensors
-    .filter((s): s is { name: string; c: number } => s.c !== null)
-    .sort((a, b) => b.c - a.c);
+  const hottest = topBy(input.sensors, (s) => s.c, 5);
   const base = powerCard({
     ...input,
     cpu: null,
     gpu: null,
     dram: null,
-    hottestC: measured[0]?.c ?? null,
+    hottestC: hottest[0]?.value ?? null,
     processes: [],
   });
   return {
@@ -92,11 +91,11 @@ export function sensorPowerCard(
     body: {
       kind: "list",
       ariaLabel: "Temperature sensors, hottest first",
-      rows: measured.slice(0, 5).map((s) => ({
+      rows: hottest.map(({ row: s, value: c }) => ({
         id: s.name,
         initial: s.name.slice(0, 1),
         name: s.name,
-        value: formatTemperature(s.c, { units: input.temperature }),
+        value: formatTemperature(c, { units: input.temperature }),
       })),
     },
   };

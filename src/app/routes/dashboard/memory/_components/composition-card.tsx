@@ -8,7 +8,7 @@ import { SectionCard } from "~/components/section-card";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
 import { StackBar } from "~/widgets/stack-bar";
-import { StatStrip, type StatStripItem } from "~/widgets/stat-strip";
+import { StatList, type StatListItem } from "~/widgets/stat-list";
 import { pressureState } from "../_lib/pressure";
 
 const HELD = [
@@ -84,7 +84,7 @@ export function CompositionCard({
   const state = pressureState(at("mem.pressure_level"));
   const layout = useLayout();
   const has = (metric: string) => layout?.byMetric.has(metric) ?? false;
-  const items: StatStripItem[] = [];
+  const items: StatListItem[] = [];
   if (has("mem.psi") && !has("mem.pressure")) {
     // Linux pressure stall information: time some, and all, tasks waited.
     items.push({
@@ -125,7 +125,7 @@ export function CompositionCard({
         className="gap-4"
       >
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
-          <StatStrip
+          <StatList
             hero={{
               label: "Used",
               value:

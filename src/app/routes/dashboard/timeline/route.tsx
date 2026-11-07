@@ -4,19 +4,17 @@ import { commandError, errorTone } from "@core/command-error";
 import type { ModuleCap } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import { failureReason } from "@core/remote-errors";
-import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  DownloadIcon,
-} from "lucide-react";
+import { DAY_MS } from "@core/time-grid";
+import { ArrowLeft, DownloadIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   HistoricalUsageCard,
   type HistoricalUsageSort,
 } from "~/components/historical-usage-card";
 import { HistoryNotices } from "~/components/history-notices";
+import { HistoryRangeControl } from "~/components/history-range-control";
 import { InlineMessage } from "~/components/inline-message";
+import { PageHeader } from "~/components/page-header";
 import { Button } from "~/components/ui/button";
 import { WindowControl } from "~/components/window-control";
 import { useEvents } from "~/hooks/use-events";
@@ -50,7 +48,7 @@ export default function TimelineRoute() {
   const clock = useHostClock();
   const navigation = useRangeNavigation();
   const view: TimelineView = navigation.range ?? {
-    windowMs: 86_400_000,
+    windowMs: DAY_MS,
     endMs: null,
   };
   const span = presentationSpan(view.windowMs);
@@ -120,91 +118,72 @@ export default function TimelineRoute() {
 
   return (
     <div ref={topRef} className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-center gap-4">
-        <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
-          <h1
-            ref={headingRef}
-            tabIndex={-1}
-            className="font-[590] text-[22px] tracking-[-0.022em] outline-none"
-          >
-            Timeline
-          </h1>
-          <span className="font-normal text-[12px] text-muted-foreground">
+      <PageHeader
+        title="Timeline"
+        headingRef={headingRef}
+        subtitle={
+          <>
             {live ? "Live · " : "Recorded · "}
             <span className="figures">
               {recordedDate(data.fromMs)} to {recordedDate(data.toMs)}
             </span>
             {" · "}
             {timezone}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!navigation.canBack || navigation.pending}
-            onClick={navigation.back}
-          >
-            <ArrowLeft />
-            Back
-          </Button>
-          <WindowControl onApply={(value) => void navigation.apply(value)} />
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Previous range"
-            disabled={navigation.pending}
-            onClick={() => step(-1)}
-          >
-            <ChevronLeft />
-          </Button>
-          {!live && (
+          </>
+        }
+        actions={
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!navigation.canBack || navigation.pending}
+                onClick={navigation.back}
+              >
+                <ArrowLeft />
+                Back
+              </Button>
+              <HistoryRangeControl
+                picker={
+                  <WindowControl
+                    onApply={(value) => void navigation.apply(value)}
+                  />
+                }
+                live={live}
+                pending={navigation.pending}
+                onPrevious={() => step(-1)}
+                onNext={() => step(1)}
+                onLive={navigation.live}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                aria-pressed={comparing}
+                disabled={!comparisonAllowed || navigation.pending}
+                onClick={() => setCompare((value) => !value)}
+              >
+                Compare previous interval
+              </Button>
+            </div>
             <Button
               variant="outline"
-              size="icon"
-              aria-label="Next range"
-              disabled={navigation.pending}
-              onClick={() => step(1)}
+              size="sm"
+              disabled={exporting || lanes.length === 0}
+              onClick={() =>
+                void exportCsv({
+                  windowMs: view.windowMs,
+                  fromMs: data.fromMs,
+                  toMs: data.toMs,
+                  lanes,
+                })
+              }
             >
-              <ChevronRight />
+              <DownloadIcon />
+              Export CSV
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            aria-pressed={live}
-            disabled={navigation.pending}
-            onClick={navigation.live}
-          >
-            Live
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-pressed={comparing}
-            disabled={!comparisonAllowed || navigation.pending}
-            onClick={() => setCompare((value) => !value)}
-          >
-            Compare previous interval
-          </Button>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={exporting || lanes.length === 0}
-          onClick={() =>
-            void exportCsv({
-              windowMs: view.windowMs,
-              fromMs: data.fromMs,
-              toMs: data.toMs,
-              lanes,
-            })
-          }
-        >
-          <DownloadIcon />
-          Export CSV
-        </Button>
-      </header>
+          </>
+        }
+      />
 
       <HistoryNotices
         health={history.health}

@@ -11,8 +11,7 @@ import type { ResidencyBarProps } from "../residency-bar";
 import type { RingGaugeProps } from "../ring-gauge";
 import type { RingStatCardProps } from "../ring-stat-card";
 import type { StackBarProps } from "../stack-bar";
-import type { StatGridProps } from "../stat-grid";
-import type { StatStripProps } from "../stat-strip";
+import type { StatListProps } from "../stat-list";
 
 function procs(rows: [string, string, string][]): ProcessListRow[] {
   return rows.map(([initial, name, value], i) => ({
@@ -366,17 +365,19 @@ export const POWER_STACK_BAR: StackBarProps = {
   ],
 };
 
-export const POWER_STAT_GRID: StatGridProps = {
+export const POWER_STAT_GRID: StatListProps = {
+  layout: "grid",
   accent: "power",
   items: [
-    { label: "CPU", value: "6.4 W", step: 1 },
-    { label: "GPU", value: "3.1 W", step: 2 },
-    { label: "ANE", value: "0.0 W", step: "hatch", muted: true },
-    { label: "DRAM", value: "0.9 W", step: 3 },
+    { label: "CPU", value: "6.4 W", swatch: 1 },
+    { label: "GPU", value: "3.1 W", swatch: 2 },
+    { label: "ANE", value: "0.0 W", swatch: "hatch", muted: true },
+    { label: "DRAM", value: "0.9 W", swatch: 3 },
   ],
 };
 
-export const GPU_STAT_GRID: StatGridProps = {
+export const GPU_STAT_GRID: StatListProps = {
+  layout: "grid",
   items: [
     { label: "Freq", value: "1.1 GHz" },
     { label: "Power", value: "3.1 W" },
@@ -384,7 +385,8 @@ export const GPU_STAT_GRID: StatGridProps = {
   ],
 };
 
-export const BATTERY_STAT_GRID: StatGridProps = {
+export const BATTERY_STAT_GRID: StatListProps = {
+  layout: "grid",
   items: [
     { label: "Remaining", value: "6:12" },
     { label: "Health", value: "94%" },
@@ -392,7 +394,7 @@ export const BATTERY_STAT_GRID: StatGridProps = {
   ],
 };
 
-export const CPU_STAT_STRIP: StatStripProps = {
+export const CPU_STAT_STRIP: StatListProps = {
   accent: "cpu",
   hero: { label: "Total", value: "18%" },
   items: [
@@ -403,7 +405,7 @@ export const CPU_STAT_STRIP: StatStripProps = {
   ],
 };
 
-export const BATTERY_STAT_STRIP: StatStripProps = {
+export const BATTERY_STAT_STRIP: StatListProps = {
   items: [
     { label: "Charge", value: "87%" },
     { label: "Health", value: "94%" },

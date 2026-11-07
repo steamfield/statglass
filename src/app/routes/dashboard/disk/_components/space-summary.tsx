@@ -1,11 +1,11 @@
-import { bytesParts, formatBytes, formatSpan } from "@core/format";
+import { bytesParts, formatBytes, formatSpan, MISSING } from "@core/format";
 import type { SpaceReport, SpaceScanStatus } from "@core/generated/bindings";
 import { ChevronRight } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useNow } from "~/hooks/use-now";
 import { MeterTrack } from "~/widgets/meter-track";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import {
   agoLabel,
   elapsedLabel,
@@ -89,7 +89,7 @@ export function SpaceSummary({
     {
       label: "Other",
       value:
-        report.other_bytes === null ? "—" : formatBytes(report.other_bytes),
+        report.other_bytes === null ? MISSING : formatBytes(report.other_bytes),
       swatch: "hatch" as const,
     },
     {
@@ -101,7 +101,7 @@ export function SpaceSummary({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <StatStrip
+        <StatList
           accent="disk"
           hero={{
             label: "Used",

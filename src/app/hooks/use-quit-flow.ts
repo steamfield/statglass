@@ -12,10 +12,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  useEdition,
+  useCanSignal,
   useMarkProcessSignalUnavailable,
 } from "~/hooks/use-edition";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -71,8 +70,7 @@ export interface QuitFlow {
 /** One immutable, host-bound request; every target still passes Rust's guards. */
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function useQuitFlow(): QuitFlow {
-  const local = useIsLocalHost();
-  const edition = useEdition();
+  const canSignal = useCanSignal();
   const transport = useTransport();
   const hostId = useHostId();
   const [pending, setPending] = useState<QuitRequest | null>(null);
@@ -85,7 +83,7 @@ export function useQuitFlow(): QuitFlow {
   const currentHost = useRef(hostId);
   currentHost.current = hostId;
   const allowed = useRef(false);
-  allowed.current = local && edition?.process_signal === true;
+  allowed.current = canSignal;
   const markUnavailable = useMarkProcessSignalUnavailable();
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import type { HostInfo } from "@core/generated/bindings";
+import { unavailableText } from "@core/module-state";
 import {
   modulePresence,
   type OnboardingChoices,
@@ -14,50 +15,13 @@ import {
 import { TrayStyleGroup } from "~/components/tray-style-option";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
+import { useHostNoun } from "~/hooks/use-host-record";
 import { cn } from "~/lib/utils";
 import { useHost } from "~/stores/host-store";
-import type { Accent } from "~/widgets/lib/accent";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { chipStatus, defaultEnabled } from "../_lib/setup";
 import { OnboardingFrame } from "./onboarding-frame";
 import { TrayStyleCards } from "./tray-style-cards";
-
-const MODULES: Record<
-  SettingsModule,
-  { label: string; description: string; accent: Accent }
-> = {
-  cpu: { label: "CPU", description: "Load, clusters, per-core", accent: "cpu" },
-  gpu: {
-    label: "GPU",
-    description: "Utilization and frequency",
-    accent: "gpu",
-  },
-  memory: {
-    label: "Memory",
-    description: "Pressure, composition, swap",
-    accent: "mem",
-  },
-  power: {
-    label: "Power & Sensors",
-    description: "Watts, SoC zones, fans",
-    accent: "power",
-  },
-  network: {
-    label: "Network",
-    description: "Rates per interface",
-    accent: "net",
-  },
-  disk: {
-    label: "Disk",
-    description: "Throughput and capacity",
-    accent: "disk",
-  },
-  battery: {
-    label: "Battery",
-    description: "Charge, health, cycles",
-    accent: "battery",
-  },
-};
 
 /** Step 1 of 2: modules, menu bar style, launch at login. */
 export function SetupStep({
@@ -72,6 +36,7 @@ export function SetupStep({
   onContinue: (choices: OnboardingChoices) => void;
 }) {
   const caps = useHost((s) => s.capabilities);
+  const noun = useHostNoun();
   const [touched, setTouched] = useState<
     Partial<Record<SettingsModule, boolean>>
   >({});
@@ -81,19 +46,21 @@ export function SetupStep({
   const defaults = defaultEnabled(caps);
   const items: ModuleToggleItem[] = SETTINGS_MODULES.map((m) => ({
     id: m,
-    ...MODULES[m],
-    available: modulePresence(caps?.modules[m], caps !== null) === "present",
+    absence: unavailableText(
+      modulePresence(caps?.modules[m], caps !== null),
+      noun
+    ),
     enabled: touched[m] ?? defaults[m],
   }));
   const status = chipStatus(hostInfo);
   const enabledNow = Object.fromEntries(
-    items.map((i) => [i.id, i.available && i.enabled])
+    items.map((i) => [i.id, i.absence === null && i.enabled])
   ) as Record<SettingsModule, boolean>;
 
   const submit = () => {
     const enabled: OnboardingChoices["enabled"] = {};
     for (const item of items) {
-      if (item.available) enabled[item.id as SettingsModule] = item.enabled;
+      if (item.absence === null) enabled[item.id] = item.enabled;
     }
     onContinue({ enabled, style, launchAtLogin });
   };
@@ -141,9 +108,7 @@ export function SetupStep({
           <span className={FIELD_LABEL}>Modules</span>
           <ModuleToggleList
             modules={items}
-            onToggle={(id, on) =>
-              setTouched((t) => ({ ...t, [id as SettingsModule]: on }))
-            }
+            onToggle={(id, on) => setTouched((t) => ({ ...t, [id]: on }))}
           />
         </div>
         <TrayStyleGroup

@@ -1,4 +1,5 @@
 import { clamp01 } from "@core/chart-math";
+import { Swatch } from "./legend";
 import { type Accent, accentVars } from "./lib/accent";
 
 export interface ResidencyBarProps {
@@ -69,11 +70,7 @@ export function ResidencyBar({
       <ul className="flex flex-col gap-[3px]">
         {states.map((s) => (
           <li key={s.label} className="flex items-center gap-2 text-[11px]">
-            <span
-              aria-hidden
-              className="size-2 shrink-0 rounded-mark"
-              style={{ background: color(s.label) }}
-            />
+            <Swatch step="none" color={color(s.label)} />
             <span className="figures flex-1 text-fg-subtle">{s.label}</span>
             <span className="figures">{Math.round(s.pct)}%</span>
           </li>

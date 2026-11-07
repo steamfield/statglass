@@ -1,3 +1,4 @@
+import { matchText } from "@core/app-search";
 import {
   DOCKER_MAX_RANGE_MS,
   type DockerContainer,
@@ -157,13 +158,10 @@ class MockDocker {
     );
   }
   readonly dockerRetained: Transport["dockerRetained"] = async (request) => {
-    const needle = request.search.toLocaleLowerCase();
     const matches = this.retained.filter(
       (row) =>
         (!request.engine_id || row.engine_id === request.engine_id) &&
-        `${row.name} ${row.image} ${row.project ?? ""}`
-          .toLocaleLowerCase()
-          .includes(needle)
+        matchText(request.search, row.name, row.image, row.project)
     );
     const limit = Math.min(100, Math.max(1, request.limit));
     return ok({

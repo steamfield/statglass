@@ -10,6 +10,7 @@ import type {
   ModuleCap,
   Settings,
 } from "@core/generated/bindings";
+import type { ModulePresence } from "@core/settings-patch";
 
 /** The seven modules the sidebar, popover and Overview list, in order. */
 export const UI_MODULES = [
@@ -23,16 +24,6 @@ export const UI_MODULES = [
 ] as const;
 
 export type UiModule = (typeof UI_MODULES)[number];
-
-export const MODULE_NAMES: Record<UiModule, string> = {
-  cpu: "CPU",
-  gpu: "GPU",
-  memory: "Memory",
-  power: "Power & Sensors",
-  network: "Network",
-  disk: "Disk",
-  battery: "Battery",
-};
 
 export type ModuleState =
   /** Measured and switched on. */
@@ -90,12 +81,18 @@ export function isUnknownChip(caps: Capabilities | null): boolean {
     : false;
 }
 
-/** Text for a card whose module cannot run here. */
+/**
+ * The one wording for a module that cannot run here, naming the host it is
+ * about (`hostNoun`: "Mac", or "host" for a Linux agent): "Not present on
+ * this host", "Not available on this Mac", "Not available in this edition".
+ * Null for a module that can run.
+ */
 export function unavailableText(
-  state: ModuleState,
-  noun: "Mac" | "host" = "Mac"
+  state: ModuleState | ModulePresence,
+  noun: "Mac" | "host"
 ): string | null {
   if (state === "edition") return "Not available in this edition";
   if (state === "unavailable") return `Not available on this ${noun}`;
+  if (state === "absent") return `Not present on this ${noun}`;
   return null;
 }

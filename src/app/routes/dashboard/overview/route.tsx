@@ -2,6 +2,7 @@ import { isUnknownChip, type UiModule } from "@core/module-state";
 import type { ProcessView } from "@core/process-interest";
 import type { ReactNode } from "react";
 import { CardGrid } from "~/components/card-grid";
+import { PageHeader } from "~/components/page-header";
 import {
   SensorDumpDialog,
   useSensorDumpDialog,
@@ -96,12 +97,10 @@ export default function OverviewRoute() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="m-0 font-[590] text-[22px] tracking-[-0.022em]">
-          Overview
-        </h1>
-        <StatusPill {...samplingStatus(sampling)} />
-      </header>
+      <PageHeader
+        title="Overview"
+        actions={<StatusPill {...samplingStatus(sampling)} />}
+      />
       <LiveMachineHeader />
       <CardGrid items={items} getKey={([m]) => m}>
         {([m, Card], origin) =>

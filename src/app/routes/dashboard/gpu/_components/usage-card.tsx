@@ -8,7 +8,7 @@ import {
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 
 const HELD = ["gpu.util", "gpu.render", "gpu.tiler", "gpu.freq", "power.gpu"];
 const CHART = ["gpu.util"];
@@ -37,7 +37,7 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
     <div {...brushScopeProps} className="contents">
       <SectionCard accent="gpu" title="GPU utilization" hiddenTitle>
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
-          <StatStrip
+          <StatList
             hero={{ label: "Utilization", value: formatPercent(util) }}
             items={[
               { label: "Renderer", value: formatPercent(v["gpu.render"]) },

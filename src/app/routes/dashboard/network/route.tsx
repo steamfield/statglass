@@ -5,13 +5,12 @@ import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
 import { InterfaceTable } from "~/components/interface-table";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
-import { PageHeader } from "~/components/page-header";
+import { ModulePage } from "~/components/module-page";
 import {
   type RangeTotal,
   RangeTotalsStrip,
 } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
-import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -19,10 +18,9 @@ import { useUsageHistorical } from "~/hooks/use-module-end";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useNetwork, usePrimaryIface } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import { AddressLine } from "./_components/address-line";
 import { AppsCard } from "./_components/apps-card";
 import { AppsNowCard } from "./_components/apps-now-card";
@@ -61,7 +59,6 @@ export default function NetworkRoute() {
   // Null until settings load: the page waits rather than draw a span it would
   // redo, and the Apps card reads nothing.
   const chartWindow = useChartWindow();
-  const windowMs = chartWindow?.windowMs ?? null;
   const gaps = useGapBands("network", chartWindow);
   const units = useUnits();
   const net = useNetwork();
@@ -88,86 +85,81 @@ export default function NetworkRoute() {
   const brush = perProcess && history === true;
 
   return (
-    <ChartRangeProvider>
-      <div className="flex flex-col gap-4">
-        <PageHeader
-          title="Network"
-          subtitle={
-            <>
-              {networkSubtitle(primary, link)}
-              {local && <AddressLine primary={primary} />}
-            </>
-          }
-          actions={<WindowControl />}
-        />
-        <ChartRangeNotice />
-        {windowMs !== null && (
-          <>
-            <div {...{ [BRUSH_SCOPE_ATTR]: "" }} className="contents">
-              <SectionCard
-                accent="net"
-                title="Throughput"
-                hiddenTitle
-                className="gap-4"
-              >
-                <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
-                  <StatStrip
-                    hero={{ label: "↓ Download", value: rate(net.rx) }}
-                    items={[
-                      { label: "↑ Upload", value: rate(net.tx) },
-                      {
-                        label: "Of link",
-                        value: formatPercent(ofLink(net.rx, link), {
-                          decimals: 1,
-                        }),
-                      },
-                    ]}
-                  />
-                  <RangeTotalsStrip
-                    windowMs={windowMs}
-                    totals={TOTALS}
-                    testId="network-totals"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <LiveMirrorChart
-                    brush={brush}
-                    gaps={gaps}
-                    subject="Network"
-                    upKey="net.tx_total"
-                    downKey="net.rx_total"
-                    upLabel="Upload"
-                    downLabel="Download"
-                    windowMs={windowMs}
-                    accent="net"
-                    format={(v) => formatRate(v, { units: units.rate })}
-                    minCeiling={100_000}
-                  />
-                  {brush && <SelectionSummary windowMs={windowMs} />}
-                </div>
-              </SectionCard>
-              <NetworkApps
-                windowMs={windowMs}
-                local={local}
-                perProcess={perProcess}
-                history={history}
-              />
-            </div>
+    <ModulePage
+      title="Network"
+      subtitle={
+        <>
+          {networkSubtitle(primary, link)}
+          {local && <AddressLine primary={primary} />}
+        </>
+      }
+    >
+      {(windowMs) => (
+        <>
+          <div {...{ [BRUSH_SCOPE_ATTR]: "" }} className="contents">
             <SectionCard
               accent="net"
-              origin="br"
-              title="Interfaces"
-              variant="default"
+              title="Throughput"
+              hiddenTitle
+              className="gap-4"
             >
-              <InterfaceTable
-                rows={interfaceRows(ifaces, held)}
-                units={units.rate}
-              />
+              <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
+                <StatList
+                  hero={{ label: "↓ Download", value: rate(net.rx) }}
+                  items={[
+                    { label: "↑ Upload", value: rate(net.tx) },
+                    {
+                      label: "Of link",
+                      value: formatPercent(ofLink(net.rx, link), {
+                        decimals: 1,
+                      }),
+                    },
+                  ]}
+                />
+                <RangeTotalsStrip
+                  windowMs={windowMs}
+                  totals={TOTALS}
+                  testId="network-totals"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <LiveMirrorChart
+                  brush={brush}
+                  gaps={gaps}
+                  subject="Network"
+                  upKey="net.tx_total"
+                  downKey="net.rx_total"
+                  upLabel="Upload"
+                  downLabel="Download"
+                  windowMs={windowMs}
+                  accent="net"
+                  format={(v) => formatRate(v, { units: units.rate })}
+                  minCeiling={100_000}
+                />
+                {brush && <SelectionSummary windowMs={windowMs} />}
+              </div>
             </SectionCard>
-          </>
-        )}
-      </div>
-    </ChartRangeProvider>
+            <NetworkApps
+              windowMs={windowMs}
+              local={local}
+              perProcess={perProcess}
+              history={history}
+            />
+          </div>
+          <SectionCard
+            accent="net"
+            origin="br"
+            title="Interfaces"
+            variant="default"
+          >
+            <InterfaceTable
+              rows={interfaceRows(ifaces, held)}
+              units={units.rate}
+            />
+          </SectionCard>
+        </>
+      )}
+    </ModulePage>
   );
 }
 

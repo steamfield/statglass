@@ -8,10 +8,9 @@ import { type ProcessSort, ProcessTable } from "~/components/process-table";
 import { SearchField } from "~/components/search-field";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
-import { useEdition } from "~/hooks/use-edition";
+import { useCanSignal } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
 import { useHostNoun } from "~/hooks/use-host-record";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import {
   useProcessColumnCaps,
   useProcessGpu,
@@ -55,10 +54,8 @@ const isColumnSet = (value: string): value is ColumnSet =>
  * holds while the pointer is over the table. Quit and Force Quit (D-029) are
  * a hover action and the row's context menu, each behind a confirm dialog.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export default function ProcessesRoute() {
   const [params] = useSearchParams();
-  const local = useIsLocalHost();
   const processNetwork = useProcessNetwork();
   const processGpu = useProcessGpu();
   const caps = useProcessColumnCaps();
@@ -93,8 +90,7 @@ export default function ProcessesRoute() {
   const rows = live ?? EMPTY;
   const units = useUnits();
   // The App Store edition has no Quit or Force Quit (D-065).
-  const edition = useEdition();
-  const canSignal = local && edition?.process_signal === true;
+  const canSignal = useCanSignal();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<ProcessSort>(() => COLUMN_SETS[chosen].sort);
   // The table's sort, unless it names a column the shown set does not have.

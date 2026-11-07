@@ -15,6 +15,11 @@ export interface SectionCardProps {
   /** Sentence case, names the measurement ("Battery, last 24 hours"). */
   title: string;
   /**
+   * One muted line under the title that carries a fact or an instruction
+   * the title lacks (design-system.md; no paraphrase of the title).
+   */
+  subtitle?: ReactNode;
+  /**
    * Keep the title for assistive tech only: the card's figures (a stat
    * strip) already say what it is. No header row is drawn.
    */
@@ -48,6 +53,7 @@ export function SectionCard({
   accent,
   origin,
   title,
+  subtitle,
   hiddenTitle = false,
   aside,
   headerAlign = "start",
@@ -85,15 +91,31 @@ export function SectionCard({
             flush && "min-h-6 px-4 pt-3.5 pb-2"
           )}
         >
-          <h2
-            id={titleId}
-            className={cn(
-              "flex-1 font-[590] text-[14px]",
-              !compactHeader && "min-w-48"
-            )}
-          >
-            {title}
-          </h2>
+          {subtitle === undefined ? (
+            <h2
+              id={titleId}
+              className={cn(
+                "flex-1 font-[590] text-[14px]",
+                !compactHeader && "min-w-48"
+              )}
+            >
+              {title}
+            </h2>
+          ) : (
+            <div
+              className={cn(
+                "flex flex-1 flex-col gap-0.5",
+                !compactHeader && "min-w-48"
+              )}
+            >
+              <h2 id={titleId} className="font-[590] text-[14px]">
+                {title}
+              </h2>
+              <span className="font-normal text-[12px] text-muted-foreground">
+                {subtitle}
+              </span>
+            </div>
+          )}
           {aside}
         </div>
       )}

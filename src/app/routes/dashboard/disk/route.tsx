@@ -32,7 +32,7 @@ import { useBrushRange, useBrushStore } from "~/stores/brush-store";
 import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 import { useMemory } from "~/stores/live-selectors";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatList } from "~/widgets/stat-list";
 import { DiskIoCharts } from "./_components/disk-io-charts";
 import { DiskProcesses } from "./_components/disk-processes";
 import { DiskRangeTotals } from "./_components/disk-range-totals";
@@ -359,7 +359,7 @@ function CurrentRates({ device }: { device: string | null }) {
   const write = device === null ? "disk.write_total" : writeKey(device);
   const values = useHeld([read, write]);
   return (
-    <StatStrip
+    <StatList
       hero={{ label: "Read/s now", value: formatRate(values[read] ?? null) }}
       items={[
         { label: "Write/s now", value: formatRate(values[write] ?? null) },

@@ -91,15 +91,23 @@ export function modulePatch(
  * Whether a module can be switched on here. Until capabilities arrive
  * (`known` false) the row stays usable.
  */
-export type ModulePresence = "present" | "not_present" | "unavailable";
+/**
+ * Whether a module's settings row can be used: the host has it, lacks the
+ * hardware, cannot run it, or this build leaves it out (`missing_entitlement`).
+ */
+export type ModulePresence = "present" | "absent" | "unavailable" | "edition";
 
 export function modulePresence(
   cap: ModuleCap | undefined,
   known: boolean
 ): ModulePresence {
   if (!known) return "present";
-  if (cap === undefined || cap === "not_present") return "not_present";
-  if (cap === "unknown" || "unsupported" in cap) return "unavailable";
+  if (cap === undefined || cap === "not_present") return "absent";
+  if (cap === "unknown") return "unavailable";
+  if ("unsupported" in cap)
+    return cap.unsupported === "missing_entitlement"
+      ? "edition"
+      : "unavailable";
   return "present";
 }
 

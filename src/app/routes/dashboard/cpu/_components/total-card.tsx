@@ -10,7 +10,7 @@ import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
-import { StatStrip, type StatStripItem } from "~/widgets/stat-strip";
+import { StatList, type StatListItem } from "~/widgets/stat-list";
 
 const LOADAVG = ["1", "5", "15"].map((window) => sk("cpu.loadavg", { window }));
 const PSI = ["cpu.psi{stall=some}", "cpu.psi{stall=full}"];
@@ -46,7 +46,7 @@ const pct1 = (v: number | null | undefined) =>
  * series (D-116), shown when the layout carries them. Idle is what neither
  * the total (user + system + steal) nor I/O wait took.
  */
-function useStripItems(): { total: number | null; items: StatStripItem[] } {
+function useStripItems(): { total: number | null; items: StatListItem[] } {
   const v = useHeld(HELD);
   const layout = useLayout();
   const has = (metric: string) => layout?.byMetric.has(metric) ?? false;
@@ -57,7 +57,7 @@ function useStripItems(): { total: number | null; items: StatStripItem[] } {
       ? null
       : 100 - total - (iowait ?? 0);
   const [l1, l5, l15] = LOADAVG.map((k) => v[k] ?? null);
-  const items: StatStripItem[] = [
+  const items: StatListItem[] = [
     { label: "User", value: pct1(v["cpu.user"]) },
     { label: "System", value: pct1(v["cpu.system"]), swatch: 2 },
   ];
@@ -100,7 +100,7 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
         className="col-span-2"
       >
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
-          <StatStrip
+          <StatList
             hero={{ label: "Total", value: formatPercent(total) }}
             items={items}
           />

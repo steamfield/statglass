@@ -44,24 +44,33 @@ export function Swatch({
   size = 8,
   color,
   dashed = false,
+  className,
 }: {
   step: SwatchStep;
   size?: 7 | 8;
+  /** A series or module color in place of the ramp step. */
   color?: string | undefined;
   dashed?: boolean | undefined;
+  className?: string | undefined;
 }) {
   const dim = size === 8 ? "size-2" : "size-[7px]";
   if (step === "none" && !color)
-    return <span aria-hidden className={cn(dim, "shrink-0")} />;
+    return (
+      <span
+        aria-hidden
+        className={cn(dim, "inline-block shrink-0", className)}
+      />
+    );
   return (
     <span
       aria-hidden
       data-dashed={dashed || undefined}
       className={cn(
         dim,
-        "shrink-0 rounded-mark",
+        "inline-block shrink-0 rounded-mark",
         step === "track" &&
-          "bg-track shadow-[inset_0_0_0_1px_var(--color-border)]"
+          "bg-track shadow-[inset_0_0_0_1px_var(--color-border)]",
+        className
       )}
       style={
         color

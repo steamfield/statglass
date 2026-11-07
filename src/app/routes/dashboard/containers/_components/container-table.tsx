@@ -212,7 +212,7 @@ export function ContainerTable({
   return (
     <div className="@container">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
-        <p className="mr-auto text-[14px]">{title}</p>
+        <h3 className="mr-auto font-[590] text-[14px]">{title}</h3>
         {filters}
         <span className="text-[11px] text-muted-foreground">
           {rows.length} matching containers

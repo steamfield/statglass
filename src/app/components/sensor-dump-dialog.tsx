@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -50,14 +51,13 @@ export function SensorDumpDialog({
   });
   const json = data ? JSON.stringify(data, null, 2) : "";
 
+  const clipboard = useCopyToClipboard(`sensor-dump ${hostId}`);
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(json);
-      toast("Sensor dump copied");
-    } catch (err) {
-      console.error("[sensor-dump] copy failed", { hostId, err });
-      toast("Couldn't copy. Select the text and copy it instead.");
-    }
+    toast(
+      (await clipboard.copy(json))
+        ? "Sensor dump copied"
+        : "Couldn't copy. Select the text and copy it instead."
+    );
   };
 
   const save = () => {

@@ -32,12 +32,7 @@ export function MonitoringDialog({
         <DialogDescription>
           Follow containers in one local Docker engine.
         </DialogDescription>
-        <EngineChooser
-          settings={snapshot.settings}
-          onChange={onChange}
-          onClose={() => {}}
-          embedded
-        />
+        <EngineChooser settings={snapshot.settings} onChange={onChange} />
         <section className="space-y-2 text-[12px]">
           <h3 className="text-[13px]">Automatic collection</h3>
           <p className="text-muted-foreground">

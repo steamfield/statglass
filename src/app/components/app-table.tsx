@@ -79,6 +79,16 @@ export function UnrecordedRange({ children }: { children: ReactNode }) {
   );
 }
 
+/** The dashed square that marks a remainder row ("System and other"). */
+export function OtherChip() {
+  return (
+    <span
+      aria-hidden
+      className="inline-block size-4 flex-none rounded-[4px] border border-border-strong/50 border-dashed"
+    />
+  );
+}
+
 /**
  * A remainder row after the apps ("Other apps", "System and other"): muted,
  * a rule above the first, a dashed square marking the system row. `indent`
@@ -113,10 +123,7 @@ export function OtherAppsRow({
         <span className="inline-flex items-center gap-2">
           {indent && <span aria-hidden className="-ml-1 inline-block size-4" />}
           {system ? (
-            <span
-              aria-hidden
-              className="inline-block size-4 flex-none rounded-[4px] border border-border-strong/50 border-dashed"
-            />
+            <OtherChip />
           ) : (
             <span aria-hidden className="inline-block w-4 flex-none" />
           )}

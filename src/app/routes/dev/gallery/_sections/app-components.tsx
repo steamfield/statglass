@@ -1,9 +1,11 @@
+import { MISSING } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
 import {
   DEFAULT_MENU_BAR,
   type TrayStyle,
   trayStyleMenuBar,
 } from "@core/settings-patch";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import {
   type TrayReadings,
   type TrayUnits,
@@ -72,7 +74,7 @@ const DATA_COLUMNS = dataHelper.columns([
     id: "value",
     header: "% CPU",
     meta: { align: "right" },
-    cell: (cell) => cell.getValue() ?? "—",
+    cell: (cell) => cell.getValue() ?? MISSING,
   }),
 ]);
 const DATA_ROWS = [
@@ -272,62 +274,13 @@ const PROCESS_ROWS: LiveProcess[] = PROCS.map(
 
 // Onboarding modules (Battery shown as absent to exercise that state).
 const MODULES: ModuleToggleItem[] = [
-  {
-    id: "cpu",
-    label: "CPU",
-    description: "Load, clusters, per-core",
-    accent: "cpu",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "gpu",
-    label: "GPU",
-    description: "Utilization and frequency",
-    accent: "gpu",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "memory",
-    label: "Memory",
-    description: "Pressure, composition, swap",
-    accent: "mem",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "power",
-    label: "Power & Sensors",
-    description: "Watts, SoC zones, fans",
-    accent: "power",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "network",
-    label: "Network",
-    description: "Rates per interface",
-    accent: "net",
-    enabled: true,
-    available: true,
-  },
-  {
-    id: "disk",
-    label: "Disk",
-    description: "Throughput and capacity",
-    accent: "disk",
-    enabled: false,
-    available: true,
-  },
-  {
-    id: "battery",
-    label: "Battery",
-    description: "Charge, health, cycles",
-    accent: "battery",
-    enabled: true,
-    available: false,
-  },
+  { id: "cpu", enabled: true, absence: null },
+  { id: "gpu", enabled: true, absence: null },
+  { id: "memory", enabled: true, absence: null },
+  { id: "power", enabled: true, absence: null },
+  { id: "network", enabled: true, absence: null },
+  { id: "disk", enabled: false, absence: null },
+  { id: "battery", enabled: true, absence: "Not present on this Mac" },
 ];
 
 const TRAY: TrayReadings = {
@@ -421,7 +374,7 @@ function ContainerComparisonSample() {
       <ComparisonChart
         series={series}
         metric="cpu"
-        from={NOW_MS - 86_400_000}
+        from={NOW_MS - DAY_MS}
         to={NOW_MS}
         live={false}
         range="24h"
@@ -512,7 +465,7 @@ export function AppComponentsSection() {
           >
             <PopoverHeader
               hostName="MacBook Pro"
-              uptimeMs={(3 * 24 + 4) * 3_600_000 + 12 * 60_000}
+              uptimeMs={(3 * 24 + 4) * HOUR_MS + 12 * MINUTE_MS}
               status={{ state: "live", label: "1s" }}
               paused={false}
               onPause={noop}
@@ -533,7 +486,7 @@ export function AppComponentsSection() {
           >
             <PopoverHeader
               hostName="MacBook Pro"
-              uptimeMs={(3 * 24 + 4) * 3_600_000}
+              uptimeMs={(3 * 24 + 4) * HOUR_MS}
               status={{ state: "paused", label: "Paused" }}
               paused
               scrolled
