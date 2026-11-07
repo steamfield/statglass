@@ -31,7 +31,10 @@ export function patchSearchParams(
 
 /**
  * Writes route state into the URL. Every patch replaces the history entry
- * unless it asks to `push` one, and builds on the latest params.
+ * unless it asks to `push` one, and builds on the params of the last render.
+ * React Router's functional `setSearchParams` does not queue updates, so two
+ * patches in one event don't compose: the second drops the first. Send one
+ * patch per event, combining its keys.
  */
 export function useSearchParamPatch(pageKey?: string) {
   const [, setParams] = useSearchParams();

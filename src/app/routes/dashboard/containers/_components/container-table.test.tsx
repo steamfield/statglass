@@ -225,3 +225,66 @@ it("historical mode keeps removed identities and labels metric peaks", () => {
   result.unmount();
   result.transport.dispose();
 });
+
+it("groups a virtualized table, collapses and restores members, and scrolls to a focused member", () => {
+  // Alpha sorts first: 60 busy containers, then 60 idle beta ones.
+  const rows = Array.from({ length: 120 }, (_, i) => ({
+    ...mockContainer(i, 1000),
+    name: `container ${i}`,
+    project: i < 60 ? "alpha" : "beta",
+    lifecycle: "running" as const,
+    metrics: { ...mockContainer(i, 1000).metrics, cpu_pct: 200 - i },
+  }));
+  let view: (collapsed: string[], focused?: string) => void = () => {};
+  function Harness() {
+    const [state, setState] = useState<{
+      collapsed: string[];
+      focused?: string;
+    }>({ collapsed: [] });
+    view = (collapsed, focused) =>
+      setState(focused === undefined ? { collapsed } : { collapsed, focused });
+    return (
+      <ContainerTable
+        {...defaults}
+        rows={rows}
+        grouped
+        collapsed={state.collapsed}
+        focused={state.focused ?? null}
+      />
+    );
+  }
+  const result = renderWithProviders(<Harness />);
+  const group = (name: string) =>
+    screen.queryByRole("button", { name: new RegExp(`^. ${name}`) });
+  expect(group("alpha")).toHaveAttribute("aria-expanded", "true");
+  expect(group("alpha")).toHaveTextContent("60 containers");
+  expect(screen.getByRole("row", { name: /^container 0 · / })).toBeVisible();
+  // The beta group sits past the rendered window.
+  expect(group("beta")).toBeNull();
+
+  act(() => view(["alpha"]));
+  expect(group("alpha")).toHaveAttribute("aria-expanded", "false");
+  expect(group("alpha")).toHaveTextContent("60 containers");
+  expect(screen.queryByRole("row", { name: /^container 0 · / })).toBeNull();
+  expect(group("beta")).toHaveTextContent("60 containers");
+  expect(screen.getByRole("row", { name: /^container 60 · / })).toBeVisible();
+
+  act(() => view([]));
+  expect(screen.getByRole("row", { name: /^container 0 · / })).toBeVisible();
+  expect(screen.queryByRole("row", { name: /^container 60 · / })).toBeNull();
+
+  const scroller = screen.getByRole("table").parentElement;
+  if (!scroller) throw new Error("Expected table scroller");
+  // happy-dom has no layout, so give the scroller the estimated geometry.
+  Object.defineProperty(scroller, "scrollHeight", { value: 122 * 44 });
+  Object.defineProperty(scroller, "clientHeight", { value: 352 });
+  const scrollTo = vi.spyOn(scroller, "scrollTo");
+  act(() => view([], rows[110]?.id));
+  // Container 110 is item 112, after both group rows: align "auto" brings
+  // its bottom to the viewport's bottom edge.
+  expect(scrollTo).toHaveBeenCalledWith(
+    expect.objectContaining({ top: 113 * 44 - 352 })
+  );
+  result.unmount();
+  result.transport.dispose();
+});

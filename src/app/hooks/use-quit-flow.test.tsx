@@ -1,10 +1,10 @@
 import { createMockTransport } from "@core/mock-transport";
 import type { ProcessTarget } from "@core/process-selection";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
 import { useEdition } from "./use-edition";
-import { useQuitFlow } from "./use-quit-flow";
+import { SIGNAL_TIMEOUT_MS, useQuitFlow } from "./use-quit-flow";
 
 const targets: ProcessTarget[] = [
   { pid: 40, start_time_us: 100, name: "python", refusal: null },
@@ -146,5 +146,32 @@ describe("quit batch ownership", () => {
     expect(sent).toEqual([40]);
     expect(screen.getByText("40:failed,41:unsent")).toBeVisible();
     expect(screen.getByRole("button", { name: "Request" })).toBeDisabled();
+  });
+
+  it("gives up on a signal that never answers, so the locked dialog can close", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    const sent: number[] = [];
+    transport.processSignal = (_host, pid) => {
+      sent.push(pid);
+      return new Promise(() => {});
+    };
+    const { user } = renderWithProviders(<Harness />, { transport });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Request" })).toBeEnabled()
+    );
+    await user.click(screen.getByRole("button", { name: "Request" }));
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Confirm twice" }));
+      await act(async () => vi.advanceTimersByTime(SIGNAL_TIMEOUT_MS - 1));
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByText("40:100,41:200")).toBeVisible();
+      await act(async () => vi.advanceTimersByTime(1));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(sent).toEqual([40]);
+    expect(screen.getByText("No pending request")).toBeVisible();
+    expect(screen.getByText("40:unknown,41:unsent")).toBeVisible();
   });
 });
