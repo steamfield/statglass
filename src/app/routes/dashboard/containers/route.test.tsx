@@ -402,7 +402,7 @@ it.each(["cpu", "memory"])(
     brush.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 1000, height: 220 }) as DOMRect;
     fireEvent.pointerDown(brush, { button: 0, clientX: 100 });
-    fireEvent.pointerMove(brush, { clientX: 250, clientY: 100 });
+    fireEvent.pointerMove(brush, { buttons: 1, clientX: 250, clientY: 100 });
     fireEvent.pointerUp(brush, { clientX: 250 });
     await waitFor(() =>
       expect(screen.getByRole("table", { name: /^Containers ·/ })).toBeVisible()

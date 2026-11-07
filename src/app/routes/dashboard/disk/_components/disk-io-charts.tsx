@@ -44,6 +44,8 @@ const milliseconds = (n: number) =>
     ? "<0.01 ms"
     : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} ms`;
 
+/** The readout's width, px: `tooltipBeside` places and sizes it. */
+const TOOLTIP_WIDTH = 256;
 const opsText = (n: number | null | undefined) =>
   n == null ? MISSING : operations(n);
 const TOOLTIP_ROWS = [
@@ -54,6 +56,27 @@ const TOOLTIP_ROWS = [
   ["Read request", "readTime"],
   ["Write request", "writeTime"],
 ] as const;
+
+/** Write one bucket's values into the tooltip's rows. */
+function fillPoint(tip: HTMLElement, point: DiskIoPoint | null | undefined) {
+  fillTooltip(tip, "read", formatRate(point?.read_bps ?? null));
+  fillTooltip(tip, "write", formatRate(point?.write_bps ?? null));
+  fillTooltip(tip, "readOps", opsText(point?.read_ops_per_sec));
+  fillTooltip(tip, "writeOps", opsText(point?.write_ops_per_sec));
+  fillTooltip(
+    tip,
+    "readTime",
+    requestTime(point?.read_request_ms ?? null, point?.read_ops_per_sec ?? null)
+  );
+  fillTooltip(
+    tip,
+    "writeTime",
+    requestTime(
+      point?.write_request_ms ?? null,
+      point?.write_ops_per_sec ?? null
+    )
+  );
+}
 
 /** Two views of the same backend buckets, with a shared DOM crosshair. */
 export function DiskIoCharts({
@@ -98,32 +121,23 @@ export function DiskIoCharts({
       if (!tip) return;
       tip.hidden = i === null;
       if (i === null) return;
-      const point = points[i];
       const at = (k: number) => formatHistoryTime(first + k * bucket, dates);
-      Object.assign(tip.style, tooltipBeside((i + 0.5) / count, PLOT_INSET));
+      Object.assign(
+        tip.style,
+        tooltipBeside((i + 0.5) / count, TOOLTIP_WIDTH, PLOT_INSET)
+      );
       fillTooltip(tip, "title", `${at(i)}–${at(i + 1)}`);
-      fillTooltip(tip, "read", formatRate(point?.read_bps ?? null));
-      fillTooltip(tip, "write", formatRate(point?.write_bps ?? null));
-      fillTooltip(tip, "readOps", opsText(point?.read_ops_per_sec));
-      fillTooltip(tip, "writeOps", opsText(point?.write_ops_per_sec));
+      // The newest bucket of a live range is still filling.
       fillTooltip(
         tip,
-        "readTime",
-        requestTime(
-          point?.read_request_ms ?? null,
-          point?.read_ops_per_sec ?? null
-        )
+        "detail",
+        fixedEndMs === null && i === count - 1
+          ? "so far"
+          : resolutionLabel(bucket)
       );
-      fillTooltip(
-        tip,
-        "writeTime",
-        requestTime(
-          point?.write_request_ms ?? null,
-          point?.write_ops_per_sec ?? null
-        )
-      );
+      fillPoint(tip, points[i]);
     },
-    [count, first, page.bucket_ms, points, dates]
+    [count, first, page.bucket_ms, points, dates, fixedEndMs]
   );
   useLayoutEffect(() => paint(hovered.current), [paint]);
   const gap = useMemo(
@@ -185,8 +199,8 @@ export function DiskIoCharts({
         Completed driver requests, not application response time or queueing
         delay. Chart ceilings adapt to the data, not drive capacity.
       </p>
-      <ChartTooltipShell hidden className="top-0 w-64 max-w-full">
-        <ChartTooltipHead detail={resolutionLabel(page.bucket_ms)} />
+      <ChartTooltipShell hidden className="top-0 max-w-full">
+        <ChartTooltipHead />
         <ChartTooltipRows>
           {TOOLTIP_ROWS.map(([label, field]) => (
             <ChartTooltipRow key={field} label={label} field={field} />

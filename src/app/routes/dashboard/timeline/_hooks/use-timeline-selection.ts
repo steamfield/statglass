@@ -25,6 +25,12 @@ type Geometry = {
 type Selection = { anchor: number; current: number } | null;
 
 /**
+ * A press zooms only when it ends 4 px or more from where it began, checked
+ * at release too, so a jittery click inspects rather than navigates.
+ */
+const CLICK = { slop: 4, latch: false } as const;
+
+/**
  * The Timeline's cursor and range selection over the shared brush gesture:
  * a drag or Shift+arrows preview a range on the displayed buckets, and a
  * release or Enter zooms to it through `onSelectRange`. The plot geometry
@@ -95,6 +101,7 @@ export function useTimelineSelection({
     return { first: from, last: Math.max(from, to - bucket), step: bucket };
   };
   const gesture = useBrushGesture({
+    ...CLICK,
     timeAt: (e) => pointerTime(e, fromMs, toMs, geometry.current),
     canDrag: () => Boolean(onSelectRange) && width > 0 && !loading,
     onPress: freeze,
@@ -142,12 +149,11 @@ export function useTimelineSelection({
     selecting: selection !== null,
     focusAfterRange,
     preview: selection ? snap(selection.anchor, selection.current) : null,
-    /** ARIA slider positions, counted in buckets as on the brush. */
-    slider: sliderValues(cursor ?? lastBucket, {
-      first: fromMs,
-      last: lastBucket,
-      step: bucketMs,
-    }),
+    /**
+     * ARIA slider positions, counted in buckets as on the brush, over the
+     * same (possibly frozen) bounds the cursor is clamped to.
+     */
+    slider: sliderValues(cursor ?? keyBounds().last, keyBounds()),
     selectEvent: (tMs: number) => {
       moveCursor(floorTo(tMs, bucketMs));
       sliderRef.current?.focus();

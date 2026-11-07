@@ -35,6 +35,9 @@ export interface CrosshairTooltipProps {
 
 const TOP = 5;
 
+/** The tooltip's width, px: `tooltipBeside` places and sizes it. */
+export const CROSSHAIR_TOOLTIP_WIDTH = 276;
+
 /**
  * The single crosshair tooltip: the moment and its resolution,
  * one row per lane with the bucket average, then the top processes stored
@@ -60,7 +63,7 @@ export function CrosshairTooltip({
           ? "No CPU readings for processes then"
           : null;
   return (
-    <ChartTooltipShell className="top-0.5 w-[276px]" style={style}>
+    <ChartTooltipShell className="top-0.5" style={style}>
       <ChartTooltipHead title={title} detail={resolution} />
       {note ? (
         <ChartTooltipNote>{note}</ChartTooltipNote>

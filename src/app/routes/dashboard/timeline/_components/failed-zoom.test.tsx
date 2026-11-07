@@ -98,7 +98,7 @@ it("releases failed zoom controls, retries recorded detail, and accepts another 
     slider.setPointerCapture = vi.fn();
     slider.hasPointerCapture = () => false;
     fireEvent.pointerDown(slider, { button: 0, pointerId: 1, clientX: 0 });
-    fireEvent.pointerMove(slider, { pointerId: 1, clientX: 320 });
+    fireEvent.pointerMove(slider, { pointerId: 1, buttons: 1, clientX: 320 });
     fireEvent.pointerUp(slider, { pointerId: 1, clientX: 320 });
     expect(screen.getByText("Selections 2")).toBeVisible();
     fail = false;

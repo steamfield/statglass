@@ -12,6 +12,8 @@ export interface KeyBounds {
 }
 
 const KEY_STEP: Record<string, -1 | 1> = { ArrowLeft: -1, ArrowRight: 1 };
+/** Which way each move key heads: Home toward the start, End toward the end. */
+const KEY_DIR: Record<string, -1 | 1> = { ...KEY_STEP, Home: -1, End: 1 };
 
 /**
  * Where a key moves a cursor at `at`: one step for the arrows, the ends for
@@ -44,16 +46,25 @@ export function sliderValues(
   at: number,
   { first, last, step }: KeyBounds
 ): { min: number; max: number; now: number } {
+  const max = Math.max(0, Math.round((last - first) / step));
   return {
     min: 0,
-    max: Math.max(0, Math.round((last - first) / step)),
-    now: Math.round((at - first) / step),
+    max,
+    now: Math.min(max, Math.max(0, Math.round((at - first) / step))),
   };
 }
 
 export interface BrushGestureOptions {
   /** Time under the pointer, or null when the plot has no size. */
   timeAt: (e: PointerEvent<HTMLElement>) => number | null;
+  /** Pointer travel, px, that makes a press a drag (default `DRAG_SLOP_PX`). */
+  slop?: number;
+  /**
+   * Whether a press stays a drag once it passed the slop (default yes). When
+   * false the travel is checked on each move and again at release, so a
+   * press that goes out and comes back is a click.
+   */
+  latch?: boolean;
   /** Whether a press may start a drag now (default yes). */
   canDrag?: () => boolean;
   /** A press is starting, before its time is read. */
@@ -83,7 +94,7 @@ export interface BrushGestureOptions {
   /** Shift+move is about to extend, before the bounds are read. */
   onExtendStart?: () => void;
   /** The fixed end of a Shift+move range, given the cursor and direction. */
-  anchorFor: (at: number, dir: -1 | 0 | 1) => number;
+  anchorFor: (at: number, dir: -1 | 1) => number;
   /** A plain move key moved the cursor. */
   onMove: (to: number) => void;
   /** A Shift+move key extended the range from `anchor` to `to`. */
@@ -107,6 +118,11 @@ type Drag = { pointer: number; x: number; anchor: number; moved: boolean };
  */
 export function useBrushGesture(o: BrushGestureOptions) {
   const drag = useRef<Drag | null>(null);
+  const slop = o.slop ?? DRAG_SLOP_PX;
+  const latch = o.latch ?? true;
+  /** Whether the press at `d` is a drag with the pointer at `x`. */
+  const dragging = (d: Drag, x: number) =>
+    (latch && d.moved) || Math.abs(x - d.x) >= slop;
   const cancel = () => {
     drag.current = null;
     o.onCancel();
@@ -134,12 +150,16 @@ export function useBrushGesture(o: BrushGestureOptions) {
         o.onDragStart?.(anchor);
       },
       onPointerMove: (e: PointerEvent<HTMLElement>) => {
+        // No button down mid-drag: the release went elsewhere (Cmd-Tab).
+        if (drag.current && e.buttons === 0) {
+          cancel();
+          return;
+        }
         const t = o.timeAt(e);
         if (t === null) return;
         const d = drag.current;
         o.onPointer?.(t, e, d !== null);
-        if (!d) return;
-        if (!d.moved && Math.abs(e.clientX - d.x) < DRAG_SLOP_PX) return;
+        if (!d || !dragging(d, e.clientX)) return;
         d.moved = true;
         o.onDrag(d.anchor, t);
       },
@@ -147,8 +167,7 @@ export function useBrushGesture(o: BrushGestureOptions) {
         const d = drag.current;
         if (!d || d.pointer !== e.pointerId) return;
         drag.current = null;
-        const dragged = d.moved || Math.abs(e.clientX - d.x) >= DRAG_SLOP_PX;
-        o.onRelease(d.anchor, o.timeAt(e), dragged);
+        o.onRelease(d.anchor, o.timeAt(e), dragging(d, e.clientX));
         if (e.currentTarget.hasPointerCapture?.(e.pointerId))
           e.currentTarget.releasePointerCapture(e.pointerId);
       },
@@ -173,12 +192,15 @@ export function useBrushGesture(o: BrushGestureOptions) {
 
 /** A move key: the cursor moves, or with Shift the range extends. */
 function moveKey(e: KeyboardEvent<HTMLElement>, o: BrushGestureOptions) {
+  const dir = KEY_DIR[e.key];
+  // Any other key (Shift+Tab, Shift+A) leaves the owner untouched.
+  if (dir === undefined) return;
   const extend = e.shiftKey && o.canExtend?.() !== false;
   if (extend) o.onExtendStart?.();
   const at = o.position();
   const to = keyTarget(e.key, at, o.keyBounds());
   if (to === null) return;
   e.preventDefault();
-  if (extend) o.onExtend(o.anchorFor(at, KEY_STEP[e.key] ?? 0), to);
+  if (extend) o.onExtend(o.anchorFor(at, dir), to);
   else o.onMove(to);
 }

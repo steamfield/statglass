@@ -43,13 +43,19 @@ const PAGE: DiskIoPage = {
   write_covered_ms: 0,
 };
 
-function Charts({ onRender }: { onRender?: () => void }) {
+function Charts({
+  onRender,
+  fixedEndMs = TO,
+}: {
+  onRender?: () => void;
+  fixedEndMs?: number | null;
+}) {
   const [secondary, setSecondary] = useState<IoSecondary>("ops");
   const charts = (
     <DiskIoCharts
       page={PAGE}
       range={{ fromMs: FROM, toMs: TO }}
-      fixedEndMs={TO}
+      fixedEndMs={fixedEndMs}
       secondary={secondary}
       onSecondary={setSecondary}
     />
@@ -78,6 +84,26 @@ describe("DiskIoCharts", () => {
     // Sub-millisecond requests sit on the 1 ms floor, not the held 2,000.
     expect(screen.getAllByText("1 ms")).toHaveLength(2);
     expect(screen.queryByText("2,000 ms")).toBeNull();
+  });
+
+  it("says a live range's newest bucket is so far, and a fixed one's an average", async () => {
+    const hoverLast = async () => {
+      const [upper] = await screen.findAllByRole("slider", {
+        name: "Select a time range",
+      });
+      if (!upper) throw new Error("Missing brush");
+      upper.getBoundingClientRect = () => new DOMRect(0, 0, 600, 97);
+      // Bucket 29 of 30.
+      fireEvent.pointerMove(upper, { clientX: 595, clientY: 10 });
+      return screen.getByRole("tooltip");
+    };
+    const live = renderWithProviders(<Charts fixedEndMs={null} />);
+    expect(await hoverLast()).toHaveTextContent("so far");
+    live.unmount();
+    renderWithProviders(<Charts />);
+    const tip = await hoverLast();
+    expect(tip).toHaveTextContent("1 min avg");
+    expect(tip).not.toHaveTextContent("so far");
   });
 
   it("moves one crosshair and the tooltip across both plots without rendering", async () => {

@@ -21,7 +21,7 @@ function Probe({ from = 0, to = 300_000, rangeKey = "host:live:5m" }) {
       <div
         ref={selection.sliderRef}
         role="slider"
-        aria-valuenow={selection.cursor ?? 0}
+        aria-valuenow={selection.slider.now}
         aria-label="Recorded plot"
         tabIndex={0}
         {...selection.sliderProps}
@@ -46,11 +46,47 @@ describe("selection during live bucket advancement", () => {
     const view = render(<Probe />);
     const plot = geometry();
     fireEvent.pointerDown(plot, { button: 0, pointerId: 1, clientX: 20 });
-    fireEvent.pointerMove(plot, { pointerId: 1, clientX: 60 });
+    fireEvent.pointerMove(plot, { pointerId: 1, buttons: 1, clientX: 60 });
     expect(screen.getByText("Selecting")).toBeInTheDocument();
     view.rerender(<Probe from={10_000} to={310_000} />);
     fireEvent.pointerUp(plot, { pointerId: 1, clientX: 60 });
     expect(screen.getByText("Saved: 60000-180000")).toBeInTheDocument();
+  });
+  it("keeps the slider position on the frozen plot it moves over", () => {
+    const view = render(<Probe />);
+    const plot = geometry();
+    fireEvent.focus(plot);
+    fireEvent.keyDown(plot, { key: "Home" });
+    fireEvent.keyDown(plot, { key: "ArrowRight", shiftKey: true });
+    fireEvent.keyDown(plot, { key: "ArrowLeft", shiftKey: true });
+    view.rerender(<Probe from={10_000} to={310_000} />);
+    expect(plot).toHaveAttribute("aria-valuenow", "0");
+  });
+  it("does not freeze the plot on a Shift key that moves nothing", () => {
+    const view = render(<Probe />);
+    const plot = geometry();
+    fireEvent.keyDown(plot, { key: "A", shiftKey: true });
+    view.rerender(<Probe from={10_000} to={310_000} />);
+    fireEvent.pointerDown(plot, { button: 0, pointerId: 1, clientX: 20 });
+    fireEvent.pointerMove(plot, { pointerId: 1, buttons: 1, clientX: 60 });
+    fireEvent.pointerUp(plot, { pointerId: 1, clientX: 60 });
+    // Today's dates, not the ones before the tail advanced.
+    expect(screen.getByText("Saved: 70000-190000")).toBeInTheDocument();
+  });
+  it("keeps the cursor rather than zooming on a press that ends within 4 px", () => {
+    render(<Probe />);
+    const plot = geometry();
+    fireEvent.pointerDown(plot, { button: 0, pointerId: 1, clientX: 20 });
+    fireEvent.pointerMove(plot, { pointerId: 1, buttons: 1, clientX: 23 });
+    fireEvent.pointerUp(plot, { pointerId: 1, clientX: 23 });
+    expect(screen.getByText("Saved: none")).toBeInTheDocument();
+    // Out past the slop and back again is a click too.
+    fireEvent.pointerDown(plot, { button: 0, pointerId: 1, clientX: 20 });
+    fireEvent.pointerMove(plot, { pointerId: 1, buttons: 1, clientX: 60 });
+    fireEvent.pointerMove(plot, { pointerId: 1, buttons: 1, clientX: 21 });
+    fireEvent.pointerUp(plot, { pointerId: 1, clientX: 21 });
+    expect(screen.getByText("Saved: none")).toBeInTheDocument();
+    expect(screen.getByText("Inspecting")).toBeInTheDocument();
   });
   it("keeps a keyboard selection through tail advancement and cancels on a different committed range", () => {
     const view = render(<Probe />);

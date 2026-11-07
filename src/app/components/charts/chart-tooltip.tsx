@@ -150,23 +150,28 @@ export function tooltipSide(fraction: number): "left" | "right" {
 const TOOLTIP_GAP_PX = 12;
 
 /**
- * `left`/`right` that place a tooltip beside a crosshair at `fraction` of a
- * plot starting `inset` px into the tooltip's positioned parent, on the side
- * `tooltipSide` picks. The unused side is "", so the same object both sets
+ * The width and `left`/`right` that place a `width` px tooltip beside a
+ * crosshair at `fraction` of a plot starting `inset` px into the tooltip's
+ * positioned parent, on the side `tooltipSide` picks. On a plot too narrow
+ * for it to fit beside the crosshair, it slides back to the plot's far edge
+ * rather than overflow. The unused side is "", so the same object both sets
  * a React style and resets an imperatively placed one.
  */
 export function tooltipBeside(
   fraction: number,
+  width: number,
   inset = 0
-): { left: string; right: string } {
+): { width: string; left: string; right: string } {
   const plot = `(100% - ${inset}px)`;
   return tooltipSide(fraction) === "right"
     ? {
-        left: `calc(${inset}px + ${plot} * ${fraction} + ${TOOLTIP_GAP_PX}px)`,
+        width: `${width}px`,
+        left: `max(${inset}px, min(${inset}px + ${plot} * ${fraction} + ${TOOLTIP_GAP_PX}px, 100% - ${width}px))`,
         right: "",
       }
     : {
+        width: `${width}px`,
         left: "",
-        right: `calc(${plot} * ${1 - fraction} + ${TOOLTIP_GAP_PX}px)`,
+        right: `max(0px, min(${plot} * ${1 - fraction} + ${TOOLTIP_GAP_PX}px, ${plot} - ${width}px))`,
       };
 }

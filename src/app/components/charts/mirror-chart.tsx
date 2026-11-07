@@ -151,6 +151,7 @@ export function MirrorChart({
     spanMs: count * bucketMs,
     height,
     inset: PLOT_INSET,
+    barMs: bucketMs,
     gaps,
     enabled: brush && !pending,
     onHoverTime,

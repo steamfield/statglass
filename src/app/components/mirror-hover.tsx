@@ -16,6 +16,9 @@ import { paintCrosshairs, plotLeft } from "~/components/charts/crosshair-line";
 import type { GapSpan } from "~/widgets/gap-band";
 import { type Accent, accentVars, rampColor } from "~/widgets/lib/accent";
 
+/** The readout's width, px: `tooltipBeside` places and sizes it. */
+const TOOLTIP_WIDTH = 220;
+
 /** Label of the first gap that overlaps `[fromMs, toMs)`, if any. */
 function gapAt(
   gaps: readonly GapSpan[] | undefined,
@@ -87,7 +90,10 @@ function paint(tip: HTMLElement, p: MirrorHoverProps, i: number | null) {
   const rows = tooltipField(tip, "rows");
   if (note) note.hidden = !empty;
   if (rows) rows.hidden = empty;
-  Object.assign(tip.style, tooltipBeside((i + 0.5) / p.count, p.inset));
+  Object.assign(
+    tip.style,
+    tooltipBeside((i + 0.5) / p.count, TOOLTIP_WIDTH, p.inset)
+  );
   tip.hidden = false;
 }
 
@@ -143,7 +149,7 @@ export function MirrorHover(props: MirrorHoverProps) {
     <ChartTooltipShell
       ref={tipRef}
       hidden
-      className="top-0 w-[220px]"
+      className="top-0"
       style={accentVars(accent)}
     >
       <ChartTooltipHead />

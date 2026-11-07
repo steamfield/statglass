@@ -39,6 +39,11 @@ describe("sliderValues", () => {
       now: 3,
     });
   });
+
+  it("keeps the position inside the range", () => {
+    expect(sliderValues(-10, BOUNDS).now).toBe(0);
+    expect(sliderValues(70, BOUNDS).now).toBe(5);
+  });
 });
 
 /** A plot 100 px wide over times 0 to 100, logging each callback. */
@@ -93,7 +98,7 @@ describe("useBrushGesture: pointer", () => {
   it("treats a press that moves less than the slop as a click", () => {
     render(<Probe />);
     fireEvent.pointerDown(plot(), { button: 0, clientX: 40 });
-    fireEvent.pointerMove(plot(), { clientX: 42 });
+    fireEvent.pointerMove(plot(), { buttons: 1, clientX: 42 });
     fireEvent.pointerUp(plot(), { clientX: 42 });
     expect(log()).toBe("click 40-42");
   });
@@ -101,10 +106,29 @@ describe("useBrushGesture: pointer", () => {
   it("drags once past the slop, and stays a drag back inside it", () => {
     render(<Probe />);
     fireEvent.pointerDown(plot(), { button: 0, clientX: 40 });
-    fireEvent.pointerMove(plot(), { clientX: 60 });
-    fireEvent.pointerMove(plot(), { clientX: 41 });
+    fireEvent.pointerMove(plot(), { buttons: 1, clientX: 60 });
+    fireEvent.pointerMove(plot(), { buttons: 1, clientX: 41 });
     fireEvent.pointerUp(plot(), { clientX: 41 });
     expect(log()).toBe("drag 40-60, drag 40-41, drop 40-41");
+  });
+
+  it("unlatched, judges the travel at each move and at release", () => {
+    render(<Probe slop={4} latch={false} />);
+    fireEvent.pointerDown(plot(), { button: 0, clientX: 40 });
+    fireEvent.pointerMove(plot(), { buttons: 1, clientX: 43 });
+    fireEvent.pointerMove(plot(), { buttons: 1, clientX: 60 });
+    fireEvent.pointerMove(plot(), { buttons: 1, clientX: 41 });
+    fireEvent.pointerUp(plot(), { clientX: 41 });
+    expect(log()).toBe("drag 40-60, click 40-41");
+  });
+
+  it("cancels a drag whose button came up elsewhere", () => {
+    render(<Probe />);
+    fireEvent.pointerDown(plot(), { button: 0, clientX: 40 });
+    fireEvent.pointerMove(plot(), { buttons: 1, clientX: 60 });
+    fireEvent.pointerMove(plot(), { buttons: 0, clientX: 70 });
+    fireEvent.pointerUp(plot(), { clientX: 70 });
+    expect(log()).toBe("drag 40-60, cancel");
   });
 
   it("ignores other buttons and presses the owner refuses", () => {
@@ -143,7 +167,18 @@ describe("useBrushGesture: keyboard", () => {
     fireEvent.keyDown(plot(), { key: "ArrowRight" });
     fireEvent.keyDown(plot(), { key: "ArrowLeft", shiftKey: true });
     fireEvent.keyDown(plot(), { key: "End", shiftKey: true });
-    expect(log()).toBe("move 30, extend 40-20, extend 30-50");
+    expect(log()).toBe("move 30, extend 40-20, extend 20-50");
+  });
+
+  it("starts an extension only for a move key", () => {
+    const onExtendStart = vi.fn();
+    render(<Probe onExtendStart={onExtendStart} />);
+    fireEvent.keyDown(plot(), { key: "A", shiftKey: true });
+    fireEvent.keyDown(plot(), { key: "Tab", shiftKey: true });
+    expect(onExtendStart).not.toHaveBeenCalled();
+    fireEvent.keyDown(plot(), { key: "Home", shiftKey: true });
+    expect(onExtendStart).toHaveBeenCalledOnce();
+    expect(log()).toBe("extend 30-0");
   });
 
   it("prevents the default of a key it acts on, only", () => {
