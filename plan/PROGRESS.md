@@ -4,6 +4,21 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Overview history charts (2026-11-07)
+
+D-129: the Overview's module cards draw their module page's lead chart over the global
+chart window instead of a ring and bars, with the window control in the header, the live
+headline in each card header, three or four facts, and the live top-5 lists captioned
+"Now". Each module's lead chart is defined once in `components/charts/module-hero.ts`
+and the module pages read it too; `MirrorChart`/`LiveMirrorChart` gained `hover`,
+`ticks`, `inset` and `maxBars`; Disk exports `useDiskIoReadWriteChart` over its existing
+query. `useMax24h` and `historyKeys.maxima` are gone.
+
+VERIFY_PLACEHOLDER
+
+Next: phase 2 of the Overview plan, a second row of non-module cards (recent events, top
+apps over the window, battery; then largest folders, containers, other Macs).
+
 ## Shared layers RFC complete (2026-11-07)
 
 Phase 3d (C8) landed: `useSeriesFocus` (pinned beats hover), `heatmapAlpha` everywhere with

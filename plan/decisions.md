@@ -4303,3 +4303,36 @@ idempotent.
 Cost: user-facing English in `statglass-schema`, next to the reason keys it explains.
 Revisit when the UI is localised, or when another consumer (the CLI, WidgetKit) needs
 Docker coverage and wants different wording.
+
+## D-129: The Overview follows the chart window with history charts
+
+Date: 2026-11-07.
+
+The Overview's module cards drew a ring gauge and two bars: the current second and
+nothing else, so the page could not show a trend. Each card now draws its module
+page's lead chart over `general.chart_window` (D-091), and the Overview header has the
+same `WindowControl` as the module pages. This replaces "Overview, the popover and
+Timeline are unchanged" from the chart-window entry; the popover and Timeline still
+are.
+
+The chart definitions live once, in `src/app/components/charts/module-hero.ts`, and
+the module pages read them too, so a card and the page it opens always plot the same
+series on the same axis. Memory follows its page: pressure on macOS, used and cached on
+Linux. Disk reads the Disk page's `query_disk_io` pipeline for the page's default
+device; Network uses `LiveMirrorChart` like its page. The charts are static (no hover
+or brush) because the whole card is a link, and the page it opens has the brush and
+readout at the same range. Mirror charts cap at 40 bars, since each bar keeps a 2 px gap
+and 120 bars leave no width in a 220 px plot. Gap bands keep their hatch and accessible
+name but drop the caption, which would cover a third of the plot.
+
+The headline in each card header is live, and gets " now" when the range has a fixed
+end, so it is not read as the chart's last value. The top-5 lists stay live (5 s process
+interest, D-066) and are captioned "Now". Memory pressure shows its state word as a
+fact; warn and critical also put a chip with an icon in the card header, which takes
+the place of the icon beside the word on the popover and Memory page. There is no window peak figure: on long
+windows it contradicted the bucket-averaged chart, and it cost a stats query per card.
+The 24 h maxima query that scaled the old bars is gone.
+
+Cost: six history charts on the Overview at 1 Hz. `perf-gate.spec.ts` gains an
+"Overview, 1 h window" case with its own `overview1h` budget, set to the existing
+Overview threshold.

@@ -106,7 +106,7 @@ SF Pro, the macOS system face, on every element (`--font-sans`: `-apple-system`)
 | Hero figure | SF Pro Rounded, tabular | 32 px | 400 | -0.022em | CPU total "18%" (07) |
 | Large figure | SF Pro Rounded, tabular | 16 to 18 px | 400 | -0.01em to -0.02em | Lane "now" values (06), cluster GHz rings (07) |
 | Card figure | SF Pro Rounded, tabular | 15 px | 400 | normal | Popover card headline values (14), CPU stat strip (07) |
-| Ring center value | SF Pro Rounded, tabular | 14 px (Overview), 17 px (Power rings) | 400 | -0.02em | "18%", "14.8" (04, 08) |
+| Ring center value | SF Pro Rounded, tabular | 17 px (Power rings) | 400 | -0.02em | "14.8" (08). Overview cards put their headline in the card header at 15 px (D-129) |
 | Composer title, popover app title | SF Pro | 16 px, 13 px | 590 | -0.01em | "Widgets" (09), "StatGlass" (14) |
 | Card title | SF Pro | 13 px (dashboard), 12 px (popover) | 590 | normal | "CPU", "Per-core load, last 10 minutes" |
 | Body and row text | SF Pro | 12 to 13 px | 400 or 510 | normal | Process names, settings rows |
@@ -159,7 +159,7 @@ Each Overview card has an `origin`: CPU `0% 0%`, GPU `100% 0%`, Memory `0% 100%`
 
 ### Card header
 
-Left: an 8 px square swatch in the module accent (2 px radius), then the title at card-title size. Right: either the headline value (`.figures-display`) or a muted subtitle (the Overview uses "10P + 4E", "20-core"). One of the two, not both. Popover cards put the headline value right.
+Left: an 8 px square swatch in the module accent (2 px radius), then the title at card-title size. Right: either the headline value (`.figures-display`) or a muted subtitle ("Pressure", "Used"). One of the two, not both. Popover and Overview cards put the live headline value right, with a muted unit where it needs one (" on battery", and " now" on an Overview card when the range has a fixed end); a warn or critical state sits beside it as a chip with an icon (D-129).
 
 ## Motion
 
@@ -318,7 +318,7 @@ From opendata's `frontend-design-slop` skill, applied to StatGlass.
 | Menu bar strip | Native status item (Rust-rendered); `TrayPreview` in onboarding and Settings | Rust `tray::render`, `TrayPreview` | v1.0 combined and values; v1.1 graphs, cores + histogram, per-module items; readouts after the bars (D-102) |
 | Popover, dark | `popover` window, route `/popover` | `PopoverShell`, `PopoverHeader`, `StatusPill`, `IconButton`, `ModuleCard` (popover variant), `StreamArea`, `InlineBar`, `CoreTiles`, `StackBar`, `Legend`, `StatGrid`, `MirrorBars`, `PopoverFooter`, `SelfCpuReadout` | v1.0 |
 | Popover, light | same, light | same | v1.0 |
-| Overview, dark | `dashboard` window, route `/dashboard/overview` | `DashboardShell`, `Sidebar`, `PageHeader`, `StatusPill`, `MachineHeader`, `CardGrid`, `MetricCard`, `RingGauge`, `InlineBar`, `Legend`, `ProcessList`, `InitialChip` | v1.0. GPU and Network process lists v1.2. "Customize" button v2.3 |
+| Overview, dark | `dashboard` window, route `/dashboard/overview` | `DashboardShell`, `Sidebar`, `PageHeader`, `StatusPill`, `MachineHeader`, `CardGrid`, `MetricCard`, `WindowControl`, `ModuleHistoryChart`, `LiveMirrorChart`/`MirrorChart`, `StatList`, `ProcessList`, `InitialChip` | v1.0. GPU and Network process lists v1.2. History charts on the chart window (D-129). "Customize" button v2.3 |
 | Overview, light | same, light | same | v1.0 |
 | Timeline | `/dashboard/timeline` | `PageHeader`, `SegmentedControl`, `RangeNav`, `TimelineLanes`, `TimelineLane`, `Crosshair`, `CrosshairTooltip`, `GapBand`, `AnnotationRow`, `CalendarHeatmap`, `ExportButton` | v1.0 1h and 24h with sleep bands; v1.1 7d, 30d, heatmap, Export CSV; v1.2 event annotations |
 | CPU page | `/dashboard/cpu` | `PageHeader`, `SegmentedControl`, `StatStrip`, `StreamArea` (large), `ClusterFreqRing`, `CoreHeatmap`, `ProcessTable` | v1.0 |
@@ -350,7 +350,7 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 |---|---|---|---|
 | `Card` | Glow card shell | yes | `{ accent: ModuleId; origin?: Corner; variant?: 'default' \| 'chart'; labelledBy: string; children }` |
 | `CardGrid` | Grid that assigns rotating glow origins | no | `{ columns: number; children }` |
-| `MetricCard` | Overview module card: header, ring, two bars, legend, top-5 list | yes | `{ module; title; subtitle; ring: RingGaugeProps; bars: InlineBarProps[2]; legend: LegendItem[]; list: ProcessRow[] \| InterfaceRow[]; href }` |
+| `MetricCard` | Overview module card: title and headline now value on one row (an optional warn/critical chip beside the value), the module page's lead chart over the chart window (static: no hover or brush, 3 x ticks, gap bands without captions), three or four facts in a two-column `StatList` grid, and the live top-5 list captioned "Now" (D-129) | yes | `{ accent; origin?; title; value; unit?; chart: ReactNode; stats: StatListItem[]; list?: { ariaLabel; rows; note?; caption? }; alert?: { tone: 'warn' \| 'critical'; text }; notice?; href?; onOpen? }` |
 | `ModuleCard` | Popover module card: title, headline value, body slot | yes | `{ module; title; value: string; unit?: string; children }` |
 | `RingGauge` | Arc gauge with one or two segments and a centered value | yes | `{ fractions: [number, number?]; value: string; label: string; accent; size: 64 \| 80 \| 104 }` |
 | `ClusterFreqRing` | RingGauge variant: GHz value, max, active % below | yes | `{ cluster: 'P' \| 'E'; ghz: number; maxGhz: number; activePct: number; accent }` |
