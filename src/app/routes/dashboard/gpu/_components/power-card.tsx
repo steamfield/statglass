@@ -9,6 +9,8 @@ import { useHeld } from "~/hooks/use-ring";
 
 const KEY = "power.gpu";
 const KEYS = [KEY];
+/** The card shares a row with the frequency card, down to about 320 px wide. */
+const NARROW_TICKS = 3;
 const WATTS_AXIS: ModuleYAxis = {
   ceiling: "auto",
   format: (w) => `${w}W`,
@@ -19,7 +21,7 @@ const WATTS_AXIS: ModuleYAxis = {
  */
 export function PowerCard({ windowMs }: { windowMs: number }) {
   const now = useHeld([KEY])[KEY] ?? null;
-  const chart = useModuleChart(KEYS, windowMs, "gpu");
+  const chart = useModuleChart(KEYS, windowMs, "gpu", { ticks: NARROW_TICKS });
 
   return (
     <SectionCard

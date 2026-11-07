@@ -183,4 +183,25 @@ describe("PowerDrawCard app lines (D-093)", () => {
     expect(container.querySelector('[data-series^="app:"]')).toBeNull();
     expect(screen.queryByText(APPS_NOTE)).toBeNull();
   });
+
+  it("scales the y axis to an app line that tops system power", async () => {
+    const transport = createMockTransport({ now: () => NOW, autoTick: false });
+    // The mock's system draw is about 15 W; this app is far above it.
+    transport.queryUsageSeries = async (_host, fromMs) => ({
+      status: "ok",
+      data: {
+        from_ms: fromMs,
+        bucket_ms: 10_000,
+        since_ms: null,
+        complete_to_ms: null,
+        latest_ms: null,
+        apps: [{ name: "Hog", avg: 90, values: Array(100).fill(90) }],
+      },
+    });
+    renderWithProviders(<PowerDrawCard windowMs={900_000} />, { transport });
+    await screen.findByText("Power draw, last 15 minutes");
+    act(() => transport.tick());
+    await screen.findByText(APPS_NOTE);
+    expect(await screen.findByText("100W")).toBeInTheDocument();
+  });
 });

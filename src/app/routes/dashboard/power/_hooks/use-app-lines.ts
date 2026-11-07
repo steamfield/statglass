@@ -17,8 +17,6 @@ export interface AppLine {
   avg: number | null;
   /** One per chart slot, from the app's 10 s buckets. */
   values: (number | null)[];
-  /** The largest of `values`, for the chart's ceiling. */
-  peak: number | null;
 }
 
 export type AppLines =
@@ -69,10 +67,6 @@ export function useAppLines(windowMs: number, grid: SlotGrid): AppLines {
             values: app.values,
           },
           { tEndMs, intervalMs, length }
-        ),
-        peak: app.values.reduce<number | null>(
-          (m, v) => (v !== null && (m === null || v > m) ? v : m),
-          null
         ),
       })) ?? [],
     [data, tEndMs, intervalMs, length]
