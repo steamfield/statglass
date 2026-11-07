@@ -73,10 +73,6 @@ for (const via of ["tooltip", "keyboard"] as const) {
           to={60000}
           live={false}
           range="1h"
-          focused={row.id}
-          pinnedFocus={null}
-          onFocus={() => {}}
-          onPinFocus={() => {}}
           onChoose={() => {}}
         />
         <div data-container-table-scroll />

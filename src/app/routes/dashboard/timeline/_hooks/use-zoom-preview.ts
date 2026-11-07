@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { motionEase, motionMs } from "~/lib/motion/tokens";
 
 interface Preview {
   target: TimeRange;
@@ -42,9 +43,7 @@ export function useZoomPreview(
     );
     const overlay = overlayRef.current;
     if (!source || !overlay || document.hidden) return;
-    const style = getComputedStyle(document.documentElement);
-    const duration =
-      Number.parseFloat(style.getPropertyValue("--motion-enter")) || 0;
+    const duration = motionMs("enter");
     if (duration <= 0) return;
     const clone = clonePlot(source);
     const width = source.getBoundingClientRect().width;
@@ -66,7 +65,7 @@ export function useZoomPreview(
       [{ transform: "translateX(0) scaleX(1)" }, { transform }],
       {
         duration,
-        easing: style.getPropertyValue("--ease-out").trim() || "ease-out",
+        easing: motionEase("out"),
       }
     );
     run.current = { preview: next, animation };
@@ -109,14 +108,8 @@ export function useZoomPreview(
         cancel();
         return;
       }
-      const duration =
-        Number.parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--motion-crossfade"
-          )
-        ) || 0;
       const fade = element.animate([{ opacity: 1 }, { opacity: 0 }], {
-        duration,
+        duration: motionMs("crossfade"),
       });
       current.animation = fade;
       await fade.finished.catch(() => undefined);

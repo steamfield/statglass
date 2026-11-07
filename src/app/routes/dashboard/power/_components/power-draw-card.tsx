@@ -2,7 +2,7 @@ import { cpuPowerNote } from "@core/cpu-power-source";
 import { eventLabel } from "@core/events";
 import { formatWatts, formatWattsFine } from "@core/format";
 import { parseLabels } from "@core/series-key";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { brushScopeProps } from "~/components/brush-overlay";
 import {
   ModuleHistoryChart,
@@ -18,6 +18,7 @@ import { useEvents } from "~/hooks/use-events";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useModuleEnd } from "~/hooks/use-module-end";
 import { useHeld, useLayout } from "~/hooks/use-ring";
+import { type SeriesFocus, useSeriesFocus } from "~/hooks/use-series-focus";
 import { usePowerComponents } from "~/stores/live-selectors";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { Legend, type LegendItem } from "~/widgets/legend";
@@ -95,12 +96,8 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
     length: values.length,
   });
   const annotations = useSpikeAnnotations(windowMs);
-  const [pinned, setPinned] = useState<string | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
   const apps = lines.kind === "ok" ? lines.apps : [];
-  const focused = apps.some((a) => a.name === (hovered ?? pinned))
-    ? (hovered ?? pinned)
-    : null;
+  const focus = useSeriesFocus(apps.map((a) => a.name));
   const cpuNote = cpuPowerNote(v["power.cpu_source"] ?? null);
 
   // System's figures are in the strip and the range totals; no value here.
@@ -110,10 +107,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
       label: a.name,
       value: formatWattsFine(a.avg),
       ...appStyle(i),
-      onFocus: () => setHovered(a.name),
-      onBlur: () => setHovered(null),
-      onClick: () => setPinned((p) => (p === a.name ? null : a.name)),
-      pressed: pinned === a.name,
+      ...focus.legendItemProps(a.name),
     })),
   ];
 
@@ -145,11 +139,12 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
           <Legend items={legend} />
           <ModuleHistoryChart
             chart={chart}
-            lines={chartSeries(values, apps, focused)}
+            lines={chartSeries(values, apps, focus.seriesStyle)}
             yAxis={WATTS_AXIS}
             accent="power"
             height={HEIGHT}
-            ariaLabel={ariaLabel(span, system, apps)}
+            subject="System power"
+            now={figures(system, apps)}
             annotations={annotations}
           />
         </div>
@@ -170,7 +165,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
 function chartSeries(
   system: (number | null)[],
   apps: readonly AppLine[],
-  focused: string | null
+  style: SeriesFocus["seriesStyle"]
 ): StreamAreaProps["series"] {
   return [
     {
@@ -187,22 +182,18 @@ function chartSeries(
       dash: appStyle(i).dashed,
       fill: false,
       edges: false,
-      weight: focused === a.name ? 2 : 1,
-      opacity: focused === null || focused === a.name ? 1 : 0.3,
+      ...style(a.name),
     })),
   ];
 }
 
-function ariaLabel(
-  span: string,
-  system: number | null,
-  apps: readonly AppLine[]
-): string {
+/** The accessible name's figures: "now 14.2 W. Top apps by energy: Xcode 3.1 W". */
+function figures(system: number | null, apps: readonly AppLine[]): string {
   const top =
     apps.length > 0
-      ? ` Top apps by energy: ${apps.map((a) => `${a.name} ${formatWattsFine(a.avg)}`).join(", ")}.`
+      ? `. Top apps by energy: ${apps.map((a) => `${a.name} ${formatWattsFine(a.avg)}`).join(", ")}`
       : "";
-  return `System power, ${span}, now ${formatWatts(system)}.${top}`;
+  return `now ${formatWatts(system)}${top}`;
 }
 
 /** What the app lines are, or why there are none. */

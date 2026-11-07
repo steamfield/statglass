@@ -29,7 +29,8 @@ function ChargeHistory({ windowMs }: { windowMs: number }) {
         yAxis="percent"
         accent="battery"
         height={140}
-        ariaLabel={`Battery charge, ${chart.span}, now ${formatPercent(charge)}.`}
+        subject="Battery charge"
+        now={`now ${formatPercent(charge)}`}
       />
       <InlineMessage tone="note">
         Recorded charge. Charging intervals are not inferred from averaged

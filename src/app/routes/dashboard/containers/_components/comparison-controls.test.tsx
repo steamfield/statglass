@@ -76,10 +76,6 @@ it("labels comparison gap bands with Rust's label, never the reason key", () => 
           label: "Events arrived too fast; some were dropped",
         },
       ]}
-      focused={null}
-      pinnedFocus={null}
-      onFocus={() => {}}
-      onPinFocus={() => {}}
       onChoose={() => {}}
     />
   );
@@ -253,7 +249,6 @@ it("provides partial values, interval min/avg/max, keyboard focus and pinned det
     },
     container
   );
-  const focus = vi.fn();
   const result = renderWithProviders(
     <ComparisonChart
       series={[{ container, points, slot: 1 }]}
@@ -262,10 +257,6 @@ it("provides partial values, interval min/avg/max, keyboard focus and pinned det
       to={86_400_000}
       live={false}
       range="24h"
-      focused={null}
-      pinnedFocus={null}
-      onFocus={focus}
-      onPinFocus={() => {}}
       onChoose={() => {}}
     />
   );
@@ -278,7 +269,8 @@ it("provides partial values, interval min/avg/max, keyboard focus and pinned det
   const link = within(screen.getByRole("tooltip")).getByRole("link");
   expect(link.getAttribute("href")).toContain("metric=cpu&range=15m&end=");
   fireEvent.focus(screen.getByRole("button", { name: container.name }));
-  expect(focus).toHaveBeenCalledWith(container.id);
+  // Keyboard focus on the legend previews the line: it draws at 2 px.
+  expect(chart.querySelector('path[stroke-width="2"]')).not.toBeNull();
   await result.user.click(
     screen.getByRole("button", { name: "Show as table" })
   );

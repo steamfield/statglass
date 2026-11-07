@@ -33,16 +33,9 @@ export function ContainerActivity({
   resume: () => void;
 }) {
   const { metric, project, range, end, now, from, to, custom } = route;
-  const {
-    focused,
-    setFocused,
-    pinnedFocus,
-    setPinnedFocus,
-    comparison,
-    comparisonPage,
-    candidates,
-    plottedSeries,
-  } = chart;
+  const { focus, comparison, comparisonPage, candidates, plottedSeries } =
+    chart;
+  const { clear: clearFocus } = focus;
   const engine = snapshot.engine?.id ?? "";
   const brush = useBrushStore();
   const [chooser, setChooser] = useState(false);
@@ -65,12 +58,11 @@ export function ContainerActivity({
   const setEnd = useCallback(
     (value: number | null) => {
       brush.getState().clear();
-      setPinnedFocus(null);
-      setFocused(null);
+      clearFocus();
       setLiveReset((old) => old + 1);
       set("end", value === null ? null : String(value));
     },
-    [brush, set, setFocused, setPinnedFocus]
+    [brush, set, clearFocus]
   );
   const historyControls = (
     <ComparisonControls
@@ -102,10 +94,7 @@ export function ContainerActivity({
         controls={historyControls}
         coverage={comparisonPage?.coverage}
         loading={comparison.isPending}
-        focused={focused}
-        pinnedFocus={pinnedFocus}
-        onFocus={setFocused}
-        onPinFocus={setPinnedFocus}
+        focus={focus}
         onChoose={() => setChooser(true)}
         more={Math.max(0, candidates.length - plottedSeries.length)}
         chooserTitle={

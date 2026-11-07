@@ -1,9 +1,7 @@
 import { heatmapDays } from "@core/heatmap-days";
 import {
-  cellAlpha,
   cellName,
   currentCell,
-  HEATMAP_SCALES,
   heatmapDayLabel,
   heatmapRows,
   isFutureCell,
@@ -13,24 +11,6 @@ import {
 
 const C = { rate: "MBps", temperature: "C" } as const;
 const F = { rate: "MBps", temperature: "F" } as const;
-
-describe("cellAlpha", () => {
-  it("follows the CPU ramp: 0.06 at 0%, capped at 0.95 from 80%", () => {
-    const cpu = HEATMAP_SCALES.cpu;
-    expect(cellAlpha(0, cpu)).toBeCloseTo(0.06);
-    expect(cellAlpha(40, cpu)).toBeCloseTo(0.06 + 0.5 * 0.89);
-    expect(cellAlpha(80, cpu)).toBeCloseTo(0.95);
-    expect(cellAlpha(100, cpu)).toBeCloseTo(0.95);
-  });
-
-  it("maps temperature from 40 to 90 °C and clamps below", () => {
-    const temp = HEATMAP_SCALES.temp;
-    expect(cellAlpha(30, temp)).toBeCloseTo(0.06);
-    expect(cellAlpha(40, temp)).toBeCloseTo(0.06);
-    expect(cellAlpha(65, temp)).toBeCloseTo(0.06 + 0.5 * 0.89);
-    expect(cellAlpha(95, temp)).toBeCloseTo(0.95);
-  });
-});
 
 describe("labels", () => {
   it('names rows like "Sep 05 Sa"', () => {

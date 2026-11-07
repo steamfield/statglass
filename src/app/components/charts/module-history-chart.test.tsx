@@ -27,7 +27,8 @@ function Card({ yAxis }: { yAxis: ModuleYAxis }) {
       yAxis={yAxis}
       accent="cpu"
       height={160}
-      ariaLabel={`CPU, ${chart.span}.`}
+      subject="CPU"
+      now={`now ${chart.series.values["cpu.total"]?.at(-1) ?? "none"}`}
     />
   );
 }
@@ -61,6 +62,7 @@ describe.each(AXES)("ModuleHistoryChart, %s axis", (_name, yAxis) => {
     await screen.findByRole("img", { name: /^CPU, last .*Drag to select/ });
     await waitFor(() => expect(store?.getState().layoutNo).not.toBeNull());
     await act(async () => {});
+    const names: string[] = [];
     for (let tick = 0; tick < 3; tick++) {
       const state = store?.getState();
       if (!state) throw new Error("Missing live store");
@@ -69,7 +71,15 @@ describe.each(AXES)("ModuleHistoryChart, %s axis", (_name, yAxis) => {
         transport.push(nextFrame(state, { "cpu.total": 20 + tick * 30 }))
       );
       expect(commits).toHaveLength(1);
+      names.push(
+        screen
+          .getByRole("img", { name: /^CPU, / })
+          .getAttribute("aria-label") ?? ""
+      );
     }
+    // The figure moves every frame; the name holds it per 10 s bucket, so
+    // three 1 s frames change it at most once.
+    expect(new Set(names).size).toBeLessThanOrEqual(2);
   });
 });
 

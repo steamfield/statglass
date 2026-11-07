@@ -52,10 +52,6 @@ function Chart({
       to={60_000}
       live={live}
       range="15m"
-      focused={null}
-      pinnedFocus={null}
-      onFocus={() => {}}
-      onPinFocus={() => {}}
       onChoose={() => {}}
       coverage={coverage}
     />

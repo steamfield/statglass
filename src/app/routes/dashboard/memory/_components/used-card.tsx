@@ -86,7 +86,8 @@ export function UsedCard({
           yAxis={{ ceiling: totalBytes, format: fmt, gutter: BYTES_GUTTER }}
           accent="mem"
           height={HEIGHT}
-          ariaLabel={`Memory used and cached files, ${chart.span}, of ${fmt(totalBytes)}, used ${fmt(v[USED])}, cached ${fmt(v[CACHED])}.`}
+          subject="Memory used and cached files"
+          now={`of ${fmt(totalBytes)}, used ${fmt(v[USED])}, cached ${fmt(v[CACHED])}`}
         />
       </SectionCard>
     </div>

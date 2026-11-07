@@ -12,6 +12,7 @@ import { InlineMessage } from "~/components/inline-message";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useSeriesFocus } from "~/hooks/use-series-focus";
 import { cn } from "~/lib/utils";
 import {
   useSpaceItemActions,
@@ -58,19 +59,23 @@ export function SpaceReportView({
   const [tab, setTab] = useState<Tab>(() =>
     !scanning && params.get("tab") === "largest" ? "largest" : "contents"
   );
-  const [hovered, setHovered] = useState<string | null>(null);
+  // Map and table share one hover; opening a folder drops it.
+  const { active: hovered, setHovered, clear } = useSeriesFocus();
   const subtree = useSpaceSubtree(reportId, folder, scanning);
   const largest = useSpaceLargest(reportId, tab === "largest" && !scanning);
   // Reveal in Finder is this Mac's; a remote host's paths can only be copied.
   const local = useIsLocalHost();
   const actions = useSpaceItemActions(reportId, local);
   const data = subtree.data;
-  const open = useCallback((node: SpaceNode) => {
-    if (!canOpen(node)) return;
-    setHovered(null);
-    setFolder(node.id);
-    setTab("contents");
-  }, []);
+  const open = useCallback(
+    (node: SpaceNode) => {
+      if (!canOpen(node)) return;
+      clear();
+      setFolder(node.id);
+      setTab("contents");
+    },
+    [clear]
+  );
   const path = data?.path ?? [];
   const up = () => {
     const parent = path.at(-2);

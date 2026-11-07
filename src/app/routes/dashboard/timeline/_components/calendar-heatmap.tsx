@@ -1,10 +1,10 @@
+import { heatmapAlpha } from "@core/chart-math";
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
 import { DENSE_HATCH_PX, strokeHatch } from "~/components/charts/canvas-hatch";
 import { useThemeVersion, withAlpha } from "~/components/charts/theme";
 import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
 import {
-  cellAlpha,
   type HeatmapRow,
   type HeatmapScale,
   isFutureCell,
@@ -96,7 +96,7 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
       const y = r * (CELL_H + GAP);
       for (let h = 0; h < 24; h++) {
         const x = h * (colW + GAP);
-        const v = row.hours[h];
+        const a = heatmapAlpha(row.hours[h], scale.hi, scale.lo);
         cell(x, y, colW, CELL_H, 2);
         // Not happened yet, not read yet, or this hour's minutes not committed
         // yet: plain track. The hatch says "no samples", which none of them is.
@@ -109,8 +109,8 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
           ctx.fill();
           continue;
         }
-        if (v != null) {
-          ctx.fillStyle = withAlpha(fill, cellAlpha(v, scale));
+        if (a !== null) {
+          ctx.fillStyle = withAlpha(fill, a);
           ctx.fill();
           continue;
         }

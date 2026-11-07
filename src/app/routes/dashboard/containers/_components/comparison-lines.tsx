@@ -2,6 +2,7 @@ import {
   type buildSeriesRuns,
   seriesColor,
 } from "@core/chart-math/series-lines";
+import { seriesFocusStyle } from "~/hooks/use-series-focus";
 import { GAP_EDGE_DOT } from "~/widgets/gap-edge-dot";
 import type { ComparisonSeries } from "./comparison-chart";
 
@@ -27,7 +28,7 @@ export function ComparisonLines({
       {plotSeries.map((s) => (
         <g
           key={s.container.id}
-          opacity={active && active !== s.container.id ? 0.3 : 1}
+          opacity={seriesFocusStyle(active, s.container.id).opacity}
           onPointerEnter={() => onFocus(s.container.id)}
         >
           {/* Each band spans its own bucket; missing spans remain empty. */}
@@ -62,7 +63,7 @@ export function ComparisonLines({
                 .join(" ")}
               fill="none"
               stroke={seriesColor(s.slot)}
-              strokeWidth={active === s.container.id ? 2 : 1}
+              strokeWidth={seriesFocusStyle(active, s.container.id).weight}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"

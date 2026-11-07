@@ -12,6 +12,7 @@ import { useCallback, useMemo } from "react";
 import { useDismissOutside } from "~/components/brush-overlay";
 import { useChartCursor } from "~/components/charts/use-chart-cursor";
 import { useElementSize } from "~/hooks/use-element-size";
+import type { SeriesFocus } from "~/hooks/use-series-focus";
 import { useBrushRange } from "~/stores/brush-store";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { containerPath } from "../_lib/presentation";
@@ -23,10 +24,7 @@ export function useComparisonPlotState(
   metric: ComparisonMetric,
   from: number,
   to: number,
-  focused: string | null,
-  pinnedFocus: string | null,
-  onFocus: (id: string | null) => void,
-  onPinFocus: (id: string | null) => void
+  focus: SeriesFocus
 ) {
   const [plotRef, plotWidth] = useElementSize("width", 1000);
   const selection = useBrushRange();
@@ -58,7 +56,7 @@ export function useComparisonPlotState(
     Math.max(0, ...values.filter((value): value is number => value !== null)),
     metric === "cpu" ? 0.1 : 1024 * 1024
   );
-  const active = pinnedFocus ?? focused;
+  const { active, pinned: pinnedFocus, clear: clearFocus } = focus;
   const plotSeries = useMemo(
     () =>
       series.map((s) => ({
@@ -90,9 +88,8 @@ export function useComparisonPlotState(
     `${containerPath(container.engine_id, container.id)}?metric=${metric}&range=15m&end=${(point ? point.time_ms + point.duration_ms : (cursor ?? to)) + 300_000}`;
   const dismiss = useCallback(() => {
     setHoverTime(null);
-    onPinFocus(null);
-    onFocus(null);
-  }, [onPinFocus, onFocus, setHoverTime]);
+    clearFocus();
+  }, [clearFocus, setHoverTime]);
   useDismissOutside(dismiss, hoverTime !== null || pinnedFocus !== null);
 
   return {

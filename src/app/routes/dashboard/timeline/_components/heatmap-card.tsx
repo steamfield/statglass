@@ -6,6 +6,7 @@ import { memo, useCallback, useState } from "react";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useHostClock } from "~/lib/host-clock";
+import { HeatScaleLegend } from "~/widgets/heat-matrix";
 import { useHeatmap } from "../_hooks/use-heatmap";
 import type { LaneUnits } from "../_lib/format";
 import {
@@ -98,24 +99,12 @@ export const HeatmapCard = memo(function HeatmapCard({
             onChange={setMetric}
             ariaLabel="Heatmap metric"
           />
-          <div aria-hidden className="flex items-center gap-1">
-            <span className="figures mr-1 text-[10px] text-muted-foreground">
-              {lo}
-            </span>
-            {LEGEND_ALPHAS.map((a) => (
-              <span
-                key={a}
-                data-legend-swatch
-                className="h-2.5 w-3.5 rounded-[2px]"
-                style={{
-                  background: `color-mix(in srgb, var(--color-${scale.accent}) ${a * 100}%, transparent)`,
-                }}
-              />
-            ))}
-            <span className="figures ml-1 text-[10px] text-muted-foreground">
-              {hi}
-            </span>
-          </div>
+          <HeatScaleLegend
+            accent={scale.accent}
+            minLabel={lo}
+            maxLabel={hi}
+            stops={LEGEND_ALPHAS}
+          />
         </div>
       }
     >

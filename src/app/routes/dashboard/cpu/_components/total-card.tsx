@@ -119,7 +119,8 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
           yAxis="percent"
           accent="cpu"
           height={HEIGHT}
-          ariaLabel={`CPU total and system, ${chart.span}, total ${formatPercent(total)}.`}
+          subject="CPU total and system"
+          now={`total ${formatPercent(total)}`}
         />
       </SectionCard>
     </div>

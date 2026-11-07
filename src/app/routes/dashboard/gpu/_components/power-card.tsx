@@ -40,7 +40,8 @@ export function PowerCard({ windowMs }: { windowMs: number }) {
         yAxis={WATTS_AXIS}
         accent="gpu"
         height={140}
-        ariaLabel={`GPU power, ${chart.span}, now ${formatWatts(now)}.`}
+        subject="GPU power"
+        now={`now ${formatWatts(now)}`}
       />
     </SectionCard>
   );

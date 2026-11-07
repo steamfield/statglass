@@ -42,10 +42,15 @@ test("the popover reopens on the 1 s tick with its 60 s charts", async ({
     );
   const atResume = (await labels()).length;
 
-  // Fresh numbers: the CPU value moves on after the resume.
+  // Fresh numbers: the CPU line moves on after the resume. (The name holds
+  // its figure per 10 s bucket, design-system.md "Accessibility", so it is
+  // the line, not the name, that shows each tick.)
+  const line = page.locator("[aria-label^='CPU, last'] [data-line]");
+  const atResumeLine = await line.getAttribute("d");
   await expect
-    .poll(async () => (await labels()).length, { timeout: 5000 })
-    .toBeGreaterThan(atResume + 1);
+    .poll(() => line.getAttribute("d"), { timeout: 5000 })
+    .not.toBe(atResumeLine);
+  expect((await labels()).length).toBeGreaterThanOrEqual(atResume);
   const all = await labels();
   expect(all.length).toBeGreaterThan(0);
   expect(all.filter((l) => !l.startsWith("CPU, last 60 seconds,"))).toEqual([]);

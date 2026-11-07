@@ -42,14 +42,7 @@ export function ContainerResults({
     from,
     to,
   } = route;
-  const {
-    ranking,
-    selectedComparison,
-    slots,
-    pinnedFocus,
-    focused,
-    setFocused,
-  } = chart;
+  const { ranking, selectedComparison, slots, focus } = chart;
   const patch = useSearchParamPatch();
   const engine = snapshot.engine?.id ?? "";
   const selection = useBrushRange();
@@ -114,8 +107,8 @@ export function ContainerResults({
             })
           }
           slots={slots}
-          focused={pinnedFocus ?? focused}
-          onFocus={setFocused}
+          focused={focus.active}
+          onFocus={focus.setHovered}
           filters={
             <>
               {selection && <SelectionChip range={selection} />}
@@ -141,7 +134,7 @@ export function ContainerResults({
                     state: null,
                     collapsed: collapsed.filter((group) => group !== target),
                   });
-                  setFocused(hiddenAttention[0]?.id ?? null);
+                  focus.setHovered(hiddenAttention[0]?.id ?? null);
                 }}
               >
                 {hiddenAttention.length} need attention

@@ -2,6 +2,7 @@ import type { CeilingLadder } from "@core/chart-math";
 import { useAreaBrush } from "~/components/area-brush";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SelectionSummary } from "~/components/selection-summary";
+import { useChartLabel } from "~/hooks/use-chart-label";
 import type { ModuleChart } from "~/hooks/use-module-chart";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import type { Accent } from "~/widgets/lib/accent";
@@ -92,7 +93,8 @@ export function ModuleHistoryChart({
   yAxis,
   accent,
   height,
-  ariaLabel,
+  subject,
+  now,
   annotations,
 }: {
   chart: ModuleChart;
@@ -100,13 +102,21 @@ export function ModuleHistoryChart({
   yAxis: ModuleYAxis;
   accent: Accent;
   height: number;
-  /** What it shows over `chart.span`, and the figure now, as a sentence. */
-  ariaLabel: string;
+  /** What it shows over `chart.span` ("GPU power"), for the accessible name. */
+  subject: string;
+  /** The figures now ("now 3.1 W"); the name holds them for 10 s at a time. */
+  now?: string;
   annotations?: StreamAreaProps["annotations"];
 }) {
   const { series, gaps } = chart;
   const y = useYAxis(yAxis, lines, chart);
   const brush = useAreaBrush(series, height, chart.brush, gaps);
+  const ariaLabel = useChartLabel({
+    subject,
+    span: chart.span,
+    now,
+    brushable: chart.brush,
+  });
   return (
     <div className="flex flex-col gap-1.5">
       <ChartHistoryStatus loading={series.loading} error={series.error} />
@@ -117,9 +127,7 @@ export function ModuleHistoryChart({
         intervalMs={series.intervalMs}
         accent={accent}
         height={height}
-        ariaLabel={
-          chart.brush ? `${ariaLabel} Drag to select a range.` : ariaLabel
-        }
+        ariaLabel={ariaLabel}
         {...y}
         xTicks={chart.xTicks}
         highlight={brush.highlight}

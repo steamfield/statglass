@@ -7,6 +7,7 @@ import {
 } from "~/components/charts/crosshair-line";
 import { PLOT_INSET } from "~/components/charts/layout";
 import { MirrorHover } from "~/components/mirror-hover";
+import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { ChartSelectionVeil } from "~/widgets/chart-frame";
 import { GapBands, type GapSpan } from "~/widgets/gap-band";
@@ -17,24 +18,20 @@ import { MirrorBars } from "~/widgets/mirror-bars";
 import { WindowTicks } from "~/widgets/window-ticks";
 
 /**
- * The accessible name of a mirrored chart, one wording everywhere:
- * "Network: upload above the line, download below, last 15 minutes".
+ * The subject of a mirrored chart's accessible name, one wording everywhere:
+ * "Network: upload above the line, download below". `useChartLabel` adds
+ * the span.
  */
-export function mirrorAriaLabel({
+export function mirrorSubject({
   subject,
   upLabel,
   downLabel,
-  span,
-  brush = false,
 }: {
   subject: string;
   upLabel: string;
   downLabel: string;
-  span: string;
-  brush?: boolean;
 }): string {
-  const label = `${subject}: ${upLabel.toLowerCase()} above the line, ${downLabel.toLowerCase()} below, ${span}.`;
-  return brush ? `${label} Drag to select a range.` : label;
+  return `${subject}: ${upLabel.toLowerCase()} above the line, ${downLabel.toLowerCase()} below`;
 }
 
 /**
@@ -144,6 +141,11 @@ export function MirrorChart({
   const downMax = useNiceCeiling(down, lastMs, minCeiling, windowMs, scope);
   const plotRef = useRef<HTMLDivElement>(null);
   const height = upHeight + downHeight + 1;
+  const ariaLabel = useChartLabel({
+    subject: mirrorSubject({ subject, upLabel, downLabel }),
+    span,
+    brushable: brush,
+  });
   const selection = useBrushOverlay({
     firstMs,
     spanMs: count * bucketMs,
@@ -187,13 +189,7 @@ export function MirrorChart({
             upHeight={upHeight}
             downHeight={downHeight}
             accent={accent}
-            ariaLabel={mirrorAriaLabel({
-              subject,
-              upLabel,
-              downLabel,
-              span,
-              brush,
-            })}
+            ariaLabel={ariaLabel}
           />
           <ChartSelectionVeil highlight={selection.highlight} />
         </div>

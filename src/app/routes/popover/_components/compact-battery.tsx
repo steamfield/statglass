@@ -1,6 +1,7 @@
 import { ratio } from "@core/chart-math";
 import { formatPercent } from "@core/format";
-import { windowWords } from "@core/live-window";
+import { spanWords } from "@core/live-window";
+import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
@@ -47,6 +48,10 @@ export function CompactPower({ showBattery }: { showBattery: boolean }) {
   const windowMs = useScaledWindow(60_000);
   const history = useSeriesWindow("power.system", windowMs);
   const ceiling = useNiceCeiling(history.values, history.tEndMs, 1, windowMs);
+  const ariaLabel = useChartLabel({
+    subject: "System power",
+    span: spanWords(windowMs, null),
+  });
   return (
     <div className="flex items-center gap-2">
       <div className="min-w-10 flex-1">
@@ -57,7 +62,7 @@ export function CompactPower({ showBattery }: { showBattery: boolean }) {
           yMax={ceiling}
           accent="power"
           height={14}
-          ariaLabel={`System power, last ${windowWords(windowMs)}`}
+          ariaLabel={ariaLabel}
         />
       </div>
       {showBattery && <CompactBattery />}

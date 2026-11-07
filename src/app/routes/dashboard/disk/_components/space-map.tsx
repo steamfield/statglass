@@ -20,11 +20,12 @@ import {
   useState,
 } from "react";
 import { useElementSize } from "~/hooks/use-element-size";
+import { motionEase, motionMs } from "~/lib/motion/tokens";
 import { cn } from "~/lib/utils";
+import { rampColor } from "~/widgets/lib/accent";
 import { canOpen, itemsLabel, kindLabel, shareLabel } from "../_lib/space";
 
-const ramp = (step: 2 | 3 | 4) =>
-  `color-mix(in srgb, var(--color-disk) var(--ramp-${step}), transparent)`;
+const ramp = (step: 2 | 3 | 4) => rampColor(step, "var(--color-disk)");
 
 /**
  * The treemap of one folder (plan/disk-space-report.md "The treemap"). Tiles
@@ -119,15 +120,6 @@ function placeTip(el: HTMLDivElement | null, e: React.PointerEvent) {
   el.style.transform = `translate(${flipX ? x - 12 : x + 14}px, ${flipY ? y - 12 : y + 16}px) translate(${flipX ? "-100%" : "0"}, ${flipY ? "-100%" : "0"})`;
 }
 
-/** A motion token in ms from the root: 0 under Reduce Motion and Performance mode. */
-function tokenMs(el: Element, name: string): number {
-  const v = getComputedStyle(el.ownerDocument.documentElement).getPropertyValue(
-    name
-  );
-  const ms = Number.parseFloat(v);
-  return Number.isFinite(ms) ? ms : 0;
-}
-
 /**
  * Opening a folder grows the new map out of the tile that was clicked (or
  * the row's tile); going up shrinks the old folder back into its tile in
@@ -148,16 +140,15 @@ function useZoom(
     prev.current = { folder, tiles };
     const el = layer.current;
     if (!before || before.folder === folder || !el || width <= 0) return;
-    const easing =
-      getComputedStyle(el).getPropertyValue("--ease-out") || "ease-out";
+    const easing = motionEase("out", el);
     const from = zoomFrom(before, folder, tiles, width, height);
     if (from === null) {
-      const ms = tokenMs(el, "--motion-crossfade");
+      const ms = motionMs("crossfade", el);
       if (ms > 0)
         el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing });
       return;
     }
-    const ms = tokenMs(el, "--motion-enter");
+    const ms = motionMs("enter", el);
     if (ms > 0)
       el.animate(
         [
