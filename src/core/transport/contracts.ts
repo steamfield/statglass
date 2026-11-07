@@ -296,6 +296,11 @@ export interface Transport {
     fromMs: Millis,
     toMs: Millis
   ): Promise<CommandResult<SeriesStats>>;
+  /**
+   * When the host last woke: the end of its latest closed sleep gap in the
+   * week before now, null when it did not sleep. Needs stored history.
+   */
+  lastWake(host: HostId): Promise<CommandResult<Millis | null>>;
   /** The primary interface's addresses, read locally on each call. */
   getNetworkAddresses(host: HostId): Promise<CommandResult<NetworkAddresses>>;
   /**

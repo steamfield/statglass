@@ -611,6 +611,34 @@ fn series_stats_count_measured_time_through_now() {
 }
 
 #[test]
+fn last_wake_is_the_latest_closed_sleep_in_the_week() {
+    use statglass_schema::{Gap, GapReason};
+    const H: i64 = 3_600_000;
+    let tmp = temp_dir("last-wake");
+    let history = History::open(tmp.path());
+    let w = history.register_host(&local_record()).unwrap();
+    let host = local_record().id;
+    assert_eq!(history.last_wake(host, NOW).unwrap(), None);
+    for (start, end, reason) in [
+        (NOW - 9 * 24 * H, Some(NOW - 8 * 24 * H), GapReason::Sleep),
+        (NOW - 30 * H, Some(NOW - 20 * H), GapReason::Sleep),
+        (NOW - 10 * H, Some(NOW - 9 * H), GapReason::AppNotRunning),
+        (NOW - H, None, GapReason::Sleep),
+    ] {
+        w.write_gap(host, Gap::new(start, end, None, reason).unwrap())
+            .unwrap();
+    }
+    w.flush().unwrap();
+    // Not the older week, not a quit, not the sleep still open.
+    assert_eq!(history.last_wake(host, NOW).unwrap(), Some(NOW - 20 * H));
+    history.close();
+    assert!(matches!(
+        History::unavailable().last_wake(host, NOW),
+        Err(CommandError::HistoryUnavailable { .. })
+    ));
+}
+
+#[test]
 fn battery_hours_follow_local_hours_in_a_half_hour_zone_through_now() {
     const MIN: i64 = 60_000;
     let tmp = temp_dir("battery-hours");

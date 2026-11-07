@@ -15,7 +15,7 @@ import {
   mockDockerSnapshot,
   projectAggregates,
 } from "./docker-fixtures";
-import { mockHistoryPoints } from "./docker-history";
+import { maskUncovered, mockHistoryPoints } from "./docker-history";
 import { MockDockerLogs } from "./docker-logs";
 import { retainedContainers, scenarioSnapshot } from "./docker-scenarios";
 import { createMockDockerStorage } from "./docker-storage";
@@ -277,12 +277,24 @@ class MockDocker {
         row.engine_id === request.engine_id &&
         (!request.container_id || row.id === request.container_id)
     );
+    // Rust answers with the engine's live coverage and masks points by it.
+    const coverage = this.snapshot.coverage.filter(
+      (g) =>
+        g.start_ms < request.to_ms && (g.end_ms ?? Infinity) > request.from_ms
+    );
     const page: DockerHistoryPage = {
       generation: this.snapshot.generation,
-      coverage: [],
+      coverage,
       metadata,
       persistence: this.snapshot.persistence,
-      points: metadata[0] ? mockHistoryPoints(request, metadata[0]) : [],
+      points: metadata[0]
+        ? maskUncovered(
+            mockHistoryPoints(request, metadata[0]),
+            coverage,
+            request.container_id,
+            request.to_ms
+          )
+        : [],
     };
     return ok(page);
   };

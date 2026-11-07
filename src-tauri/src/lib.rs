@@ -53,6 +53,13 @@ pub const BINDINGS_PATH: &str = concat!(
     "/../src/core/generated/bindings.ts"
 );
 
+/// The tray's rate strings for sample inputs, written with the bindings so
+/// `bindings-check` fails when the preview's test would check a stale table.
+pub const TRAY_RATES_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../src/core/generated/tray-rates.json"
+);
+
 /// The bundle identifier of debug builds; release builds use `tauri.conf.json`'s.
 #[cfg(debug_assertions)]
 pub const DEV_IDENTIFIER: &str = "com.tryopendata.statglass.dev";
@@ -106,6 +113,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             durable_usage::query_historical_usage, durable_usage::query_usage_processes,
             commands::query_usage_by_app, commands::query_usage_series,
             commands::query_series_stats,
+            commands::last_wake,
             commands::get_network_addresses,
             commands::get_public_ip,
             commands::query_events,
@@ -144,7 +152,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
     facts::register(builder)
 }
 
-/// Writes the TypeScript bindings for `builder` to [`BINDINGS_PATH`].
+/// Writes the TypeScript bindings for `builder` to [`BINDINGS_PATH`], and the tray rate
+/// table to [`TRAY_RATES_PATH`].
 pub fn export_bindings(builder: &Builder<tauri::Wry>) -> Result<(), specta_typescript::Error> {
     builder.export(Typescript::default(), BINDINGS_PATH)?;
     // Specta emits spaces after union separators. Normalize generation itself so
@@ -157,6 +166,9 @@ pub fn export_bindings(builder: &Builder<tauri::Wry>) -> Result<(), specta_types
         .join("\n")
         + "\n";
     std::fs::write(BINDINGS_PATH, clean)?;
+    let golden =
+        serde_json::to_string_pretty(&tray::model::rate_golden()).map_err(std::io::Error::other)?;
+    std::fs::write(TRAY_RATES_PATH, golden + "\n")?;
     Ok(())
 }
 

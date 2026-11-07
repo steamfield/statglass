@@ -424,12 +424,8 @@ impl DockerHandle {
             {
                 g.end_ms = Some(now.max(g.start_ms));
             }
-            s.coverage.push(DockerCoverage {
-                start_ms: now,
-                end_ms: None,
-                container_id: None,
-                reason: reason.into(),
-            });
+            s.coverage
+                .push(DockerCoverage::new(now, None, None, reason.into()));
             if s.coverage.len() > 128 {
                 s.coverage.drain(0..64);
             }
@@ -527,12 +523,12 @@ mod tests {
             s.observed_ms = 123;
             s.aggregate.running = 5;
             s.aggregate.expected = 5;
-            s.coverage.push(DockerCoverage {
-                start_ms: 10,
-                end_ms: Some(20),
-                container_id: None,
-                reason: "disconnected".into(),
-            });
+            s.coverage.push(DockerCoverage::new(
+                10,
+                Some(20),
+                None,
+                "disconnected".into(),
+            ));
         });
         let worker = handle.control.subscribe();
         let mut subscriber = handle.subscribe();

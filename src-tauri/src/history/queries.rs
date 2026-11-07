@@ -1,5 +1,8 @@
 //! Query adapters: validate IPC requests, combine persisted and recent values.
 use super::*;
+
+/// How far back `last_wake` looks for a sleep.
+const LAST_WAKE_SPAN_MS: i64 = 7 * 86_400_000;
 impl History {
     /// `query_network_by_app`: the stored tiers plus `recent` (the engine's in-memory
     /// buckets, which replace stored rows of the same bucket), split into apps, overhead
@@ -160,6 +163,22 @@ impl History {
         Ok(statglass_store::range_stats(
             &read, &defs, from_ms, to_ms, now_ms,
         ))
+    }
+
+    /// `last_wake`: the end of the latest closed sleep gap of `host` in the week before
+    /// `now_ms`; `None` when it did not sleep in that week, and `history_unavailable`
+    /// without stored history, which keeps the gaps. Blocking.
+    pub fn last_wake(
+        &self,
+        host: statglass_schema::HostId,
+        now_ms: i64,
+    ) -> Result<Option<i64>, CommandError> {
+        let gaps = self.read(|r| r.gaps(host, now_ms - LAST_WAKE_SPAN_MS, now_ms + 1))?;
+        Ok(gaps
+            .into_iter()
+            .filter(|g| g.reason == statglass_schema::GapReason::Sleep)
+            .filter_map(|g| g.end_ms)
+            .max())
     }
 
     /// `battery_hours`: for each hour between consecutive `hour_starts` (the

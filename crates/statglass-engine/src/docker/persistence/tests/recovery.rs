@@ -63,12 +63,8 @@ fn assert_resumed_engine_closes_gap(reason: &str) {
     let (_dir, store, r) = setup();
     let t = wall_ms();
     let mut s = fixture(t);
-    s.coverage.push(api::DockerCoverage {
-        start_ms: t + 50,
-        end_ms: None,
-        container_id: None,
-        reason: reason.into(),
-    });
+    s.coverage
+        .push(api::DockerCoverage::new(t + 50, None, None, reason.into()));
     r.record(&s);
     store.writer().flush().unwrap();
     s.coverage.clear();
@@ -247,12 +243,12 @@ fn a_new_gap_after_the_last_observation_does_not_poison_retries() {
     let (_dir, store, r) = setup();
     let t = wall_ms();
     let mut snapshot = fixture(t);
-    snapshot.coverage.push(api::DockerCoverage {
-        start_ms: t + 50,
-        end_ms: None,
-        container_id: None,
-        reason: "event_replay_uncertain".into(),
-    });
+    snapshot.coverage.push(api::DockerCoverage::new(
+        t + 50,
+        None,
+        None,
+        "event_replay_uncertain".into(),
+    ));
     r.record(&snapshot);
     store.writer().flush().unwrap();
     assert_eq!(r.status().error, None);
@@ -352,12 +348,12 @@ fn review_event_coverage_survives_recorder_restart() {
     let (_dir, store, r) = setup();
     let t = wall_ms();
     let mut s = fixture(t);
-    s.coverage = vec![api::DockerCoverage {
-        start_ms: t - 1000,
-        end_ms: Some(t),
-        container_id: None,
-        reason: "replay_uncertain".into(),
-    }];
+    s.coverage = vec![api::DockerCoverage::new(
+        t - 1000,
+        Some(t),
+        None,
+        "replay_uncertain".into(),
+    )];
     r.record(&s);
     store.writer().flush().unwrap();
     let fresh = DockerRecorder::new(host().id);

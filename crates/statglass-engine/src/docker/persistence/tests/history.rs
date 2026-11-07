@@ -1,4 +1,61 @@
 use super::*;
+use crate::docker::persistence::projection::mask_uncovered;
+
+#[test]
+fn points_claim_no_measurement_inside_collection_or_metric_gaps() {
+    let full = |time_ms: i64| api::DockerHistoryPoint {
+        time_ms,
+        duration_ms: 10_000,
+        cpu_measured_ms: 10_000,
+        memory_measured_ms: 10_000,
+        expected_ms: 10_000,
+        cpu_covered: true,
+        memory_covered: true,
+        ..point(&db::DockerBucket {
+            entity: "c".into(),
+            tier: Tier::S10,
+            bucket_ms: time_ms,
+            revision: 1,
+            metrics: vec![],
+            populations: vec![],
+        })
+    };
+    let mut points: Vec<_> = [0, 10_000, 20_000, 30_000, 40_000]
+        .into_iter()
+        .map(full)
+        .collect();
+    let gap = |start, end, id: Option<&str>, reason: &str| {
+        api::DockerCoverage::new(start, end, id.map(Into::into), reason.into())
+    };
+    let gaps = [
+        // Spans the first bucket; the overlapping half-gap counts once.
+        gap(0, Some(10_000), None, "disconnected"),
+        gap(5_000, Some(10_000), Some("c"), "partial_cycle"),
+        // Touches the second bucket: measured time is capped, not erased.
+        gap(17_000, Some(19_000), Some("c"), "partial_cycle"),
+        // Another container, saving and event gaps measure nothing about this one.
+        gap(20_000, Some(30_000), Some("other"), "partial_cycle"),
+        gap(20_000, Some(40_000), None, "write_failed"),
+        gap(20_000, Some(40_000), None, "events_disconnected"),
+        // Open: runs to the end of the range.
+        gap(45_000, None, None, "paused"),
+    ];
+    mask_uncovered(&mut points, &gaps, Some("c"), 50_000);
+    let measured: Vec<_> = points
+        .iter()
+        .map(|p| (p.cpu_measured_ms, p.memory_measured_ms, p.cpu_covered))
+        .collect();
+    assert_eq!(
+        measured,
+        [
+            (0, 0, false),
+            (8_000, 8_000, false),
+            (10_000, 10_000, true),
+            (10_000, 10_000, true),
+            (5_000, 5_000, false),
+        ]
+    );
+}
 
 #[test]
 fn history_points_publish_coverage_without_client_inference() {

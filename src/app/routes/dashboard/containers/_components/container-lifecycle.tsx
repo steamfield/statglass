@@ -1,4 +1,5 @@
 import { errorTone } from "@core/command-error";
+import { formatDateTime } from "@core/format";
 import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import type { useDockerEvents } from "../_hooks/use-docker";
@@ -29,7 +30,7 @@ export function ContainerLifecycle({
             className="figures text-muted-foreground"
             dateTime={new Date(event.time_ms).toISOString()}
           >
-            {new Date(event.time_ms).toLocaleString()}
+            {formatDateTime(event.time_ms)}
           </time>
           <span>
             {event.action}
@@ -65,7 +66,7 @@ export function ContainerLifecycle({
       </div>
       {events.data?.coverage.map((gap) => (
         <p key={gap.start_ms} className="text-[11px] text-muted-foreground">
-          Event coverage: {gap.reason}
+          Event coverage: {gap.label}
         </p>
       ))}
     </section>

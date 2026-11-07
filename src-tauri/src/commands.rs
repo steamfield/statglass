@@ -405,6 +405,21 @@ pub async fn query_series_stats(
     .await
 }
 
+/// When the host last woke, on its clock ([`crate::history::History::last_wake`]).
+#[tauri::command]
+#[specta::specta]
+pub async fn last_wake(app: AppHandle, host: HostId) -> Result<Option<Millis>, CommandError> {
+    blocking(app, move |state| {
+        state.host(host)?;
+        let now_ms = state.host_now(host);
+        Ok(state
+            .history_for(host)?
+            .last_wake(host, now_ms)?
+            .map(Millis))
+    })
+    .await
+}
+
 /// The addresses of the interface carrying the default route. Read from the system on
 /// each call; no network request. `remote_host` for a host other than this Mac.
 #[tauri::command]

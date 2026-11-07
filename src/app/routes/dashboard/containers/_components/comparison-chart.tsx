@@ -95,25 +95,16 @@ function ComparisonPlot({
     () => coverage.filter((gap) => !eventCoverage(gap)),
     [coverage]
   );
+  // Rust already counts no measured time inside the coverage gaps (D-128).
   const series = useMemo(
     () =>
       sourceSeries.map((s) => ({
         ...s,
-        points: s.points
-          .filter((point) => point.time_ms >= from && point.time_ms < to)
-          .map((point) =>
-            metricGaps.some(
-              (gap) =>
-                (gap.container_id === null ||
-                  gap.container_id === s.container.id) &&
-                gap.start_ms < point.time_ms + point.duration_ms &&
-                (gap.end_ms ?? to) > point.time_ms
-            )
-              ? { ...point, cpu_measured_ms: 0, memory_measured_ms: 0 }
-              : point
-          ),
+        points: s.points.filter(
+          (point) => point.time_ms >= from && point.time_ms < to
+        ),
       })),
-    [sourceSeries, from, to, metricGaps]
+    [sourceSeries, from, to]
   );
   const displayName = useCallback(
     (container: DockerContainer) =>

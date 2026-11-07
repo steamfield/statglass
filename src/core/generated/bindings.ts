@@ -211,6 +211,8 @@ export const commands = {
 	 *  or a metric is labelled or unknown.
 	 */
 	querySeriesStats: (host: HostId, metrics: string[], fromMs: Millis, toMs: Millis) => typedError<SeriesStats, CommandError>(__TAURI_INVOKE("query_series_stats", { host, metrics, fromMs, toMs })),
+	/**  When the host last woke, on its clock ([`crate::history::History::last_wake`]). */
+	lastWake: (host: HostId) => typedError<number | null, CommandError>(__TAURI_INVOKE("last_wake", { host })),
 	/**
 	 *  The addresses of the interface carrying the default route. Read from the system on
 	 *  each call; no network request. `remote_host` for a host other than this Mac.
@@ -922,8 +924,17 @@ export type DockerCoverage = {
 	start_ms: number,
 	end_ms: number | null,
 	container_id: string | null,
+	/**  The key records merge by; `kind` and `label` are derived from it (D-128). */
 	reason: string,
+	kind: DockerCoverageKind,
+	label: string,
 };
+
+/**
+ *  What a coverage record interrupted. `Collection` and `Metrics` mean nothing was
+ *  measured, so a history point counts no measured time inside them (D-128).
+ */
+export type DockerCoverageKind = "collection" | "saving" | "metrics" | "events";
 
 export type DockerEngine = {
 	id: string,

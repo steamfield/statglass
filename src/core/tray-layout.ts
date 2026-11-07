@@ -4,6 +4,8 @@
  * Settings and onboarding previews show what the real status items will.
  * Rust draws the menu bar; this only lays out a preview of it.
  */
+
+import { sumOrNull } from "@core/chart-math/numeric";
 import type {
   ItemMode,
   MenuBarSettings,
@@ -108,30 +110,50 @@ export function wattsText(w: number | null): string {
   return w < 100 ? `${w.toFixed(1)}W` : `${w.toFixed(0)}W`;
 }
 
+/**
+ * Rust's `format!("{:.N}")` of an `f32`: the value as the tray holds it,
+ * printed exactly, a tie going to the even digit ("1.25" is "1.2").
+ */
+function fixedF32(x: number, digits: number): string {
+  const f = Math.fround(x);
+  const unit = 10 ** digits;
+  // Exact: an f32 times 10 or 1 fits in a double.
+  const scaled = f * unit;
+  const floor = Math.floor(scaled);
+  if (scaled - floor !== 0.5) return f.toFixed(digits);
+  return ((floor % 2 === 0 ? floor : floor + 1) / unit).toFixed(digits);
+}
+
+/** The tray's `f32` rate in the chosen unit, never negative. */
+function trayRate(bps: number, unit: NetworkUnit) {
+  const bits = unit === "bits_per_sec";
+  const v = Math.fround(bps);
+  return {
+    v: Math.max(0, bits ? Math.fround(v * 8) : v),
+    suffix: bits ? "b" : "B",
+  };
+}
+
 /** Rust's `rate_line`: "38.4 MB/s", "512 KB/s", bits with a lowercase b. */
 export function rateLine(bps: number | null, unit: NetworkUnit): string {
   if (bps === null) return DASH;
-  const bits = unit === "bits_per_sec";
-  const v = Math.max(0, bits ? bps * 8 : bps);
-  const suffix = bits ? "b" : "B";
+  const { v, suffix } = trayRate(bps, unit);
   const scaled = (x: number, prefix: string) =>
-    Math.round(x * 10) >= 1000
-      ? `${x.toFixed(0)} ${prefix}${suffix}/s`
-      : `${x.toFixed(1)} ${prefix}${suffix}/s`;
-  if (v >= 1e9) return scaled(v / 1e9, "G");
-  if (v >= 1e6) return scaled(v / 1e6, "M");
-  return `${Math.floor(v / 1e3)} K${suffix}/s`;
+    Math.round(Math.fround(x * 10)) >= 1000
+      ? `${fixedF32(x, 0)} ${prefix}${suffix}/s`
+      : `${fixedF32(x, 1)} ${prefix}${suffix}/s`;
+  if (v >= 1e9) return scaled(Math.fround(v / 1e9), "G");
+  if (v >= 1e6) return scaled(Math.fround(v / 1e6), "M");
+  return `${Math.floor(Math.fround(v / 1e3))} K${suffix}/s`;
 }
 
 /** Rust's `rate_text`: "38.4MB", "512KB". */
 export function rateText(bps: number | null, unit: NetworkUnit): string {
   if (bps === null) return DASH;
-  const bits = unit === "bits_per_sec";
-  const v = Math.max(0, bits ? bps * 8 : bps);
-  const suffix = bits ? "b" : "B";
-  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}G${suffix}`;
-  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M${suffix}`;
-  return `${Math.floor(v / 1e3)}K${suffix}`;
+  const { v, suffix } = trayRate(bps, unit);
+  if (v >= 1e9) return `${fixedF32(v / 1e9, 1)}G${suffix}`;
+  if (v >= 1e6) return `${fixedF32(v / 1e6, 1)}M${suffix}`;
+  return `${Math.floor(Math.fround(v / 1e3))}K${suffix}`;
 }
 
 function rates(r: TrayReadings, unit: NetworkUnit) {
@@ -217,8 +239,7 @@ function ownItem(
         text: wattsText(v.power),
       };
     case "network": {
-      const total =
-        v.netUp === null || v.netDown === null ? null : v.netUp + v.netDown;
+      const total = sumOrNull(v.netUp, v.netDown);
       return {
         module: m,
         kind: "value",

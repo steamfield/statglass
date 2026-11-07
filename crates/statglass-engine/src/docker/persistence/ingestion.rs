@@ -170,12 +170,12 @@ impl DockerRecorder {
                             .iter()
                             .any(|g| g.start_ms == gap.start_ms && g.reason == gap.reason)
                         {
-                            coverage.push(api::DockerCoverage {
-                                start_ms: gap.start_ms,
-                                end_ms: None,
-                                container_id: None,
-                                reason: gap.reason,
-                            });
+                            coverage.push(api::DockerCoverage::new(
+                                gap.start_ms,
+                                None,
+                                None,
+                                gap.reason,
+                            ));
                         }
                     }
                     s.restored_coverage.insert(daemon.to_owned());

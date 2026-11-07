@@ -1,3 +1,4 @@
+import { formatDateTime } from "@core/format";
 import {
   mockContainer,
   mockDockerSnapshot,
@@ -47,26 +48,117 @@ it("blocks a seventh chart choice and never changes recording", async () => {
   result.transport.dispose();
 });
 
+it("labels comparison gap bands with Rust's label, never the reason key", () => {
+  const container = mockContainer(0, 3_600_000);
+  const result = renderWithProviders(
+    <ComparisonChart
+      series={[{ container, points: [], slot: 1 }]}
+      metric="cpu"
+      from={0}
+      to={3_600_000}
+      live={false}
+      range="1h"
+      coverage={[
+        {
+          start_ms: 600_000,
+          end_ms: 900_000,
+          container_id: null,
+          reason: "shutdown",
+          kind: "collection",
+          label: "StatGlass was not running",
+        },
+        {
+          start_ms: 1_200_000,
+          end_ms: 1_500_000,
+          container_id: null,
+          reason: "events_dropped_rate_limit",
+          kind: "events",
+          label: "Events arrived too fast; some were dropped",
+        },
+      ]}
+      focused={null}
+      pinnedFocus={null}
+      onFocus={() => {}}
+      onPinFocus={() => {}}
+      onChoose={() => {}}
+    />
+  );
+  expect(screen.getByLabelText("StatGlass was not running")).toBeTruthy();
+  expect(screen.queryByLabelText("shutdown")).toBeNull();
+  // Event coverage is not a metric gap.
+  expect(
+    screen.queryByLabelText("Events arrived too fast; some were dropped")
+  ).toBeNull();
+  result.unmount();
+  result.transport.dispose();
+});
+
+it("groups history details by Rust's kind", async () => {
+  const snapshot = mockDockerSnapshot(1, 30000);
+  const result = renderWithProviders(
+    <HistoryNotice
+      snapshot={snapshot}
+      coverage={[
+        {
+          start_ms: 0,
+          end_ms: 10000,
+          container_id: null,
+          reason: "events_dropped_rate_limit",
+          kind: "events",
+          label: "Events arrived too fast; some were dropped",
+        },
+      ]}
+      metric="cpu"
+      onManage={() => {}}
+      onResume={() => {}}
+    />
+  );
+  expect(
+    screen.getByText("Some container events may be missing")
+  ).toBeVisible();
+  await result.user.click(screen.getByRole("button", { name: /Details/ }));
+  const dialog = screen.getByRole("dialog", { name: "History details" });
+  expect(within(dialog).getByRole("heading", { name: "Events" })).toBeVisible();
+  expect(
+    within(dialog).getByText("Events arrived too fast; some were dropped")
+  ).toBeVisible();
+  result.unmount();
+  result.transport.dispose();
+});
+
 it("merges touching equal-scope coverage without merging events into metrics", () => {
   const records = mergeCoverage([
-    { start_ms: 0, end_ms: 10000, container_id: "a", reason: "write_failed" },
+    {
+      start_ms: 0,
+      end_ms: 10000,
+      container_id: "a",
+      reason: "write_failed",
+      kind: "saving",
+      label: "Measurements could not be saved",
+    },
     {
       start_ms: 10000,
       end_ms: 20000,
       container_id: "a",
       reason: "write_failed",
+      kind: "saving",
+      label: "Measurements could not be saved",
     },
     {
       start_ms: 0,
       end_ms: 20000,
       container_id: null,
       reason: "events_disconnected",
+      kind: "events",
+      label: "Lost connection to Docker events",
     },
     {
       start_ms: 10000,
       end_ms: 20000,
       container_id: "b",
       reason: "write_failed",
+      kind: "saving",
+      label: "Measurements could not be saved",
     },
   ]);
   expect(records).toHaveLength(3);
@@ -92,6 +184,8 @@ it("shows one prioritized notice and separates metrics from events in details", 
           end_ms: 10000,
           container_id: null,
           reason: "events_disconnected",
+          kind: "events",
+          label: "Lost connection to Docker events",
         },
       ]}
       metric="cpu"
@@ -216,7 +310,7 @@ it("keeps the unavailable last-reading time at the newest measured container obs
     />
   );
   expect(screen.getByRole("status")).toHaveTextContent(
-    `last reading ${new Date(measured).toLocaleTimeString()}`
+    `last reading ${formatDateTime(measured)}`
   );
   result.unmount();
   result.transport.dispose();

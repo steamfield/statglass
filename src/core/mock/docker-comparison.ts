@@ -3,17 +3,19 @@ import {
   type DockerComparisonPage,
   type DockerComparisonRequest,
   type DockerContainer,
+  type DockerCoverage,
   type DockerSnapshot,
 } from "@core/generated/bindings";
 import type { CommandResult } from "@core/transport";
 import { MiB } from "./docker-fixtures";
-import { mockHistoryPoints } from "./docker-history";
+import { maskUncovered, mockHistoryPoints } from "./docker-history";
 import type { ScenarioName } from "./fixtures";
 import { invalid, ok, rangeError } from "./protocol";
 
 function comparisonRow(
   container: DockerContainer,
   request: DockerComparisonRequest,
+  coverage: readonly DockerCoverage[],
   scenarios: readonly ScenarioName[],
   now: () => number,
   startedAt: number
@@ -31,9 +33,11 @@ function comparisonRow(
           },
         }
       : container;
-  const points = mockHistoryPoints(
-    { ...request, container_id: container.id },
-    boosted
+  const points = maskUncovered(
+    mockHistoryPoints({ ...request, container_id: container.id }, boosted),
+    coverage,
+    container.id,
+    request.to_ms
   );
   const cpu = points.filter(
     (p) => p.cpu_measured_ms > 0 && p.metrics.cpu_pct !== null
@@ -99,7 +103,14 @@ export function comparison(
   );
   const all = candidates
     .map((container) => {
-      return comparisonRow(container, request, scenarios, now, startedAt);
+      return comparisonRow(
+        container,
+        request,
+        snapshot.coverage,
+        scenarios,
+        now,
+        startedAt
+      );
     })
     .filter((row) =>
       request.metric === "cpu"

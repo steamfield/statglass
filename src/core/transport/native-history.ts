@@ -13,6 +13,7 @@ export function nativeHistory(): Pick<
   | "queryUsageByApp"
   | "queryUsageSeries"
   | "querySeriesStats"
+  | "lastWake"
   | "getNetworkAddresses"
   | "getPublicIp"
   | "queryEvents"
@@ -35,6 +36,7 @@ export function nativeHistory(): Pick<
       commands.queryUsageSeries(host, fromMs, toMs, by, limit),
     querySeriesStats: (host, metrics, fromMs, toMs) =>
       commands.querySeriesStats(host, metrics, fromMs, toMs),
+    lastWake: (host) => commands.lastWake(host),
     getNetworkAddresses: (host) => commands.getNetworkAddresses(host),
     getPublicIp: () => commands.getPublicIp(),
     queryEvents: (host, fromMs, toMs) =>

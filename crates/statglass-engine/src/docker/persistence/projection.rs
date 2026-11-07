@@ -165,3 +165,51 @@ pub(super) fn display_points(
     }
     Ok(points)
 }
+/// No point claims more measured time than the collection and metrics gaps of its
+/// container, or of all containers, leave in its bucket (D-128). A bucket a gap touches
+/// is not covered; one a gap spans has no measured time. Open gaps run to `to_ms`.
+pub(super) fn mask_uncovered(
+    points: &mut [api::DockerHistoryPoint],
+    gaps: &[api::DockerCoverage],
+    container: Option<&str>,
+    to_ms: i64,
+) {
+    let masking: Vec<(i64, i64)> = gaps
+        .iter()
+        .filter(|g| {
+            g.kind.masks_measurements()
+                && (g.container_id.is_none() || g.container_id.as_deref() == container)
+        })
+        .map(|g| (g.start_ms, g.end_ms.unwrap_or(to_ms)))
+        .collect();
+    for p in points {
+        let end = p.time_ms.saturating_add(i64::from(p.duration_ms));
+        let gap_ms = overlap_ms(&masking, p.time_ms, end);
+        if gap_ms == 0 {
+            continue;
+        }
+        let left = u32::try_from(end - p.time_ms - gap_ms).unwrap_or(0);
+        p.cpu_measured_ms = p.cpu_measured_ms.min(left);
+        p.memory_measured_ms = p.memory_measured_ms.min(left);
+        p.cpu_covered = false;
+        p.memory_covered = false;
+    }
+}
+/// How much of `[from, to)` the spans cover, counting overlapping spans once.
+fn overlap_ms(spans: &[(i64, i64)], from: i64, to: i64) -> i64 {
+    let mut clipped: Vec<(i64, i64)> = spans
+        .iter()
+        .map(|&(s, e)| (s.max(from), e.min(to)))
+        .filter(|(s, e)| e > s)
+        .collect();
+    clipped.sort_unstable();
+    let (mut total, mut cursor) = (0, from);
+    for (s, e) in clipped {
+        let s = s.max(cursor);
+        if e > s {
+            total += e - s;
+            cursor = e;
+        }
+    }
+    total
+}

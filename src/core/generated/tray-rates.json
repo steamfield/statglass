@@ -1,0 +1,290 @@
+[
+  {
+    "bytes_per_sec": -5.0,
+    "unit": "bytes_per_sec",
+    "line": "0 KB/s",
+    "text": "0KB"
+  },
+  {
+    "bytes_per_sec": 0.0,
+    "unit": "bytes_per_sec",
+    "line": "0 KB/s",
+    "text": "0KB"
+  },
+  {
+    "bytes_per_sec": 999.0,
+    "unit": "bytes_per_sec",
+    "line": "0 KB/s",
+    "text": "0KB"
+  },
+  {
+    "bytes_per_sec": 1000.0,
+    "unit": "bytes_per_sec",
+    "line": "1 KB/s",
+    "text": "1KB"
+  },
+  {
+    "bytes_per_sec": 1999.9000244140625,
+    "unit": "bytes_per_sec",
+    "line": "1 KB/s",
+    "text": "1KB"
+  },
+  {
+    "bytes_per_sec": 512300.0,
+    "unit": "bytes_per_sec",
+    "line": "512 KB/s",
+    "text": "512KB"
+  },
+  {
+    "bytes_per_sec": 999999.0,
+    "unit": "bytes_per_sec",
+    "line": "999 KB/s",
+    "text": "999KB"
+  },
+  {
+    "bytes_per_sec": 1000000.0,
+    "unit": "bytes_per_sec",
+    "line": "1.0 MB/s",
+    "text": "1.0MB"
+  },
+  {
+    "bytes_per_sec": 1049999.0,
+    "unit": "bytes_per_sec",
+    "line": "1.0 MB/s",
+    "text": "1.0MB"
+  },
+  {
+    "bytes_per_sec": 1050000.0,
+    "unit": "bytes_per_sec",
+    "line": "1.0 MB/s",
+    "text": "1.0MB"
+  },
+  {
+    "bytes_per_sec": 1250000.0,
+    "unit": "bytes_per_sec",
+    "line": "1.2 MB/s",
+    "text": "1.2MB"
+  },
+  {
+    "bytes_per_sec": 9995000.0,
+    "unit": "bytes_per_sec",
+    "line": "10.0 MB/s",
+    "text": "10.0MB"
+  },
+  {
+    "bytes_per_sec": 38400000.0,
+    "unit": "bytes_per_sec",
+    "line": "38.4 MB/s",
+    "text": "38.4MB"
+  },
+  {
+    "bytes_per_sec": 99940000.0,
+    "unit": "bytes_per_sec",
+    "line": "99.9 MB/s",
+    "text": "99.9MB"
+  },
+  {
+    "bytes_per_sec": 99950000.0,
+    "unit": "bytes_per_sec",
+    "line": "100 MB/s",
+    "text": "99.9MB"
+  },
+  {
+    "bytes_per_sec": 99960000.0,
+    "unit": "bytes_per_sec",
+    "line": "100 MB/s",
+    "text": "100.0MB"
+  },
+  {
+    "bytes_per_sec": 124999000.0,
+    "unit": "bytes_per_sec",
+    "line": "125 MB/s",
+    "text": "125.0MB"
+  },
+  {
+    "bytes_per_sec": 250000000.0,
+    "unit": "bytes_per_sec",
+    "line": "250 MB/s",
+    "text": "250.0MB"
+  },
+  {
+    "bytes_per_sec": 999948992.0,
+    "unit": "bytes_per_sec",
+    "line": "1000 MB/s",
+    "text": "999.9MB"
+  },
+  {
+    "bytes_per_sec": 999960000.0,
+    "unit": "bytes_per_sec",
+    "line": "1000 MB/s",
+    "text": "1000.0MB"
+  },
+  {
+    "bytes_per_sec": 1000000000.0,
+    "unit": "bytes_per_sec",
+    "line": "1.0 GB/s",
+    "text": "1.0GB"
+  },
+  {
+    "bytes_per_sec": 2500000000.0,
+    "unit": "bytes_per_sec",
+    "line": "2.5 GB/s",
+    "text": "2.5GB"
+  },
+  {
+    "bytes_per_sec": 12339999744.0,
+    "unit": "bytes_per_sec",
+    "line": "12.3 GB/s",
+    "text": "12.3GB"
+  },
+  {
+    "bytes_per_sec": 124999999488.0,
+    "unit": "bytes_per_sec",
+    "line": "125 GB/s",
+    "text": "125.0GB"
+  },
+  {
+    "bytes_per_sec": -5.0,
+    "unit": "bits_per_sec",
+    "line": "0 Kb/s",
+    "text": "0Kb"
+  },
+  {
+    "bytes_per_sec": 0.0,
+    "unit": "bits_per_sec",
+    "line": "0 Kb/s",
+    "text": "0Kb"
+  },
+  {
+    "bytes_per_sec": 999.0,
+    "unit": "bits_per_sec",
+    "line": "7 Kb/s",
+    "text": "7Kb"
+  },
+  {
+    "bytes_per_sec": 1000.0,
+    "unit": "bits_per_sec",
+    "line": "8 Kb/s",
+    "text": "8Kb"
+  },
+  {
+    "bytes_per_sec": 1999.9000244140625,
+    "unit": "bits_per_sec",
+    "line": "15 Kb/s",
+    "text": "15Kb"
+  },
+  {
+    "bytes_per_sec": 512300.0,
+    "unit": "bits_per_sec",
+    "line": "4.1 Mb/s",
+    "text": "4.1Mb"
+  },
+  {
+    "bytes_per_sec": 999999.0,
+    "unit": "bits_per_sec",
+    "line": "8.0 Mb/s",
+    "text": "8.0Mb"
+  },
+  {
+    "bytes_per_sec": 1000000.0,
+    "unit": "bits_per_sec",
+    "line": "8.0 Mb/s",
+    "text": "8.0Mb"
+  },
+  {
+    "bytes_per_sec": 1049999.0,
+    "unit": "bits_per_sec",
+    "line": "8.4 Mb/s",
+    "text": "8.4Mb"
+  },
+  {
+    "bytes_per_sec": 1050000.0,
+    "unit": "bits_per_sec",
+    "line": "8.4 Mb/s",
+    "text": "8.4Mb"
+  },
+  {
+    "bytes_per_sec": 1250000.0,
+    "unit": "bits_per_sec",
+    "line": "10.0 Mb/s",
+    "text": "10.0Mb"
+  },
+  {
+    "bytes_per_sec": 9995000.0,
+    "unit": "bits_per_sec",
+    "line": "80.0 Mb/s",
+    "text": "80.0Mb"
+  },
+  {
+    "bytes_per_sec": 38400000.0,
+    "unit": "bits_per_sec",
+    "line": "307 Mb/s",
+    "text": "307.2Mb"
+  },
+  {
+    "bytes_per_sec": 99940000.0,
+    "unit": "bits_per_sec",
+    "line": "800 Mb/s",
+    "text": "799.5Mb"
+  },
+  {
+    "bytes_per_sec": 99950000.0,
+    "unit": "bits_per_sec",
+    "line": "800 Mb/s",
+    "text": "799.6Mb"
+  },
+  {
+    "bytes_per_sec": 99960000.0,
+    "unit": "bits_per_sec",
+    "line": "800 Mb/s",
+    "text": "799.7Mb"
+  },
+  {
+    "bytes_per_sec": 124999000.0,
+    "unit": "bits_per_sec",
+    "line": "1000 Mb/s",
+    "text": "1000.0Mb"
+  },
+  {
+    "bytes_per_sec": 250000000.0,
+    "unit": "bits_per_sec",
+    "line": "2.0 Gb/s",
+    "text": "2.0Gb"
+  },
+  {
+    "bytes_per_sec": 999948992.0,
+    "unit": "bits_per_sec",
+    "line": "8.0 Gb/s",
+    "text": "8.0Gb"
+  },
+  {
+    "bytes_per_sec": 999960000.0,
+    "unit": "bits_per_sec",
+    "line": "8.0 Gb/s",
+    "text": "8.0Gb"
+  },
+  {
+    "bytes_per_sec": 1000000000.0,
+    "unit": "bits_per_sec",
+    "line": "8.0 Gb/s",
+    "text": "8.0Gb"
+  },
+  {
+    "bytes_per_sec": 2500000000.0,
+    "unit": "bits_per_sec",
+    "line": "20.0 Gb/s",
+    "text": "20.0Gb"
+  },
+  {
+    "bytes_per_sec": 12339999744.0,
+    "unit": "bits_per_sec",
+    "line": "98.7 Gb/s",
+    "text": "98.7Gb"
+  },
+  {
+    "bytes_per_sec": 124999999488.0,
+    "unit": "bits_per_sec",
+    "line": "1000 Gb/s",
+    "text": "1000.0Gb"
+  }
+]

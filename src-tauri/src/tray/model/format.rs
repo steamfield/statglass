@@ -89,3 +89,55 @@ pub(super) fn words_name(module: Module) -> &'static str {
         Module::Unknown => "unknown",
     }
 }
+
+/// One row of the table `src/core/tray-layout.test.ts` checks the menu bar preview's
+/// copies of [`rate_line`] and [`rate_text`] against. `make bindings` writes it.
+#[derive(serde::Serialize)]
+pub struct RateGolden {
+    /// The `f32` the tray formats, widened exactly.
+    bytes_per_sec: f64,
+    unit: NetworkUnit,
+    line: String,
+    text: String,
+}
+
+/// Inputs on each side of every boundary the two formatters branch or round on.
+pub fn rate_golden() -> Vec<RateGolden> {
+    const INPUTS: [f32; 24] = [
+        -5.0,
+        0.0,
+        999.0,
+        1_000.0,
+        1_999.9,
+        512_300.0,
+        999_999.0,
+        1_000_000.0,
+        1_049_999.0,
+        1_050_000.0,
+        1_250_000.0,
+        9_995_000.0,
+        38_400_000.0,
+        99_940_000.0,
+        99_950_000.0,
+        99_960_000.0,
+        124_999_000.0,
+        250e6,
+        999_949_000.0,
+        999_960_000.0,
+        1e9,
+        2.5e9,
+        12.34e9,
+        125e9,
+    ];
+    [NetworkUnit::BytesPerSec, NetworkUnit::BitsPerSec]
+        .into_iter()
+        .flat_map(|unit| {
+            INPUTS.into_iter().map(move |v| RateGolden {
+                bytes_per_sec: f64::from(v),
+                unit,
+                line: rate_line(v, unit),
+                text: rate_text(v, unit),
+            })
+        })
+        .collect()
+}

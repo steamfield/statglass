@@ -1,8 +1,10 @@
-import type { MenuBarSettings } from "@core/generated/bindings";
+import type { MenuBarSettings, NetworkUnit } from "@core/generated/bindings";
+import rateGolden from "@core/generated/tray-rates.json";
 import { DEFAULT_MENU_BAR, trayStyleMenuBar } from "./settings-patch";
 import {
   combinedWidthPt,
   rateLine,
+  rateText,
   type TrayReadings,
   type TrayUnits,
   tempText,
@@ -10,6 +12,13 @@ import {
   WIDE_ITEM_PT,
   wattsText,
 } from "./tray-layout";
+
+const NETWORK_UNITS: readonly NetworkUnit[] = ["bytes_per_sec", "bits_per_sec"];
+const RATE_GOLDEN = rateGolden.map((row) => {
+  const unit = NETWORK_UNITS.find((u) => u === row.unit);
+  if (!unit) throw new Error(`Unknown network unit ${row.unit}`);
+  return { ...row, unit };
+});
 
 const V: TrayReadings = {
   cpu: 18,
@@ -121,15 +130,23 @@ describe("trayLayout", () => {
 });
 
 describe("tray formatters match the Rust renderer", () => {
-  it("formats temperature, watts and rates", () => {
+  it("formats temperature and watts", () => {
     expect(tempText(61.4, "celsius")).toBe("61°");
     expect(tempText(61.4, "fahrenheit")).toBe("143°");
     expect(wattsText(14.84)).toBe("14.8W");
     expect(wattsText(104.4)).toBe("104W");
-    expect(rateLine(38.4e6, "bytes_per_sec")).toBe("38.4 MB/s");
-    expect(rateLine(512e3, "bytes_per_sec")).toBe("512 KB/s");
-    expect(rateLine(1.2e6, "bits_per_sec")).toBe("9.6 Mb/s");
   });
+
+  // `make bindings` writes the table from the tray's own formatters.
+  it.each(RATE_GOLDEN)(
+    "formats $bytes_per_sec in $unit as the tray does",
+    ({ bytes_per_sec, unit, line, text }) => {
+      expect([
+        rateLine(bytes_per_sec, unit),
+        rateText(bytes_per_sec, unit),
+      ]).toEqual([line, text]);
+    }
+  );
 });
 
 describe("combinedWidthPt", () => {

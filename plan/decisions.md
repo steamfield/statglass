@@ -118,6 +118,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-120 | Durable interval usage keeps facts before ranking | Accepted |
 | D-125 | Rename Kelvo to StatGlass with fresh installation identities | Accepted |
 | D-126 | Agents query StatGlass through a bundled, read-only CLI | Accepted |
+| D-128 | Docker coverage records carry a Rust-derived kind and label | Accepted |
 
 ---
 
@@ -4061,3 +4062,43 @@ with the 250 MB); reopening the dashboard after 10 s is a cold load; switching b
 range after 30 s refetches it. Revisit if a cold dashboard open becomes visibly slow, or if WebKit
 stops honouring the feature (the bench's `STATGLASS_BENCH_WK_DEFAULTS=0` measures the
 difference).
+
+## D-128: Docker coverage records carry a Rust-derived kind and label
+
+Date: 2026-11-07. Phase 5 of [rfc-shared-layers.md](rfc-shared-layers.md) (R6.1).
+
+`DockerCoverage` (`statglass-schema`) gains `kind` (`collection`, `saving`, `metrics`
+or `events`) and `label` (a sentence-case explanation). Rust derives both from the
+`reason` key in `DockerCoverage::new`, the only constructor, so every record the engine
+builds, from the live state or from the persisted `docker_coverage` rows, carries them.
+`reason` stays, as the key the record is merged and deduplicated by. A reason this build
+does not know gets kind `metrics` and the key in words as its label. The client stops
+keeping its own reason tables: History details groups by `kind` and shows `label`, the
+comparison chart labels its gap bands with `label`, and event coverage is `kind ==
+events`. `events_dropped_rate_limit` and `restart_evidence_dropped` are now event
+coverage; the client counted them as metric gaps.
+
+Rust also makes the points it returns consistent with that coverage. No history point
+(container history and each comparison series) claims more measured time than the
+`collection` and `metrics` records for its container, or for all containers, leave in
+its bucket: a bucket such a record touches is not covered, its `cpu_measured_ms` and
+`memory_measured_ms` are capped at the time outside the record, and a bucket the record
+spans has none. The comparison chart used to zero every bucket a record touched in
+TypeScript, which also hid the bucket a restart resumed in. Because the ranking is
+computed from the same points, a container's peak and average now leave fully gapped
+buckets out too, so the ranking and the chart agree. `saving` and `events` records do not mask measurements:
+a bucket that is in the answer was measured, whether or not it was saved.
+
+Rate metrics (network and block I/O) use `cpu_covered`. Docker reports them in the
+same stats sample as CPU, and like CPU they are deltas from the previous sample
+(`normalize.rs`), so they are missing exactly when CPU is, apart from a counter that is
+absent on its own; that case is a `null` value, which the chart already breaks on.
+
+This is not a wire-format change: Docker types do not cross `statglass-proto`, and
+`api::DockerCoverage` is never persisted or synced (the store keeps its own
+`db::DockerCoverage` rows, which do not change). It reaches the webview as JSON through
+tauri-specta only, so no codec skew test applies and no migration is needed.
+
+Cost: user-facing English in `statglass-schema`, next to the reason keys it explains.
+Revisit when the UI is localised, or when another consumer (the CLI, WidgetKit) needs
+Docker coverage and wants different wording.

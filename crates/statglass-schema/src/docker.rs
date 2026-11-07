@@ -143,7 +143,85 @@ pub struct DockerCoverage {
     #[specta(type = Option<JsSafeInt>)]
     pub end_ms: Option<i64>,
     pub container_id: Option<String>,
+    /// The key records merge by; `kind` and `label` are derived from it (D-128).
     pub reason: String,
+    pub kind: DockerCoverageKind,
+    pub label: String,
+}
+/// What a coverage record interrupted. `Collection` and `Metrics` mean nothing was
+/// measured, so a history point counts no measured time inside them (D-128).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DockerCoverageKind {
+    Collection,
+    Saving,
+    Metrics,
+    Events,
+}
+impl DockerCoverageKind {
+    /// Whether history points inside a record of this kind were measured.
+    pub fn masks_measurements(self) -> bool {
+        matches!(self, Self::Collection | Self::Metrics)
+    }
+}
+impl DockerCoverage {
+    /// The only constructor, so `kind` and `label` always follow `reason`.
+    pub fn new(
+        start_ms: i64,
+        end_ms: Option<i64>,
+        container_id: Option<String>,
+        reason: String,
+    ) -> Self {
+        let (kind, label) = coverage_meaning(&reason);
+        Self {
+            start_ms,
+            end_ms,
+            container_id,
+            kind,
+            label: label.map_or_else(|| in_words(&reason), str::to_owned),
+            reason,
+        }
+    }
+}
+/// "write_rejected" as "Write rejected".
+fn in_words(key: &str) -> String {
+    let words = key.replace('_', " ");
+    let mut chars = words.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+/// A reason this build does not know is a metrics gap labelled with its key in words.
+fn coverage_meaning(reason: &str) -> (DockerCoverageKind, Option<&'static str>) {
+    use DockerCoverageKind::{Collection, Events, Metrics, Saving};
+    match reason {
+        "disconnected" => (Collection, Some("Lost connection to Docker")),
+        "disabled" => (Collection, Some("Docker monitoring was off")),
+        "paused" => (Collection, Some("Monitoring was paused")),
+        "idle_suspended" => (
+            Collection,
+            Some("Monitoring paused while no containers ran"),
+        ),
+        "engine_switch" => (Collection, Some("Monitoring switched Docker engines")),
+        "shutdown" => (Collection, Some("StatGlass was not running")),
+        "partial_cycle" => (Metrics, Some("Some containers were not measured")),
+        "clock_step" => (Metrics, Some("The Mac's clock changed")),
+        "coverage_unknown" => (Metrics, Some("Too many interruptions to list")),
+        "write_failed" => (Saving, Some("Measurements could not be saved")),
+        "writer_disconnected" => (Saving, Some("History writer stopped")),
+        "ring_capacity" => (Saving, Some("Recent measurements outgrew memory")),
+        "metadata_oversized" => (Saving, Some("Container details too large to save")),
+        "metadata_capacity" => (Saving, Some("Container details could not be kept")),
+        "events_disconnected" => (Events, Some("Lost connection to Docker events")),
+        "event_replay_uncertain" => (
+            Events,
+            Some("Some events may be missing after reconnecting"),
+        ),
+        "events_dropped_rate_limit" => (Events, Some("Events arrived too fast; some were dropped")),
+        "restart_evidence_dropped" => (Events, Some("Some restart events were dropped")),
+        _ => (Metrics, None),
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct DockerPersistence {
@@ -364,7 +442,33 @@ pub struct DockerContainerSeries {
 
 #[cfg(test)]
 mod tests {
-    use super::DockerSettings;
+    use super::{DockerCoverage, DockerCoverageKind, DockerSettings};
+
+    #[test]
+    fn coverage_kind_and_label_follow_the_reason() {
+        let gap = |reason: &str| DockerCoverage::new(1, Some(2), None, reason.into());
+        let events = gap("events_dropped_rate_limit");
+        assert_eq!(events.kind, DockerCoverageKind::Events);
+        assert!(!events.kind.masks_measurements());
+        let saving = gap("write_failed");
+        assert_eq!(saving.kind, DockerCoverageKind::Saving);
+        assert_eq!(saving.label, "Measurements could not be saved");
+        assert!(!saving.kind.masks_measurements());
+        assert_eq!(gap("paused").kind, DockerCoverageKind::Collection);
+        assert!(gap("partial_cycle").kind.masks_measurements());
+        // A reason from a newer build is still a gap, in words.
+        let unknown = gap("write_rejected");
+        assert_eq!(unknown.kind, DockerCoverageKind::Metrics);
+        assert_eq!(unknown.label, "Write rejected");
+        assert_eq!(unknown.reason, "write_rejected");
+        assert_eq!(
+            serde_json::to_value(&unknown).unwrap(),
+            serde_json::json!({
+                "start_ms": 1, "end_ms": 2, "container_id": null,
+                "reason": "write_rejected", "kind": "metrics", "label": "Write rejected"
+            })
+        );
+    }
 
     #[test]
     fn saved_manual_population_is_ignored_and_not_written_back() {

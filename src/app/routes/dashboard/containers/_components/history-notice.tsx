@@ -1,7 +1,10 @@
+import { formatDateTime } from "@core/format";
 import type {
   DockerCoverage,
+  DockerCoverageKind,
   DockerPersistence,
   DockerSnapshot,
+  DockerStatus,
 } from "@core/generated/bindings";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
@@ -10,6 +13,14 @@ import {
   HistoryDetails,
   mergeCoverage,
 } from "./history-details";
+
+const STATUS_LABEL: Partial<Record<DockerStatus, string>> = {
+  unavailable: "Docker is unavailable",
+  permission_denied: "Docker refused access",
+  incompatible: "This Docker version is not supported",
+  paused: "Monitoring is paused",
+  idle_suspended: "Monitoring is paused while no containers run",
+};
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function HistoryNotice({
@@ -60,7 +71,7 @@ export function HistoryNotice({
   const text = unavailable
     ? saving
       ? `${runtime} unavailable; recent history not saved`
-      : `${runtime} unavailable · last reading ${new Date(latest).toLocaleTimeString()}`
+      : `${runtime} unavailable · last reading ${formatDateTime(latest)}`
     : paused
       ? "Monitoring paused"
       : saving
@@ -71,27 +82,39 @@ export function HistoryNotice({
             ? `Monitoring ${snapshot.aggregate.expected} of ${snapshot.aggregate.running} running containers`
             : "Some container events may be missing";
   const details = [...records];
+  // What the snapshot says now, beside Rust's coverage records.
+  const current = (
+    reason: string,
+    kind: DockerCoverageKind,
+    label: string
+  ): DockerCoverage => ({
+    start_ms: latest,
+    end_ms: null,
+    container_id: null,
+    reason,
+    kind,
+    label,
+  });
   if (unavailable || paused)
-    details.push({
-      start_ms: latest,
-      end_ms: null,
-      container_id: null,
-      reason: snapshot.status,
-    });
+    details.push(
+      current(
+        snapshot.status,
+        "collection",
+        STATUS_LABEL[snapshot.status] ?? text
+      )
+    );
   if (saving && !records.some((r) => r.reason === "write_failed"))
-    details.push({
-      start_ms: latest,
-      end_ms: null,
-      container_id: null,
-      reason: "write_failed",
-    });
+    details.push(
+      current("write_failed", "saving", "Measurements could not be saved")
+    );
   if (partial)
-    details.push({
-      start_ms: latest,
-      end_ms: null,
-      container_id: null,
-      reason: "partial_population",
-    });
+    details.push(
+      current(
+        "partial_population",
+        "collection",
+        "Some running containers are not monitored"
+      )
+    );
   return (
     <>
       <div
