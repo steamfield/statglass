@@ -1,7 +1,7 @@
 import { errorTone } from "@core/command-error";
 import type { DockerSnapshot } from "@core/generated/bindings";
 import { windowWords } from "@core/live-window";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { useBrushStore } from "~/stores/brush-store";
 import type { useContainerComparison } from "../_hooks/use-container-comparison";
@@ -36,6 +36,10 @@ export function ContainerActivity({
   const { focus, comparison, comparisonPage, candidates, plottedSeries } =
     chart;
   const { clear: clearFocus } = focus;
+  const plottedIds = useMemo(
+    () => plottedSeries.map((s) => s.container.id),
+    [plottedSeries]
+  );
   const engine = snapshot.engine?.id ?? "";
   const brush = useBrushStore();
   const [chooser, setChooser] = useState(false);
@@ -113,6 +117,8 @@ export function ContainerActivity({
             <HistoryNotice
               snapshot={snapshot}
               coverage={comparisonPage?.coverage ?? []}
+              total={comparisonPage?.coverage_total}
+              plotted={plottedIds}
               metric={metric}
               onManage={() => onManage()}
               onResume={resume}

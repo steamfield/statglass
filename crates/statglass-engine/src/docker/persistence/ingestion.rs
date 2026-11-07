@@ -19,6 +19,7 @@ impl DockerRecorder {
         s.generation = snapshot.generation;
         s.runtime.insert(daemon.clone(), engine.runtime.clone());
         let now = snapshot.observed_ms;
+        s.first_observed.entry(daemon.clone()).or_insert(now);
         evict(&mut s, now);
         let stale = self.restore_coverage(&mut s, attached.as_ref(), daemon, now);
         let mut batch = self.batch(&mut s, daemon, snapshot.generation, now);
@@ -46,7 +47,11 @@ impl DockerRecorder {
         let (a, coord) = self.context();
         let _g = coord.lock_ok();
         let mut s = self.state.lock_ok();
-        s.observed.clear();
+        // Observations before the step stay deduplicated; ones the old clock dated
+        // after it must not hide the real observations that follow.
+        for time in s.observed.values_mut() {
+            *time = (*time).min(from_ms - 1);
+        }
         let remove: Vec<_> = s
             .entries
             .keys()
@@ -76,6 +81,16 @@ impl DockerRecorder {
                     gap.end_ms = Some(from_ms);
                 }
             }
+        }
+        // Writes not yet saved forget the same span, so a retry never re-extends a
+        // record past the step or resaves what the store discards.
+        let state = &mut *s;
+        for retry in state
+            .retry
+            .values_mut()
+            .chain(state.pending.iter_mut().map(|p| &mut p.retry))
+        {
+            step_retry(retry, from_ms);
         }
         recount_aux(&mut s);
         s.events.retain(|e| e.time_ms < from_ms);
@@ -147,6 +162,27 @@ impl DockerRecorder {
     }
 }
 
+/// A retry after a clock step to `from_ms`: rows and events from the step on are gone,
+/// and every other row ends by it.
+fn step_retry(retry: &mut Retry, from_ms: i64) {
+    retry.coverage.retain(|c| c.start_ms < from_ms);
+    for c in &mut retry.coverage {
+        if c.end_ms.is_none_or(|end| end > from_ms) {
+            c.end_ms = Some(from_ms);
+            c.expected_ms = from_ms - c.start_ms;
+            c.sampled_ms = c.sampled_ms.min(c.expected_ms);
+        }
+    }
+    retry.events.retain(|e| e.time_ns / 1_000_000 < from_ms);
+    if retry
+        .cursor
+        .as_ref()
+        .is_some_and(|c| c.time_ns / 1_000_000 >= from_ms)
+    {
+        retry.cursor = None;
+    }
+}
+
 impl DockerRecorder {
     /// Returns the stale records it closed, for the caller to persist.
     fn restore_coverage(
@@ -171,6 +207,7 @@ impl DockerRecorder {
                 let snapshot = reader.docker_snapshot(self.host, daemon)?;
                 Ok((snapshot.open_coverage()?, snapshot.last_observed()?))
             })();
+            let first_observed = s.first_observed.get(daemon).copied();
             match restored {
                 Ok((gaps, last_observed)) => {
                     s.restore_retry.remove(daemon);
@@ -193,10 +230,14 @@ impl DockerRecorder {
                         } else {
                             // No observation resumes this record and the process that
                             // opened it stopped without closing it (a crash): it ends
-                            // where that process's observations do, never in the future.
+                            // where that process's observations do, never in the future
+                            // and never after this process's first observation: a late
+                            // restore reads this process's own saved time too.
+                            let first = first_observed.unwrap_or(now);
                             let end = last_observed
                                 .unwrap_or(gap.start_ms)
                                 .min(now)
+                                .min(first)
                                 .max(gap.start_ms);
                             let record = api::DockerCoverage::new(
                                 gap.start_ms,
@@ -218,7 +259,9 @@ impl DockerRecorder {
                         .map_or(RESTORE_RETRY_MIN, |(_, d)| (*d * 2).min(RESTORE_RETRY_MAX));
                     s.restore_retry
                         .insert(daemon.to_owned(), (Instant::now() + backoff, backoff));
-                    s.error = Some(error.to_string());
+                    // Not a saving failure: recording continues. The backoff bounds this
+                    // to one line per retry.
+                    tracing::warn!(%daemon, %error, ?backoff, "Docker coverage restore failed; will retry");
                 }
             }
         }
@@ -300,7 +343,13 @@ fn record_containers(
         let Some(time) = c.observed_ms else {
             continue;
         };
-        let span = c.interval_ms.unwrap_or(0).min(60_000) as i64;
+        // A first sample has no counter baseline, so no CPU or rates; its gauges
+        // (memory) stand for the publish interval like any other observation.
+        let span = match c.interval_ms {
+            Some(0) => snapshot.interval_ms,
+            interval => interval.unwrap_or(0),
+        }
+        .min(60_000) as i64;
         if span == 0
             || s.observed
                 .get(&(daemon.to_owned(), c.id.clone()))
@@ -378,6 +427,7 @@ fn record_coverage(
         .filter(|c| c.end_ms.is_none_or(|end| end >= now - HOUR))
         .collect();
     let mut changed = Vec::new();
+    let held = held_coverage(s, daemon);
     let gaps = s.coverage.entry(daemon.to_owned()).or_default();
     for c in current {
         // A record is its engine, container, reason and start. It is saved again only
@@ -393,6 +443,8 @@ fn record_coverage(
                 *old = c.clone();
                 changed.push(c.clone());
             }
+            // Memory let it go because the store or a write holds it already.
+            None if coverage_key(c).is_some_and(|key| held.contains(&key)) => {}
             None => {
                 gaps.push(c.clone());
                 changed.push(c.clone());
@@ -402,25 +454,16 @@ fn record_coverage(
     for c in &changed {
         push_coverage(s, batch, c, now);
     }
-    let saved = s.saved_coverage.get(daemon);
+    let held = held_coverage(s, daemon);
+    let live_only = s.live_only;
     if let Some(gaps) = s.coverage.get_mut(daemon) {
-        bound_coverage(gaps, saved);
+        bound_coverage(gaps, &held, live_only);
     }
 }
 
 fn push_coverage(s: &mut State, batch: &mut db::DockerBatch, c: &api::DockerCoverage, now: i64) {
-    batch.coverage.push(db::DockerCoverage {
-        entity: c.container_id.clone(),
-        metric: None,
-        start_ms: c.start_ms,
-        end_ms: c.end_ms,
-        reason: c.reason().to_owned(),
-        revision: next(s),
-        sampled_ms: 0,
-        // A transition can open a gap after the last metric snapshot.
-        // Its still-open duration is zero until a newer observation.
-        expected_ms: c.end_ms.unwrap_or(now).saturating_sub(c.start_ms).max(0),
-    });
+    let row = coverage_row(s, c, now);
+    batch.coverage.push(row);
 }
 
 fn pending_buckets(s: &State, batch: &mut db::DockerBatch, daemon: &str, now: i64) -> Vec<Key> {

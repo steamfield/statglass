@@ -842,7 +842,13 @@ export type DockerComparisonPage = {
 	generation: number,
 	ranking: DockerRankedContainer[],
 	series: DockerContainerSeries[],
+	/**
+	 *  The range's newest engine-wide records and the charted containers' own, at most
+	 *  [`MAX_COVERAGE_LISTED`] per scope; the points are masked by all of them (D-128).
+	 */
 	coverage: DockerCoverage[],
+	/**  How many of those records the range holds, listed or not. */
+	coverage_total: number,
 	persistence: DockerPersistence,
 };
 
@@ -978,7 +984,13 @@ export type DockerHealth = "no_check" | "starting" | "healthy" | "unhealthy" | "
 export type DockerHistoryPage = {
 	generation: number,
 	points: DockerHistoryPoint[],
+	/**
+	 *  The newest records of the range, at most [`MAX_COVERAGE_LISTED`]; the points
+	 *  are masked by all of them (D-128).
+	 */
 	coverage: DockerCoverage[],
+	/**  How many records the range holds, listed or not. */
+	coverage_total: number,
 	metadata: DockerContainer[],
 	persistence: DockerPersistence,
 };

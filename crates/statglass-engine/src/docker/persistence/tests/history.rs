@@ -1,5 +1,26 @@
 use super::*;
-use crate::docker::persistence::projection::mask_uncovered;
+use crate::docker::persistence::projection::Mask;
+
+/// Masks `points` by the `gaps` that mask `container`, in start order as a read feeds
+/// them; open gaps run to `to_ms`.
+fn mask_uncovered(
+    points: &mut [api::DockerHistoryPoint],
+    gaps: &[api::DockerCoverage],
+    container: Option<&str>,
+    to_ms: i64,
+) {
+    let mut masking: Vec<(i64, i64)> = gaps
+        .iter()
+        .filter(|g| g.masks(container))
+        .map(|g| (g.start_ms, g.end_ms.unwrap_or(to_ms)))
+        .collect();
+    masking.sort_unstable();
+    let mut mask = Mask::new(points);
+    for (start, end) in masking {
+        mask.add(start, end);
+    }
+    mask.apply(points);
+}
 
 #[test]
 fn points_claim_no_measurement_inside_collection_or_metric_gaps() {

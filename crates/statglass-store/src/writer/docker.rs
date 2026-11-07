@@ -306,11 +306,9 @@ impl State {
             .as_ref()
             .map(|e| self.entity(host, engine, e))
             .transpose()?;
-        let updated=self.conn.execute("UPDATE docker_coverage SET end_ms=coalesce(?1,end_ms),revision=?2,sampled_ms=?3,expected_ms=CASE WHEN ?1 IS NULL AND end_ms IS NOT NULL THEN expected_ms ELSE ?4 END WHERE engine_id=?5 AND entity_id IS ?6 AND metric IS ?7 AND start_ms=?8 AND reason=?9 AND revision<=?2",params![c.end_ms,c.revision,c.sampled_ms,c.expected_ms,engine,entity,c.metric,c.start_ms,c.reason])?;
-        if updated > 0 {
-            return Ok(());
-        }
-        self.conn.execute("INSERT INTO docker_coverage(host_id,engine_id,entity_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![host,engine,entity,c.metric,c.start_ms,c.end_ms,c.reason,c.revision,c.sampled_ms,c.expected_ms])?;
+        // One row per record (V9's unique index). An older revision never moves it, and
+        // an end once set never goes back to open.
+        self.conn.execute("INSERT INTO docker_coverage(host_id,engine_id,entity_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(engine_id,coalesce(entity_id,-1),coalesce(metric,''),reason,start_ms) DO UPDATE SET end_ms=coalesce(excluded.end_ms,end_ms),revision=excluded.revision,sampled_ms=excluded.sampled_ms,expected_ms=CASE WHEN excluded.end_ms IS NULL AND end_ms IS NOT NULL THEN expected_ms ELSE excluded.expected_ms END WHERE excluded.revision>=revision",params![host,engine,entity,c.metric,c.start_ms,c.end_ms,c.reason,c.revision,c.sampled_ms,c.expected_ms])?;
         Ok(())
     }
     fn insert_docker_bucket(&self, host: i64, engine: i64, b: &DockerBucket) -> Result<()> {

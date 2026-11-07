@@ -79,6 +79,7 @@ function history(covered: boolean): DockerHistoryPage {
   return {
     generation: 1,
     coverage: [],
+    coverage_total: 0,
     metadata: [],
     persistence: {
       error: null,

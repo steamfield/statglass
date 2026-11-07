@@ -118,6 +118,7 @@ it("groups history details by Rust's kind", async () => {
           label: "Events arrived too fast; some were dropped",
         },
       ]}
+      plotted={[]}
       metric="cpu"
       onManage={() => {}}
       onResume={() => {}}
@@ -207,6 +208,7 @@ it("shows one prioritized notice and separates metrics from events in details", 
           label: "Lost connection to Docker events",
         },
       ]}
+      plotted={[]}
       metric="cpu"
       onManage={() => {}}
       onResume={() => {}}
@@ -248,6 +250,7 @@ it("lists the current-state records Rust publishes, in Rust's words", async () =
         ],
       }}
       coverage={[]}
+      plotted={[]}
       metric="cpu"
       onManage={() => {}}
       onResume={() => {}}
@@ -349,6 +352,7 @@ it("keeps the unavailable last-reading time at the newest measured container obs
         })),
       }}
       coverage={[]}
+      plotted={[]}
       metric="cpu"
       onManage={() => {}}
       onResume={() => {}}
@@ -379,6 +383,7 @@ it("reads the population notice from Rust's current records, as the details do",
         current_coverage: [],
       }}
       coverage={[]}
+      plotted={[]}
       metric="cpu"
       onManage={() => {}}
       onResume={() => {}}
@@ -409,6 +414,7 @@ it.each([0, 3])(
           ],
         }}
         coverage={[]}
+        plotted={[]}
         metric="cpu"
         onManage={() => {}}
         onResume={() => {}}
@@ -424,3 +430,43 @@ it.each([0, 3])(
     result.transport.dispose();
   }
 );
+
+it("counts only masking records of the engine or the charted containers", async () => {
+  const snapshot = mockDockerSnapshot(1, 30000);
+  const result = renderWithProviders(
+    <HistoryNotice
+      snapshot={snapshot}
+      coverage={[
+        mockCoverage(0, 1000, "charted", "partial_cycle"),
+        mockCoverage(2000, 3000, "charted", "partial_cycle"),
+        mockCoverage(0, 1000, "elsewhere", "partial_cycle"),
+        mockCoverage(0, 5000, null, "aggregate_partial"),
+        mockCoverage(0, 5000, null, "write_failed"),
+      ]}
+      total={12}
+      plotted={["charted"]}
+      metric="cpu"
+      onManage={() => {}}
+      onResume={() => {}}
+    />
+  );
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "CPU history missing for 2 intervals"
+  );
+  await result.user.click(screen.getByRole("button", { name: /Details/ }));
+  const dialog = screen.getByRole("dialog", { name: "History details" });
+  expect(within(dialog).getByText("7 older records not listed")).toBeVisible();
+  result.unmount();
+  result.transport.dispose();
+});
+
+it("merges many separate records in one pass", () => {
+  // A flapping container: 40,000 episodes that never touch.
+  const records = Array.from({ length: 40_000 }, (_, i) =>
+    mockCoverage(i * 20, i * 20 + 10, "c", "partial_cycle")
+  );
+  const started = performance.now();
+  const merged = mergeCoverage(records);
+  expect(performance.now() - started).toBeLessThan(500);
+  expect(merged).toHaveLength(40_000);
+});

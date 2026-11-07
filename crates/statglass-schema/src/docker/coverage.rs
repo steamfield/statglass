@@ -3,6 +3,17 @@
 use crate::JsSafeInt;
 use serde::{Deserialize, Serialize};
 
+/// The reasons of kind `events`, for reads that want only event coverage.
+pub const EVENT_COVERAGE_REASONS: [&str; 4] = [
+    "events_disconnected",
+    "event_replay_uncertain",
+    "events_dropped_rate_limit",
+    "restart_evidence_dropped",
+];
+/// How many records a history or comparison page lists per scope. Masking still uses
+/// every record in the range; the page says how many it holds (D-128).
+pub const MAX_COVERAGE_LISTED: usize = 500;
+
 /// One interruption of Docker coverage. `kind`, `masking` and `label` are derived from
 /// `reason` and the scope by `DockerCoverage::new`, which deserializing also goes
 /// through, and those fields are private in Rust, so they always agree (D-128).
@@ -119,13 +130,17 @@ fn in_words(key: &str) -> String {
         .map(|first| first.to_uppercase().chain(chars).collect())
         .unwrap_or_default()
 }
-/// A container's record masks only that container. An engine-wide `inventory_failed`
+/// A container's record masks only that container. An engine-wide `aggregate_partial`
+/// explains the aggregate's unweighted cycles and masks nothing: the containers it
+/// missed carry their own records. An engine-wide `inventory_failed`
 /// masks every container but not the aggregate, which already gives no weight to a
 /// cycle that measured fewer containers than expected. An engine-wide `partial_cycle`,
 /// which earlier builds wrote when any one container failed, masks nothing for the
 /// same reason.
 fn coverage_masking(kind: DockerCoverageKind, scoped: bool, reason: &str) -> DockerCoverageMasking {
-    if !kind.masks_measurements() || !scoped && reason == "partial_cycle" {
+    if !kind.masks_measurements()
+        || !scoped && matches!(reason, "partial_cycle" | "aggregate_partial")
+    {
         DockerCoverageMasking::None
     } else if scoped || reason == "inventory_failed" {
         DockerCoverageMasking::Containers
@@ -163,6 +178,7 @@ fn coverage_meaning(reason: &str) -> (DockerCoverageKind, Option<&'static str>) 
         ),
         "partial_cycle" => (Metrics, Some("Some containers were not measured")),
         "inventory_failed" => (Metrics, Some("Docker did not list its containers")),
+        "aggregate_partial" => (Metrics, Some("The engine total missed some containers")),
         "clock_step" => (Metrics, Some("The Mac's clock changed")),
         "coverage_unknown" => (Metrics, Some("Too many interruptions to list")),
         "write_failed" => (Saving, Some("Measurements could not be saved")),
@@ -178,5 +194,26 @@ fn coverage_meaning(reason: &str) -> (DockerCoverageKind, Option<&'static str>) 
         "events_dropped_rate_limit" => (Events, Some("Events arrived too fast; some were dropped")),
         "restart_evidence_dropped" => (Events, Some("Some restart events were dropped")),
         _ => (Other, None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_reasons_are_exactly_the_events_kind() {
+        for reason in EVENT_COVERAGE_REASONS {
+            let record = DockerCoverage::new(0, None, None, reason.into());
+            assert_eq!(record.kind(), DockerCoverageKind::Events, "{reason}");
+        }
+    }
+
+    #[test]
+    fn an_aggregate_partial_masks_nothing() {
+        let record = DockerCoverage::new(0, None, None, "aggregate_partial".into());
+        assert_eq!(record.kind(), DockerCoverageKind::Metrics);
+        assert_eq!(record.masking(), DockerCoverageMasking::None);
+        assert!(!record.masks(None) && !record.masks(Some("c")));
     }
 }

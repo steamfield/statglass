@@ -15,6 +15,7 @@ use std::{
 };
 mod catalog;
 mod comparison;
+mod coverage;
 mod events;
 mod history;
 mod ingestion;
@@ -23,12 +24,15 @@ mod projection;
 mod retention;
 mod writes;
 
+use coverage::written_coverage;
 use observation::{metadata, observe};
 #[cfg(test)]
 use projection::point;
 #[cfg(test)]
 use retention::evict_entry;
-use retention::{bound_coverage, bucket_bytes, evict, gap, recount_aux};
+use retention::{
+    bound_coverage, bucket_bytes, coverage_row, evict, gap, held_coverage, recount_aux,
+};
 use writes::{drain, queue, requeue};
 #[cfg(test)]
 use writes::{drain_at, should_warn};
@@ -118,6 +122,11 @@ struct State {
     restore_retry: BTreeMap<String, (Instant, Duration)>,
     /// Closed records in `coverage` the store has acknowledged saving.
     saved_coverage: BTreeMap<String, BTreeSet<CoverageKey>>,
+    /// No store is attached: memory is the only copy of a record.
+    live_only: bool,
+    /// When this recorder first observed each daemon. Restore never closes a crashed
+    /// process's record after it: later saved time is this process's own.
+    first_observed: BTreeMap<String, i64>,
 }
 struct ReadPin<'a> {
     state: &'a Mutex<State>,
@@ -184,6 +193,8 @@ impl DockerRecorder {
                 restored_coverage: BTreeSet::new(),
                 restore_retry: BTreeMap::new(),
                 saved_coverage: BTreeMap::new(),
+                live_only: true,
+                first_observed: BTreeMap::new(),
             }),
         }
     }
@@ -210,6 +221,7 @@ impl DockerRecorder {
     }
     pub fn detach(&self) {
         *self.attached.lock_ok() = None;
+        self.state.lock_ok().live_only = true;
     }
     pub fn attach(&self, writer: Writer, path: PathBuf) {
         let coordination = writer.docker_snapshot_lock();
@@ -224,6 +236,7 @@ impl DockerRecorder {
         {
             let mut state = self.state.lock_ok();
             state.suspended = false;
+            state.live_only = false;
             state.restored_coverage.clear();
             state.restore_retry.clear();
             // Another store may not hold what this one saved.
@@ -288,6 +301,7 @@ impl DockerRecorder {
             s.restored_coverage.clear();
             s.restore_retry.clear();
             s.saved_coverage.clear();
+            s.first_observed.clear();
             s.pending.clear();
             s.retry.clear();
             s.last_warning.clear();

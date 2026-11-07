@@ -1,4 +1,5 @@
 //! Rank bounded container comparisons from a consistent reader snapshot.
+use super::coverage::{EngineCoverage, live_coverage};
 use super::*;
 impl DockerRecorder {
     pub fn comparison(
@@ -83,8 +84,9 @@ struct ComparisonRead<'a> {
 }
 struct RankedComparison {
     ranking: Vec<api::DockerRankedContainer>,
-    pages: BTreeMap<String, api::DockerContainerSeries>,
-    all_coverage: Vec<api::DockerCoverage>,
+    /// The kept candidates' series, with their own records and how many there were.
+    pages: BTreeMap<String, (api::DockerContainerSeries, Vec<api::DockerCoverage>, u32)>,
+    engine: EngineCoverage,
 }
 
 impl DockerRecorder {
@@ -114,7 +116,7 @@ impl DockerRecorder {
             .filter(|(engine, _)| engine == &q.engine_id)
             .map(|(_, fact)| fact.clone())
             .collect();
-        let coverage = s.coverage.get(&q.engine_id).cloned().unwrap_or_default();
+        let coverage = live_coverage(s, &q.engine_id);
         // Payloads are immutable Arcs already charged to the ring. Register their
         // shared ownership so replacing/evicting a live revision transfers its
         // charge to the read, instead of charging every payload twice up front.
@@ -174,14 +176,13 @@ impl DockerRecorder {
         let candidates = comparison_candidates(q, snapshot, facts, &read.ring)?;
         let mut ranking = Vec::new();
         let mut pages = BTreeMap::new();
-        let mut all_coverage = read.coverage.clone();
-        if let Some(snapshot) = &snapshot {
-            for c in snapshot.event_coverage(None, q.from_ms, q.to_ms)? {
-                all_coverage.push(api::DockerCoverage::new(
-                    c.start_ms, c.end_ms, c.entity, c.reason,
-                ));
-            }
-        }
+        // Engine-wide records, read once; each candidate's page reads only its own.
+        let engine = EngineCoverage::read(
+            snapshot,
+            &read.coverage,
+            floor_to(q.from_ms, 900_000),
+            q.to_ms,
+        )?;
         for (id, fact) in candidates {
             if q.project
                 .as_ref()
@@ -196,7 +197,7 @@ impl DockerRecorder {
                         source,
                     }
                 })?;
-            let page = self.comparison_history(q, snapshot, read, &id)?;
+            let page = self.comparison_history(q, snapshot, read, &engine, &id)?;
             if page.points.is_empty() {
                 continue;
             }
@@ -204,7 +205,14 @@ impl DockerRecorder {
             let (peak_working_set_bytes, avg_working_set_bytes, memory_measured_ms) =
                 weighted_summary(&page.points, false);
             let last_lifecycle = page.metadata.last().map(|metadata| metadata.lifecycle);
-            all_coverage.extend(page.coverage);
+            let own: Vec<_> = page
+                .coverage
+                .into_iter()
+                .filter(|c| c.container_id.as_deref() == Some(id.as_str()))
+                .collect();
+            let own_total = page
+                .coverage_total
+                .saturating_sub(u32::try_from(engine.total).unwrap_or(u32::MAX));
             let selected_weight = match q.metric {
                 api::DockerComparisonMetric::Cpu => cpu_measured_ms,
                 api::DockerComparisonMetric::Memory => memory_measured_ms,
@@ -229,10 +237,14 @@ impl DockerRecorder {
             {
                 pages.insert(
                     id,
-                    api::DockerContainerSeries {
-                        container,
-                        points: page.points,
-                    },
+                    (
+                        api::DockerContainerSeries {
+                            container,
+                            points: page.points,
+                        },
+                        own,
+                        own_total,
+                    ),
                 );
             }
             // Only six point arrays may survive a candidate pass; rankings keep
@@ -257,7 +269,7 @@ impl DockerRecorder {
         Ok(RankedComparison {
             ranking,
             pages,
-            all_coverage,
+            engine,
         })
     }
 
@@ -266,6 +278,7 @@ impl DockerRecorder {
         q: &api::DockerComparisonRequest,
         snapshot: Option<&db::DockerReadSnapshot<'_>>,
         read: &ComparisonRead<'_>,
+        engine: &EngineCoverage,
         id: &str,
     ) -> Result<api::DockerHistoryPage, DockerServiceError> {
         let own_ring: Vec<_> = read
@@ -289,7 +302,7 @@ impl DockerRecorder {
                 .filter(|m| m.external_id == id)
                 .cloned()
                 .collect(),
-            read.coverage.clone(),
+            (&read.coverage, engine),
             read.pin.generation,
         )?;
 
@@ -306,7 +319,7 @@ impl DockerRecorder {
         let RankedComparison {
             mut ranking,
             mut pages,
-            mut all_coverage,
+            engine,
         } = ranked;
         ranking.sort_by(|a, b| rank_order(a, b, q.metric));
         ranking.truncate(500);
@@ -322,29 +335,19 @@ impl DockerRecorder {
                 .map(|r| r.container.id.clone())
                 .collect()
         });
-        let series = selected
-            .into_iter()
-            .filter_map(|id| pages.remove(&id))
-            .collect();
-        all_coverage.sort_by(|a, b| {
-            (a.start_ms, &a.container_id, a.reason()).cmp(&(
-                b.start_ms,
-                &b.container_id,
-                b.reason(),
-            ))
-        });
-        all_coverage.dedup_by(|a, b| {
-            if a.start_ms == b.start_ms
-                && a.container_id == b.container_id
-                && a.reason() == b.reason()
-            {
-                b.end_ms = b.end_ms.max(a.end_ms);
-                true
-            } else {
-                false
+        // The banner and History details list engine-wide records and the charted
+        // containers' own; every candidate's points were masked by all of its records.
+        let mut coverage = engine.listed;
+        let mut coverage_total = engine.total;
+        let mut series = Vec::new();
+        for id in selected {
+            if let Some((page, own, own_total)) = pages.remove(&id) {
+                series.push(page);
+                coverage.extend(own);
+                coverage_total += own_total as usize;
             }
-        });
-        all_coverage.retain(|c| {
+        }
+        coverage.retain(|c| {
             c.container_id.as_deref() != Some("")
                 && c.start_ms < q.to_ms
                 && c.end_ms.is_none_or(|end| end > q.from_ms)
@@ -364,7 +367,8 @@ impl DockerRecorder {
             generation: read.pin.generation,
             ranking,
             series,
-            coverage: all_coverage,
+            coverage,
+            coverage_total: u32::try_from(coverage_total).unwrap_or(u32::MAX),
             persistence,
         };
         Ok(page)

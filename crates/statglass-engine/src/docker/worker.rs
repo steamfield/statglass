@@ -160,7 +160,7 @@ impl DockerHandle {
         let mut refresh = true;
         let mut event_rate = (Instant::now(), 0usize);
         let mut restarts: BTreeMap<String, VecDeque<i64>> = BTreeMap::new();
-        let mut clock = (now_ms(), Instant::now());
+        let mut clock = crate::clock::now();
         let mut last_observation: Option<Instant> = None;
         loop {
             let control = controls.borrow_and_update().clone();
@@ -345,29 +345,42 @@ impl DockerHandle {
         })
     }
 
-    fn check_clock(&self, clock: &mut (i64, Instant), samples: &mut Samples, generation: u32) {
-        let wall = now_ms();
-        let mono = Instant::now();
-        if wall
-            .saturating_sub(clock.0)
-            .saturating_sub(mono.duration_since(clock.1).as_millis() as i64)
-            .abs()
-            > 2000
-        {
+    fn check_clock(&self, clock: &mut crate::ClockReading, samples: &mut Samples, generation: u32) {
+        let now = crate::clock::now();
+        if clock_stepped(clock, &now) {
             samples.baseline.clear();
             let _gate = self.gate.lock_ok();
             if self.control.borrow().generation == generation {
-                self.step_clock(wall);
+                self.step_clock(now.wall_ms);
             }
         }
-        *clock = (wall, mono);
+        *clock = now;
     }
     /// The recorder and the published records forget the same span, so the
     /// recorder sees no record it does not already hold, and the step opens one
-    /// engine-wide `clock_step` at the new time.
+    /// engine-wide `clock_step` at the new time. The published rows' observations
+    /// carry the old clock's times: they go in the same update, so the step's own
+    /// record never re-records them.
     pub(super) fn step_clock(&self, wall: i64) {
         self.recorder.clock_step(wall);
-        self.update(|s| step_coverage(&mut s.coverage, wall));
+        self.update(|s| {
+            step_coverage(&mut s.coverage, wall);
+            for row in &mut s.containers {
+                row.observed_ms = None;
+                row.interval_ms = None;
+            }
+            s.interval_ms = 0;
+        });
         self.gap_at("clock_step", wall);
     }
+}
+
+/// Whether the wall clock moved more than 2 s away from the time that passed, measured
+/// on a clock that keeps counting while the Mac sleeps: a wake is not a step.
+pub(super) fn clock_stepped(before: &crate::ClockReading, now: &crate::ClockReading) -> bool {
+    now.wall_ms
+        .saturating_sub(before.wall_ms)
+        .saturating_sub(now.continuous_ms_since(before))
+        .abs()
+        > 2000
 }

@@ -426,13 +426,12 @@ impl DockerHandle {
     fn gap_at(&self, reason: &str, start: i64) {
         self.update(|s| {
             s.now_ms = now_ms();
-            if open_engine_wide(&mut s.coverage).is_some_and(|g| g.reason() == reason) {
+            let gap = DockerCoverage::new(start, None, None, reason.into());
+            let events = gap.kind() == DockerCoverageKind::Events;
+            if open_engine_wide(&mut s.coverage, events).is_some_and(|g| g.reason() == reason) {
                 return;
             }
-            open_gap(
-                &mut s.coverage,
-                DockerCoverage::new(start, None, None, reason.into()),
-            );
+            open_gap(&mut s.coverage, gap);
         });
         self.recorder.record(&self.snapshot());
     }

@@ -243,7 +243,8 @@ async fn collect_stats(
                 served += 1;
             }
             Ok(Some((index, mut row, Some(Err(_)), _, _))) => {
-                baseline.remove(&row.id);
+                // Counters are cumulative, so the baseline stays: the next good sample
+                // spans the failure (a restart shows as counters going back).
                 row.metrics = DockerMetrics::default();
                 row.observed_ms = None;
                 failed.insert(row.id.clone());

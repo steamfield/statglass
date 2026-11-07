@@ -1,10 +1,14 @@
 //! Recorder scenarios grouped by invariant; the SQLite fixture permit is shared.
 mod catalog;
+mod clock;
 mod comparison;
 mod history;
+mod memory;
 mod observations;
 mod pressure;
 mod recovery;
+mod restore;
+mod volume;
 
 use super::*;
 use statglass_schema::{HostRecord, OsKind};

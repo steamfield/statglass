@@ -24,6 +24,7 @@ const MEANING: Record<string, readonly [DockerCoverageKind, string]> = {
   ],
   partial_cycle: ["metrics", "Some containers were not measured"],
   inventory_failed: ["metrics", "Docker did not list its containers"],
+  aggregate_partial: ["metrics", "The engine total missed some containers"],
   clock_step: ["metrics", "The Mac's clock changed"],
   write_failed: ["saving", "Measurements could not be saved"],
   events_disconnected: ["events", "Lost connection to Docker events"],
@@ -36,7 +37,8 @@ function masking(
   reason: string
 ): DockerCoverageMasking {
   if (kind !== "collection" && kind !== "metrics") return "none";
-  if (!scoped && reason === "partial_cycle") return "none";
+  if (!scoped && (reason === "partial_cycle" || reason === "aggregate_partial"))
+    return "none";
   return scoped || reason === "inventory_failed" ? "containers" : "all";
 }
 

@@ -2,7 +2,10 @@
 use crate::{HostId, JsSafeInt};
 use serde::{Deserialize, Serialize};
 mod coverage;
-pub use coverage::{DockerCoverage, DockerCoverageKind, DockerCoverageMasking};
+pub use coverage::{
+    DockerCoverage, DockerCoverageKind, DockerCoverageMasking, EVENT_COVERAGE_REASONS,
+    MAX_COVERAGE_LISTED,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(default)]
@@ -226,7 +229,11 @@ pub struct DockerHistoryPoint {
 pub struct DockerHistoryPage {
     pub generation: u32,
     pub points: Vec<DockerHistoryPoint>,
+    /// The newest records of the range, at most [`MAX_COVERAGE_LISTED`]; the points
+    /// are masked by all of them (D-128).
     pub coverage: Vec<DockerCoverage>,
+    /// How many records the range holds, listed or not.
+    pub coverage_total: u32,
     pub metadata: Vec<DockerContainer>,
     pub persistence: DockerPersistence,
 }
@@ -335,7 +342,11 @@ pub struct DockerComparisonPage {
     pub generation: u32,
     pub ranking: Vec<DockerRankedContainer>,
     pub series: Vec<DockerContainerSeries>,
+    /// The range's newest engine-wide records and the charted containers' own, at most
+    /// [`MAX_COVERAGE_LISTED`] per scope; the points are masked by all of them (D-128).
     pub coverage: Vec<DockerCoverage>,
+    /// How many of those records the range holds, listed or not.
+    pub coverage_total: u32,
     pub persistence: DockerPersistence,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
