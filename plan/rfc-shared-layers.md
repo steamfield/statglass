@@ -1,7 +1,9 @@
 # RFC: Shared layers for charts, queries, UI states and Rust collectors
 
 Status: Accepted 2026-11-07, revised after a devil's-advocate review (see "Review outcome"); open
-questions decided by the owner. Phases 0 and 1 done (2026-11-07, see PROGRESS); 2a and 2b in progress.
+questions decided by the owner. Implemented 2026-11-07: every phase (0 through 5) landed with
+code reviews and fix rounds; see PROGRESS. R6.1's coverage masking took four review rounds
+and a store migration (schema v9); D-128 records the final rules.
 From phase 1 on, implementation runs on Claude subagents in isolated worktrees instead of Codex
 (owner's decision, 2026-11-07).
 Date: 2026-11-07.

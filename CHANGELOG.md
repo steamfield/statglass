@@ -30,7 +30,12 @@
 - Disk I/O x ticks end at "now" and follow the shared axis rule; popover network bars
   stop rescaling every second.
 - Container comparison gap bands and history details use Rust's coverage labels; points
-  inside a collection or metrics gap no longer count as measured.
+  inside a collection or metrics gap no longer count as measured. A container whose stats
+  read fails only breaks its own line; the engine total no longer repeats stale values for
+  containers it couldn't measure, and History details explains the gap. Waking the Mac from
+  sleep no longer records a clock change.
+- Docker history stays readable however many interruptions a container records (the
+  history database upgrades to schema 9 on first launch).
 - The Timeline range control and Containers' history toolbar share one control; the
   Docker popover card uses the module card shell.
 - Chart descriptions for screen readers change at most every 10 seconds instead of every

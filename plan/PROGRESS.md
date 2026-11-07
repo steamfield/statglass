@@ -4,6 +4,36 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Shared layers RFC complete (2026-11-07)
+
+Phase 3d (C8) landed: `useSeriesFocus` (pinned beats hover), `heatmapAlpha` everywhere with
+`HeatScaleLegend` stops, `motionMs`/`motionEase`, `layoutMarkers` in `@core/chart-math` with a
+`ChartAnnotations` widget, `useCompactStream`, `useChartLabel` (aria labels change at most every
+10 s; heat matrices spell out their resolution), `MeterCell`, StackBar for GPU residency,
+`ChartTable` for both "Show as table" views (sticky time column, series groups divided), and
+the battery hours view plus its `battery_hours` command removed. A final sweep migrated the
+leftover time literals, floors, formatters, dates and render-time series keys.
+
+Docker coverage (R6.1, D-128) needed four review rounds after phase 5. Final shape: Rust
+publishes each record's kind, label and masking scope; per-container `partial_cycle` only for
+stats errors and the deadline, one engine-wide `inventory_failed` per failed refresh,
+`aggregate_partial` explaining aggregate holes; the aggregate never counts unmeasured
+containers; coverage reads stream without a row cap through end-time indexes and fold into
+masked time per point; schema v9 adds a unique coverage key (with a dedupe of older
+duplicates) and an upsert that never reopens a closed record; clock steps are detected on a
+sleep-counting clock, so waking from sleep is no longer a step; crash-closed records clamp to
+the restarted process's first observation.
+
+Verified on main: `make check` (1,862 vitest, every Rust suite), `make bindings-check`,
+`make e2e-perf` (14), `bun run test:e2e` (512), Linux Docker runs for the touched crates, and
+a manual QA pass of every screen in both themes (the browser dev server with the mock): brush
+and Escape, crosshairs and tooltips, Timeline click vs drag zoom, table sorting, container
+grouping and collapse, chart/table focus sync, Show as table, coverage details, menus by
+keyboard, Storage and the popover. QA found one new problem (series groups ran together in
+Show as table), fixed. Existing issues seen during QA and left alone: a zoomed Timeline range
+labels only one x tick, and History details prints the raw reason key in monospace beside
+each label (D-101).
+
 ## Shared layers RFC phases 3b, 3c, 4 and 5 (2026-11-07)
 
 Phase 3b (C3, C5): `MirrorChart` backs Network and Disk I/O (Disk keeps imperative hover
