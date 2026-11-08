@@ -278,7 +278,7 @@ export function diskCard(input: {
   usedBytes: number | null;
   bytes: "GB" | "GiB";
   rate: RateUnits;
-  processes: readonly LiveProcess[];
+  processes: readonly LiveProcess[] | null;
 }): CardBase {
   return {
     accent: "disk",
@@ -294,8 +294,11 @@ export function diskCard(input: {
     list: {
       caption: "Now",
       ariaLabel: "Top processes by disk I/O",
+      ...(input.processes === null
+        ? { note: "Disk rates by process aren't readable on this host" }
+        : {}),
       rows: topProcesses(
-        input.processes,
+        input.processes ?? [],
         (p) =>
           p.disk_read_bps === null && p.disk_write_bps === null
             ? null

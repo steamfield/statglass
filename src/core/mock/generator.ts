@@ -485,6 +485,16 @@ export class MockGenerator {
           : st.v - spec.perTick * (1 - ticksPerSecond);
       return round(clampWalk(scaled, spec));
     });
+    if (this.flags.networkRateExtremes) {
+      this.specs.forEach((spec, i) => {
+        if (
+          sampled[i] &&
+          !this.failing.has(i) &&
+          ["net.rx", "net.tx"].includes(spec.key.metric)
+        )
+          values[i] = networkRateAt(this.tick);
+      });
+    }
     this.specs.forEach((spec, i) => {
       if (!spec.sumOf || !sampled[i]) return;
       const parts = spec.sumOf.map((p) => values[p] ?? null);
@@ -543,4 +553,11 @@ export class MockGenerator {
 
 function round(v: number): number {
   return Math.round(v * 1000) / 1000;
+}
+
+/** Four ticks per state let held values expire during the failed reads. */
+function networkRateAt(tick: number): number | null {
+  const phase = tick % 12;
+  if (phase < 4) return 0;
+  return phase < 8 ? 999e9 : null;
 }

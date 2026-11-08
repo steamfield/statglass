@@ -371,3 +371,41 @@ test("Low Power Mode engages Performance mode and stops all motion", async ({
     crossfade: "0ms",
   });
 });
+
+test("Overview cards have one animated ancestor and its headers enter separately", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openOverview(page);
+  const card = page
+    .getByRole("main")
+    .getByRole("link", { name: "CPU", exact: true });
+  await expect(card).toBeVisible();
+  const names = await card.evaluate((card) => {
+    const names: string[] = [];
+    for (
+      let ancestor = card.parentElement;
+      ancestor && ancestor.tagName !== "MAIN";
+      ancestor = ancestor.parentElement
+    ) {
+      const name = getComputedStyle(ancestor).animationName;
+      if (name !== "none") names.push(name);
+    }
+    return names;
+  });
+  expect(names).toHaveLength(1);
+  expect(names[0]).toMatch(/lift/);
+  const titleMotion = await page
+    .getByRole("heading", { name: "Overview", exact: true })
+    .evaluate((title) => {
+      const header = title.closest("header");
+      if (!header) throw new Error("Missing page header");
+      return getComputedStyle(header).animationName;
+    });
+  expect(titleMotion).toMatch(/lift/);
+  expect(
+    await page
+      .getByRole("region", { name: "This Mac" })
+      .evaluate((header) => getComputedStyle(header).animationName)
+  ).toMatch(/lift/);
+});

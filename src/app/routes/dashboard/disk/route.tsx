@@ -1,6 +1,5 @@
 import { relativeWindow } from "@core/chart-range";
 import { formatRate } from "@core/format";
-import type { DiskDevice } from "@core/generated/bindings";
 import { keyByLabel, labelValues } from "@core/series-key";
 import { type ReactNode, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -20,24 +19,21 @@ import {
 import { VolumeTable } from "~/components/volume-table";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow, useSetChartWindow } from "~/hooks/use-chart-window";
+import { useDiskIo, useDiskIoScope } from "~/hooks/use-disk-io";
 import { useEdition } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
 import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
-import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useSearchParamPatch } from "~/hooks/use-search-param-patch";
 import { useBrushRange, useBrushStore } from "~/stores/brush-store";
 import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
-import { useHost } from "~/stores/host-store";
 import { useMemory } from "~/stores/live-selectors";
 import { StatList } from "~/widgets/stat-list";
 import { DiskIoCharts } from "./_components/disk-io-charts";
 import { DiskProcesses } from "./_components/disk-processes";
 import { DiskRangeTotals } from "./_components/disk-range-totals";
 import { SpaceView } from "./_components/space-view";
-import { useDiskDevices, useDiskIo } from "./_hooks/use-disk-io";
 import { useSpaceVolumes } from "./_hooks/use-disk-space";
 import { volumeRows } from "./_lib/disk";
 import { readRange, writeRange } from "./_lib/range-params";
@@ -96,29 +92,23 @@ function DiskActivity({
   const hostRecord = useHostRecord();
   // Rows without measured disk rates would list every process at 0 B/s.
   const diskIo = useProcessColumnCaps().diskIo;
-  const local = useIsLocalHost();
-  const inventory = useDiskDevices(local && hostRecord !== undefined);
-  const remote = useRemoteDevices(!local);
   const chosen = params.get("device");
-  const device = local
-    ? chosen === "all"
-      ? null
-      : (chosen ?? inventory.data?.default_device ?? null)
-    : remote.pick(chosen);
   const secondary = params.get("response") === "ops" ? "ops" : "time";
   const selection = useBrushRange();
   const brush = useBrushStore();
   // Keep dismissal available while changing range unmounts the loading plots.
   useDismissOutside(brush.getState().clear, selection !== null);
-  const edge = useOpenEdge();
   // A pinned interval keeps its surrounding chart window when live time advances.
   const fixedEnd = chartWindow?.endMs ?? null;
-  const end = fixedEnd ?? selection?.toMs ?? edge;
-  const canReadHistory = !local || inventory.data !== undefined;
-  const range =
-    windowMs !== null && end !== null && canReadHistory
-      ? { fromMs: end - windowMs, toMs: end }
-      : null;
+  const {
+    local,
+    inventory,
+    defaultDevice,
+    device,
+    devices,
+    range,
+    canReadHistory,
+  } = useDiskIoScope(windowMs, fixedEnd, selection, chosen);
   const [chartRef, chartWidth] = useElementSize("width", 1000);
   const maxPoints = Math.max(
     12,
@@ -154,7 +144,6 @@ function DiskActivity({
   );
   const held = useHeld(volKeys);
   const mounts = hostRecord?.info.boot_mounts ?? [];
-  const devices = local ? (inventory.data?.devices ?? []) : remote.devices;
   const selected = devices.find((d) => d.dev === device);
   const missing =
     device !== null && inventory.data !== undefined && selected === undefined;
@@ -162,8 +151,8 @@ function DiskActivity({
     const next = new URLSearchParams(params);
     if (local && chosen === null && inventory.data)
       next.set("device", inventory.data.default_device ?? "all");
-    if (!local && chosen === null && remote.defaultDevice !== null)
-      next.set("device", remote.defaultDevice);
+    if (!local && chosen === null && defaultDevice !== null)
+      next.set("device", defaultDevice);
     writeRange(next, selection);
     if (next.toString() !== params.toString())
       setParams(next, { replace: true });
@@ -172,7 +161,7 @@ function DiskActivity({
     inventory.data,
     local,
     params,
-    remote.defaultDevice,
+    defaultDevice,
     selection,
     setParams,
   ]);
@@ -325,32 +314,6 @@ function DiskActivity({
     </div>
   );
 }
-const NO_DEVICES: readonly DiskDevice[] = [];
-
-/**
- * A remote host's devices come with its capabilities (D-116): the local
- * device inventory command only describes this Mac. A host from before
- * D-116 lists none, and its page shows all devices as it always has.
- */
-function useRemoteDevices(remote: boolean) {
-  const devices = useHost((s) =>
-    remote ? (s.capabilities?.disk_devices ?? NO_DEVICES) : NO_DEVICES
-  );
-  const defaultDevice =
-    devices.find((d) => d.default)?.dev ?? devices[0]?.dev ?? null;
-  return {
-    devices,
-    defaultDevice,
-    /** The device shown: the chosen one when the host has it, else the default. */
-    pick: (chosen: string | null): string | null =>
-      chosen === "all"
-        ? null
-        : devices.some((d) => d.dev === chosen)
-          ? chosen
-          : defaultDevice,
-  };
-}
-
 const readKey = keyByLabel("disk.read", "dev");
 const writeKey = keyByLabel("disk.write", "dev");
 

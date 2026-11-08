@@ -2,9 +2,9 @@ import { formatPercent, formatRate } from "@core/format";
 import { keyByLabel, labelValues } from "@core/series-key";
 import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
-import { NETWORK_HERO } from "~/components/charts/module-hero";
 import { InterfaceTable } from "~/components/interface-table";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
+import { NETWORK_HERO } from "~/components/module-hero";
 import { ModulePage } from "~/components/module-page";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
@@ -110,7 +110,7 @@ export default function NetworkRoute() {
                 <LiveMirrorChart
                   brush={brush}
                   gaps={gaps}
-                  {...NETWORK_HERO}
+                  {...NETWORK_HERO.chart}
                   windowMs={windowMs}
                   accent="net"
                   format={(v) => formatRate(v, { units: units.rate })}

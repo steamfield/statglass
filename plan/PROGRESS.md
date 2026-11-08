@@ -14,7 +14,20 @@ and the module pages read it too; `MirrorChart`/`LiveMirrorChart` gained `hover`
 `ticks`, `inset` and `maxBars`; Disk exports `useDiskIoReadWriteChart` over its existing
 query. `useMax24h` and `historyKeys.maxima` are gone.
 
-VERIFY_PLACEHOLDER
+Built by two Codex units (shared specs, then the Overview) with a Claude refactor pass,
+an independent code review (27 items, all fixed or recorded in D-129) and a second Codex
+review. Verified in the worktree: Vitest 1,900 (272 files), lint, typecheck,
+`bun run test:e2e` 512 of 514 (the two failures, the popover background tick and the
+Disk brush, passed alone and 20 of 20 repeated under parallel load), every `make check`
+step up to `rust-test`, `make bindings-check`, and `make e2e-perf` 15 passed: Overview
+9.1 ms/s at 15 m, 9.7 ms/s at 1 h (new `overview1h` case, budget 35 like the other
+1 h screens), no long tasks; plain 8.1 vs Performance mode 5 ms/s. `updater-patch-test`
+cannot run from a nested worktree (its crate resolves to the main checkout's
+workspace); this branch does not touch `vendor/`. Screenshots in both themes at 5m,
+15m, 1h and 24h against the module pages and popover. Differences left in place: the
+Overview charts have no hover readout or brush (the card is a link to the page that
+has them), gap bands carry no caption, and the stats are a two-column grid rather
+than the module pages' strip, to fit 300 px.
 
 Next: phase 2 of the Overview plan, a second row of non-module cards (recent events, top
 apps over the window, battery; then largest folders, containers, other Macs).

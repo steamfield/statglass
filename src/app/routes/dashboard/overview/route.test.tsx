@@ -1,6 +1,6 @@
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import OverviewRoute from "./route";
 
@@ -123,12 +123,19 @@ it("fixed dates mark each live headline now, preserving the Power source", async
       chartWindow: { absolute: { from_ms: to - 3600000, to_ms: to } },
     },
   });
-  for (const subject of SUBJECTS) {
-    const chart = await screen.findByRole("img", {
-      name: new RegExp(`^${subject}.*?, selected dates`),
-    });
-    const card = chart.closest("a");
-    expect(card?.querySelector("header")).toHaveTextContent(/ now$/);
+  for (const name of [
+    "CPU",
+    "GPU",
+    "Memory",
+    "Power & Sensors",
+    "Network",
+    "Disk",
+  ]) {
+    const card = await screen.findByRole("link", { name });
+    expect(within(card).getByText(/^(?:on battery )?now$/)).toBeVisible();
+    expect(
+      within(card).getByRole("img", { name: /selected dates/ })
+    ).toBeVisible();
   }
   expect(screen.getByText("on battery now")).toBeVisible();
 });

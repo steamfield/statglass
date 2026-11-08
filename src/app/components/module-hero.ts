@@ -1,10 +1,10 @@
 import { stackSum } from "@core/chart-math";
 import { formatBytes, formatPercent, formatWatts } from "@core/format";
-import type { Module } from "@core/generated/bindings";
+import type { HostInfo, Module } from "@core/generated/bindings";
 import type { LiveMirrorChartProps } from "~/components/live-mirror-chart";
 import type { RangeTotal } from "~/components/range-totals-strip";
 import type { StreamAreaProps } from "~/widgets/stream-area";
-import { BYTES_GUTTER, type ModuleYAxis } from "./module-history-chart";
+import { BYTES_GUTTER, type ModuleYAxis } from "./charts/module-history-chart";
 
 /** Shared drawing contract for a module's lead area chart. Callers own subscriptions. */
 export interface HeroChartSpec {
@@ -25,6 +25,7 @@ export const CPU_HERO = {
     { key: "cpu.system", values: values["cpu.system"] ?? [], step: 2 },
   ],
   yAxis: "percent",
+  /** Over the window or the selection (D-099): `cpu.total` averaged and its peak. */
   totals: [
     {
       metric: "cpu.total",
@@ -43,6 +44,7 @@ export const GPU_HERO = {
     { key: "gpu.util", values: values["gpu.util"] ?? [], step: 1 },
   ],
   yAxis: "percent",
+  /** Over the window or the selection (D-099): `gpu.util` averaged and its peak. */
   totals: [
     {
       metric: "gpu.util",
@@ -112,7 +114,12 @@ export const POWER_HERO = {
       weight: 2,
     },
   ],
+  /**
+   * App lines share the scale: macOS's per-process estimate can top the
+   * system reading, and a line pinned at the ceiling would misstate it.
+   */
   yAxis: { ceiling: "auto", min: 5, format: (w) => `${w}W` },
+  /** Over the window or the selection (D-099): `power.system` averaged and its peak. */
   totals: [
     { metric: "power.system", label: "Avg", format: (s) => formatWatts(s.avg) },
     {
@@ -124,12 +131,15 @@ export const POWER_HERO = {
 } satisfies HeroChartSpec;
 
 export const NETWORK_HERO = {
-  upKey: "net.tx_total",
-  downKey: "net.rx_total",
-  upLabel: "Upload",
-  downLabel: "Download",
-  subject: "Network",
-  minCeiling: 100_000,
+  chart: {
+    upKey: "net.tx_total",
+    downKey: "net.rx_total",
+    upLabel: "Upload",
+    downLabel: "Download",
+    subject: "Network",
+    minCeiling: 100_000,
+  },
+  /** Interface bytes from the stored totals, in every edition (D-091, D-098). */
   totals: [
     {
       metric: "net.rx_total",
@@ -142,7 +152,20 @@ export const NETWORK_HERO = {
       format: (s) => formatBytes(s.integral),
     },
   ],
-} satisfies Pick<
-  LiveMirrorChartProps,
-  "upKey" | "downKey" | "upLabel" | "downLabel" | "subject" | "minCeiling"
-> & { totals: readonly RangeTotal[] };
+} satisfies {
+  chart: Pick<
+    LiveMirrorChartProps,
+    "upKey" | "downKey" | "upLabel" | "downLabel" | "subject" | "minCeiling"
+  >;
+  totals: readonly RangeTotal[];
+};
+
+/** Match the host OS, even when its current layout still carries another OS's series. */
+export function memoryHero(
+  info: Pick<HostInfo, "os" | "mem_total_bytes"> | undefined,
+  format: (value: number) => string
+): HeroChartSpec {
+  return info === undefined || info.os === "mac_os"
+    ? MEMORY_PRESSURE_HERO
+    : memoryUsedHero(info.mem_total_bytes, format);
+}

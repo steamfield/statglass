@@ -7,10 +7,9 @@ import {
   resolutionLabel,
 } from "@core/format";
 import type { DiskIoPage, DiskIoPoint } from "@core/generated/bindings";
-import { gapBands } from "@core/history-state";
+import type { gapBands } from "@core/history-state";
 import { spanWords } from "@core/live-window";
-import { DAY_MS, floorTo } from "@core/time-grid";
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import {
   ChartTooltipHead,
   ChartTooltipRow,
@@ -22,9 +21,9 @@ import {
 import { PLOT_INSET } from "~/components/charts/layout";
 import {
   MirrorChart,
-  type MirrorChartProps,
   paintMirrorCrosshairs,
 } from "~/components/charts/mirror-chart";
+import { useDiskIoReadWriteChart } from "~/components/disk-io-chart";
 import { SegmentedControl } from "~/components/segmented-control";
 
 export type IoSecondary = "time" | "ops";
@@ -189,54 +188,6 @@ export function DiskIoCharts({
       </ChartTooltipShell>
     </div>
   );
-}
-
-/**
- * The read/write plot for a `useDiskIo` answer, including the page's bucket
- * alignment and gaps. A compact caller queries its default device with
- * `useDiskIo(device, range, 40)` and overrides hover, ticks and inset on `chart`.
- */
-export function useDiskIoReadWriteChart(
-  page: DiskIoPage,
-  range: TimeRange,
-  fixedEndMs: number | null
-) {
-  const first = floorTo(range.fromMs, page.bucket_ms);
-  const count = Math.max(1, Math.ceil((range.toMs - first) / page.bucket_ms));
-  const windowMs = range.toMs - range.fromMs;
-  const dates = windowMs >= DAY_MS;
-  const points = useMemo(() => {
-    const byTime = new Map(page.points.map((p) => [p.t, p]));
-    return Array.from(
-      { length: count },
-      (_, i) => byTime.get(first + i * page.bucket_ms) ?? null
-    );
-  }, [page.points, page.bucket_ms, count, first]);
-  const gaps = useMemo(
-    () => gapBands(page.gaps, first, range.toMs, { module: "disk" }),
-    [page.gaps, first, range.toMs]
-  );
-  const chart: MirrorChartProps = {
-    up: points.map((p) => p?.read_bps ?? null),
-    down: points.map((p) => p?.write_bps ?? null),
-    firstMs: first,
-    bucketMs: page.bucket_ms,
-    windowMs,
-    fixedEndMs,
-    subject: "Disk I/O",
-    upLabel: "Read",
-    downLabel: "Write",
-    span: spanWords(windowMs, fixedEndMs),
-    format: formatRate,
-    minCeiling: 1e6,
-    accent: "disk",
-    upHeight: 48,
-    downHeight: 48,
-    gaps,
-    brush: false,
-    dateLabels: dates,
-  };
-  return { points, first, count, windowMs, dates, gaps, chart };
 }
 
 /** One mirrored view of the buckets: read above the line, write below. */

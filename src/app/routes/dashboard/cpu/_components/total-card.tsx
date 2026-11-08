@@ -1,8 +1,8 @@
 import { fixed, formatPercent, MISSING } from "@core/format";
 import { sk } from "@core/series-key";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { CPU_HERO } from "~/components/charts/module-hero";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
+import { CPU_HERO } from "~/components/module-hero";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";

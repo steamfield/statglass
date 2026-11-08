@@ -18,13 +18,16 @@ export function ModulePage({
   subtitle,
   children,
   actions,
-  header,
+  beforeBody,
+  afterBody,
 }: {
   title: string;
   subtitle?: ReactNode;
   actions?: ReactNode;
-  /** Content that remains visible while the chart window loads. */
-  header?: ReactNode;
+  /** Renders below the range notice and outside the settings wait. */
+  beforeBody?: ReactNode;
+  /** Trailing content in the gap column, also outside the settings wait. */
+  afterBody?: ReactNode;
   /** The page's cards for the chart window, once settings have loaded. */
   children: (windowMs: number) => ReactNode;
 }) {
@@ -35,15 +38,20 @@ export function ModulePage({
           title={title}
           subtitle={subtitle}
           actions={
-            <div className="flex flex-wrap items-center gap-3">
-              {actions}
+            actions ? (
+              <div className="flex flex-wrap items-center gap-3">
+                {actions}
+                <WindowControl />
+              </div>
+            ) : (
               <WindowControl />
-            </div>
+            )
           }
         />
         <ChartRangeNotice />
-        {header}
+        {beforeBody}
         <ModulePageBody>{children}</ModulePageBody>
+        {afterBody}
       </div>
     </ChartRangeProvider>
   );

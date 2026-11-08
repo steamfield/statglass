@@ -17,7 +17,12 @@ it("heads the page with the window control and draws the cards for the chart win
 
 it("waits for settings before drawing any card", () => {
   renderWithProviders(
-    <ModulePage title="GPU" actions={<span>Live</span>} header={<p>Machine</p>}>
+    <ModulePage
+      title="GPU"
+      actions={<span>Live</span>}
+      beforeBody={<p>Machine</p>}
+      afterBody={<p>Notice</p>}
+    >
       {() => <p>Cards</p>}
     </ModulePage>
   );
@@ -25,4 +30,5 @@ it("waits for settings before drawing any card", () => {
   expect(screen.queryByText("Cards")).toBeNull();
   expect(screen.getByText("Live")).toBeVisible();
   expect(screen.getByText("Machine")).toBeVisible();
+  expect(screen.getByText("Notice")).toBeVisible();
 });

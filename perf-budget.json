@@ -11,7 +11,7 @@
       "mainThreadMsPerSec": 50
     },
     "overview1h": {
-      "mainThreadMsPerSec": 50
+      "mainThreadMsPerSec": 35
     },
     "cpu1h": {
       "mainThreadMsPerSec": 35

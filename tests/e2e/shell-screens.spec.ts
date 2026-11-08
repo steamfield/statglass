@@ -105,6 +105,33 @@ test("unknown chip hides Power & Sensors and offers the sensor dump", async ({
   await expect(
     page.getByRole("navigation").getByRole("link", { name: /Power/ })
   ).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation instanceof CSSAnimation &&
+                animation.playState === "running"
+            ).length
+      )
+    )
+    .toBe(0);
+  const noticeGap = await page
+    .getByRole("button", { name: "Share sensor dump" })
+    .evaluate((button) => {
+      const notice = button.closest("p")?.parentElement;
+      const previous = notice?.previousElementSibling;
+      if (!notice || !previous)
+        throw new Error("Missing notice or module grid");
+      return (
+        notice.getBoundingClientRect().top -
+        previous.getBoundingClientRect().bottom
+      );
+    });
+  expect(noticeGap).toBe(16);
   await page.getByRole("button", { name: "Share sensor dump" }).click();
   await expect(page.getByTestId("sensor-dump-json")).toContainText("model");
   await shot(page, "state-unknown-chip-dump", info.project.name);
@@ -165,7 +192,9 @@ test("fixed-range Overview headers stay aligned at 300 px through live ticks", a
 }) => {
   await page.clock.install();
   await page.setViewportSize({ width: 1200, height: 833 });
-  await page.goto("/?window=dashboard&theme=dark&chart_window=1h");
+  await page.goto(
+    "/?window=dashboard&theme=dark&chart_window=1h&scenario=network-rate-extremes"
+  );
   await page.getByRole("button", { name: /^Time range:/ }).click();
   await page.getByRole("radio", { name: "Date range", exact: true }).click();
   await page
@@ -178,23 +207,17 @@ test("fixed-range Overview headers stay aligned at 300 px through live ticks", a
   await expect(
     page.getByRole("img", { name: /^CPU total and system, selected dates/ })
   ).toBeVisible();
-  const network = page.getByRole("link", { name: "Network", exact: true });
+  await expect(
+    page.getByText("Loading chart history…", { exact: true })
+  ).toHaveCount(0);
+  const network = page
+    .getByRole("main")
+    .getByRole("link", { name: "Network", exact: true });
   const position = () =>
     network
       .getByRole("img")
       .evaluate((chart) => chart.getBoundingClientRect().top);
   const top = await position();
-  // Substitute formatted ticker text to exercise layout independently of the
-  // generator's rate magnitudes; the live ticks below restore real readings.
-  for (const text of ["↑ 0 B/s ↓ 0 B/s", "↑ 999 MB/s ↓ 999 MB/s", "↑ — ↓ —"]) {
-    await network
-      .locator("header .figures-display > span")
-      .first()
-      .evaluate((ticker, text) => {
-        ticker.textContent = text;
-      }, text);
-    expect(await position()).toBe(top);
-  }
   const headlines = () =>
     page.locator("main a header").evaluateAll((headers) =>
       headers.map((header) => ({
@@ -203,8 +226,14 @@ test("fixed-range Overview headers stay aligned at 300 px through live ticks", a
         text: header.textContent,
       }))
     );
-  for (const elapsed of [0, 3000]) {
-    await page.clock.runFor(elapsed);
+  const observed = new Set<string>();
+  for (let tick = 0; tick < 16; tick++) {
+    await page.clock.runFor(1000);
+    const networkText = (await network.textContent()) ?? "";
+    if (networkText.includes("↑ 0 B/s ↓ 0 B/s")) observed.add("zero");
+    if (networkText.includes("GB/s")) observed.add("large");
+    if (networkText.includes("↑ — ↓ —")) observed.add("missing");
+    expect(await position()).toBe(top);
     const readings = await headlines();
     expect(readings).toHaveLength(6);
     expect(new Set(readings.map((reading) => reading.height)).size).toBe(1);
@@ -213,4 +242,5 @@ test("fixed-range Overview headers stay aligned at 300 px through live ticks", a
       expect(reading.overflow, reading.text ?? "").toBe(false);
     }
   }
+  expect([...observed].sort()).toEqual(["large", "missing", "zero"]);
 });

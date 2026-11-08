@@ -5,15 +5,15 @@
 
 import { formatBytes } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
+import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import {
   CPU_HERO,
   GPU_HERO,
-  MEMORY_PRESSURE_HERO,
-  memoryUsedHero,
+  memoryHero,
   POWER_HERO,
-} from "~/components/charts/module-hero";
+} from "~/components/module-hero";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useModuleEnd } from "~/hooks/use-module-end";
 import {
@@ -40,6 +40,7 @@ import {
 } from "~/stores/live-selectors";
 import type { Corner } from "~/widgets/lib/accent";
 import { MetricCard } from "~/widgets/metric-card";
+import { useOverviewDisk } from "../_hooks/use-overview-disk";
 import {
   type ClusterInput,
   cpuCard,
@@ -55,7 +56,6 @@ import {
   OverviewDiskChart,
   OverviewHistoryChart,
   OverviewNetworkChart,
-  useOverviewDisk,
 } from "./overview-history-charts";
 
 const NO_PROCESSES: readonly LiveProcess[] = [];
@@ -163,11 +163,19 @@ export function OverviewMemoryCard({ origin, windowMs }: CardProps) {
   const mac =
     host === undefined || host.info.os === "mac_os" || mem.composition;
   const props = mac ? memoryCard(input) : usedMemoryCard(input);
-  const spec = mac
-    ? MEMORY_PRESSURE_HERO
-    : memoryUsedHero(host.info.mem_total_bytes, (v) =>
-        formatBytes(v, { units: bytes })
-      );
+  const info = host?.info;
+  const os = info?.os;
+  const totalBytes = info?.mem_total_bytes;
+  const spec = useMemo(
+    () =>
+      memoryHero(
+        os === undefined || totalBytes === undefined
+          ? undefined
+          : { os, mem_total_bytes: totalBytes },
+        (v) => formatBytes(v, { units: bytes })
+      ),
+    [os, totalBytes, bytes]
+  );
   return (
     <MetricCard
       {...props}
@@ -284,6 +292,12 @@ export function OverviewDiskCard({ origin, windowMs }: CardProps) {
   const boot = useHostRecord()?.info.boot_mounts?.[0] ?? null;
   const vol = useHost(useShallow((s) => selectVolumeCapacity(s, boot)));
   const units = useUnits();
+  // Rows without measured disk rates (`process_disk_io` false, D-116) hold
+  // zeros that must not read as idle processes.
+  const diskIo = useProcessColumnCaps().diskIo;
+  const processes = useHost((s) =>
+    diskIo ? (s.processes?.rows ?? NO_PROCESSES) : null
+  );
   const props = diskCard({
     read,
     write,
@@ -291,9 +305,8 @@ export function OverviewDiskCard({ origin, windowMs }: CardProps) {
     usedBytes: vol.used,
     bytes: units.bytes,
     rate: units.rate,
-    processes: useProcesses(),
+    processes,
   });
-  const diskIo = useProcessColumnCaps().diskIo;
   return (
     <MetricCard
       {...props}
@@ -306,16 +319,6 @@ export function OverviewDiskCard({ origin, windowMs }: CardProps) {
           fixedEnd={fixedEnd}
           devicesFailed={devicesFailed}
         />
-      }
-      list={
-        diskIo
-          ? props.list
-          : {
-              caption: "Now",
-              ariaLabel: "Top processes by disk I/O",
-              rows: [],
-              note: "Disk rates by process aren't readable on this host",
-            }
       }
       href="/dashboard/disk"
       onOpen={useOpen()}

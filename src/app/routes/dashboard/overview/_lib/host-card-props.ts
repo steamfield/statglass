@@ -1,8 +1,24 @@
-/** Facts for hosts without macOS memory composition or component power. */
-import { formatBytes, formatPercent, formatTemperature } from "@core/format";
+/**
+ * Overview card props for a host without the macOS-only series a Linux agent
+ * leaves out (D-116): no memory composition or pressure, no power split by
+ * component, no per-process energy and no SoC hottest zone. Each starts from
+ * the Mac card and replaces the parts that would otherwise read "—".
+ */
+import {
+  formatBytes,
+  formatPercent,
+  formatRpm,
+  formatTemperature,
+  MISSING,
+} from "@core/format";
 import { topBy } from "@core/top-by";
 import { type CardBase, memoryCard, powerCard } from "./card-props";
 
+/**
+ * Memory from `mem.used`, `mem.cached` and `mem.free` (used + cached + free
+ * is MemTotal on Linux), with `mem.psi{stall=some}` for pressure stall.
+ * The total is MemTotal as measured rather than a marketing size.
+ */
 export function usedMemoryCard(
   input: Omit<
     Parameters<typeof memoryCard>[0],
@@ -34,6 +50,11 @@ export function usedMemoryCard(
   };
 }
 
+/**
+ * Power from `power.system` and the `thermal.sensor` readings: system draw
+ * alone, the hottest sensor as a fact, and sensors hottest first in place
+ * of top processes by energy (D-116).
+ */
 export function sensorPowerCard(
   input: Omit<
     Parameters<typeof powerCard>[0],
@@ -52,8 +73,16 @@ export function sensorPowerCard(
   return {
     ...base,
     stats: [
-      { label: "Hottest sensor", value: base.stats[0]?.value ?? "—" },
-      ...base.stats.slice(1, 2),
+      {
+        label: "Hottest sensor",
+        value: hottest[0]
+          ? formatTemperature(hottest[0].value, { units: input.temperature })
+          : MISSING,
+      },
+      {
+        label: "Fans",
+        value: input.passive ? "Passive cooling" : formatRpm(input.fanRpm),
+      },
     ],
     list: {
       caption: "Now",

@@ -103,7 +103,15 @@ export default function OverviewRoute() {
       <ModulePage
         title="Overview"
         actions={<StatusPill {...samplingStatus(sampling)} />}
-        header={<LiveMachineHeader />}
+        beforeBody={<LiveMachineHeader />}
+        afterBody={
+          unknownChip && (
+            <UnsupportedNotice
+              modelId={host?.info.model ?? "this Mac"}
+              onShareDump={dump.show}
+            />
+          )
+        }
       >
         {(windowMs) => (
           <CardGrid items={items} getKey={([m]) => m}>
@@ -117,12 +125,6 @@ export default function OverviewRoute() {
           </CardGrid>
         )}
       </ModulePage>
-      {unknownChip && (
-        <UnsupportedNotice
-          modelId={host?.info.model ?? "this Mac"}
-          onShareDump={dump.show}
-        />
-      )}
       <SensorDumpDialog open={dump.open} onOpenChange={dump.setOpen} />
     </>
   );

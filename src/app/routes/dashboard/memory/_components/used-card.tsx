@@ -1,7 +1,7 @@
-import { formatBytes } from "@core/format";
+import { formatBytes, MISSING } from "@core/format";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { memoryUsedHero } from "~/components/charts/module-hero";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
+import type { HeroChartSpec } from "~/components/module-hero";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
@@ -18,16 +18,17 @@ const HEIGHT = 160;
  */
 export function UsedCard({
   windowMs,
-  totalBytes,
+  spec,
+  totalLabel,
 }: {
   windowMs: number;
-  /** `HostInfo.mem_total_bytes`: the chart's ceiling. */
-  totalBytes: number;
+  /** Host-selected used-memory chart and MemTotal scale. */
+  spec: HeroChartSpec;
+  totalLabel: string | null;
 }) {
   const units = useUnits();
   const fmt = (x: number | null | undefined) =>
     formatBytes(x, { units: units.bytes });
-  const spec = memoryUsedHero(totalBytes, fmt);
   const v = useHeld(spec.keys);
   const chart = useModuleChart(spec.keys, windowMs, spec.module, {
     brush: true,
@@ -59,7 +60,7 @@ export function UsedCard({
           accent="mem"
           height={HEIGHT}
           subject={spec.subject}
-          now={`of ${fmt(totalBytes)}, used ${fmt(v["mem.used"])}, cached ${fmt(v["mem.cached"])}`}
+          now={`of ${totalLabel ?? MISSING}, used ${fmt(v["mem.used"])}, cached ${fmt(v["mem.cached"])}`}
         />
       </SectionCard>
     </div>

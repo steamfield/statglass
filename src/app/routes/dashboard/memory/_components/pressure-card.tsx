@@ -1,8 +1,8 @@
 import { formatPercent } from "@core/format";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { MEMORY_PRESSURE_HERO } from "~/components/charts/module-hero";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
+import { MEMORY_PRESSURE_HERO } from "~/components/module-hero";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";

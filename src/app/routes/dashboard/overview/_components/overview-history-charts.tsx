@@ -1,39 +1,26 @@
 import type { TimeRange } from "@core/brush";
 import { formatRate } from "@core/format";
 import type { DiskIoPage } from "@core/generated/bindings";
-import { keyByLabel } from "@core/series-key";
 import { useMemo } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { COMPACT_PLOT_INSET } from "~/components/charts/layout";
 import { MirrorChart } from "~/components/charts/mirror-chart";
-import {
-  type HeroChartSpec,
-  NETWORK_HERO,
-} from "~/components/charts/module-hero";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
+import { useDiskIoReadWriteChart } from "~/components/disk-io-chart";
 import { InlineMessage } from "~/components/inline-message";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
+import { type HeroChartSpec, NETWORK_HERO } from "~/components/module-hero";
+import type { useDiskIo } from "~/hooks/use-disk-io";
 import { useGapBands } from "~/hooks/use-gap-bands";
-import { useHostRecord } from "~/hooks/use-host-record";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleChart } from "~/hooks/use-module-chart";
-import { useModuleEnd } from "~/hooks/use-module-end";
-import { useOpenEdge } from "~/hooks/use-range-scope";
-import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { useDiskIoReadWriteChart } from "~/routes/dashboard/disk/_components/disk-io-charts";
-import {
-  useDiskDevices,
-  useDiskIo,
-} from "~/routes/dashboard/disk/_hooks/use-disk-io";
-import { useHost } from "~/stores/host-store";
 import type { GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
 
+import { MIRROR_BARS } from "../_lib/chart-layout";
+
 const AREA_HEIGHT = 88;
 const MIRROR_HEIGHT = 44;
-/** Bars in a ~220 px mirror plot, the same count the Disk card queries. */
-const MIRROR_BARS = 40;
 
 /**
  * A caption would cover a third of a 300 px card; the hatched band stays
@@ -72,7 +59,7 @@ export function OverviewNetworkChart({ windowMs }: { windowMs: number }) {
   const gaps = useMemo(() => uncaptioned(bands), [bands]);
   return (
     <LiveMirrorChart
-      {...NETWORK_HERO}
+      {...NETWORK_HERO.chart}
       windowMs={windowMs}
       accent="net"
       format={(v) => formatRate(v, { units: rate })}
@@ -85,42 +72,6 @@ export function OverviewNetworkChart({ windowMs }: { windowMs: number }) {
       downHeight={MIRROR_HEIGHT}
     />
   );
-}
-
-/** Match the Disk page's initial device and open edge, without a brush or URL selection. */
-export function useOverviewDisk(windowMs: number) {
-  const local = useIsLocalHost();
-  const host = useHostRecord();
-  const inventory = useDiskDevices(local && host !== undefined);
-  const devices = useHost((s) => s.capabilities?.disk_devices);
-  const device = local
-    ? (inventory.data?.default_device ?? null)
-    : (devices?.find((d) => d.default)?.dev ?? devices?.[0]?.dev ?? null);
-  const fixedEnd = useModuleEnd();
-  const edge = useOpenEdge(fixedEnd === null);
-  const end = fixedEnd ?? edge;
-  const range =
-    end !== null && (!local || inventory.data !== undefined)
-      ? { fromMs: end - windowMs, toMs: end }
-      : null;
-  const query = useDiskIo(device, range, MIRROR_BARS, fixedEnd === null);
-  const readKey =
-    device === null
-      ? "disk.read_total"
-      : keyByLabel("disk.read", "dev")(device);
-  const writeKey =
-    device === null
-      ? "disk.write_total"
-      : keyByLabel("disk.write", "dev")(device);
-  const values = useHeld([readKey, writeKey]);
-  return {
-    devicesFailed: local && inventory.isError,
-    read: values[readKey] ?? null,
-    write: values[writeKey] ?? null,
-    query,
-    range,
-    fixedEnd,
-  };
 }
 
 export function OverviewDiskChart({
@@ -141,7 +92,7 @@ export function OverviewDiskChart({
       ) : (
         <ChartHistoryStatus loading={query.isPending} error={query.isError} />
       )}
-      {query.data && range && (
+      {!devicesFailed && query.data && range && (
         <DiskPlot page={query.data} range={range} fixedEnd={fixedEnd} />
       )}
     </div>

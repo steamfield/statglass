@@ -71,6 +71,7 @@ export const SCENARIOS = [
   "cpu-power-calibrated",
   "wide-layout",
   "hidden-resume",
+  "network-rate-extremes",
   "no-process-network",
   "no-process-gpu",
   "low-power-mode",
@@ -138,6 +139,8 @@ export interface ScenarioFlags {
    * shown: the channel resumes with the missed span (the perf gate).
    */
   hiddenResume: boolean;
+  /** Cycle zero, very large and failed Network reads for layout QA. */
+  networkRateExtremes: boolean;
   /**
    * `Capabilities.process_network` is false: NetworkStatistics did not load
    * (D-081), so the network process columns hide and the Overview Network
@@ -210,6 +213,7 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
           : null,
     wideLayout: has("wide-layout"),
     hiddenResume: has("hidden-resume"),
+    networkRateExtremes: has("network-rate-extremes"),
     noProcessNetwork: has("no-process-network") || has("appstore"),
     noProcessGpu: has("no-process-gpu") || has("appstore"),
     lowPowerMode: has("low-power-mode"),

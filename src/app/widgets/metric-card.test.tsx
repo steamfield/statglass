@@ -1,12 +1,24 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { expectJsonRoundTrip } from "@tests/widget-json";
 import { OVERVIEW_CARDS, PASSIVE_COOLING_CARD } from "./lib/sample-props";
-import { MetricCard } from "./metric-card";
+import { MetricCard, type MetricCardProps } from "./metric-card";
 
 const CPU = OVERVIEW_CARDS[0];
 const GPU = OVERVIEW_CARDS[1];
 if (!CPU || !GPU) throw new Error("Missing card samples");
 
+function DataCard(props: Omit<MetricCardProps, "chart">) {
+  return <MetricCard {...props} chart={null} />;
+}
+
 describe("MetricCard", () => {
+  it("round-trips every sample card's data props through JSON", () => {
+    for (const { chart: _chart, ...data } of [
+      ...OVERVIEW_CARDS,
+      PASSIVE_COOLING_CARD,
+    ])
+      expectJsonRoundTrip(DataCard, data);
+  });
   it("renders its headline, chart, compact facts and captioned live list", () => {
     render(<MetricCard {...CPU} />);
     expect(screen.getByText("18%")).toBeVisible();

@@ -1,19 +1,25 @@
 import type { LiveProcess } from "@core/generated/bindings";
 import type { ScenarioName } from "@core/mock/fixtures";
 import {
+  capabilities,
   MOCK_HOST_ID,
   PROCESSES,
   withGpuPct,
   withNetRates,
 } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import { act, screen, within } from "@testing-library/react";
+import { hostKeys } from "@core/query-keys";
+import { seriesKey } from "@core/series-key";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import {
   OverviewDiskCard,
   OverviewGpuCard,
+  OverviewMemoryCard,
   OverviewNetworkCard,
+  OverviewPowerCard,
 } from "./overview-cards";
 
 function renderCard(scenarios: ScenarioName[]) {
@@ -131,4 +137,151 @@ it("shows a failed disk inventory instead of loading indefinitely", async () => 
   });
   expect(await screen.findByText("Couldn't load disk devices.")).toBeVisible();
   expect(screen.queryByText("Loading chart history…")).toBeNull();
+});
+
+it("uses the local inventory's disk3 default for current headline rates", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  transport.listDiskIoDevices = async () => ({
+    status: "ok",
+    data: {
+      default_device: "disk3",
+      devices: [
+        {
+          dev: "disk0",
+          name: "Other",
+          internal: true,
+          default: false,
+          request_time_supported: true,
+        },
+        {
+          dev: "disk3",
+          name: "Boot",
+          internal: true,
+          default: true,
+          request_time_supported: true,
+        },
+      ],
+    },
+  });
+  renderWithProviders(<OverviewDiskCard origin="tl" windowMs={300000} />, {
+    transport,
+  });
+  await screen.findByRole("img", { name: /^Disk I\/O/ });
+  const frame = pushLayout(transport, 2, [
+    seriesKey("disk.read", { dev: "disk0" }),
+    seriesKey("disk.write", { dev: "disk0" }),
+    seriesKey("disk.read", { dev: "disk3" }),
+    seriesKey("disk.write", { dev: "disk3" }),
+  ]);
+  frame(Date.now() + 1000, [1e6, 2e6, 90e6, 30e6]);
+  expect(screen.getByText("↑ 90.0 MB/s ↓ 30.0 MB/s")).toBeVisible();
+});
+
+it("uses a remote capability's non-first default without local inventory", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const getHost = transport.getHost;
+  transport.getHost = async (host) => {
+    const result = await getHost(host);
+    return result.status === "ok"
+      ? { ...result, data: { ...result.data, is_local: false } }
+      : result;
+  };
+  const view = renderWithProviders(
+    <OverviewDiskCard origin="tl" windowMs={300000} />,
+    { transport }
+  );
+  await screen.findByRole("heading", { name: "Disk" });
+  act(() =>
+    transport.push({
+      kind: "caps",
+      capabilities: {
+        ...capabilities(transport.flags, {}),
+        disk_devices: [
+          { dev: "sda", name: "First", internal: true, default: false },
+          { dev: "sdb", name: "Default", internal: true, default: true },
+        ],
+      },
+    })
+  );
+  await waitFor(() => expect(view.queryClient.isFetching()).toBe(0));
+  const frame = pushLayout(transport, 2, [
+    seriesKey("disk.read", { dev: "sda" }),
+    seriesKey("disk.write", { dev: "sda" }),
+    seriesKey("disk.read", { dev: "sdb" }),
+    seriesKey("disk.write", { dev: "sdb" }),
+  ]);
+  frame(Date.now() + 1000, [1e6, 2e6, 80e6, 20e6]);
+  expect(screen.getByText("↑ 80.0 MB/s ↓ 20.0 MB/s")).toBeVisible();
+  expect(
+    transport.calls.some((call) => call.command === "list_disk_io_devices")
+  ).toBe(false);
+});
+
+it.each([
+  { name: "Disk", Card: OverviewDiskCard, capability: "process_disk_io" },
+  { name: "Power", Card: OverviewPowerCard, capability: "process_energy" },
+])(
+  "$name ignores process batches without its process capability",
+  async ({ Card, capability }) => {
+    const renders = { n: 0 };
+    const { transport, queryClient } = renderWithProviders(
+      <Profiler id="card" onRender={() => renders.n++}>
+        <Card origin="tl" windowMs={300000} />
+      </Profiler>
+    );
+    await screen.findByRole("img");
+    act(() =>
+      transport.push({
+        kind: "caps",
+        capabilities: {
+          ...capabilities(transport.flags, {}),
+          [capability]: false,
+        },
+      })
+    );
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    const before = renders.n;
+    act(() => transport.push(batch(1, PROCESSES)));
+    act(() => transport.push(batch(2, withGpuPct(PROCESSES))));
+    expect(renders.n).toBe(before);
+  }
+);
+
+it("hides the held Disk plot when an inventory refetch fails", async () => {
+  const { transport, queryClient } = renderWithProviders(
+    <OverviewDiskCard origin="tl" windowMs={300000} />
+  );
+  await screen.findByRole("img", { name: /^Disk I\/O/ });
+  transport.listDiskIoDevices = async () => ({
+    status: "error",
+    error: { kind: "unknown_host", host: MOCK_HOST_ID },
+  });
+  await act(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: hostKeys.diskIoDevices(MOCK_HOST_ID),
+    });
+  });
+  expect(await screen.findByText("Couldn't load disk devices.")).toBeVisible();
+  expect(screen.queryByRole("img", { name: /^Disk I\/O/ })).toBeNull();
+});
+
+it("charts used memory for a Linux host even when the layout carries macOS composition", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const getHost = transport.getHost;
+  transport.getHost = async (host) => {
+    const result = await getHost(host);
+    return result.status === "ok"
+      ? {
+          ...result,
+          data: { ...result.data, info: { ...result.data.info, os: "linux" } },
+        }
+      : result;
+  };
+  renderWithProviders(<OverviewMemoryCard origin="tl" windowMs={300000} />, {
+    transport,
+  });
+  expect(
+    await screen.findByRole("img", { name: /^Memory used and cached files/ })
+  ).toBeVisible();
+  expect(screen.queryByRole("img", { name: /^Memory pressure/ })).toBeNull();
 });
