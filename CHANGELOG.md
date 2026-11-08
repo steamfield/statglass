@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.8.0](https://github.com/steamfield/statglass/compare/v0.7.0...v0.8.0) - 2026-11-08
+
+### Added
+
+- Overview cards chart their module's history over the dashboard's time range, with the
+  range control in the Overview header (D-129).
+- A second Overview row: Battery (charge over the range, time remaining, health, cycles,
+  battery power), Events (detector events in the range, each opening Timeline on that
+  moment) and Apps (top apps by CPU, memory, GPU or energy over the range) (D-130).
+
+### Changed
+
+- Overview cards put the live reading in the header and three or four facts under the
+  chart; the ring gauges and bars are gone. Memory pressure warnings show as a header chip.
+- Network and Disk list upload or read first, matching their charts.
+- The popover and the Battery page share one wording for time remaining and time to full.
+- Each module page's lead chart is defined once and shared with its Overview card.
+
 ## [0.7.0](https://github.com/steamfield/statglass/compare/v0.6.2...v0.7.0) - 2026-11-07
 
 0.6.2 was tagged but not published; 0.7.0 includes its changes.

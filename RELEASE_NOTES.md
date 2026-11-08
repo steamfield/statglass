@@ -1,49 +1,34 @@
-# StatGlass 0.7.0
+# StatGlass 0.8.0
 
 StatGlass is a free, open-source system monitor for Apple Silicon Macs running macOS
 26 or later.
 
-This release makes charts, tables and Docker history behave the same way on every page,
-and fixes a set of inconsistencies that had crept in between them. It also includes the
-sortable tables from 0.6.2, which was never published.
+This release turns the Overview into a page you can monitor from. Every card now shows
+how its metric has moved over time, not just the reading this second, and a second row
+adds battery, recent events and the apps that did the most work.
 
-## Sortable tables
+## Overview
 
-- Every value column in the dashboard's tables sorts. The first click puts the largest
-  values first, or sorts text from A to Z, and a second click flips the order. Missing
-  readings always sort to the bottom, and summary rows such as **Other apps** stay last.
-- Live tables keep their order while the pointer is over them, and now also while you move
-  through them with the keyboard. A mouse click no longer freezes the order after the
-  pointer leaves.
-- Containers can be grouped by project from the **View** menu, with groups you can collapse.
-
-## Charts
-
-- Module history charts share one look: values in a left gutter and five time ticks. Swap
-  and Used memory gain gutter values, Battery gains a percent grid, and Swap gains a
-  selection summary.
-- One crosshair and tooltip on every chart, and the same wording for averages ("10 s avg").
-- The popover's network and power charts no longer rescale every second, and Disk I/O's
-  time axis ends at "now" like the rest.
-- **Show as table** for Timeline lanes and container comparisons is one sortable table with
-  min, average and max per series and gaps listed in place.
-- Screen reader descriptions of live charts change at most every 10 seconds.
-
-## Docker history
-
-- A container whose stats can't be read only breaks its own line; other containers and the
-  engine total are unaffected, and **History details** says what was missed.
-- Waking the Mac from sleep is no longer recorded as a clock change.
-- History stays readable however many interruptions a container records. The history
-  database upgrades itself on first launch; an older StatGlass can't open it afterwards.
+- Each module card draws its history over the dashboard's time range: CPU load, GPU
+  utilization, memory pressure, system power, network and disk throughput. Pick the range
+  from the new **5m**, **1h** and **More** control in the Overview header; it is the same
+  range the module pages use, so a card opens its page on the same span.
+- The current reading stays in each card's header. When you look at a fixed past range,
+  it says "now" so it isn't mistaken for the chart's last value.
+- Sleep periods show as hatched bands, as on the module pages.
+- Memory pressure warnings appear as a chip in the Memory card's header.
+- A **Battery** card shows charge over the range, time remaining or time to full, health,
+  cycles and battery power. Macs without a battery don't get one.
+- An **Events** card lists what the Mac's detectors noticed in the range: fans ramping up,
+  thermal state changes, sustained heavy processes, power spikes and alert rules. Click
+  one to open Timeline on that moment.
+- An **Apps** card ranks the top apps by CPU, memory, GPU or energy over the range, from
+  live readings for the last hour and recorded history beyond it.
 
 ## Smaller changes
 
-- Confirmations for hosts, updates and cleanup no longer close on a stray click or Escape
-  while their action runs.
-- Pages explain a missing module with the host's own name instead of "this Mac".
-- Disk processes search matches PIDs and ports by their leading digits, like Processes.
-- The battery hours view, superseded by Battery's range history, is gone.
+- Network and Disk headers list upload or read first, matching their charts.
+- The popover and the Battery page share one wording for time remaining and time to full.
 
 ## Moving from Kelvo
 
