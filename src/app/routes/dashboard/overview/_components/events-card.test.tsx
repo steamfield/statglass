@@ -60,9 +60,9 @@ it("clips to half-open bounds, counts every event, and lists the newest six", as
     events
       .slice(4)
       .reverse()
-      .map((e) => formatClock(e.ts_ms) + eventLabel(e))
+      .map((e) => `${formatClock(e.ts_ms)}Warning${eventLabel(e)}`)
   );
-  expect(screen.getByText("8 in last 15 minutes")).toBeVisible();
+  expect(screen.getByText("8 in the last 15 minutes")).toBeVisible();
   expect(screen.queryByText(/Too old|At end|App 0|App 1/)).toBeNull();
 });
 
@@ -86,13 +86,14 @@ it("uses warning priority for an icon and leaves recovery informational", async 
   setup({ events: [recovery, warning] });
   await screen.findByRole("list");
   expect(
-    screen.getByRole("button", { name: /Compiler/ }).querySelector("svg")
-  ).not.toBeNull();
+    screen.getByRole("button", { name: /Warning.*Compiler/ })
+  ).toBeVisible();
   expect(
-    screen
-      .getByRole("button", { name: /Thermal state Nominal/ })
-      .querySelector("svg")
-  ).toBeNull();
+    screen.getByRole("button", { name: /Thermal state Nominal/ })
+  ).not.toHaveAccessibleName(/Warning/);
+  expect(
+    screen.getByRole("button", { name: /Compiler/ })
+  ).toHaveAccessibleDescription("Open in Timeline");
 });
 
 it("shows the loading state until the event query resolves", async () => {
@@ -125,6 +126,7 @@ it("distinguishes a read error from unavailable history", async () => {
   });
   expect(await screen.findByText("Couldn't load events")).toBeVisible();
   expect(screen.queryByText(/Nothing detected/)).toBeNull();
+  expect(screen.queryByText(/^\d+ (in|between) /)).toBeNull();
 });
 
 it("uses the existing history-unavailable wording", async () => {
@@ -135,6 +137,7 @@ it("uses the existing history-unavailable wording", async () => {
     await screen.findByText("History is unavailable. Live values still work.")
   ).toBeVisible();
   expect(screen.queryByText(/Nothing detected/)).toBeNull();
+  expect(screen.queryByText(/^\d+ (in|between) /)).toBeNull();
 });
 
 it.each([false, true])(
@@ -194,6 +197,14 @@ it("waits for the range save before navigating, and respects trimmed history", a
   await waitFor(() =>
     expect(router.state.location.pathname).toBe("/dashboard/timeline")
   );
+  const settings = await transport.getSettings();
+  expect(settings).toMatchObject({
+    settings: {
+      general: {
+        chart_window: { absolute: { from_ms: retained, to_ms: NOW - 40_000 } },
+      },
+    },
+  });
 });
 
 it("navigates when apply returns false for an already selected range", async () => {
@@ -253,10 +264,67 @@ it("hides the old count while a larger event range loads", async () => {
     );
   }
   const { user } = renderWithProviders(<ChangingCard />, { transport });
-  await screen.findByText("1 in last 15 minutes");
+  await screen.findByText("1 in the last 15 minutes");
   await user.click(screen.getByRole("button", { name: "Day" }));
   expect(screen.getByText("Loading chart history…")).toBeVisible();
-  expect(screen.queryByText(/1 in last/)).toBeNull();
+  expect(screen.queryByText(/1 in the last/)).toBeNull();
   await act(async () => release());
-  await screen.findByText("2 in last day");
+  await screen.findByText("2 in the last day");
+});
+
+it("uses the same absolute scope words for the count and empty state", async () => {
+  const transport = createMockTransport({
+    autoTick: false,
+    now: () => NOW,
+    chartWindow: { absolute: { from_ms: NOW - WINDOW, to_ms: NOW } },
+  });
+  setup({ transport });
+  expect(await screen.findByText(/^1 between /)).toBeVisible();
+});
+
+it("stays on Overview when saving an event's range fails", async () => {
+  const transport = createMockTransport({
+    autoTick: false,
+    now: () => NOW,
+    settingsNotSaved: true,
+  });
+  const { router, user } = setup({ transport });
+  await user.click(await screen.findByRole("button", { name: /Compiler/ }));
+  expect(router.state.location.pathname).toBe("/dashboard/overview");
+  expect((await transport.getSettings()).settings.general.chart_window).toBe(
+    "15m"
+  );
+  expect(screen.getByRole("button", { name: /Compiler/ })).toBeEnabled();
+});
+
+it("ignores another event click while the first range is being saved", async () => {
+  const e = event(100_000, "Compiler");
+  const { transport, router, user, queryClient } = setup({
+    events: [e, event(300_000, "Browser")],
+  });
+  await screen.findByRole("button", { name: /Compiler/ });
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+  const update = transport.updateSettings;
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  transport.updateSettings = async (...args) => {
+    await gate;
+    return update(...args);
+  };
+  await user.click(screen.getByRole("button", { name: /Compiler/ }));
+  await user.click(screen.getByRole("button", { name: /Browser/ }));
+  expect(router.state.location.pathname).toBe("/dashboard/overview");
+  await act(async () => release());
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe("/dashboard/timeline")
+  );
+  const range = eventRange([e], BRUSH_STEP_MS, NOW);
+  if (!range) throw new Error("expected event range");
+  expect((await transport.getSettings()).settings.general.chart_window).toEqual(
+    {
+      absolute: { from_ms: range.fromMs, to_ms: range.toMs },
+    }
+  );
 });

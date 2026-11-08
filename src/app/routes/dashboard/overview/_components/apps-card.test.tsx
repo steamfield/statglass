@@ -138,3 +138,47 @@ it.each([900_000, DAY_MS])(
     expect(renders.n).toBe(before);
   }
 );
+
+it("explains a 90-day window without reporting a read failure", async () => {
+  renderWithProviders(<OverviewAppsCard origin="tr" windowMs={90 * DAY_MS} />);
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "Recorded app attribution supports intervals up to 30 days. Choose a shorter range to inspect apps."
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByText(/Loading/)).toBeNull();
+});
+
+it("shows the live coverage note when no app samples are available", async () => {
+  const transport = createMockTransport({ autoTick: false, now: () => NOW });
+  const read = transport.queryUsageByApp;
+  transport.queryUsageByApp = async (...args) => {
+    const reply = await read(...args);
+    return reply.status === "ok"
+      ? {
+          ...reply,
+          data: {
+            ...reply.data,
+            apps: [],
+            covered_ms: 0,
+            since_ms: null,
+          },
+        }
+      : reply;
+  };
+  renderWithProviders(<OverviewAppsCard origin="tr" windowMs={900_000} />, {
+    transport,
+  });
+  expect(await screen.findByText("Waiting for app samples")).toHaveRole(
+    "status"
+  );
+  expect(screen.queryByText(/No app activity recorded/)).toBeNull();
+});
+
+it("words incomplete history as coverage followed by an observed-ranking sentence", async () => {
+  renderWithProviders(<OverviewAppsCard origin="tr" windowMs={DAY_MS} />, {
+    transportOptions: { now: () => NOW, scenarios: ["sleep-gap"] },
+  });
+  expect(await screen.findByText(/incomplete observation/)).toHaveTextContent(
+    /Avg CPU: .* incomplete observation\. Observed ranking; some use could not be recorded\./
+  );
+});

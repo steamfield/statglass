@@ -15,6 +15,7 @@ import {
   marketingGb,
   rateParts,
 } from "@core/format";
+import { batteryTime } from "@core/format/battery";
 import { METRIC_CODES } from "@core/generated/bindings";
 import { spanWords } from "@core/live-window";
 import { mirrorSubject } from "~/components/charts/mirror-chart";
@@ -28,7 +29,6 @@ import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import { useUnits } from "~/hooks/use-units";
-import { batteryTime } from "~/lib/battery";
 import { useTransport } from "~/lib/transport-context";
 import { useHost } from "~/stores/host-store";
 import {

@@ -27,6 +27,8 @@ export interface CardGridProps<T> {
   minColumnWidth?: number;
   /** Collapse unused tracks so a partial row shares all available width. */
   fit?: boolean;
+  /** Continue entrance ordering after an earlier grid. */
+  staggerFrom?: number;
 }
 
 /**
@@ -40,6 +42,7 @@ export function CardGrid<T>({
   children,
   minColumnWidth = 300,
   fit = false,
+  staggerFrom = 0,
 }: CardGridProps<T>) {
   return (
     <div
@@ -56,7 +59,7 @@ export function CardGrid<T>({
         <div
           key={getKey(item)}
           className="min-w-0 [&>*]:h-full"
-          style={stagger(i)}
+          style={stagger(staggerFrom + i)}
         >
           {children(item, cardOrigin(i), i)}
         </div>

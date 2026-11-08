@@ -13,11 +13,11 @@ import {
   type RateUnits,
   type TemperatureUnits,
 } from "@core/format";
+import { batteryTime } from "@core/format/battery";
 import type { LiveProcess, PowerSource } from "@core/generated/bindings";
 import { topBy } from "@core/top-by";
 import { netTotal } from "~/components/process-table";
 import type { BatteryDetail } from "~/hooks/use-battery";
-import { batteryTime } from "~/lib/battery";
 import { pressureState } from "~/routes/dashboard/memory/_lib/pressure";
 import type { MetricCardProps } from "~/widgets/metric-card";
 import type { ProcessListRow } from "~/widgets/process-list";
@@ -337,7 +337,7 @@ export function batteryCard(
     accent: "battery",
     title: "Battery",
     value: formatPercent(battery.charge),
-    ...(source === null
+    ...(source === null || source === "unknown"
       ? {}
       : {
           unit:

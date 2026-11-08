@@ -158,7 +158,12 @@ export default function OverviewRoute() {
                 )
               }
             </CardGrid>
-            <CardGrid fit items={activityItems} getKey={(item) => item.id}>
+            <CardGrid
+              fit={activityItems.length < 3}
+              staggerFrom={items.length}
+              items={activityItems}
+              getKey={(item) => item.id}
+            >
               {(item, origin) => item.render(origin, windowMs)}
             </CardGrid>
           </>

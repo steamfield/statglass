@@ -1,11 +1,10 @@
-import { BRUSH_STEP_MS, scopeWords } from "@core/brush";
-import { recordedDate } from "@core/chart-range";
+import { BRUSH_STEP_MS, rangeScopeWords } from "@core/brush";
 import { eventId, eventLabel, eventPriority, eventRange } from "@core/events";
 import { formatClock, monthName } from "@core/format";
+import type { Event } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
-import { spanWords } from "@core/live-window";
 import { TriangleAlert } from "lucide-react";
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { useNavigate } from "react-router";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { useEventsQuery } from "~/hooks/use-events";
@@ -14,9 +13,7 @@ import { useModuleEnd } from "~/hooks/use-module-end";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
-import { cn } from "~/lib/utils";
 import { Card } from "~/widgets/card";
-import { Swatch } from "~/widgets/legend";
 import type { Corner } from "~/widgets/lib/accent";
 
 export function OverviewEventsCard({
@@ -36,15 +33,35 @@ export function OverviewEventsCard({
   const query = useEventsQuery(windowMs, endMs);
   const { health, error } = useHistoryHealth();
   const unavailable = error ? historyUnavailable(error) : null;
-  const { apply } = useRangeNavigation();
+  const { apply, pending, range: currentRange } = useRangeNavigation();
+  const opening = useRef(false);
   const navigate = useNavigate();
   const events = query.events
     .filter((event) => event.ts_ms >= fromMs && event.ts_ms < toMs)
     .sort((a, b) => b.ts_ms - a.ts_ms);
-  const scope =
-    endMs === null
-      ? `in the ${scopeWords(null, windowMs)}`
-      : `between ${recordedDate(fromMs)} and ${recordedDate(toMs)}`;
+  const scope = rangeScopeWords(windowMs, endMs);
+  const openEvent = async (event: Event) => {
+    if (opening.current || pending) return;
+    const range = eventRange(
+      [event],
+      BRUSH_STEP_MS,
+      clock(),
+      health?.trimmed_before_ms ?? 0
+    );
+    if (!range) return;
+    opening.current = true;
+    const applied = await apply({
+      absolute: { from_ms: range.fromMs, to_ms: range.toMs },
+    });
+    opening.current = false;
+    // A no-op is safe only when these absolute bounds are active.
+    if (
+      applied ||
+      (currentRange?.endMs === range.toMs &&
+        currentRange.windowMs === range.toMs - range.fromMs)
+    )
+      navigate("/dashboard/timeline");
+  };
 
   return (
     <Card
@@ -56,14 +73,13 @@ export function OverviewEventsCard({
     >
       <header className="flex items-baseline justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Swatch step={1} />
           <h3 id={titleId} className="font-[590] text-[13px]">
             Events
           </h3>
         </div>
-        {!query.isPending && (
+        {!query.isPending && !query.isError && !unavailable && (
           <span className="figures text-[11px] text-muted-foreground">
-            {events.length} in {spanWords(windowMs, endMs)}
+            {events.length} {scope}
           </span>
         )}
       </header>
@@ -89,32 +105,22 @@ export function OverviewEventsCard({
               <li key={eventId(event)}>
                 <button
                   type="button"
-                  className={cn(
-                    "flex w-full items-baseline gap-2 rounded-control py-1 text-left text-[12px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
-                    warning ? "text-warning" : "text-fg-subtle"
-                  )}
-                  onClick={async () => {
-                    const range = eventRange(
-                      [event],
-                      BRUSH_STEP_MS,
-                      clock(),
-                      health?.trimmed_before_ms ?? 0
-                    );
-                    if (range)
-                      await apply({
-                        absolute: { from_ms: range.fromMs, to_ms: range.toMs },
-                      });
-                    navigate("/dashboard/timeline");
-                  }}
+                  aria-description="Open in Timeline"
+                  disabled={pending}
+                  className="flex w-full items-baseline gap-2 rounded-control py-1 text-left text-[12px] text-fg-subtle outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => void openEvent(event)}
                 >
                   <span className="figures shrink-0 text-[11px] text-muted-foreground">
                     {eventTime(event.ts_ms, toMs)}
                   </span>
                   {warning && (
-                    <TriangleAlert
-                      aria-hidden
-                      className="size-3 shrink-0 self-center"
-                    />
+                    <>
+                      <TriangleAlert
+                        aria-hidden
+                        className="size-3 shrink-0 self-center text-warning"
+                      />
+                      <span className="sr-only">Warning</span>
+                    </>
                   )}
                   <span className="min-w-0 truncate" title={eventLabel(event)}>
                     {eventLabel(event)}

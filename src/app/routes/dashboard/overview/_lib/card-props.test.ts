@@ -282,6 +282,7 @@ describe("Battery facts", () => {
     expect(card.stats[3]?.value).toBe("30.0 W");
     expect(batteryCard(battery, "adapter").unit).toBe(" on adapter");
     expect(batteryCard(battery, null).unit).toBeUndefined();
+    expect(batteryCard(battery, "unknown").unit).toBeUndefined();
   });
   it("keeps missing readings as gaps", () => {
     const card = batteryCard(

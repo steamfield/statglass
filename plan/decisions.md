@@ -4336,3 +4336,32 @@ The 24 h maxima query that scaled the old bars is gone.
 Cost: six history charts on the Overview at 1 Hz. `perf-gate.spec.ts` gains an
 "Overview, 1 h window" case with its own `overview1h` budget, set to the existing
 Overview threshold.
+
+## D-130: A second Overview row: Battery, Events and Apps
+
+Date: 2026-11-08. Phase 2a of the Overview plan, after D-129.
+
+The Overview gets a second `CardGrid` below the six module cards, on the same column
+width, so at 1280 px its three cards line up with the columns above. It holds Battery
+(when the host has one), Events and Apps. Battery is a module card (`MetricCard` with a
+`BATTERY_HERO` chart), but adding it to the module grid would leave it alone on a 3+3+1
+row; in the second row it lines up. The row uses `auto-fit`, so on a Mac without a
+battery Events and Apps share it without a hole.
+
+Events lists the detector events (D-083 and the alert rules) in the chart range. A row
+opens Timeline on the event's range through `useRangeNavigation().apply`, the same path
+as Timeline's heatmap: the range is dashboard-wide, so the Overview stays on it until
+the user goes Back or Live. Loading, error, unavailable history and an empty range each
+say so; none reads as "nothing happened".
+
+Apps ranks the top five apps over the range by CPU, memory, GPU or energy. It reads the
+live ring up to an hour and recorded attribution (D-120) past that, the same split as
+the module pages' apps tables. The two paths measure energy differently (joules in the
+live ring, estimated CPU watts in history), so the segment is labelled "Energy" or "CPU
+power" by path rather than pretending they are one figure. Network is left out: it has
+no live path, and the Network page has the full table. A history answer is held while
+the range's open edge moves, so the card does not reload every 10 s.
+
+The Remaining / To full / On power wording is one helper shared by the popover, the
+Battery page and the new card. The Battery page keeps its dash on adapter power, which
+the popover shows as "On power".

@@ -133,7 +133,11 @@ for (const theme of ["light", "dark"]) {
     await expect(
       page.getByRole("heading", { name: "Overview", exact: true })
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: /^Battery/ })).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("navigation", { name: "Dashboard sections" })
+        .getByRole("link", { name: /^Battery/ })
+    ).toHaveCount(0);
     await page.screenshot({
       animations: "disabled",
       path: `test-results/screens/remote-overview-${theme}-${info.project.name}.png`,
@@ -228,7 +232,11 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(
     page.getByRole("combobox", { name: "Selected machine" })
   ).toContainText("Work Mac");
-  await expect(page.getByRole("link", { name: /^Battery/ })).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Dashboard sections" })
+      .getByRole("link", { name: /^Battery/ })
+  ).toHaveCount(0);
   await page.getByRole("link", { name: "Hosts", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
@@ -261,7 +269,11 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(
     page.getByRole("combobox", { name: "Selected machine" })
   ).toContainText("This Mac");
-  await expect(page.getByRole("link", { name: /^Battery/ })).toBeVisible();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Dashboard sections" })
+      .getByRole("link", { name: /^Battery/ })
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });
 

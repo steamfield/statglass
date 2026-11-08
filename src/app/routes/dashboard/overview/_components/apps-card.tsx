@@ -1,6 +1,6 @@
-import { scopeWords } from "@core/brush";
-import { recordedDate } from "@core/chart-range";
+import { rangeScopeWords } from "@core/brush";
 import { USAGE_HISTORY_MAX_RANGE_MS } from "@core/generated/bindings";
+import { DAY_MS } from "@core/time-grid";
 import { useId, useState } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import {
@@ -10,7 +10,6 @@ import {
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { useHost } from "~/stores/host-store";
 import { Card } from "~/widgets/card";
-import { Swatch } from "~/widgets/legend";
 import type { Corner } from "~/widgets/lib/accent";
 import { ProcessList } from "~/widgets/process-list";
 import { type TopAppsMetric, useTopApps } from "../_hooks/use-top-apps";
@@ -35,10 +34,7 @@ export function OverviewAppsCard({
     ? selected
     : "cpu";
   const apps = useTopApps(windowMs, by);
-  const scope =
-    endMs === null
-      ? `in the ${scopeWords(null, windowMs)}`
-      : `between ${recordedDate(endMs - windowMs)} and ${recordedDate(endMs)}`;
+  const scope = rangeScopeWords(windowMs, endMs);
 
   return (
     <Card
@@ -50,7 +46,6 @@ export function OverviewAppsCard({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Swatch step={1} />
           <h3 id={titleId} className="font-[590] text-[13px]">
             Apps
           </h3>
@@ -62,12 +57,7 @@ export function OverviewAppsCard({
           ariaLabel="Rank apps by"
         />
       </header>
-      <AppsBody
-        apps={apps}
-        historical={historical}
-        beyondHistory={historical && windowMs > USAGE_HISTORY_MAX_RANGE_MS}
-        scope={scope}
-      />
+      <AppsBody apps={apps} historical={historical} scope={scope} />
     </Card>
   );
 }
@@ -76,18 +66,18 @@ export function OverviewAppsCard({
 function AppsBody({
   apps,
   historical,
-  beyondHistory,
   scope,
 }: {
   apps: ReturnType<typeof useTopApps>;
   historical: boolean;
-  beyondHistory: boolean;
   scope: string;
 }) {
-  if (beyondHistory)
+  if (apps.beyondHistory)
     return (
       <p role="status" className="text-[12px] text-muted-foreground">
-        Recorded app activity covers up to 30 days
+        Recorded app attribution supports intervals up to{" "}
+        {USAGE_HISTORY_MAX_RANGE_MS / DAY_MS} days. Choose a shorter range to
+        inspect apps.
       </p>
     );
   if (apps.isError)
@@ -102,7 +92,7 @@ function AppsBody({
   if (apps.rows.length === 0)
     return (
       <p role="status" className="text-[12px] text-muted-foreground">
-        No app activity recorded {scope}
+        {(!historical && apps.note) || `No app activity recorded ${scope}`}
       </p>
     );
   return (

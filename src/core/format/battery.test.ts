@@ -33,12 +33,4 @@ describe("battery time wording", () => {
     expect(batteryTime({ timeRemainingMin: 0 }, "charging").value).toBe("0:00");
     expect(batteryTime({ timeRemainingMin: 65 }, "adapter").value).toBe("1:05");
   });
-  it("preserves the Battery page's suppressed adapter time and missing countdowns", () => {
-    expect(batteryTime({ timeRemainingMin: 65 }, "adapter", "page").value).toBe(
-      MISSING
-    );
-    expect(
-      batteryTime({ timeRemainingMin: null }, "charging", "page").value
-    ).toBe(MISSING);
-  });
 });

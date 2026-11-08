@@ -49,21 +49,28 @@ export function useTopApps(windowMs: number, by: TopAppsMetric) {
   const key = `${host}:${by}:${windowMs}:${historical}:${keepPrevious}`;
   const recorded = useRollingAnswer(history.data, key, keepPrevious);
   const recent = useRollingAnswer(live.data, key, keepPrevious);
-  const isError = historical
-    ? history.isError || windowMs > USAGE_HISTORY_MAX_RANGE_MS
-    : live.isError;
+  const beyondHistory = historical && windowMs > USAGE_HISTORY_MAX_RANGE_MS;
+  const isError = historical ? history.isError : live.isError;
   return {
     ...(historical
       ? recordedApps(recorded, by, units.bytes)
       : recentApps(recent, by, units.bytes)),
     historical,
     caption: !historical && by === "energy" ? "Energy" : HISTORICAL_LABELS[by],
-    isPending: !isError && !(historical ? recorded : recent),
+    beyondHistory,
+    isPending: !beyondHistory && !isError && !(historical ? recorded : recent),
     isError,
   };
 }
 
-/** Holds only within one view identity; metric changes start with no answer. */
+/**
+ * Hold only the same host, metric and window while a rolling edge advances.
+ * holdWhile is a query-level placeholder callback; useHistoricalUsage exposes
+ * no placeholder option. useUsageByApp's useRangeQuery keepPrevious checks the
+ * host and span by default, but its wrapper exposes no metric identity predicate.
+ * Holding here gives both paths the same host/metric/window guard without
+ * changing the shared hooks' callers.
+ */
 function useRollingAnswer<T>(
   data: T | undefined,
   key: string,
@@ -92,7 +99,7 @@ function recordedApps(
   const incomplete =
     recorded && (!recorded.ranking_complete || !coverage?.complete);
   const note = incomplete
-    ? `${historicalCoverage(coverage, recorded.range.requested_to_ms - recorded.range.requested_from_ms)}; observed ranking`
+    ? `${HISTORICAL_LABELS[by]}: ${historicalCoverage(coverage, recorded.range.requested_to_ms - recorded.range.requested_from_ms)}.${!recorded.ranking_complete ? " Observed ranking; some use could not be recorded." : ""}`
     : null;
   return { rows, note };
 }

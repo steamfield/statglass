@@ -1,10 +1,10 @@
 import { MISSING, wattsParts } from "@core/format";
+import { batteryTime } from "@core/format/battery";
 import type { PowerSource } from "@core/generated/bindings";
 import type { BatteryDetail } from "~/hooks/use-battery";
-import { batteryTime } from "~/lib/battery";
 
 /** `LiveStatus.power_source` (D-092), "unknown" before the first status. */
-export type PowerState = PowerSource | "unknown";
+export type PowerState = PowerSource;
 
 export const STATE_TEXT: Record<PowerState, string> = {
   charging: "Charging",
@@ -22,7 +22,13 @@ export function timeField(
   b: BatteryDetail,
   state: PowerState
 ): { label: string; value: string } {
-  return batteryTime(b, state, "page");
+  // The subtitle already names the adapter state; this field only shows a countdown.
+  if (state === "adapter" || b.timeRemainingMin === null)
+    return {
+      label: state === "charging" ? "To full" : "Remaining",
+      value: MISSING,
+    };
+  return batteryTime(b, state);
 }
 
 /** "On battery · 6:12 remaining", "Charging · 1:05 to full". */

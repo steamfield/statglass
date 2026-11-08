@@ -6,10 +6,11 @@
  */
 
 import { clamp01 } from "@core/chart-math";
+import { recordedDate } from "@core/chart-range";
 import { formatSpan } from "@core/format";
 import { NET_BUCKET_MS } from "@core/generated/bindings";
 import { windowWords } from "@core/live-window";
-import { ceilTo, floorTo } from "@core/time-grid";
+import { ceilTo, floorTo, MINUTE_MS } from "@core/time-grid";
 
 /** Width of the buckets a selection snaps to: the per-app network bucket. */
 export const BRUSH_STEP_MS: number = NET_BUCKET_MS;
@@ -139,4 +140,31 @@ export function scopeWords(
   return selection
     ? `selected ${formatSpan(selection.toMs - selection.fromMs)}`
     : `last ${windowWords(windowMs)}`;
+}
+
+/** Scope in a sentence, shared by live and absolute activity summaries. */
+export function rangeScopeWords(
+  windowMs: number,
+  endMs: number | null
+): string {
+  return endMs === null
+    ? `in the ${scopeWords(null, windowMs)}`
+    : `between ${recordedDate(endMs - windowMs)} and ${recordedDate(endMs)}`;
+}
+
+/** Selection follows displayed bucket edges, never inventing finer precision. */
+export function selectedRange(
+  a: number,
+  b: number,
+  bucketMs: number,
+  nowMs: number,
+  retainedFrom = 0
+): TimeRange | null {
+  const minimum = Math.max(MINUTE_MS, bucketMs);
+  let fromMs = floorTo(Math.min(a, b), bucketMs);
+  let toMs = ceilTo(Math.max(a, b), bucketMs);
+  if (toMs - fromMs < minimum) toMs = fromMs + minimum;
+  toMs = Math.min(toMs, nowMs);
+  fromMs = Math.max(retainedFrom, Math.min(fromMs, toMs - minimum));
+  return toMs - fromMs >= minimum ? { fromMs, toMs } : null;
 }

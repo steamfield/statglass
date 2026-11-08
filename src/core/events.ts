@@ -3,10 +3,10 @@
  * and the Power chart, and merging a pushed `event-recorded` into a list
  * already fetched.
  */
-import type { TimeRange } from "@core/brush";
+import { selectedRange } from "@core/brush";
 import { formatPercent } from "@core/format";
 import type { Event, HostId, ThermalState } from "@core/generated/bindings";
-import { ceilTo, floorTo, MINUTE_MS } from "@core/time-grid";
+import { MINUTE_MS } from "@core/time-grid";
 
 const THERMAL: Record<ThermalState, string> = {
   nominal: "Nominal",
@@ -148,21 +148,4 @@ export function eventRange(
     nowMs,
     retainedFrom
   );
-}
-
-/** Selection follows displayed bucket edges, never inventing finer precision. */
-export function selectedRange(
-  a: number,
-  b: number,
-  bucketMs: number,
-  nowMs: number,
-  retainedFrom = 0
-): TimeRange | null {
-  const minimum = Math.max(MINUTE_MS, bucketMs);
-  let fromMs = floorTo(Math.min(a, b), bucketMs);
-  let toMs = ceilTo(Math.max(a, b), bucketMs);
-  if (toMs - fromMs < minimum) toMs = fromMs + minimum;
-  toMs = Math.min(toMs, nowMs);
-  fromMs = Math.max(retainedFrom, Math.min(fromMs, toMs - minimum));
-  return toMs - fromMs >= minimum ? { fromMs, toMs } : null;
 }

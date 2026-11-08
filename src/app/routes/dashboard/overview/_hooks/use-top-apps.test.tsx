@@ -18,10 +18,12 @@ function Probe({ windowMs }: { windowMs: number }) {
         GPU
       </button>
       <output>{apps.historical ? "history" : "live"}</output>
-      {apps.isPending ? (
-        <p>Loading</p>
-      ) : apps.isError ? (
+      {apps.isError ? (
         <p>Error</p>
+      ) : apps.beyondHistory ? (
+        <p>Beyond history</p>
+      ) : apps.isPending ? (
+        <p>Loading</p>
       ) : (
         <ul>
           {apps.rows.map((row) => (
@@ -40,12 +42,14 @@ it.each([900_000, DAY_MS])(
   "uses the correct source for a %i ms window",
   async (windowMs) => {
     const transport = createMockTransport({ now: () => NOW, autoTick: false });
-    const live = vi.spyOn(transport, "queryUsageByApp");
-    const history = vi.spyOn(transport, "queryHistoricalUsage");
     renderWithProviders(<Probe windowMs={windowMs} />, { transport });
     await screen.findByRole("list");
-    expect(live.mock.calls.length).toBe(windowMs === DAY_MS ? 0 : 1);
-    expect(history.mock.calls.length).toBe(windowMs === DAY_MS ? 1 : 0);
+    expect(
+      screen.getByText(windowMs === DAY_MS ? "history" : "live")
+    ).toBeVisible();
+    expect(
+      screen.getByText(windowMs === DAY_MS ? "Compiler: 30.0%" : "clang: 60.0%")
+    ).toBeVisible();
     expect(screen.getAllByRole("listitem").length).toBeLessThanOrEqual(5);
   }
 );
@@ -153,31 +157,13 @@ it("exposes incomplete history coverage and surfaces errors without a live fallb
   expect(live).not.toHaveBeenCalled();
 });
 
-it("re-queries live usage on metric changes", async () => {
-  const transport = createMockTransport({ autoTick: false, now: () => NOW });
-  const live = vi.spyOn(transport, "queryUsageByApp");
-  const { user } = renderWithProviders(<Probe windowMs={900_000} />, {
-    transport,
-  });
-  await screen.findByRole("list");
-  await user.click(screen.getByRole("button", { name: "GPU" }));
-  await waitFor(() =>
-    expect(live).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(Number),
-      expect.any(Number),
-      "gpu",
-      expect.any(Number)
-    )
-  );
-  await screen.findByRole("list");
-});
-
 it("ends loading for a window beyond app history's supported range", async () => {
   const transport = createMockTransport({ autoTick: false, now: () => NOW });
   const history = vi.spyOn(transport, "queryHistoricalUsage");
   renderWithProviders(<Probe windowMs={90 * DAY_MS} />, { transport });
-  expect(await screen.findByText("Error")).toBeVisible();
+  expect(await screen.findByText("Beyond history")).toBeVisible();
+  expect(screen.queryByText("Error")).toBeNull();
+  expect(screen.queryByText("Loading")).toBeNull();
   expect(history).not.toHaveBeenCalled();
 });
 
@@ -223,7 +209,9 @@ it("does not show CPU-ranked rows while a live GPU query is pending", async () =
   expect(screen.getByText("Loading")).toBeVisible();
   expect(screen.queryByRole("list")).toBeNull();
   await act(async () => release());
-  await screen.findByRole("list");
+  await waitFor(() =>
+    expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("Figma: 9.8%")
+  );
 });
 
 it("keeps the live answer while the same metric's rolling range moves", async () => {
