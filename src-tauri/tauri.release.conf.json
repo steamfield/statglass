@@ -1,5 +1,9 @@
 {
   "bundle": {
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Riley Hilliard (YWA9Q642YP)",
+      "hardenedRuntime": true
+    }
   }
 }

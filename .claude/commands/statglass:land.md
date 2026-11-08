@@ -20,9 +20,10 @@ host reboot, identity reset or history deletion.
 
 ## Verify and push
 
-- Follow D-118: never dispatch or rerun a hosted macOS job, including an old CI or
-  Release workflow. Inspect the workflow at the target revision before any rerun.
-  Hosted checks use Linux only; native checks and release packaging stay local.
+- Follow D-118 and D-131: the tag-triggered Release workflow is the only hosted macOS
+  job. Never dispatch or rerun any other macOS job, including an old CI or Release
+  revision. Inspect the workflow at the target revision before any rerun. Native checks
+  stay local in the Git hooks.
 
 - Use the normal commit and push hooks. The pre-push hook runs
   `make check bindings-check e2e-perf`, saving live stage logs under

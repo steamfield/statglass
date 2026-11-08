@@ -1,78 +1,120 @@
 # Releasing StatGlass
 
 StatGlass stays free. The public channel is an Apple Silicon DMG on GitHub Releases,
-ad-hoc signed without Apple notarization. Mac App Store and Homebrew distribution
-are outside this release workflow.
+signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper
+prompt. A pushed version tag builds, signs, notarizes and uploads a draft release on
+GitHub's free macOS runner (D-131); the maintainer checks the draft and publishes it.
+Mac App Store and Homebrew distribution are outside this workflow.
 
-## Release identity and signing
+## Cutting a release
 
-- Keep `Cargo.toml` (workspace version), `package.json` and
-  `src-tauri/tauri.conf.json` on the same stable version.
-- `src-tauri/tauri.conf.json` contains the public updater key. The private key lives
-  in the repository Actions secret `TAURI_SIGNING_PRIVATE_KEY`. An encrypted key
-  also needs `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-- The initial key has an owner-only local backup at
-  `~/.config/kelvo/release/updater.key`. Back it up securely. Never commit it,
-  print it in CI logs, or regenerate it during a release. Losing it prevents
-  updates to existing installations; replacing the key requires a planned transition.
-- Updater signatures bind both archive contents and the app version. These are
-  independent of Apple's code signing and require no Apple membership.
+1. Write `RELEASE_NOTES.md` (first line `# StatGlass X.Y.Z`) and the `CHANGELOG.md`
+   entry (`## [X.Y.Z](https://github.com/steamfield/statglass/compare/vPREV...vX.Y.Z) - DATE`).
+   Leave them uncommitted.
+2. On an up-to-date `main`, run:
 
-## Publish
+   ```sh
+   scripts/release.sh cut X.Y.Z
+   ```
 
-1. Update the three versions and `RELEASE_NOTES.md` plus `CHANGELOG.md`. Run `make check`,
-   `bun run test:e2e`, and `python3 scripts/test-release-manifest.py`.
-2. Commit and push main through the normal Git hooks, then create and push the
-   matching `vMAJOR.MINOR.PATCH` tag. Hosted CI uses Linux only; the Release
-   workflow validates version agreement and manifest tests, without macOS runners.
-3. Build locally using the command below after `make agent-linux` succeeds.
-   Verify the app with `codesign --verify --deep --strict`, confirm the bundled
-   helper, the `statglass-cli` command-line tool and both Linux agents, and run
-   `scripts/check-deps.sh` against the app, helper and command-line tool
-   executables. Stage with `python3 scripts/release-manifest.py TAG --stage`
-   then sign `statglass-release.json` and generate checksums using the commands below. Run
-   `cargo run -p statglass --example verify_release -- target/release-assets`. This verifies
-   the catalog signature, protocol/version agreement, and every advertised binary
-   before exercising the Mac archive installation.
-   Run `cargo build -p statglass --example verify_update_restart` followed by
-   `python3 scripts/verify-update-restart.py` for isolated native restart acceptance.
-   It checks ordinary, background and remote-setup launches with real shutdown,
-   persistent identity/history and no restarted windows; a real login-session launch
-   remains part of the fresh-account check below.
-   Create the draft with `gh release create TAG target/release-assets/* --verify-tag
-   --draft --title "StatGlass TAG" --notes-file RELEASE_NOTES.md`. It must contain
-   `StatGlass_aarch64.dmg`, `StatGlass.app.tar.gz`, its `.sig`, `statglass-latest.json`, `statglass-release.json`,
-   `statglass-release.json.sig`, both standalone Linux musl agents, and `SHA256SUMS`.
-4. Download the draft DMG. Verify the signature with `codesign --verify --deep
-   --strict StatGlass.app`, install and launch it on a fresh account/second Mac, and
-   check a real update from the previous release when one exists. Confirm history
-   and settings survive and note any Gatekeeper prompts. Browser tests cannot
-   establish native installation or restart behavior.
-5. Publish the complete draft as the latest stable release. Only then does the
-   fixed `/releases/latest/download/statglass-latest.json` and `statglass-release.json` endpoints advertise it to clients.
+   It refuses a dirty tree (other than the two notes files), a version that is not
+   newer than the latest tag, or notes that do not name the version. It bumps
+   `Cargo.toml`, `Cargo.lock`, `package.json` and `src-tauri/tauri.conf.json`, runs the
+   manifest checks, and commits `chore(release): X.Y.Z`. After you confirm, it pushes
+   `main` through the pre-push gate, then creates and pushes the annotated tag.
+3. The tag starts the Release workflow. Linux jobs validate the versions and manifest
+   and build both Linux agents. The `macos` job then waits for your approval: open
+   the run (the script prints its URL, and GitHub notifies you) and approve the
+   `release` environment. It builds the app with the agents bundled, signs the app,
+   helper and CLI with the Developer ID under the hardened runtime, notarizes and
+   staples the app, builds the signed updater archive and the DMG, then signs,
+   notarizes and staples the DMG (`scripts/notarize-dmg.sh`). It checks runtime
+   dependencies, stages the assets, signs `statglass-release.json`, writes
+   `SHA256SUMS`, runs `verify_release`, and creates a draft release with all of them.
+   Expect 20 to 40 minutes; Apple's notarization queue is most of the variance.
+4. When the draft exists, run:
 
-Never replace published updater archives or reuse a version. Fix a bad release
-with a higher version. A failed draft can be deleted and rebuilt from its existing
-tag using the local build procedure. Do not move published tags.
+   ```sh
+   scripts/release.sh publish X.Y.Z
+   ```
 
-## Local release build
+   It downloads the draft DMG, checks it against `SHA256SUMS`, confirms the stapled
+   ticket and that Gatekeeper accepts the DMG and the app inside, and copies the DMG to
+   `~/Downloads`. Open that copy on a fresh macOS account or a second Mac and confirm
+   it launches with no warning. When a previous release exists, also check a real
+   update from it: history and settings survive and the app restarts. Then confirm
+   the prompt and the script publishes the draft as the latest release. Only then do
+   the fixed `/releases/latest/download/statglass-latest.json` and
+   `statglass-release.json` endpoints advertise it to installed apps.
 
-With the signing key stored at the path above:
+Never replace published assets or reuse a version; fix a bad release with a higher
+version. A failed or rejected draft can be deleted and rebuilt by rerunning the
+Release workflow for the same tag (Actions, Release, Run workflow, with the tag).
+Do not move published tags.
+
+## Signing identities and secrets
+
+Two independent signatures protect a release:
+
+- Apple's: the Developer ID Application certificate for team `YWA9Q642YP`, with
+  notarization through an App Store Connect API key. Gatekeeper checks these.
+- The updater's: a minisign key whose public half is in `src-tauri/tauri.conf.json`.
+  Installed apps refuse an update archive or catalog without it, whatever the Apple
+  signature says. Updater signatures bind both the archive contents and the version.
+
+The workflow reads these from the `release` environment, which only `v*` tags may
+use and which requires the maintainer's approval:
+
+| Secret | Contents |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Developer ID Application certificate and private key, `.p12`, base64 |
+| `APPLE_CERTIFICATE_PASSWORD` | Password of that `.p12` |
+| `APPLE_API_KEY` | App Store Connect API key ID |
+| `APPLE_API_ISSUER` | App Store Connect issuer ID |
+| `APPLE_API_KEY_P8` | Contents of the `AuthKey_<id>.p8` file |
+| `TAURI_SIGNING_PRIVATE_KEY` | Updater private key (repository secret) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Its password, empty for the current key |
+
+Owner-only local copies live in `~/.config/kelvo/release/` (`updater.key`,
+`AuthKey_<id>.p8`) and the login keychain (the Developer ID identity, and the
+`statglass-notary` notarytool profile). Back up the updater key and an exported `.p12`
+outside the Mac. Never commit them or print them in CI logs. Losing the updater key
+prevents updates to existing installations; replacing it requires a planned
+transition. The Developer ID certificate expires on 2027-12-08: create a new one
+before then and replace `APPLE_CERTIFICATE`. Releases signed before expiry keep
+working because their signatures are timestamped.
+
+## Local release build (fallback)
+
+When GitHub Actions is unavailable, the same build runs on the maintainer's Mac with
+the local copies above. `target/release-assets` must be empty first; move a previous
+deliverable aside rather than mixing releases. Use the actual version and tag.
 
 ```sh
 TAURI_SIGNING_PRIVATE_KEY="$HOME/.config/kelvo/release/updater.key" \
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD='' \
+APPLE_API_KEY=9WT3GZJQPY \
+APPLE_API_ISSUER="<issuer ID from App Store Connect, Users and Access, Integrations>" \
+APPLE_API_KEY_PATH="$HOME/.config/kelvo/release/AuthKey_9WT3GZJQPY.p8" \
 bun run build:app --config src-tauri/tauri.release.conf.json --bundles app,dmg
-python3 scripts/release-manifest.py v0.3.0 --stage
+NOTARY_PROFILE=statglass-notary scripts/notarize-dmg.sh
+python3 scripts/release-manifest.py vX.Y.Z --stage
 bun run tauri signer sign --private-key-path "$HOME/.config/kelvo/release/updater.key" \
-  --password '' --app-version 0.3.0 target/release-assets/statglass-release.json
-python3 scripts/release-manifest.py v0.3.0 --checksums
+  --password '' --app-version X.Y.Z target/release-assets/statglass-release.json
+python3 scripts/release-manifest.py vX.Y.Z --checksums
 cargo run -p statglass --example verify_release -- target/release-assets
+gh release create vX.Y.Z target/release-assets/* --verify-tag --draft \
+  --title "StatGlass vX.Y.Z" --notes-file RELEASE_NOTES.md
 ```
 
-Use the actual version tag. `target/release-assets` must be empty before staging;
-move a previous deliverable aside rather than mixing files between releases.
-Ordinary local builds do not create signed updater archives and need no private key.
+Without the `APPLE_API_*` variables, `tauri build` still signs with the Developer ID
+but skips notarization without failing; `notarize-dmg.sh` catches that and stops.
+For restart behavior outside a published update, `cargo build -p statglass --example
+verify_update_restart` followed by `python3 scripts/verify-update-restart.py` checks
+ordinary, background and remote-setup launches in isolation.
+
+Ordinary local builds (`scripts/build-local.sh`, `bun run build:app`) stay ad-hoc
+signed and need no keys.
 
 ## Update behavior
 
