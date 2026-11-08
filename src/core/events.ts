@@ -3,8 +3,10 @@
  * and the Power chart, and merging a pushed `event-recorded` into a list
  * already fetched.
  */
+import type { TimeRange } from "@core/brush";
 import { formatPercent } from "@core/format";
 import type { Event, HostId, ThermalState } from "@core/generated/bindings";
+import { ceilTo, floorTo, MINUTE_MS } from "@core/time-grid";
 
 const THERMAL: Record<ThermalState, string> = {
   nominal: "Nominal",
@@ -109,4 +111,58 @@ export class RecentEvents {
     this.#byHost.set(host, list);
     return list;
   }
+}
+
+export function eventPriority(event: Event): number {
+  const detail = event.detail;
+  if (detail.kind === "alert") return 3;
+  if (detail.kind === "thermal_state") {
+    const states = ["nominal", "fair", "serious", "critical"];
+    return states.indexOf(detail.to) > states.indexOf(detail.from ?? "") &&
+      ["serious", "critical"].includes(detail.to)
+      ? 3
+      : 0;
+  }
+  return detail.kind === "fans_ramped" ? 1 : 2;
+}
+
+export function eventRange(
+  events: readonly Event[],
+  bucketMs: number,
+  nowMs: number,
+  retainedFrom = 0
+) {
+  if (events.length === 0) return null;
+  const start = Math.min(
+    ...events.map((event) => Math.min(event.start_ms, event.ts_ms))
+  );
+  const detection = Math.max(...events.map((event) => event.ts_ms));
+  const padding =
+    detection === start
+      ? 300_000
+      : Math.max(MINUTE_MS, (detection - start) * 0.2);
+  return selectedRange(
+    start - padding,
+    detection + padding,
+    bucketMs,
+    nowMs,
+    retainedFrom
+  );
+}
+
+/** Selection follows displayed bucket edges, never inventing finer precision. */
+export function selectedRange(
+  a: number,
+  b: number,
+  bucketMs: number,
+  nowMs: number,
+  retainedFrom = 0
+): TimeRange | null {
+  const minimum = Math.max(MINUTE_MS, bucketMs);
+  let fromMs = floorTo(Math.min(a, b), bucketMs);
+  let toMs = ceilTo(Math.max(a, b), bucketMs);
+  if (toMs - fromMs < minimum) toMs = fromMs + minimum;
+  toMs = Math.min(toMs, nowMs);
+  fromMs = Math.max(retainedFrom, Math.min(fromMs, toMs - minimum));
+  return toMs - fromMs >= minimum ? { fromMs, toMs } : null;
 }
