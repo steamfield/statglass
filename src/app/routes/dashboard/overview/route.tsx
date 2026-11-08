@@ -21,8 +21,11 @@ import { useSampling } from "~/stores/live-selectors";
 import type { Corner } from "~/widgets/lib/accent";
 import { StatusPill } from "~/widgets/status-pill";
 import { samplingStatus } from "../_lib/sampling-status";
+import { OverviewAppsCard } from "./_components/apps-card";
+import { OverviewEventsCard } from "./_components/events-card";
 import { LiveMachineHeader } from "./_components/live-machine-header";
 import {
+  OverviewBatteryCard,
   OverviewCpuCard,
   OverviewDiskCard,
   OverviewGpuCard,
@@ -61,11 +64,12 @@ function overviewView(network: boolean, gpu: boolean): ProcessView {
   };
 }
 
-/** The six Overview modules in display order. Battery has no card. */
-const CARDS: readonly [
+/** The primary Overview modules in display order. */
+type OverviewCard = readonly [
   UiModule,
   (p: { origin: Corner; windowMs: number }) => ReactNode,
-][] = [
+];
+const CARDS: readonly OverviewCard[] = [
   ["cpu", OverviewCpuCard],
   ["gpu", OverviewGpuCard],
   ["memory", OverviewMemoryCard],
@@ -98,6 +102,36 @@ export default function OverviewRoute() {
     return s === "on" || s === "edition" || s === "unavailable";
   });
 
+  const activityItems: {
+    id: string;
+    render: (origin: Corner, windowMs: number) => ReactNode;
+  }[] = [];
+  const battery = states.battery;
+  if (battery === "on" || battery === "edition" || battery === "unavailable")
+    activityItems.push({
+      id: "battery",
+      render: (origin, windowMs) =>
+        battery === "on" ? (
+          <OverviewBatteryCard origin={origin} windowMs={windowMs} />
+        ) : (
+          <UnavailableCard module="battery" state={battery} />
+        ),
+    });
+  activityItems.push(
+    {
+      id: "events",
+      render: (origin, windowMs) => (
+        <OverviewEventsCard origin={origin} windowMs={windowMs} />
+      ),
+    },
+    {
+      id: "apps",
+      render: (origin, windowMs) => (
+        <OverviewAppsCard origin={origin} windowMs={windowMs} />
+      ),
+    }
+  );
+
   return (
     <>
       <ModulePage
@@ -114,15 +148,25 @@ export default function OverviewRoute() {
         }
       >
         {(windowMs) => (
-          <CardGrid items={items} getKey={([m]) => m}>
-            {([m, Card], origin) =>
-              states[m] === "on" ? (
-                <Card origin={origin} windowMs={windowMs} />
-              ) : (
-                <UnavailableCard module={m} state={states[m]} />
-              )
-            }
-          </CardGrid>
+          <>
+            <CardGrid items={items} getKey={([m]) => m}>
+              {([m, Card], origin) =>
+                states[m] === "on" ? (
+                  <Card origin={origin} windowMs={windowMs} />
+                ) : (
+                  <UnavailableCard module={m} state={states[m]} />
+                )
+              }
+            </CardGrid>
+            <CardGrid
+              fit={activityItems.length < 3}
+              staggerFrom={items.length}
+              items={activityItems}
+              getKey={(item) => item.id}
+            >
+              {(item, origin) => item.render(origin, windowMs)}
+            </CardGrid>
+          </>
         )}
       </ModulePage>
       <SensorDumpDialog open={dump.open} onOpenChange={dump.setOpen} />

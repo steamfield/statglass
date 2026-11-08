@@ -3,7 +3,7 @@ import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
-import { useEvents } from "./use-events";
+import { useEvents, useEventsQuery } from "./use-events";
 
 const DAY = 86_400_000;
 
@@ -178,4 +178,72 @@ describe("useEvents", () => {
     await vi.waitFor(() => expect(eventCalls(transport.calls)).toBe(1));
     expect(screen.getByText("events")).toBeInTheDocument();
   });
+});
+
+function QueryProbe() {
+  const q = useEventsQuery(DAY, null);
+  return (
+    <p>
+      {q.isPending
+        ? "Pending"
+        : q.isError
+          ? "Failed"
+          : `Loaded ${q.events.length}`}
+    </p>
+  );
+}
+
+it("exposes pending, success and error query states", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const read = transport.queryEvents;
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  transport.queryEvents = async (...args) => {
+    await gate;
+    return read(...args);
+  };
+  const { queryClient } = renderWithProviders(<QueryProbe />, { transport });
+  expect(screen.getByText("Pending")).toBeVisible();
+  await act(async () => release());
+  await screen.findByText("Loaded 4");
+  transport.queryEvents = async () => ({
+    status: "error",
+    error: { kind: "internal", message: "read failed" },
+  });
+  await act(() => queryClient.invalidateQueries());
+  expect(await screen.findByText("Failed")).toBeVisible();
+});
+
+it("marks a held answer pending until the new event range is read", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const read = transport.queryEvents;
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  transport.queryEvents = async (...args) => {
+    if (args[2] - args[1] > 900_000) await gate;
+    return read(...args);
+  };
+  const endMs = Date.now();
+  function ChangingRange() {
+    const [span, setSpan] = useState(900_000);
+    const q = useEventsQuery(span, endMs);
+    return (
+      <>
+        <button type="button" onClick={() => setSpan(DAY)}>
+          Full day
+        </button>
+        <p>{q.isPending ? "Loading range" : "Range ready"}</p>
+      </>
+    );
+  }
+  const { user } = renderWithProviders(<ChangingRange />, { transport });
+  await screen.findByText("Range ready");
+  await user.click(screen.getByRole("button", { name: "Full day" }));
+  expect(screen.getByText("Loading range")).toBeVisible();
+  await act(async () => release());
+  await screen.findByText("Range ready");
 });

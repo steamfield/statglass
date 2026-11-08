@@ -1,8 +1,8 @@
 import type { TimeRange } from "@core/brush";
+import { selectedRange } from "@core/brush";
 import { floorTo } from "@core/time-grid";
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { sliderValues, useBrushGesture } from "~/hooks/use-brush-gesture";
-import { selectedRange } from "../_lib/selection";
 
 interface SelectionOptions {
   rangeKey: string;

@@ -11,10 +11,13 @@ import { createMockTransport } from "@core/mock-transport";
 import { hostKeys } from "@core/query-keys";
 import { seriesKey } from "@core/series-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import { pushLayout } from "@tests/live-frames";
+import { nextFrame, pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
+import { ChartRangeProvider } from "~/stores/chart-range";
+import { type HostStore, useHostStore } from "~/stores/host-store";
 import {
+  OverviewBatteryCard,
   OverviewDiskCard,
   OverviewGpuCard,
   OverviewMemoryCard,
@@ -285,3 +288,43 @@ it("charts used memory for a Linux host even when the layout carries macOS compo
   ).toBeVisible();
   expect(screen.queryByRole("img", { name: /^Memory pressure/ })).toBeNull();
 });
+
+it.each(["cpu.total", "power.system"])(
+  "Battery facts ignore a %s-only frame while the selected history stays fixed",
+  async (metric) => {
+    let store: HostStore | undefined;
+    function GrabStore() {
+      store = useHostStore();
+      return null;
+    }
+    const renders = { n: 0 };
+    const to = Date.now() - 86400000;
+    const { transport, queryClient } = renderWithProviders(
+      <>
+        <GrabStore />
+        <ChartRangeProvider>
+          <Profiler id="battery" onRender={() => renders.n++}>
+            <OverviewBatteryCard origin="tl" windowMs={900000} />
+          </Profiler>
+        </ChartRangeProvider>
+      </>,
+      {
+        transportOptions: {
+          chartWindow: { absolute: { from_ms: to - 900000, to_ms: to } },
+        },
+      }
+    );
+    await screen.findByRole("img", { name: /^Battery charge, selected dates/ });
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    const state = store?.getState();
+    if (!state) throw new Error("No host store");
+    const before = renders.n;
+    act(() => transport.push(nextFrame(state, { [metric]: 80 })));
+    expect(renders.n).toBe(before);
+    const after = store?.getState();
+    if (!after) throw new Error("No host store");
+    act(() => transport.push(nextFrame(after, { "battery.charge": 50 })));
+    expect(renders.n).toBeGreaterThan(before);
+    expect(screen.getByText("50%")).toBeVisible();
+  }
+);

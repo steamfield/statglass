@@ -13,9 +13,11 @@ import {
   type RateUnits,
   type TemperatureUnits,
 } from "@core/format";
+import { batteryTime } from "@core/format/battery";
 import type { LiveProcess, PowerSource } from "@core/generated/bindings";
 import { topBy } from "@core/top-by";
 import { netTotal } from "~/components/process-table";
+import type { BatteryDetail } from "~/hooks/use-battery";
 import { pressureState } from "~/routes/dashboard/memory/_lib/pressure";
 import type { MetricCardProps } from "~/widgets/metric-card";
 import type { ProcessListRow } from "~/widgets/process-list";
@@ -321,4 +323,41 @@ export function coresLabel(
   const e = count("efficiency");
   if (p === 0 && e === 0) return "";
   return [p ? `${p}P` : null, e ? `${e}E` : null].filter(Boolean).join(" + ");
+}
+
+/** Battery current facts; signed watts retain the direction of battery flow. */
+export function batteryCard(
+  battery: Pick<
+    BatteryDetail,
+    "charge" | "timeRemainingMin" | "health" | "cycles" | "powerW"
+  >,
+  source: PowerSource | null
+): CardBase {
+  return {
+    accent: "battery",
+    title: "Battery",
+    value: formatPercent(battery.charge),
+    ...(source === null || source === "unknown"
+      ? {}
+      : {
+          unit:
+            source === "charging"
+              ? " charging"
+              : source === "adapter"
+                ? " on adapter"
+                : " on battery",
+        }),
+    stats: [
+      batteryTime(battery, source),
+      { label: "Health", value: formatPercent(battery.health) },
+      {
+        label: "Cycles",
+        value:
+          battery.cycles === null
+            ? MISSING
+            : String(Math.round(battery.cycles)),
+      },
+      { label: "Battery power", value: formatWatts(battery.powerW) },
+    ],
+  };
 }

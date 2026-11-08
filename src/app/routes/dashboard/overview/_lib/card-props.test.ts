@@ -1,6 +1,7 @@
 import { type LiveProcess, METRIC_CODES } from "@core/generated/bindings";
 import { liveProcess } from "@tests/fixtures/processes";
 import {
+  batteryCard,
   cpuCard,
   diskCard,
   gpuCard,
@@ -242,4 +243,63 @@ it("Disk shows used capacity from disk.used and current read/write rates", () =>
   });
   expect(card.value).toBe("↑ 220 MB/s ↓ 48.0 MB/s");
   expect(card.stats).toEqual([{ label: "Used", value: "388 GB of 1.0 TB" }]);
+});
+
+const battery = {
+  charge: 87,
+  charging: 0,
+  external: 0,
+  timeRemainingMin: 372,
+  health: 94,
+  cycles: 212,
+  capacityWh: 68.2,
+  designWh: 72.6,
+  powerW: -14.8,
+  tempC: null,
+  systemW: 14.8,
+};
+
+describe("Battery facts", () => {
+  it("shows charge, source and four live facts without a list", () => {
+    const card = batteryCard(battery, "battery");
+    expect(card.value).toBe("87%");
+    expect(card.unit).toBe(" on battery");
+    expect(card.stats).toEqual([
+      { label: "Remaining", value: "6:12" },
+      { label: "Health", value: "94%" },
+      { label: "Cycles", value: "212" },
+      { label: "Battery power", value: "−14.8 W" },
+    ]);
+    expect(card.list).toBeUndefined();
+  });
+  it("shows charging and adapter wording, positive power and absent source", () => {
+    const card = batteryCard(
+      { ...battery, timeRemainingMin: 65, powerW: 30 },
+      "charging"
+    );
+    expect(card.unit).toBe(" charging");
+    expect(card.stats[0]).toEqual({ label: "To full", value: "1:05" });
+    expect(card.stats[3]?.value).toBe("30.0 W");
+    expect(batteryCard(battery, "adapter").unit).toBe(" on adapter");
+    expect(batteryCard(battery, null).unit).toBeUndefined();
+    expect(batteryCard(battery, "unknown").unit).toBeUndefined();
+  });
+  it("keeps missing readings as gaps", () => {
+    const card = batteryCard(
+      {
+        ...battery,
+        charge: null,
+        timeRemainingMin: null,
+        health: null,
+        cycles: null,
+        powerW: null,
+      },
+      "battery"
+    );
+    expect(card.value).toBe("—");
+    expect(card.stats.map((stat) => stat.value)).toEqual(["—", "—", "—", "—"]);
+    expect(
+      batteryCard({ ...battery, timeRemainingMin: null }, "charging").stats[0]
+    ).toEqual({ label: "To full", value: "On power" });
+  });
 });

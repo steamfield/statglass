@@ -1,12 +1,10 @@
 import { formatPercent } from "@core/format";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
 import { InlineMessage } from "~/components/inline-message";
+import { BATTERY_HERO } from "~/components/module-hero";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
 import { useModuleRange } from "~/stores/chart-range";
-
-const KEY = "battery.charge";
-const KEYS = [KEY];
 
 /**
  * Recorded charge only: averaged charging booleans cannot identify charging
@@ -19,17 +17,21 @@ export function BatteryRangeHistory() {
 }
 
 function ChargeHistory({ windowMs }: { windowMs: number }) {
-  const chart = useModuleChart(KEYS, windowMs, "battery");
-  const charge = useHeld(KEYS)[KEY] ?? null;
+  const chart = useModuleChart(
+    BATTERY_HERO.keys,
+    windowMs,
+    BATTERY_HERO.module
+  );
+  const charge = useHeld(BATTERY_HERO.keys)[BATTERY_HERO.keys[0]] ?? null;
   return (
     <>
       <ModuleHistoryChart
         chart={chart}
-        lines={[{ key: KEY, values: chart.series.values[KEY] ?? [], step: 1 }]}
-        yAxis="percent"
+        lines={BATTERY_HERO.lines(chart.series.values)}
+        yAxis={BATTERY_HERO.yAxis}
         accent="battery"
         height={140}
-        subject="Battery charge"
+        subject={BATTERY_HERO.subject}
         now={`now ${formatPercent(charge)}`}
       />
       <InlineMessage tone="note">

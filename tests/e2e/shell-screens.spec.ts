@@ -53,6 +53,12 @@ for (const theme of THEMES) {
     await expect(
       page.getByRole("list", { name: "Top processes by CPU" })
     ).toContainText("Xcode");
+    await expect(
+      page.getByRole("main").getByRole("link", { name: "Battery", exact: true })
+    ).toBeAttached();
+    await expect(
+      page.getByRole("img", { name: /^Battery charge/ })
+    ).toBeAttached();
     await shot(page, `overview-${theme}`, info.project.name);
     expect(errors).toEqual([]);
   });
@@ -158,6 +164,12 @@ test("no battery and no fans", async ({ page }, info) => {
   await expect(
     page.getByRole("navigation").getByRole("link", { name: /Battery/ })
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("main").getByRole("link", { name: "Battery", exact: true })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Battery", exact: true })
+  ).toHaveCount(0);
   await shot(page, "state-no-battery", info.project.name);
 
   await page.goto("/?window=dashboard&theme=dark&ticks=0&scenario=no-fans");
@@ -235,7 +247,7 @@ test("fixed-range Overview headers stay aligned at 300 px through live ticks", a
     if (networkText.includes("↑ — ↓ —")) observed.add("missing");
     expect(await position()).toBe(top);
     const readings = await headlines();
-    expect(readings).toHaveLength(6);
+    expect(readings).toHaveLength(7);
     expect(new Set(readings.map((reading) => reading.height)).size).toBe(1);
     for (const reading of readings) {
       expect(reading.text).toMatch(/ now$/);

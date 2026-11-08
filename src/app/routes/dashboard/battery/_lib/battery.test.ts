@@ -1,3 +1,4 @@
+import { MISSING } from "@core/format";
 import { describe, expect, it } from "vitest";
 import type { BatteryDetail } from "~/hooks/use-battery";
 import { batterySubtitle, powerText, timeField } from "./battery";
@@ -37,6 +38,17 @@ describe("battery page helpers", () => {
       "On power adapter, not charging"
     );
     expect(batterySubtitle(base, "unknown")).toBe("Power source unknown");
+  });
+
+  it("keeps adapter and missing countdown fields as dashes", () => {
+    expect(timeField(base, "adapter")).toEqual({
+      label: "Remaining",
+      value: MISSING,
+    });
+    expect(timeField({ ...base, timeRemainingMin: null }, "charging")).toEqual({
+      label: "To full",
+      value: MISSING,
+    });
   });
 
   it("describes the signed battery power", () => {

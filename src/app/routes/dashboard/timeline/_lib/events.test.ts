@@ -1,5 +1,5 @@
 import type { Event } from "@core/generated/bindings";
-import { eventRange, groupEvents } from "./events";
+import { groupEvents } from "./events";
 
 const event = (
   ts: number,
@@ -44,16 +44,5 @@ describe("Timeline annotations", () => {
       groupEvents([event(100_000), recovery], 0, 3_600_000, 1000)[0]
         ?.representative.detail.kind
     ).toBe("fans_ramped");
-  });
-  it("uses episode start through detection with padding, not an invented end", () => {
-    expect(eventRange([event(600_000)], 10_000, 3_600_000)).toEqual({
-      fromMs: 480_000,
-      toMs: 660_000,
-    });
-    const instant = { ...event(600_000), start_ms: 600_000 };
-    expect(eventRange([instant], 10_000, 3_600_000)).toEqual({
-      fromMs: 300_000,
-      toMs: 900_000,
-    });
   });
 });

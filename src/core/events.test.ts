@@ -1,4 +1,10 @@
-import { eventLabel, mergeEvent, RecentEvents } from "./events";
+import {
+  eventLabel,
+  eventPriority,
+  eventRange,
+  mergeEvent,
+  RecentEvents,
+} from "./events";
 import type { Event } from "./generated/bindings";
 
 const ev = (ts: number, detail: Event["detail"], processes: string[] = []) => ({
@@ -151,5 +157,66 @@ describe("RecentEvents", () => {
     r.add("h", b);
     r.add("h", c);
     expect(r.mergeInto("h", [], 0, 10_000)).toEqual([b, c]);
+  });
+});
+
+describe("eventRange", () => {
+  it("uses episode start through detection with padding, not an invented end", () => {
+    expect(
+      eventRange(
+        [ev(600_000, { kind: "fans_ramped", from_rpm: 1, to_rpm: 2 })],
+        10_000,
+        3_600_000
+      )
+    ).toEqual({
+      fromMs: 480_000,
+      toMs: 660_000,
+    });
+    const instant = {
+      ...ev(600_000, { kind: "fans_ramped", from_rpm: 1, to_rpm: 2 }),
+      start_ms: 600_000,
+    };
+    expect(eventRange([instant], 10_000, 3_600_000)).toEqual({
+      fromMs: 300_000,
+      toMs: 900_000,
+    });
+  });
+});
+
+describe("eventPriority", () => {
+  it("prioritizes alerts, episodes and escalating serious thermal states", () => {
+    expect(
+      eventPriority(
+        ev(1, {
+          kind: "alert",
+          rule_id: "r",
+          rule_name: "r",
+          cause: { type: "thermal_state", state: "critical" },
+        })
+      )
+    ).toBe(3);
+    expect(
+      eventPriority(
+        ev(1, { kind: "thermal_state", from: "fair", to: "serious" })
+      )
+    ).toBe(3);
+    expect(
+      eventPriority(
+        ev(1, { kind: "thermal_state", from: "serious", to: "fair" })
+      )
+    ).toBe(0);
+    expect(
+      eventPriority(ev(1, { kind: "fans_ramped", from_rpm: 1, to_rpm: 2 }))
+    ).toBe(1);
+    expect(
+      eventPriority(
+        ev(1, {
+          kind: "power_spike",
+          component: "ane",
+          watts: 1,
+          baseline_watts: 0,
+        })
+      )
+    ).toBe(2);
   });
 });

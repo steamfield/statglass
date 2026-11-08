@@ -1,20 +1,5 @@
-import { eventId } from "@core/events";
+import { eventId, eventPriority } from "@core/events";
 import type { Event } from "@core/generated/bindings";
-import { MINUTE_MS } from "@core/time-grid";
-import { selectedRange } from "./selection";
-
-export function eventPriority(event: Event): number {
-  const detail = event.detail;
-  if (detail.kind === "alert") return 3;
-  if (detail.kind === "thermal_state") {
-    const states = ["nominal", "fair", "serious", "critical"];
-    return states.indexOf(detail.to) > states.indexOf(detail.from ?? "") &&
-      ["serious", "critical"].includes(detail.to)
-      ? 3
-      : 0;
-  }
-  return detail.kind === "fans_ramped" ? 1 : 2;
-}
 
 export interface EventGroup {
   id: string;
@@ -54,28 +39,4 @@ export function groupEvents(
       });
   }
   return groups;
-}
-
-export function eventRange(
-  events: readonly Event[],
-  bucketMs: number,
-  nowMs: number,
-  retainedFrom = 0
-) {
-  if (events.length === 0) return null;
-  const start = Math.min(
-    ...events.map((event) => Math.min(event.start_ms, event.ts_ms))
-  );
-  const detection = Math.max(...events.map((event) => event.ts_ms));
-  const padding =
-    detection === start
-      ? 300_000
-      : Math.max(MINUTE_MS, (detection - start) * 0.2);
-  return selectedRange(
-    start - padding,
-    detection + padding,
-    bucketMs,
-    nowMs,
-    retainedFrom
-  );
 }

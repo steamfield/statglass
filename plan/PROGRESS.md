@@ -4,6 +4,24 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Overview second row: Battery, Events and Apps (2026-11-08)
+
+D-130: a second card row under the module grid, on the same column width. Battery (a
+`MetricCard` on a new `BATTERY_HERO`, absent without a battery), Events (detector events
+in the chart range; a row opens Timeline on the event's range) and Apps (top five by CPU,
+memory, GPU or energy, live up to an hour and recorded history past it). `eventPriority`,
+`eventRange` move to `@core/events`, `selectedRange` to `@core/brush`; the battery time
+wording is one `@core/format` helper used by the popover and the card; `useEventsQuery`
+exposes loading and error; `CardGrid` gains `fit` and `staggerFrom`.
+
+Built by two parallel Codex units and a fix pass, with a devil's-advocate review of the
+design and an independent code review (two bugs: "on battery" for an unknown power source,
+and a "0 in ..." count above the Events error; both fixed with tests). Verified: Vitest
+1,965 (276 files), lint, typecheck, `bun run test:e2e` (remote-hosts needed its Battery
+query scoped to the sidebar; one Docker test flaked under load and passed alone), the new
+`overview-activity.spec.ts`, and screenshots at 1280 and 2000 px in both themes and with
+`no-battery`. Perf gates were not run for this change.
+
 ## Overview history charts (2026-11-07)
 
 D-129: the Overview's module cards draw their module page's lead chart over the global
@@ -29,8 +47,7 @@ Overview charts have no hover readout or brush (the card is a link to the page t
 has them), gap bands carry no caption, and the stats are a two-column grid rather
 than the module pages' strip, to fit 300 px.
 
-Next: phase 2 of the Overview plan, a second row of non-module cards (recent events, top
-apps over the window, battery; then largest folders, containers, other Macs).
+Next: phase 2b of the Overview plan (largest folders, containers, other Macs).
 
 ## Shared layers RFC complete (2026-11-07)
 

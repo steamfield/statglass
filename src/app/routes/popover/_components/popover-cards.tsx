@@ -9,16 +9,15 @@ import {
   bytesParts,
   formatBytes,
   formatGhz,
-  formatHoursMinutes,
   formatPercent,
   formatWatts,
   MISSING,
   marketingGb,
   rateParts,
 } from "@core/format";
+import { batteryTime } from "@core/format/battery";
 import { METRIC_CODES } from "@core/generated/bindings";
 import { spanWords } from "@core/live-window";
-import { MINUTE_MS } from "@core/time-grid";
 import { mirrorSubject } from "~/components/charts/mirror-chart";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
@@ -440,12 +439,7 @@ function BatteryDetails() {
   const b = useBattery();
   const source = usePowerSource();
   const notice = useReadFailure("battery.charge");
-  const remaining =
-    b.timeRemainingMin === null
-      ? source === "adapter" || source === "charging"
-        ? "On power"
-        : MISSING
-      : formatHoursMinutes(b.timeRemainingMin * MINUTE_MS);
+  const remaining = batteryTime(b, source).value;
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">

@@ -91,9 +91,10 @@ const SUBJECTS = [
   "System power",
   "Network",
   "Disk I/O",
+  "Battery charge",
 ];
 
-it("all six cards follow the shared setting from 5m to 1h", async () => {
+it("all metric cards follow the shared setting from 5m to 1h", async () => {
   const { transport } = renderWithProviders(<OverviewRoute />, {
     transportOptions: { chartWindow: "5m" },
   });
@@ -130,6 +131,7 @@ it("fixed dates mark each live headline now, preserving the Power source", async
     "Power & Sensors",
     "Network",
     "Disk",
+    "Battery",
   ]) {
     const card = await screen.findByRole("link", { name });
     expect(within(card).getByText(/^(?:on battery )?now$/)).toBeVisible();
@@ -137,7 +139,7 @@ it("fixed dates mark each live headline now, preserving the Power source", async
       within(card).getByRole("img", { name: /selected dates/ })
     ).toBeVisible();
   }
-  expect(screen.getByText("on battery now")).toBeVisible();
+  expect(screen.getAllByText("on battery now")).toHaveLength(2);
 });
 
 it("Linux charts used memory with the Linux facts", async () => {
@@ -174,3 +176,27 @@ it("shows the machine header while settings are still pending", async () => {
     await screen.findByRole("list", { name: "Top processes by CPU" })
   ).toBeVisible();
 });
+
+it("renders a Battery card linked to its page", async () => {
+  const { user, router } = renderWithProviders(<OverviewRoute />);
+  const card = await screen.findByRole("link", {
+    name: "Battery",
+  });
+  expect(within(card).getByText("Health")).toBeVisible();
+  expect(within(card).getByText("Battery power")).toBeVisible();
+  expect(within(card).queryByRole("list")).toBeNull();
+  await user.click(card);
+  expect(router.state.location.pathname).toBe("/dashboard/battery");
+});
+
+it.each(["no-battery", "linux"] as const)(
+  "omits the Battery card on %s",
+  async (scenario) => {
+    renderWithProviders(<OverviewRoute />, {
+      transportOptions: { scenarios: [scenario] },
+    });
+    await screen.findByRole("img", { name: /^CPU total and system/ });
+    expect(screen.queryByRole("link", { name: "Battery" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Battery" })).toBeNull();
+  }
+);

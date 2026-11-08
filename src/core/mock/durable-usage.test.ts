@@ -192,3 +192,28 @@ describe("durable usage transport", () => {
     });
   });
 });
+
+it.each([
+  { by: "cpu", order: ["Compiler", "Browser", "Editor"] },
+  { by: "memory", order: ["Compiler", "Browser", "Editor"] },
+  { by: "gpu", order: ["Browser", "Editor", "Compiler"] },
+  { by: "energy", order: ["Editor", "Compiler", "Browser"] },
+] satisfies { by: HistoricalUsageRequest["by"]; order: string[] }[])(
+  "ranks $by independently while preserving app names and comparison membership",
+  async ({ by, order }) => {
+    const source = transport();
+    const result = await source.queryHistoricalUsage({ ...request(), by });
+    if (result.status !== "ok") throw new Error("expected history");
+    expect(result.data.apps.map((app) => app.name)).toEqual(order);
+    const comparison = await source.queryHistoricalUsage({
+      ...request(),
+      by,
+      app_names: ["Compiler", "Editor"],
+    });
+    if (comparison.status !== "ok") throw new Error("expected comparison");
+    expect(comparison.data.apps.map((app) => app.name)).toEqual([
+      "Compiler",
+      "Editor",
+    ]);
+  }
+);

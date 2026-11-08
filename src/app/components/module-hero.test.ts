@@ -1,6 +1,7 @@
 import { formatBytes } from "@core/format";
 import type { MetricStat } from "@core/generated/bindings";
 import {
+  BATTERY_HERO,
   CPU_HERO,
   GPU_HERO,
   MEMORY_PRESSURE_HERO,
@@ -19,7 +20,7 @@ const stat: MetricStat = {
 };
 
 describe("module hero behavior", () => {
-  it.each([CPU_HERO, GPU_HERO, MEMORY_PRESSURE_HERO, POWER_HERO])(
+  it.each([CPU_HERO, GPU_HERO, MEMORY_PRESSURE_HERO, POWER_HERO, BATTERY_HERO])(
     "keeps missing series empty for $module",
     (spec) => {
       const lines = spec.lines({});
@@ -82,4 +83,11 @@ describe("module hero behavior", () => {
       );
     }
   );
+});
+
+it("draws battery charge on a percent scale and preserves gaps", () => {
+  expect(BATTERY_HERO.yAxis).toBe("percent");
+  expect(BATTERY_HERO.lines({ "battery.charge": [87, null, 0] })).toEqual([
+    { key: "battery.charge", values: [87, null, 0], step: 1 },
+  ]);
 });

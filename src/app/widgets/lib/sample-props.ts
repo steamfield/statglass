@@ -187,6 +187,20 @@ export const OVERVIEW_CARDS: MetricCardProps[] = [
     },
     href: "/dashboard/disk",
   },
+  {
+    accent: "battery",
+    title: "Battery",
+    value: "87%",
+    unit: " on battery",
+    chart: sampleChart("battery", "Battery charge", 87),
+    stats: [
+      { label: "Remaining", value: "6:12" },
+      { label: "Health", value: "94%" },
+      { label: "Cycles", value: "212" },
+      { label: "Battery power", value: "−14.8 W" },
+    ],
+    href: "/dashboard/battery",
+  },
 ];
 
 export const PASSIVE_COOLING_CARD: MetricCardProps = {
