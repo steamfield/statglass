@@ -1,7 +1,7 @@
-import { formatHoursMinutes, MISSING, wattsParts } from "@core/format";
+import { MISSING, wattsParts } from "@core/format";
 import type { PowerSource } from "@core/generated/bindings";
-import { MINUTE_MS } from "@core/time-grid";
 import type { BatteryDetail } from "~/hooks/use-battery";
+import { batteryTime } from "~/lib/battery";
 
 /** `LiveStatus.power_source` (D-092), "unknown" before the first status. */
 export type PowerState = PowerSource | "unknown";
@@ -22,11 +22,7 @@ export function timeField(
   b: BatteryDetail,
   state: PowerState
 ): { label: string; value: string } {
-  const value =
-    b.timeRemainingMin === null || state === "adapter"
-      ? MISSING
-      : formatHoursMinutes(b.timeRemainingMin * MINUTE_MS);
-  return { label: state === "charging" ? "To full" : "Remaining", value };
+  return batteryTime(b, state, "page");
 }
 
 /** "On battery · 6:12 remaining", "Charging · 1:05 to full". */

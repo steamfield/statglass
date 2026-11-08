@@ -9,7 +9,6 @@ import {
   bytesParts,
   formatBytes,
   formatGhz,
-  formatHoursMinutes,
   formatPercent,
   formatWatts,
   MISSING,
@@ -18,7 +17,6 @@ import {
 } from "@core/format";
 import { METRIC_CODES } from "@core/generated/bindings";
 import { spanWords } from "@core/live-window";
-import { MINUTE_MS } from "@core/time-grid";
 import { mirrorSubject } from "~/components/charts/mirror-chart";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
@@ -30,6 +28,7 @@ import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import { useUnits } from "~/hooks/use-units";
+import { batteryTime } from "~/lib/battery";
 import { useTransport } from "~/lib/transport-context";
 import { useHost } from "~/stores/host-store";
 import {
@@ -440,12 +439,7 @@ function BatteryDetails() {
   const b = useBattery();
   const source = usePowerSource();
   const notice = useReadFailure("battery.charge");
-  const remaining =
-    b.timeRemainingMin === null
-      ? source === "adapter" || source === "charging"
-        ? "On power"
-        : MISSING
-      : formatHoursMinutes(b.timeRemainingMin * MINUTE_MS);
+  const remaining = batteryTime(b, source).value;
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">

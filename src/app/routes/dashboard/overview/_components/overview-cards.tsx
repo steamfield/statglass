@@ -1,5 +1,5 @@
 /**
- * The six Overview cards (plan 4.5), each subscribed to its
+ * The Overview metric cards (plan 4.5), each subscribed to its
  * own slice so one module's tick does not re-render the others.
  */
 
@@ -9,11 +9,13 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import {
+  BATTERY_HERO,
   CPU_HERO,
   GPU_HERO,
   memoryHero,
   POWER_HERO,
 } from "~/components/module-hero";
+import { selectBatteryDetail } from "~/hooks/use-battery";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useModuleEnd } from "~/hooks/use-module-end";
 import {
@@ -42,6 +44,7 @@ import type { Corner } from "~/widgets/lib/accent";
 import { MetricCard } from "~/widgets/metric-card";
 import { useOverviewDisk } from "../_hooks/use-overview-disk";
 import {
+  batteryCard,
   type ClusterInput,
   cpuCard,
   diskCard,
@@ -328,4 +331,33 @@ export function OverviewDiskCard({ origin, windowMs }: CardProps) {
 
 function useNowUnit(unit = ""): string {
   return `${unit}${useModuleEnd() === null ? "" : " now"}`;
+}
+
+export function OverviewBatteryCard({ origin, windowMs }: CardProps) {
+  const battery = useHost(
+    useShallow((s) => {
+      // The detail selector also reads system watts; subscribe only to this card's facts.
+      const { charge, timeRemainingMin, health, cycles, powerW } =
+        selectBatteryDetail(s);
+      return { charge, timeRemainingMin, health, cycles, powerW };
+    })
+  );
+  const props = batteryCard(battery, usePowerSource());
+  return (
+    <MetricCard
+      {...props}
+      origin={origin}
+      unit={useNowUnit(props.unit)}
+      chart={
+        <OverviewHistoryChart
+          spec={BATTERY_HERO}
+          windowMs={windowMs}
+          accent="battery"
+        />
+      }
+      notice={useReadFailure("battery.charge")}
+      href="/dashboard/battery"
+      onOpen={useOpen()}
+    />
+  );
 }

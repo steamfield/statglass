@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { stagger } from "~/lib/motion/enter";
+import { cn } from "~/lib/utils";
 import type { Corner } from "~/widgets/lib/accent";
 
 const ORIGINS: readonly Corner[] = ["tl", "tr", "bl", "br"];
@@ -24,6 +25,8 @@ export interface CardGridProps<T> {
    * Overview gets three columns at 1280 px with the default 300.
    */
   minColumnWidth?: number;
+  /** Collapse unused tracks so a partial row shares all available width. */
+  fit?: boolean;
 }
 
 /**
@@ -36,11 +39,17 @@ export function CardGrid<T>({
   getKey,
   children,
   minColumnWidth = 300,
+  fit = false,
 }: CardGridProps<T>) {
   return (
     <div
       data-stagger
-      className="grid grid-cols-[repeat(auto-fill,minmax(var(--col),1fr))] gap-4"
+      className={cn(
+        "grid gap-4",
+        fit
+          ? "grid-cols-[repeat(auto-fit,minmax(var(--col),1fr))]"
+          : "grid-cols-[repeat(auto-fill,minmax(var(--col),1fr))]"
+      )}
       style={{ "--col": `${minColumnWidth}px` } as CSSProperties}
     >
       {items.map((item, i) => (

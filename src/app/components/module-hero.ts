@@ -65,6 +65,16 @@ export const MEMORY_PRESSURE_HERO = {
   yAxis: "percent",
 } satisfies HeroChartSpec;
 
+export const BATTERY_HERO = {
+  module: "battery",
+  keys: ["battery.charge"] satisfies [string],
+  subject: "Battery charge",
+  lines: (values) => [
+    { key: "battery.charge", values: values["battery.charge"] ?? [], step: 1 },
+  ],
+  yAxis: "percent",
+} satisfies HeroChartSpec;
+
 /** Right-align the stack; a slot missing either part stays a gap. */
 function stackOnto(
   base: readonly (number | null)[],

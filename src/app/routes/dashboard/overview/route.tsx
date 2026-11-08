@@ -23,6 +23,7 @@ import { StatusPill } from "~/widgets/status-pill";
 import { samplingStatus } from "../_lib/sampling-status";
 import { LiveMachineHeader } from "./_components/live-machine-header";
 import {
+  OverviewBatteryCard,
   OverviewCpuCard,
   OverviewDiskCard,
   OverviewGpuCard,
@@ -61,11 +62,12 @@ function overviewView(network: boolean, gpu: boolean): ProcessView {
   };
 }
 
-/** The six Overview modules in display order. Battery has no card. */
-const CARDS: readonly [
+/** The primary Overview modules in display order. */
+type OverviewCard = readonly [
   UiModule,
   (p: { origin: Corner; windowMs: number }) => ReactNode,
-][] = [
+];
+const CARDS: readonly OverviewCard[] = [
   ["cpu", OverviewCpuCard],
   ["gpu", OverviewGpuCard],
   ["memory", OverviewMemoryCard],
@@ -98,6 +100,23 @@ export default function OverviewRoute() {
     return s === "on" || s === "edition" || s === "unavailable";
   });
 
+  const activityItems: {
+    id: string;
+    render: (origin: Corner, windowMs: number) => ReactNode;
+  }[] = [];
+  const battery = states.battery;
+  if (battery === "on" || battery === "edition" || battery === "unavailable")
+    activityItems.push({
+      id: "battery",
+      render: (origin, windowMs) =>
+        battery === "on" ? (
+          <OverviewBatteryCard origin={origin} windowMs={windowMs} />
+        ) : (
+          <UnavailableCard module="battery" state={battery} />
+        ),
+    });
+  // Activity slot: append OverviewEventsCard and OverviewAppsCard items here.
+
   return (
     <>
       <ModulePage
@@ -114,15 +133,22 @@ export default function OverviewRoute() {
         }
       >
         {(windowMs) => (
-          <CardGrid items={items} getKey={([m]) => m}>
-            {([m, Card], origin) =>
-              states[m] === "on" ? (
-                <Card origin={origin} windowMs={windowMs} />
-              ) : (
-                <UnavailableCard module={m} state={states[m]} />
-              )
-            }
-          </CardGrid>
+          <>
+            <CardGrid items={items} getKey={([m]) => m}>
+              {([m, Card], origin) =>
+                states[m] === "on" ? (
+                  <Card origin={origin} windowMs={windowMs} />
+                ) : (
+                  <UnavailableCard module={m} state={states[m]} />
+                )
+              }
+            </CardGrid>
+            {activityItems.length > 0 && (
+              <CardGrid fit items={activityItems} getKey={(item) => item.id}>
+                {(item, origin) => item.render(origin, windowMs)}
+              </CardGrid>
+            )}
+          </>
         )}
       </ModulePage>
       <SensorDumpDialog open={dump.open} onOpenChange={dump.setOpen} />
