@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.0](https://github.com/steamfield/statglass/compare/v0.8.1...v0.9.0) - 2026-11-08
+
+### Changed
+
+- Releases are signed with a Developer ID under the hardened runtime and notarized by
+  Apple, so the DMG opens without approving it in System Settings (D-131). 0.8.1 was
+  Developer ID signed without notarization.
+- A pushed version tag builds, signs, notarizes and drafts the release on GitHub's
+  standard macOS runner; `scripts/release.sh cut` and `publish` drive it.
+
 ## [0.8.1](https://github.com/steamfield/statglass/compare/v0.7.0...v0.8.1) - 2026-11-08
 
 0.8.0 was tagged but not published; 0.8.1 includes its changes, with Battery, Events and

@@ -1,35 +1,24 @@
-# StatGlass 0.8.1
+# StatGlass 0.9.0
 
 StatGlass is a free, open-source system monitor for Apple Silicon Macs running macOS
 26 or later.
 
-This release turns the Overview into a page you can monitor from. Every card now shows
-how its metric has moved over time, not just the reading this second, and a second row
-adds battery, recent events and the apps that did the most work, filling the grid at
-any window width.
+StatGlass is now signed with a Developer ID and notarized by Apple. Download the DMG,
+drag StatGlass into Applications and open it: macOS asks once whether to open an app
+from the internet, and there is no trip to System Settings to allow it.
 
-## Overview
+## Install and updates
 
-- Each module card draws its history over the dashboard's time range: CPU load, GPU
-  utilization, memory pressure, system power, network and disk throughput. Pick the range
-  from the new **5m**, **1h** and **More** control in the Overview header; it is the same
-  range the module pages use, so a card opens its page on the same span.
-- The current reading stays in each card's header. When you look at a fixed past range,
-  it says "now" so it isn't mistaken for the chart's last value.
-- Sleep periods show as hatched bands, as on the module pages.
-- Memory pressure warnings appear as a chip in the Memory card's header.
-- A **Battery** card shows charge over the range, time remaining or time to full, health,
-  cycles and battery power. Macs without a battery don't get one.
-- An **Events** card lists what the Mac's detectors noticed in the range: fans ramping up,
-  thermal state changes, sustained heavy processes, power spikes and alert rules. Click
-  one to open Timeline on that moment.
-- An **Apps** card ranks the top apps by CPU, memory, GPU or energy over the range, from
-  live readings for the last hour and recorded history beyond it.
-
-## Smaller changes
-
-- Network and Disk headers list upload or read first, matching their charts.
-- The popover and the Battery page share one wording for time remaining and time to full.
+- The app, its SSH helper and the `statglass` command-line tool are signed with a
+  Developer ID under Apple's hardened runtime, and the app and DMG carry Apple's
+  notarization ticket, so they pass Gatekeeper offline too.
+- Installed copies update to 0.9.0 the usual way, from **Settings → General** or
+  automatically. Updates are still verified with StatGlass's own update signature
+  before they install.
+- Because the app's signature changed, macOS may ask again for a permission you
+  granted an earlier version, such as notifications. Allow it once more.
+- Releases are now built, signed and notarized from the tagged source on GitHub's
+  build machines.
 
 ## Moving from Kelvo
 
