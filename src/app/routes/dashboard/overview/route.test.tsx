@@ -2,6 +2,7 @@ import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import { HostSelectionContext } from "~/lib/host-selection";
 import OverviewRoute from "./route";
 
 const interest = (calls: { command: string; args: unknown[] }[]) =>
@@ -226,6 +227,47 @@ describe("Overview cards menu (D-131)", () => {
       "Apps",
       "Largest folders",
     ]);
+  });
+
+  const cardNames = async (user: { click: (e: Element) => Promise<void> }) =>
+    within(await menu(user))
+      .getAllByRole("menuitemcheckbox")
+      .map((item) => item.textContent);
+
+  it("adds Containers with Docker monitoring on and Other hosts once a host is saved", async () => {
+    const { user } = renderWithProviders(<OverviewRoute />, {
+      transportOptions: { scenarios: ["docker-11", "multi-host"] },
+    });
+    await screen.findByRole("heading", { name: "Containers" });
+    await screen.findByRole("heading", { name: "Other hosts" });
+    expect((await cardNames(user)).slice(-3)).toEqual([
+      "Largest folders",
+      "Containers",
+      "Other hosts",
+    ]);
+  });
+
+  it("leaves This Mac's cards out while a remote host is on screen", async () => {
+    const transport = createMockTransport({
+      autoTick: false,
+      scenarios: ["docker-11", "multi-host"],
+    });
+    const hosts = (await transport.listHosts()).map((host) => ({
+      ...host,
+      is_local: false,
+    }));
+    const { user } = renderWithProviders(
+      <HostSelectionContext
+        value={{ hosts, selected: MOCK_HOST_ID, select: () => {} }}
+      >
+        <OverviewRoute />
+      </HostSelectionContext>,
+      { transport }
+    );
+    const names = await cardNames(user);
+    expect(names).not.toContain("Largest folders");
+    expect(names).not.toContain("Containers");
+    expect(names).toContain("Other hosts");
   });
 
   it("hides a card, saves it, and brings every card back", async () => {

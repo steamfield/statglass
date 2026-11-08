@@ -63,12 +63,17 @@ export const commands = {
 	/**
 	 *  The largest actionable folders of this Mac's last boot-volume scan, kept between
 	 *  launches for the Overview. A remote host has none: the summary stays off the wire.
+	 *  Off the main thread: reading it can settle a finished scan, which ranks and writes.
 	 */
 	diskSpaceHighlights: (host: HostId) => typedError<{
 	/**  The volume's display name. */
 	volume: string,
 	finished_ms: number | null,
 	used_bytes: number | null,
+	/**  The size a folder needed to be listed. */
+	min_bytes: number | null,
+	/**  The user's home folder, so paths under it can be shown from `~`. */
+	home: string | null,
 	folders: SpaceHighlight[],
 } | null, CommandError>(__TAURI_INVOKE("disk_space_highlights", { host })),
 	/**
@@ -2819,6 +2824,10 @@ export type SpaceHighlights = {
 	volume: string,
 	finished_ms: number | null,
 	used_bytes: number | null,
+	/**  The size a folder needed to be listed. */
+	min_bytes: number | null,
+	/**  The user's home folder, so paths under it can be shown from `~`. */
+	home: string | null,
 	folders: SpaceHighlight[],
 };
 

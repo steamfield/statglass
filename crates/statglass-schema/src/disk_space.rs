@@ -202,5 +202,9 @@ pub struct SpaceHighlights {
     pub volume: String,
     pub finished_ms: f64,
     pub used_bytes: f64,
+    /// The size a folder needed to be listed.
+    pub min_bytes: f64,
+    /// The user's home folder, so paths under it can be shown from `~`.
+    pub home: Option<String>,
     pub folders: Vec<SpaceHighlight>,
 }

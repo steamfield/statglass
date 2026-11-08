@@ -5,13 +5,16 @@ import {
   type DockerComparisonMetric,
   type DockerRankedContainer,
 } from "@core/generated/bindings";
+import { dockerKeys } from "@core/query-keys";
 import { floorTo } from "@core/time-grid";
+import { unwrap } from "@core/transport";
+import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { Link } from "react-router";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useModuleEnd } from "~/hooks/use-module-end";
-import { useDocker } from "~/routes/dashboard/containers/_hooks/use-docker";
+import { useTransport } from "~/lib/transport-context";
 import { useDockerComparison } from "~/routes/dashboard/containers/_hooks/use-docker-comparison";
 import {
   containerPath,
@@ -43,14 +46,24 @@ export function OverviewContainersCard({
 }) {
   const titleId = useId();
   const [metric, setMetric] = useState<DockerComparisonMetric>("cpu");
-  const { snapshot, error } = useDocker();
+  const transport = useTransport();
+  // A read every Docker bucket, not the live stream: a stream from a shown
+  // window moves the Docker worker to its 1 s visible cadence, and the card
+  // needs only the engine, its generation, its clock and the running count.
+  const docker = useQuery({
+    queryKey: dockerKeys.snapshot(),
+    queryFn: () => unwrap(transport.dockerSnapshot()),
+    refetchInterval: DOCKER_BUCKET_MS,
+  });
+  const snapshot = docker.data ?? null;
+  const engine = snapshot?.engine?.id ?? "";
   const endMs = useModuleEnd();
   // Docker keeps its own clock; the window ends at its open 10 s bucket,
   // as on the Containers page, so the query key moves once per bucket.
   const toMs = endMs ?? floorTo(snapshot?.now_ms ?? 0, DOCKER_BUCKET_MS);
   const comparison = useDockerComparison(
     {
-      engine_id: snapshot?.engine?.id ?? "",
+      engine_id: engine,
       from_ms: toMs - windowMs,
       to_ms: toMs,
       metric,
@@ -101,10 +114,14 @@ export function OverviewContainersCard({
       </header>
       <ContainersBody
         error={
-          error ??
-          (comparison.isError ? "Couldn't load container history" : null)
+          docker.isError
+            ? "Couldn't read Docker"
+            : comparison.isError
+              ? "Couldn't load container history"
+              : null
         }
-        loading={!snapshot || comparison.isPending}
+        noEngine={snapshot !== null && !engine}
+        loading={docker.isPending || (engine !== "" && comparison.isPending)}
         ranked={ranked}
         metric={metric}
         scope={scope}
@@ -115,12 +132,14 @@ export function OverviewContainersCard({
 
 function ContainersBody({
   error,
+  noEngine,
   loading,
   ranked,
   metric,
   scope,
 }: {
   error: string | null;
+  noEngine: boolean;
   loading: boolean;
   ranked: DockerRankedContainer[];
   metric: DockerComparisonMetric;
@@ -130,6 +149,12 @@ function ContainersBody({
     return (
       <p role="alert" className="text-[12px] text-muted-foreground">
         {error}
+      </p>
+    );
+  if (noEngine)
+    return (
+      <p role="status" className="text-[12px] text-muted-foreground">
+        Docker isn't reachable, so there are no containers to rank.
       </p>
     );
   if (loading) return <ChartHistoryStatus loading />;

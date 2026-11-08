@@ -181,16 +181,18 @@ pub async fn disk_space_path(
 
 /// The largest actionable folders of this Mac's last boot-volume scan, kept between
 /// launches for the Overview. A remote host has none: the summary stays off the wire.
+/// Off the main thread: reading it can settle a finished scan, which ranks and writes.
 #[tauri::command]
 #[specta::specta]
-pub fn disk_space_highlights(
+pub async fn disk_space_highlights(
     state: State<'_, AppState>,
     host: HostId,
 ) -> Result<Option<SpaceHighlights>, CommandError> {
     if !available() || matches!(state.route(host)?, Route::Remote(_)) {
         return Ok(None);
     }
-    Ok(state.disk_space.highlights())
+    let service = state.disk_space.clone();
+    spawn_blocking(move || service.highlights()).await
 }
 
 /// Shows an entry of this Mac's report in Finder. Paths come from the report, never the
@@ -209,16 +211,21 @@ pub fn disk_space_reveal(
 /// revealed, so the webview cannot name an arbitrary one.
 #[tauri::command]
 #[specta::specta]
-pub fn disk_space_reveal_highlight(
+pub async fn disk_space_reveal_highlight(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<(), CommandError> {
-    if !state.disk_space.is_highlight(&path) {
-        return Err(CommandError::DiskSpace {
-            message: "This folder is not in the last scan".into(),
-        });
-    }
-    reveal(std::path::Path::new(&path))
+    guard()?;
+    let service = state.disk_space.clone();
+    spawn_blocking(move || {
+        if !service.is_highlight(&path) {
+            return Err(CommandError::DiskSpace {
+                message: "This folder is not in the last scan".into(),
+            });
+        }
+        reveal(std::path::Path::new(&path))
+    })
+    .await?
 }
 
 fn reveal(path: &std::path::Path) -> Result<(), CommandError> {

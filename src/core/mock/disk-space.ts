@@ -327,6 +327,18 @@ function synthetic(
   };
 }
 
+const IDLE: SpaceScanStatus = {
+  phase: "idle",
+  report_id: null,
+  volume: null,
+  elapsed_ms: 0,
+  items: 0,
+  measured_bytes: 0,
+  used_bytes: 0,
+  current: null,
+  error: null,
+};
+
 const unavailable = () =>
   refuse("Space reports are not available in this edition");
 
@@ -361,24 +373,13 @@ export function createMockDiskSpace(
   const find = (id: number) =>
     [running, report].find((s) => s !== null && s.id === id) ?? null;
   const gone = refuse("this report is no longer available; scan again");
-  const idle: SpaceScanStatus = {
-    phase: "idle",
-    report_id: null,
-    volume: null,
-    elapsed_ms: 0,
-    items: 0,
-    measured_bytes: 0,
-    used_bytes: 0,
-    current: null,
-    error: null,
-  };
   const status = (): SpaceScanStatus => {
     settle();
     const scan = running ?? ended ?? report;
-    if (!scan) return idle;
+    if (!scan) return IDLE;
     if (scan === ended)
       return {
-        ...idle,
+        ...IDLE,
         phase: scan.phase,
         volume: scan.plan.volume.mount,
         error: scan.error,
@@ -386,7 +387,11 @@ export function createMockDiskSpace(
     return scan.status(now());
   };
   return {
-    ...mockHighlights(scenarios, now),
+    // A finished boot-volume scan replaces the kept summary, as in Rust.
+    ...mockHighlights(scenarios, now, () => {
+      settle();
+      return report?.plan.volume.is_boot ? report.endedAt : null;
+    }),
     ...routeDiskSpace(
       {
         diskSpaceVolumes: async () =>
@@ -469,17 +474,24 @@ export function createMockDiskSpace(
  */
 function mockHighlights(
   scenarios: readonly ScenarioName[],
-  now: () => number
+  now: () => number,
+  bootScanEnded: () => number | null
 ): HighlightMethods {
-  const highlights =
+  const kept =
     scenarios.includes("appstore") || scenarios.includes("disk-space-unscanned")
       ? null
-      : { ...MOCK_HIGHLIGHTS, finished_ms: now() - 3 * DAY_MS };
+      : now() - 3 * DAY_MS;
+  const current = () => {
+    const finished = bootScanEnded() ?? kept;
+    return finished === null
+      ? null
+      : { ...MOCK_HIGHLIGHTS, finished_ms: finished };
+  };
   return {
     diskSpaceHighlights: async (host) =>
-      ok(host === MOCK_HOST_ID ? highlights : null),
+      ok(host === MOCK_HOST_ID ? current() : null),
     diskSpaceRevealHighlight: async (path) =>
-      highlights?.folders.some((folder) => folder.path === path)
+      current()?.folders.some((folder) => folder.path === path)
         ? ok(null)
         : refuse("This folder is not in the last scan"),
   };

@@ -45,8 +45,9 @@ pub struct SpaceService {
     inner: Mutex<Inner>,
     /// Set by [`SpaceService::folder`]: the one folder this service offers as a volume.
     folder: Option<PathBuf>,
-    /// Where the highlights summary is kept; none keeps it in memory only.
-    summary: Option<PathBuf>,
+    /// Where the highlights summary is kept, and the user's home folder; none for a
+    /// service that keeps no summary (a host answering remote scans).
+    summary: Option<(PathBuf, Option<PathBuf>)>,
 }
 
 /// Folders a summary keeps; the Overview shows the first five.
@@ -67,7 +68,7 @@ impl SpaceService {
 
     /// A service that keeps the boot volume's highlights in `dir`'s [`HIGHLIGHTS_FILE`],
     /// starting from the summary already there. A missing or unreadable file is no summary.
-    pub fn with_summary(dir: &Path) -> Self {
+    pub fn with_summary(dir: &Path, home: Option<PathBuf>) -> Self {
         let path = dir.join(HIGHLIGHTS_FILE);
         let highlights = match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes)
@@ -85,7 +86,7 @@ impl SpaceService {
                 ..Inner::default()
             }),
             folder: None,
-            summary: Some(path),
+            summary: Some((path, home)),
         }
     }
 
@@ -98,30 +99,36 @@ impl SpaceService {
 
     /// Whether `path` is one of the summary's folders: the only paths revealed from it.
     pub fn is_highlight(&self, path: &str) -> bool {
-        self.inner
-            .lock_ok()
+        let mut inner = self.inner.lock_ok();
+        self.settle(&mut inner);
+        inner
             .highlights
             .as_ref()
             .is_some_and(|h| h.folders.iter().any(|f| f.path == path))
     }
 
-    /// Settles a stopped scan; a finished boot-volume scan replaces the summary.
+    /// Settles a stopped scan; a finished boot-volume scan replaces the summary. Runs
+    /// under the service lock once per finished scan; the commands that can reach it
+    /// run off the main thread.
     fn settle(&self, inner: &mut Inner) {
         let Some(entry) = settle(inner) else { return };
+        let Some((file, home)) = &self.summary else {
+            return;
+        };
         let plan = entry.scan.plan();
-        if !plan.volume.is_boot && self.folder.is_none() {
+        if !plan.volume.is_boot {
             return;
         }
         let highlights = SpaceHighlights {
             volume: plan.volume.name.clone(),
             finished_ms: entry.finished_ms,
             used_bytes: plan.used_bytes as f64,
+            min_bytes: entry.scan.highlight_floor() as f64,
+            home: home.as_ref().map(|h| h.to_string_lossy().into_owned()),
             folders: entry.scan.highlights(HIGHLIGHTS),
         };
-        if let Some(path) = &self.summary
-            && let Err(e) = write_summary(path, &highlights)
-        {
-            tracing::warn!("writing {}: {e}", path.display());
+        if let Err(e) = write_summary(file, &highlights) {
+            tracing::warn!("writing {}: {e}", file.display());
         }
         inner.highlights = Some(highlights);
     }
@@ -188,9 +195,11 @@ impl SpaceService {
         }
     }
 
-    /// Cancels any scan and forgets the report (the dashboard was destroyed).
+    /// Cancels any scan and forgets the report (the dashboard was destroyed). A scan
+    /// that finished unnoticed still leaves its summary.
     pub fn clear(&self) {
         let mut inner = self.inner.lock_ok();
+        self.settle(&mut inner);
         if let Some(entry) = inner.running.take() {
             entry.scan.cancel();
         }
@@ -493,39 +502,94 @@ mod tests {
         assert!(service.report().is_none());
     }
 
+    fn boot(dir: &std::path::Path) -> ScanPlan {
+        let mut boot = plan(dir);
+        boot.volume.is_boot = true;
+        boot
+    }
+
     #[test]
     fn a_finished_boot_scan_leaves_a_summary_the_next_service_reads() {
         // The ranking itself is tested with the tree (`statglass-collect`); here the
         // folders are under its 1 GiB floor, so the summary lists none.
         let dir = tree(20);
         let data = tempfile::tempdir().unwrap();
-        let mut boot = plan(dir.path());
-        boot.volume.is_boot = true;
-        let service = SpaceService::with_summary(data.path());
+        let home = Some(PathBuf::from("/Users/me"));
+        let service = SpaceService::with_summary(data.path(), home.clone());
         assert!(service.highlights().is_none());
-        service.start_plan(boot).unwrap();
+        service.start_plan(boot(dir.path())).unwrap();
         wait(&service, SpacePhase::Done);
         let summary = service.highlights().unwrap();
         assert_eq!(summary.volume, "Test");
         assert!(summary.finished_ms > 0.0);
+        assert_eq!(summary.min_bytes, (1u64 << 30) as f64);
+        assert_eq!(summary.home.as_deref(), Some("/Users/me"));
         assert!(summary.folders.is_empty());
-        assert!(!service.is_highlight("/etc"));
         service.clear();
         assert_eq!(
-            SpaceService::with_summary(data.path()).highlights(),
+            SpaceService::with_summary(data.path(), home).highlights(),
             Some(summary),
             "the summary outlives the report and the process"
         );
     }
 
     #[test]
-    fn other_volumes_leave_the_summary_alone() {
+    fn only_paths_in_the_kept_summary_are_highlights() {
+        let data = tempfile::tempdir().unwrap();
+        let kept = SpaceHighlights {
+            volume: "Macintosh HD".into(),
+            finished_ms: 1.0,
+            used_bytes: 4e11,
+            min_bytes: 2e9,
+            home: None,
+            folders: vec![statglass_schema::disk_space::SpaceHighlight {
+                path: "/Users/me/Library/Caches".into(),
+                bytes: 2e10,
+                category: Some(statglass_schema::disk_space::SpaceCategory::Caches),
+            }],
+        };
+        write_summary(&data.path().join(HIGHLIGHTS_FILE), &kept).unwrap();
+        let service = SpaceService::with_summary(data.path(), None);
+        assert_eq!(service.highlights(), Some(kept));
+        assert!(service.is_highlight("/Users/me/Library/Caches"));
+        assert!(!service.is_highlight("/Users/me/Library"));
+        assert!(!service.is_highlight("/etc/passwd"));
+    }
+
+    #[test]
+    fn clearing_keeps_the_summary_of_a_scan_nothing_settled() {
+        let dir = tree(5);
+        let data = tempfile::tempdir().unwrap();
+        let service = SpaceService::with_summary(data.path(), None);
+        service.start_plan(boot(dir.path())).unwrap();
+        // Wait on the scan itself: `status()` would settle it.
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while service
+            .inner
+            .lock_ok()
+            .running
+            .as_ref()
+            .is_some_and(|e| e.scan.phase() == SpacePhase::Scanning)
+            && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        service.clear();
+        assert!(service.highlights().is_some());
+    }
+
+    #[test]
+    fn other_volumes_and_services_without_a_summary_keep_none() {
         let data = tempfile::tempdir().unwrap();
         let dir = tree(5);
-        let service = SpaceService::with_summary(data.path());
+        let service = SpaceService::with_summary(data.path(), None);
         service.start_plan(plan(dir.path())).unwrap();
         wait(&service, SpacePhase::Done);
         assert!(service.highlights().is_none());
         assert!(!data.path().join(HIGHLIGHTS_FILE).exists());
+        let remote = SpaceService::new();
+        remote.start_plan(boot(dir.path())).unwrap();
+        wait(&remote, SpacePhase::Done);
+        assert!(remote.highlights().is_none());
     }
 }

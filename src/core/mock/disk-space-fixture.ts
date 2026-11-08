@@ -168,13 +168,16 @@ export const UNREADABLE = [
 ] as const;
 
 /**
- * What Rust's ranking (`disk_space::highlights`) keeps from `BOOT_TREE`: the
- * deepest large folders, known locations with their category.
+ * A representative summary for `BOOT_TREE`, written by hand rather than
+ * computed: the kind of folders Rust's ranking (`disk_space::highlights`)
+ * keeps, known locations with their category.
  */
 export const MOCK_HIGHLIGHTS: SpaceHighlights = {
   volume: "Macintosh HD",
   finished_ms: 0,
   used_bytes: 412 * GB,
+  min_bytes: 2.06 * GB,
+  home: "/Users/riley",
   folders: [
     {
       path: "/Users/riley/Library/Containers",

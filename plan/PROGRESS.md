@@ -16,6 +16,20 @@ Other hosts (live CPU and memory per saved host; a row switches host). The heade
 menu bar settings patch moved to `src-tauri/src/settings/menu_bar.rs` to keep
 `settings.rs` under its size limit.
 
+Largest folders never scans on its own: Run report the first time, Re-run with the
+report's age after that, both starting the Space view's boot scan. A code review returned
+25 fixes, all made: the walk now enters only `Users`, `Applications`, `Library`, `opt` and
+`usr` and always walks through home folders; the Containers card reads Docker's snapshot
+every 10 s instead of streaming (a stream forced Docker's 1 s visible cadence) and says
+when Docker isn't reachable instead of loading forever; the highlights commands run off
+the main thread; `clear()` keeps a summary nothing settled; the summary publishes its
+size floor and home folder. Verified: Vitest 1,981 (278 files), lint, typecheck, clippy,
+Rust tests for schema, collect, engine and the app, `make architecture-check`, 222
+Playwright tests across the Overview, Docker, hosts and Space specs, and screenshots in
+both themes. The engine's `perf_gates` failed on `processes` allocations per tick (3.8,
+then 18, against a ceiling of 1) on a busy machine; this change touches no collector or
+tick code and the same test passed earlier on the branch. Not run: `make e2e-perf`.
+
 Left open: v2.3b's reorder, edit mode and Top processes option; reclaimable Docker space on
 the card (needs an on-demand storage scan, D-107); per-host history on Other hosts; the
 real-app check of a boot scan writing the summary and Reveal from the card.

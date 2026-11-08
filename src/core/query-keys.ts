@@ -317,6 +317,8 @@ export function settingsInvalidation(
  */
 export const dockerKeys = {
   all: ["docker"] as const,
+  /** The local engine's current snapshot, read without a live stream. */
+  snapshot: () => [...dockerKeys.all, "snapshot"] as const,
   comparison: (
     host: HostId,
     engine: string,

@@ -276,13 +276,22 @@ impl Scan {
         }
     }
 
-    /// The largest actionable folders of a finished scan (`highlights`), at least 1 GiB
-    /// or 0.5% of the volume's used space each. Empty unless the scan is done.
+    /// The size a folder needs to be a highlight: 1 GiB, or 0.5% of the volume's used
+    /// space when that is larger.
+    pub fn highlight_floor(&self) -> u64 {
+        (1 << 30).max(self.plan.used_bytes / 200)
+    }
+
+    /// The largest actionable folders of a finished scan (`highlights`), each at least
+    /// [`Scan::highlight_floor`]. Empty unless the scan is done.
     pub fn highlights(&self, limit: usize) -> Vec<SpaceHighlight> {
+        self.highlights_over(self.highlight_floor(), limit)
+    }
+
+    fn highlights_over(&self, min_bytes: u64, limit: usize) -> Vec<SpaceHighlight> {
         if self.phase() != SpacePhase::Done {
             return Vec::new();
         }
-        let min_bytes = (1 << 30).max(self.plan.used_bytes / 200);
         let tree = self.walk.tree.lock_ok();
         highlights::highlights(&tree, min_bytes, limit)
             .into_iter()

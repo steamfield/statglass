@@ -4377,7 +4377,10 @@ window (the Containers page's ranking query with no series), shown on This Mac w
 monitoring on. Other hosts lists every saved remote host with its live CPU and memory
 share, or its connection state, and a row switches the dashboard to that host.
 
-Containers leaves reclaimable space out: reading Docker storage runs a disk scan, and
+The Containers card reads the engine's snapshot every 10 s Docker bucket instead of
+subscribing to its stream: a stream from a shown window moves the Docker worker to its
+1 s visible cadence, and the Overview is the dashboard's landing page. Containers leaves
+reclaimable space out: reading Docker storage runs a disk scan, and
 D-107 keeps those scans on demand. Other hosts has no chart: the host registry carries
 live readings only, and per-host history would need host-scoped chart hooks.
 
@@ -4386,14 +4389,25 @@ finishes, `SpaceService` keeps its eight largest actionable folders (absolute pa
 sizes, a category for known locations) in `space-highlights.json`, owner-only in the app
 data directory, so the Overview can show them without scanning again. The tree and the
 report stay in memory only, and a new boot-volume scan replaces the summary. The ranking
-lives with the tree in `statglass-collect`: walking from the root over folders of at least
-1 GiB or 0.5% of used space, a folder whose large subfolders hold half of it or more is
-passed through, and any other is a highlight. Known locations (Xcode build data and
-archives, device support, simulators, `node_modules`, a home folder's caches, Trash,
-Docker and OrbStack data, downloaded models, Downloads) are highlights at once, and the
-system's root folders are never offered. The summary is local only: a remote host
+lives with the tree in `statglass-collect`. The walk enters only `Users`, `Applications`,
+`Library`, `opt` and `usr` at the root, never the system's own folders or the hidden
+ones (`.Spotlight-V100`, `.fseventsd`). It counts finished folders of at least 1 GiB, or
+0.5% of used space when that is larger, and publishes that floor in the summary. The
+root's folders and each home folder are always walked through, because "your home folder
+is big" says nothing about what to clear. Below them, a folder whose large subfolders
+hold half of it or more is passed through, and any other is a highlight. Known locations
+(Xcode build data and archives, device support, simulators including the system-wide
+`/Library/Developer/CoreSimulator`, `node_modules`, a home folder's caches, Trash, Docker
+and OrbStack data, downloaded models, Downloads) are highlights at once. The summary also
+carries the user's home folder, so only their own paths show from `~`. The summary is local only: a remote host
 answers `null`, so D-117's wire vocabulary is unchanged. A row reveals its folder in
 Finder through `disk_space_reveal_highlight`, which accepts only a path the summary holds.
+
+A scan reads the whole disk, so nothing starts one but the user. With no summary the
+card says what the report does and offers Run report; with one it shows the folders, how
+long ago the scan ran, and Re-run. Both start the Space view's own boot-volume scan, so
+either place shows the other's progress, and the scan still cancels when the dashboard
+hides (D-114).
 
 The Overview header gets a card picker, an "Overview cards" menu with one checkbox per
 card the host can fill and Show all. The choice is saved per card in

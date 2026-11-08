@@ -3,6 +3,7 @@ import type { RemoteHostRecord } from "@core/generated/bindings";
 import { connectionLabel } from "@core/remote-hosts";
 import { useId } from "react";
 import { Link } from "react-router";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
 import { Card } from "~/widgets/card";
@@ -30,10 +31,14 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
   const titleId = useId();
   const selection = useHostSelection();
   const remotes = useRemoteHosts();
-  if (!selection || !remotes.data) return null;
-  const rows = hostRows(selection.hosts, selection.selected, remotes.data);
-  const remoteRows = rows.filter((row) => row.id !== localId(selection.hosts));
+  const rows = selection
+    ? hostRows(selection.hosts, selection.selected, remotes.data ?? [])
+    : [];
+  const remoteRows = rows.filter(
+    (row) => row.id !== localId(selection?.hosts ?? [])
+  );
   const connected = remoteRows.filter((row) => row.connected).length;
+  const more = rows.length - MAX_ROWS;
 
   return (
     <Card
@@ -52,34 +57,48 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
             Other hosts
           </Link>
         </h3>
-        <span className="figures text-[11px] text-muted-foreground">
-          {connected} of {remoteRows.length} connected
-        </span>
+        {remoteRows.length > 0 && (
+          <span className="figures text-[11px] text-muted-foreground">
+            {connected} of {remoteRows.length} connected
+          </span>
+        )}
       </header>
-      <ul aria-label="Other hosts" className="flex flex-col gap-1">
-        {rows.slice(0, MAX_ROWS).map((row) => (
-          <li key={row.id}>
-            <button
-              type="button"
-              aria-description="Show this host's metrics"
-              className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-[12px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => selection.select(row.id)}
-            >
-              <span
-                className="min-w-0 truncate text-fg-subtle"
-                title={row.name}
+      {!selection || remotes.isPending ? (
+        <ChartHistoryStatus loading />
+      ) : (
+        <ul aria-label="Other hosts" className="flex flex-col gap-1">
+          {rows.slice(0, MAX_ROWS).map((row) => (
+            <li key={row.id}>
+              <button
+                type="button"
+                aria-description="Show this host's metrics"
+                className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-[12px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => selection.select(row.id)}
               >
-                {row.name}
-              </span>
-              <span
-                className={`shrink-0 text-[11px] ${row.connected ? "figures text-fg-subtle" : "text-muted-foreground"}`}
-              >
-                {row.detail}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+                <span
+                  className="min-w-0 truncate text-fg-subtle"
+                  title={row.name}
+                >
+                  {row.name}
+                </span>
+                <span
+                  className={`shrink-0 text-[11px] ${row.connected ? "figures text-fg-subtle" : "text-muted-foreground"}`}
+                >
+                  {row.detail}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {more > 0 && (
+        <Link
+          to="/dashboard/hosts"
+          className="figures self-start rounded-control text-[11px] text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {more} more on Hosts
+        </Link>
+      )}
     </Card>
   );
 }
@@ -97,7 +116,7 @@ export function hostRows(
   const local = localId(hosts);
   const rows: HostRow[] =
     local !== undefined && local !== selected
-      ? [{ id: local, name: "This Mac", detail: "", connected: true }]
+      ? [{ id: local, name: "This Mac", detail: "Local", connected: false }]
       : [];
   for (const remote of remotes) {
     if (remote.config.id === selected) continue;

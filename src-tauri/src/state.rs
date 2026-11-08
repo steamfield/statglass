@@ -163,6 +163,7 @@ impl AppState {
             docker_streams: crate::docker::DockerStreams::default(),
             disk_space: Arc::new(statglass_engine::disk_space::SpaceService::with_summary(
                 &data_dir,
+                std::env::var_os("HOME").map(std::path::PathBuf::from),
             )),
             local,
             hosts: HostRegistry::new(),
