@@ -508,6 +508,11 @@ fn check(mode: Mode) {
                 "", s.new_rows
             );
         }
+        if *id == PROCESSES {
+            // Its per-tick count follows the machine's process churn; its steady state is
+            // checked by `process_collector_steady_samples_stay_within_allocation_budget`.
+            continue;
+        }
         let key = format!("allocsPerTick.{}.collectors.{id}", mode.name());
         let ceiling = b["allocsPerTick"][mode.name()]["collectors"][*id]
             .as_f64()
@@ -544,6 +549,87 @@ fn check(mode: Mode) {
         failures.push("statglass-collect built without call-counters".into());
     }
     assert!(failures.is_empty(), "over budget:\n{}", failures.join("\n"));
+}
+
+/// The process collector's id. Its allocations are checked on its own, back to back.
+const PROCESSES: &str = "processes";
+
+fn machine_pids(buf: &mut Vec<i32>) -> HashSet<i32> {
+    // SAFETY: a size query with a null buffer; returns the number of pids.
+    let n = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    buf.resize(usize::try_from(n.max(0)).unwrap_or(0) + 64, 0);
+    let bytes = i32::try_from(std::mem::size_of_val(buf.as_slice())).unwrap_or(i32::MAX);
+    // SAFETY: `buf` holds `bytes` bytes of i32s; the call writes at most that many.
+    let got = unsafe { libc::proc_listallpids(buf.as_mut_ptr().cast(), bytes) };
+    let got = usize::try_from(got.max(0)).unwrap_or(0).min(buf.len());
+    buf[..got].iter().copied().filter(|&p| p > 0).collect()
+}
+
+/// The processes collector in steady state: samples taken back to back (milliseconds
+/// apart, so few see a process start) and counted only when no pid appeared on the
+/// machine between the listing before the previous sample and the one after this one.
+/// A first-seen process costs identity allocations that follow what else is running, so
+/// counting every sample made this gate fail whenever a build was starting processes.
+/// It samples until it has `QUIET` quiet samples or runs out of attempts.
+#[test]
+fn process_collector_steady_samples_stay_within_allocation_budget() {
+    const QUIET: u64 = 60;
+    const ATTEMPTS: u64 = 3_000;
+    let all = platform_collectors(Arc::new(statglass_collect::calib::NoScaleStore));
+    let Some(mut c) = all.into_iter().find(|c| c.id().0 == PROCESSES) else {
+        println!("[perf] skipped: no processes collector on this platform");
+        return;
+    };
+    if !matches!(c.probe(), Probe::Supported(_)) {
+        println!("[perf] skipped: processes collector unsupported");
+        return;
+    }
+    let start = std::time::Instant::now();
+    let mut buf = SampleBuf::new();
+    let mut pid_buf = Vec::new();
+    let sample = |c: &mut Box<dyn Collector>, buf: &mut SampleBuf, n: u64| {
+        buf.clear();
+        let tick = Tick {
+            n,
+            wall_ms: 0,
+            continuous_ns: 1_000_000_000 + u64::try_from(start.elapsed().as_nanos()).unwrap(),
+            interval_ms: 1_000,
+        };
+        let a0 = allocs();
+        c.sample(&tick, buf).unwrap();
+        allocs() - a0
+    };
+    // Warm-up: the first samples read every process's identity and size the buffers.
+    for n in 0..5 {
+        sample(&mut c, &mut buf, n);
+    }
+    let (mut quiet, mut quiet_allocs, mut taken) = (0, 0, 0);
+    let mut prev_before = machine_pids(&mut pid_buf);
+    while quiet < QUIET && taken < ATTEMPTS {
+        let before = machine_pids(&mut pid_buf);
+        let a = sample(&mut c, &mut buf, 5 + taken);
+        let after = machine_pids(&mut pid_buf);
+        taken += 1;
+        if before.iter().chain(&after).all(|p| prev_before.contains(p)) {
+            quiet += 1;
+            quiet_allocs += a;
+        }
+        prev_before = before;
+    }
+    let ceiling = num(&budget(), "allocsPerTick.processesSteady");
+    println!(
+        "[perf] processes steady: {quiet} quiet of {taken} back-to-back samples, allocs/sample {:.2} (ceiling {ceiling})",
+        quiet_allocs as f64 / quiet.max(1) as f64
+    );
+    assert!(
+        quiet >= QUIET,
+        "only {quiet} of {taken} samples saw no new process on the machine; too busy to measure"
+    );
+    let per_sample = quiet_allocs as f64 / quiet as f64;
+    assert!(
+        per_sample <= ceiling,
+        "processes collector allocates {per_sample:.2} per steady sample, ceiling {ceiling}"
+    );
 }
 
 fn pid_count() -> f64 {
