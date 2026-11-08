@@ -18,14 +18,18 @@ use statglass_schema::Module;
 use statglass_schema::Settings;
 use statglass_schema::lock::LockExt;
 use statglass_schema::settings::{
-    Appearance, ChartWindow, ItemMode, MemoryUnit, NetworkUnit, TemperatureUnit,
+    Appearance, ChartWindow, MemoryUnit, NetworkUnit, TemperatureUnit,
 };
 
 use crate::error::CommandError;
 use crate::ipc::SettingsSnapshot;
 
 pub mod cli_access;
+mod menu_bar;
+mod overview;
 mod popover;
+pub use menu_bar::{BarsPatch, ItemsPatch, MenuBarPatch, ReadoutsPatch};
+pub use overview::OverviewPatch;
 pub use popover::PopoverPatch;
 
 /// A partial change. Every field is optional; absent fields keep their value.
@@ -38,6 +42,8 @@ pub struct SettingsPatch {
     pub cli_access: Option<cli_access::CliAccessPatch>,
     #[specta(optional)]
     pub popover: Option<PopoverPatch>,
+    #[specta(optional)]
+    pub overview: Option<OverviewPatch>,
     #[specta(optional)]
     pub docker: Option<statglass_schema::docker::DockerSettings>,
     #[specta(optional)]
@@ -70,70 +76,6 @@ pub struct RemoteAccessPatch {
 pub struct ModulePatch {
     #[specta(optional)]
     pub enabled: Option<bool>,
-}
-
-/// A change to the menu bar (D-102). Each field of each group patches on its own, so one
-/// switch never overwrites another window's change to a different one (D-050).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
-#[serde(default)]
-pub struct MenuBarPatch {
-    #[specta(optional)]
-    pub bars: Option<BarsPatch>,
-    #[specta(optional)]
-    pub readouts: Option<ReadoutsPatch>,
-    #[specta(optional)]
-    pub items: Option<ItemsPatch>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
-#[serde(default)]
-pub struct BarsPatch {
-    #[specta(optional)]
-    pub cpu: Option<bool>,
-    #[specta(optional)]
-    pub gpu: Option<bool>,
-    #[specta(optional)]
-    pub memory: Option<bool>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
-#[serde(default)]
-pub struct ReadoutsPatch {
-    #[specta(optional)]
-    pub cpu: Option<bool>,
-    #[specta(optional)]
-    pub gpu: Option<bool>,
-    #[specta(optional)]
-    pub memory: Option<bool>,
-    #[specta(optional)]
-    pub temperature: Option<bool>,
-    #[specta(optional)]
-    pub power: Option<bool>,
-    #[specta(optional)]
-    pub network: Option<bool>,
-    #[specta(optional)]
-    pub disk: Option<bool>,
-    #[specta(optional)]
-    pub battery: Option<bool>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
-#[serde(default)]
-pub struct ItemsPatch {
-    #[specta(optional)]
-    pub cpu: Option<ItemMode>,
-    #[specta(optional)]
-    pub gpu: Option<ItemMode>,
-    #[specta(optional)]
-    pub memory: Option<ItemMode>,
-    #[specta(optional)]
-    pub power: Option<ItemMode>,
-    #[specta(optional)]
-    pub network: Option<ItemMode>,
-    #[specta(optional)]
-    pub disk: Option<ItemMode>,
-    #[specta(optional)]
-    pub battery: Option<ItemMode>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
@@ -218,6 +160,9 @@ impl SettingsPatch {
         if let Some(p) = self.popover {
             p.apply(&mut s.popover);
         }
+        if let Some(p) = self.overview {
+            p.apply(&mut s.overview);
+        }
         if let Some(modules) = &self.modules {
             for (module, p) in modules {
                 let entry =
@@ -233,33 +178,7 @@ impl SettingsPatch {
             }
         }
         if let Some(p) = self.menu_bar {
-            let mb = &mut s.menu_bar;
-            if let Some(b) = p.bars {
-                set(&mut mb.bars.cpu, b.cpu);
-                set(&mut mb.bars.gpu, b.gpu);
-                set(&mut mb.bars.memory, b.memory);
-            }
-            if let Some(r) = p.readouts {
-                let o = &mut mb.readouts;
-                set(&mut o.cpu, r.cpu);
-                set(&mut o.gpu, r.gpu);
-                set(&mut o.memory, r.memory);
-                set(&mut o.temperature, r.temperature);
-                set(&mut o.power, r.power);
-                set(&mut o.network, r.network);
-                set(&mut o.disk, r.disk);
-                set(&mut o.battery, r.battery);
-            }
-            if let Some(i) = p.items {
-                let o = &mut mb.items;
-                set(&mut o.cpu, i.cpu);
-                set(&mut o.gpu, i.gpu);
-                set(&mut o.memory, i.memory);
-                set(&mut o.power, i.power);
-                set(&mut o.network, i.network);
-                set(&mut o.disk, i.disk);
-                set(&mut o.battery, i.battery);
-            }
+            p.apply(&mut s.menu_bar);
         }
         if let Some(p) = self.sampling {
             set(&mut s.sampling.interval_ms, p.interval_ms);
@@ -548,7 +467,7 @@ mod tests {
     use std::cell::RefCell;
     use std::sync::Arc;
 
-    use statglass_schema::settings::ModuleSettings;
+    use statglass_schema::settings::{ItemMode, ModuleSettings};
 
     use super::*;
 
@@ -641,6 +560,22 @@ mod tests {
             let owner = SettingsOwner::load_with_defaults(Box::new(file), defaults);
             assert_eq!(owner.settings().units.temperature, stored.units.temperature);
         }
+    }
+
+    #[test]
+    fn overview_patch_turns_one_card_off_and_keeps_the_rest() {
+        let before = Settings::default();
+        let patch: SettingsPatch =
+            serde_json::from_value(serde_json::json!({"overview":{"apps":false}})).unwrap();
+        let after = patch.apply(&before).unwrap();
+        assert!(!after.overview.apps);
+        assert_eq!(
+            statglass_schema::settings::OverviewSettings {
+                apps: true,
+                ..after.overview
+            },
+            before.overview
+        );
     }
 
     #[test]

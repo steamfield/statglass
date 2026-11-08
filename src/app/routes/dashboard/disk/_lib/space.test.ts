@@ -109,6 +109,8 @@ describe("labels", () => {
     expect(agoLabel(10 * 60_000, 6 * 60_000)).toBe("4 min ago");
     expect(agoLabel(3 * 3_600_000, 0)).toBe("3 h ago");
     expect(agoLabel(30_000, 0)).toBe("just now");
+    expect(agoLabel(30 * 3_600_000, 0)).toBe("1 day ago");
+    expect(agoLabel(80 * 3_600_000, 0)).toBe("3 days ago");
     expect(elapsedLabel(123_400)).toBe("2:03");
   });
 

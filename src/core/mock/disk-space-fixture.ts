@@ -4,6 +4,7 @@
  * get a few generated files and a "smaller items" remainder, so every folder
  * opens onto something.
  */
+import type { SpaceHighlights } from "@core/generated/bindings";
 
 export type SpaceSpec =
   | { t: "dir"; name: string; kids: SpaceSpec[] }
@@ -165,3 +166,51 @@ export const UNREADABLE = [
   "private/var/protected",
   "Library/Application Support/com.apple.TCC",
 ] as const;
+
+/**
+ * What Rust's ranking (`disk_space::highlights`) keeps from `BOOT_TREE`: the
+ * deepest large folders, known locations with their category.
+ */
+export const MOCK_HIGHLIGHTS: SpaceHighlights = {
+  volume: "Macintosh HD",
+  finished_ms: 0,
+  used_bytes: 412 * GB,
+  folders: [
+    {
+      path: "/Users/riley/Library/Containers",
+      bytes: 38.2 * GB,
+      category: null,
+    },
+    {
+      path: "/Users/riley/Projects/opendata/data",
+      bytes: 28.3 * GB,
+      category: null,
+    },
+    {
+      path: "/Users/riley/Library/Application Support",
+      bytes: 26.4 * GB,
+      category: null,
+    },
+    {
+      path: "/Users/riley/Library/Developer/CoreSimulator",
+      bytes: 24.3 * GB,
+      category: "simulators",
+    },
+    { path: "/Users/riley/Downloads", bytes: 22.4 * GB, category: "downloads" },
+    {
+      path: "/Users/riley/Library/Developer/Xcode/DerivedData",
+      bytes: 18.4 * GB,
+      category: "xcode_builds",
+    },
+    {
+      path: "/Users/riley/Movies/Final Cut Projects",
+      bytes: 18.1 * GB,
+      category: null,
+    },
+    {
+      path: "/Users/riley/Projects/statglass/target",
+      bytes: 17.2 * GB,
+      category: null,
+    },
+  ],
+};

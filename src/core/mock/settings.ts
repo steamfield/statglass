@@ -124,6 +124,7 @@ export function applyPatch(s: Settings, patch: SettingsPatch): Settings {
     ...s,
     modules,
     popover: pick(s.popover ?? NO_POPOVER, patch.popover),
+    overview: pick(s.overview ?? ALL_OVERVIEW_CARDS, patch.overview),
     menu_bar: {
       bars: pick(base.bars, mb?.bars),
       readouts: pick(base.readouts, mb?.readouts),
@@ -142,6 +143,20 @@ export function applyPatch(s: Settings, patch: SettingsPatch): Settings {
     alerts: pick(s.alerts ?? NO_ALERTS, patch.alerts),
   };
 }
+const ALL_OVERVIEW_CARDS = {
+  cpu: true,
+  gpu: true,
+  memory: true,
+  power: true,
+  network: true,
+  disk: true,
+  battery: true,
+  events: true,
+  apps: true,
+  folders: true,
+  containers: true,
+  hosts: true,
+};
 const NO_ALERTS = { hot_process: false, thermal_serious: false };
 
 const NO_POPOVER = {

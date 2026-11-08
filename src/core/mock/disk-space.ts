@@ -8,7 +8,9 @@ import type {
   SpaceSubtree,
   SpaceTarget,
 } from "@core/generated/bindings";
+import { DAY_MS } from "@core/time-grid";
 import type { MockTransport } from "./contracts";
+import { MOCK_HIGHLIGHTS } from "./disk-space-fixture";
 import {
   routeDiskSpace,
   type SpaceMethods,
@@ -16,7 +18,7 @@ import {
 } from "./disk-space-hosts";
 import { build, crumbs, type Node, nodes } from "./disk-space-tree";
 import { type MockVolume, mockVolumes } from "./disk-space-volumes";
-import type { ScenarioName } from "./fixtures";
+import { MOCK_HOST_ID, type ScenarioName } from "./fixtures";
 import { fail, ok } from "./protocol";
 
 /** How long a mock scan takes, start to finish. */
@@ -325,6 +327,14 @@ function synthetic(
   };
 }
 
+const unavailable = () =>
+  refuse("Space reports are not available in this edition");
+
+type HighlightMethods = Pick<
+  MockTransport,
+  "diskSpaceHighlights" | "diskSpaceRevealHighlight"
+>;
+
 /**
  * This host's space reports, one scan at a time; a remote host's calls go
  * to its own peer (D-117), so each host keeps its own scan and report.
@@ -334,14 +344,12 @@ export function createMockDiskSpace(
   now: () => number,
   remotes: SpaceRemotes = new Map(),
   initialMount?: string
-): SpaceMethods & Pick<MockTransport, "endSpaceSession"> {
+): SpaceMethods & HighlightMethods & Pick<MockTransport, "endSpaceSession"> {
   const appstore = scenarios.includes("appstore");
   let running = seededScan(scenarios, initialMount, now());
   let nextId = running?.id ?? 0;
   let report: Scan | null = null;
   let ended: Scan | null = null;
-  const unavailable = () =>
-    refuse("Space reports are not available in this edition");
   const settle = () => {
     running?.settle(now());
     if (!running || running.phase === "scanning") return;
@@ -377,80 +385,103 @@ export function createMockDiskSpace(
       };
     return scan.status(now());
   };
-  const routed = routeDiskSpace(
-    {
-      diskSpaceVolumes: async () =>
-        appstore
-          ? unavailable()
-          : ok(mockVolumes(scenarios).map((v) => v.volume)),
-      diskSpaceStart: async (_host, mount, include) => {
-        if (appstore) return unavailable();
-        settle();
-        if (running) return refuse("a scan is already running");
-        const spec = mockVolumes(scenarios).find(
-          (v) => v.volume.mount === mount
-        );
-        if (!spec) return refuse(`${mount} is not a volume StatGlass can scan`);
-        const skipped = spec.volume.protected.filter(
-          (p) => !include.includes(p.key)
-        );
-        running = new Scan(
-          ++nextId,
-          {
-            ...spec,
-            skipped: skipped.map((p) => p.label),
-            skip: new Set(skipped.map((p) => p.key)),
-            ejectAt:
-              !spec.volume.is_boot && scenarios.includes("disk-space-eject")
-                ? 0.4
-                : null,
-          },
-          now()
-        );
-        ended = null;
-        return ok(running.status(now()));
-      },
-      diskSpaceStatus: async () => ok(status()),
-      diskSpaceCancel: async () => {
-        settle();
-        running?.end("cancelled", now());
-        settle();
-        return ok(null);
-      },
-      diskSpaceReport: async () => {
-        settle();
-        return ok(report?.report() ?? null);
-      },
-      diskSpaceSubtree: async (_host, id, node) => {
-        settle();
-        const tree = find(id)?.subtree(node, now());
-        return tree ? ok(tree) : gone;
-      },
-      diskSpaceLargestFiles: async (_host, id) => {
-        settle();
-        const scan = find(id);
-        return scan ? ok(scan.largest(now())) : gone;
-      },
-      diskSpaceReveal: async (id, target) => {
-        settle();
-        return find(id)?.path(target, now()) ? ok(null) : gone;
-      },
-      diskSpacePath: async (_host, id, target) => {
-        settle();
-        const path = find(id)?.path(target, now());
-        return path ? ok(path) : gone;
-      },
-    },
-    remotes
-  );
   return {
-    ...routed,
+    ...mockHighlights(scenarios, now),
+    ...routeDiskSpace(
+      {
+        diskSpaceVolumes: async () =>
+          appstore
+            ? unavailable()
+            : ok(mockVolumes(scenarios).map((v) => v.volume)),
+        diskSpaceStart: async (_host, mount, include) => {
+          if (appstore) return unavailable();
+          settle();
+          if (running) return refuse("a scan is already running");
+          const spec = mockVolumes(scenarios).find(
+            (v) => v.volume.mount === mount
+          );
+          if (!spec)
+            return refuse(`${mount} is not a volume StatGlass can scan`);
+          const skipped = spec.volume.protected.filter(
+            (p) => !include.includes(p.key)
+          );
+          running = new Scan(
+            ++nextId,
+            {
+              ...spec,
+              skipped: skipped.map((p) => p.label),
+              skip: new Set(skipped.map((p) => p.key)),
+              ejectAt:
+                !spec.volume.is_boot && scenarios.includes("disk-space-eject")
+                  ? 0.4
+                  : null,
+            },
+            now()
+          );
+          ended = null;
+          return ok(running.status(now()));
+        },
+        diskSpaceStatus: async () => ok(status()),
+        diskSpaceCancel: async () => {
+          settle();
+          running?.end("cancelled", now());
+          settle();
+          return ok(null);
+        },
+        diskSpaceReport: async () => {
+          settle();
+          return ok(report?.report() ?? null);
+        },
+        diskSpaceSubtree: async (_host, id, node) => {
+          settle();
+          const tree = find(id)?.subtree(node, now());
+          return tree ? ok(tree) : gone;
+        },
+        diskSpaceLargestFiles: async (_host, id) => {
+          settle();
+          const scan = find(id);
+          return scan ? ok(scan.largest(now())) : gone;
+        },
+        diskSpaceReveal: async (id, target) => {
+          settle();
+          return find(id)?.path(target, now()) ? ok(null) : gone;
+        },
+        diskSpacePath: async (_host, id, target) => {
+          settle();
+          const path = find(id)?.path(target, now());
+          return path ? ok(path) : gone;
+        },
+      },
+      remotes
+    ),
     endSpaceSession: () => {
       running?.end("cancelled", now());
       running = null;
       report = null;
       ended = null;
     },
+  };
+}
+
+/**
+ * As if this Mac's boot volume was scanned three days ago (a summary on
+ * disk); none before a first scan, in the App Store edition or for a remote.
+ */
+function mockHighlights(
+  scenarios: readonly ScenarioName[],
+  now: () => number
+): HighlightMethods {
+  const highlights =
+    scenarios.includes("appstore") || scenarios.includes("disk-space-unscanned")
+      ? null
+      : { ...MOCK_HIGHLIGHTS, finished_ms: now() - 3 * DAY_MS };
+  return {
+    diskSpaceHighlights: async (host) =>
+      ok(host === MOCK_HOST_ID ? highlights : null),
+    diskSpaceRevealHighlight: async (path) =>
+      highlights?.folders.some((folder) => folder.path === path)
+        ? ok(null)
+        : refuse("This folder is not in the last scan"),
   };
 }
 

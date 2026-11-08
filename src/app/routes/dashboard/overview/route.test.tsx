@@ -200,3 +200,53 @@ it.each(["no-battery", "linux"] as const)(
     expect(screen.queryByRole("heading", { name: "Battery" })).toBeNull();
   }
 );
+
+describe("Overview cards menu (D-131)", () => {
+  const menu = async (user: { click: (e: Element) => Promise<void> }) => {
+    await user.click(
+      await screen.findByRole("button", { name: "Overview cards" })
+    );
+    return screen.findByRole("menu");
+  };
+
+  it("lists only the cards this host can fill", async () => {
+    const { user } = renderWithProviders(<OverviewRoute />);
+    const items = within(await menu(user))
+      .getAllByRole("menuitemcheckbox")
+      .map((item) => item.textContent);
+    expect(items).toEqual([
+      "CPU",
+      "GPU",
+      "Memory",
+      "Power & Sensors",
+      "Network",
+      "Disk",
+      "Battery",
+      "Events",
+      "Apps",
+      "Largest folders",
+    ]);
+  });
+
+  it("hides a card, saves it, and brings every card back", async () => {
+    const { user, transport } = renderWithProviders(<OverviewRoute />);
+    await screen.findByRole("link", { name: "Battery" });
+    await user.click(
+      within(await menu(user)).getByRole("menuitemcheckbox", {
+        name: "Battery",
+      })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Battery" })).toBeNull()
+    );
+    expect((await transport.getSettings()).settings.overview?.battery).toBe(
+      false
+    );
+    // The menu stays open for the next change.
+    await user.click(screen.getByRole("menuitem", { name: "Show all" }));
+    expect(await screen.findByRole("link", { name: "Battery" })).toBeVisible();
+    expect((await transport.getSettings()).settings.overview?.battery).toBe(
+      true
+    );
+  });
+});

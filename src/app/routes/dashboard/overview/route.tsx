@@ -1,38 +1,27 @@
-import { isUnknownChip, type UiModule } from "@core/module-state";
+import { isUnknownChip } from "@core/module-state";
 import type { ProcessView } from "@core/process-interest";
-import type { ReactNode } from "react";
 import { CardGrid } from "~/components/card-grid";
 import { ModulePage } from "~/components/module-page";
 import {
   SensorDumpDialog,
   useSensorDumpDialog,
 } from "~/components/sensor-dump-dialog";
-import { UnavailableCard } from "~/components/unavailable-card";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
 import { useHostRecord } from "~/hooks/use-host-record";
-import { useModuleStates } from "~/hooks/use-module-states";
 import {
   useProcessGpu,
   useProcessInterest,
   useProcessNetwork,
 } from "~/hooks/use-process-interest";
+import { useWriteSettings } from "~/hooks/use-write-settings";
 import { useHost } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
-import type { Corner } from "~/widgets/lib/accent";
+import { useSettings } from "~/stores/settings-store";
 import { StatusPill } from "~/widgets/status-pill";
 import { samplingStatus } from "../_lib/sampling-status";
-import { OverviewAppsCard } from "./_components/apps-card";
-import { OverviewEventsCard } from "./_components/events-card";
+import { CardsMenu } from "./_components/cards-menu";
 import { LiveMachineHeader } from "./_components/live-machine-header";
-import {
-  OverviewBatteryCard,
-  OverviewCpuCard,
-  OverviewDiskCard,
-  OverviewGpuCard,
-  OverviewMemoryCard,
-  OverviewNetworkCard,
-  OverviewPowerCard,
-} from "./_components/overview-cards";
+import { useOverviewCards } from "./_hooks/use-overview-cards";
 
 /**
  * The cards' top-5 lists rank by CPU, memory, energy impact and disk I/O.
@@ -64,21 +53,6 @@ function overviewView(network: boolean, gpu: boolean): ProcessView {
   };
 }
 
-/** The Overview's module cards in display order; Events and Apps follow. */
-type OverviewCard = readonly [
-  UiModule,
-  (p: { origin: Corner; windowMs: number }) => ReactNode,
-];
-const CARDS: readonly OverviewCard[] = [
-  ["cpu", OverviewCpuCard],
-  ["gpu", OverviewGpuCard],
-  ["memory", OverviewMemoryCard],
-  ["power", OverviewPowerCard],
-  ["network", OverviewNetworkCard],
-  ["disk", OverviewDiskCard],
-  ["battery", OverviewBatteryCard],
-];
-
 /**
  * Overview (plan 4.5): page header with the live status pill,
  * the machine header, and a card per module the host has and the user has
@@ -93,52 +67,33 @@ export default function OverviewRoute() {
   const perProcessNetwork = useProcessNetwork();
   const perProcessGpu = useProcessGpu();
   useProcessInterest(overviewView(perProcessNetwork, perProcessGpu));
-  const states = useModuleStates();
   const sampling = useSampling();
   const unknownChip = useHost((s) => isUnknownChip(s.capabilities));
   const host = useHostRecord();
   const dump = useSensorDumpDialog();
-  // One grid for the modules, Battery, Events and Apps, so the cards after
-  // the modules fill whatever the last module row leaves open at any width.
-  const items: {
-    id: string;
-    render: (origin: Corner, windowMs: number) => ReactNode;
-  }[] = [];
-  for (const [m, Card] of CARDS) {
-    const state = states[m];
-    if (state === "on")
-      items.push({
-        id: m,
-        render: (origin, windowMs) => (
-          <Card origin={origin} windowMs={windowMs} />
-        ),
-      });
-    else if (state === "edition" || state === "unavailable")
-      items.push({
-        id: m,
-        render: () => <UnavailableCard module={m} state={state} />,
-      });
-  }
-  items.push(
-    {
-      id: "events",
-      render: (origin, windowMs) => (
-        <OverviewEventsCard origin={origin} windowMs={windowMs} />
-      ),
-    },
-    {
-      id: "apps",
-      render: (origin, windowMs) => (
-        <OverviewAppsCard origin={origin} windowMs={windowMs} />
-      ),
-    }
-  );
+  // One grid for every card, so the cards after the modules fill whatever
+  // the last module row leaves open at any width. The user's picks filter
+  // the cards this host can fill (D-131).
+  const cards = useOverviewCards();
+  const saved = useSettings((settings) => settings.overview);
+  const write = useWriteSettings();
+  const shown = (id: keyof NonNullable<typeof saved>) => saved?.[id] !== false;
+  const items = cards.filter((card) => shown(card.id));
 
   return (
     <>
       <ModulePage
         title="Overview"
-        actions={<StatusPill {...samplingStatus(sampling)} />}
+        actions={
+          <>
+            <StatusPill {...samplingStatus(sampling)} />
+            <CardsMenu
+              items={cards}
+              shown={shown}
+              onChange={(overview) => write({ overview })}
+            />
+          </>
+        }
         beforeBody={<LiveMachineHeader />}
         afterBody={
           unknownChip && (
@@ -149,11 +104,18 @@ export default function OverviewRoute() {
           )
         }
       >
-        {(windowMs) => (
-          <CardGrid items={items} getKey={(item) => item.id}>
-            {(item, origin) => item.render(origin, windowMs)}
-          </CardGrid>
-        )}
+        {(windowMs) =>
+          items.length === 0 ? (
+            <p role="status" className="text-[13px] text-muted-foreground">
+              Every card is hidden. Pick the cards to show from the Overview
+              cards menu.
+            </p>
+          ) : (
+            <CardGrid items={items} getKey={(item) => item.id}>
+              {(item, origin) => item.render(origin, windowMs)}
+            </CardGrid>
+          )
+        }
       </ModulePage>
       <SensorDumpDialog open={dump.open} onOpenChange={dump.setOpen} />
     </>

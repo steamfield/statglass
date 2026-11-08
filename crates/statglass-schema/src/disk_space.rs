@@ -162,3 +162,45 @@ pub enum SpaceTarget {
     Node { id: u32 },
     LargestFile { index: u32 },
 }
+
+/// What a large folder is, when it is one of the locations people clear to free space.
+/// Local only: the summary never crosses the wire.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SpaceCategory {
+    /// Xcode's DerivedData.
+    XcodeBuilds,
+    XcodeArchives,
+    /// Xcode's `* DeviceSupport` symbol caches.
+    DeviceSupport,
+    Simulators,
+    NodeModules,
+    /// A home folder's `Library/Caches`.
+    Caches,
+    Trash,
+    /// Docker Desktop or OrbStack disk data.
+    ContainerData,
+    /// Downloaded model weights (Hugging Face, Ollama).
+    Models,
+    Downloads,
+}
+
+/// One of the largest actionable folders of the last boot-volume scan.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct SpaceHighlight {
+    /// Absolute path, as Finder shows it.
+    pub path: String,
+    pub bytes: f64,
+    pub category: Option<SpaceCategory>,
+}
+
+/// The summary of the last finished boot-volume scan, kept on disk (unlike the report)
+/// so the Overview can show it without scanning again. Largest first.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct SpaceHighlights {
+    /// The volume's display name.
+    pub volume: String,
+    pub finished_ms: f64,
+    pub used_bytes: f64,
+    pub folders: Vec<SpaceHighlight>,
+}

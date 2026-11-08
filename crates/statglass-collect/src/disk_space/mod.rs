@@ -1,6 +1,7 @@
 //! On-demand disk space scans (plan/disk-space-report.md). Not a `Collector`: no tick,
 //! no series. A scan walks one volume on its own threads and keeps a size tree that the
 //! UI reads while it runs and after it finishes.
+mod highlights;
 mod portable;
 mod tree;
 mod walk;
@@ -12,8 +13,8 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use statglass_schema::disk_space::{
-    SpaceCrumb, SpaceFile, SpaceKind, SpaceNode, SpacePhase, SpaceReport, SpaceSubtree,
-    SpaceTarget, SpaceVolume,
+    SpaceCrumb, SpaceFile, SpaceHighlight, SpaceKind, SpaceNode, SpacePhase, SpaceReport,
+    SpaceSubtree, SpaceTarget, SpaceVolume,
 };
 use statglass_schema::lock::LockExt;
 
@@ -258,16 +259,42 @@ impl Scan {
                 path.strip_prefix(&self.plan.root).ok()?.to_path_buf()
             }
         };
+        Some(self.absolute(rel))
+    }
+
+    /// A root-relative path as Finder shows it: firmlinked paths under "/".
+    fn absolute(&self, rel: PathBuf) -> PathBuf {
         if self
             .plan
             .firmlinked
             .iter()
             .any(|prefix| rel.starts_with(prefix))
         {
-            Some(PathBuf::from("/").join(rel))
+            PathBuf::from("/").join(rel)
         } else {
-            Some(self.plan.root.join(rel))
+            self.plan.root.join(rel)
         }
+    }
+
+    /// The largest actionable folders of a finished scan (`highlights`), at least 1 GiB
+    /// or 0.5% of the volume's used space each. Empty unless the scan is done.
+    pub fn highlights(&self, limit: usize) -> Vec<SpaceHighlight> {
+        if self.phase() != SpacePhase::Done {
+            return Vec::new();
+        }
+        let min_bytes = (1 << 30).max(self.plan.used_bytes / 200);
+        let tree = self.walk.tree.lock_ok();
+        highlights::highlights(&tree, min_bytes, limit)
+            .into_iter()
+            .filter_map(|(id, category)| {
+                let rel: PathBuf = tree.rel_path(id)?.iter().collect();
+                Some(SpaceHighlight {
+                    path: display(&self.absolute(rel)),
+                    bytes: tree.get(id)?.bytes as f64,
+                    category,
+                })
+            })
+            .collect()
     }
 
     /// The summary of a finished scan.

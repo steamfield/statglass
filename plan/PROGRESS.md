@@ -4,6 +4,22 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Overview: Largest folders, Containers, Other hosts and a card picker (2026-11-08)
+
+D-131: phase 2b. Three cards after Apps in the one grid, each only where the host can fill
+it: Largest folders (the last boot-volume scan's actionable folders, kept in
+`space-highlights.json`; ranking in `statglass-collect/src/disk_space/highlights.rs`;
+`disk_space_highlights` and `disk_space_reveal_highlight` commands, local only), Containers
+(peak CPU or memory over the chart window from the Containers page's ranking query) and
+Other hosts (live CPU and memory per saved host; a row switches host). The header's
+"Overview cards" menu hides and shows cards, saved per card in `settings.overview`. The
+menu bar settings patch moved to `src-tauri/src/settings/menu_bar.rs` to keep
+`settings.rs` under its size limit.
+
+Left open: v2.3b's reorder, edit mode and Top processes option; reclaimable Docker space on
+the card (needs an on-demand storage scan, D-107); per-host history on Other hosts; the
+real-app check of a boot scan writing the summary and Reveal from the card.
+
 ## Overview: Battery, Events and Apps (2026-11-08)
 
 D-130: three cards after the modules in the Overview's one card grid (a separate second

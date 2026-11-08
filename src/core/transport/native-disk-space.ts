@@ -12,6 +12,8 @@ export function nativeDiskSpace(): Pick<
   | "diskSpaceLargestFiles"
   | "diskSpaceReveal"
   | "diskSpacePath"
+  | "diskSpaceHighlights"
+  | "diskSpaceRevealHighlight"
 > {
   return {
     diskSpaceVolumes: (host) => commands.diskSpaceVolumes(host),
@@ -28,5 +30,7 @@ export function nativeDiskSpace(): Pick<
       commands.diskSpaceReveal(report, target),
     diskSpacePath: (host, report, target) =>
       commands.diskSpacePath(host, report, target),
+    diskSpaceHighlights: (host) => commands.diskSpaceHighlights(host),
+    diskSpaceRevealHighlight: (path) => commands.diskSpaceRevealHighlight(path),
   };
 }

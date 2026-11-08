@@ -161,7 +161,9 @@ impl AppState {
         let state = AppState {
             docker: docker.clone(),
             docker_streams: crate::docker::DockerStreams::default(),
-            disk_space: Arc::default(),
+            disk_space: Arc::new(statglass_engine::disk_space::SpaceService::with_summary(
+                &data_dir,
+            )),
             local,
             hosts: HostRegistry::new(),
             live: LiveRegistry::new(),

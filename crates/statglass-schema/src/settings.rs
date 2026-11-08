@@ -16,8 +16,10 @@ use serde::{Deserialize, Serialize};
 
 mod agent;
 mod chart_window;
+mod overview;
 mod popover;
 pub use chart_window::ChartWindow;
+pub use overview::OverviewSettings;
 pub use popover::{CardDensity, PopoverSettings};
 
 use crate::alert::AlertRule;
@@ -35,6 +37,9 @@ pub struct Settings {
     pub docker: crate::docker::DockerSettings,
     #[serde(default)]
     pub popover: PopoverSettings,
+    /// Absent from a settings file written before 0.9: every Overview card shown.
+    #[serde(default)]
+    pub overview: OverviewSettings,
     /// One entry per settings module: every [`Module`] except `Sensors`. An entry for a
     /// module this build does not know (a settings file from a newer build) is dropped on
     /// decode (D-040).
@@ -570,6 +575,7 @@ impl Default for Settings {
         Self {
             docker: crate::docker::DockerSettings::default(),
             popover: PopoverSettings::default(),
+            overview: OverviewSettings::default(),
             modules,
             remote_access: RemoteAccessSettings::default(),
             cli_access: CliAccessSettings::default(),
