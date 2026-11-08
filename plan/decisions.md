@@ -4337,16 +4337,16 @@ Cost: six history charts on the Overview at 1 Hz. `perf-gate.spec.ts` gains an
 "Overview, 1 h window" case with its own `overview1h` budget, set to the existing
 Overview threshold.
 
-## D-130: A second Overview row: Battery, Events and Apps
+## D-130: Battery, Events and Apps on the Overview
 
 Date: 2026-11-08. Phase 2a of the Overview plan, after D-129.
 
-The Overview gets a second `CardGrid` below the six module cards, on the same column
-width, so at 1280 px its three cards line up with the columns above. It holds Battery
-(when the host has one), Events and Apps. Battery is a module card (`MetricCard` with a
-`BATTERY_HERO` chart), but adding it to the module grid would leave it alone on a 3+3+1
-row; in the second row it lines up. The row uses `auto-fit`, so on a Mac without a
-battery Events and Apps share it without a hole.
+The Overview gains Battery (a module card on a `BATTERY_HERO` chart, absent without a
+battery), Events and Apps. All of them share the module cards' `CardGrid`: the modules
+first, then Events and Apps, so they flow into whatever the last module row leaves open.
+A first version put Battery, Events and Apps in a second grid of their own; at four or
+five columns that left holes at the end of both grids, so 0.8.0 was tagged but not
+published, and 0.8.1 ships the single grid.
 
 Events lists the detector events (D-083 and the alert rules) in the chart range. A row
 opens Timeline on the event's range through `useRangeNavigation().apply`, the same path

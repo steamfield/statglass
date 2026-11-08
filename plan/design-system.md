@@ -132,7 +132,7 @@ The menu bar image is the one exception: Rust draws it in bundled JetBrains Mono
 | Popover panel | 360 × 680 px, 22 px radius, cards inset 10 px, 8 px apart |
 | Sidebar row | 30 px tall, 8 px horizontal padding, 6 px radius, 10 px icon gap, three groups separated by `--color-border-subtle` |
 | Controls | Icon buttons 28 px square; pills 22 to 24 px tall; buttons 28 px tall |
-| Overview grid | Three columns of module cards under a full-width machine header, then a second row on the same column width: Battery (when the Mac has one), Events and Apps. The second row uses `auto-fit`, so two cards share it without a hole (D-130) |
+| Overview grid | One grid under a full-width machine header: the module cards (Battery included when the Mac has one), then Events and Apps, flowing into whatever the last module row leaves open (three columns at 1280 px, D-130) |
 
 ## Card anatomy
 
@@ -303,7 +303,7 @@ From opendata's `frontend-design-slop` skill, applied to StatGlass.
 - No section kickers. Sentence-case field labels are fine (column headers, KPI labels, the "Modules" and "Menu bar style" control-group labels in onboarding). No uppercase tracked labels anywhere (D-101). A label above a heading that restates it is not.
 - No subtitle that restates the title. Page subtitles carry facts: "Apple M4 Pro · 10 performance + 4 efficiency cores", "On battery · 14.8 W system draw · 6:12 remaining".
 - The 25% zoom test applies to every page. Each page has one dominant region: the stacked lanes on Timeline, the total chart on CPU, the module grid on Overview.
-- The Overview's six identical module cards are a real grid of comparable modules, which is the legitimate case. Do not add a card of a different kind to fill a row. Battery, Events and Apps sit in their own second row (D-130), lined up with the columns above, rather than in the module grid.
+- The Overview's six identical module cards are a real grid of comparable modules, which is the legitimate case. Events and Apps follow the modules in the same grid (D-130) because a separate row left holes at every width; they come last, so the comparable module cards stay together.
 - The corner glow is house style. No other glow: no `box-shadow` halos, no glowing dots. The live dot is a flat 6 px circle, and it does not pulse.
 - No accent dot before labels except the module swatch in a card header or legend, where it is the legend key.
 - No icons in tinted circles above titles. Sidebar icons stay because they disambiguate entries at a glance.
@@ -351,8 +351,8 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `Card` | Glow card shell | yes | `{ accent: ModuleId; origin?: Corner; variant?: 'default' \| 'chart'; labelledBy: string; children }` |
 | `CardGrid` | Grid that assigns rotating glow origins | no | `{ columns: number; children }` |
 | `MetricCard` | Overview module card: title and headline now value on one row (an optional warn/critical chip beside the value), the module page's lead chart over the chart window (static: no hover or brush, 3 x ticks, gap bands without captions), three or four facts in a two-column `StatList` grid, and the live top-5 list captioned "Now" (D-129) | yes | `{ accent; origin?; title; value; unit?; chart: ReactNode; stats: StatListItem[]; list?: { ariaLabel; rows; note?; caption? }; alert?: { tone: 'warn' \| 'critical'; text }; notice?; href?; onOpen? }` |
-| `OverviewEventsCard` | Overview second row: detector events in the chart range, newest first, at most six, each row a button that opens Timeline on the event's range; a count with range words in the header; warning icon and colour for alert-level events; one muted line each for loading, error, history unavailable and nothing detected (D-130) | no | `{ windowMs; origin }` |
-| `OverviewAppsCard` | Overview second row: the top five apps over the chart range from the live ring (up to an hour) or recorded history, ranked by a segmented CPU, Memory, GPU (with per-process GPU) or energy (with per-process energy; "Energy" live, "CPU power" from history); coverage note when the ranking is incomplete (D-130) | no | `{ windowMs; origin }` |
+| `OverviewEventsCard` | Overview, after the module cards: detector events in the chart range, newest first, at most six, each row a button that opens Timeline on the event's range; a count with range words in the header; warning icon and colour for alert-level events; one muted line each for loading, error, history unavailable and nothing detected (D-130) | no | `{ windowMs; origin }` |
+| `OverviewAppsCard` | Overview, after the module cards: the top five apps over the chart range from the live ring (up to an hour) or recorded history, ranked by a segmented CPU, Memory, GPU (with per-process GPU) or energy (with per-process energy; "Energy" live, "CPU power" from history); coverage note when the ranking is incomplete (D-130) | no | `{ windowMs; origin }` |
 | `ModuleCard` | Popover module card: title, headline value, body slot | yes | `{ module; title; value: string; unit?: string; children }` |
 | `RingGauge` | Arc gauge with one or two segments and a centered value | yes | `{ fractions: [number, number?]; value: string; label: string; accent; size: 64 \| 80 \| 104 }` |
 | `ClusterFreqRing` | RingGauge variant: GHz value, max, active % below | yes | `{ cluster: 'P' \| 'E'; ghz: number; maxGhz: number; activePct: number; accent }` |

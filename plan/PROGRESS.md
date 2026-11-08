@@ -4,15 +4,16 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Overview second row: Battery, Events and Apps (2026-11-08)
+## Overview: Battery, Events and Apps (2026-11-08)
 
-D-130: a second card row under the module grid, on the same column width. Battery (a
+D-130: three cards after the modules in the Overview's one card grid (a separate second
+row left holes at four and five columns; fixed before 0.8.1). Battery (a
 `MetricCard` on a new `BATTERY_HERO`, absent without a battery), Events (detector events
 in the chart range; a row opens Timeline on the event's range) and Apps (top five by CPU,
 memory, GPU or energy, live up to an hour and recorded history past it). `eventPriority`,
 `eventRange` move to `@core/events`, `selectedRange` to `@core/brush`; the battery time
 wording is one `@core/format` helper used by the popover and the card; `useEventsQuery`
-exposes loading and error; `CardGrid` gains `fit` and `staggerFrom`.
+exposes loading and error.
 
 Built by two parallel Codex units and a fix pass, with a devil's-advocate review of the
 design and an independent code review (two bugs: "on battery" for an unknown power source,
