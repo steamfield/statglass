@@ -4,6 +4,24 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Developer ID signing and release workflow (2026-11-08, branch `feat/developer-id-signing`, D-131)
+
+- Apple Developer membership is active (individual, team `YWA9Q642YP`). The Developer
+  ID Application identity is in the login keychain and the `statglass-notary`
+  notarytool profile validates.
+- `tauri.release.conf.json` signs with the Developer ID under the hardened runtime;
+  Tauri also signs the bundled helper and CLI that way (checked with `codesign -dv`).
+- `release.yml`: Linux validation and agent builds, then one `macos-26` job in the
+  `release` environment that builds, signs, notarizes and staples the app and DMG
+  (`scripts/notarize-dmg.sh`), stages and signs the assets, and creates a draft.
+  `scripts/release.sh cut|publish` wraps the maintainer's side. `.github/releasing.md`,
+  README and the docs install page describe the signed flow.
+- 0.8.1 was published Developer ID signed but not notarized (see D-131).
+- Open: the first local notarization was still in Apple's review at the time of
+  writing; the workflow has not run yet (it needs the `release` environment and its
+  secrets); a clean-account Gatekeeper check of the first notarized release and an
+  update from 0.8.1 remain.
+
 ## Overview: Battery, Events and Apps (2026-11-08)
 
 D-130: three cards after the modules in the Overview's one card grid (a separate second
@@ -792,7 +810,7 @@ Known follow-ups (small, not scheduled):
 | v2.1 Floating desktop widgets | [v2](v2-customization-widgets.md) | Not started | |
 | v2.2 WidgetKit dev build | [v2](v2-customization-widgets.md) | Not started | |
 | v2.3 Alerts editor, configurable Overview | [v2](v2-customization-widgets.md) | Not started | |
-| v3.x Native distribution | [v3](v3-native-distribution.md) | Not started | Needs a paid Apple Developer membership |
+| v3.x Native distribution | [v3](v3-native-distribution.md) | v3.0 signing in progress | D-131: Developer ID signing and notarization from a tag-triggered macOS job; first notarized release, cask and WidgetKit (v3.1) open |
 | v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac and Linux monitoring implemented; native acceptance open | SSH setup/recovery, remote history, app attribution and Space reports; real two-Mac setup, SSH-agent interoperability and overhead remain unverified. [Mac execution record](remote-macs-execution.md); [current landing record](history-remote-landing.md) |
 | v4.x Headless Linux agent | [D-116](decisions.md) | Done (automated + real server); native click-through and reboot open | `kelvo-agent` with /proc, sysfs, hwmon, PSI and cgroup v2 collectors; Add host installs, updates, re-pairs and removes it over SSH; Linux page variants and a Containers page. Real-server lifecycle passed on M1 Fedora Asahi; the accepted 0.32% CPU / 40.6 MB combined footprint was summary-only. Warm detail uses saved 128M high / 256M max / zero swap with a full retention hour and repeated scans |
 

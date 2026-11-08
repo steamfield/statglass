@@ -101,20 +101,21 @@ generated `.agents/skills` links; see `scripts/agent-config/README.md`.
 - **Xcode Command Line Tools** (macOS SDK for the collectors)
 - **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `make hooks`. Git hooks run native macOS checks locally; hosted CI uses Linux only
 
-## Hosted runner policy (D-118)
+## Hosted runner policy (D-118, D-131)
 
-**Never start, add or restore a GitHub-hosted macOS job from this repository.**
-This includes push/PR CI, manual dispatch, preview OS checks, release packaging
-and rerunning historical workflows that still contain macOS jobs. Hosted workflows
-must use Linux runners only; macOS runners consume the user's GitHub credits.
+**The only GitHub-hosted macOS job is the `macos` job in `.github/workflows/release.yml`**,
+which runs on a pushed `v*` tag on the standard `macos-26` runner (free on this public
+repository) and waits for the maintainer's approval in the `release` environment. Never
+add macOS to push/PR CI, preview OS checks or any other workflow, never use a larger
+(billed) runner size, and never rerun a historical workflow revision that has other
+macOS jobs. Everything else uses Linux runners.
 
 Run native macOS checks locally through the existing Git hooks (`make check
-bindings-check e2e-perf` in pre-push), and build/sign/verify release packages locally
-using `.github/releasing.md`. Do not bypass those hooks. Before dispatching or
-rerunning a workflow, inspect the workflow at its target revision: the current
-Linux-only file does not make an old revision safe to rerun. If a running job is
-found using a hosted macOS runner, cancel it and report it. Changing this policy
-requires an explicit new user decision.
+bindings-check e2e-perf` in pre-push). Cut releases with `scripts/release.sh` as
+described in `.github/releasing.md`. Do not bypass those hooks. Before dispatching or
+rerunning a workflow, inspect the workflow at its target revision. If a running job is
+found on a macOS runner outside the release job, cancel it and report it. Changing this
+policy requires an explicit new user decision.
 
 ## Debugging Budget
 
