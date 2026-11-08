@@ -119,6 +119,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-125 | Rename Kelvo to StatGlass with fresh installation identities | Accepted |
 | D-126 | Agents query StatGlass through a bundled, read-only CLI | Accepted |
 | D-128 | Docker coverage records carry a Rust-derived kind, masking and label | Accepted |
+| D-131 | Developer ID releases from a tag-triggered macOS job | Accepted |
 
 ---
 
@@ -4366,7 +4367,39 @@ The Remaining / To full / On power wording is one helper shared by the popover, 
 Battery page and the new card. The Battery page keeps its dash on adapter power, which
 the popover shows as "On power".
 
-## D-131: Largest folders, Containers, Other hosts and a card picker on the Overview
+## D-131: Developer ID releases from a tag-triggered macOS job
+
+Date: 2026-11-08. User decision, amending D-118 and replacing the CI part of v3.0 in
+v3-native-distribution.md.
+
+StatGlass ships signed with a Developer ID (team `YWA9Q642YP`, individual enrollment),
+under the hardened runtime, notarized and stapled, so a downloaded DMG opens without a
+Gatekeeper warning. The updater's minisign signature is unchanged and still required,
+so existing ad-hoc installs update to Developer ID builds with no migration step.
+
+D-118 kept macOS off hosted runners because of their cost. `steamfield/statglass` is
+public, and GitHub's standard hosted runners, `macos-26` included, are free and
+unlimited on public repositories (larger runner sizes are billed), so that cost does
+not apply to a release job here. Exactly one hosted macOS job exists: `macos`
+in `release.yml`, started by a pushed `v*` tag. It reads the Apple certificate, the App
+Store Connect API key and the updater key from a `release` environment that only `v*`
+tags may use and that waits for the maintainer's approval, which keeps a compromised
+action or workflow change on another ref from signing as the maintainer. The Linux
+agents build on Linux and reach the macOS job as an artifact. The job ends at a draft
+release; the maintainer runs `scripts/release.sh publish`, which checks the downloaded
+DMG with Gatekeeper, and opens it on a clean account before publishing.
+
+Everything else in D-118 stands: push and PR CI stay Linux-only, native checks and the
+perf gates stay in the local pre-push hook (their budgets are this Mac's numbers and
+would flake on a shared 3-core runner), and no workflow uses a larger runner. A local
+release build with the same keys remains the documented fallback.
+
+0.8.1 was built locally while this change was in the working tree, so it shipped
+Developer ID signed but not notarized: `tauri build` signs with the configured
+identity and skips notarization silently when the `APPLE_API_*` variables are absent.
+`scripts/notarize-dmg.sh` now fails a build whose app has no stapled ticket.
+
+## D-132: Largest folders, Containers, Other hosts and a card picker on the Overview
 
 Date: 2026-11-08. Phase 2b of the Overview plan, after D-130.
 
@@ -4415,3 +4448,4 @@ card the host can fill and Show all. The choice is saved per card in
 patched per field like the popover's densities (D-050). Capability gates still apply on
 top of it. This is the hide-and-show part of v2.3's Customize Overview. Reordering, the
 edit mode and the per-card Top processes option remain v2.3b.
+||||||| c449bfc

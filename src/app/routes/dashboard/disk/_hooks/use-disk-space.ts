@@ -31,7 +31,7 @@ export function useSpaceVolumes(enabled: boolean) {
 
 /**
  * The running scan, or how the last one ended. Polled only while one runs.
- * When a scan ends, the kept largest-folders summary (D-131) is read again,
+ * When a scan ends, the kept largest-folders summary (D-132) is read again,
  * whichever view started it: a finished boot scan replaces it.
  */
 export function useSpaceStatus(enabled: boolean) {

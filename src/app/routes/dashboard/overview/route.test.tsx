@@ -202,7 +202,7 @@ it.each(["no-battery", "linux"] as const)(
   }
 );
 
-describe("Overview cards menu (D-131)", () => {
+describe("Overview cards menu (D-132)", () => {
   const menu = async (user: { click: (e: Element) => Promise<void> }) => {
     await user.click(
       await screen.findByRole("button", { name: "Overview cards" })

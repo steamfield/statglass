@@ -31,7 +31,7 @@ const CATEGORY: Record<SpaceCategory, string> = {
 };
 
 /**
- * The largest actionable folders of this Mac's last boot-volume scan (D-131):
+ * The largest actionable folders of this Mac's last boot-volume scan (D-132):
  * the deepest folders where space sits, known locations named by what they
  * hold. Scanning is heavy, so it runs only when the user asks: Run report
  * the first time, Re-run after that. The summary outlives the scan, so later

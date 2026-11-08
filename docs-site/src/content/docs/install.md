@@ -1,6 +1,6 @@
 ---
 title: Install StatGlass
-description: Download StatGlass for Apple Silicon Macs running macOS 26 or later. Follow the steps to install the DMG, approve the first launch, or build from source.
+description: Download StatGlass for Apple Silicon Macs running macOS 26 or later. Follow the steps to install the DMG or build from source.
 group: Getting started
 order: 1
 featured: true
@@ -13,10 +13,8 @@ StatGlass runs on Apple Silicon Macs (M1 or newer) with macOS 26 or newer.
 1. Download StatGlass_aarch64.dmg from the [latest release](https://github.com/steamfield/statglass/releases/latest).
 2. Open the DMG and drag StatGlass into Applications.
 3. Eject the DMG, then open StatGlass from Applications.
-4. If macOS blocks the first launch, go to System Settings → Privacy & Security → Open Anyway, then confirm Open.
 
-> [!NOTE]
-> StatGlass is ad-hoc signed, without Apple notarization, so the first-launch approval is expected. You do not need an Apple Developer account. Managed Macs may restrict this approval; see [Apple's instructions](https://support.apple.com/en-us/102445).
+StatGlass is signed with a Developer ID and notarized by Apple, so macOS only asks you to confirm opening an app downloaded from the internet.
 
 StatGlass appears in the menu bar and asks you to choose a menu bar style. [The menu bar and windows](/docs/menu-bar-and-windows) explains the choices.
 

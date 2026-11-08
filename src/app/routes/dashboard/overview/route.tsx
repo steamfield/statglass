@@ -73,7 +73,7 @@ export default function OverviewRoute() {
   const dump = useSensorDumpDialog();
   // One grid for every card, so the cards after the modules fill whatever
   // the last module row leaves open at any width. The user's picks filter
-  // the cards this host can fill (D-131).
+  // the cards this host can fill (D-132).
   const cards = useOverviewCards();
   const saved = useSettings((settings) => settings.overview);
   const write = useWriteSettings();

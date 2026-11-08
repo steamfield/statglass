@@ -40,7 +40,16 @@ done
 # pinned zig and cargo-zigbuild. Without them the app is packaged without agents and
 # says so when adding a Linux host; release.yml runs `make agent-linux` itself and fails.
 CONFIGS=(--config "$ROOT/src-tauri/tauri.remote.conf.json")
-if tools="$(make -s -C "$ROOT" agent-linux-tools 2>&1)"; then
+if [[ -n "${STATGLASS_AGENTS_PREBUILT:-}" ]]; then
+  # The release workflow builds the agents on Linux and drops them into place first.
+  for t in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+    [[ -x "$ROOT/src-tauri/binaries/agent/statglass-agent-$t" ]] || {
+      echo "build-app: STATGLASS_AGENTS_PREBUILT is set but statglass-agent-$t is missing." >&2
+      exit 1
+    }
+  done
+  CONFIGS+=(--config "$ROOT/src-tauri/tauri.agent.conf.json")
+elif tools="$(make -s -C "$ROOT" agent-linux-tools 2>&1)"; then
   make -C "$ROOT" agent-linux
   CONFIGS+=(--config "$ROOT/src-tauri/tauri.agent.conf.json")
 else

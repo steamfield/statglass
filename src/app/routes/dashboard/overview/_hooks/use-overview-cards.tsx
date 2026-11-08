@@ -50,7 +50,7 @@ const MODULES: readonly (readonly [
 
 /**
  * The cards this host can fill, in display order, whether or not the user
- * shows them (D-131): a card per module the host has and the user has on
+ * shows them (D-132): a card per module the host has and the user has on
  * (a module the build can't run keeps a "not available" card), Events and
  * Apps, then Largest folders and Containers on This Mac when Space reports
  * and Docker monitoring are on, and Other hosts once a remote host is saved.

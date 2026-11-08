@@ -12,7 +12,7 @@ import { useHostId } from "~/stores/host-store";
 const BOOT = "/";
 
 /**
- * The Largest folders card's report (D-131): the kept summary of the last
+ * The Largest folders card's report (D-132): the kept summary of the last
  * boot-volume scan, and a scan of the boot volume the user starts from the
  * card. Scanning is never automatic; it is the Space view's scan, so either
  * place shows the other's progress, and `useSpaceStatus` reads the summary
