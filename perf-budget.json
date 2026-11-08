@@ -45,6 +45,8 @@
     "allocsPerTick": {
       "_detectorsDoc": "Event detectors and alert rules alone (statglass_engine::detect), every tick a 1,000-row process batch and a process held above the sustained and alert thresholds, all rules on: steady state allocates nothing (D-083). Also inside the engine-core numbers above.",
       "detectors": 0,
+      "_processesSteadyDoc": "The processes collector's allocations per sample on samples during which no process appeared on the machine, measured back to back by process_collector_steady_samples_stay_within_allocation_budget. A first-seen process costs identity allocations (name, app, user) that follow the machine's process churn, not the code: a build starting hundreds of short processes a second pushed the per-tick figure from 0.56 to 18.9 on unchanged code. The per-mode runs print the processes collector's allocations but do not check them. Measured 0.00.",
+      "processesSteady": 0.5,
       "trayOnly": {
         "engine": 11,
         "collectors": {
@@ -52,7 +54,6 @@
           "battery": 1,
           "disk_capacity": 1,
           "gpu_per_process": 0.05,
-          "processes": 1,
           "self_cpu": 0.1
         }
       },
@@ -63,7 +64,6 @@
           "battery": 1,
           "disk_capacity": 1,
           "gpu_per_process": 0.05,
-          "processes": 1,
           "self_cpu": 0.1
         }
       },
@@ -74,7 +74,6 @@
           "battery": 0.5,
           "disk_capacity": 0.5,
           "gpu_per_process": 0.05,
-          "processes": 1,
           "self_cpu": 0.1
         }
       },
@@ -85,7 +84,6 @@
           "battery": 0.5,
           "disk_capacity": 0.5,
           "gpu_per_process": 0.05,
-          "processes": 1,
           "self_cpu": 0.1
         }
       },
@@ -96,7 +94,6 @@
           "battery": 0.5,
           "disk_capacity": 0.5,
           "gpu_per_process": 0.05,
-          "processes": 1,
           "self_cpu": 0.1
         }
       }

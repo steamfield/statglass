@@ -4,6 +4,23 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Perf gate: process allocations measured in steady state (2026-11-08)
+
+- The per-mode `perf_gates` runs failed pushes three times in a day on
+  `allocsPerTick.*.collectors.processes` (1.04 to 1.34 against 1) while other sessions
+  compiled; reruns alone passed. Cause: a first-seen process costs the collector identity
+  allocations, so the per-tick count followed the machine's process churn. Four loops of
+  `/usr/bin/true` reproduced it at 18.9 per tick on unchanged code.
+- `process_collector_steady_samples_stay_within_allocation_budget` now samples the
+  collector back to back and counts allocations only on samples where no pid appeared
+  on the machine; budget `allocsPerTick.processesSteady` 0.5, measured 0.00. The per-mode
+  runs print the collector's allocations without checking them. An injected allocation
+  per sample fails it (1.00 > 0.5).
+- Under a build-like load (a new process every 50 ms) all eight gates pass. Under the
+  extreme four-loop burst the steady test reports it is too busy to measure, and
+  `callsPerTick.*.kernel` also exceeds its ceiling (13.41 > 9) from the same identity
+  lookups; that ceiling is unchanged.
+
 ## Developer ID signing and release workflow (2026-11-08, branch `feat/developer-id-signing`, D-131)
 
 - Apple Developer membership is active (individual, team `YWA9Q642YP`). The Developer
@@ -891,7 +908,7 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 - UI: Overview, CPU, Memory, Power & Sensors, Processes and Disk render Linux hosts; a Linux Containers page reads the `cgroup.*` series.
 - Code review (17 findings) fixed: purge only data setup created, safe rollback ordering, identity components compared separately, chip-class sensor names, saturating iowait, counter decreases as resets, real pre-D-116 types in the skew test, and smaller install/removal checks.
 - Verified: `make check` (Rust 1,038 tests, Vitest 1,205), `make bindings-check`, `make rust-linux-test`, `make remote-scripts-test`, `bun run test:e2e`. On linux-tailscale (Fedora Asahi 41, M1, SELinux enforcing): collector readings against `mpstat`, `free`, `/proc` counters, raw sysfs sensors, `docker stats` and `systemctl`; install, live data within 16 s, update keeping the id, reset-identity and re-pair, purge uninstall leaving nothing, no AVC denials. Footprint in summary mode with one session: 0.32% of one core and 40.6 MB for agent, bridge and Tailscale SSH's session process; the agent alone plateaus at 22.7 MB after the in-memory hour. Accepted as light (D-116).
-- Open: the Add host click-through in the built app, reconnect after a server reboot, the new Linux CI job on GitHub, notarizing with the ELF resources, and the GitHub runner sshd install job the plan named. The `perf_gates` macOS process-allocation tests fail under heavy machine load (process churn) and pass alone.
+- Open: the Add host click-through in the built app, reconnect after a server reboot, the new Linux CI job on GitHub, and the GitHub runner sshd install job the plan named. Notarizing with the ELF resources passed on 2026-11-08 (D-131). The `perf_gates` process-allocation flake under machine load is fixed (see the 2026-11-08 entry).
 - The perf gate caught a Power page regression from the Linux variants (the route subscribed to every power value, so it re-rendered each tick: 53 ms/s against base 31); fixed in `73b4436` with a render-count test. The Power gate still fails about half its runs on base and branch alike: one 53 to 57 ms long task every 10 s when the Energy by app refetch lands on a tick. Memoizing the usage rows, or keeping that commit off the tick, is the follow-up.
 - Merged main's Power rework, whose per-app usage series took D-115; the Linux agent is renumbered D-116. On a Linux host the zones matrix lists the hwmon temperature sensors, the power draw card shows the `power.sensor` rails in its strip and draws no app lines, and Energy by app is hidden; `ZoneTable` and the separate system power card are gone.
 
