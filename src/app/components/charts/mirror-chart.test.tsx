@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
@@ -6,6 +6,7 @@ import { LiveMirrorChart } from "~/components/live-mirror-chart";
 import { BrushProvider } from "~/stores/brush-store";
 import { ChartRangeProvider } from "~/stores/chart-range";
 import { type HostStore, useHostStore } from "~/stores/host-store";
+import { COMPACT_PLOT_INSET, PLOT_INSET } from "./layout";
 import {
   MirrorChart,
   type MirrorChartProps,
@@ -51,6 +52,83 @@ describe("MirrorChart", () => {
     expect(screen.getByText("4 MB/s")).toBeVisible();
     expect(screen.getByText("6 MB/s")).toBeVisible();
     expect(screen.getByText("now")).toBeVisible();
+  });
+
+  it("keeps five ticks, the full inset and hover by default", () => {
+    const { container } = renderWithProviders(<MirrorChart {...plot} />);
+    const ticks = screen.getByText("now").parentElement;
+    expect(ticks?.children).toHaveLength(5);
+    expect(ticks).toHaveStyle({ paddingLeft: `${PLOT_INSET}px` });
+    expect(screen.getByRole("tooltip", { hidden: true })).toBeInTheDocument();
+    expect(container.querySelector('[data-crosshair="paint"]')).not.toBeNull();
+  });
+
+  it("omits the hover readout and crosshair when hover is disabled", () => {
+    const initial = renderWithProviders(<MirrorChart {...plot} />);
+    expect(screen.getByRole("tooltip", { hidden: true })).toBeInTheDocument();
+    initial.unmount();
+    const { container } = renderWithProviders(
+      <MirrorChart {...plot} hover={false} />
+    );
+    fireEvent.pointerMove(screen.getByRole("img"), { clientX: 150 });
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+    expect(container.querySelector("[data-crosshair]")).toBeNull();
+  });
+
+  it.each([null, plot.firstMs + 40_000])(
+    "draws three ticks for end %s",
+    (fixedEndMs) => {
+      const { container } = renderWithProviders(
+        <MirrorChart {...plot} fixedEndMs={fixedEndMs} ticks={3} />
+      );
+      const ticks = container.firstElementChild?.lastElementChild;
+      expect(ticks?.children).toHaveLength(3);
+      if (fixedEndMs === null) expect(ticks).toHaveTextContent("now");
+      else expect(ticks).not.toHaveTextContent("now");
+    }
+  );
+
+  it("aligns compact labels, brush, gaps, ticks and hover to the same inset", () => {
+    const { container } = renderWithProviders(
+      <BrushProvider>
+        <MirrorChart
+          {...plot}
+          brush
+          inset={COMPACT_PLOT_INSET}
+          gaps={[
+            {
+              fromMs: plot.firstMs,
+              toMs: plot.firstMs + 10_000,
+              label: "Asleep",
+            },
+          ]}
+        />
+      </BrushProvider>
+    );
+    const image = screen.getByRole("img");
+    const plotBox = image.parentElement?.parentElement;
+    if (!plotBox) throw new Error("Missing plot box");
+    expect(plotBox).toHaveStyle({ paddingLeft: `${COMPACT_PLOT_INSET}px` });
+    expect(screen.getByText("↑ Read").parentElement).toHaveStyle({
+      width: `${COMPACT_PLOT_INSET - 8}px`,
+    });
+    expect(screen.getByRole("slider")).toHaveStyle({
+      left: `${COMPACT_PLOT_INSET}px`,
+    });
+    expect(
+      screen.getByRole("note", { name: "Asleep" }).parentElement
+    ).toHaveStyle({ left: `${COMPACT_PLOT_INSET}px` });
+    expect(screen.getByText("now").parentElement).toHaveStyle({
+      paddingLeft: `${COMPACT_PLOT_INSET}px`,
+    });
+    const bars = image.parentElement;
+    if (!bars) throw new Error("Missing bars");
+    bars.getBoundingClientRect = () => new DOMRect(0, 0, 200, 97);
+    fireEvent.pointerMove(plotBox, { clientX: 75 });
+    expect(screen.getByRole("tooltip")).toBeVisible();
+    expect(container.querySelector('[data-crosshair="paint"]')).toHaveStyle({
+      left: `calc(${COMPACT_PLOT_INSET}px + (100% - ${COMPACT_PLOT_INSET}px) * 0.375)`,
+    });
   });
 
   it("names actual times once the range's end is fixed", () => {
@@ -117,6 +195,35 @@ describe("MirrorChart", () => {
     expect(veil.nextElementSibling).toHaveStyle({ left: "50.000%" });
   });
 
+  it("paints caller-managed crosshairs at the compact plot's bar centers", () => {
+    const { container } = renderWithProviders(
+      <>
+        <MirrorChart
+          {...plot}
+          brush
+          onHoverTime={vi.fn()}
+          inset={COMPACT_PLOT_INSET}
+          axis={false}
+        />
+        <MirrorChart
+          {...plot}
+          brush
+          onHoverTime={vi.fn()}
+          inset={COMPACT_PLOT_INSET}
+        />
+      </>
+    );
+    paintMirrorCrosshairs(container, 1, 4, COMPACT_PLOT_INSET);
+    const lines = container.querySelectorAll('[data-crosshair="paint"]');
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line).toBeVisible();
+      expect(line).toHaveStyle({
+        left: `calc(${COMPACT_PLOT_INSET}px + (100% - ${COMPACT_PLOT_INSET}px) * 0.375)`,
+      });
+    }
+  });
+
   it("paints one crosshair across sibling plots at the hovered bar", () => {
     const { container } = renderWithProviders(
       <>
@@ -145,6 +252,33 @@ describe("MirrorChart", () => {
 });
 
 describe("LiveMirrorChart", () => {
+  it("forwards hover, tick count and inset to its plot", async () => {
+    const { container } = renderWithProviders(
+      <ChartRangeProvider>
+        <LiveMirrorChart
+          subject="Network"
+          upKey="net.tx_total"
+          downKey="net.rx_total"
+          upLabel="Upload"
+          downLabel="Download"
+          windowMs={60_000}
+          accent="net"
+          format={String}
+          minCeiling={1}
+          hover={false}
+          ticks={3}
+          inset={COMPACT_PLOT_INSET}
+        />
+      </ChartRangeProvider>
+    );
+    await screen.findByRole("img", { name: /^Network: upload above the line/ });
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+    expect(container.querySelector("[data-crosshair]")).toBeNull();
+    const ticks = screen.getByText("now").parentElement;
+    expect(ticks?.children).toHaveLength(3);
+    expect(ticks).toHaveStyle({ paddingLeft: `${COMPACT_PLOT_INSET}px` });
+  });
+
   it("commits once per pushed frame", async () => {
     let store: HostStore | undefined;
     function Capture() {

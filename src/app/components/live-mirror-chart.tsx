@@ -2,7 +2,10 @@ import { brushBucketMs } from "@core/brush";
 import { spanWords } from "@core/live-window";
 import { DAY_MS } from "@core/time-grid";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
-import { MirrorChart } from "~/components/charts/mirror-chart";
+import {
+  MirrorChart,
+  type MirrorChartProps,
+} from "~/components/charts/mirror-chart";
 import { useGridInterval } from "~/hooks/use-grid-interval";
 import { useModuleBuckets } from "~/hooks/use-module-buckets";
 import { useModuleEnd } from "~/hooks/use-module-end";
@@ -14,23 +17,30 @@ const MAX_BARS = 120;
 
 /**
  * Bucket width and count for a mirrored chart over `windowMs`: one bar per
- * sample for short windows, at most `MAX_BARS` bars otherwise, each the
+ * sample for short windows, at most `maxBars` bars otherwise, each the
  * average of its bucket.
  */
 export function mirrorBuckets(
   windowMs: number,
   intervalMs: number,
-  brush = false
+  brush = false,
+  maxBars = MAX_BARS
 ): { bucketMs: number; count: number } {
   const samples = Math.max(1, Math.round(windowMs / intervalMs));
-  const per = Math.max(1, Math.ceil(samples / MAX_BARS));
+  const per = Math.max(1, Math.ceil(samples / maxBars));
   const bucketMs = brush
     ? brushBucketMs(per * intervalMs, intervalMs)
     : per * intervalMs;
   return { bucketMs, count: Math.max(1, Math.round(windowMs / bucketMs)) };
 }
 
-export interface LiveMirrorChartProps {
+export interface LiveMirrorChartProps
+  extends Pick<MirrorChartProps, "hover" | "ticks" | "inset"> {
+  /**
+   * Most bars drawn (default 120). A narrow card needs fewer: each bar
+   * keeps a 2 px gap, so 120 bars in a 220 px plot have no width left.
+   */
+  maxBars?: number;
   /**
    * Series drawn above the axis (upload, read). Pages pass a Rust total
    * (`net.tx_total`, D-092), so the chart never adds interfaces itself.
@@ -79,12 +89,17 @@ export function LiveMirrorChart({
   downHeight = 120,
   gaps,
   brush = false,
+  hover,
+  ticks,
+  inset,
+  maxBars,
 }: LiveMirrorChartProps) {
   const intervalMs = useGridInterval();
   const { bucketMs: requestedBucketMs, count: requestedCount } = mirrorBuckets(
     windowMs,
     intervalMs,
-    brush
+    brush,
+    maxBars
   );
   const fixedEnd = useModuleEnd();
   const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
@@ -118,6 +133,9 @@ export function LiveMirrorChart({
         downHeight={downHeight}
         gaps={gaps}
         brush={brush}
+        hover={hover}
+        ticks={ticks}
+        inset={inset}
         dateLabels={fixedEnd !== null || windowMs >= DAY_MS}
         pending={endMs === null}
       />

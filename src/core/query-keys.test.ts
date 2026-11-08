@@ -24,7 +24,6 @@ const RANGE = { windowMs: 3600000, endMs: null, bucketMs: 10_000 } as const;
 
 const KEYS = {
   historyRange: historyKeys.range(H, "cpu", RANGE, "auto"),
-  maxima: historyKeys.maxima(H, "gpu", "gpu.power"),
   historySize: hostKeys.historySize(H),
   historyHealth: hostKeys.historyHealth(H),
   hostDetail: hostKeys.detail(H),
@@ -46,7 +45,6 @@ describe("settingsInvalidation", () => {
     const next = { ...base, history: { ...base.history, retention_days: 7 } };
     expect(stale(next)).toEqual([
       "historyRange",
-      "maxima",
       "historySize",
       "historyHealth",
     ]);
@@ -57,7 +55,7 @@ describe("settingsInvalidation", () => {
       ...base,
       modules: { ...base.modules, gpu: { enabled: false } },
     };
-    expect(stale(next)).toEqual(["historyRange", "maxima", "historySize"]);
+    expect(stale(next)).toEqual(["historyRange", "historySize"]);
   });
 
   it("a menu bar change alone invalidates nothing", () => {
@@ -116,7 +114,6 @@ describe("settingsInvalidation", () => {
   it("with no previous settings every dependent key is stale", () => {
     expect(stale(base, null)).toEqual([
       "historyRange",
-      "maxima",
       "historySize",
       "historyHealth",
     ]);

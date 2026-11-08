@@ -1,15 +1,21 @@
-import { scaleOrNull } from "@core/chart-math/numeric";
 /**
  * The six Overview cards (plan 4.5), each subscribed to its
  * own slice so one module's tick does not re-render the others.
  */
 
-import { formatPercent } from "@core/format";
+import { formatBytes } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
+import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
-import { useCompactStream } from "~/hooks/use-compact-stream";
-import { useGpuMaxMhz, useHostRecord } from "~/hooks/use-host-record";
+import {
+  CPU_HERO,
+  GPU_HERO,
+  memoryHero,
+  POWER_HERO,
+} from "~/components/module-hero";
+import { useHostRecord } from "~/hooks/use-host-record";
+import { useModuleEnd } from "~/hooks/use-module-end";
 import {
   useProcessColumnCaps,
   useProcessGpu,
@@ -24,7 +30,6 @@ import {
   keysOf,
   selectVolumeCapacity,
   useCpu,
-  useDisk,
   useGpu,
   useMemory,
   useNetwork,
@@ -35,10 +40,9 @@ import {
 } from "~/stores/live-selectors";
 import type { Corner } from "~/widgets/lib/accent";
 import { MetricCard } from "~/widgets/metric-card";
-import { useMax24h } from "../_hooks/use-overview-history";
+import { useOverviewDisk } from "../_hooks/use-overview-disk";
 import {
   type ClusterInput,
-  coresLabel,
   cpuCard,
   diskCard,
   gpuCard,
@@ -46,9 +50,13 @@ import {
   networkCard,
   powerCard,
 } from "../_lib/card-props";
-import { scaleFrom } from "../_lib/history";
 import { sensorPowerCard, usedMemoryCard } from "../_lib/host-card-props";
 import { ifaceRates, linkRate, thermalSensors } from "../_lib/selectors";
+import {
+  OverviewDiskChart,
+  OverviewHistoryChart,
+  OverviewNetworkChart,
+} from "./overview-history-charts";
 
 const NO_PROCESSES: readonly LiveProcess[] = [];
 
@@ -58,6 +66,7 @@ function useProcesses(): readonly LiveProcess[] {
 
 interface CardProps {
   origin: Corner;
+  windowMs: number;
 }
 
 function useOpen() {
@@ -65,7 +74,7 @@ function useOpen() {
   return (href: string) => navigate(href);
 }
 
-export function OverviewCpuCard({ origin }: CardProps) {
+export function OverviewCpuCard({ origin, windowMs }: CardProps) {
   const cpu = useCpu();
   const host = useHostRecord();
   const topology = host?.info.cpu_topology ?? [];
@@ -77,24 +86,19 @@ export function OverviewCpuCard({ origin }: CardProps) {
       e: e ? held(s, clusterFreqKey(e.name)) : null,
     }))
   );
-  const maxHz = (mhz: readonly number[] | undefined) => {
-    const top = mhz?.[mhz.length - 1];
-    return top === undefined ? null : top * 1e6;
-  };
   // A host whose cores are all one kind (`uniform`, D-116) has one cluster.
   const only = !p || !e ? topology[0] : undefined;
   const onlyFreq = useHost((s) =>
     only ? held(s, clusterFreqKey(only.name)) : null
   );
   const clusters: [ClusterInput, ClusterInput] | [ClusterInput] = only
-    ? [{ label: "Frequency", freqHz: onlyFreq, maxHz: maxHz(only.dvfs_mhz) }]
+    ? [{ label: "Frequency", freqHz: onlyFreq }]
     : [
-        { label: "P-cluster", freqHz: freq.p, maxHz: maxHz(p?.dvfs_mhz) },
-        { label: "E-cluster", freqHz: freq.e, maxHz: maxHz(e?.dvfs_mhz) },
+        { label: "P-cluster", freqHz: freq.p },
+        { label: "E-cluster", freqHz: freq.e },
       ];
   const props = cpuCard({
     ...cpu,
-    coresLabel: coresLabel(topology),
     coreCount: topology.reduce((n, c) => n + c.cores.length, 0),
     clusters,
     processes: useProcesses(),
@@ -103,6 +107,14 @@ export function OverviewCpuCard({ origin }: CardProps) {
     <MetricCard
       {...props}
       origin={origin}
+      unit={useNowUnit()}
+      chart={
+        <OverviewHistoryChart
+          spec={CPU_HERO}
+          windowMs={windowMs}
+          accent="cpu"
+        />
+      }
       notice={useReadFailure("cpu.total")}
       href="/dashboard/cpu"
       onOpen={useOpen()}
@@ -110,47 +122,26 @@ export function OverviewCpuCard({ origin }: CardProps) {
   );
 }
 
-/**
- * The GPU card: top 5 processes by GPU share with per-process GPU time
- * (D-085), else the 60 s utilization chart. Two components, so the list
- * version neither reads the ring buffer nor re-renders on its version.
- */
-export function OverviewGpuCard({ origin }: CardProps) {
-  return useProcessGpu() ? (
-    <GpuProcessesCard origin={origin} />
-  ) : (
-    <GpuChartCard origin={origin} />
-  );
-}
-
-function useGpuCardInput() {
+/** Process batches do not touch this card when the host cannot measure GPU shares. */
+export function OverviewGpuCard({ origin, windowMs }: CardProps) {
   const gpu = useGpu();
-  const maxMhz = useGpuMaxMhz();
-  const maxFreqHz = scaleOrNull(maxMhz, 1e6);
-  const powerMax = useMax24h("power", "power.gpu");
-  return {
-    ...gpu,
-    maxFreqHz,
-    powerScaleW: scaleFrom(powerMax, 5),
-    subtitle: "",
-  };
-}
-
-function GpuChartCard({ origin }: CardProps) {
-  const input = useGpuCardInput();
-  const stream = useCompactStream({
-    seriesKey: "gpu.util",
-    accent: "gpu",
-    subject: "GPU",
-    now: formatPercent(input.util),
-    height: 98,
-    yMax: 100,
-  });
-  const props = gpuCard({ ...input, body: { stream } });
+  const perProcess = useProcessGpu();
+  const processes = useHost((s) =>
+    perProcess ? (s.processes?.rows ?? NO_PROCESSES) : null
+  );
+  const props = gpuCard({ ...gpu, processes });
   return (
     <MetricCard
       {...props}
       origin={origin}
+      unit={useNowUnit()}
+      chart={
+        <OverviewHistoryChart
+          spec={GPU_HERO}
+          windowMs={windowMs}
+          accent="gpu"
+        />
+      }
       notice={useReadFailure("gpu.util")}
       href="/dashboard/gpu"
       onOpen={useOpen()}
@@ -158,41 +149,41 @@ function GpuChartCard({ origin }: CardProps) {
   );
 }
 
-function GpuProcessesCard({ origin }: CardProps) {
-  const props = gpuCard({
-    ...useGpuCardInput(),
-    body: { processes: useProcesses() },
-  });
-  return (
-    <MetricCard
-      {...props}
-      origin={origin}
-      notice={useReadFailure("gpu.util")}
-      href="/dashboard/gpu"
-      onOpen={useOpen()}
-    />
-  );
-}
-
-export function OverviewMemoryCard({ origin }: CardProps) {
+export function OverviewMemoryCard({ origin, windowMs }: CardProps) {
   const mem = useMemory();
   const host = useHostRecord();
-  const binary = useUnits().bytes === "GiB";
+  const { bytes } = useUnits();
+  const binary = bytes === "GiB";
   const input = {
     ...mem,
-    totalBytes: host?.info.mem_total_bytes ?? null,
     binary,
     processes: useProcesses(),
   };
   // A Mac always has the composition; a Linux layout has no `mem.app`.
-  const props =
-    host === undefined || host.info.os === "mac_os" || mem.composition
-      ? memoryCard(input)
-      : usedMemoryCard(input);
+  const mac =
+    host === undefined || host.info.os === "mac_os" || mem.composition;
+  const props = mac ? memoryCard(input) : usedMemoryCard(input);
+  const info = host?.info;
+  const os = info?.os;
+  const totalBytes = info?.mem_total_bytes;
+  const spec = useMemo(
+    () =>
+      memoryHero(
+        os === undefined || totalBytes === undefined
+          ? undefined
+          : { os, mem_total_bytes: totalBytes },
+        (v) => formatBytes(v, { units: bytes })
+      ),
+    [os, totalBytes, bytes]
+  );
   return (
     <MetricCard
       {...props}
       origin={origin}
+      unit={useNowUnit()}
+      chart={
+        <OverviewHistoryChart spec={spec} windowMs={windowMs} accent="mem" />
+      }
       notice={useReadFailure("mem.used")}
       href="/dashboard/memory"
       onOpen={useOpen()}
@@ -200,7 +191,7 @@ export function OverviewMemoryCard({ origin }: CardProps) {
   );
 }
 
-export function OverviewPowerCard({ origin }: CardProps) {
+export function OverviewPowerCard({ origin, windowMs }: CardProps) {
   const p = usePower();
   const sensors = useSensors();
   const powerSource = usePowerSource();
@@ -217,7 +208,6 @@ export function OverviewPowerCard({ origin }: CardProps) {
   const common = {
     system: p.system,
     fanRpm: sensors.fanRpm,
-    fanMax: sensors.fanMax,
     passive: hasSensorLayout && sensors.fanCount === 0,
     powerSource,
     temperature,
@@ -242,6 +232,14 @@ export function OverviewPowerCard({ origin }: CardProps) {
     <MetricCard
       {...props}
       origin={origin}
+      unit={useNowUnit(props.unit)}
+      chart={
+        <OverviewHistoryChart
+          spec={POWER_HERO}
+          windowMs={windowMs}
+          accent="power"
+        />
+      }
       notice={useReadFailure("power.system")}
       href="/dashboard/power"
       onOpen={useOpen()}
@@ -249,7 +247,7 @@ export function OverviewPowerCard({ origin }: CardProps) {
   );
 }
 
-export function OverviewNetworkCard({ origin }: CardProps) {
+export function OverviewNetworkCard({ origin, windowMs }: CardProps) {
   const primary = usePrimaryIface();
   const net = useNetwork();
   const rates = useHost(useShallow(ifaceRates));
@@ -280,48 +278,54 @@ export function OverviewNetworkCard({ origin }: CardProps) {
     <MetricCard
       {...props}
       origin={origin}
+      unit={useNowUnit()}
+      chart={<OverviewNetworkChart windowMs={windowMs} />}
       href="/dashboard/network"
       onOpen={useOpen()}
     />
   );
 }
 
-export function OverviewDiskCard({ origin }: CardProps) {
-  const disk = useDisk();
+export function OverviewDiskCard({ origin, windowMs }: CardProps) {
+  const { read, write, query, range, fixedEnd, devicesFailed } =
+    useOverviewDisk(windowMs);
   const boot = useHostRecord()?.info.boot_mounts?.[0] ?? null;
   const vol = useHost(useShallow((s) => selectVolumeCapacity(s, boot)));
-  const readMax = useMax24h("disk", "disk.read_total");
-  const writeMax = useMax24h("disk", "disk.write_total");
-  const props = diskCard({
-    read: disk.read,
-    write: disk.write,
-    totalBytes: vol.total,
-    freeBytes: vol.free,
-    usedBytes: vol.used,
-    readScale: scaleFrom(readMax, 500e6),
-    writeScale: scaleFrom(writeMax, 500e6),
-    rate: useUnits().rate,
-    processes: useProcesses(),
-  });
+  const units = useUnits();
   // Rows without measured disk rates (`process_disk_io` false, D-116) hold
   // zeros that must not read as idle processes.
   const diskIo = useProcessColumnCaps().diskIo;
+  const processes = useHost((s) =>
+    diskIo ? (s.processes?.rows ?? NO_PROCESSES) : null
+  );
+  const props = diskCard({
+    read,
+    write,
+    totalBytes: vol.total,
+    usedBytes: vol.used,
+    bytes: units.bytes,
+    rate: units.rate,
+    processes,
+  });
   return (
     <MetricCard
       {...props}
-      body={
-        diskIo
-          ? props.body
-          : {
-              kind: "list",
-              ariaLabel: "Top processes by disk I/O",
-              rows: [],
-              note: "Disk rates by process aren't readable on this host",
-            }
-      }
       origin={origin}
+      unit={useNowUnit()}
+      chart={
+        <OverviewDiskChart
+          query={query}
+          range={range}
+          fixedEnd={fixedEnd}
+          devicesFailed={devicesFailed}
+        />
+      }
       href="/dashboard/disk"
       onOpen={useOpen()}
     />
   );
+}
+
+function useNowUnit(unit = ""): string {
+  return `${unit}${useModuleEnd() === null ? "" : " now"}`;
 }

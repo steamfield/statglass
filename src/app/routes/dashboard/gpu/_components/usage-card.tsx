@@ -1,27 +1,15 @@
 import { formatGhz, formatPercent, formatWatts } from "@core/format";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
-import {
-  type RangeTotal,
-  RangeTotalsStrip,
-} from "~/components/range-totals-strip";
+import { GPU_HERO } from "~/components/module-hero";
+import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
 import { StatList } from "~/widgets/stat-list";
 
 const HELD = ["gpu.util", "gpu.render", "gpu.tiler", "gpu.freq", "power.gpu"];
-const CHART = ["gpu.util"];
 const HEIGHT = 200;
-/** Over the window or the selection (D-099): `gpu.util` averaged and its peak. */
-const TOTALS: readonly RangeTotal[] = [
-  {
-    metric: "gpu.util",
-    label: "Avg",
-    format: (s) => formatPercent(s.avg, { decimals: 1 }),
-  },
-  { metric: "gpu.util", label: "Peak", format: (s) => formatPercent(s.max) },
-];
 
 /**
  * Utilization strip over the utilization chart, the GPU page's lead card,
@@ -30,7 +18,9 @@ const TOTALS: readonly RangeTotal[] = [
  */
 export function UsageCard({ windowMs }: { windowMs: number }) {
   const v = useHeld(HELD);
-  const chart = useModuleChart(CHART, windowMs, "gpu", { brush: true });
+  const chart = useModuleChart(GPU_HERO.keys, windowMs, GPU_HERO.module, {
+    brush: true,
+  });
   const util = v["gpu.util"] ?? null;
 
   return (
@@ -51,23 +41,17 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
           />
           <RangeTotalsStrip
             windowMs={windowMs}
-            totals={TOTALS}
+            totals={GPU_HERO.totals}
             testId="gpu-range-totals"
           />
         </div>
         <ModuleHistoryChart
           chart={chart}
-          lines={[
-            {
-              key: "gpu.util",
-              values: chart.series.values["gpu.util"] ?? [],
-              step: 1,
-            },
-          ]}
-          yAxis="percent"
+          lines={GPU_HERO.lines(chart.series.values)}
+          yAxis={GPU_HERO.yAxis}
           accent="gpu"
           height={HEIGHT}
-          subject="GPU utilization"
+          subject={GPU_HERO.subject}
           now={`now ${formatPercent(util)}`}
         />
       </SectionCard>

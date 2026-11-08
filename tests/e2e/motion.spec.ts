@@ -40,34 +40,64 @@ const running = (page: Page) =>
 
 /** All running motion except the explicitly bounded live-value transitions. */
 const unexpectedRunning = (page: Page) =>
-  page.evaluate(() =>
-    document
+  page.evaluate(() => {
+    const boundedTick = (effect: KeyframeEffect) => {
+      const timing = effect.getTiming();
+      return (
+        timing.iterations === 1 &&
+        typeof timing.duration === "number" &&
+        Number.isFinite(timing.duration) &&
+        timing.duration > 0 &&
+        timing.duration <= 150
+      );
+    };
+    const scrolls = (effect: KeyframeEffect, target: Element) => {
+      const frames = effect.getKeyframes();
+      // useTickScroll animates only the chart layer's translateX, for one tick token.
+      return (
+        target.matches("main div[class*='_layer_']") &&
+        frames.length === 2 &&
+        frames.every(
+          (f) =>
+            typeof f.transform === "string" &&
+            /^translateX\(/.test(f.transform) &&
+            Object.keys(f).every((key) =>
+              [
+                "transform",
+                "offset",
+                "computedOffset",
+                "easing",
+                "composite",
+              ].includes(key)
+            )
+        )
+      );
+    };
+    return document
       .getAnimations()
       .filter((a) => a.playState === "running")
       .filter((a) => {
-        if (!(a instanceof CSSTransition)) return true;
-        const target = (a.effect as KeyframeEffect | null)?.target;
-        if (!(target instanceof Element)) return true;
-        const timing = a.effect?.getTiming();
-        // CSS shortens an interrupted reversal; its declared token stays 150ms.
+        const effect = a.effect;
+        if (
+          !(effect instanceof KeyframeEffect) ||
+          !(effect.target instanceof Element)
+        )
+          return true;
+        const target = effect.target;
+        if (!boundedTick(effect)) return true;
+        if (!(a instanceof CSSTransition))
+          return a instanceof CSSAnimation || !scrolls(effect, target);
         const declared = getComputedStyle(target).transitionDuration.split(",");
-        // RingGauge: each live reading tweens arc length and segment rotation.
         const ring =
           target.matches("main svg circle") &&
           target.classList.contains(
             "transition-[stroke-dashoffset,transform]"
           ) &&
           ["stroke-dashoffset", "transform"].includes(a.transitionProperty);
-        // InlineBar's MeterTrack: each live reading tweens the fill scale.
         const bar =
           target.matches("main span.origin-left.transition-transform") &&
           a.transitionProperty === "transform";
         return !(
-          timing?.iterations === 1 &&
-          typeof timing.duration === "number" &&
-          Number.isFinite(timing.duration) &&
-          timing.duration > 0 &&
-          timing.duration <= 150 &&
           declared.every((value) => value.trim() === "0.15s") &&
           (ring || bar)
         );
@@ -78,8 +108,8 @@ const unexpectedRunning = (page: Page) =>
           : a instanceof CSSTransition
             ? a.transitionProperty
             : a.constructor.name
-      )
-  );
+      );
+  });
 
 const openOverview = async (page: Page) => {
   await page.setViewportSize({ width: 1280, height: 833 });
@@ -91,6 +121,15 @@ const openOverview = async (page: Page) => {
 
 async function reverseRing(page: Page, duration: number | null = null) {
   await openOverview(page);
+  await page.locator("[data-sidebar-item][href='/dashboard/gpu']").click();
+  await expect(
+    page.getByRole("heading", { name: "GPU", exact: true })
+  ).toBeVisible();
+  await expect(
+    page
+      .locator("main circle.transition-\\[stroke-dashoffset\\,transform\\]")
+      .first()
+  ).toBeAttached();
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   const original = await page.evaluate(async (duration) => {
     const circle = Array.from(document.querySelectorAll("main circle")).find(
@@ -163,6 +202,28 @@ test("live-motion validation accepts shortened reversals and rejects long transi
   const longDeclared = await reverseRing(page, 400);
   expect(longDeclared.duration).toBeLessThan(150);
   expect(await unexpectedRunning(page)).toContain("stroke-dashoffset");
+
+  await openOverview(page);
+  await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  await page.evaluate(async () => {
+    const layer = document.querySelector("main div[class*='_layer_']");
+    if (!layer) throw new Error("No chart scroll layer");
+    const scroll = layer.animate(
+      [{ transform: "translateX(1%)" }, { transform: "translateX(0)" }],
+      { duration: 150 }
+    );
+    scroll.updatePlaybackRate(0);
+    await scroll.ready;
+  });
+  expect(await unexpectedRunning(page)).toEqual([]);
+  await page.evaluate(() => {
+    const scroll = document
+      .querySelector("main div[class*='_layer_']")
+      ?.getAnimations()[0];
+    if (!scroll?.effect) throw new Error("No scroll animation");
+    scroll.effect.updateTiming({ duration: 400 });
+  });
+  expect(await unexpectedRunning(page)).toContain("Animation");
 
   await openOverview(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
@@ -309,4 +370,42 @@ test("Low Power Mode engages Performance mode and stops all motion", async ({
     enter: "0ms",
     crossfade: "0ms",
   });
+});
+
+test("Overview cards have one animated ancestor and its headers enter separately", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openOverview(page);
+  const card = page
+    .getByRole("main")
+    .getByRole("link", { name: "CPU", exact: true });
+  await expect(card).toBeVisible();
+  const names = await card.evaluate((card) => {
+    const names: string[] = [];
+    for (
+      let ancestor = card.parentElement;
+      ancestor && ancestor.tagName !== "MAIN";
+      ancestor = ancestor.parentElement
+    ) {
+      const name = getComputedStyle(ancestor).animationName;
+      if (name !== "none") names.push(name);
+    }
+    return names;
+  });
+  expect(names).toHaveLength(1);
+  expect(names[0]).toMatch(/lift/);
+  const titleMotion = await page
+    .getByRole("heading", { name: "Overview", exact: true })
+    .evaluate((title) => {
+      const header = title.closest("header");
+      if (!header) throw new Error("Missing page header");
+      return getComputedStyle(header).animationName;
+    });
+  expect(titleMotion).toMatch(/lift/);
+  expect(
+    await page
+      .getByRole("region", { name: "This Mac" })
+      .evaluate((header) => getComputedStyle(header).animationName)
+  ).toMatch(/lift/);
 });

@@ -7,10 +7,9 @@ import {
   resolutionLabel,
 } from "@core/format";
 import type { DiskIoPage, DiskIoPoint } from "@core/generated/bindings";
-import { gapBands } from "@core/history-state";
+import type { gapBands } from "@core/history-state";
 import { spanWords } from "@core/live-window";
-import { DAY_MS, floorTo } from "@core/time-grid";
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import {
   ChartTooltipHead,
   ChartTooltipRow,
@@ -24,6 +23,7 @@ import {
   MirrorChart,
   paintMirrorCrosshairs,
 } from "~/components/charts/mirror-chart";
+import { useDiskIoReadWriteChart } from "~/components/disk-io-chart";
 import { SegmentedControl } from "~/components/segmented-control";
 
 export type IoSecondary = "time" | "ops";
@@ -95,17 +95,8 @@ export function DiskIoCharts({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const hovered = useRef<number | null>(null);
-  const first = floorTo(range.fromMs, page.bucket_ms);
-  const count = Math.max(1, Math.ceil((range.toMs - first) / page.bucket_ms));
-  const windowMs = range.toMs - range.fromMs;
-  const dates = windowMs >= DAY_MS;
-  const points = useMemo(() => {
-    const byTime = new Map(page.points.map((p) => [p.t, p]));
-    return Array.from(
-      { length: count },
-      (_, i) => byTime.get(first + i * page.bucket_ms) ?? null
-    );
-  }, [page.points, page.bucket_ms, count, first]);
+  const { points, first, count, windowMs, dates, gaps, chart } =
+    useDiskIoReadWriteChart(page, range, fixedEndMs);
   const paint = useCallback(
     (time: number | null) => {
       hovered.current = time;
@@ -140,10 +131,6 @@ export function DiskIoCharts({
     [count, first, page.bucket_ms, points, dates, fixedEndMs]
   );
   useLayoutEffect(() => paint(hovered.current), [paint]);
-  const gap = useMemo(
-    () => gapBands(page.gaps, first, range.toMs, { module: "disk" }),
-    [page.gaps, first, range.toMs]
-  );
   const last = points.at(-1);
   const plot = {
     points,
@@ -153,20 +140,12 @@ export function DiskIoCharts({
     fixedEndMs,
     span: spanWords(windowMs, fixedEndMs),
     dates,
-    gaps: gap,
+    gaps,
     onHover: paint,
   };
   return (
     <div ref={host} className="relative flex flex-col gap-3">
-      <IoPlot
-        {...plot}
-        subject="Disk I/O"
-        up="read_bps"
-        down="write_bps"
-        format={formatRate}
-        minimum={1e6}
-        axis={false}
-      />
+      <MirrorChart {...chart} brush onHoverTime={paint} axis={false} />
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <SegmentedControl
           options={OPTIONS}

@@ -1,10 +1,7 @@
-import { stackSum } from "@core/chart-math";
-import { formatBytes } from "@core/format";
+import { formatBytes, MISSING } from "@core/format";
 import { brushScopeProps } from "~/components/brush-overlay";
-import {
-  BYTES_GUTTER,
-  ModuleHistoryChart,
-} from "~/components/charts/module-history-chart";
+import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
+import type { HeroChartSpec } from "~/components/module-hero";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
@@ -12,26 +9,6 @@ import { useUnits } from "~/hooks/use-units";
 import { Legend } from "~/widgets/legend";
 
 const HEIGHT = 160;
-const USED = "mem.used";
-const CACHED = "mem.cached";
-const KEYS = [USED, CACHED];
-
-/**
- * Cached stacked on used, slot by slot from the newest (the chart
- * right-aligns). A slot missing either part is a gap, never a partial top.
- */
-function stackOnto(
-  base: readonly (number | null)[],
-  top: readonly (number | null)[]
-): (number | null)[] {
-  const n = Math.min(base.length, top.length);
-  const b = base.length - n;
-  const t = top.length - n;
-  return Array.from({ length: n }, (_, i) =>
-    stackSum([base[b + i], top[t + i]])
-  );
-}
-
 /**
  * Used memory with cached files stacked on it over the chart window, up to
  * MemTotal (D-091), on a host that reports Linux's used, cached and free
@@ -41,18 +18,21 @@ function stackOnto(
  */
 export function UsedCard({
   windowMs,
-  totalBytes,
+  spec,
+  totalLabel,
 }: {
   windowMs: number;
-  /** `HostInfo.mem_total_bytes`: the chart's ceiling. */
-  totalBytes: number;
+  /** Host-selected used-memory chart and MemTotal scale. */
+  spec: HeroChartSpec;
+  totalLabel: string | null;
 }) {
   const units = useUnits();
-  const v = useHeld(KEYS);
-  const chart = useModuleChart(KEYS, windowMs, "memory", { brush: true });
-  const used = chart.series.values[USED] ?? [];
   const fmt = (x: number | null | undefined) =>
     formatBytes(x, { units: units.bytes });
+  const v = useHeld(spec.keys);
+  const chart = useModuleChart(spec.keys, windowMs, spec.module, {
+    brush: true,
+  });
 
   return (
     <div {...brushScopeProps} className="contents">
@@ -67,27 +47,20 @@ export function UsedCard({
         aside={
           <Legend
             items={[
-              { label: "Used", value: fmt(v[USED]), step: 1 },
-              { label: "Cached files", value: fmt(v[CACHED]), step: 4 },
+              { label: "Used", value: fmt(v["mem.used"]), step: 1 },
+              { label: "Cached files", value: fmt(v["mem.cached"]), step: 4 },
             ]}
           />
         }
       >
         <ModuleHistoryChart
           chart={chart}
-          lines={[
-            {
-              key: CACHED,
-              values: stackOnto(used, chart.series.values[CACHED] ?? []),
-              step: 4,
-            },
-            { key: USED, values: used, step: 1 },
-          ]}
-          yAxis={{ ceiling: totalBytes, format: fmt, gutter: BYTES_GUTTER }}
+          lines={spec.lines(chart.series.values)}
+          yAxis={spec.yAxis}
           accent="mem"
           height={HEIGHT}
-          subject="Memory used and cached files"
-          now={`of ${fmt(totalBytes)}, used ${fmt(v[USED])}, cached ${fmt(v[CACHED])}`}
+          subject={spec.subject}
+          now={`of ${totalLabel ?? MISSING}, used ${fmt(v["mem.used"])}, cached ${fmt(v["mem.cached"])}`}
         />
       </SectionCard>
     </div>

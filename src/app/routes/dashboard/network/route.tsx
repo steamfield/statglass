@@ -1,15 +1,12 @@
-import { formatBytes, formatPercent, formatRate } from "@core/format";
-import type { MetricStat } from "@core/generated/bindings";
+import { formatPercent, formatRate } from "@core/format";
 import { keyByLabel, labelValues } from "@core/series-key";
 import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
 import { InterfaceTable } from "~/components/interface-table";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
+import { NETWORK_HERO } from "~/components/module-hero";
 import { ModulePage } from "~/components/module-page";
-import {
-  type RangeTotal,
-  RangeTotalsStrip,
-} from "~/components/range-totals-strip";
+import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useGapBands } from "~/hooks/use-gap-bands";
@@ -29,20 +26,6 @@ import { interfaceRows, networkSubtitle, ofLink } from "./_lib/network";
 
 const NO_KEYS: readonly string[] = [];
 const linkRateKey = keyByLabel("net.link_rate", "iface");
-
-/** Interface bytes from the stored totals, in every edition (D-091, D-098). */
-const TOTALS: readonly RangeTotal[] = [
-  {
-    metric: "net.rx_total",
-    label: "↓ Downloaded",
-    format: (s: MetricStat) => formatBytes(s.integral),
-  },
-  {
-    metric: "net.tx_total",
-    label: "↑ Uploaded",
-    format: (s: MetricStat) => formatBytes(s.integral),
-  },
-];
 
 /**
  * Network (plan 4.11): the Overview Network card and the popover's
@@ -119,7 +102,7 @@ export default function NetworkRoute() {
                 />
                 <RangeTotalsStrip
                   windowMs={windowMs}
-                  totals={TOTALS}
+                  totals={NETWORK_HERO.totals}
                   testId="network-totals"
                 />
               </div>
@@ -127,15 +110,10 @@ export default function NetworkRoute() {
                 <LiveMirrorChart
                   brush={brush}
                   gaps={gaps}
-                  subject="Network"
-                  upKey="net.tx_total"
-                  downKey="net.rx_total"
-                  upLabel="Upload"
-                  downLabel="Download"
+                  {...NETWORK_HERO.chart}
                   windowMs={windowMs}
                   accent="net"
                   format={(v) => formatRate(v, { units: units.rate })}
-                  minCeiling={100_000}
                 />
                 {brush && <SelectionSummary windowMs={windowMs} />}
               </div>

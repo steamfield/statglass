@@ -4,21 +4,25 @@
  * component, no per-process energy and no SoC hottest zone. Each starts from
  * the Mac card and replaces the parts that would otherwise read "—".
  */
-import { ratio } from "@core/chart-math";
-import { formatBytes, formatPercent, formatTemperature } from "@core/format";
+import {
+  formatBytes,
+  formatPercent,
+  formatRpm,
+  formatTemperature,
+  MISSING,
+} from "@core/format";
 import { topBy } from "@core/top-by";
 import { type CardBase, memoryCard, powerCard } from "./card-props";
 
 /**
  * Memory from `mem.used`, `mem.cached` and `mem.free` (used + cached + free
- * is MemTotal on Linux): the ring is used and cached, the first bar is
- * `mem.psi{stall=some}`, and the total is MemTotal as measured rather than
- * a marketing size.
+ * is MemTotal on Linux), with `mem.psi{stall=some}` for pressure stall.
+ * The total is MemTotal as measured rather than a marketing size.
  */
 export function usedMemoryCard(
   input: Omit<
     Parameters<typeof memoryCard>[0],
-    "app" | "wired" | "compressed" | "pressure"
+    "app" | "wired" | "compressed" | "pressureLevel"
   > & { cached: number | null; psiSome: number | null }
 ): CardBase {
   const units = input.binary ? "GiB" : "GB";
@@ -27,46 +31,29 @@ export function usedMemoryCard(
     app: null,
     wired: null,
     compressed: null,
-    pressure: null,
+    pressureLevel: null,
   });
   return {
     ...base,
-    subtitle:
-      input.totalBytes === null ? "" : formatBytes(input.totalBytes, { units }),
-    ring: {
-      ...base.ring,
-      fractions: [
-        ratio(input.used, input.totalBytes),
-        ratio(input.cached, input.totalBytes),
-      ],
-    },
-    bars: [
-      {
-        label: "Pressure stall",
-        value: formatPercent(input.psiSome, { decimals: 1 }),
-        fraction: ratio(input.psiSome, 100),
-      },
-      base.bars[1],
-    ],
-    legend: [
-      {
-        label: "Used",
-        value: formatBytes(input.used, { units, decimals: 1 }),
-        step: 1,
-      },
+    stats: [
+      { label: "Used", value: base.value },
       {
         label: "Cached",
         value: formatBytes(input.cached, { units, decimals: 1 }),
-        step: 2,
       },
+      {
+        label: "Pressure stall",
+        value: formatPercent(input.psiSome, { decimals: 1 }),
+      },
+      { label: "Swap", value: formatBytes(input.swapUsed, { units }) },
     ],
   };
 }
 
 /**
- * Power from `power.system` and the `thermal.sensor` readings: the ring is
- * the system draw alone, the temperature bar the hottest sensor, and the
- * list the sensors hottest first, in place of top processes by energy.
+ * Power from `power.system` and the `thermal.sensor` readings: system draw
+ * alone, the hottest sensor as a fact, and sensors hottest first in place
+ * of top processes by energy (D-116).
  */
 export function sensorPowerCard(
   input: Omit<
@@ -85,11 +72,20 @@ export function sensorPowerCard(
   });
   return {
     ...base,
-    ring: { ...base.ring, fractions: [null] },
-    bars: [{ ...base.bars[0], label: "Hottest sensor" }, base.bars[1]],
-    legend: [],
-    body: {
-      kind: "list",
+    stats: [
+      {
+        label: "Hottest sensor",
+        value: hottest[0]
+          ? formatTemperature(hottest[0].value, { units: input.temperature })
+          : MISSING,
+      },
+      {
+        label: "Fans",
+        value: input.passive ? "Passive cooling" : formatRpm(input.fanRpm),
+      },
+    ],
+    list: {
+      caption: "Now",
       ariaLabel: "Temperature sensors, hottest first",
       rows: hottest.map(({ row: s, value: c }) => ({
         id: s.name,

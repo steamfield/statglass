@@ -1,118 +1,133 @@
-import { useId } from "react";
+import { OctagonAlert, TriangleAlert } from "lucide-react";
+import { type ReactNode, useId } from "react";
+import { NumberTicker } from "~/lib/motion/number-ticker";
 import { cn } from "~/lib/utils";
 import { LinkCard } from "./card";
 import { CardNotice } from "./card-notice";
-import { InlineBar, type InlineBarProps } from "./inline-bar";
-import { Legend, type LegendItem, Swatch } from "./legend";
+import { Swatch } from "./legend";
 import type { Accent, Corner } from "./lib/accent";
 import { ProcessList, type ProcessListRow } from "./process-list";
-import { RingGauge, type RingGaugeProps } from "./ring-gauge";
-import { StreamArea, type StreamAreaProps } from "./stream-area";
+import { StatList, type StatListItem } from "./stat-list";
 
-/**
- * What fills the bottom of the card: a top-5 list (processes, or interfaces on
- * the Network card without per-process network), or a 60 s chart (the GPU card
- * on a host without `process_gpu`). `note` is one quiet line under
- * the list saying what it covers ("Your processes only").
- */
-export type MetricCardBody =
-  | { kind: "list"; ariaLabel: string; rows: ProcessListRow[]; note?: string }
-  | { kind: "stream"; stream: StreamAreaProps };
+export interface MetricCardList {
+  ariaLabel: string;
+  rows: ProcessListRow[];
+  note?: string;
+  caption?: string;
+}
+
+/** A state that needs the user, shown as a chip in the header (design-system.md "Status colors"). */
+export interface MetricCardAlert {
+  tone: "warn" | "critical";
+  text: string;
+}
 
 export interface MetricCardProps {
   accent: Accent;
   origin?: Corner;
   title: string;
-  /** Static host fact on the right ("10P + 4E", "on battery"). */
-  subtitle: string;
-  ring: Omit<RingGaugeProps, "size" | "accent">;
-  bars: [
-    Omit<InlineBarProps, "layout" | "accent">,
-    Omit<InlineBarProps, "layout" | "accent">,
-  ];
-  /** Keys for the ring's segments; empty when the ring has none. */
-  legend: LegendItem[];
-  body: MetricCardBody;
-  /** A state line under the header ("Sensor read failed · last value 11:02"). */
+  value: string;
+  unit?: string;
+  chart: ReactNode;
+  stats: StatListItem[];
+  list?: MetricCardList | undefined;
+  alert?: MetricCardAlert | undefined;
   notice?: string | undefined;
-  /** Module page the card opens. Without it the card is not interactive. */
   href?: string | undefined;
-  /** Called instead of following `href` (the route navigates in-app). */
   onOpen?: (href: string) => void;
 }
 
-/**
- * Overview module card: header, ring, two bars, legend and a
- * top-5 list or chart. The whole card is the link to its module page.
- */
+/** A module's current figure, history and live facts. The whole card opens its page. */
 export function MetricCard({
   accent,
   origin = "tl",
   title,
-  subtitle,
-  ring,
-  bars,
-  legend,
-  body,
+  value,
+  unit,
+  chart,
+  stats,
+  list,
+  alert,
   notice,
   href,
   onOpen,
 }: MetricCardProps) {
   const titleId = useId();
-  const content = (
-    <>
-      <header className="flex items-baseline justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Swatch step={1} />
-          <h3 id={titleId} className="font-[590] text-[13px]">
-            {title}
-          </h3>
-        </div>
-        <span className="font-normal text-[11px] text-muted-foreground">
-          {subtitle}
-        </span>
-      </header>
-      {notice && <CardNotice text={notice} />}
-      <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-4">
-        <RingGauge {...ring} accent={accent} size={72} />
-        <div className="flex min-w-0 flex-col gap-[9px]">
-          {bars.map((bar) => (
-            <InlineBar key={bar.label} {...bar} layout="stacked" />
-          ))}
-        </div>
-      </div>
-      {legend.length > 0 && <Legend items={legend} />}
-      <div className="border-border-subtle border-t pt-[9px]">
-        {body.kind === "list" ? (
-          <>
-            <ProcessList rows={body.rows} ariaLabel={body.ariaLabel} />
-            {body.note && (
-              <p className="mt-1.5 font-normal text-[11px] text-muted-foreground">
-                {body.note}
-              </p>
-            )}
-          </>
-        ) : (
-          <StreamArea {...body.stream} />
-        )}
-      </div>
-    </>
-  );
-
   return (
     <LinkCard
       accent={accent}
       origin={origin}
+      variant="chart"
       labelledBy={titleId}
       href={href}
       onOpen={onOpen}
       className={cn(
-        "flex flex-col gap-3 px-4 py-3.5",
+        "flex min-w-0 flex-col gap-3 px-4 py-3.5",
         href !== undefined &&
           "text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       )}
     >
-      {content}
+      <header className="flex items-baseline justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Swatch step={1} />
+          <h3 id={titleId} className="truncate font-[590] text-[13px]">
+            {title}
+          </h3>
+        </div>
+        <span className="flex shrink-0 items-baseline gap-2">
+          {alert && <AlertChip {...alert} />}
+          <span className="figures-display whitespace-nowrap text-[15px]">
+            <NumberTicker text={value} unit={unit} />
+            {unit && (
+              <span className="text-[11px] text-muted-foreground">{unit}</span>
+            )}
+          </span>
+        </span>
+      </header>
+      {notice && <CardNotice text={notice} />}
+      <div className="min-h-28">{chart}</div>
+      <div className="flex min-h-21 flex-col gap-2">
+        {(stats.length > 2 ? [stats.slice(0, 2), stats.slice(2)] : [stats]).map(
+          (items) => (
+            <StatList
+              key={items[0]?.label}
+              layout="grid"
+              items={items}
+              valueClassName="whitespace-nowrap"
+            />
+          )
+        )}
+      </div>
+      {list && (
+        <div className="border-border-subtle border-t pt-2">
+          {list.caption && (
+            <p className="mb-1.5 text-[11px] text-muted-foreground">
+              {list.caption}
+            </p>
+          )}
+          <ProcessList rows={list.rows} ariaLabel={list.ariaLabel} />
+          {list.note && (
+            <p className="mt-1.5 font-normal text-[11px] text-muted-foreground">
+              {list.note}
+            </p>
+          )}
+        </div>
+      )}
     </LinkCard>
+  );
+}
+
+function AlertChip({ tone, text }: MetricCardAlert) {
+  const Icon = tone === "warn" ? TriangleAlert : OctagonAlert;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 self-center text-[11px]",
+        tone === "warn" ? "text-warning" : "text-destructive"
+      )}
+    >
+      <Icon aria-hidden className="size-3" strokeWidth={1.75} />
+      {text}
+    </span>
   );
 }

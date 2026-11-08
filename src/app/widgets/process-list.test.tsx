@@ -3,9 +3,8 @@ import { expectJsonRoundTrip } from "@tests/widget-json";
 import { OVERVIEW_CARDS } from "./lib/sample-props";
 import { ProcessList } from "./process-list";
 
-const body = OVERVIEW_CARDS[0]?.body;
-if (body?.kind !== "list") throw new Error("the CPU sample has a list body");
-const { kind: _kind, ...props } = body;
+const props = OVERVIEW_CARDS[0]?.list;
+if (!props) throw new Error("the CPU sample has a list");
 
 describe("ProcessList", () => {
   it("round-trips its props through JSON", () => {

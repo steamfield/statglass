@@ -66,9 +66,6 @@ export const historyKeys = {
   host: (hostId: HostId) => [...historyKeys.all, hostId] as const,
   range: (hostId: HostId, module: Module, range: RangeSpec, tier: TierKey) =>
     [...historyKeys.host(hostId), module, range, tier] as const,
-  /** 24 h maxima that scale Overview bars (GPU power, disk rates). */
-  maxima: (hostId: HostId, module: Module, metric: string) =>
-    [...historyKeys.host(hostId), module, "max24h", metric] as const,
   /**
    * Stored processes for one Timeline bucket. 10 s, 1 min and 15 min buckets
    * can share a start, so the width is part of the key.

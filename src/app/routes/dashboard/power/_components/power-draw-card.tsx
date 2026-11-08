@@ -4,15 +4,10 @@ import { formatWatts, formatWattsFine } from "@core/format";
 import { parseLabels } from "@core/series-key";
 import { useMemo } from "react";
 import { brushScopeProps } from "~/components/brush-overlay";
-import {
-  ModuleHistoryChart,
-  type ModuleYAxis,
-} from "~/components/charts/module-history-chart";
+import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
 import { InlineMessage } from "~/components/inline-message";
-import {
-  type RangeTotal,
-  RangeTotalsStrip,
-} from "~/components/range-totals-strip";
+import { POWER_HERO } from "~/components/module-hero";
+import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useEvents } from "~/hooks/use-events";
 import { useModuleChart } from "~/hooks/use-module-chart";
@@ -30,25 +25,18 @@ import {
   useAppLines,
 } from "../_hooks/use-app-lines";
 
-const SYSTEM = "power.system";
 const COMPONENTS = [
   { metric: "power.cpu", label: "CPU" },
   { metric: "power.gpu", label: "GPU" },
   { metric: "power.ane", label: "ANE" },
   { metric: "power.dram", label: "DRAM" },
 ] as const;
-const HELD = [SYSTEM, ...COMPONENTS.map((c) => c.metric), "power.cpu_source"];
-const CHART = [SYSTEM];
+const HELD = [
+  ...POWER_HERO.keys,
+  ...COMPONENTS.map((c) => c.metric),
+  "power.cpu_source",
+];
 const HEIGHT = DASHBOARD_CHART_HEIGHT;
-/**
- * App lines share the scale: macOS's per-process estimate can top the
- * system reading, and a line pinned at the ceiling would misstate it.
- */
-const WATTS_AXIS: ModuleYAxis = {
-  ceiling: "auto",
-  min: 5,
-  format: (w) => `${w}W`,
-};
 /** A `power.sensor{name=…}` key's rail name, as the kernel labels it. */
 const railName = (key: string) => parseLabels(key).name ?? "";
 /**
@@ -60,12 +48,6 @@ const appStyle = (i: number) => ({
   step: APP_STEPS[i % APP_STEPS.length] ?? 2,
   dashed: i >= 3,
 });
-/** Over the window or the selection (D-099): `power.system` averaged and its peak. */
-const TOTALS: readonly RangeTotal[] = [
-  { metric: SYSTEM, label: "Avg", format: (s) => formatWatts(s.avg) },
-  { metric: SYSTEM, label: "Peak", format: (s) => formatWatts(s.max) },
-];
-
 /**
  * System draw over the chart window (D-091) with the top apps by energy as
  * lines under it (D-093), and the components' live watts in the strip.
@@ -86,10 +68,12 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const railKeys = useLayout()?.byMetric.get("power.sensor") ?? [];
   const rails = components ? [] : railKeys;
   const v = useHeld([...HELD, ...rails]);
-  const system = v[SYSTEM] ?? null;
-  const chart = useModuleChart(CHART, windowMs, "power", { brush: true });
+  const system = v["power.system"] ?? null;
+  const chart = useModuleChart(POWER_HERO.keys, windowMs, POWER_HERO.module, {
+    brush: true,
+  });
   const { series, span } = chart;
-  const values = series.values[SYSTEM] ?? [];
+  const values = series.values["power.system"] ?? [];
   const lines = useAppLines(windowMs, {
     tEndMs: series.tEndMs,
     intervalMs: series.intervalMs,
@@ -131,7 +115,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
           />
           <RangeTotalsStrip
             windowMs={windowMs}
-            totals={TOTALS}
+            totals={POWER_HERO.totals}
             testId="power-range-totals"
           />
         </div>
@@ -139,11 +123,15 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
           <Legend items={legend} />
           <ModuleHistoryChart
             chart={chart}
-            lines={chartSeries(values, apps, focus.seriesStyle)}
-            yAxis={WATTS_AXIS}
+            lines={chartSeries(
+              POWER_HERO.lines(series.values),
+              apps,
+              focus.seriesStyle
+            )}
+            yAxis={POWER_HERO.yAxis}
             accent="power"
             height={HEIGHT}
-            subject="System power"
+            subject={POWER_HERO.subject}
             now={figures(system, apps)}
             annotations={annotations}
           />
@@ -163,18 +151,12 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
  * drawn: inside a step-1 fill the lighter ramp steps can't be told apart.
  */
 function chartSeries(
-  system: (number | null)[],
+  system: StreamAreaProps["series"],
   apps: readonly AppLine[],
   style: SeriesFocus["seriesStyle"]
 ): StreamAreaProps["series"] {
   return [
-    {
-      key: SYSTEM,
-      values: system,
-      step: 1,
-      weight: 2,
-      fill: apps.length === 0,
-    },
+    ...system.map((line) => ({ ...line, fill: apps.length === 0 })),
     ...apps.map((a, i) => ({
       key: `app:${a.name}`,
       values: a.values,

@@ -1,6 +1,6 @@
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import OverviewRoute from "./route";
 
@@ -82,4 +82,95 @@ describe("Overview process interest", () => {
     );
     log.mockRestore();
   });
+});
+
+const SUBJECTS = [
+  "CPU total and system",
+  "GPU utilization",
+  "Memory pressure",
+  "System power",
+  "Network",
+  "Disk I/O",
+];
+
+it("all six cards follow the shared setting from 5m to 1h", async () => {
+  const { transport } = renderWithProviders(<OverviewRoute />, {
+    transportOptions: { chartWindow: "5m" },
+  });
+  for (const subject of SUBJECTS)
+    expect(
+      await screen.findByRole("img", {
+        name: new RegExp(`^${subject}.*?, last 5 minutes`),
+      })
+    ).toBeVisible();
+  await act(async () => {
+    await transport.updateSettings({ general: { chart_window: "1h" } });
+  });
+  for (const subject of SUBJECTS)
+    expect(
+      await screen.findByRole("img", {
+        name: new RegExp(`^${subject}.*?, last hour`),
+      })
+    ).toBeVisible();
+  expect(screen.getByRole("radio", { name: "1h" })).toBeChecked();
+  expect(screen.getAllByText("Now")).toHaveLength(6);
+});
+
+it("fixed dates mark each live headline now, preserving the Power source", async () => {
+  const to = Date.now() - 86400000;
+  renderWithProviders(<OverviewRoute />, {
+    transportOptions: {
+      chartWindow: { absolute: { from_ms: to - 3600000, to_ms: to } },
+    },
+  });
+  for (const name of [
+    "CPU",
+    "GPU",
+    "Memory",
+    "Power & Sensors",
+    "Network",
+    "Disk",
+  ]) {
+    const card = await screen.findByRole("link", { name });
+    expect(within(card).getByText(/^(?:on battery )?now$/)).toBeVisible();
+    expect(
+      within(card).getByRole("img", { name: /selected dates/ })
+    ).toBeVisible();
+  }
+  expect(screen.getByText("on battery now")).toBeVisible();
+});
+
+it("Linux charts used memory with the Linux facts", async () => {
+  renderWithProviders(<OverviewRoute />, {
+    transportOptions: { scenarios: ["linux"], chartWindow: "5m" },
+  });
+  expect(
+    await screen.findByRole("img", {
+      name: /^Memory used and cached files, last 5 minutes/,
+    })
+  ).toBeVisible();
+  expect(screen.queryByRole("img", { name: /^Memory pressure/ })).toBeNull();
+  expect(screen.getByText("Pressure stall")).toBeVisible();
+  expect(screen.getByText("Cached")).toBeVisible();
+});
+
+it("shows the machine header while settings are still pending", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const settings = await transport.getSettings();
+  let release: ((value: typeof settings) => void) | undefined;
+  transport.getSettings = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  renderWithProviders(<OverviewRoute />, { transport });
+  expect(await screen.findByRole("region", { name: "This Mac" })).toBeVisible();
+  expect(
+    screen.queryByRole("list", { name: "Top processes by CPU" })
+  ).toBeNull();
+  await act(async () => {
+    release?.(settings);
+  });
+  expect(
+    await screen.findByRole("list", { name: "Top processes by CPU" })
+  ).toBeVisible();
 });

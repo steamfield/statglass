@@ -3,14 +3,54 @@ import { expectJsonRoundTrip } from "@tests/widget-json";
 import { OVERVIEW_CARDS, PASSIVE_COOLING_CARD } from "./lib/sample-props";
 import { MetricCard, type MetricCardProps } from "./metric-card";
 
-const CPU = OVERVIEW_CARDS[0] as MetricCardProps;
-const GPU = OVERVIEW_CARDS[1] as MetricCardProps;
+const CPU = OVERVIEW_CARDS[0];
+const GPU = OVERVIEW_CARDS[1];
+if (!CPU || !GPU) throw new Error("Missing card samples");
+
+function DataCard(props: Omit<MetricCardProps, "chart">) {
+  return <MetricCard {...props} chart={null} />;
+}
 
 describe("MetricCard", () => {
-  it("round-trips its props through JSON for every sample card", () => {
-    for (const card of OVERVIEW_CARDS) expectJsonRoundTrip(MetricCard, card);
-    expectJsonRoundTrip(MetricCard, PASSIVE_COOLING_CARD);
+  it("round-trips every sample card's data props through JSON", () => {
+    for (const { chart: _chart, ...data } of [
+      ...OVERVIEW_CARDS,
+      PASSIVE_COOLING_CARD,
+    ])
+      expectJsonRoundTrip(DataCard, data);
   });
+  it("renders its headline, chart, compact facts and captioned live list", () => {
+    render(<MetricCard {...CPU} />);
+    expect(screen.getByText("18%")).toBeVisible();
+    expect(
+      screen.getByRole("img", { name: "CPU total and system, last 5 minutes" })
+    ).toBeVisible();
+    expect(screen.getByText("User")).toBeVisible();
+    expect(screen.getByText("Now")).toBeVisible();
+    expect(
+      screen.getByRole("list", { name: "Top processes by CPU" })
+    ).toBeVisible();
+  });
+
+  it("renders the source unit and passive cooling fact", () => {
+    render(<MetricCard {...PASSIVE_COOLING_CARD} />);
+    expect(screen.getByText("on adapter")).toBeVisible();
+    expect(screen.getByText("Passive cooling")).toBeVisible();
+  });
+
+  it.each(["warn", "critical"] as const)(
+    "shows %s pressure as a header chip with an icon",
+    (tone) => {
+      const { container } = render(
+        <MetricCard {...CPU} alert={{ tone, text: `Pressure ${tone}` }} />
+      );
+      expect(screen.getByText(`Pressure ${tone}`)).toBeVisible();
+      expect(container.querySelector("svg.lucide")).toHaveAttribute(
+        "aria-hidden",
+        "true"
+      );
+    }
+  );
 
   it("is a link named by its title that hands navigation to the route", () => {
     const onOpen = vi.fn();
@@ -25,11 +65,12 @@ describe("MetricCard", () => {
     expect(screen.getByRole("region", { name: "CPU" })).toBeInTheDocument();
   });
 
-  it("renders the GPU chart body instead of a list", () => {
+  it("keeps its chart when no list is supplied", () => {
     render(<MetricCard {...GPU} />);
     expect(
-      screen.getByRole("img", { name: "GPU, last 60 seconds, 36%" })
+      screen.getByRole("img", { name: "GPU utilization, last 5 minutes" })
     ).toBeInTheDocument();
-    expect(screen.queryByRole("list", { name: /processes/ })).toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.queryByText("Now")).toBeNull();
   });
 });

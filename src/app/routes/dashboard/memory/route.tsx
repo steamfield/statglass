@@ -1,5 +1,6 @@
 import { formatBytes, MISSING, marketingGb } from "@core/format";
 import { useMemo } from "react";
+import { MEMORY_PRESSURE_HERO, memoryHero } from "~/components/module-hero";
 import { ModulePage } from "~/components/module-page";
 import {
   UsageAppsCard,
@@ -24,6 +25,18 @@ export default function MemoryRoute() {
   const mac = info === undefined || info.os === "mac_os";
   const totalGb = info ? marketingGb(info.mem_total_bytes) : null;
   const bytes = useUnits().bytes;
+  const os = info?.os;
+  const totalBytes = info?.mem_total_bytes;
+  const spec = useMemo(
+    () =>
+      memoryHero(
+        os === undefined || totalBytes === undefined
+          ? undefined
+          : { os, mem_total_bytes: totalBytes },
+        (v) => formatBytes(v, { units: bytes })
+      ),
+    [os, totalBytes, bytes]
+  );
   // A Linux host's MemTotal as measured, not a marketing size.
   const totalLabel =
     totalGb === null
@@ -82,10 +95,14 @@ export default function MemoryRoute() {
             windowMs={windowMs}
           />
           <div className="flex flex-col gap-4">
-            {mac || !info ? (
+            {spec === MEMORY_PRESSURE_HERO ? (
               <PressureCard windowMs={windowMs} />
             ) : (
-              <UsedCard windowMs={windowMs} totalBytes={info.mem_total_bytes} />
+              <UsedCard
+                windowMs={windowMs}
+                spec={spec}
+                totalLabel={totalLabel}
+              />
             )}
             <SwapCard windowMs={windowMs} />
           </div>

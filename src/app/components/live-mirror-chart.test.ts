@@ -11,6 +11,13 @@ describe("mirror chart buckets (D-091)", () => {
     expect(brushBucketMs(15_000, 1000)).toBe(30_000);
   });
 
+  it("a narrow card's cap keeps 15m at 1 s to 40 bars", () => {
+    expect(mirrorBuckets(900_000, 1000, false, 40)).toEqual({
+      bucketMs: 23_000,
+      count: 39,
+    });
+  });
+
   it.each([250, 500, 1000, 2000, 5000, 10_000, 30_000, 60_000])(
     "no window draws more than 120 bars at %i ms sampling",
     (intervalMs) => {

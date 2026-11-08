@@ -77,6 +77,7 @@ export class MockRing {
     this.txIdx = gen.keys.flatMap((k, i) => (k.metric === "net.tx" ? [i] : []));
   }
   readonly withBursts = (ts: number, values: (number | null)[]) => {
+    if (this.flags.networkRateExtremes) return values;
     for (const b of burstsAt(ts, this.startMs)) {
       for (const [i, bps] of [
         [this.en0Rx, b.rxBps],

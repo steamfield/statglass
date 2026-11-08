@@ -1,3 +1,6 @@
+import { formatRate } from "@core/format";
+import { COMPACT_PLOT_INSET } from "~/components/charts/layout";
+import { MirrorChart } from "~/components/charts/mirror-chart";
 import { Card } from "~/widgets/card";
 import { CoreTiles } from "~/widgets/core-tiles";
 import { InitialChip } from "~/widgets/initial-chip";
@@ -36,7 +39,7 @@ import { StreamArea } from "~/widgets/stream-area";
 import { GalleryItem } from "../_components/gallery-item";
 
 const POPOVER_W = 340;
-const cpuList = OVERVIEW_CARDS[0]?.body;
+const cpuList = OVERVIEW_CARDS[0]?.list;
 
 /** Cards, gauges, bars, legends, stat cells, lists and pills (widgets/). */
 export function WidgetsCardsSection() {
@@ -45,7 +48,18 @@ export function WidgetsCardsSection() {
       <GalleryItem name="MetricCard" usedIn="Overview">
         <div className="grid grid-cols-3 gap-4">
           {OVERVIEW_CARDS.map((card) => (
-            <MetricCard key={card.title} {...card} onOpen={() => {}} />
+            <MetricCard
+              key={card.title}
+              {...card}
+              onOpen={() => {}}
+              chart={
+                card.accent === "net" || card.accent === "disk" ? (
+                  <GalleryMirror accent={card.accent} />
+                ) : (
+                  card.chart
+                )
+              }
+            />
           ))}
         </div>
       </GalleryItem>
@@ -132,10 +146,7 @@ export function WidgetsCardsSection() {
         </GalleryItem>
 
         <div className="flex flex-col gap-8">
-          <GalleryItem
-            name="RingGauge"
-            usedIn="Overview · Power & Sensors · CPU"
-          >
+          <GalleryItem name="RingGauge" usedIn="Power & Sensors · CPU">
             <div className="flex items-center gap-6">
               <RingGauge {...RING_GAUGE} />
               <RingGauge
@@ -154,15 +165,15 @@ export function WidgetsCardsSection() {
               />
             </div>
           </GalleryItem>
-          <GalleryItem name="InlineBar" usedIn="Overview" width={240}>
+          <GalleryItem name="InlineBar" usedIn="Popover" width={240}>
             <InlineBar {...INLINE_BAR} />
             <InlineBar label="Fans" value="Passive cooling" fraction="none" />
           </GalleryItem>
-          <GalleryItem name="Legend" usedIn="Overview">
+          <GalleryItem name="Legend" usedIn="Module pages">
             <Legend {...LEGEND} />
           </GalleryItem>
           <GalleryItem name="ProcessList" usedIn="Overview" width={300}>
-            {cpuList?.kind === "list" && (
+            {cpuList && (
               <ProcessList rows={cpuList.rows} ariaLabel={cpuList.ariaLabel} />
             )}
           </GalleryItem>
@@ -234,5 +245,42 @@ export function WidgetsCardsSection() {
         </div>
       </GalleryItem>
     </div>
+  );
+}
+
+function GalleryMirror({ accent }: { accent: "net" | "disk" }) {
+  const network = accent === "net";
+  const up = Array.from(
+    { length: 40 },
+    (_, i) => (network ? 1.2e6 : 220e6) * (0.8 + (i % 7) / 20)
+  );
+  const down = Array.from(
+    { length: 40 },
+    (_, i) => (network ? 38.4e6 : 48e6) * (0.8 + (i % 5) / 20)
+  );
+  return (
+    <MirrorChart
+      up={up}
+      down={down}
+      firstMs={1_759_617_300_000}
+      bucketMs={7500}
+      windowMs={300000}
+      fixedEndMs={null}
+      subject={network ? "Network" : "Disk I/O"}
+      upLabel={network ? "Upload" : "Read"}
+      downLabel={network ? "Download" : "Write"}
+      span="last 5 minutes"
+      format={formatRate}
+      minCeiling={network ? 100_000 : 1e6}
+      accent={accent}
+      upHeight={44}
+      downHeight={44}
+      gaps={[]}
+      brush={false}
+      dateLabels={false}
+      hover={false}
+      ticks={3}
+      inset={COMPACT_PLOT_INSET}
+    />
   );
 }
