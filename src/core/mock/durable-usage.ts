@@ -12,6 +12,7 @@ import {
   USAGE_HISTORY_MAX_RANGE_MS,
   USAGE_PROCESS_PAGE_MAX,
 } from "@core/generated/bindings";
+import { historicalValue } from "@core/historical-usage";
 import { floorTo, MINUTE_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
@@ -133,7 +134,9 @@ export class MockDurableUsage {
   }
   private figures(
     range: UsageHistoryRange,
-    weight: number
+    weight: number,
+    gpuWeight = weight,
+    energyWeight = weight
   ): HistoricalUsageFigures {
     const ms = range.spans.reduce(
       (sum, span) => sum + span.to_ms - span.from_ms,
@@ -142,12 +145,15 @@ export class MockDurableUsage {
     const measured = ms > 0;
     return {
       cpu_avg_pct: measured ? weight : null,
-      gpu_avg_pct: measured && this.supported("gpu") ? weight / 4 : null,
+      gpu_avg_pct: measured && this.supported("gpu") ? gpuWeight / 4 : null,
       mem_peak_bytes: measured ? Math.round(weight * 16_777_216) : null,
       mem_avg_bytes: measured ? Math.round(weight * 8_388_608) : null,
       energy_j:
-        measured && this.supported("energy") ? (weight * ms) / 100_000 : null,
-      cpu_power_w: measured && this.supported("energy") ? weight / 100 : null,
+        measured && this.supported("energy")
+          ? (energyWeight * ms) / 100_000
+          : null,
+      cpu_power_w:
+        measured && this.supported("energy") ? energyWeight / 100 : null,
       network_rx_bytes:
         measured && this.supported("network") ? Math.floor(weight * ms) : null,
       network_tx_bytes:
@@ -156,6 +162,15 @@ export class MockDurableUsage {
           : null,
       coverage: range.coverage,
     };
+  }
+  private appFigures(range: UsageHistoryRange, name: string, fraction = 1) {
+    const index = APPS.indexOf(name);
+    return this.figures(
+      range,
+      (3 - index) * 10 * fraction,
+      ([10, 30, 20][index] ?? 0) * fraction,
+      ([20, 10, 30][index] ?? 0) * fraction
+    );
   }
   private absentFigures(range: UsageHistoryRange): HistoricalUsageFigures {
     const zero = (metric: HistoricalUsageMetric) =>
@@ -198,14 +213,21 @@ export class MockDurableUsage {
         return ok({
           range,
           by: request.by,
-          apps: names.map((name) => ({
-            name,
-            figures: APPS.includes(name)
-              ? this.figures(range, (3 - APPS.indexOf(name)) * 10)
-              : this.absentFigures(range),
-            process_details_available:
-              APPS.includes(name) && range.spans.length > 0,
-          })),
+          apps: names
+            .map((name) => ({
+              name,
+              figures: APPS.includes(name)
+                ? this.appFigures(range, name)
+                : this.absentFigures(range),
+              process_details_available:
+                APPS.includes(name) && range.spans.length > 0,
+            }))
+            .sort((a, b) =>
+              request.app_names.length > 0
+                ? 0
+                : (historicalValue(b.figures, request.by) ?? -1) -
+                  (historicalValue(a.figures, request.by) ?? -1)
+            ),
           ranking_complete:
             range.coverage.find((c) => c.metric === request.by)?.coverage
               .complete ?? false,
@@ -261,12 +283,10 @@ export class MockDurableUsage {
                 (this.ring.startMs - MINUTE_MS) * 1000 + offset + i,
               name: request.app_name,
               figures: {
-                ...this.figures(
+                ...this.appFigures(
                   range,
-                  ((3 - APPS.indexOf(request.app_name)) *
-                    10 *
-                    (count - offset - i)) /
-                    ((count * (count + 1)) / 2)
+                  request.app_name,
+                  (count - offset - i) / ((count * (count + 1)) / 2)
                 ),
                 network_rx_bytes: null,
                 network_tx_bytes: null,

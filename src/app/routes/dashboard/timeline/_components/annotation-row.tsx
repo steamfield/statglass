@@ -1,5 +1,5 @@
 import { layoutMarkers } from "@core/chart-math";
-import { eventId, eventLabel } from "@core/events";
+import { eventId, eventLabel, eventPriority } from "@core/events";
 import { formatClock } from "@core/format";
 import type { Event } from "@core/generated/bindings";
 import {
@@ -9,7 +9,7 @@ import {
   PopoverTrigger,
 } from "~/components/ui/popover";
 import { cn } from "~/lib/utils";
-import { eventPriority, groupEvents } from "../_lib/events";
+import { groupEvents } from "../_lib/events";
 import type { Marker } from "../_lib/gaps";
 
 export interface AnnotationRowProps {

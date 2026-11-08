@@ -1,4 +1,5 @@
 import type { TimeRange } from "@core/brush";
+import { eventRange } from "@core/events";
 import { cssPercent, formatClockSeconds } from "@core/format";
 import type {
   Event,
@@ -14,7 +15,6 @@ import { Card } from "~/widgets/card";
 import { type LaneData, useProcessesAt } from "../_hooks/use-timeline-data";
 import { useTimelineSelection } from "../_hooks/use-timeline-selection";
 import { useZoomPreview } from "../_hooks/use-zoom-preview";
-import { eventRange } from "../_lib/events";
 import type { LaneUnits } from "../_lib/format";
 import {
   type Band,

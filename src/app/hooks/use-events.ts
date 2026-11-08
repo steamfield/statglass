@@ -42,17 +42,14 @@ function recentEvents(transport: Transport): RecentEvents {
  * a push can beat its commit to the store (`RecentEvents`).
  * History unavailable means no events.
  */
-export function useEvents(
-  spanMs: number,
-  endMs: number | null
-): readonly Event[] {
+export function useEventsQuery(spanMs: number, endMs: number | null) {
   const now = useHostClock();
   const transport = useTransport();
   const hostId = useHostId();
   const queryClient = useQueryClient();
   const live = endMs === null;
   const queryKey = historyKeys.events(hostId, spanMs, endMs);
-  const { data } = useQuery({
+  const { data, isPending, isError, isPlaceholderData } = useQuery({
     queryKey,
     queryFn: async () => {
       const recent = recentEvents(transport);
@@ -80,5 +77,17 @@ export function useEvents(
     });
   }, [transport, queryClient, hostId]);
 
-  return data ?? NONE;
+  return {
+    events: data ?? NONE,
+    isPending: isPending || isPlaceholderData,
+    isError,
+  };
+}
+
+/** Compatibility wrapper for charts that only need the event list. */
+export function useEvents(
+  spanMs: number,
+  endMs: number | null
+): readonly Event[] {
+  return useEventsQuery(spanMs, endMs).events;
 }
