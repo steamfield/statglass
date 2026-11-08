@@ -138,7 +138,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$KEYCHAIN" >/dev/null
           read -r -a keychains <<< "$(security list-keychains -d user | tr -d '"' | xargs)"
           security list-keychains -d user -s "$KEYCHAIN" "${keychains[@]}"
-          security find-identity -v -p codesigning "$KEYCHAIN" | grep -q "$APPLE_SIGNING_IDENTITY"
+          identities="$(security find-identity -v -p codesigning "$KEYCHAIN")"
+          [[ "$identities" == *"$APPLE_SIGNING_IDENTITY"* ]] || { echo "$identities"; exit 1; }
           printf '%s' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH"
 
       # Signs the app, helper and CLI with the Developer ID under the hardened runtime,

@@ -32,7 +32,9 @@ fi
 echo "notarize-dmg: checking the app"
 codesign --verify --deep --strict --verbose=2 "$APP"
 TEAM="${IDENTITY##*(}"
-codesign -dv "$APP" 2>&1 | grep -q "TeamIdentifier=${TEAM%)}" ||
+# Captured first: `codesign | grep -q` fails under pipefail when grep exits early.
+details="$(codesign -dv "$APP" 2>&1)"
+[[ "$details" == *"TeamIdentifier=${TEAM%)}"* ]] ||
   { echo "notarize-dmg: $APP is not signed with $IDENTITY." >&2; exit 1; }
 xcrun stapler validate "$APP" ||
   { echo "notarize-dmg: the app has no notarization ticket. Were the APPLE_API_* variables set for tauri build?" >&2; exit 1; }
