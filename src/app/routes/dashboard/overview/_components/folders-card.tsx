@@ -89,6 +89,15 @@ export function OverviewFoldersCard({ origin }: { origin: Corner }) {
           </Button>
         </footer>
       )}
+      {report.busy && (
+        <p role="status" className="text-[11px] text-muted-foreground">
+          Another volume is being scanned in{" "}
+          <Link to={SPACE} className="text-link hover:underline">
+            Space
+          </Link>
+          . The report can run when it finishes.
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-[11px] text-destructive">
           {error}

@@ -53,7 +53,9 @@ export function OverviewContainersCard({
   const docker = useQuery({
     queryKey: dockerKeys.snapshot(),
     queryFn: () => unwrap(transport.dockerSnapshot()),
-    refetchInterval: DOCKER_BUCKET_MS,
+    // Faster while the engine is still connecting, so the card follows it in.
+    refetchInterval: (q) =>
+      q.state.data?.status === "connecting" ? 1000 : DOCKER_BUCKET_MS,
   });
   const snapshot = docker.data ?? null;
   const engine = snapshot?.engine?.id ?? "";
@@ -120,8 +122,13 @@ export function OverviewContainersCard({
               ? "Couldn't load container history"
               : null
         }
-        noEngine={snapshot !== null && !engine}
-        loading={docker.isPending || (engine !== "" && comparison.isPending)}
+        noEngine={
+          snapshot !== null &&
+          !engine &&
+          snapshot.status !== "connecting" &&
+          snapshot.status !== "disabled"
+        }
+        loading={docker.isPending || !engine || comparison.isPending}
         ranked={ranked}
         metric={metric}
         scope={scope}
@@ -154,7 +161,7 @@ function ContainersBody({
   if (noEngine)
     return (
       <p role="status" className="text-[12px] text-muted-foreground">
-        Docker isn't reachable, so there are no containers to rank.
+        No Docker engine to read containers from.
       </p>
     );
   if (loading) return <ChartHistoryStatus loading />;

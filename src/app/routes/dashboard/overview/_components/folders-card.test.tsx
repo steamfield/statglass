@@ -1,4 +1,5 @@
 import { formatBytes } from "@core/format";
+import type { SpaceScanStatus } from "@core/generated/bindings";
 import { MOCK_SCAN_MS } from "@core/mock/disk-space";
 import { MOCK_HIGHLIGHTS } from "@core/mock/disk-space-fixture";
 import type { ScenarioName } from "@core/mock/fixtures";
@@ -107,4 +108,52 @@ it("says why Finder couldn't show a folder", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "This item no longer exists"
   );
+});
+
+const status = (patch: Partial<SpaceScanStatus>): SpaceScanStatus => ({
+  phase: "idle",
+  report_id: null,
+  volume: null,
+  elapsed_ms: 0,
+  items: 0,
+  measured_bytes: 0,
+  used_bytes: 0,
+  current: null,
+  error: null,
+  ...patch,
+});
+
+it("says why the last report failed", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  vi.spyOn(transport, "diskSpaceStatus").mockResolvedValue({
+    status: "ok",
+    data: status({
+      phase: "failed",
+      volume: "/",
+      error: "Couldn't finish scanning Macintosh HD.",
+    }),
+  });
+  renderWithProviders(<OverviewFoldersCard origin="tl" />, {
+    transport,
+    route: "/dashboard/overview",
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Couldn't finish scanning Macintosh HD."
+  );
+});
+
+it("explains a disabled Re-run while another volume is scanned", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  vi.spyOn(transport, "diskSpaceStatus").mockResolvedValue({
+    status: "ok",
+    data: status({ phase: "scanning", volume: "/Volumes/Backup" }),
+  });
+  renderWithProviders(<OverviewFoldersCard origin="tl" />, {
+    transport,
+    route: "/dashboard/overview",
+  });
+  expect(
+    await screen.findByText(/Another volume is being scanned/)
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "Re-run" })).toBeDisabled();
 });

@@ -59,7 +59,7 @@ it("re-ranks by memory and links each row to its container", async () => {
   expect(first?.getAttribute("href")).toMatch(/^\/dashboard\/containers\//);
 });
 
-it("says Docker isn't reachable instead of loading forever", async () => {
+async function withSnapshot(status: "unavailable" | "connecting") {
   const transport = createMockTransport({
     autoTick: false,
     scenarios: ["docker-11"],
@@ -68,10 +68,21 @@ it("says Docker isn't reachable instead of loading forever", async () => {
   if (real.status !== "ok") throw new Error("snapshot failed");
   vi.spyOn(transport, "dockerSnapshot").mockResolvedValue({
     status: "ok",
-    data: { ...real.data, status: "unavailable", engine: null },
+    data: { ...real.data, status, engine: null },
   });
   setup(transport);
-  expect(await screen.findByText(/Docker isn't reachable/)).toBeVisible();
+}
+
+it("says there's no engine instead of loading forever", async () => {
+  await withSnapshot("unavailable");
+  expect(
+    await screen.findByText("No Docker engine to read containers from.")
+  ).toBeVisible();
   expect(screen.getByText("Unavailable")).toBeVisible();
-  expect(screen.queryByText(/Loading/)).toBeNull();
+});
+
+it("waits while the engine is still connecting", async () => {
+  await withSnapshot("connecting");
+  expect(await screen.findByText("Connecting")).toBeVisible();
+  expect(screen.queryByText(/No Docker engine/)).toBeNull();
 });

@@ -28,6 +28,11 @@ export function useFolderReport() {
   const status = useSpaceStatus(true).data;
   const scan = useSpaceScan();
   const scanning = status?.phase === "scanning" && status.volume === BOOT;
+  // How the last boot scan failed, from here or from the Space view.
+  const failed =
+    status?.phase === "failed" && status.volume === BOOT
+      ? (status.error ?? "Couldn't finish the report.")
+      : null;
   return {
     summary,
     /** Share of the volume's used space measured so far, while scanning. */
@@ -40,7 +45,7 @@ export function useFolderReport() {
     /** Another volume's scan is running; a new one can't start until it ends. */
     busy: status?.phase === "scanning" && !scanning,
     starting: scan.starting,
-    error: scan.error,
+    error: scan.error ?? failed,
     run: () => void scan.start(BOOT, []),
     cancel: () => void scan.cancel(),
   };
