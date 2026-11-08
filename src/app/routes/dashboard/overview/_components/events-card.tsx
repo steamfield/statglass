@@ -1,10 +1,9 @@
 import { BRUSH_STEP_MS, scopeWords } from "@core/brush";
 import { recordedDate } from "@core/chart-range";
 import { eventId, eventLabel, eventPriority, eventRange } from "@core/events";
-import { formatHistoryTime } from "@core/format";
+import { formatClock, monthName } from "@core/format";
 import { historyUnavailable } from "@core/history-state";
 import { spanWords } from "@core/live-window";
-import { DAY_MS } from "@core/time-grid";
 import { TriangleAlert } from "lucide-react";
 import { useId } from "react";
 import { useNavigate } from "react-router";
@@ -109,7 +108,7 @@ export function OverviewEventsCard({
                   }}
                 >
                   <span className="figures shrink-0 text-[11px] text-muted-foreground">
-                    {formatHistoryTime(event.ts_ms, windowMs > DAY_MS)}
+                    {eventTime(event.ts_ms, toMs)}
                   </span>
                   {warning && (
                     <TriangleAlert
@@ -128,4 +127,16 @@ export function OverviewEventsCard({
       )}
     </Card>
   );
+}
+
+/**
+ * "14:56" for an event on the range end's day, "Nov 7, 14:56" otherwise: a
+ * live 24 h range crosses midnight, so the date can't follow the span alone.
+ */
+function eventTime(ms: number, toMs: number): string {
+  const d = new Date(ms);
+  const end = new Date(toMs);
+  return d.toDateString() === end.toDateString()
+    ? formatClock(ms)
+    : `${monthName(d)} ${d.getDate()}, ${formatClock(ms)}`;
 }

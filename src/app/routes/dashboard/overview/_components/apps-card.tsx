@@ -1,5 +1,6 @@
 import { scopeWords } from "@core/brush";
 import { recordedDate } from "@core/chart-range";
+import { USAGE_HISTORY_MAX_RANGE_MS } from "@core/generated/bindings";
 import { useId, useState } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import {
@@ -28,10 +29,11 @@ export function OverviewAppsCard({
   const energy = useHost((s) => s.capabilities?.process_energy === true);
   const options = appOptions(gpu, energy, historical);
   const [selected, setSelected] = useState<TopAppsMetric>("cpu");
+  // A segment the window no longer offers reads as CPU; the choice comes
+  // back when the segment does.
   const by = options.some((option) => option.value === selected)
     ? selected
     : "cpu";
-  if (by !== selected) setSelected(by);
   const apps = useTopApps(windowMs, by);
   const scope =
     endMs === null
@@ -60,31 +62,63 @@ export function OverviewAppsCard({
           ariaLabel="Rank apps by"
         />
       </header>
-      {apps.isError ? (
-        <p role="alert" className="text-[12px] text-muted-foreground">
-          {historical
-            ? "Couldn't load app history"
-            : "Couldn't load app activity"}
-        </p>
-      ) : apps.isPending ? (
-        <ChartHistoryStatus loading />
-      ) : apps.rows.length === 0 ? (
-        <p role="status" className="text-[12px] text-muted-foreground">
-          No app activity recorded {scope}
-        </p>
-      ) : (
-        <>
-          <p className="text-[11px] text-muted-foreground">{apps.caption}</p>
-          <ProcessList
-            rows={apps.rows.map((row) => ({ ...row, initial: row.name }))}
-            ariaLabel={`Top apps by ${apps.caption}`}
-          />
-          {apps.note && (
-            <p className="text-[11px] text-muted-foreground">{apps.note}</p>
-          )}
-        </>
-      )}
+      <AppsBody
+        apps={apps}
+        historical={historical}
+        beyondHistory={historical && windowMs > USAGE_HISTORY_MAX_RANGE_MS}
+        scope={scope}
+      />
     </Card>
+  );
+}
+
+/** The card's list, or the one line that says why there isn't one. */
+function AppsBody({
+  apps,
+  historical,
+  beyondHistory,
+  scope,
+}: {
+  apps: ReturnType<typeof useTopApps>;
+  historical: boolean;
+  beyondHistory: boolean;
+  scope: string;
+}) {
+  if (beyondHistory)
+    return (
+      <p role="status" className="text-[12px] text-muted-foreground">
+        Recorded app activity covers up to 30 days
+      </p>
+    );
+  if (apps.isError)
+    return (
+      <p role="alert" className="text-[12px] text-muted-foreground">
+        {historical
+          ? "Couldn't load app history"
+          : "Couldn't load app activity"}
+      </p>
+    );
+  if (apps.isPending) return <ChartHistoryStatus loading />;
+  if (apps.rows.length === 0)
+    return (
+      <p role="status" className="text-[12px] text-muted-foreground">
+        No app activity recorded {scope}
+      </p>
+    );
+  return (
+    <>
+      <p className="text-[11px] text-muted-foreground">{apps.caption}</p>
+      <ProcessList
+        rows={apps.rows.map((row) => ({
+          ...row,
+          initial: row.name.slice(0, 1),
+        }))}
+        ariaLabel={`Top apps by ${apps.caption}`}
+      />
+      {apps.note && (
+        <p className="text-[11px] text-muted-foreground">{apps.note}</p>
+      )}
+    </>
   );
 }
 

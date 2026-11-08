@@ -436,7 +436,9 @@ describe("remote Mac recovery workflows", () => {
     ).toHaveTextContent("Office Mac");
     await waitFor(() =>
       expect(
-        screen.queryByRole("link", { name: /^Battery/ })
+        within(
+          screen.getByRole("navigation", { name: "Dashboard sections" })
+        ).queryByRole("link", { name: /^Battery/ })
       ).not.toBeInTheDocument()
     );
   });
@@ -519,7 +521,9 @@ describe("remote Mac recovery workflows", () => {
     expect(
       screen.getByRole("combobox", { name: "Selected machine" })
     ).toHaveTextContent("This Mac");
-    await screen.findByRole("link", { name: /^Battery/ });
+    await within(
+      screen.getByRole("navigation", { name: "Dashboard sections" })
+    ).findByRole("link", { name: /^Battery/ });
   });
 
   it("reads the selected Mac's mirrored timeline even when its live connection fails", async () => {

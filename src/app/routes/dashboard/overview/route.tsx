@@ -21,6 +21,8 @@ import { useSampling } from "~/stores/live-selectors";
 import type { Corner } from "~/widgets/lib/accent";
 import { StatusPill } from "~/widgets/status-pill";
 import { samplingStatus } from "../_lib/sampling-status";
+import { OverviewAppsCard } from "./_components/apps-card";
+import { OverviewEventsCard } from "./_components/events-card";
 import { LiveMachineHeader } from "./_components/live-machine-header";
 import {
   OverviewBatteryCard,
@@ -115,7 +117,20 @@ export default function OverviewRoute() {
           <UnavailableCard module="battery" state={battery} />
         ),
     });
-  // Activity slot: append OverviewEventsCard and OverviewAppsCard items here.
+  activityItems.push(
+    {
+      id: "events",
+      render: (origin, windowMs) => (
+        <OverviewEventsCard origin={origin} windowMs={windowMs} />
+      ),
+    },
+    {
+      id: "apps",
+      render: (origin, windowMs) => (
+        <OverviewAppsCard origin={origin} windowMs={windowMs} />
+      ),
+    }
+  );
 
   return (
     <>
@@ -143,11 +158,9 @@ export default function OverviewRoute() {
                 )
               }
             </CardGrid>
-            {activityItems.length > 0 && (
-              <CardGrid fit items={activityItems} getKey={(item) => item.id}>
-                {(item, origin) => item.render(origin, windowMs)}
-              </CardGrid>
-            )}
+            <CardGrid fit items={activityItems} getKey={(item) => item.id}>
+              {(item, origin) => item.render(origin, windowMs)}
+            </CardGrid>
           </>
         )}
       </ModulePage>

@@ -1,6 +1,6 @@
 import { BRUSH_STEP_MS } from "@core/brush";
 import { eventLabel, eventRange } from "@core/events";
-import { formatHistoryTime } from "@core/format";
+import { formatClock, monthName } from "@core/format";
 import type { Event } from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
@@ -60,17 +60,21 @@ it("clips to half-open bounds, counts every event, and lists the newest six", as
     events
       .slice(4)
       .reverse()
-      .map((e) => formatHistoryTime(e.ts_ms, false) + eventLabel(e))
+      .map((e) => formatClock(e.ts_ms) + eventLabel(e))
   );
   expect(screen.getByText("8 in last 15 minutes")).toBeVisible();
   expect(screen.queryByText(/Too old|At end|App 0|App 1/)).toBeNull();
 });
 
-it("adds a date for ranges longer than a day", async () => {
-  setup({ windowMs: 2 * DAY_MS });
+it("dates an event from an earlier day than the range's end", async () => {
+  const earlier = event(DAY_MS + 100_000, "Compiler");
+  setup({ events: [earlier], windowMs: 2 * DAY_MS });
+  const d = new Date(earlier.ts_ms);
   expect(
     await screen.findByRole("button", { name: /Compiler/ })
-  ).toHaveTextContent(formatHistoryTime(NOW - 100_000, true));
+  ).toHaveTextContent(
+    `${monthName(d)} ${d.getDate()}, ${formatClock(earlier.ts_ms)}`
+  );
 });
 
 it("uses warning priority for an icon and leaves recovery informational", async () => {
