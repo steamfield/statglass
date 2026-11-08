@@ -1,6 +1,9 @@
 # Changelog
 
-## [0.8.0](https://github.com/steamfield/statglass/compare/v0.7.0...v0.8.0) - 2026-11-08
+## [0.8.1](https://github.com/steamfield/statglass/compare/v0.7.0...v0.8.1) - 2026-11-08
+
+0.8.0 was tagged but not published; 0.8.1 includes its changes, with Battery, Events and
+Apps flowing into the Overview's card grid instead of a separate row that left gaps.
 
 ### Added
 

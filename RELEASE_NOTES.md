@@ -1,11 +1,12 @@
-# StatGlass 0.8.0
+# StatGlass 0.8.1
 
 StatGlass is a free, open-source system monitor for Apple Silicon Macs running macOS
 26 or later.
 
 This release turns the Overview into a page you can monitor from. Every card now shows
 how its metric has moved over time, not just the reading this second, and a second row
-adds battery, recent events and the apps that did the most work.
+adds battery, recent events and the apps that did the most work, filling the grid at
+any window width.
 
 ## Overview
 
