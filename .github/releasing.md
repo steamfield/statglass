@@ -49,7 +49,10 @@ Mac App Store and Homebrew distribution are outside this workflow.
 
 Never replace published assets or reuse a version; fix a bad release with a higher
 version. A failed or rejected draft can be deleted and rebuilt by rerunning the
-Release workflow for the same tag (Actions, Release, Run workflow, with the tag).
+Release workflow for the same tag: pick the tag (not `main`) in Run workflow's "Use
+workflow from" menu, because the `release` environment only accepts `v*` refs. That
+run uses the workflow file as it was at the tag, so a fix to `release.yml` made after
+tagging does not apply; use the local fallback below or cut a new patch version.
 Do not move published tags.
 
 ## Signing identities and secrets
