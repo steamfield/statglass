@@ -68,13 +68,15 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  # Apple's notary queue for a new team took over 2 hours per submission in 2026-11, and
+  # the job waits on it twice (app, then DMG), so the limit is generous.
   # Standard macOS runners are free on this public repository (D-131). The signing
   # secrets live in the `release` environment, which only v* tags can use and which
   # waits for the maintainer's approval before this job starts.
   macos:
     needs: agents
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 300
     environment: release
     permissions:
       contents: write
