@@ -23,6 +23,8 @@ addresses, and every dashboard page keeps its header in view as you scroll.
 - Installed copies update to 0.11.0 the usual way, from **Settings → General** or
   automatically. Updates are verified with StatGlass's own update signature before
   they install.
+- The download is now named `StatGlass.dmg`. The website's Download button always
+  fetches the newest one.
 
 ## Moving from Kelvo
 

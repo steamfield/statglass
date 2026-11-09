@@ -49,6 +49,7 @@ class ReleaseTests(unittest.TestCase):
             (out / "statglass-release.json.sig").write_text("signature")
             release.checksums(out)
             self.assertEqual(len((out / "SHA256SUMS").read_text().splitlines()), 8)
+            self.assertTrue((out / "StatGlass.dmg").is_file())
             for target in release.AGENTS:
                 entry = catalog["artifacts"][target]
                 self.assertTrue(entry["url"].startswith("https://github.com/steamfield/statglass/releases/download/v0.1.0/"))

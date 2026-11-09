@@ -86,20 +86,20 @@ publish() {
     die "$tag has no draft release (still building, or already published)."
   dir="$(mktemp -d)"
   trap 'rm -rf "$dir"' EXIT
-  gh release download "$tag" --repo "$REPO" --pattern StatGlass_aarch64.dmg --pattern SHA256SUMS --dir "$dir"
-  (cd "$dir" && grep ' StatGlass_aarch64.dmg$' SHA256SUMS | shasum -a 256 -c -)
+  gh release download "$tag" --repo "$REPO" --pattern StatGlass.dmg --pattern SHA256SUMS --dir "$dir"
+  (cd "$dir" && grep ' StatGlass.dmg$' SHA256SUMS | shasum -a 256 -c -)
 
   # A downloaded file carries quarantine, so this is the check Gatekeeper makes on a user's Mac.
-  xcrun stapler validate "$dir/StatGlass_aarch64.dmg"
-  spctl --assess --type open --context context:primary-signature --verbose=2 "$dir/StatGlass_aarch64.dmg"
+  xcrun stapler validate "$dir/StatGlass.dmg"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$dir/StatGlass.dmg"
   mount="$dir/mount"
   mkdir "$mount"
-  hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dir/StatGlass_aarch64.dmg" >/dev/null
+  hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dir/StatGlass.dmg" >/dev/null
   spctl --assess --type execute --verbose=2 "$mount/StatGlass.app" || { hdiutil detach "$mount" >/dev/null; die "Gatekeeper rejects the app."; }
   hdiutil detach "$mount" >/dev/null
   echo "release: the draft DMG is notarized and passes Gatekeeper."
 
-  cp "$dir/StatGlass_aarch64.dmg" "$HOME/Downloads/StatGlass-$version.dmg"
+  cp "$dir/StatGlass.dmg" "$HOME/Downloads/StatGlass-$version.dmg"
   echo "release: copied it to ~/Downloads/StatGlass-$version.dmg."
   echo "         Open it on a fresh macOS account or another Mac, and check an update from the previous release."
   confirm "Publish $tag as the latest release? Installed apps will start updating to it."

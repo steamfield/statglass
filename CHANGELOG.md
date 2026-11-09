@@ -13,6 +13,7 @@
 - Dashboard page headers are pinned to the top of the scrolling page and drag the
   window.
 - Overview area charts draw their lines at half the module pages' weight.
+- The release DMG asset is `StatGlass.dmg` instead of `StatGlass_aarch64.dmg`.
 - The machine header's laptop drawing is redrawn.
 - Type sizes, weights, tracking, corner radii and icon strokes come from theme tokens
   in `src/app/styles/theme.css`, so a re-theme no longer edits components. No visual

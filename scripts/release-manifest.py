@@ -75,7 +75,7 @@ def catalog(version, output, notes, protocol):
 def checksums(output):
     # Run after signing, so the checksum list covers the detached signature too.
     required = ["statglass-release.json", "statglass-release.json.sig", "statglass-latest.json", "StatGlass.app.tar.gz",
-                "StatGlass.app.tar.gz.sig", "StatGlass_aarch64.dmg", *AGENTS.values()]
+                "StatGlass.app.tar.gz.sig", "StatGlass.dmg", *AGENTS.values()]
     for name in required:
         if not (output / name).is_file() or (output / name).stat().st_size == 0:
             raise ValueError(f"Missing or empty release asset: {name}")
@@ -93,7 +93,8 @@ def stage(version, bundle, output, agents=None):
     if len(dmgs) != 1:
         raise ValueError("Expected exactly one DMG")
     assets = {
-        "StatGlass_aarch64.dmg": dmgs[0],
+        # The browser saves the asset under this name; Apple Silicon is the only target.
+        "StatGlass.dmg": dmgs[0],
         "StatGlass.app.tar.gz": bundle / "macos/StatGlass.app.tar.gz",
         "StatGlass.app.tar.gz.sig": bundle / "macos/StatGlass.app.tar.gz.sig",
     }
