@@ -219,7 +219,7 @@ export function Sidebar({
       ref={navRef}
       aria-label="Dashboard sections"
       onKeyDown={onKeyDown}
-      className="relative flex h-full w-[220px] shrink-0 flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-3.5 pb-3 text-foreground max-sm:w-13 max-sm:px-2"
+      className="relative flex h-full w-[220px] shrink-0 flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-2.5 pb-3 text-foreground max-sm:w-13 max-sm:px-2"
     >
       <div
         ref={pillRef}
@@ -289,14 +289,16 @@ export function Sidebar({
   );
 }
 
-// The brand and navigation groups do not depend on live sample values.
+// The brand and navigation groups do not depend on live sample values. The
+// page header's pinned bar is sized to line up with the brand row; keep
+// `PageHeader` in step when its inset, strip or padding change.
 const SidebarBrand = memo(function SidebarBrand() {
   return (
     <>
       <div aria-hidden data-tauri-drag-region className="h-[30px] shrink-0" />
       <div
         data-tauri-drag-region
-        className="mb-2 flex shrink-0 items-center gap-2.5 border-border-subtle border-b px-2 pt-0.5 pb-3"
+        className="mb-2 flex shrink-0 items-center gap-2.5 border-border-subtle border-b px-2 pt-0.5 pb-2"
       >
         <StatGlassMark className="pointer-events-none size-5" />
         <span className="pointer-events-none font-[620] text-[18px] leading-none tracking-[-0.02em] max-sm:sr-only">

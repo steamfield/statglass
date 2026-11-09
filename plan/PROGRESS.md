@@ -4,6 +4,24 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Pinned page header, Overview machine header facts (2026-11-09)
+
+Every dashboard page's header is now a bar pinned to the top of the scrolling page, so the
+title and its controls stay put and the bar drags the window
+(`data-tauri-drag-region="deep"`; controls still click). The bar's first row centers on the
+sidebar's brand row and its hairline continues the brand row's; the subtitle moved inline
+after the title, as the machine header shows the macOS version, to hold the vertical budget.
+The sidebar's top inset and brand padding shrank 4 px each so the 200-container scenario
+still fits 900 px. The Overview machine header gained Load (1, 5, 15 min), Thermal state
+(Serious and Critical with the status icons) and a full-width Network row with the local
+and public addresses copied on click, so the public lookup (D-093) now also runs while
+Overview is shown. Its laptop drawing was redrawn with a notch, the CPU card's two traces
+and area fill, and a slab deck. Overview area chart lines are drawn at half weight.
+
+Verified with `bun run check` (1991 tests), the full Playwright suite (520; 11 WebKit
+failures in one loaded run passed on rerun) and screenshots of Overview and Disk in both
+themes. Not verified in the Tauri app: window dragging from the bar.
+
 ## Overview: Largest folders, Containers, Other hosts and a card picker (2026-11-08)
 
 D-132: phase 2b. Three cards after Apps in the one grid, each only where the host can fill

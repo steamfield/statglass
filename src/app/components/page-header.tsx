@@ -18,8 +18,16 @@ export interface PageHeaderProps {
 }
 
 /**
- * Dashboard page header: 22 px title, a muted fact line, and
- * an optional control on the right. No kicker; the subtitle must carry facts.
+ * Dashboard page header: a bar pinned to the top of the scrolling page with
+ * the 22 px title, a muted fact line after it, and an optional control on
+ * the right. No kicker; the subtitle must carry facts. A long subtitle wraps
+ * under the title, and controls that don't fit wrap to a second row.
+ *
+ * The bar lines up with the sidebar's brand row: its first row centers on the
+ * brand at 54 px and its bottom hairline continues the brand row's at 72 px,
+ * as the sidebar's 10 px inset, 30 px traffic-light strip and brand row add
+ * up. The whole bar drags the window except its controls, since the page
+ * scrolls and has no title bar of its own.
  */
 export function PageHeader({
   title,
@@ -28,8 +36,11 @@ export function PageHeader({
   headingRef,
 }: PageHeaderProps) {
   return (
-    <header className="flex flex-wrap items-center gap-4">
-      <div className="flex min-w-[220px] flex-1 flex-col gap-0.5">
+    <header
+      data-tauri-drag-region="deep"
+      className="sticky top-0 z-20 -mx-3 flex min-h-[73px] flex-wrap items-center gap-x-4 gap-y-2 border-border-subtle border-b bg-background px-3 pt-[37px] pb-0.5 sm:-mx-6 sm:px-6"
+    >
+      <div className="flex min-w-[220px] flex-1 flex-wrap items-baseline gap-x-3">
         <h1
           ref={headingRef}
           tabIndex={headingRef ? -1 : undefined}

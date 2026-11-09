@@ -90,7 +90,7 @@ export default function DashboardLayout() {
         <main
           ref={mainRef}
           data-stale={stale || undefined}
-          className="min-w-0 flex-1 overflow-y-auto px-3 pt-5 pb-6 sm:px-6"
+          className="min-w-0 flex-1 overflow-y-auto px-3 pb-6 sm:px-6"
         >
           {/* About other hosts, so it isn't dimmed with this host's stale page. */}
           {metricPage && <HostUpdateNotice />}

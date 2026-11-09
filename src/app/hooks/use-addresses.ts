@@ -22,11 +22,12 @@ const PUBLIC_STALE_MS = 10 * MINUTE_MS;
  * local address it read and the interface internet traffic leaves through,
  * so joining another network or a VPN asks again. The
  * public lookup waits for the local read, so a remote host (which has none
- * here) never shows this Mac's address. It runs only while the Network page
- * or the popover's Network card is shown (a hidden window pauses both
- * intervals), at most every 10 minutes per window, and is not retried on
- * failure. Showing the window re-reads the local addresses at once, so a
- * network changed while the popover was closed is caught on open.
+ * here) never shows this Mac's address. It runs only while the Network page,
+ * the Overview machine header or the popover's Network card is shown (a
+ * hidden window pauses both intervals), at most every 10 minutes per window,
+ * and is not retried on failure. Showing the window re-reads the local
+ * addresses at once, so a network changed while the popover was closed is
+ * caught on open.
  */
 export function useAddresses(primary: string | null) {
   const isLocal = useIsLocalHost();

@@ -5,15 +5,9 @@
  */
 import { selectedRange } from "@core/brush";
 import { formatPercent } from "@core/format";
-import type { Event, HostId, ThermalState } from "@core/generated/bindings";
+import type { Event, HostId } from "@core/generated/bindings";
+import { THERMAL_LABEL } from "@core/thermal";
 import { MINUTE_MS } from "@core/time-grid";
-
-const THERMAL: Record<ThermalState, string> = {
-  nominal: "Nominal",
-  fair: "Fair",
-  serious: "Serious",
-  critical: "Critical",
-};
 
 const pct = (v: number | null) => (v === null ? "?" : formatPercent(v));
 const watts = (v: number | null) => (v === null ? "?" : `${v.toFixed(1)} W`);
@@ -37,7 +31,7 @@ export function eventLabel(e: Event): string {
     case "fans_ramped":
       return `Fans ramped up${blame(e.processes)}`;
     case "thermal_state":
-      return `Thermal state ${THERMAL[d.to]}`;
+      return `Thermal state ${THERMAL_LABEL[d.to]}`;
     case "sustained_process":
       return `${d.process} at ${pct(d.cpu_pct)} CPU for ${duration(d.secs)}`;
     case "power_spike":
@@ -45,7 +39,7 @@ export function eventLabel(e: Event): string {
     case "alert":
       return d.cause.type === "process_cpu"
         ? `Alert · ${d.cause.process} at ${pct(d.cause.cpu_pct)} CPU`
-        : `Alert · thermal state ${THERMAL[d.cause.state]}`;
+        : `Alert · thermal state ${THERMAL_LABEL[d.cause.state]}`;
   }
 }
 

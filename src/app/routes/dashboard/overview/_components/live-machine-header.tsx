@@ -15,6 +15,7 @@ import { useHost } from "~/stores/host-store";
 import { selectBattery, selectVolumeCapacity } from "~/stores/live-selectors";
 import { useLastWake } from "../_hooks/use-overview-history";
 import { coresLabel } from "../_lib/card-props";
+import { stateSpecs, useHasMetric } from "./machine-live-specs";
 
 /** "Apple M4 Pro" reads as "M4 Pro" inside the title's parentheses. */
 function shortChip(chip: string): string {
@@ -44,6 +45,8 @@ export function LiveMachineHeader() {
       return { charge, health, cycles, present };
     })
   );
+  const hasLoad = useHasMetric("cpu.loadavg");
+  const hasThermal = useHasMetric("thermal.state");
   if (!host) return null;
   const info = host.info;
   const topology = info.cpu_topology;
@@ -87,6 +90,7 @@ export function LiveMachineHeader() {
       .filter(Boolean)
       .join(" · "),
   });
+  specs.push(...stateSpecs({ load: hasLoad, thermal: hasThermal }));
 
   return (
     <MachineHeader
