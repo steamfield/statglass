@@ -25,6 +25,8 @@ import { useTickScroll } from "./lib/use-tick-scroll";
 const VB_W = 1000;
 /** The dash pattern's length in screen px ("3 2"). */
 const DASH = [3, 2] as const;
+/** Line width in px when a series sets no `weight`. */
+export const DEFAULT_LINE_WEIGHT = 1.5;
 const DASH_PERIOD = DASH[0] + DASH[1];
 
 /**
@@ -256,7 +258,7 @@ export function StreamArea({
                     d={linePath}
                     fill="none"
                     style={{ stroke }}
-                    strokeWidth={s.weight ?? 1.5}
+                    strokeWidth={s.weight ?? DEFAULT_LINE_WEIGHT}
                     strokeDasharray={s.dash ? DASH.join(" ") : undefined}
                     strokeDashoffset={
                       s.dash ? dashOffset.toFixed(2) : undefined

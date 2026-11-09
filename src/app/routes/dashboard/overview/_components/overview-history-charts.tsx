@@ -16,6 +16,10 @@ import { useModuleChart } from "~/hooks/use-module-chart";
 import { useUnits } from "~/hooks/use-units";
 import type { GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
+import {
+  DEFAULT_LINE_WEIGHT,
+  type StreamAreaProps,
+} from "~/widgets/stream-area";
 
 import { MIRROR_BARS } from "../_lib/chart-layout";
 
@@ -26,6 +30,17 @@ const MIRROR_HEIGHT = 44;
  * A caption would cover a third of a 300 px card; the hatched band stays
  * and keeps its accessible name, and the module page shows the caption.
  */
+/**
+ * Overview charts are a third the width of a module page's, so a module
+ * page's line weight hides the detail; draw them at half weight.
+ */
+function thinned(lines: StreamAreaProps["series"]): StreamAreaProps["series"] {
+  return lines.map((l) => ({
+    ...l,
+    weight: (l.weight ?? DEFAULT_LINE_WEIGHT) / 2,
+  }));
+}
+
 function uncaptioned<T extends GapSpan>(gaps: readonly T[]): T[] {
   return gaps.map((g) => ({ ...g, showCaption: false }));
 }
@@ -44,7 +59,7 @@ export function OverviewHistoryChart({
   return (
     <ModuleHistoryChart
       chart={{ ...chart, gaps }}
-      lines={spec.lines(chart.series.values)}
+      lines={thinned(spec.lines(chart.series.values))}
       yAxis={spec.yAxis}
       accent={accent}
       height={AREA_HEIGHT}
