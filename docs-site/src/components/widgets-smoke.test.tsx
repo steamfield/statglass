@@ -13,7 +13,7 @@ describe("StatGlass widgets in docs-site", () => {
           value="18%"
           label="Load"
           accent="cpu"
-          size={72}
+          size={88}
         />
         <StreamArea
           series={[{ key: "total", values: [10, 12, 14, 13, 18], step: 1 }]}
