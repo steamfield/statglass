@@ -4398,3 +4398,54 @@ release build with the same keys remains the documented fallback.
 Developer ID signed but not notarized: `tauri build` signs with the configured
 identity and skips notarization silently when the `APPLE_API_*` variables are absent.
 `scripts/notarize-dmg.sh` now fails a build whose app has no stapled ticket.
+
+## D-132: Largest folders, Containers, Other hosts and a card picker on the Overview
+
+Date: 2026-11-08. Phase 2b of the Overview plan, after D-130.
+
+Three more cards join the Overview's one grid after Apps, each only where the host can
+fill it. Largest folders shows the five largest actionable folders of this Mac's last
+boot-volume scan. Containers ranks the containers that peaked highest over the chart
+window (the Containers page's ranking query with no series), shown on This Mac with Docker
+monitoring on. Other hosts lists every saved remote host with its live CPU and memory
+share, or its connection state, and a row switches the dashboard to that host.
+
+The Containers card reads the engine's snapshot every 10 s Docker bucket instead of
+subscribing to its stream: a stream from a shown window moves the Docker worker to its
+1 s visible cadence, and the Overview is the dashboard's landing page. Containers leaves
+reclaimable space out: reading Docker storage runs a disk scan, and
+D-107 keeps those scans on demand. Other hosts has no chart: the host registry carries
+live readings only, and per-host history would need host-scoped chart hooks.
+
+This amends D-114's "never stored" for one summary. When a scan of the boot volume
+finishes, `SpaceService` keeps its eight largest actionable folders (absolute paths,
+sizes, a category for known locations) in `space-highlights.json`, owner-only in the app
+data directory, so the Overview can show them without scanning again. The tree and the
+report stay in memory only, and a new boot-volume scan replaces the summary. The ranking
+lives with the tree in `statglass-collect`. The walk enters only `Users`, `Applications`,
+`Library`, `opt` and `usr` at the root, never the system's own folders or the hidden
+ones (`.Spotlight-V100`, `.fseventsd`). It counts finished folders of at least 1 GiB, or
+0.5% of used space when that is larger, and publishes that floor in the summary. The
+root's folders and each home folder are always walked through, because "your home folder
+is big" says nothing about what to clear. Below them, a folder whose large subfolders
+hold half of it or more is passed through, and any other is a highlight. Known locations
+(Xcode build data and archives, device support, simulators including the system-wide
+`/Library/Developer/CoreSimulator`, `node_modules`, a home folder's caches, Trash, Docker
+and OrbStack data, downloaded models, Downloads) are highlights at once. The summary also
+carries the user's home folder, so only their own paths show from `~`. The summary is local only: a remote host
+answers `null`, so D-117's wire vocabulary is unchanged. A row reveals its folder in
+Finder through `disk_space_reveal_highlight`, which accepts only a path the summary holds.
+
+A scan reads the whole disk, so nothing starts one but the user. With no summary the
+card says what the report does and offers Run report; with one it shows the folders, how
+long ago the scan ran, and Re-run. Both start the Space view's own boot-volume scan, so
+either place shows the other's progress, and the scan still cancels when the dashboard
+hides (D-114).
+
+The Overview header gets a card picker, an "Overview cards" menu with one checkbox per
+card the host can fill and Show all. The choice is saved per card in
+`settings.overview` (every card shown by default and for a settings file from before),
+patched per field like the popover's densities (D-050). Capability gates still apply on
+top of it. This is the hide-and-show part of v2.3's Customize Overview. Reordering, the
+edit mode and the per-card Top processes option remain v2.3b.
+||||||| c449bfc

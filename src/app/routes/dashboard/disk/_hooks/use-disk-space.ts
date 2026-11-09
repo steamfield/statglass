@@ -29,11 +29,16 @@ export function useSpaceVolumes(enabled: boolean) {
   });
 }
 
-/** The running scan, or how the last one ended. Polled only while one runs. */
+/**
+ * The running scan, or how the last one ended. Polled only while one runs.
+ * When a scan ends, the kept largest-folders summary (D-132) is read again,
+ * whichever view started it: a finished boot scan replaces it.
+ */
 export function useSpaceStatus(enabled: boolean) {
   const transport = useTransport();
   const host = useHostId();
-  return useQuery({
+  const client = useQueryClient();
+  const query = useQuery({
     queryKey: diskSpaceKeys.status(host),
     queryFn: () => unwrap(transport.diskSpaceStatus(host)),
     enabled,
@@ -41,6 +46,16 @@ export function useSpaceStatus(enabled: boolean) {
       q.state.data?.phase === "scanning" ? SPACE_POLL_MS : false,
     refetchOnWindowFocus: false,
   });
+  const scanning = query.data?.phase === "scanning";
+  const wasScanning = useRef(scanning);
+  useEffect(() => {
+    if (wasScanning.current && !scanning)
+      void client.invalidateQueries({
+        queryKey: diskSpaceKeys.highlights(host),
+      });
+    wasScanning.current = scanning;
+  }, [client, host, scanning]);
+  return query;
 }
 
 /** The finished report; refetched when a scan ends. */

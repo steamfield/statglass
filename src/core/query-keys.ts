@@ -317,6 +317,8 @@ export function settingsInvalidation(
  */
 export const dockerKeys = {
   all: ["docker"] as const,
+  /** The local engine's current snapshot, read without a live stream. */
+  snapshot: () => [...dockerKeys.all, "snapshot"] as const,
   comparison: (
     host: HostId,
     engine: string,
@@ -438,6 +440,8 @@ export const diskSpaceKeys = {
   ) => ["disk-space", hostId, "subtree", report, node, live] as const,
   largest: (hostId: HostId, report: number) =>
     ["disk-space", hostId, "largest", report] as const,
+  /** The last boot-volume scan's largest folders, kept between launches. */
+  highlights: (hostId: HostId) => ["disk-space", hostId, "highlights"] as const,
 };
 
 /*

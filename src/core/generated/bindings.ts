@@ -60,6 +60,27 @@ export const commands = {
 	diskSpaceReveal: (report: number, target: SpaceTarget) => typedError<null, CommandError>(__TAURI_INVOKE("disk_space_reveal", { report, target })),
 	/**  The path of an entry of a report, as the host shows it, for Copy path. */
 	diskSpacePath: (host: HostId, report: number, target: SpaceTarget) => typedError<string, CommandError>(__TAURI_INVOKE("disk_space_path", { host, report, target })),
+	/**
+	 *  The largest actionable folders of this Mac's last boot-volume scan, kept between
+	 *  launches for the Overview. A remote host has none: the summary stays off the wire.
+	 *  Off the main thread: reading it can settle a finished scan, which ranks and writes.
+	 */
+	diskSpaceHighlights: (host: HostId) => typedError<{
+	/**  The volume's display name. */
+	volume: string,
+	finished_ms: number | null,
+	used_bytes: number | null,
+	/**  The size a folder needed to be listed. */
+	min_bytes: number | null,
+	/**  The user's home folder, so paths under it can be shown from `~`. */
+	home: string | null,
+	folders: SpaceHighlight[],
+} | null, CommandError>(__TAURI_INVOKE("disk_space_highlights", { host })),
+	/**
+	 *  Shows a folder of the highlights summary in Finder. Only a path the summary holds is
+	 *  revealed, so the webview cannot name an arbitrary one.
+	 */
+	diskSpaceRevealHighlight: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("disk_space_reveal_highlight", { path })),
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
@@ -2214,6 +2235,40 @@ export type OsKind = "mac_os" | "linux" |
 /**  An OS this build does not know, from a newer peer (D-040). */
 "unknown";
 
+export type OverviewPatch = {
+	cpu?: boolean | null,
+	gpu?: boolean | null,
+	memory?: boolean | null,
+	power?: boolean | null,
+	network?: boolean | null,
+	disk?: boolean | null,
+	battery?: boolean | null,
+	events?: boolean | null,
+	apps?: boolean | null,
+	folders?: boolean | null,
+	containers?: boolean | null,
+	hosts?: boolean | null,
+};
+
+/**
+ *  Every card is shown unless the user turned it off. A missing field takes its default,
+ *  so a settings file from before this existed shows them all.
+ */
+export type OverviewSettings = {
+	cpu?: boolean,
+	gpu?: boolean,
+	memory?: boolean,
+	power?: boolean,
+	network?: boolean,
+	disk?: boolean,
+	battery?: boolean,
+	events?: boolean,
+	apps?: boolean,
+	folders?: boolean,
+	containers?: boolean,
+	hosts?: boolean,
+};
+
 /**  Why Performance mode is in effect (D-088). */
 export type PerformanceReason = "off" |
 /**  The user turned it on in Settings. */
@@ -2657,6 +2712,8 @@ export type Settings = {
 	cli_access?: CliAccessSettings,
 	docker?: DockerSettings,
 	popover?: PopoverSettings,
+	/**  Absent from a settings file written before 0.9: every Overview card shown. */
+	overview?: OverviewSettings,
 	/**
 	 *  One entry per settings module: every [`Module`] except `Sensors`. An entry for a
 	 *  module this build does not know (a settings file from a newer build) is dropped on
@@ -2685,6 +2742,7 @@ export type SettingsPatch = {
 	remote_access?: RemoteAccessPatch | null,
 	cli_access?: CliAccessPatch | null,
 	popover?: PopoverPatch | null,
+	overview?: OverviewPatch | null,
 	docker?: DockerSettings | null,
 	modules?: Partial<{ [key in Module]: ModulePatch }> | null,
 	menu_bar?: MenuBarPatch | null,
@@ -2719,6 +2777,22 @@ export type SignalRefusal =
 /**  StatGlass itself or one of its helpers. */
 "statglass";
 
+/**
+ *  What a large folder is, when it is one of the locations people clear to free space.
+ *  Local only: the summary never crosses the wire.
+ */
+export type SpaceCategory =
+/**  Xcode's DerivedData. */
+"xcode_builds" | "xcode_archives" |
+/**  Xcode's `* DeviceSupport` symbol caches. */
+"device_support" | "simulators" | "node_modules" |
+/**  A home folder's `Library/Caches`. */
+"caches" | "trash" |
+/**  Docker Desktop or OrbStack disk data. */
+"container_data" |
+/**  Downloaded model weights (Hugging Face, Ollama). */
+"models" | "downloads";
+
 export type SpaceCrumb = {
 	id: number,
 	name: string,
@@ -2731,6 +2805,30 @@ export type SpaceFile = {
 	/**  Parent folder relative to the volume root, with "/" separators. */
 	parent: string,
 	bytes: number | null,
+};
+
+/**  One of the largest actionable folders of the last boot-volume scan. */
+export type SpaceHighlight = {
+	/**  Absolute path, as Finder shows it. */
+	path: string,
+	bytes: number | null,
+	category: SpaceCategory | null,
+};
+
+/**
+ *  The summary of the last finished boot-volume scan, kept on disk (unlike the report)
+ *  so the Overview can show it without scanning again. Largest first.
+ */
+export type SpaceHighlights = {
+	/**  The volume's display name. */
+	volume: string,
+	finished_ms: number | null,
+	used_bytes: number | null,
+	/**  The size a folder needed to be listed. */
+	min_bytes: number | null,
+	/**  The user's home folder, so paths under it can be shown from `~`. */
+	home: string | null,
+	folders: SpaceHighlight[],
 };
 
 export type SpaceKind = "folder" | "file" |

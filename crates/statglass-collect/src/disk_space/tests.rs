@@ -240,3 +240,35 @@ impl Lister for Blocked {
         Err(ListError::Unreadable)
     }
 }
+
+#[test]
+fn highlights_show_firmlinked_folders_from_root_and_the_rest_under_the_scan_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    write(&root.join("Users/me/Movies/a.mov"), 200 << 10);
+    write(&root.join("Applications/Big.app/bin"), 150 << 10);
+    let mut p = plan(&root, 1 << 30);
+    p.firmlinked.push("Users".into());
+    let scan = run(p);
+    let paths: Vec<String> = scan
+        .highlights_over(100 << 10, 8)
+        .into_iter()
+        .map(|h| h.path)
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "/Users/me/Movies".to_owned(),
+            root.join("Applications/Big.app").display().to_string(),
+        ]
+    );
+}
+
+#[test]
+fn the_highlight_floor_is_a_gibibyte_or_half_a_percent_of_used_space() {
+    let dir = tempfile::tempdir().unwrap();
+    let small = run(plan(dir.path(), 100 << 30));
+    assert_eq!(small.highlight_floor(), 1 << 30);
+    let big = run(plan(dir.path(), 1000 << 30));
+    assert_eq!(big.highlight_floor(), (1000 << 30) / 200);
+}

@@ -2,6 +2,7 @@ import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import { HostSelectionContext } from "~/lib/host-selection";
 import OverviewRoute from "./route";
 
 const interest = (calls: { command: string; args: unknown[] }[]) =>
@@ -200,3 +201,94 @@ it.each(["no-battery", "linux"] as const)(
     expect(screen.queryByRole("heading", { name: "Battery" })).toBeNull();
   }
 );
+
+describe("Overview cards menu (D-132)", () => {
+  const menu = async (user: { click: (e: Element) => Promise<void> }) => {
+    await user.click(
+      await screen.findByRole("button", { name: "Overview cards" })
+    );
+    return screen.findByRole("menu");
+  };
+
+  it("lists only the cards this host can fill", async () => {
+    const { user } = renderWithProviders(<OverviewRoute />);
+    const items = within(await menu(user))
+      .getAllByRole("menuitemcheckbox")
+      .map((item) => item.textContent);
+    expect(items).toEqual([
+      "CPU",
+      "GPU",
+      "Memory",
+      "Power & Sensors",
+      "Network",
+      "Disk",
+      "Battery",
+      "Events",
+      "Apps",
+      "Largest folders",
+    ]);
+  });
+
+  const cardNames = async (user: { click: (e: Element) => Promise<void> }) =>
+    within(await menu(user))
+      .getAllByRole("menuitemcheckbox")
+      .map((item) => item.textContent);
+
+  it("adds Containers with Docker monitoring on and Other hosts once a host is saved", async () => {
+    const { user } = renderWithProviders(<OverviewRoute />, {
+      transportOptions: { scenarios: ["docker-11", "multi-host"] },
+    });
+    await screen.findByRole("heading", { name: "Containers" });
+    await screen.findByRole("heading", { name: "Other hosts" });
+    expect((await cardNames(user)).slice(-3)).toEqual([
+      "Largest folders",
+      "Containers",
+      "Other hosts",
+    ]);
+  });
+
+  it("leaves This Mac's cards out while a remote host is on screen", async () => {
+    const transport = createMockTransport({
+      autoTick: false,
+      scenarios: ["docker-11", "multi-host"],
+    });
+    const hosts = (await transport.listHosts()).map((host) => ({
+      ...host,
+      is_local: false,
+    }));
+    const { user } = renderWithProviders(
+      <HostSelectionContext
+        value={{ hosts, selected: MOCK_HOST_ID, select: () => {} }}
+      >
+        <OverviewRoute />
+      </HostSelectionContext>,
+      { transport }
+    );
+    const names = await cardNames(user);
+    expect(names).not.toContain("Largest folders");
+    expect(names).not.toContain("Containers");
+    expect(names).toContain("Other hosts");
+  });
+
+  it("hides a card, saves it, and brings every card back", async () => {
+    const { user, transport } = renderWithProviders(<OverviewRoute />);
+    await screen.findByRole("link", { name: "Battery" });
+    await user.click(
+      within(await menu(user)).getByRole("menuitemcheckbox", {
+        name: "Battery",
+      })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Battery" })).toBeNull()
+    );
+    expect((await transport.getSettings()).settings.overview?.battery).toBe(
+      false
+    );
+    // The menu stays open for the next change.
+    await user.click(screen.getByRole("menuitem", { name: "Show all" }));
+    expect(await screen.findByRole("link", { name: "Battery" })).toBeVisible();
+    expect((await transport.getSettings()).settings.overview?.battery).toBe(
+      true
+    );
+  });
+});

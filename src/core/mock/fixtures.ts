@@ -35,6 +35,7 @@ export const SCENARIOS = [
   "disk-io-gap",
   "disk-space-eject",
   "disk-space-boot-only",
+  "disk-space-unscanned",
 
   "ssh-auth",
   "ssh-untrusted",

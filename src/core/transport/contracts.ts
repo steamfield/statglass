@@ -72,6 +72,7 @@ import type {
   SettingsPatch,
   SettingsSnapshot,
   SpaceFile,
+  SpaceHighlights,
   SpaceReport,
   SpaceScanStatus,
   SpaceSubtree,
@@ -414,6 +415,15 @@ export interface Transport {
     report: number,
     target: SpaceTarget
   ): Promise<CommandResult<string>>;
+  /**
+   * The largest actionable folders of this Mac's last boot-volume scan, kept
+   * between launches; null before the first scan and for a remote host.
+   */
+  diskSpaceHighlights(
+    host: HostId
+  ): Promise<CommandResult<SpaceHighlights | null>>;
+  /** Shows a folder of the highlights in Finder (local only). */
+  diskSpaceRevealHighlight(path: string): Promise<CommandResult<null>>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<CommandResult<UpdateStatus>>;
   installUpdate(version: string): Promise<CommandResult<null>>;

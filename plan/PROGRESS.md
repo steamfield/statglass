@@ -4,6 +4,36 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Overview: Largest folders, Containers, Other hosts and a card picker (2026-11-08)
+
+D-132: phase 2b. Three cards after Apps in the one grid, each only where the host can fill
+it: Largest folders (the last boot-volume scan's actionable folders, kept in
+`space-highlights.json`; ranking in `statglass-collect/src/disk_space/highlights.rs`;
+`disk_space_highlights` and `disk_space_reveal_highlight` commands, local only), Containers
+(peak CPU or memory over the chart window from the Containers page's ranking query) and
+Other hosts (live CPU and memory per saved host; a row switches host). The header's
+"Overview cards" menu hides and shows cards, saved per card in `settings.overview`. The
+menu bar settings patch moved to `src-tauri/src/settings/menu_bar.rs` to keep
+`settings.rs` under its size limit.
+
+Largest folders never scans on its own: Run report the first time, Re-run with the
+report's age after that, both starting the Space view's boot scan. A code review returned
+25 fixes, all made: the walk now enters only `Users`, `Applications`, `Library`, `opt` and
+`usr` and always walks through home folders; the Containers card reads Docker's snapshot
+every 10 s instead of streaming (a stream forced Docker's 1 s visible cadence) and says
+when Docker isn't reachable instead of loading forever; the highlights commands run off
+the main thread; `clear()` keeps a summary nothing settled; the summary publishes its
+size floor and home folder. Verified: Vitest 1,981 (278 files), lint, typecheck, clippy,
+Rust tests for schema, collect, engine and the app, `make architecture-check`, 222
+Playwright tests across the Overview, Docker, hosts and Space specs, and screenshots in
+both themes. The engine's per-mode `perf_gates` failed on `processes` allocations per tick (3.8,
+then 18) on a busy machine: the process-churn effect main has since fixed with the
+steady-state gate below. Not run: `make e2e-perf`.
+
+Left open: v2.3b's reorder, edit mode and Top processes option; reclaimable Docker space on
+the card (needs an on-demand storage scan, D-107); per-host history on Other hosts; the
+real-app check of a boot scan writing the summary and Reveal from the card.
+
 ## Perf gate: process allocations measured in steady state (2026-11-08)
 
 - The per-mode `perf_gates` runs failed pushes three times in a day on

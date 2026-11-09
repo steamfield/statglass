@@ -6,7 +6,8 @@ use statglass_engine::disk_space::SpaceError;
 use statglass_remote::RemoteError;
 use statglass_schema::HostId;
 use statglass_schema::disk_space::{
-    SpaceFile, SpaceReport, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume,
+    SpaceFile, SpaceHighlights, SpaceReport, SpaceScanStatus, SpaceSubtree, SpaceTarget,
+    SpaceVolume,
 };
 use tauri::State;
 
@@ -178,6 +179,22 @@ pub async fn disk_space_path(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// The largest actionable folders of this Mac's last boot-volume scan, kept between
+/// launches for the Overview. A remote host has none: the summary stays off the wire.
+/// Off the main thread: reading it can settle a finished scan, which ranks and writes.
+#[tauri::command]
+#[specta::specta]
+pub async fn disk_space_highlights(
+    state: State<'_, AppState>,
+    host: HostId,
+) -> Result<Option<SpaceHighlights>, CommandError> {
+    if !available() || matches!(state.route(host)?, Route::Remote(_)) {
+        return Ok(None);
+    }
+    let service = state.disk_space.clone();
+    spawn_blocking(move || service.highlights()).await
+}
+
 /// Shows an entry of this Mac's report in Finder. Paths come from the report, never the
 /// webview.
 #[tauri::command]
@@ -187,7 +204,31 @@ pub fn disk_space_reveal(
     report: u32,
     target: SpaceTarget,
 ) -> Result<(), CommandError> {
-    let path = state.disk_space.reveal_path(report, target)?;
+    reveal(&state.disk_space.reveal_path(report, target)?)
+}
+
+/// Shows a folder of the highlights summary in Finder. Only a path the summary holds is
+/// revealed, so the webview cannot name an arbitrary one.
+#[tauri::command]
+#[specta::specta]
+pub async fn disk_space_reveal_highlight(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), CommandError> {
+    guard()?;
+    let service = state.disk_space.clone();
+    spawn_blocking(move || {
+        if !service.is_highlight(&path) {
+            return Err(CommandError::DiskSpace {
+                message: "This folder is not in the last scan".into(),
+            });
+        }
+        reveal(std::path::Path::new(&path))
+    })
+    .await?
+}
+
+fn reveal(path: &std::path::Path) -> Result<(), CommandError> {
     if !path.exists() {
         return Err(CommandError::DiskSpace {
             message: "This item no longer exists".into(),
@@ -195,7 +236,7 @@ pub fn disk_space_reveal(
     }
     std::process::Command::new("/usr/bin/open")
         .arg("-R")
-        .arg(&path)
+        .arg(path)
         .status()
         .map_err(|e| CommandError::DiskSpace {
             message: format!("Couldn't open Finder: {e}"),
