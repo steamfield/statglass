@@ -85,7 +85,8 @@ publish() {
   [[ "$(gh release view "$tag" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null)" == true ]] ||
     die "$tag has no draft release (still building, or already published)."
   dir="$(mktemp -d)"
-  trap 'rm -rf "$dir"' EXIT
+  # Expanded now: the EXIT trap runs after this function's locals are gone.
+  trap "rm -rf '$dir'" EXIT
   gh release download "$tag" --repo "$REPO" --pattern StatGlass.dmg --pattern SHA256SUMS --dir "$dir"
   (cd "$dir" && grep ' StatGlass.dmg$' SHA256SUMS | shasum -a 256 -c -)
 
