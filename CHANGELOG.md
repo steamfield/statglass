@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/steamfield/statglass/compare/v0.10.0...v0.11.0) - 2026-11-09
+
+### Added
+
+- The Overview machine header shows load averages (1, 5, 15 min), the thermal state at
+  Serious or Critical, and a Network row with copyable local and public addresses, so
+  the public address lookup (D-093) also runs while Overview is shown.
+
+### Changed
+
+- Dashboard page headers are pinned to the top of the scrolling page and drag the
+  window.
+- Overview area charts draw their lines at half the module pages' weight.
+- The machine header's laptop drawing is redrawn.
+- Type sizes, weights, tracking, corner radii and icon strokes come from theme tokens
+  in `src/app/styles/theme.css`, so a re-theme no longer edits components. No visual
+  change apart from the Disk space map's corner radius (3 px to 4 px).
+
 ## [0.10.0](https://github.com/steamfield/statglass/compare/v0.8.1...v0.10.0) - 2026-11-08
 
 0.9.0 was tagged but not published; 0.10.0 includes its signing and release changes.
