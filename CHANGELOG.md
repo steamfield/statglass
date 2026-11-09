@@ -1,6 +1,21 @@
 # Changelog
 
-## [0.9.0](https://github.com/steamfield/statglass/compare/v0.8.1...v0.9.0) - 2026-11-08
+## [0.10.0](https://github.com/steamfield/statglass/compare/v0.8.1...v0.10.0) - 2026-11-08
+
+0.9.0 was tagged but not published; 0.10.0 includes its signing and release changes.
+
+### Added
+
+- Largest folders on the Overview: the five biggest folders worth cleaning up on this
+  Mac's startup disk (Xcode build data, simulators, caches, `node_modules`, models,
+  Downloads and so on), from a report you run from the card. The last report is kept
+  with its age and a Re-run button; a row shows the folder in Finder (D-132).
+- Containers on the Overview, when Docker monitoring is on: the five containers that
+  peaked highest over the time range, by CPU or memory, each linking to its page.
+- Other hosts on the Overview, once a remote host is saved: each host's live CPU and
+  memory or its connection state; a row switches the dashboard to that host.
+- An Overview cards menu in the Overview header to hide and show cards. The choice is
+  saved.
 
 ### Changed
 
