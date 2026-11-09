@@ -117,6 +117,8 @@ SF Pro, the macOS system face, on every element (`--font-sans`: `-apple-system`)
 | Axis tick, chart corner label | SF Pro, tabular | 9 to 10 px | 400 | normal | "-60s", "now", "40%", heatmap hour labels |
 | Initials chip | SF Pro | 9 px | 400 | normal | Process initial in a 16 px square, 4 px radius, `--color-raised` |
 
+Each size is a `--text-*` token in `src/app/styles/theme.css`: `micro` 9, `caption` 10, `label` 11, `small` 12, `body` 13, `heading` 14, `figure` 15, `title-sm` 16, `figure-lg` 17, `title` 18, `title-lg` 20, `page-title` 22, `display` 28, `hero` 32 (px). Weights are `font-medium` (510) and `font-semibold` (590); tracking is `tracking-title` (-0.022em), `tracking-figure` (-0.02em) and `tracking-snug` (-0.01em).
+
 Nothing in the UI is uppercase. Field labels are sentence case, muted and one size up from the old uppercase labels, and their position next to a value is what marks them as labels. Section titles are sentence case at card-title size.
 
 The menu bar image is the one exception: Rust draws it in bundled JetBrains Mono NL (D-023), and the tray preview in Settings and onboarding uses the same face (`--font-tray`) so it matches. Moving the menu bar to SF needs fixed-width digit cells in the renderer, since `ab_glyph` does not apply the `tnum` feature.

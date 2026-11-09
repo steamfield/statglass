@@ -22,7 +22,7 @@ export function HostVersion({
   return (
     <p
       className={cn(
-        "figures mt-1 text-[12px]",
+        "figures mt-1 text-small",
         line.tone === "destructive"
           ? "text-destructive"
           : "text-muted-foreground"

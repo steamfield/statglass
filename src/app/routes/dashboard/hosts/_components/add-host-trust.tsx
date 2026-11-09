@@ -53,7 +53,7 @@ export function AddHostTrust({
         </div>
       )}
       {trust && (
-        <div className="grid gap-2 border-border-subtle border-y py-3 text-[12px]">
+        <div className="grid gap-2 border-border-subtle border-y py-3 text-small">
           <p>
             Verify {trust.hostname}:{trust.port} with the owner of that Mac
             before trusting its SSH key. On the other Mac, run this in Terminal

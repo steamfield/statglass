@@ -37,14 +37,14 @@ export function SearchField({
         aria-label={label}
         spellCheck={false}
         autoComplete="off"
-        className={`${styles.input} h-full w-full rounded-control border border-border bg-btn pr-7 pl-7 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring`}
+        className={`${styles.input} h-full w-full rounded-control border border-border bg-btn pr-7 pl-7 text-foreground text-small outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring`}
       />
       {value && (
         <button
           type="button"
           onClick={() => onChange("")}
           aria-label="Clear search"
-          className="absolute right-1.5 grid size-4 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute right-1.5 grid size-4 place-items-center rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <XIcon aria-hidden className="size-3" />
         </button>

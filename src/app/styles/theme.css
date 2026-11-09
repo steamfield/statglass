@@ -18,6 +18,47 @@
      the tray preview uses the same face so it matches. Nothing else does. */
   --font-tray: "JetBrains Mono Variable", ui-monospace, monospace;
 
+  /*
+   * Type scale (design-system.md "Typography"). Every UI size is one of these;
+   * markup never sets `text-[Npx]`. Names avoid Tailwind's default `text-xs`
+   * to `text-9xl`, which docs-site still uses with their stock values. No
+   * line height here, so text keeps inheriting it as it did with px values.
+   * 13 px is the macOS body size.
+   */
+  --text-micro: 9px; /* initials chip, heatmap hour labels */
+  --text-caption: 10px; /* axis ticks, ring labels, chart corner labels */
+  --text-label: 11px; /* field labels, table headers, secondary text */
+  --text-small: 12px; /* row text, popover card titles, compact body */
+  --text-body: 13px; /* controls, menus, settings rows, dashboard card titles */
+  --text-heading: 14px; /* section headings */
+  --text-figure: 15px; /* card headline figures */
+  --text-title-sm: 16px; /* composer title, dialog title, lane "now" figure */
+  --text-figure-lg: 17px; /* ring centre figure (88 px ring) */
+  --text-title: 18px; /* error title, 112 px ring centre figure, wordmark */
+  --text-title-lg: 20px; /* machine name */
+  --text-page-title: 22px;
+  --text-display: 28px; /* onboarding title */
+  --text-hero: 32px; /* hero figure */
+  /* Tray preview glyphs, sized to match the Rust menu bar renderer. */
+  --text-tray-label: 6px;
+  --text-tray-label--line-height: 6px;
+  --text-tray-value: 8px;
+  --text-tray-value--line-height: 9px;
+  --text-tray-glyph: 11px; /* single-line items and the menu bar clock */
+
+  /* Unitless, so children with their own size inherit the ratio, not 16 px
+     (the shadcn primitives' table, menus and small controls). */
+  --leading-compact: calc(4 / 3);
+
+  /* SF Pro weights in use: 400, 510, 590 (Apple's medium and semibold). */
+  --font-weight-medium: 510;
+  --font-weight-semibold: 590;
+  --font-weight-wordmark: 620;
+
+  --tracking-title: -0.022em; /* titles and the hero figure */
+  --tracking-figure: -0.02em; /* ring centre figures, wordmark */
+  --tracking-snug: -0.01em; /* small titles, large figures */
+
   /* Shadcn/ui color tokens - Light mode (zinc-based, cyan accent) */
   --color-background: #fafafa;
   --color-foreground: #09090b;
@@ -40,7 +81,6 @@
   --color-border: #d4d4d8;
   --color-input: #d4d4d8;
   --color-ring: #06b6d4;
-  --radius: 0.375rem;
 
   /* StatGlass surfaces and text - Light mode */
   --color-deep: #f4f4f5;
@@ -57,6 +97,8 @@
   --color-selected: rgba(9, 9, 11, 0.05);
   --color-scrollbar: rgba(9, 9, 11, 0.22);
   --color-link: #0891b2;
+  /* Scrim behind modal dialogs, both themes. */
+  --color-overlay: rgba(0, 0, 0, 0.5);
 
   /* Vibrant surfaces (popover, desktop widgets) - Light mode */
   --color-vibrant: rgba(246, 246, 248, 0.68);
@@ -96,7 +138,9 @@
   --color-live: #10b981;
   --color-warning: #f59e0b;
 
-  /* Radius scale */
+  /* Radius scale. Tailwind's stock `rounded-sm`/`-md`/`-lg` are cleared so
+     every corner comes from this one scale. */
+  --radius-*: initial;
   --radius-panel: 22px;
   --radius-card: 12px;
   --radius-tile: 8px;
@@ -224,13 +268,6 @@
   }
 
   :root.dark {
-    --color-series-1: #3987e5;
-    --color-series-2: #d95926;
-    --color-series-3: #199e70;
-    --color-series-4: #9085e9;
-    --color-series-5: #d55181;
-    --color-series-6: #008300;
-
     --color-vibrant: #161619;
     --color-card-vibrant: #111113;
     --color-widget: #121214;

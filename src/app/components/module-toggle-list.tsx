@@ -44,7 +44,7 @@ export function ModuleToggleRow({
     <Row
       className={cn(
         "flex items-center border-border-subtle border-b last:border-b-0",
-        dense ? "h-[42px] gap-2.5 px-3" : "min-h-12 gap-3 px-4 text-[13px]"
+        dense ? "h-[42px] gap-2.5 px-3" : "min-h-12 gap-3 px-4 text-body"
       )}
     >
       <Swatch
@@ -56,7 +56,7 @@ export function ModuleToggleRow({
         <label
           htmlFor={switchId}
           className={cn(
-            dense && "text-[13px]",
+            dense && "text-body",
             // Onboarding mutes only an absent module; settings, any that is off.
             (dense ? absence !== null : !on) && "text-muted-foreground"
           )}
@@ -67,7 +67,7 @@ export function ModuleToggleRow({
           <span
             className={cn(
               "font-normal text-muted-foreground",
-              dense ? "truncate text-[11px]" : "text-[12px]"
+              dense ? "truncate text-label" : "text-small"
             )}
           >
             {line}

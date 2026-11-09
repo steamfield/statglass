@@ -13,13 +13,13 @@ export function StorageInventorySummary({
       <dl className="flex flex-wrap gap-x-8 gap-y-3 border-border-subtle border-y py-3">
         {snapshot.categories.map((item) => (
           <div key={item.kind}>
-            <dt className="text-[11px] text-muted-foreground">
+            <dt className="text-label text-muted-foreground">
               {storageKindLabel[item.kind]}
             </dt>
-            <dd className="figures-display mt-1 text-[20px]">
+            <dd className="figures-display mt-1 text-title-lg">
               {formatBytes(item.size_bytes)}
             </dd>
-            <dd className="figures text-[11px] text-muted-foreground">
+            <dd className="figures text-label text-muted-foreground">
               {item.reclaimable_bytes === null
                 ? "Reclaimable unknown"
                 : `${formatBytes(item.reclaimable_bytes)} potentially reclaimable`}
@@ -27,7 +27,7 @@ export function StorageInventorySummary({
           </div>
         ))}
       </dl>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-label text-muted-foreground">
         Shared image and cache layers make sizes non-additive. VM allocation,
         logs, bind-mounted host files and other Buildx builders may use
         additional space. Unreferenced does not mean disposable.
@@ -39,7 +39,7 @@ export function StorageInventorySummary({
         </InlineMessage>
       )}
       {snapshot.warnings.map((warning) => (
-        <p key={warning} className="text-[12px] text-muted-foreground">
+        <p key={warning} className="text-muted-foreground text-small">
           {warning}
         </p>
       ))}

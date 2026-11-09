@@ -64,7 +64,7 @@ export function OverviewFoldersCard({ origin }: { origin: Corner }) {
       className="flex min-w-0 flex-col gap-3 px-4 py-3.5"
     >
       <header className="flex items-baseline justify-between gap-3">
-        <h3 id={titleId} className="font-[590] text-[13px]">
+        <h3 id={titleId} className="font-semibold text-body">
           <Link
             to={SPACE}
             className="rounded-control outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
@@ -76,7 +76,7 @@ export function OverviewFoldersCard({ origin }: { origin: Corner }) {
       <FoldersBody report={report} onReveal={(f) => void reveal(f)} />
       {summary && report.progress === null && (
         <footer className="mt-auto flex items-center justify-between gap-3">
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-label text-muted-foreground">
             Scanned {agoLabel(now, summary.finished_ms)}
           </span>
           <Button
@@ -90,7 +90,7 @@ export function OverviewFoldersCard({ origin }: { origin: Corner }) {
         </footer>
       )}
       {report.busy && (
-        <p role="status" className="text-[11px] text-muted-foreground">
+        <p role="status" className="text-label text-muted-foreground">
           Another volume is being scanned in{" "}
           <Link to={SPACE} className="text-link hover:underline">
             Space
@@ -99,7 +99,7 @@ export function OverviewFoldersCard({ origin }: { origin: Corner }) {
         </p>
       )}
       {error && (
-        <p role="alert" className="text-[11px] text-destructive">
+        <p role="alert" className="text-destructive text-label">
           {error}
         </p>
       )}
@@ -118,7 +118,7 @@ function FoldersBody({
   if (report.progress !== null)
     return (
       <div className="flex items-center justify-between gap-3">
-        <p role="status" className="figures text-[12px] text-muted-foreground">
+        <p role="status" className="figures text-muted-foreground text-small">
           Scanning this Mac's disk… {Math.round(report.progress * 100)}%
         </p>
         <Button variant="ghost" size="sm" onClick={report.cancel}>
@@ -128,7 +128,7 @@ function FoldersBody({
     );
   if (report.summary.isError)
     return (
-      <p role="alert" className="text-[12px] text-muted-foreground">
+      <p role="alert" className="text-muted-foreground text-small">
         Couldn't load the last report
       </p>
     );
@@ -136,7 +136,7 @@ function FoldersBody({
   if (!summary)
     return (
       <div className="flex flex-col items-start gap-2">
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-muted-foreground text-small">
           Find the folders taking the most space on this Mac. The report reads
           the whole disk, so it runs only when you ask.
         </p>
@@ -151,7 +151,7 @@ function FoldersBody({
     );
   if (summary.folders.length === 0)
     return (
-      <p role="status" className="text-[12px] text-muted-foreground">
+      <p role="status" className="text-muted-foreground text-small">
         No folder holds {formatBytes(summary.min_bytes)} or more on its own.
       </p>
     );
@@ -185,16 +185,16 @@ function FolderRow({
       type="button"
       aria-description="Show in Finder"
       title={folder.path}
-      className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-[12px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onReveal}
     >
       <span className="flex min-w-0 items-baseline gap-2">
         <span className="shrink-0 text-fg-subtle">{name}</span>
-        <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+        <span className="min-w-0 truncate text-label text-muted-foreground">
           {detail(folder, name, parent)}
         </span>
       </span>
-      <span className="figures shrink-0 text-[11px] text-fg-subtle">
+      <span className="figures shrink-0 text-fg-subtle text-label">
         {formatBytes(folder.bytes)}
       </span>
     </button>

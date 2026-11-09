@@ -95,7 +95,7 @@ export function SectionCard({
             <h2
               id={titleId}
               className={cn(
-                "flex-1 font-[590] text-[14px]",
+                "flex-1 font-semibold text-heading",
                 !compactHeader && "min-w-48"
               )}
             >
@@ -108,10 +108,10 @@ export function SectionCard({
                 !compactHeader && "min-w-48"
               )}
             >
-              <h2 id={titleId} className="font-[590] text-[14px]">
+              <h2 id={titleId} className="font-semibold text-heading">
                 {title}
               </h2>
-              <span className="font-normal text-[12px] text-muted-foreground">
+              <span className="font-normal text-muted-foreground text-small">
                 {subtitle}
               </span>
             </div>

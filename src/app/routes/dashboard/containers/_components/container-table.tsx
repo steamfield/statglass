@@ -174,7 +174,7 @@ export function ContainerTable({
         <tr key={item.id} className="h-11 bg-raised/40">
           <th colSpan={count} className="px-3 text-left">
             <button
-              className="w-full text-left text-[12px]"
+              className="w-full text-left text-small"
               type="button"
               aria-expanded={!collapsed.includes(group)}
               onClick={() => onCollapse(group)}
@@ -212,9 +212,9 @@ export function ContainerTable({
   return (
     <div className="@container">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
-        <h3 className="mr-auto font-[590] text-[14px]">{title}</h3>
+        <h3 className="mr-auto font-semibold text-heading">{title}</h3>
         {filters}
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-label text-muted-foreground">
           {rows.length} matching containers
         </span>
         {attention}
@@ -255,7 +255,7 @@ export function ContainerTable({
               className="w-full table-fixed border-collapse"
               aria-label={title}
             >
-              <thead className="sticky top-0 z-10 border-border border-y bg-card text-[11px] text-muted-foreground">
+              <thead className="sticky top-0 z-10 border-border border-y bg-card text-label text-muted-foreground">
                 <DataTableHead table={model.table} />
               </thead>
               <DataTable
@@ -274,7 +274,7 @@ export function ContainerTable({
               />
             </table>
             {!rows.length && (
-              <p className="px-3 py-8 text-[12px] text-muted-foreground">
+              <p className="px-3 py-8 text-muted-foreground text-small">
                 No containers match this view.
               </p>
             )}

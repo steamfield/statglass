@@ -70,7 +70,7 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
             accent="gpu"
             size={112}
           />
-          <figcaption className="figures text-[11px] text-muted-foreground">
+          <figcaption className="figures text-label text-muted-foreground">
             max {maxGhz === null ? MISSING : fixed(maxGhz, 2)}
           </figcaption>
         </figure>
@@ -78,8 +78,8 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
           {rows ? (
             <div className="flex flex-col gap-2">
               <div className="flex justify-between">
-                <span className="text-[12px]">{span}</span>
-                <span className="figures text-[11px] text-muted-foreground">
+                <span className="text-small">{span}</span>
+                <span className="figures text-label text-muted-foreground">
                   active {formatPercent(idle === undefined ? 100 : 100 - idle)}
                 </span>
               </div>
@@ -92,7 +92,7 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
               />
             </div>
           ) : (
-            <p className="m-0 font-normal text-[12px] text-muted-foreground">
+            <p className="m-0 font-normal text-muted-foreground text-small">
               No frequency residency samples in the {span}
             </p>
           )}

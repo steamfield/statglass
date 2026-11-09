@@ -27,9 +27,9 @@ export function GalleryItem({
       style={width ? { width } : undefined}
     >
       <figcaption className="flex items-baseline gap-2">
-        <span className="font-[590] text-[13px]">{name}</span>
+        <span className="font-semibold text-body">{name}</span>
         {usedIn && (
-          <span className="figures text-[11px] text-muted-foreground">
+          <span className="figures text-label text-muted-foreground">
             {usedIn}
           </span>
         )}

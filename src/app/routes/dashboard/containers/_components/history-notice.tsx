@@ -94,7 +94,7 @@ export function HistoryNotice({
     <>
       <div
         role="status"
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-muted-foreground"
       >
         <span className="flex-1">{text}</span>
         {(unavailable || paused || partial) && (

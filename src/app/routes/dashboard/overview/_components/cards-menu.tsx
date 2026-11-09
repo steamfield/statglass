@@ -31,7 +31,7 @@ export function CardsMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="icon" aria-label="Overview cards">
-          <LayoutGrid strokeWidth={1.5} />
+          <LayoutGrid className="icon-light" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">

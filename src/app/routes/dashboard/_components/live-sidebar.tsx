@@ -207,7 +207,7 @@ export function LiveSidebar() {
           label={performanceLabel}
           side="right"
           onOpenSettings={() => navigate("/dashboard/settings")}
-          className="ml-3.5 self-start text-left font-normal text-[11px] text-muted-foreground"
+          className="ml-3.5 self-start text-left font-normal text-label text-muted-foreground"
         >
           {performanceLabel}
         </PerformanceExplainer>

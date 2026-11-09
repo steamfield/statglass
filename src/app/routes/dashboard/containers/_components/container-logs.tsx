@@ -61,7 +61,7 @@ export function ContainerLogs({
   return (
     <section aria-label="Container logs" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-muted-foreground text-small">
           Latest 200 lines · kept in memory only ·{" "}
           {error
             ? "Stopped"
@@ -73,7 +73,7 @@ export function ContainerLogs({
         </p>
         <label
           htmlFor="docker-log-follow"
-          className="flex items-center gap-2 text-[12px]"
+          className="flex items-center gap-2 text-small"
         >
           <Checkbox
             id="docker-log-follow"
@@ -114,7 +114,7 @@ export function ContainerLogs({
         aria-label="Log output"
         // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard scrolling needs a focusable log viewport
         tabIndex={0}
-        className="max-h-80 overflow-auto rounded-control border border-border bg-deep p-3 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="max-h-80 overflow-auto rounded-control border border-border bg-deep p-3 text-label focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onScroll={(e) => {
           const node = e.currentTarget;
           const up =
@@ -138,7 +138,7 @@ export function ContainerLogs({
           </p>
         )}
       </section>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-label text-muted-foreground">
         Buffer capped at 2,000 lines or 2 MiB.
         {truncated
           ? " Docker log output was truncated; some lines are unavailable."

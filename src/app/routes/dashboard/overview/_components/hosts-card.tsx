@@ -49,7 +49,7 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
       className="flex min-w-0 flex-col gap-3 px-4 py-3.5"
     >
       <header className="flex items-baseline justify-between gap-3">
-        <h3 id={titleId} className="font-[590] text-[13px]">
+        <h3 id={titleId} className="font-semibold text-body">
           <Link
             to="/dashboard/hosts"
             className="rounded-control outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
@@ -58,7 +58,7 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
           </Link>
         </h3>
         {remoteRows.length > 0 && (
-          <span className="figures text-[11px] text-muted-foreground">
+          <span className="figures text-label text-muted-foreground">
             {connected} of {remoteRows.length} connected
           </span>
         )}
@@ -72,7 +72,7 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
               <button
                 type="button"
                 aria-description="Show this host's metrics"
-                className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-[12px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => selection.select(row.id)}
               >
                 <span
@@ -82,7 +82,7 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
                   {row.name}
                 </span>
                 <span
-                  className={`shrink-0 text-[11px] ${row.connected ? "figures text-fg-subtle" : "text-muted-foreground"}`}
+                  className={`shrink-0 text-label ${row.connected ? "figures text-fg-subtle" : "text-muted-foreground"}`}
                 >
                   {row.detail}
                 </span>
@@ -94,7 +94,7 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
       {more > 0 && (
         <Link
           to="/dashboard/hosts"
-          className="figures self-start rounded-control text-[11px] text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="figures self-start rounded-control text-label text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           {more} more on Hosts
         </Link>

@@ -33,7 +33,7 @@ function ActionButton({
     <Button
       variant="ghost"
       size="sm"
-      className="h-6 px-2 text-[11px] aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
+      className="h-6 px-2 text-label aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
       aria-label={`${LABEL[kind]} ${p.name} (${p.pid})`}
       aria-disabled={reason !== null || undefined}
       onClick={(e) => {

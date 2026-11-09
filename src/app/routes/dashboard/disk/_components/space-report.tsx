@@ -217,9 +217,9 @@ function Breadcrumb({
   onCrumb: (crumb: SpaceCrumb, index: number) => void;
 }) {
   const crumb =
-    "rounded-sm px-1 py-0.5 outline-none hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+    "rounded-chip px-1 py-0.5 outline-none hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
   return (
-    <nav aria-label="Folder path" className="-mx-1 min-w-0 text-[12px]">
+    <nav aria-label="Folder path" className="-mx-1 min-w-0 text-small">
       <ol className="flex min-w-0 flex-wrap items-center gap-y-1 text-fg-subtle">
         <li className="flex items-center">
           <button type="button" className={crumb} onClick={onVolumes}>
@@ -238,7 +238,7 @@ function Breadcrumb({
                 <span
                   aria-current="page"
                   className={cn(
-                    "truncate px-1 py-0.5 font-[510] text-foreground"
+                    "truncate px-1 py-0.5 font-medium text-foreground"
                   )}
                 >
                   {c.name}

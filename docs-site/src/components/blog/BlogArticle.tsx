@@ -46,7 +46,7 @@ export function BlogArticle({
               </li>
             </ol>
           </nav>
-          <h1 className="text-[clamp(2rem,4vw,3rem)] leading-tight font-[590] tracking-[-0.03em] text-balance">
+          <h1 className="text-[clamp(2rem,4vw,3rem)] leading-tight font-semibold tracking-[-0.03em] text-balance">
             {entry.data.headline ?? entry.data.title}
           </h1>
           <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -88,7 +88,7 @@ export function BlogArticle({
         >
           <p
             data-motion-part=""
-            className="max-w-xl text-xl leading-snug font-[590] tracking-[-0.01em] text-balance"
+            className="max-w-xl text-xl leading-snug font-semibold tracking-[-0.01em] text-balance"
           >
             StatGlass is free under the Apache-2.0 license.
           </p>
@@ -96,14 +96,14 @@ export function BlogArticle({
             data-motion-part=""
             href="/docs/install"
             data-track-install="blog"
-            className="inline-flex min-h-11 items-center rounded-control bg-primary px-5 text-sm font-[510] text-primary-foreground hover:opacity-90"
+            className="inline-flex min-h-11 items-center rounded-control bg-primary px-5 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
             Install StatGlass
           </a>
         </section>
         {(related.length > 0 || docs.length > 0) && (
           <section aria-labelledby="related">
-            <h2 id="related" className="mb-4 text-xl font-[590] tracking-tight">
+            <h2 id="related" className="mb-4 text-xl font-semibold tracking-tight">
               Related
             </h2>
             <ul className="divide-y divide-border border-y border-border">

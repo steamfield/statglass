@@ -35,7 +35,7 @@ export function SelectionSummary({
       (start !== undefined || s.lastTsMs !== null) &&
       range.toMs <= (start ?? (s.lastTsMs ?? 0) - windowMs)
   );
-  const className = "mt-1 mb-0 font-normal text-[12px] text-muted-foreground";
+  const className = "mt-1 mb-0 font-normal text-small text-muted-foreground";
 
   if (range === null) {
     return (

@@ -181,7 +181,7 @@ export function HeatMatrix({
         return (
           <div key={r.id} className={cn("contents", first && "[&>*]:mt-2")}>
             <span
-              className="figures col-start-1 truncate text-[10px] text-muted-foreground"
+              className="figures col-start-1 truncate text-caption text-muted-foreground"
               style={row(k)}
               title={r.title}
             >
@@ -207,7 +207,7 @@ export function HeatMatrix({
               />
             </div>
             <span
-              className="figures col-start-3 text-right text-[11px]"
+              className="figures col-start-3 text-right text-label"
               style={row(k)}
             >
               {r.now == null ? MISSING : formatNow(r.now)}
@@ -262,7 +262,7 @@ export function HeatScaleLegend({
       className="flex items-center gap-1"
       style={accentVars(accent)}
     >
-      <span className="figures mr-1 text-[10px] text-muted-foreground">
+      <span className="figures mr-1 text-caption text-muted-foreground">
         {minLabel}
       </span>
       {stops.map((a) => (
@@ -274,7 +274,7 @@ export function HeatScaleLegend({
           }}
         />
       ))}
-      <span className="figures ml-1 text-[10px] text-muted-foreground">
+      <span className="figures ml-1 text-caption text-muted-foreground">
         {maxLabel}
       </span>
     </div>

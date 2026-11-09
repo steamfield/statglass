@@ -48,7 +48,7 @@ export function MenuBarStyles() {
     <dl
       data-demo=""
       ref={ref}
-      className="divide-y divide-border border-y border-border text-base leading-normal font-[510]"
+      className="divide-y divide-border border-y border-border text-base leading-normal font-medium"
     >
       {STYLES.map(({ name, detail, menuBar }) => (
         <div
@@ -57,7 +57,7 @@ export function MenuBarStyles() {
           className="grid items-center gap-x-6 gap-y-2 py-4 sm:grid-cols-[minmax(0,1fr)_auto]"
         >
           <div>
-            <dt className="text-sm font-[590]">{name}</dt>
+            <dt className="text-sm font-semibold">{name}</dt>
             <dd className="text-sm text-secondary-foreground">{detail}</dd>
           </div>
           <dd className="min-w-0">

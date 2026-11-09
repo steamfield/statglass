@@ -59,7 +59,7 @@ export function ChartTooltipHead({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
-      <span data-tip="title" className="figures text-[12px]">
+      <span data-tip="title" className="figures text-small">
         {title}
       </span>
       <span data-tip="detail" className={FIELD_LABEL}>
@@ -99,7 +99,7 @@ export function ChartTooltipRow({
   field?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 text-[12px]">
+    <div className="flex items-center gap-2 text-small">
       {color && <SeriesSwatch color={color} />}
       <span className="flex-1 font-normal text-fg-subtle">{label}</span>
       <span data-tip={field} className="figures">
@@ -120,7 +120,7 @@ export function ChartTooltipNote({
   return (
     <span
       data-tip={field}
-      className="font-normal text-[12px] text-muted-foreground"
+      className="font-normal text-muted-foreground text-small"
     >
       {children}
     </span>

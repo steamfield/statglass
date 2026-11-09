@@ -22,25 +22,25 @@ export function SelectedProcessTable() {
   const { selected } = ctx;
   return (
     <div data-process-scroll className="max-h-96 min-h-0 overflow-auto">
-      <Table aria-label="Selected processes" className="w-full text-[12px]">
+      <Table aria-label="Selected processes" className="w-full text-small">
         <TableHeader variant="plain">
           <TableRow variant="plain">
             <ProcessSelectionHead />
             <TableHead
               variant="plain"
-              className="px-3 text-left font-normal text-[12px] text-foreground"
+              className="px-3 text-left font-normal text-foreground text-small"
             >
               Process
             </TableHead>
             <TableHead
               variant="plain"
-              className="px-3 text-right font-normal text-[12px] text-foreground"
+              className="px-3 text-right font-normal text-foreground text-small"
             >
               PID
             </TableHead>
             <TableHead
               variant="plain"
-              className="px-3 text-left font-normal text-[12px] text-foreground"
+              className="px-3 text-left font-normal text-foreground text-small"
             >
               Last observed
             </TableHead>
@@ -89,7 +89,7 @@ export function ProcessSelectionSummary({
       {" "}
       {selected.length > 0 && (
         <div
-          className="flex shrink-0 flex-wrap items-center gap-2 border-border-subtle border-t px-3 py-1 text-[11px]"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-border-subtle border-t px-3 py-1 text-label"
           // Shared with virtual table viewport geometry.
           style={{ minHeight: SELECTION_BAR_PX }}
         >
@@ -134,7 +134,7 @@ export function ProcessSelectionSummary({
         </div>
       )}
       {flow.results.length > 1 && (
-        <details className="shrink-0 border-border-subtle border-t px-3 py-2 text-[12px]">
+        <details className="shrink-0 border-border-subtle border-t px-3 py-2 text-small">
           <summary className="cursor-pointer">
             Batch results:{" "}
             {flow.results.filter((r) => r.state === "accepted").length} of{" "}

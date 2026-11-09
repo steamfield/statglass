@@ -396,7 +396,7 @@ function HistoricalAppRows({
                 aria-expanded={open}
                 aria-label={`${open ? "Hide" : "Show"} ${name} recorded processes`}
                 onClick={toggle}
-                className="-ml-1 grid size-4 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="-ml-1 grid size-4 place-items-center rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <ChevronRight
                   aria-hidden

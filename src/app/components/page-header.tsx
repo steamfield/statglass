@@ -45,14 +45,14 @@ export function PageHeader({
           ref={headingRef}
           tabIndex={headingRef ? -1 : undefined}
           className={cn(
-            "m-0 font-[590] text-[22px] tracking-[-0.022em]",
+            "m-0 font-semibold text-page-title tracking-title",
             headingRef && "outline-none"
           )}
         >
           {title}
         </h1>
         {subtitle && (
-          <span className="font-normal text-[12px] text-muted-foreground">
+          <span className="font-normal text-muted-foreground text-small">
             {subtitle}
           </span>
         )}

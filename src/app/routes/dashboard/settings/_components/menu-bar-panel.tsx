@@ -135,9 +135,9 @@ function MarkerCell({ readout }: { readout: Readout }) {
       className="flex w-5 shrink-0 items-center justify-center text-muted-foreground"
     >
       {readout === "network" ? (
-        <span className="font-tray text-[11px]">↑↓</span>
+        <span className="font-tray text-label">↑↓</span>
       ) : readout === "temperature" ? (
-        <span className="font-tray text-[11px]">°</span>
+        <span className="font-tray text-label">°</span>
       ) : (
         <TrayMarkerIcon marker={marker} />
       )}
@@ -146,7 +146,7 @@ function MarkerCell({ readout }: { readout: Readout }) {
 }
 
 const ROW =
-  "flex min-h-10 items-center gap-3 border-border-subtle border-b px-4 text-[13px]";
+  "flex min-h-10 items-center gap-3 border-border-subtle border-b px-4 text-body";
 
 /**
  * "Menu bar" (D-102): a live preview of the menu bar, then the three
@@ -186,18 +186,18 @@ export function MenuBarPanel({
       >
         <TrayPreview layout={layout} />
         {wide && (
-          <span className="font-normal text-[12px] text-muted-foreground">
+          <span className="font-normal text-muted-foreground text-small">
             Wide items can end up hidden behind the camera on MacBooks with a
             notch.
           </span>
         )}
       </div>
 
-      <div className="flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-[13px]">
+      <div className="flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-body">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2">
           <span>Bars</span>
           {barsOff.length > 0 && (
-            <span className="font-normal text-[12px] text-muted-foreground">
+            <span className="font-normal text-muted-foreground text-small">
               {barsOffText(barsOff)}
             </span>
           )}
@@ -246,13 +246,13 @@ export function MenuBarPanel({
                 {row.name}
               </label>
               {off && (
-                <span className="font-normal text-[12px] text-muted-foreground">
+                <span className="font-normal text-muted-foreground text-small">
                   {off}
                 </span>
               )}
             </div>
             {!off && (
-              <span className="figures whitespace-pre text-[12px] text-muted-foreground">
+              <span className="figures whitespace-pre text-muted-foreground text-small">
                 {readoutValue(r, readings, units)}
               </span>
             )}
@@ -281,7 +281,7 @@ export function MenuBarPanel({
                 {MODULE_META[m].name}
               </label>
               {off && (
-                <span className="font-normal text-[12px] text-muted-foreground">
+                <span className="font-normal text-muted-foreground text-small">
                   {off}
                 </span>
               )}
@@ -297,7 +297,7 @@ export function MenuBarPanel({
                 id={id}
                 size="sm"
                 aria-label={`${MODULE_META[m].name} separate item`}
-                className="w-[150px] px-2 text-[12px]"
+                className="w-[150px] px-2 text-small"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -312,7 +312,7 @@ export function MenuBarPanel({
           </div>
         );
       })}
-      <p className="px-4 py-3 font-normal text-[12px] text-muted-foreground">
+      <p className="px-4 py-3 font-normal text-muted-foreground text-small">
         Each gets its own place in the menu bar, left of the bars. ⌘-drag to
         reorder.
       </p>

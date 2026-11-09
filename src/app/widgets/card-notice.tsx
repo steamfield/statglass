@@ -13,9 +13,9 @@ export function CardNotice({ text }: CardNoticeProps) {
   return (
     <p
       role="status"
-      className="m-0 flex items-center gap-1.5 font-normal text-[11px] text-muted-foreground"
+      className="m-0 flex items-center gap-1.5 font-normal text-label text-muted-foreground"
     >
-      <TriangleAlert aria-hidden className="size-3 shrink-0" strokeWidth={2} />
+      <TriangleAlert aria-hidden className="size-3 shrink-0" />
       <span className="min-w-0 truncate">{text}</span>
     </p>
   );

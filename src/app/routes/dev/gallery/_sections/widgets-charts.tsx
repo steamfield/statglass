@@ -43,7 +43,7 @@ function ChartCard({
       className="flex flex-col gap-3 p-4"
     >
       <div className="flex items-center gap-3">
-        <h3 id={id} className="flex-1 font-[590] text-[13px]">
+        <h3 id={id} className="flex-1 font-semibold text-body">
           {title}
         </h3>
         {aside}
@@ -70,7 +70,7 @@ export function WidgetsChartsSection() {
             labelledBy="gc-cpu"
             className="flex flex-col gap-2 p-3"
           >
-            <h3 id="gc-cpu" className="font-[590] text-[12px]">
+            <h3 id="gc-cpu" className="font-semibold text-small">
               CPU
             </h3>
             <StreamArea {...POPOVER_CPU} />
@@ -82,7 +82,7 @@ export function WidgetsChartsSection() {
             labelledBy="gc-gpu"
             className="flex flex-col gap-2 p-3"
           >
-            <h3 id="gc-gpu" className="font-[590] text-[12px]">
+            <h3 id="gc-gpu" className="font-semibold text-small">
               GPU
             </h3>
             <StreamArea {...POPOVER_GPU} />
@@ -93,7 +93,7 @@ export function WidgetsChartsSection() {
             labelledBy="gc-net"
             className="flex flex-col gap-2 p-3"
           >
-            <h3 id="gc-net" className="font-[590] text-[12px]">
+            <h3 id="gc-net" className="font-semibold text-small">
               Network
             </h3>
             <MirrorBars {...NETWORK_BARS} />

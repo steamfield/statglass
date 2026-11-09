@@ -62,7 +62,7 @@ export function HostConnectionNotice({ remote }: { remote: RemoteHostRecord }) {
     return (
       <p
         role="status"
-        className="mb-4 border-border-subtle border-b pb-3 text-[12px] text-muted-foreground"
+        className="mb-4 border-border-subtle border-b pb-3 text-muted-foreground text-small"
       >
         {config.name} · {connectionLabel(remote)}
         {Math.abs(status.clock_offset_ms ?? 0) >= 30000 &&
@@ -81,8 +81,8 @@ export function HostConnectionNotice({ remote }: { remote: RemoteHostRecord }) {
         />
         <div className="min-w-0 flex-1 space-y-2">
           <div role="status">
-            <h2 className="font-[590] text-[14px]">{copy.title}</h2>
-            <p className="mt-1 text-[12px] text-muted-foreground">
+            <h2 className="font-semibold text-heading">{copy.title}</h2>
+            <p className="mt-1 text-muted-foreground text-small">
               {copy.message}
             </p>
           </div>
@@ -105,11 +105,11 @@ export function HostConnectionNotice({ remote }: { remote: RemoteHostRecord }) {
             <InlineMessage tone="error">{retryError}</InlineMessage>
           )}
           {status.error && (
-            <details className="text-[12px] text-muted-foreground">
+            <details className="text-muted-foreground text-small">
               <summary className="w-fit cursor-pointer hover:text-foreground">
                 Technical details
               </summary>
-              <p className="wrap-anywhere mt-2 rounded-md border border-border-subtle bg-muted/30 p-3">
+              <p className="wrap-anywhere mt-2 rounded-control border border-border-subtle bg-muted/30 p-3">
                 {status.error}
               </p>
             </details>

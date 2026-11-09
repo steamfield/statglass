@@ -46,10 +46,8 @@ export function PopoverHeader({
     >
       <StatGlassMark className="size-7" />
       <div className="flex min-w-0 flex-1 flex-col gap-px">
-        <h1 className="m-0 font-[590] text-[13px] tracking-[-0.01em]">
-          StatGlass
-        </h1>
-        <span className="truncate font-normal text-[11px] text-muted-foreground">
+        <h1 className="m-0 font-semibold text-body tracking-snug">StatGlass</h1>
+        <span className="truncate font-normal text-label text-muted-foreground">
           {hostName} · up{" "}
           <span className="figures">{formatDuration(uptimeMs)}</span>
         </span>
@@ -74,7 +72,11 @@ export function PopoverHeader({
         aria-pressed={paused}
         onClick={onPause}
       >
-        {paused ? <Play strokeWidth={1.5} /> : <Pause strokeWidth={1.5} />}
+        {paused ? (
+          <Play className="icon-light" />
+        ) : (
+          <Pause className="icon-light" />
+        )}
       </Button>
       {options ?? (
         <Button
@@ -83,7 +85,7 @@ export function PopoverHeader({
           aria-label="Settings"
           onClick={onSettings}
         >
-          <SlidersHorizontal strokeWidth={1.5} />
+          <SlidersHorizontal className="icon-light" />
         </Button>
       )}
     </header>

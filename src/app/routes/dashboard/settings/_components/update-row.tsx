@@ -93,7 +93,7 @@ export function UpdateRow() {
         </>
       }
     >
-      <span className="figures text-[12px] text-fg-subtle">{version}</span>
+      <span className="figures text-fg-subtle text-small">{version}</span>
       <Button
         variant="outline"
         size="sm"

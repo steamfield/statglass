@@ -44,7 +44,7 @@ body {
 
 html {
   font-family: var(--font-sans);
-  font-weight: 510;
+  font-weight: var(--font-weight-medium);
   color-scheme: light;
 }
 

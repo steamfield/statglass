@@ -28,7 +28,7 @@ export function ContainerSummary({
     projectNames.push(project);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="figures flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[13px]">
+      <div className="figures flex flex-wrap items-baseline gap-x-5 gap-y-1 text-body">
         {project !== null && <span>{project || "Standalone"}</span>}
         <span>
           CPU {formatPercent(cpu)} (

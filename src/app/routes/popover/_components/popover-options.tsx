@@ -20,7 +20,7 @@ export function PopoverOptions({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="icon" aria-label="Popover options">
-          <SlidersHorizontal strokeWidth={1.5} />
+          <SlidersHorizontal className="icon-light" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-36">

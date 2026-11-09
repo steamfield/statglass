@@ -156,7 +156,7 @@ export default function ProcessesRoute() {
             ariaLabel="Processes"
           />
         </div>
-        <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-border-subtle border-t px-4 py-2.5 font-normal text-[11px] text-muted-foreground">
+        <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-border-subtle border-t px-4 py-2.5 font-normal text-label text-muted-foreground">
           <span className="figures">{countLine(rows, shown)}</span>
           {note && <span>{note}</span>}
         </footer>

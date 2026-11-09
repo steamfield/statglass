@@ -110,7 +110,7 @@ export function ModuleLiveCard({ module, caption }: ModuleLiveCardProps) {
     <figure
       data-demo=""
       data-nosnippet=""
-      className="mx-auto w-full max-w-[360px] text-base leading-normal font-[510]"
+      className="mx-auto w-full max-w-[360px] text-base leading-normal font-medium"
     >
       <ModuleReading module={module} />
       <figcaption className="mt-3 text-xs font-normal text-muted-foreground">

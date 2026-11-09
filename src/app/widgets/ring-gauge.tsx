@@ -13,15 +13,15 @@ const GEOMETRY: Record<
   88: {
     r: 38,
     stroke: 7,
-    value: "text-[17px]",
-    label: "text-[10px]",
+    value: "text-figure-lg",
+    label: "text-caption",
     round: true,
   },
   112: {
     r: 48,
     stroke: 8,
-    value: "text-[18px]",
-    label: "text-[10px]",
+    value: "text-title",
+    label: "text-caption",
     round: true,
   },
 };
@@ -111,7 +111,7 @@ export function RingGauge({
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-px">
-        <span className={cn("figures-display tracking-[-0.02em]", g.value)}>
+        <span className={cn("figures-display tracking-figure", g.value)}>
           <NumberTicker text={value} unit={label} />
         </span>
         <span className={cn("font-normal text-muted-foreground", g.label)}>

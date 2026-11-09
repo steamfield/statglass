@@ -70,16 +70,16 @@ export function MetricCard({
       <header className="flex items-baseline justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Swatch step={1} />
-          <h3 id={titleId} className="truncate font-[590] text-[13px]">
+          <h3 id={titleId} className="truncate font-semibold text-body">
             {title}
           </h3>
         </div>
         <span className="flex shrink-0 items-baseline gap-2">
           {alert && <AlertChip {...alert} />}
-          <span className="figures-display whitespace-nowrap text-[15px]">
+          <span className="figures-display whitespace-nowrap text-figure">
             <NumberTicker text={value} unit={unit} />
             {unit && (
-              <span className="text-[11px] text-muted-foreground">{unit}</span>
+              <span className="text-label text-muted-foreground">{unit}</span>
             )}
           </span>
         </span>
@@ -101,13 +101,13 @@ export function MetricCard({
       {list && (
         <div className="border-border-subtle border-t pt-2">
           {list.caption && (
-            <p className="mb-1.5 text-[11px] text-muted-foreground">
+            <p className="mb-1.5 text-label text-muted-foreground">
               {list.caption}
             </p>
           )}
           <ProcessList rows={list.rows} ariaLabel={list.ariaLabel} />
           {list.note && (
-            <p className="mt-1.5 font-normal text-[11px] text-muted-foreground">
+            <p className="mt-1.5 font-normal text-label text-muted-foreground">
               {list.note}
             </p>
           )}
@@ -122,11 +122,11 @@ function AlertChip({ tone, text }: MetricCardAlert) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 self-center text-[11px]",
+        "inline-flex items-center gap-1 self-center text-label",
         tone === "warn" ? "text-warning" : "text-destructive"
       )}
     >
-      <Icon aria-hidden className="size-3" strokeWidth={1.75} />
+      <Icon aria-hidden className="icon-regular size-3" />
       {text}
     </span>
   );

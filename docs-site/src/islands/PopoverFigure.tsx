@@ -9,7 +9,7 @@ export function PopoverFigure({ caption }: PopoverFigureProps) {
     <figure
       data-demo=""
       data-nosnippet=""
-      className="mx-auto my-8 w-full max-w-[360px] text-base leading-normal font-[510]"
+      className="mx-auto my-8 w-full max-w-[360px] text-base leading-normal font-medium"
     >
       <div className="flex flex-col gap-1.5">
         <MenuBarItem />

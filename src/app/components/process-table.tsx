@@ -418,7 +418,7 @@ function ProcessTableBody({
     >
       <Table
         aria-label={ariaLabel}
-        className="w-full border-collapse text-[12px]"
+        className="w-full border-collapse text-small"
       >
         <thead className="sticky top-0 z-10 bg-card">
           <DataTableHead

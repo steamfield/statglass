@@ -53,7 +53,7 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
             .join(" · ") || undefined
         }
       >
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-caption text-muted-foreground">
           <span className="figures whitespace-nowrap">
             {snapshot.aggregate.cpu_cores?.toFixed(2) ?? MISSING} cores ·{" "}
             {formatBytes(snapshot.aggregate.working_set_bytes)}
@@ -81,7 +81,7 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
         leader ? (
           <button
             type="button"
-            className="block self-start rounded-control text-left text-[11px] text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="block self-start rounded-control text-left text-label text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() =>
               void transport.openDashboard(
                 containerPath(leader.engine_id, leader.id)
@@ -97,7 +97,7 @@ function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
         ) : null
       }
     >
-      <span className="figures block text-[11px] text-muted-foreground">
+      <span className="figures block text-label text-muted-foreground">
         {snapshot.aggregate.cpu_cores?.toFixed(2) ?? MISSING} cores ·{" "}
         {formatBytes(snapshot.aggregate.working_set_bytes)} ·{" "}
         {statusLabel[snapshot.status]} ·{" "}
@@ -154,7 +154,7 @@ function LiveTimelineLane({ from, to }: { from: number; to: number }) {
         </InlineMessage>
       )}
       {!!events.data?.coverage.length && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-label text-muted-foreground">
           Container event history is incomplete in parts of this range.
         </p>
       )}

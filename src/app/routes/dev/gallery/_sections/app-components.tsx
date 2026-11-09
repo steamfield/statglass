@@ -541,8 +541,8 @@ export function AppComponentsSection() {
                 } as CSSProperties
               }
             >
-              <span className="font-[590] text-[13px]">{m.label}</span>
-              <span className="figures text-[11px] text-muted-foreground">
+              <span className="font-semibold text-body">{m.label}</span>
+              <span className="figures text-label text-muted-foreground">
                 {origin}
               </span>
             </section>
@@ -627,8 +627,10 @@ export function AppComponentsSection() {
           style={{ "--a": "var(--color-cpu)" } as CSSProperties}
         >
           <div className="flex items-center gap-3 px-4 pt-3.5 pb-1.5">
-            <h3 className="m-0 flex-1 font-[590] text-[14px]">Top processes</h3>
-            <span className="font-normal text-[11px] text-muted-foreground">
+            <h3 className="m-0 flex-1 font-semibold text-heading">
+              Top processes
+            </h3>
+            <span className="font-normal text-label text-muted-foreground">
               % CPU is of one core; 14 cores = 1400%
             </span>
           </div>
@@ -720,13 +722,13 @@ export function AppComponentsSection() {
               />
             </SettingsRow>
             <SettingsRow label="Slow down on battery">
-              <span className="font-normal text-[12px] text-muted-foreground">
+              <span className="font-normal text-muted-foreground text-small">
                 to 2s
               </span>
               <Switch defaultChecked aria-label="Slow down on battery" />
             </SettingsRow>
             <SettingsRow label="History on disk">
-              <span className="figures text-[12px] text-fg-subtle">148 MB</span>
+              <span className="figures text-fg-subtle text-small">148 MB</span>
               <Button variant="outline" size="sm">
                 Clear
               </Button>

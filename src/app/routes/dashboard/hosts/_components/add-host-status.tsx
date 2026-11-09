@@ -54,7 +54,7 @@ export function AddHostStatus({
         (prepared.linux ? (
           <AddHostLinux prepared={prepared} linux={prepared.linux} />
         ) : (
-          <div className="grid gap-1 text-[13px] text-fg-subtle">
+          <div className="grid gap-1 text-body text-fg-subtle">
             <p>{macStatus(prepared)}</p>
             <p>
               StatGlass on that Mac will start at login and share its metrics

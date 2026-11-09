@@ -91,7 +91,7 @@ function CpuFootnote({ coreCount }: { coreCount: number | null }) {
       <button
         type="button"
         onClick={() => navigate("/dashboard/processes")}
-        className="rounded-sm text-fg-subtle underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        className="rounded-chip text-fg-subtle underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       >
         Every process
       </button>

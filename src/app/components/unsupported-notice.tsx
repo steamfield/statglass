@@ -19,10 +19,9 @@ export function UnsupportedNotice({
     <div className="flex items-start gap-2 pt-1">
       <Info
         aria-hidden
-        className="mt-px size-3.5 shrink-0 text-muted-foreground"
-        strokeWidth={1.5}
+        className="icon-light mt-px size-3.5 shrink-0 text-muted-foreground"
       />
-      <p className="m-0 font-normal text-[12px] text-muted-foreground leading-normal">
+      <p className="m-0 font-normal text-muted-foreground text-small leading-normal">
         Temperature and fan sensors aren't mapped for this chip{" "}
         <span className="figures">({modelId})</span> yet, so Power &amp; Sensors
         is hidden. CPU and GPU watts still show on their own pages.{" "}

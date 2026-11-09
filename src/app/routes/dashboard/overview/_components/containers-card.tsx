@@ -90,7 +90,7 @@ export function OverviewContainersCard({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h3 id={titleId} className="font-[590] text-[13px]">
+          <h3 id={titleId} className="font-semibold text-body">
             <Link
               to="/dashboard/containers"
               className="rounded-control outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
@@ -99,7 +99,7 @@ export function OverviewContainersCard({
             </Link>
           </h3>
           {snapshot && (
-            <span className="figures truncate text-[11px] text-muted-foreground">
+            <span className="figures truncate text-label text-muted-foreground">
               {snapshot.status === "connected" ||
               snapshot.status === "idle_suspended"
                 ? `${snapshot.aggregate.running} running`
@@ -154,26 +154,26 @@ function ContainersBody({
 }) {
   if (error)
     return (
-      <p role="alert" className="text-[12px] text-muted-foreground">
+      <p role="alert" className="text-muted-foreground text-small">
         {error}
       </p>
     );
   if (noEngine)
     return (
-      <p role="status" className="text-[12px] text-muted-foreground">
+      <p role="status" className="text-muted-foreground text-small">
         No Docker engine to read containers from.
       </p>
     );
   if (loading) return <ChartHistoryStatus loading />;
   if (ranked.length === 0)
     return (
-      <p role="status" className="text-[12px] text-muted-foreground">
+      <p role="status" className="text-muted-foreground text-small">
         No container activity {scope}
       </p>
     );
   return (
     <>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-label text-muted-foreground">
         {metric === "cpu" ? "Peak CPU" : "Peak memory"}
       </p>
       <ul aria-label="Busiest containers" className="flex flex-col gap-1">
@@ -181,12 +181,12 @@ function ContainersBody({
           <li key={row.container.id}>
             <Link
               to={containerPath(row.container.engine_id, row.container.id)}
-              className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-[12px] text-fg-subtle outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-fg-subtle text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="min-w-0 truncate" title={row.container.name}>
                 {row.container.name}
               </span>
-              <span className="figures shrink-0 text-[11px]">
+              <span className="figures shrink-0 text-label">
                 {metric === "cpu"
                   ? formatPercent(row.peak_cpu_pct)
                   : formatBytes(row.peak_working_set_bytes)}

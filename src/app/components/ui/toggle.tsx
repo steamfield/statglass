@@ -16,9 +16,9 @@ const toggleVariants = cva(
           "rounded-control border border-border bg-btn text-fg-subtle hover:bg-selected data-[state=on]:bg-selected data-[state=on]:text-foreground",
       },
       size: {
-        default: "h-6 px-2.5 text-[11px]",
-        sm: "h-[22px] px-2.5 text-[11px]",
-        lg: "h-7 px-3 text-xs",
+        default: "h-6 px-2.5 text-label",
+        sm: "h-[22px] px-2.5 text-label",
+        lg: "h-7 px-3 text-small leading-compact",
       },
     },
     defaultVariants: {

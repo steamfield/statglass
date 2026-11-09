@@ -31,7 +31,7 @@ export function SpaceProgress({
   return (
     <div role="status" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-        <p className="figures text-[13px] text-foreground">
+        <p className="figures text-body text-foreground">
           Scanning · about {pct}% measured
           <span className="text-fg-subtle">
             {" · "}
@@ -43,7 +43,7 @@ export function SpaceProgress({
         </Button>
       </div>
       <MeterTrack fraction={fraction} fill="var(--color-disk)" height="h-1.5" />
-      <p className="flex min-w-0 flex-wrap justify-between gap-x-6 gap-y-1 text-[11px] text-muted-foreground">
+      <p className="flex min-w-0 flex-wrap justify-between gap-x-6 gap-y-1 text-label text-muted-foreground">
         <span className="min-w-0 truncate" title={status.current ?? ""}>
           Reading {middleTruncate(`/${status.current ?? ""}`, 72)}
         </span>
@@ -137,7 +137,7 @@ function SpaceNotes({ report }: { report: SpaceReport }) {
     );
   const last = parts.pop();
   return (
-    <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+    <div className="flex flex-col gap-1 text-label text-muted-foreground">
       <p>
         Other is used space no file accounts for: {parts.join(", ")} and {last}.
         {report.truncated &&
@@ -145,7 +145,7 @@ function SpaceNotes({ report }: { report: SpaceReport }) {
       </p>
       {(report.skipped.length > 0 || report.unreadable > 0) && (
         <details className="group">
-          <summary className="flex w-fit cursor-default list-none items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <summary className="flex w-fit cursor-default list-none items-center gap-1 rounded-chip outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
             <ChevronRight
               aria-hidden
               className="size-3 transition-transform duration-(--motion-fast) group-open:rotate-90"

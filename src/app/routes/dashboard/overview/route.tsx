@@ -106,7 +106,7 @@ export default function OverviewRoute() {
       >
         {(windowMs) =>
           items.length === 0 ? (
-            <p role="status" className="text-[13px] text-muted-foreground">
+            <p role="status" className="text-body text-muted-foreground">
               Every card is hidden. Pick the cards to show from the Overview
               cards menu.
             </p>

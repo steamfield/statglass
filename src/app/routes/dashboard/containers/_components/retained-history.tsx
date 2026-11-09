@@ -55,7 +55,7 @@ export const RetainedHistory = memo(function RetainedHistory({
           Browse retained history
         </Button>
       ) : (
-        <h2 className="text-[14px]">Retained history</h2>
+        <h2 className="text-heading">Retained history</h2>
       )}
       {open && <RetainedBrowser generation={generation} />}
     </section>
@@ -116,7 +116,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
   );
   return (
     <div className="mt-3 flex flex-col gap-3">
-      <p className="text-[12px] text-muted-foreground">
+      <p className="text-muted-foreground text-small">
         Browse saved engines and containers without enabling collection or
         reconnecting an engine. Values and states are last observed.
       </p>
@@ -191,7 +191,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
           />
           {rows.isSuccess && (
             <>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-label text-muted-foreground">
                 {rows.data.total} retained{" "}
                 {rows.data.total === 1 ? "container" : "containers"} · last
                 observed state
@@ -208,7 +208,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
                 {rows.data.containers.map((row) => (
                   <li
                     key={`${row.engine_id}:${row.id}`}
-                    className="py-2 text-[12px]"
+                    className="py-2 text-small"
                   >
                     <Link
                       className="rounded-control text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -221,7 +221,7 @@ function RetainedBrowser({ generation }: { generation: number }) {
                       {lifecycleLabel[row.lifecycle]} ·{" "}
                       {formatDateTime(row.last_seen_ms)}
                     </span>
-                    <div className="truncate text-[11px] text-muted-foreground">
+                    <div className="truncate text-label text-muted-foreground">
                       {row.image}
                     </div>
                   </li>

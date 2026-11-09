@@ -6,11 +6,12 @@ import { cn } from "~/lib/utils";
 
 // Shared with the alert dialog (components/confirm-dialog.tsx).
 const dialogOverlayClass =
-  "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 duration-(--motion-entry) ease-out data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:duration-(--motion-fast)";
+  "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-overlay duration-(--motion-entry) ease-out data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:duration-(--motion-fast)";
 const dialogContentClass =
   "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=open]:slide-in-from-bottom-1 data-[state=closed]:slide-out-to-bottom-1 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-card border bg-popover p-5 text-popover-foreground shadow-lg outline-none duration-(--motion-entry) ease-out data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:duration-(--motion-fast) sm:max-w-lg dark:shadow-none";
-const dialogTitleClass = "font-[590] text-base leading-none tracking-[-0.01em]";
-const dialogDescriptionClass = "text-[13px] text-muted-foreground";
+const dialogTitleClass =
+  "font-semibold text-title-sm leading-none tracking-snug";
+const dialogDescriptionClass = "text-body text-muted-foreground";
 
 function Dialog({
   ...props
@@ -69,7 +70,7 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+            className="absolute top-4 right-4 rounded-mark opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
           >
             <XIcon />
             <span className="sr-only">Close</span>

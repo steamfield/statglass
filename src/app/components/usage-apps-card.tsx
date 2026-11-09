@@ -304,7 +304,7 @@ function UsageBody({
                   <button
                     type="button"
                     onClick={() => setShowAll((v) => !v)}
-                    className="rounded-sm font-[510] text-[12px] text-fg-subtle outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    className="rounded-chip font-medium text-fg-subtle text-small outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {showAll
                       ? `Show top ${COLLAPSED_APPS}`
@@ -487,7 +487,7 @@ function AppRows({
                 onClick={onToggle}
                 aria-expanded={open}
                 aria-label={`${open ? "Hide" : "Show"} ${app.name} processes`}
-                className="-ml-1 grid size-4 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="-ml-1 grid size-4 place-items-center rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <ChevronRight
                   aria-hidden
@@ -503,7 +503,7 @@ function AppRows({
             <InitialChip text={app.name} />
             <span className="truncate">{app.name}</span>
             {many && (
-              <span className="font-normal text-[11px] text-muted-foreground">
+              <span className="font-normal text-label text-muted-foreground">
                 {processCount(app.processes.length)}
               </span>
             )}
@@ -556,7 +556,7 @@ function ProcessRow({
       <TableCell className={cn(APP_CELL, "pl-[52px]")}>
         <span className="inline-flex min-w-0 items-baseline gap-2">
           <span className="truncate">{p.name}</span>
-          <span className="figures text-[11px] text-muted-foreground">
+          <span className="figures text-label text-muted-foreground">
             {p.pid}
           </span>
         </span>
@@ -567,7 +567,7 @@ function ProcessRow({
         <ActionsCell processes={[p]} />
       ) : (
         <TableCell
-          className={cn(APP_CELL, "text-right text-[11px] text-fg-faint")}
+          className={cn(APP_CELL, "text-right text-fg-faint text-label")}
         >
           exited
         </TableCell>

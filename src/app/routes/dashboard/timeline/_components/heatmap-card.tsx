@@ -109,7 +109,7 @@ export const HeatmapCard = memo(function HeatmapCard({
       }
     >
       {error ? (
-        <p className="font-normal text-[13px] text-fg-subtle">
+        <p className="font-normal text-body text-fg-subtle">
           {unavailable(error)
             ? "No history is being kept, so there are no past hours to show."
             : `The heatmap could not be read. ${failureReason(error, "Please try again.")}`}

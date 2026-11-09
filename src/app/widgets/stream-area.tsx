@@ -300,7 +300,7 @@ export function StreamArea({
       {ceilingLabel && (
         <span
           aria-hidden
-          className="figures absolute -top-0.5 left-0 text-[9px] text-fg-faint"
+          className="figures absolute -top-0.5 left-0 text-fg-faint text-micro"
         >
           {ceilingLabel}
         </span>
@@ -308,7 +308,7 @@ export function StreamArea({
       {windowLabel && (
         <span
           aria-hidden
-          className="figures absolute right-0 -bottom-3.5 text-[9px] text-fg-faint"
+          className="figures absolute right-0 -bottom-3.5 text-fg-faint text-micro"
         >
           {windowLabel}
         </span>

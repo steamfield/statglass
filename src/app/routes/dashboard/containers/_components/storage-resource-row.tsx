@@ -38,24 +38,24 @@ export function StorageResourceRow({
           />
           <span className="min-w-0 break-words">
             {row.name}
-            <span className="block text-[11px] text-muted-foreground">
+            <span className="block text-label text-muted-foreground">
               {storageKindLabel[row.kind]} ·{" "}
               {row.project ?? "No Compose project"}
             </span>
           </span>
         </label>
         {row.database && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-label text-muted-foreground">
             Likely {row.database} database · inferred from image
           </p>
         )}
         {row.kind === "volume" && !row.references.length && !row.database && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-label text-muted-foreground">
             Previous use unknown
           </p>
         )}
         {row.mounts.length > 0 && (
-          <details className="mt-1 text-[11px] text-muted-foreground">
+          <details className="mt-1 text-label text-muted-foreground">
             <summary className="cursor-pointer">
               {row.mounts.length} mounts
             </summary>

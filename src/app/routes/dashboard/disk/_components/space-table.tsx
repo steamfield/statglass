@@ -174,7 +174,7 @@ const NodeRow = memo(function NodeRow({
       tabIndex={0}
       aria-label={`${node.name}, ${pending ? `scanning, ${sizeText}` : sizeText}${opens ? ", folder" : ""}`}
       className={cn(
-        "group text-[12px] outline-none focus-visible:bg-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+        "group text-small outline-none focus-visible:bg-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         active && "bg-selected",
         opens && "cursor-pointer"
       )}
@@ -262,8 +262,7 @@ function KindIcon({ node }: { node: SpaceNode }) {
   return (
     <Icon
       aria-hidden
-      className="size-3.5 shrink-0 text-(--color-disk-ink)"
-      strokeWidth={1.75}
+      className="icon-regular size-3.5 shrink-0 text-(--color-disk-ink)"
     />
   );
 }
@@ -339,7 +338,7 @@ function ItemMenu({
           Copy path
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        <p className="px-2 py-1.5 text-label text-muted-foreground">
           Deleting may not free space at once while local snapshots or clones
           still reference the data.
         </p>
@@ -382,14 +381,13 @@ export const LargestFilesTable = memo(function LargestFilesTable({
               <TableRow
                 data-row={f.index}
                 tabIndex={0}
-                className="group text-[12px] outline-none focus-visible:bg-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="group text-small outline-none focus-visible:bg-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 <TableCell className="max-w-0">
                   <div className="flex min-w-0 items-center gap-2">
                     <File
                       aria-hidden
-                      className="size-3.5 shrink-0 text-(--color-disk-ink)"
-                      strokeWidth={1.75}
+                      className="icon-regular size-3.5 shrink-0 text-(--color-disk-ink)"
                     />
                     <span className="truncate text-foreground" title={f.name}>
                       {f.name}

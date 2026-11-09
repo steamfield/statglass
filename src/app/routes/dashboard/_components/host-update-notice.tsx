@@ -69,10 +69,9 @@ export function HostUpdateNoticeView({
     >
       <Info
         aria-hidden
-        className="mt-px size-3.5 shrink-0 text-muted-foreground"
-        strokeWidth={1.5}
+        className="icon-light mt-px size-3.5 shrink-0 text-muted-foreground"
       />
-      <p className="m-0 flex-1 font-normal text-[12px] text-muted-foreground leading-normal">
+      <p className="m-0 flex-1 font-normal text-muted-foreground text-small leading-normal">
         {text}{" "}
         <button
           type="button"
@@ -89,7 +88,7 @@ export function HostUpdateNoticeView({
           onClick={() => onDismiss(notice.key)}
           className="rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <X aria-hidden className="size-3.5" strokeWidth={1.5} />
+          <X aria-hidden className="icon-light size-3.5" />
         </button>
       )}
     </section>

@@ -24,11 +24,11 @@ export function SettingsRow({
 }: SettingsRowProps) {
   const Label = htmlFor ? "label" : "span";
   return (
-    <div className="flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-[13px] last:border-b-0">
+    <div className="flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-body last:border-b-0">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2">
         <Label htmlFor={htmlFor}>{label}</Label>
         {sub && (
-          <span className="font-normal text-[12px] text-muted-foreground">
+          <span className="font-normal text-muted-foreground text-small">
             {sub}
           </span>
         )}
@@ -61,7 +61,7 @@ export function SettingsPanel({
   const titleId = useId();
   return (
     <section aria-labelledby={titleId} className="flex flex-col gap-2.5">
-      <h2 id={titleId} className="font-[590] text-[14px]">
+      <h2 id={titleId} className="font-semibold text-heading">
         {title}
       </h2>
       <div

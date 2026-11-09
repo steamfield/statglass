@@ -46,7 +46,7 @@ export function OverviewAppsCard({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <h3 id={titleId} className="font-[590] text-[13px]">
+          <h3 id={titleId} className="font-semibold text-body">
             Apps
           </h3>
         </div>
@@ -74,7 +74,7 @@ function AppsBody({
 }) {
   if (apps.beyondHistory)
     return (
-      <p role="status" className="text-[12px] text-muted-foreground">
+      <p role="status" className="text-muted-foreground text-small">
         Recorded app attribution supports intervals up to{" "}
         {USAGE_HISTORY_MAX_RANGE_MS / DAY_MS} days. Choose a shorter range to
         inspect apps.
@@ -82,7 +82,7 @@ function AppsBody({
     );
   if (apps.isError)
     return (
-      <p role="alert" className="text-[12px] text-muted-foreground">
+      <p role="alert" className="text-muted-foreground text-small">
         {historical
           ? "Couldn't load app history"
           : "Couldn't load app activity"}
@@ -91,13 +91,13 @@ function AppsBody({
   if (apps.isPending) return <ChartHistoryStatus loading />;
   if (apps.rows.length === 0)
     return (
-      <p role="status" className="text-[12px] text-muted-foreground">
+      <p role="status" className="text-muted-foreground text-small">
         {(!historical && apps.note) || `No app activity recorded ${scope}`}
       </p>
     );
   return (
     <>
-      <p className="text-[11px] text-muted-foreground">{apps.caption}</p>
+      <p className="text-label text-muted-foreground">{apps.caption}</p>
       <ProcessList
         rows={apps.rows.map((row) => ({
           ...row,
@@ -106,7 +106,7 @@ function AppsBody({
         ariaLabel={`Top apps by ${apps.caption}`}
       />
       {apps.note && (
-        <p className="text-[11px] text-muted-foreground">{apps.note}</p>
+        <p className="text-label text-muted-foreground">{apps.note}</p>
       )}
     </>
   );

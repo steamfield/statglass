@@ -137,8 +137,10 @@ export const DockerStorage = memo(function DockerStorage({
     <section aria-label="Docker storage" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-[590] text-[16px]">Docker-managed storage</h2>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <h2 className="font-semibold text-title-sm">
+            Docker-managed storage
+          </h2>
+          <p className="mt-1 text-label text-muted-foreground">
             {snapshot
               ? `Measured ${formatDateTime(snapshot.observed_ms)}`
               : "Scan images, writable layers, volumes and daemon build cache on demand."}
@@ -182,7 +184,7 @@ export const DockerStorage = memo(function DockerStorage({
             setGrouped={setGrouped}
             setPage={setPage}
           />
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-label text-muted-foreground">
             Age filters use stopped time for containers and last use for cache.
             Images and volumes have no reliable unused age.
           </p>

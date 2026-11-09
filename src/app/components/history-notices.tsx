@@ -63,9 +63,8 @@ function NoticeLine({ notice }: { notice: HistoryNotice }) {
         <TriangleAlert
           aria-hidden
           className="mt-px size-3.5 shrink-0 text-warning"
-          strokeWidth={2}
         />
-        <p className="m-0 min-w-0 flex-1 font-normal text-[12px] text-fg-subtle">
+        <p className="m-0 min-w-0 flex-1 font-normal text-fg-subtle text-small">
           {notice.text}
         </p>
       </div>
@@ -74,9 +73,9 @@ function NoticeLine({ notice }: { notice: HistoryNotice }) {
   return (
     <p
       role="status"
-      className="m-0 flex items-start gap-2 font-normal text-[12px] text-muted-foreground"
+      className="m-0 flex items-start gap-2 font-normal text-muted-foreground text-small"
     >
-      <Info aria-hidden className="mt-px size-3.5 shrink-0" strokeWidth={1.5} />
+      <Info aria-hidden className="icon-light mt-px size-3.5 shrink-0" />
       {notice.text}
     </p>
   );

@@ -28,7 +28,7 @@ export function CompactBattery() {
           : "Power state unavailable";
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2 text-[10px]">
+      <div className="flex items-center gap-2 text-caption">
         <span className="figures whitespace-nowrap">
           {formatPercent(battery.charge)} · {status}
         </span>
@@ -39,7 +39,7 @@ export function CompactBattery() {
         />
       </div>
       {notice && (
-        <span className="text-[11px] text-muted-foreground">{notice}</span>
+        <span className="text-label text-muted-foreground">{notice}</span>
       )}
     </div>
   );

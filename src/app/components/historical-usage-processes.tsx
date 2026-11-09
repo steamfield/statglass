@@ -62,7 +62,7 @@ export function HistoricalUsageProcesses({
               <span className="inline-flex items-baseline gap-2">
                 <span>{process.name}</span>
                 <span
-                  className="figures text-[11px] text-muted-foreground"
+                  className="figures text-label text-muted-foreground"
                   title={`Started ${recordedProcessStart(process.start_time_us)}`}
                 >
                   PID {process.pid}

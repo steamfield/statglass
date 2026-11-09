@@ -57,7 +57,7 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
           <SelectTrigger
             id="settings-appearance"
             size="sm"
-            className="px-2 text-[12px]"
+            className="px-2 text-small"
           >
             <SelectValue />
           </SelectTrigger>

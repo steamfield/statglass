@@ -197,7 +197,7 @@ export function CgroupTable({
     <div className="min-h-0 overflow-auto" {...data.holdProps}>
       <table
         aria-label="Services and containers"
-        className="w-full border-collapse text-[12px]"
+        className="w-full border-collapse text-small"
       >
         <thead className="sticky top-0 z-10 bg-card">
           <DataTableHead table={data.table} />

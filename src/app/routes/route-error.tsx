@@ -35,10 +35,10 @@ export function RouteError({ embedded = false }: { embedded?: boolean }) {
     >
       <TriangleAlert aria-hidden className="size-6 text-muted-foreground" />
       <div className="max-w-md space-y-2">
-        <h1 id="view-error-title" className="font-[590] text-[18px]">
+        <h1 id="view-error-title" className="font-semibold text-title">
           This view hit a snag
         </h1>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           {host
             ? `StatGlass couldn’t display this view for ${host.display_name}.`
             : "StatGlass couldn’t display this view."}{" "}
@@ -61,11 +61,11 @@ export function RouteError({ embedded = false }: { embedded?: boolean }) {
           <Link to="/dashboard/hosts">Open Hosts</Link>
         </Button>
       </div>
-      <details className="w-full max-w-lg text-[12px] text-muted-foreground">
+      <details className="w-full max-w-lg text-muted-foreground text-small">
         <summary className="w-fit cursor-pointer hover:text-foreground">
           Technical details
         </summary>
-        <div className="wrap-anywhere mt-2 space-y-1 rounded-md border border-border-subtle bg-muted/30 p-3">
+        <div className="wrap-anywhere mt-2 space-y-1 rounded-control border border-border-subtle bg-muted/30 p-3">
           <p>{message}</p>
           <p>View: {location.pathname}</p>
           {hostId && <p>Host: {hostId}</p>}

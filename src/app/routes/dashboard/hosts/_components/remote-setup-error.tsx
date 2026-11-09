@@ -11,7 +11,7 @@ export function RemoteSetupError({ error }: { error: CommandError | string }) {
       : remoteErrorAdvice(error);
   const detail = typeof error === "string" ? error : remoteErrorText(error);
   return (
-    <div className="grid gap-2 text-[13px]">
+    <div className="grid gap-2 text-body">
       <div role="alert" className="grid gap-1">
         <p className="text-destructive">{advice?.title ?? detail}</p>
         {advice && (
@@ -21,7 +21,7 @@ export function RemoteSetupError({ error }: { error: CommandError | string }) {
         )}
       </div>
       {advice && advice.recovery !== detail && (
-        <details className="text-[12px] text-muted-foreground">
+        <details className="text-muted-foreground text-small">
           <summary>Technical details</summary>
           <p className="select-text whitespace-pre-wrap break-words">
             {detail}

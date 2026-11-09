@@ -33,7 +33,7 @@ export function ReviewList({
   return (
     <ul
       aria-label={label}
-      className="m-0 max-h-60 min-w-0 list-none divide-y divide-border-subtle overflow-y-auto border-border-subtle border-y p-0 text-[12px]"
+      className="m-0 max-h-60 min-w-0 list-none divide-y divide-border-subtle overflow-y-auto border-border-subtle border-y p-0 text-small"
     >
       {items.map((item) => (
         <li key={item.key} className="flex justify-between gap-3 py-2">

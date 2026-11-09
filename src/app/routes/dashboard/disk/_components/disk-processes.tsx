@@ -162,12 +162,12 @@ function DiskProcessList({
               <button
                 type="button"
                 onClick={() => setAll(!all)}
-                className="mx-4 my-2 self-start rounded-sm text-[12px] text-fg-subtle outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="mx-4 my-2 self-start rounded-chip text-fg-subtle text-small outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {all ? "Show top 10" : `Show all ${filtered.length} processes`}
               </button>
             )}
-            <p className="px-4 py-2 font-normal text-[11px] text-muted-foreground">
+            <p className="px-4 py-2 font-normal text-label text-muted-foreground">
               Bytes requested by this user's processes across all devices.
               Caches and filesystem work mean these figures differ from device
               traffic.
@@ -198,7 +198,7 @@ function DiskCoverageNote({
 }) {
   if (!range || coveredMs === undefined || coveredMs <= 0) return null;
   return (
-    <p className="px-4 pb-2 text-[11px] text-muted-foreground">
+    <p className="px-4 pb-2 text-label text-muted-foreground">
       Averages cover {formatSpan(coveredMs)} sampled in this interval.
     </p>
   );
@@ -411,13 +411,13 @@ function DiskRows({
           >
             <TableCell className="px-2 py-1 sm:px-3">
               <Link
-                className="block truncate rounded-sm text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                className="block truncate rounded-chip text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                 to={`/dashboard/processes/${p.pid}/${p.start_time_us}?${params}`}
                 aria-label={`Inspect ${p.name}, PID ${p.pid}`}
               >
                 {p.name}
               </Link>
-              <span className="figures block truncate text-[11px] text-muted-foreground">
+              <span className="figures block truncate text-label text-muted-foreground">
                 {p.pid}
                 {historic && !p.running ? " · Exited" : ""}
               </span>
@@ -436,7 +436,7 @@ function DiskRows({
               {historic ? (
                 <>
                   {formatBytes(requestedBytes(p))}
-                  <span className="block text-[11px] text-muted-foreground">
+                  <span className="block text-label text-muted-foreground">
                     {formatRate(p.total_avg_bps)}
                   </span>
                 </>

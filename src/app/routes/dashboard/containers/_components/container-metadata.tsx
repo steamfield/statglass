@@ -11,7 +11,7 @@ export function ContainerMetadata({
   onRefresh: () => void;
 }) {
   return (
-    <details className="border-border-subtle border-y py-3 text-[12px]">
+    <details className="border-border-subtle border-y py-3 text-small">
       <summary className="cursor-pointer">Container metadata</summary>
       <Button
         size="sm"

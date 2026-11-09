@@ -152,7 +152,7 @@ export function ModuleCard({
       )}
       {card}
       {aside !== undefined && (
-        <div className="absolute top-3 right-3 font-normal text-[11px] text-muted-foreground">
+        <div className="absolute top-3 right-3 font-normal text-label text-muted-foreground">
           {aside}
         </div>
       )}
@@ -229,7 +229,7 @@ function ModuleCardHeader({
       <h3
         id={titleId}
         className={cn(
-          "flex items-center gap-1 font-[590] text-[12px]",
+          "flex items-center gap-1 font-semibold text-small",
           onToggle && "pl-5"
         )}
       >
@@ -238,7 +238,6 @@ function ModuleCardHeader({
           // Shown on hover and focus: the card opens a page in another window.
           <ArrowUpRight
             aria-hidden
-            strokeWidth={2}
             className="size-3 -translate-x-0.5 text-muted-foreground opacity-0 transition-[opacity,translate] duration-(--motion-fast) ease-(--ease-out) group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
           />
         )}
@@ -247,12 +246,12 @@ function ModuleCardHeader({
         <span
           className={cn(
             "figures-display whitespace-nowrap",
-            compact ? "text-[12px]" : "text-[15px]"
+            compact ? "text-small" : "text-figure"
           )}
         >
           {value}
           {unit && (
-            <span className="text-[12px] text-muted-foreground">{unit}</span>
+            <span className="text-muted-foreground text-small">{unit}</span>
           )}
         </span>
       ) : subtitle !== undefined && aside === undefined ? (
@@ -260,7 +259,7 @@ function ModuleCardHeader({
           className={
             subtitleStyle === "label"
               ? FIELD_LABEL
-              : "font-normal text-[11px] text-muted-foreground"
+              : "font-normal text-label text-muted-foreground"
           }
         >
           {subtitle}

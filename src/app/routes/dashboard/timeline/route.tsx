@@ -193,7 +193,7 @@ export default function TimelineRoute() {
       {otherError && (
         <p
           role={errorTone(otherError) === "error" ? "alert" : "status"}
-          className="rounded-tile border border-border bg-card px-4 py-3 font-normal text-[13px] text-fg-subtle"
+          className="rounded-tile border border-border bg-card px-4 py-3 font-normal text-body text-fg-subtle"
         >
           History could not be read.{" "}
           {failureReason(otherError, "Please try again.")} Live values still
@@ -289,13 +289,13 @@ function TimelineSummaryNotes({
         </InlineMessage>
       )}
       {current && (current.from_ms !== fromMs || current.to_ms !== toMs) && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-label text-muted-foreground">
           Summary bucket coverage: {recordedDate(current.from_ms)} to{" "}
           {recordedDate(current.to_ms)} · {timezone}.
         </p>
       )}
       {comparing && previousSummaries.data && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-label text-muted-foreground">
           Previous summary bucket coverage:{" "}
           {recordedDate(previousSummaries.data.from_ms)} to{" "}
           {recordedDate(previousSummaries.data.to_ms)} · {timezone}.

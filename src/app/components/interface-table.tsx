@@ -53,7 +53,7 @@ export function InterfaceTable({ rows, units }: InterfaceTableProps) {
         table={data.table}
         rows={data.rows}
         renderRow={({ original: r }) => (
-          <TableRow key={r.id} className="text-[12px]">
+          <TableRow key={r.id} className="text-small">
             <TableCell className="figures text-foreground">{r.id}</TableCell>
             <TableCell className="font-normal text-fg-subtle">
               {r.disconnected ? (

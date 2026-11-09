@@ -198,7 +198,7 @@ export function WidgetsCardsSection() {
                 labelledBy="g-card-a"
                 className="p-4"
               >
-                <h3 id="g-card-a" className="font-[590] text-[13px]">
+                <h3 id="g-card-a" className="font-semibold text-body">
                   Default, 9%
                 </h3>
               </Card>
@@ -208,7 +208,7 @@ export function WidgetsCardsSection() {
                 labelledBy="g-card-b"
                 className="p-4"
               >
-                <h3 id="g-card-b" className="font-[590] text-[13px]">
+                <h3 id="g-card-b" className="font-semibold text-body">
                   Chart, 6%
                 </h3>
               </Card>

@@ -62,10 +62,10 @@ export function PrivacyStep({
           <span className={FIELD_LABEL}>Updates</span>
           <div className="flex items-center gap-2.5 rounded-tile border border-border bg-well px-3 py-2.5">
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <label htmlFor="onboarding-updates" className="text-[13px]">
+              <label htmlFor="onboarding-updates" className="text-body">
                 Check for updates automatically
               </label>
-              <span className="font-normal text-[11px] text-muted-foreground">
+              <span className="font-normal text-label text-muted-foreground">
                 This is the only network request StatGlass makes. You can turn
                 it off any time in Settings.
               </span>
@@ -79,9 +79,9 @@ export function PrivacyStep({
         </div>
         <div className="flex flex-col gap-2">
           <span className={FIELD_LABEL}>Privacy</span>
-          <p className="font-normal text-[13px] text-fg-subtle leading-relaxed">
+          <p className="font-normal text-body text-fg-subtle leading-relaxed">
             StatGlass has no telemetry. All history stays on this Mac, in{" "}
-            <span className="figures whitespace-nowrap text-[12px] text-foreground">
+            <span className="figures whitespace-nowrap text-foreground text-small">
               {HISTORY_DIR}
             </span>
             , and {sizeText}.

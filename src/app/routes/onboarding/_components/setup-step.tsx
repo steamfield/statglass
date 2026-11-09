@@ -78,7 +78,7 @@ export function SetupStep({
           />
           <label
             htmlFor="onboarding-login"
-            className="font-normal text-[13px] text-fg-subtle"
+            className="font-normal text-body text-fg-subtle"
           >
             Launch at login
           </label>
@@ -86,7 +86,7 @@ export function SetupStep({
           {status && (
             <span
               className={cn(
-                "figures text-[11px]",
+                "figures text-label",
                 hostInfo?.chip_known ? "text-fg-faint" : "text-muted-foreground"
               )}
             >

@@ -125,7 +125,7 @@ function HostSettings({
             preferences save immediately on the host.
           </DialogDescription>
           <fieldset disabled={busy} className="grid gap-3">
-            <label className="grid gap-1 text-[12px]">
+            <label className="grid gap-1 text-small">
               Name
               <input
                 className={HOST_INPUT}
@@ -133,7 +133,7 @@ function HostSettings({
                 onChange={(e) => setConfig({ ...config, name: e.target.value })}
               />
             </label>
-            <label className="grid gap-1 text-[12px]">
+            <label className="grid gap-1 text-small">
               LAN SSH alias
               <input
                 className={HOST_INPUT}
@@ -143,7 +143,7 @@ function HostSettings({
                 }
               />
             </label>
-            <label className="grid gap-1 text-[12px]">
+            <label className="grid gap-1 text-small">
               Tailscale SSH alias
               <input
                 className={HOST_INPUT}
@@ -153,7 +153,7 @@ function HostSettings({
                 }
               />
             </label>
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-muted-foreground text-small">
               Mirrored history:{" "}
               {size.data === undefined
                 ? size.isError
@@ -161,7 +161,7 @@ function HostSettings({
                   : "loading…"
                 : formatBytes(size.data)}
             </p>
-            <label className="grid gap-1 text-[12px]">
+            <label className="grid gap-1 text-small">
               History limit (MB)
               <input
                 className={HOST_INPUT}
@@ -189,7 +189,7 @@ function HostSettings({
                 Enter a whole number from 10 to 10,000 MB.
               </InlineMessage>
             )}
-            <div className="flex justify-between text-[13px]">
+            <div className="flex justify-between text-body">
               Connect automatically
               <Switch
                 aria-label="Connect automatically"
@@ -304,11 +304,11 @@ export default function HostsRoute() {
         {local && (
           <div className="flex items-center justify-between gap-4 py-4">
             <div>
-              <h2 className="font-[590] text-[14px]">This Mac</h2>
-              <p className="text-[12px] text-muted-foreground">
+              <h2 className="font-semibold text-heading">This Mac</h2>
+              <p className="text-muted-foreground text-small">
                 {local.display_name} · {local.info.chip ?? local.info.model}
               </p>
-              <p className="figures mt-1 text-[12px] text-muted-foreground">
+              <p className="figures mt-1 text-muted-foreground text-small">
                 StatGlass {version}
                 {localTarget && ` · ${localTarget} available in Settings`}
               </p>
@@ -324,23 +324,25 @@ export default function HostsRoute() {
             className="flex flex-wrap items-center justify-between gap-4 py-4"
           >
             <div className="min-w-0 flex-1">
-              <h2 className="font-[590] text-[14px]">{remote.config.name}</h2>
-              <p className="text-[12px] text-muted-foreground">
+              <h2 className="font-semibold text-heading">
+                {remote.config.name}
+              </h2>
+              <p className="text-muted-foreground text-small">
                 {connectionLabel(remote)}
               </p>
               {remote.status.last_seen_ms !== null &&
                 remote.status.state !== "connected" && (
-                  <p className="text-[12px] text-muted-foreground">
+                  <p className="text-muted-foreground text-small">
                     Last seen {formatDateTime(remote.status.last_seen_ms)}
                   </p>
                 )}
               {remote.status.identity_changed !== null ? (
-                <p className="mt-1 text-[12px] text-destructive">
+                <p className="mt-1 text-destructive text-small">
                   This host now answers with a different identity.
                 </p>
               ) : (
                 remote.status.error && (
-                  <p className="mt-1 text-[12px] text-destructive">
+                  <p className="mt-1 text-destructive text-small">
                     {remote.status.error}
                   </p>
                 )

@@ -16,10 +16,10 @@ html[data-native][data-window="popover"] body {
   background-color: transparent;
 }
 
-/* Root weight. Weights in use are 400, 510 and 590 only. */
+/* Root weight. UI weights are 400, 510 and 590; 620 is the wordmark only. */
 html {
   font-family: var(--font-sans);
-  font-weight: 510;
+  font-weight: var(--font-weight-medium);
 }
 
 @layer base {

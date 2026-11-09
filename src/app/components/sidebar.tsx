@@ -112,15 +112,14 @@ function SidebarItem({
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden
-        className={cn("shrink-0", entry.disabled && "opacity-60")}
+        className={cn("icon-light shrink-0", entry.disabled && "opacity-60")}
       >
         <path d={ICONS[entry.icon]} />
       </svg>
-      <span className="flex-1 truncate text-[13px] max-sm:sr-only">
+      <span className="flex-1 truncate text-body max-sm:sr-only">
         {entry.label}
       </span>
       {entry.attention && (
@@ -128,14 +127,14 @@ function SidebarItem({
           <span className="sr-only">, {entry.attention.label}</span>
           <span
             aria-hidden
-            className="figures rounded-full border border-border px-1.5 font-normal text-[10px] text-fg-subtle leading-4 max-sm:absolute max-sm:top-1 max-sm:right-1 max-sm:size-1.5 max-sm:border-0 max-sm:bg-fg-subtle max-sm:p-0 max-sm:text-[0px]"
+            className="figures rounded-full border border-border px-1.5 font-normal text-caption text-fg-subtle leading-4 max-sm:absolute max-sm:top-1 max-sm:right-1 max-sm:size-1.5 max-sm:border-0 max-sm:bg-fg-subtle max-sm:p-0 max-sm:text-[0px]"
           >
             {entry.attention.count}
           </span>
         </>
       )}
       {!entry.disabled && entry.value && (
-        <span className="figures min-w-9 text-right font-normal text-[11px] text-muted-foreground max-sm:hidden">
+        <span className="figures min-w-9 text-right font-normal text-label text-muted-foreground max-sm:hidden">
           {entry.value}
         </span>
       )}
@@ -245,10 +244,9 @@ export function Sidebar({
             <>
               <Pause
                 aria-hidden
-                className="size-2.5 text-muted-foreground"
-                strokeWidth={2.5}
+                className="icon-bold size-2.5 text-muted-foreground"
               />
-              <span className="font-normal text-[11px] text-muted-foreground">
+              <span className="font-normal text-label text-muted-foreground">
                 Paused
               </span>
             </>
@@ -260,7 +258,7 @@ export function Sidebar({
                 aria-hidden
                 className="size-1.5 rounded-full border border-muted-foreground"
               />
-              <span className="min-w-0 truncate font-normal text-[11px] text-muted-foreground">
+              <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
                 {status.connection === "connecting"
                   ? "Connecting…"
                   : status.connection === "reconnecting"
@@ -271,7 +269,7 @@ export function Sidebar({
           ) : (
             <>
               <span aria-hidden className="size-1.5 rounded-full bg-live" />
-              <span className="min-w-0 truncate font-normal text-[11px] text-muted-foreground">
+              <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
                 Sampling every{" "}
                 <span className="figures">
                   {intervalLabel(status.intervalMs)}
@@ -281,7 +279,7 @@ export function Sidebar({
             </>
           )}
           <span className="flex-1" />
-          <span className="figures text-[10px] text-fg-faint">v{version}</span>
+          <span className="figures text-caption text-fg-faint">v{version}</span>
         </div>
         {footerNote}
       </div>
@@ -301,7 +299,7 @@ const SidebarBrand = memo(function SidebarBrand() {
         className="mb-2 flex shrink-0 items-center gap-2.5 border-border-subtle border-b px-2 pt-0.5 pb-2"
       >
         <StatGlassMark className="pointer-events-none size-5" />
-        <span className="pointer-events-none font-[620] text-[18px] leading-none tracking-[-0.02em] max-sm:sr-only">
+        <span className="pointer-events-none font-wordmark text-title leading-none tracking-figure max-sm:sr-only">
           StatGlass
         </span>
       </div>

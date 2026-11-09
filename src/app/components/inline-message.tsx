@@ -22,7 +22,7 @@ export function InlineMessage({
     return (
       <p
         className={cn(
-          "m-0 flex items-start gap-2 font-normal text-[12px] text-muted-foreground leading-normal",
+          "m-0 flex items-start gap-2 font-normal text-muted-foreground text-small leading-normal",
           className
         )}
       >
@@ -34,7 +34,7 @@ export function InlineMessage({
     <p
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "font-normal text-[12px]",
+        "font-normal text-small",
         tone === "error" ? "text-destructive" : "text-muted-foreground",
         className
       )}

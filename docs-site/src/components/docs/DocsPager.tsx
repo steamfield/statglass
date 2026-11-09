@@ -13,7 +13,7 @@ function PagerLink({
       className={`block rounded-card border border-border bg-card p-4 no-underline hover:border-link ${direction === "Next" ? "text-right sm:col-start-2" : ""}`}
     >
       <span className="block text-xs text-muted-foreground">{direction}</span>
-      <span className="mt-1 block text-sm font-[510] text-foreground">
+      <span className="mt-1 block text-sm font-medium text-foreground">
         {link.label}
       </span>
     </a>

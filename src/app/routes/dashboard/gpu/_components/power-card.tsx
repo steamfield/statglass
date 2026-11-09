@@ -28,7 +28,7 @@ export function PowerCard({ windowMs }: { windowMs: number }) {
       accent="gpu"
       origin="tr"
       title={`Power, ${chart.span}`}
-      aside={<span className="figures text-[13px]">{formatWatts(now)}</span>}
+      aside={<span className="figures text-body">{formatWatts(now)}</span>}
       headerAlign="baseline"
       compactHeader
       headerWrap={false}

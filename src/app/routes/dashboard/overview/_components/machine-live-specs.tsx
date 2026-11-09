@@ -81,11 +81,9 @@ export function ThermalSpec() {
         critical && "text-destructive"
       )}
     >
-      {warn && (
-        <TriangleAlert aria-hidden className="size-3.5" strokeWidth={1.75} />
-      )}
+      {warn && <TriangleAlert aria-hidden className="icon-regular size-3.5" />}
       {critical && (
-        <OctagonAlert aria-hidden className="size-3.5" strokeWidth={1.75} />
+        <OctagonAlert aria-hidden className="icon-regular size-3.5" />
       )}
       {THERMAL_LABEL[state]}
     </span>

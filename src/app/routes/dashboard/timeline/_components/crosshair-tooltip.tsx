@@ -93,7 +93,7 @@ export function CrosshairTooltip({
               {top.map(({ row: p, value: cpu }) => (
                 <div
                   key={`${p.pid}:${p.name}`}
-                  className="flex items-center gap-2 text-[12px]"
+                  className="flex items-center gap-2 text-small"
                 >
                   <InitialChip text={p.name} />
                   <span className="flex-1 truncate font-normal text-fg-subtle">

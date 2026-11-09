@@ -20,19 +20,19 @@ export function PopoverFooter({
       data-popover-size
       className="flex items-center gap-2.5 border-border border-t pt-2.5 pr-3 pb-3 pl-4"
     >
-      <Button className="h-[30px] px-3 text-[12px]" onClick={onOpenDashboard}>
+      <Button className="h-[30px] px-3 text-small" onClick={onOpenDashboard}>
         Open dashboard
-        <ArrowUpRight strokeWidth={2} />
+        <ArrowUpRight />
       </Button>
       <Button
         variant="outline"
-        className="h-[30px] px-2.5 text-[12px]"
+        className="h-[30px] px-2.5 text-small"
         onClick={onActivity}
       >
         Activity
       </Button>
       <span className="flex-1" />
-      <span className="figures whitespace-nowrap text-[10px] text-muted-foreground">
+      <span className="figures whitespace-nowrap text-caption text-muted-foreground">
         statglass {formatPercent(selfCpuPct, { decimals: 1 })} cpu
       </span>
     </footer>

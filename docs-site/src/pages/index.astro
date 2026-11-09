@@ -53,10 +53,10 @@ const maxCpu = Math.max(
 
 const section = "mx-auto max-w-[1200px] px-4 sm:px-8";
 const h2 =
-  "text-[28px] leading-tight font-[590] tracking-[-0.022em] text-balance sm:text-[32px]";
+  "text-[28px] leading-tight font-semibold tracking-[-0.022em] text-balance sm:text-[32px]";
 const body = "text-base leading-relaxed text-pretty text-secondary-foreground";
 const primaryButton =
-  "inline-flex min-h-11 items-center rounded-control bg-primary px-5 text-sm font-[510] text-primary-foreground hover:opacity-90";
+  "inline-flex min-h-11 items-center rounded-control bg-primary px-5 text-sm font-medium text-primary-foreground hover:opacity-90";
 ---
 
 <BaseLayout title="Menu Bar System Monitor for Mac" path="/" landing>
@@ -67,7 +67,7 @@ const primaryButton =
     <div class="min-w-0 space-y-6">
       <h1
         data-motion-part
-        class="text-[clamp(2.5rem,6vw,3.75rem)] leading-[1.04] font-[590] tracking-[-0.03em] text-balance"
+        class="text-[clamp(2.5rem,6vw,3.75rem)] leading-[1.04] font-semibold tracking-[-0.03em] text-balance"
       >
         A Mac menu bar system monitor that keeps history.
       </h1>
@@ -82,7 +82,7 @@ const primaryButton =
         </a>
         <a
           href={SITE.repo}
-          class="text-sm font-[510] text-foreground underline-offset-4 hover:underline"
+          class="text-sm font-medium text-foreground underline-offset-4 hover:underline"
         >
           Source on GitHub
         </a>
@@ -159,7 +159,7 @@ const primaryButton =
             <tbody>
               {retention.map(([span, detail]) => (
                 <tr class="border-t border-border">
-                  <th scope="row" class="py-2.5 pr-4 text-left font-[510]">
+                  <th scope="row" class="py-2.5 pr-4 text-left font-medium">
                     {span}
                   </th>
                   <td class="py-2.5 text-right text-secondary-foreground">
@@ -214,7 +214,7 @@ const primaryButton =
             data-motion-part
             class="grid gap-1 py-3 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-6"
           >
-            <dt class="text-sm font-[590]">{name}</dt>
+            <dt class="text-sm font-semibold">{name}</dt>
             <dd class="text-sm leading-relaxed text-secondary-foreground">
               {detail}
             </dd>
@@ -263,7 +263,7 @@ const primaryButton =
                   scope="row"
                   class:list={[
                     "py-3 pr-4 text-left",
-                    i === 0 ? "font-[590]" : "font-[510]",
+                    i === 0 ? "font-semibold" : "font-medium",
                   ]}
                 >
                   {app}
@@ -360,7 +360,7 @@ const primaryButton =
   >
     <p
       data-motion-part
-      class="max-w-xl text-xl leading-snug font-[590] tracking-[-0.01em] text-balance"
+      class="max-w-xl text-xl leading-snug font-semibold tracking-[-0.01em] text-balance"
     >
       StatGlass is free under the Apache-2.0 license.
     </p>
@@ -370,7 +370,7 @@ const primaryButton =
       </a>
       <a
         href="/docs"
-        class="text-sm font-[510] underline-offset-4 hover:underline"
+        class="text-sm font-medium underline-offset-4 hover:underline"
       >
         Read the docs
       </a>

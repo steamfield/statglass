@@ -182,7 +182,7 @@ export function ComparisonCanvas({
       <ChartSelectionVeil highlight={brush.highlight} />
       {brush.overlay}
       {!times.length && (
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-muted-foreground">
+        <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground text-small">
           {loading
             ? "Loading recorded measurements…"
             : "No recorded measurements in this range."}

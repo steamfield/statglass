@@ -13,7 +13,7 @@ export function DockerLocalOnly({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-col items-start gap-3">
       <PageHeader title="Containers" />
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-body text-muted-foreground">
         Container monitoring is available on This Mac. Select This Mac to view
         local containers.
       </p>

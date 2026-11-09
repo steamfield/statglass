@@ -4,6 +4,28 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Theme centralization (2026-11-09)
+
+Theme values that lived in components moved into `src/app/styles/theme.css`, so a re-theme
+edits that file. Font sizes (about 450 `text-[Npx]` across 150 files) are role tokens
+(`text-label`, `text-small`, `text-body`, … `text-hero`), weights are `font-medium`/
+`font-semibold` at 510/590, tracking is three named tokens, Tailwind's stock radius scale is
+cleared so every corner uses `rounded-control`/`-chip`/`-tile`/`-mark`, lucide stroke weights
+come from `--icon-stroke-*` (`icon-light`/`-regular`/`-bold`), the dialog scrim is
+`--color-overlay`, and `withAlpha` now handles any CSS color format (it returned
+non-hex tokens opaque). `cn()` is taught the new names through `extendTailwindMerge`;
+`utils.test.ts` fails if a theme.css token is missing there, and `theme-usage.test.ts`
+rejects `text-[Npx]`, `font-[N]`, `tracking-[…]`, stock or arbitrary radius classes and
+`strokeWidth` on lucide icons in `src/app`. docs-site's hardcoded 510/590 weights now read
+the same tokens. Arbitrary line heights that fit a specific cell (heatmap, container rows,
+table footnotes) stay in place.
+
+Verified with lint, typecheck, `bun run test` (2025), a docs-site build (27 pages; compiled
+CSS checked for the tokens), and a computed-style diff of every element on eight routes
+before and after (font size, weight, tracking, line height, radius, icon stroke): no
+differences. Reviewed by ce:code-reviewer; its fixes are in. One intended change: the Disk
+space map's clip radius went from 3 px to the 4 px chip token (checked by screenshot).
+
 ## Pinned page header, Overview machine header facts (2026-11-09)
 
 Every dashboard page's header is now a bar pinned to the top of the scrolling page, so the

@@ -78,10 +78,10 @@ export function StatList({
       {hero && (
         <div className="flex flex-col gap-0.5">
           <dt className={FIELD_LABEL}>{hero.label}</dt>
-          <dd className="figures-display text-[32px] leading-none tracking-[-0.022em]">
+          <dd className="figures-display text-hero leading-none tracking-title">
             <NumberTicker text={hero.value} unit={hero.unit} />
             {hero.unit && (
-              <span className="text-[15px] text-muted-foreground">
+              <span className="text-figure text-muted-foreground">
                 {" "}
                 {hero.unit}
               </span>
@@ -97,7 +97,7 @@ export function StatList({
           </dt>
           <dd
             className={cn(
-              grid ? "figures text-[12px]" : "figures-display text-[15px]",
+              grid ? "figures text-small" : "figures-display text-figure",
               item.muted && "text-muted-foreground",
               valueClassName
             )}
@@ -112,7 +112,7 @@ export function StatList({
             )}
             {item.unit && (
               <span
-                className={cn("text-muted-foreground", !grid && "text-[11px]")}
+                className={cn("text-muted-foreground", !grid && "text-label")}
               >
                 {" "}
                 {item.unit}

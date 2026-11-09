@@ -43,18 +43,18 @@ export function RingStatCard({
         <span aria-hidden className="size-[88px] shrink-0" />
       )}
       <div className="flex min-w-0 flex-col gap-1.5">
-        <h3 id={titleId} className="font-[590] text-[13px]">
+        <h3 id={titleId} className="font-semibold text-body">
           {title}
         </h3>
         {description && (
-          <span className="font-normal text-[11px] text-muted-foreground">
+          <span className="font-normal text-label text-muted-foreground">
             {description}
           </span>
         )}
         {kv && (
           <dl className="flex flex-col gap-px">
             <dt className={FIELD_LABEL}>{kv.label}</dt>
-            <dd className="figures text-[13px]">{kv.value}</dd>
+            <dd className="figures text-body">{kv.value}</dd>
           </dl>
         )}
       </div>

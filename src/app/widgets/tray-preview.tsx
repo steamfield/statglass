@@ -101,7 +101,7 @@ function Stacked({ text }: { text: string }) {
   return (
     <span
       aria-hidden
-      className="inline-flex w-1.5 shrink-0 flex-col text-center font-tray text-[6px] leading-[6px]"
+      className="inline-flex w-1.5 shrink-0 flex-col text-center font-tray text-tray-label"
     >
       {text.split("").map((c, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: characters of a fixed label
@@ -123,7 +123,7 @@ export function TrayMarkerIcon({ marker }: { marker: TrayMarker }) {
 /** Network up over down, two lines of 8 px text, right-aligned. */
 function Rates({ up, down }: { up: string; down: string }) {
   return (
-    <span className="inline-flex shrink-0 flex-col items-end whitespace-pre font-tray text-[8px] leading-[9px]">
+    <span className="inline-flex shrink-0 flex-col items-end whitespace-pre font-tray text-tray-value">
       <span>{up}</span>
       <span>{down}</span>
     </span>
@@ -131,7 +131,9 @@ function Rates({ up, down }: { up: string; down: string }) {
 }
 
 const Value = ({ children }: { children: ReactNode }) => (
-  <span className="whitespace-nowrap font-tray text-[11px]">{children}</span>
+  <span className="whitespace-nowrap font-tray text-tray-glyph">
+    {children}
+  </span>
 );
 
 function Readout({ r }: { r: TrayReadout }) {
@@ -413,7 +415,7 @@ export function TrayPreview({
           )}
         </span>
       )}
-      <span className="shrink-0 text-[11px] opacity-60">{clock}</span>
+      <span className="shrink-0 text-tray-glyph opacity-60">{clock}</span>
     </div>
   );
 }

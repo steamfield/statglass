@@ -126,7 +126,7 @@ export function ContainerResults({
             hiddenAttention.length ? (
               <button
                 type="button"
-                className="text-[11px] underline"
+                className="text-label underline"
                 onClick={() => {
                   const target = hiddenAttention[0]?.project ?? "Standalone";
                   patch({

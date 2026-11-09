@@ -55,9 +55,9 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
       {flow.operation && (
         <section
           aria-label="Docker operation results"
-          className="border-border-subtle border-y py-3 text-[12px]"
+          className="border-border-subtle border-y py-3 text-small"
         >
-          <h2 className="font-[590]">
+          <h2 className="font-semibold">
             {flow.operation.finished_ms === null
               ? "Working…"
               : "Operation complete"}
@@ -71,7 +71,9 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
               <li
                 key={`${item.selection.kind}:${item.selection.id}:${item.selection.action}`}
               >
-                <span className="font-[590]">{statusLabels[item.status]}</span>{" "}
+                <span className="font-semibold">
+                  {statusLabels[item.status]}
+                </span>{" "}
                 · {item.selection.id} · {item.message}
                 {item.reclaimed_bytes !== null && (
                   <span className="figures">
@@ -123,7 +125,7 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
               key: `${row.kind}:${row.id}`,
               label: (
                 <>
-                  <span className="font-[590]">{row.name}</span> ·{" "}
+                  <span className="font-semibold">{row.name}</span> ·{" "}
                   {row.kind.replaceAll("_", " ")} ·{" "}
                   <span className="figures">{formatBytes(row.size_bytes)}</span>
                 </>
@@ -134,7 +136,7 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
             }))}
           />
           {!volumeStep && !stops && (
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-muted-foreground text-small">
               Estimated reclaimable:{" "}
               {review?.estimated_reclaimed_bytes == null
                 ? review?.resources.some(
@@ -146,19 +148,19 @@ function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
             </p>
           )}
           {review?.warnings.map((warning) => (
-            <p key={warning} className="text-[12px] text-muted-foreground">
+            <p key={warning} className="text-muted-foreground text-small">
               {warning}
             </p>
           ))}
           {volumeStep && (
             <>
-              <p className="text-[12px] text-muted-foreground">
+              <p className="text-muted-foreground text-small">
                 Docker volume names can be reused. If another Docker client
                 replaces an unused volume between the final check and deletion,
                 Docker cannot reliably detect that replacement.
               </p>
               <label
-                className="flex items-start gap-2 text-[12px]"
+                className="flex items-start gap-2 text-small"
                 htmlFor="volume-data-loss"
               >
                 <Checkbox

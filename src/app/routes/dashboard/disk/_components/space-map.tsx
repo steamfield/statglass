@@ -83,7 +83,7 @@ export const SpaceMap = memo(function SpaceMap({
         onHover(null);
       }}
     >
-      <div className="absolute inset-0 overflow-hidden rounded-[3px]">
+      <div className="absolute inset-0 overflow-hidden rounded-chip">
         <div ref={layer} className="absolute inset-0 origin-top-left">
           {tiles.map((t) => (
             <Tile
@@ -100,7 +100,7 @@ export const SpaceMap = memo(function SpaceMap({
         ref={tip}
         aria-hidden
         className={cn(
-          "pointer-events-none absolute top-0 left-0 z-10 w-max max-w-64 rounded-control border border-border bg-popover px-2.5 py-2 text-[11px] shadow-sm",
+          "pointer-events-none absolute top-0 left-0 z-10 w-max max-w-64 rounded-control border border-border bg-popover px-2.5 py-2 text-label shadow-sm",
           hoveredTile ? "visible" : "invisible"
         )}
       >
@@ -249,7 +249,7 @@ const Tile = memo(function Tile({
       data-depth={t.depth}
       data-live={t.live || undefined}
       className={cn(
-        "absolute overflow-hidden rounded-[2px] transition-[background-color] duration-(--motion-fast)",
+        "absolute overflow-hidden rounded-mark transition-[background-color] duration-(--motion-fast)",
         // Padding would widen a sliver past its own box.
         t.w < 24 || t.h < 16
           ? "p-0"
@@ -292,11 +292,11 @@ function FrameHeader({ tile: t }: { tile: SpaceTile }) {
       className="flex min-w-0 items-center gap-1.5"
       style={{ height: FRAME_HEADER }}
     >
-      <span className="min-w-0 truncate font-[590] text-[12px] text-foreground leading-4">
+      <span className="min-w-0 truncate font-semibold text-foreground text-small leading-4">
         {name}
       </span>
       {both && (
-        <span className="figures shrink-0 text-[11px] text-fg-subtle leading-4">
+        <span className="figures shrink-0 text-fg-subtle text-label leading-4">
           {size}
         </span>
       )}
@@ -325,7 +325,7 @@ function TileText({ tile: t }: { tile: SpaceTile }) {
         <span
           className={cn(
             "min-w-0 flex-1 truncate leading-4",
-            t.depth === 2 ? "text-[11px]" : "font-[510] text-[12px]",
+            t.depth === 2 ? "text-label" : "font-medium text-small",
             quiet ? "text-muted-foreground" : "text-foreground"
           )}
         >
@@ -339,7 +339,7 @@ function TileText({ tile: t }: { tile: SpaceTile }) {
         )}
       </div>
       {label === "full" && (
-        <div className="figures whitespace-nowrap text-[11px] text-fg-subtle leading-4">
+        <div className="figures whitespace-nowrap text-fg-subtle text-label leading-4">
           {size}
           {t.live ? (
             <span className="text-muted-foreground"> so far</span>
@@ -383,7 +383,7 @@ function TileTip({ tile: t, folder }: { tile: SpaceTile; folder: SpaceNode }) {
         : ` · click to open ${opens.name}`;
   return (
     <>
-      <div className="truncate font-[510] text-[12px] text-foreground">
+      <div className="truncate font-medium text-foreground text-small">
         {tileName(t)}
       </div>
       <div className="figures mt-0.5 text-fg-subtle">

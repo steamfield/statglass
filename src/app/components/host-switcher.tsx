@@ -37,7 +37,7 @@ export const HostSwitcher = memo(function HostSwitcher() {
               ?.display_name
           }
           size="sm"
-          className="w-full text-[12px] max-sm:justify-center max-sm:px-0 max-sm:[&>svg:last-child]:hidden"
+          className="w-full text-small max-sm:justify-center max-sm:px-0 max-sm:[&>svg:last-child]:hidden"
         >
           <Monitor aria-hidden className="hidden size-4 max-sm:block" />
           <span className="min-w-0 truncate max-sm:sr-only">

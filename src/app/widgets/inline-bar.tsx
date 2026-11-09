@@ -63,7 +63,7 @@ export function InlineBar({
   if (layout === "row") {
     return (
       <div
-        className="grid grid-cols-[64px_52px_minmax(0,1fr)] items-center gap-2 text-[12px]"
+        className="grid grid-cols-[64px_52px_minmax(0,1fr)] items-center gap-2 text-small"
         style={style}
       >
         <span className="font-normal text-fg-subtle">{label}</span>
@@ -90,14 +90,14 @@ export function InlineBar({
       <div className="flex justify-between gap-2">
         <span
           className={
-            wide ? "font-normal text-[11px] text-fg-subtle" : FIELD_LABEL
+            wide ? "font-normal text-fg-subtle text-label" : FIELD_LABEL
           }
         >
           {label}
         </span>
         <span
           className={cn(
-            "figures text-[11px]",
+            "figures text-label",
             typeof fraction !== "number" && "text-muted-foreground"
           )}
         >

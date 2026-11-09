@@ -19,13 +19,13 @@ export function StatusPill({ state, label }: StatusPillProps) {
     <span
       data-state={state}
       className={cn(
-        "inline-flex h-6 items-center gap-1.5 rounded-full border border-border bg-btn px-2.5 text-[11px]",
+        "inline-flex h-6 items-center gap-1.5 rounded-full border border-border bg-btn px-2.5 text-label",
         state === "live" ? "text-fg-subtle" : "text-muted-foreground"
       )}
     >
       <Swap k={state} className="inline-flex items-center gap-1.5">
         {state === "paused" ? (
-          <Pause aria-hidden className="size-2.5" strokeWidth={2.5} />
+          <Pause aria-hidden className="icon-bold size-2.5" />
         ) : (
           <span
             aria-hidden

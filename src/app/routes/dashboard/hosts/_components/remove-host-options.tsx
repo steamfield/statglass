@@ -21,7 +21,7 @@ function Choice({
 }) {
   const id = useId();
   return (
-    <label htmlFor={id} className="flex items-center gap-2 text-[13px]">
+    <label htmlFor={id} className="flex items-center gap-2 text-body">
       <Checkbox
         id={id}
         checked={checked}

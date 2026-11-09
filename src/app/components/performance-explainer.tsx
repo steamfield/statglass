@@ -76,7 +76,7 @@ export function PerformanceExplainer({
         <button
           type="button"
           onClick={onOpenSettings}
-          className="self-start text-[12px] text-foreground underline underline-offset-2 hover:text-fg-subtle"
+          className="self-start text-foreground text-small underline underline-offset-2 hover:text-fg-subtle"
         >
           Performance settings
         </button>

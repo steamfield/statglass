@@ -19,7 +19,7 @@ export function ContainerObservation({
           switch or reconnect the live engine.
         </InlineMessage>
       )}
-      <p className="text-[12px] text-muted-foreground">
+      <p className="text-muted-foreground text-small">
         <span role="status">
           {connection} ·{" "}
           {current ? "Current observation" : "Retained observation"}
@@ -29,7 +29,7 @@ export function ContainerObservation({
           yearUnlessCurrent: true,
         })}
       </p>
-      <div className="figures flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
+      <div className="figures flex flex-wrap gap-x-6 gap-y-2 text-body">
         <span>
           {current ? "Now" : "Last observed"} · CPU{" "}
           {formatPercent(row.metrics.cpu_pct)}
@@ -44,14 +44,14 @@ export function ContainerObservation({
               : formatBytes(row.explicit_limit_bytes)}
         </span>
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-label text-muted-foreground">
         Charged memory is used to assess an explicit limit; the charts show
         cache-adjusted working set.
       </p>
       {(row.oom_killed || row.observed_restarts > 0) && (
         <p
           role="status"
-          className="rounded-control border border-border px-3 py-2 text-[12px]"
+          className="rounded-control border border-border px-3 py-2 text-small"
         >
           {row.oom_killed ? "⚠ OOM recorded by Docker. " : ""}
           {row.repeated_restarts ? "Repeated restarts · " : ""}

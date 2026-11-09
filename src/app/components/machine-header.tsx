@@ -156,13 +156,13 @@ export function MachineHeader({
       <Illustration />
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h2 className="m-0 font-[590] text-[20px] tracking-[-0.022em]">
+          <h2 className="m-0 font-semibold text-title-lg tracking-title">
             {title}
           </h2>
-          <span className="font-normal text-[13px] text-muted-foreground">
+          <span className="font-normal text-body text-muted-foreground">
             {osVersion}
             {osBuild && (
-              <span className="figures text-[11px]"> ({osBuild})</span>
+              <span className="figures text-label"> ({osBuild})</span>
             )}
           </span>
         </div>
@@ -175,10 +175,10 @@ export function MachineHeader({
                 s.wide && "col-span-2"
               )}
             >
-              <dt className="w-[72px] shrink-0 font-normal text-[11px] text-muted-foreground">
+              <dt className="w-[72px] shrink-0 font-normal text-label text-muted-foreground">
                 {s.label}
               </dt>
-              <dd className="m-0 truncate font-normal text-[12px] text-fg-subtle">
+              <dd className="m-0 truncate font-normal text-fg-subtle text-small">
                 {s.value}
               </dd>
             </div>

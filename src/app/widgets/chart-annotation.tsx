@@ -32,7 +32,7 @@ export function ChartAnnotation({
     <span
       data-annotation-ts={tsMs}
       className={cn(
-        "inline-flex max-w-full items-center gap-1.5 whitespace-nowrap text-[11px] text-fg-subtle",
+        "inline-flex max-w-full items-center gap-1.5 whitespace-nowrap text-fg-subtle text-label",
         align === "end" && "flex-row-reverse",
         variant === "pill" &&
           "rounded-mark border border-border bg-card px-1.5 py-0.5"

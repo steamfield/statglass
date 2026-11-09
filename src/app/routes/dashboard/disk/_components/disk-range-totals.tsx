@@ -37,22 +37,22 @@ export function DiskRangeTotals({
       className="flex min-w-0 flex-col gap-1"
       data-testid="disk-range-totals"
     >
-      <div className="figures flex gap-4 text-[12px] text-fg-subtle">
+      <div className="figures flex gap-4 text-fg-subtle text-small">
         <span>
           Read · {scope}{" "}
-          <strong className="font-[590] text-foreground">
+          <strong className="font-semibold text-foreground">
             {formatBytes(page?.read_bytes ?? null)}
           </strong>
         </span>
         <span>
           Written · {scope}{" "}
-          <strong className="font-[590] text-foreground">
+          <strong className="font-semibold text-foreground">
             {formatBytes(page?.write_bytes ?? null)}
           </strong>
         </span>
       </div>
       {differs && (
-        <p className="figures font-normal text-[11px] text-muted-foreground">
+        <p className="figures font-normal text-label text-muted-foreground">
           Recorded totals cover {formatClockSeconds(page.from_ms)} to{" "}
           {formatClockSeconds(page.to_ms)}.{" "}
           {selected ? "Selected interval" : "Chart interval"}:{" "}
@@ -61,7 +61,7 @@ export function DiskRangeTotals({
         </p>
       )}
       {page && (differs || partial) && (
-        <p className="figures font-normal text-[11px] text-muted-foreground">
+        <p className="figures font-normal text-label text-muted-foreground">
           Read measured for {formatSpan(page.read_covered_ms)} of {scope}
           {"; "}
           written measured for {formatSpan(page.write_covered_ms)} of {scope}.

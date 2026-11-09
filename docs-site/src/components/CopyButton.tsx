@@ -16,7 +16,7 @@ export function CopyButton({
     <SfCopyButton
       controls={id}
       label={label}
-      className="flex shrink-0 items-center gap-1.5 rounded-control border border-border bg-card px-2.5 py-1.5 text-xs font-[510] whitespace-nowrap text-foreground hover:bg-secondary transition-transform duration-(--motion-fast) ease-(--ease-out) active:scale-95"
+      className="flex shrink-0 items-center gap-1.5 rounded-control border border-border bg-card px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-foreground hover:bg-secondary transition-transform duration-(--motion-fast) ease-(--ease-out) active:scale-95"
       icon={
         <svg
           aria-hidden="true"

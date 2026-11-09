@@ -73,28 +73,28 @@ export function OverviewEventsCard({
     >
       <header className="flex items-baseline justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <h3 id={titleId} className="font-[590] text-[13px]">
+          <h3 id={titleId} className="font-semibold text-body">
             Events
           </h3>
         </div>
         {!query.isPending && !query.isError && !unavailable && (
-          <span className="figures text-[11px] text-muted-foreground">
+          <span className="figures text-label text-muted-foreground">
             {events.length} {scope}
           </span>
         )}
       </header>
       {unavailable ? (
-        <p role="status" className="text-[12px] text-muted-foreground">
+        <p role="status" className="text-muted-foreground text-small">
           {unavailable.message}
         </p>
       ) : query.isError ? (
-        <p role="alert" className="text-[12px] text-muted-foreground">
+        <p role="alert" className="text-muted-foreground text-small">
           Couldn't load events
         </p>
       ) : query.isPending ? (
         <ChartHistoryStatus loading />
       ) : events.length === 0 ? (
-        <p role="status" className="text-[12px] text-muted-foreground">
+        <p role="status" className="text-muted-foreground text-small">
           Nothing detected {scope}
         </p>
       ) : (
@@ -107,10 +107,10 @@ export function OverviewEventsCard({
                   type="button"
                   aria-description="Open in Timeline"
                   disabled={pending}
-                  className="flex w-full items-baseline gap-2 rounded-control py-1 text-left text-[12px] text-fg-subtle outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex w-full items-baseline gap-2 rounded-control py-1 text-left text-fg-subtle text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => void openEvent(event)}
                 >
-                  <span className="figures shrink-0 text-[11px] text-muted-foreground">
+                  <span className="figures shrink-0 text-label text-muted-foreground">
                     {eventTime(event.ts_ms, toMs)}
                   </span>
                   {warning && (

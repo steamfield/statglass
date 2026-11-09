@@ -62,13 +62,13 @@ export function TrayStyleOption({
       )}
     >
       <span className="flex w-full items-baseline justify-between">
-        <span className="text-[13px]">{title}</span>
+        <span className="text-body">{title}</span>
         {recommended && (
-          <span className="font-normal text-[11px] text-link">Recommended</span>
+          <span className="font-normal text-label text-link">Recommended</span>
         )}
       </span>
       <TrayPreview layout={layout} className="w-full" />
-      <span className="font-normal text-[11px] text-muted-foreground">
+      <span className="font-normal text-label text-muted-foreground">
         {description}
       </span>
     </RadioGroup.Item>

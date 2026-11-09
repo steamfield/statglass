@@ -154,7 +154,7 @@ export function DiskIoCharts({
           ariaLabel="Storage response metric"
         />
         <p
-          className="figures text-[11px] text-muted-foreground"
+          className="figures text-label text-muted-foreground"
           data-testid="disk-response-current"
         >
           {secondary === "time"
@@ -174,7 +174,7 @@ export function DiskIoCharts({
         minimum={secondary === "time" ? 1 : 100}
         axis
       />
-      <p className="font-normal text-[11px] text-muted-foreground">
+      <p className="font-normal text-label text-muted-foreground">
         Completed driver requests, not application response time or queueing
         delay. Chart ceilings adapt to the data, not drive capacity.
       </p>

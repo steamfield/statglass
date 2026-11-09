@@ -27,7 +27,7 @@ function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          "data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97] z-50 max-h-(--radix-popover-content-available-height) w-72 origin-(--radix-popover-content-transform-origin) overflow-y-auto rounded-card border bg-popover p-3 text-[12px] text-popover-foreground shadow-md outline-hidden duration-(--motion-fast) ease-out data-[state=closed]:animate-out data-[state=open]:animate-in dark:shadow-none",
+          "data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97] z-50 max-h-(--radix-popover-content-available-height) w-72 origin-(--radix-popover-content-transform-origin) overflow-y-auto rounded-card border bg-popover p-3 text-popover-foreground text-small shadow-md outline-hidden duration-(--motion-fast) ease-out data-[state=closed]:animate-out data-[state=open]:animate-in dark:shadow-none",
           className
         )}
         {...props}

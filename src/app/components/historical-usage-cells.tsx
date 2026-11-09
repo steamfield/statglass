@@ -59,12 +59,12 @@ export function HistoricalUsageCells({
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-chip outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`${metric}: ${value}; ${historicalCoverage(coverage, spanMs)}`}
             >
               {value}
               {coverage?.supported && !coverage.complete && (
-                <span className="ml-1 text-[10px] text-muted-foreground">
+                <span className="ml-1 text-caption text-muted-foreground">
                   partial
                 </span>
               )}
@@ -80,7 +80,7 @@ export function HistoricalUsageCells({
           </TooltipContent>
         </Tooltip>
         {compare && (
-          <span className="block font-normal text-[10px] text-muted-foreground">
+          <span className="block font-normal text-caption text-muted-foreground">
             Previous {prior}
             {priorCoverage?.supported && !priorCoverage.complete
               ? " (partial)"

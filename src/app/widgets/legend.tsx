@@ -100,7 +100,7 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
         {items.map((item) => (
           <li
             key={item.label}
-            className="inline-flex items-center gap-1.5 font-normal text-[11px] text-fg-subtle"
+            className="inline-flex items-center gap-1.5 font-normal text-fg-subtle text-label"
           >
             {item.onClick ? (
               <button
@@ -145,7 +145,7 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
   return (
     <ul
       className={cn(
-        "grid gap-x-4 gap-y-1 text-[11px]",
+        "grid gap-x-4 gap-y-1 text-label",
         columns === 2 ? "grid-cols-2" : "grid-cols-1"
       )}
       style={style}

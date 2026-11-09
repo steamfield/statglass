@@ -15,7 +15,7 @@ export function ContainerLifecycle({
 }) {
   return (
     <section aria-label="Lifecycle events" className="flex flex-col gap-2">
-      <h2 className="text-[14px]">Lifecycle evidence</h2>
+      <h2 className="text-heading">Lifecycle evidence</h2>
       {events.error && (
         <InlineMessage tone={errorTone(events.error)}>
           Events unavailable: {dockerErrorMessage(events.error)}
@@ -24,7 +24,7 @@ export function ContainerLifecycle({
       {events.data?.events.map((event) => (
         <div
           key={event.id}
-          className="flex flex-wrap gap-3 border-border-subtle border-b py-2 text-[12px]"
+          className="flex flex-wrap gap-3 border-border-subtle border-b py-2 text-small"
         >
           <time
             className="figures text-muted-foreground"
@@ -65,7 +65,7 @@ export function ContainerLifecycle({
         )}
       </div>
       {events.data?.coverage.map((gap) => (
-        <p key={gap.start_ms} className="text-[11px] text-muted-foreground">
+        <p key={gap.start_ms} className="text-label text-muted-foreground">
           Event coverage: {gap.label}
         </p>
       ))}

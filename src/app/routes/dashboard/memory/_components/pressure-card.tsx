@@ -46,30 +46,25 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
               <Swap
                 k={state}
                 className={cn(
-                  "inline-flex items-center gap-1 text-[12px]",
+                  "inline-flex items-center gap-1 text-small",
                   state === "warn" ? "text-warning" : "text-destructive"
                 )}
               >
                 {state === "warn" ? (
                   <TriangleAlert
                     aria-hidden
-                    className="size-3.5"
-                    strokeWidth={1.75}
+                    className="icon-regular size-3.5"
                   />
                 ) : (
-                  <OctagonAlert
-                    aria-hidden
-                    className="size-3.5"
-                    strokeWidth={1.75}
-                  />
+                  <OctagonAlert aria-hidden className="icon-regular size-3.5" />
                 )}
                 Pressure: {state}
               </Swap>
             )}
-            <span className="figures text-[13px]">
+            <span className="figures text-body">
               {formatPercent(pressure)}
               {state && (
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-label text-muted-foreground">
                   {" "}
                   {state}
                 </span>

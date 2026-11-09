@@ -26,8 +26,8 @@ export function FullWidthRow({
         className={cn(
           "px-3 font-normal text-muted-foreground",
           tone === "empty"
-            ? "h-[29px] py-0 text-[12px]"
-            : "whitespace-normal pt-1 pb-2.5 text-[11px] leading-[1.45]",
+            ? "h-[29px] py-0 text-small"
+            : "whitespace-normal pt-1 pb-2.5 text-label leading-[1.45]",
           className
         )}
       >

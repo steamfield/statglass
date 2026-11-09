@@ -14,7 +14,7 @@ import {
 import { useHostClock } from "~/lib/host-clock";
 
 const INPUT =
-  "figures h-8 min-w-0 rounded-md border border-input bg-transparent px-2 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive";
+  "figures h-8 min-w-0 rounded-control border border-input bg-transparent px-2 text-small outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive";
 const UNITS = { minutes: MINUTE_MS, hours: HOUR_MS, days: DAY_MS };
 
 export function CustomRangeForm({
@@ -136,7 +136,7 @@ export function CustomRangeForm({
           />
           <p
             id={`${id}-zone`}
-            className="col-span-2 text-[11px] text-muted-foreground"
+            className="col-span-2 text-label text-muted-foreground"
           >
             YYYY-MM-DD HH:mm ·{" "}
             {Intl.DateTimeFormat().resolvedOptions().timeZone}
@@ -147,13 +147,13 @@ export function CustomRangeForm({
         <p
           id={`${id}-error`}
           role="alert"
-          className="text-[11px] text-destructive"
+          className="text-destructive text-label"
         >
           {error}
         </p>
       )}
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-label text-muted-foreground">
           {mode === "relative" ? "Follows now" : "Stays at these dates"}
         </span>
         <Button size="sm" type="submit">

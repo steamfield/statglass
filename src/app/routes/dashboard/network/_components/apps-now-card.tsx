@@ -73,7 +73,7 @@ export function AppsNowCard() {
         brush. Live rates still show.{" "}
         <Link
           to="/dashboard/settings"
-          className="rounded-sm text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-chip text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           Turn it on in Settings
         </Link>
@@ -91,7 +91,7 @@ export function AppsNowCard() {
               : "None of your processes sent or received anything."
           }
           renderRow={({ original: r }) => (
-            <TableRow key={r.pid} className="text-[12px]">
+            <TableRow key={r.pid} className="text-small">
               <TableCell className="px-3 py-1.75 text-foreground">
                 <span className="inline-flex items-center gap-2">
                   <InitialChip text={r.name} />

@@ -109,14 +109,14 @@ export function ContainerDataRow({
             return (
               <td
                 key={column}
-                className="figures whitespace-nowrap px-2 py-1 text-right text-[12px]"
+                className="figures whitespace-nowrap px-2 py-1 text-right text-small"
               >
                 {formatPercent(
                   metrics?.cpu_pct ?? null,
                   historical ? { significantDigits: 3 } : {}
                 )}
                 {summary && (
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className="text-caption text-muted-foreground">
                     {formatPercent(summary.avg_cpu_pct, {
                       significantDigits: 3,
                     })}{" "}
@@ -142,7 +142,7 @@ export function ContainerDataRow({
               <td
                 key={column}
                 className={cn(
-                  "figures whitespace-nowrap px-2 py-1 text-right text-[12px]",
+                  "figures whitespace-nowrap px-2 py-1 text-right text-small",
                   columnDef.meta?.cellClassName
                 )}
               >
@@ -165,7 +165,7 @@ export function ContainerDataRow({
             return (
               <td
                 key={column}
-                className="figures max-w-32 truncate px-2 text-right text-[11px]"
+                className="figures max-w-32 truncate px-2 text-right text-label"
               >
                 {extraColumnValue(column, row, metrics)}
               </td>
@@ -208,7 +208,7 @@ const ContainerIdentityCells = memo(function ContainerIdentityCells({
   ) => void;
 }) {
   return column === "name" ? (
-    <td className="min-w-0 px-2 py-1 text-[12px]">
+    <td className="min-w-0 px-2 py-1 text-small">
       <Link
         to={containerPath(engineId, id)}
         onClick={(event) => onNavigate(event, engineId, id)}
@@ -222,7 +222,7 @@ const ContainerIdentityCells = memo(function ContainerIdentityCells({
       </Link>
       {failure && <InlineMessage tone="error">{failure}</InlineMessage>}
       <span
-        className="hidden truncate text-[10px] text-muted-foreground [@container(max-width:480px)]:block"
+        className="hidden truncate text-caption text-muted-foreground [@container(max-width:480px)]:block"
         title={`${lifecycleLabel[lifecycle]} · ${health}`}
       >
         {lifecycleLabel[lifecycle]}
@@ -230,11 +230,11 @@ const ContainerIdentityCells = memo(function ContainerIdentityCells({
       </span>
     </td>
   ) : (
-    <td className={cn("px-2 py-1 text-[12px]", className)}>
+    <td className={cn("px-2 py-1 text-small", className)}>
       {lifecycleLabel[lifecycle]}
       {health && (
         <div
-          className="truncate text-[10px] text-muted-foreground"
+          className="truncate text-caption text-muted-foreground"
           title={`${health} · ${metadataObservedMs ? formatDateTime(metadataObservedMs) : "time unknown"}`}
         >
           {health} ·{" "}
@@ -298,7 +298,7 @@ function ContainerMemoryCell({
   return (
     <td
       className={cn(
-        "figures px-2 py-1 text-right text-[12px] leading-[14px]",
+        "figures px-2 py-1 text-right text-small leading-[14px]",
         className
       )}
     >
@@ -324,7 +324,7 @@ function ContainerMemoryCell({
       {summary && (
         <div
           className={cn(
-            "whitespace-nowrap text-[10px] text-muted-foreground",
+            "whitespace-nowrap text-caption text-muted-foreground",
             !historical && MEMORY_TRACK_INSET
           )}
         >

@@ -90,7 +90,7 @@ export function AnnotationRow({
                     }}
                     style={{ maxWidth: Math.min(180, available) }}
                     className={cn(
-                      "figures flex h-6 min-w-5 items-center justify-center gap-1 overflow-hidden rounded-control border px-1.5 text-[10px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+                      "figures flex h-6 min-w-5 items-center justify-center gap-1 overflow-hidden rounded-control border px-1.5 text-caption outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
                       warning
                         ? "border-warning/40 bg-warning/10"
                         : "border-border bg-card"
@@ -126,7 +126,7 @@ export function AnnotationRow({
                           <button
                             type="button"
                             onClick={() => onSelectEvents?.([event])}
-                            className="w-full rounded-control px-2 py-1.5 text-left text-[11px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                            className="w-full rounded-control px-2 py-1.5 text-left text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <span className="figures text-muted-foreground">
                               {formatClock(event.ts_ms)}
@@ -147,7 +147,7 @@ export function AnnotationRow({
         {marks.map((mark) => (
           <li
             key={`${mark.kind}-${mark.tMs}`}
-            className="figures absolute text-[10px] text-muted-foreground"
+            className="figures absolute text-caption text-muted-foreground"
             style={{ left: mark.leftPx, top: mark.row * 13 }}
           >
             {mark.label}

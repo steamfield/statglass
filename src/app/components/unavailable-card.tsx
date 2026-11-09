@@ -31,7 +31,7 @@ export function UnavailableCard({
       accent={MODULE_META[module].accent}
       title={MODULE_META[module].name}
     >
-      <p className="m-0 font-normal text-[12px] text-muted-foreground">
+      <p className="m-0 font-normal text-muted-foreground text-small">
         {unavailableText(state, noun) ?? "Not available"}
       </p>
     </ModuleCard>

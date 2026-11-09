@@ -50,7 +50,7 @@ export function ChartRangeNotice() {
     <>
       {range && (range.endMs !== null || range.windowMs > RING_SPAN_MS) && (
         <p
-          className="font-normal text-[11px] text-muted-foreground"
+          className="font-normal text-label text-muted-foreground"
           role="status"
         >
           {range.endMs !== null &&

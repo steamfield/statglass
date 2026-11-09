@@ -32,7 +32,7 @@ export function AddHostLinux({
   const free =
     linux.free_bytes === null ? "" : ` (${formatBytes(linux.free_bytes)} free)`;
   return (
-    <div className="grid gap-2 text-[13px] text-fg-subtle">
+    <div className="grid gap-2 text-body text-fg-subtle">
       <p>
         {linux.distro ?? "Linux"}
         <span className="text-muted-foreground">
@@ -56,7 +56,7 @@ export function AddHostLinux({
         </InlineMessage>
       )}
       {!linux.linger_ok && (
-        <div className="grid gap-1 text-[12px]">
+        <div className="grid gap-1 text-small">
           <p>
             Lingering is off for {linux.user}, so the agent stops when{" "}
             {linux.user} logs out. To keep it running, run this on the server:
@@ -65,13 +65,13 @@ export function AddHostLinux({
         </div>
       )}
       {linux.selinux === "Enforcing" && (
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-muted-foreground text-small">
           SELinux is enforcing. StatGlass labels the binary so systemd can run
           it.
         </p>
       )}
       {linux.docker === "unreadable" && (
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-muted-foreground text-small">
           {linux.user} can’t read the Docker socket, so containers show by short
           id instead of name.
         </p>

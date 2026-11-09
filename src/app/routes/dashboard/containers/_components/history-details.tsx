@@ -80,19 +80,19 @@ export function HistoryDetails({
             const items = merged.filter((row) => row.kind === kind);
             return items.length ? (
               <section key={kind} className="mb-4">
-                <h3 className="mb-2 text-[13px]">{title}</h3>
+                <h3 className="mb-2 text-body">{title}</h3>
                 {items.map((row, index) => (
                   <div
                     key={`${row.reason}:${row.container_id}:${row.start_ms}`}
-                    className="border-border-subtle border-b py-2 text-[12px]"
+                    className="border-border-subtle border-b py-2 text-small"
                   >
                     <div>{row.label}</div>
                     {kind === "saving" && index === 0 && savingError && (
-                      <p className="mt-1 break-words text-[12px] text-muted-foreground">
+                      <p className="mt-1 break-words text-muted-foreground text-small">
                         {savingError}
                       </p>
                     )}
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className="text-label text-muted-foreground">
                       {formatDateTime(row.start_ms)}–
                       {row.end_ms === null ? "now" : formatDateTime(row.end_ms)}{" "}
                       ·{" "}
@@ -103,7 +103,7 @@ export function HistoryDetails({
                           : (containers.find((c) => c.id === row.container_id)
                               ?.name ?? row.container_id)}
                     </div>
-                    <code className="text-[11px] text-muted-foreground">
+                    <code className="text-label text-muted-foreground">
                       {row.reason}
                     </code>
                   </div>
@@ -112,7 +112,7 @@ export function HistoryDetails({
             ) : null;
           })}
           {unlisted > 0 && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               {unlisted} older {unlisted === 1 ? "record" : "records"} not
               listed
             </p>

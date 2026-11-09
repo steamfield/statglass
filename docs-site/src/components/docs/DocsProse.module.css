@@ -28,7 +28,7 @@
 .prose h3:where(:not([data-demo], [data-demo] *)) {
   position: relative;
   scroll-margin-top: 5.5rem;
-  font-weight: 590;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: -0.02em;
   color: var(--color-foreground);
 }
@@ -92,7 +92,7 @@
 }
 
 .prose strong:where(:not([data-demo], [data-demo] *)) {
-  font-weight: 590;
+  font-weight: var(--font-weight-semibold);
 }
 
 .prose hr:where(:not([data-demo], [data-demo] *)) {
@@ -151,7 +151,7 @@
   background: var(--color-secondary);
   color: var(--color-secondary-foreground);
   font-size: 0.6875rem;
-  font-weight: 590;
+  font-weight: var(--font-weight-semibold);
   text-align: left;
   white-space: nowrap;
 }
@@ -190,7 +190,7 @@
 .prose [data-callout-title]:where(:not([data-demo], [data-demo] *)) {
   margin-bottom: 0.25rem;
   font-size: 0.75rem;
-  font-weight: 590;
+  font-weight: var(--font-weight-semibold);
 }
 
 /* Disclosures */
@@ -203,7 +203,7 @@
 
 .prose summary:where(:not([data-demo], [data-demo] *)) {
   cursor: pointer;
-  font-weight: 510;
+  font-weight: var(--font-weight-medium);
 }
 
 .prose details[open] > summary:where(:not([data-demo], [data-demo] *)) {
@@ -297,7 +297,7 @@
   color: var(--color-foreground);
   font-family: var(--font-sans);
   font-size: 0.75rem;
-  font-weight: 510;
+  font-weight: var(--font-weight-medium);
 }
 
 .prose [data-code-copy] button[hidden]:where(:not([data-demo], [data-demo] *)) {

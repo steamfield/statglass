@@ -278,7 +278,7 @@ export function BrushOverlay({
         .join(". ")}
       title={gapExplanationAt?.(at) ?? undefined}
       data-testid="brush"
-      className="group absolute top-0 right-0 cursor-crosshair touch-none select-none rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group absolute top-0 right-0 cursor-crosshair touch-none select-none rounded-chip outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style={{ height, left: inset }}
       {...gesture.handlers}
       onPointerLeave={() => {

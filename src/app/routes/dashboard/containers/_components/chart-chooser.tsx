@@ -64,7 +64,7 @@ export function ChartChooser({
             .map((row) => (
               <label
                 key={row.id}
-                className="flex min-h-11 items-center gap-3 border-border-subtle border-b py-2 text-[12px]"
+                className="flex min-h-11 items-center gap-3 border-border-subtle border-b py-2 text-small"
               >
                 <input
                   type="checkbox"
@@ -108,7 +108,7 @@ export function ChartChooser({
               </label>
             ))}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-small">
           <span>{selected.length} of 6</span>
           {selected.length >= 6 && (
             <span className="text-muted-foreground">

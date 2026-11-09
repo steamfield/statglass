@@ -21,7 +21,7 @@ import type { Accent } from "~/widgets/lib/accent";
  */
 
 /** Cell padding and size shared by the per-app tables. */
-export const APP_CELL = "px-3 py-1.75 text-[12px] whitespace-nowrap";
+export const APP_CELL = "px-3 py-1.75 text-small whitespace-nowrap";
 
 /**
  * The card shell: title with its scope, controls or the pinned
@@ -70,8 +70,8 @@ export function AppsNote({ children }: { children: ReactNode }) {
 export function UnrecordedRange({ children }: { children: ReactNode }) {
   return (
     <div className="px-4 pt-1 pb-3.5">
-      <div className="flex h-33 items-center justify-center rounded-lg border border-border-strong/40 border-dashed bg-gap-hatch">
-        <span className="rounded-md border border-border bg-card px-2 py-1 font-normal text-[11px] text-fg-subtle">
+      <div className="flex h-33 items-center justify-center rounded-tile border border-border-strong/40 border-dashed bg-gap-hatch">
+        <span className="rounded-control border border-border bg-card px-2 py-1 font-normal text-fg-subtle text-label">
           {children}
         </span>
       </div>
@@ -84,7 +84,7 @@ export function OtherChip() {
   return (
     <span
       aria-hidden
-      className="inline-block size-4 flex-none rounded-[4px] border border-border-strong/50 border-dashed"
+      className="inline-block size-4 flex-none rounded-chip border border-border-strong/50 border-dashed"
     />
   );
 }

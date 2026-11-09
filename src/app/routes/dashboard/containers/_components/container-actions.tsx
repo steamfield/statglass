@@ -249,7 +249,7 @@ export function ContainerActionButton({
   if (!action) return null;
   if (flow.pendingIds.has(row.id))
     return (
-      <span className="text-[11px] text-muted-foreground">
+      <span className="text-label text-muted-foreground">
         {action === "stop" ? "Stopping…" : "Starting…"}
       </span>
     );
@@ -261,7 +261,7 @@ export function ContainerActionButton({
       aria-label={`${action === "stop" ? "Stop" : "Start"} ${row.name}`}
       aria-disabled={reason !== null || undefined}
       className={cn(
-        "h-6 px-2 text-[11px] aria-disabled:opacity-50",
+        "h-6 px-2 text-label aria-disabled:opacity-50",
         reveal &&
           "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
       )}

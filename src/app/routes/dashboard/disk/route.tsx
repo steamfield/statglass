@@ -226,7 +226,7 @@ function DiskActivity({
                     setChartWindow(relativeWindow(windowMs));
                 }}
                 aria-pressed={selection === null && fixedEnd === null}
-                className="h-7 rounded-control border border-border bg-btn px-3 text-[12px] outline-none hover:bg-selected focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-7 rounded-control border border-border bg-btn px-3 text-small outline-none hover:bg-selected focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Live
               </button>
@@ -270,7 +270,7 @@ function DiskActivity({
             <InlineMessage tone="status">Loading disk I/O…</InlineMessage>
           )}
           {device === null && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               Request times are weighted by completed operations. A busy fast
               device can hide a slower device; select a drive to inspect it.
             </p>
@@ -298,7 +298,7 @@ function DiskActivity({
           aria-label="Volume capacity"
           // biome-ignore lint/a11y/noNoninteractiveTabindex: the horizontally scrollable volume table needs keyboard access
           tabIndex={0}
-          className="relative min-w-0 max-w-full overflow-x-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative min-w-0 max-w-full overflow-x-auto rounded-chip outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <VolumeTable
             rows={volumeRows(vols, held, mounts)}
@@ -344,7 +344,7 @@ function AnalyzeLink({
     <button
       type="button"
       onClick={() => onAnalyze(vol)}
-      className="rounded-sm text-[12px] text-fg-subtle underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="rounded-chip text-fg-subtle text-small underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
     >
       Analyze space
     </button>
@@ -357,10 +357,10 @@ function MemoryContext() {
   if ((memory.pressureLevel ?? 0) === 0 && (memory.swapUsed ?? 0) === 0)
     return null;
   return (
-    <p className="text-[12px] text-muted-foreground">
+    <p className="text-muted-foreground text-small">
       This {noun} is using swap or reporting memory pressure.{" "}
       <Link
-        className="rounded-sm text-fg-subtle underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="rounded-chip text-fg-subtle underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         to="/dashboard/memory"
       >
         Inspect Memory

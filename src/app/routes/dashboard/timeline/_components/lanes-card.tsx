@@ -347,13 +347,13 @@ export function LanesCard({
           {ticks.map((t) => (
             <span
               key={t.tMs}
-              className="figures absolute top-1.5 -translate-x-1/2 text-[10px] text-fg-faint"
+              className="figures absolute top-1.5 -translate-x-1/2 text-caption text-fg-faint"
               style={{ left: cssPercent(fractionAt(t.tMs, fromMs, toMs)) }}
             >
               {t.label}
             </span>
           ))}
-          <span className="figures absolute top-1.5 right-0 text-[10px] text-muted-foreground">
+          <span className="figures absolute top-1.5 right-0 text-caption text-muted-foreground">
             {endLabel(span, toMs, live)}
           </span>
         </div>

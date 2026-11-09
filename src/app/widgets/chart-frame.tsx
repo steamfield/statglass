@@ -44,7 +44,7 @@ export function ChartFrame({
           <span
             key={tick.value}
             aria-hidden
-            className="figures absolute -translate-y-1/2 whitespace-nowrap text-[10px] text-fg-faint"
+            className="figures absolute -translate-y-1/2 whitespace-nowrap text-caption text-fg-faint"
             style={{ left: -gutter, top: chartY(tick.value, ceiling, height) }}
           >
             {tick.label}

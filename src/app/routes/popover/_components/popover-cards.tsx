@@ -152,7 +152,7 @@ export function LiveMemoryCard({
         <div className="flex items-center gap-2">
           <MeterTrack fraction={frac(mem.used)} className="flex-1" />
           {mem.hasPressure && (
-            <span className="whitespace-nowrap text-[10px] text-muted-foreground">
+            <span className="whitespace-nowrap text-caption text-muted-foreground">
               Pressure · {level}
             </span>
           )}
@@ -299,7 +299,7 @@ export function LivePowerCard({
           />
           {showBattery && <BatteryDetails />}
           {cpuNote && (
-            <p className="m-0 font-normal text-[11px] text-muted-foreground">
+            <p className="m-0 font-normal text-label text-muted-foreground">
               {cpuNote}
             </p>
           )}
@@ -443,13 +443,13 @@ function BatteryDetails() {
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] text-muted-foreground">Battery</span>
-        <span className="figures-display text-[15px]">
+        <span className="text-label text-muted-foreground">Battery</span>
+        <span className="figures-display text-figure">
           {formatPercent(b.charge)}
         </span>
       </div>
       {notice && (
-        <p className="m-0 text-[11px] text-muted-foreground">{notice}</p>
+        <p className="m-0 text-label text-muted-foreground">{notice}</p>
       )}
       <MeterTrack
         fraction={ratio(b.charge, 100)}

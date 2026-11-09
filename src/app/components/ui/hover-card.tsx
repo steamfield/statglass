@@ -39,7 +39,7 @@ function HoverCardContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          "fade-in-0 zoom-in-[0.97] z-50 w-64 animate-in rounded-card border bg-popover p-3 text-[12px] text-popover-foreground shadow-md outline-hidden duration-(--motion-fast) ease-out dark:shadow-none",
+          "fade-in-0 zoom-in-[0.97] z-50 w-64 animate-in rounded-card border bg-popover p-3 text-popover-foreground text-small shadow-md outline-hidden duration-(--motion-fast) ease-out dark:shadow-none",
           "data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97] data-[state=closed]:animate-out",
           className
         )}

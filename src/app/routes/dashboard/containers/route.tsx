@@ -103,7 +103,7 @@ function LocalContainersRoute() {
         <PageHeader title="Containers" />
         <p
           role={error ? "alert" : "status"}
-          className="text-[13px] text-muted-foreground"
+          className="text-body text-muted-foreground"
         >
           {error ?? "Loading Docker monitoring…"}
         </p>
@@ -192,7 +192,7 @@ function MonitoringContent({
   return (
     <>
       <section className="flex flex-wrap items-center justify-between gap-3 py-2">
-        <p className="max-w-xl text-[13px] text-muted-foreground">
+        <p className="max-w-xl text-body text-muted-foreground">
           Monitor CPU, memory and lifecycle evidence for one local Docker
           engine. Saved history remains available below.
         </p>

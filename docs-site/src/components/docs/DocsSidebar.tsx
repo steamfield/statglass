@@ -34,7 +34,7 @@ function DocsNav({
                     <a
                       href={item.href}
                       aria-current={active ? "page" : undefined}
-                      className={`block rounded-control px-3 py-1.5 text-sm ${active ? "bg-secondary font-[510] text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                      className={`block rounded-control px-3 py-1.5 text-sm ${active ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                     >
                       {item.label}
                     </a>
@@ -64,7 +64,7 @@ export function DocsSidebar({
   return (
     <div>
       <details data-docs-menu className="lg:hidden">
-        <summary className="flex cursor-pointer items-center rounded-control border border-border bg-card px-3 py-2 text-sm font-[510] text-foreground">
+        <summary className="flex cursor-pointer items-center rounded-control border border-border bg-card px-3 py-2 text-sm font-medium text-foreground">
           Docs menu
         </summary>
         <div className="mt-3">

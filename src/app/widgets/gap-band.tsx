@@ -67,7 +67,7 @@ export function GapBand({
         <span
           title={reason === "paused" ? PAUSE_EXPLANATION : label}
           className={cn(
-            "inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-fg-subtle",
+            "inline-flex items-center gap-1 whitespace-nowrap text-fg-subtle text-label",
             labelPosition === "bottom" && "translate-y-1/2",
             reason !== "paused" &&
               "rounded-control border border-border bg-card px-2 py-1"

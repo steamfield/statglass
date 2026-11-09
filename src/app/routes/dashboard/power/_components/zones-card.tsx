@@ -94,7 +94,7 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
       compactHeader
       className="gap-3"
     >
-      <p className="-mt-1 font-normal text-[12px] text-muted-foreground">
+      <p className="-mt-1 font-normal text-muted-foreground text-small">
         {zones
           ? "Apple doesn't document which zone sits over which core, so zones keep their sensor names."
           : "As the kernel names them."}
@@ -142,7 +142,7 @@ function OtherSensors({
   return (
     <div className="flex flex-wrap gap-5 border-border-subtle border-t pt-2.5">
       {sensors.map((x) => (
-        <span key={x.label} className="font-normal text-[12px] text-fg-subtle">
+        <span key={x.label} className="font-normal text-fg-subtle text-small">
           {x.label}{" "}
           <span className="figures text-foreground">
             {formatTemperature(x.value, { units })}

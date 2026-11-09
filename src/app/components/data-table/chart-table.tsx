@@ -166,7 +166,7 @@ export function ChartTable({
   const valueColumns = series.length * STATS.length;
   const renderRow = (row: Row<TableFeatures, ChartTableRow>) =>
     row.original.kind === "gap" ? (
-      <TableRow className="text-[12px]">
+      <TableRow className="text-small">
         <TableCell
           className={cn("figures whitespace-nowrap", sticky, ROW_HOVER)}
         >
@@ -180,7 +180,7 @@ export function ChartTable({
         </TableCell>
       </TableRow>
     ) : (
-      <TableRow className="text-[12px]">
+      <TableRow className="text-small">
         <DataTableCells row={row} className="figures whitespace-nowrap" />
       </TableRow>
     );

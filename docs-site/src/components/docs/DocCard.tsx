@@ -15,7 +15,7 @@ export function DocCard({
       data-accent={accent}
       className={`${styles.card} block rounded-card border border-border p-5 no-underline`}
     >
-      <span className="block text-sm font-[590] tracking-tight text-foreground">
+      <span className="block text-sm font-semibold tracking-tight text-foreground">
         {link.label}
       </span>
       <span className="mt-1 block text-[13px] leading-relaxed text-muted-foreground">

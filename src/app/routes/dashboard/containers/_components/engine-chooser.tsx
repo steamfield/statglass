@@ -59,8 +59,8 @@ export function EngineChooser({
   };
   return (
     <section aria-label="Choose Docker engine">
-      <h2 className="mb-3 text-[14px]">Local Docker engines</h2>
-      <p className="mb-3 text-[12px] text-muted-foreground">
+      <h2 className="mb-3 text-heading">Local Docker engines</h2>
+      <p className="mb-3 text-muted-foreground text-small">
         Selection is independent of the Docker CLI context. Switching preserves
         the previous engine's history.
       </p>
@@ -82,14 +82,14 @@ export function EngineChooser({
           className="flex flex-wrap items-center justify-between gap-3 border-border-subtle border-t py-3"
         >
           <div className="min-w-0">
-            <div className="text-[13px]">
+            <div className="text-body">
               {engine.runtime} · {engine.context ?? "Default socket"}
               {engine.preferred ? " · Current context" : ""}
             </div>
-            <div className="break-all text-[11px] text-muted-foreground">
+            <div className="break-all text-label text-muted-foreground">
               {engine.socket}
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               {engine.reachable ? "Reachable" : (engine.error ?? "Unavailable")}
             </p>
           </div>

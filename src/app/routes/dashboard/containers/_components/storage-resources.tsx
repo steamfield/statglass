@@ -47,7 +47,7 @@ export function StorageResources({
 }) {
   return (
     <SectionCard accent="disk" title="Storage resources" hiddenTitle flush>
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-label text-muted-foreground">
         <span>
           {rows.length} resources shown · {chosen.length} selected
         </span>
@@ -79,9 +79,9 @@ export function StorageResources({
       <div className="overflow-x-auto">
         <table
           aria-label="Storage resources"
-          className="w-full border-collapse text-[12px]"
+          className="w-full border-collapse text-small"
         >
-          <thead className="border-border border-y text-[11px] text-muted-foreground">
+          <thead className="border-border border-y text-label text-muted-foreground">
             <DataTableHead table={table} />
           </thead>
           <tbody>
@@ -130,12 +130,12 @@ export function StorageResources({
         </table>
       </div>
       {!rows.length && (
-        <p className="px-3 py-8 text-[12px] text-muted-foreground">
+        <p className="px-3 py-8 text-muted-foreground text-small">
           No resources match this view.
         </p>
       )}
       {rows.length > 32 && (
-        <div className="flex items-center justify-end gap-2 px-3 py-2 text-[11px]">
+        <div className="flex items-center justify-end gap-2 px-3 py-2 text-label">
           <Button
             size="sm"
             variant="ghost"

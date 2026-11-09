@@ -36,7 +36,7 @@ export function OnboardingFrame({
         className="flex h-10 shrink-0 items-center px-4"
       >
         <span className="flex-1" />
-        <span className="figures text-[11px] text-muted-foreground">
+        <span className="figures text-label text-muted-foreground">
           {step} of 2
         </span>
       </div>
@@ -48,11 +48,9 @@ export function OnboardingFrame({
             steps fit the fixed 820 x 566 window above the footer. */}
         <div className="flex items-center gap-3">
           <StatGlassMark className="size-9" />
-          <h1 className="font-[590] text-[28px] tracking-[-0.022em]">
-            {title}
-          </h1>
+          <h1 className="font-semibold text-display tracking-title">{title}</h1>
         </div>
-        <p className="font-normal text-[14px] text-fg-subtle">{sub}</p>
+        <p className="font-normal text-fg-subtle text-heading">{sub}</p>
       </div>
       <div
         className={cn("min-h-0 flex-1 px-8 py-6", body.className)}

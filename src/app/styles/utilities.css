@@ -1,4 +1,38 @@
 /*
+ * Icon stroke weights. Lucide draws at 2 by default; these tokens set every
+ * icon's weight from one place (CSS beats the SVG `stroke-width` attribute).
+ * Markup picks a weight with `icon-light`, `icon-regular` or `icon-bold`.
+ * A `strokeWidth` (or `absoluteStrokeWidth`) prop on a lucide icon is
+ * silently ignored, since this rule wins over the attribute;
+ * theme-usage.test.ts rejects it. Chart lines and the tray preview, which
+ * mirrors the Rust renderer, keep their own widths.
+ */
+:root {
+  --icon-stroke-light: 1.5;
+  --icon-stroke-regular: 1.75;
+  --icon-stroke-medium: 2;
+  --icon-stroke-bold: 2.5;
+}
+
+@layer base {
+  .lucide {
+    stroke-width: var(--icon-stroke-medium);
+  }
+}
+
+@utility icon-light {
+  stroke-width: var(--icon-stroke-light);
+}
+
+@utility icon-regular {
+  stroke-width: var(--icon-stroke-regular);
+}
+
+@utility icon-bold {
+  stroke-width: var(--icon-stroke-bold);
+}
+
+/*
  * The gap hatch (design-system.md "Gaps"): 1 px `--color-grid` stripes at
  * 135 degrees, 7 px apart. The dense variant, 4 px apart, is for cells too
  * small to show the 7 px pitch (heat-matrix cells, the calendar canvas).

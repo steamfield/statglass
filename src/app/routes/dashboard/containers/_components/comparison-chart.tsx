@@ -142,7 +142,7 @@ function ComparisonPlot({
         aside={controls}
       >
         <div className="min-w-0">
-          <div className="mb-1.5 text-[11px] text-muted-foreground">
+          <div className="mb-1.5 text-label text-muted-foreground">
             {metric === "cpu" ? "% of one core" : "Working set"}
             {` · ${resolutionLabel(duration)} · shaded min–max`}
           </div>
@@ -190,7 +190,7 @@ function ComparisonPlot({
           </Button>
           <button
             type="button"
-            className="ml-auto w-fit rounded-control text-[11px] text-muted-foreground underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring"
+            className="ml-auto w-fit rounded-control text-label text-muted-foreground underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setAsTable((value) => !value)}
           >
             {asTable ? "Show as chart" : "Show as table"}

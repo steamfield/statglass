@@ -69,7 +69,7 @@ export function PopoverDemo() {
               track(EVENTS.demoStarted, { from: "hero" });
               setWanted(true);
             }}
-            className="inline-flex min-h-11 items-center rounded-control border border-border bg-card px-4 text-sm font-[510] text-foreground hover:bg-secondary"
+            className="inline-flex min-h-11 items-center rounded-control border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-secondary"
           >
             Load the live popover
           </button>

@@ -54,7 +54,7 @@ export default function ProcessDetailRoute() {
     <div className="flex min-w-0 flex-col gap-4">
       <Link
         to={back}
-        className="self-start rounded-sm text-[12px] text-fg-subtle outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="self-start rounded-chip text-fg-subtle text-small outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         Back to Disk
       </Link>
@@ -82,7 +82,7 @@ export default function ProcessDetailRoute() {
           </InlineMessage>
         ) : (
           <>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[12px] sm:grid-cols-3">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-small sm:grid-cols-3">
               {(!selected && live
                 ? [
                     ["Read/s now", formatRate(live.disk_read_bps)],
@@ -111,13 +111,13 @@ export default function ProcessDetailRoute() {
                   </div>
                 ))}
             </dl>
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-muted-foreground text-small">
               {retained && !retained.running ? "Exited · " : ""}Requested bytes
               across all devices on this Mac.{" "}
               {history.data &&
                 `Averages cover ${formatSpan(history.data.covered_ms)} of process sampling in the selected interval.`}
             </p>
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-muted-foreground text-small">
               {selected
                 ? `Average CPU ${formatPercent(retained?.cpu_avg_pct ?? null)} · Peak memory ${formatBytes(retained?.mem_peak_bytes ?? null)}`
                 : `Current CPU ${formatPercent(live?.cpu_pct ?? null)} · Memory ${formatBytes(live?.mem_bytes ?? null)}`}

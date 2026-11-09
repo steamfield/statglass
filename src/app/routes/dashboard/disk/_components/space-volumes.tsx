@@ -42,7 +42,7 @@ export function SpaceVolumes({
       variant="default"
       className="overflow-hidden"
     >
-      <p className="max-w-2xl text-[12px] text-muted-foreground">
+      <p className="max-w-2xl text-muted-foreground text-small">
         A space report measures every file on a volume and shows what uses the
         space. StatGlass reads file sizes only and changes nothing.
         {protectedOnes.length > 0 &&
@@ -52,7 +52,7 @@ export function SpaceVolumes({
         aria-label="Volumes to scan"
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the horizontally scrollable volume table needs keyboard access
         tabIndex={0}
-        className="relative min-w-0 max-w-full overflow-x-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="relative min-w-0 max-w-full overflow-x-auto rounded-chip outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <VolumeTable
           units={units}
@@ -123,8 +123,8 @@ function ProtectedLocations({
 }) {
   const skipped = locations.filter((l) => !include.has(l.key)).length;
   return (
-    <details className="group text-[12px]">
-      <summary className="flex w-fit cursor-default list-none items-center gap-1 rounded-sm text-fg-subtle outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+    <details className="group text-small">
+      <summary className="flex w-fit cursor-default list-none items-center gap-1 rounded-chip text-fg-subtle outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden
           className="size-3.5 transition-transform duration-(--motion-fast) group-open:rotate-90"

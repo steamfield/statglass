@@ -13,7 +13,7 @@ import { RetainedHistory } from "./retained-history";
 
 export function DockerRuntime({ snapshot }: { snapshot: DockerSnapshot }) {
   return (
-    <details className="border-border-subtle border-y py-3 text-[12px]">
+    <details className="border-border-subtle border-y py-3 text-small">
       <summary className="cursor-pointer focus-visible:ring-2 focus-visible:ring-ring">
         Runtime &amp; history
       </summary>
@@ -43,7 +43,7 @@ export function DockerRuntime({ snapshot }: { snapshot: DockerSnapshot }) {
               : ""}
           </p>
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-label text-muted-foreground">
           History:{" "}
           {dockerPersistenceLabel[snapshot.persistence.status] ??
             snapshot.persistence.status}{" "}

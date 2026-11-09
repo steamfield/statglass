@@ -9,7 +9,10 @@ const Table = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <table
     ref={ref}
-    className={cn("w-full caption-bottom text-xs", className)}
+    className={cn(
+      "w-full caption-bottom text-small leading-compact",
+      className
+    )}
     {...props}
   />
 ));
@@ -125,7 +128,10 @@ const TableCaption = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <caption
     ref={ref}
-    className={cn("mt-4 text-muted-foreground text-xs", className)}
+    className={cn(
+      "mt-4 text-muted-foreground text-small leading-compact",
+      className
+    )}
     {...props}
   />
 ));

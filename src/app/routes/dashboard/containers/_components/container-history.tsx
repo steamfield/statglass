@@ -212,7 +212,7 @@ export const ContainerHistory = memo(function ContainerHistory({
             ))}
           </ChartFrame>
           {memory && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               Working set · dashed line:{" "}
               {aggregate ? "engine capacity" : "explicit memory limit"} at that
               time
@@ -220,7 +220,7 @@ export const ContainerHistory = memo(function ContainerHistory({
           )}
         </>
       ) : (
-        <p className="py-6 text-[12px] text-muted-foreground">
+        <p className="py-6 text-muted-foreground text-small">
           {page
             ? "No recorded measurements in this range. Monitoring may have been off or history expired."
             : "Loading recorded measurements…"}

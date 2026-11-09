@@ -63,7 +63,7 @@ export function DocsShell({
               )}
             </ol>
           </nav>
-          <h1 className="text-3xl font-[590] tracking-tight text-foreground sm:text-4xl">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             {page.title}
           </h1>
           <p className="text-base leading-7 text-muted-foreground sm:text-lg">
@@ -80,7 +80,7 @@ export function DocsShell({
           <section aria-labelledby="docs-start-here" className="mt-12">
             <h2
               id="docs-start-here"
-              className="mb-4 text-xl font-[590] tracking-tight text-foreground"
+              className="mb-4 text-xl font-semibold tracking-tight text-foreground"
             >
               Start here
             </h2>

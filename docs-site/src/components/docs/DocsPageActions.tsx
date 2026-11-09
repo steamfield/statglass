@@ -1,7 +1,7 @@
 import { CopyButton } from "@/components/CopyButton";
 
 const linkClass =
-  "inline-flex items-center rounded-control border border-border bg-card px-2.5 py-1.5 text-xs font-[510] text-foreground no-underline hover:bg-secondary";
+  "inline-flex items-center rounded-control border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground no-underline hover:bg-secondary";
 
 /**
  * Ways to take a page to an agent: copy its Markdown (BaseLayout's copy script reads the hidden

@@ -42,12 +42,12 @@ export function LaneLabel({
             onClick={onRank}
             aria-pressed={ranked}
             aria-label={`Rank apps by ${def.label}`}
-            className="rounded-sm font-[590] text-[12px] underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-chip font-semibold text-small underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           >
             {def.label}
           </button>
         ) : (
-          <span className="font-[590] text-[12px]">{def.label}</span>
+          <span className="font-semibold text-small">{def.label}</span>
         )}
         <button
           type="button"
@@ -59,10 +59,10 @@ export function LaneLabel({
           <TableIcon className="size-3" />
         </button>
       </div>
-      <span className="figures-display text-[16px] leading-5 tracking-[-0.01em]">
+      <span className="figures-display text-title-sm leading-5 tracking-snug">
         {summary.value}
       </span>
-      <span className="figures truncate text-[10px] text-muted-foreground leading-3">
+      <span className="figures truncate text-caption text-muted-foreground leading-3">
         {summary.detail}
       </span>
       {comparison ? (
@@ -70,7 +70,7 @@ export function LaneLabel({
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="figures truncate rounded-sm text-left text-[10px] text-fg-faint leading-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="figures truncate rounded-chip text-left text-caption text-fg-faint leading-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`Previous ${comparison.previous}; ${comparison.delta}. Current: ${summary.coverage}. Previous: ${comparison.coverage}`}
             >
               Prev {comparison.previous} · {comparison.delta}
@@ -84,7 +84,7 @@ export function LaneLabel({
       ) : (
         summary.coverage && (
           <span
-            className="figures truncate text-[10px] text-fg-faint leading-3"
+            className="figures truncate text-caption text-fg-faint leading-3"
             title={summary.coverage}
           >
             {summary.coverage}

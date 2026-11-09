@@ -88,7 +88,7 @@ export function VolumeTable({ rows, units, action }: VolumeTableProps) {
         renderRow={({ original: r }) => {
           const frac = ratio(r.usedBytes, r.totalBytes);
           return (
-            <TableRow key={r.id} className="text-[12px]">
+            <TableRow key={r.id} className="text-small">
               <TableCell className="text-foreground">
                 {r.name}
                 {r.disconnected && (

@@ -22,7 +22,7 @@ export function AlertsPanel({
     <SettingsPanel
       title="Alerts"
       after={
-        <p className="m-0 text-[11px] text-muted-foreground">
+        <p className="m-0 text-label text-muted-foreground">
           Sent as a notification, at most once every 30 minutes each, and marked
           on the Timeline. Switching one on sends a test notification, so macOS
           can ask for permission now.

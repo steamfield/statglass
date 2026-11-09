@@ -24,7 +24,7 @@ export function CopyValue({ value, label }: { value: string; label: string }) {
           type="button"
           onClick={() => void copy(value)}
           aria-label={`Copy ${label} ${value}`}
-          className="figures -mx-1 rounded-sm px-1 text-fg-subtle outline-none hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="figures -mx-1 rounded-chip px-1 text-fg-subtle outline-none hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           {value}
         </button>

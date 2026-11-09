@@ -59,7 +59,7 @@ export function WindowControl({
             type="button"
             aria-label={`Time range: ${chartRangeLabel(current.window)}`}
             className={cn(
-              "figures inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-[11px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+              "figures inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
               !quick && "bg-primary/14 text-cpu-2-ink"
             )}
           >
@@ -86,7 +86,7 @@ export function WindowControl({
                   current.endMs === null && current.windowMs === preset.ms
                 }
                 onClick={() => apply(relativeWindow(preset.ms))}
-                className="flex items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 aria-pressed:bg-primary/14 aria-pressed:text-cpu-2-ink"
+                className="flex items-center justify-between gap-2 rounded-chip px-2 py-1.5 text-left outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 aria-pressed:bg-primary/14 aria-pressed:text-cpu-2-ink"
               >
                 {preset.label}
                 {current.endMs === null && current.windowMs === preset.ms && (

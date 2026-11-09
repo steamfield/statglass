@@ -21,13 +21,13 @@ export function ProcessList({ rows, ariaLabel }: ProcessListProps) {
       {rows.map((row) => (
         <li
           key={row.id}
-          className="flex h-[18px] items-center gap-2 text-[12px]"
+          className="flex h-[18px] items-center gap-2 text-small"
         >
           <InitialChip text={row.initial} />
           <span className="min-w-0 flex-1 truncate font-normal text-fg-subtle">
             {row.name}
           </span>
-          <span className="figures text-[11px]">{row.value}</span>
+          <span className="figures text-label">{row.value}</span>
         </li>
       ))}
     </ul>

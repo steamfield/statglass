@@ -149,7 +149,7 @@ export function SamplingPanel({
         label="Slow down on battery"
         sub={performanceOn && "Set by Performance mode"}
       >
-        <span className="font-normal text-[12px] text-muted-foreground">
+        <span className="font-normal text-muted-foreground text-small">
           to{" "}
           {intervalLabel(
             slowestIntervalMs({ ...sampling, slow_on_battery: true })
@@ -170,7 +170,7 @@ export function SamplingPanel({
           `Limited to about ${current.limitedDays} days by the ${limitText} limit`
         }
       >
-        <span className="figures text-[12px] text-muted-foreground">
+        <span className="figures text-muted-foreground text-small">
           {current ? `about ${approxSize(current.bytes)}` : MISSING}
         </span>
         <Select
@@ -182,7 +182,7 @@ export function SamplingPanel({
           <SelectTrigger
             id="settings-retention"
             size="sm"
-            className="px-2 text-[12px]"
+            className="px-2 text-small"
           >
             <SelectValue>{history.retention_days} days</SelectValue>
           </SelectTrigger>
@@ -192,7 +192,7 @@ export function SamplingPanel({
               return (
                 <SelectItem key={d} value={String(d)}>
                   {d} days
-                  <span className="figures text-[11px] text-muted-foreground">
+                  <span className="figures text-label text-muted-foreground">
                     {p === null
                       ? MISSING
                       : p.limitedDays === null
@@ -215,7 +215,7 @@ export function SamplingPanel({
           <SelectTrigger
             id="settings-size-limit"
             size="sm"
-            className="px-2 text-[12px]"
+            className="px-2 text-small"
           >
             <SelectValue />
           </SelectTrigger>
@@ -271,7 +271,7 @@ function PerformanceChanges({
   return (
     <div
       id="settings-performance-changes"
-      className="-mt-2 basis-full pb-2.5 font-normal text-[12px] text-muted-foreground"
+      className="-mt-2 basis-full pb-2.5 font-normal text-muted-foreground text-small"
     >
       <ul className="m-0 list-none p-0">
         {changes.map((c) => (
@@ -313,7 +313,7 @@ function HistoryOnDisk() {
   const sizeText = size.data === undefined ? MISSING : MB(size.data);
   return (
     <SettingsRow label="History on disk">
-      <span className="figures text-[12px] text-fg-subtle">{sizeText}</span>
+      <span className="figures text-fg-subtle text-small">{sizeText}</span>
       <Button
         variant="outline"
         size="sm"

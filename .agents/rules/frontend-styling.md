@@ -33,6 +33,7 @@ Three tiers, in order. Reach for the next one only when the one above cannot exp
 - Color tokens are semantic (`bg-background`, `text-foreground`, `border-border`), not hardcoded hex
 - Dark mode is the primary design context
 - Typography: SF Pro (`-apple-system`), nothing self-hosted for the UI. No monospace and no uppercase (D-101)
+- Theme values live in `src/app/styles/theme.css` (`@theme`), so a re-theme edits that file, not components. Type sizes are role tokens (`text-label`, `text-small`, `text-body`, `text-page-title`…), never `text-[Npx]`; weights are `font-medium` (510) and `font-semibold` (590); tracking is `tracking-title`/`-figure`/`-snug`; corners use the radius scale (`rounded-control`, `rounded-chip`…; Tailwind's `rounded-sm`/`-md`/`-lg` are cleared). Icon weight is `icon-light`/`icon-regular`/`icon-bold` (default 2), never a `strokeWidth` prop. A new token name also goes in the `extendTailwindMerge` list in `src/app/lib/utils.ts`, or `cn()` mis-merges it
 - Figures use `.figures` (tabular); a card's headline number uses `.figures-display` (SF Pro Rounded); field labels are 11 px sentence case (`FIELD_LABEL`)
 - Cards use the corner-glow accent card (9% tint; 6% on chart cards)
 - Module accents: CPU cyan, GPU pink, Memory violet, Power & Sensors amber, Network emerald, Disk blue, Battery lime. Series inside a card use a lightness ramp of the card's accent, not other module accents

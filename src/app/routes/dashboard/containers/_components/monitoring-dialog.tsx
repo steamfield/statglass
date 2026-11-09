@@ -33,8 +33,8 @@ export function MonitoringDialog({
           Follow containers in one local Docker engine.
         </DialogDescription>
         <EngineChooser settings={snapshot.settings} onChange={onChange} />
-        <section className="space-y-2 text-[12px]">
-          <h3 className="text-[13px]">Automatic collection</h3>
+        <section className="space-y-2 text-small">
+          <h3 className="text-body">Automatic collection</h3>
           <p className="text-muted-foreground">
             Docker is the source of truth. StatGlass follows this engine’s
             container inventory and starts collecting when containers run, up to{" "}
@@ -42,7 +42,7 @@ export function MonitoringDialog({
             remains available after a container stops or is removed.
           </p>
         </section>
-        <div className="space-y-3 border-border-subtle border-t pt-3 text-[12px]">
+        <div className="space-y-3 border-border-subtle border-t pt-3 text-small">
           <label htmlFor="docker-popover" className="flex items-center gap-2">
             <Checkbox
               id="docker-popover"

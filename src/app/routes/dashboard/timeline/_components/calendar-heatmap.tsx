@@ -170,7 +170,7 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
         {HOURS.map((h) => (
           <span
             key={h}
-            className="figures text-[9px] text-fg-faint leading-[11px]"
+            className="figures text-fg-faint text-micro leading-[11px]"
           >
             {h % 3 === 0 ? String(h).padStart(2, "0") : ""}
           </span>
@@ -202,7 +202,7 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
                 <th
                   scope="row"
                   className={cn(
-                    "figures whitespace-nowrap text-left font-normal text-[10px] leading-[11px]",
+                    "figures whitespace-nowrap text-left font-normal text-caption leading-[11px]",
                     r === curRow ? "text-foreground" : "text-muted-foreground"
                   )}
                 >
@@ -228,7 +228,7 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
                       onKeyDown={(e) => onCellKey(e, r, h)}
                       onFocus={() => setFocus([r, h])}
                       className={cn(
-                        "h-[11px] rounded-[2px] p-0 outline-none focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2",
+                        "h-[11px] rounded-mark p-0 outline-none focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2",
                         enabled && "cursor-pointer"
                       )}
                     />

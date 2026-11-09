@@ -13,7 +13,7 @@ export function Command({ text }: { text: string }) {
   const [copiedOnce, setCopiedOnce] = useState(false);
   return (
     <div className="grid gap-1">
-      <pre className="select-text whitespace-pre-wrap break-all rounded-control bg-muted p-2 font-sans text-[12px]">
+      <pre className="select-text whitespace-pre-wrap break-all rounded-control bg-muted p-2 font-sans text-small">
         {text}
       </pre>
       <div className="flex items-center gap-2">
@@ -62,7 +62,7 @@ export function SshSetupHelp({
     ...new Set([lan, tailscale].filter((value): value is string => !!value)),
   ];
   return (
-    <div className="grid gap-2 border-border-subtle border-y py-3 text-[12px]">
+    <div className="grid gap-2 border-border-subtle border-y py-3 text-small">
       <p className="text-muted-foreground" role="status">
         {config.isPending
           ? "Checking SSH configuration on this Mac…"
