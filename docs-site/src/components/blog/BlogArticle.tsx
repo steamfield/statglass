@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { BlogEntry } from "@/lib/blog";
+import { SITE } from "@/config";
 import { blogPath, readingMinutes } from "@/lib/blog";
 import type { DocLink } from "@/lib/docs";
 import prose from "@/components/docs/DocsProse.module.css";
@@ -94,16 +95,19 @@ export function BlogArticle({
           </p>
           <a
             data-motion-part=""
-            href="/docs/install"
+            href={SITE.download}
             data-track-install="blog"
             className="inline-flex min-h-11 items-center rounded-control bg-primary px-5 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
-            Install StatGlass
+            Download for Mac
           </a>
         </section>
         {(related.length > 0 || docs.length > 0) && (
           <section aria-labelledby="related">
-            <h2 id="related" className="mb-4 text-xl font-semibold tracking-tight">
+            <h2
+              id="related"
+              className="mb-4 text-xl font-semibold tracking-tight"
+            >
               Related
             </h2>
             <ul className="divide-y divide-border border-y border-border">
