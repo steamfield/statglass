@@ -173,7 +173,11 @@ describe("host card model", () => {
   ])("carries update phase %o ahead of failure", (phase) => {
     const remote = remoteFixture();
     remote.status.update = { target: "1.0.1", phase };
-    remote.status.last_update_failure = { target: "1.0.0", message: "timeout" };
+    remote.status.last_update_failure = {
+      via: "push",
+      target: "1.0.0",
+      message: "timeout",
+    };
     expect(remoteHostCardModel(remote).version).toMatchObject({
       kind: "updating",
       progress: phase,
@@ -188,7 +192,11 @@ describe("host card model", () => {
       target: "1.0.0",
       via: "push",
     };
-    remote.status.last_update_failure = { target: "1.0.0", message: "timeout" };
+    remote.status.last_update_failure = {
+      via: "push",
+      target: "1.0.0",
+      message: "timeout",
+    };
     expect(remoteHostCardModel(remote).version).toMatchObject({
       kind: "failed",
       action: { label: "Retry update" },
@@ -298,4 +306,22 @@ describe("rr band", () => {
       "also on This Mac"
     );
   });
+});
+
+it("uses Rust's local memory percentage independently of local byte readings", () => {
+  const host = hostRecord(scenarioFlags([]), 0);
+  const vitals = { ...mockHostVitals(false), memory_pct: 37 };
+  expect(localHostCardModel(host, vitals, "1", null, null, 0).memory).toBe(
+    "37%"
+  );
+  expect(
+    localHostCardModel(
+      host,
+      { ...vitals, memory_pct: null },
+      "1",
+      null,
+      null,
+      host.info.mem_total_bytes
+    ).memory
+  ).toBe("—");
 });

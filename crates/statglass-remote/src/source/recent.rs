@@ -30,7 +30,15 @@ impl Session<'_> {
                             result.map_err(|e| RemoteError::Transport(e.to_string()))
                         });
                     match watermark {
-                        Ok(from) => from.unwrap_or_else(|| now.saturating_sub(300_000)),
+                        Ok(from) => {
+                            if self.status.history_error.as_deref().is_some_and(|error| {
+                                error.starts_with("reading the mirror watermark: ")
+                            }) {
+                                self.status.history_error = None;
+                                (self.source.on_status)(self.status.clone());
+                            }
+                            from.unwrap_or_else(|| now.saturating_sub(300_000))
+                        }
                         Err(error) => {
                             self.status.history_error =
                                 Some(format!("reading the mirror watermark: {error}"));

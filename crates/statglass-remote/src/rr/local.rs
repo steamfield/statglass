@@ -3,7 +3,7 @@ use super::{LOCK_DIR, MAX_BYTES, RrJob, parse};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::os::fd::{AsRawFd, FromRawFd};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 fn current_user() -> io::Result<String> {
@@ -34,6 +34,15 @@ fn current_user() -> io::Result<String> {
 }
 
 fn bytes(dir: &Path) -> io::Result<Option<Vec<u8>>> {
+    // SAFETY: geteuid has no preconditions. Compare against opened descriptors.
+    let uid = unsafe { libc::geteuid() };
+    read_owned(dir, |metadata| metadata.uid() == uid)
+}
+
+pub(super) fn read_owned(
+    dir: &Path,
+    owns: impl Fn(&std::fs::Metadata) -> bool,
+) -> io::Result<Option<Vec<u8>>> {
     let metadata = std::fs::symlink_metadata(dir)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Ok(None);
@@ -46,6 +55,9 @@ fn bytes(dir: &Path) -> io::Result<Option<Vec<u8>>> {
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_DIRECTORY)
         .open(dir)?;
+    if !owns(&directory.metadata()?) {
+        return Ok(None);
+    }
     // Pin the directory so replacing it with a symlink cannot redirect this open.
     // SAFETY: directory is live and the filename is a constant terminated string.
     let fd = unsafe {
@@ -60,7 +72,8 @@ fn bytes(dir: &Path) -> io::Result<Option<Vec<u8>>> {
     }
     // SAFETY: openat returned a new owned descriptor; File takes ownership exactly once.
     let file = unsafe { File::from_raw_fd(fd) };
-    if !file.metadata()?.is_file() {
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || !owns(&metadata) {
         return Ok(None);
     }
     let mut bytes = Vec::new();

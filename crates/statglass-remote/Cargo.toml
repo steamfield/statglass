@@ -7,7 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-jiff = "0.2.37"
+jiff.workspace = true
 statglass-engine.workspace = true
 statglass-proto.workspace = true
 statglass-schema.workspace = true

@@ -283,36 +283,41 @@ pub(super) async fn add(
 pub(super) async fn update_saved(app: AppHandle, id: String) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
     let id = host_id(&id)?;
-    let saved = state
-        .remotes
-        .saved
-        .lock_ok()
-        .get(&id)
-        .cloned()
-        .ok_or(CommandError::UnknownHost { host: id })?;
-    if !saved.is_linux() {
-        return Err(CommandError::InvalidArgument {
-            message:
-                "Only Linux hosts run the StatGlass agent; update StatGlass on a Mac from Add host"
-                    .into(),
-        });
-    }
-    state
-        .remotes
-        .run_update(
-            id,
-            env!("CARGO_PKG_VERSION").into(),
-            || super::super::progress::emit_changed(&app),
-            |token| perform_update(&app, id, token, &saved),
-        )
-        .await
+    run_update(
+        &state.remotes,
+        id,
+        || super::super::progress::emit_changed(&app),
+        |token, saved| perform_update(&app, id, token, saved),
+    )
+    .await
+}
+
+/// The maintenance lock is held before taking the configuration snapshot.
+async fn run_update<F: std::future::Future<Output = Result<(), CommandError>>>(
+    manager: &RemoteManager,
+    id: HostId,
+    changed: impl Fn(),
+    work: impl FnOnce(Uuid, SavedHost) -> F,
+) -> Result<(), CommandError> {
+    manager.run_update(id, env!("CARGO_PKG_VERSION").into(), AgentUpdateVia::Push, changed, |token| async move {
+        let saved = manager.saved.lock_ok().get(&id).cloned().ok_or(CommandError::UnknownHost { host: id })?;
+        if !saved.is_linux() {
+            return Err(CommandError::InvalidArgument {
+                message: "Only Linux hosts run the StatGlass agent; update StatGlass on a Mac from Add host".into(),
+            });
+        }
+        if !saved.config.enabled {
+            return Err(CommandError::InvalidArgument { message: "Turn on this host's connection before updating its agent".into() });
+        }
+        work(token, saved).await
+    }).await
 }
 
 async fn perform_update(
     app: &AppHandle,
     id: HostId,
     token: Uuid,
-    saved: &SavedHost,
+    saved: SavedHost,
 ) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
     let phase = |phase| super::super::progress::phase(app, id, token, phase);
@@ -345,11 +350,17 @@ async fn perform_update(
         });
     })
     .await?;
-    if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
-        source.retry();
-    }
-    phase(UpdatePhase::Reconnecting);
+    reconnect(phase, || {
+        if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
+            source.retry();
+        }
+    });
     Ok(())
+}
+
+fn reconnect(phase: impl FnOnce(UpdatePhase), retry: impl FnOnce()) {
+    phase(UpdatePhase::Reconnecting);
+    retry();
 }
 
 /// Whether the saved host's agent may be updated from `probe`: it must report the saved

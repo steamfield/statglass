@@ -636,3 +636,80 @@ fn newer_release_with_incompatible_protocol_cannot_connect() {
         "incompatibility must not offer a downgrade"
     );
 }
+
+#[tokio::test]
+async fn queued_updates_use_current_routes_and_recheck_enabled_after_the_lock() {
+    for enabled in [true, false] {
+        let manager = RemoteManager::default();
+        let id = HostId(Uuid::new_v4());
+        manager
+            .saved
+            .lock_ok()
+            .insert(id, saved_host(id, "Linux", agent_command()));
+        let guard = manager.operation.lock().await;
+        let used = std::cell::RefCell::new(None);
+        let queued = tokio::sync::Notify::new();
+        let update = run_update(
+            &manager,
+            id,
+            || queued.notify_one(),
+            |_, saved| async {
+                *used.borrow_mut() = Some(saved.config);
+                Ok(())
+            },
+        );
+        tokio::pin!(update);
+        tokio::select! {
+            result = &mut update => panic!("update must queue: {result:?}"),
+            () = queued.notified() => {},
+        }
+        {
+            let mut saved = manager.saved.lock_ok();
+            let host = saved.get_mut(&id).unwrap();
+            host.config.lan = Some("new-route".into());
+            host.config.enabled = enabled;
+        }
+        drop(guard);
+        let result = update.await;
+        if enabled {
+            result.unwrap();
+            assert_eq!(
+                used.borrow().as_ref().unwrap().lan.as_deref(),
+                Some("new-route")
+            );
+        } else {
+            assert!(result.unwrap_err().to_string().contains("Turn on"));
+            assert!(
+                used.borrow().is_none(),
+                "disabled host must never reach SSH"
+            );
+        }
+    }
+}
+
+#[test]
+fn reconnect_is_armed_before_retry_can_report_success() {
+    let manager = RemoteManager::default();
+    let id = HostId(Uuid::nil());
+    let token = manager
+        .begin_update(id, "1.0.0".into(), AgentUpdateVia::Push)
+        .unwrap();
+    let order = std::cell::RefCell::new(Vec::new());
+    reconnect(
+        |phase| {
+            order.borrow_mut().push("reconnecting");
+            assert!(manager.set_update_phase(id, token, phase));
+        },
+        || {
+            order.borrow_mut().push("retry");
+            manager.observe_update(id, true, Some("1.0.0"));
+        },
+    );
+    assert_eq!(*order.borrow(), vec!["reconnecting", "retry"]);
+    let mut status = RemoteHostStatus::default();
+    manager.apply_update(id, &mut status);
+    assert!(
+        status.update.is_none(),
+        "a synchronous reconnect must finish the update"
+    );
+}

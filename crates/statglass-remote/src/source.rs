@@ -1191,7 +1191,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_failed_recent_watermark_reports_history_trouble_without_stopping_live_metrics() {
-        struct FailedMirror;
+        struct FailedMirror(std::sync::atomic::AtomicBool);
         impl MirrorSink for FailedMirror {
             fn cursor(
                 &self,
@@ -1205,10 +1205,15 @@ mod tests {
                 Ok(())
             }
             fn recent_watermark(&self) -> std::result::Result<Option<i64>, MirrorError> {
-                Err(MirrorError::InvalidInput("mirror read failed"))
+                if self.0.load(Ordering::SeqCst) {
+                    Err(MirrorError::InvalidInput("mirror read failed"))
+                } else {
+                    Ok(None)
+                }
             }
         }
-        let source = fixture_source(Some(Arc::new(FailedMirror)));
+        let mirror = Arc::new(FailedMirror(std::sync::atomic::AtomicBool::new(true)));
+        let source = fixture_source(Some(mirror.clone()));
         source.clock.observe(9_000_000);
         source.set_recent_interest(true);
         let sink = SourceSink {
@@ -1255,6 +1260,22 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(sink.live.latest_frame().unwrap().held[0], 12.0);
+        mirror.0.store(false, Ordering::SeqCst);
+        tokio::time::advance(Duration::from_secs(15)).await;
+        session.request_recent().await.unwrap();
+        assert!(
+            session.status.history_error.is_none(),
+            "successful watermark read clears its error"
+        );
+        assert!(session.recent_pending);
+        session.recent_pending = false;
+        session.status.history_error = Some("another history error".into());
+        tokio::time::advance(Duration::from_secs(15)).await;
+        session.request_recent().await.unwrap();
+        assert_eq!(
+            session.status.history_error.as_deref(),
+            Some("another history error")
+        );
     }
 
     struct CountingMirror(AtomicU32);

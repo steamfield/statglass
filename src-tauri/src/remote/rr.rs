@@ -35,6 +35,16 @@ impl RemoteManager {
         }
     }
 
+    fn clear_rr_jobs(&self, changed: impl FnOnce()) {
+        let mut jobs = self.rr.lock_ok();
+        let cleared = !jobs.is_empty();
+        jobs.clear();
+        drop(jobs);
+        if cleared {
+            changed();
+        }
+    }
+
     fn rr_targets(&self) -> Vec<Target> {
         let saved = self.saved.lock_ok().clone();
         let statuses = self.statuses.lock_ok();
@@ -111,23 +121,34 @@ pub(super) fn start(app: &AppHandle, stop: watch::Receiver<bool>) {
         }));
     let handle = app.clone();
     let local_slots = Arc::new(tokio::sync::Semaphore::new(1));
-    let task = tauri::async_runtime::spawn(run(interest, stop, move |backoff| {
-        let app = handle.clone();
-        let local_slots = local_slots.clone();
-        async move {
-            let state = app.state::<AppState>();
-            poll(
-                &state.remotes,
-                state.local,
-                state.remotes.rr_targets(),
-                &backoff,
-                |alias| async move { statglass_remote::rr::read(&alias).await },
-                local_read(local_slots, statglass_remote::rr::read_local),
-                || super::progress::emit_changed(&app),
-            )
-            .await;
-        }
-    }));
+    let clear_handle = app.clone();
+    let task = tauri::async_runtime::spawn(run(
+        interest,
+        stop,
+        move |backoff| {
+            let app = handle.clone();
+            let local_slots = local_slots.clone();
+            async move {
+                let state = app.state::<AppState>();
+                poll(
+                    &state.remotes,
+                    state.local,
+                    state.remotes.rr_targets(),
+                    &backoff,
+                    |alias| async move { statglass_remote::rr::read(&alias).await },
+                    local_read(local_slots, statglass_remote::rr::read_local),
+                    || super::progress::emit_changed(&app),
+                )
+                .await;
+            }
+        },
+        move || {
+            clear_handle
+                .state::<AppState>()
+                .remotes
+                .clear_rr_jobs(|| super::progress::emit_changed(&clear_handle));
+        },
+    ));
     if let Some(old) = app
         .state::<AppState>()
         .remotes
@@ -225,12 +246,14 @@ async fn run<F: Future<Output = ()>>(
     mut interest: watch::Receiver<bool>,
     mut stop: watch::Receiver<bool>,
     mut poll: impl FnMut(Arc<Mutex<Backoff>>) -> F,
+    mut clear: impl FnMut(),
 ) {
     loop {
         if *stop.borrow() {
             return;
         }
         if !*interest.borrow_and_update() {
+            clear();
             tokio::select! {
                 _ = stop.changed() => return,
                 result = interest.changed() => if result.is_err() { return; },
@@ -255,6 +278,9 @@ async fn run<F: Future<Output = ()>>(
                 }
             }
         }
+        // A release/reacquire can be coalesced into a latest `true` by watch.
+        // Ending this polling lifetime still invalidates every job it observed.
+        clear();
     }
 }
 

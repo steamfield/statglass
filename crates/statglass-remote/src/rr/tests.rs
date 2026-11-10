@@ -91,7 +91,7 @@ fn peers_match_client_user_and_ten_second_window() {
 fn exact_remote_command_is_constant_and_runs_posix_sh() {
     assert_eq!(
         crate::transport::sh_c(SCRIPT).unwrap(),
-        "exec /bin/sh -c 'if [ ! -L /tmp/rr.lock ] && [ -f /tmp/rr.lock/info.json ] && [ ! -L /tmp/rr.lock/info.json ]; then head -c 4096 /tmp/rr.lock/info.json; fi'"
+        "exec /bin/sh -c 'if [ ! -L /tmp/rr.lock ] && [ -O /tmp/rr.lock ] && [ -O /tmp/rr.lock/info.json ] && [ -f /tmp/rr.lock/info.json ] && [ ! -L /tmp/rr.lock/info.json ]; then head -c 4096 /tmp/rr.lock/info.json; fi'"
     );
 }
 
@@ -157,4 +157,66 @@ async fn remote_and_local_readers_reject_links_fifos_and_bound_bytes() {
     assert_eq!(script(&dir).await.len(), 4096);
     assert!(local::read_at(&dir, "alice").is_none());
     assert!(parse(&script(&dir).await, "alice").is_none());
+}
+
+#[test]
+fn local_reader_requires_both_opened_objects_to_belong_to_the_login() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("info.json"), json("cargo test")).unwrap();
+    for foreign in [0, 1] {
+        let calls = std::cell::Cell::new(0);
+        let bytes = local::read_owned(temp.path(), |_| {
+            let index = calls.get();
+            calls.set(index + 1);
+            index != foreign
+        })
+        .unwrap();
+        assert!(
+            bytes.is_none(),
+            "foreign opened object {foreign} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn ssh_login_parses_config_and_rejects_a_missing_or_empty_user() {
+    assert_eq!(
+        parse_login("host builder\nuser alice\nhostname 192.0.2.1\n").unwrap(),
+        "alice"
+    );
+    for config in [
+        "host builder\nhostname 192.0.2.1\n",
+        "user \nhost builder\n",
+    ] {
+        assert!(matches!(
+            parse_login(config),
+            Err(crate::RemoteError::Protocol(_))
+        ));
+    }
+}
+
+#[tokio::test]
+async fn remote_script_requires_ownership_of_directory_and_file() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("info.json"), json("cargo test")).unwrap();
+    assert!(!script(temp.path()).await.is_empty());
+    // An unprivileged test cannot create files as another uid. The exact script
+    // assertion also guards both ownership checks on these machines.
+    assert!(SCRIPT.contains("[ -O /tmp/rr.lock ] && [ -O /tmp/rr.lock/info.json ]"));
+    for path in [temp.path().join("info.json"), temp.path().to_path_buf()] {
+        if std::process::Command::new("chown")
+            .arg("0")
+            .arg(&path)
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+        {
+            use std::os::unix::fs::MetadataExt;
+            // SAFETY: geteuid has no preconditions.
+            if std::fs::metadata(&path).unwrap().uid() != unsafe { libc::geteuid() } {
+                assert!(script(temp.path()).await.is_empty());
+            }
+        }
+    }
 }

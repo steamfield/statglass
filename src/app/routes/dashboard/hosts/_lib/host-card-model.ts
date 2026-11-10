@@ -247,7 +247,7 @@ export function localHostCardModel(
   version: string,
   target: string | null,
   cpu: number | null,
-  memory: number | null,
+  _memory: number | null,
   job: RrJob | null = null,
   hosts: readonly HostRecord[] = []
 ): HostCardModel {
@@ -264,11 +264,7 @@ export function localHostCardModel(
     system: system(host),
     version: localVersionState(version, target),
     cpu: formatPercent(cpu),
-    memory: formatPercent(
-      memory === null || host.info.mem_total_bytes <= 0
-        ? null
-        : (memory / host.info.mem_total_bytes) * 100
-    ),
+    memory: formatPercent(vitals?.memory_pct),
     ...readings(vitals, true),
   };
 }

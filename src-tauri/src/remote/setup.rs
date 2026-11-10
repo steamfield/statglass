@@ -296,7 +296,20 @@ pub async fn add_remote_host(
         }
         HostProbe::Mac(probe) => probe,
     };
-    let installation = Installation::prepare(&alias, probe, install).await?;
+    let saved = state.remotes.saved.lock_ok().clone();
+    let pending_cancel = &mut cancel;
+    let read_alias = &alias;
+    let installation =
+        mac::prepare_checked(
+            probe,
+            reinstall,
+            &saved,
+            |helper| async move {
+                setup_step(pending_cancel, wait_for_control(read_alias, &helper)).await
+            },
+            |probe| Installation::prepare(&alias, probe, install),
+        )
+        .await?;
     let mut before = None;
     let result = installation
         .connect_and_register(
