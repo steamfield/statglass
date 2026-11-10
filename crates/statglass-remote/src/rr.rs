@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 
 pub const LOCK_DIR: &str = "/tmp/rr.lock";
 pub const MAX_BYTES: u64 = 4096;
-/// Constant paths only. Test file type before opening so a FIFO never blocks.
-pub const SCRIPT: &str = "if [ ! -L /tmp/rr.lock ] && [ -f /tmp/rr.lock/info.json ] && [ ! -L /tmp/rr.lock/info.json ]; then head -c 4096 /tmp/rr.lock/info.json; fi";
+/// Constant paths only. Test file type and ownership before opening. The test-then-read
+/// race is accepted because the read is capped at 4 KB and parsed into an allowlist.
+pub const SCRIPT: &str = "if [ ! -L /tmp/rr.lock ] && [ -O /tmp/rr.lock ] && [ -O /tmp/rr.lock/info.json ] && [ -f /tmp/rr.lock/info.json ] && [ ! -L /tmp/rr.lock/info.json ]; then head -c 4096 /tmp/rr.lock/info.json; fi";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct RrJob {
@@ -90,7 +91,11 @@ async fn login(alias: &str) -> crate::Result<String> {
     if !output.status.success() {
         return Err(crate::RemoteError::Transport("resolving SSH login".into()));
     }
-    String::from_utf8_lossy(&output.stdout)
+    parse_login(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_login(config: &str) -> crate::Result<String> {
+    config
         .lines()
         .find_map(|line| line.strip_prefix("user ").map(str::to_owned))
         .filter(|user| !user.is_empty())

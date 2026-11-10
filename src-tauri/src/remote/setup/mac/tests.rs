@@ -97,3 +97,100 @@ fn a_disabled_reinstall_reports_the_confirmed_version_without_needing_a_source_c
         Some("0.0.9")
     );
 }
+
+fn probe(installed: bool) -> statglass_remote::install::InstallProbe {
+    statglass_remote::install::InstallProbe {
+        os: "Darwin".into(),
+        os_version: "26".into(),
+        arch: "arm64".into(),
+        user: "alice".into(),
+        console_user: "alice".into(),
+        app_path: installed.then(|| "/Applications/StatGlass.app".into()),
+        helper_path: installed
+            .then(|| "/Applications/StatGlass.app/Contents/MacOS/statglass-remote-helper".into()),
+    }
+}
+
+#[tokio::test]
+async fn reinstall_rejects_changed_or_missing_identity_before_touching_the_remote() {
+    let id = HostId(Uuid::new_v4());
+    let hosts = BTreeMap::from([(id, saved(id))]);
+    for installed in [true, false] {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let reported = HostId(Uuid::new_v4());
+        let result = prepare_checked(
+            probe(installed),
+            Some(id),
+            &hosts,
+            |_| async {
+                calls.borrow_mut().push("status");
+                Ok(serde_json::from_value(serde_json::json!({
+                    "ok": true, "message": "", "host": statglass_engine::host_record(reported),
+                }))
+                .unwrap())
+            },
+            |_| async {
+                calls.borrow_mut().extend(["install", "update", "launch"]);
+                Ok(())
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(
+            *calls.borrow(),
+            if installed { vec!["status"] } else { vec![] }
+        );
+        if !installed {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("StatGlass isn't installed on that Mac anymore; add it again")
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn reinstall_refreshes_the_helper_and_replaces_the_source_only_when_it_changes() {
+    let id = HostId(Uuid::new_v4());
+    let mut host = saved(id);
+    let original = host.config.clone();
+    let source = std::cell::RefCell::new(host.endpoint());
+    let replacements = std::cell::Cell::new(0);
+    let helper = "/Users/alice/Applications/StatGlass.app/Contents/MacOS/statglass-remote-helper";
+    for changed in [true, false] {
+        let got = refresh_saved(
+            &mut host,
+            statglass_engine::host_record(id),
+            "1.0.0".into(),
+            helper.into(),
+            |next| {
+                let source = &source;
+                let replacements = &replacements;
+                async move {
+                    *source.borrow_mut() = next.endpoint();
+                    replacements.set(replacements.get() + 1);
+                    Ok(())
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(got, changed);
+        assert_eq!(
+            source.borrow().command,
+            RemoteCommand::MacHelper(helper.into())
+        );
+        assert_eq!(host.endpoint().command, source.borrow().command);
+        assert_eq!(
+            replacements.get(),
+            1,
+            "an unchanged helper must retain its source"
+        );
+    }
+    assert_eq!(
+        serde_json::to_value(&host.config).unwrap(),
+        serde_json::to_value(original).unwrap()
+    );
+}

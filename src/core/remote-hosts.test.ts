@@ -1,5 +1,6 @@
 import type {
   AgentUpdate,
+  AgentUpdateVia,
   RemoteHostRecord,
   RemoteState,
   UpdatePhase,
@@ -199,7 +200,11 @@ describe("agentVersionLine", () => {
         ...behind,
         status: {
           ...behind.status,
-          last_update_failure: { target: "0.3.1", message: "timeout" },
+          last_update_failure: {
+            via: "push",
+            target: "0.3.1",
+            message: "timeout",
+          },
         },
       })
     ).toMatchObject({
@@ -226,6 +231,7 @@ it("offers failed-update recovery while monitoring is disconnected", () => {
       ...behind.status,
       state: "offline",
       last_update_failure: {
+        via: "push",
         target: "0.3.1",
         message: "The new agent did not reconnect",
       },
@@ -248,3 +254,30 @@ it("offers failed-update recovery while monitoring is disconnected", () => {
     }).action
   ).toBeNull();
 });
+
+it.each<AgentUpdateVia>(["push", "add_host"])(
+  "uses the recorded failure route %s regardless of OS or current version state",
+  (via) => {
+    const systems: RemoteHostRecord["os"][] = ["linux", "mac_os"];
+    for (const os of systems) {
+      for (const agent_update of [
+        current.status.agent_update,
+        behind.status.agent_update,
+      ]) {
+        const remote: RemoteHostRecord = {
+          ...current,
+          os,
+          status: {
+            ...current.status,
+            agent_update,
+            last_update_failure: { target: "1.0.0", message: "timeout", via },
+          },
+        };
+        expect(agentVersionState(remote).action).toEqual({
+          kind: via,
+          label: "Retry update",
+        });
+      }
+    }
+  }
+);

@@ -463,6 +463,7 @@ export type AgentUpdate =
 { kind: "newer_than_this"; installed: string };
 
 export type AgentUpdateFailure = {
+	via: AgentUpdateVia,
 	target: string,
 	message: string,
 };
@@ -1760,6 +1761,8 @@ export type HostRecord = {
 };
 
 export type HostVitals = {
+	cpu_pct: number | null,
+	memory_pct: number | null,
 	load_1m: number | null,
 	cores: number | null,
 	memory_pressure: MemoryPressure | null,

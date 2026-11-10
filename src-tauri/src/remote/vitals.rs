@@ -35,6 +35,8 @@ impl<'de> Deserialize<'de> for MemoryPressure {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct HostVitals {
+    pub cpu_pct: Option<f32>,
+    pub memory_pct: Option<f32>,
     pub load_1m: Option<f32>,
     pub cores: Option<u32>,
     pub memory_pressure: Option<MemoryPressure>,
@@ -67,6 +69,14 @@ pub(super) fn host_vitals(frame: Option<&LiveFrame>, host: HostId, info: &HostIn
             return out;
         }
     };
+    out.cpu_pct = snapshot.cpu.as_ref().and_then(|cpu| cpu.total);
+    if info.mem_total_bytes > 0 {
+        out.memory_pct = snapshot
+            .memory
+            .as_ref()
+            .and_then(|memory| memory.used)
+            .map(|used| used / info.mem_total_bytes as f32 * 100.0);
+    }
     out.load_1m = snapshot
         .cpu
         .as_ref()
@@ -164,6 +174,8 @@ mod tests {
         assert_eq!(
             got,
             HostVitals {
+                cpu_pct: None,
+                memory_pct: None,
                 load_1m: Some(1.5),
                 cores: Some(2),
                 memory_pressure: Some(MemoryPressure::Stall { some_pct: 2.5 }),
@@ -176,6 +188,37 @@ mod tests {
             }
         );
     }
+    #[test]
+    fn percentages_use_the_same_held_facts_for_local_and_remote_hosts() {
+        let got = vitals(&[("cpu.total", 12.5), ("mem.used", 8_000_000_000.0)]);
+        assert_eq!(got.cpu_pct, Some(12.5));
+        assert_eq!(got.memory_pct, Some(50.0));
+        let missing = vitals(&[("cpu.total", f32::NAN), ("mem.used", f32::NAN)]);
+        assert_eq!((missing.cpu_pct, missing.memory_pct), (None, None));
+        let mut info = info();
+        info.mem_total_bytes = 0;
+        assert_eq!(
+            host_vitals(None, HostId(uuid::Uuid::nil()), &info).memory_pct,
+            None
+        );
+        let frame = LiveFrame {
+            ts_ms: 0,
+            interval_ms: 1000,
+            timeline: 0,
+            layout: Arc::new(FrameLayout {
+                layout_no: 1,
+                series: vec![SeriesKey::parse("mem.used").unwrap()].into(),
+            }),
+            values: vec![f32::NAN].into(),
+            held: vec![8_000_000_000.0].into(),
+            holds: vec![2500].into(),
+        };
+        assert_eq!(
+            host_vitals(Some(&frame), HostId(uuid::Uuid::nil()), &info).memory_pct,
+            None
+        );
+    }
+
     #[test]
     fn macos_pressure_is_a_level() {
         assert_eq!(

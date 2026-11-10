@@ -10,7 +10,7 @@ pub struct RemoteHostConfig {
     pub mirror_budget_mb: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteState {
     Connecting,
@@ -19,13 +19,13 @@ pub enum RemoteState {
     Disabled,
     Error,
 }
-#[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteRoute {
     Lan,
     Tailscale,
 }
-#[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteSync {
     Idle,
@@ -137,6 +137,7 @@ pub struct AgentUpdateProgress {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct AgentUpdateFailure {
+    pub via: AgentUpdateVia,
     pub target: String,
     pub message: String,
 }

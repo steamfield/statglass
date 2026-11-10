@@ -44,11 +44,9 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
             }
             known.clone()
         };
-        state
-            .remotes
-            .observe_update(id, s.connected, s.remote_version.as_deref());
-        publish_status(&state.remotes, id, generation, s, linux, last);
-        super::progress::emit_changed(&handle);
+        if publish_status(&state.remotes, id, generation, s, linux, last) {
+            super::progress::emit_changed(&handle);
+        }
     });
     let source = RemoteSource::new(
         saved.record.clone(),
@@ -109,10 +107,14 @@ fn publish_status(
     status: statglass_remote::ConnectionStatus,
     linux: bool,
     last: Option<String>,
-) {
+) -> bool {
     let mut statuses = manager.statuses.lock_ok();
     // A host removed or re-registered meanwhile keeps its newer status.
     if manager.generations.lock_ok().get(&id) == Some(&generation) {
+        let mut previous = statuses.get(&id).cloned().unwrap_or_default();
+        manager.apply_update(id, &mut previous);
+        manager.apply_rr(id, &mut previous);
+        manager.observe_update(id, status.connected, status.remote_version.as_deref());
         if status.connected {
             manager
                 .rr_sessions
@@ -122,8 +124,26 @@ fn publish_status(
         } else {
             manager.clear_rr(id);
         }
-        statuses.insert(id, connection_status(status, linux, last));
+        let mut next = connection_status(status, linux, last);
+        manager.apply_update(id, &mut next);
+        manager.apply_rr(id, &mut next);
+        let changed = rendered_status_changed(&previous, &next);
+        statuses.insert(id, next);
+        return changed;
     }
+    false
+}
+
+/// High-frequency facts are refreshed by the host list's five-second poll.
+fn rendered_status_changed(previous: &RemoteHostStatus, next: &RemoteHostStatus) -> bool {
+    previous.state != next.state
+        || previous.route != next.route
+        || previous.error != next.error
+        || previous.identity_changed != next.identity_changed
+        || previous.agent_update != next.agent_update
+        || previous.update != next.update
+        || previous.last_update_failure != next.last_update_failure
+        || previous.rr != next.rr
 }
 
 pub(super) async fn discard_host_async(app: &AppHandle, id: HostId) -> Result<(), CommandError> {
@@ -214,3 +234,6 @@ pub(super) fn connection_status(
         identity_changed: s.identity_changed.map(|id| id.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests;

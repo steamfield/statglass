@@ -44,10 +44,15 @@ async fn cadence_is_owned_by_recent_interest_and_native_window_lifetime() {
     let (stop, stopped) = watch::channel(false);
     let reads = Arc::new(AtomicUsize::new(0));
     let observed = reads.clone();
-    let task = tokio::spawn(run(rx, stopped, move |_| {
-        observed.fetch_add(1, Ordering::SeqCst);
-        async {}
-    }));
+    let task = tokio::spawn(run(
+        rx,
+        stopped,
+        move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            async {}
+        },
+        || {},
+    ));
     tokio::time::advance(PERIOD * 2).await;
     assert_eq!(reads.load(Ordering::SeqCst), 0);
     registry.window_visible("dashboard", true);
@@ -87,14 +92,19 @@ async fn interest_release_cancels_an_inflight_read() {
     let drops = Arc::new(AtomicUsize::new(0));
     let observed = drops.clone();
     let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
-    let task = tokio::spawn(run(rx, stopped, move |_| {
-        let guard = Guard(observed.clone());
-        started.send(()).unwrap();
-        async move {
-            let _guard = guard;
-            std::future::pending::<()>().await;
-        }
-    }));
+    let task = tokio::spawn(run(
+        rx,
+        stopped,
+        move |_| {
+            let guard = Guard(observed.clone());
+            started.send(()).unwrap();
+            async move {
+                let _guard = guard;
+                std::future::pending::<()>().await;
+            }
+        },
+        || {},
+    ));
     ready.recv().await.unwrap();
     tx.send(false).unwrap();
     tokio::task::yield_now().await;
@@ -305,3 +315,109 @@ async fn timing_out_local_work_cannot_accumulate_blocking_readers() {
 
 #[path = "backoff_tests.rs"]
 mod backoff_tests;
+
+#[tokio::test(start_paused = true)]
+async fn releasing_interest_clears_local_and_remote_jobs_and_notifies_once() {
+    let manager = Arc::new(RemoteManager::default());
+    let target = connected(&manager, id(1));
+    manager.publish_rr(None, id(0), Some(job()), || {});
+    manager.publish_rr(Some(&target), id(1), Some(job()), || {});
+    let (interest, rx) = watch::channel(true);
+    let (stop, stopped) = watch::channel(false);
+    let observed = manager.clone();
+    let changes = Arc::new(AtomicUsize::new(0));
+    let notified = changes.clone();
+    let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(run(
+        rx,
+        stopped,
+        move |_| {
+            started.send(()).unwrap();
+            async {}
+        },
+        move || {
+            observed.clear_rr_jobs(|| {
+                notified.fetch_add(1, Ordering::SeqCst);
+            })
+        },
+    ));
+    ready.recv().await.unwrap();
+    interest.send(false).unwrap();
+    tokio::task::yield_now().await;
+    assert!(
+        manager.rr.lock_ok().is_empty(),
+        "both local and remote jobs must be cleared"
+    );
+    assert_eq!(changes.load(Ordering::SeqCst), 1);
+    interest.send(true).unwrap();
+    ready.recv().await.unwrap();
+    assert!(
+        manager.rr.lock_ok().is_empty(),
+        "a return visit must not show old jobs"
+    );
+    interest.send(false).unwrap();
+    tokio::task::yield_now().await;
+    assert_eq!(
+        changes.load(Ordering::SeqCst),
+        1,
+        "clearing empty jobs emits nothing"
+    );
+    interest.send(true).unwrap();
+    ready.recv().await.unwrap();
+    manager.publish_rr(None, id(0), Some(job()), || {});
+    interest.send(false).unwrap();
+    interest.send(true).unwrap();
+    ready.recv().await.unwrap();
+    assert!(
+        manager.rr.lock_ok().is_empty(),
+        "a coalesced release/reacquire must also clear jobs"
+    );
+    assert_eq!(changes.load(Ordering::SeqCst), 2);
+    stop.send(true).unwrap();
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn a_read_finishing_after_disconnect_and_reconnect_is_discarded() {
+    let manager = RemoteManager::default();
+    let target = connected(&manager, id(1));
+    let (release, wait) = tokio::sync::oneshot::channel();
+    let (started, ready) = tokio::sync::oneshot::channel();
+    let started = Mutex::new(Some(started));
+    let wait = Mutex::new(Some(wait));
+    let changes = AtomicUsize::new(0);
+    let backoff = Mutex::new(Backoff::default());
+    let work = poll(
+        &manager,
+        id(0),
+        vec![target],
+        &backoff,
+        |_| {
+            let wait = wait.lock_ok().take().unwrap();
+            started.lock_ok().take().unwrap().send(()).unwrap();
+            async move {
+                wait.await.unwrap();
+                Ok(Some(job()))
+            }
+        },
+        async { Ok(None) },
+        || {
+            changes.fetch_add(1, Ordering::SeqCst);
+        },
+    );
+    tokio::pin!(work);
+    tokio::select! {
+        () = &mut work => panic!("read should wait for release"),
+        () = async { ready.await.unwrap(); } => {},
+    }
+    manager.statuses.lock_ok().get_mut(&id(1)).unwrap().state = RemoteState::Offline;
+    manager.clear_rr(id(1));
+    connected(&manager, id(1));
+    release.send(()).unwrap();
+    work.await;
+    assert!(
+        status(&manager, id(1)).rr.is_none(),
+        "an old SSH read must not cross connection generations"
+    );
+    assert_eq!(changes.load(Ordering::SeqCst), 0);
+}

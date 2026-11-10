@@ -98,6 +98,8 @@ it("never invents measured vitals for a host that has never connected", async ()
     if (!host) throw new Error("Missing unreachable host");
     const expected = {
       cores: 8,
+      cpu_pct: null,
+      memory_pct: null,
       load_1m: null,
       memory_pressure: null,
       disk_used_bytes: null,

@@ -25,22 +25,8 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
                 && let Some(frame) = entry.latest_frame()
             {
                 status.vitals = super::vitals::host_vitals(Some(&frame), *id, &entry.record().info);
-                let value = |metric: &str| {
-                    frame
-                        .layout
-                        .series
-                        .iter()
-                        .position(|key| key.metric.as_str() == metric && key.labels.is_empty())
-                        .and_then(|i| frame.held.get(i))
-                        .copied()
-                        .filter(|v| v.is_finite())
-                        .map(f64::from)
-                };
-                status.cpu_pct = value("cpu.total");
-                if h.record.info.mem_total_bytes > 0 {
-                    status.memory_pct = value("mem.used")
-                        .map(|used| used / h.record.info.mem_total_bytes as f64 * 100.0);
-                }
+                status.cpu_pct = status.vitals.cpu_pct.map(f64::from);
+                status.memory_pct = status.vitals.memory_pct.map(f64::from);
             }
             RemoteHostRecord {
                 config: h.config.clone(),

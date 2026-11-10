@@ -112,21 +112,13 @@ export function agentVersionState(remote: RemoteHostRecord): HostVersionState {
   const allowed = config.enabled && status.identity_changed === null;
   const reachable =
     allowed && (status.state === "connected" || update.kind === "required");
+  const via =
+    status.last_update_failure?.via ?? ("via" in update ? update.via : null);
   const action = (
     label: string,
     canRun = reachable
   ): HostVersionState["action"] =>
-    canRun
-      ? {
-          kind:
-            "via" in update
-              ? update.via
-              : remote.os === "linux"
-                ? "push"
-                : "add_host",
-          label,
-        }
-      : null;
+    canRun && via ? { kind: via, label } : null;
   const base: HostVersionState = {
     kind: "unknown",
     text: "Version not reported yet",

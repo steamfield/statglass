@@ -90,16 +90,21 @@ async fn interest_off_then_on_resets_failed_reads() {
     let reads = Arc::new(AtomicUsize::new(0));
     let observed = reads.clone();
     let (done, mut rounds) = tokio::sync::mpsc::unbounded_channel();
-    let task = tokio::spawn(run(rx, stopped, move |backoff| {
-        let manager = manager.clone();
-        let target = target.clone();
-        let reads = observed.clone();
-        let done = done.clone();
-        async move {
-            round(&manager, &backoff, vec![target], &reads, false).await;
-            done.send(()).unwrap();
-        }
-    }));
+    let task = tokio::spawn(run(
+        rx,
+        stopped,
+        move |backoff| {
+            let manager = manager.clone();
+            let target = target.clone();
+            let reads = observed.clone();
+            let done = done.clone();
+            async move {
+                round(&manager, &backoff, vec![target], &reads, false).await;
+                done.send(()).unwrap();
+            }
+        },
+        || {},
+    ));
     rounds.recv().await.unwrap();
     assert_eq!(reads.load(Ordering::SeqCst), 1);
     tokio::time::advance(PERIOD).await;

@@ -55,6 +55,8 @@ export function seedUpdateScenarios(
       memory_pct: null,
       vitals: {
         cores: 8,
+        cpu_pct: null,
+        memory_pct: null,
         load_1m: null,
         memory_pressure: null,
         disk_used_bytes: null,
@@ -112,6 +114,8 @@ export function seedUpdateScenarios(
 /** Measured fixture facts; production thresholds and projections live in Rust. */
 export function mockHostVitals(linux = false): HostVitals {
   return {
+    cpu_pct: 18,
+    memory_pct: 42,
     load_1m: linux ? 0.72 : 2.4,
     cores: linux ? 8 : 14,
     memory_pressure: linux
@@ -144,6 +148,7 @@ function seedMonitoringScenarios(
       agent_version: OLD,
       agent_update: behind("push"),
       last_update_failure: {
+        via: "push",
         target: APP_VERSION,
         message:
           "The host did not reconnect with the updated agent within three minutes",
@@ -309,6 +314,7 @@ function seedGridScenarios(
       agent_update: behind("push"),
       route: "tailscale",
       last_update_failure: {
+        via: "push",
         target: APP_VERSION,
         message: "The update could not reconnect over either saved SSH route",
       },
