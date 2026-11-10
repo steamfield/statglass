@@ -1,5 +1,4 @@
 import type { Connection } from "@core/live-state";
-import { Pause } from "lucide-react";
 import {
   type KeyboardEvent,
   type MouseEvent,
@@ -10,6 +9,7 @@ import {
 } from "react";
 import { StatGlassMark } from "~/components/statglass-mark";
 import { cn } from "~/lib/utils";
+import { StatusDot } from "~/widgets/status-dot";
 
 /** Icon paths (24 x 24, 1.5 px stroke). */
 const ICONS = {
@@ -242,10 +242,7 @@ export function Sidebar({
         <div className="flex items-center gap-2">
           {status.paused ? (
             <>
-              <Pause
-                aria-hidden
-                className="icon-bold size-2.5 text-muted-foreground"
-              />
+              <StatusDot state="paused" className="text-muted-foreground" />
               <span className="font-normal text-label text-muted-foreground">
                 Paused
               </span>
@@ -254,10 +251,7 @@ export function Sidebar({
             status.connection === "connecting" ||
             status.connection === "reconnecting" ? (
             <>
-              <span
-                aria-hidden
-                className="size-1.5 rounded-full border border-muted-foreground"
-              />
+              <StatusDot state="stale" />
               <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
                 {status.connection === "connecting"
                   ? "Connecting…"
@@ -268,7 +262,7 @@ export function Sidebar({
             </>
           ) : (
             <>
-              <span aria-hidden className="size-1.5 rounded-full bg-live" />
+              <StatusDot state="live" />
               <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
                 Sampling every{" "}
                 <span className="figures">

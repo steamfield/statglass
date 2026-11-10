@@ -1,6 +1,6 @@
-import { Pause } from "lucide-react";
 import { Swap } from "~/lib/motion/swap";
 import { cn } from "~/lib/utils";
+import { StatusDot } from "./status-dot";
 
 export interface StatusPillProps {
   state: "live" | "paused" | "stale";
@@ -24,19 +24,7 @@ export function StatusPill({ state, label }: StatusPillProps) {
       )}
     >
       <Swap k={state} className="inline-flex items-center gap-1.5">
-        {state === "paused" ? (
-          <Pause aria-hidden className="icon-bold size-2.5" />
-        ) : (
-          <span
-            aria-hidden
-            className={cn(
-              "size-1.5 rounded-full",
-              state === "live"
-                ? "bg-live"
-                : "border border-muted-foreground bg-transparent"
-            )}
-          />
-        )}
+        <StatusDot state={state} />
         <span className="figures">{label}</span>
       </Swap>
     </span>
