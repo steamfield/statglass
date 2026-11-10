@@ -1,11 +1,16 @@
 import { clamp01 } from "@core/chart-math";
 import { cssPercent } from "@core/format";
+import type { CSSProperties } from "react";
+import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
+import { ChartLoading } from "./chart-loading";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
 import styles from "./lib/scroll-layer.module.css";
 import { useTickScroll } from "./lib/use-tick-scroll";
 
 export interface MirrorBarsProps {
+  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
+  loading?: boolean;
   /** Upload (or read) per interval, drawn above the baseline. `null` is a gap. */
   up: readonly (number | null)[];
   /** Download (or write), drawn below. Same length as `up`. */
@@ -49,10 +54,12 @@ export function MirrorBars({
   downMax,
   upHeight = 18,
   downHeight = 30,
+  loading,
 }: MirrorBarsProps) {
+  const reveal = useReveal(loading);
   const n = Math.max(up.length, down.length, 1);
-  const upH = heights(up, upMax, upHeight);
-  const downH = heights(down, downMax, downHeight);
+  const upH = heights(loading ? [] : up, upMax, upHeight);
+  const downH = heights(loading ? [] : down, downMax, downHeight);
   const shift = cssPercent(1 / n);
   const upRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
   const downRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
@@ -63,40 +70,52 @@ export function MirrorBars({
     <div
       role="img"
       aria-label={ariaLabel}
-      className="flex flex-col overflow-hidden"
+      className="relative overflow-hidden"
       style={accentVars(accent)}
     >
+      {/* The axis is frame, not data: it stays put while the bars settle. */}
       <div
-        ref={upRef}
-        className={cn("flex items-end gap-0.5", styles.layer)}
-        style={{ height: upHeight }}
+        className="absolute inset-x-0 h-px bg-axis"
+        style={{ top: upHeight }}
       >
-        {slots.map((i) => (
-          <span
-            key={i}
-            data-gap={upH[i] == null || undefined}
-            className="flex-1 rounded-t-hair"
-            style={{
-              height: upH[i] ?? 0,
-              background: rampColor(2),
-            }}
-          />
-        ))}
+        {loading && <ChartLoading className="inset-0" />}
       </div>
-      <div className="h-px bg-axis" />
       <div
-        ref={downRef}
-        className={cn("flex items-start gap-0.5", styles.layer)}
-        style={{ height: downHeight }}
+        data-bars
+        className={cn("flex flex-col gap-px", reveal)}
+        style={{ "--reveal-origin": `50% ${upHeight}px` } as CSSProperties}
       >
-        {slots.map((i) => (
-          <span
-            key={i}
-            data-gap={downH[i] == null || undefined}
-            className="flex-1 rounded-b-hair bg-(--a)"
-            style={{ height: downH[i] ?? 0 }}
-          />
-        ))}
+        <div
+          ref={upRef}
+          className={cn("flex items-end gap-0.5", styles.layer)}
+          style={{ height: upHeight }}
+        >
+          {slots.map((i) => (
+            <span
+              key={i}
+              data-gap={(!loading && upH[i] == null) || undefined}
+              className="flex-1 rounded-t-hair"
+              style={{
+                height: upH[i] ?? 0,
+                background: rampColor(2),
+              }}
+            />
+          ))}
+        </div>
+        <div
+          ref={downRef}
+          className={cn("flex items-start gap-0.5", styles.layer)}
+          style={{ height: downHeight }}
+        >
+          {slots.map((i) => (
+            <span
+              key={i}
+              data-gap={(!loading && downH[i] == null) || undefined}
+              className="flex-1 rounded-b-hair bg-(--a)"
+              style={{ height: downH[i] ?? 0 }}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

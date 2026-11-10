@@ -15,6 +15,7 @@
  *   --motion-enter      280ms  one-shot entrance (lift) when a surface appears
  *   --motion-stagger     30ms  delay step between entering items, index capped
  *   --motion-crossfade  150ms  keyed state swap, threshold colour change
+ *   --motion-scan       900ms  one pass of the chart loading mark along the baseline
  *   --ease-out          decelerating, no overshoot (also drives the `ease-out` utility)
  *   --ease-tick         gentler decelerate for per-tick tweens; expo-out does
  *                       90% of the move in the first third, which reads as a jump
@@ -42,6 +43,7 @@
   --motion-enter: 0ms;
   --motion-stagger: 0ms;
   --motion-crossfade: 0ms;
+  --motion-scan: 0ms;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -53,6 +55,7 @@
     --motion-enter: 280ms;
     --motion-stagger: 30ms;
     --motion-crossfade: 150ms;
+    --motion-scan: 900ms;
   }
 }
 
@@ -67,6 +70,7 @@
   --motion-enter: 0ms;
   --motion-stagger: 0ms;
   --motion-crossfade: 0ms;
+  --motion-scan: 0ms;
 }
 
 :root[data-performance] [data-sonner-toast] {

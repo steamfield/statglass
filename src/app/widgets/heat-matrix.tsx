@@ -1,7 +1,9 @@
 import { heatmapAlpha } from "@core/chart-math";
 import { cssPercent, MISSING } from "@core/format";
 import { type CSSProperties, memo, type ReactElement, useRef } from "react";
+import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
+import { ChartLoading } from "./chart-loading";
 import { GapBands, type GapSpan } from "./gap-band";
 import { type Accent, accentVars } from "./lib/accent";
 import { historyTicks } from "./lib/chart-labels";
@@ -23,6 +25,8 @@ export interface HeatMatrixRow {
 }
 
 export interface HeatMatrixProps {
+  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
+  loading?: boolean;
   rows: readonly HeatMatrixRow[];
   /** Values at `min` get the faintest tint, at `max` the strongest. */
   scale: { min: number; max: number };
@@ -60,7 +64,11 @@ const Cell = memo(function Cell({ v, min, max }: CellProps) {
   return (
     <span
       data-gap={a === null || undefined}
-      className={cn("h-2.5 rounded-hair", a === null && "bg-gap-hatch-dense")}
+      className={cn(
+        "h-2.5 rounded-hair",
+        a === null &&
+          "bg-gap-hatch-dense group-data-loading:bg-none group-data-loading:bg-track"
+      )}
       style={
         a === null
           ? undefined
@@ -151,7 +159,9 @@ export function HeatMatrix({
   accent,
   ariaLabel,
   gaps,
+  loading,
 }: HeatMatrixProps) {
+  const reveal = useReveal(loading);
   const cols = Math.max(1, Math.round(windowMs / bucketMs));
   // Bucket number of the first column, or 0 for positional keys.
   const firstKey = endMs === null ? 0 : Math.floor(endMs / bucketMs) - cols + 1;
@@ -164,7 +174,8 @@ export function HeatMatrix({
     <div
       role="img"
       aria-label={ariaLabel}
-      className="grid items-center gap-x-2.5 gap-y-0.5"
+      className="group grid items-center gap-x-2.5 gap-y-0.5"
+      data-loading={loading || undefined}
       style={{
         ...accentVars(accent),
         gridTemplateColumns: `${labelWidth}px minmax(0, 1fr) 40px`,
@@ -174,10 +185,12 @@ export function HeatMatrix({
         const first = k > 0 && r.group !== rows[k - 1]?.group;
         // Right-align: the newest bucket is always the last column.
         const pad = Math.max(0, cols - r.buckets.length);
-        const cells = [
-          ...Array<number | null>(pad).fill(null),
-          ...r.buckets.slice(-cols),
-        ];
+        const cells = loading
+          ? Array<number | null>(cols).fill(null)
+          : [
+              ...Array<number | null>(pad).fill(null),
+              ...r.buckets.slice(-cols),
+            ];
         return (
           <div key={r.id} className={cn("contents", first && "[&>*]:mt-2")}>
             <span
@@ -188,7 +201,7 @@ export function HeatMatrix({
               {r.label}
             </span>
             <div
-              className="col-start-2 grid gap-px"
+              className={cn("col-start-2 grid gap-px", reveal)}
               style={{
                 ...row(k),
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
@@ -215,16 +228,28 @@ export function HeatMatrix({
           </div>
         );
       })}
-      {gaps && gaps.length > 0 && endMs !== null && rows.length > 0 && (
+      {!loading &&
+        gaps &&
+        gaps.length > 0 &&
+        endMs !== null &&
+        rows.length > 0 && (
+          <div
+            className="pointer-events-none relative col-start-2 self-stretch"
+            style={{ gridRow: `1 / ${rows.length + 1}` }}
+          >
+            <GapBands
+              gaps={gaps}
+              rangeFromMs={endMs - (cols - 1) * bucketMs}
+              rangeToMs={endMs + bucketMs}
+            />
+          </div>
+        )}
+      {loading && rows.length > 0 && (
         <div
           className="pointer-events-none relative col-start-2 self-stretch"
           style={{ gridRow: `1 / ${rows.length + 1}` }}
         >
-          <GapBands
-            gaps={gaps}
-            rangeFromMs={endMs - (cols - 1) * bucketMs}
-            rangeToMs={endMs + bucketMs}
-          />
+          <ChartLoading className="inset-x-0 bottom-0" />
         </div>
       )}
       <span className="col-start-1" style={row(rows.length)} />

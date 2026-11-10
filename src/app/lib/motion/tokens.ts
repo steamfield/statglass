@@ -6,7 +6,8 @@ export type MotionDuration =
   | "entry"
   | "enter"
   | "stagger"
-  | "crossfade";
+  | "crossfade"
+  | "scan";
 
 /** The easing tokens, by suffix. */
 export type MotionEase = "out" | "tick";

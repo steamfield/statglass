@@ -4,10 +4,19 @@ const root = document.documentElement;
 
 afterEach(() => {
   root.style.removeProperty("--motion-enter");
+  root.style.removeProperty("--motion-scan");
   root.style.removeProperty("--ease-out");
 });
 
 describe("motionMs", () => {
+  it("reads the scan duration and follows zeroed or missing tokens", () => {
+    expect(motionMs("scan")).toBe(0);
+    root.style.setProperty("--motion-scan", "900ms");
+    expect(motionMs("scan")).toBe(900);
+    root.style.setProperty("--motion-scan", "0ms");
+    expect(motionMs("scan")).toBe(0);
+  });
+
   it("reads the duration token from the root in ms", () => {
     root.style.setProperty("--motion-enter", "280ms");
     expect(motionMs("enter")).toBe(280);
