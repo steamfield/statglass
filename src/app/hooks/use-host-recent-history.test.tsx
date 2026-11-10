@@ -3,6 +3,7 @@ import { historyKeys } from "@core/query-keys";
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
+import { HostSelectionContext } from "~/lib/host-selection";
 import { useHostRecentHistory } from "./use-host-recent-history";
 
 function Probe({
@@ -237,6 +238,99 @@ it("ignores millisecond clock jitter but refreshes after a two-second correction
     expect(read).toHaveBeenCalledTimes(beforeSmall + 1);
     expect(read.mock.calls.at(-1)?.[0].to_ms).toBe(expectedEnd);
   } finally {
+    view.unmount();
+    transport.dispose();
+  }
+});
+
+it("leaves a selected host's clock refresh to LocalHost and uses the corrected range", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(performance, "now").mockReturnValue(0);
+  const transport = createMockTransport({
+    scenarios: ["multi-host"],
+    autoTick: false,
+  });
+  const read = vi.spyOn(transport, "queryHistory");
+  const selection = { hosts: [], selected: "remote-studio", select: () => {} };
+  function SelectedProbe() {
+    const [offset, setOffset] = useState(0);
+    return (
+      <HostSelectionContext value={selection}>
+        <button type="button" onClick={() => setOffset(2000)}>
+          Step selected clock
+        </button>
+        <Probe offset={offset} />
+      </HostSelectionContext>
+    );
+  }
+  const view = renderWithProviders(<SelectedProbe />, { transport });
+  try {
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    expect(read).toHaveBeenCalledTimes(1);
+    const correctedEnd = Date.now() + 2000;
+    act(() =>
+      screen.getByRole("button", { name: "Step selected clock" }).click()
+    );
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    expect(read).toHaveBeenCalledTimes(1);
+    // The owner may invalidate after or before passive child effects; the range is ready.
+    await act(async () => {
+      await view.queryClient.invalidateQueries(
+        { queryKey: historyKeys.host(selection.selected) },
+        { cancelRefetch: false }
+      );
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(read.mock.calls.at(-1)?.[0].to_ms).toBe(correctedEnd);
+  } finally {
+    view.unmount();
+    transport.dispose();
+  }
+});
+
+it("does not cancel an in-flight card refresh when an unselected host's clock steps", async () => {
+  vi.useFakeTimers();
+  const transport = createMockTransport({
+    scenarios: ["multi-host"],
+    autoTick: false,
+  });
+  const original = transport.queryHistory;
+  let settle: (() => void) | undefined;
+  const read = vi.spyOn(transport, "queryHistory");
+  function UnselectedProbe() {
+    const [offset, setOffset] = useState(0);
+    return (
+      <>
+        <button type="button" onClick={() => setOffset(2000)}>
+          Step card clock
+        </button>
+        <Probe offset={offset} />
+      </>
+    );
+  }
+  const view = renderWithProviders(<UnselectedProbe />, { transport });
+  try {
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    read.mockImplementationOnce(async (request) => {
+      await new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      return original(request);
+    });
+    act(() => {
+      void view.queryClient.invalidateQueries({
+        queryKey: historyKeys.recent("remote-studio", 600000),
+      });
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+    act(() => screen.getByRole("button", { name: "Step card clock" }).click());
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    expect(read).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      settle?.();
+    });
+  } finally {
+    settle?.();
     view.unmount();
     transport.dispose();
   }

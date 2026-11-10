@@ -120,8 +120,6 @@ function LocalCardData({
         vitals.data ?? null,
         version,
         target,
-        null,
-        null,
         rr.data ?? null,
         selection?.hosts
       ),

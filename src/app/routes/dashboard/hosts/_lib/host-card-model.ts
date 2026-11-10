@@ -50,6 +50,14 @@ function system(host: HostRecord | undefined): string {
     : MISSING;
 }
 
+export function isLiveHost({ status }: RemoteHostRecord): boolean {
+  return (
+    status.state === "connected" &&
+    !status.identity_changed &&
+    status.agent_update.kind !== "required"
+  );
+}
+
 function connection(
   remote: RemoteHostRecord
 ): Pick<
@@ -72,14 +80,13 @@ function connection(
     route,
     message: null,
     stateAction: null,
-    isLive: true,
+    isLive: isLiveHost(remote),
   };
   if (status.identity_changed)
     return {
       ...base,
       status: "Identity changed",
       mark: "warn",
-      isLive: false,
       stateAction: "Re-pair…",
       message: {
         tone: "note",
@@ -91,7 +98,6 @@ function connection(
       ...base,
       status: "Update required",
       mark: "warn",
-      isLive: false,
       message: {
         tone: "note",
         text: "Update StatGlass on this host to reconnect. Mirrored history stays available here.",
@@ -104,13 +110,12 @@ function connection(
         route: routeLabel(remote),
       };
     case "connecting":
-      return { ...base, status: "Connecting…", mark: "idle", isLive: false };
+      return { ...base, status: "Connecting…", mark: "idle" };
     case "offline":
       return {
         ...base,
         status: "Offline",
         mark: "idle",
-        isLive: false,
         route:
           status.last_seen_ms === null
             ? ""
@@ -126,7 +131,6 @@ function connection(
         ...base,
         status: "Connection off",
         mark: "paused",
-        isLive: false,
         stateAction: "Turn on",
         message: {
           tone: "note",
@@ -138,7 +142,6 @@ function connection(
         ...base,
         status: "Connection failed",
         mark: "error",
-        isLive: false,
         stateAction: "Retry",
         message: {
           tone: "error",
@@ -235,8 +238,10 @@ export function remoteHostCardModel(
     name: remote.config.name,
     system: system(host),
     version: agentVersionState(remote),
-    cpu: formatPercent(state.isLive ? remote.status.cpu_pct : null),
-    memory: formatPercent(state.isLive ? remote.status.memory_pct : null),
+    cpu: formatPercent(state.isLive ? remote.status.vitals.cpu_pct : null),
+    memory: formatPercent(
+      state.isLive ? remote.status.vitals.memory_pct : null
+    ),
     ...readings(remote.status.vitals, state.isLive),
   };
 }
@@ -246,8 +251,6 @@ export function localHostCardModel(
   vitals: HostVitals | null,
   version: string,
   target: string | null,
-  cpu: number | null,
-  _memory: number | null,
   job: RrJob | null = null,
   hosts: readonly HostRecord[] = []
 ): HostCardModel {
@@ -263,7 +266,7 @@ export function localHostCardModel(
     isLive: true,
     system: system(host),
     version: localVersionState(version, target),
-    cpu: formatPercent(cpu),
+    cpu: MISSING,
     memory: formatPercent(vitals?.memory_pct),
     ...readings(vitals, true),
   };

@@ -69,29 +69,28 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
       ) : (
         <ul aria-label="Other hosts" className="flex flex-col gap-1">
           {rows.slice(0, MAX_ROWS).map((row) => (
-            <li key={row.id} className="group relative">
-              {/* The label keeps row clicks native without nesting tooltip focus in the button. */}
-              <label
-                htmlFor={`${titleId}-${row.id}`}
-                className="relative z-10 flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-small group-hover:bg-muted"
+            <li key={row.id}>
+              <TruncatedText
+                focusable={false}
+                className="min-w-0 text-fg-subtle"
+                text={row.name}
               >
-                <TruncatedText
-                  className="min-w-0 text-fg-subtle"
-                  text={row.name}
-                />
-                <span
-                  className={`shrink-0 text-label ${row.connected ? "figures text-fg-subtle" : "text-muted-foreground"}`}
-                >
-                  {row.detail}
-                </span>
-              </label>
-              <button
-                id={`${titleId}-${row.id}`}
-                type="button"
-                aria-description="Show this host's metrics"
-                className="absolute inset-0 rounded-control outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => selection.select(row.id)}
-              />
+                {(text) => (
+                  <button
+                    type="button"
+                    aria-description="Show this host's metrics"
+                    className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => selection.select(row.id)}
+                  >
+                    {text}
+                    <span
+                      className={`shrink-0 text-label ${row.connected ? "figures text-fg-subtle" : "text-muted-foreground"}`}
+                    >
+                      {row.detail}
+                    </span>
+                  </button>
+                )}
+              </TruncatedText>
             </li>
           ))}
         </ul>
@@ -131,7 +130,7 @@ export function hostRows(
       id: remote.config.id,
       name: remote.config.name,
       detail: connected
-        ? `CPU ${formatPercent(status.cpu_pct)} · Mem ${formatPercent(status.memory_pct)}`
+        ? `CPU ${formatPercent(status.vitals.cpu_pct)} · Mem ${formatPercent(status.vitals.memory_pct)}`
         : connectionLabel(remote),
       connected,
     });

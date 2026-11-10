@@ -20,6 +20,7 @@ import {
   mockLinuxPreparation,
 } from "./remote-linux";
 import { savedMacSetup, setupCancelled } from "./remote-setup";
+import { MockRemoteStatus } from "./remote-status";
 import {
   hasProgressFixture,
   MockAgentUpdates,
@@ -42,6 +43,7 @@ export class MockRemotes {
       automaticUpdates: boolean;
     }
   >();
+  private readonly statusEvents = new MockRemoteStatus();
   private readonly updates = new MockAgentUpdates(this);
   private trustedAliases = new Set<string>();
   private setups = new Map<string, () => void>();
@@ -100,8 +102,6 @@ export class MockRemotes {
         error: null,
         sync: "current",
         clock_offset_ms: 120000,
-        cpu_pct: linux ? 3 : 18,
-        memory_pct: linux ? 43 : 42,
         agent_version: APP_VERSION,
         agent_update: { kind: "up_to_date", installed: APP_VERSION },
         identity_changed: null,
@@ -111,6 +111,7 @@ export class MockRemotes {
         last_update_failure: null,
       },
     };
+    this.statusEvents.forget(saved.id);
     this.remotes.set(saved.id, {
       record: remote,
       automaticUpdates: true,
@@ -173,14 +174,9 @@ export class MockRemotes {
     id,
     status
   ) => {
-    const remote = this.remotes.get(id);
-    if (!remote) return;
-    remote.record = {
-      ...remote.record,
-      status: { ...remote.record.status, ...status },
-    };
-    syncRrJobs(this);
-    this.emitters.remotes.emit({});
+    this.statusEvents.push(this, id, status, () =>
+      this.emitters.remotes.emit({})
+    );
   };
   startUpdate(id: string) {
     this.updates.start(id);
@@ -411,6 +407,7 @@ export class MockRemotes {
     );
     this.remotes.get(id)?.peer.dispose();
     this.remotes.delete(id);
+    this.statusEvents.forget(id);
     this.emitHostsChanged();
     return ok(null);
   };

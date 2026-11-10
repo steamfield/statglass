@@ -101,6 +101,7 @@ pub struct RemoteManager {
     setups: Mutex<BTreeMap<String, tokio::sync::watch::Sender<bool>>>,
     trust: Mutex<BTreeMap<String, (std::time::Instant, statglass_remote::trust::TrustCandidate)>>,
     statuses: Mutex<BTreeMap<HostId, RemoteHostStatus>>,
+    emitted_clock_offsets: Mutex<BTreeMap<HostId, f64>>,
     updates: Mutex<BTreeMap<HostId, progress::TrackedUpdate>>,
     rr: Mutex<BTreeMap<HostId, statglass_remote::rr::RrJob>>,
     rr_sessions: Mutex<BTreeMap<HostId, Uuid>>,

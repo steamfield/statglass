@@ -65,7 +65,7 @@ export interface StreamAreaProps {
   yMax: number;
   accent: Accent;
   height: number;
-  ariaLabel: string;
+  ariaLabel?: string;
   ariaLabelledBy?: string;
   /** Corner label for the ceiling ("40%"), top left. */
   ceilingLabel?: string;

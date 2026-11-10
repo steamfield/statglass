@@ -2627,8 +2627,6 @@ export type RemoteHostStatus = {
 	error: string | null,
 	sync: RemoteSync,
 	clock_offset_ms: number | null,
-	cpu_pct: number | null,
-	memory_pct: number | null,
 	vitals: HostVitals,
 	rr: RrJob | null,
 	update: AgentUpdateProgress | null,

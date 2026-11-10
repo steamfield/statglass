@@ -110,15 +110,16 @@ async fn update_saved(
     })
     .await?;
     state.remotes.saved.lock_ok().insert(id, saved.clone());
-    if let Err(error) = save(app) {
+    restore_on_save_error(save(app), || async {
         if changed {
             discard_host_async(app, id).await?;
-            register(app, previous)?;
+            register(app, previous)
         } else {
             state.remotes.saved.lock_ok().insert(id, previous);
+            Ok(())
         }
-        return Err(error);
-    }
+    })
+    .await?;
     if let Some(mirror) = state.remotes.mirrors.lock_ok().get(&id) {
         mirror.history.register_host(&saved.record);
     }
@@ -132,6 +133,19 @@ async fn update_saved(
         os: saved.record.info.os,
         status,
     })
+}
+
+async fn restore_on_save_error<F: std::future::Future<Output = Result<(), CommandError>>>(
+    saved: Result<(), CommandError>,
+    restore: impl FnOnce() -> F,
+) -> Result<(), CommandError> {
+    if let Err(error) = saved {
+        if let Err(rollback) = restore().await {
+            tracing::warn!(%rollback, "restoring the saved Mac after saving its reinstall failed");
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 pub(super) async fn prepare(

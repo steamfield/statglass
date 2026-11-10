@@ -25,8 +25,6 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
                 && let Some(frame) = entry.latest_frame()
             {
                 status.vitals = super::vitals::host_vitals(Some(&frame), *id, &entry.record().info);
-                status.cpu_pct = status.vitals.cpu_pct.map(f64::from);
-                status.memory_pct = status.vitals.memory_pct.map(f64::from);
             }
             RemoteHostRecord {
                 config: h.config.clone(),

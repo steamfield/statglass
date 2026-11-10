@@ -299,18 +299,36 @@ async fn run_update<F: std::future::Future<Output = Result<(), CommandError>>>(
     changed: impl Fn(),
     work: impl FnOnce(Uuid, SavedHost) -> F,
 ) -> Result<(), CommandError> {
-    manager.run_update(id, env!("CARGO_PKG_VERSION").into(), AgentUpdateVia::Push, changed, |token| async move {
-        let saved = manager.saved.lock_ok().get(&id).cloned().ok_or(CommandError::UnknownHost { host: id })?;
-        if !saved.is_linux() {
-            return Err(CommandError::InvalidArgument {
-                message: "Only Linux hosts run the StatGlass agent; update StatGlass on a Mac from Add host".into(),
-            });
-        }
-        if !saved.config.enabled {
-            return Err(CommandError::InvalidArgument { message: "Turn on this host's connection before updating its agent".into() });
-        }
-        work(token, saved).await
-    }).await
+    const MAC_UPDATE: &str =
+        "Only Linux hosts run the StatGlass agent; update StatGlass on a Mac from Add host";
+    const ENABLE_CONNECTION: &str = "Turn on this host's connection before updating its agent";
+    manager
+        .run_update(
+            id,
+            env!("CARGO_PKG_VERSION").into(),
+            AgentUpdateVia::Push,
+            changed,
+            |token| async move {
+                let saved = manager
+                    .saved
+                    .lock_ok()
+                    .get(&id)
+                    .cloned()
+                    .ok_or(CommandError::UnknownHost { host: id })?;
+                if !saved.is_linux() {
+                    return Err(CommandError::InvalidArgument {
+                        message: MAC_UPDATE.into(),
+                    });
+                }
+                if !saved.config.enabled {
+                    return Err(CommandError::InvalidArgument {
+                        message: ENABLE_CONNECTION.into(),
+                    });
+                }
+                work(token, saved).await
+            },
+        )
+        .await
 }
 
 async fn perform_update(

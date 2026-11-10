@@ -51,8 +51,6 @@ export function seedUpdateScenarios(
       state: "error",
       route: null,
       last_seen_ms: null,
-      cpu_pct: null,
-      memory_pct: null,
       vitals: {
         cores: 8,
         cpu_pct: null,
@@ -83,8 +81,6 @@ export function seedUpdateScenarios(
     seed(remotes, "pi", true, {
       state: "offline",
       route: null,
-      cpu_pct: null,
-      memory_pct: null,
       agent_version: OLD,
       agent_update: behind("push"),
     });
@@ -93,8 +89,6 @@ export function seedUpdateScenarios(
     seed(remotes, "legacy", true, {
       state: "error",
       route: null,
-      cpu_pct: null,
-      memory_pct: null,
       error: "incompatible remote: protocol 1 is below the supported range 2-3",
       agent_version: "0.0.1",
       agent_update: {
@@ -254,8 +248,6 @@ export function seedRemoteScenarios(
         error:
           "remote host identity does not match: linux-tailscale identified 48670e8f-2bca-4868-b557-16b1f1289341, expected 91d73b19-5d36-43b5-87f1-884bd635378e",
         identity_changed: "48670e8f-2bca-4868-b557-16b1f1289341",
-        cpu_pct: null,
-        memory_pct: null,
       };
   }
 }
@@ -366,8 +358,6 @@ function seedDashboard(
         ...record.status,
         state: "offline",
         route: null,
-        cpu_pct: null,
-        memory_pct: null,
       };
     if (name === "nas")
       record.status.vitals = {
@@ -428,10 +418,10 @@ export function remoteRecords(
     ...record,
     status: {
       ...record.status,
-      cpu_pct: 3 + index + phase,
-      memory_pct: 42 + index + phase,
       vitals: {
         ...record.status.vitals,
+        cpu_pct: 3 + index + phase,
+        memory_pct: 42 + index + phase,
         load_1m: 0.5 + index / 10 + phase / 10,
       },
     },

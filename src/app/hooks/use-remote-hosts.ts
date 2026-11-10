@@ -26,7 +26,13 @@ export function useRemoteHostsChanged() {
   useEffect(
     () =>
       transport.onRemoteHostsChanged(() => {
-        if (!focusManager.isFocused()) return;
+        if (!focusManager.isFocused()) {
+          void cache.invalidateQueries({
+            queryKey: hostKeys.remote(),
+            refetchType: "none",
+          });
+          return;
+        }
         void cache.invalidateQueries(
           { queryKey: hostKeys.remote() },
           { cancelRefetch: false }

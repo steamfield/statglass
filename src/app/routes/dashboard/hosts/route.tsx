@@ -19,6 +19,8 @@ import { LocalHostCard, RemoteHostCard } from "./_components/host-cards";
 import { UpdateAllDialog } from "./_components/update-all-dialog";
 import { useHostsRecentInterest } from "./_hooks/use-hosts-recent-interest";
 
+import { isLiveHost } from "./_lib/host-card-model";
+
 export default function HostsRoute() {
   useHostsRecentInterest();
   const selection = useHostSelection();
@@ -30,13 +32,7 @@ export default function HostsRoute() {
   const records = remotes.data ?? [];
   const behind = records.filter(pushable);
   const updatable = behind.filter(reachable).length;
-  const live =
-    records.filter(
-      (host) =>
-        host.status.state === "connected" &&
-        host.status.identity_changed === null &&
-        host.status.agent_update.kind !== "required"
-    ).length + (local ? 1 : 0);
+  const live = records.filter(isLiveHost).length + (local ? 1 : 0);
   const updates = hostsNeedingUpdate(records).length;
   const ids = [
     ...(local ? [local.id] : []),

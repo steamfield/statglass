@@ -194,3 +194,12 @@ async fn reinstall_refreshes_the_helper_and_replaces_the_source_only_when_it_cha
         serde_json::to_value(original).unwrap()
     );
 }
+
+#[tokio::test]
+async fn a_failed_reinstall_save_keeps_its_error_when_rollback_fails() {
+    let result = restore_on_save_error(Err(failure("save failed")), || async {
+        Err(failure("rollback failed"))
+    })
+    .await;
+    assert!(matches!(result, Err(CommandError::Internal { message }) if message == "save failed"));
+}
