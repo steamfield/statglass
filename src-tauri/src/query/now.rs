@@ -2,16 +2,15 @@
 //!
 //! Every host starts from the series a remote host serves while unselected
 //! ([`statglass_remote::headline_metrics`]: `cpu.total`, `mem.used`, `mem.pressure`,
-//! `gpu.util`, `thermal.hottest`, `net.rx`, `net.tx`, `disk.read`, `disk.write`, every
-//! label of each), so local and remote answers have one shape. This Mac adds
-//! `power.system`, `battery.charge` and the root volume's `disk.used{vol=/}` and
-//! `disk.free{vol=/}`; a remote host gets no extras, because it serves them only while
+//! `gpu.util`, `thermal.hottest`, network and disk rates, plus the D-134 vitals),
+//! with the same label filter as summaries. This Mac adds
+//! `power.system` and `battery.charge`; a remote host gets no extras, because it serves them only while
 //! a window shows it, and the answer must not depend on that. A series the frame does
 //! not hold (no battery) is simply absent. `detail` drops the filter and reports every
 //! held series, which for a remote host is still what it serves at the time.
 
 use statglass_query::{NowAnswer, NowHost, Reading};
-use statglass_remote::headline_metrics;
+use statglass_remote::{headline_metrics, headline_series};
 use statglass_schema::SeriesKey;
 
 use super::hosts::resolve;
@@ -20,18 +19,14 @@ use super::{Backend, HostView};
 
 /// This Mac's headline series beyond [`headline_metrics`]: `(metric, labels)`, where
 /// labels are matched exactly and an empty list matches the unlabelled series.
-const LOCAL_HEADLINE: &[(&str, &[(&str, &str)])] = &[
-    ("power.system", &[]),
-    ("battery.charge", &[]),
-    ("disk.used", &[("vol", "/")]),
-    ("disk.free", &[("vol", "/")]),
-];
+const LOCAL_HEADLINE: &[(&str, &[(&str, &str)])] =
+    &[("power.system", &[]), ("battery.charge", &[])];
 
-/// Whether `key` is in the headline set: `base` by metric id, plus
+/// Whether `key` is in the headline set with its label restrictions, plus
 /// [`LOCAL_HEADLINE`] on this Mac.
 fn is_headline(key: &SeriesKey, base: &[&str], local: bool) -> bool {
     let id = key.metric.as_str();
-    base.contains(&id)
+    headline_series(base, key)
         || local
             && LOCAL_HEADLINE.iter().any(|(m, labels)| {
                 *m == id

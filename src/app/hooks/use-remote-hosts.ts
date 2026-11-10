@@ -1,9 +1,10 @@
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
-import { useQuery } from "@tanstack/react-query";
+import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { useTransport } from "~/lib/transport-context";
 
-/** Connection metadata only; metric samples arrive on the live channel. */
+/** Remote status and card vitals, shared by every consumer in the window. */
 export function useRemoteHosts<T = RemoteHostRecord[]>(
   select?: (hosts: RemoteHostRecord[]) => T
 ) {
@@ -14,5 +15,29 @@ export function useRemoteHosts<T = RemoteHostRecord[]>(
     queryFn: () => transport.listRemoteHosts(),
     refetchInterval: transport.windowLabel() === "dashboard" ? 5000 : false,
     staleTime: 4000,
+    refetchOnWindowFocus: true,
   });
+}
+
+/** One event subscription per window, mounted by LocalHost. */
+export function useRemoteHostsChanged() {
+  const transport = useTransport();
+  const cache = useQueryClient();
+  useEffect(
+    () =>
+      transport.onRemoteHostsChanged(() => {
+        if (!focusManager.isFocused()) {
+          void cache.invalidateQueries({
+            queryKey: hostKeys.remote(),
+            refetchType: "none",
+          });
+          return;
+        }
+        void cache.invalidateQueries(
+          { queryKey: hostKeys.remote() },
+          { cancelRefetch: false }
+        );
+      }),
+    [transport, cache]
+  );
 }

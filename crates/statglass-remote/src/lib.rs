@@ -12,6 +12,7 @@ pub mod install;
 mod mirror;
 mod mirror_error;
 mod mirror_sink;
+pub mod rr;
 pub use mirror_error::MirrorError;
 mod pages;
 pub use mirror::{Mirror, SyncWatermark};
@@ -30,7 +31,9 @@ pub use host_server::{HostServer, InterestSet, ServedHost};
 pub use mirror_sink::MirrorSink;
 pub use pages::{page_from_wire, page_to_wire};
 pub use server::status_to_wire;
-pub use server::{ServerProvider, headline_metrics, serve_connection, serve_metrics};
+pub use server::{
+    ServerProvider, headline_metrics, headline_series, serve_connection, serve_metrics,
+};
 pub use socket::{
     ControlRequest, ControlResponse, SocketPaths, bind_private, control_request, same_uid,
     serve_control,

@@ -52,6 +52,7 @@ import type {
   HostId,
   HostRecord,
   HostsChanged,
+  HostVitals,
   LiveMsg,
   Millis,
   NavigateRequested,
@@ -62,9 +63,11 @@ import type {
   RemoteHostConfig,
   RemoteHostPreparation,
   RemoteHostRecord,
+  RemoteHostsChanged,
   RemoteSshConfigStatus,
   RemoteSshHostTrust,
   RemoteUpdateStatus,
+  RrJob,
   SensorDump,
   SeriesSelector,
   SeriesStats,
@@ -167,6 +170,10 @@ export interface Transport {
   dockerResume(): Promise<CommandResult<DockerSnapshot>>;
   listHosts(): Promise<HostRecord[]>;
   listRemoteHosts(): Promise<RemoteHostRecord[]>;
+  localRrJob(): Promise<RrJob | null>;
+  hostVitals(host: HostId): Promise<CommandResult<HostVitals>>;
+  setHostsRecentInterest(on: boolean): Promise<CommandResult<null>>;
+  onRemoteHostsChanged(cb: (event: RemoteHostsChanged) => void): Unsubscribe;
   getRemoteUpdateStatus(id: string): Promise<CommandResult<RemoteUpdateStatus>>;
   setRemoteUpdatePolicy(
     id: string,
@@ -186,7 +193,8 @@ export interface Transport {
     config: RemoteHostConfig,
     install: boolean,
     showMenuBar: boolean,
-    setupId: string
+    setupId: string,
+    reinstall?: HostId | null
   ): Promise<CommandResult<RemoteHostRecord>>;
   cancelRemoteSetup(setupId: string): Promise<CommandResult<null>>;
   updateRemoteHost(
@@ -455,4 +463,7 @@ export interface Transport {
   onWindowAppearanceChanged(
     cb: (event: WindowAppearanceChanged) => void
   ): Unsubscribe;
+  /** Native visibility, including occlusion, rather than WKWebView document visibility. */
+  onWindowVisibility(cb: (visible: boolean) => void): Unsubscribe;
+  windowVisible(): Promise<boolean>;
 }

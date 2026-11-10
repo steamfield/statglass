@@ -56,7 +56,13 @@ function message(status: RemoteUpdateStatus): string {
 }
 
 /** Mounted only while this host's settings are open; no SSH polling after closing. */
-export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
+export function RemoteUpdateSettings({
+  hostId,
+  disabled = false,
+}: {
+  hostId: string;
+  disabled?: boolean;
+}) {
   const transport = useTransport();
   const cache = useQueryClient();
   const key = hostKeys.updates(hostId);
@@ -88,9 +94,9 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
   };
   const current = status.data;
   return (
-    <div className="-mx-4">
+    <div>
       <SettingsRow
-        label="Updates on this host"
+        label="Update status"
         sub={
           <span role="status">
             {status.isPending
@@ -121,7 +127,7 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
         <Button
           size="sm"
           variant="outline"
-          disabled={status.isFetching || saving}
+          disabled={disabled || status.isFetching || saving}
           onClick={() => void status.refetch()}
         >
           Refresh
@@ -133,7 +139,7 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
             <Switch
               aria-label="Check for host updates automatically"
               checked={current.check_updates}
-              disabled={saving || status.isFetching}
+              disabled={disabled || saving || status.isFetching}
               onCheckedChange={(on) =>
                 void update(on, current.auto_install_updates)
               }
@@ -143,7 +149,12 @@ export function RemoteUpdateSettings({ hostId }: { hostId: string }) {
             <Switch
               aria-label="Install host updates automatically"
               checked={current.auto_install_updates}
-              disabled={saving || status.isFetching || !current.check_updates}
+              disabled={
+                disabled ||
+                saving ||
+                status.isFetching ||
+                !current.check_updates
+              }
               onCheckedChange={(on) => void update(current.check_updates, on)}
             />
           </SettingsRow>

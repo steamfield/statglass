@@ -50,8 +50,7 @@ function mount(source: MockTransport) {
 }
 
 function hostRow(name = "Studio Mac") {
-  const row = screen.getByRole("heading", { name }).parentElement
-    ?.parentElement;
+  const row = screen.getByRole("region", { name });
   if (!row) throw new Error(`Missing host row: ${name}`);
   return within(row);
 }
@@ -62,7 +61,7 @@ describe("remote Mac recovery workflows", () => {
     const source = transport();
     mount(source);
     await screen.findByRole("heading", { name: "Studio Mac" });
-    fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
+    fireEvent.click(hostRow().getByRole("button", { name: /^Settings for / }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "o'brien@studio.local" },
     });
@@ -318,15 +317,15 @@ describe("remote Mac recovery workflows", () => {
     const source = transport();
     mount(source);
     await screen.findByRole("heading", { name: "Studio Mac" });
-    fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
+    fireEvent.click(hostRow().getByRole("button", { name: /^Settings for / }));
     for (const value of ["", "9", "10001", "10.5"]) {
-      fireEvent.change(screen.getByLabelText("History limit (MB)"), {
+      fireEvent.change(screen.getByLabelText("Size limit"), {
         target: { value },
       });
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
       expect(screen.getByRole("alert")).toHaveTextContent("10 to 10,000 MB");
     }
-    fireEvent.change(screen.getByLabelText("History limit (MB)"), {
+    fireEvent.change(screen.getByLabelText("Size limit"), {
       target: { value: "10000" },
     });
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
@@ -345,8 +344,10 @@ describe("remote Mac recovery workflows", () => {
       const source = transport();
       mount(source);
       await screen.findByRole("heading", { name: "Studio Mac" });
-      fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
-      fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+      fireEvent.click(
+        hostRow().getByRole("button", { name: /^Settings for / })
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
       expect(
         screen.getByLabelText("Also stop sharing on that Mac")
       ).toBeChecked();
@@ -377,8 +378,8 @@ describe("remote Mac recovery workflows", () => {
     };
     mount(source);
     await screen.findByRole("heading", { name: "Studio Mac" });
-    fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    fireEvent.click(hostRow().getByRole("button", { name: /^Settings for / }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     await waitFor(() =>
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
@@ -469,7 +470,7 @@ describe("remote Mac recovery workflows", () => {
     );
     expect(hostRow().getByText("Offline")).toBeInTheDocument();
     fireEvent.click(hostRow().getByRole("button", { name: "Retry" }));
-    await screen.findByText("LAN · connected");
+    await screen.findByText("LAN");
     expect(hostRow().getByText("18%")).toBeInTheDocument();
     expect(hostRow().getByText("42%")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -495,8 +496,8 @@ describe("remote Mac recovery workflows", () => {
     ).toHaveTextContent("Studio Mac");
     fireEvent.click(screen.getByRole("link", { name: "Hosts" }));
     await screen.findByRole("heading", { name: "Hosts" });
-    fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    fireEvent.click(hostRow().getByRole("button", { name: /^Settings for / }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
     expect(
       screen.getByLabelText("Delete mirrored history from this Mac")
     ).not.toBeChecked();
@@ -507,7 +508,7 @@ describe("remote Mac recovery workflows", () => {
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Name")).toHaveValue("Studio Mac");
-    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     await waitFor(() =>
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()

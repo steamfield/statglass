@@ -12,8 +12,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use serde::Serialize;
 use tauri::{
-    AppHandle, LogicalPosition, Manager, TitleBarStyle, WebviewUrl, WebviewWindow,
+    AppHandle, LogicalPosition, Manager, State, TitleBarStyle, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, Window,
 };
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -22,6 +23,29 @@ use tauri_specta::Event;
 use crate::error::CommandError;
 use crate::ipc::NavigateRequested;
 use crate::state::AppState;
+
+/// Sent only to the window whose native visibility changed.
+#[derive(Clone, Debug, Serialize, specta::Type, Event)]
+pub struct WindowVisibilityChanged {
+    pub visible: bool,
+}
+
+pub fn install_visibility_events(app: &AppHandle) {
+    let handle = app.clone();
+    app.state::<AppState>()
+        .live
+        .set_visibility_emitter(move |label, event| {
+            if let Err(error) = event.emit_to(&handle, label) {
+                tracing::warn!(label, %error, "sending window visibility");
+            }
+        });
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn window_visible(window: WebviewWindow, state: State<'_, AppState>) -> bool {
+    state.live.is_visible(window.label())
+}
 
 pub const DASHBOARD: &str = "dashboard";
 pub const ONBOARDING: &str = "onboarding";

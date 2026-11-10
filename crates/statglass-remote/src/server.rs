@@ -336,7 +336,7 @@ impl<W: AsyncWrite + Unpin> Connection<W> {
                         .iter()
                         .cloned()
                         .zip(frame.held.iter().copied())
-                        .filter(|(key, _)| self.headline.contains(&key.metric.as_str()))
+                        .filter(|(key, _)| headline_series(self.headline, key))
                         .collect(),
                 }),
             )
@@ -351,6 +351,14 @@ impl<W: AsyncWrite + Unpin> Connection<W> {
 pub fn headline_metrics(os: OsKind) -> &'static [&'static str] {
     const MAC: &[&str] = &[
         "cpu.total",
+        "cpu.loadavg",
+        "mem.pressure_level",
+        "mem.psi",
+        "disk.used",
+        "disk.free",
+        "disk.total",
+        "net.rx_total",
+        "net.tx_total",
         "mem.used",
         "mem.pressure",
         "gpu.util",
@@ -363,6 +371,16 @@ pub fn headline_metrics(os: OsKind) -> &'static [&'static str] {
     match os {
         OsKind::MacOs | OsKind::Linux | OsKind::Unknown => MAC,
     }
+}
+
+pub fn headline_series(metrics: &[&str], key: &statglass_schema::SeriesKey) -> bool {
+    metrics.contains(&key.metric.as_str())
+        && match key.metric.as_str() {
+            "cpu.loadavg" => key.labels.get("window") == Some("1"),
+            "mem.psi" => key.labels.get("stall") == Some("some"),
+            "disk.used" | "disk.free" | "disk.total" => key.labels.get("vol") == Some("/"),
+            _ => true,
+        }
 }
 
 async fn send_frame<W: AsyncWrite + Unpin>(
@@ -779,5 +797,40 @@ pub(crate) mod tests {
             Err(RemoteError::Incompatible(_))
         ));
         assert!(p.interests.lock_ok().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod headline_tests {
+    use super::*;
+    use statglass_schema::{Catalog, SeriesKey};
+    #[test]
+    fn headline_metrics_carry_host_vitals_and_only_the_boot_volume() {
+        for os in [OsKind::MacOs, OsKind::Linux] {
+            let metrics = headline_metrics(os);
+            for key in [
+                "cpu.loadavg{window=1}",
+                "mem.pressure_level",
+                "mem.psi{stall=some}",
+                "disk.used{vol=/}",
+                "disk.free{vol=/}",
+                "disk.total{vol=/}",
+                "net.rx_total",
+                "net.tx_total",
+            ] {
+                let key = SeriesKey::parse(key).unwrap();
+                Catalog::builtin().validate(&key).unwrap();
+                assert!(headline_series(metrics, &key), "{key:?}");
+            }
+            for key in [
+                "disk.used{vol=/data}",
+                "disk.free{vol=/data}",
+                "disk.total{vol=/data}",
+                "cpu.loadavg{window=5}",
+                "mem.psi{stall=full}",
+            ] {
+                assert!(!headline_series(metrics, &SeriesKey::parse(key).unwrap()));
+            }
+        }
     }
 }

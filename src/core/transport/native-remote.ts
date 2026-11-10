@@ -4,6 +4,9 @@ import type { Transport } from "./contracts";
 export function nativeRemote(): Pick<
   Transport,
   | "listRemoteHosts"
+  | "localRrJob"
+  | "hostVitals"
+  | "setHostsRecentInterest"
   | "getRemoteUpdateStatus"
   | "setRemoteUpdatePolicy"
   | "inspectRemoteSshHost"
@@ -22,6 +25,9 @@ export function nativeRemote(): Pick<
   | "repairRemoteHost"
 > {
   return {
+    localRrJob: () => commands.localRrJob(),
+    hostVitals: (host) => commands.hostVitals(host),
+    setHostsRecentInterest: (on) => commands.setHostsRecentInterest(on),
     listRemoteHosts: () => commands.listRemoteHosts(),
     getRemoteUpdateStatus: (id) => commands.getRemoteUpdateStatus(id),
     setRemoteUpdatePolicy: (id, checkUpdates, autoInstallUpdates) =>
@@ -31,8 +37,14 @@ export function nativeRemote(): Pick<
     acceptRemoteSshHost: (token) => commands.acceptRemoteSshHost(token),
     prepareRemoteHost: (lan, tailscale) =>
       commands.prepareRemoteHost(lan, tailscale),
-    addRemoteHost: (config, install, showMenuBar, setupId) =>
-      commands.addRemoteHost(config, install, showMenuBar, setupId),
+    addRemoteHost: (config, install, showMenuBar, setupId, reinstall) =>
+      commands.addRemoteHost(
+        config,
+        install,
+        showMenuBar,
+        setupId,
+        reinstall ?? null
+      ),
     cancelRemoteSetup: (setupId) => commands.cancelRemoteSetup(setupId),
     updateRemoteHost: (config) => commands.updateRemoteHost(config),
     removeRemoteHost: (

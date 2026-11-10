@@ -101,6 +101,12 @@ pub struct RemoteManager {
     setups: Mutex<BTreeMap<String, tokio::sync::watch::Sender<bool>>>,
     trust: Mutex<BTreeMap<String, (std::time::Instant, statglass_remote::trust::TrustCandidate)>>,
     statuses: Mutex<BTreeMap<HostId, RemoteHostStatus>>,
+    emitted_clock_offsets: Mutex<BTreeMap<HostId, f64>>,
+    updates: Mutex<BTreeMap<HostId, progress::TrackedUpdate>>,
+    rr: Mutex<BTreeMap<HostId, statglass_remote::rr::RrJob>>,
+    rr_sessions: Mutex<BTreeMap<HostId, Uuid>>,
+    rr_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    event_pending: std::sync::atomic::AtomicBool,
     mirrors: Mutex<BTreeMap<HostId, RegisteredMirror>>,
     sources: Mutex<BTreeMap<HostId, Arc<RemoteSource>>>,
     monitor: Mutex<Option<crate::remote_network::Monitor>>,
@@ -148,7 +154,10 @@ impl RemoteManager {
     pub(crate) fn cli_view(&self, host: HostId) -> Option<(bool, RemoteHostStatus)> {
         let enabled = self.saved.lock_ok().get(&host)?.config.enabled;
         let status = self.statuses.lock_ok().get(&host).cloned();
-        Some((enabled, status.unwrap_or_default()))
+        let mut status = status.unwrap_or_default();
+        self.apply_update(host, &mut status);
+        self.apply_rr(host, &mut status);
+        Some((enabled, status))
     }
     /// Every saved host's record, registered or not.
     pub(crate) fn saved_records(&self) -> Vec<HostRecord> {
@@ -314,10 +323,13 @@ fn validate(c: &RemoteHostConfig) -> Result<(), CommandError> {
 mod agent_bundle;
 mod commands;
 mod contracts;
+mod progress;
 mod registration;
+mod rr;
 mod server;
 mod setup;
 mod update_controls;
+mod vitals;
 pub use commands::*;
 pub use contracts::*;
 use registration::{discard_host_async, register};
@@ -327,6 +339,7 @@ pub use setup::*;
 #[cfg(test)]
 use setup::{most_actionable, setup_step};
 pub use update_controls::*;
+pub use vitals::{HostVitals, MemoryPressure};
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;

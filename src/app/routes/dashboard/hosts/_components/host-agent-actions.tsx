@@ -3,15 +3,13 @@ import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { toast } from "sonner";
 import { ConfirmDialog } from "~/components/confirm-dialog";
-import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
+
 import { RemoteSetupError } from "./remote-setup-error";
-import { pushable, useAgentUpdate, useAgentUpdating } from "./use-agent-update";
 
 /** Re-pairs a host that answers with a new identity, after saying what happens to the old one. */
-function RepairDialog({
+export function RepairDialog({
   remote,
   close,
 }: {
@@ -57,49 +55,5 @@ function RepairDialog({
     >
       {error && <RemoteSetupError error={error} />}
     </ConfirmDialog>
-  );
-}
-
-/** The host-list actions a host's status offers: an agent update, or re-pairing. */
-export function HostAgentActions({
-  remote,
-  onError,
-}: {
-  remote: RemoteHostRecord;
-  onError: (message: string | null) => void;
-}) {
-  const agentUpdate = useAgentUpdate();
-  const updating = useAgentUpdating(remote.config.id);
-  const [repairing, setRepairing] = useState(false);
-  const update = async () => {
-    onError(null);
-    const error = await agentUpdate.mutateAsync(remote.config.id);
-    if (error) onError(error);
-    else
-      toast.success(
-        "Update requested. The host finishes the update independently; its settings show the result."
-      );
-  };
-  return (
-    <>
-      {remote.status.identity_changed !== null && (
-        <Button size="sm" variant="outline" onClick={() => setRepairing(true)}>
-          Re-pair…
-        </Button>
-      )}
-      {pushable(remote) && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={updating}
-          onClick={update}
-        >
-          {updating ? "Updating agent…" : "Update agent"}
-        </Button>
-      )}
-      {repairing && (
-        <RepairDialog remote={remote} close={() => setRepairing(false)} />
-      )}
-    </>
   );
 }

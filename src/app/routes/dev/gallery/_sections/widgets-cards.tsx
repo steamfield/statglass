@@ -1,6 +1,7 @@
 import { formatRate } from "@core/format";
 import { COMPACT_PLOT_INSET } from "~/components/charts/layout";
 import { MirrorChart } from "~/components/charts/mirror-chart";
+import { AlertChip } from "~/widgets/alert-chip";
 import { Card } from "~/widgets/card";
 import { CoreTiles } from "~/widgets/core-tiles";
 import { InitialChip } from "~/widgets/initial-chip";
@@ -34,6 +35,7 @@ import { RingGauge } from "~/widgets/ring-gauge";
 import { RingStatCard } from "~/widgets/ring-stat-card";
 import { StackBar } from "~/widgets/stack-bar";
 import { StatList } from "~/widgets/stat-list";
+import { StatusDot } from "~/widgets/status-dot";
 import { StatusPill } from "~/widgets/status-pill";
 import { StreamArea } from "~/widgets/stream-area";
 import { GalleryItem } from "../_components/gallery-item";
@@ -215,6 +217,25 @@ export function WidgetsCardsSection() {
             </div>
           </GalleryItem>
         </div>
+      </div>
+
+      <div className="flex items-start gap-8">
+        <GalleryItem name="AlertChip" usedIn="Overview · Memory">
+          <div className="flex items-center gap-3">
+            <AlertChip tone="warn" text="Pressure: warn" />
+            <AlertChip tone="critical" text="Pressure: critical" />
+          </div>
+        </GalleryItem>
+        <GalleryItem name="StatusDot" usedIn="StatusPill · Sidebar">
+          <div className="flex items-center gap-3 text-label text-muted-foreground">
+            {(["live", "idle", "paused", "stale"] as const).map((state) => (
+              <span key={state} className="inline-flex items-center gap-1.5">
+                <StatusDot state={state} />
+                {state}
+              </span>
+            ))}
+          </div>
+        </GalleryItem>
       </div>
 
       <GalleryItem name="StatList" usedIn="CPU · Power & Sensors">

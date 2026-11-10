@@ -75,9 +75,34 @@ pub(crate) async fn upload_with(
     bytes: &[u8],
     sha256_hex: &str,
 ) -> Result<()> {
+    upload_progress(remote, target, bytes, sha256_hex, &|_| {}).await
+}
+
+pub(crate) async fn upload_progress(
+    remote: &impl Remote,
+    target: &AgentTarget,
+    bytes: &[u8],
+    sha256_hex: &str,
+    progress: &(dyn Fn(super::UpdateStep) + Send + Sync),
+) -> Result<()> {
+    let total_bytes = bytes.len() as u64;
+    let sent = |sent_bytes| {
+        progress(super::UpdateStep::Uploading {
+            sent_bytes,
+            total_bytes,
+        });
+        if sent_bytes == total_bytes {
+            progress(super::UpdateStep::Installing);
+        }
+    };
+    sent(0);
     let script = upload_script(target, sha256_hex)?;
     let output = remote
-        .exec(&sh_c(&script)?, Stdin::Bytes(bytes), UPLOAD_TIMEOUT)
+        .exec(
+            &sh_c(&script)?,
+            Stdin::CountingBytes { bytes, sent: &sent },
+            UPLOAD_TIMEOUT,
+        )
         .await?;
     match output.code {
         Some(0) => Ok(()),

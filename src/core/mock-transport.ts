@@ -95,6 +95,7 @@ import { MockShell } from "./mock/shell";
 import { MockStore } from "./mock/store";
 import { MockStream } from "./mock/stream";
 import { MockUsageQueries } from "./mock/usage-queries";
+import { mockVisibility } from "./mock/visibility";
 export function createMockTransport(
   options: MockTransportOptions = {}
 ): MockTransport {
@@ -188,6 +189,7 @@ export function createMockTransport(
     ...ring.methods,
     ...docker.methods,
     ...createMockDiskSpace(scenarios, now, remote.remotes, options.spaceScan),
+    ...mockVisibility(power, stream, emitters),
     onNavigateRequested: emitters.navigate.on,
     onSettingsChanged: emitters.settings.on,
     onHistoryHealthChanged: emitters.health.on,
@@ -196,9 +198,7 @@ export function createMockTransport(
     onHostsChanged: emitters.hosts.on,
     onWindowAppearanceChanged: emitters.appearance.on,
     dispose() {
-      docker.dispose();
-      stream.dispose();
-      remote.dispose();
+      for (const source of [docker, stream, remote]) source.dispose();
       for (const e of Object.values(emitters)) e.clear();
     },
   };

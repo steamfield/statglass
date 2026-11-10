@@ -1,5 +1,4 @@
 import { formatPercent } from "@core/format";
-import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
 import { MEMORY_PRESSURE_HERO } from "~/components/module-hero";
@@ -7,7 +6,7 @@ import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
 import { Swap } from "~/lib/motion/swap";
-import { cn } from "~/lib/utils";
+import { AlertChip } from "~/widgets/alert-chip";
 import { pressureState } from "../_lib/pressure";
 
 const HEIGHT = 160;
@@ -43,22 +42,12 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
         aside={
           <span className="flex items-baseline gap-3">
             {(state === "warn" || state === "critical") && (
-              <Swap
-                k={state}
-                className={cn(
-                  "inline-flex items-center gap-1 text-small",
-                  state === "warn" ? "text-warning" : "text-destructive"
-                )}
-              >
-                {state === "warn" ? (
-                  <TriangleAlert
-                    aria-hidden
-                    className="icon-regular size-3.5"
-                  />
-                ) : (
-                  <OctagonAlert aria-hidden className="icon-regular size-3.5" />
-                )}
-                Pressure: {state}
+              <Swap k={state} className="inline-flex">
+                <AlertChip
+                  size="small"
+                  tone={state}
+                  text={`Pressure: ${state}`}
+                />
               </Swap>
             )}
             <span className="figures text-body">

@@ -1,5 +1,13 @@
 //! Host-list and trust commands; Tauri state and event effects stay in the shell.
 use super::*;
+use statglass_remote::rr::RrJob;
+
+#[tauri::command]
+#[specta::specta]
+pub fn local_rr_job(state: State<'_, AppState>) -> Option<RrJob> {
+    state.remotes.rr.lock_ok().get(&state.local).cloned()
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
@@ -11,25 +19,12 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
         .iter()
         .map(|(id, h)| {
             let mut status = statuses.get(id).cloned().unwrap_or_default();
+            state.remotes.apply_update(*id, &mut status);
+            state.remotes.apply_rr(*id, &mut status);
             if let Ok(entry) = state.host(*id)
                 && let Some(frame) = entry.latest_frame()
             {
-                let value = |metric: &str| {
-                    frame
-                        .layout
-                        .series
-                        .iter()
-                        .position(|key| key.metric.as_str() == metric && key.labels.is_empty())
-                        .and_then(|i| frame.held.get(i))
-                        .copied()
-                        .filter(|v| v.is_finite())
-                        .map(f64::from)
-                };
-                status.cpu_pct = value("cpu.total");
-                if h.record.info.mem_total_bytes > 0 {
-                    status.memory_pct = value("mem.used")
-                        .map(|used| used / h.record.info.mem_total_bytes as f64 * 100.0);
-                }
+                status.vitals = super::vitals::host_vitals(Some(&frame), *id, &entry.record().info);
             }
             RemoteHostRecord {
                 config: h.config.clone(),
@@ -38,6 +33,33 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
             }
         })
         .collect()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn host_vitals(state: State<'_, AppState>, host: HostId) -> Result<HostVitals, CommandError> {
+    let entry = state.host(host)?;
+    Ok(super::vitals::host_vitals(
+        entry.latest_frame().as_deref(),
+        host,
+        &entry.record().info,
+    ))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_hosts_recent_interest(
+    window: tauri::Window,
+    state: State<'_, AppState>,
+    on: bool,
+) -> Result<(), CommandError> {
+    if window.label() != "dashboard" {
+        return Err(CommandError::InvalidArgument {
+            message: "Host history interest belongs to the dashboard".into(),
+        });
+    }
+    state.live.set_hosts_recent_interest(window.label(), on);
+    Ok(())
 }
 
 fn notice_path(app: &AppHandle) -> Result<PathBuf, CommandError> {

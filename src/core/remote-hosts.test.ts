@@ -1,14 +1,25 @@
 import type {
   AgentUpdate,
+  AgentUpdateVia,
   RemoteHostRecord,
+  RemoteRoute,
   RemoteState,
+  RemoteSync,
+  UpdatePhase,
   UpdateStatus,
 } from "@core/generated/bindings";
+import { mockHostVitals } from "./mock/remote-updates";
 import {
   agentVersionLine,
+  agentVersionState,
+  connectionLabel,
   hostUpdateNotice,
   localUpdateTarget,
+  pushable,
+  reachable,
   releaseUrl,
+  routeLabel,
+  updatePhaseText,
 } from "./remote-hosts";
 
 function host(
@@ -32,12 +43,14 @@ function host(
       error: null,
       sync: "current",
       clock_offset_ms: 0,
-      cpu_pct: null,
-      memory_pct: null,
       agent_version:
         "installed" in agent_update ? agent_update.installed : null,
       agent_update,
       identity_changed: null,
+      rr: null,
+      vitals: mockHostVitals(true),
+      update: null,
+      last_update_failure: null,
     },
   };
 }
@@ -111,43 +124,98 @@ describe("localUpdateTarget", () => {
 });
 
 describe("agentVersionLine", () => {
-  it("shows the installed and installable versions", () => {
+  it("shares the current and available copy with cards", () => {
     expect(agentVersionLine(behind, null)?.text).toBe(
-      "StatGlass 0.3.0 → 0.3.1 available"
+      "StatGlass 0.3.0 · 0.3.1 available"
     );
     expect(agentVersionLine(current, "0.3.2")?.text).toBe(
-      "StatGlass 0.3.1 · 0.3.2 after updating this Mac"
+      "StatGlass 0.3.1 · Latest · 0.3.2 after updating this Mac"
     );
-    expect(agentVersionLine(host({ kind: "unknown" }), null)).toBeNull();
-  });
-
-  it("marks an offline host's version as last reported", () => {
-    const offline = host({ kind: "up_to_date", installed: "0.3.1" }, "offline");
-    expect(agentVersionLine(offline, null)?.text).toBe(
-      "StatGlass 0.3.1 (last reported)"
+    expect(agentVersionLine(host({ kind: "unknown" }), null)?.text).toBe(
+      "Version not reported yet"
     );
   });
-
-  it("flags a host that can't connect", () => {
+  it("defers offline updates and offers a reinstall for a reachable Mac", () => {
+    const offline = host(behind.status.agent_update, "offline");
+    expect(agentVersionState(offline)).toMatchObject({
+      text: "StatGlass 0.3.0 · 0.3.1 available, updates once reachable",
+      action: null,
+    });
     expect(
-      agentVersionLine(
-        { ...blocked, status: { ...blocked.status, state: "error" } },
-        null
+      agentVersionState(
+        host({
+          kind: "available",
+          installed: "0.3.0",
+          target: "0.3.1",
+          via: "add_host",
+        })
       )
-    ).toEqual({
-      text: "StatGlass 0.2.0 can’t connect to this version. Update it to 0.3.1.",
-      tone: "destructive",
+    ).toMatchObject({
+      action: { kind: "add_host", label: "Reinstall 0.3.1…" },
     });
   });
-
-  it("points a Mac host at Add host", () => {
-    const mac = host({
-      kind: "available",
-      installed: "0.3.0",
-      target: "0.3.1",
-      via: "add_host",
+  it("offers updates to incompatible hosts, and names newer hosts", () => {
+    expect(agentVersionState(blocked)).toMatchObject({
+      text: "Needs 0.3.1 to connect",
+      action: { kind: "push", label: "Update to 0.3.1" },
     });
-    expect(agentVersionLine(mac, null)?.text).toContain("from Add host");
+    expect(
+      agentVersionState(host({ kind: "newer_than_this", installed: "0.4.0" }))
+        .text
+    ).toBe("StatGlass 0.4.0 · Newer than this Mac");
+  });
+  it("keeps disabled and identity-changed hosts out of updates", () => {
+    expect(
+      agentVersionState({
+        ...behind,
+        config: { ...behind.config, enabled: false },
+      }).action
+    ).toBeNull();
+    expect(
+      agentVersionState({
+        ...behind,
+        status: { ...behind.status, identity_changed: "new" },
+      }).action
+    ).toBeNull();
+  });
+  it.each<[UpdatePhase, string]>([
+    [{ kind: "queued" }, "Waiting for another update"],
+    [{ kind: "probing" }, "Checking the host"],
+    [
+      { kind: "uploading", sent_bytes: 6100000, total_bytes: 9400000 },
+      "Uploading 6.1 of 9.4 MB",
+    ],
+    [{ kind: "installing" }, "Installing"],
+    [{ kind: "restarting" }, "Restarting"],
+    [{ kind: "reconnecting" }, "Reconnecting"],
+    [{ kind: "unknown" }, "Updating"],
+  ])("names update phase %o", (phase, text) => {
+    expect(updatePhaseText(phase)).toBe(text);
+    expect(
+      agentVersionState({
+        ...behind,
+        status: { ...behind.status, update: { target: "0.3.1", phase } },
+      }).text
+    ).toBe(`Updating to 0.3.1 · ${text}`);
+  });
+  it("names failures and offers a retry", () => {
+    expect(
+      agentVersionState({
+        ...behind,
+        status: {
+          ...behind.status,
+          last_update_failure: {
+            via: "push",
+            target: "0.3.1",
+            message: "timeout",
+          },
+        },
+      })
+    ).toMatchObject({
+      text: "Update to 0.3.1 failed",
+      icon: "error",
+      action: { label: "Retry update" },
+    });
   });
 });
 
@@ -158,4 +226,123 @@ describe("releaseUrl", () => {
     );
     expect(releaseUrl("0.3.1/../../settings")).toBeNull();
   });
+});
+
+it("offers failed-update recovery while monitoring is disconnected", () => {
+  const remote: RemoteHostRecord = {
+    ...behind,
+    status: {
+      ...behind.status,
+      state: "offline",
+      last_update_failure: {
+        via: "push",
+        target: "0.3.1",
+        message: "The new agent did not reconnect",
+      },
+    },
+  };
+  expect(agentVersionState(remote).action).toEqual({
+    kind: "push",
+    label: "Retry update",
+  });
+  expect(
+    agentVersionState({
+      ...remote,
+      config: { ...remote.config, enabled: false },
+    }).action
+  ).toBeNull();
+  expect(
+    agentVersionState({
+      ...remote,
+      status: { ...remote.status, identity_changed: "new-id" },
+    }).action
+  ).toBeNull();
+});
+
+it.each<AgentUpdateVia>(["push", "add_host"])(
+  "uses the recorded failure route %s regardless of OS or current version state",
+  (via) => {
+    const systems: RemoteHostRecord["os"][] = ["linux", "mac_os"];
+    for (const os of systems) {
+      for (const agent_update of [
+        current.status.agent_update,
+        behind.status.agent_update,
+      ]) {
+        const remote: RemoteHostRecord = {
+          ...current,
+          os,
+          status: {
+            ...current.status,
+            agent_update,
+            last_update_failure: { target: "1.0.0", message: "timeout", via },
+          },
+        };
+        expect(agentVersionState(remote).action).toEqual({
+          kind: via,
+          label: "Retry update",
+        });
+      }
+    }
+  }
+);
+
+describe("route labels", () => {
+  it.each<[RemoteRoute, RemoteSync, string, string]>([
+    ["lan", "current", "LAN", "LAN · connected"],
+    ["lan", "idle", "LAN", "LAN · connected"],
+    ["tailscale", "current", "Tailscale", "Tailscale · connected"],
+    [
+      "lan",
+      "catching_up",
+      "LAN · catching up history",
+      "LAN · catching up history",
+    ],
+    [
+      "tailscale",
+      "unavailable",
+      "Tailscale · history unavailable",
+      "Tailscale · history unavailable",
+    ],
+  ])(
+    "shares %s / %s copy without stripping connection text",
+    (route, sync, label, connected) => {
+      const remote = host({ kind: "unknown" });
+      remote.status.route = route;
+      remote.status.sync = sync;
+      expect(routeLabel(remote)).toBe(label);
+      expect(connectionLabel(remote)).toBe(connected);
+      remote.status.state = "offline";
+      expect(connectionLabel(remote)).toBe("Offline");
+    }
+  );
+});
+
+it("shares the update-all reachability and push eligibility predicates", () => {
+  const remote = host({
+    kind: "available",
+    installed: "0.1.0",
+    target: "0.2.0",
+    via: "push",
+  });
+  expect(pushable(remote)).toBe(true);
+  expect(reachable(remote)).toBe(true);
+  expect(agentVersionState(remote).action?.kind).toBe("push");
+  remote.status.state = "offline";
+  expect(reachable(remote)).toBe(false);
+  expect(agentVersionState(remote).action).toBeNull();
+  remote.status.agent_update = {
+    kind: "required",
+    installed: "0.1.0",
+    target: "0.2.0",
+    via: "push",
+  };
+  expect(reachable(remote)).toBe(true);
+  expect(agentVersionState(remote).action?.kind).toBe("push");
+  remote.config.enabled = false;
+  expect(pushable(remote)).toBe(false);
+  expect(agentVersionState(remote).action).toBeNull();
+  remote.config.enabled = true;
+  remote.status.identity_changed = "other";
+  expect(pushable(remote)).toBe(false);
+  expect(agentVersionState(remote).action).toBeNull();
 });

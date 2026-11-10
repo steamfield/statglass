@@ -19,6 +19,7 @@ use tokio::{sync::watch, time::Instant};
 
 mod control;
 mod queries;
+mod recent;
 mod status;
 use control::Control;
 pub use status::ConnectionStatus;
@@ -27,6 +28,7 @@ pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
 #[derive(Clone, Default)]
 struct ControlState {
     interest: RemoteInterest,
+    recent_interest: bool,
     stop: bool,
     asleep: bool,
     retry: u64,
@@ -85,6 +87,14 @@ impl RemoteSource {
     }
     pub fn set_controller_on_battery(&self, on_battery: bool) {
         self.controller_battery.store(on_battery, Ordering::Relaxed);
+    }
+    /// Summary history demand is independent of the wire's detail interest.
+    pub fn set_recent_interest(&self, on: bool) {
+        self.control.send_if_modified(|s| {
+            let changed = s.recent_interest != on;
+            s.recent_interest = on;
+            changed
+        });
     }
     pub fn sleep(&self) {
         self.control.send_modify(|s| s.asleep = true);
@@ -298,6 +308,7 @@ async fn session_loop(
         timed_out: HashMap::new(),
         history_available: false,
         history_failed: false,
+        watermark_failed: false,
         floors: HashMap::new(),
         restart_cursor: HashSet::new(),
         last_recent: Instant::now() - Duration::from_secs(60),
@@ -365,6 +376,7 @@ struct Session<'a> {
     timed_out: HashMap<Tier, Instant>,
     history_available: bool,
     history_failed: bool,
+    watermark_failed: bool,
     floors: HashMap<Tier, i64>,
     restart_cursor: HashSet<Tier>,
     last_recent: Instant,
@@ -419,6 +431,7 @@ impl Session<'_> {
                     Ok(cursor) => cursor,
                     Err(error) => {
                         self.history_failed = true;
+                        self.watermark_failed = false;
                         self.status.history_error = Some(error.to_string());
                         self.status.catching_up = false;
                         (self.source.on_status)(self.status.clone());
@@ -635,11 +648,13 @@ impl Session<'_> {
             Message::SourceStatus(wire) => {
                 self.history_available = wire.history_available;
                 if !self.history_available {
+                    self.watermark_failed = false;
                     self.status.history_error =
                         Some("Remote history is disabled or unavailable".into());
                 } else if self.status.history_error.as_deref()
                     == Some("Remote history is disabled or unavailable")
                 {
+                    self.watermark_failed = false;
                     self.status.history_error = None;
                 }
                 let s = server::status_from_wire(wire);
@@ -748,10 +763,12 @@ impl Session<'_> {
                         self.history_failed = true;
                         self.next_tier = self.tiers.len();
                         self.last_sync = Instant::now();
+                        self.watermark_failed = false;
                         self.status.history_error = Some(error.to_string());
                         self.status.catching_up = false;
                         (self.source.on_status)(self.status.clone());
                     } else {
+                        self.watermark_failed = false;
                         self.status.history_error = None;
                     }
                 }
@@ -793,6 +810,7 @@ impl Session<'_> {
                     && let Err(error) = mirror.truncated(tier, self.epoch, earliest_ts_ms)
                 {
                     self.history_failed = true;
+                    self.watermark_failed = false;
                     self.status.history_error = Some(error.to_string());
                 }
                 self.floors.insert(tier, earliest_ts_ms);
@@ -820,7 +838,10 @@ impl Session<'_> {
                 }
                 if let Some(mirror) = self.source.mirror.clone() {
                     match mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows) {
-                        Err(error) => self.status.history_error = Some(error.to_string()),
+                        Err(error) => {
+                            self.watermark_failed = false;
+                            self.status.history_error = Some(error.to_string());
+                        }
                         Ok(()) if !self.ring_filled && self.control.borrow().interest.detail => {
                             self.refill_ring(mirror).await?;
                         }
@@ -841,6 +862,7 @@ impl Session<'_> {
                     self.next_tier = self.tiers.len();
                     self.last_sync = Instant::now();
                 }
+                self.watermark_failed = false;
                 self.status.history_error = Some(message);
                 self.status.catching_up = false;
                 (self.source.on_status)(self.status.clone());
@@ -851,10 +873,6 @@ impl Session<'_> {
         }
         Ok(SessionAction::Continue)
     }
-    #[expect(
-        clippy::too_many_lines,
-        reason = "split when substantially changed; architecture refactor section 10"
-    )]
     async fn tick(&mut self) -> Result<SessionAction> {
         // A reply that never arrives would otherwise park its tier (or recent history)
         // for the rest of the session; reconnecting resynchronizes the stream.
@@ -890,6 +908,7 @@ impl Session<'_> {
         if self.recent_pending && self.last_recent.elapsed() > Duration::from_secs(30) {
             self.recent_pending = false;
             self.recent_timed_out = Some(Instant::now());
+            self.watermark_failed = false;
             self.status.history_error = Some("recent history request timed out".into());
         }
         if self
@@ -903,6 +922,7 @@ impl Session<'_> {
             }
             self.next_tier = self.tiers.len();
             self.last_sync = Instant::now();
+            self.watermark_failed = false;
             self.status.history_error = Some("history request timed out".into());
             self.status.catching_up = false;
             (self.source.on_status)(self.status.clone());
@@ -924,6 +944,7 @@ impl Session<'_> {
                         .await
                         .map_err(|e| RemoteError::Transport(e.to_string()))?
                     {
+                        self.watermark_failed = false;
                         self.status.history_error = Some(error.to_string());
                     }
                 }
@@ -935,30 +956,7 @@ impl Session<'_> {
                 self.history_failed = false;
             }
         }
-        if self.history_available
-            && self.control.borrow().interest.detail
-            && self.last_recent.elapsed() >= Duration::from_secs(30)
-            && self.in_flight.is_none()
-            && !self.recent_pending
-            && self.recent_timed_out.is_none()
-            && self.next_tier >= self.tiers.len()
-        {
-            let now = self
-                .source
-                .clock
-                .now_ms()
-                .unwrap_or_else(statglass_engine::wall_ms);
-            codec::write(
-                &mut self.writer,
-                &Message::RecentRequest {
-                    from_ms: now.saturating_sub(300_000),
-                    to_ms: now,
-                },
-            )
-            .await?;
-            self.last_recent = Instant::now();
-            self.recent_pending = true;
-        }
+        self.request_recent().await?;
 
         Ok(SessionAction::Continue)
     }
@@ -1117,6 +1115,7 @@ mod tests {
             timed_out: HashMap::new(),
             history_available: true,
             history_failed: false,
+            watermark_failed: false,
             floors: HashMap::new(),
             restart_cursor: HashSet::new(),
             last_recent: Instant::now(),
@@ -1138,6 +1137,175 @@ mod tests {
             route: Route::Lan,
         }
     }
+    #[tokio::test(start_paused = true)]
+    async fn summary_recent_interest_refreshes_from_the_watermark_without_detail() {
+        struct Watermarked;
+        impl MirrorSink for Watermarked {
+            fn cursor(
+                &self,
+                _: Tier,
+                _: uuid::Uuid,
+                _: SyncKinds,
+            ) -> std::result::Result<Option<Cursor>, MirrorError> {
+                Ok(None)
+            }
+            fn ingest(&self, _: SyncPage, _: SyncKinds) -> std::result::Result<(), MirrorError> {
+                Ok(())
+            }
+            fn recent_watermark(&self) -> std::result::Result<Option<i64>, MirrorError> {
+                Ok(Some(8_990_000))
+            }
+        }
+        let source = fixture_source(Some(Arc::new(Watermarked)));
+        source.clock.observe(9_000_000);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus::default();
+        let (client, mut peer) = tokio::io::duplex(65536);
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> = Box::pin(client);
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        session.next_tier = session.tiers.len();
+        // Off sends nothing even after the interval; no pending reply is created.
+        tokio::time::advance(Duration::from_secs(15)).await;
+        session.request_recent().await.unwrap();
+        assert!(!session.recent_pending);
+        source.set_recent_interest(true);
+        session.request_recent().await.unwrap();
+        assert!(session.recent_pending);
+        let first_to = match codec::read(&mut peer).await.unwrap() {
+            Message::RecentRequest { from_ms, to_ms } => {
+                assert_eq!(from_ms, 8_990_000);
+                to_ms
+            }
+            other => panic!("expected recent request, got {other:?}"),
+        };
+        assert!(!source.control.borrow().interest.detail);
+        session.recent_pending = false; // The previous snapshot completed.
+        tokio::time::advance(Duration::from_secs(14)).await;
+        session.request_recent().await.unwrap();
+        assert!(!session.recent_pending);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        session.request_recent().await.unwrap();
+        assert!(
+            matches!(codec::read(&mut peer).await.unwrap(), Message::RecentRequest { from_ms: 8_990_000, to_ms } if to_ms >= first_to)
+        );
+        session.recent_pending = false;
+        source.set_recent_interest(false);
+        tokio::time::advance(Duration::from_secs(30)).await;
+        session.request_recent().await.unwrap();
+        assert!(!session.recent_pending);
+        // The original detail demand still sends its five-minute snapshot at 30 s.
+        source.control.send_modify(|s| s.interest.detail = true);
+        session.request_recent().await.unwrap();
+        assert!(
+            matches!(codec::read(&mut peer).await.unwrap(), Message::RecentRequest { from_ms, to_ms } if to_ms - from_ms == 300_000)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_recent_watermark_reports_history_trouble_without_stopping_live_metrics() {
+        watermark_recovers(false).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_watermark_error_clears_even_when_its_wording_changes() {
+        watermark_recovers(true).await;
+    }
+
+    async fn watermark_recovers(reword: bool) {
+        struct FailedMirror(std::sync::atomic::AtomicBool);
+        impl MirrorSink for FailedMirror {
+            fn cursor(
+                &self,
+                _: Tier,
+                _: uuid::Uuid,
+                _: SyncKinds,
+            ) -> std::result::Result<Option<Cursor>, MirrorError> {
+                Ok(None)
+            }
+            fn ingest(&self, _: SyncPage, _: SyncKinds) -> std::result::Result<(), MirrorError> {
+                Ok(())
+            }
+            fn recent_watermark(&self) -> std::result::Result<Option<i64>, MirrorError> {
+                if self.0.load(Ordering::SeqCst) {
+                    Err(MirrorError::InvalidInput("mirror read failed"))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+        let mirror = Arc::new(FailedMirror(std::sync::atomic::AtomicBool::new(true)));
+        let source = fixture_source(Some(mirror.clone()));
+        source.clock.observe(9_000_000);
+        source.set_recent_interest(true);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus {
+            connected: true,
+            ..Default::default()
+        };
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> =
+            Box::pin(tokio::io::sink());
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        session.next_tier = session.tiers.len();
+        tokio::time::advance(Duration::from_secs(15)).await;
+        assert!(
+            matches!(session.tick().await, Ok(SessionAction::Continue)),
+            "mirror errors must not disconnect the live session"
+        );
+        assert!(session.status.connected);
+        assert!(
+            session
+                .status
+                .history_error
+                .as_deref()
+                .unwrap()
+                .contains("mirror read failed")
+        );
+        assert!(!session.recent_pending);
+        session
+            .incoming(Some(Ok(Message::HostSummary(
+                statglass_proto::HostSummary {
+                    ts_ms: 9_000_000,
+                    online: true,
+                    headline: vec![(
+                        statglass_schema::SeriesKey::bare(statglass_schema::MetricId::from_static(
+                            "cpu.total",
+                        )),
+                        12.0,
+                    )],
+                },
+            ))))
+            .await
+            .unwrap();
+        assert_eq!(sink.live.latest_frame().unwrap().held[0], 12.0);
+        if reword {
+            session.status.history_error = Some("the watermark message was reworded".into());
+        }
+        mirror.0.store(false, Ordering::SeqCst);
+        tokio::time::advance(Duration::from_secs(15)).await;
+        session.request_recent().await.unwrap();
+        assert!(
+            session.status.history_error.is_none(),
+            "successful watermark read clears its error"
+        );
+        assert!(session.recent_pending);
+        session.recent_pending = false;
+        session.status.history_error = Some("another history error".into());
+        tokio::time::advance(Duration::from_secs(15)).await;
+        session.request_recent().await.unwrap();
+        assert_eq!(
+            session.status.history_error.as_deref(),
+            Some("another history error")
+        );
+    }
+
     struct CountingMirror(AtomicU32);
     impl MirrorSink for CountingMirror {
         fn cursor(

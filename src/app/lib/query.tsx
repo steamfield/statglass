@@ -8,9 +8,14 @@
  */
 import { appKeys, diskSpaceKeys, dockerKeys, hostKeys } from "@core/query-keys";
 import { CommandFailure } from "@core/transport";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
+import { type ReactNode, useEffect, useState } from "react";
 import { HISTORY_STALE_MS, QUERY_GC_MS } from "~/lib/queries/timing";
+import { useTransport } from "~/lib/transport-context";
 
 /** Command errors that a retry cannot fix. */
 const PERMANENT_ERRORS = new Set([
@@ -88,6 +93,48 @@ export function QueryProvider({
   client?: QueryClient;
   children: ReactNode;
 }) {
+  const transport = useTransport();
+  useEffect(() => {
+    focusManager.setEventListener((setFocused) => {
+      let active = true;
+      let receivedEvent = false;
+      let retry: ReturnType<typeof setTimeout> | undefined;
+      let attempts = 0;
+      setFocused(false);
+      const unsubscribe = transport.onWindowVisibility((visible) => {
+        if (!active) return;
+        receivedEvent = true;
+        clearTimeout(retry);
+        setFocused(visible);
+      });
+      const readVisibility = () => {
+        if (!active || receivedEvent) return;
+        void transport.windowVisible().then(
+          (visible) => {
+            if (active && !receivedEvent) setFocused(visible);
+          },
+          (error: unknown) => {
+            if (!active || receivedEvent) return;
+            console.error("[query] reading native window visibility", error);
+            retry = setTimeout(
+              readVisibility,
+              Math.min(getRetryDelay(attempts++), 30000)
+            );
+          }
+        );
+      };
+      readVisibility();
+      return () => {
+        active = false;
+        clearTimeout(retry);
+        unsubscribe();
+      };
+    });
+    return () => {
+      focusManager.setEventListener(() => () => {});
+      focusManager.setFocused(undefined);
+    };
+  }, [transport]);
   // One client per window, stable across re-renders.
   const [queryClient] = useState(() => client ?? makeQueryClient());
   return (

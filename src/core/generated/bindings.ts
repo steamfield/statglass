@@ -84,6 +84,15 @@ export const commands = {
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
+	hostVitals: (host: HostId) => typedError<HostVitals, CommandError>(__TAURI_INVOKE("host_vitals", { host })),
+	localRrJob: () => __TAURI_INVOKE<{
+	command: string | null,
+	user: string,
+	client_hostname: string,
+	started_ms: number,
+	peers: HostId[],
+} | null>("local_rr_job"),
+	setHostsRecentInterest: (on: boolean) => typedError<null, CommandError>(__TAURI_INVOKE("set_hosts_recent_interest", { on })),
 	/**  The host-update notice the user last dismissed, as `{variant}:{version}` (D-123). */
 	hostUpdateNoticeDismissed: () => typedError<string | null, CommandError>(__TAURI_INVOKE("host_update_notice_dismissed")),
 	dismissHostUpdateNotice: (key: string) => typedError<null, CommandError>(__TAURI_INVOKE("dismiss_host_update_notice", { key })),
@@ -93,7 +102,7 @@ export const commands = {
 	inspectRemoteSshHost: (alias: string) => typedError<RemoteSshHostTrust, CommandError>(__TAURI_INVOKE("inspect_remote_ssh_host", { alias })),
 	acceptRemoteSshHost: (token: string) => typedError<null, CommandError>(__TAURI_INVOKE("accept_remote_ssh_host", { token })),
 	prepareRemoteHost: (lan: string | null, tailscale: string | null) => typedError<RemoteHostPreparation, CommandError>(__TAURI_INVOKE("prepare_remote_host", { lan, tailscale })),
-	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId })),
+	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string, reinstall: string | null) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId, reinstall })),
 	cancelRemoteSetup: (setupId: string) => typedError<null, CommandError>(__TAURI_INVOKE("cancel_remote_setup", { setupId })),
 	updateRemoteHost: (config: RemoteHostConfig) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("update_remote_host", { config })),
 	/**
@@ -344,6 +353,7 @@ export const commands = {
 	 *  `window-appearance-changed` carries later changes.
 	 */
 	getWindowAppearance: () => __TAURI_INVOKE<WindowAppearance>("get_window_appearance"),
+	windowVisible: () => __TAURI_INVOKE<boolean>("window_visible"),
 	/**
 	 *  Open-latency probe: the popover page reports its first painted frame after a show.
 	 *  Rust injects the call itself (`popover::toggle`); pages never need to call it.
@@ -360,9 +370,11 @@ export const events = {
 	historyHealthChanged: makeEvent<HistoryHealthChanged>("history-health-changed"),
 	hostsChanged: makeEvent<HostsChanged>("hosts-changed"),
 	navigateRequested: makeEvent<NavigateRequested>("navigate-requested"),
+	remoteHostsChanged: makeEvent<RemoteHostsChanged>("remote-hosts-changed"),
 	settingsChanged: makeEvent<SettingsChanged>("settings-changed"),
 	updateStatusChanged: makeEvent<UpdateStatusChanged>("update-status-changed"),
 	windowAppearanceChanged: makeEvent<WindowAppearanceChanged>("window-appearance-changed"),
+	windowVisibilityChanged: makeEvent<WindowVisibilityChanged>("window-visibility-changed"),
 };
 
 /* Constants */
@@ -449,6 +461,17 @@ export type AgentUpdate =
 { kind: "required"; installed: string; target: string; via: AgentUpdateVia } |
 /**  The host is ahead; it is never downgraded. Updating this Mac catches up. */
 { kind: "newer_than_this"; installed: string };
+
+export type AgentUpdateFailure = {
+	via: AgentUpdateVia,
+	target: string,
+	message: string,
+};
+
+export type AgentUpdateProgress = {
+	target: string,
+	phase: UpdatePhase,
+};
 
 /**
  *  How a host gets this Mac's version: a Linux agent is pushed in place ("Update
@@ -1737,6 +1760,20 @@ export type HostRecord = {
 	info: HostInfo,
 };
 
+export type HostVitals = {
+	cpu_pct: number | null,
+	memory_pct: number | null,
+	load_1m: number | null,
+	cores: number | null,
+	memory_pressure: MemoryPressure | null,
+	disk_used_bytes: number | null,
+	disk_free_bytes: number | null,
+	disk_total_bytes: number | null,
+	disk_low: boolean,
+	net_rx_bps: number | null,
+	net_tx_bps: number | null,
+};
+
 /**
  *  Emitted when a host's record changes (the local host learns `chip_known` from its
  *  first capabilities), with every host, local first: what `list_hosts` returns now.
@@ -1999,6 +2036,8 @@ export type LiveStatus = {
 	 */
 	primary_iface: string | null,
 };
+
+export type MemoryPressure = { kind: "level"; level: number } | { kind: "stall"; some_pct: number | null } | { kind: "unknown" };
 
 /**  GB (10^9) or GiB (2^30). */
 export type MemoryUnit = "decimal" | "binary";
@@ -2588,8 +2627,10 @@ export type RemoteHostStatus = {
 	error: string | null,
 	sync: RemoteSync,
 	clock_offset_ms: number | null,
-	cpu_pct: number | null,
-	memory_pct: number | null,
+	vitals: HostVitals,
+	rr: RrJob | null,
+	update: AgentUpdateProgress | null,
+	last_update_failure: AgentUpdateFailure | null,
 	/**  The version the host last reported (`Hello.app_version`), kept across restarts. */
 	agent_version: string | null,
 	/**  How the host's StatGlass compares with the one this Mac can install (D-123). */
@@ -2600,6 +2641,8 @@ export type RemoteHostStatus = {
 	 */
 	identity_changed: string | null,
 };
+
+export type RemoteHostsChanged = Record<string, never>;
 
 export type RemoteRoute = "lan" | "tailscale";
 
@@ -2624,6 +2667,14 @@ export type RemoteUpdateStatus = {
 	status: string,
 	version: string | null,
 	message: string | null,
+};
+
+export type RrJob = {
+	command: string | null,
+	user: string,
+	client_hostname: string,
+	started_ms: number,
+	peers: HostId[],
 };
 
 export type SamplingPatch = {
@@ -3064,6 +3115,8 @@ export type UnsupportedReason =
  */
 "unknown";
 
+export type UpdatePhase = { kind: "queued" } | { kind: "probing" } | { kind: "uploading"; sent_bytes: number; total_bytes: number } | { kind: "installing" } | { kind: "restarting" } | { kind: "reconnecting" } | { kind: "unknown" };
+
 export type UpdateStatus = { kind: "idle" } | { kind: "not_configured" } | { kind: "checking" } | { kind: "up_to_date" } | { kind: "available"; version: string; notes: string } | { kind: "downloading"; version: string; percent: number | null } | { kind: "downloaded"; version: string } | { kind: "waiting"; version: string; reason: string } | { kind: "compatibility_blocked"; version: string; message: string } | { kind: "needs_authorization"; version: string } | { kind: "installing"; version: string } | { kind: "ready"; version: string } | { kind: "failed"; message: string };
 
 export type UpdateStatusChanged = {
@@ -3276,6 +3329,11 @@ export type WindowAppearance = {
 /**  Emitted when Performance mode, Reduce Transparency or the theme changes. */
 export type WindowAppearanceChanged = {
 	appearance: WindowAppearance,
+};
+
+/**  Sent only to the window whose native visibility changed. */
+export type WindowVisibilityChanged = {
+	visible: boolean,
 };
 
 /* Tauri Specta runtime */

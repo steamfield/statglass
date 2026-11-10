@@ -14,6 +14,10 @@ pub trait MirrorSink: Send + Sync + 'static {
         epoch: uuid::Uuid,
         kinds: SyncKinds,
     ) -> std::result::Result<Option<Cursor>, MirrorError>;
+    /// Durable S10 end, on the remote clock; recent replies never advance it.
+    fn recent_watermark(&self) -> std::result::Result<Option<i64>, MirrorError> {
+        Ok(None)
+    }
     fn ingest(&self, page: SyncPage, kinds: SyncKinds) -> std::result::Result<(), MirrorError>;
     fn recent(
         &self,

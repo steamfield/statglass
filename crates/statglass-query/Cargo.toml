@@ -14,7 +14,7 @@ thiserror.workspace = true
 # The CLI contract's published JSON Schemas (`statglass schema`).
 schemars = { version = "1.2.2", features = ["derive"] }
 # RFC 3339 output in the system zone and bare-time parsing with DST disambiguation.
-jiff = "0.2.37"
+jiff.workspace = true
 # Optimal-string-alignment distance for did-you-mean.
 strsim = "0.11.1"
 # `geteuid` for the socket directory ownership check, without unsafe FFI.

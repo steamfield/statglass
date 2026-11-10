@@ -3,6 +3,151 @@
 //! Side-effecting install/configure calls settle before cancellation is observed.
 use super::*;
 
+fn saved_reinstall(
+    saved: &BTreeMap<HostId, SavedHost>,
+    reported: HostId,
+    reinstall: Option<HostId>,
+) -> Result<Option<SavedHost>, CommandError> {
+    if saved.contains_key(&reported) && reinstall != Some(reported) {
+        return Err(failure("This Mac is already in your host list"));
+    }
+    let Some(expected) = reinstall else {
+        return Ok(None);
+    };
+    if reported != expected {
+        return Err(CommandError::RemoteIdentity {
+            message: format!(
+                "This Mac reports a different identity ({reported}) than the requested reinstall ({expected}). Re-pair the host first"
+            ),
+        });
+    }
+    let host = saved
+        .get(&expected)
+        .ok_or(CommandError::UnknownHost { host: expected })?;
+    if host.is_linux() {
+        return Err(CommandError::RemoteIdentity {
+            message: "A Mac answered where a Linux host was saved. Re-pair the host first".into(),
+        });
+    }
+    Ok(Some(host.clone()))
+}
+
+/// Validate a saved identity using read-only control access before any installation.
+pub(super) async fn prepare_checked<R, P, T>(
+    probe: statglass_remote::install::InstallProbe,
+    reinstall: Option<HostId>,
+    saved: &BTreeMap<HostId, SavedHost>,
+    read: impl FnOnce(String) -> R,
+    prepare: impl FnOnce(statglass_remote::install::InstallProbe) -> P,
+) -> Result<T, CommandError>
+where
+    R: std::future::Future<Output = Result<ControlResponse, CommandError>>,
+    P: std::future::Future<Output = Result<T, CommandError>>,
+{
+    if reinstall.is_some() {
+        let helper = probe
+            .helper_path
+            .as_ref()
+            .filter(|_| probe.app_path.is_some())
+            .ok_or_else(|| {
+                failure("StatGlass isn't installed on that Mac anymore; add it again")
+            })?;
+        let snapshot = read(helper.clone()).await?;
+        let host = snapshot
+            .host
+            .ok_or_else(|| failure("StatGlass returned no machine identity"))?;
+        saved_reinstall(saved, host.id, reinstall)?;
+    }
+    prepare(probe).await
+}
+
+async fn refresh_saved<F: std::future::Future<Output = Result<(), CommandError>>>(
+    saved: &mut SavedHost,
+    record: HostRecord,
+    version: String,
+    helper: String,
+    replace: impl FnOnce(SavedHost) -> F,
+) -> Result<bool, CommandError> {
+    let command = RemoteCommand::MacHelper(helper);
+    let changed = saved.command != command;
+    saved.record.info = record.info;
+    saved.last_agent_version = Some(version);
+    saved.command = command;
+    if changed {
+        replace(saved.clone()).await?;
+    }
+    Ok(changed)
+}
+
+fn confirmed_version(
+    statuses: &mut BTreeMap<HostId, RemoteHostStatus>,
+    id: HostId,
+    version: &str,
+) -> RemoteHostStatus {
+    let status = statuses.entry(id).or_default();
+    status.agent_version = Some(version.into());
+    status.agent_update = super::super::commands::agent_update(false, Some(version), false);
+    status.clone()
+}
+
+async fn update_saved(
+    app: &AppHandle,
+    mut saved: SavedHost,
+    record: HostRecord,
+    version: String,
+    helper: String,
+) -> Result<RemoteHostRecord, CommandError> {
+    let state = app.state::<AppState>();
+    let id = saved.record.id;
+    let previous = saved.clone();
+    let restore = &previous;
+    let changed = refresh_saved(&mut saved, record, version.clone(), helper, |next| async {
+        discard_host_async(app, id).await?;
+        super::super::commands::register_or_restore(
+            || register(app, next),
+            || register(app, restore.clone()),
+        )
+    })
+    .await?;
+    state.remotes.saved.lock_ok().insert(id, saved.clone());
+    restore_on_save_error(save(app), || async {
+        if changed {
+            discard_host_async(app, id).await?;
+            register(app, previous)
+        } else {
+            state.remotes.saved.lock_ok().insert(id, previous);
+            Ok(())
+        }
+    })
+    .await?;
+    if let Some(mirror) = state.remotes.mirrors.lock_ok().get(&id) {
+        mirror.history.register_host(&saved.record);
+    }
+    if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
+        source.retry();
+    }
+    let status = confirmed_version(&mut state.remotes.statuses.lock_ok(), id, &version);
+    super::super::progress::emit_changed(app);
+    Ok(RemoteHostRecord {
+        config: saved.config,
+        os: saved.record.info.os,
+        status,
+    })
+}
+
+async fn restore_on_save_error<F: std::future::Future<Output = Result<(), CommandError>>>(
+    saved: Result<(), CommandError>,
+    restore: impl FnOnce() -> F,
+) -> Result<(), CommandError> {
+    if let Err(error) = saved {
+        if let Err(rollback) = restore().await {
+            tracing::warn!(%rollback, "restoring the saved Mac after saving its reinstall failed");
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
 pub(super) async fn prepare(
     alias: &str,
     p: statglass_remote::install::InstallProbe,
@@ -103,6 +248,7 @@ impl Installation {
         app: &AppHandle,
         mut config: RemoteHostConfig,
         show_menu_bar: bool,
+        reinstall: Option<HostId>,
         before: &mut Option<ControlResponse>,
         cancel: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<RemoteHostRecord, CommandError> {
@@ -119,9 +265,7 @@ impl Installation {
         if host.id == state.local {
             return Err(failure("This is this Mac"));
         }
-        if state.remotes.saved.lock_ok().contains_key(&host.id) {
-            return Err(failure("This Mac is already in your host list"));
-        }
+        let saved = saved_reinstall(&state.remotes.saved.lock_ok(), host.id, reinstall)?;
         let expected = host.id;
         *before = Some(snapshot);
         let response = statglass_remote::install::configure(
@@ -154,8 +298,12 @@ impl Installation {
         })
         .await?;
         let mut record = HostRecord::from_identity(session.hello.host.clone(), false);
+        let version = session.hello.app_version.clone();
         session.close().await;
         check_setup_cancel(cancel)?;
+        if let Some(saved) = saved {
+            return update_saved(app, saved, record, version, self.helper.clone()).await;
+        }
         config.id = record.id.to_string();
         record.display_name = config.name.clone();
         register_new(
@@ -216,3 +364,6 @@ impl Installation {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

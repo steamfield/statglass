@@ -1,7 +1,23 @@
 //! Window demand, subscription ownership and source replacement.
 use super::*;
+use crate::windows::WindowVisibilityChanged;
+use std::collections::VecDeque;
 use std::sync::MutexGuard;
 use tokio::task::JoinHandle;
+
+mod effects;
+
+type VisibilityEmitter = Arc<dyn Fn(&str, WindowVisibilityChanged) + Send + Sync>;
+
+/// Summary-only demand, independent of a host's live/detail channels.
+pub trait RecentFeed: Send + Sync + 'static {
+    fn set_recent_interest(&self, on: bool);
+}
+impl RecentFeed for statglass_remote::RemoteSource {
+    fn set_recent_interest(&self, on: bool) {
+        self.set_recent_interest(on);
+    }
+}
 
 struct StreamSlot {
     id: u32,
@@ -72,6 +88,7 @@ struct WindowEntry {
     visible: watch::Sender<bool>,
     hosts: HashMap<HostId, HostSlot>,
     visible_now: bool,
+    recent: bool,
 }
 
 impl WindowEntry {
@@ -82,6 +99,7 @@ impl WindowEntry {
             visible: watch::Sender::new(false),
             hosts: HashMap::new(),
             visible_now: false,
+            recent: false,
         }
     }
 
@@ -100,6 +118,10 @@ struct Inner {
     /// Numbers `subscribe` calls, registry-wide, so a slot recreated after its window
     /// closed never matches a call that started before.
     next_seq: u64,
+    recent_sources: HashMap<HostId, Arc<dyn RecentFeed>>,
+    recent_observer: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    effects: VecDeque<Box<dyn FnOnce() + Send>>,
+    applying_effects: bool,
 }
 
 impl Inner {
@@ -164,6 +186,7 @@ impl Inner {
 #[derive(Default)]
 pub struct LiveRegistry {
     inner: Mutex<Inner>,
+    visibility_emitter: Mutex<Option<VisibilityEmitter>>,
 }
 
 impl LiveRegistry {
@@ -171,8 +194,61 @@ impl LiveRegistry {
         Self::default()
     }
 
+    pub fn set_visibility_emitter(
+        &self,
+        emit: impl Fn(&str, WindowVisibilityChanged) + Send + Sync + 'static,
+    ) {
+        *self.visibility_emitter.lock_ok() = Some(Arc::new(emit));
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock_ok()
+    }
+
+    pub fn register_recent_source(&self, host: HostId, source: Arc<dyn RecentFeed>) {
+        let mut inner = self.lock();
+        let old = inner.recent_sources.insert(host, source);
+        if let Some(old) = old {
+            inner
+                .effects
+                .push_back(Box::new(move || old.set_recent_interest(false)));
+        }
+        inner.queue_recent_interest();
+        drop(inner);
+        self.apply_effects();
+    }
+
+    /// A controller-side poller shares the exact recent-history demand lifetime.
+    pub fn observe_hosts_recent_interest(&self, observer: Arc<dyn Fn(bool) + Send + Sync>) {
+        let mut inner = self.lock();
+        let old = inner.recent_observer.replace(observer);
+        if let Some(old) = old {
+            inner.effects.push_back(Box::new(move || old(false)));
+        }
+        inner.queue_recent_interest();
+        drop(inner);
+        self.apply_effects();
+    }
+
+    /// Demand from the Hosts page, gated by native window visibility.
+    pub fn set_hosts_recent_interest(&self, label: &str, on: bool) {
+        let mut inner = self.lock();
+        inner.window(label).recent = on;
+        inner.queue_recent_interest();
+        drop(inner);
+        self.apply_effects();
+    }
+
+    /// Native navigation runs even when the outgoing webview cannot clean up its
+    /// effects. A new page must acquire its own Hosts demand.
+    pub fn page_loading(&self, label: &str) {
+        let mut inner = self.lock();
+        if let Some(window) = inner.windows.get_mut(label) {
+            window.recent = false;
+            inner.queue_recent_interest();
+            drop(inner);
+            self.apply_effects();
+        }
     }
 
     /// Starts (or restarts, after a page reload) the stream for `label` and the feed's
@@ -342,6 +418,7 @@ impl LiveRegistry {
     pub fn window_visible(&self, label: &str, visible: bool) {
         let mut inner = self.lock();
         let w = inner.window(label);
+        let changed = w.visible_now != visible;
         w.visible_now = visible;
         let send = |w: &WindowEntry| {
             w.visible.send_if_modified(|v| {
@@ -364,6 +441,15 @@ impl LiveRegistry {
         if visible && let Some(w) = inner.windows.get(label) {
             send(w);
         }
+        inner.queue_recent_interest();
+        if changed && let Some(emit) = self.visibility_emitter.lock_ok().clone() {
+            let label = label.to_owned();
+            inner.effects.push_back(Box::new(move || {
+                emit(&label, WindowVisibilityChanged { visible })
+            }));
+        }
+        drop(inner);
+        self.apply_effects();
         tracing::debug!(label, visible, "window visibility");
     }
 
@@ -381,12 +467,23 @@ impl LiveRegistry {
         for f in &feeds {
             inner.apply_process_interest(f);
         }
+        inner.queue_recent_interest();
+        drop(inner);
+        self.apply_effects();
         tracing::debug!(label, "window closed; live channels dropped");
     }
 
     /// Release all channels and demand before removing or replacing a source.
     pub fn remove_host(&self, host: HostId) {
         self.replace_host_slots(host, None);
+        let mut inner = self.lock();
+        if let Some(source) = inner.recent_sources.remove(&host) {
+            inner
+                .effects
+                .push_back(Box::new(move || source.set_recent_interest(false)));
+        }
+        drop(inner);
+        self.apply_effects();
     }
 
     /// Register the source instance that subsequent subscriptions must use.
@@ -418,3 +515,86 @@ impl LiveRegistry {
             .is_some_and(WindowEntry::is_visible)
     }
 }
+
+#[cfg(test)]
+mod remote_recent_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    #[derive(Default)]
+    struct Feed(AtomicBool);
+    impl RecentFeed for Feed {
+        fn set_recent_interest(&self, on: bool) {
+            self.0.store(on, Ordering::SeqCst);
+        }
+    }
+    #[test]
+    fn remote_recent_demand_does_not_survive_a_webview_reload() {
+        let registry = LiveRegistry::new();
+        let feed = Arc::new(Feed::default());
+        registry.register_recent_source(HostId(uuid::Uuid::nil()), feed.clone());
+        registry.window_visible("dashboard", true);
+        registry.set_hosts_recent_interest("dashboard", true);
+        assert!(feed.0.load(Ordering::SeqCst));
+        let recent = Arc::new(AtomicBool::new(true));
+        let observed = recent.clone();
+        registry.observe_hosts_recent_interest(Arc::new(move |on| {
+            observed.store(on, Ordering::SeqCst);
+        }));
+        registry.page_loading("dashboard");
+        assert!(
+            !recent.load(Ordering::SeqCst),
+            "reload also releases controller-side rr demand"
+        );
+        assert!(
+            !feed.0.load(Ordering::SeqCst),
+            "a replacement page did not request recent history"
+        );
+        assert!(
+            registry.is_visible("dashboard"),
+            "reloading does not hide the native window"
+        );
+        registry.set_hosts_recent_interest("dashboard", true);
+        assert!(
+            feed.0.load(Ordering::SeqCst),
+            "the replacement Hosts page can acquire demand"
+        );
+    }
+    #[test]
+    fn remote_recent_demand_follows_visibility_replacement_and_window_lifetime() {
+        let registry = LiveRegistry::new();
+        let host = HostId(uuid::Uuid::nil());
+        let first = Arc::new(Feed::default());
+        registry.register_recent_source(host, first.clone());
+        registry.set_hosts_recent_interest("dashboard", true);
+        assert!(
+            !first.0.load(Ordering::SeqCst),
+            "unknown windows are hidden"
+        );
+        registry.window_visible("dashboard", true);
+        assert!(first.0.load(Ordering::SeqCst));
+        registry.window_visible("dashboard", false);
+        assert!(!first.0.load(Ordering::SeqCst));
+        registry.window_visible("dashboard", true);
+        let next = Arc::new(Feed::default());
+        registry.register_recent_source(host, next.clone());
+        assert!(!first.0.load(Ordering::SeqCst));
+        assert!(next.0.load(Ordering::SeqCst));
+        registry.set_hosts_recent_interest("dashboard", false);
+        assert!(!next.0.load(Ordering::SeqCst));
+        registry.set_hosts_recent_interest("dashboard", true);
+        registry.window_closed("dashboard");
+        assert!(!next.0.load(Ordering::SeqCst));
+        registry.window_visible("dashboard", true);
+        assert!(
+            !next.0.load(Ordering::SeqCst),
+            "a new window has no page demand"
+        );
+        registry.set_hosts_recent_interest("dashboard", true);
+        registry.remove_host(host);
+        assert!(!next.0.load(Ordering::SeqCst));
+    }
+}
+
+#[cfg(test)]
+#[path = "visibility_tests.rs"]
+mod visibility_tests;

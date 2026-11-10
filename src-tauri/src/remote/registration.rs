@@ -44,10 +44,8 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
             }
             known.clone()
         };
-        let mut statuses = state.remotes.statuses.lock_ok();
-        // A host removed or re-registered meanwhile keeps its newer status.
-        if state.remotes.generations.lock_ok().get(&id) == Some(&generation) {
-            statuses.insert(id, connection_status(s, linux, last));
+        if publish_status(&state.remotes, id, generation, s, linux, last) {
+            super::progress::emit_changed(&handle);
         }
     });
     let source = RemoteSource::new(
@@ -58,6 +56,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         Some(mirror.clone()),
     );
     source.set_controller_on_battery(state.host(state.local)?.hub().status().on_battery);
+    state.live.register_recent_source(id, source.clone());
     state.remotes.sources.lock_ok().insert(id, source.clone());
     let entry = state.hosts.insert(saved.record.clone(), source);
     state.remotes.mirrors.lock_ok().insert(
@@ -100,6 +99,68 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     Ok(())
 }
 
+/// Status and rr connection identity change under the same status lock.
+fn publish_status(
+    manager: &RemoteManager,
+    id: HostId,
+    generation: Uuid,
+    status: statglass_remote::ConnectionStatus,
+    linux: bool,
+    last: Option<String>,
+) -> bool {
+    let mut statuses = manager.statuses.lock_ok();
+    // A host removed or re-registered meanwhile keeps its newer status.
+    if manager.generations.lock_ok().get(&id) == Some(&generation) {
+        let mut previous = statuses.get(&id).cloned().unwrap_or_default();
+        manager.apply_update(id, &mut previous);
+        manager.apply_rr(id, &mut previous);
+        manager.observe_update(id, status.connected, status.remote_version.as_deref());
+        if status.connected {
+            manager
+                .rr_sessions
+                .lock_ok()
+                .entry(id)
+                .or_insert_with(Uuid::new_v4);
+        } else {
+            manager.clear_rr(id);
+        }
+        let mut next = connection_status(status, linux, last);
+        manager.apply_update(id, &mut next);
+        manager.apply_rr(id, &mut next);
+        let mut offsets = manager.emitted_clock_offsets.lock_ok();
+        let emitted_offset = offsets.entry(id).or_insert(previous.clock_offset_ms);
+        let changed = rendered_status_changed(&previous, &next, *emitted_offset);
+        if changed {
+            *emitted_offset = next.clock_offset_ms;
+        }
+        statuses.insert(id, next);
+        return changed;
+    }
+    false
+}
+
+/// High-frequency facts are refreshed by the host list's five-second poll.
+// Keep aligned with CLOCK_STEP_THRESHOLD_MS in src/core/host-clock.ts.
+const CLOCK_STEP_THRESHOLD_MS: f64 = 1000.0;
+
+fn rendered_status_changed(
+    previous: &RemoteHostStatus,
+    next: &RemoteHostStatus,
+    emitted_offset: f64,
+) -> bool {
+    (next.clock_offset_ms - emitted_offset).abs() >= CLOCK_STEP_THRESHOLD_MS
+        || previous.sync != next.sync
+        || previous.agent_version != next.agent_version
+        || previous.state != next.state
+        || previous.route != next.route
+        || previous.error != next.error
+        || previous.identity_changed != next.identity_changed
+        || previous.agent_update != next.agent_update
+        || previous.update != next.update
+        || previous.last_update_failure != next.last_update_failure
+        || previous.rr != next.rr
+}
+
 pub(super) async fn discard_host_async(app: &AppHandle, id: HostId) -> Result<(), CommandError> {
     let app = app.clone();
     tokio::task::spawn_blocking(move || discard_host(&app.state::<AppState>(), id))
@@ -120,6 +181,9 @@ fn discard_host(state: &AppState, id: HostId) {
     state.remotes.sources.lock_ok().remove(&id);
     state.remotes.saved.lock_ok().remove(&id);
     state.remotes.statuses.lock_ok().remove(&id);
+    state.remotes.emitted_clock_offsets.lock_ok().remove(&id);
+    state.remotes.clear_rr(id);
+    state.remotes.updates.lock_ok().remove(&id);
     if let Some(m) = state.remotes.mirrors.lock_ok().remove(&id) {
         m.history.close();
     }
@@ -176,9 +240,14 @@ pub(super) fn connection_status(
             RemoteSync::Idle
         },
         clock_offset_ms: s.clock_offset_ms as f64,
-        cpu_pct: None,
-        memory_pct: None,
+        vitals: HostVitals::default(),
+        rr: None,
+        update: None,
+        last_update_failure: None,
         agent_version,
         identity_changed: s.identity_changed.map(|id| id.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests;

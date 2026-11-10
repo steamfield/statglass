@@ -19,11 +19,9 @@ it("keeps a never-connected host usable and offers a connection retry", async ()
   const heading = await screen.findByRole("heading", {
     name: "unreachable",
   });
-  const row = heading.closest("div.flex-wrap");
+  const row = heading.closest("section");
   if (!row) throw new Error("missing remote host row");
-  fireEvent.click(
-    within(row as HTMLElement).getByRole("button", { name: "View metrics" })
-  );
+  fireEvent.click(within(row).getByRole("button", { name: "View metrics" }));
   await screen.findByRole("heading", { name: "Overview" });
   await screen.findByRole("heading", { name: "Can’t connect to unreachable" });
   expect(screen.getByRole("navigation")).toBeInTheDocument();

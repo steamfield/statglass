@@ -12,6 +12,7 @@ export {
   type TrayUnits,
   trayLayout,
 } from "@core/tray-layout";
+export { AlertChip, type AlertChipProps } from "./alert-chip";
 export { Card, type CardProps, LinkCard, type LinkCardProps } from "./card";
 export { CardNotice, type CardNoticeProps } from "./card-notice";
 export {
@@ -72,6 +73,7 @@ export {
   type StatListItem,
   type StatListProps,
 } from "./stat-list";
+export { StatusDot, type StatusDotProps } from "./status-dot";
 export { StatusPill, type StatusPillProps } from "./status-pill";
 export { StreamArea, type StreamAreaProps } from "./stream-area";
 export { TrayPreview, type TrayPreviewProps } from "./tray-preview";

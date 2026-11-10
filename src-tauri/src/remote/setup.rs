@@ -256,6 +256,7 @@ pub async fn add_remote_host(
     install: bool,
     show_menu_bar: bool,
     setup_id: String,
+    reinstall: Option<HostId>,
 ) -> Result<RemoteHostRecord, CommandError> {
     let _maintenance = crate::updates::maintenance(&app)?;
     validate(&config)?;
@@ -288,14 +289,37 @@ pub async fn add_remote_host(
     .await?;
     let probe = match probe {
         HostProbe::Linux(probe) => {
+            if reinstall.is_some() {
+                return Err(CommandError::RemoteIdentity { message: "A Linux host answered where a Mac reinstall was requested. Check the SSH aliases; Re-pair the host first".into() });
+            }
             return linux::add(&app, &alias, *probe, config, install, &mut cancel).await;
         }
         HostProbe::Mac(probe) => probe,
     };
-    let installation = Installation::prepare(&alias, probe, install).await?;
+    let saved = state.remotes.saved.lock_ok().clone();
+    let pending_cancel = &mut cancel;
+    let read_alias = &alias;
+    let installation =
+        mac::prepare_checked(
+            probe,
+            reinstall,
+            &saved,
+            |helper| async move {
+                setup_step(pending_cancel, wait_for_control(read_alias, &helper)).await
+            },
+            |probe| Installation::prepare(&alias, probe, install),
+        )
+        .await?;
     let mut before = None;
     let result = installation
-        .connect_and_register(&app, config, show_menu_bar, &mut before, &mut cancel)
+        .connect_and_register(
+            &app,
+            config,
+            show_menu_bar,
+            reinstall,
+            &mut before,
+            &mut cancel,
+        )
         .await;
     match result {
         Ok(record) => {

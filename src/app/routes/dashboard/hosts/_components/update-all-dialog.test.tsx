@@ -1,4 +1,5 @@
 import { createMockTransport } from "@core/mock-transport";
+import { pushable } from "@core/remote-hosts";
 import { screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -6,7 +7,6 @@ import {
   renderWithProviders,
 } from "../../../../../../tests/test-utils";
 import { UpdateAllDialog } from "./update-all-dialog";
-import { pushable } from "./use-agent-update";
 
 describe("update all", () => {
   it("pushes reachable hosts in order, skips offline ones and keeps its list", async () => {

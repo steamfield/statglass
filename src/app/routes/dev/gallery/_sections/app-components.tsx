@@ -38,6 +38,7 @@ import {
   TrayStyleGroup,
   TrayStyleOption,
 } from "~/components/tray-style-option";
+import { TruncatedText } from "~/components/truncated-text";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { Table, TableHeader } from "~/components/ui/table";
@@ -415,6 +416,18 @@ export function AppComponentsSection() {
 
   return (
     <div className="flex flex-col gap-8">
+      <GalleryItem name="TruncatedText" usedIn="Overview · Other hosts">
+        <div className="flex gap-8 text-small">
+          <div className="flex w-40 flex-col gap-2">
+            <TruncatedText text="Studio Mac with a long host name" />
+            <TruncatedText as="p" text="Office Mac with a long host name" />
+          </div>
+          <div className="flex w-40 flex-col gap-2">
+            <TruncatedText text="Studio Mac" />
+            <TruncatedText as="p" text="Office Mac" />
+          </div>
+        </div>
+      </GalleryItem>
       <GalleryItem name="DataTable" usedIn="Shared sortable tables">
         <DataTableSample />
       </GalleryItem>

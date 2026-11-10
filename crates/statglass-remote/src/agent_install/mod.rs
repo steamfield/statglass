@@ -25,13 +25,21 @@ mod tests;
 
 pub use flows::{
     StepOutcome, UninstallReport, UninstallStep, install, reset_identity, status, uninstall,
-    uninstall_at, update,
+    uninstall_at, update, update_with_progress,
 };
 pub use probe::{
     AgentStatus, AgentVersion, DigestTool, DockerSocket, ExistingAgent, HostProbe, LinuxProbe,
     OtherUserAgent, probe_host, probe_linux,
 };
 pub use upload::{run_remote_with_stdin, upload_agent};
+
+/// Controller-side observations; no changes to the agent's wire protocol.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UpdateStep {
+    Uploading { sent_bytes: u64, total_bytes: u64 },
+    Installing,
+    Restarting,
+}
 
 /// Why an agent step failed. Steps that only need SSH report [`RemoteError`] through
 /// [`AgentInstallError::Remote`].
@@ -174,10 +182,14 @@ pub(crate) struct Output {
 }
 
 /// What a remote command reads on its stdin.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) enum Stdin<'a> {
     None,
     Bytes(&'a [u8]),
+    CountingBytes {
+        bytes: &'a [u8],
+        sent: &'a (dyn Fn(u64) + Send + Sync),
+    },
     /// Streamed from the file, never read into memory whole.
     File(&'a Path),
 }
@@ -233,7 +245,7 @@ pub(crate) async fn collect(
 ) -> crate::Result<Output> {
     let mut source: Option<Box<dyn AsyncRead + Unpin + Send + '_>> = match stdin {
         Stdin::None => None,
-        Stdin::Bytes(bytes) => Some(Box::new(bytes)),
+        Stdin::Bytes(bytes) | Stdin::CountingBytes { bytes, .. } => Some(Box::new(bytes)),
         Stdin::File(path) => Some(Box::new(tokio::fs::File::open(path).await?)),
     };
     cmd.stdin(if source.is_some() {
@@ -257,7 +269,21 @@ pub(crate) async fn collect(
     crate::install::setup_timeout(timeout, async move {
         let feed = async move {
             if let (Some(mut input), Some(source)) = (input, source.as_mut()) {
-                tokio::io::copy(source, &mut input).await?;
+                if let Stdin::CountingBytes { sent, .. } = stdin {
+                    let mut buffer = vec![0u8; 64 * 1024];
+                    let mut total = 0;
+                    loop {
+                        let n = source.read(&mut buffer).await?;
+                        if n == 0 {
+                            break;
+                        }
+                        input.write_all(&buffer[..n]).await?;
+                        total += n as u64;
+                        sent(total);
+                    }
+                } else {
+                    tokio::io::copy(source, &mut input).await?;
+                }
                 input.shutdown().await?;
             }
             Ok::<(), std::io::Error>(())
