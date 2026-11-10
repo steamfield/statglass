@@ -24,6 +24,7 @@ import {
   hasProgressFixture,
   MockAgentUpdates,
   mockHostVitals,
+  mockLocalRrJob,
   mockMacPreparation,
   remoteRecords,
   seedRemoteScenarios,
@@ -477,7 +478,8 @@ export class MockRemotes {
       acceptRemoteSshHost: this.acceptRemoteSshHost,
       listRemoteHosts: this.listRemoteHosts,
       hostVitals: this.hostVitals,
-      localRrJob: async () => null,
+      localRrJob: async () =>
+        this.options.scenarios?.includes("rr-jobs") ? mockLocalRrJob() : null,
       setHostsRecentInterest: this.setHostsRecentInterest,
       onRemoteHostsChanged: this.onRemoteHostsChanged,
       pushRemoteStatus: this.pushRemoteStatus,

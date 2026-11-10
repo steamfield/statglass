@@ -10,6 +10,7 @@ import type {
   HostRecord,
   HostVitals,
   RemoteHostRecord,
+  RrJob,
 } from "@core/generated/bindings";
 import {
   agentVersionState,
@@ -32,6 +33,12 @@ export interface HostCardModel {
   cpu: string;
   memory: string;
   diskWarning: string | null;
+  rr: {
+    command: string | null;
+    detail: string;
+    startedMs: number;
+    clockOffsetMs: number;
+  } | null;
   vitals: { label: string; value: string; secondary?: string }[];
 }
 
@@ -188,13 +195,42 @@ function readings(vitals: HostVitals | null, live: boolean) {
   };
 }
 
+function rrBand(
+  job: RrJob | null,
+  live: boolean,
+  hosts: readonly HostRecord[],
+  clockOffsetMs: number
+): HostCardModel["rr"] {
+  if (!live || !job) return null;
+  const names = job.peers.map((id) => {
+    const host = hosts.find((host) => host.id === id);
+    return host?.is_local ? "This Mac" : (host?.display_name ?? id);
+  });
+  const peers =
+    names.slice(0, 2).join(", ") +
+    (names.length > 2 ? ` and ${names.length - 2} more` : "");
+  return {
+    command: job.command,
+    detail: `From ${job.client_hostname}${peers ? ` · also on ${peers}` : ""}`,
+    startedMs: job.started_ms,
+    clockOffsetMs,
+  };
+}
+
 export function remoteHostCardModel(
   remote: RemoteHostRecord,
-  host?: HostRecord
+  host?: HostRecord,
+  hosts: readonly HostRecord[] = []
 ): HostCardModel {
   const state = connection(remote);
   return {
     ...state,
+    rr: rrBand(
+      remote.status.rr,
+      state.isLive,
+      hosts,
+      remote.status.clock_offset_ms ?? 0
+    ),
     id: remote.config.id,
     name: remote.config.name,
     system: system(host),
@@ -211,11 +247,14 @@ export function localHostCardModel(
   version: string,
   target: string | null,
   cpu: number | null,
-  memory: number | null
+  memory: number | null,
+  job: RrJob | null = null,
+  hosts: readonly HostRecord[] = []
 ): HostCardModel {
   return {
     id: host.id,
     name: "This Mac",
+    rr: rrBand(job, true, hosts, 0),
     status: "Live",
     mark: "live",
     route: "This Mac",

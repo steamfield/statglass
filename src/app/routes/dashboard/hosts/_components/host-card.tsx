@@ -12,6 +12,7 @@ import type { Corner } from "~/widgets/lib/accent";
 import { StatList } from "~/widgets/stat-list";
 import type { HostCardModel } from "../_lib/host-card-model";
 import { HostCardActions } from "./host-card-actions";
+import { HostCardRr } from "./host-card-rr";
 import { HostCardStatus } from "./host-card-status";
 import { HostCardVersion } from "./host-card-version";
 import { HostMetricLane } from "./host-metric-lane";
@@ -90,7 +91,7 @@ export function HostCard({
           valueClassName="flex flex-col"
         />
       </div>
-      {/* The rr job band belongs here, between vitals and the connection message. */}
+      {model.rr && <HostCardRr rr={model.rr} />}
       {model.message && (
         <InlineMessage
           tone={model.message.tone}

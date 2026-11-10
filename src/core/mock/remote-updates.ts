@@ -4,6 +4,7 @@ import type {
   RemoteHostPreparation,
   RemoteHostRecord,
   RemoteHostStatus,
+  RrJob,
   UpdatePhase,
 } from "@core/generated/bindings";
 import type { ScenarioName } from "./fixtures";
@@ -254,6 +255,16 @@ export function seedRemoteScenarios(
   }
 }
 
+export function mockLocalRrJob(): RrJob {
+  return {
+    command: "cargo check --workspace",
+    user: "me",
+    client_hostname: "This Mac",
+    started_ms: 1_794_312_000_000,
+    peers: [],
+  };
+}
+
 function seedRrJobs(remotes: MockRemotes) {
   const first = seed(remotes, "rr-build", true, {});
   const second = seed(remotes, "rr-test", true, {});
@@ -302,6 +313,13 @@ function seedGridScenarios(
         message: "The update could not reconnect over either saved SSH route",
       },
     });
+    record.status.rr = {
+      ...mockLocalRrJob(),
+      client_hostname: "Riley’s MacBook Pro with a long client hostname",
+      command:
+        "cargo test --workspace --all-features -- tests/integration/billing --maxfail=3",
+      peers: [],
+    };
     record.status.vitals = {
       ...record.status.vitals,
       disk_used_bytes: 465_000_000_000,

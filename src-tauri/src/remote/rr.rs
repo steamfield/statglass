@@ -4,6 +4,9 @@ use statglass_remote::rr::{RrJob, group};
 use std::{future::Future, time::Duration};
 use tokio::sync::watch;
 
+mod backoff;
+use backoff::Backoff;
+
 // One-shot SSH disables multiplexing, so each read pays a fresh handshake.
 const PERIOD: Duration = Duration::from_secs(60);
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -108,7 +111,7 @@ pub(super) fn start(app: &AppHandle, stop: watch::Receiver<bool>) {
         }));
     let handle = app.clone();
     let local_slots = Arc::new(tokio::sync::Semaphore::new(1));
-    let task = tauri::async_runtime::spawn(run(interest, stop, move || {
+    let task = tauri::async_runtime::spawn(run(interest, stop, move |backoff| {
         let app = handle.clone();
         let local_slots = local_slots.clone();
         async move {
@@ -117,6 +120,7 @@ pub(super) fn start(app: &AppHandle, stop: watch::Receiver<bool>) {
                 &state.remotes,
                 state.local,
                 state.remotes.rr_targets(),
+                &backoff,
                 |alias| async move { statglass_remote::rr::read(&alias).await },
                 local_read(local_slots, statglass_remote::rr::read_local),
                 || super::progress::emit_changed(&app),
@@ -156,6 +160,7 @@ async fn poll<F, L>(
     manager: &RemoteManager,
     local: HostId,
     targets: Vec<Target>,
+    backoff: &Mutex<Backoff>,
     read: impl Fn(String) -> F,
     local_read: L,
     changed: impl Fn(),
@@ -165,20 +170,19 @@ async fn poll<F, L>(
 {
     let mut tasks = tokio::task::JoinSet::new();
     for target in targets {
+        if !backoff.lock_ok().ready(&target) {
+            continue;
+        }
         let future = read(target.alias.clone());
         tasks.spawn(async move {
-            let job = match tokio::time::timeout(CALL_TIMEOUT, future).await {
-                Ok(Ok(job)) => job,
-                Ok(Err(error)) => {
-                    tracing::debug!(%error, "reading remote rr lock");
-                    None
-                }
-                Err(_) => {
-                    tracing::debug!("remote rr lock read timed out");
-                    None
-                }
-            };
-            (Some(target.clone()), target.host, job)
+            let result = tokio::time::timeout(CALL_TIMEOUT, future)
+                .await
+                .unwrap_or_else(|_| {
+                    Err(statglass_remote::RemoteError::Transport(
+                        "rr lock read timed out".into(),
+                    ))
+                });
+            (Some(target.clone()), target.host, result)
         });
     }
     tasks.spawn(async move {
@@ -193,11 +197,24 @@ async fn poll<F, L>(
                 None
             }
         };
-        (None, local, job)
+        (None, local, Ok(job))
     });
     while let Some(result) = tasks.join_next().await {
         match result {
-            Ok((target, host, job)) => manager.publish_rr(target.as_ref(), host, job, &changed),
+            Ok((target, host, result)) => {
+                if let Some(target) = &target {
+                    let first = backoff.lock_ok().record(target, result.is_ok());
+                    if let Err(error) = &result {
+                        let error = error as &dyn std::error::Error;
+                        if first {
+                            tracing::info!(%host, alias = %target.alias, error, "reading remote rr lock; backing off");
+                        } else {
+                            tracing::debug!(%host, alias = %target.alias, error, "reading remote rr lock; backing off");
+                        }
+                    }
+                }
+                manager.publish_rr(target.as_ref(), host, result.unwrap_or_default(), &changed);
+            }
             Err(error) => tracing::warn!(%error, "rr reader task failed"),
         }
     }
@@ -207,7 +224,7 @@ async fn poll<F, L>(
 async fn run<F: Future<Output = ()>>(
     mut interest: watch::Receiver<bool>,
     mut stop: watch::Receiver<bool>,
-    mut poll: impl FnMut() -> F,
+    mut poll: impl FnMut(Arc<Mutex<Backoff>>) -> F,
 ) {
     loop {
         if *stop.borrow() {
@@ -220,6 +237,7 @@ async fn run<F: Future<Output = ()>>(
             }
             continue;
         }
+        let backoff = Arc::new(Mutex::new(Backoff::default()));
         let mut interval = tokio::time::interval(PERIOD);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -232,7 +250,7 @@ async fn run<F: Future<Output = ()>>(
                         biased;
                         _ = stop.changed() => return,
                         result = interest.changed() => { if result.is_err() { return; } break; },
-                        () = poll() => {},
+                        () = poll(backoff.clone()) => {},
                     }
                 }
             }
