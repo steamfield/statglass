@@ -23,6 +23,18 @@ function trace(messages: LiveMsg[]) {
     });
 }
 
+// Accept the legacy fixture and the fixture the native regeneration command now writes.
+function withPlan(messages: TraceEntry[]): TraceEntry[] {
+  const initial = [...messages];
+  if (initial.some((m) => m.kind === "backfill_plan")) return initial;
+  initial.splice(
+    initial.findIndex((m) => m.kind === "backfill"),
+    0,
+    { kind: "backfill_plan" }
+  );
+  return initial;
+}
+
 // Segment boundaries can differ with catalog holds. Compare every older sample
 // in delivery order; this still catches omissions, overlaps and reversed chunks.
 interface TraceEntry {
@@ -62,7 +74,9 @@ it("matches the Rust registry's ordering, backfill boundaries, disconnect and ty
         series: [{ metric: "cpu.total", labels: [] }],
       }
     );
-    expect(trace(messages.splice(0))).toEqual(fixture.initial);
+    const initial = trace(messages.splice(0));
+    expect(withPlan(initial)).toEqual(initial); // A regenerated fixture already includes the plan.
+    expect(initial).toEqual(withPlan(fixture.initial));
     now += 1000;
     transport.tick();
     await vi.runAllTimersAsync();

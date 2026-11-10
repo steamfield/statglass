@@ -477,3 +477,177 @@ describe("mock totals and held staleness (D-092)", () => {
     expect(ofKind(vpn.msgs, "status")[0]?.primary_iface).toBeNull();
   });
 });
+
+describe("mock catch-up plans", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("announces the recent row count before rows and the oldest earlier start", async () => {
+    const { t, msgs } = await subscribe(
+      { historyRows: 3600 },
+      { backfillMs: 3_600_000 }
+    );
+    const [plan] = ofKind(msgs, "backfill_plan");
+    expect(ofKind(msgs, "backfill_plan")).toHaveLength(1);
+    expect(msgs.findIndex((m) => m.kind === "backfill_plan")).toBeLessThan(
+      msgs.findIndex((m) => m.kind === "backfill")
+    );
+    expect(plan?.recent_rows).toBe(
+      ofKind(msgs, "backfill").reduce((n, m) => n + m.rows.length, 0)
+    );
+    await vi.runAllTimersAsync();
+    expect(plan?.earlier_start_ms).toBe(
+      Math.min(...ofKind(msgs, "backfill_earlier").map((m) => m.start_ms))
+    );
+    t.dispose();
+  });
+
+  it("defers a hidden subscription's history and plan until show", async () => {
+    const t = createMockTransport({ now: () => NOW, historyRows: 3600 });
+    t.setWindowVisible(false);
+    const msgs: LiveMsg[] = [];
+    const sub = await t.subscribeLive(MOCK_HOST_ID, (m) => msgs.push(m), {
+      backfillMs: 3_600_000,
+    });
+    // Rust's live/registry.rs only runs catch_up for a visible window.
+    expect(msgs.map((m) => m.kind)).toEqual(["caps"]);
+    expect(sub.info).toMatchObject({
+      status: "ok",
+      data: {
+        backfill_start_ms: null,
+        backfill_rows: 0,
+        earlier_start_ms: null,
+        earlier_rows: 0,
+      },
+    });
+    await vi.runAllTimersAsync();
+    expect(msgs.map((m) => m.kind)).toEqual(["caps"]);
+    t.setWindowVisible(true);
+    expect(ofKind(msgs, "backfill_plan")).toHaveLength(1);
+    expect(msgs.findIndex((m) => m.kind === "backfill_plan")).toBeLessThan(
+      msgs.findIndex((m) => m.kind === "backfill")
+    );
+    expect(ofKind(msgs, "backfill").length).toBeGreaterThan(0);
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill_earlier").length).toBeGreaterThan(0);
+    t.dispose();
+  });
+
+  it("does not plan a plain resume", async () => {
+    const { t, msgs } = await subscribe({ historyRows: 60 });
+    msgs.length = 0;
+    t.setWindowVisible(false);
+    t.fastForward(10_000);
+    t.setWindowVisible(true);
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill").length).toBeGreaterThan(0);
+    expect(ofKind(msgs, "backfill_plan")).toEqual([]);
+    t.dispose();
+  });
+
+  it.each(["hidden", "idle"] as const)(
+    "holds earlier chunks while %s, then continues them",
+    async (pause) => {
+      const { t, msgs } = await subscribe(
+        { historyRows: 3600 },
+        { backfillMs: 3_600_000 }
+      );
+      const setPaused = (value: boolean) =>
+        pause === "hidden"
+          ? t.setWindowVisible(!value)
+          : t.setDisplayIdle(value);
+      // Pause between chunk tasks as well as before the initial timer.
+      t.tick();
+      await vi.advanceTimersByTimeAsync(0);
+      const before = ofKind(msgs, "backfill_earlier").length;
+      expect(before).toBe(1);
+      setPaused(true);
+      await vi.runAllTimersAsync();
+      expect(ofKind(msgs, "backfill_earlier")).toHaveLength(before);
+      setPaused(false);
+      await vi.runAllTimersAsync();
+      expect(ofKind(msgs, "backfill_earlier").length).toBeGreaterThan(before);
+      t.dispose();
+    }
+  );
+
+  it("cancels queued earlier chunks with a new plan after a step", async () => {
+    let now = NOW;
+    const { t, msgs } = await subscribe(
+      { now: () => now, historyRows: 3600 },
+      { backfillMs: 3_600_000 }
+    );
+    msgs.length = 0;
+    t.stepClock(-300_000);
+    now += 1000;
+    t.tick();
+    const plans = ofKind(msgs, "backfill_plan");
+    expect(plans).toEqual([
+      { kind: "backfill_plan", recent_rows: 1, earlier_start_ms: null },
+    ]);
+    expect(msgs.findIndex((m) => m.kind === "backfill_plan")).toBeLessThan(
+      msgs.findIndex((m) => m.kind === "backfill")
+    );
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill_earlier")).toEqual([]);
+    t.dispose();
+  });
+});
+
+it("a hidden first subscription shown during display idle sends recent history but holds earlier chunks", async () => {
+  vi.useFakeTimers();
+  const t = createMockTransport({ now: () => NOW, historyRows: 3600 });
+  const msgs: LiveMsg[] = [];
+  try {
+    t.setWindowVisible(false);
+    t.setDisplayIdle(true);
+    await t.subscribeLive(MOCK_HOST_ID, (m) => msgs.push(m), {
+      backfillMs: 3_600_000,
+    });
+    t.setWindowVisible(true);
+    expect(ofKind(msgs, "backfill_plan")).toHaveLength(1);
+    expect(ofKind(msgs, "backfill").length).toBeGreaterThan(0);
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill_earlier")).toEqual([]);
+    t.setDisplayIdle(false);
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill_earlier").length).toBeGreaterThan(0);
+  } finally {
+    t.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("announces a layout before the first frame when the subscribe had no history", async () => {
+  const { t, msgs } = await subscribe({ historyRows: 0 });
+  try {
+    expect(ofKind(msgs, "backfill_plan")).toEqual([]);
+    t.tick();
+    const state = msgs.reduce(reduceLive, initialHostLive(MOCK_HOST_ID));
+    expect(state.lastTsMs).toBe(NOW);
+    expect(msgs.findIndex((m) => m.kind === "layout")).toBeLessThan(
+      msgs.findIndex((m) => m.kind === "frame")
+    );
+  } finally {
+    t.dispose();
+  }
+});
+
+it("showing a populated subscription during display idle catches up missed rows without another plan", async () => {
+  vi.useFakeTimers();
+  const { t, msgs } = await subscribe({ historyRows: 60 });
+  try {
+    msgs.length = 0;
+    t.setWindowVisible(false);
+    t.fastForward(10_000);
+    t.setDisplayIdle(true);
+    t.setWindowVisible(true);
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill").length).toBeGreaterThan(0);
+    expect(ofKind(msgs, "backfill_plan")).toEqual([]);
+    expect(ofKind(msgs, "status").at(-1)?.display_idle).toBe(true);
+  } finally {
+    t.dispose();
+    vi.useRealTimers();
+  }
+});

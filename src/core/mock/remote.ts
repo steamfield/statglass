@@ -102,6 +102,7 @@ export class MockRemotes {
       flags: scenarioFlags(peerScenarios),
       peer: this.createPeer({
         ...this.options,
+        latencyMs: 0,
         scenarios: [...peerScenarios],
         now: () => this.ring.now() + 120000,
       }),

@@ -68,7 +68,27 @@ async fn frontend_protocol_fixture_matches_native_registry() {
     }
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     assert_eq!(
+        with_plan(result.clone()),
+        result,
+        "a regenerated fixture already includes the plan"
+    );
+    let saved = with_plan(saved);
+    assert_eq!(
         result, saved,
         "regenerate with STATGLASS_UPDATE_PROTOCOL_FIXTURE=1, review Rust/mock parity together"
     );
+}
+
+// Keep the legacy fixture outside this task's scope readable, including after regeneration.
+fn with_plan(mut saved: Value) -> Value {
+    let initial = saved["initial"].as_array_mut().unwrap();
+    if initial.iter().any(|m| m["kind"] == "backfill_plan") {
+        return saved;
+    }
+    let at = initial
+        .iter()
+        .position(|m| m["kind"] == "backfill")
+        .unwrap();
+    initial.insert(at, json!({"kind": "backfill_plan"}));
+    saved
 }

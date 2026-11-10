@@ -199,7 +199,19 @@ export class SeriesColumns {
 
 export type Connection = "connecting" | "live" | "reconnecting";
 
+/** History promised by the live catch-up, but not yet received. */
+export type HistoryPending = null | "subscribe" | "recent" | number;
+
 export interface HostLive {
+  /**
+   * History this window is still waiting for (D-066 backfill), so a chart can hold
+   * back until its window is whole instead of drawing it in pieces.
+   * - null: nothing expected.
+   * - "subscribe": an empty-ring subscribe has not said yet what it will send.
+   * - "recent": the plan promised recent rows that have not landed.
+   * - a number: older chunks are still coming, down to this start time (ms).
+   */
+  historyPending: HistoryPending;
   hostId: HostId;
   connection: Connection;
   capabilities: Capabilities | null;
@@ -243,6 +255,7 @@ export interface HostLive {
 export function initialHostLive(hostId: HostId): HostLive {
   return {
     hostId,
+    historyPending: null,
     connection: "connecting",
     capabilities: null,
     status: null,
@@ -336,6 +349,9 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
         layoutNo: msg.layout_no,
       };
 
+    case "backfill_plan":
+      return onBackfillPlan(state, msg);
+
     case "backfill": {
       const layout = state.layouts[msg.layout_no];
       if (!layout) return state;
@@ -354,6 +370,8 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
       return {
         ...state,
         connection: "live",
+        historyPending:
+          state.historyPending === "recent" ? null : state.historyPending,
         held,
         lastTsMs: state.columns.lastTsMs() ?? state.lastTsMs,
         rowsVersion: state.rowsVersion + 1,
@@ -378,6 +396,8 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
       return {
         ...state,
         connection: "live",
+        historyPending:
+          state.historyPending === "recent" ? null : state.historyPending,
         layoutNo: msg.layout_no,
         held: heldFrom(layout, msg.held),
         // A dropped duplicate leaves the newest row where it was.
@@ -409,6 +429,7 @@ function onTimeline(
 ): HostLive {
   if (state.timeline === timeline) return state;
   if (state.timeline === null) return { ...state, timeline };
+  state = { ...state, historyPending: null };
   const removed = state.columns.truncateFrom(fromMs);
   if (removed === 0) return { ...state, timeline, statusSinceMs: null };
   return {
@@ -419,6 +440,68 @@ function onTimeline(
     rowsVersion: state.rowsVersion + 1,
     rowsEpoch: state.rowsEpoch + 1,
   };
+}
+
+/** A subscribe is starting: with an empty ring, its history is awaited. */
+export function awaitHistory<S extends HostLive>(state: S): S {
+  if (state.lastTsMs !== null || state.historyPending !== null) return state;
+  return { ...state, historyPending: "subscribe" };
+}
+
+/** The subscribe failed or said it sent nothing: nothing is awaited from it. */
+export function settleSubscribe<S extends HostLive>(state: S): S {
+  if (state.historyPending !== "subscribe") return state;
+  return { ...state, historyPending: null };
+}
+
+function onBackfillPlan(
+  state: HostLive,
+  msg: Extract<LiveMsg, { kind: "backfill_plan" }>
+): HostLive {
+  if (msg.earlier_start_ms !== null) {
+    if (state.lastTsMs !== null) return state;
+    return { ...state, historyPending: msg.earlier_start_ms };
+  }
+  if (typeof state.historyPending === "number")
+    return { ...state, historyPending: null };
+  const historyPending =
+    state.lastTsMs === null && msg.recent_rows > 0 ? "recent" : null;
+  return historyPending === state.historyPending
+    ? state
+    : { ...state, historyPending };
+}
+
+function settleEarlier(state: HostLive): HostLive {
+  if (typeof state.historyPending !== "number") return state;
+  const first = state.columns.firstTsMs();
+  return (first !== null && first <= state.historyPending) ||
+    state.columns.length === state.columns.capacity
+    ? { ...state, historyPending: null }
+    : state;
+}
+
+/**
+ * Whether a chart over the last `windowMs` should still hold back. `toleranceMs` is
+ * the width of the chart's slots: coverage starts within one slot of the window.
+ */
+export function ringLoading(
+  state: Pick<
+    HostLive,
+    "connection" | "historyPending" | "lastTsMs" | "columns" | "status"
+  >,
+  windowMs: number,
+  toleranceMs: number = gridIntervalMs(state.status)
+): boolean {
+  if (
+    state.historyPending === null ||
+    state.connection === "reconnecting" ||
+    state.status?.display_idle
+  )
+    return false;
+  if (typeof state.historyPending !== "number") return true;
+  const first = state.columns.firstTsMs();
+  if (first === null || state.lastTsMs === null) return true;
+  return first > state.lastTsMs - windowMs + toleranceMs;
 }
 
 /** Drop every row. Layouts, readouts and the subscription stay. */
@@ -452,6 +535,7 @@ function prependEarlier(
     const values = msg.rows[i] as (number | null)[];
     if (!state.columns.prepend(tsMs, layout.keys, values, holds)) break;
   }
+  state = settleEarlier(state);
   if (state.columns.length === before) return state;
   return {
     ...state,

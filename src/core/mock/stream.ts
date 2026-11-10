@@ -1,5 +1,6 @@
-import { RING_SPAN_MS } from "@core/generated/bindings";
+import { type LiveMsg, RING_SPAN_MS } from "@core/generated/bindings";
 import { MINUTE_MS } from "../time-grid";
+import type { LiveOptions, LiveSubscription } from "../transport";
 import type { MockChannels } from "./channels";
 import type { MockCommands } from "./commands";
 import type {
@@ -13,10 +14,8 @@ import { MOCK_HOST_ID } from "./fixtures";
 import type { MockPower } from "./power";
 import type { MockProcesses } from "./processes";
 import {
-  EARLIER_AFTER_MS,
   effectiveMinPeriodMs,
   framePeriodMs,
-  layoutMsg,
   ok,
   pickFor,
   project,
@@ -68,6 +67,8 @@ export class MockStream {
       .holds;
     if (!this.power.receiving()) return;
     for (const sub of [...this.channels.live.values()]) {
+      this.channels.catchUpStep(sub);
+      this.channels.sendLayout(sub);
       const period = effectiveMinPeriodMs(
         sub.minPeriodMs,
         this.power.status.performance
@@ -127,6 +128,10 @@ export class MockStream {
     onMsg,
     opts = {}
   ) => {
+    if ((this.options.latencyMs ?? 0) > 0)
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.options.latencyMs)
+      );
     const remote = this.remote.remotes.get(host);
     if (remote) {
       this.commands.record(
@@ -166,6 +171,13 @@ export class MockStream {
       }
       return remote.peer.subscribeLive(MOCK_HOST_ID, onMsg, opts);
     }
+    return this.subscribeLocal(host, onMsg, opts);
+  };
+  private readonly subscribeLocal = (
+    host: string,
+    onMsg: (msg: LiveMsg) => void,
+    opts: LiveOptions
+  ): LiveSubscription => {
     const backfillMs = Math.min(opts.backfillMs ?? MINUTE_MS, RING_SPAN_MS);
     this.commands.record(
       "subscribe_live",
@@ -181,6 +193,7 @@ export class MockStream {
       stream: this.nextStream++,
       pick,
       series: project(this.ring.gen.keys, pick),
+      layoutNo: null,
       minPeriodMs: opts.minPeriodMs ?? null,
       lastFrameMs: null,
       backfillMs,
@@ -197,34 +210,19 @@ export class MockStream {
     this.channels.live.set(onMsg, sub);
     // A new subscription from the window ends interest tagged with another.
     this.processes.currentStream = sub.stream;
-    const h = this.channels.history(sub, backfillMs);
-    sub.earlier = h.earlier;
     onMsg({ kind: "caps", capabilities: this.ring.caps });
-    // A hidden window gets its status on show, never the background's.
-    if (this.power.windowVisible) this.channels.sendStatus(sub);
-    onMsg(layoutMsg(this.ring.layoutNo, sub.series));
-    for (const msg of h.recent) onMsg(msg);
+    // Rust's registry only catches up visible windows (live/registry.rs).
+    const h = this.power.windowVisible ? this.channels.fresh(sub) : null;
     this.ensureTimer();
-    // Rust starts the earlier chunks after the first frame, or after 1 s
-    // when no frame comes (paused, stale).
-    if (sub.earlier.length > 0) {
-      sub.timer = setTimeout(
-        () => this.channels.sendEarlier(sub),
-        EARLIER_AFTER_MS
-      );
-    }
-    const first = h.recent[0];
+    const first = h?.recent[0];
     return {
       info: ok({
         host,
         stream: sub.stream,
         backfill_start_ms: first?.kind === "backfill" ? first.start_ms : null,
-        backfill_rows: h.recent.reduce(
-          (n, m) => n + (m.kind === "backfill" ? m.rows.length : 0),
-          0
-        ),
-        earlier_start_ms: h.earlierStart,
-        earlier_rows: h.earlierRows,
+        backfill_rows: h?.recentRows ?? 0,
+        earlier_start_ms: h?.earlierStart ?? null,
+        earlier_rows: h?.earlierRows ?? 0,
       }),
       unsubscribe: () => {
         if (sub.timer !== null) clearTimeout(sub.timer);
@@ -243,19 +241,17 @@ export class MockStream {
       sub.timer = null;
       sub.lastFrameMs = null;
       sub.holdsSent = null;
-      sub.onMsg(layoutMsg(this.ring.layoutNo, sub.series));
     }
     this.processes.lastBatchMs = null;
   };
   readonly setWindowVisible: MockTransport["setWindowVisible"] = (visible) => {
     if (this.power.windowVisible === visible) return;
-    const was = this.power.receiving();
     this.power.windowVisible = visible;
     this.docker.setVisible(this.power.receiving());
     // Rust's order (D-094): the tick changes before the stream resumes and
     // after it stops, so the window never gets the background's status.
     this.power.updatePower();
-    if (!was && this.power.receiving()) this.channels.resume();
+    if (visible) this.channels.resume();
   };
   readonly setLowPowerMode: MockTransport["setLowPowerMode"] = (on) => {
     this.power.lowPowerMode = on;

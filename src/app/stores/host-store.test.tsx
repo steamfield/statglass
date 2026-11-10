@@ -1,9 +1,12 @@
+import { ringLoading } from "@core/live-state";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import type { Transport } from "@core/transport";
 import { act, render } from "@testing-library/react";
 import { TransportProvider } from "~/lib/transport-context";
 import { HostStoreProvider, useHost } from "./host-store";
+
+const HOUR = 3_600_000;
 
 function setVisibility(state: "visible" | "hidden") {
   Object.defineProperty(document, "visibilityState", {
@@ -168,5 +171,85 @@ describe("subscription setup races", () => {
       mock.dispose();
       vi.useRealTimers();
     }
+  });
+});
+
+describe("live history pending", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function History() {
+    const pending = useHost((s) => ringLoading(s, HOUR));
+    return <span data-testid="history">{String(pending)}</span>;
+  }
+  function historyView(transport: Transport, backfillMs = HOUR) {
+    return render(
+      <TransportProvider transport={transport}>
+        <HostStoreProvider hostId={MOCK_HOST_ID} backfillMs={backfillMs}>
+          <History />
+        </HostStoreProvider>
+      </TransportProvider>
+    );
+  }
+
+  it("waits after subscribe resolves until the earlier chunks finish", async () => {
+    const t = createMockTransport({ historyRows: 3600, autoTick: false });
+    const view = historyView(t);
+    await act(async () => {});
+    expect(view.getByTestId("history").textContent).toBe("true");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(view.getByTestId("history").textContent).toBe("false");
+    view.unmount();
+    t.dispose();
+  });
+
+  it("settles as soon as the default recent backfill lands", async () => {
+    const t = createMockTransport({ historyRows: 3600, autoTick: false });
+    const view = historyView(t, 60_000);
+    await act(async () => {});
+    expect(view.getByTestId("history").textContent).toBe("false");
+    view.unmount();
+    t.dispose();
+  });
+
+  it.each(["throws", "typed"] as const)(
+    "settles when subscribe fails (%s)",
+    async (failure) => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const t = createMockTransport({ autoTick: false });
+      const subscribeLive: Transport["subscribeLive"] =
+        failure === "throws"
+          ? async () => {
+              throw new Error("channel closed");
+            }
+          : async (_host, onMsg, options) =>
+              t.subscribeLive("unknown", onMsg, options);
+      const view = historyView({ ...t, subscribeLive });
+      await act(async () => {});
+      expect(view.getByTestId("history").textContent).toBe("false");
+      view.unmount();
+      t.dispose();
+    }
+  );
+
+  it("settles a hidden reply, then waits for the plan on show", async () => {
+    const t = createMockTransport({ historyRows: 3600, autoTick: false });
+    t.setWindowVisible(false);
+    const view = historyView(t);
+    await act(async () => {});
+    expect(view.getByTestId("history").textContent).toBe("false");
+    act(() => t.setWindowVisible(true));
+    expect(view.getByTestId("history").textContent).toBe("true");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(view.getByTestId("history").textContent).toBe("false");
+    view.unmount();
+    t.dispose();
   });
 });

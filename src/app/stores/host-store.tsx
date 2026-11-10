@@ -12,11 +12,13 @@
  */
 import type { HostId, LiveMsg, SeriesSelector } from "@core/generated/bindings";
 import {
+  awaitHistory,
   type Connection,
   clearRows,
   type HostLive,
   initialHostLive,
   reduceLive,
+  settleSubscribe,
 } from "@core/live-state";
 import { ProcessInterest } from "@core/process-interest";
 import { MINUTE_MS } from "@core/time-grid";
@@ -36,6 +38,8 @@ import { useTransport } from "~/lib/transport-context";
 
 export interface HostLiveState extends HostLive {
   apply: (msg: LiveMsg) => void;
+  awaitHistory: () => void;
+  settleSubscribe: () => void;
   setStale: (stale: boolean) => void;
   setConnection: (connection: Connection) => void;
   /** Drop every row (a resubscribe that refills the ring from Rust). */
@@ -76,6 +80,8 @@ export function createHostStore(
     setConnection: (connection) =>
       set((s) => (s.connection === connection ? s : { connection })),
     clearRows: () => set((s) => clearRows(s)),
+    awaitHistory: () => set((s) => awaitHistory(s)),
+    settleSubscribe: () => set((s) => settleSubscribe(s)),
     processInterest: interest,
   }));
 }
@@ -242,9 +248,15 @@ function useLiveSubscription(
       }
       if (sub.info.status === "error") {
         sub.unsubscribe();
+        store.getState().settleSubscribe();
         retry(attempt, sub.info.error, backfill);
         return;
       }
+      if (
+        sub.info.data.backfill_rows === 0 &&
+        sub.info.data.earlier_start_ms === null
+      )
+        store.getState().settleSubscribe();
       unsubscribe = sub.unsubscribe;
       interest.setStream(sub.info.data.stream);
       armStale();
@@ -259,6 +271,8 @@ function useLiveSubscription(
           : { series: seriesRef.current }),
       };
       try {
+        if (cancelled) return;
+        store.getState().awaitHistory();
         const sub = await transport.subscribeLive(
           hostId,
           (msg) => {
@@ -268,8 +282,10 @@ function useLiveSubscription(
         );
         acceptSubscription(sub, attempt, backfill, attemptGeneration);
       } catch (err) {
-        if (!cancelled && generation === attemptGeneration)
+        if (!cancelled && generation === attemptGeneration) {
+          store.getState().settleSubscribe();
           retry(attempt, err, backfill);
+        }
       }
     };
 
