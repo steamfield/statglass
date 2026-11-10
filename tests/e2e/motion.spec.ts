@@ -557,6 +557,15 @@ for (const mode of ["reduced motion", "Performance mode"] as const) {
       page,
       mode === "Performance mode" ? "performance-mode" : "default"
     );
+    // Performance mode reaches the page with the stream's first status. On a
+    // slow runner the scan's 150 ms delay can end before that, so only what
+    // starts once the mode is known counts. Reduced motion is known at load.
+    if (mode === "Performance mode")
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-performance",
+        /.*/
+      );
+    const before = (await started(page)).length;
     await page.clock.runFor(1100);
     await chartsReady(page);
     await expect(
@@ -565,7 +574,9 @@ for (const mode of ["reduced motion", "Performance mode"] as const) {
         .locator("path[data-line]")
     ).toHaveCount(2);
     expect(
-      (await started(page)).filter((name) => /scan|reveal/.test(name))
+      (await started(page))
+        .slice(mode === "Performance mode" ? before : 0)
+        .filter((name) => /scan|reveal/.test(name))
     ).toEqual([]);
     expect(
       await page.evaluate(() =>
