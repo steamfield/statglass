@@ -148,9 +148,11 @@ describe("popover network card", () => {
     await waitFor(() => expect(storeRef?.getState().layoutNo).not.toBeNull());
     // Upload bar heights (the row above the axis), tallest first.
     const upHeights = () => {
-      const row = screen.getByRole("img", {
-        name: /^Network: upload/,
-      }).firstElementChild;
+      const row = screen
+        .getByRole("img", {
+          name: /^Network: upload/,
+        })
+        .querySelector("[data-bars] > div");
       return [...(row?.querySelectorAll<HTMLElement>("span") ?? [])]
         .map((bar) => Number.parseFloat(bar.style.height))
         .filter((h) => h > 0)

@@ -1,4 +1,4 @@
-import type { LayoutInfo } from "@core/live-state";
+import { type LayoutInfo, ringLoading } from "@core/live-state";
 import {
   bucketAverages,
   bucketIndex,
@@ -101,4 +101,30 @@ export function useRingBuckets(
     values[k] = [...(closed[k] ?? []), ...(open[k] ?? [])];
   }
   return { values, endMs: last * bucketMs };
+}
+
+/**
+ * Whether the ring is still filling the last `windowMs` (`ringLoading`). A boolean
+ * selector: the caller re-renders when it flips, not on every tick.
+ */
+export function useRingLoading(
+  windowMs: number,
+  toleranceMs?: number,
+  enabled = true
+): boolean {
+  return useHost((s) => enabled && ringLoading(s, windowMs, toleranceMs));
+}
+
+/**
+ * `useRingLoading` for a window that subscribes while hidden (the popover): not
+ * loading until the stream's first status arrives on show, so nothing animates in a
+ * hidden-but-warm window between the subscribe and its reply.
+ */
+export function useShownRingLoading(
+  windowMs: number,
+  toleranceMs?: number
+): boolean {
+  return useHost(
+    (s) => s.status !== null && ringLoading(s, windowMs, toleranceMs)
+  );
 }

@@ -289,7 +289,7 @@ describe("Disk and Memory pages over a range (D-099)", () => {
   });
 
   it("Memory: apps by peak footprint, with their average while running; either chart brushes", async () => {
-    const { user } = render(<MemoryRoute />);
+    const { user, transport } = render(<MemoryRoute />);
     const table = await screen.findByRole("table", { name: "Memory by app" });
     expect(
       within(table).getByRole("columnheader", { name: /Peak/ })
@@ -307,7 +307,8 @@ describe("Disk and Memory pages over a range (D-099)", () => {
         /Peak used · 5 min.+BPeak swap · 5 min.+B/
       )
     );
-    const [, swap] = screen.getAllByRole("slider", {
+    act(() => transport.tick());
+    const [, swap] = await screen.findAllByRole("slider", {
       name: "Select a time range",
     });
     act(() => swap?.focus());

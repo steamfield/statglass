@@ -2,6 +2,7 @@ import { spanWords, windowLabel } from "@core/live-window";
 import { MINUTE_MS } from "@core/time-grid";
 import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
+import { useShownRingLoading } from "~/hooks/use-ring";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import { useSeriesWindow } from "~/stores/live-selectors";
 import type { Accent } from "~/widgets/lib/accent";
@@ -43,6 +44,7 @@ export function useCompactStream({
 }: CompactStreamOptions): StreamAreaProps {
   const windowMs = useScaledWindow(MINUTE_MS);
   const history = useSeriesWindow(seriesKey, windowMs);
+  const loading = useShownRingLoading(windowMs);
   const auto = useNiceCeiling(
     history.values,
     history.tEndMs,
@@ -56,6 +58,7 @@ export function useCompactStream({
     now: now === undefined ? undefined : `now ${now}`,
   });
   return {
+    loading,
     series: [{ key: seriesKey, values: history.values, step: 1 }],
     tEndMs: history.tEndMs,
     intervalMs: history.intervalMs,

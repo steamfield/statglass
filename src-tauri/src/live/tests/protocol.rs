@@ -6,6 +6,7 @@ fn trace(messages: impl IntoIterator<Item = LiveMsg>) -> Vec<Value> {
     messages
         .into_iter()
         .filter_map(|message| match message {
+            LiveMsg::BackfillPlan { recent_rows, earlier_start_ms } => Some(json!({"kind": "backfill_plan", "recent_rows": recent_rows, "earlier_start_ms": earlier_start_ms})),
             LiveMsg::Holds { .. } => None, // Holds have their own catalog/expiry contract tests.
             LiveMsg::Backfill { start_ms, rows, .. } => {
                 Some(json!({"kind": "backfill", "start_ms": start_ms, "rows": rows.len()}))

@@ -15,6 +15,12 @@ function trace(messages: LiveMsg[]) {
             start_ms: message.start_ms,
             rows: message.rows.length,
           };
+        case "backfill_plan":
+          return {
+            kind: message.kind,
+            recent_rows: message.recent_rows,
+            earlier_start_ms: message.earlier_start_ms,
+          };
         case "frame":
           return { kind: message.kind, ts_ms: message.ts_ms };
         default:
@@ -62,7 +68,8 @@ it("matches the Rust registry's ordering, backfill boundaries, disconnect and ty
         series: [{ metric: "cpu.total", labels: [] }],
       }
     );
-    expect(trace(messages.splice(0))).toEqual(fixture.initial);
+    const initial = trace(messages.splice(0));
+    expect(initial).toEqual(fixture.initial);
     now += 1000;
     transport.tick();
     await vi.runAllTimersAsync();

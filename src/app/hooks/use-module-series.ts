@@ -21,6 +21,7 @@ export function useModuleSeries(
     values: history.grid?.values ?? {},
     tEndMs: history.grid?.endMs ?? 0,
     intervalMs: history.grid?.bucketMs ?? live.intervalMs,
+    ringLoading: false,
     loading: history.loading,
     error: history.error,
   };

@@ -5,8 +5,9 @@ import { bucketAverages, bucketIndex } from "@core/series-stats";
 import { act, screen } from "@testing-library/react";
 import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
+import { Profiler, useState } from "react";
 import { type HostStore, useHostStore } from "~/stores/host-store";
-import { useRingBuckets } from "./use-ring";
+import { useRingBuckets, useRingLoading } from "./use-ring";
 import { useWindowSeries, type WindowSeries } from "./use-window-series";
 
 const KEYS = ["cpu.total", "cpu.system"];
@@ -249,4 +250,122 @@ describe("a slow series crossing a bucket boundary", () => {
       }
     }
   );
+});
+
+describe("ring loading subscriptions", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("exposes loading until the earlier chunks finish", async () => {
+    const r = setup(HOUR);
+    await act(async () => {});
+    expect(latest?.ringLoading).toBe(true);
+    expect(latest?.loading).toBeUndefined();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(latest?.ringLoading).toBe(false);
+    r.unmount();
+    r.transport.dispose();
+  });
+
+  it("a loading flip adds one commit while a later tick still adds one", async () => {
+    let commits = 0;
+    let loadingCommits = 0;
+    function Series() {
+      storeRef = useHostStore();
+      latest = useWindowSeries(KEYS, HOUR);
+      return null;
+    }
+    function Loading() {
+      useRingLoading(HOUR);
+      return null;
+    }
+    const r = renderWithProviders(
+      <>
+        <Profiler
+          id="series"
+          onRender={() => {
+            commits++;
+          }}
+        >
+          <Series />
+        </Profiler>
+        <Profiler
+          id="loading"
+          onRender={() => {
+            loadingCommits++;
+          }}
+        >
+          <Loading />
+        </Profiler>
+      </>,
+      { transportOptions: { historyRows: 3600 }, backfillMs: HOUR }
+    );
+    await act(async () => {});
+    const s = state();
+    const first = s.columns.firstTsMs();
+    if (first === null) throw new Error("missing rows");
+    const before = commits;
+    const loadingBefore = loadingCommits;
+    // One final chunk changes both the row selector and the boolean selector.
+    act(() =>
+      r.transport.push({
+        kind: "backfill_earlier",
+        layout_no: s.layoutNo ?? 1,
+        start_ms: first - HOUR,
+        interval_ms: 1000,
+        rows: [[1]],
+        holds_ms: [],
+      })
+    );
+    expect(latest?.ringLoading).toBe(false);
+    expect(commits - before).toBe(1);
+    expect(loadingCommits - loadingBefore).toBe(1);
+    const after = commits;
+    act(() => r.transport.tick());
+    expect(commits - after).toBe(1);
+    expect(loadingCommits - loadingBefore).toBe(1);
+    r.unmount();
+    r.transport.dispose();
+  });
+
+  it("returns false while disabled, without disturbing hook order", async () => {
+    let enable = () => {};
+    function Disabled() {
+      const [enabled, setEnabled] = useState(false);
+      enable = () => setEnabled(true);
+      latest = useWindowSeries(KEYS, HOUR, { enabled });
+      return null;
+    }
+    const r = renderWithProviders(<Disabled />, {
+      transportOptions: { historyRows: 3600 },
+      backfillMs: HOUR,
+    });
+    await act(async () => {});
+    expect(latest?.ringLoading).toBe(false);
+    act(enable);
+    expect(latest?.ringLoading).toBe(true);
+    r.unmount();
+    r.transport.dispose();
+  });
+});
+
+it("reports loading on the raw grid while a recent-only subscribe is delayed", async () => {
+  vi.useFakeTimers();
+  const r = renderWithProviders(<Probe windowMs={60_000} />, {
+    transportOptions: { historyRows: 60, latencyMs: 800 },
+  });
+  try {
+    expect(latest?.ringLoading).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(latest?.ringLoading).toBe(false);
+    expect(latest?.intervalMs).toBe(1000);
+  } finally {
+    r.unmount();
+    r.transport.dispose();
+    vi.useRealTimers();
+  }
 });

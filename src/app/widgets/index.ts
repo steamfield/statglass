@@ -18,6 +18,7 @@ export {
   ChartAnnotation,
   type ChartAnnotationProps,
 } from "./chart-annotation";
+export { ChartLoading, type ChartLoadingProps } from "./chart-loading";
 export { CoreHeatmap, type CoreHeatmapProps } from "./core-heatmap";
 export {
   CoreTiles,

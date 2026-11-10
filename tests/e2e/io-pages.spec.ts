@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chartsReady } from "./helpers/charts-ready";
 
 /**
  * Network, Disk, Battery and Processes pages on the mock transport, in both
@@ -36,7 +37,9 @@ for (const theme of THEMES) {
       await expect(
         page.getByRole("heading", { name: p.heading, exact: true })
       ).toBeVisible();
+      await chartsReady(page);
       await page.screenshot({
+        animations: "disabled",
         path: `test-results/screens/${p.slug}-${theme}-${info.project.name}.png`,
         fullPage: true,
       });
@@ -57,6 +60,8 @@ for (const p of [
     await page.setViewportSize({ width: 1280, height: 1000 });
     await page.goto(`/?window=dashboard&route=${p.route}&ticks=0`);
     const chart = page.getByRole("img", { name: p.chart });
+    await chart.waitFor();
+    await chartsReady(page);
     const box = await chart.boundingBox();
     if (!box) throw new Error("chart not laid out");
     await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2);

@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { nextFrame } from "@tests/live-frames";
-import { renderWithProviders } from "@tests/test-utils";
+import { mockElementAnimate, renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
 import { BrushProvider } from "~/stores/brush-store";
@@ -322,4 +322,69 @@ describe("LiveMirrorChart", () => {
       expect(commits).toHaveLength(1);
     }
   });
+});
+
+it("disables mirror interactions and gap bands while loading, independently of pending", () => {
+  const gaps = [
+    { fromMs: plot.firstMs, toMs: plot.firstMs + 10_000, label: "Asleep" },
+  ];
+  const r = renderWithProviders(
+    <BrushProvider>
+      <MirrorChart {...plot} brush loading gaps={gaps} />
+    </BrushProvider>
+  );
+  expect(r.container.querySelector("[data-chart-loading]")).not.toBeNull();
+  expect(screen.queryByRole("slider")).toBeNull();
+  expect(screen.queryByRole("note", { name: "Asleep" })).toBeNull();
+  expect(r.container.querySelector("[data-crosshair]")).toBeNull();
+  expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+  expect(r.container.querySelector("[data-gap]")).toBeNull();
+  r.unmount();
+  renderWithProviders(
+    <BrushProvider>
+      <MirrorChart {...plot} brush gaps={gaps} />
+    </BrushProvider>
+  );
+  expect(screen.getByRole("slider")).toBeInTheDocument();
+  expect(screen.getByRole("note", { name: "Asleep" })).toBeInTheDocument();
+  expect(screen.getByRole("tooltip", { hidden: true })).toBeInTheDocument();
+});
+
+it("holds live mirrored bars until the hour's backfill lands", async () => {
+  vi.useFakeTimers();
+  const animate = mockElementAnimate();
+  document.documentElement.style.setProperty("--motion-enter", "280ms");
+  const r = renderWithProviders(
+    <ChartRangeProvider>
+      <LiveMirrorChart
+        subject="Network"
+        upKey="net.tx_total"
+        downKey="net.rx_total"
+        upLabel="Upload"
+        downLabel="Download"
+        windowMs={3_600_000}
+        accent="net"
+        format={String}
+        minCeiling={1}
+      />
+    </ChartRangeProvider>,
+    { transportOptions: { historyRows: 3600 }, backfillMs: 3_600_000 }
+  );
+  try {
+    await act(async () => {});
+    expect(r.container.querySelector("[data-chart-loading]")).not.toBeNull();
+    expect(screen.queryByText("Loading chart history…")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(r.container.querySelector("[data-chart-loading]")).toBeNull();
+    const bars = r.container.querySelector("[data-bars]");
+    expect(bars).toHaveAttribute("data-reveal");
+    expect(animate.mock.contexts).toContain(bars);
+  } finally {
+    r.unmount();
+    r.transport.dispose();
+    document.documentElement.style.removeProperty("--motion-enter");
+    vi.useRealTimers();
+  }
 });

@@ -173,7 +173,10 @@ describe("CPU page over a range (D-099)", () => {
   it("a brushed range scopes the totals and the table; Esc and a press elsewhere clear it", async () => {
     const { transport, user } = renderCpu();
     await appsTable();
-    const brush = screen.getByRole("slider", { name: "Select a time range" });
+    act(() => transport.tick());
+    const brush = await screen.findByRole("slider", {
+      name: "Select a time range",
+    });
     act(() => brush.focus());
     // Focus starts on [T − 10 s, T); one left, select, extend right.
     await user.keyboard("{ArrowLeft}{Enter}{Shift>}{ArrowRight}{/Shift}");

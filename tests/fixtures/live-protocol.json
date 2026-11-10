@@ -33,6 +33,11 @@
       "kind": "layout"
     },
     {
+      "earlier_start_ms": 1000,
+      "kind": "backfill_plan",
+      "recent_rows": 121
+    },
+    {
       "kind": "backfill",
       "rows": 121,
       "start_ms": 1380000

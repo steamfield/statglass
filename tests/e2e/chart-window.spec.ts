@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { chartsReady } from "./helpers/charts-ready";
 
 const moduleHeader = (page: Page) =>
   page
@@ -137,6 +138,7 @@ for (const theme of ["dark", "light"] as const) {
       name: /^Per-core load, last 90 days/,
     });
     await expect(heatmap.locator("[data-gap]")).not.toHaveCount(0);
+    await chartsReady(page);
     const cells = await heatmap.locator(".h-2\\.5").count();
     expect(cells).toBeGreaterThan(0);
     expect(cells).toBeLessThanOrEqual(14 * 61);
@@ -177,3 +179,30 @@ for (const theme of ["dark", "light"] as const) {
     ).toBeVisible();
   });
 }
+
+test("a retained range shows a loading frame and quiet history status until the query resolves", async ({
+  page,
+}) => {
+  await page.goto("/?route=/dashboard/cpu&theme=dark&ticks=0&latency=800");
+  await expect(
+    page.getByRole("heading", { name: "CPU", exact: true })
+  ).toBeVisible();
+  await chartsReady(page);
+  await moduleHeader(page)
+    .getByRole("button", { name: "Time range: 15m" })
+    .click();
+  await page.getByRole("button", { name: "Last 1 day" }).click();
+  const card = page.getByRole("region", { name: "CPU total" });
+  await expect(card.locator("[data-chart-loading]")).toHaveCount(1);
+  await expect(card.locator("path[data-line]")).toHaveCount(0);
+  const status = card
+    .getByRole("status", { name: "" })
+    .filter({ hasText: "Loading chart history…" });
+  await expect(status).toHaveClass(/sr-only/);
+  const box = await status.boundingBox();
+  expect(box?.width).toBe(1);
+  expect(box?.height).toBe(1);
+  await chartsReady(page);
+  await expect(card.locator("path[data-line]").first()).toBeVisible();
+  await expect(status).toHaveCount(0);
+});

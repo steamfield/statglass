@@ -165,7 +165,8 @@ for (const mode of ["chart", "bars"]) {
         const layers =
           chart instanceof SVGElement
             ? [chart.parentElement]
-            : [chart?.firstElementChild, chart?.lastElementChild];
+            : Array.from(chart?.querySelectorAll("[data-bars] > div") ?? []);
+        if (layers.length === 0) throw new Error("Missing scroll layers");
         return layers.map((layer) =>
           layer ? getComputedStyle(layer).transform : "missing"
         );

@@ -81,23 +81,30 @@ export class MockQueries {
           )
         )
     );
-  readonly queryHistory: MockTransport["queryHistory"] = async (request) =>
-    this.remote.forward(request.host, (peer) =>
-      peer.queryHistory({ ...request, host: MOCK_HOST_ID })
-    ) ??
-    this.commands.hostCommand(
-      "query_history",
-      request.host,
-      [request],
-      { range: [request.from_ms, request.to_ms] },
-      () => {
-        if (request.selectors.length === 0) return invalid("empty selectors");
-        // With history unavailable Rust answers from the engine's recent
-        // rows (`HISTORY_RECENT_MS`). Gaps sit where the ring has its holes:
-        // fixed at start, not sliding.
-        return ok(this.historyPage(request));
-      }
+  readonly queryHistory: MockTransport["queryHistory"] = async (request) => {
+    if ((this.options.latencyMs ?? 0) > 0)
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.options.latencyMs)
+      );
+    return (
+      this.remote.forward(request.host, (peer) =>
+        peer.queryHistory({ ...request, host: MOCK_HOST_ID })
+      ) ??
+      this.commands.hostCommand(
+        "query_history",
+        request.host,
+        [request],
+        { range: [request.from_ms, request.to_ms] },
+        () => {
+          if (request.selectors.length === 0) return invalid("empty selectors");
+          // With history unavailable Rust answers from the engine's recent
+          // rows (`HISTORY_RECENT_MS`). Gaps sit where the ring has its holes:
+          // fixed at start, not sliding.
+          return ok(this.historyPage(request));
+        }
+      )
     );
+  };
   /** As `History::last_wake`: the latest closed sleep in the past week. */
   readonly lastWake: MockTransport["lastWake"] = async (host) =>
     this.remote.forward(host, (peer) => peer.lastWake(MOCK_HOST_ID)) ??

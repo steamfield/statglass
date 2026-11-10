@@ -6,7 +6,8 @@ export type MotionDuration =
   | "entry"
   | "enter"
   | "stagger"
-  | "crossfade";
+  | "crossfade"
+  | "scan";
 
 /** The easing tokens, by suffix. */
 export type MotionEase = "out" | "tick";
@@ -23,12 +24,14 @@ function rootStyle(el?: Element): CSSStyleDeclaration {
 /**
  * `--motion-<name>` in ms: 0 under Reduce Motion and Performance mode, and 0
  * when the token is missing, so a JS tween that reads it never runs then.
+ * The value may be in seconds: the production CSS minifier writes `280ms` as
+ * `.28s`.
  */
 export function motionMs(name: MotionDuration, el?: Element): number {
-  const ms = Number.parseFloat(
-    rootStyle(el).getPropertyValue(`--motion-${name}`)
-  );
-  return Number.isFinite(ms) ? ms : 0;
+  const value = rootStyle(el).getPropertyValue(`--motion-${name}`).trim();
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n)) return 0;
+  return value.endsWith("ms") ? n : n * 1000;
 }
 
 /** `--ease-<name>`, trimmed, or `ease-out` when the token is missing. */

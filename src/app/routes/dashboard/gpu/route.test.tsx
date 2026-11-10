@@ -53,11 +53,13 @@ describe("GPU page over a range (D-085, D-099)", () => {
   });
 
   it("a brushed range scopes the table", async () => {
-    const { user } = render();
+    const { user, transport } = render();
     await screen.findByRole("table", { name: "GPU by app" });
-    act(() =>
-      screen.getByRole("slider", { name: "Select a time range" }).focus()
-    );
+    act(() => transport.tick());
+    const brush = await screen.findByRole("slider", {
+      name: "Select a time range",
+    });
+    act(() => brush.focus());
     await user.keyboard("{Enter}");
     expect(
       await screen.findByRole("heading", { name: "GPU by app, selected 10 s" })
@@ -65,7 +67,8 @@ describe("GPU page over a range (D-085, D-099)", () => {
   });
 
   it("without per-process GPU time: the range figures, no apps table", async () => {
-    render(["no-process-gpu"]);
+    const { transport } = render(["no-process-gpu"]);
+    act(() => transport.tick());
     await vi.waitFor(() =>
       expect(screen.getByTestId("gpu-range-totals")).toHaveTextContent(
         /Avg · 5 min[\d.]+%/
@@ -73,7 +76,7 @@ describe("GPU page over a range (D-085, D-099)", () => {
     );
     expect(screen.queryByRole("table", { name: "GPU by app" })).toBeNull();
     expect(
-      screen.getByRole("slider", { name: "Select a time range" })
+      await screen.findByRole("slider", { name: "Select a time range" })
     ).toBeVisible();
   });
 });

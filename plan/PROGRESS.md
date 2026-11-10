@@ -4,6 +4,38 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Chart loading states and reveal (2026-11-10)
+
+Dashboard and popover charts hold back until their history has arrived, then reveal once
+(D-133). The frame draws at once; a 1 px accent segment scans the baseline after 150 ms
+(`ChartLoading`, `--motion-scan`); when the window is whole the data layer settles from
+the baseline (`useReveal`, one Web Animations call). `StreamArea`, `MirrorBars` and
+`HeatMatrix` take a `loading` prop, and every `ModuleHistoryChart`, mirrored chart and
+heatmap owner passes history-query loading or ring loading. Rust sends a new
+`LiveMsg::BackfillPlan` before a fresh catch-up's rows and finishes promised earlier
+chunks when a window hides; the live state keeps it as `historyPending` and
+`ringLoading` reads it. The mock sends the same plan, no longer catches up a hidden
+window until shown, takes `?latency=`, and fills rows a throttled background-tab timer
+missed. `motionMs` now reads the seconds the production minifier writes, which brings
+the tick scroll, number counts, space map and Timeline zoom to life in production builds.
+
+Verified with `cargo test -p statglass live` (57), `bun run test`, `bun run test:e2e`
+(both browsers), clippy, lint, typecheck and `make architecture-check`; `make check` was
+run in a nested worktree, where only `updater-patch-test` cannot resolve its workspace.
+Screenshots of Overview and CPU mid-load and settled in both themes, and the gallery's
+"Chart loading" specimen, were compared with the neighbouring screens. The docs-site
+article demo was driven in headless Chromium against a production build: the frame fades
+in showing the marks and both Memory charts reveal over 280 ms about a second later.
+Reviewed by ce:devils-advocate (plan) and ce:code-reviewer (branch); their findings are
+in. `make e2e-perf` passes; alternating runs against main showed no difference outside
+run-to-run noise before the `motionMs` fix.
+
+Open, from D-133: the popover's first-open reveal has not been checked for stale frames
+in the packaged app, `make bench` was not run, the Disk I/O charts keep their text line,
+and the settings and host-list gate before a page body renders is unmeasured in the
+packaged app. The landing page's dashboard demo opens on Timeline, whose uPlot lanes are
+not part of this change.
+
 ## Theme centralization (2026-11-09)
 
 Theme values that lived in components moved into `src/app/styles/theme.css`, so a re-theme

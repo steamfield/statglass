@@ -133,6 +133,28 @@ export function WidgetsChartsSection() {
         </GalleryItem>
       </div>
 
+      <GalleryItem
+        name="Chart loading"
+        usedIn="Live and history charts"
+        width={340}
+      >
+        <div className="flex flex-col gap-4 p-3">
+          <StreamArea {...POPOVER_CPU} loading />
+          <MirrorBars {...NETWORK_BARS} loading />
+          <HeatMatrix
+            loading
+            rows={THERMAL_ZONES.slice(0, 3)}
+            scale={{ min: 20, max: 110 }}
+            formatNow={(c) => formatTemperature(c, { compact: true })}
+            labelWidth={44}
+            bucketMs={10_000}
+            windowMs={600_000}
+            accent="temp"
+            ariaLabel="SoC thermal zones, loading"
+          />
+        </div>
+      </GalleryItem>
+
       <GalleryItem name="StreamArea · large" usedIn="CPU">
         <ChartCard id="gc-total" title="CPU total" accent="cpu">
           <StreamArea {...CPU_TOTAL} />

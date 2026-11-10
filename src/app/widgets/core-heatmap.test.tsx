@@ -16,6 +16,17 @@ const props: CoreHeatmapProps = {
 };
 
 describe("CoreHeatmap", () => {
+  it("passes loading through to HeatMatrix", () => {
+    const { container, getByRole, rerender } = render(
+      <CoreHeatmap {...props} loading />
+    );
+    expect(getByRole("img")).toHaveAttribute("data-loading", "true");
+    expect(container.querySelector("[data-chart-loading]")).toBeInTheDocument();
+    rerender(<CoreHeatmap {...props} loading={false} />);
+    expect(getByRole("img")).not.toHaveAttribute("data-loading");
+    expect(container.querySelector("[data-chart-loading]")).toBeNull();
+  });
+
   it("renders the same after a JSON round trip", () => {
     expectJsonRoundTrip(CoreHeatmap, props);
   });

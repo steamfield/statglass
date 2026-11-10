@@ -53,16 +53,17 @@ describe("mock transport", () => {
     });
   });
 
-  it("sends caps, status, layout, then backfill (D-049)", async () => {
+  it("sends caps, status, plan, layout, then backfill (D-049)", async () => {
     const { msgs, sub } = await subscribe();
     expect(msgs.map((m) => m.kind)).toEqual([
       "caps",
       "status",
+      "backfill_plan",
       "layout",
       "backfill",
     ]);
     expect(sub.info.status).toBe("ok");
-    const backfill = msgs[3];
+    const backfill = msgs[4];
     expect(backfill?.kind === "backfill" && backfill.rows.length).toBe(61);
   });
 
@@ -356,5 +357,78 @@ describe("host command preamble", () => {
       queryUsageSeries: "invalid_argument: the range is longer than 3610000 ms",
       queryUsageByApp: "ok",
     });
+  });
+});
+
+describe("mock loading latency", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const request = {
+    host: MOCK_HOST_ID,
+    selectors: [{ metric: "cpu.total", labels: [] }],
+    from_ms: 0,
+    to_ms: 1000,
+    tier: "auto",
+    max_points: 10,
+  } as const;
+
+  it.each([undefined, 0])(
+    "subscribeLive and queryHistory add no timers when latency is %s",
+    async (latencyMs) => {
+      const t = createMockTransport({
+        historyRows: 60,
+        ...(latencyMs === undefined ? {} : { latencyMs }),
+      });
+      const before = vi.getTimerCount();
+      let messages = 0;
+      const sub = t.subscribeLive(MOCK_HOST_ID, () => {
+        messages++;
+      });
+      expect(vi.getTimerCount()).toBe(before);
+      expect(messages).toBeGreaterThan(0);
+      const query = t.queryHistory({
+        ...request,
+        selectors: [...request.selectors].map((s) => ({ ...s, labels: [] })),
+      });
+      expect(vi.getTimerCount()).toBe(before);
+      expect(messages).toBeGreaterThan(0);
+      expect((await query).status).toBe("ok");
+      expect(vi.getTimerCount()).toBe(before);
+      (await sub).unsubscribe();
+      t.dispose();
+    }
+  );
+
+  it("delays remote subscribes and history only once", async () => {
+    const t = createMockTransport({
+      scenarios: ["multi-host"],
+      latencyMs: 800,
+      historyRows: 60,
+    });
+    const host = (await t.listHosts()).find((h) => !h.is_local);
+    if (!host) throw new Error("missing remote");
+    let messages = 0;
+    const sub = t.subscribeLive(host.id, () => {
+      messages++;
+    });
+    let done = false;
+    const query = t
+      .queryHistory({
+        ...request,
+        host: host.id,
+        selectors: [{ metric: "cpu.total", labels: [] }],
+      })
+      .then(() => {
+        done = true;
+      });
+    await vi.advanceTimersByTimeAsync(799);
+    expect(messages).toBe(0);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(messages).toBeGreaterThan(0);
+    expect(done).toBe(true);
+    (await sub).unsubscribe();
+    await query;
+    t.dispose();
   });
 });
