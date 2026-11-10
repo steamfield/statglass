@@ -2,7 +2,9 @@ import { spanWords, windowLabel } from "@core/live-window";
 import { MINUTE_MS } from "@core/time-grid";
 import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
+import { useRingLoading } from "~/hooks/use-ring";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
+import { useHost } from "~/stores/host-store";
 import { useSeriesWindow } from "~/stores/live-selectors";
 import type { Accent } from "~/widgets/lib/accent";
 import type { StreamAreaProps } from "~/widgets/stream-area";
@@ -43,6 +45,9 @@ export function useCompactStream({
 }: CompactStreamOptions): StreamAreaProps {
   const windowMs = useScaledWindow(MINUTE_MS);
   const history = useSeriesWindow(seriesKey, windowMs);
+  // A hidden popover subscribes before Rust sends its first status on show.
+  const started = useHost((s) => s.status !== null);
+  const loading = useRingLoading(windowMs, undefined, started);
   const auto = useNiceCeiling(
     history.values,
     history.tEndMs,
@@ -56,6 +61,7 @@ export function useCompactStream({
     now: now === undefined ? undefined : `now ${now}`,
   });
   return {
+    loading,
     series: [{ key: seriesKey, values: history.values, step: 1 }],
     tEndMs: history.tEndMs,
     intervalMs: history.intervalMs,

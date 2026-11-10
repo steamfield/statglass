@@ -252,6 +252,7 @@ export class MockStream {
     // after it stops, so the window never gets the background's status.
     this.power.updatePower();
     if (visible) this.channels.resume();
+    else this.channels.flushEarlier();
   };
   readonly setLowPowerMode: MockTransport["setLowPowerMode"] = (on) => {
     this.power.lowPowerMode = on;

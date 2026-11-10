@@ -92,7 +92,9 @@
       animation-name: fade;
     }
 
-    .reveal {
+    /* Off outright in Performance mode: a 0ms animation still starts, and a
+       chart's data should appear without one. */
+    :root:not([data-performance]) .reveal {
       animation: reveal var(--motion-enter) var(--ease-out) backwards;
       transform-origin: var(--reveal-origin, 50% 100%);
     }

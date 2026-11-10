@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chartsReady } from "./helpers/charts-ready";
 
 /**
  * Popover, dashboard shell, Overview and the plan 4.17 states on the mock
@@ -17,11 +18,19 @@ function trackConsoleErrors(page: Page): string[] {
   return errors;
 }
 
-const shot = (page: Page, name: string, project: string, fullPage = false) =>
-  page.screenshot({
+const shot = async (
+  page: Page,
+  name: string,
+  project: string,
+  fullPage = false
+) => {
+  await chartsReady(page);
+  return page.screenshot({
+    animations: "disabled",
     path: `test-results/screens/${name}-${project}.png`,
     fullPage,
   });
+};
 
 const popoverViewport = (page: Page) =>
   page.locator("[data-radix-scroll-area-viewport]");

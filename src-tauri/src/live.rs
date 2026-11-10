@@ -441,17 +441,13 @@ impl Stream {
         Ok(())
     }
 
-    fn send_plan(
-        &self,
-        segs: &[BackfillSegment],
-        earlier_start_ms: Option<i64>,
-    ) -> Result<(), Closed> {
+    fn send_plan(&self, segs: &[BackfillSegment], earlier: Option<i64>) -> Result<(), Closed> {
         let recent_rows = segs
             .iter()
             .fold(0_u32, |n, s| n.saturating_add(len_u32(s.rows.len())));
         self.send(LiveMsg::BackfillPlan {
             recent_rows,
-            earlier_start_ms,
+            earlier_start_ms: earlier,
         })
     }
 
@@ -728,6 +724,13 @@ impl Stream {
     async fn run(mut self, mut visible: watch::Receiver<bool>, mut sub: Option<Subscriber>) {
         loop {
             let Some(s) = sub.as_mut() else {
+                // Hidden: history a plan promised still goes out, so a reader holding
+                // its charts back is not left loading until the next show (D-133).
+                while !self.earlier.is_empty() {
+                    if self.send_earlier().is_err() {
+                        return;
+                    }
+                }
                 if visible.wait_for(|v| *v).await.is_err() {
                     return;
                 }

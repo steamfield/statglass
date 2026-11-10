@@ -199,6 +199,19 @@ export class MockChannels {
     if (sub.timer !== null) clearTimeout(sub.timer);
     sub.timer = setTimeout(next, 0);
   };
+  /**
+   * The window hid: Rust sends what a plan promised at once (live.rs `run`),
+   * so a reader is not left waiting for it until the next show.
+   */
+  readonly flushEarlier = () => {
+    for (const sub of this.live.values()) {
+      if (sub.earlier.length === 0) continue;
+      if (sub.timer !== null) clearTimeout(sub.timer);
+      sub.timer = null;
+      sub.earlierStarted = true;
+      for (const chunk of sub.earlier.splice(0)) sub.onMsg(chunk);
+    }
+  };
   dispose() {
     for (const sub of this.live.values()) {
       if (sub.timer !== null) clearTimeout(sub.timer);

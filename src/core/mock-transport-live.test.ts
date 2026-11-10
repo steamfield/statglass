@@ -545,31 +545,49 @@ describe("mock catch-up plans", () => {
     t.dispose();
   });
 
-  it.each(["hidden", "idle"] as const)(
-    "holds earlier chunks while %s, then continues them",
-    async (pause) => {
-      const { t, msgs } = await subscribe(
-        { historyRows: 3600 },
-        { backfillMs: 3_600_000 }
-      );
-      const setPaused = (value: boolean) =>
-        pause === "hidden"
-          ? t.setWindowVisible(!value)
-          : t.setDisplayIdle(value);
-      // Pause between chunk tasks as well as before the initial timer.
-      t.tick();
-      await vi.advanceTimersByTimeAsync(0);
-      const before = ofKind(msgs, "backfill_earlier").length;
-      expect(before).toBe(1);
-      setPaused(true);
-      await vi.runAllTimersAsync();
-      expect(ofKind(msgs, "backfill_earlier")).toHaveLength(before);
-      setPaused(false);
-      await vi.runAllTimersAsync();
-      expect(ofKind(msgs, "backfill_earlier").length).toBeGreaterThan(before);
-      t.dispose();
-    }
-  );
+  it("holds earlier chunks while the display is idle, then continues them", async () => {
+    const { t, msgs } = await subscribe(
+      { historyRows: 3600 },
+      { backfillMs: 3_600_000 }
+    );
+    // Pause between chunk tasks as well as before the initial timer.
+    t.tick();
+    await vi.advanceTimersByTimeAsync(0);
+    const before = ofKind(msgs, "backfill_earlier").length;
+    expect(before).toBe(1);
+    t.setDisplayIdle(true);
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill_earlier")).toHaveLength(before);
+    t.setDisplayIdle(false);
+    await vi.runAllTimersAsync();
+    expect(ofKind(msgs, "backfill_earlier").length).toBeGreaterThan(before);
+    t.dispose();
+  });
+
+  // Rust: live.rs `run` drains the earlier queue when the window hides.
+  it("sends every promised earlier chunk at once when the window hides", async () => {
+    const { t, msgs, sub } = await subscribe(
+      { historyRows: 3600 },
+      { backfillMs: 3_600_000 }
+    );
+    if (sub.info.status !== "ok") throw new Error("subscribe failed");
+    const promised = sub.info.data.earlier_rows;
+    expect(promised).toBeGreaterThan(0);
+    expect(ofKind(msgs, "backfill_earlier")).toEqual([]);
+    t.setWindowVisible(false);
+    const rows = ofKind(msgs, "backfill_earlier").reduce(
+      (n, m) => n + m.rows.length,
+      0
+    );
+    expect(rows).toBe(promised);
+    await vi.runAllTimersAsync();
+    t.setWindowVisible(true);
+    await vi.runAllTimersAsync();
+    expect(
+      ofKind(msgs, "backfill_earlier").reduce((n, m) => n + m.rows.length, 0)
+    ).toBe(promised);
+    t.dispose();
+  });
 
   it("cancels queued earlier chunks with a new plan after a step", async () => {
     let now = NOW;

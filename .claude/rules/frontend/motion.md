@@ -30,6 +30,7 @@ is visible, everything else runs once per interaction.
 | `--motion-enter` | 280ms | One-shot entrance (lift) | off |
 | `--motion-stagger` | 30ms | Delay step between entering items, index capped at 8 | off |
 | `--motion-crossfade` | 150ms | Keyed state swap | off |
+| `--motion-scan` | 900ms | One pass of the chart loading mark (`ChartLoading`) | off |
 | `--ease-out` | `cubic-bezier(0.16,1,0.3,1)` | Everything except per-tick tweens | |
 | `--ease-tick` | `cubic-bezier(0.33,1,0.68,1)` | Per-tick tweens | |
 
@@ -49,6 +50,11 @@ and keyframe rules inside that media block anyway.
 - `<Swap k={state}>` remounts small leaf content when a state changes and fades it in
   (status pill, pressure badge). Never wrap a canvas, a uPlot chart, a store subscriber or
   a `role="status"` region: remounting destroys them.
+
+- `useReveal(loading)` returns the class for a chart's data layer: nothing until the chart
+  has been loading and then stopped, when the layer settles from the baseline once
+  (D-133). The chart widgets apply it from their `loading` prop; put it on the data
+  element, never on the one `useTickScroll` transforms.
 
 Rules for anything new:
 
@@ -99,4 +105,6 @@ motion (`make bench` popover/overview scenarios, `perf-gate.spec.ts`).
 - Don't add `will-change` by hand; it pins layers in memory in a long-lived panel.
 - No infinite animations (`animate-pulse`, spinners) unless something is actually loading,
   and stop them when it isn't. A hidden-but-warm popover keeps running CSS animations.
+  The one loop is `ChartLoading`, which a chart renders only while `loading` is true; a
+  new loading state uses it instead of adding another.
 - No springs or overshoot.

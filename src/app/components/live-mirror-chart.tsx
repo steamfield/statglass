@@ -102,20 +102,22 @@ export function LiveMirrorChart({
     maxBars
   );
   const fixedEnd = useModuleEnd();
-  const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
-    [upKey, downKey],
-    requestedBucketMs,
-    requestedCount,
-    windowMs
-  );
+  const { values, endMs, bucketMs, loading, ringLoading, error } =
+    useModuleBuckets(
+      [upKey, downKey],
+      requestedBucketMs,
+      requestedCount,
+      windowMs
+    );
   const count = values[upKey]?.length ?? Math.ceil(windowMs / bucketMs);
   const pick = (key: string) =>
     Array.from({ length: count }, (_, i) => values[key]?.[i] ?? null);
 
   return (
     <div className="flex flex-col gap-1.5">
-      <ChartHistoryStatus loading={loading} error={error} />
+      <ChartHistoryStatus quiet loading={loading} error={error} />
       <MirrorChart
+        loading={Boolean(loading || ringLoading)}
         up={pick(upKey)}
         down={pick(downKey)}
         firstMs={(endMs ?? 0) - (count - 1) * bucketMs}

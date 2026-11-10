@@ -106,6 +106,8 @@ interface MirrorChartData {
   inset?: number | undefined;
   /** No bucket yet: the empty frame, without brush, gaps or hover. */
   pending?: boolean;
+  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
+  loading?: boolean;
 }
 
 /**
@@ -140,6 +142,7 @@ export function MirrorChart({
   ticks = 5,
   inset = PLOT_INSET,
   pending = false,
+  loading = false,
 }: MirrorChartProps) {
   const count = Math.max(1, up.length);
   const lastMs = firstMs + (count - 1) * bucketMs;
@@ -161,7 +164,7 @@ export function MirrorChart({
     inset,
     barMs: bucketMs,
     gaps,
-    enabled: brush && !pending,
+    enabled: brush && !pending && !loading,
     onHoverTime: hover ? onHoverTime : undefined,
   });
   const live = fixedEndMs === null;
@@ -189,6 +192,7 @@ export function MirrorChart({
         </div>
         <div ref={plotRef} className="relative">
           <MirrorBars
+            loading={loading}
             up={up}
             down={down}
             intervalMs={bucketMs}
@@ -203,7 +207,7 @@ export function MirrorChart({
           <ChartSelectionVeil highlight={selection.highlight} />
         </div>
         {selection.overlay}
-        {gaps && gaps.length > 0 && !pending && (
+        {gaps && gaps.length > 0 && !pending && !loading && (
           <div
             className="pointer-events-none absolute top-0 right-0"
             style={{ left: inset, height }}
@@ -218,8 +222,10 @@ export function MirrorChart({
             />
           </div>
         )}
-        {hover && !pending && <CrosshairLine paint height={height} />}
-        {hover && !pending && !onHoverTime && (
+        {hover && !pending && !loading && (
+          <CrosshairLine paint height={height} />
+        )}
+        {hover && !pending && !loading && !onHoverTime && (
           <MirrorHover
             plotRef={plotRef}
             inset={inset}

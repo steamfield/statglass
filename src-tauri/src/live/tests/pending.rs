@@ -90,6 +90,32 @@ async fn hidden_first_subscribe_waits_for_show_to_plan_and_backfill() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn hiding_sends_the_promised_earlier_chunks_at_once() {
+    let (feed, _) = seeded(1500);
+    let reg = registry(&["main"]);
+    let (s, rx, _) = sink();
+    let info = reg.subscribe("main", feed, s, req(3_600_000)).unwrap();
+    assert!(info.earlier_rows > 0);
+    let before = drain_raw(&rx).await;
+    assert!(
+        !before
+            .iter()
+            .any(|m| matches!(m, LiveMsg::BackfillEarlier { .. }))
+    );
+    // Hidden before `EARLIER_AFTER` has passed.
+    reg.window_visible("main", false);
+    let hidden = drain_raw(&rx).await;
+    let rows: usize = hidden
+        .iter()
+        .filter_map(|m| match m {
+            LiveMsg::BackfillEarlier { rows, .. } => Some(rows.len()),
+            _ => None,
+        })
+        .sum();
+    assert_eq!(rows, info.earlier_rows as usize);
+}
+
+#[tokio::test(start_paused = true)]
 async fn plain_resume_does_not_plan_again() {
     let (feed, l) = seeded(60);
     let reg = registry(&["main"]);

@@ -173,6 +173,8 @@ Motion tells the reader what changed, and lets a surface settle into place when 
 | A headline number changes (ring centre, stat-strip figures) | Counts to the new value when it moved 10% or more or changed unit: "10 GB" counts down through the megabytes to "100 MB". Smaller moves, other numbers and a change to or from "—" are replaced in place. No per-digit roll, never a count up from zero on mount. Tabular figures keep width stable | 450 ms, ease-out cubic; instant in Performance mode (D-087, D-088) |
 | A value changes state (paused to live, pressure turning critical) | The glyph and word remount and fade in | 150 ms |
 | A bar, ring or core tile changes value | `transform: scaleX()` on the bar fill, `stroke-dashoffset` on the ring, background alpha on tiles | 150 ms, `--ease-tick` |
+| A chart is waiting for its history (first open, a range over 1 h) | The frame draws; a 1 px accent segment sweeps the baseline after 150 ms. No data, hatching or annotations until the window is whole (D-133) | 900 ms a pass (`--motion-scan`), only while loading; a static frame in Performance mode and reduced motion |
+| A chart's history has arrived | The data layer fades in and settles 10% up from the baseline (mirrored bars from their axis). Only after a load: a chart mounted with data does not animate | 280 ms, once |
 | A dashboard page opens (navigation, first open) | The header, then each row, fades in and rises 3 px; Overview's cards one by one. 30 ms apart, capped at 8 steps | 280 ms each, once per mount |
 | An onboarding step opens | Title, body, footer lift in the same way | 280 ms |
 | Sidebar selection | One pill slides to the new row (it used to be a fill on each row) | 150 ms |
@@ -386,6 +388,7 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `TimelineLane` | One metric's line and area with label column | no | `{ metric; label; nowValue; sub; color; points: { tMs; min; avg; max }[]; domain; mirrored?: boolean }` |
 | `CrosshairTooltip` | Values at cursor plus top processes then | no | `{ tMs; resolutionLabel; rows: { label; value; color }[]; processes: { initial; name; value }[] }` |
 | `GapBand` | Hatched band with label | yes | `{ fromMs; toMs; label }` |
+| `ChartLoading` | The loading mark: a 1 px track on a chart's baseline with the scanning accent segment. `StreamArea`, `MirrorBars` and `HeatMatrix` render it from their `loading` prop | yes | `{ className? }` |
 | `AnnotationRow` | Non-overlapping annotation pills | no | `{ items: { tMs; kind: 'sleep' \| 'wake' \| 'event'; label }[] }` |
 | `CalendarHeatmap` | 30 days × 24 hours grid | no | `{ days: { dateIso; hours: (number \| null)[] }[]; metric: 'cpu' \| 'temp'; vmax; selected?: { dateIso; hour }; onSelect }` |
 | `SegmentedControl` | Radix ToggleGroup styled as pill track | no | `{ options: { value; label }[]; value; onChange; size: 'sm' \| 'md'; ariaLabel }` |

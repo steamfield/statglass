@@ -328,3 +328,34 @@ it.each(["cpu.total", "power.system"])(
     expect(screen.getByText("50%")).toBeVisible();
   }
 );
+
+it.each([
+  ["GPU", OverviewGpuCard, /^GPU utilization/],
+  ["Network", OverviewNetworkCard, /^Network:/],
+])(
+  "%s shows a loading frame during backfill and data afterwards",
+  async (_name, Card, label) => {
+    vi.useFakeTimers();
+    const r = renderWithProviders(<Card origin="tl" windowMs={3_600_000} />, {
+      transportOptions: { historyRows: 3600 },
+      backfillMs: 3_600_000,
+    });
+    try {
+      await act(async () => {});
+      expect(r.container.querySelector("[data-chart-loading]")).not.toBeNull();
+      expect(r.container.querySelector("path[data-line]")).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
+      expect(r.container.querySelector("[data-chart-loading]")).toBeNull();
+      const chart = screen.getByRole("img", { name: label });
+      if (_name === "GPU")
+        expect(chart.querySelector("path[data-line]")).not.toBeNull();
+      else expect(chart.querySelector("[data-bars]")).toHaveClass(/reveal/);
+    } finally {
+      r.unmount();
+      r.transport.dispose();
+      vi.useRealTimers();
+    }
+  }
+);
