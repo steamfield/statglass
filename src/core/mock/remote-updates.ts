@@ -229,6 +229,7 @@ export function seedRemoteScenarios(
   scenarios: readonly ScenarioName[]
 ) {
   seedUpdateScenarios(remotes, scenarios);
+  if (scenarios.includes("rr-jobs")) seedRrJobs(remotes);
   if (scenarios.includes("multi-host"))
     remotes.addRemote({
       id: "remote-studio",
@@ -275,4 +276,32 @@ export function seedRemoteScenarios(
         memory_pct: null,
       };
   }
+}
+
+function seedRrJobs(remotes: MockRemotes) {
+  const first = seed(remotes, "rr-build", true, {});
+  const second = seed(remotes, "rr-test", true, {});
+  const third = seed(remotes, "rr-long", false, {});
+  const job = {
+    command: "cargo test --workspace",
+    user: "me",
+    client_hostname: "MacBook Pro",
+    started_ms: 1_794_312_000_000,
+    peers: [],
+  };
+  first.status.rr = { ...job, peers: [second.config.id] };
+  second.status.rr = {
+    ...job,
+    started_ms: job.started_ms + 3000,
+    peers: [first.config.id],
+  };
+  third.status.rr = {
+    ...job,
+    started_ms: job.started_ms + 30_000,
+    command:
+      `cargo test --workspace --all-features -- ${"integration_suite_".repeat(20)}`.slice(
+        0,
+        200
+      ),
+  };
 }

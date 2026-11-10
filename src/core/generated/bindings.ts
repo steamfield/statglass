@@ -85,6 +85,13 @@ export const commands = {
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
 	hostVitals: (host: HostId) => typedError<HostVitals, CommandError>(__TAURI_INVOKE("host_vitals", { host })),
+	localRrJob: () => __TAURI_INVOKE<{
+	command: string | null,
+	user: string,
+	client_hostname: string,
+	started_ms: number,
+	peers: HostId[],
+} | null>("local_rr_job"),
 	setHostsRecentInterest: (on: boolean) => typedError<null, CommandError>(__TAURI_INVOKE("set_hosts_recent_interest", { on })),
 	/**  The host-update notice the user last dismissed, as `{variant}:{version}` (D-123). */
 	hostUpdateNoticeDismissed: () => typedError<string | null, CommandError>(__TAURI_INVOKE("host_update_notice_dismissed")),
@@ -2607,6 +2614,7 @@ export type RemoteHostStatus = {
 	cpu_pct: number | null,
 	memory_pct: number | null,
 	vitals: HostVitals,
+	rr: RrJob | null,
 	update: AgentUpdateProgress | null,
 	last_update_failure: AgentUpdateFailure | null,
 	/**  The version the host last reported (`Hello.app_version`), kept across restarts. */
@@ -2645,6 +2653,14 @@ export type RemoteUpdateStatus = {
 	status: string,
 	version: string | null,
 	message: string | null,
+};
+
+export type RrJob = {
+	command: string | null,
+	user: string,
+	client_hostname: string,
+	started_ms: number,
+	peers: HostId[],
 };
 
 export type SamplingPatch = {

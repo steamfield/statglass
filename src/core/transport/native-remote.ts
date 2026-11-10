@@ -4,6 +4,7 @@ import type { Transport } from "./contracts";
 export function nativeRemote(): Pick<
   Transport,
   | "listRemoteHosts"
+  | "localRrJob"
   | "hostVitals"
   | "setHostsRecentInterest"
   | "getRemoteUpdateStatus"
@@ -24,6 +25,7 @@ export function nativeRemote(): Pick<
   | "repairRemoteHost"
 > {
   return {
+    localRrJob: () => commands.localRrJob(),
     hostVitals: (host) => commands.hostVitals(host),
     setHostsRecentInterest: (on) => commands.setHostsRecentInterest(on),
     listRemoteHosts: () => commands.listRemoteHosts(),

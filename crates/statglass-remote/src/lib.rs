@@ -12,6 +12,7 @@ pub mod install;
 mod mirror;
 mod mirror_error;
 mod mirror_sink;
+pub mod rr;
 pub use mirror_error::MirrorError;
 mod pages;
 pub use mirror::{Mirror, SyncWatermark};

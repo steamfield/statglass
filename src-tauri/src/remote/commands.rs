@@ -1,5 +1,13 @@
 //! Host-list and trust commands; Tauri state and event effects stay in the shell.
 use super::*;
+use statglass_remote::rr::RrJob;
+
+#[tauri::command]
+#[specta::specta]
+pub fn local_rr_job(state: State<'_, AppState>) -> Option<RrJob> {
+    state.remotes.rr.lock_ok().get(&state.local).cloned()
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
@@ -12,6 +20,7 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
         .map(|(id, h)| {
             let mut status = statuses.get(id).cloned().unwrap_or_default();
             state.remotes.apply_update(*id, &mut status);
+            state.remotes.apply_rr(*id, &mut status);
             if let Ok(entry) = state.host(*id)
                 && let Some(frame) = entry.latest_frame()
             {

@@ -39,6 +39,7 @@ function host(
         "installed" in agent_update ? agent_update.installed : null,
       agent_update,
       identity_changed: null,
+      rr: null,
       vitals: mockHostVitals(true),
       update: null,
       last_update_failure: null,

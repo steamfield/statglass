@@ -67,6 +67,7 @@ import type {
   RemoteSshConfigStatus,
   RemoteSshHostTrust,
   RemoteUpdateStatus,
+  RrJob,
   SensorDump,
   SeriesSelector,
   SeriesStats,
@@ -169,6 +170,7 @@ export interface Transport {
   dockerResume(): Promise<CommandResult<DockerSnapshot>>;
   listHosts(): Promise<HostRecord[]>;
   listRemoteHosts(): Promise<RemoteHostRecord[]>;
+  localRrJob(): Promise<RrJob | null>;
   hostVitals(host: HostId): Promise<CommandResult<HostVitals>>;
   setHostsRecentInterest(on: boolean): Promise<CommandResult<null>>;
   onRemoteHostsChanged(cb: (event: RemoteHostsChanged) => void): Unsubscribe;
