@@ -8,6 +8,7 @@ import type {
   SettingsChanged,
   UpdateStatus,
   WindowAppearanceChanged,
+  WindowVisibilityChanged,
 } from "@core/generated/bindings";
 import { createEmitter } from "./emitter";
 export function createMockEmitters() {
@@ -16,6 +17,7 @@ export function createMockEmitters() {
     settings: createEmitter<SettingsChanged>(),
     caps: createEmitter<CapabilitiesChanged>(),
     appearance: createEmitter<WindowAppearanceChanged>(),
+    visibility: createEmitter<WindowVisibilityChanged>(),
     navigate: createEmitter<NavigateRequested>(),
     health: createEmitter<HistoryHealthChanged>(),
     hosts: createEmitter<HostsChanged>(),

@@ -5,8 +5,8 @@ import {
   clickOutside,
   renderWithProviders,
 } from "../../../../../../tests/test-utils";
+import { pushable } from "../_hooks/use-agent-update";
 import { UpdateAllDialog } from "./update-all-dialog";
-import { pushable } from "./use-agent-update";
 
 describe("update all", () => {
   it("pushes reachable hosts in order, skips offline ones and keeps its list", async () => {

@@ -19,9 +19,13 @@ import {
   isLinuxAlias,
   mockLinuxPreparation,
 } from "./remote-linux";
+import { savedMacSetup, setupCancelled } from "./remote-setup";
 import {
+  hasProgressFixture,
   MockAgentUpdates,
   mockHostVitals,
+  mockMacPreparation,
+  remoteRecords,
   seedRemoteScenarios,
 } from "./remote-updates";
 import { remoteUsage, type UsageQueries } from "./remote-usage";
@@ -52,6 +56,15 @@ export class MockRemotes {
   readonly forward = <T>(host: string, call: (peer: MockTransport) => T) => {
     const remote = this.remotes.get(host);
     return remote ? call(remote.peer) : null;
+  };
+  /**
+   * The last instant a remote's mirror holds samples for: its last-seen time while
+   * it isn't connected, so history after it is a gap as in Rust; null when connected.
+   */
+  readonly mirroredUntil = (host: string): number | null => {
+    const status = this.remotes.get(host)?.record.status;
+    if (!status || status.state === "connected") return null;
+    return status.last_seen_ms ?? Number.NEGATIVE_INFINITY;
   };
   /** A remote's host record: what its peer reports, under the saved name. */
   private readonly remoteRecord = (
@@ -145,7 +158,7 @@ export class MockRemotes {
     return ok(null);
   };
   readonly listRemoteHosts: MockTransport["listRemoteHosts"] = async () => {
-    return [...this.remotes.values()].map((r) => r.record);
+    return remoteRecords(this, this.options.scenarios ?? [], this.ring.now());
   };
   readonly hostVitals: MockTransport["hostVitals"] = async (host) => {
     if (host === MOCK_HOST_ID) return ok(mockHostVitals(this.ring.flags.linux));
@@ -256,16 +269,7 @@ export class MockRemotes {
       );
       return "error" in linux ? fail(linux.error) : ok(linux.ok);
     }
-    return ok({
-      kind: "mac",
-      installed: true,
-      compatible: true,
-      newer_installed: false,
-      host_id: `remote-${alias}`,
-      name: alias || "Remote Mac",
-      message: null,
-      linux: null,
-    });
+    return ok(mockMacPreparation(alias, this));
   };
   /** Aliases whose agent was given a new identity; they prepare as a fresh host. */
   private identityReset = new Set<string>();
@@ -282,6 +286,10 @@ export class MockRemotes {
     const remote = this.remotes.get(id);
     if (!remote) return fail({ kind: "unknown_host", host: id });
     remote.automaticUpdates = true;
+    if (hasProgressFixture(this.options.scenarios ?? [])) {
+      this.startUpdate(id);
+      return ok(null);
+    }
     this.pushRemoteStatus(id, {
       state: "connected",
       error: null,
@@ -334,33 +342,30 @@ export class MockRemotes {
     config,
     install,
     showMenuBar,
-    setupId
+    setupId,
+    reinstall = null
   ) => {
     this.commands.record(
       "add_remote_host",
       config,
       install,
       showMenuBar,
-      setupId
+      setupId,
+      reinstall
     );
-    if (this.options.remoteSetupDelayMs) {
-      const cancelled = await new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => {
-          this.setups.delete(setupId);
-          resolve(false);
-        }, this.options.remoteSetupDelayMs);
-        this.setups.set(setupId, () => {
-          clearTimeout(timer);
-          this.setups.delete(setupId);
-          resolve(true);
-        });
+    if (
+      await setupCancelled(
+        this.setups,
+        this.options.remoteSetupDelayMs,
+        setupId
+      )
+    )
+      return fail({
+        kind: "invalid_argument",
+        message: "Setup cancelled. Remote settings were restored.",
       });
-      if (cancelled)
-        return fail({
-          kind: "invalid_argument",
-          message: "Setup cancelled. Remote settings were restored.",
-        });
-    }
+    const savedMac = savedMacSetup(this, config, reinstall);
+    if (savedMac) return savedMac;
     const alias = config.lan ?? config.tailscale ?? "";
     if (alias.includes("dup") && !this.identityReset.has(alias))
       return fail({
@@ -422,7 +427,7 @@ export class MockRemotes {
       id === "remote-unreachable"
     )
       return ok(null);
-    remote.record.status.state = "connected";
+    this.pushRemoteStatus(id, { state: "connected", error: null });
     return ok(null);
   };
   readonly listHosts: MockTransport["listHosts"] = async () => {

@@ -82,9 +82,21 @@ export class MockQueries {
         )
     );
   readonly queryHistory: MockTransport["queryHistory"] = async (request) =>
-    this.remote.forward(request.host, (peer) =>
-      peer.queryHistory({ ...request, host: MOCK_HOST_ID })
-    ) ??
+    this.remote.forward(request.host, async (peer) => {
+      const until = this.remote.mirroredUntil(request.host);
+      const result = await peer.queryHistory({
+        ...request,
+        host: MOCK_HOST_ID,
+      });
+      if (until === null || result.status === "error") return result;
+      return ok({
+        ...result.data,
+        series: result.data.series.map((series) => ({
+          ...series,
+          points: series.points.filter((point) => point.t <= until),
+        })),
+      });
+    }) ??
     this.commands.hostCommand(
       "query_history",
       request.host,

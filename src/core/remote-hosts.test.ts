@@ -2,14 +2,17 @@ import type {
   AgentUpdate,
   RemoteHostRecord,
   RemoteState,
+  UpdatePhase,
   UpdateStatus,
 } from "@core/generated/bindings";
 import { mockHostVitals } from "./mock/remote-updates";
 import {
   agentVersionLine,
+  agentVersionState,
   hostUpdateNotice,
   localUpdateTarget,
   releaseUrl,
+  updatePhaseText,
 } from "./remote-hosts";
 
 function host(
@@ -115,43 +118,94 @@ describe("localUpdateTarget", () => {
 });
 
 describe("agentVersionLine", () => {
-  it("shows the installed and installable versions", () => {
+  it("shares the current and available copy with cards", () => {
     expect(agentVersionLine(behind, null)?.text).toBe(
-      "StatGlass 0.3.0 → 0.3.1 available"
+      "StatGlass 0.3.0 · 0.3.1 available"
     );
     expect(agentVersionLine(current, "0.3.2")?.text).toBe(
-      "StatGlass 0.3.1 · 0.3.2 after updating this Mac"
+      "StatGlass 0.3.1 · Latest · 0.3.2 after updating this Mac"
     );
-    expect(agentVersionLine(host({ kind: "unknown" }), null)).toBeNull();
-  });
-
-  it("marks an offline host's version as last reported", () => {
-    const offline = host({ kind: "up_to_date", installed: "0.3.1" }, "offline");
-    expect(agentVersionLine(offline, null)?.text).toBe(
-      "StatGlass 0.3.1 (last reported)"
+    expect(agentVersionLine(host({ kind: "unknown" }), null)?.text).toBe(
+      "Version not reported yet"
     );
   });
-
-  it("flags a host that can't connect", () => {
+  it("defers offline updates and offers a reinstall for a reachable Mac", () => {
+    const offline = host(behind.status.agent_update, "offline");
+    expect(agentVersionState(offline)).toMatchObject({
+      text: "StatGlass 0.3.0 · 0.3.1 available, updates once reachable",
+      action: null,
+    });
     expect(
-      agentVersionLine(
-        { ...blocked, status: { ...blocked.status, state: "error" } },
-        null
+      agentVersionState(
+        host({
+          kind: "available",
+          installed: "0.3.0",
+          target: "0.3.1",
+          via: "add_host",
+        })
       )
-    ).toEqual({
-      text: "StatGlass 0.2.0 can’t connect to this version. Update it to 0.3.1.",
-      tone: "destructive",
+    ).toMatchObject({
+      action: { kind: "add_host", label: "Reinstall 0.3.1…" },
     });
   });
-
-  it("points a Mac host at Add host", () => {
-    const mac = host({
-      kind: "available",
-      installed: "0.3.0",
-      target: "0.3.1",
-      via: "add_host",
+  it("offers updates to incompatible hosts, and names newer hosts", () => {
+    expect(agentVersionState(blocked)).toMatchObject({
+      text: "Needs 0.3.1 to connect",
+      action: { kind: "push", label: "Update to 0.3.1" },
     });
-    expect(agentVersionLine(mac, null)?.text).toContain("from Add host");
+    expect(
+      agentVersionState(host({ kind: "newer_than_this", installed: "0.4.0" }))
+        .text
+    ).toBe("StatGlass 0.4.0 · Newer than this Mac");
+  });
+  it("keeps disabled and identity-changed hosts out of updates", () => {
+    expect(
+      agentVersionState({
+        ...behind,
+        config: { ...behind.config, enabled: false },
+      }).action
+    ).toBeNull();
+    expect(
+      agentVersionState({
+        ...behind,
+        status: { ...behind.status, identity_changed: "new" },
+      }).action
+    ).toBeNull();
+  });
+  it.each<[UpdatePhase, string]>([
+    [{ kind: "queued" }, "Waiting for another update"],
+    [{ kind: "probing" }, "Checking the host"],
+    [
+      { kind: "uploading", sent_bytes: 6100000, total_bytes: 9400000 },
+      "Uploading 6.1 of 9.4 MB",
+    ],
+    [{ kind: "installing" }, "Installing"],
+    [{ kind: "restarting" }, "Restarting"],
+    [{ kind: "reconnecting" }, "Reconnecting"],
+    [{ kind: "unknown" }, "Updating"],
+  ])("names update phase %o", (phase, text) => {
+    expect(updatePhaseText(phase)).toBe(text);
+    expect(
+      agentVersionState({
+        ...behind,
+        status: { ...behind.status, update: { target: "0.3.1", phase } },
+      }).text
+    ).toBe(`Updating to 0.3.1 · ${text}`);
+  });
+  it("names failures and offers a retry", () => {
+    expect(
+      agentVersionState({
+        ...behind,
+        status: {
+          ...behind.status,
+          last_update_failure: { target: "0.3.1", message: "timeout" },
+        },
+      })
+    ).toMatchObject({
+      text: "Update to 0.3.1 failed",
+      icon: "error",
+      action: { label: "Retry update" },
+    });
   });
 });
 
@@ -162,4 +216,34 @@ describe("releaseUrl", () => {
     );
     expect(releaseUrl("0.3.1/../../settings")).toBeNull();
   });
+});
+
+it("offers failed-update recovery while monitoring is disconnected", () => {
+  const remote: RemoteHostRecord = {
+    ...behind,
+    status: {
+      ...behind.status,
+      state: "offline",
+      last_update_failure: {
+        target: "0.3.1",
+        message: "The new agent did not reconnect",
+      },
+    },
+  };
+  expect(agentVersionState(remote).action).toEqual({
+    kind: "push",
+    label: "Retry update",
+  });
+  expect(
+    agentVersionState({
+      ...remote,
+      config: { ...remote.config, enabled: false },
+    }).action
+  ).toBeNull();
+  expect(
+    agentVersionState({
+      ...remote,
+      status: { ...remote.status, identity_changed: "new-id" },
+    }).action
+  ).toBeNull();
 });

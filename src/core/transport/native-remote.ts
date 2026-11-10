@@ -35,8 +35,14 @@ export function nativeRemote(): Pick<
     acceptRemoteSshHost: (token) => commands.acceptRemoteSshHost(token),
     prepareRemoteHost: (lan, tailscale) =>
       commands.prepareRemoteHost(lan, tailscale),
-    addRemoteHost: (config, install, showMenuBar, setupId) =>
-      commands.addRemoteHost(config, install, showMenuBar, setupId),
+    addRemoteHost: (config, install, showMenuBar, setupId, reinstall) =>
+      commands.addRemoteHost(
+        config,
+        install,
+        showMenuBar,
+        setupId,
+        reinstall ?? null
+      ),
     cancelRemoteSetup: (setupId) => commands.cancelRemoteSetup(setupId),
     updateRemoteHost: (config) => commands.updateRemoteHost(config),
     removeRemoteHost: (

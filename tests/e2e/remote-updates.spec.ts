@@ -8,7 +8,7 @@ for (const theme of ["dark", "light"]) {
     await page.goto(
       `/?route=/dashboard/hosts&scenario=multi-host,remote-update-blocked&theme=${theme}&ticks=0`
     );
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: /^Settings for / }).click();
     const guide = page.getByRole("button", { name: "Upgrade guide" });
     await guide.scrollIntoViewIfNeeded();
     await expect(page.getByText(/Update agent cannot apply it/)).toBeVisible();
@@ -43,7 +43,9 @@ for (const theme of ["dark", "light"]) {
     await expect(page.getByRole("heading", { name: "Hosts" })).toBeVisible();
     await expect(notice).toHaveCount(0);
     await expect(
-      page.getByText("StatGlass 0.0.9 (last reported) → 0.1.0 available")
+      page.getByText(
+        "StatGlass 0.0.9 · 0.1.0 available, updates once reachable"
+      )
     ).toBeVisible();
     await page.screenshot({
       path: `test-results/screens/hosts-versions-${theme}-${info.project.name}.png`,

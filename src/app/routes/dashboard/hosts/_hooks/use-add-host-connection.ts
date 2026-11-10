@@ -30,6 +30,8 @@ export function useAddHostConnection({
   onOpenChange,
   lan,
   tailscale,
+  mirrorBudgetMb = 100,
+  reinstallHostId = null,
 }: {
   prepared: RemoteHostPreparation | null;
   name: string;
@@ -43,6 +45,8 @@ export function useAddHostConnection({
   onOpenChange: (open: boolean) => void;
   lan: string;
   tailscale: string;
+  mirrorBudgetMb?: number;
+  reinstallHostId?: string | null;
 }) {
   const transport = useTransport();
   const cache = useQueryClient();
@@ -54,18 +58,19 @@ export function useAddHostConnection({
     setPhase("adding");
     setError(null);
     const config: RemoteHostConfig = {
-      id: next.host_id ?? "",
+      id: reinstallHostId ?? next.host_id ?? "",
       name: name.trim() || next.name,
       ...endpoints,
       enabled: true,
-      mirror_budget_mb: 100,
+      mirror_budget_mb: mirrorBudgetMb,
     };
     try {
       const result = await transport.addRemoteHost(
         config,
-        !next.installed || !next.compatible,
+        installationRequested(next, reinstallHostId),
         showMenuBar,
-        attempt
+        attempt,
+        reinstallHostId ?? null
       );
       if (result.status === "error") {
         setError(result.error);
@@ -136,4 +141,16 @@ export function useAddHostConnection({
   };
 
   return { add, resetAndAdd, cancel };
+}
+
+function installationRequested(
+  prepared: RemoteHostPreparation,
+  reinstallHostId: string | null
+) {
+  return (
+    !prepared.newer_installed &&
+    (!prepared.installed ||
+      !prepared.compatible ||
+      (reinstallHostId !== null && prepared.kind === "mac"))
+  );
 }

@@ -11,10 +11,7 @@ for (const theme of ["light", "dark"]) {
     await page.goto(
       `/?route=/dashboard/hosts&scenario=host-unreachable&theme=${theme}&ticks=0`
     );
-    const row = page
-      .getByRole("heading", { name: "unreachable", exact: true })
-      .locator("..")
-      .locator("..");
+    const row = page.getByRole("region", { name: "unreachable", exact: true });
     await row
       .getByRole("button", { name: "View metrics", exact: true })
       .click();

@@ -191,7 +191,8 @@ export interface Transport {
     config: RemoteHostConfig,
     install: boolean,
     showMenuBar: boolean,
-    setupId: string
+    setupId: string,
+    reinstall?: HostId | null
   ): Promise<CommandResult<RemoteHostRecord>>;
   cancelRemoteSetup(setupId: string): Promise<CommandResult<null>>;
   updateRemoteHost(
@@ -460,4 +461,7 @@ export interface Transport {
   onWindowAppearanceChanged(
     cb: (event: WindowAppearanceChanged) => void
   ): Unsubscribe;
+  /** Native visibility, including occlusion, rather than WKWebView document visibility. */
+  onWindowVisibility(cb: (visible: boolean) => void): Unsubscribe;
+  windowVisible(): Promise<boolean>;
 }

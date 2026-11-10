@@ -7,6 +7,9 @@
     "popover": {
       "mainThreadMsPerSec": 40
     },
+    "hosts": {
+      "mainThreadMsPerSec": 50
+    },
     "overview": {
       "mainThreadMsPerSec": 50
     },

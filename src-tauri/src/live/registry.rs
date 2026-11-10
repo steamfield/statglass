@@ -1,7 +1,10 @@
 //! Window demand, subscription ownership and source replacement.
 use super::*;
+use crate::windows::WindowVisibilityChanged;
 use std::sync::MutexGuard;
 use tokio::task::JoinHandle;
+
+type VisibilityEmitter = Box<dyn Fn(&str, WindowVisibilityChanged) + Send + Sync>;
 
 /// Summary-only demand, independent of a host's live/detail channels.
 pub trait RecentFeed: Send + Sync + 'static {
@@ -184,11 +187,19 @@ impl Inner {
 #[derive(Default)]
 pub struct LiveRegistry {
     inner: Mutex<Inner>,
+    visibility_emitter: Mutex<Option<VisibilityEmitter>>,
 }
 
 impl LiveRegistry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_visibility_emitter(
+        &self,
+        emit: impl Fn(&str, WindowVisibilityChanged) + Send + Sync + 'static,
+    ) {
+        *self.visibility_emitter.lock_ok() = Some(Box::new(emit));
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -387,6 +398,7 @@ impl LiveRegistry {
     pub fn window_visible(&self, label: &str, visible: bool) {
         let mut inner = self.lock();
         let w = inner.window(label);
+        let changed = w.visible_now != visible;
         w.visible_now = visible;
         let send = |w: &WindowEntry| {
             w.visible.send_if_modified(|v| {
@@ -410,6 +422,9 @@ impl LiveRegistry {
             send(w);
         }
         inner.apply_recent_interest();
+        if changed && let Some(emit) = &*self.visibility_emitter.lock_ok() {
+            emit(label, WindowVisibilityChanged { visible });
+        }
         tracing::debug!(label, visible, "window visibility");
     }
 
@@ -538,3 +553,7 @@ mod remote_recent_tests {
         assert!(!next.0.load(Ordering::SeqCst));
     }
 }
+
+#[cfg(test)]
+#[path = "visibility_tests.rs"]
+mod visibility_tests;

@@ -3,7 +3,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { Profiler } from "react";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { renderWithProviders } from "../../../../tests/test-utils";
-import { useAgentUpdating } from "./hosts/_components/use-agent-update";
+import { useAgentUpdating } from "./hosts/_hooks/use-agent-update";
 import DashboardLayout from "./route";
 
 function renderShell(

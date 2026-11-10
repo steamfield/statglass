@@ -32,6 +32,7 @@ interface FrontendBudget {
   longTaskMs: number;
   popover: ScreenBudget;
   overview: ScreenBudget;
+  hosts: ScreenBudget;
   overview1h: ScreenBudget;
   cpu1h: ScreenBudget;
   gpu1h: ScreenBudget;
@@ -282,6 +283,30 @@ test.describe("performance gate", () => {
     expect(r.longTasks).toEqual([]);
     expect(r.mainThreadMsPerSec).toBeLessThan(
       budget.popover.mainThreadMsPerSec
+    );
+  });
+
+  test("Hosts, 12 hosts at 1 Hz", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const result = await measure(
+      page,
+      "/?window=dashboard&route=/dashboard/hosts&scenario=hosts-many&theme=dark",
+      async () => {
+        await expect(
+          page.getByRole("heading", { name: "Hosts", exact: true })
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "View metrics", exact: true })
+        ).toHaveCount(12);
+        await expect(
+          page.locator("path[data-line]").first()
+        ).not.toHaveAttribute("d", "");
+      }
+    );
+    console.log(`[perf] hosts ${JSON.stringify(result)}`);
+    expect(result.longTasks).toEqual([]);
+    expect(result.mainThreadMsPerSec).toBeLessThan(
+      budget.hosts.mainThreadMsPerSec
     );
   });
 
