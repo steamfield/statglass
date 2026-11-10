@@ -282,7 +282,6 @@ pub(super) async fn add(
 /// history, then reconnects. A failed update restores the previous agent.
 pub(super) async fn update_saved(app: AppHandle, id: String) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
-    let _guard = state.remotes.operation.lock().await;
     let id = host_id(&id)?;
     let saved = state
         .remotes
@@ -298,6 +297,25 @@ pub(super) async fn update_saved(app: AppHandle, id: String) -> Result<(), Comma
                     .into(),
         });
     }
+    state
+        .remotes
+        .run_update(
+            id,
+            env!("CARGO_PKG_VERSION").into(),
+            || super::super::progress::emit_changed(&app),
+            |token| perform_update(&app, id, token, &saved),
+        )
+        .await
+}
+
+async fn perform_update(
+    app: &AppHandle,
+    id: HostId,
+    token: Uuid,
+    saved: &SavedHost,
+) -> Result<(), CommandError> {
+    let state = app.state::<AppState>();
+    let phase = |phase| super::super::progress::phase(app, id, token, phase);
     let (alias, probe) = linux_probe(
         saved.config.lan.clone(),
         saved.config.tailscale.clone(),
@@ -305,11 +323,32 @@ pub(super) async fn update_saved(app: AppHandle, id: String) -> Result<(), Comma
     )
     .await?;
     check_update(&probe, id)?;
-    let binary = AgentBinary::bundled(&app, &probe)?;
-    agent_install::update(&alias, &probe, &binary.bytes, &binary.sha256).await?;
+    if probe
+        .existing()
+        .and_then(|a| a.version.as_ref())
+        .is_some_and(|v| v.automatic_updates)
+    {
+        state.remotes.accept_newer_update(id, token);
+    }
+    let binary = AgentBinary::bundled(app, &probe)?;
+    agent_install::update_with_progress(&alias, &probe, &binary.bytes, &binary.sha256, &|step| {
+        phase(match step {
+            agent_install::UpdateStep::Uploading {
+                sent_bytes,
+                total_bytes,
+            } => UpdatePhase::Uploading {
+                sent_bytes,
+                total_bytes,
+            },
+            agent_install::UpdateStep::Installing => UpdatePhase::Installing,
+            agent_install::UpdateStep::Restarting => UpdatePhase::Restarting,
+        });
+    })
+    .await?;
     if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
         source.retry();
     }
+    phase(UpdatePhase::Reconnecting);
     Ok(())
 }
 

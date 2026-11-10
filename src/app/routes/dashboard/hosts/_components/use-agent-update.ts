@@ -2,11 +2,8 @@ import { commandErrorText } from "@core/command-error";
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { remoteErrorText } from "@core/remote-errors";
-import {
-  useMutation,
-  useMutationState,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useTransport } from "~/lib/transport-context";
 
 const AGENT_UPDATE = ["agent-update"] as const;
@@ -58,10 +55,11 @@ export function reachable(remote: RemoteHostRecord): boolean {
   );
 }
 
-/** Whether an update request for this host is in flight. */
+/** Whether Rust is applying an update or waiting for the host to reconnect. */
 export function useAgentUpdating(id: string): boolean {
-  return useMutationState({
-    filters: { mutationKey: AGENT_UPDATE, status: "pending" },
-    select: (m) => m.state.variables,
-  }).includes(id);
+  return (
+    useRemoteHosts((hosts) =>
+      hosts.some((host) => host.config.id === id && host.status.update !== null)
+    ).data ?? false
+  );
 }

@@ -481,7 +481,27 @@ async fn lifecycle(shell: Shell, layout: AgentLayout) {
     );
 
     // A good update keeps the history and the epoch.
-    let status = update_with(&shell, &probe, &v2, &sha(&v2)).await.unwrap();
+    let steps = std::sync::Mutex::new(Vec::new());
+    let status = super::flows::update_progress_with(&shell, &probe, &v2, &sha(&v2), &|step| {
+        steps.lock().unwrap().push(step);
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        *steps.lock().unwrap(),
+        [
+            super::UpdateStep::Uploading {
+                sent_bytes: 0,
+                total_bytes: v2.len() as u64
+            },
+            super::UpdateStep::Uploading {
+                sent_bytes: v2.len() as u64,
+                total_bytes: v2.len() as u64
+            },
+            super::UpdateStep::Installing,
+            super::UpdateStep::Restarting,
+        ]
+    );
     assert_eq!(status.version, "v2");
     assert_eq!(status.epoch.as_deref(), Some(EPOCH));
     assert_eq!(shell.read(&paths.binary).unwrap().as_bytes(), v2);
@@ -888,4 +908,66 @@ fn flows_are_send() {
     send(&super::probe_host("a", Some(150)));
     send(&super::uninstall_at("a", &target, true));
     send(&super::reset_identity("a", &probe));
+}
+
+#[tokio::test]
+async fn request_update_records_installing_then_restarting_without_an_upload() {
+    let shell = Shell::local();
+    let probe = shell.probe().await;
+    let bytes = String::from_utf8(fake_agent("v1", true))
+        .unwrap()
+        .replace("\"proto\":1", "\"automatic_updates\":true,\"proto\":1")
+        .into_bytes();
+    install_with(&shell, &probe, &bytes, &sha(&bytes), 150)
+        .await
+        .unwrap();
+    let probe = shell.probe().await;
+    assert!(
+        probe
+            .existing()
+            .unwrap()
+            .version
+            .as_ref()
+            .unwrap()
+            .automatic_updates
+    );
+    let steps = std::sync::Mutex::new(Vec::new());
+    let result = super::flows::update_progress_with(
+        &shell,
+        &probe,
+        b"unused push bytes",
+        &sha(b"unused push bytes"),
+        &|step| {
+            steps.lock().unwrap().push(step);
+        },
+    )
+    .await
+    .unwrap();
+    assert!(result.running);
+    assert_eq!(
+        *steps.lock().unwrap(),
+        [super::UpdateStep::Installing, super::UpdateStep::Restarting]
+    );
+    assert_eq!(shell.read(&shell.paths.binary).unwrap().as_bytes(), bytes);
+    assert!(shell.log().contains("agent v1 update"));
+}
+
+#[tokio::test]
+async fn counting_stdin_reports_each_written_chunk_and_the_total() {
+    let bytes = vec![b'x'; 150_000];
+    let sent = std::sync::Mutex::new(Vec::new());
+    let mut command = tokio::process::Command::new("/bin/sh");
+    command.args(["-c", "cat >/dev/null"]);
+    let result = super::collect(
+        command,
+        super::Stdin::CountingBytes {
+            bytes: &bytes,
+            sent: &|n| sent.lock().unwrap().push(n),
+        },
+        Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.code, Some(0));
+    assert_eq!(*sent.lock().unwrap(), [65_536, 131_072, 150_000]);
 }

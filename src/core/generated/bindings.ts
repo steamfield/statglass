@@ -84,6 +84,8 @@ export const commands = {
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
+	hostVitals: (host: HostId) => typedError<HostVitals, CommandError>(__TAURI_INVOKE("host_vitals", { host })),
+	setHostsRecentInterest: (on: boolean) => typedError<null, CommandError>(__TAURI_INVOKE("set_hosts_recent_interest", { on })),
 	/**  The host-update notice the user last dismissed, as `{variant}:{version}` (D-123). */
 	hostUpdateNoticeDismissed: () => typedError<string | null, CommandError>(__TAURI_INVOKE("host_update_notice_dismissed")),
 	dismissHostUpdateNotice: (key: string) => typedError<null, CommandError>(__TAURI_INVOKE("dismiss_host_update_notice", { key })),
@@ -360,6 +362,7 @@ export const events = {
 	historyHealthChanged: makeEvent<HistoryHealthChanged>("history-health-changed"),
 	hostsChanged: makeEvent<HostsChanged>("hosts-changed"),
 	navigateRequested: makeEvent<NavigateRequested>("navigate-requested"),
+	remoteHostsChanged: makeEvent<RemoteHostsChanged>("remote-hosts-changed"),
 	settingsChanged: makeEvent<SettingsChanged>("settings-changed"),
 	updateStatusChanged: makeEvent<UpdateStatusChanged>("update-status-changed"),
 	windowAppearanceChanged: makeEvent<WindowAppearanceChanged>("window-appearance-changed"),
@@ -449,6 +452,16 @@ export type AgentUpdate =
 { kind: "required"; installed: string; target: string; via: AgentUpdateVia } |
 /**  The host is ahead; it is never downgraded. Updating this Mac catches up. */
 { kind: "newer_than_this"; installed: string };
+
+export type AgentUpdateFailure = {
+	target: string,
+	message: string,
+};
+
+export type AgentUpdateProgress = {
+	target: string,
+	phase: UpdatePhase,
+};
 
 /**
  *  How a host gets this Mac's version: a Linux agent is pushed in place ("Update
@@ -1737,6 +1750,18 @@ export type HostRecord = {
 	info: HostInfo,
 };
 
+export type HostVitals = {
+	load_1m: number | null,
+	cores: number | null,
+	memory_pressure: MemoryPressure | null,
+	disk_used_bytes: number | null,
+	disk_free_bytes: number | null,
+	disk_total_bytes: number | null,
+	disk_low: boolean,
+	net_rx_bps: number | null,
+	net_tx_bps: number | null,
+};
+
 /**
  *  Emitted when a host's record changes (the local host learns `chip_known` from its
  *  first capabilities), with every host, local first: what `list_hosts` returns now.
@@ -1988,6 +2013,8 @@ export type LiveStatus = {
 	 */
 	primary_iface: string | null,
 };
+
+export type MemoryPressure = { kind: "level"; level: number } | { kind: "stall"; some_pct: number | null } | { kind: "unknown" };
 
 /**  GB (10^9) or GiB (2^30). */
 export type MemoryUnit = "decimal" | "binary";
@@ -2579,6 +2606,9 @@ export type RemoteHostStatus = {
 	clock_offset_ms: number | null,
 	cpu_pct: number | null,
 	memory_pct: number | null,
+	vitals: HostVitals,
+	update: AgentUpdateProgress | null,
+	last_update_failure: AgentUpdateFailure | null,
 	/**  The version the host last reported (`Hello.app_version`), kept across restarts. */
 	agent_version: string | null,
 	/**  How the host's StatGlass compares with the one this Mac can install (D-123). */
@@ -2589,6 +2619,8 @@ export type RemoteHostStatus = {
 	 */
 	identity_changed: string | null,
 };
+
+export type RemoteHostsChanged = Record<string, never>;
 
 export type RemoteRoute = "lan" | "tailscale";
 
@@ -3052,6 +3084,8 @@ export type UnsupportedReason =
  *  "not available".
  */
 "unknown";
+
+export type UpdatePhase = { kind: "queued" } | { kind: "probing" } | { kind: "uploading"; sent_bytes: number; total_bytes: number } | { kind: "installing" } | { kind: "restarting" } | { kind: "reconnecting" } | { kind: "unknown" };
 
 export type UpdateStatus = { kind: "idle" } | { kind: "not_configured" } | { kind: "checking" } | { kind: "up_to_date" } | { kind: "available"; version: string; notes: string } | { kind: "downloading"; version: string; percent: number | null } | { kind: "downloaded"; version: string } | { kind: "waiting"; version: string; reason: string } | { kind: "compatibility_blocked"; version: string; message: string } | { kind: "needs_authorization"; version: string } | { kind: "installing"; version: string } | { kind: "ready"; version: string } | { kind: "failed"; message: string };
 

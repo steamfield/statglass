@@ -19,7 +19,11 @@ import {
   isLinuxAlias,
   mockLinuxPreparation,
 } from "./remote-linux";
-import { seedUpdateScenarios } from "./remote-updates";
+import {
+  MockAgentUpdates,
+  mockHostVitals,
+  seedRemoteScenarios,
+} from "./remote-updates";
 import { remoteUsage, type UsageQueries } from "./remote-usage";
 import type { MockRing } from "./ring";
 export class MockRemotes {
@@ -32,6 +36,7 @@ export class MockRemotes {
       automaticUpdates: boolean;
     }
   >();
+  private readonly updates = new MockAgentUpdates(this);
   private trustedAliases = new Set<string>();
   private setups = new Map<string, () => void>();
   constructor(
@@ -94,6 +99,9 @@ export class MockRemotes {
         agent_version: APP_VERSION,
         agent_update: { kind: "up_to_date", installed: APP_VERSION },
         identity_changed: null,
+        vitals: mockHostVitals(linux),
+        update: null,
+        last_update_failure: null,
       },
     };
     this.remotes.set(saved.id, {
@@ -139,6 +147,35 @@ export class MockRemotes {
   readonly listRemoteHosts: MockTransport["listRemoteHosts"] = async () => {
     return [...this.remotes.values()].map((r) => r.record);
   };
+  readonly hostVitals: MockTransport["hostVitals"] = async (host) => {
+    if (host === MOCK_HOST_ID) return ok(mockHostVitals(this.ring.flags.linux));
+    const remote = this.remotes.get(host);
+    return remote
+      ? ok(remote.record.status.vitals)
+      : fail({ kind: "unknown_host", host });
+  };
+  readonly setHostsRecentInterest: MockTransport["setHostsRecentInterest"] =
+    async (on) => {
+      this.commands.record("set_hosts_recent_interest", on);
+      return ok(null);
+    };
+  readonly onRemoteHostsChanged: MockTransport["onRemoteHostsChanged"] = (cb) =>
+    this.emitters.remotes.on(cb);
+  readonly pushRemoteStatus: MockTransport["pushRemoteStatus"] = (
+    id,
+    status
+  ) => {
+    const remote = this.remotes.get(id);
+    if (!remote) return;
+    remote.record = {
+      ...remote.record,
+      status: { ...remote.record.status, ...status },
+    };
+    this.emitters.remotes.emit({});
+  };
+  startUpdate(id: string) {
+    this.updates.start(id);
+  }
   readonly getRemoteUpdateStatus: MockTransport["getRemoteUpdateStatus"] =
     async (id) => {
       this.commands.record("get_remote_update_status", id);
@@ -245,13 +282,14 @@ export class MockRemotes {
     const remote = this.remotes.get(id);
     if (!remote) return fail({ kind: "unknown_host", host: id });
     remote.automaticUpdates = true;
-    remote.record.status = {
-      ...remote.record.status,
+    this.pushRemoteStatus(id, {
       state: "connected",
       error: null,
       agent_version: APP_VERSION,
       agent_update: { kind: "up_to_date", installed: APP_VERSION },
-    };
+      update: null,
+      last_update_failure: null,
+    });
     this.emitHostsChanged();
     return ok(null);
   };
@@ -407,60 +445,16 @@ export class MockRemotes {
   readonly emitHostsChanged: MockTransport["emitHostsChanged"] = () => {
     const hosts = this.allHosts();
     this.emitters.hosts.emit({ hosts });
+    this.emitters.remotes.emit({});
   };
   /** App queries go to the sampled peer; remote live rows have no Quit. */
   routeUsage<T extends UsageQueries>(local: T): T {
     return remoteUsage(this.remotes, this.commands, this.options, local);
   }
   seedScenario() {
-    seedUpdateScenarios(this, this.options.scenarios ?? []);
-    if (this.options.scenarios?.includes("multi-host"))
-      this.addRemote({
-        id: "remote-studio",
-        name: "Studio Mac",
-        lan: "studio.local",
-        tailscale: "studio-tailnet",
-        enabled: true,
-        mirror_budget_mb: 100,
-      });
-    if (this.options.scenarios?.includes("linux-host")) {
-      const linux = this.addRemote(
-        {
-          id: "remote-linux",
-          name: "linux-tailscale",
-          lan: null,
-          tailscale: "linux-tailscale",
-          enabled: true,
-          mirror_budget_mb: 100,
-        },
-        ["linux"]
-      );
-      if (this.options.scenarios.includes("linux-agent-update")) {
-        const peer = this.remotes.get(linux.config.id);
-        if (peer) peer.automaticUpdates = false;
-        linux.status = {
-          ...linux.status,
-          agent_version: "0.0.9",
-          agent_update: {
-            kind: "available",
-            installed: "0.0.9",
-            target: APP_VERSION,
-            via: "push",
-          },
-        };
-      }
-      if (this.options.scenarios.includes("linux-identity-changed"))
-        linux.status = {
-          ...linux.status,
-          state: "error",
-          error:
-            "remote host identity does not match: linux-tailscale identified 48670e8f-2bca-4868-b557-16b1f1289341, expected 91d73b19-5d36-43b5-87f1-884bd635378e",
-          identity_changed: "48670e8f-2bca-4868-b557-16b1f1289341",
-          cpu_pct: null,
-          memory_pct: null,
-        };
-    }
+    seedRemoteScenarios(this, this.options.scenarios ?? []);
   }
+
   private dismissedNotice: string | null = null;
   readonly hostUpdateNoticeDismissed: MockTransport["hostUpdateNoticeDismissed"] =
     async () => ok(this.dismissedNotice);
@@ -471,6 +465,7 @@ export class MockRemotes {
       return ok(null);
     };
   dispose() {
+    this.updates.dispose();
     for (const remote of this.remotes.values()) remote.peer.dispose();
     for (const cancel of this.setups.values()) cancel();
   }
@@ -481,6 +476,10 @@ export class MockRemotes {
       inspectRemoteSshHost: this.inspectRemoteSshHost,
       acceptRemoteSshHost: this.acceptRemoteSshHost,
       listRemoteHosts: this.listRemoteHosts,
+      hostVitals: this.hostVitals,
+      setHostsRecentInterest: this.setHostsRecentInterest,
+      onRemoteHostsChanged: this.onRemoteHostsChanged,
+      pushRemoteStatus: this.pushRemoteStatus,
       getRemoteUpdateStatus: this.getRemoteUpdateStatus,
       setRemoteUpdatePolicy: this.setRemoteUpdatePolicy,
       prepareRemoteHost: this.prepareRemoteHost,

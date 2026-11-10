@@ -102,6 +102,8 @@ export function createTauriTransport(label: string): Transport {
       syncUnlisten(events.settingsChanged.listen((e) => cb(e.payload))),
     onCapabilitiesChanged: (cb) =>
       syncUnlisten(events.capabilitiesChanged.listen((e) => cb(e.payload))),
+    onRemoteHostsChanged: (cb) =>
+      syncUnlisten(events.remoteHostsChanged.listen((e) => cb(e.payload))),
     onHostsChanged: (cb) =>
       syncUnlisten(events.hostsChanged.listen((e) => cb(e.payload))),
     onHistoryHealthChanged: (cb) =>

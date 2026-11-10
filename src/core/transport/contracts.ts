@@ -52,6 +52,7 @@ import type {
   HostId,
   HostRecord,
   HostsChanged,
+  HostVitals,
   LiveMsg,
   Millis,
   NavigateRequested,
@@ -62,6 +63,7 @@ import type {
   RemoteHostConfig,
   RemoteHostPreparation,
   RemoteHostRecord,
+  RemoteHostsChanged,
   RemoteSshConfigStatus,
   RemoteSshHostTrust,
   RemoteUpdateStatus,
@@ -167,6 +169,9 @@ export interface Transport {
   dockerResume(): Promise<CommandResult<DockerSnapshot>>;
   listHosts(): Promise<HostRecord[]>;
   listRemoteHosts(): Promise<RemoteHostRecord[]>;
+  hostVitals(host: HostId): Promise<CommandResult<HostVitals>>;
+  setHostsRecentInterest(on: boolean): Promise<CommandResult<null>>;
+  onRemoteHostsChanged(cb: (event: RemoteHostsChanged) => void): Unsubscribe;
   getRemoteUpdateStatus(id: string): Promise<CommandResult<RemoteUpdateStatus>>;
   setRemoteUpdatePolicy(
     id: string,

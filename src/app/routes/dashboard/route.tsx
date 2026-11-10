@@ -56,14 +56,24 @@ function useScrollTopOnNavigate(ref: RefObject<HTMLElement | null>) {
 const localNow = () => Date.now();
 function selectConnection(hosts: RemoteHostRecord[]) {
   return hosts.map((host) => ({
-    ...host,
+    config: host.config,
+    os: host.os,
     status: {
-      ...host.status,
-      last_seen_ms: null,
-      cpu_pct: null,
-      memory_pct: null,
+      state: host.status.state,
+      route: host.status.route,
+      error: host.status.error,
+      identity_changed: host.status.identity_changed,
+      agent_update: host.status.agent_update,
     },
   }));
+}
+
+/** The notice also reads sync and clock facts; keep that subscription local. */
+function ConnectionNotice({ id }: { id: string }) {
+  const remote = useRemoteHosts((hosts) =>
+    hosts.find((host) => host.config.id === id)
+  ).data;
+  return remote ? <HostConnectionNotice remote={remote} /> : null;
 }
 
 export default function DashboardLayout() {
@@ -95,7 +105,7 @@ export default function DashboardLayout() {
           {/* About other hosts, so it isn't dimmed with this host's stale page. */}
           {metricPage && <HostUpdateNotice />}
           {remote && metricPage && (
-            <HostConnectionNotice key={hostId} remote={remote} />
+            <ConnectionNotice key={hostId} id={hostId} />
           )}
           <div
             className={cn(

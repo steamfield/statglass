@@ -743,7 +743,7 @@ async fn now_keeps_remote_hosts_to_headline_series_and_offline_hosts_empty() {
     assert_eq!(n.hosts[0].age_ms, Some(1_000));
     assert_eq!(
         series(1),
-        ["cpu.total", "mem.used"],
+        ["cpu.total", "disk.used{vol=/}", "mem.used"],
         "a remote host gets the headline set only, whatever its frame holds"
     );
     let linux = &n.hosts[2];

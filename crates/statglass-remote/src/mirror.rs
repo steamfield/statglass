@@ -41,6 +41,10 @@ impl MirrorEpoch {
 }
 
 impl MirrorSink for Mirror {
+    fn recent_watermark(&self) -> Result<Option<i64>, MirrorError> {
+        Ok(self.sync_watermark()?.s10_ms)
+    }
+
     fn cursor(
         &self,
         tier: Tier,
