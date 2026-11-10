@@ -191,6 +191,9 @@ fn full_hour_comparison_shares_payloads_for_128_containers() {
         }
         recount_aux(&mut s);
         assert!(s.bytes + s.aux_bytes < RING_BYTES);
+        // This checks the answer and its memory accounting, not speed: a debug build on
+        // a loaded CI runner can take longer than the production read budget.
+        s.read_budget = Duration::from_secs(600);
     }
     let started = Instant::now();
     let page = r

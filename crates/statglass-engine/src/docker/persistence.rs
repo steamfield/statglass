@@ -128,6 +128,8 @@ struct State {
     /// When this recorder first observed each daemon. Restore never closes a crashed
     /// process's record after it: later saved time is this process's own.
     first_observed: BTreeMap<String, i64>,
+    /// How long a read may hold its pin before its answer counts as expired.
+    read_budget: Duration,
 }
 struct ReadPin<'a> {
     state: &'a Mutex<State>,
@@ -141,7 +143,7 @@ impl ReadPin<'_> {
         let s = self.state.lock_ok();
         s.generation == self.generation
             && s.reset_epoch == self.reset_epoch
-            && self.started.elapsed() <= Duration::from_secs(2)
+            && self.started.elapsed() <= s.read_budget
     }
 }
 impl Drop for ReadPin<'_> {
@@ -196,6 +198,7 @@ impl DockerRecorder {
                 saved_coverage: BTreeMap::new(),
                 live_only: true,
                 first_observed: BTreeMap::new(),
+                read_budget: Duration::from_secs(2),
             }),
         }
     }
