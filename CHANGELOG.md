@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.12.0](https://github.com/steamfield/statglass/compare/v0.11.1...v0.12.0) - 2026-11-10
+
+### Added
+
+- The Hosts page is a grid of host cards (D-134). Each shows 10 minutes of CPU and
+  memory from mirrored history, the host's vitals (1-minute load against its cores,
+  memory pressure, boot volume with the store's low-disk threshold, total network), its
+  StatGlass version, and its state with the action that fixes it. While the page is
+  visible the controller requests recent rows every 15 s, so cards stay current
+  without putting hosts into detail mode.
+- Agent update progress is owned by Rust: queued, probing, uploading with an
+  approximate byte count, installing, restarting, reconnecting, and the last failure.
+  A typed `RemoteHostsChanged` event fires when a rendered status field changes.
+- rr jobs: while the Hosts page is visible, the controller reads `/tmp/rr.lock/info.json`
+  over each host's SSH alias every 60 s (this Mac reads it locally). The file must be
+  a regular file, not a symlink, under 4 KB, and owned by the SSH login. Jobs of one
+  run are grouped across hosts, and failing reads back off to 5, 15 and 60 minutes.
+- Shared `AlertChip`, `StatusDot` and `TruncatedText` components replace the private
+  copies.
+
+### Changed
+
+- Host settings are sectioned on the shared settings rows: Connection, History on this
+  Mac, Updates on this host, Remove.
+- React Query's focus state follows the window visibility Rust tracks, so every
+  polling query stops in a hidden window.
+- `HostVitals` carries CPU and memory percent for every host; `RemoteHostStatus` no
+  longer duplicates them.
+
+### Fixed
+
+- Reinstalling a saved Mac updates it in place under its own identity, after checking
+  the Mac behind the alias is the same one, instead of being refused as already added.
 ## [0.11.1](https://github.com/steamfield/statglass/compare/v0.11.0...v0.11.1) - 2026-11-10
 
 ### Changed
