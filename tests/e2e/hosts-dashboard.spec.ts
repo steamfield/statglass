@@ -60,6 +60,7 @@ for (const theme of ["dark", "light"]) {
   });
   for (const scenario of [
     "hosts-dashboard",
+    "rr-jobs",
     "host-updating",
     "host-update-failed",
     "hosts-worst-case",
@@ -88,6 +89,42 @@ for (const theme of ["dark", "light"]) {
         await expect(progress).toHaveAttribute("aria-valuemax", "8000000");
       }
       await ready(page);
+      if (scenario === "rr-jobs") {
+        for (const { name, peer } of [
+          { name: "rr-build", peer: "rr-test" },
+          { name: "rr-test", peer: "rr-build" },
+        ]) {
+          const card = page.getByRole("region", { name, exact: true });
+          await expect(
+            card.getByText("rr running", { exact: true })
+          ).toBeVisible();
+          await expect(
+            card.getByText(`From MacBook Pro · also on ${peer}`, {
+              exact: true,
+            })
+          ).toBeVisible();
+        }
+        const local = page.getByRole("region", {
+          name: "This Mac",
+          exact: true,
+        });
+        await expect(
+          local.getByText("cargo check --workspace", { exact: true })
+        ).toBeVisible();
+        const command = page
+          .getByRole("region", { name: "rr-long", exact: true })
+          .getByText(/^cargo test --workspace --all-features/);
+        await expect(command).toHaveAttribute("tabindex", "0");
+        await command.focus();
+        await expect(page.getByRole("tooltip")).toContainText(
+          "integration_suite_"
+        );
+        await page.keyboard.press("Escape");
+      }
+      if (scenario === "hosts-worst-case")
+        await expect(
+          page.getByText("rr running", { exact: true })
+        ).toBeVisible();
       await page.screenshot({
         path: `test-results/screens/hosts-${scenario}-${theme}-${info.project.name}.png`,
         fullPage: true,
@@ -99,6 +136,19 @@ for (const theme of ["dark", "light"]) {
         .withRules(["color-contrast", "button-name", "aria-progressbar-name"])
         .analyze();
       expect(audit.violations).toEqual([]);
+      if (scenario === "rr-jobs") {
+        await page.setViewportSize({ width: 700, height: 1040 });
+        await page.screenshot({
+          path: `test-results/screens/hosts-rr-jobs-narrow-${theme}-${info.project.name}.png`,
+          fullPage: true,
+          animations: "disabled",
+        });
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth
+          )
+        ).toBe(true);
+      }
       if (scenario === "hosts-worst-case") {
         const card = page.getByRole("region", {
           name: "production-backup-unreachable-over-the-saved-ssh-alias",

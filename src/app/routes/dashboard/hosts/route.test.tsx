@@ -319,3 +319,55 @@ it("keeps a newer Mac's probe facts and does not request a downgrade from Reinst
       ?.args[1]
   ).toBe(false);
 });
+
+it("shows shared rr jobs, the local job, and removes a disconnected band", async () => {
+  const { source } = await mount({ scenarios: ["rr-jobs"], historyRows: 1 });
+  for (const { name, peer } of [
+    { name: "rr-build", peer: "rr-test" },
+    { name: "rr-test", peer: "rr-build" },
+  ]) {
+    const card = within(await screen.findByRole("region", { name }));
+    expect(card.getByText(`From MacBook Pro · also on ${peer}`)).toBeVisible();
+    expect(card.getByText("cargo test --workspace")).toBeVisible();
+  }
+  const local = within(screen.getByRole("region", { name: "This Mac" }));
+  expect(await local.findByText("cargo check --workspace")).toBeVisible();
+  act(() => source.pushRemoteStatus("remote-rr-build", { state: "offline" }));
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("region", { name: "rr-build" })).queryByText(
+        "rr running"
+      )
+    ).not.toBeInTheDocument()
+  );
+});
+
+it("reads the local job once per minute and stops when the card unmounts", async () => {
+  vi.useFakeTimers();
+  const source = createMockTransport({
+    scenarios: ["rr-jobs"],
+    autoTick: false,
+    historyRows: 1,
+  });
+  sources.push(source);
+  const read = vi.spyOn(source, "localRrJob");
+  const hosts = await source.listHosts();
+  const view = renderWithProviders(
+    <HostSelectionContext.Provider
+      value={{ hosts, selected: MOCK_HOST_ID, select: () => {} }}
+    >
+      <HostsRoute />
+    </HostSelectionContext.Provider>,
+    { transport: source }
+  );
+  await act(() => vi.advanceTimersByTimeAsync(10));
+  expect(read).toHaveBeenCalledTimes(1);
+  await act(() => vi.advanceTimersByTimeAsync(59_989));
+  expect(read).toHaveBeenCalledTimes(1);
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(read).toHaveBeenCalledTimes(2);
+  view.unmount();
+  await act(() => vi.advanceTimersByTimeAsync(120_000));
+  expect(read).toHaveBeenCalledTimes(2);
+  view.queryClient.clear();
+});

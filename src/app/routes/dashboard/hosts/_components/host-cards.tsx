@@ -41,7 +41,7 @@ export const RemoteHostCard = memo(function RemoteHostCard({
   );
   const host = selection?.hosts.find((host) => host.id === id);
   if (!remote) return null;
-  const model = remoteHostCardModel(remote, host);
+  const model = remoteHostCardModel(remote, host, selection?.hosts);
   const show = () => {
     selection?.select(id);
     void navigate("/dashboard/overview");
@@ -94,6 +94,15 @@ function LocalCardData({
     queryFn: () => unwrap(transport.hostVitals(host.id)),
     refetchInterval: 5000,
   });
+  const rr = useQuery({
+    queryKey: hostKeys.localRr(host.id),
+    queryFn: () => transport.localRrJob(),
+    refetchInterval: 60_000,
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
   const { history, query } = useHostRecentHistory(host.id);
   const cpu = useHost((state) =>
     state.stale ? null : held(state, "cpu.total")
@@ -107,7 +116,9 @@ function LocalCardData({
     version,
     target,
     cpu,
-    memory
+    memory,
+    rr.data ?? null,
+    selection?.hosts
   );
   return (
     <div className="flex h-full flex-col gap-2">
@@ -121,6 +132,13 @@ function LocalCardData({
           selection?.select(host.id);
           void navigate("/dashboard/overview");
         }}
+      />
+      <QueryNotice
+        query={rr}
+        loading="Reading local rr job…"
+        error={(error) =>
+          commandErrorText(error, "Couldn't read the local rr job.")
+        }
       />
       <QueryNotice
         query={vitals}

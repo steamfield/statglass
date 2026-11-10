@@ -210,3 +210,92 @@ describe("host card model", () => {
     expect(model.vitals.every((v) => v.value === "—")).toBe(true);
   });
 });
+
+describe("rr band", () => {
+  const job = {
+    command: "cargo test",
+    user: "me",
+    client_hostname: "Riley’s MacBook Pro",
+    started_ms: 1_000_000,
+    peers: ["one", "two", "three"],
+  };
+  const hosts = ["one", "two", "three"].map((id) => ({
+    ...hostRecord(scenarioFlags([]), 0),
+    id,
+    is_local: false,
+    display_name: `Saved ${id}`,
+  }));
+
+  it("omits the band without a job", () => {
+    expect(remoteHostCardModel(remoteFixture()).rr).toBeNull();
+  });
+
+  it("resolves peer ids to saved names and carries host clock facts", () => {
+    const remote = remoteFixture();
+    remote.status.rr = { ...job, peers: ["one", "two"] };
+    remote.status.clock_offset_ms = 120_000;
+    expect(remoteHostCardModel(remote, undefined, hosts).rr).toEqual({
+      command: "cargo test",
+      detail: "From Riley’s MacBook Pro · also on Saved one, Saved two",
+      startedMs: 1_000_000,
+      clockOffsetMs: 120_000,
+    });
+  });
+
+  it("limits peers to two names and a remainder count", () => {
+    const remote = remoteFixture();
+    remote.status.rr = job;
+    expect(remoteHostCardModel(remote, undefined, hosts).rr?.detail).toBe(
+      "From Riley’s MacBook Pro · also on Saved one, Saved two and 1 more"
+    );
+  });
+
+  it("keeps a null command and no-peer detail", () => {
+    const remote = remoteFixture();
+    remote.status.rr = { ...job, command: null, peers: [] };
+    expect(remoteHostCardModel(remote).rr).toMatchObject({
+      command: null,
+      detail: "From Riley’s MacBook Pro",
+    });
+  });
+
+  it.each<RemoteState>(["offline", "disabled", "connecting", "error"])(
+    "omits stale rr state while %s",
+    (state) => {
+      const remote = remoteFixture();
+      remote.status.state = state;
+      remote.status.rr = job;
+      expect(remoteHostCardModel(remote).rr).toBeNull();
+    }
+  );
+
+  it("omits a job when identity or required updates prevent live data", () => {
+    const remote = remoteFixture();
+    remote.status.rr = job;
+    remote.status.identity_changed = "other";
+    expect(remoteHostCardModel(remote).rr).toBeNull();
+    remote.status.identity_changed = null;
+    remote.status.agent_update = {
+      kind: "required",
+      installed: "0.1",
+      target: "1.0",
+      via: "push",
+    };
+    expect(remoteHostCardModel(remote).rr).toBeNull();
+  });
+
+  it("shows the local job and names a local peer This Mac", () => {
+    const host = hostRecord(scenarioFlags([]), 0);
+    expect(
+      localHostCardModel(host, null, "1", null, null, null, {
+        ...job,
+        peers: [],
+      }).rr
+    ).toMatchObject({ command: "cargo test", clockOffsetMs: 0 });
+    const remote = remoteFixture();
+    remote.status.rr = { ...job, peers: [host.id] };
+    expect(remoteHostCardModel(remote, undefined, [host]).rr?.detail).toContain(
+      "also on This Mac"
+    );
+  });
+});

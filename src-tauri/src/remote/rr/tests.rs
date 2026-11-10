@@ -44,7 +44,7 @@ async fn cadence_is_owned_by_recent_interest_and_native_window_lifetime() {
     let (stop, stopped) = watch::channel(false);
     let reads = Arc::new(AtomicUsize::new(0));
     let observed = reads.clone();
-    let task = tokio::spawn(run(rx, stopped, move || {
+    let task = tokio::spawn(run(rx, stopped, move |_| {
         observed.fetch_add(1, Ordering::SeqCst);
         async {}
     }));
@@ -87,7 +87,7 @@ async fn interest_release_cancels_an_inflight_read() {
     let drops = Arc::new(AtomicUsize::new(0));
     let observed = drops.clone();
     let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
-    let task = tokio::spawn(run(rx, stopped, move || {
+    let task = tokio::spawn(run(rx, stopped, move |_| {
         let guard = Guard(observed.clone());
         started.send(()).unwrap();
         async move {
@@ -103,8 +103,8 @@ async fn interest_release_cancels_an_inflight_read() {
     task.await.unwrap();
 }
 
-#[test]
-fn only_enabled_connected_hosts_use_the_current_route() {
+#[tokio::test(start_paused = true)]
+async fn only_enabled_connected_hosts_use_the_current_route() {
     let manager = RemoteManager::default();
     for (n, state, enabled) in [
         (1, RemoteState::Connected, true),
@@ -154,6 +154,22 @@ fn only_enabled_connected_hosts_use_the_current_route() {
     assert_eq!(targets[0].alias, "lan");
     manager.statuses.lock_ok().get_mut(&id(1)).unwrap().route = Some(RemoteRoute::Tailscale);
     assert_eq!(manager.rr_targets()[0].alias, "tail");
+    let backoff = Mutex::new(Backoff::default());
+    let reads = AtomicUsize::new(0);
+    for state in [
+        RemoteState::Offline,
+        RemoteState::Connecting,
+        RemoteState::Error,
+        RemoteState::Disabled,
+    ] {
+        manager.statuses.lock_ok().get_mut(&id(1)).unwrap().state = state;
+        backoff_tests::round(&manager, &backoff, manager.rr_targets(), &reads, true).await;
+    }
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        0,
+        "disconnected saved hosts must never reach SSH"
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -170,10 +186,12 @@ async fn concurrent_reads_publish_changes_and_time_out_without_the_operation_loc
         published.notify_one();
     };
     let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
+    let backoff = Mutex::new(Backoff::default());
     let work = poll(
         &manager,
         id(0),
         vec![first.clone(), second, stuck],
+        &backoff,
         |_| {
             let started = started.clone();
             async move {
@@ -225,11 +243,13 @@ async fn a_stalled_local_read_does_not_block_subsequent_remote_rounds() {
     let manager = RemoteManager::default();
     let target = connected(&manager, id(1));
     let reads = AtomicUsize::new(0);
+    let backoff = Mutex::new(Backoff::default());
     let round = || {
         poll(
             &manager,
             id(0),
             vec![target.clone()],
+            &backoff,
             |_| {
                 reads.fetch_add(1, Ordering::SeqCst);
                 async { Ok(Some(job())) }
@@ -282,3 +302,6 @@ async fn timing_out_local_work_cannot_accumulate_blocking_readers() {
     release.send(()).unwrap();
     finished.await.unwrap();
 }
+
+#[path = "backoff_tests.rs"]
+mod backoff_tests;

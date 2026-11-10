@@ -1,12 +1,14 @@
 import { createMockTransport } from "@core/mock-transport";
 
-it("exposes no local lock by default and two peer jobs plus a long command", async () => {
+it("exposes a local lock and two peer jobs plus a long command", async () => {
   const transport = createMockTransport({
     scenarios: ["rr-jobs"],
     historyRows: 1,
   });
   try {
-    expect(await transport.localRrJob()).toBeNull();
+    expect(await transport.localRrJob()).toMatchObject({
+      command: "cargo check --workspace",
+    });
     const hosts = await transport.listRemoteHosts();
     expect(hosts).toHaveLength(3);
     const [first, second, third] = hosts;

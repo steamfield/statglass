@@ -216,6 +216,7 @@ export const historyKeys = {
 };
 
 export const hostKeys = {
+  localRr: (hostId: HostId) => [...hostKeys.all, hostId, "local-rr"] as const,
   vitals: (hostId: HostId) => [...hostKeys.all, hostId, "vitals"] as const,
   diskIoDevices: (hostId: HostId) =>
     ["hosts", hostId, "disk-io-devices"] as const,
