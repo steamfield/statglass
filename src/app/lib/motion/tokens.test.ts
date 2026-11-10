@@ -22,6 +22,17 @@ describe("motionMs", () => {
     expect(motionMs("enter")).toBe(280);
   });
 
+  // The production CSS minifier rewrites `280ms` as `.28s`.
+  it.each([
+    [".28s", 280],
+    ["0.45s", 450],
+    ["0s", 0],
+    ["30ms", 30],
+  ])("reads %s as %i ms", (value, ms) => {
+    root.style.setProperty("--motion-enter", value);
+    expect(motionMs("enter")).toBe(ms);
+  });
+
   it("reads the root even when the element sets its own value", () => {
     root.style.setProperty("--motion-enter", "0ms");
     const el = document.createElement("div");
