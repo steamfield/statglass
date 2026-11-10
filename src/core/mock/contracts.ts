@@ -6,6 +6,7 @@ import type {
   HistoryHealth,
   LiveMsg,
   ProcessView,
+  RemoteHostStatus,
   SeriesKey,
   UpdateStatus,
 } from "@core/generated/bindings";
@@ -65,6 +66,7 @@ export interface MockTransport extends Transport {
   readonly calls: MockCall[];
   /** Deliver one message to every live subscriber. */
   push(msg: LiveMsg): void;
+  pushRemoteStatus(id: string, status: Partial<RemoteHostStatus>): void;
   /** Generate one tick: a frame (unless paused or stale) and processes. */
   tick(): void;
   /** Number of live subscribers. */

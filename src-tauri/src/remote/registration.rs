@@ -44,11 +44,16 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
             }
             known.clone()
         };
+        state
+            .remotes
+            .observe_update(id, s.connected, s.remote_version.as_deref());
         let mut statuses = state.remotes.statuses.lock_ok();
         // A host removed or re-registered meanwhile keeps its newer status.
         if state.remotes.generations.lock_ok().get(&id) == Some(&generation) {
             statuses.insert(id, connection_status(s, linux, last));
         }
+        drop(statuses);
+        super::progress::emit_changed(&handle);
     });
     let source = RemoteSource::new(
         saved.record.clone(),
@@ -58,6 +63,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         Some(mirror.clone()),
     );
     source.set_controller_on_battery(state.host(state.local)?.hub().status().on_battery);
+    state.live.register_recent_source(id, source.clone());
     state.remotes.sources.lock_ok().insert(id, source.clone());
     let entry = state.hosts.insert(saved.record.clone(), source);
     state.remotes.mirrors.lock_ok().insert(
@@ -120,6 +126,7 @@ fn discard_host(state: &AppState, id: HostId) {
     state.remotes.sources.lock_ok().remove(&id);
     state.remotes.saved.lock_ok().remove(&id);
     state.remotes.statuses.lock_ok().remove(&id);
+    state.remotes.updates.lock_ok().remove(&id);
     if let Some(m) = state.remotes.mirrors.lock_ok().remove(&id) {
         m.history.close();
     }
@@ -178,6 +185,9 @@ pub(super) fn connection_status(
         clock_offset_ms: s.clock_offset_ms as f64,
         cpu_pct: None,
         memory_pct: None,
+        vitals: HostVitals::default(),
+        update: None,
+        last_update_failure: None,
         agent_version,
         identity_changed: s.identity_changed.map(|id| id.to_string()),
     }

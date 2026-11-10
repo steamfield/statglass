@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::probe::{AgentStatus, LinuxProbe, probe_with};
-use super::upload::{drop_previous, upload_with};
+use super::upload::{drop_previous, upload_progress, upload_with};
 use super::{AgentInstallError, AgentTarget, Remote, Result, STEP_TIMEOUT, Ssh, run_script, unit};
 use crate::transport::sh_word;
 
@@ -63,6 +63,27 @@ pub(crate) async fn update_with(
     bytes: &[u8],
     sha256_hex: &str,
 ) -> Result<AgentStatus> {
+    update_progress_with(remote, probe, bytes, sha256_hex, &|_| {}).await
+}
+
+/// An update with controller-side phase and streamed byte observations.
+pub async fn update_with_progress(
+    alias: &str,
+    probe: &LinuxProbe,
+    bytes: &[u8],
+    sha256_hex: &str,
+    progress: &(dyn Fn(super::UpdateStep) + Send + Sync),
+) -> Result<AgentStatus> {
+    update_progress_with(&Ssh(alias), probe, bytes, sha256_hex, progress).await
+}
+
+pub(crate) async fn update_progress_with(
+    remote: &impl Remote,
+    probe: &LinuxProbe,
+    bytes: &[u8],
+    sha256_hex: &str,
+    progress: &(dyn Fn(super::UpdateStep) + Send + Sync),
+) -> Result<AgentStatus> {
     let target = probe.target()?;
     if probe.existing().is_none() {
         return Err(AgentInstallError::NotInstalled {
@@ -75,13 +96,16 @@ pub(crate) async fn update_with(
         .and_then(|agent| agent.version.as_ref())
         .is_some_and(|version| version.automatic_updates)
     {
-        return running(
-            &run_script(remote, &unit::request_update(&words), None, STEP_TIMEOUT).await?,
-        );
+        progress(super::UpdateStep::Installing);
+        let status =
+            running(&run_script(remote, &unit::request_update(&words), None, STEP_TIMEOUT).await?)?;
+        progress(super::UpdateStep::Restarting);
+        return Ok(status);
     }
     let attempt = async {
         run_script(remote, &unit::stop_and_back_up(&words), None, STEP_TIMEOUT).await?;
-        upload_with(remote, &target, bytes, sha256_hex).await?;
+        upload_progress(remote, &target, bytes, sha256_hex, progress).await?;
+        progress(super::UpdateStep::Restarting);
         running(&run_script(remote, &unit::restart(&words), None, STEP_TIMEOUT).await?)
     };
     match attempt.await {

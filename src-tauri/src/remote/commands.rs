@@ -11,9 +11,11 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
         .iter()
         .map(|(id, h)| {
             let mut status = statuses.get(id).cloned().unwrap_or_default();
+            state.remotes.apply_update(*id, &mut status);
             if let Ok(entry) = state.host(*id)
                 && let Some(frame) = entry.latest_frame()
             {
+                status.vitals = super::vitals::host_vitals(Some(&frame), *id, &entry.record().info);
                 let value = |metric: &str| {
                     frame
                         .layout
@@ -38,6 +40,33 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
             }
         })
         .collect()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn host_vitals(state: State<'_, AppState>, host: HostId) -> Result<HostVitals, CommandError> {
+    let entry = state.host(host)?;
+    Ok(super::vitals::host_vitals(
+        entry.latest_frame().as_deref(),
+        host,
+        &entry.record().info,
+    ))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_hosts_recent_interest(
+    window: tauri::Window,
+    state: State<'_, AppState>,
+    on: bool,
+) -> Result<(), CommandError> {
+    if window.label() != "dashboard" {
+        return Err(CommandError::InvalidArgument {
+            message: "Host history interest belongs to the dashboard".into(),
+        });
+    }
+    state.live.set_hosts_recent_interest(window.label(), on);
+    Ok(())
 }
 
 fn notice_path(app: &AppHandle) -> Result<PathBuf, CommandError> {

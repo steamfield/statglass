@@ -43,6 +43,9 @@ pub struct RemoteHostStatus {
     pub clock_offset_ms: f64,
     pub cpu_pct: Option<f64>,
     pub memory_pct: Option<f64>,
+    pub vitals: HostVitals,
+    pub update: Option<AgentUpdateProgress>,
+    pub last_update_failure: Option<AgentUpdateFailure>,
     /// The version the host last reported (`Hello.app_version`), kept across restarts.
     pub agent_version: Option<String>,
     /// How the host's StatGlass compares with the one this Mac can install (D-123).
@@ -62,12 +65,82 @@ impl Default for RemoteHostStatus {
             clock_offset_ms: 0.0,
             cpu_pct: None,
             memory_pct: None,
+            vitals: HostVitals::default(),
+            update: None,
+            last_update_failure: None,
             agent_version: None,
             agent_update: AgentUpdate::Unknown,
             identity_changed: None,
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UpdatePhase {
+    Queued,
+    Probing,
+    Uploading {
+        #[specta(type = statglass_schema::JsSafeInt)]
+        sent_bytes: u64,
+        #[specta(type = statglass_schema::JsSafeInt)]
+        total_bytes: u64,
+    },
+    Installing,
+    Restarting,
+    Reconnecting,
+    Unknown,
+}
+
+impl<'de> Deserialize<'de> for UpdatePhase {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum Input {
+            Queued,
+            Probing,
+            Uploading {
+                sent_bytes: u64,
+                total_bytes: u64,
+            },
+            Installing,
+            Restarting,
+            Reconnecting,
+            #[serde(other)]
+            Unknown,
+        }
+        Ok(match Input::deserialize(deserializer)? {
+            Input::Queued => Self::Queued,
+            Input::Probing => Self::Probing,
+            Input::Uploading {
+                sent_bytes,
+                total_bytes,
+            } => Self::Uploading {
+                sent_bytes,
+                total_bytes,
+            },
+            Input::Installing => Self::Installing,
+            Input::Restarting => Self::Restarting,
+            Input::Reconnecting => Self::Reconnecting,
+            Input::Unknown => Self::Unknown,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct AgentUpdateProgress {
+    pub target: String,
+    pub phase: UpdatePhase,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct AgentUpdateFailure {
+    pub target: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize, specta::Type, tauri_specta::Event)]
+pub struct RemoteHostsChanged {}
 /// How a host gets this Mac's version: a Linux agent is pushed in place ("Update
 /// agent"); a Mac is reinstalled from Add host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

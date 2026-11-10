@@ -91,7 +91,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             disk_space::disk_space_path, disk_space::disk_space_highlights,
             disk_space::disk_space_reveal_highlight,
             commands::list_hosts,
-            remote::list_remote_hosts, remote::host_update_notice_dismissed, remote::dismiss_host_update_notice, remote::get_remote_update_status, remote::set_remote_update_policy,
+            remote::list_remote_hosts, remote::host_vitals, remote::set_hosts_recent_interest, remote::host_update_notice_dismissed, remote::dismiss_host_update_notice, remote::get_remote_update_status, remote::set_remote_update_policy,
             remote::remote_ssh_config_status,
             remote::inspect_remote_ssh_host,
             remote::accept_remote_ssh_host,
@@ -147,6 +147,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             ipc::NavigateRequested,
             ipc::HistoryHealthChanged,
             ipc::HostsChanged,
+            remote::RemoteHostsChanged,
             ipc::EventRecorded,
         ]);
     facts::register(builder)
@@ -254,6 +255,13 @@ pub fn run() {
                 },
             }
             Ok(())
+        })
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started
+                && let Some(state) = webview.try_state::<AppState>()
+            {
+                state.live.page_loading(webview.label());
+            }
         })
         .on_window_event(|window, event| match event {
             // The popover hides when it loses key status: an outside click, or another

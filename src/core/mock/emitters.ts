@@ -4,6 +4,7 @@ import type {
   HistoryHealthChanged,
   HostsChanged,
   NavigateRequested,
+  RemoteHostsChanged,
   SettingsChanged,
   UpdateStatus,
   WindowAppearanceChanged,
@@ -18,6 +19,7 @@ export function createMockEmitters() {
     navigate: createEmitter<NavigateRequested>(),
     health: createEmitter<HistoryHealthChanged>(),
     hosts: createEmitter<HostsChanged>(),
+    remotes: createEmitter<RemoteHostsChanged>(),
     event: createEmitter<EventRecorded>(),
   };
 }

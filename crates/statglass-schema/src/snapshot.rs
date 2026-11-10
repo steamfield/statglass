@@ -149,6 +149,8 @@ pub struct MemoryView {
     pub pressure: Option<f32>,
     /// 0 normal, 1 warn, 2 critical.
     pub pressure_level: Option<f32>,
+    /// Linux `mem.psi{stall=some}`, percent of time stalled.
+    pub psi_some_pct: Option<f32>,
     pub swap_used: Option<f32>,
     pub swap_in: Option<f32>,
     pub swap_out: Option<f32>,
@@ -372,6 +374,7 @@ impl Snapshot {
                         "mem.free" => &mut m.free,
                         "mem.pressure" => &mut m.pressure,
                         "mem.pressure_level" => &mut m.pressure_level,
+                        "mem.psi" if key.labels.get("stall") == Some("some") => &mut m.psi_some_pct,
                         "mem.swap_used" => &mut m.swap_used,
                         "mem.swap_in" => &mut m.swap_in,
                         "mem.swap_out" => &mut m.swap_out,
