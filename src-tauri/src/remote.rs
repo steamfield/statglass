@@ -102,6 +102,9 @@ pub struct RemoteManager {
     trust: Mutex<BTreeMap<String, (std::time::Instant, statglass_remote::trust::TrustCandidate)>>,
     statuses: Mutex<BTreeMap<HostId, RemoteHostStatus>>,
     updates: Mutex<BTreeMap<HostId, progress::TrackedUpdate>>,
+    rr: Mutex<BTreeMap<HostId, statglass_remote::rr::RrJob>>,
+    rr_sessions: Mutex<BTreeMap<HostId, Uuid>>,
+    rr_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     event_pending: std::sync::atomic::AtomicBool,
     mirrors: Mutex<BTreeMap<HostId, RegisteredMirror>>,
     sources: Mutex<BTreeMap<HostId, Arc<RemoteSource>>>,
@@ -152,6 +155,7 @@ impl RemoteManager {
         let status = self.statuses.lock_ok().get(&host).cloned();
         let mut status = status.unwrap_or_default();
         self.apply_update(host, &mut status);
+        self.apply_rr(host, &mut status);
         Some((enabled, status))
     }
     /// Every saved host's record, registered or not.
@@ -320,6 +324,7 @@ mod commands;
 mod contracts;
 mod progress;
 mod registration;
+mod rr;
 mod server;
 mod setup;
 mod update_controls;

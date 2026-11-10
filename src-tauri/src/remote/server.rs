@@ -21,6 +21,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         *state.remotes.saved.lock_ok() = saved;
     }
     let (stop, mut rx) = tokio::sync::watch::channel(false);
+    super::rr::start(app, rx.clone());
     *state.remotes.stop.lock_ok() = Some(stop);
     let paths = SocketPaths::new(data_dir(app)?);
     let handle = app.clone();
@@ -205,6 +206,9 @@ pub fn refresh_metrics(app: &AppHandle, enabled: bool) {
 
 pub fn shutdown(app: &AppHandle) {
     let state = app.state::<AppState>();
+    if let Some(task) = state.remotes.rr_task.lock_ok().take() {
+        task.abort();
+    }
     state.remotes.monitor.lock_ok().take();
     for (_, watcher) in std::mem::take(&mut *state.remotes.watchers.lock_ok()) {
         watcher.abort();

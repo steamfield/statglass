@@ -44,6 +44,7 @@ pub struct RemoteHostStatus {
     pub cpu_pct: Option<f64>,
     pub memory_pct: Option<f64>,
     pub vitals: HostVitals,
+    pub rr: Option<statglass_remote::rr::RrJob>,
     pub update: Option<AgentUpdateProgress>,
     pub last_update_failure: Option<AgentUpdateFailure>,
     /// The version the host last reported (`Hello.app_version`), kept across restarts.
@@ -66,6 +67,7 @@ impl Default for RemoteHostStatus {
             cpu_pct: None,
             memory_pct: None,
             vitals: HostVitals::default(),
+            rr: None,
             update: None,
             last_update_failure: None,
             agent_version: None,

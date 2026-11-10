@@ -113,6 +113,7 @@ struct Inner {
     /// closed never matches a call that started before.
     next_seq: u64,
     recent_sources: HashMap<HostId, Arc<dyn RecentFeed>>,
+    recent_observer: Option<Arc<dyn Fn(bool) + Send + Sync>>,
 }
 
 impl Inner {
@@ -124,6 +125,9 @@ impl Inner {
 
     fn apply_recent_interest(&self) {
         let on = self.windows.values().any(|w| w.is_visible() && w.recent);
+        if let Some(observer) = &self.recent_observer {
+            observer(on);
+        }
         for source in self.recent_sources.values() {
             source.set_recent_interest(on);
         }
@@ -199,6 +203,15 @@ impl LiveRegistry {
         let mut inner = self.lock();
         if let Some(old) = inner.recent_sources.insert(host, source) {
             old.set_recent_interest(false);
+        }
+        inner.apply_recent_interest();
+    }
+
+    /// A controller-side poller shares the exact recent-history demand lifetime.
+    pub fn observe_hosts_recent_interest(&self, observer: Arc<dyn Fn(bool) + Send + Sync>) {
+        let mut inner = self.lock();
+        if let Some(old) = inner.recent_observer.replace(observer) {
+            old(false);
         }
         inner.apply_recent_interest();
     }

@@ -47,12 +47,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         state
             .remotes
             .observe_update(id, s.connected, s.remote_version.as_deref());
-        let mut statuses = state.remotes.statuses.lock_ok();
-        // A host removed or re-registered meanwhile keeps its newer status.
-        if state.remotes.generations.lock_ok().get(&id) == Some(&generation) {
-            statuses.insert(id, connection_status(s, linux, last));
-        }
-        drop(statuses);
+        publish_status(&state.remotes, id, generation, s, linux, last);
         super::progress::emit_changed(&handle);
     });
     let source = RemoteSource::new(
@@ -106,6 +101,31 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     Ok(())
 }
 
+/// Status and rr connection identity change under the same status lock.
+fn publish_status(
+    manager: &RemoteManager,
+    id: HostId,
+    generation: Uuid,
+    status: statglass_remote::ConnectionStatus,
+    linux: bool,
+    last: Option<String>,
+) {
+    let mut statuses = manager.statuses.lock_ok();
+    // A host removed or re-registered meanwhile keeps its newer status.
+    if manager.generations.lock_ok().get(&id) == Some(&generation) {
+        if status.connected {
+            manager
+                .rr_sessions
+                .lock_ok()
+                .entry(id)
+                .or_insert_with(Uuid::new_v4);
+        } else {
+            manager.clear_rr(id);
+        }
+        statuses.insert(id, connection_status(status, linux, last));
+    }
+}
+
 pub(super) async fn discard_host_async(app: &AppHandle, id: HostId) -> Result<(), CommandError> {
     let app = app.clone();
     tokio::task::spawn_blocking(move || discard_host(&app.state::<AppState>(), id))
@@ -126,6 +146,7 @@ fn discard_host(state: &AppState, id: HostId) {
     state.remotes.sources.lock_ok().remove(&id);
     state.remotes.saved.lock_ok().remove(&id);
     state.remotes.statuses.lock_ok().remove(&id);
+    state.remotes.clear_rr(id);
     state.remotes.updates.lock_ok().remove(&id);
     if let Some(m) = state.remotes.mirrors.lock_ok().remove(&id) {
         m.history.close();
@@ -186,6 +207,7 @@ pub(super) fn connection_status(
         cpu_pct: None,
         memory_pct: None,
         vitals: HostVitals::default(),
+        rr: None,
         update: None,
         last_update_failure: None,
         agent_version,

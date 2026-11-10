@@ -26,6 +26,7 @@ import {
 } from "./remote-updates";
 import { remoteUsage, type UsageQueries } from "./remote-usage";
 import type { MockRing } from "./ring";
+import { syncRrJobs } from "./rr";
 export class MockRemotes {
   readonly remotes = new Map<
     string,
@@ -99,6 +100,7 @@ export class MockRemotes {
         agent_version: APP_VERSION,
         agent_update: { kind: "up_to_date", installed: APP_VERSION },
         identity_changed: null,
+        rr: null,
         vitals: mockHostVitals(linux),
         update: null,
         last_update_failure: null,
@@ -171,6 +173,7 @@ export class MockRemotes {
       ...remote.record,
       status: { ...remote.record.status, ...status },
     };
+    syncRrJobs(this);
     this.emitters.remotes.emit({});
   };
   startUpdate(id: string) {
@@ -443,6 +446,7 @@ export class MockRemotes {
       ok(this.ring.caps)
     );
   readonly emitHostsChanged: MockTransport["emitHostsChanged"] = () => {
+    syncRrJobs(this);
     const hosts = this.allHosts();
     this.emitters.hosts.emit({ hosts });
     this.emitters.remotes.emit({});
@@ -477,6 +481,7 @@ export class MockRemotes {
       acceptRemoteSshHost: this.acceptRemoteSshHost,
       listRemoteHosts: this.listRemoteHosts,
       hostVitals: this.hostVitals,
+      localRrJob: async () => null,
       setHostsRecentInterest: this.setHostsRecentInterest,
       onRemoteHostsChanged: this.onRemoteHostsChanged,
       pushRemoteStatus: this.pushRemoteStatus,
