@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactElement, type ReactNode, useState } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -11,36 +11,40 @@ export interface TruncatedTextProps {
   text: string;
   className?: string;
   as?: "span" | "p";
+  focusable?: boolean;
+  /** Wrap the text in its interactive ancestor, which becomes the tooltip trigger. */
+  children?: (text: ReactNode) => ReactElement;
 }
 
-/**
- * One line of text that ends in an ellipsis when it doesn't fit. Only then is it
- * a tab stop with a tooltip holding the full text; the text stays in the DOM, so
- * screen readers get it either way. The tooltip always wraps the element, so it
- * is never replaced when the width changes and keeps focus.
- */
+/** One ellipsized line; interactive parents can own its tooltip and tab stop. */
 export function TruncatedText({
   text,
   className,
   as: Text = "span",
+  focusable = true,
+  children,
 }: TruncatedTextProps) {
   const { ref, isTruncated } = useIsTruncated(text);
   const [open, setOpen] = useState(false);
+  const label = (
+    <Text
+      ref={ref}
+      className={cn(
+        "block truncate",
+        isTruncated &&
+          focusable &&
+          "rounded-control outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        className
+      )}
+      tabIndex={isTruncated && focusable ? 0 : undefined}
+    >
+      {text}
+    </Text>
+  );
   return (
     <Tooltip open={isTruncated && open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
-        <Text
-          ref={ref}
-          className={cn(
-            "block truncate",
-            isTruncated &&
-              "rounded-control outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            className
-          )}
-          tabIndex={isTruncated ? 0 : undefined}
-        >
-          {text}
-        </Text>
+        {children ? children(label) : label}
       </TooltipTrigger>
       <TooltipContent className="break-words">{text}</TooltipContent>
     </Tooltip>

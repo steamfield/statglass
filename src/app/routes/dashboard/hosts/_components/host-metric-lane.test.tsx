@@ -47,6 +47,7 @@ it("names the current reading without announcing each intervening tick", () => {
   );
   const view = render(lane("18%"));
   try {
+    expect(view.getByRole("img")).not.toHaveAttribute("aria-label");
     expect(view.getByRole("img")).toHaveAccessibleName(
       "CPU, last 10 minutes, now 18%."
     );

@@ -127,7 +127,12 @@ fn publish_status(
         let mut next = connection_status(status, linux, last);
         manager.apply_update(id, &mut next);
         manager.apply_rr(id, &mut next);
-        let changed = rendered_status_changed(&previous, &next);
+        let mut offsets = manager.emitted_clock_offsets.lock_ok();
+        let emitted_offset = offsets.entry(id).or_insert(previous.clock_offset_ms);
+        let changed = rendered_status_changed(&previous, &next, *emitted_offset);
+        if changed {
+            *emitted_offset = next.clock_offset_ms;
+        }
         statuses.insert(id, next);
         return changed;
     }
@@ -135,8 +140,18 @@ fn publish_status(
 }
 
 /// High-frequency facts are refreshed by the host list's five-second poll.
-fn rendered_status_changed(previous: &RemoteHostStatus, next: &RemoteHostStatus) -> bool {
-    previous.state != next.state
+// Keep aligned with CLOCK_STEP_THRESHOLD_MS in src/core/host-clock.ts.
+const CLOCK_STEP_THRESHOLD_MS: f64 = 1000.0;
+
+fn rendered_status_changed(
+    previous: &RemoteHostStatus,
+    next: &RemoteHostStatus,
+    emitted_offset: f64,
+) -> bool {
+    (next.clock_offset_ms - emitted_offset).abs() >= CLOCK_STEP_THRESHOLD_MS
+        || previous.sync != next.sync
+        || previous.agent_version != next.agent_version
+        || previous.state != next.state
         || previous.route != next.route
         || previous.error != next.error
         || previous.identity_changed != next.identity_changed
@@ -166,6 +181,7 @@ fn discard_host(state: &AppState, id: HostId) {
     state.remotes.sources.lock_ok().remove(&id);
     state.remotes.saved.lock_ok().remove(&id);
     state.remotes.statuses.lock_ok().remove(&id);
+    state.remotes.emitted_clock_offsets.lock_ok().remove(&id);
     state.remotes.clear_rr(id);
     state.remotes.updates.lock_ok().remove(&id);
     if let Some(m) = state.remotes.mirrors.lock_ok().remove(&id) {
@@ -224,8 +240,6 @@ pub(super) fn connection_status(
             RemoteSync::Idle
         },
         clock_offset_ms: s.clock_offset_ms as f64,
-        cpu_pct: None,
-        memory_pct: None,
         vitals: HostVitals::default(),
         rr: None,
         update: None,

@@ -131,7 +131,35 @@ describe("TruncatedText", () => {
     expect(screen.getByRole("tooltip")).toHaveClass("break-words");
   });
 
-  it("keeps an overflowing host label outside its row button and both keyboard targets work", async () => {
+  it.each(["focus", "hover"])(
+    "uses the link as tooltip trigger on %s with one tab stop",
+    async (interaction) => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <TruncatedText text="Long host name" focusable={false}>
+            {(text) => <a href="#host">{text}</a>}
+          </TruncatedText>
+          <button type="button">Next</button>
+        </>
+      );
+      expect(screen.getByText("Long host name")).not.toHaveAttribute(
+        "tabindex"
+      );
+      if (interaction === "focus") await user.tab();
+      else await user.hover(screen.getByRole("link"));
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Long host name"
+      );
+      if (interaction === "focus") {
+        expect(screen.getByRole("link")).toHaveFocus();
+        await user.tab();
+        expect(screen.getByRole("button", { name: "Next" })).toHaveFocus();
+      }
+    }
+  );
+
+  it("uses one keyboard target for an overflowing host row and reveals its tooltip on button focus", async () => {
     const transport = createMockTransport({
       autoTick: false,
       scenarios: ["multi-host"],
@@ -160,9 +188,8 @@ describe("TruncatedText", () => {
     ).toBeNull();
     await user.tab();
     await user.tab();
-    expect(hostName()).toHaveFocus();
+    expect(hostName()).not.toHaveAttribute("tabindex");
     expect(await screen.findByRole("tooltip")).toHaveTextContent(name);
-    await user.tab();
     expect(
       screen.getByRole("button", { name: new RegExp(name) })
     ).toHaveFocus();

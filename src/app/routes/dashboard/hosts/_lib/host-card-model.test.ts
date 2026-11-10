@@ -23,8 +23,6 @@ function remoteFixture(): RemoteHostRecord {
       state: "connected",
       route: "lan",
       sync: "current",
-      cpu_pct: 18,
-      memory_pct: 42,
       last_seen_ms: 1791000000000,
       error: null,
       identity_changed: null,
@@ -205,7 +203,7 @@ describe("host card model", () => {
 
   it("builds This Mac from the local host and exposes Settings for its update", () => {
     const host = hostRecord(scenarioFlags([]), 1791000000000);
-    const model = localHostCardModel(host, null, "1.0.0", "1.0.1", null, null);
+    const model = localHostCardModel(host, null, "1.0.0", "1.0.1");
     expect(model).toMatchObject({
       name: "This Mac",
       status: "Live",
@@ -295,7 +293,7 @@ describe("rr band", () => {
   it("shows the local job and names a local peer This Mac", () => {
     const host = hostRecord(scenarioFlags([]), 0);
     expect(
-      localHostCardModel(host, null, "1", null, null, null, {
+      localHostCardModel(host, null, "1", null, {
         ...job,
         peers: [],
       }).rr
@@ -311,17 +309,8 @@ describe("rr band", () => {
 it("uses Rust's local memory percentage independently of local byte readings", () => {
   const host = hostRecord(scenarioFlags([]), 0);
   const vitals = { ...mockHostVitals(false), memory_pct: 37 };
-  expect(localHostCardModel(host, vitals, "1", null, null, 0).memory).toBe(
-    "37%"
-  );
+  expect(localHostCardModel(host, vitals, "1", null).memory).toBe("37%");
   expect(
-    localHostCardModel(
-      host,
-      { ...vitals, memory_pct: null },
-      "1",
-      null,
-      null,
-      host.info.mem_total_bytes
-    ).memory
+    localHostCardModel(host, { ...vitals, memory_pct: null }, "1", null).memory
   ).toBe("—");
 });

@@ -31,15 +31,15 @@ impl Session<'_> {
                         });
                     match watermark {
                         Ok(from) => {
-                            if self.status.history_error.as_deref().is_some_and(|error| {
-                                error.starts_with("reading the mirror watermark: ")
-                            }) {
+                            if self.watermark_failed {
+                                self.watermark_failed = false;
                                 self.status.history_error = None;
                                 (self.source.on_status)(self.status.clone());
                             }
                             from.unwrap_or_else(|| now.saturating_sub(300_000))
                         }
                         Err(error) => {
+                            self.watermark_failed = true;
                             self.status.history_error =
                                 Some(format!("reading the mirror watermark: {error}"));
                             self.last_recent = Instant::now();

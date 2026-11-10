@@ -23,6 +23,15 @@ Verified with frontend regression tests, lint, typecheck, the Hosts, remote-host
 remote-update and gallery browser specs, and the frontend performance gate. Hosts scenarios
 and Memory were compared in both themes. Browser mocks do not establish native acceptance.
 
+Second-review fixes track watermark failures by source, recover the effects drain after
+panics, align production and mock status events, retain save errors during Mac rollback,
+and use vitals as the sole CPU/memory fact. Hidden status events mark the cache stale;
+selected-host clock corrections have one history invalidation owner. Host titles use
+one keyboard target and show their full name on link focus.
+
+Known difference: This Mac's memory figure refreshes every 5 s from vitals; its CPU
+figure refreshes every second from the live stream.
+
 Open: native QA of updates and saved-Mac reinstall on real hosts. rr reads over SSH open
 a fresh connection per read (ControlMaster off), every 60 s while Hosts is visible, with
 backoff after failures. An ongoing outage has no hatched band yet: Rust reports its gap

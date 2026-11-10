@@ -28,32 +28,38 @@ it("registers one remote event listener for all Hosts page consumers", async () 
   view.unmount();
 });
 
-it("does not refetch on a remote event while hidden and catches up when shown", async () => {
-  vi.useFakeTimers();
-  const transport = createMockTransport({
-    scenarios: ["hosts-dashboard"],
-    autoTick: false,
-    windowLabel: "dashboard",
-  });
-  sources.push(transport);
-  const list = vi.spyOn(transport, "listRemoteHosts");
-  render(
-    <App transport={transport} router={{ initialEntry: "/dashboard/hosts" }} />
-  );
-  await act(() => vi.advanceTimersByTimeAsync(100));
-  expect(list.mock.calls.length).toBeGreaterThan(0);
-  act(() => transport.setWindowVisible(false));
-  const before = list.mock.calls.length;
-  act(() => transport.pushRemoteStatus("remote-build", { state: "offline" }));
-  await act(() => vi.advanceTimersByTimeAsync(5000));
-  expect(list).toHaveBeenCalledTimes(before);
-  act(() => transport.setWindowVisible(true));
-  await act(() => vi.advanceTimersByTimeAsync(100));
-  expect(list).toHaveBeenCalledTimes(before + 1);
-  expect(screen.getByRole("region", { name: "build" })).toHaveTextContent(
-    "Offline"
-  );
-});
+it.each([500, 5000])(
+  "does not refetch while hidden and catches up after %i ms",
+  async (hiddenMs) => {
+    vi.useFakeTimers();
+    const transport = createMockTransport({
+      scenarios: ["hosts-dashboard"],
+      autoTick: false,
+      windowLabel: "dashboard",
+    });
+    sources.push(transport);
+    const list = vi.spyOn(transport, "listRemoteHosts");
+    render(
+      <App
+        transport={transport}
+        router={{ initialEntry: "/dashboard/hosts" }}
+      />
+    );
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    expect(list.mock.calls.length).toBeGreaterThan(0);
+    act(() => transport.setWindowVisible(false));
+    const before = list.mock.calls.length;
+    act(() => transport.pushRemoteStatus("remote-build", { state: "offline" }));
+    await act(() => vi.advanceTimersByTimeAsync(hiddenMs));
+    expect(list).toHaveBeenCalledTimes(before);
+    act(() => transport.setWindowVisible(true));
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    expect(list).toHaveBeenCalledTimes(before + 1);
+    expect(screen.getByRole("region", { name: "build" })).toHaveTextContent(
+      "Offline"
+    );
+  }
+);
 
 it("refetches recent history once when the selected remote clock steps", async () => {
   vi.useFakeTimers();
@@ -77,7 +83,7 @@ it("refetches recent history once when the selected remote clock steps", async (
     read.mock.calls.filter(([request]) => request.host === "remote-build");
   expect(reads()).toHaveLength(1);
   act(() =>
-    transport.pushRemoteStatus("remote-build", { clock_offset_ms: 2000 })
+    transport.pushRemoteStatus("remote-build", { clock_offset_ms: 121000 })
   );
   await act(() => vi.advanceTimersByTimeAsync(100));
   expect(reads()).toHaveLength(2);

@@ -50,22 +50,26 @@ export const HostCard = memo(function HostCard({
       <header className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <h2 id={titleId} className="min-w-0 font-semibold text-body">
-            <Link
-              to="/dashboard/overview"
-              onClick={(event) => {
-                if (
-                  event.button === 0 &&
-                  !event.metaKey &&
-                  !event.ctrlKey &&
-                  !event.shiftKey &&
-                  !event.altKey
-                )
-                  onSelect();
-              }}
-              className="block rounded-control outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <TruncatedText text={model.name} />
-            </Link>
+            <TruncatedText text={model.name} focusable={false}>
+              {(text) => (
+                <Link
+                  to="/dashboard/overview"
+                  onClick={(event) => {
+                    if (
+                      event.button === 0 &&
+                      !event.metaKey &&
+                      !event.ctrlKey &&
+                      !event.shiftKey &&
+                      !event.altKey
+                    )
+                      onSelect();
+                  }}
+                  className="block rounded-control outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {text}
+                </Link>
+              )}
+            </TruncatedText>
           </h2>
           <HostCardStatus model={model} />
         </div>

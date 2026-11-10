@@ -173,12 +173,11 @@ for (const theme of ["dark", "light"]) {
             (icon) => getComputedStyle(icon).strokeWidth
           )
         ).toBe("2px");
-        const title = card
-          .getByRole("link")
-          .getByText("production-backup-unreachable-over-the-saved-ssh-alias", {
-            exact: true,
-          });
-        await expect(title).toHaveAttribute("tabindex", "0");
+        const title = card.getByRole("link", {
+          name: "production-backup-unreachable-over-the-saved-ssh-alias",
+          exact: true,
+        });
+        await expect(title.locator("[tabindex]")).toHaveCount(0);
         await title.scrollIntoViewIfNeeded();
         await title.evaluate(
           () =>
@@ -191,6 +190,12 @@ for (const theme of ["dark", "light"]) {
           "production-backup-unreachable-over-the-saved-ssh-alias"
         );
         await page.keyboard.press("Escape");
+        await page.keyboard.press(
+          info.project.name === "webkit" ? "Alt+Tab" : "Tab"
+        );
+        await expect(
+          card.getByRole("button", { name: /^Settings for/ })
+        ).toBeFocused();
         const text = card.getByText(/^SSH connection failed:/, {
           exact: false,
         });

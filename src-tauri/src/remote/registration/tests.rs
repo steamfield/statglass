@@ -18,8 +18,8 @@ fn live_facts_emit_nothing_and_a_state_change_emits_once() {
         status.clock_offset_ms = seen;
         let mut statuses = manager.statuses.lock_ok();
         let previous = statuses.get_mut(&id).unwrap();
-        previous.cpu_pct = Some(12.0);
-        previous.memory_pct = Some(42.0);
+        previous.vitals.cpu_pct = Some(12.0);
+        previous.vitals.memory_pct = Some(42.0);
         previous.vitals.load_1m = Some(1.5);
         drop(statuses);
         events += usize::from(publish_status(
@@ -83,4 +83,44 @@ fn a_stale_generation_cannot_complete_an_update() {
             "stale callback cleared update failure"
         );
     }
+}
+
+#[test]
+fn accumulated_clock_steps_emit_once() {
+    let manager = RemoteManager::default();
+    let id = HostId(Uuid::nil());
+    let generation = Uuid::new_v4();
+    manager.generations.lock_ok().insert(id, generation);
+    let mut status = ConnectionStatus {
+        connected: true,
+        ..Default::default()
+    };
+    assert!(publish_status(
+        &manager,
+        id,
+        generation,
+        status.clone(),
+        false,
+        None
+    ));
+    for offset in [400, 999, 1000, 1400, 1999, 2000, 1999, 1000] {
+        status.clock_offset_ms = offset;
+        assert_eq!(
+            publish_status(&manager, id, generation, status.clone(), false, None),
+            [1000, 2000].contains(&offset),
+            "offset {offset}"
+        );
+    }
+}
+
+#[test]
+fn rendered_sync_and_version_changes_emit_without_other_changes() {
+    let previous = RemoteHostStatus::default();
+    let mut next = previous.clone();
+    next.sync = RemoteSync::CatchingUp;
+    assert!(rendered_status_changed(&previous, &next, 0.0));
+    next = previous.clone();
+    next.agent_version = Some("0.0.9".into());
+    assert!(rendered_status_changed(&previous, &next, 0.0));
+    assert!(!rendered_status_changed(&next, &next, 0.0));
 }

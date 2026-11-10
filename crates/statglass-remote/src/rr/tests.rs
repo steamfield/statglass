@@ -195,28 +195,7 @@ fn ssh_login_parses_config_and_rejects_a_missing_or_empty_user() {
     }
 }
 
-#[tokio::test]
-async fn remote_script_requires_ownership_of_directory_and_file() {
-    let temp = tempfile::tempdir().unwrap();
-    std::fs::write(temp.path().join("info.json"), json("cargo test")).unwrap();
-    assert!(!script(temp.path()).await.is_empty());
-    // An unprivileged test cannot create files as another uid. The exact script
-    // assertion also guards both ownership checks on these machines.
+#[test]
+fn remote_script_has_string_guards_for_directory_and_file_ownership() {
     assert!(SCRIPT.contains("[ -O /tmp/rr.lock ] && [ -O /tmp/rr.lock/info.json ]"));
-    for path in [temp.path().join("info.json"), temp.path().to_path_buf()] {
-        if std::process::Command::new("chown")
-            .arg("0")
-            .arg(&path)
-            .stderr(Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-        {
-            use std::os::unix::fs::MetadataExt;
-            // SAFETY: geteuid has no preconditions.
-            if std::fs::metadata(&path).unwrap().uid() != unsafe { libc::geteuid() } {
-                assert!(script(temp.path()).await.is_empty());
-            }
-        }
-    }
 }

@@ -29,6 +29,18 @@ impl Inner {
     }
 }
 
+struct EffectDrain<'a> {
+    registry: &'a LiveRegistry,
+    active: bool,
+}
+impl Drop for EffectDrain<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            self.registry.lock().applying_effects = false;
+        }
+    }
+}
+
 impl LiveRegistry {
     /// One caller drains callbacks in mutation order without holding `inner`.
     /// Concurrent and reentrant callers enqueue their effects and return.
@@ -40,12 +52,17 @@ impl LiveRegistry {
             }
             inner.applying_effects = true;
         }
+        let mut drain = EffectDrain {
+            registry: self,
+            active: true,
+        };
         loop {
             let effect = {
                 let mut inner = self.lock();
                 let next = inner.effects.pop_front();
                 if next.is_none() {
                     inner.applying_effects = false;
+                    drain.active = false;
                 }
                 next
             };
@@ -54,5 +71,32 @@ impl LiveRegistry {
             };
             effect();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effects_resume_after_a_callback_panics() {
+        let registry = LiveRegistry::new();
+        registry
+            .lock()
+            .effects
+            .push_back(Box::new(|| panic!("callback failed")));
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                registry.apply_effects();
+            }))
+            .is_err()
+        );
+        let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = ran.clone();
+        registry.lock().effects.push_back(Box::new(move || {
+            observed.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+        registry.apply_effects();
+        assert!(ran.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

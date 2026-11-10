@@ -308,6 +308,7 @@ async fn session_loop(
         timed_out: HashMap::new(),
         history_available: false,
         history_failed: false,
+        watermark_failed: false,
         floors: HashMap::new(),
         restart_cursor: HashSet::new(),
         last_recent: Instant::now() - Duration::from_secs(60),
@@ -375,6 +376,7 @@ struct Session<'a> {
     timed_out: HashMap<Tier, Instant>,
     history_available: bool,
     history_failed: bool,
+    watermark_failed: bool,
     floors: HashMap<Tier, i64>,
     restart_cursor: HashSet<Tier>,
     last_recent: Instant,
@@ -429,6 +431,7 @@ impl Session<'_> {
                     Ok(cursor) => cursor,
                     Err(error) => {
                         self.history_failed = true;
+                        self.watermark_failed = false;
                         self.status.history_error = Some(error.to_string());
                         self.status.catching_up = false;
                         (self.source.on_status)(self.status.clone());
@@ -645,11 +648,13 @@ impl Session<'_> {
             Message::SourceStatus(wire) => {
                 self.history_available = wire.history_available;
                 if !self.history_available {
+                    self.watermark_failed = false;
                     self.status.history_error =
                         Some("Remote history is disabled or unavailable".into());
                 } else if self.status.history_error.as_deref()
                     == Some("Remote history is disabled or unavailable")
                 {
+                    self.watermark_failed = false;
                     self.status.history_error = None;
                 }
                 let s = server::status_from_wire(wire);
@@ -758,10 +763,12 @@ impl Session<'_> {
                         self.history_failed = true;
                         self.next_tier = self.tiers.len();
                         self.last_sync = Instant::now();
+                        self.watermark_failed = false;
                         self.status.history_error = Some(error.to_string());
                         self.status.catching_up = false;
                         (self.source.on_status)(self.status.clone());
                     } else {
+                        self.watermark_failed = false;
                         self.status.history_error = None;
                     }
                 }
@@ -803,6 +810,7 @@ impl Session<'_> {
                     && let Err(error) = mirror.truncated(tier, self.epoch, earliest_ts_ms)
                 {
                     self.history_failed = true;
+                    self.watermark_failed = false;
                     self.status.history_error = Some(error.to_string());
                 }
                 self.floors.insert(tier, earliest_ts_ms);
@@ -830,7 +838,10 @@ impl Session<'_> {
                 }
                 if let Some(mirror) = self.source.mirror.clone() {
                     match mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows) {
-                        Err(error) => self.status.history_error = Some(error.to_string()),
+                        Err(error) => {
+                            self.watermark_failed = false;
+                            self.status.history_error = Some(error.to_string());
+                        }
                         Ok(()) if !self.ring_filled && self.control.borrow().interest.detail => {
                             self.refill_ring(mirror).await?;
                         }
@@ -851,6 +862,7 @@ impl Session<'_> {
                     self.next_tier = self.tiers.len();
                     self.last_sync = Instant::now();
                 }
+                self.watermark_failed = false;
                 self.status.history_error = Some(message);
                 self.status.catching_up = false;
                 (self.source.on_status)(self.status.clone());
@@ -896,6 +908,7 @@ impl Session<'_> {
         if self.recent_pending && self.last_recent.elapsed() > Duration::from_secs(30) {
             self.recent_pending = false;
             self.recent_timed_out = Some(Instant::now());
+            self.watermark_failed = false;
             self.status.history_error = Some("recent history request timed out".into());
         }
         if self
@@ -909,6 +922,7 @@ impl Session<'_> {
             }
             self.next_tier = self.tiers.len();
             self.last_sync = Instant::now();
+            self.watermark_failed = false;
             self.status.history_error = Some("history request timed out".into());
             self.status.catching_up = false;
             (self.source.on_status)(self.status.clone());
@@ -930,6 +944,7 @@ impl Session<'_> {
                         .await
                         .map_err(|e| RemoteError::Transport(e.to_string()))?
                     {
+                        self.watermark_failed = false;
                         self.status.history_error = Some(error.to_string());
                     }
                 }
@@ -1100,6 +1115,7 @@ mod tests {
             timed_out: HashMap::new(),
             history_available: true,
             history_failed: false,
+            watermark_failed: false,
             floors: HashMap::new(),
             restart_cursor: HashSet::new(),
             last_recent: Instant::now(),
@@ -1191,6 +1207,15 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_failed_recent_watermark_reports_history_trouble_without_stopping_live_metrics() {
+        watermark_recovers(false).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_watermark_error_clears_even_when_its_wording_changes() {
+        watermark_recovers(true).await;
+    }
+
+    async fn watermark_recovers(reword: bool) {
         struct FailedMirror(std::sync::atomic::AtomicBool);
         impl MirrorSink for FailedMirror {
             fn cursor(
@@ -1260,6 +1285,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(sink.live.latest_frame().unwrap().held[0], 12.0);
+        if reword {
+            session.status.history_error = Some("the watermark message was reworded".into());
+        }
         mirror.0.store(false, Ordering::SeqCst);
         tokio::time::advance(Duration::from_secs(15)).await;
         session.request_recent().await.unwrap();

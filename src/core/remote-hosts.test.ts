@@ -43,8 +43,6 @@ function host(
       error: null,
       sync: "current",
       clock_offset_ms: 0,
-      cpu_pct: null,
-      memory_pct: null,
       agent_version:
         "installed" in agent_update ? agent_update.installed : null,
       agent_update,

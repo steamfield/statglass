@@ -1,11 +1,12 @@
 import { historyGrid } from "@core/history-grid";
 import { gapBands } from "@core/history-state";
-import { hostClock } from "@core/host-clock";
+import { CLOCK_STEP_THRESHOLD_MS, hostClock } from "@core/host-clock";
 import { historyKeys, sameHost } from "@core/query-keys";
 import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useHostSelection } from "~/lib/host-selection";
 import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 
@@ -16,21 +17,26 @@ const WINDOW_MS = 10 * MINUTE_MS;
 export function useHostRecentHistory(hostId: string, offsetMs = 0) {
   const transport = useTransport();
   const cache = useQueryClient();
+  const selected = useHostSelection()?.selected;
   const queryKey = historyKeys.recent(hostId, WINDOW_MS);
   const clock = useRef<() => number>(hostClock(offsetMs));
   const previousClock = useRef({ hostId, offsetMs });
+  useLayoutEffect(() => {
+    clock.current = hostClock(offsetMs);
+  }, [offsetMs]);
   useEffect(() => {
     const previous = previousClock.current;
-    clock.current = hostClock(offsetMs);
     previousClock.current = { hostId, offsetMs };
     if (
+      hostId !== selected &&
       previous.hostId === hostId &&
-      Math.abs(previous.offsetMs - offsetMs) >= 1000
+      Math.abs(previous.offsetMs - offsetMs) >= CLOCK_STEP_THRESHOLD_MS
     )
-      void cache.invalidateQueries({
-        queryKey: historyKeys.recent(hostId, WINDOW_MS),
-      });
-  }, [cache, hostId, offsetMs]);
+      void cache.invalidateQueries(
+        { queryKey: historyKeys.recent(hostId, WINDOW_MS) },
+        { cancelRefetch: false }
+      );
+  }, [cache, hostId, offsetMs, selected]);
   const query = useQuery({
     queryKey,
     placeholderData: holdWhile(queryKey, sameHost),

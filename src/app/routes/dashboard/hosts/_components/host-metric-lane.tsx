@@ -64,7 +64,6 @@ export const HostMetricLane = memo(function HostMetricLane({
         height={PLOT_HEIGHT}
         gridlines={[yMax / 2]}
         gaps={gaps}
-        ariaLabel={`${label}, last 10 minutes.`}
         ariaLabelledBy={readingId}
         overlay={overlay}
       />
