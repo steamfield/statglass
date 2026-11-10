@@ -669,3 +669,64 @@ it("showing a populated subscription during display idle catches up missed rows 
     vi.useRealTimers();
   }
 });
+
+it("hiding during a queued resume sends catch-up rows before promised earlier chunks", async () => {
+  vi.useFakeTimers();
+  const { t, msgs } = await subscribe(
+    { historyRows: 3600 },
+    { backfillMs: 3_600_000 }
+  );
+  try {
+    t.setDisplayIdle(true);
+    t.fastForward(10_000);
+    t.setDisplayIdle(false);
+    msgs.length = 0;
+    t.setWindowVisible(false);
+    const kinds = msgs.map((m) => m.kind);
+    const lastBackfill = kinds.lastIndexOf("backfill");
+    const firstEarlier = kinds.indexOf("backfill_earlier");
+    expect(lastBackfill).toBeGreaterThanOrEqual(0);
+    expect(firstEarlier).toBeGreaterThan(lastBackfill);
+    const delivered = [...msgs];
+    await vi.runAllTimersAsync();
+    expect(msgs).toEqual(delivered);
+  } finally {
+    t.dispose();
+    vi.useRealTimers();
+  }
+});
+
+// A background tab's timers fire about once a minute. The engine the mock
+// stands in for keeps sampling, so the rows are filled and sent on the next
+// timer, like a hidden window's catch-up.
+it("fills and sends the rows a throttled timer missed", async () => {
+  vi.useFakeTimers();
+  try {
+    let now = NOW;
+    const { t, msgs } = await subscribe(
+      { now: () => now, autoTick: true, historyRows: 60 },
+      { backfillMs: 3_600_000 }
+    );
+    for (let i = 0; i < 3; i++) {
+      now += 1000;
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    msgs.length = 0;
+    // Five minutes pass with one timer callback at the end.
+    now += 300_000;
+    await vi.advanceTimersByTimeAsync(1000);
+    // The catch-up is delivered one message per task.
+    await vi.advanceTimersByTimeAsync(50);
+    const filled = ofKind(msgs, "backfill").reduce(
+      (n, m) => n + m.rows.length,
+      0
+    );
+    expect(filled).toBeGreaterThanOrEqual(298);
+    const frames = ofKind(msgs, "frame");
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.ts_ms).toBe(now);
+    t.dispose();
+  } finally {
+    vi.useRealTimers();
+  }
+});

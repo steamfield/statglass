@@ -27,6 +27,7 @@ export class MockStream {
   private ticks = 0;
   private nextStream = 1;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private lastTimerMs: number | null = null;
   constructor(
     private readonly options: MockTransportOptions,
     private readonly ring: MockRing,
@@ -115,7 +116,44 @@ export class MockStream {
   };
   readonly ensureTimer = () => {
     if (!this.options.autoTick || this.timer !== null) return;
-    this.timer = setInterval(this.tick, this.power.status.interval_ms);
+    this.lastTimerMs = null;
+    this.timer = setInterval(this.onTimer, this.power.status.interval_ms);
+  };
+  /**
+   * A browser throttles a background tab's timers to one a minute, but the
+   * engine this stands in for never stops sampling. A late timer fills the
+   * rows it missed and sends them as a hidden window's catch-up would be, so
+   * the charts come back whole instead of with a hole for the time away.
+   */
+  private readonly onTimer = () => {
+    const now = this.ring.now();
+    const interval = this.power.status.interval_ms;
+    const late =
+      this.lastTimerMs !== null && now - this.lastTimerMs >= 2 * interval;
+    this.lastTimerMs = now;
+    if (late && !this.power.status.paused && !this.ring.flags.stale) {
+      this.fillRows(now + this.ring.clockOffset - interval);
+      if (this.power.receiving()) this.channels.resume();
+    }
+    this.tick();
+  };
+  /** Rows the engine took with no window taking frames, up to `untilMs`. */
+  private readonly fillRows = (untilMs: number) => {
+    const interval = this.power.status.interval_ms;
+    const last = this.ring.rows[this.ring.rows.length - 1]?.ts ?? untilMs;
+    this.ring.gen.trayOnly = true;
+    this.ring.gen.intervalMs = interval;
+    const from = Math.max(last + interval, untilMs - RING_SPAN_MS);
+    for (let ts = from; ts <= untilMs; ts += interval) {
+      const row = this.ring.gen.next();
+      this.ring.pushRow(
+        ts,
+        this.ring.withBursts(ts, row.values),
+        row.cadences,
+        interval
+      );
+    }
+    this.ring.gen.trayOnly = !this.power.receiving();
   };
   readonly retime = () => {
     if (this.timer === null) return;
@@ -267,28 +305,9 @@ export class MockStream {
     if (!was && this.power.receiving()) this.channels.resume();
   };
   readonly fastForward: MockTransport["fastForward"] = (ms) => {
-    const interval = this.power.status.interval_ms;
-    const last =
-      this.ring.rows[this.ring.rows.length - 1]?.ts ??
-      this.ring.now() + this.ring.clockOffset;
-    this.ring.clockOffset += ms;
     // Time passes with the window hidden: only the tray is open.
-    this.ring.gen.trayOnly = true;
-    this.ring.gen.intervalMs = interval;
-    for (
-      let ts = last + interval;
-      ts <= this.ring.now() + this.ring.clockOffset;
-      ts += interval
-    ) {
-      const row = this.ring.gen.next();
-      this.ring.pushRow(
-        ts,
-        this.ring.withBursts(ts, row.values),
-        row.cadences,
-        interval
-      );
-    }
-    this.ring.gen.trayOnly = !this.power.receiving();
+    this.ring.clockOffset += ms;
+    this.fillRows(this.ring.now() + this.ring.clockOffset);
   };
   readonly setPaused: MockTransport["setPaused"] = async (paused) => {
     this.commands.record("set_paused", paused);
