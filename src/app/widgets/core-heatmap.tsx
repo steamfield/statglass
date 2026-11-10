@@ -4,6 +4,8 @@ import { HeatMatrix } from "./heat-matrix";
 import type { Accent } from "./lib/accent";
 
 export interface CoreHeatmapProps {
+  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
+  loading?: boolean;
   /** One row per core, P cores first. `buckets` are oldest first; `null` is no samples. */
   cores: {
     id: string;
