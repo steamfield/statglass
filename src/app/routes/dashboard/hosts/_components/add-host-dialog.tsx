@@ -1,6 +1,7 @@
 import { commandErrorText } from "@core/command-error";
 import type {
   CommandError,
+  RemoteHostConfig,
   RemoteHostPreparation,
   RemoteSshHostTrust,
 } from "@core/generated/bindings";
@@ -13,28 +14,30 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { useTransport } from "~/lib/transport-context";
+import {
+  type SetupPhase,
+  useAddHostConnection,
+} from "../_hooks/use-add-host-connection";
 import { AddHostFields } from "./add-host-fields";
 import { AddHostFooter } from "./add-host-footer";
 import { AddHostStatus } from "./add-host-status";
 import { AddHostTrust } from "./add-host-trust";
-import {
-  type SetupPhase,
-  useAddHostConnection,
-} from "./use-add-host-connection";
 
 export { HOST_INPUT } from "./host-input";
 
 export function AddHostDialog({
   open,
   onOpenChange,
+  reinstall,
 }: {
   open: boolean;
+  reinstall?: RemoteHostConfig;
   onOpenChange: (open: boolean) => void;
 }) {
   const transport = useTransport();
-  const [name, setName] = useState("");
-  const [lan, setLan] = useState("");
-  const [tailscale, setTailscale] = useState("");
+  const [name, setName] = useState(reinstall?.name ?? "");
+  const [lan, setLan] = useState(reinstall?.lan ?? "");
+  const [tailscale, setTailscale] = useState(reinstall?.tailscale ?? "");
   const [showMenuBar, setShowMenuBar] = useState(true);
   const [prepared, setPrepared] = useState<RemoteHostPreparation | null>(null);
   const [trust, setTrust] = useState<RemoteSshHostTrust | null>(null);
@@ -139,6 +142,8 @@ export function AddHostDialog({
     onOpenChange,
     lan,
     tailscale,
+    mirrorBudgetMb: reinstall?.mirror_budget_mb ?? 100,
+    reinstallHostId: reinstall?.id ?? null,
   });
   return (
     <Dialog
@@ -190,6 +195,12 @@ export function AddHostDialog({
           accept={accept}
         />
         <AddHostFooter
+          reinstall={
+            reinstall !== undefined &&
+            prepared !== null &&
+            prepared.kind === "mac" &&
+            !prepared.newer_installed
+          }
           phase={phase}
           busy={busy}
           cancel={cancel}

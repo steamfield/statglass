@@ -1,7 +1,7 @@
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "~/components/confirm-dialog";
-import { reachable, useAgentUpdate } from "./use-agent-update";
+import { reachable, useAgentUpdate } from "../_hooks/use-agent-update";
 
 type Outcome = { id: string; result: string };
 

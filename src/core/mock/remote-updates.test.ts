@@ -1,3 +1,4 @@
+import type { HistoryRequest } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
 
 it("walks update phases through status pushes, then reports the target on reconnect", async () => {
@@ -112,6 +113,170 @@ it("never invents measured vitals for a host that has never connected", async ()
       status: "ok",
       data: expected,
     });
+  } finally {
+    transport.dispose();
+  }
+});
+
+it("rejects saved Mac identities as native setup does", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-outdated"],
+    autoTick: false,
+  });
+  try {
+    const mac = (await transport.listRemoteHosts()).find(
+      (host) => host.os === "mac_os"
+    );
+    if (!mac) throw new Error("Missing Mac fixture");
+    const result = await transport.addRemoteHost(
+      mac.config,
+      true,
+      true,
+      "reinstall-attempt"
+    );
+    expect(result).toEqual({
+      status: "error",
+      error: {
+        kind: "internal",
+        message: "This Mac is already in your host list",
+      },
+    });
+  } finally {
+    transport.dispose();
+  }
+});
+
+it("reinstalls only the requested saved Mac and keeps its configuration and mirrored history", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-outdated"],
+    historyRows: 10,
+  });
+  try {
+    const mac = (await transport.listRemoteHosts()).find(
+      (host) => host.os === "mac_os"
+    );
+    if (!mac) throw new Error("Missing Mac fixture");
+    const config = { ...mac.config, mirror_budget_mb: 731, enabled: false };
+    await transport.updateRemoteHost(config);
+    const before = await transport.historySize(config.id);
+    const result = await transport.addRemoteHost(
+      {
+        ...config,
+        name: "Unwanted rename",
+        mirror_budget_mb: 10,
+        enabled: true,
+      },
+      true,
+      true,
+      "same-id",
+      config.id
+    );
+    expect(result).toMatchObject({
+      status: "ok",
+      data: {
+        config,
+        status: { state: "disabled", agent_update: { kind: "up_to_date" } },
+      },
+    });
+    expect(await transport.historySize(config.id)).toEqual(before);
+    expect(await transport.listRemoteHosts()).toHaveLength(4);
+  } finally {
+    transport.dispose();
+  }
+});
+
+it("retains accumulated mirrored samples through a Mac reinstall", async () => {
+  vi.useFakeTimers();
+  const transport = createMockTransport({
+    scenarios: ["hosts-outdated"],
+    historyRows: 1,
+    autoTick: true,
+  });
+  try {
+    const mac = (await transport.listRemoteHosts()).find(
+      (host) => host.os === "mac_os"
+    );
+    if (!mac) throw new Error("Missing Mac fixture");
+    const subscription = await transport.subscribeLive(mac.config.id, () => {});
+    try {
+      await vi.advanceTimersByTimeAsync(30000);
+      const to = Date.now() + (mac.status.clock_offset_ms ?? 0);
+      const request: HistoryRequest = {
+        host: mac.config.id,
+        selectors: [{ metric: "cpu.total", labels: [] }],
+        from_ms: to - 60000,
+        to_ms: to,
+        tier: "s10",
+        max_points: 61,
+      };
+      const before = await transport.queryHistory(request);
+      if (before.status === "error")
+        throw new Error("Missing mirrored samples");
+      expect(before.data.series[0]?.points.length).toBeGreaterThan(1);
+      expect(before).toMatchObject({
+        status: "ok",
+        data: { series: [{ points: expect.any(Array) }] },
+      });
+      const result = await transport.addRemoteHost(
+        mac.config,
+        true,
+        true,
+        "history-reinstall",
+        mac.config.id
+      );
+      expect(result.status).toBe("ok");
+      expect(await transport.queryHistory(request)).toEqual(before);
+    } finally {
+      subscription.unsubscribe();
+    }
+  } finally {
+    transport.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("rejects a different saved Mac and an unsaved mismatched identity without adding either", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-outdated"],
+    historyRows: 1,
+  });
+  try {
+    const mac = (await transport.listRemoteHosts()).find(
+      (host) => host.os === "mac_os"
+    );
+    if (!mac) throw new Error("Missing Mac fixture");
+    const before = await transport.listRemoteHosts();
+    expect(
+      await transport.addRemoteHost(
+        mac.config,
+        true,
+        true,
+        "other-saved",
+        "different-id"
+      )
+    ).toEqual({
+      status: "error",
+      error: {
+        kind: "internal",
+        message: "This Mac is already in your host list",
+      },
+    });
+    expect(
+      await transport.addRemoteHost(
+        { ...mac.config, lan: "unknown-mac.local" },
+        true,
+        true,
+        "mismatched",
+        mac.config.id
+      )
+    ).toMatchObject({
+      status: "error",
+      error: {
+        kind: "remote_identity",
+        message: expect.stringContaining("different identity"),
+      },
+    });
+    expect(await transport.listRemoteHosts()).toEqual(before);
   } finally {
     transport.dispose();
   }

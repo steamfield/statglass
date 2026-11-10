@@ -8,7 +8,7 @@ for (const theme of ["light", "dark"]) {
     await page.goto(
       `/?route=/dashboard/hosts&scenario=multi-host&theme=${theme}&ticks=0`
     );
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: /^Settings for / }).click();
     await page
       .getByRole("button", { name: "Show SSH setup guide", exact: true })
       .click();
@@ -208,7 +208,7 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(
     page.getByRole("heading", { name: "Office Mac", exact: true })
   ).toBeVisible();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Settings for / }).click();
   await page.getByLabel("Name", { exact: true }).fill("Work Mac");
   await page
     .getByRole("switch", { name: "Connect automatically", exact: true })
@@ -217,9 +217,7 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(
     page.getByRole("heading", { name: "Work Mac", exact: true })
   ).toBeVisible();
-  await expect(
-    page.getByText("Connection disabled", { exact: true })
-  ).toBeVisible();
+  await expect(page.getByText("Connection off", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Office Mac", exact: true })
   ).toHaveCount(0);
@@ -238,14 +236,14 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
       .getByRole("link", { name: /^Battery/ })
   ).toHaveCount(0);
   await page.getByRole("link", { name: "Hosts", exact: true }).click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Settings for / }).click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
     "Work Mac"
   );
   await expect(
     page.getByRole("switch", { name: "Connect automatically", exact: true })
   ).not.toBeChecked();
-  await page.getByRole("button", { name: "Remove host…", exact: true }).click();
+  await page.getByRole("button", { name: "Remove…", exact: true }).click();
   await expect(
     page.getByLabel("Delete mirrored history from this Mac")
   ).not.toBeChecked();
@@ -253,7 +251,7 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(page.getByLabel("LAN SSH alias", { exact: true })).toHaveValue(
     "office.local"
   );
-  await page.getByRole("button", { name: "Remove host…", exact: true }).click();
+  await page.getByRole("button", { name: "Remove…", exact: true }).click();
   await page.getByRole("button", { name: "Remove host", exact: true }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(
@@ -286,7 +284,7 @@ for (const theme of ["light", "dark"]) {
       `/?route=/dashboard/hosts&scenario=linux-host,linux-agent-update&theme=${theme}&ticks=0`
     );
     await expect(
-      page.getByRole("button", { name: "Update agent", exact: true })
+      page.getByRole("button", { name: "Update to 0.1.0", exact: true })
     ).toBeVisible();
     await page.screenshot({
       animations: "disabled",

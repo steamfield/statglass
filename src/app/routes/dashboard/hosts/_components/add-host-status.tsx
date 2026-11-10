@@ -3,9 +3,9 @@ import type {
   RemoteHostPreparation,
 } from "@core/generated/bindings";
 import { InlineMessage } from "~/components/inline-message";
+import type { SetupPhase } from "../_hooks/use-add-host-connection";
 import { AddHostLinux } from "./add-host-linux";
 import { RemoteSetupError } from "./remote-setup-error";
-import type { SetupPhase } from "./use-add-host-connection";
 
 function macStatus(prepared: RemoteHostPreparation): string {
   return (

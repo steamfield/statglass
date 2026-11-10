@@ -137,6 +137,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             updates::get_update_status,
             updates::install_update,
             commands::get_window_appearance,
+            windows::window_visible,
             commands::report_popover_paint, popover::commands::report_popover_content_height,
         ])
         .events(collect_events![
@@ -144,6 +145,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             ipc::SettingsChanged,
             ipc::CapabilitiesChanged,
             ipc::WindowAppearanceChanged,
+            windows::WindowVisibilityChanged,
             ipc::NavigateRequested,
             ipc::HistoryHealthChanged,
             ipc::HostsChanged,
@@ -232,6 +234,7 @@ pub fn run() {
             );
             builder.mount_events(app);
             AppState::start(app.handle())?;
+            windows::install_visibility_events(app.handle());
             let background_restart = updates::take_background_restart(app.handle());
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());

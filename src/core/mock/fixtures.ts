@@ -50,6 +50,8 @@ export const SCENARIOS = [
   "host-update-failed",
   "hosts-dashboard",
   "rr-jobs",
+  "hosts-worst-case",
+  "hosts-many",
   "host-incompatible",
   "host-newer",
   "host-unreachable",

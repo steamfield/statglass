@@ -1,6 +1,8 @@
 import type {
   AgentUpdate,
   HostVitals,
+  RemoteHostPreparation,
+  RemoteHostRecord,
   RemoteHostStatus,
   UpdatePhase,
 } from "@core/generated/bindings";
@@ -127,34 +129,8 @@ function seedMonitoringScenarios(
   remotes: MockRemotes,
   scenarios: readonly ScenarioName[]
 ) {
-  if (scenarios.includes("hosts-dashboard")) {
-    for (const name of ["studio", "build", "nas", "offline", "partial"]) {
-      const record = seed(remotes, name, name !== "studio", {});
-      if (name === "offline")
-        record.status = {
-          ...record.status,
-          state: "offline",
-          route: null,
-          cpu_pct: null,
-          memory_pct: null,
-        };
-      if (name === "nas")
-        record.status.vitals = {
-          ...record.status.vitals,
-          disk_used_bytes: 499_000_000_000,
-          disk_free_bytes: 1_000_000_000,
-          disk_low: true,
-        };
-      if (name === "partial")
-        record.status.vitals = {
-          ...record.status.vitals,
-          load_1m: null,
-          disk_used_bytes: null,
-          disk_free_bytes: null,
-          disk_total_bytes: null,
-        };
-    }
-  }
+  seedGridScenarios(remotes, scenarios);
+  seedDashboard(remotes, scenarios);
   if (scenarios.includes("host-updating")) {
     const record = seed(remotes, "updating", true, {
       agent_version: OLD,
@@ -304,4 +280,136 @@ function seedRrJobs(remotes: MockRemotes) {
         200
       ),
   };
+}
+
+function seedGridScenarios(
+  remotes: MockRemotes,
+  scenarios: readonly ScenarioName[]
+) {
+  if (scenarios.includes("hosts-many")) {
+    for (let i = 1; i <= 11; i++) seed(remotes, `worker-${i}`, true, {});
+  }
+  if (scenarios.includes("hosts-worst-case")) {
+    const longName =
+      "production-build-arm64-west-coast-primary-with-a-long-hostname";
+    const record = seed(remotes, longName, true, {
+      sync: "catching_up",
+      agent_version: OLD,
+      agent_update: behind("push"),
+      route: "tailscale",
+      last_update_failure: {
+        target: APP_VERSION,
+        message: "The update could not reconnect over either saved SSH route",
+      },
+    });
+    record.status.vitals = {
+      ...record.status.vitals,
+      disk_used_bytes: 465_000_000_000,
+      disk_free_bytes: 35_000_000_000,
+      disk_low: true,
+    };
+    seed(
+      remotes,
+      "production-backup-unreachable-over-the-saved-ssh-alias",
+      true,
+      {
+        state: "error",
+        route: null,
+        error:
+          "SSH connection failed: Permission denied (publickey). Tried production-backup.lan.example.test and production-backup.tailnet.example.test; verify your SSH agent and both aliases.",
+        agent_update: behind("push"),
+      }
+    );
+  }
+}
+function seedDashboard(
+  remotes: MockRemotes,
+  scenarios: readonly ScenarioName[]
+) {
+  if (!scenarios.includes("hosts-dashboard")) return;
+  for (const name of ["studio", "build", "nas", "offline", "partial"]) {
+    const record = seed(remotes, name, name !== "studio", {});
+    if (name === "studio") {
+      record.config.enabled = false;
+      record.status.state = "disabled";
+    }
+    if (name === "build") {
+      record.status.sync = "catching_up";
+      record.status.agent_update = behind("push");
+    }
+    if (name === "offline")
+      record.status = {
+        ...record.status,
+        state: "offline",
+        route: null,
+        cpu_pct: null,
+        memory_pct: null,
+      };
+    if (name === "nas")
+      record.status.vitals = {
+        ...record.status.vitals,
+        disk_used_bytes: 465_000_000_000,
+        disk_free_bytes: 35_000_000_000,
+        disk_low: true,
+      };
+    if (name === "partial")
+      record.status.vitals = {
+        ...record.status.vitals,
+        load_1m: null,
+        disk_used_bytes: null,
+        disk_free_bytes: null,
+        disk_total_bytes: null,
+      };
+  }
+}
+
+export function hasProgressFixture(scenarios: readonly ScenarioName[]) {
+  return (
+    scenarios.includes("hosts-dashboard") ||
+    scenarios.includes("hosts-worst-case")
+  );
+}
+
+/** Mac preparation does not identify the host; setup verifies it after launch. */
+export function mockMacPreparation(
+  alias: string,
+  remotes: MockRemotes
+): RemoteHostPreparation {
+  const hosts = [...remotes.remotes.values()].map((remote) => remote.record);
+  const existing = hosts.find(
+    (host) => host.config.lan === alias || host.config.tailscale === alias
+  );
+  return {
+    kind: "mac",
+    installed: true,
+    compatible: true,
+    newer_installed: false,
+    host_id: null,
+    name: existing?.config.name ?? (alias || "Remote Mac"),
+    message: null,
+    linux: null,
+  };
+}
+
+/** The grid performance fixture gets fresh per-host summary facts every five seconds. */
+export function remoteRecords(
+  remotes: MockRemotes,
+  scenarios: readonly ScenarioName[],
+  nowMs: number
+): RemoteHostRecord[] {
+  const records = [...remotes.remotes.values()].map((remote) => remote.record);
+  if (!scenarios.includes("hosts-many")) return records;
+  const phase = Math.floor(nowMs / 5000) % 2;
+  return records.map((record, index) => ({
+    ...record,
+    status: {
+      ...record.status,
+      cpu_pct: 3 + index + phase,
+      memory_pct: 42 + index + phase,
+      vitals: {
+        ...record.status.vitals,
+        load_1m: 0.5 + index / 10 + phase / 10,
+      },
+    },
+  }));
 }

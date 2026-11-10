@@ -1,294 +1,48 @@
 import { commandErrorText } from "@core/command-error";
-import { formatBytes, formatDateTime, formatPercent } from "@core/format";
-import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
-import { hostKeys } from "@core/query-keys";
-import { remoteErrorText, sshEndpointError } from "@core/remote-errors";
-import { connectionLabel, localUpdateTarget } from "@core/remote-hosts";
-import { MINUTE_MS } from "@core/time-grid";
-import { unwrap } from "@core/transport";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { countNoun } from "@core/format";
+import { hostsNeedingUpdate, localUpdateTarget } from "@core/remote-hosts";
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { toast } from "sonner";
-import { ConfirmDialog } from "~/components/confirm-dialog";
-import { InlineMessage } from "~/components/inline-message";
+import { CardGrid } from "~/components/card-grid";
 import { PageHeader } from "~/components/page-header";
 import { QueryNotice } from "~/components/query-notice";
 import { Button } from "~/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "~/components/ui/dialog";
-import { Switch } from "~/components/ui/switch";
 import { useLocalUpdateStatus } from "~/hooks/use-local-update-status";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
-import { useTransport } from "~/lib/transport-context";
-import { StatList } from "~/widgets/stat-list";
-import { version } from "../../../../../package.json";
-import { AddHostDialog, HOST_INPUT } from "./_components/add-host-dialog";
-import { HostAgentActions } from "./_components/host-agent-actions";
-import { HostVersion } from "./_components/host-version";
-import { RemoteSetupError } from "./_components/remote-setup-error";
-import { RemoteUpdateSettings } from "./_components/remote-update-settings";
-import {
-  type RemoveChoices,
-  RemoveHostOptions,
-} from "./_components/remove-host-options";
-import { SshSetupHelp } from "./_components/ssh-setup-help";
+import { AddHostDialog } from "./_components/add-host-dialog";
+import { LocalHostCard, RemoteHostCard } from "./_components/host-cards";
 import { UpdateAllDialog } from "./_components/update-all-dialog";
-import { pushable, reachable } from "./_components/use-agent-update";
-
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
-function HostSettings({
-  remote,
-  close,
-}: {
-  remote: RemoteHostRecord;
-  close: () => void;
-}) {
-  const transport = useTransport();
-  const cache = useQueryClient();
-  const [config, setConfig] = useState(remote.config);
-  const size = useQuery({
-    queryKey: hostKeys.historySize(remote.config.id),
-    queryFn: () => unwrap(transport.historySize(remote.config.id)),
-    refetchInterval: MINUTE_MS,
-  });
-  const linux = remote.os === "linux";
-  const [choices, setChoices] = useState<RemoveChoices>({
-    stopSharing: true,
-    uninstallAgent: true,
-    purgeAgent: false,
-    deleteMirror: false,
-  });
-  const [removing, setRemoving] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<CommandError | string | null>(null);
-  const endpointError =
-    sshEndpointError(config.lan ?? "") ??
-    sshEndpointError(config.tailscale ?? "");
-  const validBudget =
-    Number.isInteger(config.mirror_budget_mb) &&
-    config.mirror_budget_mb >= 10 &&
-    config.mirror_budget_mb <= 10000;
-  const run = async (remove: boolean) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = remove
-        ? await transport.removeRemoteHost(
-            config.id,
-            choices.deleteMirror,
-            !linux && choices.stopSharing,
-            linux && choices.uninstallAgent,
-            linux && choices.uninstallAgent && choices.purgeAgent
-          )
-        : await transport.updateRemoteHost(config);
-      if (result.status === "error") setError(result.error);
-      else {
-        if (remove && typeof result.data === "string") toast.error(result.data);
-        await cache.invalidateQueries({ queryKey: hostKeys.all });
-        close();
-      }
-    } catch (e) {
-      console.error("[remote settings] update failed", {
-        hostId: config.id,
-        remove,
-        error: e,
-      });
-      setError(commandErrorText(e, "Please try again."));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const named =
-    config.name.trim() !== "" &&
-    Boolean(config.lan?.trim() || config.tailscale?.trim());
-  return (
-    <>
-      <Dialog
-        open={!removing}
-        onOpenChange={(open) => {
-          if (!open && !busy) close();
-        }}
-      >
-        <DialogContent
-          showCloseButton={!busy}
-          className="max-h-[calc(100svh-2rem)] overflow-y-auto"
-        >
-          <DialogTitle>{config.name}</DialogTitle>
-          <DialogDescription>
-            Connection and mirrored history are saved on this Mac. Update
-            preferences save immediately on the host.
-          </DialogDescription>
-          <fieldset disabled={busy} className="grid gap-3">
-            <label className="grid gap-1 text-small">
-              Name
-              <input
-                className={HOST_INPUT}
-                value={config.name}
-                onChange={(e) => setConfig({ ...config, name: e.target.value })}
-              />
-            </label>
-            <label className="grid gap-1 text-small">
-              LAN SSH alias
-              <input
-                className={HOST_INPUT}
-                value={config.lan ?? ""}
-                onChange={(e) =>
-                  setConfig({ ...config, lan: e.target.value || null })
-                }
-              />
-            </label>
-            <label className="grid gap-1 text-small">
-              Tailscale SSH alias
-              <input
-                className={HOST_INPUT}
-                value={config.tailscale ?? ""}
-                onChange={(e) =>
-                  setConfig({ ...config, tailscale: e.target.value || null })
-                }
-              />
-            </label>
-            <p className="text-muted-foreground text-small">
-              Mirrored history:{" "}
-              {size.data === undefined
-                ? size.isError
-                  ? "unavailable"
-                  : "loading…"
-                : formatBytes(size.data)}
-            </p>
-            <label className="grid gap-1 text-small">
-              History limit (MB)
-              <input
-                className={HOST_INPUT}
-                type="number"
-                min="10"
-                max="10000"
-                value={
-                  Number.isNaN(config.mirror_budget_mb)
-                    ? ""
-                    : config.mirror_budget_mb
-                }
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    mirror_budget_mb:
-                      e.target.value === ""
-                        ? Number.NaN
-                        : Number(e.target.value),
-                  })
-                }
-              />
-            </label>
-            {!validBudget && (
-              <InlineMessage tone="error">
-                Enter a whole number from 10 to 10,000 MB.
-              </InlineMessage>
-            )}
-            <div className="flex justify-between text-body">
-              Connect automatically
-              <Switch
-                aria-label="Connect automatically"
-                checked={config.enabled}
-                onCheckedChange={(enabled) => setConfig({ ...config, enabled })}
-              />
-            </div>
-          </fieldset>
-          <RemoteUpdateSettings hostId={remote.config.id} />
-          {endpointError && (
-            <InlineMessage tone="error">{endpointError}</InlineMessage>
-          )}
-          {error && <RemoteSetupError error={error} />}
-          <SshSetupHelp
-            saved
-            lan={config.lan}
-            tailscale={config.tailscale}
-            busy={busy}
-          />
-          <div className="flex justify-between gap-2">
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setRemoving(true)}
-            >
-              Remove host…
-            </Button>
-            <Button
-              disabled={busy || !named || !validBudget || !!endpointError}
-              onClick={() => run(false)}
-            >
-              {busy ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <ConfirmDialog
-        open={removing}
-        onOpenChange={(open) => {
-          if (!open) setRemoving(false);
-        }}
-        title={`Remove ${config.name}?`}
-        description={
-          linux
-            ? "This disconnects the server. Unless you uninstall it, the agent keeps running and recording history there."
-            : "This disconnects the Mac. StatGlass on that Mac keeps running and its start-at-login setting stays the same."
-        }
-        cancelLabel="Back"
-        confirmLabel={busy ? "Saving…" : "Remove host"}
-        confirmDisabled={!named}
-        onConfirm={() => void run(true)}
-        busy={busy}
-        lockWhileBusy
-      >
-        <RemoveHostOptions
-          linux={linux}
-          choices={choices}
-          setChoices={setChoices}
-          busy={busy}
-        />
-        {error && <RemoteSetupError error={error} />}
-      </ConfirmDialog>
-    </>
-  );
-}
+import { pushable, reachable } from "./_hooks/use-agent-update";
+import { useHostsRecentInterest } from "./_hooks/use-hosts-recent-interest";
 
 export default function HostsRoute() {
+  useHostsRecentInterest();
   const selection = useHostSelection();
-  const transport = useTransport();
-  const cache = useQueryClient();
-  const navigate = useNavigate();
   const remotes = useRemoteHosts();
   const [adding, setAdding] = useState(false);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [localUpdate] = useLocalUpdateStatus();
-  const localTarget = localUpdateTarget(localUpdate);
-  const behind = remotes.data?.filter(pushable) ?? [];
-  const updatable = behind.filter(reachable).length;
-  const [editing, setEditing] = useState<RemoteHostRecord | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const show = (id: string) => {
-    selection?.select(id);
-    void navigate("/dashboard/overview");
-  };
-  const retry = async (id: string) => {
-    setError(null);
-    try {
-      const result = await transport.retryRemoteHost(id);
-      if (result.status === "error") setError(remoteErrorText(result.error));
-      await cache.invalidateQueries({ queryKey: hostKeys.remote() });
-    } catch (e) {
-      setError(commandErrorText(e, "Please try again."));
-    }
-  };
   const local = selection?.hosts.find((host) => host.is_local);
+  const records = remotes.data ?? [];
+  const behind = records.filter(pushable);
+  const updatable = behind.filter(reachable).length;
+  const live =
+    records.filter((host) => host.status.state === "connected").length +
+    (local ? 1 : 0);
+  const offline = records.filter(
+    (host) => host.status.state === "offline"
+  ).length;
+  const updates = hostsNeedingUpdate(records).length;
+  const ids = [
+    ...(local ? [local.id] : []),
+    ...records.map((host) => host.config.id),
+  ];
+  const subtitle = `${countNoun(ids.length, "host", "hosts")} · ${live} live · ${offline} offline${updates ? ` · ${countNoun(updates, "update", "updates")} available` : ""}`;
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Hosts"
+        subtitle={subtitle}
         actions={
           <div className="flex gap-2">
             {updatable >= 2 && (
@@ -300,124 +54,31 @@ export default function HostsRoute() {
           </div>
         }
       />
-      <div className="divide-y divide-border-subtle border-border-subtle border-y">
-        {local && (
-          <div className="flex items-center justify-between gap-4 py-4">
-            <div>
-              <h2 className="font-semibold text-heading">This Mac</h2>
-              <p className="text-muted-foreground text-small">
-                {local.display_name} · {local.info.chip ?? local.info.model}
-              </p>
-              <p className="figures mt-1 text-muted-foreground text-small">
-                StatGlass {version}
-                {localTarget && ` · ${localTarget} available in Settings`}
-              </p>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => show(local.id)}>
-              View metrics
-            </Button>
-          </div>
-        )}
-        {remotes.data?.map((remote) => (
-          <div
-            key={remote.config.id}
-            className="flex flex-wrap items-center justify-between gap-4 py-4"
-          >
-            <div className="min-w-0 flex-1">
-              <h2 className="font-semibold text-heading">
-                {remote.config.name}
-              </h2>
-              <p className="text-muted-foreground text-small">
-                {connectionLabel(remote)}
-              </p>
-              {remote.status.last_seen_ms !== null &&
-                remote.status.state !== "connected" && (
-                  <p className="text-muted-foreground text-small">
-                    Last seen {formatDateTime(remote.status.last_seen_ms)}
-                  </p>
-                )}
-              {remote.status.identity_changed !== null ? (
-                <p className="mt-1 text-destructive text-small">
-                  This host now answers with a different identity.
-                </p>
-              ) : (
-                remote.status.error && (
-                  <p className="mt-1 text-destructive text-small">
-                    {remote.status.error}
-                  </p>
-                )
-              )}
-              <HostVersion remote={remote} localTarget={localTarget} />
-            </div>
-            <StatList
-              layout="grid"
-              valueClassName="min-w-10"
-              items={[
-                {
-                  label: "CPU",
-                  value: formatPercent(
-                    remote.status.state === "connected"
-                      ? remote.status.cpu_pct
-                      : null
-                  ),
-                },
-                {
-                  label: "Memory",
-                  value: formatPercent(
-                    remote.status.state === "connected"
-                      ? remote.status.memory_pct
-                      : null
-                  ),
-                },
-              ]}
+      <CardGrid items={ids} getKey={(id) => id} minColumnWidth={400}>
+        {(id, origin) =>
+          local?.id === id ? (
+            <LocalHostCard
+              host={local}
+              origin={origin}
+              target={localUpdateTarget(localUpdate)}
             />
-            <div className="flex gap-2">
-              <HostAgentActions remote={remote} onError={setError} />
-              {remote.status.state !== "connected" &&
-                remote.config.enabled &&
-                remote.status.identity_changed === null && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => retry(remote.config.id)}
-                  >
-                    Retry
-                  </Button>
-                )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditing(remote)}
-              >
-                Settings
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => show(remote.config.id)}
-              >
-                View metrics
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ) : (
+            <RemoteHostCard id={id} origin={origin} />
+          )
+        }
+      </CardGrid>
       <QueryNotice
         query={remotes}
         loading="Loading saved hosts…"
-        error={(e) => commandErrorText(e, "Couldn't load saved hosts.")}
+        error={(error) => commandErrorText(error, "Couldn't load saved hosts.")}
         empty={
-          remotes.data?.length === 0 &&
+          records.length === 0 &&
           "Add a Linux server or another Mac over SSH to view its live metrics and keep a copy of its history here."
         }
       />
-      {error && <InlineMessage tone="error">{error}</InlineMessage>}
       {adding && <AddHostDialog open onOpenChange={setAdding} />}
       {updatingAll && (
         <UpdateAllDialog remotes={behind} close={() => setUpdatingAll(false)} />
-      )}
-      {editing && (
-        <HostSettings remote={editing} close={() => setEditing(null)} />
       )}
     </div>
   );

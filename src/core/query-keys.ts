@@ -31,6 +31,8 @@ export type TierKey = Tier | "auto";
 
 export const historyKeys = {
   all: ["history"] as const,
+  recent: (hostId: HostId, offsetMs: number) =>
+    [...historyKeys.host(hostId), "recent", offsetMs] as const,
   moduleSeries: (
     hostId: HostId,
     keys: readonly string[],
@@ -214,6 +216,7 @@ export const historyKeys = {
 };
 
 export const hostKeys = {
+  vitals: (hostId: HostId) => [...hostKeys.all, hostId, "vitals"] as const,
   diskIoDevices: (hostId: HostId) =>
     ["hosts", hostId, "disk-io-devices"] as const,
   sshConfig: () => ["ssh-config"] as const,

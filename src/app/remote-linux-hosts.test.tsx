@@ -40,8 +40,7 @@ async function check(alias: string) {
 }
 
 function hostRow(name: string) {
-  const row = screen.getByRole("heading", { name }).parentElement
-    ?.parentElement;
+  const row = screen.getByRole("region", { name });
   if (!row) throw new Error(`Missing host row: ${name}`);
   return within(row);
 }
@@ -166,11 +165,13 @@ describe("Linux hosts", () => {
     const source = mount(["linux-host", "linux-agent-update"]);
     await screen.findByRole("heading", { name: "linux-tailscale" });
     fireEvent.click(
-      hostRow("linux-tailscale").getByRole("button", { name: "Update agent" })
+      hostRow("linux-tailscale").getByRole("button", {
+        name: "Update to 0.1.0",
+      })
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: "Update agent" })
+        screen.queryByRole("button", { name: "Update to 0.1.0" })
       ).not.toBeInTheDocument()
     );
     expect(
@@ -208,9 +209,9 @@ describe("Linux hosts", () => {
     const source = mount(["linux-host"]);
     await screen.findByRole("heading", { name: "linux-tailscale" });
     fireEvent.click(
-      hostRow("linux-tailscale").getByRole("button", { name: "Settings" })
+      hostRow("linux-tailscale").getByRole("button", { name: /^Settings for / })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
     expect(
       screen.queryByLabelText("Also stop sharing on that Mac")
     ).not.toBeInTheDocument();
@@ -243,9 +244,9 @@ describe("Linux hosts", () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(
-      hostRow("linux-tailscale").getByRole("button", { name: "Settings" })
+      hostRow("linux-tailscale").getByRole("button", { name: /^Settings for / })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
     await clickOutside();
     expect(
       screen.getByRole("alertdialog", { name: "Remove linux-tailscale?" })

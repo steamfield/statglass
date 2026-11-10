@@ -1,4 +1,8 @@
-import type { ExportOutcome, HistoryRequest } from "@core/generated/bindings";
+import type {
+  ExportOutcome,
+  HistoryRequest,
+  RemoteHostStatus,
+} from "@core/generated/bindings";
 import { HISTORY_TIERS, METRIC_MODULES } from "@core/generated/bindings";
 import { DAY_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";
@@ -82,9 +86,23 @@ export class MockQueries {
         )
     );
   readonly queryHistory: MockTransport["queryHistory"] = async (request) =>
-    this.remote.forward(request.host, (peer) =>
-      peer.queryHistory({ ...request, host: MOCK_HOST_ID })
-    ) ??
+    this.remote.forward(request.host, async (peer) => {
+      const until = mirroredUntil(
+        this.remote.remotes.get(request.host)?.record.status
+      );
+      const result = await peer.queryHistory({
+        ...request,
+        host: MOCK_HOST_ID,
+      });
+      if (until === null || result.status === "error") return result;
+      return ok({
+        ...result.data,
+        series: result.data.series.map((series) => ({
+          ...series,
+          points: series.points.filter((point) => point.t <= until),
+        })),
+      });
+    }) ??
     this.commands.hostCommand(
       "query_history",
       request.host,
@@ -321,6 +339,15 @@ export class MockQueries {
       sensorDump: this.sensorDump,
     };
   }
+}
+
+/**
+ * The last instant a remote's mirror holds samples for: its last-seen time while it
+ * isn't connected, so later history is a gap as in Rust; null when connected.
+ */
+function mirroredUntil(status: RemoteHostStatus | undefined): number | null {
+  if (!status || status.state === "connected") return null;
+  return status.last_seen_ms ?? Number.NEGATIVE_INFINITY;
 }
 
 function exportTier(

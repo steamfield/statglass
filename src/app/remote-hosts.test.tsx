@@ -26,7 +26,7 @@ describe("remote host selection", () => {
   it("scopes subscriptions and capabilities to the selected Mac and keeps Settings local", async () => {
     const { transport, unmount } = setup();
     const title = await screen.findByRole("heading", { name: "Studio Mac" });
-    const row = title.parentElement?.parentElement;
+    const row = title.closest("section");
     if (!row) throw new Error("Missing host row");
     fireEvent.click(
       within(row).getByRole("button", {

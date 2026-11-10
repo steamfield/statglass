@@ -102,7 +102,7 @@ export const commands = {
 	inspectRemoteSshHost: (alias: string) => typedError<RemoteSshHostTrust, CommandError>(__TAURI_INVOKE("inspect_remote_ssh_host", { alias })),
 	acceptRemoteSshHost: (token: string) => typedError<null, CommandError>(__TAURI_INVOKE("accept_remote_ssh_host", { token })),
 	prepareRemoteHost: (lan: string | null, tailscale: string | null) => typedError<RemoteHostPreparation, CommandError>(__TAURI_INVOKE("prepare_remote_host", { lan, tailscale })),
-	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId })),
+	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string, reinstall: string | null) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId, reinstall })),
 	cancelRemoteSetup: (setupId: string) => typedError<null, CommandError>(__TAURI_INVOKE("cancel_remote_setup", { setupId })),
 	updateRemoteHost: (config: RemoteHostConfig) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("update_remote_host", { config })),
 	/**
@@ -353,6 +353,7 @@ export const commands = {
 	 *  `window-appearance-changed` carries later changes.
 	 */
 	getWindowAppearance: () => __TAURI_INVOKE<WindowAppearance>("get_window_appearance"),
+	windowVisible: () => __TAURI_INVOKE<boolean>("window_visible"),
 	/**
 	 *  Open-latency probe: the popover page reports its first painted frame after a show.
 	 *  Rust injects the call itself (`popover::toggle`); pages never need to call it.
@@ -373,6 +374,7 @@ export const events = {
 	settingsChanged: makeEvent<SettingsChanged>("settings-changed"),
 	updateStatusChanged: makeEvent<UpdateStatusChanged>("update-status-changed"),
 	windowAppearanceChanged: makeEvent<WindowAppearanceChanged>("window-appearance-changed"),
+	windowVisibilityChanged: makeEvent<WindowVisibilityChanged>("window-visibility-changed"),
 };
 
 /* Constants */
@@ -3315,6 +3317,11 @@ export type WindowAppearance = {
 /**  Emitted when Performance mode, Reduce Transparency or the theme changes. */
 export type WindowAppearanceChanged = {
 	appearance: WindowAppearance,
+};
+
+/**  Sent only to the window whose native visibility changed. */
+export type WindowVisibilityChanged = {
+	visible: boolean,
 };
 
 /* Tauri Specta runtime */

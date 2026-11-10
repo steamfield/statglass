@@ -1,5 +1,6 @@
 import { commands, events, type LiveMsg } from "@core/generated/bindings";
 import { Channel } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Transport, Unsubscribe } from "./contracts";
 import { nativeDiskSpace } from "./native-disk-space";
 import { nativeDocker } from "./native-docker";
@@ -34,6 +35,13 @@ export function createTauriTransport(label: string): Transport {
   return {
     kind: "tauri",
     windowLabel: () => label,
+    windowVisible: () => commands.windowVisible(),
+    onWindowVisibility: (cb) =>
+      syncUnlisten(
+        events
+          .windowVisibilityChanged(getCurrentWindow())
+          .listen((e) => cb(e.payload.visible))
+      ),
     ...nativeDocker(),
     ...nativeDiskSpace(),
     listHosts: () => commands.listHosts(),
