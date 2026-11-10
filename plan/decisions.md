@@ -4448,4 +4448,42 @@ card the host can fill and Show all. The choice is saved per card in
 patched per field like the popover's densities (D-050). Capability gates still apply on
 top of it. This is the hide-and-show part of v2.3's Customize Overview. Reordering, the
 edit mode and the per-card Top processes option remain v2.3b.
-||||||| c449bfc
+
+## D-133: The Hosts page monitors every host: vitals, recent history, update progress, rr jobs
+
+Date: 2026-11-10. Replaces the Hosts row list with a grid of host cards (design: the
+"Hosts Monitoring" canvas). Extends D-123 and D-132.
+
+Each card shows the last 10 minutes of CPU and memory, four vitals (1-minute load against
+the core count, memory pressure, the boot volume's use, total network rate), the host's
+StatGlass version and update state, and the rr job holding the host, if any.
+
+Vitals are Rust facts. The agent's headline set (D-047) gains `cpu.loadavg{window=1}`,
+`mem.pressure_level`, `mem.psi{stall=some}`, `disk.used`, `disk.free` and `disk.total` for
+`vol="/"`, and `net.rx_total`/`net.tx_total`. These are existing series in an existing
+key/value list, so the wire shape is unchanged and an older agent simply omits them. One
+function builds `HostVitals` from a host's held frame through `Snapshot`, for This Mac and
+remote hosts alike; each field is optional, so a partial set renders partially. The disk
+warning uses `low_disk_threshold`, the threshold the agent's install and update checks
+already apply, so the client holds no threshold.
+
+Recent history comes from the mirror, never from display values. While the Hosts page is
+visible the controller holds a "recent interest" for every host: in summary mode it sends
+`RecentRequest` every 15 s from the mirror's sync watermark, and `query_history` already
+merges those rows. A host never goes into detail mode for a card, so its agent keeps
+sending 5 s summaries. The interest drops when the page unmounts or the window hides.
+
+Update progress is owned by Rust. `RemoteManager` holds each host's update phase (queued,
+probing, uploading with an approximate byte count, installing, restarting, reconnecting)
+and its last failure, on `RemoteHostStatus`. The phase clears when the host reconnects
+reporting the target version; a deadline turns a stuck update into a failure. Status
+changes emit a typed event that refreshes the host list, so the client polls at its usual
+5 s. Mac hosts keep updating through Add host.
+
+rr jobs are read over SSH, not by the agent. rr locks a host by creating
+`/tmp/rr.lock/info.json` over SSH as its user, and the system agent runs with
+`PrivateTmp`, so the controller reads the lock through the host's existing SSH session
+every 15 s while the recent interest is held: regular file only, no symlinks, 4 KB cap,
+parsed into an allowlist of command, user, client host and start time. This Mac reads the
+same path locally. Jobs on several hosts with the same client, user and start are grouped
+in Rust. A host without rr shows nothing. No wire change.
