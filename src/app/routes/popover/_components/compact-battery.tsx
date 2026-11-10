@@ -5,9 +5,8 @@ import { MINUTE_MS } from "@core/time-grid";
 import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
-import { useRingLoading } from "~/hooks/use-ring";
+import { useShownRingLoading } from "~/hooks/use-ring";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
-import { useHost } from "~/stores/host-store";
 import {
   useBattery,
   usePowerSource,
@@ -50,8 +49,7 @@ export function CompactBattery() {
 export function CompactPower({ showBattery }: { showBattery: boolean }) {
   const windowMs = useScaledWindow(MINUTE_MS);
   const history = useSeriesWindow("power.system", windowMs);
-  const started = useHost((s) => s.status !== null);
-  const loading = useRingLoading(windowMs, undefined, started);
+  const loading = useShownRingLoading(windowMs);
   const ceiling = useNiceCeiling(history.values, history.tEndMs, 1, windowMs);
   const ariaLabel = useChartLabel({
     subject: "System power",

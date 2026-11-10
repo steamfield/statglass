@@ -117,7 +117,7 @@ export function LiveMirrorChart({
     <div className="flex flex-col gap-1.5">
       <ChartHistoryStatus quiet loading={loading} error={error} />
       <MirrorChart
-        loading={Boolean(loading || ringLoading)}
+        loading={loading === true || ringLoading}
         up={pick(upKey)}
         down={pick(downKey)}
         firstMs={(endMs ?? 0) - (count - 1) * bucketMs}

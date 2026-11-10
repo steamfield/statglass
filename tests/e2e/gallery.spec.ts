@@ -2,8 +2,6 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import { chartsReady } from "./helpers/charts-ready";
 
-test.use({ reducedMotion: "reduce" });
-
 /**
  * The dev gallery renders every widget and app component on the mock
  * transport. These specs screenshot it in both themes and hold muted text
@@ -42,13 +40,28 @@ for (const theme of THEMES) {
       const errors = trackConsoleErrors(page);
       await openGallery(page, theme);
       await expect(page.locator("[data-chart-loading]")).toHaveCount(3);
-      expect(
-        await page.evaluate(
+      await expect
+        .poll(
           () =>
-            document.getAnimations().filter((a) => a.playState === "running")
-              .length
+            page.evaluate(
+              () =>
+                document
+                  .getAnimations()
+                  .filter(
+                    (a) =>
+                      a.playState === "running" &&
+                      !(
+                        a instanceof CSSAnimation &&
+                        /scan/.test(a.animationName) &&
+                        a.effect instanceof KeyframeEffect &&
+                        a.effect.target instanceof Element &&
+                        a.effect.target.closest("[data-chart-loading]")
+                      )
+                  ).length
+            ),
+          { timeout: 2000 }
         )
-      ).toBe(0);
+        .toBe(0);
       await page.screenshot({
         path: `test-results/screens/gallery-${theme}-${info.project.name}.png`,
         fullPage: true,

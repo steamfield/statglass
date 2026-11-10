@@ -129,7 +129,7 @@ export function StreamArea({
   annotations,
   loading,
 }: StreamAreaProps) {
-  const reveal = useReveal(loading);
+  const reveal = useReveal<HTMLDivElement>(loading);
   const uid = useId();
   const n = Math.max(2, ...series.map((s) => s.values.length));
   const x = scaleLinear()
@@ -204,7 +204,7 @@ export function StreamArea({
       gutter={gutter}
       style={accentVars(accent)}
     >
-      <div className="relative overflow-hidden">
+      <div ref={reveal} className="relative overflow-hidden">
         <svg
           aria-hidden
           viewBox={`0 0 ${VB_W} ${height}`}
@@ -223,8 +223,10 @@ export function StreamArea({
             width="100%"
             height={height}
             role="img"
+            aria-busy={loading || undefined}
             aria-label={ariaLabel}
-            className={cn("block overflow-hidden", reveal)}
+            data-reveal
+            className="block origin-bottom overflow-hidden"
           >
             <defs>
               {drawn

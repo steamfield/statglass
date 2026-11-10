@@ -12,7 +12,7 @@ import { hostKeys } from "@core/query-keys";
 import { seriesKey } from "@core/series-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { nextFrame, pushLayout } from "@tests/live-frames";
-import { renderWithProviders } from "@tests/test-utils";
+import { mockElementAnimate, renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { ChartRangeProvider } from "~/stores/chart-range";
 import { type HostStore, useHostStore } from "~/stores/host-store";
@@ -336,6 +336,8 @@ it.each([
   "%s shows a loading frame during backfill and data afterwards",
   async (_name, Card, label) => {
     vi.useFakeTimers();
+    const animate = mockElementAnimate();
+    document.documentElement.style.setProperty("--motion-enter", "280ms");
     const r = renderWithProviders(<Card origin="tl" windowMs={3_600_000} />, {
       transportOptions: { historyRows: 3600 },
       backfillMs: 3_600_000,
@@ -351,10 +353,15 @@ it.each([
       const chart = screen.getByRole("img", { name: label });
       if (_name === "GPU")
         expect(chart.querySelector("path[data-line]")).not.toBeNull();
-      else expect(chart.querySelector("[data-bars]")).toHaveClass(/reveal/);
+      else {
+        const bars = chart.querySelector("[data-bars]");
+        expect(bars).toHaveAttribute("data-reveal");
+        expect(animate.mock.contexts).toContain(bars);
+      }
     } finally {
       r.unmount();
       r.transport.dispose();
+      document.documentElement.style.removeProperty("--motion-enter");
       vi.useRealTimers();
     }
   }

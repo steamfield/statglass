@@ -22,6 +22,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
+import { onTestFinished, vi } from "vitest";
 import { QueryProvider } from "~/lib/query";
 import { TransportProvider } from "~/lib/transport-context";
 import { HostStoreProvider } from "~/stores/host-store";
@@ -95,4 +96,22 @@ export async function clickOutside() {
   fireEvent.pointerDown(document.body, { button: 0 });
   fireEvent.pointerUp(document.body, { button: 0 });
   fireEvent.click(document.body, { button: 0 });
+}
+
+/** Instrument the browser animation boundary and restore it after the test. */
+export function mockElementAnimate() {
+  const original = Object.getOwnPropertyDescriptor(
+    Element.prototype,
+    "animate"
+  );
+  const animate = vi.fn<Element["animate"]>();
+  Object.defineProperty(Element.prototype, "animate", {
+    configurable: true,
+    value: animate,
+  });
+  onTestFinished(() => {
+    if (original) Object.defineProperty(Element.prototype, "animate", original);
+    else Reflect.deleteProperty(Element.prototype, "animate");
+  });
+  return animate;
 }

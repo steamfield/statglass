@@ -10,8 +10,6 @@
  *
  *   --i            stagger index, set inline by `enter()`
  *   --stagger-cap  last index that still adds delay (8; a surface may lower it)
- *   --reveal-origin point the data settles from (the baseline; mirrored charts
- *                   use their centre axis)
  *   --rise         lift distance (3px; a surface may lower it)
  */
 
@@ -25,13 +23,6 @@
 @keyframes fade {
   from {
     opacity: 0;
-  }
-}
-
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: scaleY(0.9);
   }
 }
 
@@ -90,13 +81,6 @@
 
     .fade {
       animation-name: fade;
-    }
-
-    /* Off outright in Performance mode: a 0ms animation still starts, and a
-       chart's data should appear without one. */
-    :root:not([data-performance]) .reveal {
-      animation: reveal var(--motion-enter) var(--ease-out) backwards;
-      transform-origin: var(--reveal-origin, 50% 100%);
     }
 
     .swap {

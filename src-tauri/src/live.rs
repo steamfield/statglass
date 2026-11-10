@@ -724,8 +724,8 @@ impl Stream {
     async fn run(mut self, mut visible: watch::Receiver<bool>, mut sub: Option<Subscriber>) {
         loop {
             let Some(s) = sub.as_mut() else {
-                // Hidden: history a plan promised still goes out, so a reader holding
-                // its charts back is not left loading until the next show (D-133).
+                // Hidden: drain promised history regardless of display_idle, so charts
+                // are not left loading until the next show (D-133).
                 while !self.earlier.is_empty() {
                     if self.send_earlier().is_err() {
                         return;

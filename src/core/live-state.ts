@@ -200,7 +200,7 @@ export class SeriesColumns {
 export type Connection = "connecting" | "live" | "reconnecting";
 
 /** History promised by the live catch-up, but not yet received. */
-export type HistoryPending = null | "subscribe" | "recent" | number;
+export type HistoryPending = null | "subscribe" | { recent: number } | number;
 
 export interface HostLive {
   /**
@@ -208,7 +208,7 @@ export interface HostLive {
    * back until its window is whole instead of drawing it in pieces.
    * - null: nothing expected.
    * - "subscribe": an empty-ring subscribe has not said yet what it will send.
-   * - "recent": the plan promised recent rows that have not landed.
+   * - { recent: number }: how many promised recent rows have not landed.
    * - a number: older chunks are still coming, down to this start time (ms).
    */
   historyPending: HistoryPending;
@@ -370,8 +370,7 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
       return {
         ...state,
         connection: "live",
-        historyPending:
-          state.historyPending === "recent" ? null : state.historyPending,
+        historyPending: settleRecent(state.historyPending, msg.rows.length),
         held,
         lastTsMs: state.columns.lastTsMs() ?? state.lastTsMs,
         rowsVersion: state.rowsVersion + 1,
@@ -396,8 +395,7 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
       return {
         ...state,
         connection: "live",
-        historyPending:
-          state.historyPending === "recent" ? null : state.historyPending,
+        historyPending: settleRecent(state.historyPending, Infinity),
         layoutNo: msg.layout_no,
         held: heldFrom(layout, msg.held),
         // A dropped duplicate leaves the newest row where it was.
@@ -454,27 +452,27 @@ export function settleSubscribe<S extends HostLive>(state: S): S {
   return { ...state, historyPending: null };
 }
 
+function settleRecent(pending: HistoryPending, rows: number): HistoryPending {
+  if (pending === null || typeof pending !== "object") return pending;
+  const recent = pending.recent - rows;
+  return recent > 0 ? { recent } : null;
+}
+
 function onBackfillPlan(
   state: HostLive,
   msg: Extract<LiveMsg, { kind: "backfill_plan" }>
 ): HostLive {
-  if (msg.earlier_start_ms !== null) {
-    if (state.lastTsMs !== null) return state;
-    return { ...state, historyPending: msg.earlier_start_ms };
-  }
-  if (typeof state.historyPending === "number")
-    return { ...state, historyPending: null };
+  const { earlier_start_ms: earlier, recent_rows: recent } = msg;
+  if (earlier !== null && state.lastTsMs !== null) return state;
   const historyPending =
-    state.lastTsMs === null && msg.recent_rows > 0 ? "recent" : null;
-  return historyPending === state.historyPending
-    ? state
-    : { ...state, historyPending };
+    earlier ?? (state.lastTsMs === null && recent > 0 ? { recent } : null);
+  if (historyPending === state.historyPending) return state;
+  return { ...state, historyPending };
 }
 
 function settleEarlier(state: HostLive): HostLive {
   if (typeof state.historyPending !== "number") return state;
-  const first = state.columns.firstTsMs();
-  return (first !== null && first <= state.historyPending) ||
+  return (state.columns.firstTsMs() ?? Infinity) <= state.historyPending ||
     state.columns.length === state.columns.capacity
     ? { ...state, historyPending: null }
     : state;
@@ -524,6 +522,9 @@ function prependEarlier(
   state: HostLive,
   msg: Extract<LiveMsg, { kind: "backfill_earlier" }>
 ): HostLive {
+  const pending = state.historyPending;
+  if (typeof pending === "number" && msg.start_ms <= pending)
+    state = { ...state, historyPending: null };
   const layout = state.layouts[msg.layout_no];
   if (!layout || msg.rows.length === 0) return state;
   const before = state.columns.length;

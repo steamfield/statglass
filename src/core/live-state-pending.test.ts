@@ -31,7 +31,7 @@ function rows(
   start_ms: number,
   count: number,
   timeline = 0
-): LiveMsg {
+): Extract<LiveMsg, { kind: "backfill" | "backfill_earlier" }> {
   const body = {
     layout_no: 1,
     start_ms,
@@ -83,7 +83,7 @@ it("settles only a subscribe that has not received its plan", () => {
 });
 it("waits for recent backfill, then settles", () => {
   const s = apply(empty(), plan(2, null));
-  expect(s.historyPending).toBe("recent");
+  expect(s.historyPending).toEqual({ recent: 2 });
   expect(ringLoading(s, HOUR)).toBe(true);
   expect(reduceLive(s, rows("backfill", 1000, 2)).historyPending).toBeNull();
 });
@@ -171,7 +171,7 @@ it("a plan cancelling older history clears its promise", () => {
   expect(s.historyPending).toBeNull();
 });
 it("a recent-only plan clears subscribe and recent markers on a populated ring", () => {
-  for (const historyPending of ["subscribe", "recent"] as const) {
+  for (const historyPending of ["subscribe", { recent: 2 }] as const) {
     const held = apply(empty(), rows("backfill", 1000, 2));
     expect(
       reduceLive({ ...held, historyPending }, plan(2, null)).historyPending
@@ -226,3 +226,46 @@ it("honours bucket tolerance rather than the one-second default", () => {
   expect(ringLoading(s, HOUR)).toBe(true);
   expect(ringLoading(s, HOUR, 15_000)).toBe(false);
 });
+
+it("counts every recent segment before revealing", () => {
+  let s = apply(empty(), plan(5, null));
+  s = reduceLive(s, rows("backfill", 1000, 2));
+  expect(ringLoading(s, HOUR)).toBe(true);
+  expect(s.historyPending).toEqual({ recent: 3 });
+  s = reduceLive(s, rows("backfill", 5000, 3));
+  expect(ringLoading(s, HOUR)).toBe(false);
+  expect(s.historyPending).toBeNull();
+});
+it("a frame settles partially received recent segments", () => {
+  let s = apply(empty(), plan(5, null), rows("backfill", 1000, 2));
+  expect(ringLoading(s, HOUR)).toBe(true);
+  s = reduceLive(s, frame(3000));
+  expect(s.historyPending).toBeNull();
+});
+it("a recent-only replacement plan keeps a cleared ring loading", () => {
+  const s = clearRows(apply(empty(), plan(2, 0), rows("backfill", 1000, 2)));
+  const next = reduceLive(s, plan(3, null));
+  expect(next.historyPending).toEqual({ recent: 3 });
+  expect(ringLoading(next, HOUR)).toBe(true);
+});
+it("a recent-only replacement cancels numeric pending with data or no rows promised", () => {
+  const held = apply(empty(), plan(2, 0), rows("backfill", 1000, 2));
+  expect(reduceLive(held, plan(3, null)).historyPending).toBeNull();
+  const cleared = clearRows(held);
+  expect(reduceLive(cleared, plan(0, null)).historyPending).toBeNull();
+});
+it.each(["unknown layout", "empty rows"])(
+  "an unapplied oldest chunk settles: %s",
+  (reason) => {
+    const s = { ...empty(), historyPending: 1000 };
+    const chunk = {
+      ...rows("backfill_earlier", 500, reason === "empty rows" ? 0 : 2),
+      layout_no: reason === "unknown layout" ? 99 : 1,
+    };
+    const next = reduceLive(s, chunk);
+    expect(next.historyPending).toBeNull();
+    expect(next.rowsVersion).toBe(s.rowsVersion);
+    expect(reduceLive(next, chunk)).toBe(next);
+    expect(reduceLive(s, { ...chunk, start_ms: 2000 })).toBe(s);
+  }
+);

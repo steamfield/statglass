@@ -73,7 +73,7 @@ export function CoreLoadCard({
     >
       <ChartHistoryStatus quiet loading={loading} error={error} />
       <CoreHeatmap
-        loading={Boolean(loading || ringLoading)}
+        loading={loading === true || ringLoading}
         live={end === null}
         gaps={gaps}
         cores={cores.map((c) => ({

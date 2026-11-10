@@ -91,10 +91,12 @@ async fn hidden_first_subscribe_waits_for_show_to_plan_and_backfill() {
 
 #[tokio::test(start_paused = true)]
 async fn hiding_sends_the_promised_earlier_chunks_at_once() {
-    let (feed, _) = seeded(1500);
+    let (feed, l) = seeded(1500);
     let reg = registry(&["main"]);
     let (s, rx, _) = sink();
-    let info = reg.subscribe("main", feed, s, req(3_600_000)).unwrap();
+    let info = reg
+        .subscribe("main", feed.clone(), s, req(3_600_000))
+        .unwrap();
     assert!(info.earlier_rows > 0);
     let before = drain_raw(&rx).await;
     assert!(
@@ -113,6 +115,36 @@ async fn hiding_sends_the_promised_earlier_chunks_at_once() {
         })
         .sum();
     assert_eq!(rows, info.earlier_rows as usize);
+    let mut floor = before
+        .iter()
+        .find_map(|m| match m {
+            LiveMsg::Backfill { start_ms, .. } => Some(*start_ms),
+            _ => None,
+        })
+        .unwrap();
+    for message in &hidden {
+        match message {
+            LiveMsg::BackfillEarlier { start_ms, .. } => {
+                assert!(*start_ms < floor);
+                floor = *start_ms;
+            }
+            LiveMsg::Frame { .. } | LiveMsg::Backfill { .. } => panic!("rows sent on hide"),
+            _ => {}
+        }
+    }
+    feed.tick(&l, 1_501_000, 2.0);
+    reg.window_visible("main", true);
+    let shown = drain_raw(&rx).await;
+    assert!(shown.iter().any(|m| matches!(m, LiveMsg::Backfill { .. })));
+    for message in shown {
+        match message {
+            LiveMsg::BackfillPlan { .. } | LiveMsg::BackfillEarlier { .. } => {
+                panic!("history restarted on show")
+            }
+            LiveMsg::Backfill { start_ms, .. } => assert!(start_ms > 1_500_000),
+            _ => {}
+        }
+    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -165,4 +197,37 @@ async fn no_anchor_sends_no_plan_but_an_anchored_window_does() {
     let (s, rx, _) = sink();
     reg.subscribe("main", feed, s, req(0)).unwrap();
     assert_eq!(plans(&drain_raw(&rx).await), [(1, None)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn hiding_while_display_idle_still_drains_promised_chunks() {
+    let (feed, _) = seeded(1500);
+    let reg = registry(&["main"]);
+    let (s, rx, _) = sink();
+    let info = reg
+        .subscribe("main", feed.clone(), s, req(3_600_000))
+        .unwrap();
+    drain_raw(&rx).await;
+    feed.set_status(|s| s.display_idle = true);
+    let idle = drain_raw(&rx).await;
+    assert!(
+        idle.iter()
+            .any(|m| matches!(m, LiveMsg::Status(s) if s.display_idle))
+    );
+    reg.window_visible("main", false);
+    let hidden = drain_raw(&rx).await;
+    let rows: usize = hidden
+        .iter()
+        .filter_map(|m| match m {
+            LiveMsg::BackfillEarlier { rows, .. } => Some(rows.len()),
+            _ => None,
+        })
+        .sum();
+    assert!(rows > 0);
+    assert_eq!(rows, info.earlier_rows as usize);
+    assert!(
+        !hidden
+            .iter()
+            .any(|m| matches!(m, LiveMsg::Frame { .. } | LiveMsg::Backfill { .. }))
+    );
 }

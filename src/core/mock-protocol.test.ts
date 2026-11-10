@@ -15,24 +15,18 @@ function trace(messages: LiveMsg[]) {
             start_ms: message.start_ms,
             rows: message.rows.length,
           };
+        case "backfill_plan":
+          return {
+            kind: message.kind,
+            recent_rows: message.recent_rows,
+            earlier_start_ms: message.earlier_start_ms,
+          };
         case "frame":
           return { kind: message.kind, ts_ms: message.ts_ms };
         default:
           return { kind: message.kind };
       }
     });
-}
-
-// Accept the legacy fixture and the fixture the native regeneration command now writes.
-function withPlan(messages: TraceEntry[]): TraceEntry[] {
-  const initial = [...messages];
-  if (initial.some((m) => m.kind === "backfill_plan")) return initial;
-  initial.splice(
-    initial.findIndex((m) => m.kind === "backfill"),
-    0,
-    { kind: "backfill_plan" }
-  );
-  return initial;
 }
 
 // Segment boundaries can differ with catalog holds. Compare every older sample
@@ -75,8 +69,7 @@ it("matches the Rust registry's ordering, backfill boundaries, disconnect and ty
       }
     );
     const initial = trace(messages.splice(0));
-    expect(withPlan(initial)).toEqual(initial); // A regenerated fixture already includes the plan.
-    expect(initial).toEqual(withPlan(fixture.initial));
+    expect(initial).toEqual(fixture.initial);
     now += 1000;
     transport.tick();
     await vi.runAllTimersAsync();

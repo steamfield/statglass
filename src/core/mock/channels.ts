@@ -118,15 +118,12 @@ export class MockChannels {
     const messages: LiveMsg[] = [];
     if (stepped) {
       sub.earlier = [];
-      messages.push(
-        {
-          kind: "backfill_plan",
-          recent_rows: missed.length,
-          earlier_start_ms: null,
-        },
-        layoutMsg(this.ring.layoutNo, sub.series)
-      );
-      sub.layoutNo = this.ring.layoutNo;
+      this.deliver(sub, {
+        kind: "backfill_plan",
+        recent_rows: missed.length,
+        earlier_start_ms: null,
+      });
+      this.sendLayout(sub);
     }
     for (const seg of segments(missed)) {
       for (const chunk of chunked(seg))
@@ -205,6 +202,9 @@ export class MockChannels {
    */
   readonly flushEarlier = () => {
     for (const sub of this.live.values()) {
+      if (sub.queueTimer !== null) clearTimeout(sub.queueTimer);
+      sub.queueTimer = null;
+      for (const msg of sub.queue.splice(0)) sub.onMsg(msg);
       if (sub.earlier.length === 0) continue;
       if (sub.timer !== null) clearTimeout(sub.timer);
       sub.timer = null;

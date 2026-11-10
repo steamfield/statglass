@@ -1,12 +1,19 @@
 import * as chartMath from "@core/chart-math";
 import { MISSING } from "@core/format";
 import { render } from "@testing-library/react";
-import styles from "~/lib/motion/motion.module.css";
+import { mockElementAnimate } from "@tests/test-utils";
 import {
   HeatMatrix,
   type HeatMatrixProps,
   HeatScaleLegend,
 } from "./heat-matrix";
+
+beforeEach(() =>
+  document.documentElement.style.setProperty("--motion-enter", "280ms")
+);
+afterEach(() =>
+  document.documentElement.style.removeProperty("--motion-enter")
+);
 
 const props: HeatMatrixProps = {
   rows: [
@@ -38,6 +45,7 @@ const tint = (c: HTMLElement | undefined) => c?.style.getPropertyValue("--t");
 
 describe("HeatMatrix", () => {
   it("shows a flat loading frame with labels, then reveals each row and restores gaps", () => {
+    const animate = mockElementAnimate();
     const data: HeatMatrixProps = {
       ...props,
       endMs: 30_000,
@@ -48,6 +56,7 @@ describe("HeatMatrix", () => {
     );
     const root = getByRole("img");
     expect(root).toHaveClass("group");
+    expect(root).toHaveAttribute("aria-busy", "true");
     expect(root).toHaveAttribute("data-loading", "true");
     expect(container.querySelector("[role=note]")).toBeNull();
     const track = container.querySelector("[data-chart-loading]");
@@ -65,12 +74,25 @@ describe("HeatMatrix", () => {
     for (const label of ["Zone 01", "65°", "40°", "now"])
       expect(getByText(label)).toBeInTheDocument();
     const grids = [...container.querySelectorAll(".col-start-2.grid")];
-    for (const grid of grids) expect(grid).not.toHaveClass(styles.reveal ?? "");
+    for (const grid of grids) expect(grid).toHaveAttribute("data-reveal");
+    expect(animate).not.toHaveBeenCalled();
     rerender(<HeatMatrix {...data} loading={false} />);
     expect(root).not.toHaveAttribute("data-loading");
     expect(container.querySelector("[data-chart-loading]")).toBeNull();
     expect([...container.querySelectorAll(".col-start-2.grid")]).toEqual(grids);
-    for (const grid of grids) expect(grid).toHaveClass(styles.reveal ?? "");
+    expect(root).not.toHaveAttribute("aria-busy");
+    expect(animate.mock.contexts).toEqual(grids);
+    rerender(
+      <HeatMatrix
+        {...data}
+        rows={[
+          ...data.rows,
+          { id: "later", label: "Later", now: 20, buckets: [20] },
+        ]}
+        loading={false}
+      />
+    );
+    expect(animate).toHaveBeenCalledTimes(grids.length);
     expect(getByRole("note", { name: "Asleep" })).toBeInTheDocument();
     expect(tint(cellsOf(container)[0])).toBe("6%");
   });

@@ -161,7 +161,7 @@ export function HeatMatrix({
   gaps,
   loading,
 }: HeatMatrixProps) {
-  const reveal = useReveal(loading);
+  const reveal = useReveal<HTMLDivElement>(loading);
   const cols = Math.max(1, Math.round(windowMs / bucketMs));
   // Bucket number of the first column, or 0 for positional keys.
   const firstKey = endMs === null ? 0 : Math.floor(endMs / bucketMs) - cols + 1;
@@ -172,7 +172,9 @@ export function HeatMatrix({
   const row = (k: number) => ({ gridRow: k + 1 });
   return (
     <div
+      ref={reveal}
       role="img"
+      aria-busy={loading || undefined}
       aria-label={ariaLabel}
       className="group grid items-center gap-x-2.5 gap-y-0.5"
       data-loading={loading || undefined}
@@ -201,7 +203,8 @@ export function HeatMatrix({
               {r.label}
             </span>
             <div
-              className={cn("col-start-2 grid gap-px", reveal)}
+              data-reveal
+              className="col-start-2 grid origin-bottom gap-px"
               style={{
                 ...row(k),
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,

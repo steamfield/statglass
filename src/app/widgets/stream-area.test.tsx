@@ -1,7 +1,14 @@
 import { render, screen } from "@testing-library/react";
+import { mockElementAnimate } from "@tests/test-utils";
 import { expectJsonRoundTrip } from "@tests/widget-json";
-import styles from "~/lib/motion/motion.module.css";
 import { StreamArea, type StreamAreaProps } from "./stream-area";
+
+beforeEach(() =>
+  document.documentElement.style.setProperty("--motion-enter", "280ms")
+);
+afterEach(() =>
+  document.documentElement.style.removeProperty("--motion-enter")
+);
 
 const props: StreamAreaProps = {
   series: [
@@ -53,6 +60,7 @@ function moveCount(d: string | null | undefined): number {
 
 describe("StreamArea loading", () => {
   it("draws only the frame while loading, then reveals data without replacing the SVG", () => {
+    const animate = mockElementAnimate();
     withWidth(560, () => {
       const data: StreamAreaProps = {
         ...props,
@@ -74,7 +82,9 @@ describe("StreamArea loading", () => {
         <StreamArea {...data} loading />
       );
       const svg = getByRole("img");
-      expect(svg).not.toHaveClass(styles.reveal ?? "");
+      expect(svg).toHaveAttribute("aria-busy", "true");
+      expect(svg).toHaveAttribute("data-reveal");
+      expect(animate).not.toHaveBeenCalled();
       expect(
         container.querySelectorAll(
           "path[data-line], path[data-area], linearGradient, [data-gap-edge], [role=note]"
@@ -94,8 +104,9 @@ describe("StreamArea loading", () => {
       ).toBeInTheDocument();
       rerender(<StreamArea {...data} loading={false} />);
       expect(getByRole("img")).toBe(svg);
-      expect(svg).toHaveClass(styles.reveal ?? "");
-      expect(svg.parentElement).not.toHaveClass(styles.reveal ?? "");
+      expect(svg).not.toHaveAttribute("aria-busy");
+      expect(animate.mock.contexts).toEqual([svg]);
+      expect(svg.parentElement).not.toHaveAttribute("data-reveal");
       expect(container.querySelector("[data-chart-loading]")).toBeNull();
       expect(
         container.querySelectorAll("path[data-line], path[data-area]")
@@ -110,7 +121,8 @@ describe("StreamArea loading", () => {
   it("keeps charts mounted without loading immediately ready", () => {
     const { container, getByRole } = render(<StreamArea {...props} />);
     expect(container.querySelector("[data-chart-loading]")).toBeNull();
-    expect(getByRole("img")).not.toHaveClass(styles.reveal ?? "");
+    expect(getByRole("img")).toHaveAttribute("data-reveal");
+    expect(getByRole("img")).not.toHaveAttribute("aria-busy");
     expect(container.querySelectorAll("path[data-line]")).toHaveLength(2);
   });
 });

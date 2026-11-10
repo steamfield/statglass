@@ -6,6 +6,7 @@ fn trace(messages: impl IntoIterator<Item = LiveMsg>) -> Vec<Value> {
     messages
         .into_iter()
         .filter_map(|message| match message {
+            LiveMsg::BackfillPlan { recent_rows, earlier_start_ms } => Some(json!({"kind": "backfill_plan", "recent_rows": recent_rows, "earlier_start_ms": earlier_start_ms})),
             LiveMsg::Holds { .. } => None, // Holds have their own catalog/expiry contract tests.
             LiveMsg::Backfill { start_ms, rows, .. } => {
                 Some(json!({"kind": "backfill", "start_ms": start_ms, "rows": rows.len()}))
@@ -68,27 +69,7 @@ async fn frontend_protocol_fixture_matches_native_registry() {
     }
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     assert_eq!(
-        with_plan(result.clone()),
-        result,
-        "a regenerated fixture already includes the plan"
-    );
-    let saved = with_plan(saved);
-    assert_eq!(
         result, saved,
         "regenerate with STATGLASS_UPDATE_PROTOCOL_FIXTURE=1, review Rust/mock parity together"
     );
-}
-
-// Keep the legacy fixture outside this task's scope readable, including after regeneration.
-fn with_plan(mut saved: Value) -> Value {
-    let initial = saved["initial"].as_array_mut().unwrap();
-    if initial.iter().any(|m| m["kind"] == "backfill_plan") {
-        return saved;
-    }
-    let at = initial
-        .iter()
-        .position(|m| m["kind"] == "backfill")
-        .unwrap();
-    initial.insert(at, json!({"kind": "backfill_plan"}));
-    saved
 }

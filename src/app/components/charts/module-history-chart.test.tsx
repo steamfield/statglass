@@ -137,6 +137,9 @@ it("holds the whole hour behind the loading frame until backfill finishes", asyn
     await act(async () => {});
     expect(r.container.querySelector("[data-chart-loading]")).not.toBeNull();
     expect(r.container.querySelector("path[data-line]")).toBeNull();
+    expect(
+      screen.getByRole("img", { name: /^CPU, / })
+    ).not.toHaveAccessibleName(/Drag to select/);
     expect(screen.queryByRole("slider")).toBeNull();
     expect(screen.queryByTestId("selection-summary")).toBeNull();
     expect(screen.queryByText(/Drag across the chart/)).toBeNull();

@@ -174,7 +174,7 @@ Motion tells the reader what changed, and lets a surface settle into place when 
 | A value changes state (paused to live, pressure turning critical) | The glyph and word remount and fade in | 150 ms |
 | A bar, ring or core tile changes value | `transform: scaleX()` on the bar fill, `stroke-dashoffset` on the ring, background alpha on tiles | 150 ms, `--ease-tick` |
 | A chart is waiting for its history (first open, a range over 1 h) | The frame draws; a 1 px accent segment sweeps the baseline after 150 ms. No data, hatching or annotations until the window is whole (D-133) | 900 ms a pass (`--motion-scan`), only while loading; a static frame in Performance mode and reduced motion |
-| A chart's history has arrived | The data layer fades in and settles 10% up from the baseline (mirrored bars from their axis). Only after a load: a chart mounted with data does not animate | 280 ms, once |
+| A chart's history has arrived | The data layer fades in and settles 10% up from the baseline (mirrored bars from their axis; the axis stays put), starting before the first painted frame. Only after a load: a chart mounted with data does not animate, and nothing replays when Performance mode or reduced motion later turns off. While loading the chart is `aria-busy` | 280 ms, once; none in Performance mode and reduced motion |
 | A dashboard page opens (navigation, first open) | The header, then each row, fades in and rises 3 px; Overview's cards one by one. 30 ms apart, capped at 8 steps | 280 ms each, once per mount |
 | An onboarding step opens | Title, body, footer lift in the same way | 280 ms |
 | Sidebar selection | One pill slides to the new row (it used to be a fill on each row) | 150 ms |

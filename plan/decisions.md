@@ -4449,7 +4449,6 @@ card the host can fill and Show all. The choice is saved per card in
 patched per field like the popover's densities (D-050). Capability gates still apply on
 top of it. This is the hide-and-show part of v2.3's Customize Overview. Reordering, the
 edit mode and the per-card Top processes option remain v2.3b.
-||||||| c449bfc
 
 ## D-133: Charts hold back until their history has arrived, then reveal once
 
@@ -4475,13 +4474,16 @@ reader stops waiting. `LiveMsg` is the Tauri channel type in `src-tauri`, not
 the same plan and, like Rust, no longer catches up a hidden window until it is shown.
 
 **Rust finishes promised history when a window hides.** The stream used to keep queued
-earlier chunks until the next show. It now sends them when the window hides, a one-off
-of at most six messages, so a chart is never left loading (and animating) in a hidden
-window. Chunks are still held while the display sleeps; `ringLoading` is false then.
+earlier chunks until the next show. It now sends them when the window hides, once (six
+messages for an hour at 1 s sampling; 600 rows each), whether or not the display is
+asleep, so a chart is never left loading (and animating) in a hidden window. While a
+window stays visible on a sleeping display the chunks are still held, and `ringLoading`
+is false then.
 
 **The frontend keeps one state.** `historyPending` in the live state is `null`,
-`"subscribe"` (an empty-ring subscribe has not said what it will send), `"recent"` or the
-earlier start. `ringLoading(state, windowMs, tolerance)` is true until the promised
+`"subscribe"` (an empty-ring subscribe has not said what it will send), `{ recent: n }`
+(the recent rows still to land, counted down across the `Backfill` messages that carry
+them) or the earlier start. `ringLoading(state, windowMs, tolerance)` is true until the promised
 history has landed or the ring covers the chart's window, whichever is first, so a 5 m
 chart reveals after the first chunk and a fresh install with three minutes of history
 does not wait for an hour that will not come. A plan that arrives while the ring holds
@@ -4495,11 +4497,25 @@ mount hidden) and a looping shimmer (on the collecting state, which lasts hours 
 nothing loading). Neither objection applies here. The reveal is opacity plus a 10%
 `scaleY` from the baseline (`useReveal`, `--motion-enter`), transform and opacity only,
 and it plays only after a chart has actually been loading: a chart mounted with its data
-(every tab change after the first) does not animate. The scan runs only while a load is
+(every tab change after the first) does not animate. It is one Web Animations call fired
+in a layout effect at the flip, reading the token as `useTickScroll` does, and leaves
+nothing on the element: a class would replay on every chart when Performance mode or
+reduced motion later turned off. The scan runs only while a load is
 in flight, on a new `--motion-scan` token (900 ms, so a typical one-second load shows
 about one pass), starts after `--motion-fast` so a load under 150 ms never shows it, and
 is `display: none` under reduced motion and Performance mode, where the loading state is
 the static frame and the data simply appears.
+
+**Two fixes that came with it.** `motionMs` read a duration token with `parseFloat`
+and no unit. The production CSS minifier writes `280ms` as `.28s`, so in every production
+build each JS-driven tween ran for a fraction of a millisecond: the chart tick scroll,
+`NumberTicker` counts, the Disk space map and the Timeline zoom, and it would have been
+the reveal too. They animated only in the dev server. `motionMs` now reads seconds as
+well, so those four work in the shipped app as D-086 and D-087 describe; the frontend
+perf gate has been measuring them dead until now. And the mock's 1 s timer is throttled
+to about one a minute in a background browser tab, which left the demo's charts mostly
+gaps on return; a late timer now fills the rows the engine would have taken and sends
+them as a hidden window's catch-up.
 
 Known differences, left in place:
 
@@ -4514,6 +4530,12 @@ Known differences, left in place:
   follow-up.
 - Gap bands and gap edge dots sit outside the settling layer, so they appear at the flip
   without the settle.
+- An auto-scaled axis (power, network) is sized from the rows held so far, so its tick
+  labels can change at the reveal.
+- A loading chart is `aria-busy`; ring loading is not announced. A live-region line per
+  chart on every dashboard open would be noise for a one-second state.
+- The mock does not forward window visibility to its remote peers, so the hidden and
+  hide-mid-backfill paths are exercised for the local host only.
 
 Revisit when: the popover's reveal on first open has been checked for stale frames in the
 packaged app; `make bench` has been run with the popover wired (not run for this change).

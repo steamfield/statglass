@@ -373,7 +373,7 @@ describe("mock loading latency", () => {
   } as const;
 
   it.each([undefined, 0])(
-    "adds no timer or task when latency is %s",
+    "subscribeLive and queryHistory add no timers when latency is %s",
     async (latencyMs) => {
       const t = createMockTransport({
         historyRows: 60,
@@ -384,6 +384,8 @@ describe("mock loading latency", () => {
       const sub = t.subscribeLive(MOCK_HOST_ID, () => {
         messages++;
       });
+      expect(vi.getTimerCount()).toBe(before);
+      expect(messages).toBeGreaterThan(0);
       const query = t.queryHistory({
         ...request,
         selectors: [...request.selectors].map((s) => ({ ...s, labels: [] })),
@@ -391,6 +393,7 @@ describe("mock loading latency", () => {
       expect(vi.getTimerCount()).toBe(before);
       expect(messages).toBeGreaterThan(0);
       expect((await query).status).toBe("ok");
+      expect(vi.getTimerCount()).toBe(before);
       (await sub).unsubscribe();
       t.dispose();
     }

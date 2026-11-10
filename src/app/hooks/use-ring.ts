@@ -114,3 +114,17 @@ export function useRingLoading(
 ): boolean {
   return useHost((s) => enabled && ringLoading(s, windowMs, toleranceMs));
 }
+
+/**
+ * `useRingLoading` for a window that subscribes while hidden (the popover): not
+ * loading until the stream's first status arrives on show, so nothing animates in a
+ * hidden-but-warm window between the subscribe and its reply.
+ */
+export function useShownRingLoading(
+  windowMs: number,
+  toleranceMs?: number
+): boolean {
+  return useHost(
+    (s) => s.status !== null && ringLoading(s, windowMs, toleranceMs)
+  );
+}

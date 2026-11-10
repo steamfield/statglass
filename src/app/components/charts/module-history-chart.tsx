@@ -109,14 +109,14 @@ export function ModuleHistoryChart({
   annotations?: StreamAreaProps["annotations"];
 }) {
   const { series, gaps } = chart;
-  const loading = Boolean(series.loading || series.ringLoading);
+  const loading = series.loading === true || series.ringLoading;
   const y = useYAxis(yAxis, lines, chart);
   const brush = useAreaBrush(series, height, chart.brush && !loading, gaps);
   const ariaLabel = useChartLabel({
     subject,
     span: chart.span,
     now,
-    brushable: chart.brush,
+    brushable: chart.brush && !loading,
   });
   return (
     <div className="flex flex-col gap-1.5">

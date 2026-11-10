@@ -15,7 +15,7 @@ export interface WindowSeries {
   tEndMs: number;
   intervalMs: number;
   /** The ring is still filling this window; the values are not all there yet. */
-  ringLoading?: boolean;
+  ringLoading: boolean;
   loading?: boolean;
   error?: boolean;
 }

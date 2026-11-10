@@ -1,6 +1,5 @@
 import { clamp01 } from "@core/chart-math";
 import { cssPercent } from "@core/format";
-import type { CSSProperties } from "react";
 import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
 import { ChartLoading } from "./chart-loading";
@@ -56,7 +55,7 @@ export function MirrorBars({
   downHeight = 30,
   loading,
 }: MirrorBarsProps) {
-  const reveal = useReveal(loading);
+  const reveal = useReveal<HTMLDivElement>(loading);
   const n = Math.max(up.length, down.length, 1);
   const upH = heights(loading ? [] : up, upMax, upHeight);
   const downH = heights(loading ? [] : down, downMax, downHeight);
@@ -68,7 +67,9 @@ export function MirrorBars({
   // scrolls by a transform, so the same slot index is reused each tick.
   return (
     <div
+      ref={reveal}
       role="img"
+      aria-busy={loading || undefined}
       aria-label={ariaLabel}
       className="relative overflow-hidden"
       style={accentVars(accent)}
@@ -82,8 +83,9 @@ export function MirrorBars({
       </div>
       <div
         data-bars
-        className={cn("flex flex-col gap-px", reveal)}
-        style={{ "--reveal-origin": `50% ${upHeight}px` } as CSSProperties}
+        data-reveal
+        className="flex flex-col gap-px"
+        style={{ transformOrigin: `50% ${upHeight}px` }}
       >
         <div
           ref={upRef}

@@ -1,35 +1,84 @@
 import { render } from "@testing-library/react";
-import styles from "./motion.module.css";
+import { mockElementAnimate } from "@tests/test-utils";
 import { useReveal } from "./reveal";
 
-function Data({ loading }: { loading?: boolean | undefined }) {
-  return <div data-testid="data" className={useReveal(loading)} />;
+function Data({
+  loading,
+  count = 2,
+  self = false,
+}: {
+  loading?: boolean;
+  count?: number;
+  self?: boolean;
+}) {
+  return (
+    <div
+      ref={useReveal<HTMLDivElement>(loading)}
+      data-reveal={self || undefined}
+    >
+      {!self &&
+        ["first", "second", "later"]
+          .slice(0, count)
+          .map((key) => <div key={key} data-reveal />)}
+    </div>
+  );
 }
+
+beforeEach(() =>
+  document.documentElement.style.setProperty("--motion-enter", "280ms")
+);
+afterEach(() =>
+  document.documentElement.style.removeProperty("--motion-enter")
+);
 
 describe("useReveal", () => {
   it.each([false, undefined])(
-    "does not reveal a chart mounted ready (%s)",
+    "does not animate a ready mount (%s)",
     (loading) => {
-      const { getByTestId, rerender } = render(<Data loading={loading} />);
-      expect(getByTestId("data")).not.toHaveClass(styles.reveal ?? "");
+      const animate = mockElementAnimate();
+      const { rerender } = render(
+        <Data {...(loading === undefined ? {} : { loading })} />
+      );
       rerender(<Data loading={false} />);
-      expect(getByTestId("data")).not.toHaveClass(styles.reveal ?? "");
+      expect(animate).not.toHaveBeenCalled();
     }
   );
-
-  it("reveals after loading, keeps the node and class across ticks, and repeats for a new load", () => {
-    const { getByTestId, rerender } = render(<Data loading />);
-    const node = getByTestId("data");
-    expect(node).not.toHaveClass(styles.reveal ?? "");
+  it.each([false, true])(
+    "animates each marked target once at the committed loading flip (self: %s)",
+    (self) => {
+      const animate = mockElementAnimate();
+      const { container, rerender } = render(<Data loading self={self} />);
+      expect(animate).not.toHaveBeenCalled();
+      rerender(<Data loading={false} self={self} />);
+      const targets = [...container.querySelectorAll("[data-reveal]")];
+      expect(animate.mock.contexts).toEqual(targets);
+      for (const call of animate.mock.calls)
+        expect(call).toEqual([
+          [
+            { opacity: 0, transform: "scaleY(0.9)" },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: 280, easing: "ease-out", id: "reveal" },
+        ]);
+      rerender(<Data loading={false} self={self} count={3} />);
+      expect(animate).toHaveBeenCalledTimes(targets.length);
+      document.documentElement.style.setProperty("--motion-enter", "0ms");
+      rerender(<Data loading={false} self={self} count={3} />);
+      document.documentElement.style.setProperty("--motion-enter", "280ms");
+      rerender(<Data loading={false} self={self} count={3} />);
+      expect(animate).toHaveBeenCalledTimes(targets.length);
+      rerender(<Data loading self={self} count={3} />);
+      rerender(<Data loading={false} self={self} count={3} />);
+      expect(animate).toHaveBeenCalledTimes(targets.length + (self ? 1 : 3));
+    }
+  );
+  it("does not animate or replay a flip with a zero duration", () => {
+    const animate = mockElementAnimate();
+    document.documentElement.style.setProperty("--motion-enter", "0ms");
+    const { rerender } = render(<Data loading />);
     rerender(<Data loading={false} />);
-    expect(node).toHaveClass(styles.reveal ?? "");
+    document.documentElement.style.setProperty("--motion-enter", "280ms");
     rerender(<Data loading={false} />);
-    expect(getByTestId("data")).toBe(node);
-    expect(node).toHaveClass(styles.reveal ?? "");
-    rerender(<Data loading />);
-    expect(node).not.toHaveClass(styles.reveal ?? "");
-    rerender(<Data loading={false} />);
-    expect(getByTestId("data")).toBe(node);
-    expect(node).toHaveClass(styles.reveal ?? "");
+    expect(animate).not.toHaveBeenCalled();
   });
 });

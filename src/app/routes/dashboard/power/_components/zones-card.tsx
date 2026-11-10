@@ -102,7 +102,7 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
       </p>
       <ChartHistoryStatus quiet loading={loading} error={error} />
       <HeatMatrix
-        loading={Boolean(loading || ringLoading)}
+        loading={loading === true || ringLoading}
         live={end === null}
         gaps={gaps}
         rows={zoneKeys.map((k, i) => ({

@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { nextFrame } from "@tests/live-frames";
-import { renderWithProviders } from "@tests/test-utils";
+import { mockElementAnimate, renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
 import { BrushProvider } from "~/stores/brush-store";
@@ -352,6 +352,8 @@ it("disables mirror interactions and gap bands while loading, independently of p
 
 it("holds live mirrored bars until the hour's backfill lands", async () => {
   vi.useFakeTimers();
+  const animate = mockElementAnimate();
+  document.documentElement.style.setProperty("--motion-enter", "280ms");
   const r = renderWithProviders(
     <ChartRangeProvider>
       <LiveMirrorChart
@@ -376,10 +378,13 @@ it("holds live mirrored bars until the hour's backfill lands", async () => {
       await vi.advanceTimersByTimeAsync(1100);
     });
     expect(r.container.querySelector("[data-chart-loading]")).toBeNull();
-    expect(r.container.querySelector("[data-bars]")).toHaveClass(/reveal/);
+    const bars = r.container.querySelector("[data-bars]");
+    expect(bars).toHaveAttribute("data-reveal");
+    expect(animate.mock.contexts).toContain(bars);
   } finally {
     r.unmount();
     r.transport.dispose();
+    document.documentElement.style.removeProperty("--motion-enter");
     vi.useRealTimers();
   }
 });

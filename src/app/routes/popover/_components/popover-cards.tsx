@@ -27,7 +27,7 @@ import { useHostRecord } from "~/hooks/use-host-record";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
-import { useRingLoading } from "~/hooks/use-ring";
+import { useShownRingLoading } from "~/hooks/use-ring";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import { useUnits } from "~/hooks/use-units";
 import { useTransport } from "~/lib/transport-context";
@@ -339,8 +339,7 @@ export function LiveNetworkCard({
   const rxKey = "net.rx_total";
   const txKey = "net.tx_total";
   const windowMs = useScaledWindow(NET_WINDOW_MS);
-  const started = useHost((s) => s.status !== null);
-  const loading = useRingLoading(windowMs, undefined, started);
+  const loading = useShownRingLoading(windowMs);
   const rx = useSeriesWindow(rxKey, windowMs);
   const tx = useSeriesWindow(txKey, windowMs);
   const rxNow = useHost((s) => held(s, rxKey));

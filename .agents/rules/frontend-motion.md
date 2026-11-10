@@ -48,10 +48,12 @@ and keyframe rules inside that media block anyway.
   (status pill, pressure badge). Never wrap a canvas, a uPlot chart, a store subscriber or
   a `role="status"` region: remounting destroys them.
 
-- `useReveal(loading)` returns the class for a chart's data layer: nothing until the chart
-  has been loading and then stopped, when the layer settles from the baseline once
-  (D-133). The chart widgets apply it from their `loading` prop; put it on the data
-  element, never on the one `useTickScroll` transforms.
+- `useReveal(loading)` returns a ref for the element holding a chart's data layers. When
+  `loading` goes from true to false it settles every `[data-reveal]` element inside from
+  the baseline once (D-133): one Web Animations call in a layout effect, reading
+  `--motion-enter` like `useTickScroll`, so a 0ms token means no animation and nothing is
+  left on the element to replay. The chart widgets apply it from their `loading` prop;
+  mark the data element, never the one `useTickScroll` transforms.
 
 Rules for anything new:
 
