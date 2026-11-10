@@ -9,7 +9,7 @@ export const SITE = {
   repo: "https://github.com/steamfield/statglass",
   /** Every release ships this asset name, so the link always serves the newest DMG. */
   download:
-    "https://github.com/steamfield/statglass/releases/latest/download/StatGlass_aarch64.dmg",
+    "https://github.com/steamfield/statglass/releases/latest/download/StatGlass.dmg",
   /** Site sections in the header; GitHub and Install sit beside them. */
   nav: [
     { label: "Docs", href: "/docs" },

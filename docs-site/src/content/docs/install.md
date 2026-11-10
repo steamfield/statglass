@@ -10,7 +10,7 @@ StatGlass runs on Apple Silicon Macs (M1 or newer) with macOS 26 or newer.
 
 ## Install the app
 
-1. [Download StatGlass](https://github.com/steamfield/statglass/releases/latest/download/StatGlass_aarch64.dmg). The link always fetches the newest release; its notes are on [GitHub](https://github.com/steamfield/statglass/releases/latest).
+1. [Download StatGlass](https://github.com/steamfield/statglass/releases/latest/download/StatGlass.dmg). The link always fetches the newest release; its notes are on [GitHub](https://github.com/steamfield/statglass/releases/latest).
 2. Open the DMG and drag StatGlass into Applications.
 3. Eject the DMG, then open StatGlass from Applications.
 

@@ -14,7 +14,7 @@ See the [changelog](CHANGELOG.md) for release history, and
 
 You need an Apple Silicon Mac (M1 or newer) on macOS 26 or newer. Intel Macs aren't supported because the power and sensor readings come from interfaces only Apple Silicon has.
 
-1. Download **StatGlass_aarch64.dmg** from the [latest release](https://github.com/steamfield/statglass/releases/latest).
+1. Download **StatGlass.dmg** from the [latest release](https://github.com/steamfield/statglass/releases/latest).
 2. Open the DMG and drag **StatGlass** into **Applications**.
 3. Eject the DMG, then open **StatGlass** from Applications.
 
