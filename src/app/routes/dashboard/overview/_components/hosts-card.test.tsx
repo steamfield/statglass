@@ -43,7 +43,7 @@ async function setup(
   const list = await screen.findByRole("list", { name: "Other hosts" });
   const rows = () =>
     within(list)
-      .getAllByRole("button")
+      .getAllByRole("listitem")
       .map((row) => row.textContent);
   return { rows, list, select };
 }

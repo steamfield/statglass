@@ -4,6 +4,7 @@ import { connectionLabel } from "@core/remote-hosts";
 import { useId } from "react";
 import { Link } from "react-router";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
+import { TruncatedText } from "~/components/truncated-text";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
 import { Card } from "~/widgets/card";
@@ -68,25 +69,29 @@ export function OverviewHostsCard({ origin }: { origin: Corner }) {
       ) : (
         <ul aria-label="Other hosts" className="flex flex-col gap-1">
           {rows.slice(0, MAX_ROWS).map((row) => (
-            <li key={row.id}>
-              <button
-                type="button"
-                aria-description="Show this host's metrics"
-                className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => selection.select(row.id)}
+            <li key={row.id} className="group relative">
+              {/* The label keeps row clicks native without nesting tooltip focus in the button. */}
+              <label
+                htmlFor={`${titleId}-${row.id}`}
+                className="relative z-10 flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-small group-hover:bg-muted"
               >
-                <span
-                  className="min-w-0 truncate text-fg-subtle"
-                  title={row.name}
-                >
-                  {row.name}
-                </span>
+                <TruncatedText
+                  className="min-w-0 text-fg-subtle"
+                  text={row.name}
+                />
                 <span
                   className={`shrink-0 text-label ${row.connected ? "figures text-fg-subtle" : "text-muted-foreground"}`}
                 >
                   {row.detail}
                 </span>
-              </button>
+              </label>
+              <button
+                id={`${titleId}-${row.id}`}
+                type="button"
+                aria-description="Show this host's metrics"
+                className="absolute inset-0 rounded-control outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => selection.select(row.id)}
+              />
             </li>
           ))}
         </ul>

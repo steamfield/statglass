@@ -1,7 +1,7 @@
-import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { NumberTicker } from "~/lib/motion/number-ticker";
 import { cn } from "~/lib/utils";
+import { AlertChip } from "./alert-chip";
 import { LinkCard } from "./card";
 import { CardNotice } from "./card-notice";
 import { Swatch } from "./legend";
@@ -114,20 +114,5 @@ export function MetricCard({
         </div>
       )}
     </LinkCard>
-  );
-}
-
-function AlertChip({ tone, text }: MetricCardAlert) {
-  const Icon = tone === "warn" ? TriangleAlert : OctagonAlert;
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 self-center text-label",
-        tone === "warn" ? "text-warning" : "text-destructive"
-      )}
-    >
-      <Icon aria-hidden className="icon-regular size-3" />
-      {text}
-    </span>
   );
 }
