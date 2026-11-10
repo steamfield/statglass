@@ -1,30 +1,30 @@
-# StatGlass 0.11.0
+# StatGlass 0.11.1
 
 StatGlass is a free, open-source system monitor for Apple Silicon Macs running macOS
 26 or later.
 
-The Overview's machine header now shows load, thermal state and your network
-addresses, and every dashboard page keeps its header in view as you scroll.
+Charts now wait for their history before drawing data, and some animations that did
+nothing in release builds work again.
 
-## Dashboard
+## Charts
 
-- Each page's header stays pinned to the top while the page scrolls, and you can drag
-  the window by it.
-- The Overview machine header adds load averages (1, 5 and 15 minutes), the thermal
-  state when it reaches Serious or Critical, and a Network row with the local and
-  public addresses. Click an address to copy it. Showing the public address means the
-  Overview now asks ipify for it while it is open, as the Network page already did.
-- The laptop drawing in that header is redrawn.
-- Overview charts draw their lines at half weight, so detail shows at card size. Module
-  pages are unchanged.
+- Dashboard and popover charts show their frame straight away. A thin line scans along
+  the baseline while history loads, and the data then settles in once, instead of
+  charts filling in piece by piece.
+- Hiding a window no longer leaves a chart's catch-up half finished.
+
+## Fixes
+
+- The tick scroll, number counts, the Disk space map and Timeline zoom animate in the
+  released app. Their durations were read wrongly in production builds, so they
+  snapped instead of moving.
+- rusqlite is updated to 0.41.1 for RUSTSEC-2026-0459.
 
 ## Install and updates
 
-- Installed copies update to 0.11.0 the usual way, from **Settings → General** or
+- Installed copies update to 0.11.1 the usual way, from **Settings → General** or
   automatically. Updates are verified with StatGlass's own update signature before
   they install.
-- The download is now named `StatGlass.dmg`. The website's Download button always
-  fetches the newest one.
 
 ## Moving from Kelvo
 
