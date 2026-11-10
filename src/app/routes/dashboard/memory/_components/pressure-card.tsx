@@ -42,11 +42,12 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
         aside={
           <span className="flex items-baseline gap-3">
             {(state === "warn" || state === "critical") && (
-              <Swap
-                k={state}
-                className="inline-flex [&>span]:text-small [&_svg]:size-3.5"
-              >
-                <AlertChip tone={state} text={`Pressure: ${state}`} />
+              <Swap k={state} className="inline-flex">
+                <AlertChip
+                  size="small"
+                  tone={state}
+                  text={`Pressure: ${state}`}
+                />
               </Swap>
             )}
             <span className="figures text-body">

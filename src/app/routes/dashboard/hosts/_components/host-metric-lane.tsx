@@ -1,7 +1,9 @@
 import { clamp01 } from "@core/chart-math";
-import { cssPercent, MISSING } from "@core/format";
+import { cssPercent, formatPercent, MISSING } from "@core/format";
 import { floorTo } from "@core/time-grid";
-import { useRef } from "react";
+import { memo, useEffect, useId, useMemo, useState } from "react";
+import { useHost } from "~/stores/host-store";
+import { held } from "~/stores/live-selectors";
 import type { GapSpan } from "~/widgets/gap-band";
 import { GapEdgeDot } from "~/widgets/gap-edge-dot";
 import { Swatch } from "~/widgets/legend";
@@ -11,7 +13,8 @@ import { WindowTicks } from "~/widgets/window-ticks";
 
 const PLOT_HEIGHT = 48;
 
-export function HostMetricLane({
+export const HostMetricLane = memo(function HostMetricLane({
+  local = false,
   label,
   value,
   values,
@@ -20,6 +23,7 @@ export function HostMetricLane({
   yMax,
   gaps,
 }: {
+  local?: boolean;
   label: "CPU" | "Memory";
   value: string;
   values: (number | null)[];
@@ -28,17 +32,12 @@ export function HostMetricLane({
   yMax: number;
   gaps: readonly GapSpan[];
 }) {
+  const readingId = useId();
   const accent = label === "CPU" ? "cpu" : "mem";
-  // Each card has its own host clock; do not subscribe to the selected host for labels.
-  const bucket = floorTo(Date.now(), 10000);
-  const reading = useRef({ bucket, value });
-  if (
-    reading.current.bucket !== bucket ||
-    reading.current.value === MISSING ||
-    value === MISSING
-  )
-    reading.current = { bucket, value };
-  const ariaLabel = `${label}, last 10 minutes, ${reading.current.value === MISSING ? "no live reading" : `now ${reading.current.value}`}.`;
+  const overlay = useMemo(
+    () => <BoundaryDots values={values} yMax={yMax} />,
+    [values, yMax]
+  );
   return (
     <div className="flex min-w-0 flex-col gap-1.5" style={accentVars(accent)}>
       <div className="flex items-baseline justify-between gap-2">
@@ -46,7 +45,15 @@ export function HostMetricLane({
           <Swatch step={1} size={8} />
           {label}
         </span>
-        <span className="figures-display text-figure">{value}</span>
+        {local ? (
+          label === "CPU" ? (
+            <LocalCpuFigure id={readingId} />
+          ) : (
+            <LocalMemoryFigure id={readingId} value={value} />
+          )
+        ) : (
+          <MetricFigure id={readingId} label={label} value={value} />
+        )}
       </div>
       <StreamArea
         series={[{ key: label, values, step: 1 }]}
@@ -57,11 +64,67 @@ export function HostMetricLane({
         height={PLOT_HEIGHT}
         gridlines={[yMax / 2]}
         gaps={gaps}
-        ariaLabel={ariaLabel}
-        overlay={<BoundaryDots values={values} yMax={yMax} />}
+        ariaLabel={`${label}, last 10 minutes.`}
+        ariaLabelledBy={readingId}
+        overlay={overlay}
       />
       <WindowTicks ticks={["-10m", "-5m", "now"]} />
     </div>
+  );
+});
+
+function LocalCpuFigure({ id }: { id: string }) {
+  const cpu = useHost((state) =>
+    state.stale ? null : held(state, "cpu.total")
+  );
+  return <MetricFigure id={id} label="CPU" value={formatPercent(cpu)} />;
+}
+
+function LocalMemoryFigure({ id, value }: { id: string; value: string }) {
+  // Memory uses Rust's percentage; bytes are not a substitute for that fact.
+  const stale = useHost((state) => state.stale);
+  return (
+    <MetricFigure id={id} label="Memory" value={stale ? MISSING : value} />
+  );
+}
+
+/** Keep the accessible current figure steady within each ten-second bucket. */
+function MetricFigure({
+  id,
+  label,
+  value,
+}: {
+  id: string;
+  label: string;
+  value: string;
+}) {
+  const [reading, setReading] = useState<{
+    bucket: number | null;
+    value: string;
+  }>({ bucket: null, value });
+  useEffect(() => {
+    const now = Date.now();
+    const bucket = floorTo(now, 10000);
+    if (reading.bucket !== bucket) {
+      setReading({ bucket, value });
+      return;
+    }
+    if (reading.value === value) return;
+    // Flush the last pending value even when an outage stops further ticks.
+    const timer = setTimeout(
+      () => setReading({ bucket: floorTo(Date.now(), 10000), value }),
+      bucket + 10000 - now
+    );
+    return () => clearTimeout(timer);
+  }, [value, reading]);
+  return (
+    <>
+      <span className="figures-display text-figure">{value}</span>
+      <span
+        id={id}
+        hidden
+      >{`${label}, last 10 minutes, ${reading.value === MISSING ? "no live reading" : `now ${reading.value}`}.`}</span>
+    </>
   );
 }
 

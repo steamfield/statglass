@@ -6,10 +6,28 @@ import type {
   UpdateStatus,
 } from "@core/generated/bindings";
 
+/** The route on its own, including any history sync notice. */
+export function routeLabel(remote: RemoteHostRecord): string {
+  const { status } = remote;
+  const route =
+    status.route === "lan"
+      ? "LAN"
+      : status.route === "tailscale"
+        ? "Tailscale"
+        : "";
+  const sync =
+    status.sync === "catching_up"
+      ? "catching up history"
+      : status.sync === "unavailable"
+        ? "history unavailable"
+        : "";
+  return [route, sync].filter(Boolean).join(" · ");
+}
+
 export function connectionLabel(remote: RemoteHostRecord): string {
   const { status } = remote;
   if (status.state === "connected")
-    return `${status.route === "lan" ? "LAN" : "Tailscale"}${status.sync === "catching_up" ? " · catching up history" : status.sync === "unavailable" ? " · history unavailable" : " · connected"}`;
+    return `${routeLabel(remote)}${status.sync === "current" || status.sync === "idle" ? " · connected" : ""}`;
   return (
     {
       connecting: "Connecting…",
@@ -105,20 +123,42 @@ export function updatePhaseText(phase: UpdatePhase): string {
   }
 }
 
+/** Linux hosts behind this Mac that "Update agent" can push to over SSH. */
+export function pushable(remote: RemoteHostRecord): boolean {
+  const update = remote.status.agent_update;
+  return (
+    (update.kind === "available" || update.kind === "required") &&
+    update.via === "push" &&
+    remote.config.enabled &&
+    remote.status.identity_changed === null
+  );
+}
+
+/** Whether Update all can reach the host now; others are listed as skipped. */
+export function reachable(remote: RemoteHostRecord): boolean {
+  return (
+    remote.status.state === "connected" ||
+    remote.status.agent_update.kind === "required"
+  );
+}
+
 /** One source for card and settings version copy, with Rust progress taking precedence. */
 export function agentVersionState(remote: RemoteHostRecord): HostVersionState {
   const { status, config } = remote;
   const update = status.agent_update;
   const allowed = config.enabled && status.identity_changed === null;
-  const reachable =
-    allowed && (status.state === "connected" || update.kind === "required");
+  const canReach = allowed && reachable(remote);
   const via =
     status.last_update_failure?.via ?? ("via" in update ? update.via : null);
   const action = (
     label: string,
-    canRun = reachable
+    canRun = canReach
   ): HostVersionState["action"] =>
-    canRun && via ? { kind: via, label } : null;
+    canRun &&
+    via &&
+    (status.last_update_failure || via !== "push" || pushable(remote))
+      ? { kind: via, label }
+      : null;
   const base: HostVersionState = {
     kind: "unknown",
     text: "Version not reported yet",

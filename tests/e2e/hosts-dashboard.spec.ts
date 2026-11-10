@@ -164,6 +164,33 @@ for (const theme of ["dark", "light"]) {
         await expect
           .poll(async () => (await card.boundingBox())?.width)
           .toBe(400);
+        const statusIcon = card
+          .getByText("Connection failed", { exact: true })
+          .locator("..")
+          .locator("svg");
+        expect(
+          await statusIcon.evaluate(
+            (icon) => getComputedStyle(icon).strokeWidth
+          )
+        ).toBe("2px");
+        const title = card
+          .getByRole("link")
+          .getByText("production-backup-unreachable-over-the-saved-ssh-alias", {
+            exact: true,
+          });
+        await expect(title).toHaveAttribute("tabindex", "0");
+        await title.scrollIntoViewIfNeeded();
+        await title.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() => resolve())
+            )
+        );
+        await title.focus();
+        await expect(page.getByRole("tooltip")).toHaveText(
+          "production-backup-unreachable-over-the-saved-ssh-alias"
+        );
+        await page.keyboard.press("Escape");
         const text = card.getByText(/^SSH connection failed:/, {
           exact: false,
         });

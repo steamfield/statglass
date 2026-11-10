@@ -4,6 +4,30 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Hosts monitoring grid (D-134) (2026-11-10)
+
+Hosts now shows This Mac and every saved host in a monitoring grid: ten minutes of CPU
+and memory from local or mirrored history, Rust-reported vitals, connection and version
+state, update progress and failures, and rr jobs with peer names. Cards keep remote hosts
+in summary mode; recent interest stops when Hosts unmounts or the window hides. The
+settings dialog groups connection, mirrored history, updates and removal. Saved Macs
+reinstall through Add host with their identity and mirror budget preserved; their name
+and aliases are read-only there and remain editable in host settings.
+
+Frontend review fixes consolidate the remote-status listener per window, suppress hidden
+event refetches, keep clock jitter out of history keys, isolate live figures from the card
+body, and share route labels, update predicates and status primitives. The subtitle counts
+all hosts as live or not connected, and truncated names expose their full text.
+
+Verified with frontend regression tests, lint, typecheck, the Hosts, remote-host,
+remote-update and gallery browser specs, and the frontend performance gate. Hosts scenarios
+and Memory were compared in both themes. Browser mocks do not establish native acceptance.
+
+Open: native QA of updates and saved-Mac reinstall on real hosts. rr reads over SSH open
+a fresh connection per read (ControlMaster off), every 60 s while Hosts is visible, with
+backoff after failures. An ongoing outage has no hatched band yet: Rust reports its gap
+span only after the host reconnects.
+
 ## Chart loading states and reveal (2026-11-10)
 
 Dashboard and popover charts hold back until their history has arrived, then reveal once

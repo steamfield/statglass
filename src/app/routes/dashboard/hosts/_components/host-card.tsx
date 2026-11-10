@@ -1,6 +1,6 @@
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { Settings } from "lucide-react";
-import { useId } from "react";
+import { memo, useId } from "react";
 import { Link } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { TruncatedText } from "~/components/truncated-text";
@@ -17,8 +17,9 @@ import { HostCardStatus } from "./host-card-status";
 import { HostCardVersion } from "./host-card-version";
 import { HostMetricLane } from "./host-metric-lane";
 
-export function HostCard({
+export const HostCard = memo(function HostCard({
   model,
+  local = false,
   remote,
   history,
   memoryTotal,
@@ -28,6 +29,7 @@ export function HostCard({
   onSettings,
 }: {
   model: HostCardModel;
+  local?: boolean;
   remote?: RemoteHostRecord;
   history: ReturnType<typeof useHostRecentHistory>["history"];
   memoryTotal: number;
@@ -60,9 +62,9 @@ export function HostCard({
                 )
                   onSelect();
               }}
-              className="block truncate rounded-control outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              className="block rounded-control outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {model.name}
+              <TruncatedText text={model.name} />
             </Link>
           </h2>
           <HostCardStatus model={model} />
@@ -83,7 +85,13 @@ export function HostCard({
           )}
         </div>
       </header>
-      <MetricLanes model={model} history={history} memoryTotal={memoryTotal} />
+      <MetricLanes
+        local={local}
+        cpu={model.cpu}
+        memory={model.memory}
+        history={history}
+        memoryTotal={memoryTotal}
+      />
       <div className="grid @min-[408px]:grid-cols-4 grid-cols-2 gap-3 [&>dl]:contents">
         <StatList
           layout="grid"
@@ -121,22 +129,27 @@ export function HostCard({
       </footer>
     </Card>
   );
-}
+});
 
-function MetricLanes({
-  model,
+const MetricLanes = memo(function MetricLanes({
+  local,
+  cpu,
+  memory,
   history,
   memoryTotal,
 }: {
-  model: HostCardModel;
+  cpu: string;
+  memory: string;
+  local: boolean;
   history: ReturnType<typeof useHostRecentHistory>["history"];
   memoryTotal: number;
 }) {
   return (
     <div className="grid grid-cols-2 gap-5">
       <HostMetricLane
+        local={local}
         label="CPU"
-        value={model.cpu}
+        value={cpu}
         values={history?.values["cpu.total"] ?? []}
         endMs={history?.endMs ?? 0}
         intervalMs={history?.bucketMs ?? 10000}
@@ -144,8 +157,9 @@ function MetricLanes({
         gaps={history?.cpuGaps ?? []}
       />
       <HostMetricLane
+        local={local}
         label="Memory"
-        value={model.memory}
+        value={memory}
         values={history?.values["mem.used"] ?? []}
         endMs={history?.endMs ?? 0}
         intervalMs={history?.bucketMs ?? 10000}
@@ -154,4 +168,4 @@ function MetricLanes({
       />
     </div>
   );
-}
+});

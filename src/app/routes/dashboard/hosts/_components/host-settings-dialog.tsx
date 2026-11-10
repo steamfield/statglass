@@ -1,6 +1,5 @@
 import { formatBytes } from "@core/format";
 import type { RemoteHostRecord } from "@core/generated/bindings";
-import { agentVersionState } from "@core/remote-hosts";
 import { useId } from "react";
 import { ConfirmDialog } from "~/components/confirm-dialog";
 import { InlineMessage } from "~/components/inline-message";
@@ -221,13 +220,11 @@ export function HostSettingsDialog({
                 <SettingsPanel title="Updates on this host">
                   <SettingsRow
                     label="StatGlass"
-                    sub={
-                      <HostCardVersion version={agentVersionState(remote)} />
-                    }
+                    sub={<HostCardVersion version={model.version} />}
                   >
                     <HostCardActions
                       connectionActions={false}
-                      model={remoteHostCardModel(remote)}
+                      model={model}
                       remote={remote}
                     />
                   </SettingsRow>

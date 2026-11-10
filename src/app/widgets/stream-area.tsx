@@ -66,6 +66,7 @@ export interface StreamAreaProps {
   accent: Accent;
   height: number;
   ariaLabel: string;
+  ariaLabelledBy?: string;
   /** Corner label for the ceiling ("40%"), top left. */
   ceilingLabel?: string;
   /** Corner label for the window ("60s"), bottom right. */
@@ -117,6 +118,7 @@ export function StreamArea({
   accent,
   height,
   ariaLabel,
+  ariaLabelledBy,
   ceilingLabel,
   windowLabel,
   gridlines = [],
@@ -225,6 +227,7 @@ export function StreamArea({
             role="img"
             aria-busy={loading || undefined}
             aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             data-reveal
             className="block origin-bottom overflow-hidden"
           >

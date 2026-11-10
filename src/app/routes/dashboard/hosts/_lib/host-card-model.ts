@@ -14,9 +14,9 @@ import type {
 } from "@core/generated/bindings";
 import {
   agentVersionState,
-  connectionLabel,
   type HostVersionState,
   localVersionState,
+  routeLabel,
 } from "@core/remote-hosts";
 
 export interface HostCardModel {
@@ -101,7 +101,7 @@ function connection(
     case "connected":
       return {
         ...base,
-        route: connectionLabel(remote).replace(" · connected", ""),
+        route: routeLabel(remote),
       };
     case "connecting":
       return { ...base, status: "Connecting…", mark: "idle", isLive: false };

@@ -1,9 +1,8 @@
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { Profiler } from "react";
-import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { renderWithProviders } from "../../../../tests/test-utils";
-import { useAgentUpdating } from "./hosts/_hooks/use-agent-update";
+import { RemoteHostCard } from "./hosts/_components/host-cards";
 import DashboardLayout from "./route";
 
 function renderShell(
@@ -122,27 +121,30 @@ it("refreshes host status on a mock push and derives updating from Rust status",
     windowLabel: "popover",
     historyRows: 60,
   });
-  function Status() {
-    const hosts = useRemoteHosts().data;
-    const updating = useAgentUpdating("remote-studio");
-    return (
-      <p>
-        {hosts?.[0]?.status.vitals.load_1m ?? "loading"} ·{" "}
-        {updating ? "Updating" : "Idle"}
-      </p>
-    );
-  }
-  const mounted = renderWithProviders(<Status />, { transport });
+  const mounted = renderWithProviders(
+    <RemoteHostCard id="remote-studio" origin="tl" />,
+    { transport }
+  );
   try {
-    await screen.findByText("2.4 · Idle");
+    await screen.findByRole("region", { name: "Studio Mac" });
+    expect(
+      screen.queryByRole("button", { name: "Updating…" })
+    ).not.toBeInTheDocument();
     act(() =>
       transport.pushRemoteStatus("remote-studio", {
         update: { target: "1.0.0", phase: { kind: "reconnecting" } },
       })
     );
-    await screen.findByText("2.4 · Updating");
+    expect(
+      await screen.findByRole("button", { name: "Updating…" })
+    ).toBeDisabled();
+    expect(screen.getByText("Updating to 1.0.0 · Reconnecting")).toBeVisible();
     act(() => transport.pushRemoteStatus("remote-studio", { update: null }));
-    await screen.findByText("2.4 · Idle");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Updating…" })
+      ).not.toBeInTheDocument()
+    );
   } finally {
     mounted.unmount();
     transport.dispose();
