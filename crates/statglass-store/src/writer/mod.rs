@@ -753,7 +753,7 @@ mod tests {
 
         let dir = crate::test_dir(name);
         let path = dir.path().join("h.sqlite");
-        let (conn, _) = db::open_writer(&path, 0).unwrap();
+        let (mut conn, _) = db::open_writer(&path, 0).unwrap();
         let fail = Arc::new(AtomicBool::new(false));
         let hook = Arc::clone(&fail);
         conn.commit_hook(Some(move || hook.load(Ordering::SeqCst)))

@@ -587,7 +587,7 @@ mod tests {
         for version in [4, 5] {
             let dir = crate::test_dir("docker-migration");
             let path = dir.path().join("h.sqlite");
-            let (conn, _) = open_writer(&path, 0).unwrap();
+            let (mut conn, _) = open_writer(&path, 0).unwrap();
             drop_docker(&conn);
             drop_usage(&conn);
             if version == 4 {
