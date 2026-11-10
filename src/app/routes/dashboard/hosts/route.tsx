@@ -1,6 +1,11 @@
 import { commandErrorText } from "@core/command-error";
 import { countNoun } from "@core/format";
-import { hostsNeedingUpdate, localUpdateTarget } from "@core/remote-hosts";
+import {
+  hostsNeedingUpdate,
+  localUpdateTarget,
+  pushable,
+  reachable,
+} from "@core/remote-hosts";
 import { useState } from "react";
 import { CardGrid } from "~/components/card-grid";
 import { PageHeader } from "~/components/page-header";
@@ -12,7 +17,6 @@ import { useHostSelection } from "~/lib/host-selection";
 import { AddHostDialog } from "./_components/add-host-dialog";
 import { LocalHostCard, RemoteHostCard } from "./_components/host-cards";
 import { UpdateAllDialog } from "./_components/update-all-dialog";
-import { pushable, reachable } from "./_hooks/use-agent-update";
 import { useHostsRecentInterest } from "./_hooks/use-hosts-recent-interest";
 
 export default function HostsRoute() {
@@ -27,17 +31,18 @@ export default function HostsRoute() {
   const behind = records.filter(pushable);
   const updatable = behind.filter(reachable).length;
   const live =
-    records.filter((host) => host.status.state === "connected").length +
-    (local ? 1 : 0);
-  const offline = records.filter(
-    (host) => host.status.state === "offline"
-  ).length;
+    records.filter(
+      (host) =>
+        host.status.state === "connected" &&
+        host.status.identity_changed === null &&
+        host.status.agent_update.kind !== "required"
+    ).length + (local ? 1 : 0);
   const updates = hostsNeedingUpdate(records).length;
   const ids = [
     ...(local ? [local.id] : []),
     ...records.map((host) => host.config.id),
   ];
-  const subtitle = `${countNoun(ids.length, "host", "hosts")} · ${live} live · ${offline} offline${updates ? ` · ${countNoun(updates, "update", "updates")} available` : ""}`;
+  const subtitle = `${countNoun(ids.length, "host", "hosts")} · ${live} live · ${ids.length - live} not connected${updates ? ` · ${countNoun(updates, "update", "updates")} available` : ""}`;
   return (
     <div className="flex flex-col gap-5">
       <PageHeader

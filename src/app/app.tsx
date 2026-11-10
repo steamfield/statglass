@@ -13,7 +13,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { RouterProvider } from "react-router";
 import { Toaster } from "~/components/ui/sonner";
 import { TooltipProvider } from "~/components/ui/tooltip";
-import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import {
+  useRemoteHosts,
+  useRemoteHostsChanged,
+} from "~/hooks/use-remote-hosts";
 import { HostClockContext } from "~/lib/host-clock";
 import { HostSelectionContext } from "~/lib/host-selection";
 import { useWindowAppearanceFlags } from "~/lib/queries/appearance";
@@ -118,6 +121,7 @@ export function LocalHost({
     staleTime: Infinity,
   });
   useHostsChanged();
+  useRemoteHostsChanged();
   if (error) {
     console.error("[app] list_hosts failed", {
       window: transport.windowLabel(),
@@ -154,9 +158,10 @@ export function LocalHost({
       previous?.host === active.id &&
       Math.abs(previous.offset - offset) >= 1000
     ) {
-      void queryClient.invalidateQueries({
-        queryKey: historyKeys.host(active.id),
-      });
+      void queryClient.invalidateQueries(
+        { queryKey: historyKeys.host(active.id) },
+        { cancelRefetch: false }
+      );
     }
   }, [active, offset, queryClient]);
   if (!local || !active) return null;

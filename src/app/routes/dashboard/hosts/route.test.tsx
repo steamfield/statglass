@@ -1,3 +1,4 @@
+import type { RemoteState } from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { hostKeys } from "@core/query-keys";
@@ -9,11 +10,17 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
+import * as React from "react";
 import { Profiler } from "react";
 import { HostSelectionContext } from "~/lib/host-selection";
-import { RemoteHostCard } from "./_components/host-cards";
+import { useHostStore } from "~/stores/host-store";
+import { LocalHostCard, RemoteHostCard } from "./_components/host-cards";
 import HostsRoute from "./route";
+
+// Observe real React calls; application components and hooks stay intact.
+vi.mock("react", { spy: true });
 
 const sources: MockTransport[] = [];
 afterEach(() => {
@@ -142,6 +149,7 @@ it("walks all update phases and exposes upload byte progress until reconnect", a
   const { source } = await mount({ scenarios: ["host-updating"] });
   await act(() => vi.advanceTimersByTimeAsync(100));
   const card = within(screen.getByRole("region", { name: "updating" }));
+  expect(card.getByRole("button", { name: "Updating…" })).toBeDisabled();
   expect(card.getByText(/Waiting for another update/)).toBeInTheDocument();
   expect(card.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
   for (const text of [
@@ -241,6 +249,11 @@ it("reinstalls a Mac through Add host while preserving its identity and mirror b
     )
   );
   expect(screen.getByLabelText("Name")).toHaveValue("studio");
+  for (const name of ["Name", "LAN SSH alias", "Tailscale SSH alias"])
+    expect(screen.getByLabelText(name)).toHaveAttribute("readonly");
+  expect(
+    screen.getByText("Change aliases in this host's settings")
+  ).toBeVisible();
   expect(screen.getByLabelText("LAN SSH alias")).toHaveValue("studio.local");
   fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
   fireEvent.click(
@@ -370,4 +383,103 @@ it("reads the local job once per minute and stops when the card unmounts", async
   await act(() => vi.advanceTimersByTimeAsync(120_000));
   expect(read).toHaveBeenCalledTimes(2);
   view.queryClient.clear();
+});
+
+it("counts every non-live state as not connected, with available updates", async () => {
+  const view = await mount({
+    scenarios: ["hosts-dashboard", "hosts-outdated"],
+  });
+  await screen.findByRole("region", { name: "studio" });
+  const records = await view.source.listRemoteHosts();
+  const id = records[0]?.config.id;
+  if (!id) throw new Error("Missing remote host");
+  const liveOthers =
+    records.filter(
+      (host) =>
+        host.config.id !== id &&
+        host.status.state === "connected" &&
+        !host.status.identity_changed &&
+        host.status.agent_update.kind !== "required"
+    ).length + 1;
+  const total = records.length + 1;
+  const updates = records.filter(
+    (host) =>
+      host.config.enabled &&
+      (host.status.agent_update.kind === "available" ||
+        host.status.agent_update.kind === "required")
+  ).length;
+  const states: RemoteState[] = [
+    "error",
+    "disabled",
+    "connecting",
+    "offline",
+    "connected",
+  ];
+  for (const state of states) {
+    act(() =>
+      view.source.pushRemoteStatus(id, {
+        state,
+        identity_changed: state === "connected" ? "other-host" : null,
+      })
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          `${total} hosts · ${liveOthers} live · ${total - liveOthers} not connected · ${updates} updates available`
+        )
+      ).toBeVisible()
+    );
+  }
+});
+
+it("commits live local figures without rendering the card body or metric lanes", async () => {
+  vi.useFakeTimers();
+  const source = createMockTransport({ autoTick: false, historyRows: 1 });
+  sources.push(source);
+  const hosts = await source.listHosts();
+  const host = hosts.find((host) => host.is_local);
+  if (!host) throw new Error("Missing local host");
+  let store: ReturnType<typeof useHostStore> | undefined;
+  function GrabStore() {
+    store = useHostStore();
+    return null;
+  }
+  // HostCard and each lane call React.useId; figure leaves do not. Observe
+  // the real React hook to count body renders without replacing components.
+  const identities = vi.mocked(React.useId);
+  identities.mockClear();
+  let commits = 0;
+  const view = renderWithProviders(
+    <HostSelectionContext.Provider
+      value={{ hosts, selected: host.id, select: () => {} }}
+    >
+      <GrabStore />
+      <Profiler id="local-card" onRender={() => commits++}>
+        <LocalHostCard host={host} origin="tl" target={null} />
+      </Profiler>
+    </HostSelectionContext.Provider>,
+    { transport: source }
+  );
+  await act(() => vi.advanceTimersByTimeAsync(100));
+  expect(identities.mock.calls.length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/Loading .*…/)).toHaveLength(0);
+  const before = commits;
+  identities.mockClear();
+  for (const cpu of [91, 92, 93]) {
+    if (!store) throw new Error("Missing local store");
+    const frame = nextFrame(store.getState(), {
+      "cpu.total": cpu,
+      "mem.used": cpu * 1_000_000,
+    });
+    act(() => source.push(frame));
+    expect(
+      within(screen.getByRole("region", { name: "This Mac" })).getByText(
+        `${cpu}%`
+      )
+    ).toBeVisible();
+  }
+  expect(commits).toBe(before + 3);
+  expect(identities).not.toHaveBeenCalled();
+  view.unmount();
+  identities.mockClear();
 });

@@ -1,27 +1,14 @@
 import { commandErrorText } from "@core/command-error";
-import type { RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { remoteErrorText } from "@core/remote-errors";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useTransport } from "~/lib/transport-context";
 
 const AGENT_UPDATE = ["agent-update"] as const;
 
-/** Linux hosts behind this Mac that "Update agent" can push to over SSH. */
-export function pushable(remote: RemoteHostRecord): boolean {
-  const update = remote.status.agent_update;
-  return (
-    (update.kind === "available" || update.kind === "required") &&
-    update.via === "push" &&
-    remote.config.enabled &&
-    remote.status.identity_changed === null
-  );
-}
-
 /**
- * One mutation per request, keyed by the host id, so a row's button and
- * "Update all" show the same in-flight state. Resolves to an error message,
+ * One mutation per request under the shared agent-update key. Rust status
+ * drives progress in cards and Update all. Resolves to an error message,
  * or null once the host accepted the request.
  */
 export function useAgentUpdate() {
@@ -45,21 +32,4 @@ export function useAgentUpdate() {
       }
     },
   });
-}
-
-/** Whether Update all can reach the host now; others are listed as skipped. */
-export function reachable(remote: RemoteHostRecord): boolean {
-  return (
-    remote.status.state === "connected" ||
-    remote.status.agent_update.kind === "required"
-  );
-}
-
-/** Whether Rust is applying an update or waiting for the host to reconnect. */
-export function useAgentUpdating(id: string): boolean {
-  return (
-    useRemoteHosts((hosts) =>
-      hosts.some((host) => host.config.id === id && host.status.update !== null)
-    ).data ?? false
-  );
 }

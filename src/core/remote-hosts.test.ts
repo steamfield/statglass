@@ -2,7 +2,9 @@ import type {
   AgentUpdate,
   AgentUpdateVia,
   RemoteHostRecord,
+  RemoteRoute,
   RemoteState,
+  RemoteSync,
   UpdatePhase,
   UpdateStatus,
 } from "@core/generated/bindings";
@@ -10,9 +12,13 @@ import { mockHostVitals } from "./mock/remote-updates";
 import {
   agentVersionLine,
   agentVersionState,
+  connectionLabel,
   hostUpdateNotice,
   localUpdateTarget,
+  pushable,
+  reachable,
   releaseUrl,
+  routeLabel,
   updatePhaseText,
 } from "./remote-hosts";
 
@@ -281,3 +287,64 @@ it.each<AgentUpdateVia>(["push", "add_host"])(
     }
   }
 );
+
+describe("route labels", () => {
+  it.each<[RemoteRoute, RemoteSync, string, string]>([
+    ["lan", "current", "LAN", "LAN · connected"],
+    ["lan", "idle", "LAN", "LAN · connected"],
+    ["tailscale", "current", "Tailscale", "Tailscale · connected"],
+    [
+      "lan",
+      "catching_up",
+      "LAN · catching up history",
+      "LAN · catching up history",
+    ],
+    [
+      "tailscale",
+      "unavailable",
+      "Tailscale · history unavailable",
+      "Tailscale · history unavailable",
+    ],
+  ])(
+    "shares %s / %s copy without stripping connection text",
+    (route, sync, label, connected) => {
+      const remote = host({ kind: "unknown" });
+      remote.status.route = route;
+      remote.status.sync = sync;
+      expect(routeLabel(remote)).toBe(label);
+      expect(connectionLabel(remote)).toBe(connected);
+      remote.status.state = "offline";
+      expect(connectionLabel(remote)).toBe("Offline");
+    }
+  );
+});
+
+it("shares the update-all reachability and push eligibility predicates", () => {
+  const remote = host({
+    kind: "available",
+    installed: "0.1.0",
+    target: "0.2.0",
+    via: "push",
+  });
+  expect(pushable(remote)).toBe(true);
+  expect(reachable(remote)).toBe(true);
+  expect(agentVersionState(remote).action?.kind).toBe("push");
+  remote.status.state = "offline";
+  expect(reachable(remote)).toBe(false);
+  expect(agentVersionState(remote).action).toBeNull();
+  remote.status.agent_update = {
+    kind: "required",
+    installed: "0.1.0",
+    target: "0.2.0",
+    via: "push",
+  };
+  expect(reachable(remote)).toBe(true);
+  expect(agentVersionState(remote).action?.kind).toBe("push");
+  remote.config.enabled = false;
+  expect(pushable(remote)).toBe(false);
+  expect(agentVersionState(remote).action).toBeNull();
+  remote.config.enabled = true;
+  remote.status.identity_changed = "other";
+  expect(pushable(remote)).toBe(false);
+  expect(agentVersionState(remote).action).toBeNull();
+});

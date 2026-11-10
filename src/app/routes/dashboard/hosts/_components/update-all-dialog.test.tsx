@@ -1,11 +1,11 @@
 import { createMockTransport } from "@core/mock-transport";
+import { pushable } from "@core/remote-hosts";
 import { screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   clickOutside,
   renderWithProviders,
 } from "../../../../../../tests/test-utils";
-import { pushable } from "../_hooks/use-agent-update";
 import { UpdateAllDialog } from "./update-all-dialog";
 
 describe("update all", () => {

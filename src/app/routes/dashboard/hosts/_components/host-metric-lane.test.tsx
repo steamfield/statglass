@@ -1,7 +1,11 @@
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { HostMetricLane } from "./host-metric-lane";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 it.each([
   { values: [null, 10, 20, null], dots: 2 },
@@ -58,9 +62,43 @@ it("names the current reading without announcing each intervening tick", () => {
     );
     view.rerender(lane("—"));
     expect(view.getByRole("img")).toHaveAccessibleName(
-      "CPU, last 10 minutes, no live reading."
+      "CPU, last 10 minutes, now 20%."
+    );
+    clock.mockReturnValue(20000);
+    view.rerender(lane("21%"));
+    expect(view.getByRole("img")).toHaveAccessibleName(
+      "CPU, last 10 minutes, now 21%."
     );
   } finally {
     clock.mockRestore();
   }
+});
+
+it("flushes a pending missing reading at the next bucket without further ticks", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const lane = (value: string) => (
+    <HostMetricLane
+      label="CPU"
+      value={value}
+      values={[18]}
+      endMs={0}
+      intervalMs={10000}
+      yMax={100}
+      gaps={[]}
+    />
+  );
+  const view = render(lane("18%"));
+  act(() => vi.advanceTimersByTime(1000));
+  view.rerender(lane("—"));
+  act(() => vi.advanceTimersByTime(8999));
+  expect(view.getByRole("img")).toHaveAccessibleName(
+    "CPU, last 10 minutes, now 18%."
+  );
+  act(() => vi.advanceTimersByTime(1));
+  expect(view.getByRole("img")).toHaveAccessibleName(
+    "CPU, last 10 minutes, no live reading."
+  );
+  view.unmount();
+  expect(vi.getTimerCount()).toBe(0);
 });

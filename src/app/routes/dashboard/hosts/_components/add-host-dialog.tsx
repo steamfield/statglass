@@ -163,6 +163,7 @@ export function AddHostDialog({
         </DialogDescription>
         <AddHostFields
           busy={busy}
+          readOnly={reinstall !== undefined}
           name={name}
           setName={setName}
           lan={lan}

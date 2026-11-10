@@ -3,7 +3,7 @@ import type { HostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
-import { memo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { QueryNotice } from "~/components/query-notice";
 import { useHostRecentHistory } from "~/hooks/use-host-recent-history";
@@ -11,8 +11,7 @@ import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { HostClockContext } from "~/lib/host-clock";
 import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
-import { HostStoreProvider, useHost, useHostId } from "~/stores/host-store";
-import { held } from "~/stores/live-selectors";
+import { HostStoreProvider, useHostId } from "~/stores/host-store";
 import type { Corner } from "~/widgets/lib/accent";
 import { version } from "../../../../../../package.json";
 import {
@@ -40,12 +39,14 @@ export const RemoteHostCard = memo(function RemoteHostCard({
     remote?.status.clock_offset_ms ?? 0
   );
   const host = selection?.hosts.find((host) => host.id === id);
+  const select = useCallback(() => selection?.select(id), [selection, id]);
+  const show = useCallback(() => {
+    select();
+    void navigate("/dashboard/overview");
+  }, [select, navigate]);
+  const openSettings = useCallback(() => setEditing(true), []);
   if (!remote) return null;
   const model = remoteHostCardModel(remote, host, selection?.hosts);
-  const show = () => {
-    selection?.select(id);
-    void navigate("/dashboard/overview");
-  };
   return (
     <>
       <div className="flex h-full flex-col gap-2">
@@ -56,8 +57,8 @@ export const RemoteHostCard = memo(function RemoteHostCard({
           memoryTotal={host?.info.mem_total_bytes ?? 0}
           origin={origin}
           onShow={show}
-          onSelect={() => selection?.select(id)}
-          onSettings={() => setEditing(true)}
+          onSelect={select}
+          onSettings={openSettings}
         />
         <QueryNotice
           query={query}
@@ -104,21 +105,27 @@ function LocalCardData({
     refetchOnReconnect: false,
   });
   const { history, query } = useHostRecentHistory(host.id);
-  const cpu = useHost((state) =>
-    state.stale ? null : held(state, "cpu.total")
+  const select = useCallback(
+    () => selection?.select(host.id),
+    [selection, host.id]
   );
-  const memory = useHost((state) =>
-    state.stale ? null : held(state, "mem.used")
-  );
-  const model = localHostCardModel(
-    host,
-    vitals.data ?? null,
-    version,
-    target,
-    cpu,
-    memory,
-    rr.data ?? null,
-    selection?.hosts
+  const show = useCallback(() => {
+    select();
+    void navigate("/dashboard/overview");
+  }, [select, navigate]);
+  const model = useMemo(
+    () =>
+      localHostCardModel(
+        host,
+        vitals.data ?? null,
+        version,
+        target,
+        null,
+        null,
+        rr.data ?? null,
+        selection?.hosts
+      ),
+    [host, vitals.data, target, rr.data, selection?.hosts]
   );
   return (
     <div className="flex h-full flex-col gap-2">
@@ -127,11 +134,9 @@ function LocalCardData({
         history={history}
         memoryTotal={host.info.mem_total_bytes}
         origin={origin}
-        onSelect={() => selection?.select(host.id)}
-        onShow={() => {
-          selection?.select(host.id);
-          void navigate("/dashboard/overview");
-        }}
+        local
+        onSelect={select}
+        onShow={show}
       />
       <QueryNotice
         query={rr}

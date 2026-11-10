@@ -95,8 +95,10 @@ it("pauses the Hosts list's five-second poll while hidden and resumes on show", 
     await act(() => vi.advanceTimersByTimeAsync(15000));
     expect(list).toHaveBeenCalledTimes(1);
     act(() => transport.setWindowVisible(true));
-    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await act(() => vi.advanceTimersByTimeAsync(1));
     expect(list).toHaveBeenCalledTimes(2);
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(list).toHaveBeenCalledTimes(3);
   } finally {
     view.unmount();
     view.queryClient.clear();
@@ -120,8 +122,10 @@ it("starts paused when mounted into an already hidden window", async () => {
     await act(() => vi.advanceTimersByTimeAsync(15000));
     expect(list).toHaveBeenCalledTimes(1);
     act(() => transport.setWindowVisible(true));
-    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await act(() => vi.advanceTimersByTimeAsync(1));
     expect(list).toHaveBeenCalledTimes(2);
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(list).toHaveBeenCalledTimes(3);
   } finally {
     view.unmount();
     view.queryClient.clear();
@@ -154,8 +158,10 @@ it("ignores a stale startup response after receiving a visibility event", async 
     await act(() => vi.advanceTimersByTimeAsync(15000));
     expect(list).toHaveBeenCalledTimes(1);
     act(() => transport.setWindowVisible(true));
-    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await act(() => vi.advanceTimersByTimeAsync(1));
     expect(list).toHaveBeenCalledTimes(2);
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(list).toHaveBeenCalledTimes(3);
   } finally {
     view.unmount();
     view.queryClient.clear();

@@ -23,10 +23,16 @@ import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { onTestFinished, vi } from "vitest";
+import { useRemoteHostsChanged } from "~/hooks/use-remote-hosts";
 import { QueryProvider } from "~/lib/query";
 import { TransportProvider } from "~/lib/transport-context";
 import { HostStoreProvider } from "~/stores/host-store";
 import { SettingsProvider } from "~/stores/settings-store";
+
+function RemoteHostsEvents() {
+  useRemoteHostsChanged();
+  return null;
+}
 
 /** A QueryClient with retries off so failures surface on the first try. */
 export function createTestQueryClient() {
@@ -69,6 +75,7 @@ export function renderWithProviders(
   const result = render(
     <TransportProvider transport={transport}>
       <QueryProvider client={queryClient}>
+        <RemoteHostsEvents />
         <SettingsProvider>
           <HostStoreProvider
             hostId={MOCK_HOST_ID}

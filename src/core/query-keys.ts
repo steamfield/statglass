@@ -31,8 +31,8 @@ export type TierKey = Tier | "auto";
 
 export const historyKeys = {
   all: ["history"] as const,
-  recent: (hostId: HostId, offsetMs: number) =>
-    [...historyKeys.host(hostId), "recent", offsetMs] as const,
+  recent: (hostId: HostId, windowMs: number) =>
+    [...historyKeys.host(hostId), "recent", windowMs] as const,
   moduleSeries: (
     hostId: HostId,
     keys: readonly string[],

@@ -1,10 +1,11 @@
 import { historyGrid } from "@core/history-grid";
 import { gapBands } from "@core/history-state";
+import { hostClock } from "@core/host-clock";
 import { historyKeys, sameHost } from "@core/query-keys";
 import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef } from "react";
 import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 
@@ -14,12 +15,27 @@ const WINDOW_MS = 10 * MINUTE_MS;
 /** Read mirrors directly: cards never open a remote detail subscription. */
 export function useHostRecentHistory(hostId: string, offsetMs = 0) {
   const transport = useTransport();
-  const queryKey = historyKeys.recent(hostId, offsetMs);
+  const cache = useQueryClient();
+  const queryKey = historyKeys.recent(hostId, WINDOW_MS);
+  const clock = useRef<() => number>(hostClock(offsetMs));
+  const previousClock = useRef({ hostId, offsetMs });
+  useEffect(() => {
+    const previous = previousClock.current;
+    clock.current = hostClock(offsetMs);
+    previousClock.current = { hostId, offsetMs };
+    if (
+      previous.hostId === hostId &&
+      Math.abs(previous.offsetMs - offsetMs) >= 1000
+    )
+      void cache.invalidateQueries({
+        queryKey: historyKeys.recent(hostId, WINDOW_MS),
+      });
+  }, [cache, hostId, offsetMs]);
   const query = useQuery({
     queryKey,
     placeholderData: holdWhile(queryKey, sameHost),
     queryFn: async () => {
-      const toMs = Date.now() + offsetMs;
+      const toMs = clock.current();
       const fromMs = toMs - WINDOW_MS;
       const page = await unwrap(
         transport.queryHistory({

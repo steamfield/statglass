@@ -7,6 +7,7 @@ import { Switch } from "~/components/ui/switch";
 import { HOST_INPUT } from "./host-input";
 export function AddHostFields({
   busy,
+  readOnly,
   name,
   setName,
   lan,
@@ -22,6 +23,7 @@ export function AddHostFields({
   setError,
 }: {
   busy: boolean;
+  readOnly: boolean;
   name: string;
   setName: (value: string) => void;
   lan: string;
@@ -43,6 +45,7 @@ export function AddHostFields({
         Name
         <input
           className={HOST_INPUT}
+          readOnly={readOnly}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Studio"
@@ -52,6 +55,7 @@ export function AddHostFields({
         LAN SSH alias
         <input
           className={HOST_INPUT}
+          readOnly={readOnly}
           value={lan}
           onChange={(e) => {
             setLan(e.target.value);
@@ -69,6 +73,7 @@ export function AddHostFields({
         Tailscale SSH alias
         <input
           className={HOST_INPUT}
+          readOnly={readOnly}
           value={tailscale}
           onChange={(e) => {
             setTailscale(e.target.value);
@@ -82,6 +87,11 @@ export function AddHostFields({
           spellCheck={false}
         />
       </label>
+      {readOnly && (
+        <p className="text-muted-foreground text-small">
+          Change aliases in this host's settings
+        </p>
+      )}
       <p className="text-muted-foreground text-small">
         Enter an alias from ~/.ssh/config or user@address, without “ssh”. On a
         Mac, use the account signed in there. Only one address is needed.
