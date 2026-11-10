@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chartsReady } from "./helpers/charts-ready";
 
 /**
  * One-shot motion (motion.md "Choreography") on the mock transport with the
@@ -10,14 +11,30 @@ import { expect, type Page, test } from "@playwright/test";
  * - Low Power Mode engages Performance mode, which stops all motion.
  */
 
-/** Record the name of every CSS animation that starts, from page load on. */
+/** Record CSS entrances and one-shot chart Web Animations from page load on. */
 async function recordAnimations(page: Page) {
   await page.addInitScript(() => {
     const names: string[] = [];
     (window as unknown as { __anims: string[] }).__anims = names;
-    document.addEventListener("animationstart", (e) =>
-      names.push(e.animationName)
-    );
+    document.addEventListener("animationstart", (e) => {
+      names.push(e.animationName);
+      if (/reveal/.test(e.animationName) && e.target instanceof SVGSVGElement)
+        e.target.dataset.reveals = String(
+          Number(e.target.dataset.reveals ?? 0) + 1
+        );
+    });
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = animate.call(this, keyframes, options);
+      if (animation.id === "reveal") {
+        names.push("reveal");
+        this.setAttribute(
+          "data-reveals",
+          String(Number(this.getAttribute("data-reveals") ?? 0) + 1)
+        );
+      }
+      return animation;
+    };
   });
 }
 
@@ -130,6 +147,7 @@ async function reverseRing(page: Page, duration: number | null = null) {
       .locator("main circle.transition-\\[stroke-dashoffset\\,transform\\]")
       .first()
   ).toBeAttached();
+  await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   const original = await page.evaluate(async (duration) => {
     const circle = Array.from(document.querySelectorAll("main circle")).find(
@@ -204,6 +222,7 @@ test("live-motion validation accepts shortened reversals and rejects long transi
   expect(await unexpectedRunning(page)).toContain("stroke-dashoffset");
 
   await openOverview(page);
+  await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   await page.evaluate(async () => {
     const layer = document.querySelector("main div[class*='_layer_']");
@@ -226,6 +245,7 @@ test("live-motion validation accepts shortened reversals and rejects long transi
   expect(await unexpectedRunning(page)).toContain("Animation");
 
   await openOverview(page);
+  await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   await page.evaluate(async () => {
     const element = Array.from(
@@ -262,6 +282,7 @@ test("Overview sections and cards lift in, then settle with nothing running", as
       async () => (await started(page)).filter((n) => /lift/.test(n)).length
     )
     .toBeGreaterThan(6);
+  await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
 });
@@ -272,6 +293,7 @@ test("navigating replays the page entrance and slides the sidebar pill", async (
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await recordAnimations(page);
   await openOverview(page);
+  await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
 
   const pill = page.locator("[data-sidebar-pill]");
@@ -293,6 +315,7 @@ test("navigating replays the page entrance and slides the sidebar pill", async (
   expect(
     await pill.evaluate((el) => getComputedStyle(el).transitionDuration)
   ).not.toBe("0s");
+  await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
 });
@@ -312,7 +335,7 @@ test("live ticks never replay an entrance", async ({ page }) => {
     )
     .toBeGreaterThan(0);
   await expect
-    .poll(() => unexpectedRunning(page), { timeout: 2000 })
+    .poll(() => unexpectedRunning(page), { timeout: 4000 })
     .toEqual([]);
 
   await page.evaluate(() => {
@@ -320,9 +343,9 @@ test("live ticks never replay an entrance", async ({ page }) => {
   });
   // Three ticks of fresh values re-render every card.
   await page.clock.runFor(3000);
-  expect((await started(page)).filter((n) => /lift|fade|swap/.test(n))).toEqual(
-    []
-  );
+  expect(
+    (await started(page)).filter((n) => /lift|fade|swap|reveal|scan/.test(n))
+  ).toEqual([]);
   expect(await unexpectedRunning(page)).toEqual([]);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
 });
@@ -408,4 +431,191 @@ test("Overview cards have one animated ancestor and its headers enter separately
       .getByRole("region", { name: "This Mac" })
       .evaluate((header) => getComputedStyle(header).animationName)
   ).toMatch(/lift/);
+});
+
+async function openLoadingCpu(page: Page, scenario = "default") {
+  await page.clock.install({ time: new Date("2026-11-10T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-11-10T12:00:01Z"));
+  await recordAnimations(page);
+  await page.goto(
+    `/?route=/dashboard/cpu&theme=dark&ticks=0&scenario=${scenario}`
+  );
+  await expect(
+    page.getByRole("heading", { name: "CPU", exact: true })
+  ).toBeVisible();
+  await page.clock.runFor(100);
+  await expect(page.locator("[data-chart-loading]")).toHaveCount(2);
+  await expect(page.locator("path[data-line]")).toHaveCount(0);
+  const heat = page.getByRole("img", { name: /^Per-core load/ });
+  expect(
+    await heat
+      .locator("[data-gap]")
+      .first()
+      .evaluate((cell) => getComputedStyle(cell).backgroundImage)
+  ).toBe("none");
+}
+
+test("chart backfill scans the baseline, reveals each data svg once, then stops", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openLoadingCpu(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document
+            .getAnimations()
+            .filter(
+              (a) =>
+                a.playState === "running" &&
+                !(a instanceof CSSAnimation && /scan/.test(a.animationName))
+            ).length
+      )
+    )
+    .toBe(0);
+  const coreHeader = page.getByRole("heading", { name: /^Per-core load/ });
+  const top = await coreHeader.evaluate((el) => el.getBoundingClientRect().top);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document
+          .getAnimations()
+          .some(
+            (a) =>
+              a instanceof CSSAnimation &&
+              /scan/.test(a.animationName) &&
+              a.playState === "running"
+          )
+      )
+    )
+    .toBe(true);
+  await page.clock.runFor(1100);
+  await chartsReady(page);
+  const chart = page.getByRole("img", { name: /^CPU total and system/ });
+  await expect(chart.locator("path[data-line]")).toHaveCount(2);
+  await expect(chart).toHaveAttribute("data-reveals", "1");
+  await chartsReady(page);
+  await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  expect(
+    await coreHeader.evaluate((el) => el.getBoundingClientRect().top)
+  ).toBe(top);
+  await page.clock.runFor(2000);
+  await expect(chart).toHaveAttribute("data-reveals", "1");
+  const entrances = (await started(page)).filter((name) =>
+    /scan|reveal/.test(name)
+  );
+  await page.evaluate(() => {
+    document.documentElement.dataset.navigationLoading = "false";
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (
+            node instanceof Element &&
+            (node.matches("[data-chart-loading]") ||
+              node.querySelector("[data-chart-loading]"))
+          ) {
+            document.documentElement.dataset.navigationLoading = "true";
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener(
+      "navigation-settled",
+      () => observer.disconnect(),
+      { once: true }
+    );
+  });
+  await page.locator("[data-sidebar-item][href='/dashboard/gpu']").click();
+  await expect(
+    page.getByRole("heading", { name: "GPU", exact: true })
+  ).toBeVisible();
+  await page.clock.runFor(100);
+  await chartsReady(page);
+  await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("navigation-settled"))
+  );
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-navigation-loading",
+    "false"
+  );
+  expect(
+    (await started(page)).filter((name) => /scan|reveal/.test(name))
+  ).toEqual(entrances);
+});
+
+for (const mode of ["reduced motion", "Performance mode"] as const) {
+  test(`chart backfill in ${mode} has no scan or reveal motion`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({
+      reducedMotion: mode === "reduced motion" ? "reduce" : "no-preference",
+    });
+    await openLoadingCpu(
+      page,
+      mode === "Performance mode" ? "performance-mode" : "default"
+    );
+    await page.clock.runFor(1100);
+    await chartsReady(page);
+    await expect(
+      page
+        .getByRole("img", { name: /^CPU total and system/ })
+        .locator("path[data-line]")
+    ).toHaveCount(2);
+    expect(
+      (await started(page)).filter((name) => /scan|reveal/.test(name))
+    ).toEqual([]);
+    expect(
+      await page.evaluate(() =>
+        document
+          .getAnimations()
+          .some(
+            (a) =>
+              a.id === "reveal" ||
+              (a instanceof CSSAnimation && /scan/.test(a.animationName))
+          )
+      )
+    ).toBe(false);
+  });
+}
+
+test("turning Performance mode off after reveal never replays chart entrances", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openLoadingCpu(page);
+  await page.clock.runFor(1600);
+  await chartsReady(page);
+  const chart = page.getByRole("img", { name: /^CPU total and system/ });
+  await expect(chart).toHaveAttribute("data-reveals", "1");
+  await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  // Exercise the window appearance attribute that native Low Power Mode toggles.
+  await page.evaluate(() => {
+    document.documentElement.dataset.performance = "";
+  });
+  await page.clock.runFor(100);
+  const before = (await started(page)).filter((n) => /reveal/.test(n));
+  await page.evaluate(() => {
+    delete document.documentElement.dataset.performance;
+  });
+  await page.clock.runFor(100);
+  expect((await started(page)).filter((n) => /reveal/.test(n))).toEqual(before);
+  expect(
+    await page.evaluate(() =>
+      document
+        .getAnimations()
+        .some(
+          (a) =>
+            a.id === "reveal" ||
+            (a instanceof CSSAnimation && /reveal/.test(a.animationName))
+        )
+    )
+  ).toBe(false);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.runFor(100);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.clock.runFor(100);
+  expect((await started(page)).filter((n) => /reveal/.test(n))).toEqual(before);
 });

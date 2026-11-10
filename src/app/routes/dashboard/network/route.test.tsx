@@ -154,12 +154,15 @@ describe("Network page Apps card (D-089)", () => {
 
   it("selecting the spike puts its app first; the selection stays pinned off the chart until cleared", async () => {
     // The 15m default, so a burst 5 to 15 minutes ago is on the chart.
-    const { user } = renderRoute(undefined, "15m");
+    const { user, transport } = renderRoute(undefined, "15m");
     expect(
       await screen.findByRole("heading", { name: "Apps, last 15 minutes" })
     ).toBeVisible();
     // An earlier Docker burst is [NOW − 390 s, NOW − 360 s) = [T − 385 s, T − 355 s).
-    const brush = screen.getByRole("slider", { name: "Select a time range" });
+    act(() => transport.tick());
+    const brush = await screen.findByRole("slider", {
+      name: "Select a time range",
+    });
     act(() => brush.focus());
     // Focus starts on [T − 10 s, T), the newest bucket that has happened.
     await user.keyboard("{ArrowLeft>37/}{Enter}{Shift>}{ArrowRight}{/Shift}");

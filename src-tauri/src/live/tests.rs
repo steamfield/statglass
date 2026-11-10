@@ -207,6 +207,10 @@ fn tag(m: &LiveMsg) -> String {
         }
     };
     match m {
+        LiveMsg::BackfillPlan {
+            recent_rows,
+            earlier_start_ms,
+        } => format!("plan {recent_rows} {earlier_start_ms:?}"),
         LiveMsg::Layout {
             layout_no, series, ..
         } => format!("layout {layout_no}/{}", series.len()),
@@ -431,6 +435,7 @@ async fn subscribe_sends_layout_then_backfill_then_frames() {
     assert_eq!(
         drain(&rx).await,
         with_head(&[
+            "plan 4 None",
             "layout 1/2",
             "backfill 1 @11040 x4",
             "frame 1 @15010",
@@ -479,7 +484,12 @@ async fn hidden_window_stops_and_resumes_with_only_the_missed_span() {
     feed.tick(&l, 2_000, 1.0);
     assert_eq!(
         drain(&rx).await,
-        with_head(&["layout 1/1", "backfill 1 @1000 x1", "frame 1 @2000"])
+        with_head(&[
+            "plan 1 None",
+            "layout 1/1",
+            "backfill 1 @1000 x1",
+            "frame 1 @2000"
+        ])
     );
 
     reg.window_visible("dashboard", false);
@@ -522,7 +532,7 @@ async fn subscribing_while_hidden_sends_nothing_until_shown() {
     reg.window_visible("popover", true);
     assert_eq!(
         drain(&rx).await,
-        with_head(&["layout 1/1", "backfill 1 @1000 x2"])
+        with_head(&["plan 2 None", "layout 1/1", "backfill 1 @1000 x2"])
     );
 }
 
@@ -546,7 +556,7 @@ async fn an_unreported_window_counts_as_hidden() {
     assert!(reg.is_visible("board-1"));
     assert_eq!(
         drain(&rx).await,
-        with_head(&["layout 1/1", "backfill 1 @1000 x2"])
+        with_head(&["plan 2 None", "layout 1/1", "backfill 1 @1000 x2"])
     );
 }
 
@@ -990,6 +1000,7 @@ async fn a_clock_step_back_restarts_the_stream_instead_of_freezing_it() {
             "frame 1 @601000",
             // The ring's rows on the new timeline (both ticks were in it by the time the
             // stream ran), then the frames, which the window drops as duplicate rows.
+            "plan 2 None",
             "backfill 1 @2000 x2 t1",
             "frame 1 @2000 t1",
             "processes x0",
@@ -1026,6 +1037,7 @@ async fn a_new_layout_with_an_old_time_is_not_a_reset() {
     assert_eq!(
         drain(&rx).await,
         with_head(&[
+            "plan 3 None",
             "layout 1/1",
             "backfill 1 @1000 x3",
             "layout 2/2",
@@ -1050,7 +1062,7 @@ async fn a_window_hidden_across_a_step_back_resumes_on_the_new_timeline() {
         .unwrap();
     assert_eq!(
         drain(&rx).await,
-        with_head(&["layout 1/1", "backfill 1 @595000 x6"])
+        with_head(&["plan 6 None", "layout 1/1", "backfill 1 @595000 x6"])
     );
     reg.window_visible("dashboard", false);
     settle().await;
@@ -1064,7 +1076,11 @@ async fn a_window_hidden_across_a_step_back_resumes_on_the_new_timeline() {
     feed.tick(&l, 600_000, 1.0);
     assert_eq!(
         drain(&rx).await,
-        vec!["backfill 1 @598000 x2 t1", "frame 1 @600000 t1"],
+        vec![
+            "plan 2 None",
+            "backfill 1 @598000 x2 t1",
+            "frame 1 @600000 t1"
+        ],
         "from the step on, then frames"
     );
 }
@@ -1089,7 +1105,7 @@ async fn a_resume_before_the_last_thing_sent_starts_over() {
     feed.tick(&l, 3_000, 1.0);
     assert_eq!(
         drain(&rx).await,
-        vec!["backfill 1 @2000 x1", "frame 1 @3000"]
+        vec!["plan 1 None", "backfill 1 @2000 x1", "frame 1 @3000"]
     );
 }
 
@@ -1254,7 +1270,12 @@ async fn the_recent_window_goes_first_and_older_history_follows_in_chunks() {
     let before_frame: Vec<String> = rx.try_iter().map(|m| tag(&m)).collect();
     assert_eq!(
         before_frame,
-        with_head(&["layout 1/1", "layout 2/2", "backfill 2 @1380000 x121"]),
+        with_head(&[
+            "layout 1/1",
+            "layout 2/2",
+            "plan 121 Some(1000)",
+            "backfill 2 @1380000 x121"
+        ]),
         "only the recent window before the call returns"
     );
 
@@ -1556,3 +1577,5 @@ async fn layout_carries_catalog_kinds_and_backfill_carries_holds() {
 mod protocol;
 
 mod replacement;
+
+mod pending;

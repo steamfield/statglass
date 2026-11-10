@@ -1,5 +1,6 @@
-import { RING_SPAN_MS } from "@core/generated/bindings";
+import { type LiveMsg, RING_SPAN_MS } from "@core/generated/bindings";
 import { MINUTE_MS } from "../time-grid";
+import type { LiveOptions, LiveSubscription } from "../transport";
 import type { MockChannels } from "./channels";
 import type { MockCommands } from "./commands";
 import type {
@@ -13,10 +14,8 @@ import { MOCK_HOST_ID } from "./fixtures";
 import type { MockPower } from "./power";
 import type { MockProcesses } from "./processes";
 import {
-  EARLIER_AFTER_MS,
   effectiveMinPeriodMs,
   framePeriodMs,
-  layoutMsg,
   ok,
   pickFor,
   project,
@@ -28,6 +27,7 @@ export class MockStream {
   private ticks = 0;
   private nextStream = 1;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private lastTimerMs: number | null = null;
   constructor(
     private readonly options: MockTransportOptions,
     private readonly ring: MockRing,
@@ -68,6 +68,8 @@ export class MockStream {
       .holds;
     if (!this.power.receiving()) return;
     for (const sub of [...this.channels.live.values()]) {
+      this.channels.catchUpStep(sub);
+      this.channels.sendLayout(sub);
       const period = effectiveMinPeriodMs(
         sub.minPeriodMs,
         this.power.status.performance
@@ -114,7 +116,44 @@ export class MockStream {
   };
   readonly ensureTimer = () => {
     if (!this.options.autoTick || this.timer !== null) return;
-    this.timer = setInterval(this.tick, this.power.status.interval_ms);
+    this.lastTimerMs = null;
+    this.timer = setInterval(this.onTimer, this.power.status.interval_ms);
+  };
+  /**
+   * A browser throttles a background tab's timers to one a minute, but the
+   * engine this stands in for never stops sampling. A late timer fills the
+   * rows it missed and sends them as a hidden window's catch-up would be, so
+   * the charts come back whole instead of with a hole for the time away.
+   */
+  private readonly onTimer = () => {
+    const now = this.ring.now();
+    const interval = this.power.status.interval_ms;
+    const late =
+      this.lastTimerMs !== null && now - this.lastTimerMs >= 2 * interval;
+    this.lastTimerMs = now;
+    if (late && !this.power.status.paused && !this.ring.flags.stale) {
+      this.fillRows(now + this.ring.clockOffset - interval);
+      if (this.power.receiving()) this.channels.resume();
+    }
+    this.tick();
+  };
+  /** Rows the engine took with no window taking frames, up to `untilMs`. */
+  private readonly fillRows = (untilMs: number) => {
+    const interval = this.power.status.interval_ms;
+    const last = this.ring.rows[this.ring.rows.length - 1]?.ts ?? untilMs;
+    this.ring.gen.trayOnly = true;
+    this.ring.gen.intervalMs = interval;
+    const from = Math.max(last + interval, untilMs - RING_SPAN_MS);
+    for (let ts = from; ts <= untilMs; ts += interval) {
+      const row = this.ring.gen.next();
+      this.ring.pushRow(
+        ts,
+        this.ring.withBursts(ts, row.values),
+        row.cadences,
+        interval
+      );
+    }
+    this.ring.gen.trayOnly = !this.power.receiving();
   };
   readonly retime = () => {
     if (this.timer === null) return;
@@ -127,6 +166,10 @@ export class MockStream {
     onMsg,
     opts = {}
   ) => {
+    if ((this.options.latencyMs ?? 0) > 0)
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.options.latencyMs)
+      );
     const remote = this.remote.remotes.get(host);
     if (remote) {
       this.commands.record(
@@ -166,6 +209,13 @@ export class MockStream {
       }
       return remote.peer.subscribeLive(MOCK_HOST_ID, onMsg, opts);
     }
+    return this.subscribeLocal(host, onMsg, opts);
+  };
+  private readonly subscribeLocal = (
+    host: string,
+    onMsg: (msg: LiveMsg) => void,
+    opts: LiveOptions
+  ): LiveSubscription => {
     const backfillMs = Math.min(opts.backfillMs ?? MINUTE_MS, RING_SPAN_MS);
     this.commands.record(
       "subscribe_live",
@@ -181,6 +231,7 @@ export class MockStream {
       stream: this.nextStream++,
       pick,
       series: project(this.ring.gen.keys, pick),
+      layoutNo: null,
       minPeriodMs: opts.minPeriodMs ?? null,
       lastFrameMs: null,
       backfillMs,
@@ -197,34 +248,19 @@ export class MockStream {
     this.channels.live.set(onMsg, sub);
     // A new subscription from the window ends interest tagged with another.
     this.processes.currentStream = sub.stream;
-    const h = this.channels.history(sub, backfillMs);
-    sub.earlier = h.earlier;
     onMsg({ kind: "caps", capabilities: this.ring.caps });
-    // A hidden window gets its status on show, never the background's.
-    if (this.power.windowVisible) this.channels.sendStatus(sub);
-    onMsg(layoutMsg(this.ring.layoutNo, sub.series));
-    for (const msg of h.recent) onMsg(msg);
+    // Rust's registry only catches up visible windows (live/registry.rs).
+    const h = this.power.windowVisible ? this.channels.fresh(sub) : null;
     this.ensureTimer();
-    // Rust starts the earlier chunks after the first frame, or after 1 s
-    // when no frame comes (paused, stale).
-    if (sub.earlier.length > 0) {
-      sub.timer = setTimeout(
-        () => this.channels.sendEarlier(sub),
-        EARLIER_AFTER_MS
-      );
-    }
-    const first = h.recent[0];
+    const first = h?.recent[0];
     return {
       info: ok({
         host,
         stream: sub.stream,
         backfill_start_ms: first?.kind === "backfill" ? first.start_ms : null,
-        backfill_rows: h.recent.reduce(
-          (n, m) => n + (m.kind === "backfill" ? m.rows.length : 0),
-          0
-        ),
-        earlier_start_ms: h.earlierStart,
-        earlier_rows: h.earlierRows,
+        backfill_rows: h?.recentRows ?? 0,
+        earlier_start_ms: h?.earlierStart ?? null,
+        earlier_rows: h?.earlierRows ?? 0,
       }),
       unsubscribe: () => {
         if (sub.timer !== null) clearTimeout(sub.timer);
@@ -243,19 +279,18 @@ export class MockStream {
       sub.timer = null;
       sub.lastFrameMs = null;
       sub.holdsSent = null;
-      sub.onMsg(layoutMsg(this.ring.layoutNo, sub.series));
     }
     this.processes.lastBatchMs = null;
   };
   readonly setWindowVisible: MockTransport["setWindowVisible"] = (visible) => {
     if (this.power.windowVisible === visible) return;
-    const was = this.power.receiving();
     this.power.windowVisible = visible;
     this.docker.setVisible(this.power.receiving());
     // Rust's order (D-094): the tick changes before the stream resumes and
     // after it stops, so the window never gets the background's status.
     this.power.updatePower();
-    if (!was && this.power.receiving()) this.channels.resume();
+    if (visible) this.channels.resume();
+    else this.channels.flushEarlier();
   };
   readonly setLowPowerMode: MockTransport["setLowPowerMode"] = (on) => {
     this.power.lowPowerMode = on;
@@ -270,28 +305,9 @@ export class MockStream {
     if (!was && this.power.receiving()) this.channels.resume();
   };
   readonly fastForward: MockTransport["fastForward"] = (ms) => {
-    const interval = this.power.status.interval_ms;
-    const last =
-      this.ring.rows[this.ring.rows.length - 1]?.ts ??
-      this.ring.now() + this.ring.clockOffset;
-    this.ring.clockOffset += ms;
     // Time passes with the window hidden: only the tray is open.
-    this.ring.gen.trayOnly = true;
-    this.ring.gen.intervalMs = interval;
-    for (
-      let ts = last + interval;
-      ts <= this.ring.now() + this.ring.clockOffset;
-      ts += interval
-    ) {
-      const row = this.ring.gen.next();
-      this.ring.pushRow(
-        ts,
-        this.ring.withBursts(ts, row.values),
-        row.cadences,
-        interval
-      );
-    }
-    this.ring.gen.trayOnly = !this.power.receiving();
+    this.ring.clockOffset += ms;
+    this.fillRows(this.ring.now() + this.ring.clockOffset);
   };
   readonly setPaused: MockTransport["setPaused"] = async (paused) => {
     this.commands.record("set_paused", paused);

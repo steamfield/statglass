@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chartsReady } from "./helpers/charts-ready";
 
 /**
  * Sampling interval and history size limit (plan 4.15, D-059, D-061): the
@@ -16,11 +17,14 @@ function trackConsoleErrors(page: Page): string[] {
   return errors;
 }
 
-const shot = (page: Page, name: string, project: string) =>
-  page.screenshot({
+const shot = async (page: Page, name: string, project: string) => {
+  await chartsReady(page);
+  return page.screenshot({
+    animations: "disabled",
     path: `test-results/screens/${name}-${project}.png`,
     fullPage: true,
   });
+};
 
 test("Settings: interval, size limit and history notices", async ({
   page,

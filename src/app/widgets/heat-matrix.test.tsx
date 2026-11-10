@@ -1,10 +1,19 @@
+import * as chartMath from "@core/chart-math";
 import { MISSING } from "@core/format";
 import { render } from "@testing-library/react";
+import { mockElementAnimate } from "@tests/test-utils";
 import {
   HeatMatrix,
   type HeatMatrixProps,
   HeatScaleLegend,
 } from "./heat-matrix";
+
+beforeEach(() =>
+  document.documentElement.style.setProperty("--motion-enter", "280ms")
+);
+afterEach(() =>
+  document.documentElement.style.removeProperty("--motion-enter")
+);
 
 const props: HeatMatrixProps = {
   rows: [
@@ -35,6 +44,87 @@ const cellsOf = (c: HTMLElement) => [
 const tint = (c: HTMLElement | undefined) => c?.style.getPropertyValue("--t");
 
 describe("HeatMatrix", () => {
+  it("shows a flat loading frame with labels, then reveals each row and restores gaps", () => {
+    const animate = mockElementAnimate();
+    const data: HeatMatrixProps = {
+      ...props,
+      endMs: 30_000,
+      gaps: [{ fromMs: 10_000, toMs: 20_000, label: "Asleep" }],
+    };
+    const { container, getByRole, getByText, rerender } = render(
+      <HeatMatrix {...data} loading />
+    );
+    const root = getByRole("img");
+    expect(root).toHaveClass("group");
+    expect(root).toHaveAttribute("aria-busy", "true");
+    expect(root).toHaveAttribute("data-loading", "true");
+    expect(container.querySelector("[role=note]")).toBeNull();
+    const track = container.querySelector("[data-chart-loading]");
+    expect(track).toBeInTheDocument();
+    expect(track?.parentElement?.style.gridRow).toBe("1 / 4");
+    const cells = cellsOf(container);
+    expect(cells).toHaveLength(12);
+    for (const cell of cells) {
+      expect(cell.style.background).toBe("");
+      expect(cell).toHaveClass(
+        "group-data-loading:bg-none",
+        "group-data-loading:bg-track"
+      );
+    }
+    for (const label of ["Zone 01", "65°", "40°", "now"])
+      expect(getByText(label)).toBeInTheDocument();
+    const grids = [...container.querySelectorAll(".col-start-2.grid")];
+    for (const grid of grids) expect(grid).toHaveAttribute("data-reveal");
+    expect(animate).not.toHaveBeenCalled();
+    rerender(<HeatMatrix {...data} loading={false} />);
+    expect(root).not.toHaveAttribute("data-loading");
+    expect(container.querySelector("[data-chart-loading]")).toBeNull();
+    expect([...container.querySelectorAll(".col-start-2.grid")]).toEqual(grids);
+    expect(root).not.toHaveAttribute("aria-busy");
+    expect(animate.mock.contexts).toEqual(grids);
+    rerender(
+      <HeatMatrix
+        {...data}
+        rows={[
+          ...data.rows,
+          { id: "later", label: "Later", now: 20, buckets: [20] },
+        ]}
+        loading={false}
+      />
+    );
+    expect(animate).toHaveBeenCalledTimes(grids.length);
+    expect(getByRole("note", { name: "Asleep" })).toBeInTheDocument();
+    expect(tint(cellsOf(container)[0])).toBe("6%");
+  });
+
+  it("does not draw a loading mark without rows", () => {
+    const { container } = render(<HeatMatrix {...props} rows={[]} loading />);
+    expect(container.querySelector("[data-chart-loading]")).toBeNull();
+  });
+
+  it("renders only the changed Cell after loading ends, just as a chart mounted ready", () => {
+    // Call-through instrumentation: heatmapAlpha runs once per Cell render.
+    const renders = vi.spyOn(chartMath, "heatmapAlpha");
+    try {
+      const changed = props.rows.map((r, i) =>
+        i === 0 ? { ...r, buckets: [20, 70, 110, 65] } : r
+      );
+      const ready = render(<HeatMatrix {...props} />);
+      renders.mockClear();
+      ready.rerender(<HeatMatrix {...props} rows={changed} />);
+      const baseline = renders.mock.calls.length;
+      expect(baseline).toBe(1);
+      ready.unmount();
+      const loaded = render(<HeatMatrix {...props} loading />);
+      loaded.rerender(<HeatMatrix {...props} loading={false} />);
+      renders.mockClear();
+      loaded.rerender(<HeatMatrix {...props} rows={changed} loading={false} />);
+      expect(renders.mock.calls).toHaveLength(baseline);
+    } finally {
+      renders.mockRestore();
+    }
+  });
+
   it("tints cells by their place on the scale, not from zero", () => {
     const { container } = render(<HeatMatrix {...props} />);
     const row = cellsOf(container).slice(0, 4);

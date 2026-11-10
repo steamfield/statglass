@@ -1872,11 +1872,13 @@ export type LinuxPreparation = {
  *  One message on a window's live channel (D-049, D-066).
  *
  *  Order on a fresh subscription: the current `Caps` and `Status`; a `Layout` for every
- *  layout the requested history uses; the most recent two minutes as `Backfill` segments
- *  (each after its `Layout` when that differs from the last one sent); then frames, each
- *  preceded by a `Layout` when the layout changes. History older than two minutes follows
- *  as `BackfillEarlier` chunks, newest first, once the first frame is out: each chunk is
- *  older than everything the channel sent before it.
+ *  layout the requested history uses; then the most recent two minutes as `Backfill`
+ *  segments (each after its `Layout` when that differs from the last one sent); then
+ *  frames, preceded by a `Layout` when it changes. A `BackfillPlan` precedes the
+ *  `Backfill` messages of a catch-up that starts history over; on a clock step it can
+ *  come before that segment's `Layout`. Older `BackfillEarlier` chunks follow newest
+ *  first once the first frame is out or after `EARLIER_AFTER`, or all at once when the
+ *  window hides, whichever is first. Each is older than everything sent before it.
  *
  *  After the channel resumes (window shown, display awake, the stream fell behind the
  *  bus): `Caps` and `Status` if they changed, then `Backfill` for exactly the span missed,
@@ -1895,11 +1897,20 @@ export type LinuxPreparation = {
  */
 export type LiveMsg =
 /**
+ *  What a catch-up that starts the window's history over is about to send: `recent_rows`
+ *  rows as the `Backfill` messages that follow at once, then everything from
+ *  `earlier_start_ms` up to them as `BackfillEarlier` chunks (`null` when no older
+ *  history follows). Sent once per such catch-up, before its first `Backfill`, so a
+ *  reader can hold a chart back until its window is whole. A resume that only sends the
+ *  span missed sends no plan.
+ */
+({ kind: "backfill_plan"; recent_rows: number; earlier_start_ms: number | null }) & { capabilities?: never; held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
+/**
  *  The series of every following `Backfill` and `Frame` with this `layout_no`, in
  *  value order, and each one's catalog kind (`gauge` for a metric this build does not
  *  know). `layout_no` numbers layouts within one engine run.
  */
-({ kind: "layout"; layout_no: number; series: SeriesKey[]; kinds: MetricKind[] }) & { capabilities?: never; held?: never; holds_ms?: never; interval_ms?: never; rows?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
+({ kind: "layout"; layout_no: number; series: SeriesKey[]; kinds: MetricKind[] }) & { capabilities?: never; earlier_start_ms?: never; held?: never; holds_ms?: never; interval_ms?: never; recent_rows?: never; rows?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**
  *  Raw measured rows from the engine's one-hour ring: row `i` was taken at about
  *  `start_ms + i * interval_ms`. `null` where a series was not sampled. Segments never
@@ -1908,12 +1919,12 @@ export type LiveMsg =
  *  After a restart the ring starts with up to an hour of stored 10 s bucket averages
  *  under their own layout (`layout_no` 4294967295, D-097), so these rows can be that.
  */
-({ kind: "backfill"; layout_no: number; start_ms: number; interval_ms: number; timeline: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; held?: never; kinds?: never; series?: never; ts_ms?: never; values?: never } |
+({ kind: "backfill"; layout_no: number; start_ms: number; interval_ms: number; timeline: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; earlier_start_ms?: never; held?: never; kinds?: never; recent_rows?: never; series?: never; ts_ms?: never; values?: never } |
 /**
  *  History older than everything sent so far on this channel, in the same shape as
  *  `Backfill`. Its `layout_no` was announced by an earlier `Layout`.
  */
-({ kind: "backfill_earlier"; layout_no: number; start_ms: number; interval_ms: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; held?: never; kinds?: never; series?: never; timeline?: never; ts_ms?: never; values?: never } |
+({ kind: "backfill_earlier"; layout_no: number; start_ms: number; interval_ms: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; earlier_start_ms?: never; held?: never; kinds?: never; recent_rows?: never; series?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**
  *  How long each series' sample stays current in the frames that follow, in
  *  `layout_no` order (D-090). Sent before the first frame and whenever it changes: a
@@ -1921,20 +1932,20 @@ export type LiveMsg =
  *  stream. Two samples of a series further apart than the earlier one's hold have a
  *  gap between them; closer ones are one run.
  */
-({ kind: "holds"; layout_no: number; holds_ms: number[] }) & { capabilities?: never; held?: never; interval_ms?: never; kinds?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
+({ kind: "holds"; layout_no: number; holds_ms: number[] }) & { capabilities?: never; earlier_start_ms?: never; held?: never; interval_ms?: never; kinds?: never; recent_rows?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**
  *  One tick. `values` is what was measured on this tick (`null` for a series not
  *  sampled now); draw charts from it. `held` is the latest value of each series while
  *  it is still current (`null` once stale, D-047); read current numbers and build the
  *  Snapshot from it. Both are in `layout_no` order.
  */
-({ kind: "frame"; ts_ms: number; layout_no: number; timeline: number; values: (number | null)[]; held: (number | null)[] }) & { capabilities?: never; holds_ms?: never; interval_ms?: never; kinds?: never; rows?: never; series?: never; start_ms?: never } |
+({ kind: "frame"; ts_ms: number; layout_no: number; timeline: number; values: (number | null)[]; held: (number | null)[] }) & { capabilities?: never; earlier_start_ms?: never; holds_ms?: never; interval_ms?: never; kinds?: never; recent_rows?: never; rows?: never; series?: never; start_ms?: never } |
 /**
  *  Process rows, sent only while this window has process interest for the host:
  *  every readable process, or the top rows its [`ProcessView`] asked for, sorted by
  *  the view's first sort key.
  */
-({ kind: "processes"; ts_ms: number; rows: LiveProcess[] }) & { capabilities?: never; held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; series?: never; start_ms?: never; timeline?: never; values?: never } | ({ kind: "caps"; capabilities: Capabilities }) & { held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
+({ kind: "processes"; ts_ms: number; rows: LiveProcess[] }) & { capabilities?: never; earlier_start_ms?: never; held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; recent_rows?: never; series?: never; start_ms?: never; timeline?: never; values?: never } | ({ kind: "caps"; capabilities: Capabilities }) & { earlier_start_ms?: never; held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; recent_rows?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**  Engine state, sent when it changes. */
 {
 	kind: "status",

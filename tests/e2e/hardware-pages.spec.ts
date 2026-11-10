@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chartsReady } from "./helpers/charts-ready";
 
 /**
  * CPU, GPU, Memory and Power & Sensors pages on the mock transport, in both
@@ -36,7 +37,9 @@ for (const theme of THEMES) {
       await expect(
         page.getByRole("heading", { name: p.heading, exact: true })
       ).toBeVisible();
+      await chartsReady(page);
       await page.screenshot({
+        animations: "disabled",
         path: `test-results/screens/${p.slug}-${theme}-${info.project.name}.png`,
         fullPage: true,
       });
@@ -143,6 +146,7 @@ test("cpu page across a sleep gap renders without console errors", async ({
   });
   await expect(asleep.first()).toBeVisible();
   await page.screenshot({
+    animations: "disabled",
     path: `test-results/screens/cpu-sleep-gap-${info.project.name}.png`,
     fullPage: true,
   });
@@ -161,6 +165,7 @@ test("module page charts label a sleep gap", async ({ page }, info) => {
       route
     ).toBeVisible();
     await page.screenshot({
+      animations: "disabled",
       path: `test-results/screens/${route}-sleep-gap-${info.project.name}.png`,
       fullPage: true,
     });
@@ -197,6 +202,7 @@ test("power stack and core heatmap label an open pause", async ({
       /Recording was paused during this interval. No samples were collected./
     );
     await page.screenshot({
+      animations: "disabled",
       path: `test-results/screens/${route}-paused-${info.project.name}.png`,
       fullPage: true,
     });

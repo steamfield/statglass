@@ -40,6 +40,10 @@ async function renderCharts(window: "5m" | "1h", scenarios: ScenarioName[]) {
     transportOptions: { now: () => NOW, scenarios, historyRows: 3600 },
     backfillMs: 60 * MIN,
   });
+  onTestFinished(() => {
+    r.unmount();
+    r.transport.dispose();
+  });
   await screen.findByRole("img", { name: /^CPU total and system/ });
   act(() => r.transport.tick());
   return r;
@@ -69,7 +73,16 @@ describe("gap bands on module page charts (plan 4.17)", () => {
   });
 
   it("marks an open pause up to now", async () => {
-    await renderCharts("1h", ["paused"]);
+    vi.useFakeTimers();
+    try {
+      const pending = renderCharts("1h", ["paused"]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
     await waitFor(() =>
       expect(
         screen.getAllByRole("note", {

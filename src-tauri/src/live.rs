@@ -441,6 +441,16 @@ impl Stream {
         Ok(())
     }
 
+    fn send_plan(&self, segs: &[BackfillSegment], earlier: Option<i64>) -> Result<(), Closed> {
+        let recent_rows = segs
+            .iter()
+            .fold(0_u32, |n, s| n.saturating_add(len_u32(s.rows.len())));
+        self.send(LiveMsg::BackfillPlan {
+            recent_rows,
+            earlier_start_ms: earlier,
+        })
+    }
+
     /// Sends one segment as `Backfill` (after its layout) and records it as sent.
     fn send_segment(&mut self, seg: &BackfillSegment) -> Result<(), Closed> {
         let Some(n) = seg.rows.len().checked_sub(1) else {
@@ -510,6 +520,9 @@ impl Stream {
             segs.drain(..first);
         }
         if stepped_from.is_some() || self.last_ts.is_some() {
+            if stepped_from.is_some() {
+                self.send_plan(&segs, None)?;
+            }
             for seg in segs.into_iter().flat_map(chunks) {
                 out.first.get_or_insert(seg.start_ms);
                 out.rows = out.rows.saturating_add(len_u32(seg.rows.len()));
@@ -531,12 +544,13 @@ impl Stream {
         for seg in &earlier {
             self.send_layout(&seg.layout)?;
         }
+        out.earlier_start = earlier.first().map(|s| s.start_ms);
+        self.send_plan(&recent, out.earlier_start)?;
         for seg in &recent {
             out.first.get_or_insert(seg.start_ms);
             out.rows = out.rows.saturating_add(len_u32(seg.rows.len()));
             self.send_segment(seg)?;
         }
-        out.earlier_start = earlier.first().map(|s| s.start_ms);
         for seg in earlier {
             out.earlier_rows = out.earlier_rows.saturating_add(len_u32(seg.rows.len()));
             self.earlier.extend(chunks(seg));
@@ -710,6 +724,13 @@ impl Stream {
     async fn run(mut self, mut visible: watch::Receiver<bool>, mut sub: Option<Subscriber>) {
         loop {
             let Some(s) = sub.as_mut() else {
+                // Hidden: drain promised history regardless of display_idle, so charts
+                // are not left loading until the next show (D-133).
+                while !self.earlier.is_empty() {
+                    if self.send_earlier().is_err() {
+                        return;
+                    }
+                }
                 if visible.wait_for(|v| *v).await.is_err() {
                     return;
                 }

@@ -87,11 +87,13 @@ impl From<statglass_store::UsageHistoryGrowth> for UsageHistoryGrowth {
 /// One message on a window's live channel (D-049, D-066).
 ///
 /// Order on a fresh subscription: the current `Caps` and `Status`; a `Layout` for every
-/// layout the requested history uses; the most recent two minutes as `Backfill` segments
-/// (each after its `Layout` when that differs from the last one sent); then frames, each
-/// preceded by a `Layout` when the layout changes. History older than two minutes follows
-/// as `BackfillEarlier` chunks, newest first, once the first frame is out: each chunk is
-/// older than everything the channel sent before it.
+/// layout the requested history uses; then the most recent two minutes as `Backfill`
+/// segments (each after its `Layout` when that differs from the last one sent); then
+/// frames, preceded by a `Layout` when it changes. A `BackfillPlan` precedes the
+/// `Backfill` messages of a catch-up that starts history over; on a clock step it can
+/// come before that segment's `Layout`. Older `BackfillEarlier` chunks follow newest
+/// first once the first frame is out or after `EARLIER_AFTER`, or all at once when the
+/// window hides, whichever is first. Each is older than everything sent before it.
 ///
 /// After the channel resumes (window shown, display awake, the stream fell behind the
 /// bus): `Caps` and `Status` if they changed, then `Backfill` for exactly the span missed,
@@ -110,6 +112,17 @@ impl From<statglass_store::UsageHistoryGrowth> for UsageHistoryGrowth {
 #[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LiveMsg {
+    /// What a catch-up that starts the window's history over is about to send: `recent_rows`
+    /// rows as the `Backfill` messages that follow at once, then everything from
+    /// `earlier_start_ms` up to them as `BackfillEarlier` chunks (`null` when no older
+    /// history follows). Sent once per such catch-up, before its first `Backfill`, so a
+    /// reader can hold a chart back until its window is whole. A resume that only sends the
+    /// span missed sends no plan.
+    BackfillPlan {
+        recent_rows: u32,
+        #[specta(type = Option<JsSafeInt>)]
+        earlier_start_ms: Option<i64>,
+    },
     /// The series of every following `Backfill` and `Frame` with this `layout_no`, in
     /// value order, and each one's catalog kind (`gauge` for a metric this build does not
     /// know). `layout_no` numbers layouts within one engine run.

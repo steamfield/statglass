@@ -1,6 +1,14 @@
 import { render, screen } from "@testing-library/react";
+import { mockElementAnimate } from "@tests/test-utils";
 import { expectJsonRoundTrip } from "@tests/widget-json";
 import { StreamArea, type StreamAreaProps } from "./stream-area";
+
+beforeEach(() =>
+  document.documentElement.style.setProperty("--motion-enter", "280ms")
+);
+afterEach(() =>
+  document.documentElement.style.removeProperty("--motion-enter")
+);
 
 const props: StreamAreaProps = {
   series: [
@@ -49,6 +57,75 @@ function withWidth(width: number, fn: () => void) {
 function moveCount(d: string | null | undefined): number {
   return (d ?? "").match(/M/g)?.length ?? 0;
 }
+
+describe("StreamArea loading", () => {
+  it("draws only the frame while loading, then reveals data without replacing the SVG", () => {
+    const animate = mockElementAnimate();
+    withWidth(560, () => {
+      const data: StreamAreaProps = {
+        ...props,
+        series: [{ key: "total", values: [10, 12, null, 13, 18], step: 1 }],
+        gaps: [
+          {
+            fromMs: props.tEndMs - 3000,
+            toMs: props.tEndMs - 2000,
+            label: "Asleep",
+          },
+        ],
+        yTicks: [{ value: 20, label: "20%" }],
+        xTicks: ["-4s", "now"],
+        highlight: { left: 0.2, width: 0.5 },
+        overlay: <span>Brush</span>,
+        annotations: [{ tsMs: props.tEndMs - 1000, label: "Spike" }],
+      };
+      const { container, getByRole, getByText, queryByText, rerender } = render(
+        <StreamArea {...data} loading />
+      );
+      const svg = getByRole("img");
+      expect(svg).toHaveAttribute("aria-busy", "true");
+      expect(svg).toHaveAttribute("data-reveal");
+      expect(animate).not.toHaveBeenCalled();
+      expect(
+        container.querySelectorAll(
+          "path[data-line], path[data-area], linearGradient, [data-gap-edge], [role=note]"
+        )
+      ).toHaveLength(0);
+      const track = container.querySelector("[data-chart-loading]");
+      expect(track).toBeInTheDocument();
+      expect(
+        track?.parentElement?.querySelector("svg[aria-hidden] path")
+      ).toBeInTheDocument();
+      for (const label of ["20%", "now", "40%", "60s", "Brush"])
+        expect(getByText(label)).toBeInTheDocument();
+      // An annotation marks a point on the data, so it waits for the data.
+      expect(queryByText("Spike")).toBeNull();
+      expect(
+        container.querySelector("[data-testid=stream-veil]")
+      ).toBeInTheDocument();
+      rerender(<StreamArea {...data} loading={false} />);
+      expect(getByRole("img")).toBe(svg);
+      expect(svg).not.toHaveAttribute("aria-busy");
+      expect(animate.mock.contexts).toEqual([svg]);
+      expect(svg.parentElement).not.toHaveAttribute("data-reveal");
+      expect(container.querySelector("[data-chart-loading]")).toBeNull();
+      expect(
+        container.querySelectorAll("path[data-line], path[data-area]")
+      ).toHaveLength(2);
+      expect(container.querySelectorAll("linearGradient")).toHaveLength(1);
+      expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(2);
+      expect(getByRole("note", { name: "Asleep" })).toBeInTheDocument();
+      expect(getByText("Spike")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps charts mounted without loading immediately ready", () => {
+    const { container, getByRole } = render(<StreamArea {...props} />);
+    expect(container.querySelector("[data-chart-loading]")).toBeNull();
+    expect(getByRole("img")).toHaveAttribute("data-reveal");
+    expect(getByRole("img")).not.toHaveAttribute("aria-busy");
+    expect(container.querySelectorAll("path[data-line]")).toHaveLength(2);
+  });
+});
 
 describe("StreamArea", () => {
   it("renders the same after a JSON round trip", () => {

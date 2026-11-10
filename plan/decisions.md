@@ -120,6 +120,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-126 | Agents query StatGlass through a bundled, read-only CLI | Accepted |
 | D-128 | Docker coverage records carry a Rust-derived kind, masking and label | Accepted |
 | D-131 | Developer ID releases from a tag-triggered macOS job | Accepted |
+| D-133 | Charts hold back until their history has arrived, then reveal once | Accepted |
 
 ---
 
@@ -4449,10 +4450,100 @@ patched per field like the popover's densities (D-050). Capability gates still a
 top of it. This is the hide-and-show part of v2.3's Customize Overview. Reordering, the
 edit mode and the per-card Top processes option remain v2.3b.
 
-## D-133: The Hosts page monitors every host: vitals, recent history, update progress, rr jobs
+## D-133: Charts hold back until their history has arrived, then reveal once
+
+Date: 2026-11-10. Amends D-086 (two cuts) and D-066 (the live channel's messages).
+
+A dashboard chart used to draw whatever the ring held: the last two minutes as a sliver on
+the right, then the rest of the hour in 600-row slabs as `BackfillEarlier` chunks landed,
+with heatmaps hatched as if the missing history were gaps. Ranges over an hour showed a
+line of text above an empty chart. Charts now have a loading state. The frame (grid,
+baseline, ticks) draws at once; the data, gap hatching, gap dots and annotations wait; a
+1 px segment in the module accent sweeps the baseline; and when the window is whole the
+data layer settles in once.
+
+**The fact comes from Rust, on the stream.** A catch-up that starts a window's history
+over sends `LiveMsg::BackfillPlan { recent_rows, earlier_start_ms }` before its first
+`Backfill`: how many recent rows follow at once and how far back the earlier chunks
+reach. The `subscribe_live` reply already carried the same numbers, but only for a window
+visible at subscribe time, and unordered against the channel; the popover subscribes
+hidden and catches up on show, so the reply could not serve it. A plain resume sends no
+plan. A clock step that drops queued chunks sends a plan with no earlier start, so a
+reader stops waiting. `LiveMsg` is the Tauri channel type in `src-tauri`, not
+`statglass-proto`, so the agent and controller wire format is untouched. The mock sends
+the same plan and, like Rust, no longer catches up a hidden window until it is shown.
+
+**Rust finishes promised history when a window hides.** The stream used to keep queued
+earlier chunks until the next show. It now sends them when the window hides, once (six
+messages for an hour at 1 s sampling; 600 rows each), whether or not the display is
+asleep, so a chart is never left loading (and animating) in a hidden window. While a
+window stays visible on a sleeping display the chunks are still held, and `ringLoading`
+is false then.
+
+**The frontend keeps one state.** `historyPending` in the live state is `null`,
+`"subscribe"` (an empty-ring subscribe has not said what it will send), `{ recent: n }`
+(the recent rows still to land, counted down across the `Backfill` messages that carry
+them) or the earlier start. `ringLoading(state, windowMs, tolerance)` is true until the promised
+history has landed or the ring covers the chart's window, whichever is first, so a 5 m
+chart reveals after the first chunk and a fresh install with three minutes of history
+does not wait for an hour that will not come. A plan that arrives while the ring holds
+rows (a resubscribe that kept them) never blanks a chart that is showing data. The ring
+hooks return it as `ringLoading`, beside `loading`, which still means a pending history
+query: only the query announces "Loading chart history…", and on a chart that line is now
+for assistive technology only.
+
+**Motion.** D-086 cut a chart draw-in (a clip that revealed "now" last, on charts that
+mount hidden) and a looping shimmer (on the collecting state, which lasts hours with
+nothing loading). Neither objection applies here. The reveal is opacity plus a 10%
+`scaleY` from the baseline (`useReveal`, `--motion-enter`), transform and opacity only,
+and it plays only after a chart has actually been loading: a chart mounted with its data
+(every tab change after the first) does not animate. It is one Web Animations call fired
+in a layout effect at the flip, reading the token as `useTickScroll` does, and leaves
+nothing on the element: a class would replay on every chart when Performance mode or
+reduced motion later turned off. The scan runs only while a load is
+in flight, on a new `--motion-scan` token (900 ms, so a typical one-second load shows
+about one pass), starts after `--motion-fast` so a load under 150 ms never shows it, and
+is `display: none` under reduced motion and Performance mode, where the loading state is
+the static frame and the data simply appears.
+
+**Two fixes that came with it.** `motionMs` read a duration token with `parseFloat`
+and no unit. The production CSS minifier writes `280ms` as `.28s`, so in every production
+build each JS-driven tween ran for a fraction of a millisecond: the chart tick scroll,
+`NumberTicker` counts, the Disk space map and the Timeline zoom, and it would have been
+the reveal too. They animated only in the dev server. `motionMs` now reads seconds as
+well, so those four work in the shipped app as D-086 and D-087 describe; the frontend
+perf gate has been measuring them dead until now. And the mock's 1 s timer is throttled
+to about one a minute in a background browser tab, which left the demo's charts mostly
+gaps on return; a late timer now fills the rows the engine would have taken and sends
+them as a hidden window's catch-up.
+
+Known differences, left in place:
+
+- Disk I/O charts (the Overview card and the Disk page) mount only once their query has
+  data, so they keep their text line and do not reveal.
+- A window hidden in the first second of a load finishes loading while hidden, so its
+  reveal plays unseen and it is simply complete when shown.
+- The stat values and tables in a card are not held back; they are current one message
+  after mount.
+- The page body still renders nothing until settings and the host list load, one IPC
+  each. Not measured in the packaged app; if that gap shows, page shells are the
+  follow-up.
+- Gap bands and gap edge dots sit outside the settling layer, so they appear at the flip
+  without the settle.
+- An auto-scaled axis (power, network) is sized from the rows held so far, so its tick
+  labels can change at the reveal.
+- A loading chart is `aria-busy`; ring loading is not announced. A live-region line per
+  chart on every dashboard open would be noise for a one-second state.
+- The mock does not forward window visibility to its remote peers, so the hidden and
+  hide-mid-backfill paths are exercised for the local host only.
+
+Revisit when: the popover's reveal on first open has been checked for stale frames in the
+packaged app; `make bench` has been run with the popover wired (not run for this change).
+
+## D-134: The Hosts page monitors every host: vitals, recent history, update progress, rr jobs
 
 Date: 2026-11-10. Replaces the Hosts row list with a grid of host cards (design: the
-"Hosts Monitoring" canvas). Extends D-123 and D-132.
+"Hosts Monitoring" canvas). Extends D-123 and D-132; card charts load through D-133.
 
 Each card shows the last 10 minutes of CPU and memory, four vitals (1-minute load against
 the core count, memory pressure, the boot volume's use, total network rate), the host's
@@ -4483,7 +4574,7 @@ changes emit a typed event that refreshes the host list, so the client polls at 
 rr jobs are read over SSH, not by the agent. rr locks a host by creating
 `/tmp/rr.lock/info.json` over SSH as its user, and the system agent runs with
 `PrivateTmp`, so the controller reads the lock through the host's existing SSH session
-every 15 s while the recent interest is held: regular file only, no symlinks, 4 KB cap,
+every 60 s while the recent interest is held (ssh runs with ControlMaster off, so each read is a fresh connection; a failing host backs off to 5, 15 and 60 minutes): regular file only, no symlinks, 4 KB cap,
 parsed into an allowlist of command, user, client host and start time. This Mac reads the
 same path locally. Jobs on several hosts with the same client, user and start are grouped
 in Rust. A host without rr shows nothing. No wire change.

@@ -50,12 +50,13 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
   const sensorKeys = zones ? sensorList : [];
   const now = useHeld([...zoneKeys, ...sensorKeys]);
   const gaps = useGapBands("sensors");
-  const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
-    zoneKeys,
-    desiredBucketMs,
-    Math.ceil(windowMs / desiredBucketMs),
-    windowMs
-  );
+  const { values, endMs, bucketMs, loading, ringLoading, error } =
+    useModuleBuckets(
+      zoneKeys,
+      desiredBucketMs,
+      Math.ceil(windowMs / desiredBucketMs),
+      windowMs
+    );
   const title = zones ? "SoC thermal zones" : "Temperature sensors";
   const span = spanWords(windowMs, end);
   const temp = (c: number) => formatTemperature(c, { units });
@@ -99,8 +100,9 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
           ? "Apple doesn't document which zone sits over which core, so zones keep their sensor names."
           : "As the kernel names them."}
       </p>
-      <ChartHistoryStatus loading={loading} error={error} />
+      <ChartHistoryStatus quiet loading={loading} error={error} />
       <HeatMatrix
+        loading={loading === true || ringLoading}
         live={end === null}
         gaps={gaps}
         rows={zoneKeys.map((k, i) => ({

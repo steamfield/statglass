@@ -121,3 +121,42 @@ it("snaps an auto ceiling on the binary ladder when the axis asks for it", async
   );
   expect(Math.log2(ceiling) % 1).toBe(0);
 });
+
+it("holds the whole hour behind the loading frame until backfill finishes", async () => {
+  vi.useFakeTimers();
+  const r = renderWithProviders(
+    <ChartRangeProvider>
+      <Card yAxis="percent" />
+    </ChartRangeProvider>,
+    {
+      transportOptions: { historyRows: 3600, chartWindow: "1h" },
+      backfillMs: 3_600_000,
+    }
+  );
+  try {
+    await act(async () => {});
+    expect(r.container.querySelector("[data-chart-loading]")).not.toBeNull();
+    expect(r.container.querySelector("path[data-line]")).toBeNull();
+    expect(
+      screen.getByRole("img", { name: /^CPU, / })
+    ).not.toHaveAccessibleName(/Drag to select/);
+    expect(screen.queryByRole("slider")).toBeNull();
+    expect(screen.queryByTestId("selection-summary")).toBeNull();
+    expect(screen.queryByText(/Drag across the chart/)).toBeNull();
+    expect(screen.queryByText("Loading chart history…")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(r.container.querySelector("[data-chart-loading]")).toBeNull();
+    const path =
+      r.container.querySelector("path[data-line]")?.getAttribute("d") ?? "";
+    expect(path).toMatch(/^M0,/);
+    expect(path).toContain("L1000,");
+    expect(screen.getByRole("slider")).toBeInTheDocument();
+    expect(screen.getByText(/Drag across the chart/)).toBeInTheDocument();
+  } finally {
+    r.unmount();
+    r.transport.dispose();
+    vi.useRealTimers();
+  }
+});

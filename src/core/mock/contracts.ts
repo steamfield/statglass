@@ -21,6 +21,9 @@ export interface MockEmbed {
   popoverContentHeight(height: number): void;
 }
 export interface MockTransportOptions {
+  /** Delays `subscribeLive` and `queryHistory` by this long, to see loading states.
+   * 0 or absent adds no timer. */
+  latencyMs?: number;
   /** Set when the app runs as an embedded demo inside another page. */
   embed?: MockEmbed;
   updateStatus?: UpdateStatus;
@@ -142,6 +145,8 @@ export interface LiveSub {
   /** Indices of the generator's series this channel carries; null for all. */
   pick: number[] | null;
   series: SeriesKey[];
+  /** Last layout announced on this channel, as in Rust Stream::layout_no. */
+  layoutNo: number | null;
   minPeriodMs: number | null;
   lastFrameMs: number | null;
   backfillMs: number;

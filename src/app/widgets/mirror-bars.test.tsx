@@ -1,6 +1,14 @@
 import { render } from "@testing-library/react";
+import { mockElementAnimate } from "@tests/test-utils";
 import { expectJsonRoundTrip } from "@tests/widget-json";
 import { MirrorBars, type MirrorBarsProps } from "./mirror-bars";
+
+beforeEach(() =>
+  document.documentElement.style.setProperty("--motion-enter", "280ms")
+);
+afterEach(() =>
+  document.documentElement.style.removeProperty("--motion-enter")
+);
 
 const props: MirrorBarsProps = {
   up: [2, 6, null, 12],
@@ -14,6 +22,40 @@ const props: MirrorBarsProps = {
 };
 
 describe("MirrorBars", () => {
+  it("keeps empty slots without gaps while loading, then settles both halves from the axis", () => {
+    const animate = mockElementAnimate();
+    const { container, getByRole, rerender } = render(
+      <MirrorBars {...props} upHeight={24} loading />
+    );
+    const root = getByRole("img");
+    const bars = () => [...container.querySelectorAll<HTMLElement>(".flex-1")];
+    expect(bars()).toHaveLength(8);
+    expect(bars().map((b) => b.style.height)).toEqual(Array(8).fill("0px"));
+    expect(container.querySelector("[data-gap]")).toBeNull();
+    const data = root.querySelector<HTMLElement>("[data-bars]");
+    expect(root).toHaveAttribute("aria-busy", "true");
+    expect(data).toHaveAttribute("data-reveal");
+    expect(animate).not.toHaveBeenCalled();
+    const track = container.querySelector("[data-chart-loading]");
+    const axis = track?.parentElement;
+    expect(axis).toHaveClass("h-px", "bg-axis");
+    rerender(<MirrorBars {...props} upHeight={24} loading={false} />);
+    expect(getByRole("img")).toBe(root);
+    expect(root.querySelector("[data-bars]")).toBe(data);
+    expect(root).not.toHaveAttribute("aria-busy");
+    expect(animate.mock.contexts).toEqual([data]);
+    expect(data?.style.transformOrigin).toBe("50% 24px");
+    expect(container.querySelector("[data-chart-loading]")).toBeNull();
+    expect(bars().map((b) => b.style.height)).toContain("24px");
+    expect(bars().map((b) => b.style.height)).toContain("30px");
+    expect(container.querySelectorAll("[data-gap]")).toHaveLength(2);
+    // The axis is frame: it must not fade with the bars. The scrolled rows
+    // carry the tick transform, so the settle is not on them either.
+    expect(data).not.toContainElement(axis ?? null);
+    for (const row of data?.querySelectorAll(":scope > .flex") ?? [])
+      expect(row).not.toHaveAttribute("data-reveal");
+  });
+
   it("renders the same after a JSON round trip", () => {
     expectJsonRoundTrip(MirrorBars, props);
   });

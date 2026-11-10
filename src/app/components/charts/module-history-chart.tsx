@@ -109,18 +109,20 @@ export function ModuleHistoryChart({
   annotations?: StreamAreaProps["annotations"];
 }) {
   const { series, gaps } = chart;
+  const loading = series.loading === true || series.ringLoading;
   const y = useYAxis(yAxis, lines, chart);
-  const brush = useAreaBrush(series, height, chart.brush, gaps);
+  const brush = useAreaBrush(series, height, chart.brush && !loading, gaps);
   const ariaLabel = useChartLabel({
     subject,
     span: chart.span,
     now,
-    brushable: chart.brush,
+    brushable: chart.brush && !loading,
   });
   return (
     <div className="flex flex-col gap-1.5">
-      <ChartHistoryStatus loading={series.loading} error={series.error} />
+      <ChartHistoryStatus quiet loading={series.loading} error={series.error} />
       <StreamArea
+        loading={loading}
         gaps={gaps}
         series={lines}
         tEndMs={series.tEndMs}
@@ -135,10 +137,14 @@ export function ModuleHistoryChart({
         {...(annotations && { annotations })}
       />
       {chart.brush && (
-        <SelectionSummary
-          windowMs={chart.windowMs}
-          inset={y.gutter ?? GUTTER}
-        />
+        <div className="flex min-h-5.5 flex-col">
+          {!loading && (
+            <SelectionSummary
+              windowMs={chart.windowMs}
+              inset={y.gutter ?? GUTTER}
+            />
+          )}
+        </div>
       )}
     </div>
   );

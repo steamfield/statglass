@@ -3,7 +3,7 @@
  * `/ask` system (shared/styles/tool-cards.css) and its marketing lift roles,
  * scaled down for a dense monitor.
  *
- * Every animation runs once, on mount: a CSS animation doesn't restart because
+ * Every animation runs once when its class is applied: a CSS animation doesn't restart because
  * React re-rendered, so 1 Hz updates never replay it. `opacity: 0` lives only
  * in the keyframes, with `backwards` fill, never in a base rule: an element
  * whose animation doesn't run (reduced motion) is simply visible.

@@ -2,7 +2,7 @@
 //!
 //! Every host starts from the series a remote host serves while unselected
 //! ([`statglass_remote::headline_metrics`]: `cpu.total`, `mem.used`, `mem.pressure`,
-//! `gpu.util`, `thermal.hottest`, network and disk rates, plus the D-133 vitals),
+//! `gpu.util`, `thermal.hottest`, network and disk rates, plus the D-134 vitals),
 //! with the same label filter as summaries. This Mac adds
 //! `power.system` and `battery.charge`; a remote host gets no extras, because it serves them only while
 //! a window shows it, and the answer must not depend on that. A series the frame does

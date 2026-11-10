@@ -94,3 +94,43 @@ describe("mock transport query parameters", () => {
     ).toEqual(expected);
   });
 });
+
+it("parses latency as a delay before subscribe messages or history results", async () => {
+  vi.useFakeTimers();
+  const transport = await createAppTransport("?ticks=0&latency=800");
+  try {
+    const messages: unknown[] = [];
+    const subscription = transport.subscribeLive(MOCK_HOST_ID, (m) =>
+      messages.push(m)
+    );
+    let historyDone = false;
+    const query = transport
+      .queryHistory({
+        host: MOCK_HOST_ID,
+        selectors: [{ metric: "cpu.total", labels: [] }],
+        from_ms: 0,
+        to_ms: 1000,
+        tier: "auto",
+        max_points: 10,
+      })
+      .then(() => {
+        historyDone = true;
+      });
+    expect(messages).toEqual([]);
+    await vi.advanceTimersByTimeAsync(799);
+    expect(messages).toEqual([]);
+    expect(historyDone).toBe(false);
+    // Other commands do not wait for this knob.
+    expect((await transport.listHosts()).length).toBeGreaterThan(0);
+    expect((await transport.getSettings()).settings).toBeDefined();
+    await vi.advanceTimersByTimeAsync(1);
+    (await subscription).unsubscribe();
+    await query;
+    expect(messages.length).toBeGreaterThan(0);
+    expect(historyDone).toBe(true);
+  } finally {
+    if ("dispose" in transport && typeof transport.dispose === "function")
+      transport.dispose();
+    vi.useRealTimers();
+  }
+});

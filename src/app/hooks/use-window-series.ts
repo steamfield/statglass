@@ -1,7 +1,7 @@
 import { brushBucketMs } from "@core/brush";
 import { gridIntervalMs, seriesWindow } from "@core/live-state";
 import { useHostStore } from "~/stores/host-store";
-import { useRingBuckets } from "./use-ring";
+import { useRingBuckets, useRingLoading } from "./use-ring";
 
 /**
  * At most this many points per series: two per pixel of a chart about 600 px
@@ -14,6 +14,8 @@ export interface WindowSeries {
   values: Record<string, (number | null)[]>;
   tEndMs: number;
   intervalMs: number;
+  /** The ring is still filling this window; the values are not all there yet. */
+  ringLoading: boolean;
   loading?: boolean;
   error?: boolean;
 }
@@ -42,6 +44,11 @@ export function useWindowSeries(
   const plainMs = Math.ceil(windowMs / interval / MAX_CHART_POINTS) * interval;
   const bucketMs = brush ? brushBucketMs(plainMs, interval) : plainMs;
   const factor = bucketMs / interval;
+  const ringLoading = useRingLoading(
+    windowMs,
+    factor > 1 ? bucketMs : undefined,
+    enabled
+  );
   const count = Math.ceil(windowMs / bucketMs);
   // Subscribes to the tick; the bucket work is skipped on the raw grid.
   const buckets = useRingBuckets(keys, bucketMs, count, {
@@ -50,19 +57,26 @@ export function useWindowSeries(
   });
   const state = store.getState();
 
-  if (!enabled) return { values: {}, tEndMs: 0, intervalMs: bucketMs };
+  if (!enabled)
+    return { values: {}, tEndMs: 0, intervalMs: bucketMs, ringLoading: false };
   if (factor <= 1) {
     const values: Record<string, (number | null)[]> = {};
     for (const k of keys) values[k] = seriesWindow(state, k, windowMs).values;
-    return { values, tEndMs: state.lastTsMs ?? 0, intervalMs: interval };
+    return {
+      values,
+      tEndMs: state.lastTsMs ?? 0,
+      intervalMs: interval,
+      ringLoading,
+    };
   }
 
   if (buckets.endMs === null) {
     const values: Record<string, (number | null)[]> = {};
     for (const k of keys) values[k] = new Array(count).fill(null);
-    return { values, tEndMs: 0, intervalMs: bucketMs };
+    return { values, tEndMs: 0, intervalMs: bucketMs, ringLoading };
   }
   return {
+    ringLoading,
     values: buckets.values,
     tEndMs: buckets.endMs,
     intervalMs: bucketMs,

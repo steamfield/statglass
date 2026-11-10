@@ -9,12 +9,14 @@ import {
   useRef,
   useState,
 } from "react";
+import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
 import {
   type ChartAnnotationProps,
   ChartAnnotations,
 } from "./chart-annotation";
 import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
+import { ChartLoading } from "./chart-loading";
 import { GapBands, type GapSpan } from "./gap-band";
 import { GapEdgeDot } from "./gap-edge-dot";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
@@ -34,6 +36,8 @@ const DASH_PERIOD = DASH[0] + DASH[1];
  * charts worker replaces the component body; keep the props shape.
  */
 export interface StreamAreaProps {
+  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
+  loading?: boolean;
   /** Series drawn back to front. `null` is a gap: the line breaks there. */
   series: {
     key: string;
@@ -123,7 +127,9 @@ export function StreamArea({
   highlight,
   overlay,
   annotations,
+  loading,
 }: StreamAreaProps) {
+  const reveal = useReveal<HTMLDivElement>(loading);
   const uid = useId();
   const n = Math.max(2, ...series.map((s) => s.values.length));
   const x = scaleLinear()
@@ -154,7 +160,7 @@ export function StreamArea({
       ? (Math.round(tEndMs / intervalMs) * (widthPx / (n - 1))) % DASH_PERIOD
       : 0;
 
-  const drawn = series.map((s) => {
+  const drawn = (loading ? [] : series).map((s) => {
     // Right-align: the last value sits at "now" even when the series is short.
     const offset = n - s.values.length;
     const runs = splitGaps(s.values).map((run) =>
@@ -198,7 +204,7 @@ export function StreamArea({
       gutter={gutter}
       style={accentVars(accent)}
     >
-      <div className="relative overflow-hidden">
+      <div ref={reveal} className="relative overflow-hidden">
         <svg
           aria-hidden
           viewBox={`0 0 ${VB_W} ${height}`}
@@ -217,8 +223,10 @@ export function StreamArea({
             width="100%"
             height={height}
             role="img"
+            aria-busy={loading || undefined}
             aria-label={ariaLabel}
-            className="block overflow-hidden"
+            data-reveal
+            className="block origin-bottom overflow-hidden"
           >
             <defs>
               {drawn
@@ -272,8 +280,9 @@ export function StreamArea({
             </g>
           </svg>
         </div>
+        {loading && <ChartLoading className="inset-x-0 bottom-0" />}
       </div>
-      {gaps && gaps.length > 0 && tEndMs > 0 && (
+      {!loading && gaps && gaps.length > 0 && tEndMs > 0 && (
         <GapBands
           gaps={gaps}
           rangeFromMs={tEndMs - windowMs}
@@ -292,7 +301,7 @@ export function StreamArea({
         ))
       )}
       <ChartAnnotations
-        annotations={annotations}
+        annotations={loading ? undefined : annotations}
         tEndMs={tEndMs}
         windowMs={windowMs}
         widthPx={widthPx}

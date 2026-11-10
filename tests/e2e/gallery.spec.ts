@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { chartsReady } from "./helpers/charts-ready";
 
 /**
  * The dev gallery renders every widget and app component on the mock
@@ -38,6 +39,29 @@ for (const theme of THEMES) {
     }, info) => {
       const errors = trackConsoleErrors(page);
       await openGallery(page, theme);
+      await expect(page.locator("[data-chart-loading]")).toHaveCount(3);
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () =>
+                document
+                  .getAnimations()
+                  .filter(
+                    (a) =>
+                      a.playState === "running" &&
+                      !(
+                        a instanceof CSSAnimation &&
+                        /scan/.test(a.animationName) &&
+                        a.effect instanceof KeyframeEffect &&
+                        a.effect.target instanceof Element &&
+                        a.effect.target.closest("[data-chart-loading]")
+                      )
+                  ).length
+            ),
+          { timeout: 2000 }
+        )
+        .toBe(0);
       await page.screenshot({
         path: `test-results/screens/gallery-${theme}-${info.project.name}.png`,
         fullPage: true,
@@ -98,6 +122,7 @@ for (const theme of THEMES) {
       );
       await page.goto(`${route.url}&theme=${theme}&ticks=0`);
       await expect(page.getByText(route.ready).first()).toBeVisible();
+      await chartsReady(page);
       await page.screenshot({
         path: `test-results/screens/${route.name}-${theme}-${info.project.name}.png`,
       });

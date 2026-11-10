@@ -21,6 +21,11 @@ const LONG_CHART_WINDOWS_MS: Record<string, number> = {
   "30d": 30 * DAY_MS,
 };
 
+function parseLatency(value: string | null): number {
+  const ms = Number(value);
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
 function parseChartWindow(value: string | null): ChartWindow | undefined {
   const long = value === null ? undefined : LONG_CHART_WINDOWS_MS[value];
   return (
@@ -37,6 +42,7 @@ function parseChartWindow(value: string | null): ChartWindow | undefined {
  *   ?window=popover|dashboard|onboarding   window label (default dashboard)
  *   ?scenario=no-fans,paused               mock scenarios, comma separated
  *   ?ticks=0                               no auto-tick (stable screenshots)
+ *   ?latency=800                           subscribe and history-query delay, ms
  *   ?interval=30000                        starting sample interval, ms
  *   ?chart_window=30m                      starting chart window (5m|15m|30m|1h|24h|7d|30d)
  *   ?space_scan=/                          start with a finished volume report
@@ -74,6 +80,7 @@ export async function createAppTransport(search: string): Promise<Transport> {
   const windowLabel = params.get("window") ?? "dashboard";
   const chartWindow = parseChartWindow(params.get("chart_window"));
   const spaceScan = params.get("space_scan");
+  const latencyMs = parseLatency(params.get("latency"));
   const intervalMs = Number(params.get("interval"));
   const remoteSetupDelayMs = Number(params.get("setup_delay"));
   const transport = createMockTransport({
@@ -94,6 +101,7 @@ export async function createAppTransport(search: string): Promise<Transport> {
     scenarios,
     autoTick: params.get("ticks") !== "0",
     ...(intervalMs ? { intervalMs } : {}),
+    latencyMs,
     ...(remoteSetupDelayMs ? { remoteSetupDelayMs } : {}),
     ...(chartWindow ? { chartWindow } : {}),
     ...(spaceScan ? { spaceScan } : {}),

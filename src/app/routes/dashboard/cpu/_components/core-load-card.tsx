@@ -48,12 +48,13 @@ export function CoreLoadCard({
   const keys = cores.map((c) => c.key);
   const now = useHeld(keys);
   const gaps = useGapBands("cpu");
-  const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
-    keys,
-    desiredBucketMs,
-    Math.ceil(windowMs / desiredBucketMs),
-    windowMs
-  );
+  const { values, endMs, bucketMs, loading, ringLoading, error } =
+    useModuleBuckets(
+      keys,
+      desiredBucketMs,
+      Math.ceil(windowMs / desiredBucketMs),
+      windowMs
+    );
   const ariaLabel = useChartLabel({
     subject: "Per-core load",
     // A static clause, so the label takes no live figures and no 10 s edge.
@@ -70,8 +71,9 @@ export function CoreLoadCard({
       compactHeader
       className="col-span-2 gap-3"
     >
-      <ChartHistoryStatus loading={loading} error={error} />
+      <ChartHistoryStatus quiet loading={loading} error={error} />
       <CoreHeatmap
+        loading={loading === true || ringLoading}
         live={end === null}
         gaps={gaps}
         cores={cores.map((c) => ({

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.1](https://github.com/steamfield/statglass/compare/v0.11.0...v0.11.1) - 2026-11-10
+
+### Changed
+
+- Dashboard and popover charts draw their frame at once, scan the baseline while
+  history loads, and reveal their data once the window is whole (D-133). Rust sends the
+  backfill plan ahead of a catch-up's rows, and hiding a window finishes the chunks it
+  already promised.
+
+### Fixed
+
+- The tick scroll, number counts, Disk space map and Timeline zoom animate in
+  production builds; the minifier writes duration tokens in seconds and they were read
+  as milliseconds.
+- rusqlite 0.41.1 for RUSTSEC-2026-0459.
+
 ## [0.11.0](https://github.com/steamfield/statglass/compare/v0.10.0...v0.11.0) - 2026-11-09
 
 ### Added

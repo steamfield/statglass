@@ -5,6 +5,7 @@ import { MINUTE_MS } from "@core/time-grid";
 import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
+import { useShownRingLoading } from "~/hooks/use-ring";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import {
   useBattery,
@@ -48,6 +49,7 @@ export function CompactBattery() {
 export function CompactPower({ showBattery }: { showBattery: boolean }) {
   const windowMs = useScaledWindow(MINUTE_MS);
   const history = useSeriesWindow("power.system", windowMs);
+  const loading = useShownRingLoading(windowMs);
   const ceiling = useNiceCeiling(history.values, history.tEndMs, 1, windowMs);
   const ariaLabel = useChartLabel({
     subject: "System power",
@@ -57,6 +59,7 @@ export function CompactPower({ showBattery }: { showBattery: boolean }) {
     <div className="flex items-center gap-2">
       <div className="min-w-10 flex-1">
         <StreamArea
+          loading={loading}
           series={[{ key: "power.system", values: history.values, step: 1 }]}
           tEndMs={history.tEndMs}
           intervalMs={history.intervalMs}
