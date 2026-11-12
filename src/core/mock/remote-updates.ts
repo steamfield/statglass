@@ -7,7 +7,10 @@ import type {
   RrJob,
   UpdatePhase,
 } from "@core/generated/bindings";
+import type { MockCommands } from "./commands";
+import type { MockTransport } from "./contracts";
 import type { ScenarioName } from "./fixtures";
+import { fail, ok } from "./protocol";
 import type { MockRemotes } from "./remote";
 import { APP_VERSION } from "./remote-linux";
 
@@ -148,6 +151,19 @@ function seedMonitoringScenarios(
           "The host did not reconnect with the updated agent within three minutes",
       },
     });
+}
+
+/** `restart_remote_agent`: the agent comes back at once, so nothing else changes. */
+export function mockRestartAgent(
+  commands: MockCommands,
+  remotes: ReadonlyMap<string, unknown>
+): MockTransport["restartRemoteAgent"] {
+  return async (id) => {
+    commands.record("restart_remote_agent", id);
+    return remotes.has(id)
+      ? ok(null)
+      : fail({ kind: "unknown_host", host: id });
+  };
 }
 
 /** Timed phases use the same status push seam as native notifications. */

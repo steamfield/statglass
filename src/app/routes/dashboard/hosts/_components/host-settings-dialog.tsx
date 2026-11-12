@@ -17,6 +17,7 @@ import { useHostSelection } from "~/lib/host-selection";
 import { MeterTrack } from "~/widgets/meter-track";
 import { useHostSettings } from "../_hooks/use-host-settings";
 import { remoteHostCardModel } from "../_lib/host-card-model";
+import { HostAgentRestart } from "./host-agent-restart";
 import { HostCardActions } from "./host-card-actions";
 import { HostCardStatus } from "./host-card-status";
 import { HostCardVersion } from "./host-card-version";
@@ -234,6 +235,9 @@ export function HostSettingsDialog({
                   />
                 </SettingsPanel>
               </div>
+              {linux && (
+                <HostAgentRestart hostId={remote.config.id} disabled={busy} />
+              )}
               <SettingsPanel title="Remove">
                 <SettingsRow
                   label="Remove host"

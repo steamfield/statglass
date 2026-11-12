@@ -47,6 +47,7 @@ case $1 in
     if [ $user = 1 ] && [ -e "$s/no-user-manager" ]; then echo offline; else echo running; fi;;
   enable) [ "$2" = --now ] && start;;
   start) start;;
+  restart) rm -f "$s/running"; start;;
   stop) [ -e "$s/fail-stop" ] && { echo "Failed to stop statglass-agent.service" >&2; exit 1; }
     rm -f "$s/running";;
   disable) rm -f "$s/running";;
@@ -519,6 +520,26 @@ async fn lifecycle(shell: Shell, layout: AgentLayout) {
     assert!(status.running);
     assert_eq!(status.host_id.unwrap().to_string(), NEW_ID);
 
+    // A restart from a stopped daemon brings it back under the same id.
+    assert!(
+        shell
+            .std_command(&format!("rm {}", q(&shell.base.join("state/running"))))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let status = super::flows::restart_with(&shell, &probe.target().unwrap())
+        .await
+        .unwrap();
+    assert!(status.running);
+    assert_eq!(status.host_id.unwrap().to_string(), NEW_ID);
+    let log = shell.log();
+    assert!(
+        log.contains("reset-failed statglass-agent.service"),
+        "{log}"
+    );
+    assert!(log.contains("restart statglass-agent.service"), "{log}");
+
     // Uninstall removes everything, and again finds nothing to do.
     let report = uninstall_with(&shell, true).await;
     assert!(report.is_clean(), "{report:?}");
@@ -889,6 +910,7 @@ fn every_script_survives_the_login_shell() {
         super::unit::restart(&w),
         super::unit::roll_back(&w),
         super::unit::reset_identity(&w),
+        super::unit::restart_service(&w),
         super::unit::uninstall(&w, true),
     ] {
         crate::transport::sh_c(&script).unwrap();
@@ -908,6 +930,7 @@ fn flows_are_send() {
     send(&super::probe_host("a", Some(150)));
     send(&super::uninstall_at("a", &target, true));
     send(&super::reset_identity("a", &probe));
+    send(&super::restart("a", &target));
 }
 
 #[tokio::test]

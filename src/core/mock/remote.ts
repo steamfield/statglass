@@ -27,6 +27,7 @@ import {
   mockHostVitals,
   mockLocalRrJob,
   mockMacPreparation,
+  mockRestartAgent,
   remoteRecords,
   seedRemoteScenarios,
 } from "./remote-updates";
@@ -491,6 +492,7 @@ export class MockRemotes {
       retryRemoteHost: this.retryRemoteHost,
       resetRemoteHostIdentity: this.resetRemoteHostIdentity,
       updateRemoteAgent: this.updateRemoteAgent,
+      restartRemoteAgent: mockRestartAgent(this.commands, this.remotes),
       hostUpdateNoticeDismissed: this.hostUpdateNoticeDismissed,
       dismissHostUpdateNotice: this.dismissHostUpdateNotice,
       repairRemoteHost: this.repairRemoteHost,

@@ -183,6 +183,25 @@ pub(crate) async fn reset_identity_with(
     running(&text)
 }
 
+/// Restarts the agent at `target` and returns the restarted daemon's status.
+pub async fn restart(alias: &str, target: &AgentTarget) -> Result<AgentStatus> {
+    restart_with(&Ssh(alias), target).await
+}
+
+pub(crate) async fn restart_with(
+    remote: &impl Remote,
+    target: &AgentTarget,
+) -> Result<AgentStatus> {
+    let text = run_script(
+        remote,
+        &unit::restart_service(&target.words()?),
+        None,
+        STEP_TIMEOUT,
+    )
+    .await?;
+    running(&text)
+}
+
 /// How one uninstall step went.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "outcome", content = "detail")]

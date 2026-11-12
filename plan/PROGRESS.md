@@ -4,6 +4,23 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Restart a Linux host's agent from host settings (2026-11-12)
+
+Linux host settings have an "Agent on this host" panel with a Restart button. The new
+`restart_remote_agent` command probes the saved routes, refuses an agent this login does
+not own or one reporting another identity, then runs `systemctl [--user] reset-failed`
+and `restart` over SSH and waits for the agent to answer before reconnecting the source.
+It runs a controller-side script, so agents from earlier releases restart too. Prompted by
+m1-linux running live-only after a full disk at start: `HistoryStore::open` never retries
+a failed open, and a restart was the only recovery.
+
+Verified with the agent-install script lifecycle test (restart from a stopped daemon,
+revert-checked), the Linux-hosts frontend tests (success and failure), and the dialog in
+the browser dev server with the `linux-host` scenario.
+
+Open: native QA against a real host from the app. The engine still does not retry a
+failed history open on its own.
+
 ## Hosts monitoring grid (D-134) (2026-11-10)
 
 Hosts now shows This Mac and every saved host in a monitoring grid: ten minutes of CPU

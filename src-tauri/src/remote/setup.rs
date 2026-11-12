@@ -149,6 +149,56 @@ pub async fn update_remote_agent(app: AppHandle, id: String) -> Result<(), Comma
     linux::update_saved(app, id).await
 }
 
+/// Restarts a saved Linux host's agent service, for a daemon that is stuck (history
+/// that could not open at start, a wedged collector), then reconnects to it. The agent
+/// keeps its identity and history.
+#[tauri::command]
+#[specta::specta]
+pub async fn restart_remote_agent(app: AppHandle, id: String) -> Result<(), CommandError> {
+    let _maintenance = crate::updates::maintenance(&app)?;
+    let state = app.state::<AppState>();
+    let _guard = state.remotes.operation.lock().await;
+    let id = host_id(&id)?;
+    let saved = state
+        .remotes
+        .saved
+        .lock_ok()
+        .get(&id)
+        .cloned()
+        .ok_or(CommandError::UnknownHost { host: id })?;
+    if !saved.is_linux() {
+        return Err(CommandError::InvalidArgument {
+            message: "Only Linux hosts run the StatGlass agent".into(),
+        });
+    }
+    let (alias, probe) = linux_probe(
+        saved.config.lan.clone(),
+        saved.config.tailscale.clone(),
+        ProbeFor::Existing,
+    )
+    .await?;
+    let target = probe.target()?;
+    if let Some(mismatch) = linux::layout_mismatch(&saved.command, &target) {
+        return Err(CommandError::RemoteAgentConflict {
+            message: format!("StatGlass did not restart the agent: {mismatch}"),
+        });
+    }
+    let reported = probe
+        .existing()
+        .and_then(|e| e.status.as_ref())
+        .and_then(|s| s.host_id);
+    if reported.is_some_and(|reported| reported != id) {
+        return Err(CommandError::RemoteIdentity {
+            message: "The agent on this host now reports a different identity, so StatGlass did not restart it. Re-pair the host first".into(),
+        });
+    }
+    statglass_remote::agent_install::restart(&alias, &target).await?;
+    if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
+        source.retry();
+    }
+    Ok(())
+}
+
 /// The probe of a host that must be Linux (an agent operation on a saved host).
 pub(super) async fn linux_probe(
     lan: Option<String>,

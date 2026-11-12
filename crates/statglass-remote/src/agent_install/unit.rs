@@ -160,6 +160,22 @@ rc=$?
     )
 }
 
+/// Restarts the daemon in place, clearing a failed state first so a unit that hit its
+/// start limit can start again, and waits for it to answer. A fresh process reopens its
+/// history, which recovers a daemon that came up live-only (a full disk at start).
+pub(crate) fn restart_service(w: &Words) -> String {
+    format!(
+        r#"set -u
+{systemctl} reset-failed {UNIT_NAME} >/dev/null 2>&1
+{systemctl} restart {UNIT_NAME}
+rc=$?
+{wait}exit $rc
+"#,
+        systemctl = w.systemctl,
+        wait = wait_running(w, 10),
+    )
+}
+
 /// Removes everything: stops and disables the unit, lets the agent remove its unit (and
 /// with `purge` its data), then removes the unit, binary and socket directly so a
 /// missing or broken binary still uninstalls. Prints one `step=outcome` line per step

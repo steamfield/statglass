@@ -124,6 +124,12 @@ export const commands = {
 	 */
 	updateRemoteAgent: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("update_remote_agent", { id })),
 	/**
+	 *  Restarts a saved Linux host's agent service, for a daemon that is stuck (history
+	 *  that could not open at start, a wedged collector), then reconnects to it. The agent
+	 *  keeps its identity and history.
+	 */
+	restartRemoteAgent: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("restart_remote_agent", { id })),
+	/**
 	 *  Re-pairs a host that now answers with a different id (a reinstall, a reset
 	 *  identity, a replaced machine). The answering host is added as a new host with the
 	 *  same name and routes; the old one is kept, disabled, with its mirrored history

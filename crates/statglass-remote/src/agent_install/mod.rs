@@ -24,8 +24,8 @@ mod upload;
 mod tests;
 
 pub use flows::{
-    StepOutcome, UninstallReport, UninstallStep, install, reset_identity, status, uninstall,
-    uninstall_at, update, update_with_progress,
+    StepOutcome, UninstallReport, UninstallStep, install, reset_identity, restart, status,
+    uninstall, uninstall_at, update, update_with_progress,
 };
 pub use probe::{
     AgentStatus, AgentVersion, DigestTool, DockerSocket, ExistingAgent, HostProbe, LinuxProbe,

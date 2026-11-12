@@ -253,3 +253,43 @@ describe("Linux hosts", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("Linux agent restart", () => {
+  it("restarts a Linux host's agent from its settings", async () => {
+    const source = mount(["linux-host"]);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Settings for linux-tailscale",
+      })
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Restart" }));
+    expect(
+      await screen.findByText("Restarted. Monitoring reconnects automatically")
+    ).toBeInTheDocument();
+    expect(
+      source.calls.find((call) => call.command === "restart_remote_agent")?.args
+    ).toEqual(["remote-linux"]);
+  });
+
+  it("shows why an agent restart failed", async () => {
+    const source = mount(["linux-host"]);
+    source.restartRemoteAgent = async () => ({
+      status: "error",
+      error: {
+        kind: "remote_agent_not_running",
+        message:
+          "the service started but the agent did not answer on its socket",
+      },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Settings for linux-tailscale",
+      })
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Restart" }));
+    expect(
+      await screen.findByText(/did not answer on its socket/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restart" })).toBeEnabled();
+  });
+});
