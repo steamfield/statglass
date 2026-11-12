@@ -4,6 +4,23 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Agent history recovers from a transient open failure (2026-11-12)
+
+`HistoryStore::reopen` opens the same file again after a failure that can clear up
+(`HistoryUnavailableReason::retryable`: an I/O error such as a full disk, or a lock another
+process held). It never touches a damaged or newer file; those still need Reset history.
+The agent daemon retries once a minute while history is unavailable, registers its host
+and attaches the engine to the reopened writer, so m1-linux's case (disk full at start,
+live-only until a manual restart) now recovers by itself within a minute of space coming
+back.
+
+Verified with engine tests for the I/O, lock and damaged-file cases and an agent test of
+one retry step, each revert-checked by disabling the retry rule.
+
+Open: the Mac app does not retry its own store yet. Its reattach path also has to move the
+Docker recorder and tell windows history is back (`reset_history` does both), so it was
+left for a separate change.
+
 ## Restart a Linux host's agent from host settings (2026-11-12)
 
 Linux host settings have an "Agent on this host" panel with a Restart button. The new
@@ -18,8 +35,7 @@ Verified with the agent-install script lifecycle test (restart from a stopped da
 revert-checked), the Linux-hosts frontend tests (success and failure), and the dialog in
 the browser dev server with the `linux-host` scenario.
 
-Open: native QA against a real host from the app. The engine still does not retry a
-failed history open on its own.
+Open: native QA against a real host from the app.
 
 ## Hosts monitoring grid (D-134) (2026-11-10)
 

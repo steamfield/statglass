@@ -7,7 +7,8 @@ use anyhow::Context;
 use statglass_engine::disk_space::SpaceService;
 use statglass_engine::{HistoryStore, identity, retention_for};
 use statglass_remote::{AgentPaths, HostServer};
-use statglass_schema::HostId;
+use statglass_schema::{HostId, HostRecord};
+use statglass_store::Writer;
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::host::AgentHost;
@@ -60,7 +61,7 @@ pub async fn run(paths: &AgentPaths, system: bool) -> anyhow::Result<()> {
     }
     let names = crate::container_names::spawn();
     crate::container_names::first_pass(&names, crate::container_names::FIRST_PASS_WITHIN).await;
-    let host = AgentHost::start(record, settings.clone(), writer, names)?;
+    let host = AgentHost::start(record.clone(), settings.clone(), writer, names)?;
     let budget = settings.history;
     let housekeeping = history
         .spawn_pruner(
@@ -69,7 +70,13 @@ pub async fn run(paths: &AgentPaths, system: bool) -> anyhow::Result<()> {
         )
         .context("starting history housekeeping")?;
     let history = Arc::new(history);
+    let retry = tokio::spawn(retry_history(
+        Arc::clone(&history),
+        Arc::clone(&host),
+        record,
+    ));
     let result = serve_until_signal(&paths.socket, Arc::clone(&host), history).await;
+    retry.abort();
     // The socket is gone once the server returns; now the engine closes its buckets
     // and gaps. Stopping waits on the engine thread, so off the runtime's workers.
     let stopping = Arc::clone(&host);
@@ -79,6 +86,49 @@ pub async fn run(paths: &AgentPaths, system: bool) -> anyhow::Result<()> {
     drop(housekeeping);
     tracing::info!("statglass-agent stopped");
     result
+}
+
+/// How often a history that failed to open (a full disk at start, another process
+/// holding the file) is tried again.
+const HISTORY_RETRY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Retries a history store that is unavailable for a reason that can clear up, and
+/// attaches the engine to it once it opens. A store that is open does nothing here.
+async fn retry_history(history: Arc<HistoryStore>, host: Arc<AgentHost>, record: HostRecord) {
+    let mut every = tokio::time::interval(HISTORY_RETRY);
+    every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    every.tick().await;
+    loop {
+        every.tick().await;
+        let (history, host, record) = (Arc::clone(&history), Arc::clone(&host), record.clone());
+        let attempt = tokio::task::spawn_blocking(move || {
+            reattach(&history, &record, |writer| host.set_store(Some(writer)))
+        });
+        if let Err(e) = attempt.await {
+            tracing::error!("history retry stopped: {e}");
+            return;
+        }
+    }
+}
+
+/// One retry: reopens the store and, when it opens and takes the host, hands the writer
+/// to `attach`. Returns whether history came back.
+fn reattach(history: &HistoryStore, record: &HostRecord, attach: impl FnOnce(Writer)) -> bool {
+    match history.reopen() {
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!("history still unavailable: {e}");
+            false
+        }
+        Ok(Some(_)) => match history.register_host(record) {
+            Some(writer) => {
+                attach(writer);
+                tracing::info!("history reopened; recording again");
+                true
+            }
+            None => false,
+        },
+    }
 }
 
 /// The metrics server makes the socket's directory owner-only. Pointed at a shared
@@ -160,6 +210,29 @@ mod tests {
         assert!(check_socket_dir(&dir.path().join("x.sock")).is_ok());
         // A directory that does not exist yet is created private by the server.
         assert!(check_socket_dir(&dir.path().join("new/x.sock")).is_ok());
+    }
+
+    #[test]
+    fn a_retry_reattaches_history_once_the_file_can_open() {
+        if crate::test_support::reexec_for_lock_test() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join(statglass_engine::HISTORY_DB_FILE);
+        std::fs::create_dir(&db).unwrap();
+        let history = HistoryStore::open(dir.path());
+        let record = statglass_engine::host_record(HostId(uuid::Uuid::from_u128(9)));
+        assert!(history.register_host(&record).is_none());
+        let attached = std::cell::Cell::new(0);
+        let attach = |_: Writer| attached.set(attached.get() + 1);
+
+        assert!(!reattach(&history, &record, attach), "still in the way");
+        std::fs::remove_dir(&db).unwrap();
+        assert!(reattach(&history, &record, attach));
+        assert!(!reattach(&history, &record, attach), "already open");
+        assert_eq!(attached.get(), 1);
+        assert_eq!(history.read(|r| r.hosts()).unwrap(), vec![record]);
+        history.close();
     }
 
     #[test]

@@ -64,6 +64,15 @@ impl From<&StoreError> for HistoryUnavailableReason {
     }
 }
 
+impl HistoryUnavailableReason {
+    /// Whether opening the same file again can succeed without anyone touching it: the
+    /// other process may quit, the disk may get space back. A damaged or newer file stays
+    /// as it is until a reset.
+    pub fn retryable(&self) -> bool {
+        matches!(self, Self::Locked | Self::Failed { .. })
+    }
+}
+
 // Keep the command-facing diagnostic text stable while retaining the typed source.
 fn store_error_message(error: &StoreError) -> String {
     match error {
@@ -282,6 +291,38 @@ impl HistoryStore {
         self.inner().close(None);
     }
 
+    /// Opens the same file again after a [`retryable`](HistoryUnavailableReason::retryable)
+    /// failure, keeping its history. Returns the new writer, which the caller attaches to
+    /// its sources after registering their hosts; `None` when there is nothing to retry
+    /// (the store is open, was closed on purpose, or failed in a way a retry cannot fix).
+    /// A failed retry keeps history unavailable with the new reason.
+    pub fn reopen(&self) -> Result<Option<Writer>, HistoryStoreError> {
+        let mut inner = self.inner();
+        if inner.writer.is_some()
+            || !inner
+                .reason
+                .as_ref()
+                .is_some_and(HistoryUnavailableReason::retryable)
+        {
+            return Ok(None);
+        }
+        match open_store(&self.path) {
+            Ok(store) => {
+                let writer = store.writer();
+                inner.readers.clear();
+                inner.generation += 1;
+                inner.writer = Some(writer.clone());
+                inner.store = Some(store);
+                inner.reason = None;
+                Ok(Some(writer))
+            }
+            Err(e) => {
+                inner.reason = Some(HistoryUnavailableReason::from(&e));
+                Err(e.into())
+            }
+        }
+    }
+
     /// Closes the store, moves the file (and its WAL) aside as
     /// `history-reset-<now_ms>.sqlite` and opens a fresh one: the way out of a corrupt or
     /// too-new database, and a full reset. Call with every source detached from the
@@ -413,6 +454,56 @@ mod tests {
         other.close().unwrap();
         history.reset(NOW).unwrap();
         assert!(history.is_available());
+    }
+
+    #[test]
+    fn a_transient_open_failure_reopens_in_place() {
+        let tmp = temp_dir("reopen");
+        let dir = tmp.path();
+        // Something in the way of the file stands in for a full disk or an I/O error.
+        std::fs::create_dir(dir.join(DB_FILE)).unwrap();
+        let history = HistoryStore::open(dir);
+        assert!(matches!(
+            history.unavailable_reason(),
+            Some(HistoryUnavailableReason::Failed { .. })
+        ));
+        assert!(history.reopen().is_err(), "still in the way");
+        assert!(!history.is_available());
+
+        std::fs::remove_dir(dir.join(DB_FILE)).unwrap();
+        assert!(history.reopen().unwrap().is_some());
+        assert!(history.register_host(&local_record()).is_some());
+        assert_eq!(history.read(|r| r.hosts()).unwrap(), vec![local_record()]);
+        assert!(history.reopen().unwrap().is_none(), "already open");
+        history.close();
+        assert!(history.reopen().unwrap().is_none(), "closed on purpose");
+    }
+
+    #[test]
+    fn a_lock_released_by_the_other_process_reopens() {
+        let tmp = temp_dir("reopen-locked");
+        let dir = tmp.path();
+        let other = Store::open(StoreConfig::new(dir.join(DB_FILE))).unwrap();
+        let history = HistoryStore::open(dir);
+        assert!(matches!(
+            history.reopen(),
+            Err(HistoryStoreError::Store(StoreError::Locked { .. }))
+        ));
+        other.close().unwrap();
+        assert!(history.reopen().unwrap().is_some());
+        assert!(history.is_available());
+    }
+
+    #[test]
+    fn a_damaged_file_is_not_reopened() {
+        let tmp = temp_dir("reopen-corrupt");
+        let dir = tmp.path();
+        std::fs::write(dir.join(DB_FILE), vec![0x5a; 8192]).unwrap();
+        let history = HistoryStore::open(dir);
+        let reason = history.unavailable_reason().unwrap();
+        assert!(!reason.retryable(), "{reason:?}");
+        assert!(history.reopen().unwrap().is_none());
+        assert_eq!(history.unavailable_reason(), Some(reason));
     }
 
     #[test]

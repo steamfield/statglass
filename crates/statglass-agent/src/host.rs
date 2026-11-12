@@ -62,6 +62,14 @@ impl AgentHost {
         }
     }
 
+    /// Attaches the engine to a store that came back after starting without one, and
+    /// returns once it is applied. A stopped engine has nothing to attach.
+    pub fn set_store(&self, store: Option<Writer>) {
+        if let Some(handle) = self.handle.lock_ok().as_ref() {
+            handle.control().set_store(store);
+        }
+    }
+
     /// What this process itself wants collected (`sample` asks for everything).
     pub fn set_local_interest(&self, interest: RemoteInterest) {
         self.change_interest(|all| all.local = interest);
