@@ -1,5 +1,5 @@
 import type { CommandError, HistoryHealth } from "@core/generated/bindings";
-import { hostKeys } from "@core/query-keys";
+import { historyKeys, hostKeys } from "@core/query-keys";
 import { CommandFailure, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -37,9 +37,16 @@ export function useHistoryHealth(): {
         const key = hostKeys.historyHealth(hostId);
         // The event carries health, not availability. Over a cached
         // `history_unavailable` it would hide the banner, so ask the command
-        // again instead: it clears the error only when history is back.
+        // again instead: it clears the error only when history is back. The
+        // store can come back on its own (Rust retries a failed open), and
+        // charts cache that error as permanent, so they ask again too.
         if (queryClient.getQueryState(key)?.status === "error") {
-          void queryClient.invalidateQueries({ queryKey: key });
+          for (const queryKey of [
+            key,
+            historyKeys.all,
+            hostKeys.historySize(hostId),
+          ])
+            void queryClient.invalidateQueries({ queryKey });
           return;
         }
         queryClient.setQueryData(key, e.health);

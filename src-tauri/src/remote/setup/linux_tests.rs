@@ -195,6 +195,37 @@ fn an_update_needs_the_saved_identity() {
     check_update(&silent, other).unwrap();
 }
 
+/// Restart reaches only the agent the host was added with: one that reports another
+/// identity was re-paired elsewhere, and one in another layout is not this host's.
+#[test]
+fn a_restart_needs_the_saved_agent_and_identity() {
+    let id = HostId(Uuid::new_v4());
+    let current = with_agent(asahi_probe(), env!("CARGO_PKG_VERSION"), id);
+    let target = check_restart(&current, &agent_command(), id).unwrap();
+    assert_eq!(target.layout, AgentLayout::System);
+
+    let other = HostId(Uuid::new_v4());
+    assert!(matches!(
+        check_restart(&current, &agent_command(), other),
+        Err(CommandError::RemoteIdentity { message }) if message.contains("Re-pair")
+    ));
+    // A stuck agent that did not answer is what a restart is for.
+    let mut silent = current.clone();
+    silent.system_agent.as_mut().unwrap().status = None;
+    check_restart(&silent, &agent_command(), other).unwrap();
+
+    let user = RemoteCommand::Agent {
+        bin: "/home/ann/.local/bin/statglass-agent".into(),
+        system: false,
+        socket: Some("/run/user/1000/statglass-agent/metrics.sock".into()),
+    };
+    assert!(matches!(
+        check_restart(&current, &user, id),
+        Err(CommandError::RemoteAgentConflict { message })
+            if message.contains("did not restart") && message.contains("/home/ann")
+    ));
+}
+
 #[test]
 fn removal_from_another_login_names_the_layout_instead_of_reporting_clean() {
     let root = asahi_probe().target().unwrap();

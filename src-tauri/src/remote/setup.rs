@@ -177,21 +177,7 @@ pub async fn restart_remote_agent(app: AppHandle, id: String) -> Result<(), Comm
         ProbeFor::Existing,
     )
     .await?;
-    let target = probe.target()?;
-    if let Some(mismatch) = linux::layout_mismatch(&saved.command, &target) {
-        return Err(CommandError::RemoteAgentConflict {
-            message: format!("StatGlass did not restart the agent: {mismatch}"),
-        });
-    }
-    let reported = probe
-        .existing()
-        .and_then(|e| e.status.as_ref())
-        .and_then(|s| s.host_id);
-    if reported.is_some_and(|reported| reported != id) {
-        return Err(CommandError::RemoteIdentity {
-            message: "The agent on this host now reports a different identity, so StatGlass did not restart it. Re-pair the host first".into(),
-        });
-    }
+    let target = linux::check_restart(&probe, &saved.command, id)?;
     statglass_remote::agent_install::restart(&alias, &target).await?;
     if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
         source.retry();

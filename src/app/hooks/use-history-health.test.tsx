@@ -1,6 +1,7 @@
 import type { HistoryHealth } from "@core/generated/bindings";
 import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import { useEventsQuery } from "./use-events";
 import { useHistoryHealth } from "./use-history-health";
 
 function Probe() {
@@ -8,6 +9,12 @@ function Probe() {
   if (error) return <p>error {error.kind}</p>;
   if (!health) return <p>loading</p>;
   return <p>low disk {String(health.low_disk_paused)}</p>;
+}
+
+/** A fixed-window events read: never stale, so only an invalidation refetches it. */
+function EventsProbe() {
+  const { isError } = useEventsQuery(60 * 60_000, 1_800_000_000_000);
+  return <p>{isError ? "events unavailable" : "events read"}</p>;
 }
 
 const HEALTHY: HistoryHealth = {
@@ -52,5 +59,22 @@ describe("useHistoryHealth", () => {
       await transport.resetHistory();
     });
     await screen.findByText("low disk false");
+  });
+
+  it("refetches history charts when the store comes back on its own", async () => {
+    const { transport } = renderWithProviders(
+      <>
+        <Probe />
+        <EventsProbe />
+      </>,
+      { transportOptions: { scenarios: ["history-unavailable"] } }
+    );
+    await screen.findByText("error history_unavailable");
+    await screen.findByText("events unavailable");
+    // Rust reopened the store after the disk freed up: no reset, only the
+    // health event. Charts cached `history_unavailable` as permanent.
+    act(() => transport.reopenHistory());
+    await screen.findByText("low disk false");
+    await screen.findByText("events read");
   });
 });

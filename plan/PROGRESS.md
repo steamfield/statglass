@@ -4,7 +4,7 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Agent history recovers from a transient open failure (2026-11-12)
+## History recovers from a transient open failure, agent and Mac app (2026-11-12)
 
 `HistoryStore::reopen` opens the same file again after a failure that can clear up
 (`HistoryUnavailableReason::retryable`: an I/O error such as a full disk, or a lock another
@@ -17,9 +17,13 @@ back.
 Verified with engine tests for the I/O, lock and damaged-file cases and an agent test of
 one retry step, each revert-checked by disabling the retry rule.
 
-Open: the Mac app does not retry its own store yet. Its reattach path also has to move the
-Docker recorder and tell windows history is back (`reset_history` does both), so it was
-left for a separate change.
+The Mac app does the same (`src-tauri/src/history/retry.rs`): a thread checks once a
+minute, reopens a store that failed for a retryable reason, registers and attaches the
+local host, attaches the Docker recorder and emits `history-health-changed`. Reset and
+retry take the same attach lock in `History`. Windows that cached `history_unavailable`
+refetch health, history queries and size on that event, so the banner and charts recover
+without a reset. The restart command's layout and identity checks moved into
+`check_restart`, with a test.
 
 ## Restart a Linux host's agent from host settings (2026-11-12)
 

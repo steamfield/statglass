@@ -7,15 +7,17 @@ use crate::ipc::{
     ProcessesAt, StoredProcess, TierRequest,
 };
 use statglass_engine::{HistoryStore, HousekeepingHandle};
+use statglass_schema::lock::LockExt;
 use statglass_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier, TimeRange};
 use statglass_store::{
     BucketRow, ExportQuery, HistoryQuery, HistoryResult, ProcResolution, RangeStats, Reader,
     Retention, TierChoice, Writer,
 };
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 mod ipc;
 mod queries;
+pub mod retry;
 #[cfg(test)]
 use ipc::MAX_HEATMAP_DAYS;
 use ipc::history_page;
@@ -32,22 +34,28 @@ pub(crate) const MAX_NET_SPAN_MS: i64 = {
 
 pub struct History {
     storage: Arc<HistoryStore>,
+    /// Held while sources are moved to a new or reopened store, so a reset and a retry
+    /// never hand them writers in the wrong order.
+    attaching: Mutex<()>,
 }
 impl History {
     pub fn open(dir: &Path) -> Self {
         Self {
             storage: Arc::new(HistoryStore::open(dir)),
+            attaching: Mutex::default(),
         }
     }
     pub fn unavailable() -> Self {
         Self {
             storage: Arc::new(HistoryStore::unavailable()),
+            attaching: Mutex::default(),
         }
     }
     /// Wraps a store already opened (`identity::open_local`).
     pub fn from_store(storage: HistoryStore) -> Self {
         Self {
             storage: Arc::new(storage),
+            attaching: Mutex::default(),
         }
     }
     pub(super) fn store(&self) -> Arc<HistoryStore> {
@@ -83,6 +91,12 @@ impl History {
     pub fn close(&self) {
         self.storage.close();
     }
+    /// Opens the same file again after a failure that can clear up (a full disk, a lock
+    /// another process held). `Ok(None)` when it is open already or the reason needs a
+    /// reset instead.
+    pub fn reopen(&self) -> Result<Option<Writer>, CommandError> {
+        Ok(self.storage.reopen()?)
+    }
     pub fn reset(&self, now_ms: i64) -> Result<Writer, CommandError> {
         Ok(self.storage.reset(now_ms)?)
     }
@@ -106,6 +120,7 @@ impl History {
         now_ms: i64,
         attach: impl FnOnce(&History),
     ) -> Result<HistoryHealth, CommandError> {
+        let _attaching = self.attaching.lock_ok();
         self.reset(now_ms)?;
         attach(self);
         if !self.is_available() {
@@ -115,5 +130,19 @@ impl History {
                 .unwrap_or_else(CommandError::history_unavailable));
         }
         Ok(self.health())
+    }
+
+    /// [`History::reopen`], then `attach` when it opened. Returns the health to announce
+    /// once history is back; `Ok(None)` when there was nothing to reopen.
+    pub fn reopen_and_attach(
+        &self,
+        attach: impl FnOnce(&History),
+    ) -> Result<Option<HistoryHealth>, CommandError> {
+        let _attaching = self.attaching.lock_ok();
+        if self.reopen()?.is_none() {
+            return Ok(None);
+        }
+        attach(self);
+        Ok(Some(self.health()))
     }
 }

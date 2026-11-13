@@ -411,6 +411,32 @@ pub(in crate::remote) fn check_update(
     Ok(())
 }
 
+/// What `restart_remote_agent` restarts: the agent this login reaches, provided it is
+/// the one the host was added with (same layout and binary) and does not report another
+/// identity. An agent that did not answer cannot be checked; restarting it may be the fix.
+pub(in crate::remote) fn check_restart(
+    probe: &LinuxProbe,
+    saved: &RemoteCommand,
+    id: HostId,
+) -> Result<AgentTarget, CommandError> {
+    let target = probe.target()?;
+    if let Some(mismatch) = layout_mismatch(saved, &target) {
+        return Err(CommandError::RemoteAgentConflict {
+            message: format!("StatGlass did not restart the agent: {mismatch}"),
+        });
+    }
+    let reported = probe
+        .existing()
+        .and_then(|e| e.status.as_ref())
+        .and_then(|s| s.host_id);
+    if reported.is_some_and(|reported| reported != id) {
+        return Err(CommandError::RemoteIdentity {
+            message: "The agent on this host now reports a different identity, so StatGlass did not restart it. Re-pair the host first".into(),
+        });
+    }
+    Ok(target)
+}
+
 /// Why the agent `saved` was added with is not the one this login reaches at `target`,
 /// so removing from here would miss it (and report a clean removal).
 pub(in crate::remote) fn layout_mismatch(

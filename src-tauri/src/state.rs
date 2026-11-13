@@ -206,6 +206,9 @@ impl AppState {
             docker.run().await;
         });
         entry.start(writer).context("starting the local source")?;
+        // A store that failed for a reason that can clear up (a full disk at launch)
+        // reopens on its own; the agent does the same.
+        crate::history::retry::spawn(app.clone());
 
         let handle = app.clone();
         platform::observe_reduce_transparency(move |reduce| {

@@ -79,6 +79,12 @@ export interface MockTransport extends Transport {
   /** Change the store's health and emit `history-health-changed`. */
   setHistoryHealth(health: HistoryHealth): void;
   /**
+   * The store reopens on its own after a failure that cleared up (a full disk
+   * at launch): history commands answer again and `history-health-changed`
+   * follows, as the app's retry does.
+   */
+  reopenHistory(): void;
+  /**
    * Step the host's wall clock by `deltaMs` as the engine reports it
    * (D-064, D-066): a new `Layout` on every channel, and the next frame
    * carries the next `timeline` and the new `layout_no` at the stepped time.

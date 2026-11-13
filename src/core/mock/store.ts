@@ -60,6 +60,10 @@ export class MockStore {
     this.health = next;
     this.emitters.health.emit({ health: this.health });
   };
+  readonly reopenHistory: MockTransport["reopenHistory"] = () => {
+    this.unavailable = null;
+    this.setHistoryHealth(this.health);
+  };
   readonly recordEvent: MockTransport["recordEvent"] = (event) => {
     this.events.push(event);
     this.events.sort((a, b) => a.ts_ms - b.ts_ms);
@@ -78,6 +82,7 @@ export class MockStore {
   get methods() {
     return {
       setHistoryHealth: this.setHistoryHealth,
+      reopenHistory: this.reopenHistory,
       recordEvent: this.recordEvent,
     };
   }
