@@ -1,0 +1,50 @@
+---
+title: Why Linux load average is high with low CPU
+description: Diagnose high Linux load average with low CPU usage. Read the three uptime numbers, then use vmstat to separate runnable work from tasks blocked on I/O.
+published: 2026-11-13
+keyword: Linux high load average low CPU usage
+feature: remote
+relatedDocs: [linux-hosts, history]
+---
+
+import { ArticleDemo } from "@/islands/ArticleDemo";
+
+A Linux server can report a load average of 12 while most of its CPUs are idle. Linux counts tasks that can run **and** tasks in uninterruptible waits, often for I/O. Either group can raise load. Timing matters too. A build that just finished can leave the one-minute average elevated after CPU use has dropped. [Linux manual for /proc/loadavg](https://man7.org/linux/man-pages/man5/proc_loadavg.5.html)
+
+## Read the three load averages in uptime
+
+Run `uptime` on the Linux host. The three values at the end are load averages for one, five and fifteen minutes, in that order. Each is a weighted count of tasks. For example, `2.1, 7.4, 9.0` fits a machine that was busier earlier. It says little about what those tasks were waiting for.
+
+CPU count gives you a scale for _runnable_ work. Eight CPU-bound threads can all make progress at once on a host with eight available logical CPUs. The same eight threads competing for two CPUs spend much more time waiting their turn. Eight tasks waiting on storage can drive up load on either host without keeping those CPUs busy. [Linux uptime manual](https://man7.org/linux/man-pages/man1/uptime.1.html)
+
+## Sample the run queue and blocked tasks
+
+While the job feels slow, run the following in the Linux host's shell. If you're working from a Mac, run it inside your SSH session. The macOS command with a similar name, `vm_stat`, reports different measurements.
+
+```sh title="Sample the Linux server every second"
+vmstat 1 6
+```
+
+On a system with procps installed, this prints six reports and exits. For CPU and I/O rates, read the last five rows. The first row averages those figures since boot. The process columns are current counts even on the first row. [The procps vmstat manual](https://man7.org/linux/man-pages/man8/vmstat.8.html)
+
+| What you see across several samples                                     | What to check next                                                                                       |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `r` repeatedly exceeds the available logical CPUs and `id` is near zero | Runnable tasks are competing for CPU time. Open `top` on the server and see which jobs are busy.         |
+| `b` stays elevated and CPU time is still available                      | Tasks are blocked on I/O. Check which job is waiting and what storage it uses, including network mounts. |
+| `r` and `b` are both small and `id` is high                             | The immediate queue is quiet. Compare the next minute's load with the time the job finished.             |
+
+For the second case, run `ps -eo stat,pid,comm` and look for a state starting with **D**. That identifies a task currently in an uninterruptible wait. A backup process in D gives you a job and a destination to investigate. That single sample doesn't establish whether the local drive, a mounted share or another dependency caused the wait. [Linux process state definitions](https://www.kernel.org/doc/html/latest/filesystems/proc.html)
+
+## Compare a remote server's load with its CPU history
+
+In StatGlass on your Mac, select the Linux host and open Overview. The machine details show the three load averages when the host reports them. If the incident is over, use the server's recorded CPU and disk charts to see whether either rose around the time the job slowed down. A chart can point you back to the backup window, but identifying a blocked task requires observing it while it waits.
+
+<ArticleDemo
+  client:visible
+  route="/dashboard/overview"
+  params={{ scenario: "linux-host", host: "remote-linux" }}
+  title="Linux host overview in StatGlass"
+  caption="Explore the sample Linux host. Select CPU or Disk to inspect that server's readings."
+/>
+
+For an overnight job, the Linux agent can keep recording while your Mac is asleep. After reconnection, StatGlass fills in the history the server still retains. If the same job runs again tonight, take the one-second samples during its slow phase and compare them with that part of the chart. [How to monitor a Linux server from your Mac](/blog/monitor-linux-server-from-mac)

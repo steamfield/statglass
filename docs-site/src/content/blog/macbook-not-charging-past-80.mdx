@@ -1,0 +1,40 @@
+---
+title: Why your MacBook stops charging at 80%
+description: MacBook won't charge past 80%? Read the battery menu to identify a charging hold or limit, charge to full for a trip, and check the power supplied by a dock.
+published: 2026-11-13
+keyword: MacBook not charging past 80 percent
+feature: battery
+relatedDocs: [metrics, menu-bar-and-windows]
+---
+
+import { ArticleDemo } from "@/islands/ArticleDemo";
+
+Click the battery icon in your MacBook's menu bar while it's plugged in. **Charging On Hold** means macOS expects you'll be on power for a while and has delayed topping up. **Charged to 80% Limit** means the Mac has reached a configured ceiling. For either message, choose **Charge to Full Now** if you need the extra runtime today. [Apple's guide to charging holds and limits](https://support.apple.com/en-us/102338)
+
+## Why charging pauses at your desk
+
+Optimized Battery Charging learns your routine. If you regularly plug in all afternoon, it can pause around 80% and aim to finish by the time it expects you to unplug. Choosing a full charge before an early departure lets you handle that one trip without changing your everyday setting.
+
+A fixed Charge Limit works differently. On an Apple silicon Mac laptop running macOS Tahoe 26.4 or later, open System Settings > Battery and click the info button beside **Charging**. You can choose a limit between 80% and 100%. The battery can settle a few percentage points either side of the limit. macOS may occasionally charge it to 100% to keep its estimate accurate. [Charge Limit availability and settings](https://support.apple.com/en-us/102338)
+
+Charge percentage also differs from **Maximum Capacity**, the measure of battery health. If the menu reports a full charge but your Mac runs for fewer hours than it used to, look up Maximum Capacity and battery condition in Battery settings. [How to check Mac battery health](/blog/check-mac-battery-health)
+
+## What if the battery level falls while plugged in?
+
+A MacBook connected to a display or dock can receive enough power for light work and still draw from its battery during a long video export. If the menu says **Not Charging** and the percentage keeps falling, check what the Mac sees at the power port. [Apple's explanation of Not Charging](https://support.apple.com/guide/mac-help/if-your-battery-status-is-not-charging-mh20876/mac)
+
+Hold Option, click the Apple menu and choose **System Information**. Under Hardware > Power, find **AC Charger Information** and read the wattage. Compare that figure with Apple's adapter guidance for your specific MacBook model. For a practical test, repeat the same work with the recommended adapter and cable plugged directly into the Mac. If the battery charges there but falls on the dock, you've narrowed the difference to the power setup. [How to check a connected adapter or display](https://support.apple.com/en-us/109509)
+
+## Check which way power is flowing
+
+In StatGlass, open Battery and read the Power card while the export runs. **Drawn from the battery** means the battery is supplying power. **Charging the battery** means power is going back into it. The wattage in System Information describes the connected power source. The battery reading can be much smaller because the Mac also needs power to run the export and display.
+
+<ArticleDemo
+  client:visible
+  route="/dashboard/battery"
+  params={{ chart_window: "24h" }}
+  title="MacBook charge history and battery power"
+  caption="Explore a simulated MacBook's charge chart and Power card. The battery menu on your own Mac gives the reason for a charging hold."
+/>
+
+If charging still stops near 80% with a suitable adapter, no set limit and optimized charging off, temperature is another possibility Apple identifies. Move the laptop to a cool, well-ventilated spot and check again after it cools. [Apple's guide to a battery that won't charge completely](https://support.apple.com/guide/mac-help/mchlbfb7e12a/mac)

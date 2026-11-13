@@ -1,0 +1,40 @@
+---
+title: What is keeping my Mac awake?
+description: Find out why your Mac won't sleep. Check Preventing Sleep in Activity Monitor, read the owner of a sleep request in Terminal, and investigate overnight wakes.
+published: 2026-11-13
+keyword: what is keeping my Mac awake
+feature: power
+relatedDocs: [history, metrics]
+---
+
+Open Activity Monitor, click Energy and look for **Yes** under **Preventing Sleep**. Check while the Mac is refusing to sleep. That column shows which app currently wants the machine to stay awake. If you came back in the morning to a warm laptop, start with the sleep log further down instead. [Apple's guide to the Energy pane](https://support.apple.com/guide/activity-monitor/view-energy-consumption-actmntr43697/mac)
+
+## Find the app holding a sleep request
+
+A presentation app might need the screen to stay lit for an hour while you talk, even if it barely uses the CPU. Sorting by Energy Impact can send you past that app. Look at Preventing Sleep, end the slideshow normally, then watch whether its entry changes. A change from Yes to No ties the request to something you can control the next time you give a presentation.
+
+For a background process, open Terminal and run this while the problem is happening.
+
+```sh title="Show current power assertions and their owners"
+pmset -g assertions
+```
+
+A power assertion is a request that macOS keep something awake. In the summary, look for `PreventUserIdleSystemSleep`. A value of 1 means a request to prevent automatic system sleep is active. `PreventUserIdleDisplaySleep` concerns the screen. Farther down, the owning-process list pairs each request with a process name and often a short explanation. Match the **type** you saw in the summary to its owner. A name elsewhere in the output may belong to an unrelated request. [Apple's annotated power assertion example](https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/PrioritizeWorkAtTheAppLevel.html)
+
+If the owner is a media player, pause playback and run the command again. If it names a backup in progress, let the backup finish and repeat the check. When a request disappears, look for another owner of the same type before testing whether the Mac sleeps on its own.
+
+## Check whether the Mac woke after it went to sleep
+
+Today's app list can't identify a request that ended last night. Use the power log to see the sequence around the time you left the Mac.
+
+```sh title="Read recent sleep and wake events"
+pmset -g log | awk '$4 == "Sleep" || $4 == "Wake" || $4 == "DarkWake"' | tail -50
+```
+
+Read the timestamps in order. A Sleep entry followed by Wake means the Mac did go to sleep at least once. DarkWake can record a background wake with the screen off. Check the reason on that line if one is present. A wake near the time you opened the lid is expected. The command shows the last 50 matching lines, so an especially busy night may require looking farther back with `pmset -g log | less`. The built-in `man pmset` describes the log options for your macOS version.
+
+## Check the timer that applies at your desk
+
+In System Settings > Lock Screen, check the display timeout for the power source you were using. A MacBook can have a short timer on battery and a much longer one at a dock. In Battery > Options, also check whether automatic sleep is prevented on the power adapter while the display is off. If the log shows repeated wakes, check Wake for network access and whether another computer is using a shared resource. [Apple's guide to unexpected sleep and wake](https://support.apple.com/guide/mac-help/mchlp2995/mac)
+
+If you're comparing these times with the StatGlass Timeline, look at the last recorded activity before a gap. StatGlass also stops recording when the app is closed, so use the macOS power log to establish whether sleep actually occurred. [How StatGlass records gaps](/docs/history#gaps)

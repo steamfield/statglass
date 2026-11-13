@@ -1,0 +1,34 @@
+---
+title: How to check Time Machine local snapshots
+description: Find Time Machine local snapshots on your Mac, see which volume holds them, and recover a recent file even when your usual backup drive is somewhere else.
+published: 2026-11-13
+keyword: Time Machine local snapshots Mac
+feature: disk
+relatedDocs: [metrics]
+---
+
+If you deleted a file and your Time Machine drive is at home, try opening Time Machine anyway. With automatic backups enabled on an APFS startup disk, macOS keeps recent snapshots on the Mac itself. You can browse the versions still on the laptop until you have access to the backup drive again. [Apple's guide to local snapshots](https://support.apple.com/en-us/102154)
+
+## Restore a file while the backup disk is away
+
+Open the Finder folder where the file used to live. If you overwrote a draft in Documents this morning, start in Documents. Open Time Machine through Spotlight and use the arrows or timeline to go back before the edit. Select the file and click **Restore** to return it to its original location. If you also need the current draft, save a separate copy of it first. [Apple's file restoration instructions](https://support.apple.com/guide/mac-help/restore-files-mh11422/mac)
+
+The time of the edit matters. Time Machine takes local snapshots roughly hourly and normally keeps those hourly versions for 24 hours, space permitting. A file you created at 10:05 and removed at 10:15 may have missed every snapshot. If yesterday's version is already gone locally, reconnect the backup drive and browse the folder again. A local snapshot lives on the same disk as the original, so only the separate backup can help if that disk fails. [How often Time Machine saves local snapshots](https://support.apple.com/en-us/102154)
+
+## List the snapshots on your startup disk
+
+Open Terminal and ask Time Machine which snapshots it can find for the startup disk. This command only lists them.
+
+```sh title="List local snapshots for the startup disk"
+tmutil listlocalsnapshots /
+```
+
+Look for names beginning with `com.apple.TimeMachine` and check the dates against the last time you saw the file. The date tells you which version to browse. To inspect another backed-up volume, use its mount point in place of the slash. The Mac's built-in `man tmutil` lists the arguments for your installed version.
+
+In Disk Utility, choose **View > Show APFS Snapshots**, then select a volume in the sidebar. For a missing item in your home folder, look at the startup volume's **Data** volume. The table at the bottom belongs to the selected volume. Use its column menu to show Date Created and Kind, which helps distinguish Time Machine snapshots from other APFS snapshots. [Apple's Disk Utility guide](https://support.apple.com/guide/disk-utility/view-apfs-snapshots-dskuf82354dc/mac)
+
+## Why deleted files can still occupy space
+
+Say you remove a large video from your project and empty the Trash. Finder stops listing it, but a snapshot taken before the deletion can still reference the video's disk blocks. That's how you can restore it. macOS counts storage it can reclaim from Time Machine local snapshots as available and removes older snapshots when it needs room. A snapshot in the list is ordinarily something you can leave alone. [How Apple accounts for snapshot space](https://support.apple.com/en-us/102154)
+
+If you're investigating a full disk, use the snapshot list alongside a scan of the files you can move. StatGlass's Space report shows the current folder tree. Its **Other** figure can include both snapshots and locations the scan couldn't read, so assigning the whole figure to Time Machine would overstate what you could recover by removing snapshots. Start with a recognizable folder in the treemap when you need to make room. [How to read a Mac disk space report](/blog/find-large-files-mac#why-dont-the-scanned-files-equal-used-space)

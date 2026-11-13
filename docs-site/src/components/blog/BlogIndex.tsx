@@ -5,7 +5,9 @@ export function BlogIndex({ posts }: { posts: readonly BlogEntry[] }) {
   return (
     <section className="mx-auto max-w-[44rem] pt-8 sm:pt-12">
       <header className="mb-10 space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Blog</h1>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          Blog
+        </h1>
         <p className="text-base leading-relaxed text-pretty text-secondary-foreground">
           Mac system monitoring guides, with the app here to try as you read.
         </p>

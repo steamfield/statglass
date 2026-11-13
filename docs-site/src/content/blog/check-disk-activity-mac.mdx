@@ -1,0 +1,42 @@
+---
+title: How to check disk activity on a Mac
+description: Check disk activity on a Mac, find which process is writing now, and read a past spike. Compare bytes written with write speed using a short worked example.
+published: 2026-11-13
+keyword: how to check disk activity on Mac
+feature: disk
+relatedDocs: [metrics, history]
+---
+
+import { ArticleDemo } from "@/islands/ArticleDemo";
+
+To see what's writing to disk on your Mac, open Activity Monitor and click **Disk**. Watch **Data written/sec** at the bottom while the problem is happening. Then look for the process whose **Bytes Written** total is climbing. An app that wrote gigabytes yesterday can still be first in that column today. [Apple's guide to disk activity](https://support.apple.com/guide/activity-monitor/view-disk-activity-actmntr1005/mac)
+
+## Find which process is writing right now
+
+Suppose an export stutters each time a sync starts. Choose View > All Processes in Activity Monitor, then sort the Disk table by Bytes Written. Watch the export and sync processes across the same ten seconds. If the sync isn't near the top yet, use the search field to track it by name.
+
+| Example process | Before  | Ten seconds later | Average write rate                   |
+| --------------- | ------- | ----------------- | ------------------------------------ |
+| Video editor    | 12.0 GB | 12.0 GB           | No change at the displayed precision |
+| Sync app        | 240 MB  | 390 MB            | 15 MB/s                              |
+
+The sync app added 150 MB in ten seconds. That's the process to watch even though it sits below the editor when sorted by total bytes. Pause the sync through the app and try the same part of the export again. If the stutter persists while the write rate drops, you have a reason to investigate elsewhere.
+
+For a read-heavy task, follow **Bytes Read** and **Data read/sec** the same way. To keep just the graph visible while working, choose View > Dock Icon > Show Disk Activity in Activity Monitor. [Activity Monitor's Dock graph](https://support.apple.com/guide/activity-monitor/view-disk-activity-actmntr1005/mac)
+
+## Read a disk spike after it ends
+
+In StatGlass, open Disk and select the stretch of the I/O chart that covers the slowdown. The process table changes with the selection. In the live view **Write/s** tells you who is writing now. In a selected interval, **Written** tells you how many bytes each recorded process requested during that span. A five-minute selection around the entire export can hide a ten-second burst, so start close to the stutter.
+
+<ArticleDemo
+  client:visible
+  route="/dashboard/disk"
+  title="Compare disk traffic and process writes"
+  caption="Select a burst in the sample disk chart and compare the recorded processes below it."
+/>
+
+On macOS the table covers your user's processes across devices. The chart measures device traffic. A cached read can satisfy an app without a new read from the drive, and filesystem work can write data on the app's behalf. Expect the totals to differ. If StatGlass was closed during the export, repeat it with recording running. [What StatGlass measures](/docs/metrics)
+
+## Why write speed doesn't tell you how much storage you lost
+
+An app can rewrite the same 100 MB file ten times. That produces roughly a gigabyte of application writes while the final file still occupies about 100 MB. Likewise, a large archive sitting untouched in Downloads contributes no ongoing writes. If the symptom is a shrinking amount of free space, open Disk > Space to scan the volume and see which files account for it. [How to find large files on a Mac](/blog/find-large-files-mac)

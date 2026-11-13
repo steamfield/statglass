@@ -4,6 +4,12 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Five new monitoring guides on the StatGlass blog (2026-11-13)
+
+The site now has 20 articles. The five additions cover Mac sleep requests, disk writes by process, Time Machine local snapshots, MacBook charging limits, and Linux load averages. Each links to the relevant Apple or Linux documentation.
+
+The production build and all 192 site tests passed, including checks for the blog index, RSS, sitemap, metadata and internal links. All five pages loaded at desktop and phone widths, and the three embedded dashboards loaded on desktop. Site-wide formatting passed after formatting the blog index heading.
+
 ## History recovers from a transient open failure, agent and Mac app (2026-11-12)
 
 `HistoryStore::reopen` opens the same file again after a failure that can clear up
