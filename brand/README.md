@@ -18,9 +18,13 @@ Raster exports are WebP. Logos and icons are lossless with transparency:
 - `statglass-app-icon-{256,512,1024}.webp`
 - `statglass-og.webp`: the 2560x1340 social card, a 2x screenshot of the landing hero in dark mode
 
-The build also writes `docs-site/public/og.webp` (same card), `apple-touch-icon.webp`
-(180) and `icon-{192,512}.webp` for the web manifest. Those three are the app icon cropped
-to a full-bleed square, since iOS and launchers apply their own mask.
+The build also writes the site's icons as PNG, since iOS ignores a WebP touch icon and
+crawlers and link unfurlers read PNG and ICO reliably: `docs-site/public/apple-touch-icon.png`
+(180) and `icon-{192,512}.png` for the web manifest, which are the app icon cropped to a
+full-bleed square because iOS and launchers apply their own mask, and `favicon.ico` (32 and
+48), the app icon on its squircle for Google results and other crawlers. Browser tabs keep
+`favicon.svg`. With `--og` it also writes `docs-site/public/og.jpg`, the same card at
+1200x628 as JPEG, because LinkedIn and some chat unfurlers drop WebP og:images.
 
 ## Regenerating
 
