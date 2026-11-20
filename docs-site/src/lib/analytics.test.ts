@@ -7,6 +7,7 @@ import {
   TEST_DOM_OVERRIDES,
 } from "../../tests/helpers/posthog-pipeline";
 import { everythingOn } from "../../tests/helpers/posthog-remote-config";
+import type { humanGate as HumanGate } from "@steamfield/ui/human-gate";
 import type * as AnalyticsModule from "./analytics";
 import type { Consent, ConsentStore } from "./analytics";
 import type { EventName } from "./events";
@@ -18,6 +19,7 @@ const testEvent = "test_event_captured" as EventName;
 let keyCounter = 0;
 let key = "";
 let analytics: typeof AnalyticsModule;
+let gate: typeof HumanGate;
 let pipeline: PostHogPipeline;
 let storedBefore: Set<string>;
 
@@ -47,6 +49,7 @@ function newStorage(live: PostHogPipeline = pipeline): string[] {
 beforeEach(async () => {
   vi.resetModules();
   analytics = await import("./analytics");
+  await openGate();
   key = `phc_test_${++keyCounter}`;
   pipeline = createPostHogPipeline(posthog);
   storedBefore = new Set(storageNames());
@@ -54,11 +57,20 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  gate.reset();
   pipeline.shutdown();
   localStorage.clear();
   sessionStorage.clear();
   vi.restoreAllMocks();
 });
+
+// happy-dom's events are untrusted, so a dispatched click can't open the human gate;
+// tests open it directly and keep their meaning. Imported after vi.resetModules, so this
+// is the gate the freshly imported analytics module uses.
+async function openGate() {
+  ({ humanGate: gate } = await import("@steamfield/ui/human-gate"));
+  gate.markHuman();
+}
 
 function start(
   config: Omit<AnalyticsModule.AnalyticsConfig, "key" | "site"> = {}
@@ -88,6 +100,8 @@ async function nextPage(
   }
   vi.resetModules();
   analytics = await import("./analytics");
+  gate.reset();
+  await openGate();
   const next = createPostHogPipeline(posthog);
   await analytics.initAnalytics({ key, site: "statglass", consent }, next.load);
   return next;
@@ -325,6 +339,65 @@ describe("a choice stored from an earlier visit", () => {
   });
 });
 
+describe("the human gate", () => {
+  // Closed, as in a browser before the visitor's first trusted input.
+  async function startClosed() {
+    gate.reset();
+    page();
+    await start({ consent: consentStore() });
+    // Past posthog-js's deferred initial-pageview timer (1ms).
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("sends nothing while closed", async () => {
+    await startClosed();
+    const { button } = page();
+    clickOn(button);
+    analytics.track(testEvent, { position: 1 });
+    window.dispatchEvent(new Event("pagehide"));
+    window.dispatchEvent(new Event("beforeunload"));
+    // $set is one of the gate's ungated events (its UNGATED_EVENTS), so it may pass.
+    expect(
+      pipeline.captured().filter((event) => event.event !== "$set")
+    ).toEqual([]);
+  });
+
+  it("sends the initial pageview once on the first input, stamped with the landing time", async () => {
+    const before = Date.now();
+    await startClosed();
+    const waited = Date.now();
+    expect(pipeline.captured("$pageview")).toEqual([]);
+    gate.markHuman();
+    const pageview = await vi.waitFor(() => pipeline.only("$pageview"));
+    expect(pageview.properties.site).toBe("statglass");
+    const sent = pageview.timestamp?.getTime();
+    expect(sent).toBeGreaterThanOrEqual(before);
+    expect(sent).toBeLessThan(waited);
+  });
+
+  it("sends an event tracked while closed once the gate opens, with the site", async () => {
+    await startClosed();
+    analytics.track(testEvent, { position: 2 });
+    expect(pipeline.captured(testEvent)).toEqual([]);
+    gate.markHuman();
+    const event = await vi.waitFor(() => pipeline.only(testEvent));
+    expect(event.properties).toMatchObject({ site: "statglass", position: 2 });
+  });
+
+  it("still captures a page leave after the gate opens", async () => {
+    await startClosed();
+    gate.markHuman();
+    await vi.waitFor(() => pipeline.only("$pageview"));
+    window.dispatchEvent(new Event("pagehide"));
+    window.dispatchEvent(new Event("beforeunload"));
+    expect(pipeline.captured("$pageleave").length).toBeGreaterThan(0);
+  });
+});
+
 describe("init", () => {
   it("initializes with the module's options", async () => {
     await start({ host: "http://127.0.0.1:9" });
@@ -335,7 +408,8 @@ describe("init", () => {
       opt_out_capturing_by_default: true,
       persistence: "localStorage+cookie",
       cross_subdomain_cookie: true,
-      capture_pageview: "history_change",
+      capture_pageview: false,
+      capture_pageleave: true,
       disable_capture_url_hashes: true,
       disable_session_recording: true,
       capture_dead_clicks: false,
@@ -475,15 +549,9 @@ describe("capture features", () => {
   });
 
   it("sends page URLs without the hash, which carries search text", async () => {
-    await start({ consent: consentStore() });
-    await firstPageview();
-    pipeline.clear();
-    // posthog-js wraps history.pushState only once per window, for the first instance in
-    // this file, so the navigation is announced the way Back would be: popstate, which
-    // each instance listens for.
     history.pushState(null, "", "/search/#q=zebra");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-    const pageview = await vi.waitFor(() => pipeline.only("$pageview"));
+    await start({ consent: consentStore() });
+    const pageview = await firstPageview();
     expect(pageview.properties.$current_url).toBe(`${location.origin}/search/`);
     history.pushState(null, "", "/");
   });
@@ -797,8 +865,9 @@ describe("the queue", () => {
     for (let i = 0; i < 60; i++) analytics.track(testEvent, { i });
     await init;
     sdk.fireLoaded();
-    expect(sdk.calls).toHaveLength(50);
-    expect(sdk.calls.at(-1)).toEqual(["capture", testEvent, { i: 49 }]);
+    const tracked = sdk.calls.filter((call) => call[1] === testEvent);
+    expect(tracked).toHaveLength(50);
+    expect(tracked.at(-1)).toEqual(["capture", testEvent, { i: 49 }]);
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
@@ -812,6 +881,6 @@ describe("the queue", () => {
     const sdk = fakeSdk();
     await analytics.initAnalytics({ key, site: "statglass" }, sdk.load);
     sdk.fireLoaded();
-    expect(sdk.calls).toEqual([]);
+    expect(sdk.calls.filter((call) => call[1] === testEvent)).toEqual([]);
   });
 });
