@@ -3,7 +3,7 @@
 //! including the faster cadence after the user launches a runtime. The classifier and
 //! the retry plan are pure; the handle methods at the bottom gather their inputs and
 //! publish the result.
-use statglass_collect::docker::now_ms;
+use statglass_collect::docker::{DockerError, now_ms};
 use statglass_collect::docker_runtimes::{default_search_paths, installed_runtimes};
 use statglass_schema::{
     docker::{
@@ -73,6 +73,29 @@ fn selected_is_missing(input: &ReasonInput<'_>) -> bool {
     input.selected.is_some_and(|socket| {
         input.runtimes.is_empty() && !input.engines.iter().any(|e| e.socket == socket)
     })
+}
+
+/// A failed connection attempt and the engines it probed on the way.
+#[derive(Debug)]
+pub(super) struct ConnectFailure {
+    /// Why the attempt failed.
+    pub error: DockerError,
+    /// Every engine discovery probed when no engine is selected, so the reason is
+    /// classified from what this attempt saw. `None` when an engine is selected, which
+    /// connects without probing the others.
+    pub probed: Option<Vec<DockerEngine>>,
+}
+
+/// The engine to connect to when none is selected: the preferred one if it answers,
+/// otherwise the only answering one. `None` when nothing answers or several do (rule 1
+/// of `unavailable_reason`).
+pub(super) fn unselected_choice(probed: &[DockerEngine]) -> Option<DockerEngine> {
+    let mut reachable = probed.iter().filter(|e| e.reachable);
+    if let Some(preferred) = reachable.clone().find(|e| e.preferred) {
+        return Some(preferred.clone());
+    }
+    let only = reachable.next()?;
+    reachable.next().is_none().then(|| only.clone())
 }
 
 /// The post-launch window: until it closes the engine retries every two seconds.
@@ -180,13 +203,19 @@ impl super::DockerHandle {
         *launch
     }
     /// Why no engine answers and when the worker tries again, `delay` from now.
-    /// Probes every candidate engine so the reason reflects what answers right now.
+    /// Classifies from `probed`, the engines the failed attempt already probed, and
+    /// probes every candidate engine only when there are none (a selected engine, or a
+    /// session that dropped).
     pub(super) async fn availability(
         &self,
         settings: &DockerSettings,
         delay: Duration,
+        probed: Option<Vec<DockerEngine>>,
     ) -> DockerAvailability {
-        let engines = self.discover().await;
+        let engines = match probed {
+            Some(engines) => engines,
+            None => self.discover().await,
+        };
         let runtimes = self.installed_runtimes();
         let reason = unavailable_reason(ReasonInput {
             engines: &engines,

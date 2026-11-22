@@ -28,3 +28,16 @@ fn many_failures_never_overflow() {
     }
     assert_eq!(backoff.attempt(), 1_000);
 }
+
+#[test]
+fn a_short_session_restarts_the_attempt_count_but_keeps_the_doubling() {
+    let mut backoff = Backoff::new();
+    for _ in 0..4 {
+        backoff.fail();
+    }
+    // Connected, then dropped before the 30 s that would reset the doubling.
+    backoff.connected();
+    assert_eq!(backoff.attempt(), 0);
+    assert_eq!(backoff.fail(), Duration::from_secs(16));
+    assert_eq!(backoff.attempt(), 1);
+}

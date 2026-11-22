@@ -182,6 +182,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
         let result = match result {
             Ok(session) => {
                 status.record_connected(session.route, session.hello.app_version.clone());
+                backoff.connected();
                 *source.caps.lock_ok() = session.hello.capabilities.clone();
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
