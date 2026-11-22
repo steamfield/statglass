@@ -188,6 +188,58 @@ impl ConnectionStatus {
         }
     }
 
+    /// Marks a connection attempt as in flight, with no automatic attempt scheduled.
+    pub(super) fn begin_dial(&mut self) {
+        self.connected = false;
+        self.retrying = true;
+        self.dialing = true;
+        self.next_attempt_ms = None;
+        self.waiting_for_network = false;
+    }
+
+    /// Records a connected session on `route` with the peer's reported app version.
+    pub(super) fn record_connected(&mut self, route: Route, remote_version: String) {
+        self.connected = true;
+        self.route = Some(route);
+        self.retrying = false;
+        self.dialing = false;
+        self.attempt = 0;
+        self.next_attempt_ms = None;
+        self.waiting_for_network = false;
+        self.error = None;
+        self.failure_kind = None;
+        self.route_failures.clear();
+        self.identity_changed = None;
+        self.incompatible = false;
+        self.remote_version = Some(remote_version);
+    }
+
+    /// Whether the recorded failure is retryable and happened while this Mac was
+    /// offline, so the next attempt waits for the network instead of a timer.
+    pub(super) fn offline_failure(&self) -> bool {
+        self.retrying && self.failure_kind == Some(ConnectionFailureKind::LocalOffline)
+    }
+
+    /// Publishes the wait after a failed attempt: `attempt` failures so far and the
+    /// wall-clock time of the next automatic attempt, `None` when the source waits for
+    /// the network or a manual retry instead.
+    pub(super) fn schedule_retry(&mut self, attempt: u32, next_attempt_ms: Option<i64>) {
+        self.dialing = false;
+        self.attempt = attempt;
+        self.next_attempt_ms = next_attempt_ms;
+        self.waiting_for_network = self.offline_failure();
+    }
+
+    /// Records that the source stopped: nothing is in flight or scheduled.
+    pub(super) fn record_stopped(&mut self) {
+        self.connected = false;
+        self.retrying = false;
+        self.catching_up = false;
+        self.dialing = false;
+        self.next_attempt_ms = None;
+        self.waiting_for_network = false;
+    }
+
     /// Records a failed connection attempt. `single_route` is the host's only route, or
     /// `None` for a host with both routes configured.
     pub(super) fn record_failure(&mut self, e: &RemoteError, single_route: Option<Route>) {
@@ -286,5 +338,84 @@ mod tests {
             assert_eq!(status.failure_kind, Some(kind));
             assert_eq!(status.retrying, retryable);
         }
+    }
+
+    fn failed_attempt(
+        error: crate::RemoteError,
+        online: bool,
+        next_attempt_ms: Option<i64>,
+    ) -> super::ConnectionStatus {
+        let mut status = super::ConnectionStatus::default();
+        status.begin_dial();
+        assert!(status.dialing && status.retrying);
+        status.record_failure(&error, Some(crate::Route::Lan));
+        status.apply_network(crate::network::LocalNetwork {
+            online,
+            tailscale_up: true,
+        });
+        status.schedule_retry(2, next_attempt_ms);
+        status
+    }
+
+    #[test]
+    fn a_failure_while_offline_waits_for_the_network_instead_of_a_timer() {
+        let status = failed_attempt(crate::RemoteError::Timeout("timed out".into()), false, None);
+        assert!(status.offline_failure());
+        assert!(status.waiting_for_network && !status.dialing);
+        assert_eq!(status.next_attempt_ms, None);
+        assert_eq!(status.attempt, 2);
+    }
+
+    #[test]
+    fn an_online_failure_publishes_its_next_attempt() {
+        let status = failed_attempt(
+            crate::RemoteError::Timeout("timed out".into()),
+            true,
+            Some(5_000),
+        );
+        assert!(!status.offline_failure());
+        assert!(!status.waiting_for_network && !status.dialing);
+        assert_eq!(status.next_attempt_ms, Some(5_000));
+    }
+
+    #[test]
+    fn a_refusal_while_offline_keeps_the_timer_because_the_host_answered() {
+        let refused = crate::RemoteError::Unreachable {
+            kind: crate::UnreachableKind::Refused,
+            detail: "Connection refused".into(),
+        };
+        let status = failed_attempt(refused, false, Some(5_000));
+        assert!(!status.offline_failure() && !status.waiting_for_network);
+    }
+
+    #[test]
+    fn a_blocking_failure_while_offline_does_not_wait_for_the_network() {
+        let status = failed_attempt(
+            crate::RemoteError::Authentication("denied".into()),
+            false,
+            None,
+        );
+        assert!(!status.offline_failure() && !status.waiting_for_network);
+    }
+
+    #[test]
+    fn connecting_and_stopping_clear_the_schedule() {
+        let mut status =
+            failed_attempt(crate::RemoteError::Timeout("timed out".into()), false, None);
+        status.begin_dial();
+        assert!(status.dialing && !status.waiting_for_network);
+        status.record_connected(crate::Route::Lan, "1.0.0".into());
+        assert_eq!(
+            (status.attempt, status.dialing, status.next_attempt_ms),
+            (0, false, None)
+        );
+        assert!(status.connected && status.failure_kind.is_none());
+        status = failed_attempt(
+            crate::RemoteError::Timeout("timed out".into()),
+            true,
+            Some(9_000),
+        );
+        status.record_stopped();
+        assert!(!status.retrying && !status.dialing && status.next_attempt_ms.is_none());
     }
 }
