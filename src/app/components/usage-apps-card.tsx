@@ -352,12 +352,13 @@ function UsageBody({
 }
 
 /**
- * An app row acts on the process Rust picked to quit the app (`quit_pid`).
- * Its helpers exit with it; signalling them first would cut a graceful quit
- * short (an app asking to save loses its helpers). Expand to pick members.
+ * An app row acts on the processes Rust picked to quit the app (`quit_pids`):
+ * its main process alone when it has one, since its helpers exit with it and
+ * signalling them first would cut a graceful quit short; otherwise every
+ * running member, so a group like `node` is selected and quit as a whole.
  */
-function appTargets(row: UsageRow): ProcessUsage[] {
-  return row.quit ? [row.quit] : [];
+function appTargets(row: UsageRow): readonly ProcessUsage[] {
+  return row.quit;
 }
 
 function UsageAppRows({

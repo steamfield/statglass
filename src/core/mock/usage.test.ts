@@ -63,10 +63,23 @@ describe("mockUsageByApp", () => {
     });
     expect(r.apps.map((a) => a.name)).toEqual(["clang", "Google Chrome"]);
     expect(r.apps[1]?.cpu_avg_pct).toBe(40);
-    expect(r.apps[1]?.quit_pid).toBe(1);
+    expect(r.apps[1]?.quit_pids).toEqual([1]);
     // Root's processes are not readable: they are in nobody's row.
     expect(r.total.cpu_avg_pct).toBeCloseTo(10 + 30 + 25 + 60 + 35 / 3);
     expect(r.covered_ms).toBe(60_000);
+  });
+
+  it("quits a group without a main process through every running member", () => {
+    const r = mockUsageByApp({
+      ...base,
+      processes: [
+        proc(3, "node", { cpu_pct: 25 }),
+        proc(4, "node", { cpu_pct: 20 }),
+      ],
+      by: "cpu",
+      limit: 10,
+    });
+    expect(r.apps.find((a) => a.name === "node")?.quit_pids).toEqual([3, 4]);
   });
 
   it("sums an app's memory and keeps children above their own floor", () => {

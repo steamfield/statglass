@@ -81,7 +81,7 @@ function proc(
 
 function app(
   name: string,
-  quit: number | null,
+  quit: number[],
   processes: ProcessUsage[]
 ): AppUsage {
   const j = processes.reduce((s, p) => s + (p.energy_j ?? 0), 0);
@@ -95,20 +95,26 @@ function app(
     write_bytes: null,
     energy_j: j,
     avg_w: j / 600,
-    quit_pid: quit,
+    quit_pids: quit,
     processes,
   };
 }
 
 const APPS: AppUsage[] = [
-  app("Google Chrome", 10, [
-    proc(11, "Google Chrome Helper (Renderer)", 300),
-    proc(10, "Google Chrome", 100),
-    proc(12, "Google Chrome Helper", 50, { running: false }),
-  ]),
-  app("WindowServer", 391, [
-    proc(391, "WindowServer", 80, { refusal: "window_server" }),
-  ]),
+  app(
+    "Google Chrome",
+    [10],
+    [
+      proc(11, "Google Chrome Helper (Renderer)", 300),
+      proc(10, "Google Chrome", 100),
+      proc(12, "Google Chrome Helper", 50, { running: false }),
+    ]
+  ),
+  app(
+    "WindowServer",
+    [391],
+    [proc(391, "WindowServer", 80, { refusal: "window_server" })]
+  ),
 ];
 
 function render(answer: (fromMs: number, toMs: number) => UsageByApp | null) {
@@ -229,6 +235,53 @@ describe("UsageAppsCard (D-093, D-099)", () => {
         name: "Quit Google Chrome Helper (Renderer)?",
       })
     ).toHaveTextContent("PID 11");
+  });
+
+  it("selects every member of a group without a main process from its row, and quits them", async () => {
+    const node = app(
+      "node",
+      [21, 22],
+      [
+        proc(21, "node", 40),
+        proc(22, "node", 30),
+        proc(23, "node", 5, { running: false }),
+      ]
+    );
+    const { user, transport } = render((from, to) => ({
+      ...full(from, to),
+      apps: [...APPS, node],
+    }));
+    await table();
+    // A plain click on the group row, the way you would pick the whole group.
+    await user.click(screen.getByText("node"));
+    expect(screen.getByText("2 selected")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Select node" })).toBeChecked();
+    await user.click(
+      screen.getByRole("button", { name: "Show node processes" })
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select node (21)" })
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select node (22)" })
+    ).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Quit 2…" }));
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Quit 2 processes?",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Quit 2 processes" })
+    );
+    await waitFor(() =>
+      expect(
+        transport.calls
+          .filter((c) => c.command === "process_signal")
+          .map((c) => c.args.slice(1))
+      ).toEqual([
+        [21, 21_000, "quit"],
+        [22, 22_000, "quit"],
+      ])
+    );
   });
 
   it("expands an app to its processes; exited ones have no actions", async () => {

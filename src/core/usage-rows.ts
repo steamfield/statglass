@@ -54,8 +54,8 @@ export interface UsageRow {
   processes: readonly ProcessUsage[];
   /** The search matched a process, not the app's name: show it expanded. */
   matchedInside: boolean;
-  /** The process the app row's Quit acts on. */
-  quit: ProcessUsage | null;
+  /** The processes the app row selects and quits (Rust's `quit_pids`). */
+  quit: readonly ProcessUsage[];
 }
 
 export interface RemainderRow {
@@ -103,12 +103,10 @@ export function usageRows(
   const matches = matchProcessQuery(query);
   const out: UsageRow[] = [];
   for (const app of data.apps) {
-    const quit =
-      app.quit_pid === null
-        ? null
-        : // A reused pid can list an exited process too; Rust picks a running one.
-          (app.processes.find((p) => p.running && p.pid === app.quit_pid) ??
-          null);
+    // A reused pid can list an exited process too; Rust picks running ones.
+    const quit = app.processes.filter(
+      (p) => p.running && app.quit_pids.includes(p.pid)
+    );
     const row = { app, share: percentOf(usageValue(by, app), whole), quit };
     if (!matches || matches({ name: app.name })) {
       out.push({ ...row, processes: app.processes, matchedInside: false });

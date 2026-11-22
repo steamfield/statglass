@@ -20,17 +20,18 @@ pub const GPU_UTIL: &str = "gpu.util";
 pub const DISK_READ: &str = "disk.read_total";
 pub const DISK_WRITE: &str = "disk.write_total";
 
-/// The process an app row's Quit acts on: the running main executable (quitting it
-/// quits the app and its helpers), else the only running process.
-fn quit_pid(processes: &[UsageProc]) -> Option<i32> {
-    let mut running = processes.iter().filter(|p| p.running);
+/// The processes an app row's Quit acts on: the running main executable alone (quitting
+/// it quits the app and its helpers, and signalling helpers first would cut a graceful
+/// quit short), else every running process.
+fn quit_pids(processes: &[UsageProc]) -> Vec<i32> {
     if let Some(main) = processes.iter().find(|p| p.running && p.app_main) {
-        return Some(main.pid);
+        return vec![main.pid];
     }
-    match (running.next(), running.next()) {
-        (Some(only), None) => Some(only.pid),
-        _ => None,
-    }
+    processes
+        .iter()
+        .filter(|p| p.running)
+        .map(|p| p.pid)
+        .collect()
 }
 
 /// A running process's refusal, `None` for an exited one.
@@ -66,7 +67,7 @@ pub fn usage_by_app(
         write_bytes: a.write_b,
         energy_j: a.energy_j,
         avg_w: a.avg_w,
-        quit_pid: quit_pid(&a.processes),
+        quit_pids: quit_pids(&a.processes),
         processes: a
             .processes
             .iter()
@@ -341,17 +342,20 @@ mod tests {
     }
 
     #[test]
-    fn quit_targets_the_main_executable_then_a_sole_process() {
+    fn quit_targets_the_main_executable_else_every_running_process() {
         // Chrome: helpers and the main process; Quit goes to the main one.
-        assert_eq!(quit_pid(&[p(2, true, false), p(1, true, true)]), Some(1));
-        // The main process exited: no single target among the helpers left.
+        assert_eq!(quit_pids(&[p(2, true, false), p(1, true, true)]), vec![1]);
+        // The main process exited: the helpers left are quit together.
         assert_eq!(
-            quit_pid(&[p(2, true, false), p(3, true, false), p(1, false, true)]),
-            None
+            quit_pids(&[p(2, true, false), p(3, true, false), p(1, false, true)]),
+            vec![2, 3]
         );
-        // A CLI with one running process.
-        assert_eq!(quit_pid(&[p(5, false, false), p(6, true, false)]), Some(6));
-        assert_eq!(quit_pid(&[p(5, false, false)]), None);
+        // A CLI group (several `node` processes): every running one.
+        assert_eq!(
+            quit_pids(&[p(5, false, false), p(6, true, false), p(7, true, false)]),
+            vec![6, 7]
+        );
+        assert_eq!(quit_pids(&[p(5, false, false)]), Vec::<i32>::new());
     }
 
     #[test]
@@ -375,7 +379,7 @@ mod tests {
         let procs = &out.apps[0].processes;
         assert_eq!(procs[0].refusal, Some(SignalRefusal::WindowServer));
         assert_eq!(procs[1].refusal, None);
-        assert_eq!(out.apps[0].quit_pid, Some(1));
+        assert_eq!(out.apps[0].quit_pids, vec![1]);
         assert_eq!(out.covered_ms, 10_000);
     }
 

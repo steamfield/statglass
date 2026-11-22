@@ -560,11 +560,11 @@ export type AppUsage = {
 	energy_j: number | null,
 	avg_w: number | null,
 	/**
-	 *  The process that Quit on the app's row acts on: its running main executable,
-	 *  or, for an app without one (a CLI), its only running process. `null` when
-	 *  neither exists; each running process can still be quit on its own.
+	 *  The processes that selecting or quitting the app's row acts on: its running main
+	 *  executable alone (quitting it quits its helpers), or, for a group without one
+	 *  (several `node` processes), every running process. Empty when none is running.
 	 */
-	quit_pid: number | null,
+	quit_pids: number[],
 	/**  Ordered like the apps. */
 	processes: ProcessUsage[],
 };

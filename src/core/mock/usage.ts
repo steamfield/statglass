@@ -4,7 +4,7 @@
  * span, plus two that exited during it. Mirrors `usage.rs` in the engine and
  * the app shell: children are kept above a floor and apps above a looser one,
  * totals count every process, an app row's Quit goes to its running main
- * executable or its only running process, exited processes carry no refusal,
+ * executable or else every running process, exited processes carry no refusal,
  * and `other` is the host's series less the apps' totals, clamped at 0.
  */
 import type {
@@ -27,6 +27,13 @@ export const APP_OF: Record<string, string> = {
   "Slack Helper": "Slack",
   "com.apple.WebKit.WebContent": "Safari",
 };
+
+/**
+ * Apps with a bundle main executable. The collector marks a process main only
+ * when it runs straight from `X.app/Contents/MacOS/`, so a CLI group such as
+ * `node` has no main process and is quit through every member.
+ */
+const BUNDLED = new Set(Object.values(APP_OF));
 
 /**
  * Processes that ran during the window and have exited, for the first third
@@ -213,7 +220,7 @@ export function mockUsageByApp({
   for (const p of processes) {
     if (user !== null && p.user !== user) continue;
     const app = APP_OF[p.name] ?? p.name;
-    add(app, app === p.name, 1, {
+    add(app, app === p.name && BUNDLED.has(app), 1, {
       pid: p.pid,
       start_time_us: p.start_time_us,
       name: p.name,
@@ -325,12 +332,8 @@ export function mockUsageByApp({
           ? Math.round(memNow + (memThen - memNow) / 3)
           : memNow,
       avg_w: secs > 0 ? usage.energy_j / secs : 0,
-      quit_pid:
-        main !== undefined
-          ? main.proc.pid
-          : running.length === 1
-            ? (running[0]?.proc.pid ?? null)
-            : null,
+      quit_pids:
+        main !== undefined ? [main.proc.pid] : running.map((r) => r.proc.pid),
       processes: processesKept,
     });
   }

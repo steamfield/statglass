@@ -319,7 +319,7 @@ pub async fn query_usage_by_app(
                 refusals.as_ref().and_then(|r| r(pid, start, name))
             });
         if !local {
-            answer.apps.iter_mut().for_each(|a| a.quit_pid = None);
+            answer.apps.iter_mut().for_each(|a| a.quit_pids.clear());
         }
         Ok(answer)
     })
