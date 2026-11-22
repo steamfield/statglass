@@ -204,6 +204,7 @@ Test cases:
 
 ### Phase 2: Feedback surfaces, Settings diagnostics, Dev Gallery and E2E
 
+Scaffold: 342a73b4ca2e5225f06d0a8b896a25469f55f86f
 Demo: `bun run dev:fast` to verify the left sidebar "Feedback" button + HoverCard, Settings General panel's "Feedback & issues" (with "Copy system info" and "File feedback") and "Support StatGlass" ("Star on GitHub"), the Dev Gallery specimen (`/?route=/dev/gallery`), and Playwright E2E; run `bun run dev` on macOS to verify the tray right-click "Send Feedback…" and native macOS Help menu when "Show in Dock" is enabled.
 Depends on: phase 1
 Test cases:
@@ -216,9 +217,9 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src-tauri/src/app_menu.rs, src-tauri/src/tray/mod.rs | src-tauri/src/star_prompt.rs, src-tauri/src/lib.rs | src-tauri/src/app_menu.rs | opus | pending | | `cargo test -p statglass app_menu` and `make rust-check` pass |
-| b | S | src/app/components/sidebar.tsx, src/app/routes/dashboard/_components/live-sidebar.tsx | src/core/star-prompt.ts, src/app/components/ui/hover-card.tsx | src/app/components/sidebar.test.tsx, src/app/routes/dashboard/route.test.tsx | opus | pending | | sidebar and dashboard route tests + `bun run typecheck` + `bun run lint` pass |
-| c | M | src/app/routes/dashboard/settings/_components/general-panel.tsx, src/app/routes/dev/gallery/_sections/app-components.tsx, tests/e2e/star-prompt-and-feedback.spec.ts | src/core/star-prompt.ts, src/app/components/star-prompt-card.tsx, src/app/components/sensor-dump-dialog.tsx, src/app/routes/dashboard/settings/_components/update-row.tsx | src/app/routes/dashboard/settings/route.test.tsx | opus | pending | | settings tests, gallery tests, Playwright E2E, `bun run typecheck`, and `bun run lint` pass |
+| a | M | src-tauri/src/app_menu.rs, src-tauri/src/tray/mod.rs | src-tauri/src/star_prompt.rs, src-tauri/src/lib.rs | src-tauri/src/app_menu.rs | opus | merged | sprint/github-star-and-feedback-2a | `cargo test -p statglass app_menu` and `make rust-check` pass |
+| b | S | src/app/components/sidebar.tsx, src/app/routes/dashboard/_components/live-sidebar.tsx | src/core/star-prompt.ts, src/app/components/ui/hover-card.tsx | src/app/components/sidebar.test.tsx, src/app/routes/dashboard/route.test.tsx | opus | merged | sprint/github-star-and-feedback-2b | sidebar and dashboard route tests + `bun run typecheck` + `bun run lint` pass |
+| c | M | src/app/routes/dashboard/settings/_components/general-panel.tsx, src/app/routes/dev/gallery/_sections/app-components.tsx, tests/e2e/star-prompt-and-feedback.spec.ts | src/core/star-prompt.ts, src/app/components/star-prompt-card.tsx, src/app/components/sensor-dump-dialog.tsx, src/app/routes/dashboard/settings/_components/update-row.tsx | src/app/routes/dashboard/settings/route.test.tsx | opus | merged | sprint/github-star-and-feedback-2c | settings tests, gallery tests, Playwright E2E, `bun run typecheck`, and `bun run lint` pass |
 
 #### Lane a brief
 

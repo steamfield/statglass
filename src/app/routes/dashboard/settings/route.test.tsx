@@ -451,13 +451,11 @@ describe("Settings sampling and history", () => {
 
 describe("Settings feedback and support", () => {
   it("copies non-PII system info, opens GitHub Issues, and records Star on GitHub", async () => {
-    const writeText = vi.fn(async (_text: string) => {});
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
-
     const { transport, user } = renderWithProviders(<SettingsRoute />);
+    // After render: user-event installs its own clipboard during setup.
+    const writeText = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
 
     await user.click(
       await screen.findByRole("button", { name: "Copy system info" })
