@@ -10,9 +10,15 @@ const MAX_WAIT: Duration = Duration::from_secs(60);
 const MAX_JITTER_MS: u64 = 250;
 
 /// Exponential reconnect delay: 1 s after the first failure, doubling to 60 s.
+///
+/// Keeps two counts. `failures` drives the doubling and only starts over on `reset`,
+/// which the caller does after a session that lasted, so a host that accepts and then
+/// drops right away keeps backing off. `since_connect` is the published attempt number
+/// and starts over on every connection.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Backoff {
     failures: u32,
+    since_connect: u32,
 }
 
 impl Backoff {
@@ -26,6 +32,7 @@ impl Backoff {
     pub(super) fn fail(&mut self) -> Duration {
         let doublings = self.failures.min(MAX_WAIT.as_secs().ilog2() + 1);
         self.failures = self.failures.saturating_add(1);
+        self.since_connect = self.since_connect.saturating_add(1);
         FIRST_WAIT.saturating_mul(1 << doublings).min(MAX_WAIT)
     }
 
@@ -43,14 +50,20 @@ impl Backoff {
         Some((wait, now_ms.saturating_add(wait_ms)))
     }
 
-    /// Forgets past failures after a connection succeeds or lasted long enough.
-    pub(super) fn reset(&mut self) {
-        self.failures = 0;
+    /// Starts the attempt count over after a connection, keeping the doubling.
+    pub(super) fn connected(&mut self) {
+        self.since_connect = 0;
     }
 
-    /// Failed attempts since the last reset.
+    /// Forgets past failures, the doubling included, after a session that lasted.
+    pub(super) fn reset(&mut self) {
+        self.failures = 0;
+        self.since_connect = 0;
+    }
+
+    /// Consecutive failed attempts since the last connection or reset.
     pub(super) fn attempt(&self) -> u32 {
-        self.failures
+        self.since_connect
     }
 }
 

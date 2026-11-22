@@ -104,3 +104,24 @@ fn a_selected_socket_of_an_installed_runtime_is_just_not_running() {
         R::NotRunning
     );
 }
+
+#[test]
+fn an_unselected_attempt_connects_to_the_preferred_or_only_answering_engine() {
+    let preferred = [
+        engine("/a.sock", true, false),
+        engine("/b.sock", true, true),
+    ];
+    let pick = |engines: &[DockerEngine]| unselected_choice(engines).map(|e| e.socket);
+    assert_eq!(pick(&preferred), Some("/b.sock".into()));
+    let one = [
+        engine("/a.sock", false, true),
+        engine("/b.sock", true, false),
+    ];
+    assert_eq!(pick(&one), Some("/b.sock".into()));
+    let several = [
+        engine("/a.sock", true, false),
+        engine("/b.sock", true, false),
+    ];
+    assert_eq!(pick(&several), None);
+    assert_eq!(pick(&[]), None);
+}

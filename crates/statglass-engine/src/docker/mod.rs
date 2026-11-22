@@ -4,7 +4,7 @@ pub use error::DockerServiceError;
 mod availability;
 #[cfg(test)]
 use availability::retry_plan;
-use availability::{FIRST_RETRY_SECONDS, LaunchWindow};
+use availability::{ConnectFailure, FIRST_RETRY_SECONDS, LaunchWindow, unselected_choice};
 pub use availability::{ReasonInput, unavailable_reason};
 mod event_lane;
 #[cfg(test)]
