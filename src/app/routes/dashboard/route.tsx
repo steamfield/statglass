@@ -22,6 +22,7 @@ import { useSampling } from "~/stores/live-selectors";
 import { HostConnectionNotice } from "./_components/host-connection-notice";
 import { HostUpdateNotice } from "./_components/host-update-notice";
 import { LiveSidebar } from "./_components/live-sidebar";
+import { StarPromptHost } from "./_components/star-prompt-host";
 
 /**
  * An open dashboard window follows `navigate-requested`: Rust sends it when
@@ -171,6 +172,7 @@ export default function DashboardLayout() {
             </div>
           </DashboardShellContext.Provider>
         </main>
+        <StarPromptHost hasFocalNotice={useFocal} />
       </div>
     </RangeNavigationProvider>
   );

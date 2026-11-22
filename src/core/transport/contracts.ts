@@ -81,6 +81,8 @@ import type {
   SpaceSubtree,
   SpaceTarget,
   SpaceVolume,
+  StarPromptAction,
+  StarPromptStatus,
   SubscriptionInfo,
   UpdateStatus,
   UsageByApp,
@@ -439,6 +441,14 @@ export interface Transport {
   installUpdate(version: string): Promise<CommandResult<null>>;
   onUpdateStatusChanged(cb: (status: UpdateStatus) => void): Unsubscribe;
   getWindowAppearance(): Promise<WindowAppearance>;
+  /** Whether the dashboard should show the GitHub star prompt. */
+  getStarPromptStatus(): Promise<StarPromptStatus>;
+  /** Persist the user's star, dismiss, or snooze choice for the GitHub star prompt. */
+  actOnStarPrompt(
+    action: StarPromptAction
+  ): Promise<CommandResult<StarPromptStatus>>;
+  /** A star, dismiss or snooze was saved, from any window or the app menu. */
+  onStarPromptChanged(cb: (status: StarPromptStatus) => void): Unsubscribe;
   /** Open an http(s) URL in the default browser (sensor dump GitHub issue). */
   openUrl(url: string): Promise<void>;
   /** Close this window (onboarding Skip and Done). */

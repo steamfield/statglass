@@ -6,6 +6,7 @@ import type {
   NavigateRequested,
   RemoteHostsChanged,
   SettingsChanged,
+  StarPromptStatus,
   UpdateStatus,
   WindowAppearanceChanged,
   WindowVisibilityChanged,
@@ -23,6 +24,7 @@ export function createMockEmitters() {
     hosts: createEmitter<HostsChanged>(),
     remotes: createEmitter<RemoteHostsChanged>(),
     event: createEmitter<EventRecorded>(),
+    starPrompt: createEmitter<StarPromptStatus>(),
   };
 }
 export type MockEmitters = ReturnType<typeof createMockEmitters>;

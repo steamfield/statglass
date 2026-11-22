@@ -75,6 +75,8 @@ export interface SidebarProps {
   version: string;
   /** Called instead of following the href, so the router can navigate. */
   onNavigate?: ((href: string) => void) | undefined;
+  /** Quiet action row above the footer divider (Feedback button). */
+  footerAction?: ReactNode;
   /** A second footer line under the sampling state (the Performance mode marker). */
   footerNote?: ReactNode;
   hostSwitcher?: ReactNode;
@@ -159,6 +161,7 @@ export function Sidebar({
   status,
   version,
   onNavigate,
+  footerAction,
   footerNote,
   hostSwitcher,
 }: SidebarProps) {
@@ -244,6 +247,7 @@ export function Sidebar({
         />
       ))}
       <div className="flex-1" />
+      {footerAction && <div className="pb-1.5">{footerAction}</div>}
       <div className="flex flex-col gap-1 border-border-subtle border-t px-2 pt-2.5 max-sm:sr-only">
         <div className="flex items-center gap-2">
           <SidebarStatusReadout status={status} />

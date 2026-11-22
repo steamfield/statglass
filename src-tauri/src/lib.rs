@@ -5,6 +5,7 @@
 //! window code builds on.
 
 mod addresses;
+pub mod app_menu;
 mod bench;
 mod calibration;
 mod cli_link;
@@ -29,6 +30,7 @@ mod query;
 pub mod remote;
 pub mod remote_network;
 pub mod settings;
+pub mod star_prompt;
 pub mod startup;
 pub mod state;
 #[cfg(test)]
@@ -139,6 +141,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::get_window_appearance,
             windows::window_visible,
             commands::report_popover_paint, popover::commands::report_popover_content_height,
+            star_prompt::get_star_prompt_status, star_prompt::act_on_star_prompt,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,
@@ -151,6 +154,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             ipc::HostsChanged,
             remote::RemoteHostsChanged,
             ipc::EventRecorded,
+            star_prompt::StarPromptChanged,
         ]);
     facts::register(builder)
 }
@@ -238,6 +242,7 @@ pub fn run() {
             let background_restart = updates::take_background_restart(app.handle());
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
+            app_menu::install(app.handle())?;
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]
             if !background_restart && !deferred_ui_launch(std::env::args()) {

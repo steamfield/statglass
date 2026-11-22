@@ -8,6 +8,7 @@ import type {
   ProcessView,
   RemoteHostStatus,
   SeriesKey,
+  StarPromptStatus,
   UpdateStatus,
 } from "@core/generated/bindings";
 import type { Transport } from "../transport";
@@ -28,6 +29,10 @@ export interface MockTransportOptions {
   embed?: MockEmbed;
   updateStatus?: UpdateStatus;
   updateFails?: boolean;
+  /** Initial status returned by `getStarPromptStatus`. Overrides the `star-prompt` scenario default. */
+  starPromptStatus?: StarPromptStatus;
+  /** Every `actOnStarPrompt` answers `settings_not_saved`, as on a full disk. */
+  starPromptFails?: boolean;
   /** What `cli_link_status` answers first. Defaults to `missing`; installing makes any state but `blocked` `current`. */
   cliLink?: CliLinkStatus;
   /** A bounded setup delay for cancellation tests. */

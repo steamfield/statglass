@@ -1,6 +1,8 @@
 import { createMockTransport } from "@core/mock-transport";
+import { GITHUB_ISSUES_URL } from "@core/star-prompt";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { Profiler } from "react";
+import { Toaster } from "~/components/ui/sonner";
 import { renderWithProviders } from "../../../../tests/test-utils";
 import { RemoteHostCard } from "./hosts/_components/host-cards";
 import DashboardLayout from "./route";
@@ -57,6 +59,45 @@ describe("Dashboard shell", () => {
       expect(sidebarLinks().some((t) => t.startsWith("Power"))).toBe(false)
     );
     expect(sidebarLinks().some((t) => t.startsWith("Battery"))).toBe(true);
+  });
+
+  it("opens GitHub Issues when the sidebar Feedback action is clicked", async () => {
+    const { transport, user } = renderShell();
+    const feedback = screen.getByRole("button", { name: "Feedback" });
+    await user.click(feedback);
+    expect(transport.calls).toContainEqual({
+      command: "open_url",
+      args: [GITHUB_ISSUES_URL],
+    });
+  });
+
+  it("explains the Feedback action on hover", async () => {
+    const { user } = renderShell();
+    await user.hover(screen.getByRole("button", { name: "Feedback" }));
+    expect(
+      await screen.findByText(
+        "Have an issue or want a feature? File feedback on GitHub."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("says so quietly when Feedback can't open the browser", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const transport = createMockTransport({ scenarios: ["paused"] });
+    transport.openUrl = async () => {
+      throw new Error("no browser");
+    };
+    const { user } = renderWithProviders(
+      <>
+        <DashboardLayout />
+        <Toaster />
+      </>,
+      { transport, route: "/dashboard/overview" }
+    );
+    await user.click(screen.getByRole("button", { name: "Feedback" }));
+    expect(await screen.findByText("Couldn't open link.")).toBeInTheDocument();
+    error.mockRestore();
+    transport.dispose();
   });
 });
 

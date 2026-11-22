@@ -168,6 +168,7 @@ pub fn toggle(app: &AppHandle, clicked: Instant, tray_id: &str) {
     }
     panel.show_and_make_key();
     set_visible(app, true);
+    crate::star_prompt::record_engagement(app);
 
     let token = state.start_open(clicked);
     if let Some(w) = app.get_webview_window(LABEL) {
