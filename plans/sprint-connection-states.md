@@ -48,6 +48,7 @@ Error model: SSH dial failures become `RemoteError::Unreachable { kind, detail }
 ### Phase 1: hosts say why they can't connect (MVP)
 
 Scaffold: eaeb2a40
+Tag: phase-1
 Demo: `bun run dev:fast`, open `/?route=/dashboard/hosts&scenario=hosts-dashboard,host-name-not-resolved,host-refused,host-tailscale-down,host-tailscale-silent,mac-offline`; each failing card names its cause. In the real app, turn Tailscale off and watch a Tailscale-only host read "Tailscale is off on this Mac".
 Test cases:
 - stderr "ssh: Could not resolve hostname studio.local: nodename nor servname provided, or not known" -> Unreachable/NameNotResolved.
@@ -64,7 +65,7 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-remote/src/network.rs, crates/statglass-remote/src/network/interfaces.rs, crates/statglass-remote/src/network/tests.rs, crates/statglass-remote/src/source/status.rs, crates/statglass-remote/src/transport.rs, crates/statglass-remote/src/lib.rs, crates/statglass-remote/src/source.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/status/network_tests.rs, crates/statglass-remote/src/transport/classify_tests.rs, src-tauri/src/remote/registration/tests.rs | opus | running | sprint/connection-states-1a | cargo tests for statglass-remote and statglass registration pass, clippy clean |
+| a | M | crates/statglass-remote/src/network.rs, crates/statglass-remote/src/network/interfaces.rs, crates/statglass-remote/src/network/tests.rs, crates/statglass-remote/src/source/status.rs, crates/statglass-remote/src/transport.rs, crates/statglass-remote/src/lib.rs, crates/statglass-remote/src/source.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/status/network_tests.rs, crates/statglass-remote/src/transport/classify_tests.rs, src-tauri/src/remote/registration/tests.rs | opus | merged | sprint/connection-states-1a | cargo tests for statglass-remote and statglass registration pass, clippy clean |
 | b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/core/mock/remote-updates.ts, src/core/mock/remote-network-scenarios.ts, src/core/mock/remote.ts, src/core/mock/stream.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts | contracts, src/core/remote-connection.test.ts | src/core/remote-connection.test.ts, src/core/remote-connection-kinds.test.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.test.ts | sonnet | merged | sprint/connection-states-1b | bun tests pass, typecheck clean |
 
 #### Lane a brief
@@ -106,27 +107,96 @@ Test cases:
 
 ### Phase 2: backoff you can see, and waiting for the network
 
-Demo: scenarios `host-backoff`, `mac-offline` on Hosts: countdown ticks, Retry now flips to "Trying…", one offline notice.
+Demo: `/?route=/dashboard/hosts&scenario=hosts-dashboard,host-backoff` shows "Retrying in N s" ticking down, Retry now flips the card to "Trying…"; `scenario=hosts-dashboard,mac-offline` shows one page notice and cards reading "Waiting for network".
 Depends on: phase 1
+Test cases: crates/statglass-remote/src/source/backoff/tests.rs (Backoff), src-tauri/src/remote/registration/tests.rs (new fields map and re-emit), src/core/remote-connection-retry.test.ts (view fields), src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx (countdown, Trying…, Retry now), all in the phase 2 scaffold.
+
+Contracts (phase 2 scaffold): `ConnectionStatus` gains `next_attempt_ms: Option<i64>` (this Mac's wall clock), `attempt: u32` (consecutive failed attempts, 0 after a success), `dialing: bool`, `waiting_for_network: bool`. `RemoteHostStatus` gains `next_attempt_ms: Option<f64>`, `attempt: u32`, `dialing: bool`, `waiting_for_network: bool`. New `crates/statglass-remote/src/source/backoff.rs`: `Backoff { .. }` with `Backoff::new()`, `fail(&mut self) -> Duration` (returns the wait and advances: 1, 2, 4 … 60 s, jitter added by the caller as today), `reset(&mut self)`, `attempt(&self) -> u32`. `RemoteConnectionView` gains `nextAttemptMs: number | null`, `dialing: boolean`, `waitingForNetwork: boolean`.
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-remote/src/source.rs, crates/statglass-remote/src/source/backoff.rs, crates/statglass-remote/src/source/status.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/backoff_tests.rs | opus | pending | | |
-| b | M | src/app/routes/dashboard/hosts/_components/host-card-status.tsx, src/app/routes/dashboard/hosts/_components/host-card-actions.tsx, src/app/routes/dashboard/hosts/_components/hosts-offline-notice.tsx, src/app/routes/dashboard/hosts/_hooks/use-retry-countdown.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts, src/app/routes/dashboard/hosts/route.tsx, src/core/mock/remote-updates.ts | contracts | | opus | pending | | |
+| a | M | crates/statglass-remote/src/source.rs, crates/statglass-remote/src/source/backoff.rs, crates/statglass-remote/src/source/status.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/backoff/tests.rs, src-tauri/src/remote/registration/tests.rs | opus | pending | | rust tests pass, clippy clean |
+| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/app/routes/dashboard/hosts/_components/host-card-status.tsx, src/app/routes/dashboard/hosts/_components/host-card-actions.tsx, src/app/routes/dashboard/hosts/_components/hosts-offline-notice.tsx, src/app/routes/dashboard/hosts/_lib/host-card-model.ts, src/app/routes/dashboard/hosts/route.tsx, src/app/routes/dashboard/_components/host-connection-notice.tsx, src/core/mock/remote-network-scenarios.ts | contracts, src/app/hooks/use-seconds-until.ts | src/core/remote-connection-retry.test.ts, src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx | opus | pending | | bun tests pass, typecheck clean, screenshots compared |
 
-(Briefs written during phase 1.)
+#### Lane 2/a brief
+
+- Goal: the remote source publishes when it will try next, whether it is dialing now, and stops dialing while this Mac is offline.
+- Behavior:
+  - Backoff (pure): `fail()` returns 1 s for the first failure and doubles to a 60 s cap; `attempt()` counts failures since `reset()`; a session that lasted over 30 s resets it before the next failure, as today's `delay = 1` rule does.
+  - Before each dial: `dialing = true`, `next_attempt_ms = None`, `waiting_for_network = false`, publish.
+  - On a retryable failure: record and refine as phase 1 does, `dialing = false`, `attempt = backoff.attempt()`, then:
+    - if `failure_kind == Some(LocalOffline)`: `waiting_for_network = true`, `next_attempt_ms = None`, publish, and wait for stop, sleep, retry or a network change, with a 60 s fallback timer (the fallback redials without growing the backoff).
+    - otherwise: wait = `backoff.fail()` + jitter, `next_attempt_ms = Some(wall_ms + wait)`, publish, then wait as today (`ends_backoff`).
+  - Non-retryable failure: `dialing = false`, `next_attempt_ms = None`, publish, wait for retry as today.
+  - On connect: `attempt = 0`, `dialing = false`, `next_attempt_ms = None`, `waiting_for_network = false`, `backoff.reset()`.
+  - A manual retry cuts the wait (unchanged) and does not reset the doubling.
+  - Shell: map the four fields; `rendered_status_changed` compares `next_attempt_ms`, `dialing` and `waiting_for_network` (not `attempt` alone).
+  - Keep `source.rs` inside its 1000-line ceiling: the loop changes should net out near zero by moving delay arithmetic into backoff.rs.
+- Out of scope: UI. Probing the network before the first dial.
+- Done when: `cargo test -p statglass-remote` and `cargo test -p statglass registration` pass, clippy clean, `make architecture-check` passes.
+
+#### Lane 2/b brief
+
+- Goal: failing host cards and the remote host focal notice show the countdown and dialing state, Retry now gives feedback, and Hosts shows one notice while this Mac is offline.
+- `remoteConnectionView` fills `nextAttemptMs` (status.next_attempt_ms), `dialing` (status.dialing) and `waitingForNetwork` (status.waiting_for_network); the existing " · Auto-retrying" meta suffix is replaced by nothing (the countdown carries it).
+- Host card status line (`host-card-status.tsx`): for a non-live remote card show, after the status text, "Trying…" while dialing, else "Retrying in {n} s" from `useSecondsUntil(nextAttemptMs)` ("Retrying…" at 0), else nothing. The model's route text (Last seen …) stays. Use `figures` (tabular numerals) on the countdown so the line doesn't jitter at 1 Hz.
+- Card action (`host-card-actions.tsx`): the "Retry" state action reads "Retry now"; while the retry command is in flight or `dialing` is true it is disabled and reads "Trying…".
+- Offline notice (`hosts-offline-notice.tsx`, rendered in `route.tsx` under the header): when any remote has `waiting_for_network`, one `InlineMessage tone="note"`: "This Mac is offline. Hosts reconnect on their own when the network is back." Cards in that state keep "Waiting for network" and drop their per-card message line (the page notice says it).
+- `host-connection-notice.tsx` (focal/banner card on a remote host's pages): meta shows the same countdown / "Trying…" text; its Retry button shows "Trying…" while dialing.
+- Mock: scenario `host-backoff` (add to SCENARIOS in the scaffold) seeds a host failing with timeout, `attempt` 3, `next_attempt_ms` now + 12 s; when the countdown elapses or Retry is pressed the mock sets `dialing` true for 1.5 s, then fails again with the next delay doubled. `mac-offline` sets `waiting_for_network` true on every host.
+- Verify: screenshots of the two demo scenarios at 1440x1000 dark next to the phase 1 Hosts screenshots; name differences.
+- Out of scope: Rust; ErrorStateCard internals.
+- Done when: `bun run test -- src/core src/app/routes/dashboard/hosts src/app/routes/dashboard/_components` passes and `bun run typecheck` is clean.
 
 ### Phase 3: Docker engine states and launching the runtime
 
-Demo: `/?route=/dashboard/containers&scenario=docker-not-running` shows the focal card; Open Docker Desktop flips it to live in the mock.
+Scaffold: ca849219
+Demo: `/?route=/dashboard/containers&scenario=docker-not-running` shows the focal card; Open Docker Desktop flips it to live in the mock. Other scenarios: docker-not-installed, docker-stopped, docker-choose-engine, docker-colima, docker-permission-denied, docker-incompatible.
 Depends on: phase 1
+Test cases: crates/statglass-collect/src/docker_runtimes/tests.rs, crates/statglass-engine/src/docker/availability/tests.rs, src-tauri/src/docker/launch/tests.rs, src/app/routes/dashboard/containers/_lib/engine-state.test.ts (all in the scaffold).
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-collect/src/docker_runtimes.rs, crates/statglass-engine/src/docker/availability.rs, crates/statglass-engine/src/docker/worker.rs, crates/statglass-engine/src/docker/mod.rs, src-tauri/src/docker.rs | contracts | | opus | pending | | |
-| b | M | src/app/routes/dashboard/containers/_components/docker-engine-state.tsx, src/app/routes/dashboard/containers/_lib/engine-state.ts, src/app/routes/dashboard/containers/route.tsx, src/core/mock/docker-scenarios.ts | contracts | | opus | pending | | |
+| a | M | crates/statglass-collect/src/docker_runtimes.rs, crates/statglass-engine/src/docker/availability.rs, crates/statglass-engine/src/docker/worker.rs, crates/statglass-engine/src/docker/mod.rs, src-tauri/src/docker/launch.rs | contracts | crates/statglass-collect/src/docker_runtimes/tests.rs, crates/statglass-engine/src/docker/availability/tests.rs, src-tauri/src/docker/launch/tests.rs | opus | pending | | rust tests pass, clippy clean |
+| b | M | src/app/routes/dashboard/containers/_components/docker-engine-state.tsx, src/app/routes/dashboard/containers/_lib/engine-state.ts, src/app/routes/dashboard/containers/route.tsx, src/core/mock/docker-scenarios.ts, src/core/mock/docker.ts | contracts, src/app/routes/dashboard/_components/host-connection-notice.tsx | src/app/routes/dashboard/containers/_lib/engine-state.test.ts | opus | pending | | bun tests pass, typecheck clean, screenshot compared |
 
-(Briefs written during phase 1.)
+#### Lane 3/a brief
+
+- Goal: Rust says why the Docker engine is unreachable, which runtimes are installed, when it retries next, and can launch an installed runtime app on request.
+- Interface (scaffold): `statglass_collect::docker_runtimes::{SearchPaths, default_search_paths, bundle_id, installed_runtimes}`; `statglass_engine::docker::{ReasonInput, unavailable_reason}`; `DockerHandle::launch_started(&self)`; `DockerSnapshot.availability: Option<DockerAvailability>`; `src-tauri/src/docker/launch.rs::{launch_target, docker_launch_runtime}`. Add `DockerHandle::installed_runtimes(&self) -> Vec<DockerRuntimeApp>` (uses the handle's `home`).
+- Behavior:
+  - installed_runtimes: Docker.app, OrbStack.app, "Rancher Desktop.app" as directories (symlinks followed) in any app folder; `colima` as a file in any bin folder; each kind once; order DockerDesktop, OrbStack, RancherDesktop, Colima; names "Docker Desktop", "OrbStack", "Rancher Desktop", "Colima"; launchable false only for Colima. default_search_paths: apps `/Applications`, `<home>/Applications`; bins `/opt/homebrew/bin`, `/usr/local/bin`. bundle_id: com.docker.docker, dev.kdrag0n.MacVirt, io.rancherdesktop.app, None for Colima.
+  - unavailable_reason: the rules in its doc comment, first match wins.
+  - Worker: whenever it transitions to `DockerStatus::Unavailable` (connect failure classified Unavailable, or a session ending Disconnected), it sets `availability` in the same snapshot update: reason from `unavailable_reason` with probed engines (`discover()`), installed runtimes, `settings.selected_engine`, and `was_connected` (true once any adapter attached during this handle's life); `next_attempt_ms` = wall now + the delay it is about to wait; `launching_until_ms` while the launch window is open. Every other status sets `availability: None`. PermissionDenied and Incompatible keep their statuses with availability None.
+  - Launch window: `launch_started` records a 60 s window (monotonic for the wait, wall ms for the snapshot) and calls `resume()` so a connection attempt starts now. While the window is open the retry wait is 2 s and does not double; after it closes, normal 1 s doubling to 30 s resumes from 1 s. A successful attach closes the window.
+  - Command: `docker_launch_runtime(kind)`: `launch_target(kind, &state.docker.installed_runtimes())?`, then `/usr/bin/open -b <bundle id>` via tokio::process::Command with a 10 s timeout; non-zero exit or spawn failure -> `CommandError::Docker { message: "Couldn’t open <name>: <trimmed stderr or io error>" }`; on success `state.docker.launch_started()` and return the snapshot. launch_target errors: not installed -> "<Name> isn’t installed on this Mac." (name from the kind even when not installed: Docker Desktop, OrbStack, Rancher Desktop, Colima); Colima -> "Colima has no app to open. Run `colima start` in Terminal."; success -> bundle id.
+  - Keep `crates/statglass-collect/src/docker.rs` untouched (it is at its 700-line ceiling). worker.rs and mod.rs stay under 500 nonblank production lines; add a module only inside your owned paths and report it.
+- Out of scope: UI, DockerStatus or coverage reason changes, auto-launching.
+- Done when: `cargo test -p statglass-collect docker_runtimes`, `cargo test -p statglass-engine docker`, `cargo test -p statglass --lib launch` pass, `cargo clippy --workspace --all-targets -- -D warnings` clean, `make architecture-check` passes.
+
+#### Lane 3/b brief
+
+- Goal: Containers shows one focal state card when the engine is unreachable, with the one action that fixes it, a retry countdown, and a way to see saved history.
+- Interface (scaffold): `engineStateView(snapshot, nowMs): EngineStateView | null` and `EngineAction` in `_lib/engine-state.ts`; `transport.dockerLaunchRuntime(kind)`; `useSecondsUntil(targetMs)` from `~/hooks/use-seconds-until`; `ErrorStateCard` (`~/components/error-state-card`, variant "focal", see how `host-connection-notice.tsx` uses it).
+- engineStateView copy (exact strings pinned by the test where it asserts them; write the rest in the same voice, short, no blame, typographic apostrophes):
+  - null for connected, connecting, paused, idle_suspended, disabled.
+  - Primary runtime R = first launchable runtime in `availability.runtimes`; if none launchable but Colima is listed, R = Colima; else the snapshot engine's runtime name or "Docker".
+  - launching (`launching_until_ms > nowMs`, reason not_running or stopped): tone info, title "Starting {R}…", summary "Waiting for the engine to answer. This usually takes a few seconds.", action null, launching true.
+  - not_running: tone warning, title "{R} isn’t running", summary "Start {R} to see live container activity. StatGlass connects as soon as the engine answers.", action launch "Open {R}" (or for Colima: copy `colima start`, label "Copy command", summary "Start Colima from Terminal to see live container activity. StatGlass connects as soon as the engine answers."), showRetry true, gif "network-error".
+  - stopped: title "{R} stopped", summary "The engine stopped answering. Start {R} again to resume live readings.", same action rules, lastReadingMs = snapshot.observed_ms.
+  - not_installed: tone info, title "No Docker engine found", summary "StatGlass monitors Docker Desktop, OrbStack, Colima and Rancher Desktop. Install or start one and this page connects on its own.", gif "not-found", action retry "Retry", showRetry false.
+  - choose_engine: tone info, title "Choose a Docker engine", summary "More than one engine is running. Pick the one StatGlass should monitor.", action choose "Choose engine…".
+  - selected_missing: tone warning, title "The selected engine is gone", summary "{selected_engine} no longer exists. Choose another engine to keep monitoring.", action choose "Choose engine…".
+  - permission_denied: tone destructive, title "StatGlass can’t open the Docker socket", summary "macOS refused access to {engine socket or “the Docker socket”}. Check the socket’s permissions, then retry.", action retry, nextAttemptMs null.
+  - incompatible: tone destructive, title "This Docker engine is too old", summary "StatGlass needs Docker Engine API 1.40 or newer (Docker 19.03+). Update {R}, then retry.", action retry.
+  - unavailable without availability: tone warning, title "Docker isn’t answering", summary from `snapshot.message` or "StatGlass will keep trying to reach the engine.", action retry.
+  - nextAttemptMs = availability.next_attempt_ms for unavailable, null otherwise. lastReadingMs = snapshot.observed_ms when `snapshot.persistence.retained_from_ms !== null`, else null (all reasons).
+- Component `docker-engine-state.tsx`: `DockerEngineState({ view, onLaunch, onRetry, onChoose, onShowHistory })`. ErrorStateCard focal with the view's tone, title, summary, gifTheme, gifSeed `docker:<reason or status>`. Actions: primary button by action kind (launch shows "Opening…" while pending and its error inline via `inlineError`; copy uses `useCopyToClipboard` and reads "Copied" briefly; choose; retry), plus a ghost "Retry now" when showRetry. Meta: countdown from `useSecondsUntil(view.nextAttemptMs)`: "Retrying in {n} s", "Trying now…" at 0, nothing when null; launching: "Waiting for {R}…". When lastReadingMs is set, a "View saved history" button and "Last reading {formatDateTime}" in meta.
+- route.tsx: compute `engineStateView(snapshot, nowMs)` when `settings.enabled`. When non-null and the user hasn't chosen to view history, render `DockerEngineState` in place of the view control, cleanup flow and Activity/Storage content (header stays; its subtitle keeps `statusLabel`). onLaunch -> `transport.dockerLaunchRuntime(kind)` then `setSnapshot`; onRetry -> existing `resume`; onChoose -> `setMonitoring(true)`; onShowHistory -> local state true, which renders today's content with an `InlineMessage tone="status"` line above it: "{view.title} · showing saved history" and a "Back" ghost button. The history choice resets when the view becomes null.
+- Mock: scenarios in `docker-scenarios.ts` (names already in SCENARIOS): docker-not-installed, docker-not-running (Docker Desktop installed), docker-stopped (Docker Desktop, retained history), docker-choose-engine (Docker Desktop + OrbStack), docker-colima (Colima only), docker-permission-denied, docker-incompatible; each status unavailable (or its own status) with containers [] and `availability` set (next_attempt_ms now + 8 s). Existing docker-unavailable maps to not_running with Docker Desktop and keeps its rows. `dockerLaunchRuntime` in `docker.ts`: sets `launching_until_ms` now + 60 s, emits, then after 3 s turns the snapshot connected with the default containers and availability null.
+- Verify: screenshot `/?route=/dashboard/containers&scenario=docker-not-running` and docker-not-installed at 1440x1000 dark, compare against the Hosts remote focal card (`/?route=/dashboard/overview&host=remote-unreachable&scenario=host-unreachable` or the gallery ErrorStateCard specimen at `/?route=/dev/gallery`), and report differences.
+- Out of scope: Rust, changing ErrorStateCard, Storage tab internals.
+- Done when: `bun run test -- src/app/routes/dashboard/containers src/core/mock` passes and `bun run typecheck` is clean.
 
 ## Log
 
