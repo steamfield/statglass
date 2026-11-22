@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/steamfield/statglass/compare/v0.13.0...v0.13.1) - 2026-11-22
+
+### Fixed
+
+- The Hosts reconnect panel truncates a long cause to one line with the full text on
+  hover or focus.
+- `url` 2.5.9 for RUSTSEC-2026-0592.
+
 ## [0.13.0](https://github.com/steamfield/statglass/compare/v0.12.1...v0.13.0) - 2026-11-22
 
 ### Added
