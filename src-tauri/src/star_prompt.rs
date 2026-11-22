@@ -4,14 +4,20 @@
 //! more than 24 hours, shown real engagement, and neither starred, permanently dismissed,
 //! nor snoozed the prompt.
 
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
+use statglass_schema::lock::LockExt;
 use tauri::State;
 
 use crate::error::CommandError;
 use crate::state::AppState;
+
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Repository page opened when the user chooses to star StatGlass on GitHub.
 pub const GITHUB_REPO_URL: &str = "https://github.com/steamfield/statglass";
@@ -53,17 +59,24 @@ pub enum StarPromptAction {
 /// Persisted star-prompt state serialized to `star-prompt.json`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StarPromptState {
+    /// Epoch milliseconds when StatGlass was first seen on this machine.
     pub first_seen_at_ms: i64,
+    /// Number of distinct debounced user interactions recorded so far.
     #[serde(default)]
     pub engagement_sessions: u32,
+    /// Epoch milliseconds of the last counted user interaction.
     #[serde(default)]
     pub last_interaction_at_ms: Option<i64>,
+    /// Number of times the user has snoozed the prompt.
     #[serde(default)]
     pub snooze_count: u32,
+    /// Epoch milliseconds until which a snoozed prompt stays hidden.
     #[serde(default)]
     pub snoozed_until_ms: Option<i64>,
+    /// Epoch milliseconds when the user permanently dismissed the prompt.
     #[serde(default)]
     pub dismissed_at_ms: Option<i64>,
+    /// Epoch milliseconds when the user chose to star StatGlass on GitHub.
     #[serde(default)]
     pub starred_at_ms: Option<i64>,
 }
@@ -92,13 +105,183 @@ impl FileStarPromptStore {
 
 impl StarPromptStore for FileStarPromptStore {
     fn load(&self) -> std::io::Result<Option<String>> {
-        let _ = &self.path;
-        todo!("not implemented")
+        match std::fs::read_to_string(&self.path) {
+            Ok(raw) => Ok(Some(raw)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 
     fn save(&self, content: &str) -> Result<(), String> {
-        let _ = (&self.path, content);
-        todo!("not implemented")
+        if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("creating {}: {e}", parent.display()))?;
+        }
+        let tmp_path = temp_path_for(&self.path);
+        let write_and_swap = write_temp_file(&tmp_path, content).and_then(|()| {
+            std::fs::rename(&tmp_path, &self.path).map_err(|e| {
+                format!(
+                    "renaming {} to {}: {e}",
+                    tmp_path.display(),
+                    self.path.display()
+                )
+            })
+        });
+        if let Err(err) = write_and_swap {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(err);
+        }
+        if let Err(err) = statglass_store::restrict(&self.path) {
+            tracing::warn!("restricting {}: {err}", self.path.display());
+        }
+        Ok(())
+    }
+}
+
+fn temp_path_for(target: &Path) -> PathBuf {
+    let dir = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let seq = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    dir.join(format!(
+        ".{STAR_PROMPT_FILE}.tmp.{}.{seq}",
+        std::process::id()
+    ))
+}
+
+fn write_temp_file(tmp_path: &Path, content: &str) -> Result<(), String> {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(tmp_path)
+        .map_err(|e| format!("creating {}: {e}", tmp_path.display()))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("writing {}: {e}", tmp_path.display()))?;
+    file.sync_all()
+        .map_err(|e| format!("syncing {}: {e}", tmp_path.display()))?;
+    drop(file);
+    // Restrict before rename so the target path never observes broader permissions.
+    statglass_store::restrict(tmp_path)
+        .map_err(|e| format!("restricting {}: {e}", tmp_path.display()))?;
+    Ok(())
+}
+
+fn seeded_first_seen_ms(history_created_at_ms: Option<i64>, now_ms: i64) -> i64 {
+    history_created_at_ms.map_or(now_ms, |created| created.min(now_ms))
+}
+
+fn fresh_state(first_seen_at_ms: i64) -> StarPromptState {
+    StarPromptState {
+        first_seen_at_ms,
+        engagement_sessions: 0,
+        last_interaction_at_ms: None,
+        snooze_count: 0,
+        snoozed_until_ms: None,
+        dismissed_at_ms: None,
+        starred_at_ms: None,
+    }
+}
+
+fn status_at(state: &StarPromptState, now_ms: i64) -> StarPromptStatus {
+    let eligible = state.starred_at_ms.is_none()
+        && state.dismissed_at_ms.is_none()
+        && now_ms.saturating_sub(state.first_seen_at_ms) > MIN_ELAPSED_MS
+        && state.engagement_sessions >= REQUIRED_ENGAGEMENT_SESSIONS
+        && state.snoozed_until_ms.is_none_or(|until| now_ms > until);
+    StarPromptStatus {
+        eligible,
+        can_snooze: state.snooze_count == 0,
+    }
+}
+
+fn next_after_interaction(state: &StarPromptState, now_ms: i64) -> Option<StarPromptState> {
+    if state.starred_at_ms.is_some()
+        || state.dismissed_at_ms.is_some()
+        || state.engagement_sessions >= REQUIRED_ENGAGEMENT_SESSIONS
+    {
+        return None;
+    }
+    if state
+        .last_interaction_at_ms
+        .is_some_and(|last| now_ms < last || now_ms.saturating_sub(last) < ENGAGEMENT_COOLDOWN_MS)
+    {
+        return None;
+    }
+    let mut next = state.clone();
+    next.engagement_sessions = next.engagement_sessions.saturating_add(1);
+    next.last_interaction_at_ms = Some(now_ms);
+    Some(next)
+}
+
+fn apply_action(state: &StarPromptState, action: StarPromptAction, now_ms: i64) -> StarPromptState {
+    let mut next = state.clone();
+    match action {
+        StarPromptAction::Starred => {
+            next.starred_at_ms = Some(now_ms);
+            next.snoozed_until_ms = None;
+        }
+        StarPromptAction::Dismissed => {
+            next.dismissed_at_ms = Some(now_ms);
+            next.snoozed_until_ms = None;
+        }
+        StarPromptAction::Snoozed if next.snooze_count == 0 => {
+            next.snooze_count = 1;
+            next.snoozed_until_ms = Some(now_ms.saturating_add(SNOOZE_DURATION_MS));
+        }
+        StarPromptAction::Snoozed => {
+            next.dismissed_at_ms = Some(now_ms);
+            next.snoozed_until_ms = None;
+        }
+    }
+    next
+}
+
+fn serialize_state(state: &StarPromptState) -> Result<String, String> {
+    serde_json::to_string_pretty(state).map_err(|e| format!("serializing {STAR_PROMPT_FILE}: {e}"))
+}
+
+fn persist_best_effort(store: &dyn StarPromptStore, state: &StarPromptState) {
+    let encoded = match serialize_state(state) {
+        Ok(encoded) => encoded,
+        Err(err) => {
+            tracing::warn!("{err}");
+            return;
+        }
+    };
+    if let Err(err) = store.save(&encoded) {
+        tracing::warn!("saving {STAR_PROMPT_FILE}: {err}");
+    }
+}
+
+fn load_initial_state(
+    store: &dyn StarPromptStore,
+    history_created_at_ms: Option<i64>,
+    now_ms: i64,
+) -> StarPromptState {
+    let seeded_first_seen = seeded_first_seen_ms(history_created_at_ms, now_ms);
+    match store.load() {
+        Ok(Some(raw)) => match serde_json::from_str::<StarPromptState>(&raw) {
+            Ok(state) => state,
+            Err(err) => {
+                tracing::warn!("stored {STAR_PROMPT_FILE} failed to parse ({err}); resetting");
+                fresh_state(seeded_first_seen)
+            }
+        },
+        Ok(None) => {
+            let state = fresh_state(seeded_first_seen);
+            persist_best_effort(store, &state);
+            state
+        }
+        Err(err) => {
+            tracing::warn!("reading {STAR_PROMPT_FILE} failed ({err}); starting fresh");
+            fresh_state(seeded_first_seen)
+        }
     }
 }
 
@@ -125,21 +308,28 @@ impl StarPromptOwner {
         history_created_at_ms: Option<i64>,
         now_ms: i64,
     ) -> Self {
-        let _ = (store, history_created_at_ms, now_ms);
-        todo!("not implemented")
+        let initial = load_initial_state(store.as_ref(), history_created_at_ms, now_ms);
+        Self {
+            store,
+            state: Mutex::new(initial),
+        }
     }
 
     /// Computes eligibility at `now_ms` without mutating state.
     pub fn status(&self, now_ms: i64) -> StarPromptStatus {
-        let _ = (&self.store, &self.state, now_ms);
-        todo!("not implemented")
+        let state = self.state.lock_ok();
+        status_at(&state, now_ms)
     }
 
     /// Records a user-initiated dashboard or popover open, debounced by
     /// [`ENGAGEMENT_COOLDOWN_MS`] and capped once [`REQUIRED_ENGAGEMENT_SESSIONS`] is reached.
     pub fn record_interaction(&self, now_ms: i64) {
-        let _ = (&self.store, &self.state, now_ms);
-        todo!("not implemented")
+        let mut state = self.state.lock_ok();
+        let Some(next) = next_after_interaction(&state, now_ms) else {
+            return;
+        };
+        persist_best_effort(self.store.as_ref(), &next);
+        *state = next;
     }
 
     /// Applies `action` at `now_ms`, persisting before committing in-memory state.
@@ -148,8 +338,15 @@ impl StarPromptOwner {
         action: StarPromptAction,
         now_ms: i64,
     ) -> Result<StarPromptStatus, CommandError> {
-        let _ = (&self.store, &self.state, action, now_ms);
-        todo!("not implemented")
+        let mut state = self.state.lock_ok();
+        let next = apply_action(&state, action, now_ms);
+        let encoded =
+            serialize_state(&next).map_err(|message| CommandError::SettingsNotSaved { message })?;
+        self.store
+            .save(&encoded)
+            .map_err(|message| CommandError::SettingsNotSaved { message })?;
+        *state = next;
+        Ok(status_at(&state, now_ms))
     }
 }
 
@@ -417,5 +614,47 @@ mod tests {
             StarPromptOwner::open(corrupt_dir.path(), Some(T0 - MIN_ELAPSED_MS - 1), T0);
         engage_three_times(&recovered, T0);
         assert!(recovered.status(T0 + 2 * ENGAGEMENT_COOLDOWN_MS).eligible);
+    }
+
+    #[test]
+    fn existing_first_seen_is_preserved_across_reloads_and_closed_states_skip_interaction_writes() {
+        let store = MemStore::default();
+        let owner = StarPromptOwner::with_store(Box::new(store.clone()), None, T0);
+        engage_three_times(&owner, T0);
+
+        // Reloading with an older history timestamp must keep the persisted first_seen_at_ms.
+        let reloaded = StarPromptOwner::with_store(
+            Box::new(store.clone()),
+            Some(T0 - 10 * MIN_ELAPSED_MS),
+            T0 + MIN_ELAPSED_MS,
+        );
+        assert!(!reloaded.status(T0 + MIN_ELAPSED_MS).eligible);
+        assert!(reloaded.status(T0 + MIN_ELAPSED_MS + 1).eligible);
+
+        // Once dismissed or starred before 3 sessions, interactions never touch disk.
+        for action in [StarPromptAction::Starred, StarPromptAction::Dismissed] {
+            let s = MemStore::default();
+            let o = StarPromptOwner::with_store(Box::new(s.clone()), None, T0);
+            o.act(action, T0 + 1_000).unwrap();
+            let saves_after_act = s.save_count();
+            o.record_interaction(T0 + 2 * ENGAGEMENT_COOLDOWN_MS);
+            assert_eq!(s.save_count(), saves_after_act);
+        }
+    }
+
+    #[test]
+    fn file_store_creates_missing_parent_dirs_and_leaves_no_temp_siblings() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("nested").join("app-data");
+        let store = FileStarPromptStore::in_dir(&nested);
+
+        assert!(store.load().unwrap().is_none());
+        store.save("{\"first_seen_at_ms\":1}").unwrap();
+
+        let entries: Vec<String> = std::fs::read_dir(&nested)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(entries, vec![STAR_PROMPT_FILE.to_string()]);
     }
 }
