@@ -21,6 +21,7 @@ import {
   project,
 } from "./protocol";
 import type { MockRemotes } from "./remote";
+import { staysFailing } from "./remote-network-scenarios";
 import type { MockRing } from "./ring";
 import { holdMs } from "./series";
 export class MockStream {
@@ -181,6 +182,8 @@ export class MockStream {
       if (
         (this.options.scenarios?.includes("host-unreachable") &&
           remote.record.config.id === "remote-unreachable") ||
+        (this.options.scenarios &&
+          staysFailing(this.options.scenarios, remote.record.config.id)) ||
         (this.options.scenarios?.includes("host-offline-history") &&
           remote.record.config.id === "remote-offline-history")
       ) {
