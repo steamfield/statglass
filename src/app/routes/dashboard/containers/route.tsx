@@ -19,6 +19,7 @@ import { ContainerActionProvider } from "./_components/container-actions";
 import { ContainerActivity } from "./_components/container-activity";
 import { ContainerRangeNotice } from "./_components/container-range-notice";
 import { DockerCleanupFlow } from "./_components/docker-cleanup-flow";
+import { DockerEngineGate } from "./_components/docker-engine-gate";
 import { DockerLocalOnly } from "./_components/docker-local-only";
 import { DockerStorage } from "./_components/docker-storage";
 import { MonitoringDialog } from "./_components/monitoring-dialog";
@@ -140,30 +141,38 @@ function LocalContainersRoute() {
           />
         )}
         <MonitoringContent snapshot={snapshot} configure={configure}>
-          {viewControl}
-          <DockerCleanupFlow flow={cleanup} />
-          {storageView ? (
-            <DockerStorage
-              key={`${engine}:${snapshot.generation}`}
-              engine={engine}
-              generation={snapshot.generation}
-              connected={connected}
-              flow={cleanup}
-            />
-          ) : (
-            <ContainerActivity
-              snapshot={snapshot}
-              route={routeState}
-              chart={chart}
-              set={set}
-              onSort={(value) => {
-                sortOverride.current = value;
-                patch({ sort: value.by, dir: value.dir });
-              }}
-              onManage={() => setMonitoring(true)}
-              resume={resume}
-            />
-          )}
+          <DockerEngineGate
+            snapshot={snapshot}
+            nowMs={nowMs}
+            setSnapshot={setSnapshot}
+            onRetry={resume}
+            onChoose={() => setMonitoring(true)}
+          >
+            {viewControl}
+            <DockerCleanupFlow flow={cleanup} />
+            {storageView ? (
+              <DockerStorage
+                key={`${engine}:${snapshot.generation}`}
+                engine={engine}
+                generation={snapshot.generation}
+                connected={connected}
+                flow={cleanup}
+              />
+            ) : (
+              <ContainerActivity
+                snapshot={snapshot}
+                route={routeState}
+                chart={chart}
+                set={set}
+                onSort={(value) => {
+                  sortOverride.current = value;
+                  patch({ sort: value.by, dir: value.dir });
+                }}
+                onManage={() => setMonitoring(true)}
+                resume={resume}
+              />
+            )}
+          </DockerEngineGate>
         </MonitoringContent>
       </div>
     </ContainerActionProvider>

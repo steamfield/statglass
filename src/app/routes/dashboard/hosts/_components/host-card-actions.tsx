@@ -13,6 +13,16 @@ import type { HostCardModel } from "../_lib/host-card-model";
 import { AddHostDialog } from "./add-host-dialog";
 import { RepairDialog } from "./host-agent-actions";
 
+/** Button text for a card's connection action; Retry reads "Trying…" while an attempt runs. */
+function stateActionLabel(
+  action: NonNullable<HostCardModel["stateAction"]>,
+  trying: boolean
+): string {
+  if (action !== "Retry") return action;
+  return trying ? "Trying…" : "Retry now";
+}
+
+/** The connection, update and repair actions in a host card's footer. */
 export function HostCardActions({
   model,
   remote,
@@ -30,6 +40,8 @@ export function HostCardActions({
   const [reinstalling, setReinstalling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const trying =
+    model.stateAction === "Retry" && (busy || model.retry?.dialing === true);
   const run = async () => {
     if (!remote) return;
     if (model.stateAction === "Re-pair…") {
@@ -77,10 +89,10 @@ export function HostCardActions({
           <Button
             variant="outline"
             size="sm"
-            disabled={busy}
+            disabled={busy || trying}
             onClick={() => void run()}
           >
-            {model.stateAction}
+            {stateActionLabel(model.stateAction, trying)}
           </Button>
         )}
         {model.version.progress ? (

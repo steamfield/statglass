@@ -4,6 +4,13 @@ import type {
   RemoteHostRecord,
 } from "@core/generated/bindings";
 import type { GifTheme } from "@steamfield/ui/gif";
+import {
+  buildRouteLines,
+  networkCauseCopy,
+  networkHint,
+  routePhrase,
+  timeoutCopy,
+} from "./remote-connection-network";
 
 export type RemoteConnectionKind =
   | "connected"
@@ -16,7 +23,12 @@ export type RemoteConnectionKind =
   | "update_required"
   | "identity_changed"
   | "disabled"
-  | "protocol";
+  | "protocol"
+  | "name_not_resolved"
+  | "refused"
+  | "no_route"
+  | "local_offline"
+  | "tailscale_down";
 
 export type RemoteConnectionTone = "info" | "warning" | "destructive";
 
@@ -37,6 +49,8 @@ export interface RemoteConnectionView {
   readonly shortReason: string;
   readonly meta: string;
   readonly routes: readonly ConfiguredRoute[];
+  /** The configured routes as one phrase, e.g. "LAN (studio.local) or Tailscale (studio)". */
+  readonly routeText: string;
   /** Durable mirrored history watermark (remote host clock epoch ms), or null when none. */
   readonly syncedThroughMs: number | null;
   readonly hasSavedHistory: boolean;
@@ -45,6 +59,14 @@ export interface RemoteConnectionView {
   readonly primaryAction: RemotePrimaryAction | null;
   readonly showRetry: boolean;
   readonly diagnostics: string;
+  /** One line per failed route, e.g. "LAN (studio.local): name not found on this network". */
+  readonly routeLines: readonly string[];
+  /** This Mac's wall-clock ms of the next automatic attempt, or null when none is scheduled. */
+  readonly nextAttemptMs: number | null;
+  /** A connection attempt is in flight. */
+  readonly dialing: boolean;
+  /** This Mac is offline and the host waits for the network to come back. */
+  readonly waitingForNetwork: boolean;
   readonly sidebarLabel: string;
   readonly pillLabel: string;
 }
@@ -77,31 +99,6 @@ function formatAge(deltaMs: number): string {
   return `${days} d ago`;
 }
 
-function routePhrase(routes: readonly ConfiguredRoute[]): string {
-  if (routes.length === 2) {
-    const [lan, ts] = routes;
-    return `LAN (${lan?.alias}) or Tailscale (${ts?.alias})`;
-  }
-  const only = routes[0];
-  if (!only) return "the saved SSH route";
-  return `${only.label} (${only.alias})`;
-}
-
-function networkHint(routes: readonly ConfiguredRoute[], name: string): string {
-  const hasLan = routes.some((r) => r.kind === "lan");
-  const hasTs = routes.some((r) => r.kind === "tailscale");
-  if (hasLan && hasTs) {
-    return `Check your network or Tailscale connection, and confirm ${name} is awake.`;
-  }
-  if (hasTs) {
-    return `Check that Tailscale is connected and ${name} is awake.`;
-  }
-  if (hasLan) {
-    return `Check that both machines are on the same network and ${name} is awake.`;
-  }
-  return `Check the SSH address in Hosts and confirm ${name} is awake.`;
-}
-
 function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
   const { status } = remote;
   if (status.identity_changed !== null) return "identity_changed";
@@ -127,6 +124,16 @@ function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
       return "identity_changed";
     case "protocol":
       return "protocol";
+    case "name_not_resolved":
+      return "name_not_resolved";
+    case "refused":
+      return "refused";
+    case "no_route":
+      return "no_route";
+    case "local_offline":
+      return "local_offline";
+    case "tailscale_down":
+      return "tailscale_down";
     case "unreachable":
     case null:
       return "unreachable";
@@ -166,13 +173,19 @@ function buildDiagnostics(
       `History synced through: ${new Date(status.synced_through_ms).toISOString()}`
     );
   }
+  for (const failure of status.route_failures) {
+    lines.push(
+      `Route ${failure.route === "lan" ? "LAN" : "Tailscale"}: ${failure.kind}`
+    );
+  }
   if (status.error) {
     lines.push(`Error: ${status.error}`);
   }
   return lines.join("\n");
 }
 
-type ConnectionCopy = Pick<
+/** The per-kind fields of a connection view. */
+export type ConnectionCopy = Pick<
   RemoteConnectionView,
   | "tone"
   | "title"
@@ -307,10 +320,18 @@ function copyForKind(
   ) {
     return blockingCopy(remote, kind, fact);
   }
+  if (
+    kind === "name_not_resolved" ||
+    kind === "refused" ||
+    kind === "no_route" ||
+    kind === "local_offline" ||
+    kind === "tailscale_down"
+  ) {
+    return networkCauseCopy(remote, kind, routes, fact);
+  }
   const { config, status, os } = remote;
   const name = config.name;
   const autoRetrying = config.enabled && status.state === "connecting";
-  const retryTag = autoRetrying ? " · Auto-retrying" : "";
   const routeText = routePhrase(routes);
 
   switch (kind) {
@@ -366,7 +387,7 @@ function copyForKind(
           os === "linux"
             ? "The StatGlass agent isn’t running on this host."
             : `StatGlass isn’t open on ${name}.`,
-        meta: `${fact}${retryTag}`,
+        meta: fact,
         gifTheme: "overloaded",
         primaryAction: "retry",
         showRetry: config.enabled,
@@ -374,25 +395,14 @@ function copyForKind(
         pillLabel: "Agent stopped",
       };
     case "timeout":
-      return {
-        tone: "warning",
-        title: `Can’t connect to ${name}`,
-        summary: `${routeText} timed out. ${networkHint(routes, name)}`,
-        shortReason: `${routeText} timed out.`,
-        meta: `${fact}${retryTag}`,
-        gifTheme: "timeout",
-        primaryAction: "retry",
-        showRetry: config.enabled,
-        sidebarLabel: autoRetrying ? "Reconnecting…" : "Timed out",
-        pillLabel: "Offline",
-      };
+      return timeoutCopy(remote, routes, fact);
     case "unreachable":
       return {
         tone: "warning",
         title: `Can’t connect to ${name}`,
         summary: `Couldn’t reach ${routeText}. ${networkHint(routes, name)}`,
         shortReason: `Couldn’t reach ${routeText}.`,
-        meta: `${fact}${retryTag}`,
+        meta: fact,
         gifTheme: "network-error",
         primaryAction: "retry",
         showRetry: config.enabled,
@@ -420,9 +430,29 @@ export function remoteConnectionView(
     kind,
     ...copy,
     routes,
+    routeText: routePhrase(routes),
     syncedThroughMs,
     hasSavedHistory: syncedThroughMs !== null,
     gifSeed: `${remote.config.id}:${kind}`,
     diagnostics: buildDiagnostics(remote, kind, routes),
+    routeLines: buildRouteLines(remote.status, routes),
+    nextAttemptMs: remote.status.next_attempt_ms,
+    dialing: remote.status.dialing,
+    waitingForNetwork: remote.status.waiting_for_network,
   };
+}
+
+/**
+ * The automatic-retry phrase shown after a failing host's status: "Trying…"
+ * while an attempt is in flight, else the countdown to the next attempt
+ * ("Retrying…" once it reaches zero), else null when nothing is scheduled.
+ */
+export function retryScheduleText(
+  dialing: boolean,
+  secondsUntilAttempt: number | null
+): string | null {
+  if (dialing) return "Trying…";
+  if (secondsUntilAttempt === null) return null;
+  if (secondsUntilAttempt === 0) return "Retrying…";
+  return `Retrying in ${secondsUntilAttempt} s`;
 }

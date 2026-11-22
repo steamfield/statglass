@@ -24,6 +24,7 @@ export function nativeDocker(): Pick<
   | "dockerEvents"
   | "dockerLogs"
   | "dockerResume"
+  | "dockerLaunchRuntime"
 > {
   return {
     dockerComparison: (request) => commands.dockerComparison(request),
@@ -75,5 +76,6 @@ export function nativeDocker(): Pick<
       };
     },
     dockerResume: () => commands.dockerResume(),
+    dockerLaunchRuntime: (kind) => commands.dockerLaunchRuntime(kind),
   };
 }

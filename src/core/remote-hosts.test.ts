@@ -43,6 +43,11 @@ function host(
       synced_through_ms: null,
       error: null,
       failure_kind: null,
+      route_failures: [],
+      next_attempt_ms: null,
+      attempt: 0,
+      dialing: false,
+      waiting_for_network: false,
       sync: "current",
       clock_offset_ms: 0,
       agent_version:

@@ -335,6 +335,8 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .constant("NET_BUCKET_MS", statglass_engine::NET_BUCKET_MS)
         .constant("USAGE_BUCKET_MS", statglass_engine::USAGE_BUCKET_MS)
         .constant("DOCKER_BUCKET_MS", statglass_engine::docker::DOCKER_BUCKET_MS)
+        // The longest one remote connection attempt runs before it fails.
+        .constant("REMOTE_DIAL_TIMEOUT_MS", statglass_remote::DIAL_TIMEOUT_MS)
         // The longest range Docker history, events and comparison answer.
         .constant("DOCKER_MAX_RANGE_MS", statglass_store::docker::MAX_RANGE_MS)
         // The longest range `query_usage_series` answers.

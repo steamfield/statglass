@@ -30,6 +30,10 @@ export interface HostCardModel {
   version: HostVersionState;
   stateAction: "Retry" | "Turn on" | "Re-pair…" | null;
   isLive: boolean;
+  /** Automatic retry state for a failing remote card; null for live, local or paused cards. */
+  retry: { nextAttemptMs: number | null; dialing: boolean } | null;
+  /** The panel that replaces the metric lanes on a remote card that isn't live; null otherwise. */
+  reconnect: HostCardReconnectModel | null;
   system: string;
   cpu: string;
   memory: string;
@@ -41,6 +45,81 @@ export interface HostCardModel {
     clockOffsetMs: number;
   } | null;
   vitals: { label: string; value: string; secondary?: string }[];
+}
+
+/** What a non-live remote card says about its connection in place of its readings. */
+export interface HostCardReconnectModel {
+  /** What is happening: "Reconnecting to Studio", "Waiting for network", … */
+  headline: string;
+  /** The classified one-line cause. */
+  cause: string;
+  /** `warning` while a failing host retries; `muted` while waiting, connecting or off. */
+  tone: "warning" | "muted";
+  /** `schedule` shows the countdown or the attempt in flight; `network` waits for this Mac. */
+  timing: "schedule" | "network" | "none";
+  /** The routes an attempt dials, e.g. "LAN (studio.local)". */
+  routes: string;
+  /** Secondary facts: the attempt count once retries slow down, and the last reading. */
+  facts: string[];
+}
+
+/** Attempts at which the facts row starts explaining the slowing retries. */
+const SLOWING_ATTEMPT = 2;
+
+function reconnectHeadline(
+  remote: RemoteHostRecord,
+  status: string
+): Pick<HostCardReconnectModel, "headline" | "tone" | "timing"> {
+  const { config, status: s } = remote;
+  if (s.waiting_for_network)
+    return {
+      headline: "Waiting for network",
+      tone: "muted",
+      timing: "network",
+    };
+  if (s.identity_changed || s.agent_update.kind === "required")
+    return { headline: status, tone: "warning", timing: "none" };
+  if (s.state === "disabled")
+    return { headline: "Connection off", tone: "muted", timing: "none" };
+  if (s.state === "connecting" && s.failure_kind === null)
+    return {
+      headline: `Connecting to ${config.name}`,
+      tone: "muted",
+      timing: "schedule",
+    };
+  return {
+    headline: `Reconnecting to ${config.name}`,
+    tone: "warning",
+    timing: "schedule",
+  };
+}
+
+function reconnectFacts(remote: RemoteHostRecord): string[] {
+  const { status } = remote;
+  const facts: string[] = [];
+  if (status.attempt >= SLOWING_ATTEMPT)
+    facts.push(`Attempt ${status.attempt} · retries slow to once a minute`);
+  const lastReadingMs = status.last_seen_ms ?? status.synced_through_ms;
+  if (lastReadingMs !== null)
+    facts.push(`Last reading ${formatDateTime(lastReadingMs)}`);
+  return facts;
+}
+
+/** The reconnect panel for a remote card that isn't live; null for a live one. */
+function reconnectPanel(
+  remote: RemoteHostRecord,
+  state: Pick<HostCardModel, "isLive" | "status" | "message">
+): HostCardReconnectModel | null {
+  if (state.isLive) return null;
+  const view = remoteConnectionView(remote);
+  return {
+    ...reconnectHeadline(remote, state.status),
+    // The card's own message is the most specific line (identity, update, network
+    // cause); the panel shows it in place of the message row.
+    cause: state.message?.text ?? view.shortReason,
+    routes: view.routeText,
+    facts: reconnectFacts(remote),
+  };
 }
 
 function system(host: HostRecord | undefined): string {
@@ -76,16 +155,32 @@ function connectingState(
       : status.synced_through_ms !== null
         ? `History through ${formatDateTime(status.synced_through_ms)}`
         : "";
+  const offline = status.failure_kind === "local_offline";
   return {
     ...base,
-    status: "Reconnecting…",
-    mark: "warn" as const,
+    status: offline ? "Waiting for network" : "Reconnecting…",
+    mark: offline ? ("idle" as const) : ("warn" as const),
     route,
     stateAction: "Retry" as const,
-    message: {
-      tone: "note" as const,
-      text: remoteConnectionView(remote).shortReason,
-    },
+    // While this Mac is offline the Hosts page notice explains it once for every card.
+    message: status.waiting_for_network
+      ? null
+      : {
+          tone: "note" as const,
+          text: remoteConnectionView(remote).shortReason,
+        },
+  };
+}
+
+/** The automatic retry schedule, only for a card that offers Retry (a failing remote). */
+function retrySchedule(
+  remote: RemoteHostRecord,
+  stateAction: HostCardModel["stateAction"]
+): HostCardModel["retry"] {
+  if (stateAction !== "Retry") return null;
+  return {
+    nextAttemptMs: remote.status.next_attempt_ms,
+    dialing: remote.status.dialing,
   };
 }
 
@@ -176,10 +271,19 @@ function connection(
         stateAction: "Retry",
         message: {
           tone: "error",
-          text: status.error ?? "The SSH connection failed.",
+          text: errorMessage(remote),
         },
       };
   }
+}
+
+/** The classified short reason when Rust named a failure kind, else the raw SSH error. */
+function errorMessage(remote: RemoteHostRecord): string {
+  const { status } = remote;
+  if (status.failure_kind === null) {
+    return status.error ?? "The SSH connection failed.";
+  }
+  return remoteConnectionView(remote).shortReason;
 }
 
 function pressure(vitals: HostVitals | null): string {
@@ -259,6 +363,8 @@ export function remoteHostCardModel(
   const state = connection(remote);
   return {
     ...state,
+    retry: retrySchedule(remote, state.stateAction),
+    reconnect: reconnectPanel(remote, state),
     rr: rrBand(
       remote.status.rr,
       state.isLive,
@@ -295,6 +401,8 @@ export function localHostCardModel(
     message: null,
     stateAction: null,
     isLive: true,
+    retry: null,
+    reconnect: null,
     system: system(host),
     version: localVersionState(version, target),
     cpu: MISSING,

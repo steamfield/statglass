@@ -1,12 +1,166 @@
-import type { DockerContainer, DockerSnapshot } from "@core/generated/bindings";
+/**
+ * Mock Docker scenarios: the snapshot each `docker-*` scenario starts from,
+ * including the unreachable-engine states Rust reports through `availability`,
+ * and the snapshots a runtime launch moves through.
+ */
+import type {
+  DockerContainer,
+  DockerRuntimeApp,
+  DockerRuntimeKind,
+  DockerSnapshot,
+  DockerStatus,
+  DockerUnavailableReason,
+} from "@core/generated/bindings";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { currentCoverage, mockCoverage } from "./docker-coverage";
 import {
   aggregateContainers,
+  engine,
   mockContainer,
   mockDockerSnapshot,
+  projectAggregates,
 } from "./docker-fixtures";
 import type { ScenarioName } from "./fixtures";
+
+/** Runtimes Rust can find on a Mac, by kind, as `installed_runtimes` reports them. */
+export const MOCK_RUNTIMES: Readonly<
+  Record<DockerRuntimeKind, DockerRuntimeApp>
+> = {
+  docker_desktop: {
+    kind: "docker_desktop",
+    name: "Docker Desktop",
+    launchable: true,
+  },
+  orb_stack: { kind: "orb_stack", name: "OrbStack", launchable: true },
+  rancher_desktop: {
+    kind: "rancher_desktop",
+    name: "Rancher Desktop",
+    launchable: true,
+  },
+  colima: { kind: "colima", name: "Colima", launchable: false },
+};
+
+/** How long the mock engine takes to answer after its app is opened. */
+export const MOCK_LAUNCH_DELAY_MS = 3_000;
+/** Rust's post-launch window of fast retries. */
+const LAUNCH_WINDOW_MS = 60_000;
+/** When the mock's next automatic connection attempt falls. */
+const NEXT_ATTEMPT_MS = 8_000;
+
+/** One unreachable-engine scenario: the status Rust publishes and why. */
+interface EngineScenario {
+  readonly status: DockerStatus;
+  readonly reason: DockerUnavailableReason | null;
+  readonly runtimes: readonly DockerRuntimeKind[];
+  /** Keeps the engine identity, as Rust does when the socket answered but refused. */
+  readonly keepsEngine: boolean;
+  readonly retainsHistory: boolean;
+}
+
+const ENGINE_SCENARIOS: Partial<Record<ScenarioName, EngineScenario>> = {
+  "docker-not-installed": unreachable("not_installed", [], false),
+  "docker-not-running": unreachable("not_running", ["docker_desktop"], false),
+  "docker-stopped": unreachable("stopped", ["docker_desktop"], true),
+  "docker-choose-engine": unreachable(
+    "choose_engine",
+    ["docker_desktop", "orb_stack"],
+    false
+  ),
+  "docker-colima": unreachable("not_running", ["colima"], false),
+  "docker-permission-denied": refused("permission_denied"),
+  "docker-incompatible": refused("incompatible"),
+};
+
+function unreachable(
+  reason: DockerUnavailableReason,
+  runtimes: readonly DockerRuntimeKind[],
+  retainsHistory: boolean
+): EngineScenario {
+  const status = "unavailable";
+  return { status, reason, runtimes, keepsEngine: false, retainsHistory };
+}
+
+function refused(status: DockerStatus): EngineScenario {
+  return {
+    status,
+    reason: null,
+    runtimes: [],
+    keepsEngine: true,
+    retainsHistory: false,
+  };
+}
+
+/** The first engine-state scenario requested, applied to a fresh snapshot. */
+function engineScenario(
+  snapshot: DockerSnapshot,
+  scenarios: readonly ScenarioName[],
+  nowMs: number
+): DockerSnapshot {
+  const name = scenarios.find((scenario) => ENGINE_SCENARIOS[scenario]);
+  const scenario = name ? ENGINE_SCENARIOS[name] : undefined;
+  if (!scenario) return snapshot;
+  return {
+    ...snapshot,
+    status: scenario.status,
+    engine: scenario.keepsEngine ? snapshot.engine : null,
+    containers: [],
+    aggregate: aggregateContainers([], nowMs),
+    project_aggregates: [],
+    persistence: {
+      ...snapshot.persistence,
+      retained_from_ms: scenario.retainsHistory
+        ? snapshot.persistence.retained_from_ms
+        : null,
+    },
+    availability:
+      scenario.reason === null
+        ? null
+        : {
+            reason: scenario.reason,
+            runtimes: scenario.runtimes.map((kind) => MOCK_RUNTIMES[kind]),
+            next_attempt_ms: nowMs + NEXT_ATTEMPT_MS,
+            launching_until_ms: null,
+          },
+  };
+}
+
+/** The snapshot right after a runtime app was opened: still unreachable, retrying fast. */
+export function launchingSnapshot(
+  snapshot: DockerSnapshot,
+  nowMs: number
+): DockerSnapshot {
+  if (snapshot.availability === null) return snapshot;
+  return {
+    ...snapshot,
+    availability: {
+      ...snapshot.availability,
+      launching_until_ms: nowMs + LAUNCH_WINDOW_MS,
+    },
+  };
+}
+
+/** The snapshot once the launched engine answers: connected with its containers. */
+export function launchedSnapshot(
+  snapshot: DockerSnapshot,
+  containers: DockerContainer[],
+  nowMs: number
+): DockerSnapshot {
+  return {
+    ...snapshot,
+    status: "connected",
+    message: null,
+    engine,
+    containers,
+    aggregate: aggregateContainers(containers, nowMs, snapshot.interval_ms),
+    project_aggregates: projectAggregates(
+      containers,
+      nowMs,
+      snapshot.interval_ms
+    ),
+    availability: null,
+    observed_ms: nowMs,
+  };
+}
 export function retainedContainers(
   snapshot: DockerSnapshot,
   now: () => number
@@ -56,7 +210,14 @@ export function scenarioSnapshot(
       status: "unavailable",
       message:
         "The selected engine is unavailable. Its history is still available.",
+      availability: {
+        reason: "not_running",
+        runtimes: [MOCK_RUNTIMES.docker_desktop],
+        next_attempt_ms: now() + NEXT_ATTEMPT_MS,
+        launching_until_ms: null,
+      },
     };
+  snapshot = engineScenario(snapshot, scenarios, now());
   if (scenarios.includes("docker-idle"))
     snapshot = {
       ...mockDockerSnapshot(0, now()),

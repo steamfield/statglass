@@ -1,4 +1,4 @@
-use crate::{RemoteError, Result, codec};
+use crate::{RemoteError, Result, UnreachableKind, codec};
 use serde::{Deserialize, Serialize};
 use statglass_proto::{Hello, Message, Negotiated, Offer};
 use statglass_schema::HostId;
@@ -104,6 +104,15 @@ pub(crate) fn sh_word(value: &str) -> Result<String> {
     word.push('"');
     Ok(word)
 }
+/// SSH's own limit for TCP connect and authentication on one route, 5 s.
+const SSH_CONNECT_TIMEOUT_ARG: &str = "-oConnectTimeout=5";
+/// How long a dial waits for the StatGlass greeting, counted from spawning `ssh`, so it
+/// also bounds SSH's own connect.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The longest one failing connection attempt runs. Both routes of a dual-route host
+/// dial at once under the same limit, and the preference grace only applies after a
+/// route has succeeded, so this bounds those too.
+pub const DIAL_TIMEOUT_MS: i64 = HANDSHAKE_TIMEOUT.as_millis() as i64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Route {
@@ -121,6 +130,15 @@ impl EndpointConfig {
             validate_alias(alias)?;
         }
         Ok(())
+    }
+
+    /// The host's only route, or `None` when both or neither alias is set.
+    pub fn single_route(&self) -> Option<Route> {
+        match (&self.lan, &self.tailscale) {
+            (Some(_), None) => Some(Route::Lan),
+            (None, Some(_)) => Some(Route::Tailscale),
+            _ => None,
+        }
     }
 }
 fn validate_alias(alias: &str) -> Result<()> {
@@ -144,7 +162,7 @@ pub fn ssh_command(alias: &str) -> Result<Command> {
         "-T",
         "-oBatchMode=yes",
         "-oStrictHostKeyChecking=yes",
-        "-oConnectTimeout=5",
+        SSH_CONNECT_TIMEOUT_ARG,
         "-oConnectionAttempts=1",
         "-oServerAliveInterval=15",
         "-oServerAliveCountMax=3",
@@ -244,8 +262,9 @@ async fn dial(
             }
         }
     }));
-    // ConnectTimeout bounds TCP/auth startup; this additionally bounds helper and handshake.
-    let handshake = tokio::time::timeout(Duration::from_secs(10), codec::read(&mut reader)).await;
+    // Counted from the spawn: ConnectTimeout ends a silent TCP connect sooner, and this
+    // bounds the whole attempt, including the helper and the greeting.
+    let handshake = tokio::time::timeout(HANDSHAKE_TIMEOUT, codec::read(&mut reader)).await;
     let hello = match handshake {
         Ok(Ok(Message::Hello(h))) => *h,
         other => {
@@ -320,9 +339,33 @@ fn stderr_error(
         RemoteError::Timeout(format!("{alias}: {detail}"))
     } else if detail.is_empty() {
         RemoteError::Transport(format!("{alias}: {}", handshake_failure(outcome)))
+    } else if let Some(kind) = unreachable_kind(&detail) {
+        RemoteError::Unreachable {
+            kind,
+            detail: format!("{alias}: {detail}"),
+        }
     } else {
         RemoteError::Transport(format!("{alias}: {detail}"))
     }
+}
+
+/// Why SSH could not open a connection, from the first stderr line that says so.
+fn unreachable_kind(detail: &str) -> Option<UnreachableKind> {
+    detail.lines().find_map(|line| {
+        let line = line.to_ascii_lowercase();
+        if line.contains("could not resolve hostname") {
+            Some(UnreachableKind::NameNotResolved)
+        } else if line.contains("connection refused") {
+            Some(UnreachableKind::Refused)
+        } else if ["no route to host", "network is unreachable", "host is down"]
+            .iter()
+            .any(|marker| line.contains(marker))
+        {
+            Some(UnreachableKind::NoRoute)
+        } else {
+            None
+        }
+    })
 }
 
 fn is_timeout_detail(detail: &str) -> bool {
@@ -392,6 +435,10 @@ where
     }
 }
 
+/// One error for a dual-route host whose LAN (`a`) and Tailscale (`b`) dials both
+/// failed. A non-retryable side wins alone, a stopped agent on either side reads as
+/// [`RemoteError::AgentNotRunning`], and otherwise both causes are kept in
+/// [`RemoteError::BothRoutes`].
 fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
     if !a.retryable() {
         return a;
@@ -399,15 +446,28 @@ fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
     if !b.retryable() {
         return b;
     }
-    let combined = format!("LAN: {a}; Tailscale: {b}");
     if matches!(a, RemoteError::AgentNotRunning(_)) || matches!(b, RemoteError::AgentNotRunning(_))
     {
-        return RemoteError::AgentNotRunning(combined);
+        return RemoteError::AgentNotRunning(format!("LAN: {a}; Tailscale: {b}"));
     }
-    if matches!(a, RemoteError::Timeout(_)) || matches!(b, RemoteError::Timeout(_)) {
-        return RemoteError::Timeout(combined);
+    RemoteError::BothRoutes {
+        lan: Box::new(a),
+        tailscale: Box::new(b),
     }
-    RemoteError::Transport(combined)
+}
+
+#[cfg(test)]
+mod classify_tests;
+
+#[cfg(test)]
+#[test]
+fn the_dial_limit_covers_the_ssh_connect_limit() {
+    let connect_secs: i64 = SSH_CONNECT_TIMEOUT_ARG
+        .trim_start_matches("-oConnectTimeout=")
+        .parse()
+        .unwrap();
+    assert!(connect_secs * 1000 < DIAL_TIMEOUT_MS);
+    assert_eq!(DIAL_TIMEOUT_MS, 10_000);
 }
 
 #[cfg(test)]
@@ -473,13 +533,13 @@ mod tests {
             ),
             RemoteError::Timeout(msg) if msg.contains("Operation timed out")
         ));
-        // Dual-route combine keeps AgentNotRunning > Timeout > Transport.
+        // Dual-route combine keeps AgentNotRunning, otherwise both causes.
         assert!(matches!(
             combine(
                 RemoteError::Transport("dns failed".into()),
                 RemoteError::Timeout("Operation timed out".into()),
             ),
-            RemoteError::Timeout(msg) if msg.contains("LAN:") && msg.contains("Tailscale:")
+            RemoteError::BothRoutes { .. }
         ));
         assert!(matches!(
             combine(

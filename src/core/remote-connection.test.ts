@@ -25,6 +25,11 @@ function makeRemote(
       synced_through_ms: null,
       error: null,
       failure_kind: null,
+      route_failures: [],
+      next_attempt_ms: null,
+      attempt: 0,
+      dialing: false,
+      waiting_for_network: false,
       sync: "idle",
       clock_offset_ms: 0,
       agent_version: "0.12.0",
@@ -61,7 +66,7 @@ describe("remoteConnectionView", () => {
     expect(view.summary).toContain("Tailscale (m4-mini-ts)");
     expect(view.meta).toContain("Saved history through");
     expect(view.meta).not.toContain("Never connected");
-    expect(view.meta).toContain("Auto-retrying");
+    expect(view.meta).not.toContain("Auto-retrying");
     expect(view.primaryAction).toBe("retry");
     expect(view.diagnostics).toContain("Tailscale=m4-mini-ts");
   });

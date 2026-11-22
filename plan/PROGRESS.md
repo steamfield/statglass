@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Connection causes, visible retries and Docker engine states (D-136) (2026-11-22)
+
+Hosts now say why a host can't connect and what StatGlass is doing about it. Rust classifies each route's failure from SSH stderr (name not found, SSH refused, no route, timeout) and refines it with this Mac's interfaces (offline, Tailscale off, Tailscale up but the host silent). The source publishes its retry schedule, stops dialing while this Mac is offline, and a failing card replaces its charts with a reconnect panel: cause, "Next attempt in N s" or "Trying … gives up after 10 s", attempt count and last reading, plus Retry now and a page notice when offline. Containers shows one focal card when the engine is unreachable, with reasons from Rust and an Open Docker Desktop / OrbStack / Rancher Desktop button that launches the installed app.
+
+- **Verified**: `make rust-check`, `cargo test` for schema, collect, engine, remote and the app (1223 tests), `bun run check` (2330 tests), `make architecture-check`, `make bindings` with no drift, and mock-transport screenshots of every new Hosts and Containers state at 1440x1000 dark.
+- **Open**: native checks in `tauri dev` against a host with Tailscale off, with Wi-Fi off, and with Docker Desktop quit then launched from the card.
+
 ## Remote error states and shared `<Gif />` integration (D-135) (2026-11-21)
 
 Overhauled remote-host disconnect and error states across the dashboard, sidebar, Hosts cards, and route error boundaries, backed by new `@steamfield/ui/gif` and `@steamfield/ui/react/gif` subpaths (automatic `.mp4`/`.webm` `<video>` and `.webp`/`.gif` `<img>` playback, tree-shakeable ESM, deterministic seeded selection, offline fallback).
