@@ -107,6 +107,7 @@ Test cases:
 
 ### Phase 2: backoff you can see, and waiting for the network
 
+Scaffold: b0074a6d
 Demo: `/?route=/dashboard/hosts&scenario=hosts-dashboard,host-backoff` shows "Retrying in N s" ticking down, Retry now flips the card to "Trying…"; `scenario=hosts-dashboard,mac-offline` shows one page notice and cards reading "Waiting for network".
 Depends on: phase 1
 Test cases: crates/statglass-remote/src/source/backoff/tests.rs (Backoff), src-tauri/src/remote/registration/tests.rs (new fields map and re-emit), src/core/remote-connection-retry.test.ts (view fields), src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx (countdown, Trying…, Retry now), all in the phase 2 scaffold.
@@ -115,8 +116,8 @@ Contracts (phase 2 scaffold): `ConnectionStatus` gains `next_attempt_ms: Option<
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-remote/src/source.rs, crates/statglass-remote/src/source/backoff.rs, crates/statglass-remote/src/source/status.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/backoff/tests.rs, src-tauri/src/remote/registration/tests.rs | opus | pending | | rust tests pass, clippy clean |
-| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/app/routes/dashboard/hosts/_components/host-card-status.tsx, src/app/routes/dashboard/hosts/_components/host-card-actions.tsx, src/app/routes/dashboard/hosts/_components/hosts-offline-notice.tsx, src/app/routes/dashboard/hosts/_lib/host-card-model.ts, src/app/routes/dashboard/hosts/route.tsx, src/app/routes/dashboard/_components/host-connection-notice.tsx, src/core/mock/remote-network-scenarios.ts | contracts, src/app/hooks/use-seconds-until.ts | src/core/remote-connection-retry.test.ts, src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx | opus | pending | | bun tests pass, typecheck clean, screenshots compared |
+| a | M | crates/statglass-remote/src/source.rs, crates/statglass-remote/src/source/backoff.rs, crates/statglass-remote/src/source/status.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/backoff/tests.rs, src-tauri/src/remote/registration/tests.rs | opus | running | sprint/connection-states-2a | rust tests pass, clippy clean |
+| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/app/routes/dashboard/hosts/_components/host-card-status.tsx, src/app/routes/dashboard/hosts/_components/host-card-actions.tsx, src/app/routes/dashboard/hosts/_components/hosts-offline-notice.tsx, src/app/routes/dashboard/hosts/_lib/host-card-model.ts, src/app/routes/dashboard/hosts/route.tsx, src/app/routes/dashboard/_components/host-connection-notice.tsx, src/core/mock/remote-network-scenarios.ts | contracts, src/app/hooks/use-seconds-until.ts | src/core/remote-connection-retry.test.ts, src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx | opus | running | sprint/connection-states-2b | bun tests pass, typecheck clean, screenshots compared |
 
 #### Lane 2/a brief
 
@@ -132,6 +133,7 @@ Contracts (phase 2 scaffold): `ConnectionStatus` gains `next_attempt_ms: Option<
   - A manual retry cuts the wait (unchanged) and does not reset the doubling.
   - Shell: map the four fields; `rendered_status_changed` compares `next_attempt_ms`, `dialing` and `waiting_for_network` (not `attempt` alone).
   - Keep `source.rs` inside its 1000-line ceiling: the loop changes should net out near zero by moving delay arithmetic into backoff.rs.
+- Remove the scaffold's `#[cfg_attr(not(test), expect(dead_code, ...))]` on `mod backoff;` in source.rs once Backoff is wired in.
 - Out of scope: UI. Probing the network before the first dial.
 - Done when: `cargo test -p statglass-remote` and `cargo test -p statglass registration` pass, clippy clean, `make architecture-check` passes.
 
@@ -143,7 +145,7 @@ Contracts (phase 2 scaffold): `ConnectionStatus` gains `next_attempt_ms: Option<
 - Card action (`host-card-actions.tsx`): the "Retry" state action reads "Retry now"; while the retry command is in flight or `dialing` is true it is disabled and reads "Trying…".
 - Offline notice (`hosts-offline-notice.tsx`, rendered in `route.tsx` under the header): when any remote has `waiting_for_network`, one `InlineMessage tone="note"`: "This Mac is offline. Hosts reconnect on their own when the network is back." Cards in that state keep "Waiting for network" and drop their per-card message line (the page notice says it).
 - `host-connection-notice.tsx` (focal/banner card on a remote host's pages): meta shows the same countdown / "Trying…" text; its Retry button shows "Trying…" while dialing.
-- Mock: scenario `host-backoff` (add to SCENARIOS in the scaffold) seeds a host failing with timeout, `attempt` 3, `next_attempt_ms` now + 12 s; when the countdown elapses or Retry is pressed the mock sets `dialing` true for 1.5 s, then fails again with the next delay doubled. `mac-offline` sets `waiting_for_network` true on every host.
+- Mock: scenario `host-backoff` (add to SCENARIOS in the scaffold) seeds a host failing with timeout, `attempt` 3, `next_attempt_ms` now + 12 s; when the countdown elapses or Retry is pressed the mock sets `dialing` true for 1.5 s, then fails again with the next delay doubled. `mac-offline` sets `waiting_for_network` true on every enabled host and leaves hosts with connections turned off (state disabled) alone; it does that today for disabled hosts too, which is wrong.
 - Verify: screenshots of the two demo scenarios at 1440x1000 dark next to the phase 1 Hosts screenshots; name differences.
 - Out of scope: Rust; ErrorStateCard internals.
 - Done when: `bun run test -- src/core src/app/routes/dashboard/hosts src/app/routes/dashboard/_components` passes and `bun run typecheck` is clean.
