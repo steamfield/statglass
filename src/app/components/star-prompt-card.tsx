@@ -23,7 +23,10 @@ function StarPromptHeader({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2">
-        <Star aria-hidden className="icon-regular size-4 shrink-0 text-power" />
+        <Star
+          aria-hidden
+          className="icon-regular size-4 shrink-0 text-power-ink"
+        />
         <p className="font-semibold text-body text-foreground">
           Enjoying StatGlass?
         </p>

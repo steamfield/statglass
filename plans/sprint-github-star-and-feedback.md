@@ -117,6 +117,7 @@ Layout:
 
 ### Phase 1: GitHub star hover-card toast (MVP)
 
+Scaffold: 4171c1a22a2e69383629a5e0bf4eaafee6f3e4fc
 Demo: `bun run dev:fast` and open `http://localhost:1420/?route=/dashboard/overview&scenario=star-prompt` to see the floating GitHub Star hover-card appear in the bottom-right corner; click "Star on GitHub", "Not now", or Dismiss `×`, and open `http://localhost:1420/?route=/popover&scenario=star-prompt` to confirm it never renders in the tray popover.
 Test cases:
 - Rust `star_prompt`: fresh install sets `first_seen_at_ms = now`, `eligible = false` at 0h and at exactly 24h (`MIN_ELAPSED_MS`), `eligible = false` at 24h+1ms with fewer than 3 engaged sessions.
@@ -134,9 +135,9 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src-tauri/src/star_prompt.rs | src-tauri/src/settings.rs, src-tauri/src/error.rs | src-tauri/src/star_prompt.rs | opus | pending | | `cargo test -p statglass star_prompt` and `cargo check --workspace --all-targets` pass |
-| b | S | src/core/star-prompt.ts | src/core/transport/contracts.ts | src/core/star-prompt.test.ts | sonnet | pending | | `bun run test -- src/core/star-prompt.test.ts` and `bun run typecheck` pass |
-| c | M | src/app/components/star-prompt-card.tsx, src/app/routes/dashboard/_components/star-prompt-host.tsx, src/app/routes/dashboard/route.tsx | src/core/star-prompt.ts, src/app/hooks/use-history-health.ts, src/app/components/ui/button.tsx, src/app/lib/motion/enter.ts | src/app/components/star-prompt-card.test.tsx, src/app/routes/dashboard/_components/star-prompt-host.test.tsx, src/app/routes/dashboard/route.test.tsx | opus | pending | | card, host, and dashboard route tests + `bun run typecheck` + `bun run lint` pass |
+| a | M | src-tauri/src/star_prompt.rs | src-tauri/src/settings.rs, src-tauri/src/error.rs | src-tauri/src/star_prompt.rs | opus | merged | sprint/github-star-and-feedback-1a | `cargo test -p statglass star_prompt` and `cargo check --workspace --all-targets` pass |
+| b | S | src/core/star-prompt.ts | src/core/transport/contracts.ts | src/core/star-prompt.test.ts | sonnet | merged | sprint/github-star-and-feedback-1b | `bun run test -- src/core/star-prompt.test.ts` and `bun run typecheck` pass |
+| c | M | src/app/components/star-prompt-card.tsx, src/app/routes/dashboard/_components/star-prompt-host.tsx, src/app/routes/dashboard/route.tsx | src/core/star-prompt.ts, src/app/hooks/use-history-health.ts, src/app/components/ui/button.tsx, src/app/lib/motion/enter.ts | src/app/components/star-prompt-card.test.tsx, src/app/routes/dashboard/_components/star-prompt-host.test.tsx, src/app/routes/dashboard/route.test.tsx | opus | merged | sprint/github-star-and-feedback-1c | card, host, and dashboard route tests + `bun run typecheck` + `bun run lint` pass |
 
 #### Lane a brief
 
@@ -204,6 +205,13 @@ Test cases:
 
 Demo: `bun run dev:fast` to verify the left sidebar "Feedback" button + HoverCard, Settings General panel's "Feedback & issues" (with "Copy system info" and "File feedback") and "Support StatGlass" ("Star on GitHub"), the Dev Gallery specimen (`/?route=/dev/gallery`), and Playwright E2E; run `bun run dev` on macOS to verify the tray right-click "Send Feedback…" and native macOS Help menu when "Show in Dock" is enabled.
 Depends on: phase 1
+Test cases:
+- Rust `app_menu`: menu event classifier maps `"menu:feedback"` and `"tray:feedback"` to `MenuAction::OpenFeedback` (`GITHUB_ISSUES_URL`), `"menu:star"` to `MenuAction::StarOnGitHub` (`GITHUB_REPO_URL` + marks starred), and ignores unrelated IDs; `build_macos_menu` builds standard App/Edit/Window/Help submenus with `"File Feedback on GitHub…"` and `"Star StatGlass on GitHub…"`.
+- Rust `tray/mod.rs`: tray right-click menu includes `"Send Feedback…"` (`"tray:feedback"`) above the Quit separator and routes it through `app_menu::handle_menu_event`.
+- UI `sidebar.test.tsx` & `route.test.tsx`: `Sidebar` renders optional `footerAction` cleanly without breaking active-pill selection or arrow-key navigation across `[data-sidebar-item]`; `LiveSidebar` renders `"Feedback"` button with HoverCard text `"Have an issue or want a feature? File feedback on GitHub"` and clicking opens `GITHUB_ISSUES_URL` (showing a quiet toast if `openUrl` fails).
+- UI `settings/route.test.tsx`: Settings General panel renders `"Feedback & issues"` (with `"Copy system info"` copying `formatSystemDiagnostics(...)` to clipboard and showing toast `"System info copied"`, and `"File feedback"` opening `GITHUB_ISSUES_URL`) and `"Support StatGlass"` (`"Star on GitHub"` opening `GITHUB_REPO_URL` and calling `actOnStarPrompt("starred")`).
+- Gallery `app-components.tsx`: renders `StarPromptCard` specimens (first appearance with `"Not now"` and final appearance with `"Don't ask again"`) cleanly in light and dark themes.
+- E2E `tests/e2e/star-prompt-and-feedback.spec.ts`: in both light and dark themes, verifies `scenario=star-prompt` displays the floating card after delay on `/dashboard/overview` (and never on `/popover`), dismissing hides it permanently, clicking Feedback in the sidebar triggers `open_url` with `GITHUB_ISSUES_URL`, and Settings shows Feedback & Support rows.
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -211,7 +219,66 @@ Depends on: phase 1
 | b | S | src/app/components/sidebar.tsx, src/app/routes/dashboard/_components/live-sidebar.tsx | src/core/star-prompt.ts, src/app/components/ui/hover-card.tsx | src/app/components/sidebar.test.tsx, src/app/routes/dashboard/route.test.tsx | opus | pending | | sidebar and dashboard route tests + `bun run typecheck` + `bun run lint` pass |
 | c | M | src/app/routes/dashboard/settings/_components/general-panel.tsx, src/app/routes/dev/gallery/_sections/app-components.tsx, tests/e2e/star-prompt-and-feedback.spec.ts | src/core/star-prompt.ts, src/app/components/star-prompt-card.tsx, src/app/components/sensor-dump-dialog.tsx, src/app/routes/dashboard/settings/_components/update-row.tsx | src/app/routes/dashboard/settings/route.test.tsx | opus | pending | | settings tests, gallery tests, Playwright E2E, `bun run typecheck`, and `bun run lint` pass |
 
-(Phase 2 test cases and full lane briefs written during Phase 1.)
+#### Lane a brief
+
+- Goal: Build the native macOS top menu bar (`src-tauri/src/app_menu.rs`) with Help menu items for Feedback and GitHub Star, add `"Send Feedback…"` to the tray right-click menu (`src-tauri/src/tray/mod.rs`), and handle their menu events cleanly.
+- Interface:
+  - `src-tauri/src/app_menu.rs`:
+    - `pub const FEEDBACK_MENU_ID: &str = "menu:feedback";`
+    - `pub const TRAY_FEEDBACK_MENU_ID: &str = "tray:feedback";`
+    - `pub const STAR_MENU_ID: &str = "menu:star";`
+    - `pub const SETTINGS_MENU_ID: &str = "menu:settings";`
+    - `pub enum MenuAction { OpenSettings, OpenFeedback, StarOnGitHub }`
+    - `pub fn classify_menu_event(id: &str) -> Option<MenuAction>` (pure function, unit tested)
+    - `pub fn install(app: &AppHandle) -> anyhow::Result<()>` (on macOS builds App / Edit / Window / Help submenus and calls `app.set_menu(menu)?;` — no-op `Ok(())` on non-macOS)
+    - `pub fn handle_menu_event(app: &AppHandle, id: &str) -> bool` (handles `MenuAction` variants via `windows::open_dashboard`, `tauri_plugin_opener::OpenerExt::opener(app).open_url(...)`, and on `StarOnGitHub` also calls `state.star_prompt.act(StarPromptAction::Starred, statglass_engine::wall_ms())` logging any error; returns `true` if handled)
+  - `src-tauri/src/tray/mod.rs`:
+    - Add `&MenuItem::with_id(app, crate::app_menu::TRAY_FEEDBACK_MENU_ID, "Send Feedback…", true, None::<&str>)?` above the Quit separator in `tray::create`.
+    - In `on_menu_event`, delegate unmatched IDs (or check `crate::app_menu::handle_menu_event(app, event.id().as_ref())`) so BOTH tray and native macOS top menu bar events run through one listener without double-firing!
+- Behavior:
+  - Clicking `"File Feedback on GitHub…"` (macOS Help menu) or `"Send Feedback…"` (tray menu) opens `crate::star_prompt::GITHUB_ISSUES_URL` via `tauri_plugin_opener::OpenerExt`.
+  - Clicking `"Star StatGlass on GitHub…"` (macOS Help menu) opens `crate::star_prompt::GITHUB_REPO_URL` and marks `StarPromptAction::Starred` on `AppState::star_prompt` so the user is never prompted later.
+  - Clicking `"Settings…"` (`Cmd+,`) in the macOS App menu opens `/dashboard/settings`.
+  - Opener errors log `tracing::warn!` and never panic.
+  - Keep `src-tauri/src/tray/mod.rs` under its 600-line ceiling (`scripts/architecture/rust_size.py`).
+- Decisions already made: Native macOS menu installs via `app.set_menu` (active automatically when `Show in Dock` switches activation policy to `Regular`); single `app.on_menu_event` listener prevents duplicate handling.
+- Out of scope: Do not touch `lib.rs` (wired in Phase 2 scaffold), `star_prompt.rs`, or frontend files.
+- Done when: `cargo test -p statglass app_menu`, `make rust-check`, `make architecture-check`, and `plan_graph.py check-lane` pass.
+
+#### Lane b brief
+
+- Goal: Add a quiet `"Feedback"` action item at the bottom of the left sidebar with a HoverCard (`"Have an issue or want a feature? File feedback on GitHub"`) that opens `GITHUB_ISSUES_URL`.
+- Interface:
+  - `src/app/components/sidebar.tsx`: add optional `footerAction?: ReactNode` prop to `SidebarProps`, rendered cleanly above the bottom status/version divider (`border-border-subtle border-t`).
+  - `src/app/routes/dashboard/_components/live-sidebar.tsx`: pass `footerAction` rendering a compact button styled consistently with sidebar rows (`h-[28px]`, `rounded-control`, `px-2`, `text-fg-subtle`, `hover:bg-selected hover:text-foreground`, lucide `MessageSquare` with `icon-light size-4 shrink-0`, label `"Feedback"` with `max-sm:sr-only`), wrapped in `HoverCard` (`side="right"`, `align="end"`) whose `HoverCardContent` reads: title `"Feedback"` (`font-semibold text-small text-foreground`) and body `"Have an issue or want a feature? File feedback on GitHub."` (`mt-1 font-normal text-label text-muted-foreground`). Clicking calls `transport.openUrl(GITHUB_ISSUES_URL)` and catches errors with `console.error` + `toast("Couldn't open link.")`.
+- Behavior:
+  - Do NOT add `data-sidebar-item` to the Feedback button so `Sidebar`'s active route pill and arrow-key navigation over route links remain untouched and `sidebar.test.tsx` stays green.
+  - Keep vertical footprint tight (single 28px row) so the 200-container scenario still fits inside 900px height.
+  - Zero `text-[Npx]`, zero `strokeWidth`, zero uppercase, zero emoji.
+- Decisions already made: Clicking opens `https://github.com/steamfield/statglass/issues` directly; HoverCard provides the `"Have an issue or want a feature? File feedback"` explanation on hover/focus without cluttering the sidebar.
+- Out of scope: Do not modify `star-prompt-host.tsx`, `general-panel.tsx`, or Rust files.
+- Done when: `bun run test -- src/app/components/sidebar.test.tsx src/app/routes/dashboard/route.test.tsx`, `bun run typecheck`, `bun run lint`, and `plan_graph.py check-lane` pass.
+
+#### Lane c brief
+
+- Goal: Add quiet `"Feedback & issues"` (with `"Copy system info"` and `"File feedback"`) and `"Support StatGlass"` (`"Star on GitHub"`) rows to Settings' General panel, add `StarPromptCard` specimens to the Dev Gallery, and add Playwright E2E coverage in `tests/e2e/star-prompt-and-feedback.spec.ts`.
+- Interface:
+  - `src/app/routes/dashboard/settings/_components/general-panel.tsx`: below `<UpdateRow />`, add two quiet `<SettingsRow>` entries:
+    1. `label="Feedback & issues"`, `sub="Have an issue or want a feature? Copy non-personal system info or open GitHub Issues."`, actions: `<Button variant="outline" size="sm" onClick={copyDiagnostics}>Copy system info</Button>` and `<Button variant="outline" size="sm" onClick={openFeedback}>File feedback</Button>`.
+    2. `label="Support StatGlass"`, `sub="StatGlass is free and open source. A star on GitHub helps others discover it."`, action: `<Button variant="outline" size="sm" onClick={openStar}>Star on GitHub</Button>`.
+  - `src/app/routes/dev/gallery/_sections/app-components.tsx`: add a `<GalleryItem name="StarPromptCard" usedIn="Dashboard floating prompt">` rendering two `StarPromptCard` specimens side by side (`canSnooze={true}` and `canSnooze={false}`).
+  - `tests/e2e/star-prompt-and-feedback.spec.ts`: Playwright E2E spec verifying in both `light` and `dark` themes:
+    1. `/?window=dashboard&route=/dashboard/overview&scenario=star-prompt&theme=<theme>&ticks=0` displays the `"Enjoying StatGlass?"` floating card (`role="status"`), clicking `"Star on GitHub"` hides it cleanly (or clicking `"Dismiss"` hides it).
+    2. `/?window=popover&route=/popover&scenario=star-prompt&theme=<theme>&ticks=0` never displays the star prompt card.
+    3. Clicking `"Feedback"` in the dashboard sidebar is visible and clickable without errors; navigating to `/dashboard/settings` shows `"Feedback & issues"` (`Copy system info`, `File feedback`) and `"Support StatGlass"` (`Star on GitHub`).
+- Behavior:
+  - `copyDiagnostics` builds text via `formatSystemDiagnostics({ appVersion: version, osVersion: host?.info.os_version, chip: host?.info.chip, model: host?.info.model })` using `useHostRecord()` and `useCopyToClipboard("system-diagnostics")`, showing `toast("System info copied")` on success or `toast("Couldn't copy system info.")` on failure.
+  - `openFeedback` calls `transport.openUrl(GITHUB_ISSUES_URL)` (logging + `toast("Couldn't open link.")` on error).
+  - `openStar` calls `transport.openUrl(GITHUB_REPO_URL)` and `transport.actOnStarPrompt("starred")` (logging any failure without throwing).
+  - Use `variant="outline"` (not primary cyan) for these quiet Settings buttons to honor StatGlass's "one accent job per view" rule.
+- Decisions already made: Quiet rows inside `GeneralPanel` (no separate marketing card), non-PII diagnostics only, direct `GITHUB_ISSUES_URL` link.
+- Out of scope: Do not touch `sidebar.tsx`, `star-prompt-card.tsx`, or Rust files.
+- Done when: `bun run test -- src/app/routes/dashboard/settings/route.test.tsx`, `bunx playwright test tests/e2e/star-prompt-and-feedback.spec.ts --project=chromium`, `bun run typecheck`, `bun run lint`, and `plan_graph.py check-lane` pass.
 
 ## Log
 
@@ -222,3 +289,6 @@ Depends on: phase 1
   - Finding 3 (missing Phase 1 test coverage): Applied — added tests for `/onboarding` exclusion, `can_snooze: false` + Escape in `StarPromptHost`, window hide/show timer reset, backward clock jump in `record_interaction`, and mock stateful transitions.
   - Finding 4 (missing Contracts/Layout items): Applied — added `StarPromptStore`, `FileStarPromptStore`, `StarPromptOwner::with_store`, `AppState::star_prompt`, and `src-tauri/capabilities/default.json` to Contracts & Layout.
   - Finding 5 (Model column vs Gemini 4 Neon): Noted — `plan_graph.py` expects `opus`/`sonnet` tier labels for lane-review policy; all delegated invocations dispatch to `antigravity` / `gemini-4-neon` (`high` for `opus` rows, `medium` for `sonnet`/critique).
+- 2026-11-21: Lane 1/b accepted choices (`/^[vV]+/` strip, `/^(?:macos|linux)/i` OS prefix detection) and merged (`b311ebb`).
+- 2026-11-21: Lane 1/a accepted choices (pretty JSON, `.star-prompt.json.tmp.<pid>.<seq>` with `0o600` + `sync_all` + `restrict`, non-destructive recovery on load error), passed Gemini 4 Neon review cleanly, and merged (`b54b884`).
+- 2026-11-22: Lane 1/c merged; applied both Gemini 4 Neon review findings directly (`useWindowVisibility` fail-closed `useState(false)` and `text-power-ink` for light-mode contrast).

@@ -53,7 +53,7 @@ function useStarPromptStatus(transport: Transport) {
 }
 
 function useWindowVisibility(transport: Transport): boolean {
-  const [windowVisible, setWindowVisible] = useState(true);
+  const [windowVisible, setWindowVisible] = useState(false);
 
   useEffect(() => {
     let active = true;
