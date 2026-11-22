@@ -161,6 +161,7 @@ Contracts (phase 2 scaffold): `ConnectionStatus` gains `next_attempt_ms: Option<
 ### Phase 3: Docker engine states and launching the runtime
 
 Scaffold: 02b3e378 (phase branch sprint/connection-states-p3)
+Tag: phase-3
 Demo: `/?route=/dashboard/containers&scenario=docker-not-running` shows the focal card; Open Docker Desktop flips it to live in the mock. Other scenarios: docker-not-installed, docker-stopped, docker-choose-engine, docker-colima, docker-permission-denied, docker-incompatible.
 Depends on: phase 1
 Test cases: crates/statglass-collect/src/docker_runtimes/tests.rs, crates/statglass-engine/src/docker/availability/tests.rs, src-tauri/src/docker/launch/tests.rs, src/app/routes/dashboard/containers/_lib/engine-state.test.ts (all in the scaffold).
