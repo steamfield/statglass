@@ -16,6 +16,7 @@ import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
 import { AddHostDialog } from "./_components/add-host-dialog";
 import { LocalHostCard, RemoteHostCard } from "./_components/host-cards";
+import { HostsOfflineNotice } from "./_components/hosts-offline-notice";
 import { UpdateAllDialog } from "./_components/update-all-dialog";
 import { useHostsRecentInterest } from "./_hooks/use-hosts-recent-interest";
 
@@ -55,6 +56,7 @@ export default function HostsRoute() {
           </div>
         }
       />
+      <HostsOfflineNotice remotes={records} />
       <CardGrid items={ids} getKey={(id) => id} minColumnWidth={400}>
         {(id, origin) =>
           local?.id === id ? (
