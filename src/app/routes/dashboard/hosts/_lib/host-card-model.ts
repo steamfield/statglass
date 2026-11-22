@@ -76,10 +76,11 @@ function connectingState(
       : status.synced_through_ms !== null
         ? `History through ${formatDateTime(status.synced_through_ms)}`
         : "";
+  const offline = status.failure_kind === "local_offline";
   return {
     ...base,
-    status: "Reconnecting…",
-    mark: "warn" as const,
+    status: offline ? "Waiting for network" : "Reconnecting…",
+    mark: offline ? ("idle" as const) : ("warn" as const),
     route,
     stateAction: "Retry" as const,
     message: {
@@ -176,10 +177,19 @@ function connection(
         stateAction: "Retry",
         message: {
           tone: "error",
-          text: status.error ?? "The SSH connection failed.",
+          text: errorMessage(remote),
         },
       };
   }
+}
+
+/** The classified short reason when Rust named a failure kind, else the raw SSH error. */
+function errorMessage(remote: RemoteHostRecord): string {
+  const { status } = remote;
+  if (status.failure_kind === null) {
+    return status.error ?? "The SSH connection failed.";
+  }
+  return remoteConnectionView(remote).shortReason;
 }
 
 function pressure(vitals: HostVitals | null): string {
