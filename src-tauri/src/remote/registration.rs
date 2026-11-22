@@ -184,6 +184,9 @@ fn rendered_status_changed(
         || previous.error != next.error
         || previous.failure_kind != next.failure_kind
         || previous.route_failures != next.route_failures
+        || previous.next_attempt_ms != next.next_attempt_ms
+        || previous.dialing != next.dialing
+        || previous.waiting_for_network != next.waiting_for_network
         || previous.synced_through_ms != next.synced_through_ms
         || previous.identity_changed != next.identity_changed
         || previous.agent_update != next.agent_update
@@ -270,10 +273,10 @@ pub(super) fn connection_status(
                 kind: map_failure_kind(failure.kind),
             })
             .collect(),
-        next_attempt_ms: None,
-        attempt: 0,
-        dialing: false,
-        waiting_for_network: false,
+        next_attempt_ms: s.next_attempt_ms.map(|ms| ms as f64),
+        attempt: s.attempt,
+        dialing: s.dialing,
+        waiting_for_network: s.waiting_for_network,
         sync: if s.history_error.is_some() {
             RemoteSync::Unavailable
         } else if s.catching_up {

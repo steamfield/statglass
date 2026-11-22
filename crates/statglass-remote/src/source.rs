@@ -17,18 +17,12 @@ use std::{
 };
 use tokio::{sync::watch, time::Instant};
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "scaffold: phase 2 lane a wires Backoff into run()"
-    )
-)]
 mod backoff;
 mod control;
 mod queries;
 mod recent;
 mod status;
+use backoff::Backoff;
 use control::Control;
 pub use status::{ConnectionFailureKind, ConnectionStatus, RouteFailure};
 
@@ -159,7 +153,7 @@ impl Source for RemoteSource {
 }
 async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
     let mut control = source.control.subscribe();
-    let mut delay = 1u64;
+    let mut backoff = Backoff::new();
     let mut replacement = None;
     let mut status = ConnectionStatus::default();
     loop {
@@ -170,8 +164,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
             let _ = control.wait_for(|s| s.stop || !s.asleep).await;
             continue;
         }
-        status.connected = false;
-        status.retrying = true;
+        status.begin_dial();
         (source.on_status)(status.clone());
         let dial = async {
             match replacement.take() {
@@ -188,15 +181,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
         let started = Instant::now();
         let result = match result {
             Ok(session) => {
-                status.connected = true;
-                status.route = Some(session.route);
-                status.retrying = false;
-                status.error = None;
-                status.failure_kind = None;
-                status.route_failures.clear();
-                status.identity_changed = None;
-                status.incompatible = false;
-                status.remote_version = Some(session.hello.app_version.clone());
+                status.record_connected(session.route, session.hello.app_version.clone());
                 *source.caps.lock_ok() = session.hello.capabilities.clone();
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
@@ -212,6 +197,8 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
         if control.borrow().stop {
             break;
         }
+        // Taken before the network probe, so a network change after the probe ends the wait.
+        let before = control.borrow_and_update().clone();
         match result {
             Ok(Some(session)) => {
                 replacement = Some(session);
@@ -223,30 +210,33 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
             Err(e) => {
                 status.record_failure(&e, source.endpoints.single_route());
                 status.apply_network(crate::network::probe());
-                (source.on_status)(status.clone());
                 if !e.retryable() {
+                    status.schedule_retry(backoff.attempt(), None);
+                    (source.on_status)(status.clone());
                     let retry = control.borrow().retry;
                     let _ = control.wait_for(|s| s.stop || s.retry != retry).await;
                     continue;
                 }
             }
         }
+        // A session that lasted is not part of a flapping run, so its failure starts over.
         if started.elapsed() > Duration::from_secs(30) {
-            delay = 1;
+            backoff.reset();
         }
-        let jitter = (statglass_engine::wall_ms().unsigned_abs() % 250) as u64;
-        let before = control.borrow_and_update().clone();
+        let wait = backoff.next_wait(status.offline_failure(), statglass_engine::wall_ms());
+        status.schedule_retry(backoff.attempt(), wait.map(|(_, at_ms)| at_ms));
+        (source.on_status)(status.clone());
         tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(delay * 1000 + jitter)) => {}
+            _ = tokio::time::sleep(wait.map_or(OFFLINE_FALLBACK, |(wait, _)| wait)) => {}
             _ = control.wait_for(|now| ends_backoff(&before, now)) => {}
         }
-        delay = (delay * 2).min(60);
     }
-    status.connected = false;
-    status.retrying = false;
-    status.catching_up = false;
+    status.record_stopped();
     (source.on_status)(status);
 }
+/// How long an offline source waits for a network change before redialing anyway, in
+/// case the change notification never arrives.
+const OFFLINE_FALLBACK: Duration = Duration::from_secs(60);
 /// Stopping, sleep, a retry or a network change ends the wait before a redial. Interest
 /// changes as the user moves around the app do not, so a host that is down keeps backing off.
 fn ends_backoff(before: &ControlState, now: &ControlState) -> bool {
