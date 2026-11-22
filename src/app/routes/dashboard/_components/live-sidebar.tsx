@@ -4,15 +4,24 @@ import { formatPercent, formatWatts } from "@core/format";
 import type { UiModule } from "@core/module-state";
 import { remoteConnectionView } from "@core/remote-connection";
 import { hostsNeedingUpdate } from "@core/remote-hosts";
-import { useCallback, useMemo } from "react";
+import { GITHUB_ISSUES_URL } from "@core/star-prompt";
+import { MessageSquare } from "lucide-react";
+import { memo, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { toast } from "sonner";
 import { HostSwitcher } from "~/components/host-switcher";
 import { PerformanceExplainer } from "~/components/performance-explainer";
 import { Sidebar, type SidebarEntry } from "~/components/sidebar";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "~/components/ui/hover-card";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import {
   useBattery,
@@ -94,6 +103,37 @@ export function compactRate(bps: number | null): string | undefined {
   const mb = bps / 1e6;
   return `${mb >= 100 ? mb.toFixed(0) : mb.toFixed(1)}M`;
 }
+
+const SidebarFeedbackAction = memo(function SidebarFeedbackAction() {
+  const transport = useTransport();
+  const onOpenIssues = useCallback(() => {
+    transport.openUrl(GITHUB_ISSUES_URL).catch((err: unknown) => {
+      console.error("[sidebar] openUrl failed", err);
+      toast("Couldn't open link.");
+    });
+  }, [transport]);
+
+  return (
+    <HoverCard>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          onClick={onOpenIssues}
+          className="flex h-7 w-full items-center gap-2.5 rounded-control px-2 text-left text-fg-subtle outline-none hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <MessageSquare aria-hidden className="icon-light size-4 shrink-0" />
+          <span className="truncate text-body max-sm:sr-only">Feedback</span>
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent side="right" align="end" className="w-60">
+        <p className="font-semibold text-foreground text-small">Feedback</p>
+        <p className="mt-1 font-normal text-label text-muted-foreground">
+          Have an issue or want a feature? File feedback on GitHub.
+        </p>
+      </HoverCardContent>
+    </HoverCard>
+  );
+});
 
 /**
  * Dashboard sidebar with live values (plan 4.4). Modules the host
@@ -219,6 +259,7 @@ export function LiveSidebar() {
       }}
       version={version}
       onNavigate={onNavigate}
+      footerAction={<SidebarFeedbackAction />}
       footerNote={
         <PerformanceExplainer
           reason={sampling.performance}
