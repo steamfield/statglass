@@ -150,15 +150,15 @@ Contracts (phase 2 scaffold): `ConnectionStatus` gains `next_attempt_ms: Option<
 
 ### Phase 3: Docker engine states and launching the runtime
 
-Scaffold: ca849219
+Scaffold: 02b3e378 (phase branch sprint/connection-states-p3)
 Demo: `/?route=/dashboard/containers&scenario=docker-not-running` shows the focal card; Open Docker Desktop flips it to live in the mock. Other scenarios: docker-not-installed, docker-stopped, docker-choose-engine, docker-colima, docker-permission-denied, docker-incompatible.
 Depends on: phase 1
 Test cases: crates/statglass-collect/src/docker_runtimes/tests.rs, crates/statglass-engine/src/docker/availability/tests.rs, src-tauri/src/docker/launch/tests.rs, src/app/routes/dashboard/containers/_lib/engine-state.test.ts (all in the scaffold).
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-collect/src/docker_runtimes.rs, crates/statglass-engine/src/docker/availability.rs, crates/statglass-engine/src/docker/worker.rs, crates/statglass-engine/src/docker/mod.rs, src-tauri/src/docker/launch.rs | contracts | crates/statglass-collect/src/docker_runtimes/tests.rs, crates/statglass-engine/src/docker/availability/tests.rs, src-tauri/src/docker/launch/tests.rs | opus | pending | | rust tests pass, clippy clean |
-| b | M | src/app/routes/dashboard/containers/_components/docker-engine-state.tsx, src/app/routes/dashboard/containers/_lib/engine-state.ts, src/app/routes/dashboard/containers/route.tsx, src/core/mock/docker-scenarios.ts, src/core/mock/docker.ts | contracts, src/app/routes/dashboard/_components/host-connection-notice.tsx | src/app/routes/dashboard/containers/_lib/engine-state.test.ts | opus | pending | | bun tests pass, typecheck clean, screenshot compared |
+| a | M | crates/statglass-collect/src/docker_runtimes.rs, crates/statglass-engine/src/docker/availability.rs, crates/statglass-engine/src/docker/worker.rs, crates/statglass-engine/src/docker/mod.rs, src-tauri/src/docker/launch.rs | contracts | crates/statglass-collect/src/docker_runtimes/tests.rs, crates/statglass-engine/src/docker/availability/tests.rs, src-tauri/src/docker/launch/tests.rs | opus | running | sprint/connection-states-3a | rust tests pass, clippy clean |
+| b | M | src/app/routes/dashboard/containers/_components/docker-engine-state.tsx, src/app/routes/dashboard/containers/_lib/engine-state.ts, src/app/routes/dashboard/containers/route.tsx, src/core/mock/docker-scenarios.ts, src/core/mock/docker.ts | contracts, src/app/routes/dashboard/_components/host-connection-notice.tsx | src/app/routes/dashboard/containers/_lib/engine-state.test.ts | opus | running | sprint/connection-states-3b | bun tests pass, typecheck clean, screenshot compared |
 
 #### Lane 3/a brief
 
