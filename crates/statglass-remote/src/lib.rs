@@ -44,7 +44,9 @@ pub use source::{
 };
 pub use statglass_proto::RemoteInterest;
 pub use stdio::stdio_bridge;
-pub use transport::{EndpointConfig, RemoteCommand, Route, SshSession, connect, ssh_command};
+pub use transport::{
+    DIAL_TIMEOUT_MS, EndpointConfig, RemoteCommand, Route, SshSession, connect, ssh_command,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RemoteError {

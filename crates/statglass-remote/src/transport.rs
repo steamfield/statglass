@@ -104,6 +104,15 @@ pub(crate) fn sh_word(value: &str) -> Result<String> {
     word.push('"');
     Ok(word)
 }
+/// SSH's own limit for TCP connect and authentication on one route (`-oConnectTimeout`).
+const SSH_CONNECT_TIMEOUT_SECS: u64 = 5;
+const SSH_CONNECT_TIMEOUT_ARG: &str = "-oConnectTimeout=5";
+/// How long a dial waits for the StatGlass greeting once SSH is up.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The longest one connection attempt runs before it fails: SSH connect plus greeting.
+/// Both routes of a dual-route host dial at once, so this bounds those too.
+pub const DIAL_TIMEOUT_MS: i64 =
+    ((SSH_CONNECT_TIMEOUT_SECS + HANDSHAKE_TIMEOUT.as_secs()) * 1000) as i64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Route {
@@ -153,7 +162,7 @@ pub fn ssh_command(alias: &str) -> Result<Command> {
         "-T",
         "-oBatchMode=yes",
         "-oStrictHostKeyChecking=yes",
-        "-oConnectTimeout=5",
+        SSH_CONNECT_TIMEOUT_ARG,
         "-oConnectionAttempts=1",
         "-oServerAliveInterval=15",
         "-oServerAliveCountMax=3",
@@ -254,7 +263,7 @@ async fn dial(
         }
     }));
     // ConnectTimeout bounds TCP/auth startup; this additionally bounds helper and handshake.
-    let handshake = tokio::time::timeout(Duration::from_secs(10), codec::read(&mut reader)).await;
+    let handshake = tokio::time::timeout(HANDSHAKE_TIMEOUT, codec::read(&mut reader)).await;
     let hello = match handshake {
         Ok(Ok(Message::Hello(h))) => *h,
         other => {
@@ -448,6 +457,16 @@ fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
 
 #[cfg(test)]
 mod classify_tests;
+
+#[cfg(test)]
+#[test]
+fn the_ssh_argument_matches_the_published_dial_limit() {
+    assert_eq!(
+        SSH_CONNECT_TIMEOUT_ARG,
+        format!("-oConnectTimeout={SSH_CONNECT_TIMEOUT_SECS}")
+    );
+    assert_eq!(DIAL_TIMEOUT_MS, 15_000);
+}
 
 #[cfg(test)]
 mod tests {
