@@ -183,6 +183,7 @@ fn rendered_status_changed(
         || previous.route != next.route
         || previous.error != next.error
         || previous.failure_kind != next.failure_kind
+        || previous.route_failures != next.route_failures
         || previous.synced_through_ms != next.synced_through_ms
         || previous.identity_changed != next.identity_changed
         || previous.agent_update != next.agent_update
@@ -254,17 +255,21 @@ pub(super) fn connection_status(
         } else {
             RemoteState::Offline
         },
-        route: s.route.map(|r| match r {
-            statglass_remote::Route::Lan => RemoteRoute::Lan,
-            statglass_remote::Route::Tailscale => RemoteRoute::Tailscale,
-        }),
+        route: s.route.map(map_route),
         last_seen_ms: s.last_seen_ms.map(|m| m as f64),
         synced_through_ms: None,
         error: s
             .error
             .or_else(|| s.connected.then_some(s.history_error.clone()).flatten()),
         failure_kind: s.failure_kind.map(map_failure_kind),
-        route_failures: Vec::new(),
+        route_failures: s
+            .route_failures
+            .iter()
+            .map(|failure| RemoteRouteFailure {
+                route: map_route(failure.route),
+                kind: map_failure_kind(failure.kind),
+            })
+            .collect(),
         sync: if s.history_error.is_some() {
             RemoteSync::Unavailable
         } else if s.catching_up {
@@ -284,6 +289,13 @@ pub(super) fn connection_status(
     }
 }
 
+fn map_route(route: statglass_remote::Route) -> RemoteRoute {
+    match route {
+        statglass_remote::Route::Lan => RemoteRoute::Lan,
+        statglass_remote::Route::Tailscale => RemoteRoute::Tailscale,
+    }
+}
+
 fn map_failure_kind(kind: statglass_remote::ConnectionFailureKind) -> RemoteFailureKind {
     match kind {
         statglass_remote::ConnectionFailureKind::Unreachable => RemoteFailureKind::Unreachable,
@@ -300,11 +312,13 @@ fn map_failure_kind(kind: statglass_remote::ConnectionFailureKind) -> RemoteFail
             RemoteFailureKind::IdentityChanged
         }
         statglass_remote::ConnectionFailureKind::Protocol => RemoteFailureKind::Protocol,
-        statglass_remote::ConnectionFailureKind::NameNotResolved
-        | statglass_remote::ConnectionFailureKind::Refused
-        | statglass_remote::ConnectionFailureKind::NoRoute
-        | statglass_remote::ConnectionFailureKind::LocalOffline
-        | statglass_remote::ConnectionFailureKind::TailscaleDown => RemoteFailureKind::Unreachable,
+        statglass_remote::ConnectionFailureKind::NameNotResolved => {
+            RemoteFailureKind::NameNotResolved
+        }
+        statglass_remote::ConnectionFailureKind::Refused => RemoteFailureKind::Refused,
+        statglass_remote::ConnectionFailureKind::NoRoute => RemoteFailureKind::NoRoute,
+        statglass_remote::ConnectionFailureKind::LocalOffline => RemoteFailureKind::LocalOffline,
+        statglass_remote::ConnectionFailureKind::TailscaleDown => RemoteFailureKind::TailscaleDown,
     }
 }
 

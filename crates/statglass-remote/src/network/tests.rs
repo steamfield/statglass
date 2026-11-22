@@ -125,3 +125,116 @@ fn probe_reads_this_machine_without_failing() {
     // The test machine has loopback at least; the probe must return rather than panic.
     let _ = probe();
 }
+
+fn entry(name: &str, addr: &str) -> interfaces::InterfaceAddress {
+    interfaces::InterfaceAddress {
+        name: name.into(),
+        addr: ip(addr),
+    }
+}
+
+#[test]
+fn virtual_bridges_and_vpn_tunnels_do_not_count_toward_online() {
+    for name in [
+        "bridge100",
+        "vmenet0",
+        "docker0",
+        "veth1",
+        "vnic0",
+        "awdl0",
+        "llw0",
+        "anpi0",
+        "ap1",
+        "gif0",
+        "stf0",
+        "utun3",
+    ] {
+        assert!(!counts_toward_online(name), "{name}");
+    }
+    for name in ["en0", "en7", "eth0", "wlan0"] {
+        assert!(counts_toward_online(name), "{name}");
+    }
+}
+
+#[test]
+fn a_mac_with_only_bridge_addresses_reads_offline() {
+    let net = summarize(&[
+        entry("bridge100", "192.168.64.1"),
+        entry("utun4", "10.8.0.2"),
+    ]);
+    assert_eq!(
+        net,
+        LocalNetwork {
+            online: false,
+            tailscale_up: false
+        }
+    );
+}
+
+#[test]
+fn ipv4_mapped_addresses_classify_as_their_ipv4_address() {
+    assert_eq!(
+        classify_address(ip("::ffff:100.64.0.1")),
+        AddressClass::Tailscale
+    );
+    assert_eq!(
+        classify_address(ip("::ffff:127.0.0.1")),
+        AddressClass::Ignored
+    );
+    assert_eq!(
+        classify_address(ip("::ffff:192.168.1.20")),
+        AddressClass::Routable
+    );
+}
+
+fn summary(entries: &[(&str, &str)]) -> LocalNetwork {
+    let addresses: Vec<_> = entries
+        .iter()
+        .map(|(name, addr)| entry(name, addr))
+        .collect();
+    summarize(&addresses)
+}
+
+#[test]
+fn a_carrier_nat_address_on_wifi_is_online_not_tailscale() {
+    assert_eq!(
+        summary(&[("en0", "100.72.1.5")]),
+        LocalNetwork {
+            online: true,
+            tailscale_up: false
+        }
+    );
+}
+
+#[test]
+fn tailscale_on_utun_beside_a_lan_address_is_online_with_tailscale() {
+    assert_eq!(
+        summary(&[("utun4", "100.101.2.3"), ("en0", "192.168.1.5")]),
+        LocalNetwork {
+            online: true,
+            tailscale_up: true
+        }
+    );
+}
+
+#[test]
+fn tailscale_alone_is_offline_with_tailscale_up() {
+    assert_eq!(
+        summary(&[("utun4", "100.101.2.3")]),
+        LocalNetwork {
+            online: false,
+            tailscale_up: true
+        }
+    );
+}
+
+#[test]
+fn linux_tailscale0_counts_as_tailscale_not_online() {
+    assert_eq!(
+        summary(&[("tailscale0", "fd7a:115c:a1e0::5")]),
+        LocalNetwork {
+            online: false,
+            tailscale_up: true
+        }
+    );
+}

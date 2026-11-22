@@ -13,6 +13,10 @@ import type { ScenarioName } from "./fixtures";
 import { fail, ok } from "./protocol";
 import type { MockRemotes } from "./remote";
 import { APP_VERSION } from "./remote-linux";
+import {
+  seedMacOffline,
+  seedNetworkCauseHosts,
+} from "./remote-network-scenarios";
 
 const OLD = "0.0.9";
 const behind = (via: "push" | "add_host"): AgentUpdate => ({
@@ -287,6 +291,7 @@ export function seedRemoteScenarios(
   scenarios: readonly ScenarioName[]
 ) {
   seedUpdateScenarios(remotes, scenarios);
+  seedNetworkCauseHosts(remotes, scenarios);
   if (scenarios.includes("rr-jobs")) seedRrJobs(remotes);
   if (scenarios.includes("multi-host"))
     remotes.addRemote({
@@ -332,6 +337,7 @@ export function seedRemoteScenarios(
         identity_changed: "48670e8f-2bca-4868-b557-16b1f1289341",
       };
   }
+  if (scenarios.includes("mac-offline")) seedMacOffline(remotes);
 }
 
 export function mockLocalRrJob(): RrJob {

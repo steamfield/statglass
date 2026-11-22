@@ -4,6 +4,13 @@ import type {
   RemoteHostRecord,
 } from "@core/generated/bindings";
 import type { GifTheme } from "@steamfield/ui/gif";
+import {
+  buildRouteLines,
+  networkCauseCopy,
+  networkHint,
+  routePhrase,
+  timeoutCopy,
+} from "./remote-connection-network";
 
 export type RemoteConnectionKind =
   | "connected"
@@ -84,31 +91,6 @@ function formatAge(deltaMs: number): string {
   return `${days} d ago`;
 }
 
-function routePhrase(routes: readonly ConfiguredRoute[]): string {
-  if (routes.length === 2) {
-    const [lan, ts] = routes;
-    return `LAN (${lan?.alias}) or Tailscale (${ts?.alias})`;
-  }
-  const only = routes[0];
-  if (!only) return "the saved SSH route";
-  return `${only.label} (${only.alias})`;
-}
-
-function networkHint(routes: readonly ConfiguredRoute[], name: string): string {
-  const hasLan = routes.some((r) => r.kind === "lan");
-  const hasTs = routes.some((r) => r.kind === "tailscale");
-  if (hasLan && hasTs) {
-    return `Check your network or Tailscale connection, and confirm ${name} is awake.`;
-  }
-  if (hasTs) {
-    return `Check that Tailscale is connected and ${name} is awake.`;
-  }
-  if (hasLan) {
-    return `Check that both machines are on the same network and ${name} is awake.`;
-  }
-  return `Check the SSH address in Hosts and confirm ${name} is awake.`;
-}
-
 function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
   const { status } = remote;
   if (status.identity_changed !== null) return "identity_changed";
@@ -135,10 +117,15 @@ function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
     case "protocol":
       return "protocol";
     case "name_not_resolved":
+      return "name_not_resolved";
     case "refused":
+      return "refused";
     case "no_route":
+      return "no_route";
     case "local_offline":
+      return "local_offline";
     case "tailscale_down":
+      return "tailscale_down";
     case "unreachable":
     case null:
       return "unreachable";
@@ -178,13 +165,19 @@ function buildDiagnostics(
       `History synced through: ${new Date(status.synced_through_ms).toISOString()}`
     );
   }
+  for (const failure of status.route_failures) {
+    lines.push(
+      `Route ${failure.route === "lan" ? "LAN" : "Tailscale"}: ${failure.kind}`
+    );
+  }
   if (status.error) {
     lines.push(`Error: ${status.error}`);
   }
   return lines.join("\n");
 }
 
-type ConnectionCopy = Pick<
+/** The per-kind fields of a connection view. */
+export type ConnectionCopy = Pick<
   RemoteConnectionView,
   | "tone"
   | "title"
@@ -319,6 +312,15 @@ function copyForKind(
   ) {
     return blockingCopy(remote, kind, fact);
   }
+  if (
+    kind === "name_not_resolved" ||
+    kind === "refused" ||
+    kind === "no_route" ||
+    kind === "local_offline" ||
+    kind === "tailscale_down"
+  ) {
+    return networkCauseCopy(remote, kind, routes, fact);
+  }
   const { config, status, os } = remote;
   const name = config.name;
   const autoRetrying = config.enabled && status.state === "connecting";
@@ -386,23 +388,7 @@ function copyForKind(
         pillLabel: "Agent stopped",
       };
     case "timeout":
-      return {
-        tone: "warning",
-        title: `Can’t connect to ${name}`,
-        summary: `${routeText} timed out. ${networkHint(routes, name)}`,
-        shortReason: `${routeText} timed out.`,
-        meta: `${fact}${retryTag}`,
-        gifTheme: "timeout",
-        primaryAction: "retry",
-        showRetry: config.enabled,
-        sidebarLabel: autoRetrying ? "Reconnecting…" : "Timed out",
-        pillLabel: "Offline",
-      };
-    case "name_not_resolved":
-    case "refused":
-    case "no_route":
-    case "local_offline":
-    case "tailscale_down":
+      return timeoutCopy(remote, routes, fact);
     case "unreachable":
       return {
         tone: "warning",
@@ -441,6 +427,6 @@ export function remoteConnectionView(
     hasSavedHistory: syncedThroughMs !== null,
     gifSeed: `${remote.config.id}:${kind}`,
     diagnostics: buildDiagnostics(remote, kind, routes),
-    routeLines: [],
+    routeLines: buildRouteLines(remote.status, routes),
   };
 }
