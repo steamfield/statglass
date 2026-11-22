@@ -29,6 +29,7 @@ mod query;
 pub mod remote;
 pub mod remote_network;
 pub mod settings;
+pub mod star_prompt;
 pub mod startup;
 pub mod state;
 #[cfg(test)]
@@ -139,6 +140,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::get_window_appearance,
             windows::window_visible,
             commands::report_popover_paint, popover::commands::report_popover_content_height,
+            star_prompt::get_star_prompt_status, star_prompt::act_on_star_prompt,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,

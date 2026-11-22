@@ -72,6 +72,7 @@ pub struct AppState {
     pub hosts: HostRegistry,
     pub live: LiveRegistry,
     pub settings: SettingsOwner,
+    pub star_prompt: crate::star_prompt::StarPromptOwner,
     pub history: Arc<History>,
     pub remotes: crate::remote::RemoteManager,
     appearance: Mutex<WindowAppearance>,
@@ -158,6 +159,12 @@ impl AppState {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_default(),
         );
+        let history_created_at_ms = history.read(|r| r.created_at_ms()).ok().flatten();
+        let star_prompt = crate::star_prompt::StarPromptOwner::open(
+            &data_dir,
+            history_created_at_ms,
+            statglass_engine::wall_ms(),
+        );
         let state = AppState {
             docker: docker.clone(),
             docker_streams: crate::docker::DockerStreams::default(),
@@ -169,6 +176,7 @@ impl AppState {
             hosts: HostRegistry::new(),
             live: LiveRegistry::new(),
             settings,
+            star_prompt,
             history: Arc::new(history),
             remotes: crate::remote::RemoteManager::default(),
             appearance: Mutex::new(WindowAppearance {

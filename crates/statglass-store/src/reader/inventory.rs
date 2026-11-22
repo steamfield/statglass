@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use statglass_schema::{Event, HostId, SeriesKey, Tier};
 
 use super::Reader;
@@ -139,5 +139,52 @@ impl Reader {
             }
         }
         Ok(out)
+    }
+
+    /// Wall-clock timestamp (ms epoch) when this history database was created, from
+    /// `meta.created_at_ms`. Returns `Ok(None)` if absent or non-numeric.
+    pub fn created_at_ms(&self) -> Result<Option<i64>> {
+        let raw: Option<rusqlite::types::Value> = self
+            .conn
+            .prepare_cached("SELECT value FROM meta WHERE key = 'created_at_ms'")?
+            .query_row([], |r| r.get(0))
+            .optional()?;
+        Ok(match raw {
+            Some(rusqlite::types::Value::Integer(ms)) => Some(ms),
+            Some(rusqlite::types::Value::Text(s)) => s.parse::<i64>().ok(),
+            _ => None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod created_at_tests {
+    use crate::{Store, StoreConfig};
+
+    #[test]
+    fn created_at_ms_reads_meta_timestamp_and_handles_missing_or_invalid_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.db");
+        let store = Store::open(StoreConfig::new(&path)).unwrap();
+        let reader = store.reader().unwrap();
+        let created = reader.created_at_ms().unwrap();
+        assert!(created.is_some_and(|ms| ms > 0));
+        drop(reader);
+        drop(store);
+
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE meta SET value = 'not-a-number' WHERE key = 'created_at_ms'",
+            [],
+        )
+        .unwrap();
+        let reader = crate::Reader::open(&path).unwrap();
+        assert_eq!(reader.created_at_ms().unwrap(), None);
+        drop(reader);
+
+        conn.execute("DELETE FROM meta WHERE key = 'created_at_ms'", [])
+            .unwrap();
+        let reader = crate::Reader::open(&path).unwrap();
+        assert_eq!(reader.created_at_ms().unwrap(), None);
     }
 }

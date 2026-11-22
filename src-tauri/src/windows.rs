@@ -129,6 +129,11 @@ pub fn open_dashboard(app: &AppHandle, route: Option<&str>) -> Result<(), Comman
         w.show().map_err(window_err)?;
         w.set_focus().map_err(window_err)?;
         set_visible(app, DASHBOARD, true);
+        if let Some(state) = app.try_state::<AppState>() {
+            state
+                .star_prompt
+                .record_interaction(statglass_engine::wall_ms());
+        }
         if let Some(route) = route {
             let event = NavigateRequested {
                 route: route.to_owned(),
@@ -153,6 +158,11 @@ pub fn open_dashboard(app: &AppHandle, route: Option<&str>) -> Result<(), Comman
     w.show().map_err(window_err)?;
     w.set_focus().map_err(window_err)?;
     set_visible(app, DASHBOARD, true);
+    if let Some(state) = app.try_state::<AppState>() {
+        state
+            .star_prompt
+            .record_interaction(statglass_engine::wall_ms());
+    }
     tracing::info!(route = path, "dashboard created");
     Ok(())
 }

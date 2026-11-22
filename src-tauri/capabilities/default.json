@@ -9,6 +9,12 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         {
+          "url": "https://github.com/steamfield/statglass"
+        },
+        {
+          "url": "https://github.com/steamfield/statglass/issues"
+        },
+        {
           "url": "https://github.com/steamfield/statglass/issues/new?labels=sensors&title=*"
         },
         {

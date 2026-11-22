@@ -1,6 +1,7 @@
 import type {
   CliLinkState,
   CliLinkStatus,
+  StarPromptStatus,
   UpdateStatus,
 } from "@core/generated/bindings";
 import type { MockCommands } from "./commands";
@@ -38,6 +39,7 @@ export function cliLinkFixture(state: CliLinkState): CliLinkStatus {
 export class MockShell {
   private updateStatus: UpdateStatus;
   private cliLink: CliLinkStatus;
+  private starPrompt: StarPromptStatus;
   constructor(
     private readonly ring: MockRing,
     private readonly power: MockPower,
@@ -48,6 +50,10 @@ export class MockShell {
   ) {
     this.updateStatus = options.updateStatus ?? { kind: "idle" };
     this.cliLink = options.cliLink ?? cliLinkFixture("missing");
+    this.starPrompt = options.starPromptStatus ?? {
+      eligible: ring.flags.starPrompt,
+      can_snooze: true,
+    };
   }
   readonly requestNavigate: MockTransport["requestNavigate"] = (route) => {
     this.emitters.navigate.emit({ route });
@@ -123,6 +129,24 @@ export class MockShell {
         theme: this.settings.snapshot.settings.general.appearance,
       };
     };
+  readonly getStarPromptStatus: MockTransport["getStarPromptStatus"] =
+    async () => {
+      this.commands.record("get_star_prompt_status");
+      return { ...this.starPrompt };
+    };
+  readonly actOnStarPrompt: MockTransport["actOnStarPrompt"] = async (
+    action
+  ) => {
+    this.commands.record("act_on_star_prompt", action);
+    if (this.options.starPromptFails) {
+      return fail({ kind: "settings_not_saved", message: "disk full" });
+    }
+    this.starPrompt =
+      action === "snoozed"
+        ? { eligible: false, can_snooze: false }
+        : { eligible: false, can_snooze: this.starPrompt.can_snooze };
+    return ok({ ...this.starPrompt });
+  };
   readonly openUrl: MockTransport["openUrl"] = async (url) => {
     this.commands.record("open_url", url);
   };
@@ -143,6 +167,8 @@ export class MockShell {
       installUpdate: this.installUpdate,
       onUpdateStatusChanged: this.onUpdateStatusChanged,
       getWindowAppearance: this.getWindowAppearance,
+      getStarPromptStatus: this.getStarPromptStatus,
+      actOnStarPrompt: this.actOnStarPrompt,
       openUrl: this.openUrl,
       closeWindow: this.closeWindow,
     };

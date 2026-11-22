@@ -101,6 +101,7 @@ export const SCENARIOS = [
   "docker-save-failed",
   "docker-stop-failed",
   "docker-rerank",
+  "star-prompt",
 ] as const;
 
 /** The schema version the mock's "newer StatGlass" wrote, and the one it reads. */
@@ -183,6 +184,8 @@ export interface ScenarioFlags {
   linux: boolean;
   compactPopover: boolean;
   powerDisabled: boolean;
+  /** Eligible to show the GitHub star hover-card toast in the dashboard. */
+  starPrompt: boolean;
 }
 
 export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
@@ -203,6 +206,7 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
     noBattery: has("no-battery"),
     compactPopover: has("popover-compact"),
     powerDisabled: has("power-disabled"),
+    starPrompt: has("star-prompt"),
     noFans: has("no-fans"),
     paused: has("paused"),
     stale: has("stale"),

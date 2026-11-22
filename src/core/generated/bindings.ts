@@ -367,6 +367,10 @@ export const commands = {
 	reportPopoverPaint: (token: number) => __TAURI_INVOKE<void>("report_popover_paint", { token }),
 	/**  Only the popover shell may report its intrinsic content size. */
 	reportPopoverContentHeight: (height: number | null) => __TAURI_INVOKE<void>("report_popover_content_height", { height }),
+	/**  Returns whether the dashboard should show the GitHub star prompt. */
+	getStarPromptStatus: () => __TAURI_INVOKE<StarPromptStatus>("get_star_prompt_status"),
+	/**  Persists the user's star, dismiss, or snooze choice and returns the updated status. */
+	actOnStarPrompt: (action: StarPromptAction) => typedError<StarPromptStatus, CommandError>(__TAURI_INVOKE("act_on_star_prompt", { action })),
 };
 
 /** Events */
@@ -3025,6 +3029,26 @@ export type SpaceVolume = {
 	total_bytes: number | null,
 	/**  Locations macOS protects with privacy prompts. Skipped unless included by key. */
 	protected: SpaceProtected[],
+};
+
+/**  User action taken on the GitHub star prompt. */
+export type StarPromptAction =
+/**  Clicked "Star on GitHub" -> permanent opt-out. */
+"starred" |
+/**  Clicked dismiss (`×` or "Don't ask again") -> permanent opt-out. */
+"dismissed" |
+/**  Clicked "Not now" -> snoozes for 7 days once; a second snooze permanently dismisses. */
+"snoozed";
+
+/**  Current star-prompt eligibility published to the dashboard window. */
+export type StarPromptStatus = {
+	/**
+	 *  True when >24h have elapsed, engagement threshold is met, and the prompt is neither
+	 *  permanently closed nor currently snoozed.
+	 */
+	eligible: boolean,
+	/**  True when the user can still snooze once ("Not now"); false on the final appearance. */
+	can_snooze: boolean,
 };
 
 /**  A process as the store keeps it: fewer fields than [`LiveProcess`]. */
