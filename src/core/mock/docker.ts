@@ -332,6 +332,8 @@ class MockDocker {
     this.emit();
     return ok(this.snapshot);
   };
+  readonly dockerLaunchRuntime: Transport["dockerLaunchRuntime"] = async () =>
+    ok(this.snapshot);
   readonly dockerLogs: Transport["dockerLogs"] = (...args) =>
     this.logs.subscribe(...args);
   readonly dockerComparison: Transport["dockerComparison"] = async (request) =>
@@ -356,6 +358,7 @@ class MockDocker {
       dockerEvents: this.dockerEvents,
       dockerLogs: this.dockerLogs,
       dockerResume: this.dockerResume,
+      dockerLaunchRuntime: this.dockerLaunchRuntime,
       ...this.storage.methods,
     };
   }

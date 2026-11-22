@@ -180,6 +180,7 @@ export function mockDockerSnapshot(count: number, now: number): DockerSnapshot {
       allowance_bytes: 37_500_000,
       retained_from_ms: now - DAY_MS,
     },
+    availability: null,
   };
 }
 

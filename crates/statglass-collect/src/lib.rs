@@ -727,6 +727,7 @@ mod tests {
 pub mod disk_space;
 #[cfg(unix)]
 pub mod docker;
+pub mod docker_runtimes;
 pub mod docker_storage;
 
 mod usage_observation;

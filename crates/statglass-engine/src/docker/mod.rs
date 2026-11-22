@@ -1,6 +1,8 @@
 //! Independent, opt-in Docker clock. Finite polling, events and logs use separate budgets.
 mod error;
 pub use error::DockerServiceError;
+mod availability;
+pub use availability::{ReasonInput, unavailable_reason};
 mod event_lane;
 #[cfg(test)]
 mod integration_tests;
@@ -104,6 +106,7 @@ impl DockerHandle {
                 allowance_bytes: 37_500_000.,
                 retained_from_ms: None,
             },
+            availability: None,
         });
         Self {
             control,
@@ -204,6 +207,11 @@ impl DockerHandle {
             };
         });
         generation
+    }
+    /// Starts the post-launch window: the engine retries every two seconds for
+    /// sixty seconds and reports `launching_until_ms`, then reconnects now.
+    pub fn launch_started(&self) {
+        self.resume();
     }
     pub fn resume(&self) {
         let _gate = self.gate.lock_ok();
