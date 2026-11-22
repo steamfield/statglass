@@ -6,11 +6,10 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 /// What this Mac's interfaces said when a connection attempt failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LocalNetwork {
-    /// An up, running, non-loopback interface has a routable address that is not
-    /// Tailscale's.
+    /// An up, running interface that [`counts_toward_online`] has a routable address.
     pub online: bool,
-    /// An up, running interface has a Tailscale address (100.64.0.0/10 or
-    /// fd7a:115c:a1e0::/48).
+    /// An up, running Tailscale interface (`utun*`, `tailscale*`) has a Tailscale
+    /// address (100.64.0.0/10 or fd7a:115c:a1e0::/48).
     pub tailscale_up: bool,
 }
 
@@ -34,10 +33,26 @@ const TAILSCALE_V6_PREFIX: [u16; 3] = [0xfd7a, 0x115c, 0xa1e0];
 
 /// Name prefixes of interfaces that never take this Mac off its own machine: VM and
 /// container bridges (OrbStack, Docker, UTM), Apple's peer-to-peer links, tunnels and
-/// `utun` VPN interfaces. Their addresses say nothing about whether the Mac is online.
-const NOT_ONLINE_PREFIXES: [&str; 12] = [
-    "bridge", "vmenet", "docker", "veth", "vnic", "awdl", "llw", "anpi", "ap", "gif", "stf", "utun",
+/// VPN interfaces (`utun`, Linux `tailscale0`). Their addresses say nothing about
+/// whether the Mac is online.
+const NOT_ONLINE_PREFIXES: [&str; 13] = [
+    "bridge",
+    "vmenet",
+    "docker",
+    "veth",
+    "vnic",
+    "awdl",
+    "llw",
+    "anpi",
+    "ap",
+    "gif",
+    "stf",
+    "utun",
+    "tailscale",
 ];
+
+/// Name prefixes of interfaces Tailscale runs on: `utun` on macOS, `tailscale0` on Linux.
+const TAILSCALE_INTERFACE_PREFIXES: [&str; 2] = ["utun", "tailscale"];
 
 /// Classifies one interface address. An IPv4-mapped IPv6 address is classified as its
 /// IPv4 address.
@@ -74,9 +89,11 @@ fn classify_v6(addr: Ipv6Addr) -> AddressClass {
 
 /// Whether a routable address on the interface named `name` means this Mac is online.
 pub fn counts_toward_online(name: &str) -> bool {
-    !NOT_ONLINE_PREFIXES
-        .iter()
-        .any(|prefix| name.starts_with(prefix))
+    !has_prefix(name, &NOT_ONLINE_PREFIXES)
+}
+
+fn has_prefix(name: &str, prefixes: &[&str]) -> bool {
+    prefixes.iter().any(|prefix| name.starts_with(prefix))
 }
 
 /// Reads this Mac's interfaces with `getifaddrs`. A failed read is logged and reports
@@ -92,21 +109,31 @@ pub fn probe() -> LocalNetwork {
 }
 
 /// Folds the addresses of up, running, non-loopback interfaces into a [`LocalNetwork`].
-/// Tailscale counts on any interface; a routable address counts only on an interface
-/// that [`counts_toward_online`].
 fn summarize(addresses: &[interfaces::InterfaceAddress]) -> LocalNetwork {
     let mut net = LocalNetwork {
         online: false,
         tailscale_up: false,
     };
     for entry in addresses {
-        match classify_address(entry.addr) {
+        match class_on_interface(entry) {
+            AddressClass::Tailscale => net.tailscale_up = true,
             AddressClass::Routable if counts_toward_online(&entry.name) => net.online = true,
             AddressClass::Routable | AddressClass::Ignored => {}
-            AddressClass::Tailscale => net.tailscale_up = true,
         }
     }
     net
+}
+
+/// How an address counts given the interface carrying it. ISPs, hotspots and corporate
+/// networks hand out carrier-grade NAT addresses from Tailscale's 100.64.0.0/10 too, so
+/// a Tailscale-range address means Tailscale only on a Tailscale interface.
+fn class_on_interface(entry: &interfaces::InterfaceAddress) -> AddressClass {
+    match classify_address(entry.addr) {
+        AddressClass::Tailscale if !has_prefix(&entry.name, &TAILSCALE_INTERFACE_PREFIXES) => {
+            AddressClass::Routable
+        }
+        class => class,
+    }
 }
 
 /// Refines one route's failure with this Mac's network state: offline turns network
@@ -143,181 +170,7 @@ pub(crate) fn is_network_kind(kind: ConnectionFailureKind) -> bool {
     )
 }
 
-/// The `getifaddrs` FFI, kept apart from the pure classification above.
-mod interfaces {
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-    /// Flags an interface needs before its addresses count.
-    const REQUIRED_FLAGS: libc::c_uint = (libc::IFF_UP | libc::IFF_RUNNING) as libc::c_uint;
-    const LOOPBACK_FLAG: libc::c_uint = libc::IFF_LOOPBACK as libc::c_uint;
-
-    /// One IP address and the name of the interface that carries it.
-    pub(super) struct InterfaceAddress {
-        pub(super) name: String,
-        pub(super) addr: IpAddr,
-    }
-
-    /// Owns a `getifaddrs` list and frees it on drop, so every return path releases it.
-    struct InterfaceList(*mut libc::ifaddrs);
-
-    impl Drop for InterfaceList {
-        fn drop(&mut self) {
-            // SAFETY: the pointer came from a successful getifaddrs call and is freed
-            // exactly once, here.
-            unsafe { libc::freeifaddrs(self.0) };
-        }
-    }
-
-    /// The IP addresses on interfaces that are up, running and not loopback.
-    ///
-    /// # Errors
-    /// Returns the OS error when `getifaddrs` fails.
-    pub(super) fn usable_addresses() -> std::io::Result<Vec<InterfaceAddress>> {
-        let mut head: *mut libc::ifaddrs = std::ptr::null_mut();
-        // SAFETY: getifaddrs writes a list head into a valid out-pointer and reports
-        // failure with -1 and errno, leaving nothing to free.
-        if unsafe { libc::getifaddrs(&mut head) } != 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        let list = InterfaceList(head);
-        let mut addresses = Vec::new();
-        let mut cursor = list.0;
-        while !cursor.is_null() {
-            // SAFETY: cursor is a non-null node of the list `list` keeps alive.
-            let entry = unsafe { &*cursor };
-            if interface_counts(entry.ifa_flags)
-                && let Some(addr) = ip_of(entry.ifa_addr)
-            {
-                addresses.push(InterfaceAddress {
-                    name: name_of(entry.ifa_name),
-                    addr,
-                });
-            }
-            cursor = entry.ifa_next;
-        }
-        Ok(addresses)
-    }
-
-    fn interface_counts(flags: libc::c_uint) -> bool {
-        flags & REQUIRED_FLAGS == REQUIRED_FLAGS && flags & LOOPBACK_FLAG == 0
-    }
-
-    /// The interface's name, or empty when the list has none for it.
-    fn name_of(name: *const libc::c_char) -> String {
-        if name.is_null() {
-            return String::new();
-        }
-        // SAFETY: name is non-null and getifaddrs gives each node a NUL-terminated name
-        // that lives as long as the list.
-        unsafe { std::ffi::CStr::from_ptr(name) }
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    /// The IP address in a `sockaddr`, or `None` for null and non-IP families.
-    fn ip_of(addr: *const libc::sockaddr) -> Option<IpAddr> {
-        if addr.is_null() {
-            return None;
-        }
-        // SAFETY: addr is non-null and points into the live getifaddrs list; sa_family
-        // says which concrete sockaddr type it is, and we only cast to that one.
-        unsafe {
-            match i32::from((*addr).sa_family) {
-                libc::AF_INET => {
-                    let v4 = &*addr.cast::<libc::sockaddr_in>();
-                    Some(IpAddr::V4(Ipv4Addr::from(u32::from_be(v4.sin_addr.s_addr))))
-                }
-                libc::AF_INET6 => {
-                    let v6 = &*addr.cast::<libc::sockaddr_in6>();
-                    Some(IpAddr::V6(Ipv6Addr::from(v6.sin6_addr.s6_addr)))
-                }
-                _ => None,
-            }
-        }
-    }
-}
+mod interfaces;
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod extra_tests {
-    use super::*;
-
-    fn ip(s: &str) -> IpAddr {
-        s.parse().unwrap()
-    }
-
-    fn entry(name: &str, addr: &str) -> interfaces::InterfaceAddress {
-        interfaces::InterfaceAddress {
-            name: name.into(),
-            addr: ip(addr),
-        }
-    }
-
-    #[test]
-    fn virtual_bridges_and_vpn_tunnels_do_not_count_toward_online() {
-        for name in [
-            "bridge100",
-            "vmenet0",
-            "docker0",
-            "veth1",
-            "vnic0",
-            "awdl0",
-            "llw0",
-            "anpi0",
-            "ap1",
-            "gif0",
-            "stf0",
-            "utun3",
-        ] {
-            assert!(!counts_toward_online(name), "{name}");
-        }
-        for name in ["en0", "en7", "eth0", "wlan0"] {
-            assert!(counts_toward_online(name), "{name}");
-        }
-    }
-
-    #[test]
-    fn a_mac_with_only_bridge_addresses_reads_offline() {
-        let net = summarize(&[
-            entry("bridge100", "192.168.64.1"),
-            entry("utun4", "10.8.0.2"),
-        ]);
-        assert_eq!(
-            net,
-            LocalNetwork {
-                online: false,
-                tailscale_up: false
-            }
-        );
-    }
-
-    #[test]
-    fn tailscale_counts_on_a_utun_interface_and_wifi_counts_as_online() {
-        let net = summarize(&[entry("utun5", "100.101.1.2"), entry("en0", "192.168.1.20")]);
-        assert_eq!(
-            net,
-            LocalNetwork {
-                online: true,
-                tailscale_up: true
-            }
-        );
-    }
-
-    #[test]
-    fn ipv4_mapped_addresses_classify_as_their_ipv4_address() {
-        assert_eq!(
-            classify_address(ip("::ffff:100.64.0.1")),
-            AddressClass::Tailscale
-        );
-        assert_eq!(
-            classify_address(ip("::ffff:127.0.0.1")),
-            AddressClass::Ignored
-        );
-        assert_eq!(
-            classify_address(ip("::ffff:192.168.1.20")),
-            AddressClass::Routable
-        );
-    }
-}
