@@ -39,6 +39,7 @@ use tauri_specta::Event;
 use self::model::{
     ItemKey, ItemState, Pacer, Readings, Retries, TrayContent, TrayHistory, TrayItem, TraySeries,
 };
+use crate::app_menu;
 use crate::hosts::HostEntry;
 use crate::ipc::SettingsChanged;
 use crate::live::LiveFeed;
@@ -85,8 +86,9 @@ pub fn create(app: &AppHandle) -> anyhow::Result<()> {
         app,
         &[
             &MenuItem::with_id(app, "open", "Open Dashboard", true, None::<&str>)?,
-            &MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?,
+            &app_menu::settings_item(app)?,
             &pause,
+            &app_menu::tray_feedback_item(app)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", "Quit StatGlass", true, Some("CmdOrCtrl+Q"))?,
         ],
@@ -138,11 +140,6 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
                 tracing::warn!("opening the dashboard from the menu: {e}");
             }
         }
-        "settings" => {
-            if let Err(e) = windows::open_dashboard(app, Some("/dashboard/settings")) {
-                tracing::warn!("opening settings from the menu: {e}");
-            }
-        }
         "pause" => {
             // The check item has already toggled itself.
             let paused = app
@@ -158,7 +155,8 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
         // An exit code, unlike closing the last window, ends the app (lib.rs `run`), and
         // `RunEvent::Exit` stops the engine and closes the store.
         "quit" => app.exit(0),
-        _ => {}
+        // Settings and Send Feedback share their handling with the macOS app menu.
+        id => _ = app_menu::handle_menu_event(app, id),
     }
 }
 
