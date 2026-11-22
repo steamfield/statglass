@@ -1,6 +1,6 @@
 # Plan: connection and engine error states
 
-Skill: sprint. Profile: sprint. On resume, re-read shared/lane-dag.md before anything else.
+Status: done. Skill: sprint. Profile: sprint. On resume, re-read shared/lane-dag.md before anything else.
 plan_graph: /Users/riley/.claude/plugins/marketplaces/claude-essentials/plugins/ce/shared/scripts/plan_graph.py
 Started: 1795352757. Timebox: none. Landing branch: sprint/connection-states.
 Gate: `make rust-check && cargo test -p statglass-schema -p statglass-collect -p statglass-engine -p statglass-remote && cargo test -p statglass && bun run check`. Filtered tests: `cargo test -p <crate> <name filter>` and `bun run test -- <path>`. Typecheck: `bun run typecheck` and `cargo check --workspace --all-targets`.
@@ -215,3 +215,7 @@ Test cases: crates/statglass-collect/src/docker_runtimes/tests.rs, crates/statgl
 - Plan critique (sonnet): applied the bridge/VPN interface filter, null ifa_addr and IPv4-mapped handling to lane 1/a. Rejected: dual-route AgentNotRunning having no route lines (it has its own copy); extra stderr wording cases (multi-line banner and Linux DNS wording already tested); splitting lane 1/a (already dispatched, scope held); phase 2/3 contracts (written in their scaffolds).
 - Lane 1/b: accepted split into remote-connection-network.ts and remote-network-scenarios.ts (Biome 500-line limit); error-case message uses shortReason only when failure_kind is set.
 - Lane 1/a review: CGNAT 100.64/10 on a physical interface read as Tailscale and offline; fixed by counting Tailscale only on utun*/tailscale* names. extra_tests moved into network/tests.rs, FFI walk split to network/interfaces.rs.
+- Mid-sprint user request: non-live host cards replace charts with a reconnect panel and say how long a reconnect takes; folded into lane 2/b; REMOTE_DIAL_TIMEOUT_MS exported from Rust.
+- Lane 3/a review: visibility change during the availability probe skipped the backoff; launch_started raced the worker. Both fixed. Lane 2/a review: offline wait snapshot taken after the probe (fixed), retry math moved to backoff.rs (fixed); missing re-emit test rejected (scaffold test covers it).
+- Final review fixed: dial limit was 15 s but attempts end at 10 s (now 10 s); attempt count didn't restart after a short connection; Docker probed engines twice per failed attempt; stale launch error; engine-state wiring moved out of route.tsx; route tests for the engine card; docs on copy helpers and routeText on the view. Left open: a run()-level test of the offline wait (needs a fake dialer seam in the remote source).
+- Done: `make check` green at 45531601. Native checks left to the user: a host with Tailscale off, Wi-Fi off, Docker Desktop quit then launched from the card.
