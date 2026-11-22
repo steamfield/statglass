@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.12.1](https://github.com/steamfield/statglass/compare/v0.12.0...v0.12.1) - 2026-11-21
+
+### Added
+
+- Structured remote connection failure kinds (`RemoteError::Timeout`,
+  `ConnectionFailureKind` / `RemoteFailureKind`) and durable `synced_through_ms`
+  mirror watermarks on `RemoteHostStatus` (D-135).
+- Shared `ErrorStateCard` backed by `@steamfield/ui/gif` and `@steamfield/ui/react/gif`,
+  with viewport, native window visibility, Reduced Motion, and Performance-mode playback
+  gating, offline icon fallback, configured route chips, and sanitized one-click
+  diagnostic copy.
+- Linux host settings can restart a host's `systemd` agent over SSH
+  (`restart_remote_agent`).
+
+### Changed
+
+- Dashboard connection and update notices render below the sticky `PageHeader` inside
+  `DashboardBanners`, keeping the 72 px header hairline aligned with the sidebar.
+- Offline hosts with saved mirrored history keep metric pages crisp and offer
+  **Jump to saved history**, **Switch to This Mac**, **Retry connection**, and
+  **Turn on connection**; hosts without saved history and live-only pages render a
+  focal error state instead of empty skeletons.
+- Sidebar footer, Overview status pill, and Hosts cards surface accurate remote
+  disconnection labels instead of `Stale · no new data` or `Connecting`.
+- Upgraded `@steamfield/ui` to `~0.6.0` in both the app and `docs-site`.
+
+### Fixed
+
+- Mac app and Linux agent automatically reopen the history store every minute after a
+  retryable open failure (such as a full disk or lock) without requiring a reset.
+- Fixed SSH error message spacing typos (`hostdid`, `hostsent`) and preserved
+  dual-route failure priority when both LAN and Tailscale fail.
+- rustix 1.1.6 for RUSTSEC-2026-0486.
+
 ## [0.12.0](https://github.com/steamfield/statglass/compare/v0.11.1...v0.12.0) - 2026-11-10
 
 ### Added
