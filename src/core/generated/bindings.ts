@@ -450,7 +450,7 @@ export const PERFORMANCE_VISIBLE_MS = 2000 as const;
 
 export const READOUTS = ["cpu","gpu","memory","temperature","power","network","disk","battery"] as const;
 
-export const REMOTE_DIAL_TIMEOUT_MS = 15000 as const;
+export const REMOTE_DIAL_TIMEOUT_MS = 10000 as const;
 
 export const RETENTION_DAYS = [7,30,90] as const;
 

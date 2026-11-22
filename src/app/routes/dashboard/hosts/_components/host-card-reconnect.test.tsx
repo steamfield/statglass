@@ -82,7 +82,7 @@ describe("host card reconnect panel", () => {
   it("says which route it is trying and how long it may take", () => {
     showPanel(studio({ dialing: true }));
     expect(
-      screen.getByText("Trying LAN (studio.local) now · gives up after 15 s")
+      screen.getByText("Trying LAN (studio.local) now · gives up after 10 s")
     ).toBeVisible();
     expect(screen.queryByText(/Next attempt/)).toBeNull();
   });

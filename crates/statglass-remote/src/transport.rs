@@ -104,15 +104,15 @@ pub(crate) fn sh_word(value: &str) -> Result<String> {
     word.push('"');
     Ok(word)
 }
-/// SSH's own limit for TCP connect and authentication on one route (`-oConnectTimeout`).
-const SSH_CONNECT_TIMEOUT_SECS: u64 = 5;
+/// SSH's own limit for TCP connect and authentication on one route, 5 s.
 const SSH_CONNECT_TIMEOUT_ARG: &str = "-oConnectTimeout=5";
-/// How long a dial waits for the StatGlass greeting once SSH is up.
+/// How long a dial waits for the StatGlass greeting, counted from spawning `ssh`, so it
+/// also bounds SSH's own connect.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-/// The longest one connection attempt runs before it fails: SSH connect plus greeting.
-/// Both routes of a dual-route host dial at once, so this bounds those too.
-pub const DIAL_TIMEOUT_MS: i64 =
-    ((SSH_CONNECT_TIMEOUT_SECS + HANDSHAKE_TIMEOUT.as_secs()) * 1000) as i64;
+/// The longest one failing connection attempt runs. Both routes of a dual-route host
+/// dial at once under the same limit, and the preference grace only applies after a
+/// route has succeeded, so this bounds those too.
+pub const DIAL_TIMEOUT_MS: i64 = HANDSHAKE_TIMEOUT.as_millis() as i64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Route {
@@ -262,7 +262,8 @@ async fn dial(
             }
         }
     }));
-    // ConnectTimeout bounds TCP/auth startup; this additionally bounds helper and handshake.
+    // Counted from the spawn: ConnectTimeout ends a silent TCP connect sooner, and this
+    // bounds the whole attempt, including the helper and the greeting.
     let handshake = tokio::time::timeout(HANDSHAKE_TIMEOUT, codec::read(&mut reader)).await;
     let hello = match handshake {
         Ok(Ok(Message::Hello(h))) => *h,
@@ -460,12 +461,13 @@ mod classify_tests;
 
 #[cfg(test)]
 #[test]
-fn the_ssh_argument_matches_the_published_dial_limit() {
-    assert_eq!(
-        SSH_CONNECT_TIMEOUT_ARG,
-        format!("-oConnectTimeout={SSH_CONNECT_TIMEOUT_SECS}")
-    );
-    assert_eq!(DIAL_TIMEOUT_MS, 15_000);
+fn the_dial_limit_covers_the_ssh_connect_limit() {
+    let connect_secs: i64 = SSH_CONNECT_TIMEOUT_ARG
+        .trim_start_matches("-oConnectTimeout=")
+        .parse()
+        .unwrap();
+    assert!(connect_secs * 1000 < DIAL_TIMEOUT_MS);
+    assert_eq!(DIAL_TIMEOUT_MS, 10_000);
 }
 
 #[cfg(test)]
