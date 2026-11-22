@@ -35,6 +35,7 @@ import { type ProcessSort, ProcessTable } from "~/components/process-table";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsRow } from "~/components/settings-row";
 import { Sidebar, type SidebarProps } from "~/components/sidebar";
+import { StarPromptCard } from "~/components/star-prompt-card";
 import {
   TrayStyleGroup,
   TrayStyleOption,
@@ -405,6 +406,24 @@ function ContainerComparisonSample() {
         onAutomatic={() => setIds(DOCKER_COMPARISON.map((s) => s.container.id))}
       />
     </>
+  );
+}
+
+/** First appearance ("Not now") and the final one ("Don't ask again"). */
+function StarPromptSamples() {
+  return (
+    <div className="flex flex-wrap items-start gap-4">
+      {[true, false].map((canSnooze) => (
+        <StarPromptCard
+          key={String(canSnooze)}
+          canSnooze={canSnooze}
+          onStar={noop}
+          onSnooze={noop}
+          onDismiss={noop}
+          className="w-80"
+        />
+      ))}
+    </div>
   );
 }
 
@@ -846,6 +865,10 @@ export function AppComponentsSection() {
         usedIn="Remote host disconnects and RouteError"
       >
         <ErrorStateSamples />
+      </GalleryItem>
+
+      <GalleryItem name="StarPromptCard" usedIn="Dashboard floating prompt">
+        <StarPromptSamples />
       </GalleryItem>
     </div>
   );

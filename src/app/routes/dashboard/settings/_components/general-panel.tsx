@@ -1,5 +1,13 @@
 import type { Appearance, Settings } from "@core/generated/bindings";
+import {
+  formatSystemDiagnostics,
+  GITHUB_ISSUES_URL,
+  GITHUB_REPO_URL,
+} from "@core/star-prompt";
+import type { Transport } from "@core/transport";
+import { toast } from "sonner";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
+import { Button } from "~/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -8,7 +16,11 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
+import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
+import { useHostRecord } from "~/hooks/use-host-record";
 import { useWriteSettings } from "~/hooks/use-write-settings";
+import { useTransport } from "~/lib/transport-context";
+import { version } from "../../../../../../package.json";
 import { UpdateRow } from "./update-row";
 
 const APPEARANCES: { value: Appearance; label: string }[] = [
@@ -17,7 +29,84 @@ const APPEARANCES: { value: Appearance; label: string }[] = [
   { value: "light", label: "Light" },
 ];
 
-/** "General", plus the update switch and version row (4.15). */
+function openExternalUrl(transport: Transport, url: string) {
+  void transport.openUrl(url).catch((err: unknown) => {
+    console.error("[settings] openUrl failed", err);
+    toast("Couldn't open link.");
+  });
+}
+
+function CommunityRows() {
+  const transport = useTransport();
+  const host = useHostRecord();
+  const clipboard = useCopyToClipboard("settings-diagnostics");
+
+  const copyDiagnostics = async () => {
+    const info = formatSystemDiagnostics({
+      appVersion: version,
+      osVersion: host?.info.os_version,
+      chip: host?.info.chip,
+      model: host?.info.model,
+    });
+    toast(
+      (await clipboard.copy(info))
+        ? "System info copied"
+        : "Couldn't copy system info."
+    );
+  };
+
+  const openFeedback = () => openExternalUrl(transport, GITHUB_ISSUES_URL);
+
+  const openStar = () => {
+    openExternalUrl(transport, GITHUB_REPO_URL);
+    void transport.actOnStarPrompt("starred").then(
+      (outcome) => {
+        if (outcome.status === "error") {
+          console.error("[settings] actOnStarPrompt failed", outcome.error);
+        }
+      },
+      (err: unknown) => {
+        console.error("[settings] actOnStarPrompt rejected", err);
+      }
+    );
+  };
+
+  return (
+    <>
+      <SettingsRow
+        label="Feedback & issues"
+        sub="Have an issue or want a feature? Copy non-personal system info or open GitHub Issues."
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={copyDiagnostics}
+        >
+          Copy system info
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={openFeedback}
+        >
+          File feedback
+        </Button>
+      </SettingsRow>
+      <SettingsRow
+        label="Support StatGlass"
+        sub="StatGlass is free and open source. A star on GitHub helps others discover it."
+      >
+        <Button type="button" variant="outline" size="sm" onClick={openStar}>
+          Star on GitHub
+        </Button>
+      </SettingsRow>
+    </>
+  );
+}
+
+/** "General" settings panel: startup, appearance, updates, feedback, and support. */
 export function GeneralPanel({ general }: { general: Settings["general"] }) {
   const write = useWriteSettings();
 
@@ -91,6 +180,7 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
         />
       </SettingsRow>
       <UpdateRow />
+      <CommunityRows />
     </SettingsPanel>
   );
 }
