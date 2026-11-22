@@ -104,6 +104,9 @@ motion (`make bench` popover/overview scenarios, `perf-gate.spec.ts`).
 - Don't add `will-change` by hand; it pins layers in memory in a long-lived panel.
 - No infinite animations (`animate-pulse`, spinners) unless something is actually loading,
   and stop them when it isn't. A hidden-but-warm popover keeps running CSS animations.
-  The one loop is `ChartLoading`, which a chart renders only while `loading` is true; a
-  new loading state uses it instead of adding another.
+  The one CSS loop is `ChartLoading`, which a chart renders only while `loading` is true; a
+  new loading state uses it instead of adding another. Error-state `<Gif />` clips
+  (`@steamfield/ui/react/gif`) are the single scoped media exception: they play only while in
+  view, the native window is visible (`transport.onWindowVisibility`), Reduced Motion is off,
+  and Performance mode (`data-performance`) is off, pausing immediately otherwise.
 - No springs or overshoot.

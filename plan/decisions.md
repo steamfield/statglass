@@ -4578,3 +4578,11 @@ every 60 s while the recent interest is held (ssh runs with ControlMaster off, s
 parsed into an allowlist of command, user, client host and start time. This Mac reads the
 same path locally. Jobs on several hosts with the same client, user and start are grouped
 in Rust. A host without rr shows nothing. No wire change.
+
+## D-135: Error-state media (`@steamfield/ui/react/gif`) and remote failure semantics
+
+Date: 2026-11-21. Adds structured remote failure classification and a shared `ErrorStateCard` built on `@steamfield/ui/gif` + `@steamfield/ui/react/gif`.
+
+- **Rust failure facts**: `statglass-remote` adds retryable `RemoteError::Timeout(String)` and `ConnectionFailureKind` (`timeout`, `unreachable`, `auth`, `untrusted`, `agent_not_running`, `incompatible`, `identity_changed`, `other`) on `ConnectionStatus` / `RemoteHostStatus`, plus durable `synced_through_ms` sourced from `Mirror::sync_watermark()?.synced_through()`. UI diagnosis and "has saved history" decisions read Rust facts directly instead of parsing error strings or relying on in-memory `last_seen_ms`.
+- **Scoped motion & CSP policy**: `src-tauri/tauri.conf.json` extends `img-src` and `media-src` to `'self' https://*.giphy.com` (never widening `connect-src` or `script-src`). Error-state `<Gif />` playback is an explicit scoped exception to `.claude/rules/frontend/motion.md`: it plays only while visible in viewport, the native window is visible (`transport.onWindowVisibility`), `prefers-reduced-motion` is off, and StatGlass Performance mode (`data-performance`) is off. When offline or when media fails to load, `<Gif fallback={...} />` renders a semantic icon slot with zero layout shift.
+- **Layout placement**: Dashboard connection notices render below the sticky `PageHeader` inside `<DashboardBanners />` so the 72 px top hairline stays aligned with the sidebar. When `synced_through_ms !== null` on a history-backed route, the notice renders as a compact banner and keeps saved history interactive; when `synced_through_ms === null` or on live-only routes (`Processes`, `Containers`), `<DashboardBody />` replaces empty widgets with the focal error state.

@@ -2587,6 +2587,8 @@ export type RemoteDockerAccess =
 /**  There is a socket this login cannot use; containers show by short id. */
 "unreadable" | "readable";
 
+export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "host_key" | "agent_not_running" | "incompatible" | "identity_changed" | "protocol";
+
 export type RemoteHostConfig = {
 	id: string,
 	name: string,
@@ -2630,7 +2632,13 @@ export type RemoteHostStatus = {
 	state: RemoteState,
 	route: RemoteRoute | null,
 	last_seen_ms: number | null,
+	/**
+	 *  End of the newest mirrored history bucket persisted on disk (remote host clock).
+	 *  Survives app restarts so offline views know whether saved history exists.
+	 */
+	synced_through_ms: number | null,
 	error: string | null,
+	failure_kind: RemoteFailureKind | null,
 	sync: RemoteSync,
 	clock_offset_ms: number | null,
 	vitals: HostVitals,

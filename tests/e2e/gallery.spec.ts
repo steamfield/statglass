@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import { chartsReady } from "./helpers/charts-ready";
+import { mockGiphyMedia } from "./helpers/mock-giphy";
 
 /**
  * The dev gallery renders every widget and app component on the mock
@@ -22,6 +23,7 @@ function trackConsoleErrors(page: Page): string[] {
 }
 
 async function openGallery(page: Page, theme: string) {
+  await mockGiphyMedia(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`/?route=/dev/gallery&theme=${theme}&ticks=0`);
   await expect(

@@ -12,6 +12,7 @@ import { useBatteryDetail } from "~/hooks/use-battery";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useUnits } from "~/hooks/use-units";
 import { useWindowSeries } from "~/hooks/use-window-series";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { useHost } from "~/stores/host-store";
 import { usePowerSource } from "~/stores/live-selectors";
 import { RingStatCard } from "~/widgets/ring-stat-card";
@@ -51,74 +52,79 @@ export default function BatteryRoute() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Battery" subtitle={batterySubtitle(b, state)} />
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-        <RingStatCard
-          accent="battery"
-          origin="tl"
-          title="Charge"
-          ring={{
-            fractions: frac(b.charge),
-            value: b.charge === null ? MISSING : b.charge.toFixed(0),
-            label: "%",
-            accent: "battery",
-          }}
-          kv={time}
-        />
-        <RingStatCard
-          accent="battery"
-          origin="tr"
-          title="Health"
-          description="Maximum capacity compared with when new"
-          ring={{
-            fractions: frac(b.health),
-            value: b.health === null ? MISSING : b.health.toFixed(0),
-            label: "%",
-            accent: "battery",
-          }}
-          kv={{
-            label: "Cycles",
-            value: b.cycles === null ? MISSING : String(b.cycles),
-          }}
-        />
-        <RingStatCard
-          accent="battery"
-          origin="bl"
-          title="Power"
-          description={power.description}
-          ring={
-            b.powerW === null
-              ? null
-              : {
-                  fractions: [Math.min(1, Math.abs(b.powerW) / ceiling)],
-                  value: power.value,
-                  label: "W",
-                  accent: "battery",
-                }
-          }
-          kv={{ label: "System", value: formatWatts(b.systemW) }}
-        />
-      </div>
-      <BatteryDayCard
-        origin="br"
-        aside={
-          <StatList
-            items={[
-              {
-                label: "Full charge",
-                value: formatWattHours(b.capacityWh),
-                unit:
-                  b.designWh === null
-                    ? "Wh"
-                    : `of ${formatWattHours(b.designWh)} Wh`,
-              },
-              {
-                label: "Temperature",
-                value: formatTemperature(b.tempC, { units: units.temperature }),
-              },
-            ]}
+      <DashboardBanners />
+      <DashboardBody>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+          <RingStatCard
+            accent="battery"
+            origin="tl"
+            title="Charge"
+            ring={{
+              fractions: frac(b.charge),
+              value: b.charge === null ? MISSING : b.charge.toFixed(0),
+              label: "%",
+              accent: "battery",
+            }}
+            kv={time}
           />
-        }
-      />
+          <RingStatCard
+            accent="battery"
+            origin="tr"
+            title="Health"
+            description="Maximum capacity compared with when new"
+            ring={{
+              fractions: frac(b.health),
+              value: b.health === null ? MISSING : b.health.toFixed(0),
+              label: "%",
+              accent: "battery",
+            }}
+            kv={{
+              label: "Cycles",
+              value: b.cycles === null ? MISSING : String(b.cycles),
+            }}
+          />
+          <RingStatCard
+            accent="battery"
+            origin="bl"
+            title="Power"
+            description={power.description}
+            ring={
+              b.powerW === null
+                ? null
+                : {
+                    fractions: [Math.min(1, Math.abs(b.powerW) / ceiling)],
+                    value: power.value,
+                    label: "W",
+                    accent: "battery",
+                  }
+            }
+            kv={{ label: "System", value: formatWatts(b.systemW) }}
+          />
+        </div>
+        <BatteryDayCard
+          origin="br"
+          aside={
+            <StatList
+              items={[
+                {
+                  label: "Full charge",
+                  value: formatWattHours(b.capacityWh),
+                  unit:
+                    b.designWh === null
+                      ? "Wh"
+                      : `of ${formatWattHours(b.designWh)} Wh`,
+                },
+                {
+                  label: "Temperature",
+                  value: formatTemperature(b.tempC, {
+                    units: units.temperature,
+                  }),
+                },
+              ]}
+            />
+          }
+        />
+      </DashboardBody>
     </div>
   );
 }

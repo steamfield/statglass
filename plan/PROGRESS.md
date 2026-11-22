@@ -4,6 +4,15 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Remote error states and shared `<Gif />` integration (D-135) (2026-11-21)
+
+Overhauled remote-host disconnect and error states across the dashboard, sidebar, Hosts cards, and route error boundaries, backed by new `@steamfield/ui/gif` and `@steamfield/ui/react/gif` subpaths (automatic `.mp4`/`.webm` `<video>` and `.webp`/`.gif` `<img>` playback, tree-shakeable ESM, deterministic seeded selection, offline fallback).
+
+- **Rust (`statglass-remote`, `src-tauri`)**: Added `RemoteError::Timeout`, `ConnectionFailureKind` / `RemoteFailureKind`, and durable `synced_through_ms` on `RemoteHostStatus`; fixed SSH error message typos (`hostdid`/`hostsent`) and preserved dual-route failure priority; updated `tauri.conf.json` CSP `img-src` and `media-src` to `'self' https://*.giphy.com`; regenerated `src/core/generated/bindings.ts`.
+- **Frontend (`src/core/remote-connection.ts`, `ErrorStateCard`, `HostConnectionNotice`, `DashboardShell`)**: Built a pure failure-diagnosis view model, moved connection notices below the sticky `PageHeader` hairline, adapted between compact `banner` (when mirrored history exists) and dominant `focal` states (no saved history or live-only pages), added route badges, `Jump to saved history`, `Turn on connection`, `Switch to This Mac`, collapsible `Technical details`, and `Copy details`. Gated `<Gif />` playback on native window visibility, Reduced Motion, and Performance mode. Fixed sidebar and Overview pills so offline hosts no longer show `Stale · no new data` or `Connecting`.
+- **Verified**: `cargo test -p statglass-remote -p statglass`, `make rust-check`, `make architecture-check`, `make bindings-check`, `bun run check`, Playwright E2E (`remote-recovery`, `remote-hosts`, `hosts-dashboard`, `csp`, `gallery`), `make e2e-perf`, and visual screenshot review in light and dark themes.
+- **Open**: Native macOS QA against an offline Tailscale host in `tauri dev`.
+
 ## Five new monitoring guides on the StatGlass blog (2026-11-13)
 
 The site now has 20 articles. The five additions cover Mac sleep requests, disk writes by process, Time Machine local snapshots, MacBook charging limits, and Linux load averages. Each links to the relevant Apple or Linux documentation.

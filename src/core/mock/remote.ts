@@ -23,6 +23,7 @@ import { savedMacSetup, setupCancelled } from "./remote-setup";
 import { MockRemoteStatus } from "./remote-status";
 import {
   hasProgressFixture,
+  initialRemoteStatus,
   MockAgentUpdates,
   mockHostVitals,
   mockLocalRrJob,
@@ -96,21 +97,7 @@ export class MockRemotes {
     const remote: RemoteHostRecord = {
       config: saved,
       os: linux ? "linux" : "mac_os",
-      status: {
-        state: saved.enabled ? "connected" : "disabled",
-        route: saved.lan ? "lan" : "tailscale",
-        last_seen_ms: this.ring.now(),
-        error: null,
-        sync: "current",
-        clock_offset_ms: 120000,
-        agent_version: APP_VERSION,
-        agent_update: { kind: "up_to_date", installed: APP_VERSION },
-        identity_changed: null,
-        rr: null,
-        vitals: mockHostVitals(linux),
-        update: null,
-        last_update_failure: null,
-      },
+      status: initialRemoteStatus(saved, this.ring.now(), linux),
     };
     this.statusEvents.forget(saved.id);
     this.remotes.set(saved.id, {
@@ -286,6 +273,7 @@ export class MockRemotes {
     this.pushRemoteStatus(id, {
       state: "connected",
       error: null,
+      failure_kind: null,
       agent_version: APP_VERSION,
       agent_update: { kind: "up_to_date", installed: APP_VERSION },
       update: null,
@@ -311,6 +299,7 @@ export class MockRemotes {
         ...remote.record.status,
         state: "disabled",
         error: null,
+        failure_kind: null,
         identity_changed: null,
       },
     };
@@ -416,12 +405,17 @@ export class MockRemotes {
     this.commands.record("retry_remote_host", id);
     const remote = this.remotes.get(id);
     if (!remote) return fail({ kind: "unknown_host", host: id });
+    const s = this.options.scenarios;
     if (
-      this.options.scenarios?.includes("host-unreachable") &&
-      id === "remote-unreachable"
+      (s?.includes("host-unreachable") && id === "remote-unreachable") ||
+      (s?.includes("host-offline-history") && id === "remote-offline-history")
     )
       return ok(null);
-    this.pushRemoteStatus(id, { state: "connected", error: null });
+    this.pushRemoteStatus(id, {
+      state: "connected",
+      error: null,
+      failure_kind: null,
+    });
     return ok(null);
   };
   readonly listHosts: MockTransport["listHosts"] = async () => {

@@ -12,6 +12,8 @@ function renderedStatusChanged(
     status.state,
     status.route,
     status.error,
+    status.failure_kind,
+    status.synced_through_ms,
     status.sync,
     status.agent_version,
     status.identity_changed,

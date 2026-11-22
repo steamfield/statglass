@@ -24,7 +24,9 @@ function remoteFixture(): RemoteHostRecord {
       route: "lan",
       sync: "current",
       last_seen_ms: 1791000000000,
+      synced_through_ms: 1791000000000,
       error: null,
+      failure_kind: null,
       identity_changed: null,
       clock_offset_ms: 0,
       agent_version: "1.0.0",
@@ -49,7 +51,9 @@ describe("host card model", () => {
     (state, status, action, isLive) => {
       const remote = remoteFixture();
       remote.status.state = state;
-      remote.status.error = "Permission denied (publickey)";
+      if (state === "error") {
+        remote.status.error = "Permission denied (publickey)";
+      }
       const model = remoteHostCardModel(remote);
       expect(model).toMatchObject({ status, stateAction: action, isLive });
       if (!isLive) {

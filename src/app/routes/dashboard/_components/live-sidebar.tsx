@@ -2,6 +2,7 @@ import { ratio } from "@core/chart-math";
 import { scaleOrNull, sumOrNull } from "@core/chart-math/numeric";
 import { formatPercent, formatWatts } from "@core/format";
 import type { UiModule } from "@core/module-state";
+import { remoteConnectionView } from "@core/remote-connection";
 import { hostsNeedingUpdate } from "@core/remote-hosts";
 import { useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -12,6 +13,7 @@ import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import { useHostId } from "~/stores/host-store";
 import {
   useBattery,
   useCgroups,
@@ -101,6 +103,7 @@ export function compactRate(bps: number | null): string | undefined {
  */
 export function LiveSidebar() {
   const local = useIsLocalHost();
+  const hostId = useHostId();
   // A remote host lists Containers when it reports cgroup groups (D-116).
   const cgroups = useCgroups();
   const navigate = useNavigate();
@@ -108,6 +111,20 @@ export function LiveSidebar() {
   const { pathname } = useLocation();
   const states = useModuleStates();
   const behind = useRemoteHosts(countBehind).data ?? 0;
+  const activeRemote = useRemoteHosts((hosts) =>
+    hosts.find((host) => host.config.id === hostId)
+  ).data;
+  const remoteStatus = useMemo(() => {
+    if (!activeRemote || activeRemote.status.state === "connected") {
+      return undefined;
+    }
+    const view = remoteConnectionView(activeRemote);
+    return {
+      label: view.sidebarLabel,
+      tone:
+        view.tone === "destructive" ? ("error" as const) : ("idle" as const),
+    };
+  }, [activeRemote]);
   const tools = useMemo(
     () =>
       withHostAttention(local || cgroups ? LOCAL_TOOLS : REMOTE_TOOLS, behind),
@@ -193,6 +210,7 @@ export function LiveSidebar() {
         paused: sampling.paused,
         stale: sampling.stale,
         connection: sampling.connection,
+        ...(remoteStatus ? { remoteStatus } : {}),
         onBattery: batteryBackoff({
           onBattery: sampling.onBattery,
           intervalMs: sampling.intervalMs,

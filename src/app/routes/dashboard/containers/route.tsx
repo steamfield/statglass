@@ -11,6 +11,7 @@ import {
   type SearchParamPatch,
   useSearchParamPatch,
 } from "~/hooks/use-search-param-patch";
+import { DashboardBanners } from "~/lib/dashboard-shell";
 import { BrushProvider } from "~/stores/brush-store";
 import { useCgroups } from "~/stores/live-selectors";
 import { CgroupContainers } from "./_components/cgroup-containers";
@@ -125,6 +126,7 @@ function LocalContainersRoute() {
             </Button>
           }
         />
+        <DashboardBanners />
         <ContainerRangeNotice />
         {(actionError || error) && (
           <InlineMessage tone="error">{actionError ?? error}</InlineMessage>

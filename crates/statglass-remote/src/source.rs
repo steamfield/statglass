@@ -22,7 +22,7 @@ mod queries;
 mod recent;
 mod status;
 use control::Control;
-pub use status::ConnectionStatus;
+pub use status::{ConnectionFailureKind, ConnectionStatus};
 
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
 #[derive(Clone, Default)]
@@ -184,6 +184,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
                 status.route = Some(session.route);
                 status.retrying = false;
                 status.error = None;
+                status.failure_kind = None;
                 status.identity_changed = None;
                 status.incompatible = false;
                 status.remote_version = Some(session.hello.app_version.clone());

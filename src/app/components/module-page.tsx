@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { PageHeader } from "~/components/page-header";
 import { WindowControl } from "~/components/window-control";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import {
   ChartRangeNotice,
   ChartRangeProvider,
@@ -8,9 +9,10 @@ import {
 } from "~/stores/chart-range";
 
 /**
- * The frame every module page with a chart window shares: the range scope,
- * the header with the window control, the recorded-history notice, and the
- * cards. The cards wait for the chart window (D-091), so they appear
+ * The frame every module page with a chart window shares: the sticky header
+ * pinned to `top: 0`, any dashboard banners right beneath it, and the body
+ * (swapped for a focal connection state when an offline remote host has no
+ * saved history). The cards wait for the chart window (D-091), so they appear
  * together instead of drawing a span they would redo.
  */
 export function ModulePage({
@@ -48,10 +50,13 @@ export function ModulePage({
             )
           }
         />
-        <ChartRangeNotice />
-        {beforeBody}
-        <ModulePageBody>{children}</ModulePageBody>
-        {afterBody}
+        <DashboardBanners />
+        <DashboardBody>
+          <ChartRangeNotice />
+          {beforeBody}
+          <ModulePageBody>{children}</ModulePageBody>
+          {afterBody}
+        </DashboardBody>
       </div>
     </ChartRangeProvider>
   );

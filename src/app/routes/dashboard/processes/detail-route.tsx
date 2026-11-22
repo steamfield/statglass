@@ -19,6 +19,7 @@ import {
 } from "~/hooks/use-process-interest";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { requestedBytes } from "../disk/_components/disk-processes";
 import { readRange } from "../disk/_lib/range-params";
 
@@ -62,69 +63,72 @@ export default function ProcessDetailRoute() {
         title={process?.name ?? "Process unavailable"}
         subtitle={`PID ${pid} · Started ${formatDateTime(Number.isSafeInteger(start) ? start / 1000 : null, { yearUnlessCurrent: true })}`}
       />
-      <SectionCard
-        accent="disk"
-        title={
-          selected
-            ? `Disk I/O · ${formatClockSeconds(selected.fromMs)} to ${formatClockSeconds(selected.toMs)}`
-            : "Disk I/O"
-        }
-      >
-        {history.isError ? (
-          <InlineMessage tone="status">
-            Couldn't load process history.
-          </InlineMessage>
-        ) : !process ? (
-          <InlineMessage tone="status">
-            {history.isPending
-              ? "Loading process history…"
-              : "This process identity has no retained measurements in this interval. A reused PID does not identify the same process."}
-          </InlineMessage>
-        ) : (
-          <>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-small sm:grid-cols-3">
-              {(!selected && live
-                ? [
-                    ["Read/s now", formatRate(live.disk_read_bps)],
-                    ["Write/s now", formatRate(live.disk_write_bps)],
-                    ["Total/s now", formatRate(diskTotal(live))],
-                  ]
-                : []
-              ).map(([label, value]) => (
-                <div key={label}>
-                  <dt className="text-muted-foreground">{label}</dt>
-                  <dd className="figures mt-1">{value}</dd>
-                </div>
-              ))}
-              {retained &&
-                [
-                  ["Read", formatBytes(retained.read_bytes)],
-                  ["Written", formatBytes(retained.write_bytes)],
-                  ["Total", formatBytes(requestedBytes(retained))],
-                  ["Average read/s", formatRate(retained.read_avg_bps)],
-                  ["Average write/s", formatRate(retained.write_avg_bps)],
-                  ["Average total/s", formatRate(retained.total_avg_bps)],
-                ].map(([label, value]) => (
+      <DashboardBanners />
+      <DashboardBody>
+        <SectionCard
+          accent="disk"
+          title={
+            selected
+              ? `Disk I/O · ${formatClockSeconds(selected.fromMs)} to ${formatClockSeconds(selected.toMs)}`
+              : "Disk I/O"
+          }
+        >
+          {history.isError ? (
+            <InlineMessage tone="status">
+              Couldn't load process history.
+            </InlineMessage>
+          ) : !process ? (
+            <InlineMessage tone="status">
+              {history.isPending
+                ? "Loading process history…"
+                : "This process identity has no retained measurements in this interval. A reused PID does not identify the same process."}
+            </InlineMessage>
+          ) : (
+            <>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-small sm:grid-cols-3">
+                {(!selected && live
+                  ? [
+                      ["Read/s now", formatRate(live.disk_read_bps)],
+                      ["Write/s now", formatRate(live.disk_write_bps)],
+                      ["Total/s now", formatRate(diskTotal(live))],
+                    ]
+                  : []
+                ).map(([label, value]) => (
                   <div key={label}>
                     <dt className="text-muted-foreground">{label}</dt>
                     <dd className="figures mt-1">{value}</dd>
                   </div>
                 ))}
-            </dl>
-            <p className="text-muted-foreground text-small">
-              {retained && !retained.running ? "Exited · " : ""}Requested bytes
-              across all devices on this Mac.{" "}
-              {history.data &&
-                `Averages cover ${formatSpan(history.data.covered_ms)} of process sampling in the selected interval.`}
-            </p>
-            <p className="text-muted-foreground text-small">
-              {selected
-                ? `Average CPU ${formatPercent(retained?.cpu_avg_pct ?? null)} · Peak memory ${formatBytes(retained?.mem_peak_bytes ?? null)}`
-                : `Current CPU ${formatPercent(live?.cpu_pct ?? null)} · Memory ${formatBytes(live?.mem_bytes ?? null)}`}
-            </p>
-          </>
-        )}
-      </SectionCard>
+                {retained &&
+                  [
+                    ["Read", formatBytes(retained.read_bytes)],
+                    ["Written", formatBytes(retained.write_bytes)],
+                    ["Total", formatBytes(requestedBytes(retained))],
+                    ["Average read/s", formatRate(retained.read_avg_bps)],
+                    ["Average write/s", formatRate(retained.write_avg_bps)],
+                    ["Average total/s", formatRate(retained.total_avg_bps)],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="figures mt-1">{value}</dd>
+                    </div>
+                  ))}
+              </dl>
+              <p className="text-muted-foreground text-small">
+                {retained && !retained.running ? "Exited · " : ""}Requested
+                bytes across all devices on this Mac.{" "}
+                {history.data &&
+                  `Averages cover ${formatSpan(history.data.covered_ms)} of process sampling in the selected interval.`}
+              </p>
+              <p className="text-muted-foreground text-small">
+                {selected
+                  ? `Average CPU ${formatPercent(retained?.cpu_avg_pct ?? null)} · Peak memory ${formatBytes(retained?.mem_peak_bytes ?? null)}`
+                  : `Current CPU ${formatPercent(live?.cpu_pct ?? null)} · Memory ${formatBytes(live?.mem_bytes ?? null)}`}
+              </p>
+            </>
+          )}
+        </SectionCard>
+      </DashboardBody>
     </div>
   );
 }

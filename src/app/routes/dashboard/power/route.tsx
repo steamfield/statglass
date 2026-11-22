@@ -22,6 +22,7 @@ import { useHostRecord } from "~/hooks/use-host-record";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld } from "~/hooks/use-ring";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { useHost } from "~/stores/host-store";
 import { usePowerSource } from "~/stores/live-selectors";
 import { PowerDrawCard } from "./_components/power-draw-card";
@@ -75,11 +76,14 @@ export default function PowerRoute() {
     return (
       <div className="flex flex-col gap-4">
         <PageHeader title="Power & Sensors" />
-        <UnsupportedNotice
-          modelId={info?.model ?? "unknown model"}
-          onShareDump={() => setDumpOpen(true)}
-        />
-        <SensorDumpDialog open={dumpOpen} onOpenChange={setDumpOpen} />
+        <DashboardBanners />
+        <DashboardBody>
+          <UnsupportedNotice
+            modelId={info?.model ?? "unknown model"}
+            onShareDump={() => setDumpOpen(true)}
+          />
+          <SensorDumpDialog open={dumpOpen} onOpenChange={setDumpOpen} />
+        </DashboardBody>
       </div>
     );
   }

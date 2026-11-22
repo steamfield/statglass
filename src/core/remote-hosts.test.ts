@@ -40,7 +40,9 @@ function host(
       state,
       route: "lan",
       last_seen_ms: null,
+      synced_through_ms: null,
       error: null,
+      failure_kind: null,
       sync: "current",
       clock_offset_ms: 0,
       agent_version:

@@ -21,6 +21,7 @@ import {
   gap,
   useDataTable,
 } from "~/components/data-table";
+import { ErrorStateCard } from "~/components/error-state-card";
 import { InlineMessage } from "~/components/inline-message";
 import { InterfaceTable } from "~/components/interface-table";
 import { MachineHeader } from "~/components/machine-header";
@@ -407,6 +408,67 @@ function ContainerComparisonSample() {
   );
 }
 
+function ErrorStateSamples() {
+  return (
+    <div className="flex flex-col gap-4">
+      <ErrorStateCard
+        variant="banner"
+        tone="warning"
+        title="Can’t connect to M4 Mini"
+        meta="Saved history through 5:00 PM · Auto-retrying"
+        summary="LAN (m4-mini.local) or Tailscale (m4-mini-ts) timed out. Check your network or Tailscale connection, and confirm M4 Mini is awake."
+        routes={[
+          { kind: "lan", label: "LAN", alias: "m4-mini.local" },
+          { kind: "tailscale", label: "Tailscale", alias: "m4-mini-ts" },
+        ]}
+        gifTheme="timeout"
+        gifSeed="gallery:banner"
+        actions={
+          <>
+            <Button size="sm" onClick={noop}>
+              Retry connection
+            </Button>
+            <Button size="sm" variant="outline" onClick={noop}>
+              Jump to saved history
+            </Button>
+            <Button size="sm" variant="outline" onClick={noop}>
+              Switch to This Mac
+            </Button>
+          </>
+        }
+        details={
+          <p className="m-0">Tailscale: m4-mini-ts: Operation timed out</p>
+        }
+        copyText="Host: M4 Mini\nError: Operation timed out"
+      />
+      <ErrorStateCard
+        variant="focal"
+        tone="destructive"
+        title="SSH couldn’t sign in to build-box"
+        meta="Never connected"
+        summary="Key-based SSH access was refused. Unlock your SSH key or check Remote Login settings, then retry."
+        routes={[
+          { kind: "tailscale", label: "Tailscale", alias: "build-box-ts" },
+        ]}
+        gifTheme="server-error"
+        gifSeed="gallery:focal"
+        actions={
+          <>
+            <Button size="sm" onClick={noop}>
+              Retry connection
+            </Button>
+            <Button size="sm" variant="outline" onClick={noop}>
+              Open Hosts
+            </Button>
+          </>
+        }
+        details={<p className="m-0">Permission denied (publickey).</p>}
+        copyText="Host: build-box\nError: Permission denied (publickey)."
+      />
+    </div>
+  );
+}
+
 export function AppComponentsSection() {
   const [sort, setSort] = useState<ProcessSort>({ by: "cpu", dir: "desc" });
   const [intervalMs, setIntervalMs] = useState("1000");
@@ -778,6 +840,13 @@ export function AppComponentsSection() {
           </GalleryItem>
         </div>
       </div>
+
+      <GalleryItem
+        name="ErrorStateCard · banner with history & focal unreachable"
+        usedIn="Remote host disconnects and RouteError"
+      >
+        <ErrorStateSamples />
+      </GalleryItem>
     </div>
   );
 }

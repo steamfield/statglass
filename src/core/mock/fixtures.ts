@@ -55,6 +55,7 @@ export const SCENARIOS = [
   "host-incompatible",
   "host-newer",
   "host-unreachable",
+  "host-offline-history",
   "linux-identity-changed",
   "popover-compact",
   "power-disabled",

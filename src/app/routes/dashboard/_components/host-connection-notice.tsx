@@ -1,121 +1,181 @@
+import { windowEnding } from "@core/chart-range";
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
+import { remoteConnectionView } from "@core/remote-connection";
 import { remoteErrorText } from "@core/remote-errors";
 import { connectionLabel } from "@core/remote-hosts";
+import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 import { useQueryClient } from "@tanstack/react-query";
-import { TriangleAlert } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router";
-import { InlineMessage } from "~/components/inline-message";
+import { History, Laptop, Power, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
+import {
+  ErrorStateCard,
+  type ErrorStateVariant,
+} from "~/components/error-state-card";
 import { Button } from "~/components/ui/button";
+import { useRangeNavigation } from "~/hooks/use-range-navigation";
+import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
 
-function connectionCopy({ config, status }: RemoteHostRecord) {
-  if (status.identity_changed !== null)
-    return {
-      title: `Check ${config.name}’s identity`,
-      message:
-        "A different machine answered. Check this host in Hosts before reconnecting.",
-    };
-  if (status.state === "disabled")
-    return {
-      title: `${config.name} is disconnected`,
-      message:
-        "Automatic connection is turned off. You can enable it in Hosts.",
-    };
-  return {
-    title:
-      status.state === "connecting" && !status.error
-        ? `Connecting to ${config.name}…`
-        : `Can’t connect to ${config.name}`,
-    message:
-      "Live readings are unavailable. StatGlass will keep trying. You can still browse saved history.",
-  };
+/** Local wall clock matching Rust's `last_seen_ms` epoch, ticking only when needed. */
+function useLocalMinuteNow(active: boolean): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNowMs(Date.now());
+    const timer = setInterval(() => setNowMs(Date.now()), MINUTE_MS);
+    return () => clearInterval(timer);
+  }, [active]);
+  return nowMs;
 }
 
-/** Connection failures are recoverable states, not render errors. */
-export function HostConnectionNotice({ remote }: { remote: RemoteHostRecord }) {
+/**
+ * Connection failures are recoverable states, not render errors.
+ * Adapts between a compact `banner` (when mirrored history is available below)
+ * and a dominant `focal` state (when no saved history exists or the page is live-only).
+ */
+export function HostConnectionNotice({
+  remote,
+  variant = "banner",
+}: {
+  remote: RemoteHostRecord;
+  variant?: ErrorStateVariant;
+}) {
   const transport = useTransport();
   const cache = useQueryClient();
-  const [busy, setBusy] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
+  const selection = useHostSelection();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const rangeNav = useRangeNavigation();
   const { status, config } = remote;
   const connected = status.state === "connected";
-  const changed = status.identity_changed !== null;
-  const copy = connectionCopy(remote);
-  const retry = async () => {
-    setBusy(true);
-    setRetryError(null);
-    try {
-      const result = await transport.retryRemoteHost(config.id);
-      if (result.status === "error")
-        setRetryError(remoteErrorText(result.error));
-      await cache.invalidateQueries({ queryKey: hostKeys.remote() });
-    } catch (error) {
-      console.error("[remote] retry failed", { hostId: config.id, error });
-      setRetryError("The retry couldn’t be started. Try again in a moment.");
-    } finally {
-      setBusy(false);
-    }
-  };
-  if (connected)
+  const nowMs = useLocalMinuteNow(!connected && status.last_seen_ms !== null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const localHost = selection?.hosts.find((host) => host.is_local);
+
+  if (connected) {
     return (
       <p
         role="status"
-        className="mb-4 border-border-subtle border-b pb-3 text-muted-foreground text-small"
+        className="m-0 border-border-subtle border-b pb-2.5 text-muted-foreground text-small"
       >
         {config.name} · {connectionLabel(remote)}
         {Math.abs(status.clock_offset_ms ?? 0) >= 30000 &&
           " · chart times follow this Mac’s clock"}
       </p>
     );
+  }
+
+  const view = remoteConnectionView(remote, nowMs);
+
+  const retry = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await transport.retryRemoteHost(config.id);
+      if (result.status === "error") {
+        setActionError(remoteErrorText(result.error));
+      }
+      await cache.invalidateQueries({ queryKey: hostKeys.remote() });
+    } catch (error) {
+      console.error("[remote] retry failed", { hostId: config.id, error });
+      setActionError("The retry couldn’t be started. Try again in a moment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enableHost = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await transport.updateRemoteHost({
+        ...config,
+        enabled: true,
+      });
+      if (result.status === "error") {
+        setActionError(remoteErrorText(result.error));
+      }
+      await cache.invalidateQueries({ queryKey: hostKeys.remote() });
+    } catch (error) {
+      console.error("[remote] enable failed", { hostId: config.id, error });
+      setActionError("Couldn’t turn connection back on. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const jumpToHistory = () => {
+    if (view.syncedThroughMs === null) return;
+    void rangeNav.apply(windowEnding(view.syncedThroughMs, DAY_MS));
+    void navigate("/dashboard/timeline");
+  };
+
+  const showHistoryJump =
+    view.syncedThroughMs !== null && pathname !== "/dashboard/timeline";
+
+  const actions = (
+    <>
+      {view.primaryAction === "enable" && (
+        <Button size="sm" disabled={busy} onClick={() => void enableHost()}>
+          <Power aria-hidden className="size-3.5" />
+          {busy ? "Turning on…" : "Turn on connection"}
+        </Button>
+      )}
+      {view.showRetry && (
+        <Button
+          size="sm"
+          variant={view.primaryAction === "retry" ? "default" : "outline"}
+          disabled={busy}
+          onClick={() => void retry()}
+        >
+          <RefreshCw aria-hidden className="size-3.5" />
+          {busy ? "Retrying…" : "Retry connection"}
+        </Button>
+      )}
+      {showHistoryJump && (
+        <Button size="sm" variant="outline" onClick={jumpToHistory}>
+          <History aria-hidden className="size-3.5" />
+          Jump to saved history
+        </Button>
+      )}
+      {localHost && selection && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => selection.select(localHost.id)}
+        >
+          <Laptop aria-hidden className="size-3.5" />
+          Switch to This Mac
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant={view.primaryAction === "open_hosts" ? "default" : "ghost"}
+        asChild
+      >
+        <Link to="/dashboard/hosts">Open Hosts</Link>
+      </Button>
+    </>
+  );
+
   return (
-    <section
-      aria-label="Host connection"
-      className="mb-5 border-border-subtle border-b pb-4"
-    >
-      <div className="flex items-start gap-3">
-        <TriangleAlert
-          aria-hidden
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-        />
-        <div className="min-w-0 flex-1 space-y-2">
-          <div role="status">
-            <h2 className="font-semibold text-heading">{copy.title}</h2>
-            <p className="mt-1 text-muted-foreground text-small">
-              {copy.message}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {config.enabled && !changed && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void retry()}
-              >
-                {busy ? "Retrying…" : "Retry connection"}
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" asChild>
-              <Link to="/dashboard/hosts">Open Hosts</Link>
-            </Button>
-          </div>
-          {retryError && (
-            <InlineMessage tone="error">{retryError}</InlineMessage>
-          )}
-          {status.error && (
-            <details className="text-muted-foreground text-small">
-              <summary className="w-fit cursor-pointer hover:text-foreground">
-                Technical details
-              </summary>
-              <p className="wrap-anywhere mt-2 rounded-control border border-border-subtle bg-muted/30 p-3">
-                {status.error}
-              </p>
-            </details>
-          )}
-        </div>
-      </div>
-    </section>
+    <ErrorStateCard
+      variant={variant}
+      tone={view.tone}
+      title={view.title}
+      meta={view.meta}
+      summary={view.summary}
+      routes={view.routes}
+      gifTheme={view.gifTheme}
+      gifSeed={view.gifSeed}
+      actions={actions}
+      inlineError={actionError}
+      details={status.error ? <p className="m-0">{status.error}</p> : undefined}
+      copyText={view.diagnostics}
+      ariaLabel="Host connection"
+    />
   );
 }

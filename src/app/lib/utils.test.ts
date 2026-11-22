@@ -62,3 +62,19 @@ describe("cn knows every theme.css token", () => {
     expect(tokens("leading")).toContain("compact");
   });
 });
+
+describe("CSS layer ordering", () => {
+  it("declares @layer sf before utilities in app.css so Tailwind utilities override @steamfield/ui", () => {
+    const appCss = readFileSync(
+      resolve(process.cwd(), "src/app/app.css"),
+      "utf8"
+    );
+    const firstNonEmpty = appCss
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0);
+    expect(firstNonEmpty).toBe(
+      "@layer theme, base, sf, components, utilities;"
+    );
+  });
+});
