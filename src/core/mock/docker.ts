@@ -19,7 +19,14 @@ import {
 } from "./docker-fixtures";
 import { maskUncovered, mockHistoryPoints } from "./docker-history";
 import { MockDockerLogs } from "./docker-logs";
-import { retainedContainers, scenarioSnapshot } from "./docker-scenarios";
+import {
+  launchedSnapshot,
+  launchingSnapshot,
+  MOCK_LAUNCH_DELAY_MS,
+  MOCK_RUNTIMES,
+  retainedContainers,
+  scenarioSnapshot,
+} from "./docker-scenarios";
 import { createMockDockerStorage } from "./docker-storage";
 import type { ScenarioName } from "./fixtures";
 
@@ -49,6 +56,7 @@ class MockDocker {
   private count: number;
   private startedAt: number;
   private visible = true;
+  private launchTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<(s: DockerSnapshot) => void>();
   private logs: MockDockerLogs;
   private storage: ReturnType<typeof createMockDockerStorage>;
@@ -332,8 +340,29 @@ class MockDocker {
     this.emit();
     return ok(this.snapshot);
   };
-  readonly dockerLaunchRuntime: Transport["dockerLaunchRuntime"] = async () =>
-    ok(this.snapshot);
+  /** Opens an installed runtime: a fast-retry window, then the engine answers. */
+  readonly dockerLaunchRuntime: Transport["dockerLaunchRuntime"] = async (
+    kind
+  ) => {
+    const installed = this.snapshot.availability?.runtimes.some(
+      (runtime) => runtime.kind === kind && runtime.launchable
+    );
+    if (!installed)
+      return fail({
+        kind: "docker",
+        message: `${MOCK_RUNTIMES[kind].name} isn’t installed on this Mac.`,
+      });
+    this.snapshot = launchingSnapshot(this.snapshot, this.now());
+    this.emit();
+    if (this.launchTimer) clearTimeout(this.launchTimer);
+    this.launchTimer = setTimeout(() => {
+      this.launchTimer = null;
+      const { containers } = mockDockerSnapshot(this.count, this.now());
+      this.snapshot = launchedSnapshot(this.snapshot, containers, this.now());
+      this.emit();
+    }, MOCK_LAUNCH_DELAY_MS);
+    return ok(this.snapshot);
+  };
   readonly dockerLogs: Transport["dockerLogs"] = (...args) =>
     this.logs.subscribe(...args);
   readonly dockerComparison: Transport["dockerComparison"] = async (request) =>
@@ -430,6 +459,7 @@ class MockDocker {
     }
   }
   dispose() {
+    if (this.launchTimer) clearTimeout(this.launchTimer);
     this.listeners.clear();
     this.logs.clear();
   }
