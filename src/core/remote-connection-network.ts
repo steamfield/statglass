@@ -10,6 +10,7 @@ import type {
 } from "@core/generated/bindings";
 import type { ConfiguredRoute, ConnectionCopy } from "./remote-connection";
 
+/** The configured routes as one phrase for copy: both routes joined by "or", the only route, or "the saved SSH route" when none is set. */
 export function routePhrase(routes: readonly ConfiguredRoute[]): string {
   if (routes.length === 2) {
     const [lan, ts] = routes;
@@ -20,6 +21,7 @@ export function routePhrase(routes: readonly ConfiguredRoute[]): string {
   return `${only.label} (${only.alias})`;
 }
 
+/** What to check when the network path failed, worded for the kinds of route configured. */
 export function networkHint(
   routes: readonly ConfiguredRoute[],
   name: string
@@ -239,6 +241,11 @@ function silentPeerWording(
   };
 }
 
+/**
+ * Copy for a connection attempt that timed out on every route. When the Tailscale
+ * route timed out and the LAN route wasn't refused (a silent Tailscale peer), the
+ * title, summary and short reason say the peer isn't responding instead.
+ */
 export function timeoutCopy(
   remote: RemoteHostRecord,
   routes: readonly ConfiguredRoute[],

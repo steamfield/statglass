@@ -1,7 +1,7 @@
 /**
  * The Containers page's focal state card for an unreachable Docker engine: the
  * view's copy in an `ErrorStateCard`, the one action that fixes it, the retry
- * countdown and a way into saved history. The route owns the commands; this
+ * countdown and a way into saved history. The gate owns the commands; this
  * component owns only the pending and failure state of the click.
  */
 import { commandErrorText } from "@core/command-error";
@@ -15,7 +15,7 @@ import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
 import { useSecondsUntil } from "~/hooks/use-seconds-until";
 import type { EngineAction, EngineStateView } from "../_lib/engine-state";
 
-/** Callbacks the route wires to its commands. `onLaunch` rejects when the app couldn't open. */
+/** Callbacks the gate wires to its commands. `onLaunch` rejects when the app couldn't open. */
 export interface DockerEngineStateProps {
   readonly view: EngineStateView;
   readonly onLaunch: (kind: DockerRuntimeKind) => Promise<void>;
@@ -32,7 +32,15 @@ export function DockerEngineState({
   onChoose,
   onShowHistory,
 }: DockerEngineStateProps) {
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { actionError, setActionError } = useActionError(view.stateKey);
+  const retry = () => {
+    setActionError(null);
+    onRetry();
+  };
+  const choose = () => {
+    setActionError(null);
+    onChoose();
+  };
   const actions = (
     <>
       {view.action && (
@@ -40,13 +48,13 @@ export function DockerEngineState({
           action={view.action}
           runtimeName={view.runtimeName}
           onLaunch={onLaunch}
-          onRetry={onRetry}
-          onChoose={onChoose}
+          onRetry={retry}
+          onChoose={choose}
           onError={setActionError}
         />
       )}
       {view.showRetry && (
-        <Button size="sm" variant="ghost" onClick={onRetry}>
+        <Button size="sm" variant="ghost" onClick={retry}>
           <RefreshCw aria-hidden className="size-3.5" />
           Retry now
         </Button>
@@ -73,6 +81,23 @@ export function DockerEngineState({
       ariaLabel="Docker engine"
     />
   );
+}
+
+/**
+ * The launch or copy failure shown under the card. It clears when the state
+ * changes (a new reason, or the engine status moving on), since the old
+ * message no longer applies to the card that replaces it.
+ */
+function useActionError(stateKey: string) {
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [errorStateKey, setErrorStateKey] = useState(stateKey);
+  // Resetting during render (React's "adjust state on prop change") avoids a
+  // frame that shows the stale message under the new state.
+  if (errorStateKey !== stateKey) {
+    setErrorStateKey(stateKey);
+    setActionError(null);
+  }
+  return { actionError, setActionError };
 }
 
 /** The factual line under the title: retry countdown or launch wait, then the last reading. */

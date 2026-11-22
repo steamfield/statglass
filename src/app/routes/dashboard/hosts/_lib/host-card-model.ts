@@ -13,7 +13,6 @@ import type {
   RrJob,
 } from "@core/generated/bindings";
 import { remoteConnectionView } from "@core/remote-connection";
-import { routePhrase } from "@core/remote-connection-network";
 import {
   agentVersionState,
   type HostVersionState,
@@ -118,7 +117,7 @@ function reconnectPanel(
     // The card's own message is the most specific line (identity, update, network
     // cause); the panel shows it in place of the message row.
     cause: state.message?.text ?? view.shortReason,
-    routes: routePhrase(view.routes),
+    routes: view.routeText,
     facts: reconnectFacts(remote),
   };
 }
