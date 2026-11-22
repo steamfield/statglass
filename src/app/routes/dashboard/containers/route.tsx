@@ -1,10 +1,6 @@
-import type {
-  DockerRuntimeKind,
-  DockerSettings,
-  DockerSnapshot,
-} from "@core/generated/bindings";
+import type { DockerSettings, DockerSnapshot } from "@core/generated/bindings";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
@@ -16,7 +12,6 @@ import {
   useSearchParamPatch,
 } from "~/hooks/use-search-param-patch";
 import { DashboardBanners } from "~/lib/dashboard-shell";
-import { useTransport } from "~/lib/transport-context";
 import { BrushProvider } from "~/stores/brush-store";
 import { useCgroups } from "~/stores/live-selectors";
 import { CgroupContainers } from "./_components/cgroup-containers";
@@ -24,7 +19,7 @@ import { ContainerActionProvider } from "./_components/container-actions";
 import { ContainerActivity } from "./_components/container-activity";
 import { ContainerRangeNotice } from "./_components/container-range-notice";
 import { DockerCleanupFlow } from "./_components/docker-cleanup-flow";
-import { DockerEngineState } from "./_components/docker-engine-state";
+import { DockerEngineGate } from "./_components/docker-engine-gate";
 import { DockerLocalOnly } from "./_components/docker-local-only";
 import { DockerStorage } from "./_components/docker-storage";
 import { MonitoringDialog } from "./_components/monitoring-dialog";
@@ -34,7 +29,6 @@ import { useDocker } from "./_hooks/use-docker";
 import { useDockerCleanup } from "./_hooks/use-docker-cleanup";
 import { useDockerConfiguration } from "./_hooks/use-docker-configuration";
 import { useSharedContainerRange } from "./_hooks/use-shared-container-range";
-import { type EngineStateView, engineStateView } from "./_lib/engine-state";
 import { DOCKER_RANGES, dockerRange } from "./_lib/history-params";
 import { type ContainerSort, statusLabel } from "./_lib/presentation";
 import { containerRouteState, restoredScroll } from "./_lib/route-state";
@@ -147,7 +141,7 @@ function LocalContainersRoute() {
           />
         )}
         <MonitoringContent snapshot={snapshot} configure={configure}>
-          <EngineStateGate
+          <DockerEngineGate
             snapshot={snapshot}
             nowMs={nowMs}
             setSnapshot={setSnapshot}
@@ -178,100 +172,10 @@ function LocalContainersRoute() {
                 resume={resume}
               />
             )}
-          </EngineStateGate>
+          </DockerEngineGate>
         </MonitoringContent>
       </div>
     </ContainerActionProvider>
-  );
-}
-
-/**
- * While the engine is unreachable, shows its focal state card in place of the
- * page content (`children`), until the reader asks for saved history.
- */
-function EngineStateGate({
-  snapshot,
-  nowMs,
-  setSnapshot,
-  onRetry,
-  onChoose,
-  children,
-}: {
-  snapshot: DockerSnapshot;
-  nowMs: number;
-  setSnapshot: (snapshot: DockerSnapshot) => void;
-  onRetry: () => void;
-  onChoose: () => void;
-  children: ReactNode;
-}) {
-  const { view, showingHistory, setShowingHistory } = useEngineState(
-    snapshot,
-    nowMs
-  );
-  const launchRuntime = useLaunchRuntime(setSnapshot);
-  if (view === null) return children;
-  if (!showingHistory)
-    return (
-      <DockerEngineState
-        view={view}
-        onLaunch={launchRuntime}
-        onRetry={onRetry}
-        onChoose={onChoose}
-        onShowHistory={() => setShowingHistory(true)}
-      />
-    );
-  return (
-    <>
-      <SavedHistoryLine view={view} onBack={() => setShowingHistory(false)} />
-      {children}
-    </>
-  );
-}
-
-/**
- * The engine's focal state for this snapshot, and whether the reader chose to see
- * saved history behind it. The choice resets once the engine is reachable again.
- */
-function useEngineState(snapshot: DockerSnapshot, nowMs: number) {
-  const view = engineStateView(snapshot, nowMs);
-  const [showingHistory, setShowingHistory] = useState(false);
-  const unreachable = view !== null;
-  useEffect(() => {
-    if (!unreachable) setShowingHistory(false);
-  }, [unreachable]);
-  return { view, showingHistory, setShowingHistory };
-}
-
-/** Opens a runtime app and publishes the snapshot Rust returns; rejects with the command error. */
-function useLaunchRuntime(setSnapshot: (snapshot: DockerSnapshot) => void) {
-  const transport = useTransport();
-  return useCallback(
-    async (kind: DockerRuntimeKind) => {
-      const result = await transport.dockerLaunchRuntime(kind);
-      if (result.status === "error") throw result.error;
-      setSnapshot(result.data);
-    },
-    [transport, setSnapshot]
-  );
-}
-
-/** One line above saved history saying the engine is still unreachable, with a way back. */
-function SavedHistoryLine({
-  view,
-  onBack,
-}: {
-  view: EngineStateView;
-  onBack: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <InlineMessage tone="status">
-        {view.title} · showing saved history
-      </InlineMessage>
-      <Button size="sm" variant="ghost" onClick={onBack}>
-        Back
-      </Button>
-    </div>
   );
 }
 

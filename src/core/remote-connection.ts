@@ -49,6 +49,8 @@ export interface RemoteConnectionView {
   readonly shortReason: string;
   readonly meta: string;
   readonly routes: readonly ConfiguredRoute[];
+  /** The configured routes as one phrase, e.g. "LAN (studio.local) or Tailscale (studio)". */
+  readonly routeText: string;
   /** Durable mirrored history watermark (remote host clock epoch ms), or null when none. */
   readonly syncedThroughMs: number | null;
   readonly hasSavedHistory: boolean;
@@ -428,6 +430,7 @@ export function remoteConnectionView(
     kind,
     ...copy,
     routes,
+    routeText: routePhrase(routes),
     syncedThroughMs,
     hasSavedHistory: syncedThroughMs !== null,
     gifSeed: `${remote.config.id}:${kind}`,
