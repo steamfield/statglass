@@ -1,7 +1,8 @@
 /**
  * Mock scenarios for remote hosts that fail on the network path: an unresolvable
- * name, a refused SSH connection, Tailscale off or silent, and this Mac offline.
- * Each seeds hosts whose status matches what Rust reports for that cause.
+ * name, a refused SSH connection, Tailscale off or silent, a host retrying on a
+ * growing backoff, and this Mac offline. Each seeds hosts whose status matches
+ * what Rust reports for that cause.
  */
 import type {
   HostVitals,
@@ -136,12 +137,107 @@ export function seedNetworkCauseHosts(
         DEFAULT_CORES
       )
     );
+  if (scenarios.includes("host-backoff")) seedBackoffHost(remotes);
 }
 
-/** Puts every remote host into local_offline: this Mac has no network, so no route can answer. */
+const BACKOFF_HOST_ID = "remote-backoff";
+const BACKOFF_FIRST_WAIT_MS = 12_000;
+const BACKOFF_MAX_WAIT_MS = 60_000;
+const DIAL_MS = 1_500;
+
+/** The pending timer of each backoff host and the wait it is counting down. */
+const backoffTimers = new WeakMap<
+  MockRemotes,
+  Map<string, { timer: ReturnType<typeof setTimeout>; waitMs: number }>
+>();
+
+/** The backoff timers of one mock transport's remotes. */
+function timersFor(remotes: MockRemotes) {
+  let timers = backoffTimers.get(remotes);
+  if (!timers) {
+    timers = new Map();
+    backoffTimers.set(remotes, timers);
+  }
+  return timers;
+}
+
+/** Applies `status` to a host and tells listeners, as Rust re-emits a changed schedule. */
+function publish(
+  remotes: MockRemotes,
+  id: string,
+  status: Partial<RemoteHostStatus>
+): boolean {
+  const remote = remotes.remotes.get(id);
+  if (!remote) return false;
+  remote.record = {
+    ...remote.record,
+    status: { ...remote.record.status, ...status },
+  };
+  remotes.emitHostsChanged();
+  return true;
+}
+
+/** Fails the attempt in flight and schedules the next one after `waitMs` (this Mac's clock). */
+function failAttempt(remotes: MockRemotes, id: string, waitMs: number) {
+  const attempt = (remotes.remotes.get(id)?.record.status.attempt ?? 0) + 1;
+  const scheduled = publish(remotes, id, {
+    dialing: false,
+    attempt,
+    next_attempt_ms: Date.now() + waitMs,
+  });
+  if (!scheduled) return;
+  const timer = setTimeout(() => dialBackoffHost(remotes, id), waitMs);
+  timersFor(remotes).set(id, { timer, waitMs });
+}
+
+/** Starts an attempt now: dialing for a moment, then failing again with the wait doubled. */
+function dialBackoffHost(remotes: MockRemotes, id: string) {
+  const timers = timersFor(remotes);
+  const pending = timers.get(id);
+  if (!pending || remotes.remotes.get(id)?.record.status.dialing) return;
+  clearTimeout(pending.timer);
+  if (!publish(remotes, id, { dialing: true, next_attempt_ms: null })) return;
+  const nextWaitMs = Math.min(pending.waitMs * 2, BACKOFF_MAX_WAIT_MS);
+  const timer = setTimeout(() => failAttempt(remotes, id, nextWaitMs), DIAL_MS);
+  timers.set(id, { timer, waitMs: pending.waitMs });
+}
+
+/** A host that keeps timing out, three attempts in with the next one 12 s away. */
+function seedBackoffHost(remotes: MockRemotes) {
+  seedFailingHost(remotes, "backoff", false, {
+    ...failedConnection(
+      {
+        failure_kind: "timeout",
+        error:
+          "ssh: connect to host backoff.local port 22: Operation timed out",
+      },
+      [{ route: "lan", kind: "timeout" }],
+      DEFAULT_CORES
+    ),
+    attempt: 2,
+  });
+  failAttempt(remotes, BACKOFF_HOST_ID, BACKOFF_FIRST_WAIT_MS);
+}
+
+/**
+ * A manual retry of the host-backoff host: cuts the wait and dials now. Returns
+ * false for any other host so the caller handles it as usual.
+ */
+export function retryBackoffHost(remotes: MockRemotes, id: string): boolean {
+  if (id !== BACKOFF_HOST_ID || !timersFor(remotes).has(id)) return false;
+  dialBackoffHost(remotes, id);
+  return true;
+}
+
+/**
+ * Puts every enabled remote host into local_offline and waiting for the network:
+ * this Mac has no network, so no route can answer. Hosts with connections
+ * turned off stay as they are, since Rust never dials them.
+ */
 export function seedMacOffline(remotes: MockRemotes) {
   for (const { record } of remotes.remotes.values()) {
     const { config, status } = record;
+    if (!config.enabled) continue;
     const routeFailures: RemoteRouteFailure[] = [];
     if (config.lan) routeFailures.push({ route: "lan", kind: "local_offline" });
     if (config.tailscale)
@@ -158,6 +254,9 @@ export function seedMacOffline(remotes: MockRemotes) {
       ),
       last_seen_ms: status.last_seen_ms,
       synced_through_ms: status.synced_through_ms,
+      next_attempt_ms: null,
+      dialing: false,
+      waiting_for_network: true,
     };
   }
 }
@@ -167,6 +266,7 @@ const NETWORK_CAUSE_HOSTS: readonly (readonly [ScenarioName, string])[] = [
   ["host-refused", "remote-refused"],
   ["host-tailscale-down", "remote-tailscale-down"],
   ["host-tailscale-silent", "remote-tailscale-silent"],
+  ["host-backoff", BACKOFF_HOST_ID],
 ];
 
 /** True when the mock keeps `hostId` failing: these scenarios model a cause a retry or stream can't fix. */

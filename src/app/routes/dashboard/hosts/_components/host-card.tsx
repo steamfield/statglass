@@ -12,6 +12,7 @@ import type { Corner } from "~/widgets/lib/accent";
 import { StatList } from "~/widgets/stat-list";
 import type { HostCardModel } from "../_lib/host-card-model";
 import { HostCardActions } from "./host-card-actions";
+import { HostCardReconnect } from "./host-card-reconnect";
 import { HostCardRr } from "./host-card-rr";
 import { HostCardStatus } from "./host-card-status";
 import { HostCardVersion } from "./host-card-version";
@@ -45,7 +46,7 @@ export const HostCard = memo(function HostCard({
       origin={origin}
       variant="chart"
       labelledBy={titleId}
-      className={`@container flex min-w-0 flex-1 flex-col gap-3.5 px-4 py-3.5 ${model.message ? "[--g:0%]" : ""}`}
+      className={`@container flex min-w-0 flex-1 flex-col gap-3.5 px-4 py-3.5 ${model.message || model.reconnect ? "[--g:0%]" : ""}`}
     >
       <header className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
@@ -89,22 +90,28 @@ export const HostCard = memo(function HostCard({
           )}
         </div>
       </header>
-      <MetricLanes
-        local={local}
-        cpu={model.cpu}
-        memory={model.memory}
-        history={history}
-        memoryTotal={memoryTotal}
-      />
-      <div className="grid @min-[408px]:grid-cols-4 grid-cols-2 gap-3 [&>dl]:contents">
-        <StatList
-          layout="grid"
-          items={model.vitals}
-          valueClassName="flex flex-col"
-        />
-      </div>
+      {model.reconnect ? (
+        <HostCardReconnect panel={model.reconnect} retry={model.retry} />
+      ) : (
+        <>
+          <MetricLanes
+            local={local}
+            cpu={model.cpu}
+            memory={model.memory}
+            history={history}
+            memoryTotal={memoryTotal}
+          />
+          <div className="grid @min-[408px]:grid-cols-4 grid-cols-2 gap-3 [&>dl]:contents">
+            <StatList
+              layout="grid"
+              items={model.vitals}
+              valueClassName="flex flex-col"
+            />
+          </div>
+        </>
+      )}
       {model.rr && <HostCardRr rr={model.rr} />}
-      {model.message && (
+      {model.message && !model.reconnect && (
         <InlineMessage
           tone={model.message.tone}
           className="min-w-0 [&>span]:min-w-0"

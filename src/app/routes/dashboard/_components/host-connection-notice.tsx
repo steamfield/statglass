@@ -1,7 +1,10 @@
 import { windowEnding } from "@core/chart-range";
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
-import { remoteConnectionView } from "@core/remote-connection";
+import {
+  remoteConnectionView,
+  retryScheduleText,
+} from "@core/remote-connection";
 import { remoteErrorText } from "@core/remote-errors";
 import { connectionLabel } from "@core/remote-hosts";
 import { DAY_MS, MINUTE_MS } from "@core/time-grid";
@@ -15,6 +18,7 @@ import {
 } from "~/components/error-state-card";
 import { Button } from "~/components/ui/button";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
+import { useSecondsUntil } from "~/hooks/use-seconds-until";
 import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
 
@@ -28,6 +32,44 @@ function useLocalMinuteNow(active: boolean): number {
     return () => clearInterval(timer);
   }, [active]);
   return nowMs;
+}
+
+/** The notice's meta line with the retry countdown appended, ticking on its own each second. */
+function RetryMeta({
+  fact,
+  dialing,
+  nextAttemptMs,
+}: {
+  fact: string;
+  dialing: boolean;
+  nextAttemptMs: number | null;
+}) {
+  const seconds = useSecondsUntil(dialing ? null : nextAttemptMs);
+  const schedule = retryScheduleText(dialing, seconds);
+  return <>{[fact, schedule].filter(Boolean).join(" · ")}</>;
+}
+
+/** Retry connection, disabled and reading "Trying…" while an attempt is in flight. */
+function RetryButton({
+  primary,
+  trying,
+  onRetry,
+}: {
+  primary: boolean;
+  trying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <Button
+      size="sm"
+      variant={primary ? "default" : "outline"}
+      disabled={trying}
+      onClick={onRetry}
+    >
+      <RefreshCw aria-hidden className="size-3.5" />
+      {trying ? "Trying…" : "Retry connection"}
+    </Button>
+  );
 }
 
 /**
@@ -125,15 +167,11 @@ export function HostConnectionNotice({
         </Button>
       )}
       {view.showRetry && (
-        <Button
-          size="sm"
-          variant={view.primaryAction === "retry" ? "default" : "outline"}
-          disabled={busy}
-          onClick={() => void retry()}
-        >
-          <RefreshCw aria-hidden className="size-3.5" />
-          {busy ? "Retrying…" : "Retry connection"}
-        </Button>
+        <RetryButton
+          primary={view.primaryAction === "retry"}
+          trying={busy || view.dialing}
+          onRetry={() => void retry()}
+        />
       )}
       {showHistoryJump && (
         <Button size="sm" variant="outline" onClick={jumpToHistory}>
@@ -166,7 +204,13 @@ export function HostConnectionNotice({
       variant={variant}
       tone={view.tone}
       title={view.title}
-      meta={view.meta}
+      meta={
+        <RetryMeta
+          fact={view.meta}
+          dialing={view.dialing}
+          nextAttemptMs={view.nextAttemptMs}
+        />
+      }
       summary={view.summary}
       routes={view.routes}
       gifTheme={view.gifTheme}

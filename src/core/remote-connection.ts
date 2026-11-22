@@ -330,7 +330,6 @@ function copyForKind(
   const { config, status, os } = remote;
   const name = config.name;
   const autoRetrying = config.enabled && status.state === "connecting";
-  const retryTag = autoRetrying ? " · Auto-retrying" : "";
   const routeText = routePhrase(routes);
 
   switch (kind) {
@@ -386,7 +385,7 @@ function copyForKind(
           os === "linux"
             ? "The StatGlass agent isn’t running on this host."
             : `StatGlass isn’t open on ${name}.`,
-        meta: `${fact}${retryTag}`,
+        meta: fact,
         gifTheme: "overloaded",
         primaryAction: "retry",
         showRetry: config.enabled,
@@ -401,7 +400,7 @@ function copyForKind(
         title: `Can’t connect to ${name}`,
         summary: `Couldn’t reach ${routeText}. ${networkHint(routes, name)}`,
         shortReason: `Couldn’t reach ${routeText}.`,
-        meta: `${fact}${retryTag}`,
+        meta: fact,
         gifTheme: "network-error",
         primaryAction: "retry",
         showRetry: config.enabled,
@@ -434,8 +433,23 @@ export function remoteConnectionView(
     gifSeed: `${remote.config.id}:${kind}`,
     diagnostics: buildDiagnostics(remote, kind, routes),
     routeLines: buildRouteLines(remote.status, routes),
-    nextAttemptMs: null,
-    dialing: false,
-    waitingForNetwork: false,
+    nextAttemptMs: remote.status.next_attempt_ms,
+    dialing: remote.status.dialing,
+    waitingForNetwork: remote.status.waiting_for_network,
   };
+}
+
+/**
+ * The automatic-retry phrase shown after a failing host's status: "Trying…"
+ * while an attempt is in flight, else the countdown to the next attempt
+ * ("Retrying…" once it reaches zero), else null when nothing is scheduled.
+ */
+export function retryScheduleText(
+  dialing: boolean,
+  secondsUntilAttempt: number | null
+): string | null {
+  if (dialing) return "Trying…";
+  if (secondsUntilAttempt === null) return null;
+  if (secondsUntilAttempt === 0) return "Retrying…";
+  return `Retrying in ${secondsUntilAttempt} s`;
 }

@@ -209,7 +209,7 @@ export function networkCauseCopy(
   return {
     ...wording,
     tone: "warning",
-    meta: `${fact}${autoRetrying ? " · Auto-retrying" : ""}`,
+    meta: fact,
     primaryAction: "retry",
     showRetry: config.enabled,
     sidebarLabel: autoRetrying ? "Reconnecting…" : label,
@@ -253,7 +253,7 @@ export function timeoutCopy(
     summary: `${routeText} timed out. ${networkHint(routes, config.name)}`,
     shortReason: `${routeText} timed out.`,
     ...(isSilentTailscalePeer(status) ? silentPeerWording(remote, routes) : {}),
-    meta: `${fact}${autoRetrying ? " · Auto-retrying" : ""}`,
+    meta: fact,
     gifTheme: "timeout",
     primaryAction: "retry",
     showRetry: config.enabled,
