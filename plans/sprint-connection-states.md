@@ -64,8 +64,8 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-remote/src/network.rs, crates/statglass-remote/src/source/status.rs, crates/statglass-remote/src/transport.rs, crates/statglass-remote/src/lib.rs, crates/statglass-remote/src/source.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/network/tests.rs, crates/statglass-remote/src/source/status/network_tests.rs, crates/statglass-remote/src/transport/classify_tests.rs, src-tauri/src/remote/registration/tests.rs | opus | running | sprint/connection-states-1a | cargo tests for statglass-remote and statglass registration pass, clippy clean |
-| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/core/mock/remote-updates.ts, src/core/mock/remote-network-scenarios.ts, src/core/mock/remote.ts, src/core/mock/stream.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts | contracts, src/core/remote-connection.test.ts | src/core/remote-connection.test.ts, src/core/remote-connection-kinds.test.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.test.ts | sonnet | running | sprint/connection-states-1b | bun tests pass, typecheck clean |
+| a | M | crates/statglass-remote/src/network.rs, crates/statglass-remote/src/network/interfaces.rs, crates/statglass-remote/src/network/tests.rs, crates/statglass-remote/src/source/status.rs, crates/statglass-remote/src/transport.rs, crates/statglass-remote/src/lib.rs, crates/statglass-remote/src/source.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/status/network_tests.rs, crates/statglass-remote/src/transport/classify_tests.rs, src-tauri/src/remote/registration/tests.rs | opus | running | sprint/connection-states-1a | cargo tests for statglass-remote and statglass registration pass, clippy clean |
+| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/core/mock/remote-updates.ts, src/core/mock/remote-network-scenarios.ts, src/core/mock/remote.ts, src/core/mock/stream.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts | contracts, src/core/remote-connection.test.ts | src/core/remote-connection.test.ts, src/core/remote-connection-kinds.test.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.test.ts | sonnet | merged | sprint/connection-states-1b | bun tests pass, typecheck clean |
 
 #### Lane a brief
 
@@ -131,3 +131,6 @@ Depends on: phase 1
 ## Log
 
 - Grill: Tailscale detection by local interface + SSH stderr; pause dialing while this Mac is offline; countdown + Retry now; Docker focal state with history link; launch allowlisted runtime apps.
+- Plan critique (sonnet): applied the bridge/VPN interface filter, null ifa_addr and IPv4-mapped handling to lane 1/a. Rejected: dual-route AgentNotRunning having no route lines (it has its own copy); extra stderr wording cases (multi-line banner and Linux DNS wording already tested); splitting lane 1/a (already dispatched, scope held); phase 2/3 contracts (written in their scaffolds).
+- Lane 1/b: accepted split into remote-connection-network.ts and remote-network-scenarios.ts (Biome 500-line limit); error-case message uses shortReason only when failure_kind is set.
+- Lane 1/a review: CGNAT 100.64/10 on a physical interface read as Tailscale and offline; fixed by counting Tailscale only on utun*/tailscale* names. extra_tests moved into network/tests.rs, FFI walk split to network/interfaces.rs.
