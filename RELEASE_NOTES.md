@@ -1,42 +1,43 @@
-# StatGlass 0.12.1
+# StatGlass 0.13.0
 
 StatGlass is a free, open-source system monitor for Apple Silicon Macs running macOS
 26 or later.
 
-This release overhauls remote-host disconnection and error states, adds a direct
-Linux agent restart from host settings, and recovers automatically from transient
-history-store open failures.
+This release makes connection problems explain themselves. Remote hosts say exactly
+why they can't connect and when StatGlass will try again, and the Containers page
+tells you when Docker isn't running and can start it for you. It also adds a GitHub
+star prompt and feedback entry points.
 
-## Remote error states
+## Hosts that can't connect
 
-- Disconnected remote hosts now explain **why** the connection failed (timeout,
-  unreachable, SSH authentication, host key verification, stopped agent, protocol
-  mismatch, or changed identity), list the saved LAN and Tailscale routes, and show
-  contextual `@steamfield/ui` clips with an automatic offline icon fallback.
-- Connection notices sit below the sticky page header so the top bar stays aligned
-  with the sidebar. When mirrored history exists on disk (`synced_through_ms`), the
-  notice renders as a compact banner and keeps saved history crisp and interactive,
-  with one-click **Jump to saved history**, **Switch to This Mac**, **Retry
-  connection**, **Turn on connection**, and collapsible **Technical details** with
-  **Copy details**.
-- Pages with no saved history yet — or live-only pages like Processes, Containers, and
-  Disk › Space — show a focused error card instead of dimmed empty widgets.
-- The sidebar footer and Overview pill now report accurate remote connection status
-  (`Offline`, `Reconnecting…`, `Auth failed`, `Agent stopped`, `Connection off`)
-  instead of `Stale · no new data` or `Connecting`.
+- A host that can't be reached now names the cause: this Mac is offline, Tailscale is
+  off on this Mac, Tailscale is on but the host isn't answering, the name isn't found
+  on this network, SSH refused the connection, or there's no route to the host. Hosts
+  with both LAN and Tailscale addresses report each route's cause.
+- A host card that isn't live no longer shows charts that could pass for current
+  data. It shows a reconnect panel instead: the cause, a countdown to the next
+  attempt ("Next attempt in 12 s"), how long an attempt can take while one is running
+  ("gives up after 10 s"), the attempt count and the last reading.
+- **Retry now** skips the wait and shows "Trying…" until the attempt finishes.
+  Automatic retries back off from 1 second to once a minute.
+- When this Mac goes offline, StatGlass stops dialing, shows one notice on Hosts, and
+  reconnects as soon as the network is back.
 
-## Hosts & history recovery
+## Containers when Docker isn't running
 
-- Linux host settings include a **Restart** action in the **Agent on this host** panel
-  to reset and restart `systemd` over SSH without leaving StatGlass.
-- Both the Mac app and the Linux agent now retry once a minute when the history store
-  fails to open for a retryable reason (such as a full disk or file lock), resuming
-  recording automatically once the condition clears instead of requiring a reset.
+- Instead of an empty chart stuck on "Loading recorded measurements…", Containers
+  shows what's wrong: Docker Desktop (or OrbStack, Rancher Desktop or Colima) isn't
+  running, the engine stopped, no engine is installed, several engines need a choice,
+  the selected engine is gone, the socket refused access, or the engine is too old.
+- **Open Docker Desktop**, **Open OrbStack** or **Open Rancher Desktop** starts the
+  installed app, and the page goes live as soon as the engine answers. For Colima, the
+  card offers `colima start` to copy.
+- Saved container history stays one click away with **View saved history**.
 
-## Install and updates
+## Feedback and a star prompt
 
-- Installed copies update to 0.12.1 the usual way, from **Settings → General** or
-  automatically. Updates are verified with StatGlass's own update signature before
-  they install.
-- Update your remote hosts to 0.12.1 from **Hosts** to pick up automatic history
-  reopen recovery on Linux agents.
+- Feedback opens GitHub Issues from the Help menu, the menu bar, the dashboard sidebar
+  and Settings, which can also copy non-personal system details for a report.
+- After a day of use across a few sessions, a small card in the dashboard asks
+  whether you'd like to star StatGlass on GitHub. You can snooze it once or dismiss it
+  for good.

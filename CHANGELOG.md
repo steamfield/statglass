@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.13.0](https://github.com/steamfield/statglass/compare/v0.12.1...v0.13.0) - 2026-11-22
+
+### Added
+
+- Per-route remote connection causes (`name_not_resolved`, `refused`, `no_route`,
+  `local_offline`, `tailscale_down`) from SSH stderr and this Mac's interfaces, with
+  `route_failures` on `RemoteHostStatus` (D-136).
+- Remote retry schedule on `RemoteHostStatus` (`next_attempt_ms`, `attempt`,
+  `dialing`, `waiting_for_network`) and the `REMOTE_DIAL_TIMEOUT_MS` constant.
+- Hosts reconnect panel replacing charts on cards that aren't live, a page notice while
+  this Mac is offline, and **Retry now** with dialing feedback.
+- `DockerSnapshot.availability` (unavailable reason, installed runtimes, next attempt,
+  launch window), the `docker_launch_runtime` command, and a Containers engine state
+  card.
+- GitHub star prompt card and feedback entry points in the Help menu, menu bar,
+  sidebar and Settings.
+
+### Changed
+
+- Remote sources stop timed redials while this Mac is offline and redial on the next
+  network change, with a 60 s fallback.
+- Dual-route failures keep both routes' causes (`RemoteError::BothRoutes`) instead of
+  one combined string.
+
 ## [0.12.1](https://github.com/steamfield/statglass/compare/v0.12.0...v0.12.1) - 2026-11-21
 
 ### Added
