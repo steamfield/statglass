@@ -197,6 +197,8 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
         if control.borrow().stop {
             break;
         }
+        // Taken before the network probe, so a network change after the probe ends the wait.
+        let before = control.borrow_and_update().clone();
         match result {
             Ok(Some(session)) => {
                 replacement = Some(session);
@@ -221,15 +223,11 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
         if started.elapsed() > Duration::from_secs(30) {
             backoff.reset();
         }
-        let now_ms = statglass_engine::wall_ms();
-        let jitter = Duration::from_millis(now_ms.unsigned_abs() % 250);
-        let wait = (!status.offline_failure()).then(|| backoff.fail() + jitter);
-        let next_ms = wait.map(|wait| now_ms.saturating_add(wait.as_millis() as i64));
-        status.schedule_retry(backoff.attempt(), next_ms);
+        let wait = backoff.next_wait(status.offline_failure(), statglass_engine::wall_ms());
+        status.schedule_retry(backoff.attempt(), wait.map(|(_, at_ms)| at_ms));
         (source.on_status)(status.clone());
-        let before = control.borrow_and_update().clone();
         tokio::select! {
-            _ = tokio::time::sleep(wait.unwrap_or(OFFLINE_FALLBACK)) => {}
+            _ = tokio::time::sleep(wait.map_or(OFFLINE_FALLBACK, |(wait, _)| wait)) => {}
             _ = control.wait_for(|now| ends_backoff(&before, now)) => {}
         }
     }

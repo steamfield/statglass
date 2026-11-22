@@ -221,13 +221,13 @@ impl ConnectionStatus {
     }
 
     /// Publishes the wait after a failed attempt: `attempt` failures so far and the
-    /// wall-clock time of the next automatic attempt, `None` when the source waits for
-    /// the network or a manual retry instead.
+    /// wall-clock time of the next automatic attempt. `None` after a retryable failure
+    /// means the source waits for the network; after any other, for a manual retry.
     pub(super) fn schedule_retry(&mut self, attempt: u32, next_attempt_ms: Option<i64>) {
         self.dialing = false;
         self.attempt = attempt;
         self.next_attempt_ms = next_attempt_ms;
-        self.waiting_for_network = self.offline_failure();
+        self.waiting_for_network = self.retrying && next_attempt_ms.is_none();
     }
 
     /// Records that the source stopped: nothing is in flight or scheduled.
@@ -340,11 +340,9 @@ mod tests {
         }
     }
 
-    fn failed_attempt(
-        error: crate::RemoteError,
-        online: bool,
-        next_attempt_ms: Option<i64>,
-    ) -> super::ConnectionStatus {
+    /// One failed attempt scheduled the way `run()` schedules it, at wall time 1000 ms.
+    fn failed_attempt(error: crate::RemoteError, online: bool) -> super::ConnectionStatus {
+        let mut backoff = super::super::backoff::Backoff::new();
         let mut status = super::ConnectionStatus::default();
         status.begin_dial();
         assert!(status.dialing && status.retrying);
@@ -353,29 +351,27 @@ mod tests {
             online,
             tailscale_up: true,
         });
-        status.schedule_retry(2, next_attempt_ms);
+        let wait = if status.retrying {
+            backoff.next_wait(status.offline_failure(), 1_000)
+        } else {
+            None
+        };
+        status.schedule_retry(backoff.attempt(), wait.map(|(_, at_ms)| at_ms));
         status
     }
 
     #[test]
     fn a_failure_while_offline_waits_for_the_network_instead_of_a_timer() {
-        let status = failed_attempt(crate::RemoteError::Timeout("timed out".into()), false, None);
-        assert!(status.offline_failure());
+        let status = failed_attempt(crate::RemoteError::Timeout("timed out".into()), false);
         assert!(status.waiting_for_network && !status.dialing);
-        assert_eq!(status.next_attempt_ms, None);
-        assert_eq!(status.attempt, 2);
+        assert_eq!((status.next_attempt_ms, status.attempt), (None, 0));
     }
 
     #[test]
     fn an_online_failure_publishes_its_next_attempt() {
-        let status = failed_attempt(
-            crate::RemoteError::Timeout("timed out".into()),
-            true,
-            Some(5_000),
-        );
-        assert!(!status.offline_failure());
+        let status = failed_attempt(crate::RemoteError::Timeout("timed out".into()), true);
         assert!(!status.waiting_for_network && !status.dialing);
-        assert_eq!(status.next_attempt_ms, Some(5_000));
+        assert_eq!((status.next_attempt_ms, status.attempt), (Some(2_000), 1));
     }
 
     #[test]
@@ -384,24 +380,21 @@ mod tests {
             kind: crate::UnreachableKind::Refused,
             detail: "Connection refused".into(),
         };
-        let status = failed_attempt(refused, false, Some(5_000));
-        assert!(!status.offline_failure() && !status.waiting_for_network);
+        let status = failed_attempt(refused, false);
+        assert!(!status.waiting_for_network);
+        assert_eq!(status.next_attempt_ms, Some(2_000));
     }
 
     #[test]
-    fn a_blocking_failure_while_offline_does_not_wait_for_the_network() {
-        let status = failed_attempt(
-            crate::RemoteError::Authentication("denied".into()),
-            false,
-            None,
-        );
-        assert!(!status.offline_failure() && !status.waiting_for_network);
+    fn a_blocking_failure_while_offline_waits_for_a_manual_retry() {
+        let status = failed_attempt(crate::RemoteError::Authentication("denied".into()), false);
+        assert!(!status.waiting_for_network && !status.dialing);
+        assert_eq!(status.next_attempt_ms, None);
     }
 
     #[test]
     fn connecting_and_stopping_clear_the_schedule() {
-        let mut status =
-            failed_attempt(crate::RemoteError::Timeout("timed out".into()), false, None);
+        let mut status = failed_attempt(crate::RemoteError::Timeout("timed out".into()), false);
         status.begin_dial();
         assert!(status.dialing && !status.waiting_for_network);
         status.record_connected(crate::Route::Lan, "1.0.0".into());
@@ -410,11 +403,7 @@ mod tests {
             (0, false, None)
         );
         assert!(status.connected && status.failure_kind.is_none());
-        status = failed_attempt(
-            crate::RemoteError::Timeout("timed out".into()),
-            true,
-            Some(9_000),
-        );
+        status = failed_attempt(crate::RemoteError::Timeout("timed out".into()), true);
         status.record_stopped();
         assert!(!status.retrying && !status.dialing && status.next_attempt_ms.is_none());
     }
