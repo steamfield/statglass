@@ -108,6 +108,7 @@ Test cases:
 ### Phase 2: backoff you can see, and waiting for the network
 
 Scaffold: b0074a6d
+Tag: phase-2
 Demo: `/?route=/dashboard/hosts&scenario=hosts-dashboard,host-backoff` shows "Retrying in N s" ticking down, Retry now flips the card to "Trying…"; `scenario=hosts-dashboard,mac-offline` shows one page notice and cards reading "Waiting for network".
 Depends on: phase 1
 Test cases: crates/statglass-remote/src/source/backoff/tests.rs (Backoff), src-tauri/src/remote/registration/tests.rs (new fields map and re-emit), src/core/remote-connection-retry.test.ts (view fields), src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx (countdown, Trying…, Retry now), all in the phase 2 scaffold.
@@ -117,7 +118,7 @@ Contracts (phase 2 scaffold): `ConnectionStatus` gains `next_attempt_ms: Option<
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | a | M | crates/statglass-remote/src/source.rs, crates/statglass-remote/src/source/backoff.rs, crates/statglass-remote/src/source/status.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/source/backoff/tests.rs, src-tauri/src/remote/registration/tests.rs | opus | merged | sprint/connection-states-2a | rust tests pass, clippy clean |
-| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/app/routes/dashboard/hosts/_components/host-card.tsx, src/app/routes/dashboard/hosts/_components/host-card-reconnect.tsx, src/app/routes/dashboard/hosts/_components/host-card-reconnect.test.tsx, src/app/routes/dashboard/hosts/_components/host-card-status.tsx, src/app/routes/dashboard/hosts/_components/host-card-actions.tsx, src/app/routes/dashboard/hosts/_components/hosts-offline-notice.tsx, src/app/routes/dashboard/hosts/_lib/host-card-model.ts, src/app/routes/dashboard/hosts/route.tsx, src/app/routes/dashboard/_components/host-connection-notice.tsx, src/core/mock/remote-network-scenarios.ts | contracts, src/app/hooks/use-seconds-until.ts | src/core/remote-connection-retry.test.ts, src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx | opus | running | sprint/connection-states-2b | bun tests pass, typecheck clean, screenshots compared |
+| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/app/routes/dashboard/hosts/_components/host-card.tsx, src/app/routes/dashboard/hosts/_components/host-card-reconnect.tsx, src/app/routes/dashboard/hosts/_components/host-card-reconnect.test.tsx, src/app/routes/dashboard/hosts/_components/host-card-status.tsx, src/app/routes/dashboard/hosts/_components/host-card-actions.tsx, src/app/routes/dashboard/hosts/_components/hosts-offline-notice.tsx, src/app/routes/dashboard/hosts/_lib/host-card-model.ts, src/app/routes/dashboard/hosts/route.tsx, src/app/routes/dashboard/_components/host-connection-notice.tsx, src/core/mock/remote-network-scenarios.ts | contracts, src/app/hooks/use-seconds-until.ts | src/core/remote-connection-retry.test.ts, src/app/routes/dashboard/hosts/_components/host-card-retry.test.tsx | opus | merged | sprint/connection-states-2b | bun tests pass, typecheck clean, screenshots compared |
 
 #### Lane 2/a brief
 
