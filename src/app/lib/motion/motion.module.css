@@ -62,7 +62,7 @@
 
   @media (prefers-reduced-motion: no-preference) {
     .page > * > :not([data-stagger]),
-    .page [data-stagger] > * {
+    .page [data-stagger] > :not([data-stagger]) {
       animation: lift var(--motion-enter) var(--ease-out) backwards;
       animation-delay: calc(
         min(var(--i, 0) + var(--j, 0), var(--stagger-cap, 8)) *
