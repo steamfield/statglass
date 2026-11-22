@@ -65,7 +65,7 @@ Test cases:
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | a | M | crates/statglass-remote/src/network.rs, crates/statglass-remote/src/source/status.rs, crates/statglass-remote/src/transport.rs, crates/statglass-remote/src/lib.rs, crates/statglass-remote/src/source.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/network/tests.rs, crates/statglass-remote/src/source/status/network_tests.rs, crates/statglass-remote/src/transport/classify_tests.rs, src-tauri/src/remote/registration/tests.rs | opus | running | sprint/connection-states-1a | cargo tests for statglass-remote and statglass registration pass, clippy clean |
-| b | M | src/core/remote-connection.ts, src/core/mock/remote-updates.ts, src/core/mock/remote.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts | contracts, src/core/remote-connection.test.ts | src/core/remote-connection.test.ts, src/core/remote-connection-kinds.test.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.test.ts | sonnet | running | sprint/connection-states-1b | bun tests pass, typecheck clean |
+| b | M | src/core/remote-connection.ts, src/core/remote-connection-network.ts, src/core/mock/remote-updates.ts, src/core/mock/remote-network-scenarios.ts, src/core/mock/remote.ts, src/core/mock/stream.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts | contracts, src/core/remote-connection.test.ts | src/core/remote-connection.test.ts, src/core/remote-connection-kinds.test.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.test.ts | sonnet | running | sprint/connection-states-1b | bun tests pass, typecheck clean |
 
 #### Lane a brief
 
