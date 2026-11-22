@@ -18,6 +18,7 @@ This folder is the plan for StatGlass, from the first installable build through 
 | [docker-monitoring-ux-rfc.md](docker-monitoring-ux-rfc.md) | Implemented and verified Containers UX revision: per-container comparison, repaired history, bounded tables and automatic engine inventory |
 | [docker-storage-cleanup.md](docker-storage-cleanup.md) | In progress: on-demand Docker storage inventory, cleanup review, confirmed local actions and resource review |
 | [rfc-agent-cli.md](rfc-agent-cli.md) | Draft: read-only `statglass` CLI for agents over an owner-only query socket, local and mirrored hosts; MCP deferred |
+| [rfc-ios-app.md](rfc-ios-app.md) | Draft: read-only iPhone viewer for remote hosts (Expo + reused Rust session/mirror core), Secure Enclave keys, QR pairing, Tailscale routes, monorepo and App Store release |
 | [io-performance-ux.md](io-performance-ux.md) | Draft: storage response-time history and process attribution in Disk; counter validation is the next step |
 | [disk-space-report.md](disk-space-report.md) | v1 implemented (D-114): on-demand Space view in Disk with a progressive, drillable treemap of what uses a volume; real-hardware privacy and lateness checks remain |
 | [rfc-shared-layers.md](rfc-shared-layers.md) | Accepted: consolidate charts, queries, UI states and Rust collectors onto shared owners, phased like the 0.6.2 table layer |
