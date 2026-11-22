@@ -1,4 +1,4 @@
-use crate::{RemoteError, Result, codec};
+use crate::{RemoteError, Result, UnreachableKind, codec};
 use serde::{Deserialize, Serialize};
 use statglass_proto::{Hello, Message, Negotiated, Offer};
 use statglass_schema::HostId;
@@ -121,6 +121,15 @@ impl EndpointConfig {
             validate_alias(alias)?;
         }
         Ok(())
+    }
+
+    /// The host's only route, or `None` when both or neither alias is set.
+    pub fn single_route(&self) -> Option<Route> {
+        match (&self.lan, &self.tailscale) {
+            (Some(_), None) => Some(Route::Lan),
+            (None, Some(_)) => Some(Route::Tailscale),
+            _ => None,
+        }
     }
 }
 fn validate_alias(alias: &str) -> Result<()> {
@@ -320,9 +329,33 @@ fn stderr_error(
         RemoteError::Timeout(format!("{alias}: {detail}"))
     } else if detail.is_empty() {
         RemoteError::Transport(format!("{alias}: {}", handshake_failure(outcome)))
+    } else if let Some(kind) = unreachable_kind(&detail) {
+        RemoteError::Unreachable {
+            kind,
+            detail: format!("{alias}: {detail}"),
+        }
     } else {
         RemoteError::Transport(format!("{alias}: {detail}"))
     }
+}
+
+/// Why SSH could not open a connection, from the first stderr line that says so.
+fn unreachable_kind(detail: &str) -> Option<UnreachableKind> {
+    detail.lines().find_map(|line| {
+        let line = line.to_ascii_lowercase();
+        if line.contains("could not resolve hostname") {
+            Some(UnreachableKind::NameNotResolved)
+        } else if line.contains("connection refused") {
+            Some(UnreachableKind::Refused)
+        } else if ["no route to host", "network is unreachable", "host is down"]
+            .iter()
+            .any(|marker| line.contains(marker))
+        {
+            Some(UnreachableKind::NoRoute)
+        } else {
+            None
+        }
+    })
 }
 
 fn is_timeout_detail(detail: &str) -> bool {
@@ -392,6 +425,10 @@ where
     }
 }
 
+/// One error for a dual-route host whose LAN (`a`) and Tailscale (`b`) dials both
+/// failed. A non-retryable side wins alone, a stopped agent on either side reads as
+/// [`RemoteError::AgentNotRunning`], and otherwise both causes are kept in
+/// [`RemoteError::BothRoutes`].
 fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
     if !a.retryable() {
         return a;
@@ -399,15 +436,14 @@ fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
     if !b.retryable() {
         return b;
     }
-    let combined = format!("LAN: {a}; Tailscale: {b}");
     if matches!(a, RemoteError::AgentNotRunning(_)) || matches!(b, RemoteError::AgentNotRunning(_))
     {
-        return RemoteError::AgentNotRunning(combined);
+        return RemoteError::AgentNotRunning(format!("LAN: {a}; Tailscale: {b}"));
     }
-    if matches!(a, RemoteError::Timeout(_)) || matches!(b, RemoteError::Timeout(_)) {
-        return RemoteError::Timeout(combined);
+    RemoteError::BothRoutes {
+        lan: Box::new(a),
+        tailscale: Box::new(b),
     }
-    RemoteError::Transport(combined)
 }
 
 #[cfg(test)]
@@ -476,13 +512,13 @@ mod tests {
             ),
             RemoteError::Timeout(msg) if msg.contains("Operation timed out")
         ));
-        // Dual-route combine keeps AgentNotRunning > Timeout > Transport.
+        // Dual-route combine keeps AgentNotRunning, otherwise both causes.
         assert!(matches!(
             combine(
                 RemoteError::Transport("dns failed".into()),
                 RemoteError::Timeout("Operation timed out".into()),
             ),
-            RemoteError::Timeout(msg) if msg.contains("LAN:") && msg.contains("Tailscale:")
+            RemoteError::BothRoutes { .. }
         ));
         assert!(matches!(
             combine(

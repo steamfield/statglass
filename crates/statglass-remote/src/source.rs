@@ -185,6 +185,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
                 status.retrying = false;
                 status.error = None;
                 status.failure_kind = None;
+                status.route_failures.clear();
                 status.identity_changed = None;
                 status.incompatible = false;
                 status.remote_version = Some(session.hello.app_version.clone());
@@ -212,7 +213,8 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
                 continue;
             }
             Err(e) => {
-                status.record_failure(&e, None);
+                status.record_failure(&e, source.endpoints.single_route());
+                status.apply_network(crate::network::probe());
                 (source.on_status)(status.clone());
                 if !e.retryable() {
                     let retry = control.borrow().retry;
