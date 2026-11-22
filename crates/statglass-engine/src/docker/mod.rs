@@ -1,6 +1,11 @@
 //! Independent, opt-in Docker clock. Finite polling, events and logs use separate budgets.
 mod error;
 pub use error::DockerServiceError;
+mod availability;
+#[cfg(test)]
+use availability::retry_plan;
+use availability::{FIRST_RETRY_SECONDS, LaunchWindow};
+pub use availability::{ReasonInput, unavailable_reason};
 mod event_lane;
 #[cfg(test)]
 mod integration_tests;
@@ -21,11 +26,16 @@ pub mod storage;
 use futures_util::{StreamExt, stream};
 pub use persistence::{DOCKER_BUCKET_MS, DockerRecorder};
 use statglass_collect::docker::{DockerAdapter, DockerCounters, DockerError, candidates, now_ms};
+/// Runtime facts the app shell needs to launch a runtime, re-exported because the shell
+/// does not depend on the collector crate.
+pub use statglass_collect::docker_runtimes::{
+    bundle_id as runtime_bundle_id, display_name as runtime_display_name,
+};
 use statglass_schema::{HostId, docker::*, lock::LockExt};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
     time::Duration,
 };
 use tokio::{
@@ -57,6 +67,10 @@ pub struct DockerHandle {
     /// The last clock reading, kept across sessions so a step while disconnected,
     /// idle or backing off is still seen by the next session's first cycle.
     clock: Arc<Mutex<Option<crate::ClockReading>>>,
+    /// The post-launch fast-retry window, while one is open.
+    launch: Arc<Mutex<Option<LaunchWindow>>>,
+    /// Set once any adapter attaches, so a later loss reads as "stopped".
+    was_connected: Arc<AtomicBool>,
 }
 struct State {
     adapter: Option<DockerAdapter>,
@@ -104,6 +118,7 @@ impl DockerHandle {
                 allowance_bytes: 37_500_000.,
                 retained_from_ms: None,
             },
+            availability: None,
         });
         Self {
             control,
@@ -119,6 +134,8 @@ impl DockerHandle {
             recorder: Arc::new(DockerRecorder::new(host_id)),
             storage: Arc::new(storage::StorageManager::default()),
             clock: Arc::new(Mutex::new(None)),
+            launch: Arc::new(Mutex::new(None)),
+            was_connected: Arc::new(AtomicBool::new(false)),
         }
     }
     pub fn glance(&self) -> (DockerStatus, DockerAggregate) {
@@ -182,6 +199,7 @@ impl DockerHandle {
             };
             s.engine = None;
             s.coverage.clear();
+            s.availability = None;
         });
         Ok(())
     }
@@ -205,8 +223,13 @@ impl DockerHandle {
         });
         generation
     }
+    /// Drops the current connection and starts a new attempt now.
     pub fn resume(&self) {
         let _gate = self.gate.lock_ok();
+        self.resume_locked();
+    }
+    /// [`Self::resume`] for a caller that already holds the gate.
+    fn resume_locked(&self) {
         self.cancel();
         self.control
             .send_modify(|c| c.generation = c.generation.wrapping_add(1));
@@ -399,6 +422,8 @@ impl DockerHandle {
         snapshot.now_ms = now_ms();
         // A presentation preference can change while this sample is in flight.
         snapshot.settings = self.control.borrow().settings.clone();
+        // A published sample comes from a live session, so no engine is unreachable.
+        snapshot.availability = None;
         let current = self.changed.borrow();
         let inspected: BTreeMap<_, _> = current
             .containers
@@ -439,32 +464,6 @@ impl DockerHandle {
         });
         self.recorder.record(&self.snapshot());
     }
-    fn gap_for(&self, generation: u32, reason: &str) {
-        let _gate = self.gate.lock_ok();
-        if self.control.borrow().generation == generation {
-            self.gap(reason);
-        }
-    }
-    fn transition(
-        &self,
-        generation: u32,
-        status: DockerStatus,
-        message: Option<String>,
-        reason: &str,
-    ) -> bool {
-        let _gate = self.gate.lock_ok();
-        if self.control.borrow().generation != generation {
-            return false;
-        }
-        self.update(|s| {
-            s.now_ms = now_ms();
-            s.status = status;
-            s.message = message;
-            s.generation = generation;
-        });
-        self.gap(reason);
-        true
-    }
 }
 /// Inventory/stats and inspection carry separate evidence clocks.
 fn reconcile(mut live: DockerContainer, inspected: &DockerContainer) -> DockerContainer {
@@ -495,12 +494,6 @@ fn reconcile(mut live: DockerContainer, inspected: &DockerContainer) -> DockerCo
         live.created = inspected.created.clone();
     }
     live
-}
-#[derive(PartialEq)]
-enum SessionEnd {
-    Changed,
-    Idle,
-    Disconnected,
 }
 
 #[cfg(test)]
@@ -592,6 +585,72 @@ mod tests {
         handle.publish(handle.snapshot());
         assert!(handle.snapshot().now_ms > 123);
         assert_eq!(handle.snapshot().observed_ms, 123);
+    }
+    #[test]
+    fn retries_wait_two_seconds_while_launching_then_back_off_from_one() {
+        let launching = retry_plan(true, 16);
+        assert_eq!(launching.delay, Duration::from_secs(2));
+        assert_eq!(launching.next_seconds, 1);
+        let steps: Vec<_> = [1, 2, 16, 30]
+            .map(|seconds| retry_plan(false, seconds))
+            .iter()
+            .map(|plan| (plan.delay.as_secs(), plan.next_seconds))
+            .collect();
+        assert_eq!(steps, [(1, 2), (2, 4), (16, 30), (30, 30)]);
+    }
+    #[test]
+    fn a_launch_marks_the_unreachable_engine_as_starting_and_retries_now() {
+        let handle = DockerHandle::new(
+            HostId(uuid::Uuid::new_v4()),
+            DockerSettings::default(),
+            PathBuf::new(),
+        );
+        let availability = DockerAvailability {
+            reason: DockerUnavailableReason::NotRunning,
+            runtimes: Vec::new(),
+            next_attempt_ms: Some(now_ms() + 30_000),
+            launching_until_ms: None,
+        };
+        assert!(handle.transition_unavailable(1, "down".into(), availability));
+        let before = now_ms();
+        handle.launch_started();
+        let until = handle
+            .snapshot()
+            .availability
+            .and_then(|a| a.launching_until_ms)
+            .expect("launch window shown");
+        assert!((before + 60_000..=now_ms() + 60_000).contains(&until));
+        assert_eq!(handle.control.borrow().generation, 2, "attempt restarts");
+        assert!(handle.transition(2, DockerStatus::Paused, None, "paused"));
+        assert_eq!(handle.snapshot().availability, None);
+    }
+    #[tokio::test]
+    async fn an_unreachable_engine_reports_why_and_when_it_retries() {
+        let handle = DockerHandle::new(
+            HostId(uuid::Uuid::new_v4()),
+            DockerSettings {
+                enabled: true,
+                selected_engine: Some("/nonexistent/statglass-test.sock".into()),
+                ..Default::default()
+            },
+            PathBuf::new(),
+        );
+        let mut status = handle.subscribe();
+        let task = tokio::spawn(handle.clone().run());
+        let snapshot = tokio::time::timeout(
+            Duration::from_secs(10),
+            status.wait_for(|s| s.status == DockerStatus::Unavailable),
+        )
+        .await
+        .expect("worker reports the failure")
+        .expect("worker alive")
+        .clone();
+        let availability = snapshot.availability.expect("reason attached");
+        let next = availability.next_attempt_ms.expect("retry scheduled");
+        assert!((snapshot.now_ms..=now_ms() + 1_000).contains(&next));
+        assert_eq!(availability.launching_until_ms, None);
+        handle.shutdown();
+        task.await.unwrap();
     }
     #[test]
     fn aggregate_counts_missing_values_without_inventing_zero() {

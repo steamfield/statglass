@@ -43,6 +43,53 @@ pub enum DockerStatus {
     PermissionDenied,
     Incompatible,
 }
+/// Why no Docker engine is reachable. Set while the status is `Unavailable`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DockerUnavailableReason {
+    /// No engine socket and no known runtime app or binary on this Mac.
+    NotInstalled,
+    /// A runtime is installed (or its socket path exists) but no engine answers.
+    NotRunning,
+    /// The engine answered earlier this session and has stopped.
+    Stopped,
+    /// Several engines answer and none is preferred or selected.
+    ChooseEngine,
+    /// The engine chosen in settings no longer exists and no runtime is installed.
+    SelectedMissing,
+}
+/// A Docker runtime StatGlass knows how to recognize and, for apps, start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DockerRuntimeKind {
+    DockerDesktop,
+    OrbStack,
+    RancherDesktop,
+    Colima,
+}
+/// A runtime found installed on this Mac.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct DockerRuntimeApp {
+    pub kind: DockerRuntimeKind,
+    /// Display name, e.g. "Docker Desktop".
+    pub name: String,
+    /// True for an app bundle StatGlass can open; false for a command-line runtime.
+    pub launchable: bool,
+}
+/// What the Containers page needs to explain an unreachable engine.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct DockerAvailability {
+    pub reason: DockerUnavailableReason,
+    /// Installed runtimes in launch preference order (Docker Desktop, OrbStack,
+    /// Rancher Desktop, Colima).
+    pub runtimes: Vec<DockerRuntimeApp>,
+    /// Wall-clock time of the next automatic connection attempt, if one is scheduled.
+    #[specta(type = Option<JsSafeInt>)]
+    pub next_attempt_ms: Option<i64>,
+    /// Until this wall-clock time the engine retries every two seconds after a launch.
+    #[specta(type = Option<JsSafeInt>)]
+    pub launching_until_ms: Option<i64>,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum DockerLifecycle {
@@ -180,6 +227,8 @@ pub struct DockerSnapshot {
     pub interval_ms: u32,
     pub population_revision: u32,
     pub persistence: DockerPersistence,
+    /// Why the engine is unreachable, while the status is `Unavailable`.
+    pub availability: Option<DockerAvailability>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct DockerEvent {

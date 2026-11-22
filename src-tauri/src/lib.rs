@@ -80,7 +80,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .disable_serde_phases()
         .commands(collect_commands![
             docker::docker_discover, docker::docker_configure, docker::docker_snapshot,
-            docker::docker_resume, docker::docker_subscribe, docker::docker_unsubscribe,
+            docker::docker_resume, docker::launch::docker_launch_runtime, docker::docker_subscribe, docker::docker_unsubscribe,
             docker::docker_detail, docker::docker_retained, docker::docker_history, docker::docker_comparison, docker::docker_events,
             docker::docker_logs, docker::docker_close_logs,
             docker::docker_storage_scan, docker::docker_storage_prepare,

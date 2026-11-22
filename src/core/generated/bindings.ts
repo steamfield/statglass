@@ -9,6 +9,15 @@ export const commands = {
 	dockerConfigure: (settings: DockerSettings) => typedError<DockerSnapshot, CommandError>(__TAURI_INVOKE("docker_configure", { settings })),
 	dockerSnapshot: () => typedError<DockerSnapshot, CommandError>(__TAURI_INVOKE("docker_snapshot")),
 	dockerResume: () => typedError<DockerSnapshot, CommandError>(__TAURI_INVOKE("docker_resume")),
+	/**
+	 *  Opens the runtime app through LaunchServices, then starts the engine's post-launch
+	 *  retry window and returns the current snapshot.
+	 *
+	 *  # Errors
+	 *  `CommandError::Docker` from [`launch_target`], or when `open` fails (its stderr is
+	 *  included).
+	 */
+	dockerLaunchRuntime: (kind: DockerRuntimeKind) => typedError<DockerSnapshot, CommandError>(__TAURI_INVOKE("docker_launch_runtime", { kind })),
 	dockerSubscribe: (channel: Channel<DockerSnapshot>, visible: boolean) => typedError<number, CommandError>(__TAURI_INVOKE("docker_subscribe", { channel, visible })),
 	dockerUnsubscribe: (stream: number) => typedError<null, CommandError>(__TAURI_INVOKE("docker_unsubscribe", { stream })),
 	dockerDetail: (engineId: string, containerId: string) => typedError<DockerContainer, CommandError>(__TAURI_INVOKE("docker_detail", { engineId, containerId })),
@@ -899,6 +908,20 @@ export type DockerAggregate = {
 	inventory_complete: boolean,
 };
 
+/**  What the Containers page needs to explain an unreachable engine. */
+export type DockerAvailability = {
+	reason: DockerUnavailableReason,
+	/**
+	 *  Installed runtimes in launch preference order (Docker Desktop, OrbStack,
+	 *  Rancher Desktop, Colima).
+	 */
+	runtimes: DockerRuntimeApp[],
+	/**  Wall-clock time of the next automatic connection attempt, if one is scheduled. */
+	next_attempt_ms: number | null,
+	/**  Until this wall-clock time the engine retries every two seconds after a launch. */
+	launching_until_ms: number | null,
+};
+
 export type DockerComparisonMetric = "cpu" | "memory";
 
 export type DockerComparisonPage = {
@@ -1155,6 +1178,15 @@ export type DockerRetainedRequest = {
 	limit: number,
 };
 
+/**  A runtime found installed on this Mac. */
+export type DockerRuntimeApp = {
+	kind: DockerRuntimeKind,
+	/**  Display name, e.g. "Docker Desktop". */
+	name: string,
+	/**  True for an app bundle StatGlass can open; false for a command-line runtime. */
+	launchable: boolean,
+};
+
 export type DockerRuntimeFootprint = {
 	scope: string,
 	explanation: string,
@@ -1163,6 +1195,9 @@ export type DockerRuntimeFootprint = {
 	observed_ms: number | null,
 	processes: string[],
 };
+
+/**  A Docker runtime StatGlass knows how to recognize and, for apps, start. */
+export type DockerRuntimeKind = "docker_desktop" | "orb_stack" | "rancher_desktop" | "colima";
 
 export type DockerSettings = {
 	enabled?: boolean,
@@ -1195,6 +1230,8 @@ export type DockerSnapshot = {
 	interval_ms: number,
 	population_revision: number,
 	persistence: DockerPersistence,
+	/**  Why the engine is unreachable, while the status is `Unavailable`. */
+	availability: DockerAvailability | null,
 };
 
 export type DockerStatus = "disabled" | "connecting" | "connected" | "idle_suspended" | "paused" | "unavailable" | "permission_denied" | "incompatible";
@@ -1291,6 +1328,19 @@ export type DockerStorageView = {
 	/**  Recover the latest session result when a window is reopened. */
 	latest_operation_id: string | null,
 };
+
+/**  Why no Docker engine is reachable. Set while the status is `Unavailable`. */
+export type DockerUnavailableReason =
+/**  No engine socket and no known runtime app or binary on this Mac. */
+"not_installed" |
+/**  A runtime is installed (or its socket path exists) but no engine answers. */
+"not_running" |
+/**  The engine answered earlier this session and has stopped. */
+"stopped" |
+/**  Several engines answer and none is preferred or selected. */
+"choose_engine" |
+/**  The engine chosen in settings no longer exists and no runtime is installed. */
+"selected_missing";
 
 /**  Returned by `get_edition`. Fixed for the life of the process. */
 export type Edition = {

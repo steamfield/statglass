@@ -29,6 +29,7 @@ import type {
   DockerLogsRequest,
   DockerRetainedPage,
   DockerRetainedRequest,
+  DockerRuntimeKind,
   DockerSettings,
   DockerSnapshot,
   DockerStorageOperation,
@@ -170,6 +171,10 @@ export interface Transport {
     onBatch: (batch: DockerLogBatch) => void
   ): Promise<{ info: CommandResult<number>; unsubscribe: Unsubscribe }>;
   dockerResume(): Promise<CommandResult<DockerSnapshot>>;
+  /** Opens an installed Docker runtime app and starts the engine's fast-retry window. */
+  dockerLaunchRuntime(
+    kind: DockerRuntimeKind
+  ): Promise<CommandResult<DockerSnapshot>>;
   listHosts(): Promise<HostRecord[]>;
   listRemoteHosts(): Promise<RemoteHostRecord[]>;
   localRrJob(): Promise<RrJob | null>;

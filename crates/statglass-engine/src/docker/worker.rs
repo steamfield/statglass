@@ -1,9 +1,11 @@
 //! Connection, retry, idle and connected-session lifecycle.
 use super::*;
 impl DockerHandle {
+    /// Runs the Docker worker until shutdown: connects to the selected engine, samples
+    /// it while connected, and backs off between failed attempts.
     pub async fn run(self) {
         let mut controls = self.control.subscribe();
-        let mut retry = 1;
+        let mut retry = FIRST_RETRY_SECONDS;
         loop {
             let c = controls.borrow_and_update().clone();
             if c.shutdown {
@@ -32,16 +34,7 @@ impl DockerHandle {
             let adapter = match result {
                 Ok(a) => a,
                 Err(e) => {
-                    let status = match e {
-                        DockerError::Incompatible => DockerStatus::Incompatible,
-                        DockerError::PermissionDenied => DockerStatus::PermissionDenied,
-                        _ => DockerStatus::Unavailable,
-                    };
-                    if !self.transition(generation, status, Some(e.to_string()), "disconnected") {
-                        continue;
-                    }
-                    self.wait_retry(&mut controls, generation, retry).await;
-                    retry = (retry * 2).min(30);
+                    self.connect_failed(&mut controls, &c, e, &mut retry).await;
                     continue;
                 }
             };
@@ -54,16 +47,9 @@ impl DockerHandle {
                 .await;
             self.cancel();
             if session == SessionEnd::Disconnected {
-                if !self.transition(
-                    generation,
-                    DockerStatus::Unavailable,
-                    Some("Docker stream disconnected; retrying".into()),
-                    "disconnected",
-                ) {
-                    continue;
-                }
-                self.wait_retry(&mut controls, generation, retry).await;
-                retry = (retry * 2).min(30);
+                let message = "Docker stream disconnected; retrying".to_owned();
+                self.back_off_unavailable(&mut controls, &c, message, &mut retry)
+                    .await;
             }
             if session == SessionEnd::Idle {
                 if !self.transition(
@@ -83,18 +69,74 @@ impl DockerHandle {
             }
         }
     }
+    /// Reports a failed connection attempt, then waits out the retry delay.
+    /// Permission and API-version failures keep their own statuses; anything else is
+    /// `Unavailable` with the reason attached.
+    async fn connect_failed(
+        &self,
+        controls: &mut watch::Receiver<Control>,
+        control: &Control,
+        error: DockerError,
+        retry: &mut u64,
+    ) {
+        let status = match error {
+            DockerError::Incompatible => DockerStatus::Incompatible,
+            DockerError::PermissionDenied => DockerStatus::PermissionDenied,
+            _ => {
+                let message = error.to_string();
+                return self
+                    .back_off_unavailable(controls, control, message, retry)
+                    .await;
+            }
+        };
+        let generation = control.generation;
+        if !self.transition(generation, status, Some(error.to_string()), "disconnected") {
+            return;
+        }
+        let plan = self.next_retry(*retry);
+        *retry = plan.next_seconds;
+        self.wait_retry(controls, generation, plan.delay).await;
+    }
+    /// Publishes `Unavailable` with why and when the next attempt comes, then waits
+    /// until then. Returns early if the generation moves on or the worker shuts down
+    /// while discovery runs; visibility and interval changes don't interrupt it.
+    async fn back_off_unavailable(
+        &self,
+        controls: &mut watch::Receiver<Control>,
+        control: &Control,
+        message: String,
+        retry: &mut u64,
+    ) {
+        let generation = control.generation;
+        let plan = self.next_retry(*retry);
+        let probe = self.availability(&control.settings, plan.delay);
+        tokio::pin!(probe);
+        let availability = loop {
+            tokio::select! {biased;
+                changed = controls.changed() => {
+                    if superseded(changed, controls, generation) { return; }
+                }
+                availability = &mut probe => break availability,
+            }
+        };
+        if !self.transition_unavailable(generation, message, availability) {
+            return;
+        }
+        *retry = plan.next_seconds;
+        self.wait_retry(controls, generation, plan.delay).await;
+    }
     async fn wait_retry(
         &self,
         controls: &mut watch::Receiver<Control>,
         generation: u32,
-        seconds: u64,
+        delay: Duration,
     ) {
-        let delay = tokio::time::sleep(Duration::from_secs(seconds));
+        let delay = tokio::time::sleep(delay);
         tokio::pin!(delay);
         loop {
             tokio::select! {biased;
                 changed = controls.changed() => {
-                    if changed.is_err() || controls.borrow().generation != generation || controls.borrow().shutdown { return; }
+                    if superseded(changed, controls, generation) { return; }
                 }
                 _ = &mut delay => return,
             }
@@ -240,12 +282,55 @@ impl DockerHandle {
 }
 
 impl DockerHandle {
+    /// Moves to `status` with `availability` cleared, unless the generation moved on.
+    /// Returns whether the transition applied.
+    pub(super) fn transition(
+        &self,
+        generation: u32,
+        status: DockerStatus,
+        message: Option<String>,
+        reason: &str,
+    ) -> bool {
+        self.apply_transition(generation, status, None, message, reason)
+    }
+    /// Publishes a status and its availability in one update and opens a `reason` gap.
+    pub(super) fn apply_transition(
+        &self,
+        generation: u32,
+        status: DockerStatus,
+        availability: Option<DockerAvailability>,
+        message: Option<String>,
+        reason: &str,
+    ) -> bool {
+        let _gate = self.gate.lock_ok();
+        if self.control.borrow().generation != generation {
+            return false;
+        }
+        self.update(|s| {
+            s.now_ms = now_ms();
+            s.status = status;
+            s.message = message;
+            s.generation = generation;
+            s.availability = availability;
+        });
+        self.gap(reason);
+        true
+    }
+    fn gap_for(&self, generation: u32, reason: &str) {
+        let _gate = self.gate.lock_ok();
+        if self.control.borrow().generation == generation {
+            self.gap(reason);
+        }
+    }
     fn attach_adapter(&self, adapter: &DockerAdapter, generation: u32) -> bool {
         let _gate = self.gate.lock_ok();
         if self.control.borrow().generation != generation {
             return false;
         }
         self.inner.lock_ok().adapter = Some(adapter.clone());
+        self.was_connected
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        *self.launch.lock_ok() = None;
         self.update(|s| {
             s.now_ms = now_ms();
             if s.engine.as_ref().is_none_or(|e| e.id != adapter.engine.id) {
@@ -259,6 +344,7 @@ impl DockerHandle {
             }
             s.engine = Some(adapter.engine.clone());
             s.generation = generation;
+            s.availability = None;
         });
 
         true
@@ -388,4 +474,56 @@ pub(super) fn clock_stepped(before: &crate::ClockReading, now: &crate::ClockRead
         .saturating_sub(now.continuous_ms_since(before))
         .abs()
         > 2000
+}
+
+/// Whether a control change ends work started for `generation`: the channel closed,
+/// the generation moved on, or the worker is shutting down.
+fn superseded(
+    changed: Result<(), watch::error::RecvError>,
+    controls: &watch::Receiver<Control>,
+    generation: u32,
+) -> bool {
+    let control = controls.borrow();
+    changed.is_err() || control.generation != generation || control.shutdown
+}
+
+/// How a connected session ended.
+#[derive(PartialEq)]
+enum SessionEnd {
+    /// The controls moved to a new generation or shut down.
+    Changed,
+    /// No container is running; the worker idles.
+    Idle,
+    /// The engine stopped answering.
+    Disconnected,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_visibility_change_during_the_probe_still_publishes_and_backs_off() {
+        let handle = DockerHandle::new(
+            HostId(uuid::Uuid::new_v4()),
+            DockerSettings {
+                enabled: true,
+                selected_engine: Some("/nonexistent/statglass-test.sock".into()),
+                ..Default::default()
+            },
+            PathBuf::new(),
+        );
+        let mut controls = handle.control.subscribe();
+        let control = controls.borrow_and_update().clone();
+        // Pending before the probe starts, so the change is seen while it runs.
+        handle.set_visible(true);
+        let mut retry = FIRST_RETRY_SECONDS;
+        handle
+            .back_off_unavailable(&mut controls, &control, "down".into(), &mut retry)
+            .await;
+        let snapshot = handle.snapshot();
+        assert_eq!(snapshot.status, DockerStatus::Unavailable);
+        assert!(snapshot.availability.is_some(), "reason published");
+        assert_eq!(retry, 2, "backoff advanced");
+    }
 }

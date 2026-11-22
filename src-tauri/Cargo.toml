@@ -58,7 +58,7 @@ serde_json.workspace = true
 specta = { workspace = true, features = ["derive"] }
 specta-typescript.workspace = true
 tauri-specta = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["sync", "macros", "time", "rt", "net", "io-util"] }
+tokio = { workspace = true, features = ["sync", "macros", "time", "rt", "net", "io-util", "process"] }
 uuid = { workspace = true, features = ["v4"] }
 thiserror.workspace = true
 anyhow.workspace = true
