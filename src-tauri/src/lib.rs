@@ -5,6 +5,7 @@
 //! window code builds on.
 
 mod addresses;
+pub mod app_menu;
 mod bench;
 mod calibration;
 mod cli_link;
@@ -240,6 +241,7 @@ pub fn run() {
             let background_restart = updates::take_background_restart(app.handle());
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
+            app_menu::install(app.handle())?;
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]
             if !background_restart && !deferred_ui_launch(std::env::args()) {

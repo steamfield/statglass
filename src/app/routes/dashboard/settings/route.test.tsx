@@ -1,6 +1,7 @@
 import { HISTORY_PROJECTION } from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
+import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from "@core/star-prompt";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../../../../../tests/test-utils";
 import SettingsRoute from "./route";
@@ -445,5 +446,41 @@ describe("Settings sampling and history", () => {
     expect(
       await screen.findByText("History is unavailable. Live values still work.")
     ).toBeInTheDocument();
+  });
+});
+
+describe("Settings feedback and support", () => {
+  it("copies non-PII system info, opens GitHub Issues, and records Star on GitHub", async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const { transport, user } = renderWithProviders(<SettingsRoute />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Copy system info" })
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0]?.[0]).toMatch(
+      /^StatGlass v[\d.]+ · macOS 27\.0\.1 · Apple M4 Pro$/
+    );
+
+    await user.click(screen.getByRole("button", { name: "File feedback" }));
+    expect(transport.calls).toContainEqual({
+      command: "open_url",
+      args: [GITHUB_ISSUES_URL],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Star on GitHub" }));
+    expect(transport.calls).toContainEqual({
+      command: "open_url",
+      args: [GITHUB_REPO_URL],
+    });
+    expect(transport.calls).toContainEqual({
+      command: "act_on_star_prompt",
+      args: ["starred"],
+    });
   });
 });

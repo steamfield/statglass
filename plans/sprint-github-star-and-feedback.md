@@ -118,6 +118,7 @@ Layout:
 ### Phase 1: GitHub star hover-card toast (MVP)
 
 Scaffold: 4171c1a22a2e69383629a5e0bf4eaafee6f3e4fc
+Tag: phase-1
 Demo: `bun run dev:fast` and open `http://localhost:1420/?route=/dashboard/overview&scenario=star-prompt` to see the floating GitHub Star hover-card appear in the bottom-right corner; click "Star on GitHub", "Not now", or Dismiss `×`, and open `http://localhost:1420/?route=/popover&scenario=star-prompt` to confirm it never renders in the tray popover.
 Test cases:
 - Rust `star_prompt`: fresh install sets `first_seen_at_ms = now`, `eligible = false` at 0h and at exactly 24h (`MIN_ELAPSED_MS`), `eligible = false` at 24h+1ms with fewer than 3 engaged sessions.

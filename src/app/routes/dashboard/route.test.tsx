@@ -1,4 +1,5 @@
 import { createMockTransport } from "@core/mock-transport";
+import { GITHUB_ISSUES_URL } from "@core/star-prompt";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { Profiler } from "react";
 import { renderWithProviders } from "../../../../tests/test-utils";
@@ -57,6 +58,16 @@ describe("Dashboard shell", () => {
       expect(sidebarLinks().some((t) => t.startsWith("Power"))).toBe(false)
     );
     expect(sidebarLinks().some((t) => t.startsWith("Battery"))).toBe(true);
+  });
+
+  it("opens GitHub Issues when the sidebar Feedback action is clicked", async () => {
+    const { transport, user } = renderShell();
+    const feedback = screen.getByRole("button", { name: "Feedback" });
+    await user.click(feedback);
+    expect(transport.calls).toContainEqual({
+      command: "open_url",
+      args: [GITHUB_ISSUES_URL],
+    });
   });
 });
 

@@ -75,6 +75,8 @@ export interface SidebarProps {
   version: string;
   /** Called instead of following the href, so the router can navigate. */
   onNavigate?: ((href: string) => void) | undefined;
+  /** Quiet action row above the footer divider (Feedback button). */
+  footerAction?: ReactNode;
   /** A second footer line under the sampling state (the Performance mode marker). */
   footerNote?: ReactNode;
   hostSwitcher?: ReactNode;

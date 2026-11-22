@@ -99,3 +99,53 @@ it("keeps values, route selection, navigation handlers and keyboard order curren
   await user.click(screen.getByRole("link", { name: "Overview" }));
   expect(latestNavigate).toHaveBeenLastCalledWith("/dashboard/overview");
 });
+
+it("renders an optional footerAction without affecting active-pill navigation or arrow-key order", async () => {
+  const user = userEvent.setup();
+  const onFeedback = vi.fn();
+  render(
+    <Sidebar
+      groups={[
+        {
+          id: "nav",
+          entries: [
+            {
+              id: "overview",
+              href: "/dashboard/overview",
+              label: "Overview",
+              icon: "overview",
+            },
+          ],
+        },
+        {
+          id: "tools",
+          entries: [
+            {
+              id: "settings",
+              href: "/dashboard/settings",
+              label: "Settings",
+              icon: "settings",
+            },
+          ],
+        },
+      ]}
+      active="overview"
+      status={{ intervalMs: 1000, paused: false, onBattery: false }}
+      version="test"
+      footerAction={
+        <button type="button" onClick={onFeedback}>
+          Feedback
+        </button>
+      }
+    />
+  );
+
+  const feedback = screen.getByRole("button", { name: "Feedback" });
+  expect(feedback).toBeVisible();
+  await user.click(feedback);
+  expect(onFeedback).toHaveBeenCalledTimes(1);
+
+  screen.getByRole("link", { name: "Overview" }).focus();
+  await user.keyboard("{End}");
+  expect(screen.getByRole("link", { name: "Settings" })).toHaveFocus();
+});
