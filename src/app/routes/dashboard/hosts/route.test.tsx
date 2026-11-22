@@ -59,10 +59,11 @@ it("renders a card for every host, and enables a disabled host", async () => {
   const offline = within(screen.getByRole("region", { name: "offline" }));
   expect(offline.getByText("Offline")).toBeInTheDocument();
   expect(offline.getByText(/^Last seen /)).toBeInTheDocument();
-  fireEvent.click(offline.getByRole("button", { name: "Retry" }));
+  fireEvent.click(offline.getByRole("button", { name: "Retry now" }));
   await waitFor(() => expect(offline.getByText("Live")).toBeInTheDocument());
   const disabled = within(screen.getByRole("region", { name: "studio" }));
-  expect(disabled.getByText("Connection off")).toBeInTheDocument();
+  // The status line and the reconnect panel headline both say it.
+  expect(disabled.getAllByText("Connection off").length).toBeGreaterThan(0);
   fireEvent.click(disabled.getByRole("button", { name: "Turn on" }));
   await waitFor(() => expect(disabled.getByText("Live")).toBeInTheDocument());
   expect(

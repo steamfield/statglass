@@ -464,12 +464,12 @@ describe("remote Mac recovery workflows", () => {
     await screen.findByText("Offline");
     expect(hostRow().getByText(/Last seen/)).toBeInTheDocument();
     expect(hostRow().queryByText("18%")).not.toBeInTheDocument();
-    fireEvent.click(hostRow().getByRole("button", { name: "Retry" }));
+    fireEvent.click(hostRow().getByRole("button", { name: "Retry now" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The Mac is still unreachable"
     );
     expect(hostRow().getByText("Offline")).toBeInTheDocument();
-    fireEvent.click(hostRow().getByRole("button", { name: "Retry" }));
+    fireEvent.click(hostRow().getByRole("button", { name: "Retry now" }));
     await screen.findByText("LAN");
     expect(hostRow().getByText("18%")).toBeInTheDocument();
     expect(hostRow().getByText("42%")).toBeInTheDocument();

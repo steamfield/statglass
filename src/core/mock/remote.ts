@@ -19,7 +19,7 @@ import {
   isLinuxAlias,
   mockLinuxPreparation,
 } from "./remote-linux";
-import { staysFailing } from "./remote-network-scenarios";
+import { retryBackoffHost, staysFailing } from "./remote-network-scenarios";
 import { savedMacSetup, setupCancelled } from "./remote-setup";
 import { MockRemoteStatus } from "./remote-status";
 import {
@@ -407,6 +407,7 @@ export class MockRemotes {
     const remote = this.remotes.get(id);
     if (!remote) return fail({ kind: "unknown_host", host: id });
     const s = this.options.scenarios;
+    if (s && retryBackoffHost(this, id)) return ok(null);
     if (
       (s?.includes("host-unreachable") && id === "remote-unreachable") ||
       (s && staysFailing(s, id)) ||

@@ -109,13 +109,15 @@ function reconnectFacts(remote: RemoteHostRecord): string[] {
 /** The reconnect panel for a remote card that isn't live; null for a live one. */
 function reconnectPanel(
   remote: RemoteHostRecord,
-  state: Pick<HostCardModel, "isLive" | "status">
+  state: Pick<HostCardModel, "isLive" | "status" | "message">
 ): HostCardReconnectModel | null {
   if (state.isLive) return null;
   const view = remoteConnectionView(remote);
   return {
     ...reconnectHeadline(remote, state.status),
-    cause: view.shortReason,
+    // The card's own message is the most specific line (identity, update, network
+    // cause); the panel shows it in place of the message row.
+    cause: state.message?.text ?? view.shortReason,
     routes: routePhrase(view.routes),
     facts: reconnectFacts(remote),
   };
