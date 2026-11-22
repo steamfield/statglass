@@ -199,6 +199,9 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // Dialog and select entrances otherwise keep WebKit's stability check
+  // waiting past the timeout on a loaded CI runner.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/?route=/dashboard/hosts&theme=dark&ticks=0");
   await page.getByRole("button", { name: "Add host", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("Office Mac");
