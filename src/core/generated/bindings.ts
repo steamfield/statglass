@@ -369,7 +369,13 @@ export const commands = {
 	reportPopoverContentHeight: (height: number | null) => __TAURI_INVOKE<void>("report_popover_content_height", { height }),
 	/**  Returns whether the dashboard should show the GitHub star prompt. */
 	getStarPromptStatus: () => __TAURI_INVOKE<StarPromptStatus>("get_star_prompt_status"),
-	/**  Persists the user's star, dismiss, or snooze choice and returns the updated status. */
+	/**
+	 *  Persists the user's star, dismiss, or snooze choice and returns the updated status.
+	 *
+	 *  # Errors
+	 *
+	 *  [`CommandError::SettingsNotSaved`] when `star-prompt.json` can't be written.
+	 */
 	actOnStarPrompt: (action: StarPromptAction) => typedError<StarPromptStatus, CommandError>(__TAURI_INVOKE("act_on_star_prompt", { action })),
 };
 
@@ -382,6 +388,7 @@ export const events = {
 	navigateRequested: makeEvent<NavigateRequested>("navigate-requested"),
 	remoteHostsChanged: makeEvent<RemoteHostsChanged>("remote-hosts-changed"),
 	settingsChanged: makeEvent<SettingsChanged>("settings-changed"),
+	starPromptChanged: makeEvent<StarPromptChanged>("star-prompt-changed"),
 	updateStatusChanged: makeEvent<UpdateStatusChanged>("update-status-changed"),
 	windowAppearanceChanged: makeEvent<WindowAppearanceChanged>("window-appearance-changed"),
 	windowVisibilityChanged: makeEvent<WindowVisibilityChanged>("window-visibility-changed"),
@@ -3039,6 +3046,14 @@ export type StarPromptAction =
 "dismissed" |
 /**  Clicked "Not now" -> snoozes for 7 days once; a second snooze permanently dismisses. */
 "snoozed";
+
+/**
+ *  Sent to every window after a star, dismiss or snooze is saved, so a dashboard showing
+ *  the prompt hides it when the choice came from Settings or the app menu.
+ */
+export type StarPromptChanged = {
+	status: StarPromptStatus,
+};
 
 /**  Current star-prompt eligibility published to the dashboard window. */
 export type StarPromptStatus = {

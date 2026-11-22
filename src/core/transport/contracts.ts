@@ -447,6 +447,8 @@ export interface Transport {
   actOnStarPrompt(
     action: StarPromptAction
   ): Promise<CommandResult<StarPromptStatus>>;
+  /** A star, dismiss or snooze was saved, from any window or the app menu. */
+  onStarPromptChanged(cb: (status: StarPromptStatus) => void): Unsubscribe;
   /** Open an http(s) URL in the default browser (sensor dump GitHub issue). */
   openUrl(url: string): Promise<void>;
   /** Close this window (onboarding Skip and Done). */

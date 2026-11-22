@@ -294,3 +294,12 @@ Test cases:
 - 2026-11-21: Lane 1/b accepted choices (`/^[vV]+/` strip, `/^(?:macos|linux)/i` OS prefix detection) and merged (`b311ebb`).
 - 2026-11-21: Lane 1/a accepted choices (pretty JSON, `.star-prompt.json.tmp.<pid>.<seq>` with `0o600` + `sync_all` + `restrict`, non-destructive recovery on load error), passed Gemini 4 Neon review cleanly, and merged (`b54b884`).
 - 2026-11-22: Lane 1/c merged; applied both Gemini 4 Neon review findings directly (`useWindowVisibility` fail-closed `useState(false)` and `text-power-ink` for light-mode contrast).
+- 2026-11-22: Gemini quota ran out mid Phase 2; finished lanes 2/a and 2/c inline on Claude (2/b had already committed). 2/a: menu item constructors moved into `app_menu` helpers to keep `tray/mod.rs` under its 600-line ceiling. 2/c: gallery specimen extracted to `StarPromptSamples` (function length). Scaffold test fix: spy on `navigator.clipboard.writeText` after render, since user-event replaces the clipboard during setup. Tagged `phase-2`.
+- 2026-11-22: Final review (Claude Opus, 8 findings), all applied on `sprint/github-star-and-feedback-fix`:
+  - 1 (card stays after starring from Settings or the Help menu): Rust emits `StarPromptChanged` from `star_prompt::act_and_notify`; the host subscribes via `transport.onStarPromptChanged`.
+  - 2, 3 (untested error paths, toasts, hover card): added host tests for `starPromptFails` and `openUrl` rejection, Settings toast and clipboard-failure tests, sidebar hover-card and open-failure tests.
+  - 4 (E2E gaps): spec now re-advances the clock after starring and clicks Feedback. Partly rejected: asserting the `open_url` call in E2E needs a window hook on the mock; the Vitest route test asserts it instead.
+  - 5 (app-menu routing lived in tray): `app_menu::install` registers the one menu listener and owns Quit; tray handles only Open and Pause.
+  - 6 (duplicated open/record handlers): `~/lib/github-links.ts` (`openExternalUrl`, `recordStarPromptAction`).
+  - 7 (silent history read failure): `star_prompt::history_created_at_ms` logs before falling back.
+  - 8 (fsync on main thread): `star_prompt::record_engagement` runs on a blocking worker; `act_on_star_prompt` is async on `spawn_blocking`; the Help-menu star saves on a blocking worker.

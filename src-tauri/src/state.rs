@@ -159,10 +159,9 @@ impl AppState {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_default(),
         );
-        let history_created_at_ms = history.read(|r| r.created_at_ms()).ok().flatten();
         let star_prompt = crate::star_prompt::StarPromptOwner::open(
             &data_dir,
-            history_created_at_ms,
+            crate::star_prompt::history_created_at_ms(&history),
             statglass_engine::wall_ms(),
         );
         let state = AppState {

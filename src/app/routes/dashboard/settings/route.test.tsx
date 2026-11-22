@@ -3,6 +3,7 @@ import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from "@core/star-prompt";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import { Toaster } from "~/components/ui/sonner";
 import { renderWithProviders } from "../../../../../tests/test-utils";
 import SettingsRoute from "./route";
 
@@ -451,7 +452,12 @@ describe("Settings sampling and history", () => {
 
 describe("Settings feedback and support", () => {
   it("copies non-PII system info, opens GitHub Issues, and records Star on GitHub", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(
+      <>
+        <SettingsRoute />
+        <Toaster />
+      </>
+    );
     // After render: user-event installs its own clipboard during setup.
     const writeText = vi
       .spyOn(navigator.clipboard, "writeText")
@@ -464,6 +470,7 @@ describe("Settings feedback and support", () => {
     expect(writeText.mock.calls[0]?.[0]).toMatch(
       /^StatGlass v[\d.]+ · macOS 27\.0\.1 · Apple M4 Pro$/
     );
+    expect(await screen.findByText("System info copied")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "File feedback" }));
     expect(transport.calls).toContainEqual({
@@ -480,5 +487,27 @@ describe("Settings feedback and support", () => {
       command: "act_on_star_prompt",
       args: ["starred"],
     });
+  });
+
+  it("says so when the clipboard refuses the system info", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { user } = renderWithProviders(
+      <>
+        <SettingsRoute />
+        <Toaster />
+      </>
+    );
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+      new Error("denied")
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Copy system info" })
+    );
+
+    expect(
+      await screen.findByText("Couldn't copy system info.")
+    ).toBeInTheDocument();
+    error.mockRestore();
   });
 });

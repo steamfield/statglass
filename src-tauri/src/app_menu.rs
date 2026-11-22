@@ -1,14 +1,13 @@
 //! Native macOS application menu bar (`Help -> File Feedback / Star on GitHub`) and
 //! shared menu-event routing for both the app menu and the tray right-click menu.
 
-use tauri::menu::MenuItem;
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Manager, Wry};
+use tauri::menu::{MenuEvent, MenuItem};
+use tauri::{AppHandle, Wry};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::star_prompt::{GITHUB_ISSUES_URL, GITHUB_REPO_URL, StarPromptAction};
-use crate::state::AppState;
 
 /// Menu item id for "File Feedback on GitHub…" in the macOS Help menu.
 pub const FEEDBACK_MENU_ID: &str = "menu:feedback";
@@ -18,6 +17,8 @@ pub const TRAY_FEEDBACK_MENU_ID: &str = "tray:feedback";
 pub const STAR_MENU_ID: &str = "menu:star";
 /// Menu item id for "Settings…" in the macOS application menu.
 pub const SETTINGS_MENU_ID: &str = "menu:settings";
+/// Menu item id for "Quit StatGlass" in both the macOS application menu and the tray.
+pub const QUIT_MENU_ID: &str = "quit";
 
 /// Semantic action routed from a native application or tray menu item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub enum MenuAction {
     OpenFeedback,
     /// Open the GitHub repository and record permanent star opt-out.
     StarOnGitHub,
+    /// Exit the app.
+    Quit,
 }
 
 /// Maps a native menu item id to a [`MenuAction`], returning `None` for unrelated ids.
@@ -36,6 +39,7 @@ pub fn classify_menu_event(id: &str) -> Option<MenuAction> {
         FEEDBACK_MENU_ID | TRAY_FEEDBACK_MENU_ID => Some(MenuAction::OpenFeedback),
         STAR_MENU_ID => Some(MenuAction::StarOnGitHub),
         SETTINGS_MENU_ID => Some(MenuAction::OpenSettings),
+        QUIT_MENU_ID => Some(MenuAction::Quit),
         _ => None,
     }
 }
@@ -48,6 +52,17 @@ pub fn settings_item(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
         "Settings…",
         true,
         Some("CmdOrCtrl+,"),
+    )
+}
+
+/// "Quit StatGlass" (Cmd+Q), shared by the macOS app menu and the tray right-click menu.
+pub fn quit_item(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
+    MenuItem::with_id(
+        app,
+        QUIT_MENU_ID,
+        "Quit StatGlass",
+        true,
+        Some("CmdOrCtrl+Q"),
     )
 }
 
@@ -79,9 +94,9 @@ fn app_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::show_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            // Routed through `tray::on_menu_event` (`"quit" => app.exit(0)`) so
+            // An explicit exit, so `RunEvent::ExitRequested { code: None }` does not block Quit.
             // `RunEvent::ExitRequested { code: None }` does not block an explicit Quit.
-            &MenuItem::with_id(app, "quit", "Quit StatGlass", true, Some("CmdOrCtrl+Q"))?,
+            &quit_item(app)?,
         ],
     )
 }
@@ -144,10 +159,13 @@ fn help_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
     )
 }
 
-/// Installs the native macOS application menu bar (active when "Show in Dock" / Regular
-/// activation policy is enabled). No-op on non-macOS targets.
+/// Registers the app's one menu listener and, on macOS, installs the application menu bar
+/// (shown when "Show in Dock" switches to the Regular activation policy).
 #[cfg(target_os = "macos")]
 pub fn install(app: &AppHandle) -> anyhow::Result<()> {
+    // Once for the app: Tauri delivers every menu's events (app menu and each tray item's
+    // menu) to every listener, so a second listener would fire each action twice.
+    app.on_menu_event(on_menu_event);
     let app_menu = app_submenu(app)?;
     let edit_menu = edit_submenu(app)?;
     let window_menu = window_submenu(app)?;
@@ -157,11 +175,19 @@ pub fn install(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Installs the native macOS application menu bar (active when "Show in Dock" / Regular
-/// activation policy is enabled). No-op on non-macOS targets.
+/// Registers the app's one menu listener. There is no application menu bar off macOS.
 #[cfg(not(target_os = "macos"))]
-pub fn install(_app: &AppHandle) -> anyhow::Result<()> {
+pub fn install(app: &AppHandle) -> anyhow::Result<()> {
+    app.on_menu_event(on_menu_event);
     Ok(())
+}
+
+fn on_menu_event(app: &AppHandle, event: MenuEvent) {
+    let id = event.id().as_ref();
+    tracing::debug!(item = id, "menu");
+    if !handle_menu_event(app, id) {
+        crate::tray::on_menu_item(app, id);
+    }
 }
 
 /// Handles an application or tray menu event id if it maps to a [`MenuAction`].
@@ -185,14 +211,19 @@ pub fn handle_menu_event(app: &AppHandle, id: &str) -> bool {
             if let Err(err) = app.opener().open_url(GITHUB_REPO_URL, None::<&str>) {
                 tracing::warn!("opening github repo url: {err}");
             }
-            if let Some(state) = app.try_state::<AppState>()
-                && let Err(err) = state
-                    .star_prompt
-                    .act(StarPromptAction::Starred, statglass_engine::wall_ms())
-            {
-                tracing::warn!("recording github star action: {err}");
-            }
+            // Saving blocks on a file write; menu events arrive on the main thread.
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(err) =
+                    crate::star_prompt::act_and_notify(&app, StarPromptAction::Starred)
+                {
+                    tracing::warn!("recording github star action: {err}");
+                }
+            });
         }
+        // An exit code, unlike closing the last window, ends the app (lib.rs `run`), and
+        // `RunEvent::Exit` stops the engine and closes the store.
+        MenuAction::Quit => app.exit(0),
     }
     true
 }
@@ -221,7 +252,7 @@ mod tests {
         );
         assert_eq!(classify_menu_event("open"), None);
         assert_eq!(classify_menu_event("pause"), None);
-        assert_eq!(classify_menu_event("quit"), None);
+        assert_eq!(classify_menu_event(QUIT_MENU_ID), Some(MenuAction::Quit));
         assert_eq!(classify_menu_event(""), None);
     }
 }

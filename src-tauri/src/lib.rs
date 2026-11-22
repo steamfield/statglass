@@ -154,6 +154,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             ipc::HostsChanged,
             remote::RemoteHostsChanged,
             ipc::EventRecorded,
+            star_prompt::StarPromptChanged,
         ]);
     facts::register(builder)
 }

@@ -98,6 +98,10 @@ export function createTauriTransport(label: string): Transport {
     getWindowAppearance: () => commands.getWindowAppearance(),
     getStarPromptStatus: () => commands.getStarPromptStatus(),
     actOnStarPrompt: (action) => commands.actOnStarPrompt(action),
+    onStarPromptChanged: (cb) =>
+      syncUnlisten(
+        events.starPromptChanged.listen((e) => cb(e.payload.status))
+      ),
     async openUrl(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
       await openUrl(url);

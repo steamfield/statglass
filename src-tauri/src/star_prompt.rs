@@ -12,7 +12,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use statglass_schema::lock::LockExt;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
+use tauri_specta::Event;
 
 use crate::error::CommandError;
 use crate::state::AppState;
@@ -285,6 +286,16 @@ fn load_initial_state(
     }
 }
 
+/// When the history database was created, which seeds an existing user's tenure. A read
+/// failure is logged, since the fallback restarts that tenure at first launch.
+pub fn history_created_at_ms(history: &crate::history::History) -> Option<i64> {
+    history
+        .read(|r| r.created_at_ms())
+        .inspect_err(|e| tracing::warn!("reading history created_at_ms: {e}"))
+        .ok()
+        .flatten()
+}
+
 /// Thread-safe owner of star-prompt eligibility and engagement tracking.
 pub struct StarPromptOwner {
     store: Box<dyn StarPromptStore>,
@@ -358,13 +369,55 @@ pub fn get_star_prompt_status(state: State<'_, AppState>) -> StarPromptStatus {
 }
 
 /// Persists the user's star, dismiss, or snooze choice and returns the updated status.
+///
+/// # Errors
+///
+/// [`CommandError::SettingsNotSaved`] when `star-prompt.json` can't be written.
 #[tauri::command]
 #[specta::specta]
-pub fn act_on_star_prompt(
+pub async fn act_on_star_prompt(
+    app: AppHandle,
     action: StarPromptAction,
-    state: State<'_, AppState>,
 ) -> Result<StarPromptStatus, CommandError> {
-    state.star_prompt.act(action, statglass_engine::wall_ms())
+    crate::commands::spawn_blocking(move || act_and_notify(&app, action)).await?
+}
+
+/// Sent to every window after a star, dismiss or snooze is saved, so a dashboard showing
+/// the prompt hides it when the choice came from Settings or the app menu.
+#[derive(Clone, Debug, Serialize, specta::Type, Event)]
+pub struct StarPromptChanged {
+    pub status: StarPromptStatus,
+}
+
+/// Saves `action` now and announces the new status with [`StarPromptChanged`]. Blocks on
+/// the file write, so callers run it off the main thread.
+///
+/// # Errors
+///
+/// [`CommandError::SettingsNotSaved`] when `star-prompt.json` can't be written.
+pub fn act_and_notify(
+    app: &AppHandle,
+    action: StarPromptAction,
+) -> Result<StarPromptStatus, CommandError> {
+    let state = app.state::<AppState>();
+    let status = state.star_prompt.act(action, statglass_engine::wall_ms())?;
+    if let Err(err) = (StarPromptChanged { status }).emit(app) {
+        tracing::warn!("sending star prompt change: {err}");
+    }
+    Ok(status)
+}
+
+/// Counts a user-opened dashboard or popover toward engagement. The write runs on a
+/// blocking worker so it never delays a window open on the main thread.
+pub fn record_engagement(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(state) = app.try_state::<AppState>() {
+            state
+                .star_prompt
+                .record_interaction(statglass_engine::wall_ms());
+        }
+    });
 }
 
 #[cfg(test)]

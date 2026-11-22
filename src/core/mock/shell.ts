@@ -145,8 +145,11 @@ export class MockShell {
       action === "snoozed"
         ? { eligible: false, can_snooze: false }
         : { eligible: false, can_snooze: this.starPrompt.can_snooze };
+    this.emitters.starPrompt.emit({ ...this.starPrompt });
     return ok({ ...this.starPrompt });
   };
+  readonly onStarPromptChanged: MockTransport["onStarPromptChanged"] = (cb) =>
+    this.emitters.starPrompt.on(cb);
   readonly openUrl: MockTransport["openUrl"] = async (url) => {
     this.commands.record("open_url", url);
   };
@@ -169,6 +172,7 @@ export class MockShell {
       getWindowAppearance: this.getWindowAppearance,
       getStarPromptStatus: this.getStarPromptStatus,
       actOnStarPrompt: this.actOnStarPrompt,
+      onStarPromptChanged: this.onStarPromptChanged,
       openUrl: this.openUrl,
       closeWindow: this.closeWindow,
     };

@@ -12,9 +12,9 @@ import {
 } from "@core/star-prompt";
 import type { Transport } from "@core/transport";
 import { memo, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { StarPromptCard } from "~/components/star-prompt-card";
 import { useHistoryHealth } from "~/hooks/use-history-health";
+import { openExternalUrl, recordStarPromptAction } from "~/lib/github-links";
 import { useTransport } from "~/lib/transport-context";
 import { useSettings } from "~/stores/settings-store";
 
@@ -44,8 +44,15 @@ function useStarPromptStatus(transport: Transport) {
         console.error("[star-prompt] getStarPromptStatus failed", err);
       }
     );
+    // A choice made in Settings or the app menu hides a card already showing.
+    const unsubscribe = transport.onStarPromptChanged((changed) => {
+      if (active) {
+        setStatus(changed);
+      }
+    });
     return () => {
       active = false;
+      unsubscribe();
     };
   }, [transport]);
 
@@ -107,35 +114,6 @@ function useCalmDelay(
   return delayElapsed;
 }
 
-function persistStarPromptAction(
-  transport: Transport,
-  action: StarPromptAction
-): void {
-  transport.actOnStarPrompt(action).then(
-    (outcome) => {
-      if (outcome.status === "error") {
-        console.error("[star-prompt] actOnStarPrompt failed", {
-          action,
-          error: outcome.error,
-        });
-      }
-    },
-    (err: unknown) => {
-      console.error("[star-prompt] actOnStarPrompt rejected", {
-        action,
-        err,
-      });
-    }
-  );
-}
-
-function openGitHubRepo(transport: Transport): void {
-  transport.openUrl(GITHUB_REPO_URL).catch((err: unknown) => {
-    console.error("[star-prompt] openUrl failed", err);
-    toast("Couldn't open link.");
-  });
-}
-
 function recordPromptAction(
   transport: Transport,
   hidePrompt: () => void,
@@ -143,9 +121,9 @@ function recordPromptAction(
 ): void {
   hidePrompt();
   if (action === "starred") {
-    openGitHubRepo(transport);
+    openExternalUrl(transport, GITHUB_REPO_URL, "star-prompt");
   }
-  persistStarPromptAction(transport, action);
+  recordStarPromptAction(transport, action, "star-prompt");
 }
 
 /** Hosts the bottom-right GitHub star prompt in the dashboard window after a calm-moment delay. */

@@ -30,6 +30,10 @@ for (const theme of ["light", "dark"] as const) {
 
     await card.getByRole("button", { name: "Star on GitHub" }).click();
     await expect(card).toBeHidden();
+
+    // Another calm-moment delay must not bring it back.
+    await page.clock.fastForward(CALM_DELAY_ADVANCE_MS);
+    await expect(card).toHaveCount(0);
   });
 
   test(`${theme}: popover never shows the GitHub star prompt`, async ({
@@ -79,8 +83,11 @@ for (const theme of ["light", "dark"] as const) {
       page.getByRole("button", { name: "Star on GitHub" })
     ).toBeVisible();
 
-    await expect(
-      page.getByRole("navigation").getByRole("button", { name: "Feedback" })
-    ).toBeVisible();
+    // Vitest asserts the open_url call; here the click must not surface an error.
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: "Feedback" })
+      .click();
+    await expect(page.getByText("Couldn't open link.")).toHaveCount(0);
   });
 }

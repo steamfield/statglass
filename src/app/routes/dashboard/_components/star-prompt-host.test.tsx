@@ -315,3 +315,109 @@ describe("StarPromptHost calm-moment guards and routes", () => {
     }
   });
 });
+
+describe("StarPromptHost choices saved elsewhere and failures", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("hides a showing card when the choice is saved in Settings or the app menu", async () => {
+    vi.useFakeTimers();
+    const transport = createMockTransport({
+      scenarios: ["star-prompt", "paused"],
+      historyRows: 60,
+    });
+    const view = renderWithProviders(
+      <StarPromptHost hasFocalNotice={false} delayMs={50} />,
+      { transport, route: "/dashboard/overview" }
+    );
+    try {
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(
+        screen.getByRole("status", { name: /star statglass on github/i })
+      ).toBeInTheDocument();
+
+      // Another surface saves the star; Rust announces it to every window.
+      await act(async () => {
+        await transport.actOnStarPrompt("starred");
+      });
+
+      expect(
+        screen.queryByRole("status", { name: /star statglass on github/i })
+      ).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      transport.dispose();
+    }
+  });
+
+  it("stays hidden when saving the choice fails", async () => {
+    vi.useFakeTimers();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const transport = createMockTransport({
+      scenarios: ["star-prompt", "paused"],
+      historyRows: 60,
+      starPromptFails: true,
+    });
+    const view = renderWithProviders(
+      <StarPromptHost hasFocalNotice={false} delayMs={50} />,
+      { transport, route: "/dashboard/overview" }
+    );
+    try {
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+      });
+      await act(() => vi.advanceTimersByTimeAsync(100));
+
+      expect(
+        screen.queryByRole("status", { name: /star statglass on github/i })
+      ).not.toBeInTheDocument();
+      expect(error).toHaveBeenCalledWith(
+        "[star-prompt] actOnStarPrompt failed",
+        expect.objectContaining({ action: "snoozed" })
+      );
+    } finally {
+      view.unmount();
+      transport.dispose();
+      error.mockRestore();
+    }
+  });
+
+  it("says so quietly when the browser can't open GitHub", async () => {
+    vi.useFakeTimers();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const transport = createMockTransport({
+      scenarios: ["star-prompt", "paused"],
+      historyRows: 60,
+    });
+    transport.openUrl = async () => {
+      throw new Error("no browser");
+    };
+    const view = renderWithProviders(
+      <>
+        <StarPromptHost hasFocalNotice={false} delayMs={50} />
+        <Toaster />
+      </>,
+      { transport, route: "/dashboard/overview" }
+    );
+    try {
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Star on GitHub" }));
+      });
+      await act(() => vi.advanceTimersByTimeAsync(100));
+
+      expect(screen.getByText("Couldn't open link.")).toBeInTheDocument();
+      expect(
+        transport.calls.some(
+          (c) => c.command === "act_on_star_prompt" && c.args[0] === "starred"
+        )
+      ).toBe(true);
+    } finally {
+      view.unmount();
+      transport.dispose();
+      error.mockRestore();
+    }
+  });
+});

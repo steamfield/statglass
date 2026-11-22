@@ -8,7 +8,6 @@ import { GITHUB_ISSUES_URL } from "@core/star-prompt";
 import { MessageSquare } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { toast } from "sonner";
 import { HostSwitcher } from "~/components/host-switcher";
 import { PerformanceExplainer } from "~/components/performance-explainer";
 import { Sidebar, type SidebarEntry } from "~/components/sidebar";
@@ -21,6 +20,7 @@ import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import { openExternalUrl } from "~/lib/github-links";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import {
@@ -106,12 +106,10 @@ export function compactRate(bps: number | null): string | undefined {
 
 const SidebarFeedbackAction = memo(function SidebarFeedbackAction() {
   const transport = useTransport();
-  const onOpenIssues = useCallback(() => {
-    transport.openUrl(GITHUB_ISSUES_URL).catch((err: unknown) => {
-      console.error("[sidebar] openUrl failed", err);
-      toast("Couldn't open link.");
-    });
-  }, [transport]);
+  const onOpenIssues = useCallback(
+    () => openExternalUrl(transport, GITHUB_ISSUES_URL, "sidebar"),
+    [transport]
+  );
 
   return (
     <HoverCard>

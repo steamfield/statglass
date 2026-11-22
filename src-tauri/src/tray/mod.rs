@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use statglass_engine::{BusMsg, EngineStatus};
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Listener, Manager, Wry};
 use tauri_specta::Event;
@@ -90,12 +90,9 @@ pub fn create(app: &AppHandle) -> anyhow::Result<()> {
             &pause,
             &app_menu::tray_feedback_item(app)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "quit", "Quit StatGlass", true, Some("CmdOrCtrl+Q"))?,
+            &app_menu::quit_item(app)?,
         ],
     )?;
-    // Once for the app, not per status item: Tauri keeps every tray's menu handler as a
-    // global listener, so per-item handlers would toggle Pause once per item.
-    app.on_menu_event(on_menu_event);
     app.manage(TrayMenu { pause });
 
     let mut items = Items {
@@ -132,9 +129,10 @@ pub fn create(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn on_menu_event(app: &AppHandle, event: MenuEvent) {
-    tracing::debug!(item = event.id().as_ref(), "tray menu");
-    match event.id().as_ref() {
+/// Handles the tray-only menu items. `app_menu` owns the app's one menu listener and
+/// passes on ids it doesn't handle.
+pub(crate) fn on_menu_item(app: &AppHandle, id: &str) {
+    match id {
         "open" => {
             if let Err(e) = windows::open_dashboard(app, None) {
                 tracing::warn!("opening the dashboard from the menu: {e}");
@@ -152,11 +150,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
                 tracing::warn!("pausing from the tray: {e}");
             }
         }
-        // An exit code, unlike closing the last window, ends the app (lib.rs `run`), and
-        // `RunEvent::Exit` stops the engine and closes the store.
-        "quit" => app.exit(0),
-        // Settings and Send Feedback share their handling with the macOS app menu.
-        id => _ = app_menu::handle_menu_event(app, id),
+        _ => {}
     }
 }
 

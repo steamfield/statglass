@@ -4,7 +4,6 @@ import {
   GITHUB_ISSUES_URL,
   GITHUB_REPO_URL,
 } from "@core/star-prompt";
-import type { Transport } from "@core/transport";
 import { toast } from "sonner";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
@@ -19,6 +18,7 @@ import { Switch } from "~/components/ui/switch";
 import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useWriteSettings } from "~/hooks/use-write-settings";
+import { openExternalUrl, recordStarPromptAction } from "~/lib/github-links";
 import { useTransport } from "~/lib/transport-context";
 import { version } from "../../../../../../package.json";
 import { UpdateRow } from "./update-row";
@@ -28,13 +28,6 @@ const APPEARANCES: { value: Appearance; label: string }[] = [
   { value: "dark", label: "Dark" },
   { value: "light", label: "Light" },
 ];
-
-function openExternalUrl(transport: Transport, url: string) {
-  void transport.openUrl(url).catch((err: unknown) => {
-    console.error("[settings] openUrl failed", err);
-    toast("Couldn't open link.");
-  });
-}
 
 function CommunityRows() {
   const transport = useTransport();
@@ -55,20 +48,12 @@ function CommunityRows() {
     );
   };
 
-  const openFeedback = () => openExternalUrl(transport, GITHUB_ISSUES_URL);
+  const openFeedback = () =>
+    openExternalUrl(transport, GITHUB_ISSUES_URL, "settings");
 
   const openStar = () => {
-    openExternalUrl(transport, GITHUB_REPO_URL);
-    void transport.actOnStarPrompt("starred").then(
-      (outcome) => {
-        if (outcome.status === "error") {
-          console.error("[settings] actOnStarPrompt failed", outcome.error);
-        }
-      },
-      (err: unknown) => {
-        console.error("[settings] actOnStarPrompt rejected", err);
-      }
-    );
+    openExternalUrl(transport, GITHUB_REPO_URL, "settings");
+    recordStarPromptAction(transport, "starred", "settings");
   };
 
   return (
