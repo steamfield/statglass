@@ -16,7 +16,12 @@ export type RemoteConnectionKind =
   | "update_required"
   | "identity_changed"
   | "disabled"
-  | "protocol";
+  | "protocol"
+  | "name_not_resolved"
+  | "refused"
+  | "no_route"
+  | "local_offline"
+  | "tailscale_down";
 
 export type RemoteConnectionTone = "info" | "warning" | "destructive";
 
@@ -45,6 +50,8 @@ export interface RemoteConnectionView {
   readonly primaryAction: RemotePrimaryAction | null;
   readonly showRetry: boolean;
   readonly diagnostics: string;
+  /** One line per failed route, e.g. "LAN (studio.local): name not found on this network". */
+  readonly routeLines: readonly string[];
   readonly sidebarLabel: string;
   readonly pillLabel: string;
 }
@@ -127,6 +134,11 @@ function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
       return "identity_changed";
     case "protocol":
       return "protocol";
+    case "name_not_resolved":
+    case "refused":
+    case "no_route":
+    case "local_offline":
+    case "tailscale_down":
     case "unreachable":
     case null:
       return "unreachable";
@@ -386,6 +398,11 @@ function copyForKind(
         sidebarLabel: autoRetrying ? "Reconnecting…" : "Timed out",
         pillLabel: "Offline",
       };
+    case "name_not_resolved":
+    case "refused":
+    case "no_route":
+    case "local_offline":
+    case "tailscale_down":
     case "unreachable":
       return {
         tone: "warning",
@@ -424,5 +441,6 @@ export function remoteConnectionView(
     hasSavedHistory: syncedThroughMs !== null,
     gifSeed: `${remote.config.id}:${kind}`,
     diagnostics: buildDiagnostics(remote, kind, routes),
+    routeLines: [],
   };
 }

@@ -43,6 +43,7 @@ function host(
       synced_through_ms: null,
       error: null,
       failure_kind: null,
+      route_failures: [],
       sync: "current",
       clock_offset_ms: 0,
       agent_version:

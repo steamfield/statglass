@@ -264,6 +264,7 @@ pub(super) fn connection_status(
             .error
             .or_else(|| s.connected.then_some(s.history_error.clone()).flatten()),
         failure_kind: s.failure_kind.map(map_failure_kind),
+        route_failures: Vec::new(),
         sync: if s.history_error.is_some() {
             RemoteSync::Unavailable
         } else if s.catching_up {
@@ -299,6 +300,11 @@ fn map_failure_kind(kind: statglass_remote::ConnectionFailureKind) -> RemoteFail
             RemoteFailureKind::IdentityChanged
         }
         statglass_remote::ConnectionFailureKind::Protocol => RemoteFailureKind::Protocol,
+        statglass_remote::ConnectionFailureKind::NameNotResolved
+        | statglass_remote::ConnectionFailureKind::Refused
+        | statglass_remote::ConnectionFailureKind::NoRoute
+        | statglass_remote::ConnectionFailureKind::LocalOffline
+        | statglass_remote::ConnectionFailureKind::TailscaleDown => RemoteFailureKind::Unreachable,
     }
 }
 

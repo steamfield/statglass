@@ -2598,7 +2598,7 @@ export type RemoteDockerAccess =
 /**  There is a socket this login cannot use; containers show by short id. */
 "unreadable" | "readable";
 
-export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "host_key" | "agent_not_running" | "incompatible" | "identity_changed" | "protocol";
+export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "host_key" | "agent_not_running" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down";
 
 export type RemoteHostConfig = {
 	id: string,
@@ -2650,6 +2650,11 @@ export type RemoteHostStatus = {
 	synced_through_ms: number | null,
 	error: string | null,
 	failure_kind: RemoteFailureKind | null,
+	/**
+	 *  Per-route causes of the last failure; empty while connected or when the
+	 *  failure was not specific to a route.
+	 */
+	route_failures: RemoteRouteFailure[],
 	sync: RemoteSync,
 	clock_offset_ms: number | null,
 	vitals: HostVitals,
@@ -2670,6 +2675,12 @@ export type RemoteHostStatus = {
 export type RemoteHostsChanged = Record<string, never>;
 
 export type RemoteRoute = "lan" | "tailscale";
+
+/**  One configured route's cause from the last failed connection attempt. */
+export type RemoteRouteFailure = {
+	route: RemoteRoute,
+	kind: RemoteFailureKind,
+};
 
 export type RemoteSshConfigStatus = "missing" | "present";
 

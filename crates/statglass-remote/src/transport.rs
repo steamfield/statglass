@@ -411,6 +411,9 @@ fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
 }
 
 #[cfg(test)]
+mod classify_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[tokio::test(start_paused = true)]

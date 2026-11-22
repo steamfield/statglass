@@ -124,3 +124,72 @@ fn rendered_sync_and_version_changes_emit_without_other_changes() {
     assert!(rendered_status_changed(&previous, &next, 0.0));
     assert!(!rendered_status_changed(&next, &next, 0.0));
 }
+
+#[test]
+fn every_new_failure_kind_crosses_the_boundary_with_its_routes() {
+    use statglass_remote::{ConnectionFailureKind as K, Route, RouteFailure};
+    let cases = [
+        (K::NameNotResolved, RemoteFailureKind::NameNotResolved),
+        (K::Refused, RemoteFailureKind::Refused),
+        (K::NoRoute, RemoteFailureKind::NoRoute),
+        (K::LocalOffline, RemoteFailureKind::LocalOffline),
+        (K::TailscaleDown, RemoteFailureKind::TailscaleDown),
+    ];
+    for (kind, expected) in cases {
+        let status = ConnectionStatus {
+            retrying: true,
+            error: Some("studio: failed".into()),
+            failure_kind: Some(kind),
+            route_failures: vec![
+                RouteFailure {
+                    route: Route::Lan,
+                    kind: K::NameNotResolved,
+                },
+                RouteFailure {
+                    route: Route::Tailscale,
+                    kind,
+                },
+            ],
+            ..Default::default()
+        };
+        let mapped = connection_status(status, false, None);
+        assert_eq!(mapped.failure_kind, Some(expected));
+        assert_eq!(
+            mapped.route_failures,
+            vec![
+                RemoteRouteFailure {
+                    route: RemoteRoute::Lan,
+                    kind: RemoteFailureKind::NameNotResolved,
+                },
+                RemoteRouteFailure {
+                    route: RemoteRoute::Tailscale,
+                    kind: expected,
+                },
+            ]
+        );
+    }
+}
+
+#[test]
+fn a_route_failure_change_re_emits_status() {
+    use statglass_remote::{ConnectionFailureKind as K, Route, RouteFailure};
+    let manager = RemoteManager::default();
+    let id = HostId(Uuid::nil());
+    let generation = Uuid::new_v4();
+    manager.generations.lock_ok().insert(id, generation);
+    let mut status = ConnectionStatus {
+        retrying: true,
+        error: Some("LAN: a; Tailscale: b".into()),
+        failure_kind: Some(K::Timeout),
+        route_failures: vec![RouteFailure {
+            route: Route::Tailscale,
+            kind: K::Timeout,
+        }],
+        ..Default::default()
+    };
+    publish_status(&manager, id, generation, status.clone(), false, None);
+    status.route_failures[0].kind = K::NoRoute;
+    assert!(publish_status(
+        &manager, id, generation, status, false, None
+    ));
+}

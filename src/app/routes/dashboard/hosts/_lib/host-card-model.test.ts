@@ -27,6 +27,7 @@ function remoteFixture(): RemoteHostRecord {
       synced_through_ms: 1791000000000,
       error: null,
       failure_kind: null,
+      route_failures: [],
       identity_changed: null,
       clock_offset_ms: 0,
       agent_version: "1.0.0",
@@ -317,4 +318,33 @@ it("uses Rust's local memory percentage independently of local byte readings", (
   expect(
     localHostCardModel(host, { ...vitals, memory_pct: null }, "1", null).memory
   ).toBe("—");
+});
+
+describe("host card model network causes", () => {
+  it("reads Waiting for network while this Mac is offline", () => {
+    const remote = remoteFixture();
+    remote.status.state = "connecting";
+    remote.status.failure_kind = "local_offline";
+    remote.status.route_failures = [{ route: "lan", kind: "local_offline" }];
+    const model = remoteHostCardModel(remote);
+    expect(model).toMatchObject({
+      status: "Waiting for network",
+      mark: "idle",
+      stateAction: "Retry",
+      message: { tone: "note", text: "This Mac is offline." },
+    });
+  });
+
+  it("shows the specific cause on a reconnecting card", () => {
+    const remote = remoteFixture();
+    remote.status.state = "connecting";
+    remote.status.failure_kind = "refused";
+    remote.status.route_failures = [{ route: "lan", kind: "refused" }];
+    const model = remoteHostCardModel(remote);
+    expect(model).toMatchObject({
+      status: "Reconnecting…",
+      mark: "warn",
+      message: { tone: "note", text: "SSH connection refused." },
+    });
+  });
 });

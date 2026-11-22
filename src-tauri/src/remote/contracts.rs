@@ -44,6 +44,17 @@ pub enum RemoteFailureKind {
     Incompatible,
     IdentityChanged,
     Protocol,
+    NameNotResolved,
+    Refused,
+    NoRoute,
+    LocalOffline,
+    TailscaleDown,
+}
+/// One configured route's cause from the last failed connection attempt.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct RemoteRouteFailure {
+    pub route: RemoteRoute,
+    pub kind: RemoteFailureKind,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
 pub struct RemoteHostStatus {
@@ -55,6 +66,9 @@ pub struct RemoteHostStatus {
     pub synced_through_ms: Option<f64>,
     pub error: Option<String>,
     pub failure_kind: Option<RemoteFailureKind>,
+    /// Per-route causes of the last failure; empty while connected or when the
+    /// failure was not specific to a route.
+    pub route_failures: Vec<RemoteRouteFailure>,
     pub sync: RemoteSync,
     pub clock_offset_ms: f64,
     pub vitals: HostVitals,
@@ -78,6 +92,7 @@ impl Default for RemoteHostStatus {
             synced_through_ms: None,
             error: None,
             failure_kind: None,
+            route_failures: Vec::new(),
             sync: RemoteSync::Idle,
             clock_offset_ms: 0.0,
             vitals: HostVitals::default(),

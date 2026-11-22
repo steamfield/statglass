@@ -12,6 +12,7 @@ pub mod install;
 mod mirror;
 mod mirror_error;
 mod mirror_sink;
+pub mod network;
 pub mod rr;
 pub use mirror_error::MirrorError;
 mod pages;
@@ -38,7 +39,9 @@ pub use socket::{
     ControlRequest, ControlResponse, SocketPaths, bind_private, control_request, same_uid,
     serve_control,
 };
-pub use source::{ConnectionFailureKind, ConnectionStatus, RemoteSource, StatusCallback};
+pub use source::{
+    ConnectionFailureKind, ConnectionStatus, RemoteSource, RouteFailure, StatusCallback,
+};
 pub use statglass_proto::RemoteInterest;
 pub use stdio::stdio_bridge;
 pub use transport::{EndpointConfig, RemoteCommand, Route, SshSession, connect, ssh_command};
@@ -96,6 +99,29 @@ pub enum RemoteError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Codec(#[from] statglass_proto::CodecError),
+    /// SSH could not open a connection to the host; `kind` is what its stderr said.
+    /// Retryable. `detail` keeps the alias-prefixed stderr for Technical details.
+    #[error("{detail}")]
+    Unreachable {
+        kind: UnreachableKind,
+        detail: String,
+    },
+    /// Both configured routes failed with retryable errors; each keeps its own cause.
+    #[error("LAN: {lan}; Tailscale: {tailscale}")]
+    BothRoutes {
+        lan: Box<RemoteError>,
+        tailscale: Box<RemoteError>,
+    },
+}
+/// Why SSH could not open a connection, read from its stderr.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnreachableKind {
+    /// The alias did not resolve ("Could not resolve hostname").
+    NameNotResolved,
+    /// Something answered on the address but refused port 22.
+    Refused,
+    /// The OS had no route ("No route to host", "Network is unreachable", "Host is down").
+    NoRoute,
 }
 impl RemoteError {
     pub fn retryable(&self) -> bool {

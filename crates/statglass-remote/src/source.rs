@@ -22,7 +22,7 @@ mod queries;
 mod recent;
 mod status;
 use control::Control;
-pub use status::{ConnectionFailureKind, ConnectionStatus};
+pub use status::{ConnectionFailureKind, ConnectionStatus, RouteFailure};
 
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
 #[derive(Clone, Default)]
@@ -212,7 +212,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
                 continue;
             }
             Err(e) => {
-                status.record_failure(&e);
+                status.record_failure(&e, None);
                 (source.on_status)(status.clone());
                 if !e.retryable() {
                     let retry = control.borrow().retry;

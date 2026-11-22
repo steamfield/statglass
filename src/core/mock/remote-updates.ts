@@ -161,6 +161,7 @@ export function initialRemoteStatus(
     synced_through_ms: now,
     error: null,
     failure_kind: null,
+    route_failures: [],
     sync: "current",
     clock_offset_ms: 120000,
     agent_version: APP_VERSION,

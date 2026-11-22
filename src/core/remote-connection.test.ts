@@ -25,6 +25,7 @@ function makeRemote(
       synced_through_ms: null,
       error: null,
       failure_kind: null,
+      route_failures: [],
       sync: "idle",
       clock_offset_ms: 0,
       agent_version: "0.12.0",
