@@ -17,6 +17,14 @@ use std::{
 };
 use tokio::{sync::watch, time::Instant};
 
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "scaffold: phase 2 lane a wires Backoff into run()"
+    )
+)]
+mod backoff;
 mod control;
 mod queries;
 mod recent;

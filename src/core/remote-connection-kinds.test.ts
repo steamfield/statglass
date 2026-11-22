@@ -33,6 +33,10 @@ function failing(
       error: "LAN: studio.local: ssh failed; Tailscale: studio-ts: ssh failed",
       failure_kind,
       route_failures,
+      next_attempt_ms: null,
+      attempt: 0,
+      dialing: false,
+      waiting_for_network: false,
       sync: "idle",
       clock_offset_ms: 0,
       agent_version: "0.12.1",
@@ -63,7 +67,7 @@ describe("remoteConnectionView for network causes", () => {
     expect(v.tone).toBe("warning");
     expect(v.primaryAction).toBe("retry");
     expect(v.showRetry).toBe(true);
-    expect(v.meta).toContain("Auto-retrying");
+    expect(v.meta).not.toContain("Auto-retrying");
   });
 
   it("says this Mac is offline instead of blaming the host", () => {

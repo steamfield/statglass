@@ -270,6 +270,10 @@ pub(super) fn connection_status(
                 kind: map_failure_kind(failure.kind),
             })
             .collect(),
+        next_attempt_ms: None,
+        attempt: 0,
+        dialing: false,
+        waiting_for_network: false,
         sync: if s.history_error.is_some() {
             RemoteSync::Unavailable
         } else if s.catching_up {

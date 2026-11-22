@@ -193,3 +193,83 @@ fn a_route_failure_change_re_emits_status() {
         &manager, id, generation, status, false, None
     ));
 }
+
+#[test]
+fn retry_schedule_crosses_the_boundary() {
+    let status = ConnectionStatus {
+        retrying: true,
+        error: Some("timed out".into()),
+        failure_kind: Some(statglass_remote::ConnectionFailureKind::Timeout),
+        next_attempt_ms: Some(1_795_000_012_000),
+        attempt: 3,
+        dialing: false,
+        waiting_for_network: false,
+        ..Default::default()
+    };
+    let mapped = connection_status(status, false, None);
+    assert_eq!(mapped.next_attempt_ms, Some(1_795_000_012_000.0));
+    assert_eq!(mapped.attempt, 3);
+    assert!(!mapped.dialing && !mapped.waiting_for_network);
+    let waiting = connection_status(
+        ConnectionStatus {
+            retrying: true,
+            dialing: true,
+            waiting_for_network: true,
+            ..Default::default()
+        },
+        false,
+        None,
+    );
+    assert!(waiting.dialing && waiting.waiting_for_network);
+}
+
+#[test]
+fn dialing_and_a_new_schedule_re_emit_but_the_attempt_count_alone_does_not() {
+    let manager = RemoteManager::default();
+    let id = HostId(Uuid::nil());
+    let generation = Uuid::new_v4();
+    manager.generations.lock_ok().insert(id, generation);
+    let mut status = ConnectionStatus {
+        retrying: true,
+        error: Some("timed out".into()),
+        failure_kind: Some(statglass_remote::ConnectionFailureKind::Timeout),
+        next_attempt_ms: Some(1_000),
+        attempt: 1,
+        ..Default::default()
+    };
+    publish_status(&manager, id, generation, status.clone(), false, None);
+    status.attempt = 2;
+    assert!(!publish_status(
+        &manager,
+        id,
+        generation,
+        status.clone(),
+        false,
+        None
+    ));
+    status.dialing = true;
+    status.next_attempt_ms = None;
+    assert!(publish_status(
+        &manager,
+        id,
+        generation,
+        status.clone(),
+        false,
+        None
+    ));
+    status.dialing = false;
+    status.next_attempt_ms = Some(5_000);
+    assert!(publish_status(
+        &manager,
+        id,
+        generation,
+        status.clone(),
+        false,
+        None
+    ));
+    status.waiting_for_network = true;
+    status.next_attempt_ms = None;
+    assert!(publish_status(
+        &manager, id, generation, status, false, None
+    ));
+}

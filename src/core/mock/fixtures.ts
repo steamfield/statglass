@@ -60,6 +60,7 @@ export const SCENARIOS = [
   "host-tailscale-down",
   "host-tailscale-silent",
   "mac-offline",
+  "host-backoff",
   "host-offline-history",
   "linux-identity-changed",
   "popover-compact",

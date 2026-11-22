@@ -30,6 +30,8 @@ export interface HostCardModel {
   version: HostVersionState;
   stateAction: "Retry" | "Turn on" | "Re-pair…" | null;
   isLive: boolean;
+  /** Automatic retry state for a failing remote card; null for live, local or paused cards. */
+  retry: { nextAttemptMs: number | null; dialing: boolean } | null;
   system: string;
   cpu: string;
   memory: string;
@@ -269,6 +271,7 @@ export function remoteHostCardModel(
   const state = connection(remote);
   return {
     ...state,
+    retry: null,
     rr: rrBand(
       remote.status.rr,
       state.isLive,
@@ -305,6 +308,7 @@ export function localHostCardModel(
     message: null,
     stateAction: null,
     isLive: true,
+    retry: null,
     system: system(host),
     version: localVersionState(version, target),
     cpu: MISSING,

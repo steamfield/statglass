@@ -2655,6 +2655,14 @@ export type RemoteHostStatus = {
 	 *  failure was not specific to a route.
 	 */
 	route_failures: RemoteRouteFailure[],
+	/**  This Mac's wall-clock ms of the next automatic attempt, when one is scheduled. */
+	next_attempt_ms: number | null,
+	/**  Consecutive failed attempts since the last connection. */
+	attempt: number,
+	/**  A connection attempt is in flight. */
+	dialing: boolean,
+	/**  This Mac is offline; the host reconnects when the network changes. */
+	waiting_for_network: boolean,
 	sync: RemoteSync,
 	clock_offset_ms: number | null,
 	vitals: HostVitals,

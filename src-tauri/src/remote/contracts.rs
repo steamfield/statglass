@@ -69,6 +69,14 @@ pub struct RemoteHostStatus {
     /// Per-route causes of the last failure; empty while connected or when the
     /// failure was not specific to a route.
     pub route_failures: Vec<RemoteRouteFailure>,
+    /// This Mac's wall-clock ms of the next automatic attempt, when one is scheduled.
+    pub next_attempt_ms: Option<f64>,
+    /// Consecutive failed attempts since the last connection.
+    pub attempt: u32,
+    /// A connection attempt is in flight.
+    pub dialing: bool,
+    /// This Mac is offline; the host reconnects when the network changes.
+    pub waiting_for_network: bool,
     pub sync: RemoteSync,
     pub clock_offset_ms: f64,
     pub vitals: HostVitals,
@@ -93,6 +101,10 @@ impl Default for RemoteHostStatus {
             error: None,
             failure_kind: None,
             route_failures: Vec::new(),
+            next_attempt_ms: None,
+            attempt: 0,
+            dialing: false,
+            waiting_for_network: false,
             sync: RemoteSync::Idle,
             clock_offset_ms: 0.0,
             vitals: HostVitals::default(),

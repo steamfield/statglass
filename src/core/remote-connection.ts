@@ -59,6 +59,12 @@ export interface RemoteConnectionView {
   readonly diagnostics: string;
   /** One line per failed route, e.g. "LAN (studio.local): name not found on this network". */
   readonly routeLines: readonly string[];
+  /** This Mac's wall-clock ms of the next automatic attempt, or null when none is scheduled. */
+  readonly nextAttemptMs: number | null;
+  /** A connection attempt is in flight. */
+  readonly dialing: boolean;
+  /** This Mac is offline and the host waits for the network to come back. */
+  readonly waitingForNetwork: boolean;
   readonly sidebarLabel: string;
   readonly pillLabel: string;
 }
@@ -428,5 +434,8 @@ export function remoteConnectionView(
     gifSeed: `${remote.config.id}:${kind}`,
     diagnostics: buildDiagnostics(remote, kind, routes),
     routeLines: buildRouteLines(remote.status, routes),
+    nextAttemptMs: null,
+    dialing: false,
+    waitingForNetwork: false,
   };
 }

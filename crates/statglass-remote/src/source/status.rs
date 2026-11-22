@@ -151,6 +151,15 @@ pub struct ConnectionStatus {
     /// Per-route causes of the last failure: both routes for a dual-route host whose
     /// routes both failed, the one route for a single-route host, otherwise empty.
     pub route_failures: Vec<RouteFailure>,
+    /// This Mac's wall-clock time of the next automatic attempt; `None` while dialing,
+    /// connected, waiting for the network or waiting for a manual retry.
+    pub next_attempt_ms: Option<i64>,
+    /// Consecutive failed attempts since the last connection; 0 once connected.
+    pub attempt: u32,
+    /// A connection attempt is in flight.
+    pub dialing: bool,
+    /// This Mac is offline; the source waits for a network change instead of a timer.
+    pub waiting_for_network: bool,
 }
 impl ConnectionStatus {
     /// Refines `failure_kind` and `route_failures` against this Mac's network at
