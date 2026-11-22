@@ -25,7 +25,9 @@ it("keeps a never-connected host usable and offers a connection retry", async ()
   await screen.findByRole("heading", { name: "Overview" });
   await screen.findByRole("heading", { name: "Can’t connect to unreachable" });
   expect(screen.getByRole("navigation")).toBeInTheDocument();
-  expect(screen.getByText("Connecting", { exact: true })).toBeVisible();
+  expect(
+    screen.getAllByText("Offline", { exact: true }).length
+  ).toBeGreaterThan(0);
   expect(screen.queryByText(/Sampling every 0s/)).not.toBeInTheDocument();
   expect(screen.queryByText("This view hit a snag")).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Technical details", { exact: true }));
@@ -39,11 +41,50 @@ it("keeps a never-connected host usable and offers a connection retry", async ()
   expect(
     transport.calls.some((call) => call.command === "retry_remote_host")
   ).toBe(true);
-  fireEvent.click(screen.getByRole("link", { name: "CPU" }));
+  fireEvent.click(
+    within(screen.getByRole("navigation")).getByRole("link", { name: /^CPU/ })
+  );
   await screen.findByRole("heading", { name: "CPU" });
   expect(screen.queryByText("This view hit a snag")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("link", { name: "Open Hosts" }));
   await screen.findByRole("heading", { name: "Hosts" });
+  view.unmount();
+  transport.dispose();
+});
+
+it("keeps mirrored history accessible and offers jump + local switch when a host is offline with history", async () => {
+  const transport = createMockTransport({
+    scenarios: ["host-offline-history"],
+    historyRows: 0,
+  });
+  const view = render(
+    <App transport={transport} router={{ initialEntry: "/dashboard/hosts" }} />
+  );
+  const heading = await screen.findByRole("heading", { name: "M4 Mini" });
+  const row = heading.closest("section");
+  if (!row) throw new Error("missing M4 Mini host card");
+  fireEvent.click(within(row).getByRole("button", { name: "View metrics" }));
+  await screen.findByRole("heading", { name: "Overview" });
+  await screen.findByRole("heading", {
+    name: "Can’t connect to M4 Mini",
+  });
+  expect(screen.getByText("m4-mini.local")).toBeVisible();
+  expect(screen.getByText("m4-mini-ts")).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Jump to saved history" })
+  ).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Switch to This Mac" })
+  ).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "Switch to This Mac" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", {
+        name: "Can’t connect to M4 Mini",
+      })
+    ).not.toBeInTheDocument()
+  );
   view.unmount();
   transport.dispose();
 });

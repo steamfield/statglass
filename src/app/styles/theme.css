@@ -137,6 +137,7 @@
   /* Status */
   --color-live: #10b981;
   --color-warning: #f59e0b;
+  --color-warning-ink: #b45309;
 
   /* Radius scale. Tailwind's stock `rounded-sm`/`-md`/`-lg` are cleared so
      every corner comes from this one scale. */
@@ -218,6 +219,7 @@
   --color-net-ink: var(--color-net);
   --color-disk-ink: var(--color-disk);
   --color-battery-ink: var(--color-battery);
+  --color-warning-ink: var(--color-warning);
 }
 
 /*

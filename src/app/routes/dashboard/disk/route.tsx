@@ -26,6 +26,7 @@ import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useSearchParamPatch } from "~/hooks/use-search-param-patch";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { useBrushRange, useBrushStore } from "~/stores/brush-store";
 import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useMemory } from "~/stores/live-selectors";
@@ -184,133 +185,136 @@ function DiskActivity({
           </div>
         }
       />
-      <div {...brushScopeProps} ref={chartRef} className="min-w-0">
+      <DashboardBanners />
+      <DashboardBody>
+        <div {...brushScopeProps} ref={chartRef} className="min-w-0">
+          <SectionCard
+            accent="disk"
+            title="Disk I/O"
+            compactHeader
+            headerAlign="center"
+            className="gap-3"
+            aside={
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Select
+                  value={device ?? "all"}
+                  onValueChange={(device) => patch({ device })}
+                >
+                  <SelectTrigger
+                    aria-label="Disk device"
+                    size="sm"
+                    className="max-w-56"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All devices</SelectItem>
+                    {devices.map((d) => (
+                      <SelectItem key={d.dev} value={d.dev}>
+                        {d.name} · {d.dev}
+                      </SelectItem>
+                    ))}
+                    {missing && (
+                      <SelectItem value={device}>
+                        {device} · Unavailable
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    brush.getState().clear();
+                    if (windowMs !== null && fixedEnd !== null)
+                      setChartWindow(relativeWindow(windowMs));
+                  }}
+                  aria-pressed={selection === null && fixedEnd === null}
+                  className="h-7 rounded-control border border-border bg-btn px-3 text-small outline-none hover:bg-selected focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Live
+                </button>
+              </div>
+            }
+          >
+            <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+              <CurrentRates device={device} />
+              <div className="flex min-w-0 flex-col gap-1">
+                <DiskRangeTotals
+                  page={totals}
+                  requested={selection ?? range}
+                  selected={selection !== null}
+                />
+                {selection && selectedTotals.isError && (
+                  <InlineMessage tone="status">
+                    Couldn't load byte totals for the selected interval.
+                  </InlineMessage>
+                )}
+              </div>
+            </div>
+            {local && inventory.isError ? (
+              <InlineMessage tone="status">
+                Couldn't load disk devices.
+              </InlineMessage>
+            ) : chart.isError ? (
+              <InlineMessage tone="status">
+                Couldn't load disk I/O history.
+              </InlineMessage>
+            ) : chart.data && range ? (
+              <DiskIoCharts
+                page={chart.data}
+                range={range}
+                fixedEndMs={
+                  selection === null && fixedEnd === null ? null : range.toMs
+                }
+                secondary={secondary}
+                onSecondary={(response) => patch({ response })}
+              />
+            ) : (
+              <InlineMessage tone="status">Loading disk I/O…</InlineMessage>
+            )}
+            {device === null && (
+              <p className="text-label text-muted-foreground">
+                Request times are weighted by completed operations. A busy fast
+                device can hide a slower device; select a drive to inspect it.
+              </p>
+            )}
+            {missing && (
+              <InlineMessage tone="status">
+                This device is unavailable. Recorded history remains selected.
+              </InlineMessage>
+            )}
+            {windowMs !== null && (
+              <SelectionSummary windowMs={windowMs} inset={0} />
+            )}
+          </SectionCard>
+        </div>
+        {windowMs !== null && diskIo && <DiskProcesses windowMs={windowMs} />}
+        <MemoryContext />
         <SectionCard
           accent="disk"
-          title="Disk I/O"
-          compactHeader
-          headerAlign="center"
-          className="gap-3"
-          aside={
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <Select
-                value={device ?? "all"}
-                onValueChange={(device) => patch({ device })}
-              >
-                <SelectTrigger
-                  aria-label="Disk device"
-                  size="sm"
-                  className="max-w-56"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All devices</SelectItem>
-                  {devices.map((d) => (
-                    <SelectItem key={d.dev} value={d.dev}>
-                      {d.name} · {d.dev}
-                    </SelectItem>
-                  ))}
-                  {missing && (
-                    <SelectItem value={device}>
-                      {device} · Unavailable
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              <button
-                type="button"
-                onClick={() => {
-                  brush.getState().clear();
-                  if (windowMs !== null && fixedEnd !== null)
-                    setChartWindow(relativeWindow(windowMs));
-                }}
-                aria-pressed={selection === null && fixedEnd === null}
-                className="h-7 rounded-control border border-border bg-btn px-3 text-small outline-none hover:bg-selected focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Live
-              </button>
-            </div>
-          }
+          origin="tr"
+          title="Volumes"
+          variant="default"
+          className="overflow-hidden"
         >
-          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-            <CurrentRates device={device} />
-            <div className="flex min-w-0 flex-col gap-1">
-              <DiskRangeTotals
-                page={totals}
-                requested={selection ?? range}
-                selected={selection !== null}
-              />
-              {selection && selectedTotals.isError && (
-                <InlineMessage tone="status">
-                  Couldn't load byte totals for the selected interval.
-                </InlineMessage>
-              )}
-            </div>
-          </div>
-          {local && inventory.isError ? (
-            <InlineMessage tone="status">
-              Couldn't load disk devices.
-            </InlineMessage>
-          ) : chart.isError ? (
-            <InlineMessage tone="status">
-              Couldn't load disk I/O history.
-            </InlineMessage>
-          ) : chart.data && range ? (
-            <DiskIoCharts
-              page={chart.data}
-              range={range}
-              fixedEndMs={
-                selection === null && fixedEnd === null ? null : range.toMs
+          <section
+            aria-label="Volume capacity"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: the horizontally scrollable volume table needs keyboard access
+            tabIndex={0}
+            className="relative min-w-0 max-w-full overflow-x-auto rounded-chip outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <VolumeTable
+              rows={volumeRows(vols, held, mounts)}
+              units="GB"
+              action={
+                onAnalyze
+                  ? (row) => <AnalyzeLink vol={row.id} onAnalyze={onAnalyze} />
+                  : undefined
               }
-              secondary={secondary}
-              onSecondary={(response) => patch({ response })}
             />
-          ) : (
-            <InlineMessage tone="status">Loading disk I/O…</InlineMessage>
-          )}
-          {device === null && (
-            <p className="text-label text-muted-foreground">
-              Request times are weighted by completed operations. A busy fast
-              device can hide a slower device; select a drive to inspect it.
-            </p>
-          )}
-          {missing && (
-            <InlineMessage tone="status">
-              This device is unavailable. Recorded history remains selected.
-            </InlineMessage>
-          )}
-          {windowMs !== null && (
-            <SelectionSummary windowMs={windowMs} inset={0} />
-          )}
+          </section>
         </SectionCard>
-      </div>
-      {windowMs !== null && diskIo && <DiskProcesses windowMs={windowMs} />}
-      <MemoryContext />
-      <SectionCard
-        accent="disk"
-        origin="tr"
-        title="Volumes"
-        variant="default"
-        className="overflow-hidden"
-      >
-        <section
-          aria-label="Volume capacity"
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: the horizontally scrollable volume table needs keyboard access
-          tabIndex={0}
-          className="relative min-w-0 max-w-full overflow-x-auto rounded-chip outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <VolumeTable
-            rows={volumeRows(vols, held, mounts)}
-            units="GB"
-            action={
-              onAnalyze
-                ? (row) => <AnalyzeLink vol={row.id} onAnalyze={onAnalyze} />
-                : undefined
-            }
-          />
-        </section>
-      </SectionCard>
+      </DashboardBody>
     </div>
   );
 }

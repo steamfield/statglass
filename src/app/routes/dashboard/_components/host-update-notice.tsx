@@ -65,7 +65,7 @@ export function HostUpdateNoticeView({
   return (
     <section
       aria-label="Host updates"
-      className="mb-4 flex items-start gap-2 border-border-subtle border-b pb-3"
+      className="flex items-start gap-2 border-border-subtle border-b pb-3"
     >
       <Info
         aria-hidden

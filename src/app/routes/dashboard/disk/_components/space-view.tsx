@@ -6,6 +6,7 @@ import { useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { useHostNoun } from "~/hooks/use-host-record";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { useHostId } from "~/stores/host-store";
 import {
   useSpaceDropped,
@@ -44,7 +45,8 @@ function SpaceShell({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <PageHeader title="Disk" subtitle={subtitle} actions={switcher} />
-      {children}
+      <DashboardBanners />
+      <DashboardBody>{children}</DashboardBody>
     </div>
   );
 }

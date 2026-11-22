@@ -12,6 +12,7 @@ import type {
   RemoteHostRecord,
   RrJob,
 } from "@core/generated/bindings";
+import { remoteConnectionView } from "@core/remote-connection";
 import {
   agentVersionState,
   type HostVersionState,
@@ -56,6 +57,36 @@ export function isLiveHost({ status }: RemoteHostRecord): boolean {
     !status.identity_changed &&
     status.agent_update.kind !== "required"
   );
+}
+
+function connectingState(
+  remote: RemoteHostRecord,
+  base: Pick<
+    HostCardModel,
+    "status" | "mark" | "route" | "message" | "stateAction" | "isLive"
+  >
+) {
+  const { status } = remote;
+  if (status.failure_kind === null) {
+    return { ...base, status: "Connecting…", mark: "idle" as const };
+  }
+  const route =
+    status.last_seen_ms !== null
+      ? `Last seen ${formatDateTime(status.last_seen_ms)}`
+      : status.synced_through_ms !== null
+        ? `History through ${formatDateTime(status.synced_through_ms)}`
+        : "";
+  return {
+    ...base,
+    status: "Reconnecting…",
+    mark: "warn" as const,
+    route,
+    stateAction: "Retry" as const,
+    message: {
+      tone: "note" as const,
+      text: remoteConnectionView(remote).shortReason,
+    },
+  };
 }
 
 function connection(
@@ -110,7 +141,7 @@ function connection(
         route: routeLabel(remote),
       };
     case "connecting":
-      return { ...base, status: "Connecting…", mark: "idle" };
+      return connectingState(remote, base);
     case "offline":
       return {
         ...base,

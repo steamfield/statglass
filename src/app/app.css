@@ -1,4 +1,6 @@
+@layer theme, base, sf, components, utilities;
 @import "tailwindcss";
+@import "@steamfield/ui/gif/styles.css";
 /* JetBrains Mono for the tray preview only (`--font-tray`), matching the
    face Rust draws the menu bar in. */
 @import "@fontsource-variable/jetbrains-mono/wght.css";

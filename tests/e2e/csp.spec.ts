@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { mockGiphyMedia } from "./helpers/mock-giphy";
 
 /**
  * The production bundle under the CSP that `tauri.conf.json` ships. The app
@@ -116,6 +117,14 @@ test("dashboard pages, dialog and select run under the shipped CSP", async ({
   await page.getByRole("combobox").first().click();
   await expect(page.getByRole("listbox")).toBeVisible();
   await page.keyboard.press("Escape");
+  // Remote error state loads Giphy media allowed by img-src / media-src.
+  await mockGiphyMedia(page);
+  await page.goto(`${ORIGIN}/dashboard/hosts?scenario=host-offline-history`);
+  const card = page.getByRole("region", { name: "M4 Mini", exact: true });
+  await card.getByRole("button", { name: "View metrics", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Can’t connect to M4 Mini" })
+  ).toBeVisible();
   expect(violations).toEqual([]);
 });
 

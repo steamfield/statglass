@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { mockGiphyMedia } from "./helpers/mock-giphy";
 
 for (const theme of ["light", "dark"]) {
   test(`saved-host SSH verification guidance (${theme})`, async ({
@@ -94,6 +95,7 @@ for (const theme of ["light", "dark"]) {
       path: `test-results/screens/ssh-neighbor-settings-${theme}-${info.project.name}.png`,
       animations: "disabled",
     });
+    await mockGiphyMedia(page);
     await page.goto(`/?route=/dev/gallery&theme=${theme}&ticks=0`);
     await expect(
       page.getByRole("heading", { name: "Gallery", exact: true })

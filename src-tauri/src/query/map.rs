@@ -106,6 +106,7 @@ pub(super) fn from_remote(e: &RemoteError, host: &str, last_seen: Option<String>
         RemoteError::HistoryUnavailable(_) => ErrorTag::HistoryUnavailable,
         RemoteError::InvalidArgument(_) => ErrorTag::Usage,
         RemoteError::Transport(_)
+        | RemoteError::Timeout(_)
         | RemoteError::Io(_)
         | RemoteError::AgentNotRunning(_)
         | RemoteError::Authentication(_)

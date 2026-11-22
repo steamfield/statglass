@@ -22,6 +22,7 @@ import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useRangeNavigation } from "~/hooks/use-range-navigation";
 import { useSeriesStats } from "~/hooks/use-series-stats";
 import { useUnits } from "~/hooks/use-units";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { useHostClock } from "~/lib/host-clock";
 import { DockerTimelineLane } from "~/routes/dashboard/containers/_components/docker-surfaces";
 import { useHost } from "~/stores/host-store";
@@ -184,76 +185,78 @@ export default function TimelineRoute() {
           </>
         }
       />
-
-      <HistoryNotices
-        health={history.health}
-        error={queryError ?? history.error}
-        fromMs={data.fromMs}
-      />
-      {otherError && (
-        <p
-          role={errorTone(otherError) === "error" ? "alert" : "status"}
-          className="rounded-tile border border-border bg-card px-4 py-3 font-normal text-body text-fg-subtle"
-        >
-          History could not be read.{" "}
-          {failureReason(otherError, "Please try again.")} Live values still
-          work.{" "}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={data.loading}
-            onClick={data.retry}
+      <DashboardBanners />
+      <DashboardBody>
+        <HistoryNotices
+          health={history.health}
+          error={queryError ?? history.error}
+          fromMs={data.fromMs}
+        />
+        {otherError && (
+          <p
+            role={errorTone(otherError) === "error" ? "alert" : "status"}
+            className="rounded-tile border border-border bg-card px-4 py-3 font-normal text-body text-fg-subtle"
           >
-            Retry recorded detail
-          </Button>
-        </p>
-      )}
+            History could not be read.{" "}
+            {failureReason(otherError, "Please try again.")} Live values still
+            work.{" "}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={data.loading}
+              onClick={data.retry}
+            >
+              Retry recorded detail
+            </Button>
+          </p>
+        )}
 
-      <LanesCard
-        lanes={data.lanes}
-        gaps={data.gaps}
-        events={events}
-        fromMs={data.fromMs}
-        toMs={data.toMs}
-        bucketMs={data.bucketMs}
-        resolution={data.resolution}
-        span={span}
-        live={live}
-        units={units}
-        summaries={summaries.data}
-        summaryError={summaries.isError}
-        previousSummaries={previousSummaries.data}
-        comparing={comparing}
-        rankBy={appSort.by}
-        onRank={(by) => setAppSort({ by, dir: "desc" })}
-        onPlotWidth={setPlotPx}
-        onSelectRange={selectRange}
-        selectionKey={`${view.windowMs}:${view.endMs}`}
-        selectionNowMs={clock()}
-        retainedFromMs={history.health?.trimmed_before_ms ?? 0}
-        loading={data.loading || navigation.pending}
-        failed={data.error !== null}
-      />
+        <LanesCard
+          lanes={data.lanes}
+          gaps={data.gaps}
+          events={events}
+          fromMs={data.fromMs}
+          toMs={data.toMs}
+          bucketMs={data.bucketMs}
+          resolution={data.resolution}
+          span={span}
+          live={live}
+          units={units}
+          summaries={summaries.data}
+          summaryError={summaries.isError}
+          previousSummaries={previousSummaries.data}
+          comparing={comparing}
+          rankBy={appSort.by}
+          onRank={(by) => setAppSort({ by, dir: "desc" })}
+          onPlotWidth={setPlotPx}
+          onSelectRange={selectRange}
+          selectionKey={`${view.windowMs}:${view.endMs}`}
+          selectionNowMs={clock()}
+          retainedFromMs={history.health?.trimmed_before_ms ?? 0}
+          loading={data.loading || navigation.pending}
+          failed={data.error !== null}
+        />
 
-      <TimelineSummaryNotes
-        comparing={comparing}
-        previous={previousSummaries}
-        current={summaries.data}
-        fromMs={data.fromMs}
-        toMs={data.toMs}
-        timezone={timezone}
-      />
-      <HistoricalUsageCard
-        range={
-          navigation.range ? { fromMs: data.fromMs, toMs: data.toMs } : null
-        }
-        by={appSort.by}
-        sort={appSort}
-        onSortChange={setAppSort}
-        compare={comparing}
-      />
-      <DockerTimelineLane from={data.fromMs} to={data.toMs} />
-      <HeatmapCard units={units} onOpen={openHour} />
+        <TimelineSummaryNotes
+          comparing={comparing}
+          previous={previousSummaries}
+          current={summaries.data}
+          fromMs={data.fromMs}
+          toMs={data.toMs}
+          timezone={timezone}
+        />
+        <HistoricalUsageCard
+          range={
+            navigation.range ? { fromMs: data.fromMs, toMs: data.toMs } : null
+          }
+          by={appSort.by}
+          sort={appSort}
+          onSortChange={setAppSort}
+          compare={comparing}
+        />
+        <DockerTimelineLane from={data.fromMs} to={data.toMs} />
+        <HeatmapCard units={units} onOpen={openHour} />
+      </DashboardBody>
     </div>
   );
 }

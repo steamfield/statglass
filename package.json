@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@steamfield/ui": "file:../steamfield-ui",
     "@tanstack/react-query": "^5.104.1",
     "@tanstack/react-table": "^9.3.1",
     "@tanstack/react-virtual": "^3.14.13",

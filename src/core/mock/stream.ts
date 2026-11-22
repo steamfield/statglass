@@ -179,8 +179,10 @@ export class MockStream {
         opts.series ?? null
       );
       if (
-        this.options.scenarios?.includes("host-unreachable") &&
-        remote.record.config.id === "remote-unreachable"
+        (this.options.scenarios?.includes("host-unreachable") &&
+          remote.record.config.id === "remote-unreachable") ||
+        (this.options.scenarios?.includes("host-offline-history") &&
+          remote.record.config.id === "remote-offline-history")
       ) {
         // The real remote publishes its default status before its first
         // successful handshake. There are no samples or cadence yet.

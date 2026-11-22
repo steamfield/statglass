@@ -38,7 +38,7 @@ pub use socket::{
     ControlRequest, ControlResponse, SocketPaths, bind_private, control_request, same_uid,
     serve_control,
 };
-pub use source::{ConnectionStatus, RemoteSource, StatusCallback};
+pub use source::{ConnectionFailureKind, ConnectionStatus, RemoteSource, StatusCallback};
 pub use statglass_proto::RemoteInterest;
 pub use stdio::stdio_bridge;
 pub use transport::{EndpointConfig, RemoteCommand, Route, SshSession, connect, ssh_command};
@@ -47,6 +47,8 @@ pub use transport::{EndpointConfig, RemoteCommand, Route, SshSession, connect, s
 pub enum RemoteError {
     #[error("{0}")]
     Transport(String),
+    #[error("{0}")]
+    Timeout(String),
     #[error("SSH authentication requires attention: {0}")]
     Authentication(String),
     #[error("SSH host-key verification requires attention: {0}")]

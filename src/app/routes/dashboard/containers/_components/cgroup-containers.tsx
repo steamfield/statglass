@@ -5,6 +5,7 @@ import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import {
   type CgroupColumn,
   type CgroupFilter,
@@ -77,39 +78,42 @@ export function CgroupContainers() {
           />
         }
       />
-      <SectionCard
-        accent="cpu"
-        title="Services and containers"
-        hiddenTitle
-        flush
-        className="min-h-0 flex-1"
-      >
-        <div className="min-h-0 flex-1 px-1 pt-1">
-          <CgroupTable
-            rows={rows}
-            other={other}
-            columns={columns}
-            sort={sort}
-            onSort={setSort}
-            bytes={units.bytes}
-            rate={units.rate}
-            empty={
-              layout === null
-                ? "Waiting for the first sample…"
-                : filter === "containers"
-                  ? "No containers running."
-                  : "No services reported."
-            }
-          />
-        </div>
-        <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-border-subtle border-t px-4 py-2.5 font-normal text-label text-muted-foreground">
-          <span className="figures">
-            {count}
-            {folded}
-          </span>
-          <span>CPU is percent of one core.</span>
-        </footer>
-      </SectionCard>
+      <DashboardBanners />
+      <DashboardBody className="min-h-0 flex-1">
+        <SectionCard
+          accent="cpu"
+          title="Services and containers"
+          hiddenTitle
+          flush
+          className="min-h-0 flex-1"
+        >
+          <div className="min-h-0 flex-1 px-1 pt-1">
+            <CgroupTable
+              rows={rows}
+              other={other}
+              columns={columns}
+              sort={sort}
+              onSort={setSort}
+              bytes={units.bytes}
+              rate={units.rate}
+              empty={
+                layout === null
+                  ? "Waiting for the first sample…"
+                  : filter === "containers"
+                    ? "No containers running."
+                    : "No services reported."
+              }
+            />
+          </div>
+          <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-border-subtle border-t px-4 py-2.5 font-normal text-label text-muted-foreground">
+            <span className="figures">
+              {count}
+              {folded}
+            </span>
+            <span>CPU is percent of one core.</span>
+          </footer>
+        </SectionCard>
+      </DashboardBody>
     </div>
   );
 }

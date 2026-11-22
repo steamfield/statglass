@@ -309,6 +309,15 @@ fn stderr_error(
         .any(|line| line.trim() == crate::AGENT_NOT_RUNNING)
     {
         RemoteError::AgentNotRunning(alias.to_string())
+    } else if outcome.is_err() {
+        let message = if detail.is_empty() {
+            format!("{alias}: {}", handshake_failure(outcome))
+        } else {
+            format!("{alias}: {detail}")
+        };
+        RemoteError::Timeout(message)
+    } else if is_timeout_detail(&detail) {
+        RemoteError::Timeout(format!("{alias}: {detail}"))
     } else if detail.is_empty() {
         RemoteError::Transport(format!("{alias}: {}", handshake_failure(outcome)))
     } else {
@@ -316,19 +325,26 @@ fn stderr_error(
     }
 }
 
+fn is_timeout_detail(detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    lower.contains("operation timed out")
+        || lower.contains("connection timed out")
+        || lower.contains("timed out")
+}
+
 fn handshake_failure(
     outcome: &std::result::Result<Result<Message>, tokio::time::error::Elapsed>,
 ) -> &'static str {
     match outcome {
-        Err(_) => "The hostdid not answer in time.",
+        Err(_) => "The host did not answer in time.",
         Ok(Err(RemoteError::Io(error))) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
             "The connection closed before StatGlass could start on the host."
         }
         Ok(Err(RemoteError::Io(_))) => {
             "The connection failed while StatGlass was starting on the host."
         }
-        Ok(Err(_)) => "The hostsent an invalid StatGlass greeting.",
-        Ok(Ok(_)) => "The hostdid not send a StatGlass greeting.",
+        Ok(Err(_)) => "The host sent an invalid StatGlass greeting.",
+        Ok(Ok(_)) => "The host did not send a StatGlass greeting.",
     }
 }
 
@@ -383,7 +399,15 @@ fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
     if !b.retryable() {
         return b;
     }
-    RemoteError::Transport(format!("LAN: {a}; Tailscale: {b}"))
+    let combined = format!("LAN: {a}; Tailscale: {b}");
+    if matches!(a, RemoteError::AgentNotRunning(_)) || matches!(b, RemoteError::AgentNotRunning(_))
+    {
+        return RemoteError::AgentNotRunning(combined);
+    }
+    if matches!(a, RemoteError::Timeout(_)) || matches!(b, RemoteError::Timeout(_)) {
+        return RemoteError::Timeout(combined);
+    }
+    RemoteError::Transport(combined)
 }
 
 #[cfg(test)]
@@ -398,7 +422,7 @@ mod tests {
         .await;
         assert_eq!(
             handshake_failure(&timeout),
-            "The hostdid not answer in time."
+            "The host did not answer in time."
         );
         let eof = Ok(Err(RemoteError::Io(
             std::io::ErrorKind::UnexpectedEof.into(),
@@ -417,12 +441,53 @@ mod tests {
         let invalid = Ok(Err(RemoteError::Protocol("bad frame".into())));
         assert_eq!(
             handshake_failure(&invalid),
-            "The hostsent an invalid StatGlass greeting."
+            "The host sent an invalid StatGlass greeting."
         );
         assert_eq!(
             handshake_failure(&Ok(Ok(Message::Unknown))),
-            "The hostdid not send a StatGlass greeting."
+            "The host did not send a StatGlass greeting."
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn timeouts_and_dual_route_combine_preserve_failure_kind() {
+        let timeout = tokio::time::timeout(
+            Duration::from_secs(1),
+            std::future::pending::<Result<Message>>(),
+        )
+        .await;
+        let eof = Ok(Err(RemoteError::Io(
+            std::io::ErrorKind::UnexpectedEof.into(),
+        )));
+        // Handshake timeout stays Timeout even with non-fatal SSH stderr banner text.
+        assert!(matches!(
+            stderr_error("m4-mini", "Warning: Permanently added".into(), &timeout),
+            RemoteError::Timeout(msg) if msg.starts_with("m4-mini: ")
+        ));
+        // SSH connect timeout in stderr classifies as Timeout.
+        assert!(matches!(
+            stderr_error(
+                "m4-mini",
+                "ssh: connect to host m4-mini port 22: Operation timed out".into(),
+                &eof,
+            ),
+            RemoteError::Timeout(msg) if msg.contains("Operation timed out")
+        ));
+        // Dual-route combine keeps AgentNotRunning > Timeout > Transport.
+        assert!(matches!(
+            combine(
+                RemoteError::Transport("dns failed".into()),
+                RemoteError::Timeout("Operation timed out".into()),
+            ),
+            RemoteError::Timeout(msg) if msg.contains("LAN:") && msg.contains("Tailscale:")
+        ));
+        assert!(matches!(
+            combine(
+                RemoteError::Timeout("timed out".into()),
+                RemoteError::AgentNotRunning("server".into()),
+            ),
+            RemoteError::AgentNotRunning(msg) if msg.contains("LAN:") && msg.contains("Tailscale:")
+        ));
     }
     #[test]
     fn agent_marker_on_stderr_is_a_typed_not_running_error() {

@@ -33,12 +33,28 @@ pub enum RemoteSync {
     Current,
     Unavailable,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteFailureKind {
+    Unreachable,
+    Timeout,
+    Authentication,
+    HostKey,
+    AgentNotRunning,
+    Incompatible,
+    IdentityChanged,
+    Protocol,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
 pub struct RemoteHostStatus {
     pub state: RemoteState,
     pub route: Option<RemoteRoute>,
     pub last_seen_ms: Option<f64>,
+    /// End of the newest mirrored history bucket persisted on disk (remote host clock).
+    /// Survives app restarts so offline views know whether saved history exists.
+    pub synced_through_ms: Option<f64>,
     pub error: Option<String>,
+    pub failure_kind: Option<RemoteFailureKind>,
     pub sync: RemoteSync,
     pub clock_offset_ms: f64,
     pub vitals: HostVitals,
@@ -59,7 +75,9 @@ impl Default for RemoteHostStatus {
             state: RemoteState::Offline,
             route: None,
             last_seen_ms: None,
+            synced_through_ms: None,
             error: None,
+            failure_kind: None,
             sync: RemoteSync::Idle,
             clock_offset_ms: 0.0,
             vitals: HostVitals::default(),

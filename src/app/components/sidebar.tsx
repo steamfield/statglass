@@ -1,4 +1,5 @@
 import type { Connection } from "@core/live-state";
+import { OctagonAlert } from "lucide-react";
 import {
   type KeyboardEvent,
   type MouseEvent,
@@ -57,6 +58,11 @@ export interface SidebarStatus {
   /** No frame for three intervals while not paused (plan 4.17). */
   stale?: boolean;
   connection?: Connection;
+  /** Accurate remote-host label when viewing a disconnected remote host. */
+  remoteStatus?: {
+    readonly label: string;
+    readonly tone: "idle" | "error";
+  };
 }
 
 export interface SidebarProps {
@@ -240,44 +246,79 @@ export function Sidebar({
       <div className="flex-1" />
       <div className="flex flex-col gap-1 border-border-subtle border-t px-2 pt-2.5 max-sm:sr-only">
         <div className="flex items-center gap-2">
-          {status.paused ? (
-            <>
-              <StatusDot state="paused" className="text-muted-foreground" />
-              <span className="font-normal text-label text-muted-foreground">
-                Paused
-              </span>
-            </>
-          ) : status.stale ||
-            status.connection === "connecting" ||
-            status.connection === "reconnecting" ? (
-            <>
-              <StatusDot state="stale" />
-              <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
-                {status.connection === "connecting"
-                  ? "Connecting…"
-                  : status.connection === "reconnecting"
-                    ? "Reconnecting…"
-                    : "Stale · no new data"}
-              </span>
-            </>
-          ) : (
-            <>
-              <StatusDot state="live" />
-              <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
-                Sampling every{" "}
-                <span className="figures">
-                  {intervalLabel(status.intervalMs)}
-                </span>
-                {status.onBattery && " · on battery"}
-              </span>
-            </>
-          )}
+          <SidebarStatusReadout status={status} />
           <span className="flex-1" />
           <span className="figures text-caption text-fg-faint">v{version}</span>
         </div>
         {footerNote}
       </div>
     </nav>
+  );
+}
+
+function SidebarStatusReadout({ status }: { status: SidebarStatus }) {
+  if (status.remoteStatus) {
+    const isError = status.remoteStatus.tone === "error";
+    return (
+      <>
+        {isError ? (
+          <OctagonAlert
+            aria-hidden
+            className="icon-regular size-3 shrink-0 text-destructive"
+          />
+        ) : (
+          <StatusDot state="stale" />
+        )}
+        <span
+          className={cn(
+            "min-w-0 truncate font-normal text-label",
+            isError ? "text-destructive" : "text-muted-foreground"
+          )}
+        >
+          {status.remoteStatus.label}
+        </span>
+      </>
+    );
+  }
+  if (status.paused) {
+    return (
+      <>
+        <StatusDot state="paused" className="text-muted-foreground" />
+        <span className="font-normal text-label text-muted-foreground">
+          Paused
+        </span>
+      </>
+    );
+  }
+  if (
+    status.stale ||
+    status.connection === "connecting" ||
+    status.connection === "reconnecting"
+  ) {
+    const label =
+      status.connection === "connecting"
+        ? "Connecting…"
+        : status.connection === "reconnecting"
+          ? "Reconnecting…"
+          : "Stale · no new data";
+    return (
+      <>
+        <StatusDot state="stale" />
+        <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
+          {label}
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      <StatusDot state="live" />
+      <span className="min-w-0 truncate font-normal text-label text-muted-foreground">
+        Sampling every{" "}
+        <span className="figures">{intervalLabel(status.intervalMs)}</span>
+        {status.onBattery && " · on battery"}
+      </span>
+    </>
   );
 }
 

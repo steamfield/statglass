@@ -20,6 +20,7 @@ import {
 } from "~/hooks/use-process-interest";
 import { useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import {
   COLUMN_SETS,
   type ColumnSet,
@@ -128,39 +129,44 @@ export default function ProcessesRoute() {
           </div>
         }
       />
-      <SectionCard
-        accent="cpu"
-        title="All processes"
-        hiddenTitle
-        flush
-        className="min-h-0 flex-1"
-      >
-        <div ref={bodyRef} className="min-h-0 flex-1 px-1 pt-1">
-          <ProcessTable
-            rows={shown}
-            columns={columns}
-            sort={tableSort}
-            onSort={setSort}
-            height={Math.max(
-              120,
-              bodyHeight - TABLE_CHROME_PX - (canSignal ? SELECTION_BAR_PX : 0)
-            )}
-            memUnits={units.bytes}
-            freezeOrderOnHover
-            selectable={canSignal}
-            empty={
-              loading
-                ? "Waiting for the first process sample…"
-                : `No process matches “${query.trim()}”.`
-            }
-            ariaLabel="Processes"
-          />
-        </div>
-        <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-border-subtle border-t px-4 py-2.5 font-normal text-label text-muted-foreground">
-          <span className="figures">{countLine(rows, shown)}</span>
-          {note && <span>{note}</span>}
-        </footer>
-      </SectionCard>
+      <DashboardBanners />
+      <DashboardBody className="min-h-0 flex-1">
+        <SectionCard
+          accent="cpu"
+          title="All processes"
+          hiddenTitle
+          flush
+          className="min-h-0 flex-1"
+        >
+          <div ref={bodyRef} className="min-h-0 flex-1 px-1 pt-1">
+            <ProcessTable
+              rows={shown}
+              columns={columns}
+              sort={tableSort}
+              onSort={setSort}
+              height={Math.max(
+                120,
+                bodyHeight -
+                  TABLE_CHROME_PX -
+                  (canSignal ? SELECTION_BAR_PX : 0)
+              )}
+              memUnits={units.bytes}
+              freezeOrderOnHover
+              selectable={canSignal}
+              empty={
+                loading
+                  ? "Waiting for the first process sample…"
+                  : `No process matches “${query.trim()}”.`
+              }
+              ariaLabel="Processes"
+            />
+          </div>
+          <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-border-subtle border-t px-4 py-2.5 font-normal text-label text-muted-foreground">
+            <span className="figures">{countLine(rows, shown)}</span>
+            {note && <span>{note}</span>}
+          </footer>
+        </SectionCard>
+      </DashboardBody>
     </div>
   );
 }

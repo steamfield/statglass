@@ -1,13 +1,22 @@
 import type { RemoteHostRecord } from "@core/generated/bindings";
-import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { RangeNavigationProvider } from "~/hooks/use-range-navigation";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import {
+  DashboardShellContext,
+  type DashboardShellState,
+} from "~/lib/dashboard-shell";
 import { HostClockContext } from "~/lib/host-clock";
 import { useHostSelection } from "~/lib/host-selection";
 import { pageEnter } from "~/lib/motion/enter";
 import { useTransport } from "~/lib/transport-context";
-import { cn } from "~/lib/utils";
 import { HostStoreProvider, useHostId } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
 import { HostConnectionNotice } from "./_components/host-connection-notice";
@@ -47,12 +56,6 @@ function useScrollTopOnNavigate(ref: RefObject<HTMLElement | null>) {
   }, [pathname, ref]);
 }
 
-/**
- * Dashboard window shell (plan 4.4): the 220 px sidebar under the
- * overlay title bar, and the page. A stale stream (no frame for three
- * intervals) dims the page's values to 50% until the next frame. Each page's
- * sections lift in on navigation (`pageEnter`); the sidebar stays put.
- */
 const localNow = () => Date.now();
 function selectConnection(hosts: RemoteHostRecord[]) {
   return hosts.map((host) => ({
@@ -62,20 +65,37 @@ function selectConnection(hosts: RemoteHostRecord[]) {
       state: host.status.state,
       route: host.status.route,
       error: host.status.error,
+      failure_kind: host.status.failure_kind,
+      synced_through_ms: host.status.synced_through_ms,
       identity_changed: host.status.identity_changed,
       agent_update: host.status.agent_update,
     },
   }));
 }
 
-/** The notice also reads sync and clock facts; keep that subscription local. */
-function ConnectionNotice({ id }: { id: string }) {
+/** The notice also reads sync, last_seen, and clock facts; keep that subscription local. */
+function ConnectionNotice({
+  id,
+  variant,
+}: {
+  id: string;
+  variant: "banner" | "focal";
+}) {
   const remote = useRemoteHosts((hosts) =>
     hosts.find((host) => host.config.id === id)
   ).data;
-  return remote ? <HostConnectionNotice remote={remote} /> : null;
+  return remote ? (
+    <HostConnectionNotice remote={remote} variant={variant} />
+  ) : null;
 }
 
+/**
+ * Dashboard window shell (plan 4.4): the 220 px sidebar under the overlay
+ * title bar, and the scrolling page. Banners and focal remote-connection
+ * states are provided through `DashboardShellContext` so each route's sticky
+ * `PageHeader` stays pinned at `top: 0` aligned with the sidebar brand row
+ * and never dims under `stale`.
+ */
 export default function DashboardLayout() {
   useNavigateRequests();
   const mainRef = useRef<HTMLElement>(null);
@@ -86,13 +106,48 @@ export default function DashboardLayout() {
   const remote = useRemoteHosts(selectConnection).data?.find(
     (host) => host.config.id === hostId
   );
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const metricPage =
     pathname !== "/dashboard/hosts" && pathname !== "/dashboard/settings";
-  const stale =
+  const hasRemote = remote !== undefined;
+  const remoteDisconnected = hasRemote && remote.status.state !== "connected";
+  const isDiskSpace =
+    pathname === "/dashboard/disk" &&
+    new URLSearchParams(search).get("view") === "space";
+  const liveOnlyPage =
+    pathname === "/dashboard/processes" ||
+    pathname === "/dashboard/containers" ||
+    isDiskSpace;
+  const useFocal =
     metricPage &&
-    ((sampling.stale && !sampling.paused) ||
-      (remote !== undefined && remote.status.state !== "connected"));
+    remoteDisconnected &&
+    (remote.status.synced_through_ms === null || liveOnlyPage);
+  const stale =
+    metricPage && ((sampling.stale && !sampling.paused) || remoteDisconnected);
+  // Keep readable mirrored history crisp when a remote host is disconnected;
+  // dim only live streams that went stale without a disconnect card explaining it.
+  const dimBody =
+    metricPage && sampling.stale && !sampling.paused && !remoteDisconnected;
+
+  const shell = useMemo<DashboardShellState>(
+    () => ({
+      banners: metricPage ? (
+        <>
+          <HostUpdateNotice />
+          {hasRemote && !useFocal && (
+            <ConnectionNotice key={hostId} id={hostId} variant="banner" />
+          )}
+        </>
+      ) : null,
+      focalNotice:
+        hasRemote && useFocal ? (
+          <ConnectionNotice key={hostId} id={hostId} variant="focal" />
+        ) : null,
+      dimBody,
+    }),
+    [metricPage, hasRemote, useFocal, hostId, dimBody]
+  );
+
   return (
     <RangeNavigationProvider>
       <div className="flex h-svh bg-background text-foreground">
@@ -102,28 +157,19 @@ export default function DashboardLayout() {
           data-stale={stale || undefined}
           className="min-w-0 flex-1 overflow-y-auto px-3 pb-6 sm:px-6"
         >
-          {/* About other hosts, so it isn't dimmed with this host's stale page. */}
-          {metricPage && <HostUpdateNotice />}
-          {remote && metricPage && (
-            <ConnectionNotice key={hostId} id={hostId} />
-          )}
-          <div
-            className={cn(
-              "transition-opacity duration-(--motion-crossfade)",
-              pageEnter,
-              stale && "opacity-50"
-            )}
-          >
-            {!metricPage && local && local.id !== hostId ? (
-              <HostClockContext.Provider value={localNow}>
-                <HostStoreProvider hostId={local.id}>
-                  <Outlet />
-                </HostStoreProvider>
-              </HostClockContext.Provider>
-            ) : (
-              <Outlet />
-            )}
-          </div>
+          <DashboardShellContext.Provider value={shell}>
+            <div className={pageEnter}>
+              {!metricPage && local && local.id !== hostId ? (
+                <HostClockContext.Provider value={localNow}>
+                  <HostStoreProvider hostId={local.id}>
+                    <Outlet />
+                  </HostStoreProvider>
+                </HostClockContext.Provider>
+              ) : (
+                <Outlet />
+              )}
+            </div>
+          </DashboardShellContext.Provider>
         </main>
       </div>
     </RangeNavigationProvider>

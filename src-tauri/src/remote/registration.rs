@@ -59,6 +59,11 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     state.live.register_recent_source(id, source.clone());
     state.remotes.sources.lock_ok().insert(id, source.clone());
     let entry = state.hosts.insert(saved.record.clone(), source);
+    let synced_through_ms = mirror
+        .sync_watermark()
+        .ok()
+        .and_then(|w| w.synced_through())
+        .map(|ms| ms as f64);
     state.remotes.mirrors.lock_ok().insert(
         id,
         RegisteredMirror {
@@ -75,6 +80,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
             } else {
                 RemoteState::Disabled
             },
+            synced_through_ms,
             agent_update: super::commands::agent_update(
                 saved.is_linux(),
                 saved.last_agent_version.as_deref(),
@@ -108,14 +114,33 @@ fn publish_status(
     linux: bool,
     last: Option<String>,
 ) -> bool {
+    let connected = status.connected;
+    let remote_version = status.remote_version.clone();
+    let mut next = connection_status(status, linux, last);
+    // Re-read durable mirror coverage only on state/sync transitions, and never while
+    // holding the `statuses` or `mirrors` mutexes.
+    let mirror_sink = {
+        let needs_watermark = manager
+            .statuses
+            .lock_ok()
+            .get(&id)
+            .is_none_or(|prev| prev.sync != next.sync || prev.state != next.state);
+        if needs_watermark {
+            manager.mirrors.lock_ok().get(&id).map(|m| m.sink.clone())
+        } else {
+            None
+        }
+    };
+    let refreshed_watermark = mirror_sink.map(|sink| sink.sync_watermark());
+
     let mut statuses = manager.statuses.lock_ok();
     // A host removed or re-registered meanwhile keeps its newer status.
     if manager.generations.lock_ok().get(&id) == Some(&generation) {
         let mut previous = statuses.get(&id).cloned().unwrap_or_default();
         manager.apply_update(id, &mut previous);
         manager.apply_rr(id, &mut previous);
-        manager.observe_update(id, status.connected, status.remote_version.as_deref());
-        if status.connected {
+        manager.observe_update(id, connected, remote_version.as_deref());
+        if connected {
             manager
                 .rr_sessions
                 .lock_ok()
@@ -124,7 +149,10 @@ fn publish_status(
         } else {
             manager.clear_rr(id);
         }
-        let mut next = connection_status(status, linux, last);
+        next.synced_through_ms = match refreshed_watermark {
+            Some(Ok(w)) => w.synced_through().map(|ms| ms as f64),
+            Some(Err(_)) | None => previous.synced_through_ms,
+        };
         manager.apply_update(id, &mut next);
         manager.apply_rr(id, &mut next);
         let mut offsets = manager.emitted_clock_offsets.lock_ok();
@@ -154,6 +182,8 @@ fn rendered_status_changed(
         || previous.state != next.state
         || previous.route != next.route
         || previous.error != next.error
+        || previous.failure_kind != next.failure_kind
+        || previous.synced_through_ms != next.synced_through_ms
         || previous.identity_changed != next.identity_changed
         || previous.agent_update != next.agent_update
         || previous.update != next.update
@@ -229,7 +259,11 @@ pub(super) fn connection_status(
             statglass_remote::Route::Tailscale => RemoteRoute::Tailscale,
         }),
         last_seen_ms: s.last_seen_ms.map(|m| m as f64),
-        error: s.error.or(s.history_error.clone()),
+        synced_through_ms: None,
+        error: s
+            .error
+            .or_else(|| s.connected.then_some(s.history_error.clone()).flatten()),
+        failure_kind: s.failure_kind.map(map_failure_kind),
         sync: if s.history_error.is_some() {
             RemoteSync::Unavailable
         } else if s.catching_up {
@@ -246,6 +280,25 @@ pub(super) fn connection_status(
         last_update_failure: None,
         agent_version,
         identity_changed: s.identity_changed.map(|id| id.to_string()),
+    }
+}
+
+fn map_failure_kind(kind: statglass_remote::ConnectionFailureKind) -> RemoteFailureKind {
+    match kind {
+        statglass_remote::ConnectionFailureKind::Unreachable => RemoteFailureKind::Unreachable,
+        statglass_remote::ConnectionFailureKind::Timeout => RemoteFailureKind::Timeout,
+        statglass_remote::ConnectionFailureKind::Authentication => {
+            RemoteFailureKind::Authentication
+        }
+        statglass_remote::ConnectionFailureKind::HostKey => RemoteFailureKind::HostKey,
+        statglass_remote::ConnectionFailureKind::AgentNotRunning => {
+            RemoteFailureKind::AgentNotRunning
+        }
+        statglass_remote::ConnectionFailureKind::Incompatible => RemoteFailureKind::Incompatible,
+        statglass_remote::ConnectionFailureKind::IdentityChanged => {
+            RemoteFailureKind::IdentityChanged
+        }
+        statglass_remote::ConnectionFailureKind::Protocol => RemoteFailureKind::Protocol,
     }
 }
 

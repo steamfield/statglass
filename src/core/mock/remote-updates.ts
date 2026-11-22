@@ -54,6 +54,8 @@ export function seedUpdateScenarios(
       state: "error",
       route: null,
       last_seen_ms: null,
+      synced_through_ms: null,
+      failure_kind: "unreachable",
       vitals: {
         cores: 8,
         cpu_pct: null,
@@ -71,6 +73,44 @@ export function seedUpdateScenarios(
         "SSH command failed (127): /usr/local/bin/statglass-agent: No such file or directory",
       clock_offset_ms: null,
     });
+  if (scenarios.includes("host-offline-history")) {
+    const record = remotes.addRemote(
+      {
+        id: "remote-offline-history",
+        name: "M4 Mini",
+        lan: "m4-mini.local",
+        tailscale: "m4-mini-ts",
+        enabled: true,
+        mirror_budget_mb: 100,
+      },
+      ["no-battery", "no-fans"]
+    );
+    const now = record.status.synced_through_ms ?? Date.now();
+    record.status = {
+      ...record.status,
+      state: "connecting",
+      route: null,
+      last_seen_ms: null,
+      synced_through_ms: now - 54 * 60_000,
+      failure_kind: "timeout",
+      sync: "idle",
+      error:
+        "LAN: m4-mini.local: ssh: Could not resolve hostname m4-mini.local: nodename nor servname provided; Tailscale: m4-mini-ts: ssh: connect to host m4-mini-ts port 22: Operation timed out",
+      vitals: {
+        cores: 10,
+        cpu_pct: null,
+        memory_pct: null,
+        load_1m: null,
+        memory_pressure: null,
+        disk_used_bytes: null,
+        disk_free_bytes: null,
+        disk_total_bytes: null,
+        disk_low: false,
+        net_rx_bps: null,
+        net_tx_bps: null,
+      },
+    };
+  }
   if (scenarios.includes("hosts-outdated")) {
     for (const name of ["nas", "build-box"])
       seed(remotes, name, true, {
@@ -92,6 +132,7 @@ export function seedUpdateScenarios(
     seed(remotes, "legacy", true, {
       state: "error",
       route: null,
+      failure_kind: "incompatible",
       error: "incompatible remote: protocol 1 is below the supported range 2-3",
       agent_version: "0.0.1",
       agent_update: {
@@ -106,6 +147,30 @@ export function seedUpdateScenarios(
       agent_version: "0.2.0",
       agent_update: { kind: "newer_than_this", installed: "0.2.0" },
     });
+}
+
+export function initialRemoteStatus(
+  saved: { enabled: boolean; lan: string | null },
+  now: number,
+  linux: boolean
+): RemoteHostStatus {
+  return {
+    state: saved.enabled ? "connected" : "disabled",
+    route: saved.lan ? "lan" : "tailscale",
+    last_seen_ms: now,
+    synced_through_ms: now,
+    error: null,
+    failure_kind: null,
+    sync: "current",
+    clock_offset_ms: 120000,
+    agent_version: APP_VERSION,
+    agent_update: { kind: "up_to_date", installed: APP_VERSION },
+    identity_changed: null,
+    rr: null,
+    vitals: mockHostVitals(linux),
+    update: null,
+    last_update_failure: null,
+  };
 }
 
 /** Measured fixture facts; production thresholds and projections live in Rust. */

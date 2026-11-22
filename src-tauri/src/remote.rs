@@ -210,6 +210,7 @@ impl From<statglass_remote::RemoteError> for CommandError {
             RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
             RemoteError::Refused(_) => Self::Internal { message },
             RemoteError::Transport(_)
+            | RemoteError::Timeout(_)
             | RemoteError::Io(_)
             | RemoteError::Codec(_)
             | RemoteError::Protocol(_) => Self::RemoteUnreachable { message },

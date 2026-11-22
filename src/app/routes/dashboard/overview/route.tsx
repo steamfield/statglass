@@ -1,5 +1,6 @@
 import { isUnknownChip } from "@core/module-state";
 import type { ProcessView } from "@core/process-interest";
+import { remoteConnectionView } from "@core/remote-connection";
 import { CardGrid } from "~/components/card-grid";
 import { ModulePage } from "~/components/module-page";
 import {
@@ -13,8 +14,9 @@ import {
   useProcessInterest,
   useProcessNetwork,
 } from "~/hooks/use-process-interest";
+import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useWriteSettings } from "~/hooks/use-write-settings";
-import { useHost } from "~/stores/host-store";
+import { useHost, useHostId } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
 import { StatusPill } from "~/widgets/status-pill";
@@ -68,6 +70,17 @@ export default function OverviewRoute() {
   const perProcessGpu = useProcessGpu();
   useProcessInterest(overviewView(perProcessNetwork, perProcessGpu));
   const sampling = useSampling();
+  const hostId = useHostId();
+  const activeRemote = useRemoteHosts((hosts) =>
+    hosts.find((h) => h.config.id === hostId)
+  ).data;
+  const pillStatus =
+    activeRemote && activeRemote.status.state !== "connected"
+      ? {
+          state: "stale" as const,
+          label: remoteConnectionView(activeRemote).pillLabel,
+        }
+      : samplingStatus(sampling);
   const unknownChip = useHost((s) => isUnknownChip(s.capabilities));
   const host = useHostRecord();
   const dump = useSensorDumpDialog();
@@ -86,7 +99,7 @@ export default function OverviewRoute() {
         title="Overview"
         actions={
           <>
-            <StatusPill {...samplingStatus(sampling)} />
+            <StatusPill {...pillStatus} />
             <CardsMenu
               items={cards}
               shown={shown}
