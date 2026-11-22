@@ -47,6 +47,7 @@ Error model: SSH dial failures become `RemoteError::Unreachable { kind, detail }
 
 ### Phase 1: hosts say why they can't connect (MVP)
 
+Scaffold: eaeb2a40
 Demo: `bun run dev:fast`, open `/?route=/dashboard/hosts&scenario=hosts-dashboard,host-name-not-resolved,host-refused,host-tailscale-down,host-tailscale-silent,mac-offline`; each failing card names its cause. In the real app, turn Tailscale off and watch a Tailscale-only host read "Tailscale is off on this Mac".
 Test cases:
 - stderr "ssh: Could not resolve hostname studio.local: nodename nor servname provided, or not known" -> Unreachable/NameNotResolved.
@@ -63,8 +64,8 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-remote/src/network.rs, crates/statglass-remote/src/source/status.rs, crates/statglass-remote/src/transport.rs, crates/statglass-remote/src/lib.rs, crates/statglass-remote/src/source.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/network/tests.rs, crates/statglass-remote/src/source/status/network_tests.rs, crates/statglass-remote/src/transport/classify_tests.rs, src-tauri/src/remote/registration/tests.rs | opus | pending | | cargo tests for statglass-remote and statglass registration pass, clippy clean |
-| b | M | src/core/remote-connection.ts, src/core/mock/remote-updates.ts, src/core/mock/remote.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts | contracts, src/core/remote-connection.test.ts | src/core/remote-connection.test.ts, src/core/remote-connection-kinds.test.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.test.ts | sonnet | pending | | bun tests pass, typecheck clean |
+| a | M | crates/statglass-remote/src/network.rs, crates/statglass-remote/src/source/status.rs, crates/statglass-remote/src/transport.rs, crates/statglass-remote/src/lib.rs, crates/statglass-remote/src/source.rs, src-tauri/src/remote/registration.rs | contracts | crates/statglass-remote/src/network/tests.rs, crates/statglass-remote/src/source/status/network_tests.rs, crates/statglass-remote/src/transport/classify_tests.rs, src-tauri/src/remote/registration/tests.rs | opus | running | sprint/connection-states-1a | cargo tests for statglass-remote and statglass registration pass, clippy clean |
+| b | M | src/core/remote-connection.ts, src/core/mock/remote-updates.ts, src/core/mock/remote.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.ts | contracts, src/core/remote-connection.test.ts | src/core/remote-connection.test.ts, src/core/remote-connection-kinds.test.ts, src/app/routes/dashboard/hosts/_lib/host-card-model.test.ts | sonnet | running | sprint/connection-states-1b | bun tests pass, typecheck clean |
 
 #### Lane a brief
 
