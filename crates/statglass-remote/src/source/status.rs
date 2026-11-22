@@ -1,5 +1,6 @@
 //! What the shell is told about a source's connection.
-use crate::{RemoteError, Route};
+use crate::network::{self, LocalNetwork};
+use crate::{RemoteError, Route, UnreachableKind};
 use serde::{Deserialize, Serialize};
 use statglass_schema::HostId;
 
@@ -39,11 +40,40 @@ impl ConnectionFailureKind {
     /// differently (local_offline, tailscale_down, agent_not_running, refused, timeout,
     /// no_route, name_not_resolved, unreachable, then the blocking kinds).
     pub fn priority(self) -> u8 {
-        u8::MAX
+        match self {
+            Self::LocalOffline => 0,
+            Self::TailscaleDown => 1,
+            Self::AgentNotRunning => 2,
+            Self::Refused => 3,
+            Self::Timeout => 4,
+            Self::NoRoute => 5,
+            Self::NameNotResolved => 6,
+            Self::Unreachable => 7,
+            Self::Authentication => 8,
+            Self::HostKey => 9,
+            Self::Incompatible => 10,
+            Self::IdentityChanged => 11,
+            Self::Protocol => 12,
+        }
     }
 
+    /// Of two causes, the one with the lower [`priority`](Self::priority).
+    fn most_actionable(self, other: Self) -> Self {
+        if other.priority() < self.priority() {
+            other
+        } else {
+            self
+        }
+    }
+
+    /// The failure kind a connection error reports. Both failed routes report the more
+    /// actionable of their two causes.
     pub fn from_error(e: &RemoteError) -> Self {
         match e {
+            RemoteError::Unreachable { kind, .. } => Self::from_unreachable(*kind),
+            RemoteError::BothRoutes { lan, tailscale } => {
+                Self::from_error(lan).most_actionable(Self::from_error(tailscale))
+            }
             RemoteError::Timeout(_) => Self::Timeout,
             RemoteError::Authentication(_) => Self::Authentication,
             RemoteError::HostKey(_) => Self::HostKey,
@@ -61,11 +91,41 @@ impl ConnectionFailureKind {
             | RemoteError::Unsupported(_)
             | RemoteError::HistoryUnavailable(_)
             | RemoteError::InvalidArgument(_)
-            | RemoteError::Refused(_)
-            | RemoteError::Unreachable { .. }
-            | RemoteError::BothRoutes { .. } => Self::Unreachable,
+            | RemoteError::Refused(_) => Self::Unreachable,
         }
     }
+
+    fn from_unreachable(kind: UnreachableKind) -> Self {
+        match kind {
+            UnreachableKind::NameNotResolved => Self::NameNotResolved,
+            UnreachableKind::Refused => Self::Refused,
+            UnreachableKind::NoRoute => Self::NoRoute,
+        }
+    }
+}
+
+/// Each route's cause in `e`: both routes when `e` combines them, the one route of a
+/// single-route host, otherwise none.
+fn route_failures_of(e: &RemoteError, single_route: Option<Route>) -> Vec<RouteFailure> {
+    if let RemoteError::BothRoutes { lan, tailscale } = e {
+        return vec![
+            RouteFailure {
+                route: Route::Lan,
+                kind: ConnectionFailureKind::from_error(lan),
+            },
+            RouteFailure {
+                route: Route::Tailscale,
+                kind: ConnectionFailureKind::from_error(tailscale),
+            },
+        ];
+    }
+    single_route
+        .map(|route| RouteFailure {
+            route,
+            kind: ConnectionFailureKind::from_error(e),
+        })
+        .into_iter()
+        .collect()
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -95,12 +155,35 @@ pub struct ConnectionStatus {
 impl ConnectionStatus {
     /// Refines `failure_kind` and `route_failures` against this Mac's network at
     /// failure time (offline, Tailscale down).
-    pub fn apply_network(&mut self, net: crate::network::LocalNetwork) {
-        let _ = net;
+    pub fn apply_network(&mut self, net: LocalNetwork) {
+        for failure in &mut self.route_failures {
+            failure.kind = network::refine(failure.kind, failure.route, net);
+        }
+        let refined_by_route = self
+            .route_failures
+            .iter()
+            .map(|failure| failure.kind)
+            .reduce(ConnectionFailureKind::most_actionable);
+        if let Some(kind) = refined_by_route {
+            self.failure_kind = Some(kind);
+            return;
+        }
+        // Without a route to refine against, only "this Mac is offline" can be said, and
+        // not over a refusal, which proves a host answered.
+        if !net.online
+            && let Some(kind) = self.failure_kind
+            && network::is_network_kind(kind)
+            && kind != ConnectionFailureKind::Refused
+        {
+            self.failure_kind = Some(ConnectionFailureKind::LocalOffline);
+        }
     }
+
+    /// Records a failed connection attempt. `single_route` is the host's only route, or
+    /// `None` for a host with both routes configured.
     pub(super) fn record_failure(&mut self, e: &RemoteError, single_route: Option<Route>) {
-        let _ = single_route;
         self.connected = false;
+        self.route_failures = route_failures_of(e, single_route);
         self.error = Some(e.to_string());
         self.failure_kind = Some(ConnectionFailureKind::from_error(e));
         self.identity_changed = match e {
