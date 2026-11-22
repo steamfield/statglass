@@ -219,13 +219,14 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(
     page.getByRole("heading", { name: "Work Mac", exact: true })
   ).toBeVisible();
-  await expect(page.getByText("Connection off", { exact: true })).toBeVisible();
+  // The card's status line and its reconnect panel headline both say it.
+  await expect(
+    page.getByText("Connection off", { exact: true }).first()
+  ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Office Mac", exact: true })
   ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Retry", exact: true })
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Retry/ })).toHaveCount(0);
   await page.getByRole("combobox", { name: "Selected machine" }).click();
   await page.getByRole("option", { name: "Work Mac", exact: true }).click();
   await page.getByRole("link", { name: "Overview", exact: true }).click();

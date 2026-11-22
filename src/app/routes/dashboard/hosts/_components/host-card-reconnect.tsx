@@ -5,6 +5,7 @@
  */
 import { REMOTE_DIAL_TIMEOUT_MS } from "@core/generated/bindings";
 import { useRef } from "react";
+import { TruncatedText } from "~/components/truncated-text";
 import { useSecondsUntil } from "~/hooks/use-seconds-until";
 import { cn } from "~/lib/utils";
 import { MeterTrack } from "~/widgets/meter-track";
@@ -40,7 +41,12 @@ export function HostCardReconnect({
       >
         {panel.headline}
       </p>
-      <p className="m-0 font-normal text-fg-subtle text-small">{panel.cause}</p>
+      {/* A raw SSH error can be long: one line, with the full text on hover or focus. */}
+      <TruncatedText
+        as="p"
+        text={panel.cause}
+        className="m-0 font-normal text-fg-subtle text-small"
+      />
       <div className="mt-auto flex flex-col gap-2">
         <TimingRow panel={panel} retry={retry} warning={warning} />
         {panel.facts.length > 0 && (

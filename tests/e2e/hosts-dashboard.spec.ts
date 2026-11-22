@@ -303,7 +303,9 @@ for (const theme of ["dark", "light"]) {
       .click();
     await expect(disabled.getByText("Live", { exact: true })).toBeVisible();
     const offline = page.getByRole("region", { name: "offline", exact: true });
-    await offline.getByRole("button", { name: "Retry", exact: true }).click();
+    await offline
+      .getByRole("button", { name: "Retry now", exact: true })
+      .click();
     await expect(offline.getByText("Live", { exact: true })).toBeVisible();
     expect(errors).toEqual([]);
   });
