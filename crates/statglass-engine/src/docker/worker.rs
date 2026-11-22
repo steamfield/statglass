@@ -93,12 +93,13 @@ impl DockerHandle {
         if !self.transition(generation, status, Some(error.to_string()), "disconnected") {
             return;
         }
-        let plan = self.retry_plan(*retry);
+        let plan = self.next_retry(*retry);
         *retry = plan.next_seconds;
         self.wait_retry(controls, generation, plan.delay).await;
     }
     /// Publishes `Unavailable` with why and when the next attempt comes, then waits
-    /// until then. Returns early if the controls change while discovery runs.
+    /// until then. Returns early if the generation moves on or the worker shuts down
+    /// while discovery runs; visibility and interval changes don't interrupt it.
     async fn back_off_unavailable(
         &self,
         controls: &mut watch::Receiver<Control>,
@@ -106,12 +107,18 @@ impl DockerHandle {
         message: String,
         retry: &mut u64,
     ) {
-        let plan = self.retry_plan(*retry);
-        let availability = tokio::select! {biased;
-            _ = controls.changed() => return,
-            availability = self.availability(&control.settings, plan.delay) => availability,
-        };
         let generation = control.generation;
+        let plan = self.next_retry(*retry);
+        let probe = self.availability(&control.settings, plan.delay);
+        tokio::pin!(probe);
+        let availability = loop {
+            tokio::select! {biased;
+                changed = controls.changed() => {
+                    if superseded(changed, controls, generation) { return; }
+                }
+                availability = &mut probe => break availability,
+            }
+        };
         if !self.transition_unavailable(generation, message, availability) {
             return;
         }
@@ -129,7 +136,7 @@ impl DockerHandle {
         loop {
             tokio::select! {biased;
                 changed = controls.changed() => {
-                    if changed.is_err() || controls.borrow().generation != generation || controls.borrow().shutdown { return; }
+                    if superseded(changed, controls, generation) { return; }
                 }
                 _ = &mut delay => return,
             }
@@ -286,24 +293,8 @@ impl DockerHandle {
     ) -> bool {
         self.apply_transition(generation, status, None, message, reason)
     }
-    /// Moves to `Unavailable` with why no engine answers. Returns whether it applied.
-    pub(super) fn transition_unavailable(
-        &self,
-        generation: u32,
-        message: String,
-        availability: DockerAvailability,
-    ) -> bool {
-        let status = DockerStatus::Unavailable;
-        self.apply_transition(
-            generation,
-            status,
-            Some(availability),
-            Some(message),
-            "disconnected",
-        )
-    }
     /// Publishes a status and its availability in one update and opens a `reason` gap.
-    fn apply_transition(
+    pub(super) fn apply_transition(
         &self,
         generation: u32,
         status: DockerStatus,
@@ -485,6 +476,17 @@ pub(super) fn clock_stepped(before: &crate::ClockReading, now: &crate::ClockRead
         > 2000
 }
 
+/// Whether a control change ends work started for `generation`: the channel closed,
+/// the generation moved on, or the worker is shutting down.
+fn superseded(
+    changed: Result<(), watch::error::RecvError>,
+    controls: &watch::Receiver<Control>,
+    generation: u32,
+) -> bool {
+    let control = controls.borrow();
+    changed.is_err() || control.generation != generation || control.shutdown
+}
+
 /// How a connected session ended.
 #[derive(PartialEq)]
 enum SessionEnd {
@@ -494,4 +496,34 @@ enum SessionEnd {
     Idle,
     /// The engine stopped answering.
     Disconnected,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_visibility_change_during_the_probe_still_publishes_and_backs_off() {
+        let handle = DockerHandle::new(
+            HostId(uuid::Uuid::new_v4()),
+            DockerSettings {
+                enabled: true,
+                selected_engine: Some("/nonexistent/statglass-test.sock".into()),
+                ..Default::default()
+            },
+            PathBuf::new(),
+        );
+        let mut controls = handle.control.subscribe();
+        let control = controls.borrow_and_update().clone();
+        // Pending before the probe starts, so the change is seen while it runs.
+        handle.set_visible(true);
+        let mut retry = FIRST_RETRY_SECONDS;
+        handle
+            .back_off_unavailable(&mut controls, &control, "down".into(), &mut retry)
+            .await;
+        let snapshot = handle.snapshot();
+        assert_eq!(snapshot.status, DockerStatus::Unavailable);
+        assert!(snapshot.availability.is_some(), "reason published");
+        assert_eq!(retry, 2, "backoff advanced");
+    }
 }

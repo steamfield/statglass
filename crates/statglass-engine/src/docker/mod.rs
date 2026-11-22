@@ -223,8 +223,13 @@ impl DockerHandle {
         });
         generation
     }
+    /// Drops the current connection and starts a new attempt now.
     pub fn resume(&self) {
         let _gate = self.gate.lock_ok();
+        self.resume_locked();
+    }
+    /// [`Self::resume`] for a caller that already holds the gate.
+    fn resume_locked(&self) {
         self.cancel();
         self.control
             .send_modify(|c| c.generation = c.generation.wrapping_add(1));

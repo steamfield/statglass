@@ -1,12 +1,14 @@
 //! What the snapshot says about an unreachable engine: why no engine answers, decided
 //! from discovery facts, and how long the worker waits before its next attempt,
 //! including the faster cadence after the user launches a runtime. The classifier and
-//! the retry plan are pure; the handle methods at the bottom gather their inputs.
+//! the retry plan are pure; the handle methods at the bottom gather their inputs and
+//! publish the result.
 use statglass_collect::docker::now_ms;
 use statglass_collect::docker_runtimes::{default_search_paths, installed_runtimes};
 use statglass_schema::{
     docker::{
-        DockerAvailability, DockerEngine, DockerRuntimeApp, DockerSettings, DockerUnavailableReason,
+        DockerAvailability, DockerEngine, DockerRuntimeApp, DockerSettings, DockerStatus,
+        DockerUnavailableReason,
     },
     lock::LockExt,
 };
@@ -131,13 +133,32 @@ impl super::DockerHandle {
     /// sixty seconds and reports `launching_until_ms`, then reconnects now.
     pub fn launch_started(&self) {
         let window = LaunchWindow::opened_at(Instant::now(), now_ms());
+        // One gate span: a worker holding an older availability can't publish it
+        // between the patch and the generation bump and erase the window.
+        let _gate = self.gate.lock_ok();
         *self.launch.lock_ok() = Some(window);
         self.update(|s| {
             if let Some(availability) = &mut s.availability {
                 availability.launching_until_ms = Some(window.until_ms);
             }
         });
-        self.resume();
+        self.resume_locked();
+    }
+    /// Moves to `Unavailable` with why no engine answers. Returns whether it applied.
+    pub(super) fn transition_unavailable(
+        &self,
+        generation: u32,
+        message: String,
+        availability: DockerAvailability,
+    ) -> bool {
+        let status = DockerStatus::Unavailable;
+        self.apply_transition(
+            generation,
+            status,
+            Some(availability),
+            Some(message),
+            "disconnected",
+        )
     }
     /// Docker runtimes installed on this Mac, in launch preference order. Reads a few
     /// fixed paths under `/Applications`, the user's home and the Homebrew bin folders.
@@ -146,7 +167,7 @@ impl super::DockerHandle {
     }
     /// The next retry wait from the backoff step, on the fast cadence while a launch
     /// window is open.
-    pub(super) fn retry_plan(&self, seconds: u64) -> RetryPlan {
+    pub(super) fn next_retry(&self, seconds: u64) -> RetryPlan {
         let launching = self.open_launch_window().is_some();
         retry_plan(launching, seconds)
     }
