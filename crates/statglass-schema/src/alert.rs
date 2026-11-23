@@ -8,10 +8,16 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::alert_metrics::alert_metric;
+use crate::catalog::Catalog;
 use crate::series::{Labels, SeriesSelector};
 
 const HOT_PROCESS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0001);
 const THERMAL_SERIOUS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0002);
+
+/// The fan speed metric and its label, whose values number fans from 0.
+const FAN_METRIC: &str = "fan.rpm";
+const FAN_LABEL: &str = "fan";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct AlertRule {
@@ -72,29 +78,100 @@ impl AlertRule {
     /// [`Self::MIN_COOLDOWN_SECS`] and [`Self::MAX_COOLDOWN_SECS`], and an id that is
     /// not a built-in one.
     pub fn validate_custom(&self) -> Result<(), AlertRuleError> {
-        Err(AlertRuleError::NotThreshold)
+        if Self::BUILTIN_IDS.contains(&self.id) {
+            return Err(AlertRuleError::ReservedId);
+        }
+        check_name(&self.name)?;
+        let Condition::Threshold { series, value, .. } = &self.when else {
+            return Err(AlertRuleError::NotThreshold);
+        };
+        check_threshold(series, *value)?;
+        check_timing(self.for_secs, self.cooldown_secs)
     }
+}
+
+/// A rule name is 1 to [`AlertRule::MAX_NAME_CHARS`] characters and already trimmed, so
+/// the name that is checked is the name that is stored.
+fn check_name(name: &str) -> Result<(), AlertRuleError> {
+    let chars = name.chars().count();
+    if name != name.trim() || chars == 0 || chars > AlertRule::MAX_NAME_CHARS {
+        return Err(AlertRuleError::Name);
+    }
+    Ok(())
+}
+
+/// The watched metric is alertable, the selector names at most one label the catalog
+/// metric carries, and the value is finite and inside the metric's range.
+fn check_threshold(series: &SeriesSelector, value: f32) -> Result<(), AlertRuleError> {
+    let metric = series.metric.as_str();
+    let Some(alertable) = alert_metric(metric) else {
+        return Err(AlertRuleError::Metric(metric.to_owned()));
+    };
+    if !labels_allowed(metric, &series.labels) {
+        return Err(AlertRuleError::Labels);
+    }
+    let in_range = value.is_finite() && alertable.min <= value && value <= alertable.max;
+    if !in_range {
+        return Err(AlertRuleError::Value {
+            min: alertable.min,
+            max: alertable.max,
+        });
+    }
+    Ok(())
+}
+
+/// Whether `labels` is empty (every series) or one pair whose key `metric` carries.
+fn labels_allowed(metric: &str, labels: &Labels) -> bool {
+    if labels.len() > 1 {
+        return false;
+    }
+    let carried = Catalog::builtin()
+        .get(metric)
+        .map_or(&[][..], |def| def.label_keys);
+    labels.keys().all(|key| carried.contains(&key))
+}
+
+/// `for_secs` is at most [`AlertRule::MAX_FOR_SECS`] and the cooldown lies between
+/// [`AlertRule::MIN_COOLDOWN_SECS`] and [`AlertRule::MAX_COOLDOWN_SECS`].
+fn check_timing(for_secs: u32, cooldown_secs: u32) -> Result<(), AlertRuleError> {
+    if for_secs > AlertRule::MAX_FOR_SECS {
+        return Err(AlertRuleError::Duration);
+    }
+    let cooldowns = AlertRule::MIN_COOLDOWN_SECS..=AlertRule::MAX_COOLDOWN_SECS;
+    if !cooldowns.contains(&cooldown_secs) {
+        return Err(AlertRuleError::Cooldown);
+    }
+    Ok(())
 }
 
 /// The display name of one series of `metric` in a rule or an alert: `None` for a
 /// series without labels, "Fan {n+1}" for `fan.rpm` with a numeric `fan` label `n`
 /// (fans are numbered from 0 in the catalog and from 1 on screen), otherwise the single
 /// label's value ("/" for the boot volume).
-pub fn series_name(_metric: &str, _labels: &Labels) -> Option<String> {
-    None
+pub fn series_name(metric: &str, labels: &Labels) -> Option<String> {
+    let (key, value) = labels.iter().next()?;
+    let fan_index = (metric == FAN_METRIC && key == FAN_LABEL)
+        .then(|| value.parse::<u32>().ok())
+        .flatten();
+    match fan_index {
+        Some(n) => Some(format!("Fan {}", n.saturating_add(1))),
+        None => Some(value.to_owned()),
+    }
 }
 
 /// Why a custom rule was refused. Each message states the limit it broke, so the
 /// Alerts page can show it as is.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AlertRuleError {
-    #[error("rule name must be 1 to 60 characters")]
+    #[error("rule name must be 1 to 60 characters with no leading or trailing spaces")]
     Name,
     #[error("metric {0:?} cannot be alerted on; choose one of the listed metrics")]
     Metric(String),
     #[error("a rule watches every series of its metric or one series named by a label it carries")]
     Labels,
-    #[error("threshold must be a number between {min} and {max}")]
+    /// `min` and `max` are the metric's range in its catalog unit, for callers that
+    /// format it in the user's display unit.
+    #[error("threshold is outside the range this metric accepts")]
     Value { min: f32, max: f32 },
     #[error("duration must be at most 1 hour")]
     Duration,
@@ -252,3 +329,63 @@ mod tests {
 #[cfg(test)]
 #[path = "alert_validation_tests.rs"]
 mod validation_tests;
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+    use crate::series::MetricId;
+
+    fn named(name: &str) -> AlertRule {
+        AlertRule {
+            id: Uuid::from_u128(0xa1e7),
+            name: name.into(),
+            when: Condition::Threshold {
+                series: SeriesSelector {
+                    metric: MetricId::from_static("mem.pressure"),
+                    labels: Labels::new(),
+                },
+                op: Cmp::Gt,
+                value: 80.0,
+            },
+            for_secs: 120,
+            cooldown_secs: 1800,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn rejects_a_name_with_leading_or_trailing_whitespace() {
+        for name in [" Memory", "Memory ", "\tMemory\n"] {
+            assert_eq!(
+                named(name).validate_custom(),
+                Err(AlertRuleError::Name),
+                "{name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_a_trimmed_name_of_60_characters_counted_as_chars() {
+        assert_eq!(named(&"é".repeat(60)).validate_custom(), Ok(()));
+        assert_eq!(
+            named(&"é".repeat(61)).validate_custom(),
+            Err(AlertRuleError::Name)
+        );
+    }
+
+    #[test]
+    fn the_name_and_value_messages_state_the_rule_without_raw_numbers() {
+        assert_eq!(
+            AlertRuleError::Name.to_string(),
+            "rule name must be 1 to 60 characters with no leading or trailing spaces"
+        );
+        let value = AlertRuleError::Value {
+            min: 1e8,
+            max: 1e14,
+        };
+        assert_eq!(
+            value.to_string(),
+            "threshold is outside the range this metric accepts"
+        );
+    }
+}

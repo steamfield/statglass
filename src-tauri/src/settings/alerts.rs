@@ -1,8 +1,12 @@
 //! The alerts part of a settings patch, and which rules a change switched on.
 
+use std::collections::HashSet;
+
+use super::set;
 use serde::Deserialize;
 use statglass_schema::settings::AlertSettings;
 use statglass_schema::{AlertRule, Settings};
+use uuid::Uuid;
 
 /// A partial change to [`AlertSettings`]. `rules`, when present, replaces the whole
 /// custom rule list; the patch path validates the result before anything is saved.
@@ -23,15 +27,10 @@ impl AlertsPatch {
     /// Applies the patch to `alerts`: each switch present is set, and `rules`, when
     /// present, replaces the custom rules.
     pub fn apply(self, alerts: &mut AlertSettings) {
-        if let Some(v) = self.hot_process {
-            alerts.hot_process = v;
-        }
-        if let Some(v) = self.thermal_serious {
-            alerts.thermal_serious = v;
-        }
-        if let Some(v) = self.host_offline {
-            alerts.host_offline = v;
-        }
+        set(&mut alerts.hot_process, self.hot_process);
+        set(&mut alerts.thermal_serious, self.thermal_serious);
+        set(&mut alerts.host_offline, self.host_offline);
+        set(&mut alerts.rules, self.rules);
     }
 }
 
@@ -40,11 +39,16 @@ impl AlertsPatch {
 /// confirmation that makes macOS show its prompt (D-084). A rule edited while it stays
 /// on is not listed.
 pub fn alerts_switched_on(old: &Settings, new: &Settings) -> Vec<AlertRule> {
-    old.alerts
-        .builtin_rules()
+    let enabled_before: HashSet<Uuid> = old
+        .alerts
+        .engine_rules()
         .into_iter()
-        .zip(new.alerts.builtin_rules())
-        .filter(|(was, now)| !was.enabled && now.enabled)
-        .map(|(_, now)| now)
+        .filter(|rule| rule.enabled)
+        .map(|rule| rule.id)
+        .collect();
+    new.alerts
+        .engine_rules()
+        .into_iter()
+        .filter(|rule| rule.enabled && !enabled_before.contains(&rule.id))
         .collect()
 }
