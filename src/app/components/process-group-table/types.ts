@@ -13,6 +13,7 @@ export type SortValue = number | string | null;
 
 /** One column after the name column. */
 export interface GroupColumn<G, M> {
+  /** `"pid"` marks a PID column: member names then leave out their inline pid. */
   id: string;
   header: ReactNode;
   align: "left" | "right";

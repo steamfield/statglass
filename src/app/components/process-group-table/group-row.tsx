@@ -26,7 +26,11 @@ function Chevron({
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={(event) => {
+        // Opening a group is not choosing it: keep the click from the row's selection.
+        event.stopPropagation();
+        onToggle();
+      }}
       aria-expanded={open}
       aria-label={`${open ? "Hide" : "Show"} ${name} processes`}
       className="-ml-1 grid size-4 place-items-center rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"

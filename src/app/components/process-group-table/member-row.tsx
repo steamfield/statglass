@@ -20,6 +20,9 @@ export const CELL = "whitespace-nowrap px-3 py-0 font-normal";
 export const ROW =
   "group h-[29px] border-border-subtle border-b hover:bg-selected";
 
+/** Column id of a PID column; with one, the name cell leaves the pid out. */
+const PID_COLUMN = "pid";
+
 /** Indent of a member's name: past the group's chevron and initial chip. */
 const MEMBER_INDENT = "pl-[52px]";
 
@@ -81,8 +84,8 @@ function MemberName({
 
 /**
  * A member process: its name indented under the group with the pid beside
- * it, then its own figures. A member with no targets (it has exited) gets a
- * disabled checkbox and no actions.
+ * it (unless the table has a PID column), then its own figures. A member
+ * with no targets (it has exited) gets a disabled checkbox and no actions.
  */
 export function MemberRow<G, M>({
   member,
@@ -112,9 +115,11 @@ export function MemberRow<G, M>({
       <TableCell className={cn(CELL, MEMBER_INDENT)}>
         <span className="inline-flex min-w-0 max-w-64 items-baseline gap-2">
           <MemberName name={name} href={rows.memberHref?.(member)} />
-          <span className="figures text-label text-muted-foreground">
-            {pid}
-          </span>
+          {!columns.some((c) => c.id === PID_COLUMN) && (
+            <span className="figures text-label text-muted-foreground">
+              {pid}
+            </span>
+          )}
         </span>
       </TableCell>
       <ColumnCells columns={columns} cell={(c) => c.member(member)} />
