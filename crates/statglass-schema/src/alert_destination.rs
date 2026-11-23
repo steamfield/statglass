@@ -71,8 +71,111 @@ impl Destination {
     /// a token of at most [`Self::MAX_TOKEN_CHARS`] characters with no whitespace or
     /// control character (an empty token is no token).
     pub fn validate(&self) -> Result<(), DestinationError> {
-        Err(DestinationError::Name)
+        let name_chars = self.name.trim().chars().count();
+        if !(1..=Self::MAX_NAME_CHARS).contains(&name_chars) {
+            return Err(DestinationError::Name);
+        }
+        match &self.kind {
+            DestinationKind::Ntfy {
+                server,
+                topic,
+                token,
+            } => {
+                // The request goes to `<server>/`, so a query or fragment would end up
+                // in front of that slash.
+                if !is_valid_url(server) || server.contains(['?', '#']) {
+                    return Err(DestinationError::Url);
+                }
+                if !is_valid_topic(topic) {
+                    return Err(DestinationError::Topic);
+                }
+                match token.as_deref() {
+                    Some(token) if !is_valid_token(token) => Err(DestinationError::Token),
+                    _ => Ok(()),
+                }
+            }
+            DestinationKind::Webhook { url } => {
+                if is_valid_url(url) {
+                    Ok(())
+                } else {
+                    Err(DestinationError::Url)
+                }
+            }
+        }
     }
+}
+
+/// An http or https URL that names a host, fits [`Destination::MAX_URL_CHARS`] and holds
+/// no whitespace, control character, quote or backslash. The scheme is matched in lower
+/// case only, as every address the destination dialog produces is.
+fn is_valid_url(url: &str) -> bool {
+    let forbidden = |c: char| c.is_whitespace() || c.is_control() || c == '"' || c == '\\';
+    if url.chars().count() > Destination::MAX_URL_CHARS || url.contains(forbidden) {
+        return false;
+    }
+    let Some(rest) = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    is_valid_authority(authority)
+}
+
+/// A host with an optional numeric port, and no user name or password: credentials
+/// belong in the ntfy token field, and a URL carrying them would be shown and logged by
+/// host. A non-numeric port also refuses userinfo whose password holds a `/`
+/// (`https://user:pa/ss@host/x`), where the cut at the first `/` leaves `user:pa`. The
+/// host needs a character other than `.` and `-`; brackets only enclose an IPv6 literal.
+fn is_valid_authority(authority: &str) -> bool {
+    if authority.contains('@') {
+        return false;
+    }
+    let (host, port) = match host_and_port(authority) {
+        Some(parts) => parts,
+        None => return false,
+    };
+    let port_is_valid = port.is_none_or(|port| {
+        (1..=5).contains(&port.len()) && port.chars().all(|c| c.is_ascii_digit())
+    });
+    host.contains(|c: char| c != '.' && c != '-') && port_is_valid
+}
+
+/// `authority` split into host and optional port, or `None` when a bracket is unclosed,
+/// stray, or followed by anything but a port.
+fn host_and_port(authority: &str) -> Option<(&str, Option<&str>)> {
+    let Some(bracketed) = authority.strip_prefix('[') else {
+        if authority.contains(['[', ']']) {
+            return None;
+        }
+        return Some(match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        });
+    };
+    // An IPv6 literal: `[::1]` or `[::1]:8080`.
+    let (address, after) = bracketed.split_once(']')?;
+    if address.contains('[') {
+        return None;
+    }
+    if after.is_empty() {
+        return Some((address, None));
+    }
+    Some((address, Some(after.strip_prefix(':')?)))
+}
+
+/// 1 to [`Destination::MAX_TOPIC_CHARS`] ASCII letters, digits, hyphens or underscores.
+fn is_valid_topic(topic: &str) -> bool {
+    let allowed = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    (1..=Destination::MAX_TOPIC_CHARS).contains(&topic.len()) && topic.chars().all(allowed)
+}
+
+/// At most [`Destination::MAX_TOKEN_CHARS`] characters with no whitespace or control
+/// character. Empty is valid: it counts as no token.
+fn is_valid_token(token: &str) -> bool {
+    token.chars().count() <= Destination::MAX_TOKEN_CHARS
+        && !token.contains(|c: char| c.is_whitespace() || c.is_control())
 }
 
 /// Why a destination was refused. Each message states the rule it broke, so the
@@ -85,7 +188,7 @@ pub enum DestinationError {
     )]
     Name,
     #[error(
-        "address must start with http:// or https://, name a host, and be at most {} characters with no spaces, quotes or backslashes",
+        "address must start with http:// or https://, name a host, and be at most {} characters with no spaces, quotes or backslashes, with no user name or password in it",
         Destination::MAX_URL_CHARS
     )]
     Url,
@@ -99,6 +202,14 @@ pub enum DestinationError {
         Destination::MAX_TOKEN_CHARS
     )]
     Token,
+    /// A save would keep more than [`MAX_DESTINATIONS`]. Returned by the app's
+    /// destination service, never by [`Destination::validate`].
+    #[error("at most {MAX_DESTINATIONS} destinations can be saved")]
+    TooMany,
+    /// A change named an id no saved destination has. Returned by the app's destination
+    /// service, never by [`Destination::validate`].
+    #[error("no saved destination has that id")]
+    UnknownId,
 }
 
 /// What one delivery to a destination came to, after its retries.
@@ -163,7 +274,7 @@ pub struct DestinationLimits {
     /// [`Destination::MAX_TOKEN_CHARS`].
     pub max_token_chars: u32,
     /// Each [`DestinationError`]'s Display text by a stable key ("name", "url",
-    /// "topic", "token").
+    /// "topic", "token", "too_many", "unknown_id").
     pub messages: std::collections::BTreeMap<&'static str, String>,
 }
 
@@ -181,6 +292,8 @@ pub fn destination_limits() -> DestinationLimits {
             ("url", DestinationError::Url),
             ("topic", DestinationError::Topic),
             ("token", DestinationError::Token),
+            ("too_many", DestinationError::TooMany),
+            ("unknown_id", DestinationError::UnknownId),
         ]
         .into_iter()
         .map(|(key, error)| (key, error.to_string()))
@@ -191,3 +304,147 @@ pub fn destination_limits() -> DestinationLimits {
 #[cfg(test)]
 #[path = "alert_destination_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+
+    fn webhook(url: &str) -> Destination {
+        Destination {
+            id: Uuid::from_u128(0xde59),
+            name: "Hook".into(),
+            enabled: true,
+            kind: DestinationKind::Webhook { url: url.into() },
+        }
+    }
+
+    #[test]
+    fn a_url_with_a_user_name_or_password_is_refused() {
+        for bad in [
+            "https://user@hooks.example.com/x",
+            "https://user:secret@hooks.example.com/x",
+            "https://@hooks.example.com/",
+            "https://user:pa/ss@hooks.example.com/x",
+            "http://user:secret@[::1]:8080/x",
+        ] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+        // An `@` after the authority is part of the path or query, not userinfo.
+        for ok in [
+            "https://hooks.example.com/@team",
+            "https://hooks.example.com/x?to=a@b",
+        ] {
+            assert_eq!(webhook(ok).validate(), Ok(()), "{ok:?}");
+        }
+    }
+
+    #[test]
+    fn the_scheme_is_matched_in_lower_case_only() {
+        for bad in ["HTTPS://ntfy.sh", "Http://ntfy.sh", "hTTps://ntfy.sh/"] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_port_is_1_to_5_digits() {
+        for ok in [
+            "http://ntfy.local:8080",
+            "http://[::1]:8080/x",
+            "http://[::1]/x",
+        ] {
+            assert_eq!(webhook(ok).validate(), Ok(()), "{ok:?}");
+        }
+        for bad in [
+            "http://ntfy.local:",
+            "http://ntfy.local:port",
+            "http://ntfy.local:123456",
+            "http://:8080/x",
+            "http://[::1/x",
+            "http://[::1]x/",
+            "http://[]:80/",
+        ] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_needs_a_character_other_than_dots_and_hyphens() {
+        for bad in ["http://./", "http://-/", "http://.-./x"] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(webhook("http://a-b.c/").validate(), Ok(()));
+    }
+
+    #[test]
+    fn an_unclosed_or_stray_bracket_is_refused() {
+        for bad in [
+            "http://[::1/secret",
+            "http://a[b/",
+            "http://ab]/",
+            "http://[[::1]/",
+        ] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_ntfy_server_has_no_query_or_fragment() {
+        for bad in [
+            "https://ntfy.sh/?x",
+            "https://ntfy.sh#x",
+            "https://ntfy.sh/a?",
+        ] {
+            let destination = Destination {
+                kind: DestinationKind::Ntfy {
+                    server: bad.into(),
+                    topic: "alerts".into(),
+                    token: None,
+                },
+                ..webhook("https://ntfy.sh")
+            };
+            assert_eq!(
+                destination.validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(
+            webhook("https://hooks.example.com/x?a=1#b").validate(),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn the_service_errors_have_their_own_messages_in_the_limits() {
+        let messages = destination_limits().messages;
+        assert_eq!(
+            messages.get("too_many").map(String::as_str),
+            Some("at most 8 destinations can be saved")
+        );
+        assert_eq!(
+            messages.get("unknown_id").map(String::as_str),
+            Some("no saved destination has that id")
+        );
+        assert_eq!(messages.len(), 6);
+    }
+}

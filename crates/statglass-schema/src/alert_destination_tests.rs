@@ -213,7 +213,7 @@ fn each_error_states_its_rule_without_the_refused_value() {
     );
     assert_eq!(
         DestinationError::Url.to_string(),
-        "address must start with http:// or https://, name a host, and be at most 2048 characters with no spaces, quotes or backslashes"
+        "address must start with http:// or https://, name a host, and be at most 2048 characters with no spaces, quotes or backslashes, with no user name or password in it"
     );
     assert_eq!(
         DestinationError::Topic.to_string(),
