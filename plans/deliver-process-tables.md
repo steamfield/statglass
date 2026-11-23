@@ -175,7 +175,7 @@ Test cases:
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | a | S | src-tauri/src/app_quit.rs, src-tauri/src/live.rs | contracts, src-tauri/src/usage.rs | | sonnet | running | deliver/process-tables-1a | cargo tests, clippy and architecture-check pass |
-| b | S | src/core/process-groups.ts | contracts, src/core/usage-rows.ts | src/core/process-groups.test.ts | sonnet | running | deliver/process-tables-1b | process-groups tests pass, typecheck clean |
+| b | S | src/core/process-groups.ts | contracts, src/core/usage-rows.ts | src/core/process-groups.test.ts | sonnet | merged | deliver/process-tables-1b | process-groups tests pass, typecheck clean |
 | c | M | src/app/components/process-group-table/process-group-table.tsx, src/app/components/process-group-table/group-row.tsx, src/app/components/process-group-table/member-row.tsx, src/app/components/process-group-table/use-group-order.ts, src/app/components/process-group-table/live-columns.tsx, src/app/routes/dashboard/processes/route.tsx, src/app/routes/dashboard/processes/_lib/processes.ts, src/app/components/process-table.tsx, src/app/components/process-table.test.tsx, src/app/components/process-table-freeze.test.tsx, src/app/hooks/use-process-interest.ts, src/app/routes/dev/gallery/_sections/app-components.tsx | contracts, src/app/components/usage-apps-card.tsx, src/app/components/process-table.tsx | src/app/components/process-group-table/process-group-table.test.tsx, src/app/routes/dashboard/processes/route.test.tsx | opus | running | deliver/process-tables-1c | component and route tests pass, typecheck and lint clean, screenshots compared |
 
 #### Lane a brief
@@ -207,22 +207,42 @@ Test cases:
 
 ### Phase 2: module live tables and Disk on the shared table
 
-Demo: CPU, GPU, Memory, Power and Disk "by app" tables at 15m look and act as before, rendered by `ProcessGroupTable`; Disk has no By process toggle.
+Demo: CPU, GPU, Memory, Power and Disk "by app" tables at 15m look and act as before, rendered by `ProcessGroupTable`; Disk shows "Disk by app" with no By process toggle; an expanded member's name opens its process detail page.
 Depends on: phase 1
+Test cases:
+- `usage-apps-card.test.tsx` passes unchanged (ranked header, main-only quit, member selection, no-main group selects all, expand with exited members, refused processes, search opens the app, coverage notes, remote host note).
+- Usage table: a running member's name links to `/dashboard/processes/<pid>/<start>`; an exited member has no link and no actions; remainder rows ("Other apps", "System and other") render after the groups with no checkbox; Show all toggles past 10 apps.
+- Disk route: the default table is "Disk by app" with Read/Written/Total and selection; selecting the Xcode app selects its main only; brushing a range asks `query_usage_by_app` for disk and retitles the card to the range; there is no By app / By process button.
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src/app/components/usage-apps-card.tsx, src/app/components/usage-apps-card.test.tsx, src/app/components/app-table.tsx, src/app/routes/dashboard/disk/_components/disk-processes.tsx, src/app/routes/dashboard/disk/route.tsx, src/app/routes/dashboard/disk/route.test.tsx | contracts | | opus | pending | | |
+| a | M | src/app/components/usage-apps-card.tsx, src/app/components/app-table.tsx, src/app/routes/dashboard/disk/_components/disk-processes.tsx, src/app/routes/dashboard/disk/_components/disk-processes.test.tsx, src/app/routes/dashboard/disk/route.tsx | contracts, src/app/components/process-group-table/index.ts | src/app/components/usage-apps-card.test.tsx, src/app/routes/dashboard/disk/route.test.tsx | opus | pending | | usage and disk tests pass, screenshots compared |
+
+#### Lane a brief
+
+- Goal: `UsageAppsCard`'s live body renders through `ProcessGroupTable`, and Disk always shows the grouped usage table.
+- Interface: build `GroupRows<UsageRow, ProcessUsage>` from `usageRows` (count = `app.processes.length`, members = `row.processes`, forcedOpen = `matchedInside`, targets = `row.quit`, memberTargets = running ? [p] : [], memberMuted = !running, memberHref = running ? detail path : undefined) and `GroupColumn`s from `config.columns` plus the share column. Rust ranks, so pass `sort` with `client: false` and the ranked column fixed descending (headers report but do not reorder, as now). Remainder rows and the footnote go through `after`; Show all through `limit={10}` and `searching`. Keep the coverage notes, GPU shortfall note and the brush scope. Remove the code in `usage-apps-card.tsx` and `app-table.tsx` this makes unused (`UsageAppRows`, `AppRows`, `ProcessRow`, `ActionsCell`, `UsageHead`/`usageColumns` if unused elsewhere; check with grep before removing an export).
+- Disk: `DiskProcesses` renders `UsageAppsCard` with its disk config, no toggle; delete `DiskProcessList` and its helpers and the `disk-processes.test.tsx` cases that test the removed per-process view (keep any that still apply to the remaining component).
+- Out of scope: `HistoricalUsageCard` (phase 3), Network, Processes.
+- Done when: `bun run test -- src/app/components/usage-apps-card.test.tsx src/app/routes/dashboard/disk src/app/routes/dashboard/cpu src/app/routes/dashboard/memory src/app/routes/dashboard/gpu src/app/routes/dashboard/power`, typecheck, lint, and screenshots of CPU and Disk compared with phase 1's Processes.
 
 ### Phase 3: recorded ranges and Network become actionable
 
-Demo: scroll CPU back to a fixed range: app rows of running apps are selectable and quit the running app; Network by app rows select and quit.
+Demo: scroll CPU (or Timeline) back to a fixed range: rows of apps that are running now are selectable and quit the running app, others are disabled; Network by app rows select and quit; with Network history off, "Apps, now" is a grouped live table.
 Depends on: phase 1
+Test cases:
+- `use-running-apps`: registers `FULL_TABLE` process interest only while `useCanSignal()` is true, returns null before the first batch, then a `RunningApps` map that keeps identity across batches whose rows did not change app membership.
+- Recorded table: an app row whose name has running processes is selectable and its selection holds `appQuitTargets`; Quit sends `process_signal` for those pids only after the dialog; an app with no running process has a disabled checkbox and actions; expanding an app loads recorded processes through the existing paged query, a recorded process whose pid and start time are running is selectable, an exited one is muted and disabled; Load more appends members that then join selection and Command-A; the App Store scenario shows no checkboxes and asks for no full-table interest; previous-range comparison and the server sort keep working (header click re-queries, order follows the reply).
+- Network live table: app rows select their running quit targets; "Other apps", "System and other" rows have no checkbox; sorting by Now and Total still works (client sort, ties by name); the brush selection still pins its app first.
+- "Apps, now": groups live processes by app with Down, Up and Total; asks for `FULL_TABLE` with network rates; shows the top 12 groups by total; groups select and quit.
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src/app/components/historical-usage-card.tsx, src/app/components/historical-usage-processes.tsx, src/app/components/historical-usage-card.test.tsx | contracts | | opus | pending | | |
-| b | M | src/app/routes/dashboard/network/_components/apps-card.tsx, src/app/routes/dashboard/network/_components/apps-now-card.tsx, src/app/routes/dashboard/network/route.test.tsx | contracts | | opus | pending | | |
+| a | M | src/app/components/historical-usage-card.tsx, src/app/components/historical-usage-processes.tsx | contracts, src/app/components/process-group-table/index.ts | src/app/components/historical-usage-card.test.tsx | opus | pending | | recorded table tests pass |
+| b | M | src/app/routes/dashboard/network/_components/apps-card.tsx, src/app/routes/dashboard/network/_components/apps-now-card.tsx | contracts, src/app/components/process-group-table/index.ts | src/app/routes/dashboard/network/route.test.tsx, src/app/routes/dashboard/network/_components/apps-card.test.tsx | opus | pending | | network tests pass |
+
+(Phase 3 briefs are written when phase 1 tags. `use-running-apps.ts` is small and shared by both lanes, so phase 3's scaffold implements it with its test.)
 
 ## Log
 - Plan critique (devils-advocate, opus), all eight findings accepted: (1) "Apps, now" grouped a top-12 batch, now FULL_TABLE; (2) deleting process-table broke three importers, scaffold repoints them to `@core/process-groups`; (3) Disk's table held the only link to the process detail page, kept through `GroupRows.memberHref`; (4) `renderMembers` left paged recorded processes outside selection, replaced by controlled `expansion` plus `afterMembers` with members always from `rows.members`; (5) `sort` conflated sortable headers with client ordering, split by `sort.client`, group ties by name; (6) Timeline's recorded table becomes actionable too, named in scope, targets memoised, e2e-perf before merge; (7) mock `app_quit` went stale after a mock Quit, computed after the signalled filter in `processRows`; (8) `live.rs` sits at its 750-line ceiling, logic goes in `app_quit.rs`, `architecture-check` added to the gate. The mock work moved from lane 1a into the scaffold so the route tests have real groups.
+- Lane 1/b merged. Accepted choices: `runningByApp` reuses the grouping helper; `runningTarget` scans members. Lane review: two cost findings rejected: `runningTarget` resolves only paged recorded processes of expanded apps (tens per tick, not 900), and `sumFigures`' ~20 passes total about 18k operations per tick over 900 rows; a single-pass rewrite would cost readability for no measurable gain. check-lane must use ec3d3dc5 (scaffold plus plan commit) as base, since lanes fast-forward to it.
