@@ -6,24 +6,29 @@ use std::collections::{HashMap, HashSet};
 
 use statglass_engine::ProcessSample;
 
-/// The indices into `procs` that Quit on their app acts on: the running main executable
-/// alone when there is one, since quitting it quits the app and signalling its helpers
-/// first would cut a graceful quit short; otherwise every running process. Empty when
-/// none is running.
+/// The indices into `procs` that Quit on their app acts on: its running main executables
+/// alone when there are any (one per running instance of the app), since quitting them
+/// quits the app and signalling its helpers first would cut a graceful quit short;
+/// otherwise every running process. Empty when none is running.
 pub fn quit_targets<P>(
     procs: &[P],
     running: impl Fn(&P) -> bool,
     main: impl Fn(&P) -> bool,
 ) -> Vec<usize> {
-    if let Some(i) = procs.iter().position(|p| running(p) && main(p)) {
-        return vec![i];
+    let indices = |keep: &dyn Fn(&P) -> bool| -> Vec<usize> {
+        procs
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| keep(p))
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let mains = indices(&|p| running(p) && main(p));
+    if mains.is_empty() {
+        indices(&|p| running(p))
+    } else {
+        mains
     }
-    procs
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| running(p))
-        .map(|(i, _)| i)
-        .collect()
 }
 
 /// The `(pid, start_time_us)` of every row in `rows` that Quit on its app acts on. Rows
@@ -142,10 +147,20 @@ mod tests {
     #[test]
     fn row_without_app_groups_under_its_own_name() {
         let rows = [
-            sample(1, "sshd", None, false),
-            sample(2, "zsh", None, false),
-            sample(3, "Safari", Some("Safari"), true),
+            sample(1, "Safari", None, false),
+            sample(2, "Safari", Some("Safari"), true),
+            sample(3, "sshd", None, false),
         ];
-        assert_eq!(live_quit_set(&rows), keys(&[1, 2, 3]));
+        assert_eq!(live_quit_set(&rows), keys(&[2, 3]));
+    }
+
+    #[test]
+    fn every_running_instance_of_an_app_is_quit() {
+        let rows = [
+            sample(1, "Foo", Some("Foo"), true),
+            sample(2, "Foo Helper", Some("Foo"), false),
+            sample(3, "Foo", Some("Foo"), true),
+        ];
+        assert_eq!(live_quit_set(&rows), keys(&[1, 3]));
     }
 }
