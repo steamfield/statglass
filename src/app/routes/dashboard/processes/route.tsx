@@ -37,7 +37,6 @@ import {
   GPU_COVERAGE,
   hiddenNote,
   NETWORK_COVERAGE,
-  selectableTargets,
   shownProcesses,
 } from "./_lib/processes";
 
@@ -111,7 +110,6 @@ export default function ProcessesRoute() {
 
   const groups = useMemo(() => groupLiveProcesses(rows, query), [rows, query]);
   const shown = useMemo(() => shownProcesses(groups), [groups]);
-  const allTargets = useMemo(() => selectableTargets(groups), [groups]);
   const tableColumns = useMemo(
     () =>
       liveColumns(columns, {
@@ -175,7 +173,6 @@ export default function ProcessesRoute() {
                 },
                 client: true,
               }}
-              allTargets={allTargets}
               height={Math.max(
                 120,
                 bodyHeight -

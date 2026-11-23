@@ -29,6 +29,12 @@ export const RUNNING_APPS_VIEW: ProcessView = {
   period_ms: 10_000,
 };
 
+/**
+ * Why a row that only knows an app or a recorded process offers no Quit:
+ * nothing it names is running. Shown only once a live batch is known.
+ */
+export const NOT_RUNNING = "Not running";
+
 /** Each listed app's quit targets, by app name. */
 export type AppQuitTargets = ReadonlyMap<string, readonly LiveProcess[]>;
 

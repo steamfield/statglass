@@ -93,13 +93,13 @@ export const historyKeys = {
     appNames: readonly string[]
   ) =>
     [
-      ...historyKeys.host(hostId),
-      "durable-usage",
-      fromMs,
-      toMs,
+      ...historyKeys.historicalUsageRange(hostId, fromMs, toMs),
       by,
       appNames,
     ] as const,
+  /** Every `historicalUsage` answer over one range, whatever it ranks by. */
+  historicalUsageRange: (hostId: HostId, fromMs: number, toMs: number) =>
+    [...historyKeys.host(hostId), "durable-usage", fromMs, toMs] as const,
   usageProcessRange: (hostId: HostId, fromMs: number, toMs: number) =>
     [...historyKeys.host(hostId), "durable-processes", fromMs, toMs] as const,
   usageProcesses: (

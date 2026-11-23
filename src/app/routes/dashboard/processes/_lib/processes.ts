@@ -1,7 +1,6 @@
 import { countNoun, formatInteger } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
 import type { LiveGroup } from "@core/process-groups";
-import { type ProcessTarget, uniqueTargets } from "@core/process-selection";
 import type {
   ProcessColumn,
   ProcessSort,
@@ -12,21 +11,6 @@ export function shownProcesses(
   groups: readonly LiveGroup[]
 ): readonly LiveProcess[] {
   return groups.flatMap((g) => g.shown);
-}
-
-/**
- * What Command-A selects and the selection refreshes from: every listed
- * process plus each group's quit targets, which a member search can leave
- * unlisted (search "2240" lists SourceKitService, but ticking Xcode selects
- * its main).
- */
-export function selectableTargets(
-  groups: readonly LiveGroup[]
-): readonly ProcessTarget[] {
-  return uniqueTargets([
-    ...shownProcesses(groups),
-    ...groups.flatMap((g) => g.quit),
-  ]);
 }
 
 /** The column-set control (plan 4.14); Network and GPU from v1.2. */

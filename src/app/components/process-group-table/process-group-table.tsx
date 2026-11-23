@@ -124,9 +124,7 @@ function SelectionSurface<G, M>({
   onHoldChange: (held: boolean) => void;
   children: ReactNode;
 }) {
-  const allTargets = useStableTargets(
-    table.allTargets ?? visibleTargets(visible, table.rows)
-  );
+  const allTargets = useStableTargets(visibleTargets(visible, table.rows));
   return (
     <ProcessSelectionSurface
       rows={selectionRows(visible, table.rows)}

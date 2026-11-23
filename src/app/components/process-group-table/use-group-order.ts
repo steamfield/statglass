@@ -44,7 +44,7 @@ export const NAME_COLUMN = "name";
  * Compares two sort values in `dir`, with missing values last either way.
  * Returns 0 for a tie so the caller can break it.
  */
-export function compareSortValues(
+function compareSortValues(
   a: SortValue,
   b: SortValue,
   dir: "asc" | "desc"
@@ -96,7 +96,7 @@ function memberSortValue<G, M>(
 }
 
 /** Groups in client-sort order (value, then name), or as they arrived. */
-export function sortGroups<G, M>(source: OrderSource<G, M>): readonly G[] {
+function sortGroups<G, M>(source: OrderSource<G, M>): readonly G[] {
   const { sort, rows } = source;
   if (!sort?.client) return rows.groups;
   const { by, dir } = sort.value;
@@ -111,10 +111,7 @@ export function sortGroups<G, M>(source: OrderSource<G, M>): readonly G[] {
 }
 
 /** A group's members in client-sort order (value, then pid), or as listed. */
-export function sortMembers<G, M>(
-  source: OrderSource<G, M>,
-  group: G
-): readonly M[] {
+function sortMembers<G, M>(source: OrderSource<G, M>, group: G): readonly M[] {
   const { sort, rows } = source;
   const members = rows.members(group);
   if (!sort?.client) return members;
@@ -130,10 +127,7 @@ export function sortMembers<G, M>(
 }
 
 /** Whether a group lists its members: it expands, and is open or forced open. */
-export function isGroupOpen<G, M>(
-  source: OrderSource<G, M>,
-  group: G
-): boolean {
+function isGroupOpen<G, M>(source: OrderSource<G, M>, group: G): boolean {
   const { rows, open } = source;
   if (!canExpand(rows, group)) return false;
   return (rows.forcedOpen?.(group) ?? false) || open.has(rows.key(group));

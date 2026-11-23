@@ -370,15 +370,20 @@ describe("UsageAppsCard (D-093, D-099)", () => {
   });
 
   it("expands an app to its processes; exited ones have no actions", async () => {
-    const { user } = render(full);
+    const { user, transport } = render(full);
     await table();
+    await goLive(transport);
     expect(screen.queryByText("Google Chrome Helper")).toBeNull();
     await user.click(
       screen.getByRole("button", { name: "Show Google Chrome processes" })
     );
     const exited = screen.getByText("Google Chrome Helper").closest("tr");
     if (!exited) throw new Error("no row");
-    expect(exited).toHaveTextContent("exited");
+    expect(
+      within(exited).getByRole("checkbox", {
+        name: "Select Google Chrome Helper (12)",
+      })
+    ).toHaveAccessibleDescription("Not running");
     expect(within(exited).queryByRole("button")).toBeNull();
     expect(
       screen.getByRole("button", {
@@ -436,8 +441,9 @@ describe("UsageAppsCard (D-093, D-099)", () => {
 
 describe("UsageAppsCard on the shared grouped table", () => {
   it("links a running member to its detail page and leaves an exited one plain", async () => {
-    const { user } = render(full);
+    const { user, transport } = render(full);
     await table();
+    await goLive(transport);
     await user.click(
       screen.getByRole("button", { name: "Show Google Chrome processes" })
     );
@@ -506,7 +512,7 @@ describe("UsageAppsCard on the shared grouped table", () => {
     answerWith(transport, full);
     // The host never answers the interest with a batch.
     transport.setProcessInterest = async () => ({ status: "ok", data: null });
-    renderWithProviders(
+    const { user } = renderWithProviders(
       <UsageAppsCard windowMs={WINDOW_MS} config={CONFIG} />,
       {
         transport,
@@ -517,7 +523,20 @@ describe("UsageAppsCard on the shared grouped table", () => {
       name: "Select Google Chrome",
     });
     expect(chrome).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Show Google Chrome processes" })
+    );
+    // Members wait too, even one the range recorded as exited.
+    for (const name of [
+      "Select Google Chrome Helper (Renderer) (11)",
+      "Select Google Chrome Helper (12)",
+    ]) {
+      const box = screen.getByRole("checkbox", { name });
+      expect(box).toBeDisabled();
+      expect(box).not.toHaveAccessibleDescription();
+    }
     expect(screen.queryByText("Not running")).toBeNull();
+    expect(screen.queryByText("exited")).toBeNull();
   });
 
   it("says an app with no running process is not running, once a batch is in", async () => {
@@ -532,6 +551,48 @@ describe("UsageAppsCard on the shared grouped table", () => {
     expect(
       screen.getByRole("checkbox", { name: "Select Google Chrome" })
     ).toBeEnabled();
+  });
+
+  it("names a listed helper's app, not the helper, when Quit acts on the app's main", async () => {
+    // Only Slack's helper used enough to be listed; Quit on Slack quits its main.
+    const withSlack = (fromMs: number, toMs: number): UsageByApp => ({
+      ...full(fromMs, toMs),
+      apps: [...APPS, app("Slack", [proc(41, "Slack Helper", 90)])],
+    });
+    const { transport } = render(withSlack);
+    await table();
+    await goLive(transport, [
+      ...LIVE,
+      running(40, "Slack", "Slack", true),
+      running(41, "Slack Helper", "Slack", false),
+    ]);
+    const slack = await screen.findByRole("checkbox", { name: "Select Slack" });
+    expect(slack).toBeEnabled();
+    expect(screen.queryByRole("checkbox", { name: /Slack Helper/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Slack/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Quit Slack (40)" })
+    ).toBeInTheDocument();
+  });
+
+  it("disables a member once it leaves the live batch, though the range still lists it running", async () => {
+    const { user, transport } = render(full);
+    await table();
+    await goLive(transport);
+    await user.click(
+      screen.getByRole("button", { name: "Show Google Chrome processes" })
+    );
+    const renderer = () =>
+      screen.getByRole("checkbox", {
+        name: "Select Google Chrome Helper (Renderer) (11)",
+      });
+    expect(renderer()).toBeEnabled();
+    push(
+      transport,
+      LIVE.filter((p) => p.pid !== 11)
+    );
+    expect(renderer()).toBeDisabled();
+    expect(renderer()).toHaveAccessibleDescription("Not running");
   });
 
   it("offers no selection and asks for no running processes in the App Store edition", async () => {

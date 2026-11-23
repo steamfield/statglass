@@ -19,14 +19,31 @@ import { useHostId } from "~/stores/host-store";
 export function useHistoricalUsage(
   range: TimeRange | null,
   by: HistoricalUsageMetric,
-  { appNames = [] }: { appNames?: readonly string[] } = {}
+  {
+    appNames = [],
+    holdAcrossMetrics = false,
+  }: {
+    appNames?: readonly string[];
+    /**
+     * Another metric over the same range keeps the last answer on screen
+     * while it loads, so a table over it (and its selection) stays mounted.
+     */
+    holdAcrossMetrics?: boolean;
+  } = {}
 ) {
   const transport = useTransport();
   const host = useHostId();
   const from = range?.fromMs ?? 0;
   const to = range?.toMs ?? 0;
+  const sameRange = historyKeys.historicalUsageRange(host, from, to);
   return useQuery({
     queryKey: historyKeys.historicalUsage(host, from, to, by, appNames),
+    placeholderData: (previous, previousQuery) =>
+      holdAcrossMetrics &&
+      previousQuery !== undefined &&
+      sameRange.every((part, i) => previousQuery.queryKey[i] === part)
+        ? previous
+        : undefined,
     queryFn: () =>
       unwrap(
         transport.queryHistoricalUsage({

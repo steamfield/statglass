@@ -103,8 +103,11 @@ test("native selection modifiers, virtual keyboard navigation and gutter draggin
   await page.keyboard.press("Space");
   await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
   await page.keyboard.press("Meta+a");
-  // Every process, including members of collapsed groups, which count as hidden.
-  await expect(page.getByText(/^800 selected · \d+ hidden$/)).toBeVisible();
+  // What each app's Quit acts on, so collapsed groups' helpers stay out and
+  // nothing selected is hidden; fewer than the 800 processes listed.
+  const all = await selectedCount(page);
+  expect(all).toBeGreaterThan(range);
+  expect(all).toBeLessThan(800);
   await page.keyboard.press("Escape");
   await page.keyboard.press("Home");
   await page.getByRole("button", { name: "Clear", exact: true }).click();

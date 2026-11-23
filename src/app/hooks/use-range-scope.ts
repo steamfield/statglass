@@ -53,6 +53,19 @@ export function useRangeScope(
 }
 
 /**
+ * A table's selection scope over a view: the brushed range, else the chart
+ * window, so a selection does not outlive the range it was made over.
+ */
+export function selectionScopeKey(
+  selection: TimeRange | null,
+  windowMs: number
+): string {
+  return selection
+    ? `${selection.fromMs}:${selection.toMs}`
+    : `live:${windowMs}`;
+}
+
+/**
  * The answer to show: a held answer stands in only for the window it was
  * read for (the key moving every 10 s), never for a selection that was just
  * cleared, whose span differs.

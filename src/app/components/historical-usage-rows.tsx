@@ -16,16 +16,17 @@ import { HISTORICAL_LABELS } from "@core/historical-usage";
 import { targetKey } from "@core/process-selection";
 import { HistoricalUsageFigure } from "~/components/historical-usage-cells";
 import type { GroupColumn, GroupRows } from "~/components/process-group-table";
-import type { AppQuitTargets, RunningMatches } from "~/hooks/use-running-apps";
+import {
+  type AppQuitTargets,
+  NOT_RUNNING,
+  type RunningMatches,
+} from "~/hooks/use-running-apps";
 
 /** Recorded processes loaded so far, by app name, across their pages. */
 export type RecordedMembers = ReadonlyMap<
   string,
   readonly HistoricalUsageProcess[]
 >;
-
-/** Why a recorded row offers no selection or actions. */
-const NOT_RUNNING = "Not running";
 
 const NONE: readonly HistoricalUsageProcess[] = [];
 
