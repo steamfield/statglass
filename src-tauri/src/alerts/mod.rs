@@ -7,6 +7,10 @@
 //! | [`store`] | `alert-destinations.json` (atomic, 0600); the only module that touches the file |
 //! | [`dispatch`] | an alert event as a [`Message`], sent to each enabled destination off the calling thread, and [`AlertsService::deliver_to`]: one delivery, its failure log and its record |
 //! | [`commands`] | the four Tauri commands and the [`commands::AlertDestinationsChanged`] event |
+//! | [`fire`] | what happens when any alert fires: record (for alerts the engine did not record), notification, destinations, `event-recorded` |
+//! | [`host_offline`] | the built-in host-offline rule as a pure state machine |
+//! | [`host_watch`] | remote statuses as the watch's observations, its notices as alert events |
+//! | [`host_poll`] | the 30 s task that feeds the watch and fires its alerts |
 //!
 //! # Emitting
 //!
@@ -24,9 +28,19 @@
 
 pub mod commands;
 pub mod dispatch;
+pub mod fire;
+pub mod host_offline;
+#[cfg(test)]
+mod host_offline_tests;
+pub mod host_poll;
+pub mod host_watch;
+#[cfg(test)]
+mod host_watch_tests;
 pub mod store;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod wiring_tests;
 
 use std::path::Path;
 use std::sync::Mutex;

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::alert::{Cmp, ThermalState};
+use crate::host::HostId;
 use crate::series::{Labels, MetricId};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -125,6 +126,20 @@ pub enum AlertCause {
         /// The rule's `for_secs`, so the alert text names the rule's duration rather
         /// than one measured from reading spacing.
         for_secs: u32,
+    },
+    /// A saved remote host stayed unreachable for the built-in host-offline rule's
+    /// time. The event's `start_ms` is when it was first seen unreachable.
+    HostOffline {
+        host: HostId,
+        /// The host's name when the alert fired, so the text reads alone.
+        name: String,
+    },
+    /// A host reported by [`AlertCause::HostOffline`] is reachable again.
+    HostBack {
+        host: HostId,
+        name: String,
+        /// How long it was unreachable, in whole seconds.
+        offline_secs: u32,
     },
 }
 
@@ -275,7 +290,67 @@ mod tests {
                     },
                 },
             },
+            Event {
+                ts_ms: 5_000_000,
+                start_ms: 4_700_000,
+                processes: vec![],
+                detail: EventDetail::Alert {
+                    rule_id: Uuid::from_u128(3),
+                    rule_name: "Saved host offline".into(),
+                    cause: AlertCause::HostOffline {
+                        host: HostId(Uuid::from_u128(0xb0)),
+                        name: "m1-linux".into(),
+                    },
+                },
+            },
+            Event {
+                ts_ms: 7_220_000,
+                start_ms: 4_700_000,
+                processes: vec![],
+                detail: EventDetail::Alert {
+                    rule_id: Uuid::from_u128(3),
+                    rule_name: "Saved host offline".into(),
+                    cause: AlertCause::HostBack {
+                        host: HostId(Uuid::from_u128(0xb0)),
+                        name: "m1-linux".into(),
+                        offline_secs: 2_520,
+                    },
+                },
+            },
         ]
+    }
+
+    /// The host causes are tagged as the client and the store's readers expect.
+    #[test]
+    fn host_causes_carry_their_tags() {
+        let tags: Vec<serde_json::Value> = events()
+            .iter()
+            .filter_map(|e| match &e.detail {
+                EventDetail::Alert { cause, .. } => {
+                    Some(serde_json::to_value(cause).unwrap()["type"].clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            tags,
+            ["process_cpu", "threshold", "host_offline", "host_back"].map(serde_json::Value::from)
+        );
+        let back = serde_json::to_value(AlertCause::HostBack {
+            host: HostId(Uuid::from_u128(1)),
+            name: "a".into(),
+            offline_secs: 60,
+        })
+        .unwrap();
+        assert_eq!(
+            back,
+            serde_json::json!({
+                "type": "host_back",
+                "host": "00000000-0000-0000-0000-000000000001",
+                "name": "a",
+                "offline_secs": 60
+            })
+        );
     }
 
     #[test]

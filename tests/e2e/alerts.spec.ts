@@ -74,9 +74,9 @@ for (const theme of THEMES) {
       await openAlerts(page, theme);
       const items = recentRegion(page).getByRole("listitem");
       await expect(items).toHaveCount(2);
-      await expect(items.nth(0)).toContainText("Alert · Memory pressure");
+      await expect(items.nth(0)).toContainText(/^Memory pressure/);
       await expect(items.nth(0)).toContainText("21:28");
-      await expect(items.nth(1)).toContainText("Alert · ffmpeg at 251% CPU");
+      await expect(items.nth(1)).toContainText(/^ffmpeg at 251% CPU/);
       await expect(items.nth(1)).toContainText("19:20");
       await page.screenshot({
         path: `test-results/screens/alerts-${theme}-${info.project.name}.png`,

@@ -1,4 +1,5 @@
 import {
+  alertLabel,
   eventLabel,
   eventPriority,
   eventRange,
@@ -76,6 +77,51 @@ describe("eventLabel", () => {
         })
       )
     ).toBe("Alert · thermal state Critical");
+  });
+
+  it("names a saved host that went offline and came back", () => {
+    const host = { host: "remote-linux", name: "m1-linux" };
+    const alert = (
+      cause: Extract<Event["detail"], { kind: "alert" }>["cause"]
+    ) => ev(0, { kind: "alert", rule_id: "r", rule_name: "n", cause });
+    expect(eventLabel(alert({ type: "host_offline", ...host }))).toBe(
+      "Alert · m1-linux is offline"
+    );
+    expect(
+      eventLabel(alert({ type: "host_back", ...host, offline_secs: 2520 }))
+    ).toBe("Alert · m1-linux is back after 42 min");
+    expect(
+      eventLabel(alert({ type: "host_back", ...host, offline_secs: 4350 }))
+    ).toBe("Alert · m1-linux is back after 1 h 12 min");
+    expect(
+      eventLabel(alert({ type: "host_back", ...host, offline_secs: 10_800 }))
+    ).toBe("Alert · m1-linux is back after 3 h");
+  });
+});
+
+describe("alertLabel", () => {
+  const alert = (cause: Extract<Event["detail"], { kind: "alert" }>["cause"]) =>
+    ev(0, { kind: "alert", rule_id: "r", rule_name: "n", cause });
+
+  it("leaves out the Alert lead for a list of alerts", () => {
+    expect(
+      alertLabel(
+        alert({ type: "host_offline", host: "remote-linux", name: "m1-linux" })
+      )
+    ).toBe("m1-linux is offline");
+    expect(
+      alertLabel(
+        alert({ type: "process_cpu", process: "ffmpeg", cpu_pct: 251 })
+      )
+    ).toBe("ffmpeg at 251% CPU");
+    expect(
+      alertLabel(alert({ type: "thermal_state", state: "critical" }))
+    ).toBe("Thermal state Critical");
+  });
+
+  it("reads any other event as eventLabel does", () => {
+    const fans = ev(0, { kind: "fans_ramped", from_rpm: 1, to_rpm: 2 });
+    expect(alertLabel(fans)).toBe(eventLabel(fans));
   });
 
   it("shows an unknown figure as ? rather than 0", () => {

@@ -5,8 +5,8 @@
 use statglass_notify::{AlertText, alert_text, alerts_on_text, format_value, rule_summary};
 use statglass_schema::settings::{MemoryUnit, NetworkUnit, TemperatureUnit, UnitSettings};
 use statglass_schema::{
-    AlertCause, AlertRule, Cmp, Condition, Event, EventDetail, Labels, MetricId, SeriesSelector,
-    ThermalState,
+    AlertCause, AlertRule, Cmp, Condition, Event, EventDetail, HostId, Labels, MetricId,
+    SeriesSelector, ThermalState,
 };
 use uuid::Uuid;
 
@@ -388,6 +388,104 @@ fn non_alert_events_have_no_text() {
         ..hot(&["ffmpeg"], AlertRule::hot_process().id)
     };
     assert_eq!(alert_text(&e, &CELSIUS_DECIMAL), None);
+}
+
+// ---- host offline ------------------------------------------------------------------
+
+const HOST_RULE: &str = "Saved host offline";
+
+/// A host-offline rule's alert about m1-linux, first seen unreachable at `start_ms`.
+fn host_alert(start_ms: i64, ts_ms: i64, cause: AlertCause) -> Event {
+    Event {
+        ts_ms,
+        start_ms,
+        processes: vec![],
+        detail: EventDetail::Alert {
+            rule_id: AlertRule::HOST_OFFLINE_ID,
+            rule_name: HOST_RULE.into(),
+            cause,
+        },
+    }
+}
+
+fn host_text(kind: &'static str, title: &str, body: &str) -> Option<AlertText> {
+    Some(AlertText {
+        title: title.into(),
+        body: body.into(),
+        rule: Some(HOST_RULE.into()),
+        kind,
+    })
+}
+
+fn offline() -> AlertCause {
+    AlertCause::HostOffline {
+        host: HostId(Uuid::from_u128(0xb0)),
+        name: "m1-linux".into(),
+    }
+}
+
+fn back(offline_secs: u32) -> AlertCause {
+    AlertCause::HostBack {
+        host: HostId(Uuid::from_u128(0xb0)),
+        name: "m1-linux".into(),
+        offline_secs,
+    }
+}
+
+#[test]
+fn host_offline_says_how_long_the_host_has_been_unreachable() {
+    let five = host_alert(0, 300_000, offline());
+    assert_eq!(
+        alert_text(&five, &CELSIUS_DECIMAL),
+        host_text(
+            "host_offline",
+            "m1-linux is offline",
+            "Not reachable for 5 minutes"
+        )
+    );
+    // Rounded down.
+    let seven = host_alert(0, 7 * 60_000 + 59_000, offline());
+    assert_eq!(
+        alert_text(&seven, &CELSIUS_DECIMAL).map(|t| t.body),
+        Some("Not reachable for 7 minutes".into())
+    );
+}
+
+#[test]
+fn host_offline_never_reads_shorter_than_the_rules_five_minutes() {
+    let early = host_alert(0, 299_000, offline());
+    assert_eq!(
+        alert_text(&early, &CELSIUS_DECIMAL).map(|t| t.body),
+        Some("Not reachable for 5 minutes".into())
+    );
+}
+
+#[test]
+fn host_back_says_how_long_the_host_was_offline() {
+    let event = host_alert(0, 2_520_000, back(2_520));
+    assert_eq!(
+        alert_text(&event, &CELSIUS_DECIMAL),
+        host_text(
+            "host_back",
+            "m1-linux is back",
+            "Was offline for 42 minutes"
+        )
+    );
+}
+
+#[test]
+fn host_back_reads_hours_and_minutes_from_an_hour_on() {
+    let body =
+        |secs: u32| alert_text(&host_alert(0, 1, back(secs)), &CELSIUS_DECIMAL).map(|t| t.body);
+    assert_eq!(
+        body(72 * 60 + 30),
+        Some("Was offline for 1 h 12 min".into())
+    );
+    assert_eq!(body(3 * 3600), Some("Was offline for 3 h".into()));
+    assert_eq!(
+        body(59 * 60 + 59),
+        Some("Was offline for 59 minutes".into())
+    );
 }
 
 // ---- alerts_on_text ----------------------------------------------------------------

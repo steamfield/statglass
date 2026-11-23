@@ -3,7 +3,7 @@
  * 7 days, newest first, each one a line that opens the Timeline at it.
  */
 import type { TimeRange } from "@core/brush";
-import { eventId, eventLabel } from "@core/events";
+import { alertLabel, eventId } from "@core/events";
 import { formatClock, monthName } from "@core/format";
 import type { ReactNode } from "react";
 import { InlineMessage } from "~/components/inline-message";
@@ -24,7 +24,7 @@ const NOT_KEPT_DESCRIPTION = "The history from this time is no longer kept";
 /**
  * A `SettingsPanel` titled "Recent": at most 20 alerts from
  * `useRecentAlerts`, newest first, each line its time on the host clock,
- * `eventLabel` and a control that opens the Timeline at that alert. "No
+ * `alertLabel` and a control that opens the Timeline at that alert. "No
  * alerts in the last 7 days." when there are none or history is
  * unavailable; "Couldn't load alerts" when the read failed otherwise.
  */
@@ -82,7 +82,7 @@ function RecentAlertLine({
   busy: boolean;
   onOpen: (range: TimeRange) => void;
 }) {
-  const label = eventLabel(alert);
+  const label = alertLabel(alert);
   return (
     <li className="border-border-subtle border-b last:border-b-0">
       <button

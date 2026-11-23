@@ -8,6 +8,7 @@ import {
   type AlertRule,
   type AlertSettings,
   type AlertsPatch,
+  type RemoteHostRecord,
   type UnitSettings,
 } from "@core/generated/bindings";
 import { settingsErrorText } from "@core/settings-patch";
@@ -17,6 +18,7 @@ import { toast } from "sonner";
 import { SettingsPanel } from "~/components/settings-row";
 import { useNow } from "~/hooks/use-now";
 import { useOpenInTimeline } from "~/hooks/use-open-in-timeline";
+import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useSettings, useUpdateSettings } from "~/stores/settings-store";
 import { type AlertEvent, useRecentAlerts } from "../_hooks/use-recent-alerts";
 import { useSeriesKeys } from "../_hooks/use-series-keys";
@@ -37,22 +39,25 @@ const DEFAULT_ALERTS: AlertSettings = {
   rules: [],
 };
 
-// Rust's `AlertRule::BUILTIN_IDS` order: hot process, thermal serious, host offline.
-const [HOT_PROCESS_ID, THERMAL_SERIOUS_ID] = ALERT_LIMITS.builtin_ids;
-
 /** The built-in rules this panel switches, in row order. */
 const BUILTINS = [
   {
     setting: "hot_process",
-    id: HOT_PROCESS_ID,
+    id: ALERT_LIMITS.hot_process_id,
     label: "A process above 200% CPU for 5 minutes",
     description: "Any one process, for the whole 5 minutes",
   },
   {
     setting: "thermal_serious",
-    id: THERMAL_SERIOUS_ID,
+    id: ALERT_LIMITS.thermal_serious_id,
     label: "Thermal state Serious or worse",
     description: "macOS is slowing the Mac down to cool it",
+  },
+  {
+    setting: "host_offline",
+    id: ALERT_LIMITS.host_offline_id,
+    label: "A saved host is offline for 5 minutes",
+    description: "Checked while this Mac is awake and online",
   },
 ] as const;
 
@@ -66,10 +71,11 @@ const NEVER_FIRED = "Never fired";
 type LastAlert = AlertEvent | "never" | "unknown";
 
 /**
- * A `SettingsPanel` titled "Rules". The two built-in rows come first
- * ("A process above 200% CPU for 5 minutes", "Thermal state Serious or
- * worse") and write `{ alerts: { hot_process } }` / `{ alerts: {
- * thermal_serious } }`. Each custom row's label is the rule name; its sub
+ * A `SettingsPanel` titled "Rules". The built-in rows come first ("A
+ * process above 200% CPU for 5 minutes", "Thermal state Serious or worse",
+ * and "A saved host is offline for 5 minutes" while a remote host is saved)
+ * and write `{ alerts: { hot_process } }`, `{ alerts: { thermal_serious } }`
+ * or `{ alerts: { host_offline } }`. Each custom row's label is the rule name; its sub
  * line is the sentence when the name differs from it, then "Last fired
  * <relative time>" opening the Timeline at that alert, "Never fired", or
  * "Not measured on this Mac" when no live series has its metric. Its switch
@@ -82,7 +88,12 @@ export function RulesPanel({ onEdit }: RulesPanelProps): ReactNode {
   const { pending, write } = useAlertsWrite();
   const measured = useMeasuredMetrics();
   const lastAlert = useLastAlerts();
+  const hostSaved = useRemoteHosts(anyHost).data ?? false;
   if (alerts === null || units === null) return null;
+  // The host rule has nothing to watch until a remote host is saved.
+  const builtins = BUILTINS.filter(
+    (b) => b.setting !== "host_offline" || hostSaved
+  );
   // Absent from a settings file written before custom rules: none.
   const rules = alerts.rules ?? [];
   const setEnabled = (id: string, enabled: boolean) =>
@@ -91,12 +102,12 @@ export function RulesPanel({ onEdit }: RulesPanelProps): ReactNode {
     });
   return (
     <SettingsPanel title="Rules" after={<SwitchingNote />}>
-      {BUILTINS.map((b) => (
+      {builtins.map((b) => (
         <RuleRow
           key={b.id}
           label={b.label}
           sub={<RuleSub prefix={b.description} lastAlert={lastAlert(b.id)} />}
-          enabled={alerts[b.setting]}
+          enabled={alerts[b.setting] ?? false}
           disabled={pending}
           onEnabledChange={(on) => write({ [b.setting]: on })}
         />
@@ -120,6 +131,11 @@ export function RulesPanel({ onEdit }: RulesPanelProps): ReactNode {
       ))}
     </SettingsPanel>
   );
+}
+
+/** Whether any remote host is saved; selected so a status poll re-renders nothing. */
+function anyHost(hosts: RemoteHostRecord[]): boolean {
+  return hosts.length > 0;
 }
 
 /** The panel's one line under the rows. */

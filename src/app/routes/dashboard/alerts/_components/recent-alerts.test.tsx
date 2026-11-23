@@ -1,4 +1,4 @@
-import { eventLabel } from "@core/events";
+import { alertLabel } from "@core/events";
 import { formatClock } from "@core/format";
 import type { Event } from "@core/generated/bindings";
 import { MOCK_HOST_ID, type ScenarioName } from "@core/mock/fixtures";
@@ -65,8 +65,26 @@ describe("Recent alerts", () => {
     alerts.forEach((alert, i) => {
       const item = items[i];
       expect(item).toHaveTextContent(formatClock(alert.ts_ms));
-      expect(item).toHaveTextContent(eventLabel(alert));
+      expect(item).toHaveTextContent(alertLabel(alert));
     });
+    // A list of alerts does not say "Alert" on every line.
+    expect(items[0]).toHaveTextContent(/^Memory pressure 86%/);
+    expect(items[1]).toHaveTextContent(/^ffmpeg at 251% CPU/);
+  });
+
+  it("lists a saved host going offline and coming back", async () => {
+    const transport = createMockTransport({
+      scenarios: ["mac-offline"],
+      autoTick: false,
+    });
+    renderWithProviders(<RecentAlerts />, { transport });
+    const region = await screen.findByRole("region", { name: "Recent" });
+    expect(
+      await within(region).findByText("Studio Mac is back after 42 min")
+    ).toBeInTheDocument();
+    expect(
+      within(region).getByText("Studio Mac is offline")
+    ).toBeInTheDocument();
   });
 
   it("shows at most the 20 newest", async () => {
@@ -100,7 +118,7 @@ describe("Recent alerts", () => {
       transport,
       route: "/dashboard/alerts",
     });
-    await user.click(await screen.findByText(eventLabel(newest)));
+    await user.click(await screen.findByText(alertLabel(newest)));
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/dashboard/timeline")
     );

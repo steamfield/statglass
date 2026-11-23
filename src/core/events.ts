@@ -25,7 +25,8 @@ function blame(processes: readonly string[]): string {
 /**
  * What happened, without the time: "Fans ramped up · kernel_task + Xcode
  * build", "ANE 1.4 W · Photos face analysis", "Alert · Memory pressure
- * 84%". A threshold alert's value reads in the display defaults (°F, GB).
+ * 84%", "Alert · m1-linux is offline". A threshold alert's value reads in
+ * the display defaults (°F, GB).
  */
 export function eventLabel(e: Event): string {
   const d = e.detail;
@@ -39,15 +40,23 @@ export function eventLabel(e: Event): string {
     case "power_spike":
       return `${d.component === "ane" ? "ANE" : "Package"} ${watts(d.watts)}${blame(e.processes.slice(0, 1))}`;
     case "alert":
-      switch (d.cause.type) {
-        case "process_cpu":
-          return `Alert · ${d.cause.process} at ${pct(d.cause.cpu_pct)} CPU`;
-        case "thermal_state":
-          return `Alert · thermal state ${THERMAL_LABEL[d.cause.state]}`;
-        case "threshold":
-          return `Alert · ${alertCauseLabel(d.cause, null)}`;
-      }
+      return `Alert · ${alertCauseLabel(d.cause, null)}`;
   }
+}
+
+/**
+ * `eventLabel` without the "Alert · " lead, for a list that holds only
+ * alerts (the Alerts page's Recent): "Memory pressure 84%", "Thermal state
+ * Critical", "m1-linux is back after 42 min". Other events read as
+ * `eventLabel` has them.
+ */
+export function alertLabel(e: Event): string {
+  const d = e.detail;
+  if (d.kind !== "alert") return eventLabel(e);
+  // Alone on a line, the thermal cause starts a sentence.
+  return d.cause.type === "thermal_state"
+    ? `Thermal state ${THERMAL_LABEL[d.cause.state]}`
+    : alertCauseLabel(d.cause, null);
 }
 
 /** Identity of a stored event: the store keeps one row per time and kind. */

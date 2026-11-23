@@ -253,6 +253,11 @@ export const appKeys = {
   /** The `statglass` command's link on PATH (D-126). */
   cliLink: ["app", "cli-link"] as const,
   /**
+   * The alert destinations and their last deliveries, kept current by
+   * `alert-destinations-changed` rather than read again.
+   */
+  alertDestinations: ["app", "alert-destinations"] as const,
+  /**
    * The public address (D-093), keyed by the primary interface, its local
    * address and the egress interface: another network (a new lease, even on
    * the same Wi-Fi interface) or a VPN coming up asks again.

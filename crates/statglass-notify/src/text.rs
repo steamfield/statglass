@@ -11,6 +11,7 @@ use statglass_schema::{
 /// Durations shorter than this read in seconds, longer ones in whole minutes.
 const SECONDS_BELOW: u32 = 120;
 const MS_PER_MINUTE: i64 = 60_000;
+const MINUTES_PER_HOUR: u32 = 60;
 const ALERTS_ON_TITLE: &str = "Alerts are on";
 /// The [`AlertText::kind`] of the "Alerts are on" confirmation.
 const ALERTS_ON_KIND: &str = "alerts_on";
@@ -25,8 +26,8 @@ pub struct AlertText {
     pub body: String,
     /// The name of the rule that fired, `None` for the "Alerts are on" confirmation.
     pub rule: Option<String>,
-    /// The `AlertCause` serde tag ("threshold", "process_cpu", "thermal_state"), or
-    /// "alerts_on" for the confirmation.
+    /// The `AlertCause` serde tag ("threshold", "process_cpu", "thermal_state",
+    /// "host_offline", "host_back"), or "alerts_on" for the confirmation.
     pub kind: &'static str,
 }
 
@@ -51,7 +52,9 @@ pub fn rule_summary(rule: &AlertRule, units: &UnitSettings) -> String {
 
 /// Title and body of the notification for an `alert` event, `None` for any other
 /// event. A threshold alert is titled with the rule name, its body reads
-/// "<label> <value> · <comparison> <threshold> for <duration>".
+/// "<label> <value> · <comparison> <threshold> for <duration>". A host-offline alert
+/// reads "<name> is offline" / "Not reachable for 5 minutes", its recovery "<name> is
+/// back" / "Was offline for 42 minutes".
 pub fn alert_text(event: &Event, units: &UnitSettings) -> Option<AlertText> {
     let EventDetail::Alert {
         cause, rule_name, ..
@@ -83,6 +86,16 @@ pub fn alert_text(event: &Event, units: &UnitSettings) -> Option<AlertText> {
             };
             (rule_name.clone(), threshold_body(&held, units))
         }
+        AlertCause::HostOffline { name, .. } => (
+            format!("{name} is offline"),
+            format!("Not reachable for {}", minutes(offline_minutes(event))),
+        ),
+        AlertCause::HostBack {
+            name, offline_secs, ..
+        } => (
+            format!("{name} is back"),
+            format!("Was offline for {}", offline_span(*offline_secs)),
+        ),
     };
     Some(AlertText {
         title,
@@ -98,6 +111,40 @@ fn cause_kind(cause: &AlertCause) -> &'static str {
         AlertCause::ProcessCpu { .. } => "process_cpu",
         AlertCause::ThermalState { .. } => "thermal_state",
         AlertCause::Threshold { .. } => "threshold",
+        AlertCause::HostOffline { .. } => "host_offline",
+        AlertCause::HostBack { .. } => "host_back",
+    }
+}
+
+/// Whole minutes from the event's `start_ms` to its `ts_ms`, and never fewer than the
+/// host-offline rule's own wait, which a slightly early timestamp must not undercut.
+fn offline_minutes(event: &Event) -> u32 {
+    let observed = (event.ts_ms - event.start_ms) / MS_PER_MINUTE;
+    let rule = AlertRule::HOST_OFFLINE_AFTER_SECS / 60;
+    u32::try_from(observed).unwrap_or(u32::MAX).max(rule)
+}
+
+/// "1 minute", "42 minutes".
+fn minutes(count: u32) -> String {
+    if count == 1 {
+        "1 minute".to_owned()
+    } else {
+        format!("{count} minutes")
+    }
+}
+
+/// How long a host was offline: whole minutes under an hour ("42 minutes"), hours and
+/// minutes from an hour on ("1 h 12 min", "3 h").
+fn offline_span(secs: u32) -> String {
+    let total = secs / 60;
+    if total < MINUTES_PER_HOUR {
+        return minutes(total);
+    }
+    let (hours, rest) = (total / MINUTES_PER_HOUR, total % MINUTES_PER_HOUR);
+    if rest == 0 {
+        format!("{hours} h")
+    } else {
+        format!("{hours} h {rest} min")
     }
 }
 

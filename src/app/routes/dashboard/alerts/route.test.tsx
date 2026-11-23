@@ -69,7 +69,7 @@ describe("Alerts page wiring", () => {
     ).toBeNull();
   });
 
-  it("shows the Rules and Recent panels", async () => {
+  it("shows the Rules, Send to and Recent panels in that order", async () => {
     const transport = createMockTransport({ scenarios: ["alerts"] });
     const view = render(
       <App
@@ -84,6 +84,12 @@ describe("Alerts page wiring", () => {
     expect(
       await screen.findByRole("region", { name: "Recent" })
     ).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("heading", { level: 2 })
+        .map((heading) => heading.textContent)
+        .filter((name) => ["Rules", "Send to", "Recent"].includes(name ?? ""))
+    ).toEqual(["Rules", "Send to", "Recent"]);
     view.unmount();
     transport.dispose();
   });

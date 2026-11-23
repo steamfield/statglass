@@ -27,6 +27,13 @@ pub struct AlertLimits {
     pub max_cooldown_secs: u32,
     /// Ids a custom rule may not use.
     pub builtin_ids: Vec<String>,
+    /// The id of the built-in "process above 200% CPU" rule, [`AlertRule::hot_process`].
+    pub hot_process_id: String,
+    /// The id of the built-in "thermal state Serious or worse" rule,
+    /// [`AlertRule::thermal_serious`].
+    pub thermal_serious_id: String,
+    /// The id of the built-in "saved host offline" alert, [`AlertRule::HOST_OFFLINE_ID`].
+    pub host_offline_id: String,
     /// The label key a rule on each alertable metric may select by; metrics with one
     /// unlabelled series are absent.
     pub label_keys: BTreeMap<&'static str, Vec<&'static str>>,
@@ -67,6 +74,9 @@ pub fn alert_limits() -> AlertLimits {
             .iter()
             .map(ToString::to_string)
             .collect(),
+        hot_process_id: AlertRule::hot_process().id.to_string(),
+        thermal_serious_id: AlertRule::thermal_serious().id.to_string(),
+        host_offline_id: AlertRule::HOST_OFFLINE_ID.to_string(),
         label_keys,
         messages: messages(),
     }
@@ -104,6 +114,19 @@ mod tests {
         assert_eq!(
             template.replace("{metric}", "\"cpu.load\""),
             AlertRuleError::Metric("cpu.load".into()).to_string()
+        );
+    }
+
+    #[test]
+    fn the_named_builtin_ids_are_the_reserved_ones() {
+        let limits = alert_limits();
+        assert_eq!(
+            [
+                limits.hot_process_id,
+                limits.thermal_serious_id,
+                limits.host_offline_id
+            ],
+            limits.builtin_ids.as_slice()
         );
     }
 

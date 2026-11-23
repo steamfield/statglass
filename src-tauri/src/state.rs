@@ -45,8 +45,8 @@ use crate::error::CommandError;
 use crate::history::History;
 use crate::hosts::{HostEntry, HostRegistry};
 use crate::ipc::{
-    CapabilitiesChanged, EventRecorded, HistoryHealth, HistoryHealthChanged, HostsChanged,
-    SettingsChanged, SettingsSnapshot, WindowAppearance, WindowAppearanceChanged,
+    CapabilitiesChanged, HistoryHealth, HistoryHealthChanged, HostsChanged, SettingsChanged,
+    SettingsSnapshot, WindowAppearance, WindowAppearanceChanged,
 };
 use crate::live::LiveRegistry;
 use crate::notify;
@@ -219,6 +219,7 @@ impl AppState {
         // A store that failed for a reason that can clear up (a full disk at launch)
         // reopens on its own; the agent does the same.
         crate::history::retry::spawn(app.clone());
+        crate::alerts::host_poll::spawn(app.clone());
 
         let handle = app.clone();
         platform::observe_reduce_transparency(move |reduce| {
@@ -549,8 +550,9 @@ fn reconcile_login_item(wanted: bool) {
 }
 
 /// Follows one host's bus for the app's own needs: the `capabilities-changed` and
-/// `event-recorded` events, alert notifications and deliveries, `chip_known`, and Performance
-/// mode for window appearance. The latest frame is the hub's.
+/// `event-recorded` events, the local host's alerts ([`crate::alerts::fire`]),
+/// `chip_known`, and Performance mode for window appearance. The latest frame is the
+/// hub's.
 pub(crate) fn spawn_host_watcher(
     app: AppHandle,
     entry: Arc<HostEntry>,
@@ -586,25 +588,7 @@ pub(crate) fn spawn_host_watcher(
                         tracing::warn!("emitting capabilities-changed: {e}");
                     }
                 }
-                BusMsg::Event(e) => {
-                    if entry.record().is_local
-                        && let Some(state) = app.try_state::<AppState>()
-                    {
-                        let units = state.settings.settings().units;
-                        notify::alert(&app, &e, &units);
-                        let sender = crate::alerts::background_sender(&app);
-                        state
-                            .alerts
-                            .on_alert(&e, &entry.record().display_name, &units, sender);
-                    }
-                    let event = EventRecorded {
-                        host: entry.record().id,
-                        event: (*e).clone(),
-                    };
-                    if let Err(err) = event.emit(&app) {
-                        tracing::warn!("emitting event-recorded: {err}");
-                    }
-                }
+                BusMsg::Event(e) => crate::alerts::fire::on_bus_event(&app, entry.record(), &e),
                 BusMsg::Status(s) if entry.record().is_local => {
                     if let Some(state) = app.try_state::<AppState>() {
                         state.remotes.controller_battery_changed(s.on_battery);

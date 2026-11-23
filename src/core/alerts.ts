@@ -96,10 +96,22 @@ export function ruleSummary(rule: AlertRule, units: UnitSettings): string {
 }
 
 /**
+ * How long a host was offline: "42 min" under an hour, then "1 h 12 min"
+ * or "3 h". Whole minutes, rounded down, as Rust's notification says them.
+ */
+function offlineSpan(secs: number): string {
+  const minutes = Math.floor(secs / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+/**
  * What an alert's cause measured, in the user's units: "Memory pressure
  * 84%", "Fan speed (Fan 2) 5,200 rpm", "ffmpeg at 251% CPU", "thermal
- * state Serious". `null` units take the display defaults (°F, GB), as
- * `displayUnits` does.
+ * state Serious", "m1-linux is offline", "m1-linux is back after 42 min".
+ * `null` units take the display defaults (°F, GB), as `displayUnits` does.
  */
 export function alertCauseLabel(
   cause: AlertCause,
@@ -118,6 +130,10 @@ export function alertCauseLabel(
       );
       return `${seriesLabel(cause.metric, cause.labels)} ${shown}`;
     }
+    case "host_offline":
+      return `${cause.name} is offline`;
+    case "host_back":
+      return `${cause.name} is back after ${offlineSpan(cause.offline_secs)}`;
   }
 }
 

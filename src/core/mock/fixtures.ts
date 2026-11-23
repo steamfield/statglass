@@ -209,6 +209,11 @@ export interface ScenarioFlags {
   alerts: boolean;
   /** Every test delivery to an alert destination fails (`alert_destination_test`). */
   alertDeliveryFails: boolean;
+  /**
+   * The event history holds a saved host's offline alert and its recovery
+   * (`mac-offline`), for the Alerts page's Recent list.
+   */
+  hostOfflineAlerts: boolean;
 }
 
 export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
@@ -232,6 +237,7 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
     starPrompt: has("star-prompt"),
     alerts: has("alerts"),
     alertDeliveryFails: has("alert-delivery-fails"),
+    hostOfflineAlerts: has("mac-offline"),
     noFans: has("no-fans"),
     paused: has("paused"),
     stale: has("stale"),

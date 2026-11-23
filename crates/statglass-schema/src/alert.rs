@@ -35,6 +35,9 @@ impl AlertRule {
     /// The id of the built-in "saved host offline" alert. The shell watches host
     /// status for it; it is not an engine rule.
     pub const HOST_OFFLINE_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0003);
+    /// How long a saved host must stay unreachable, in observed time, before the
+    /// built-in host-offline alert fires: 5 minutes.
+    pub const HOST_OFFLINE_AFTER_SECS: u32 = 300;
     /// The ids of the built-in rules. A custom rule may not use one.
     pub const BUILTIN_IDS: [Uuid; 3] = [HOT_PROCESS_ID, THERMAL_SERIOUS_ID, Self::HOST_OFFLINE_ID];
     /// The most custom rules one settings file holds.
