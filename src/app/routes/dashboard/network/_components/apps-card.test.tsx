@@ -20,11 +20,16 @@ import { AppsNowCard } from "./apps-now-card";
 
 const T = NETWORK_BY_APP_FROM_MS;
 
+/** A row's cells after the selection gutter, which selectable rows lead with. */
+const dataCells = (row: HTMLElement) =>
+  within(row)
+    .getAllByRole("cell")
+    .filter((cell) => cell.getAttribute("aria-label") !== "Selection");
 const tableNames = () =>
   within(screen.getByRole("table", { name: "Network by app" }))
     .getAllByRole("row")
     .slice(1)
-    .map((row) => within(row).getAllByRole("cell")[0]?.textContent);
+    .map((row) => dataCells(row)[0]?.textContent);
 const appNames = () => tableNames().slice(0, 3);
 const header = (label: string) =>
   screen.getByRole("columnheader", { name: new RegExp(`^${label}`) });
@@ -241,7 +246,8 @@ describe("Network app table headers", () => {
         within(screen.getByRole("table", { name: "Network by app" }))
           .getAllByRole("row")
           .slice(1, 4)
-          .map((row) => within(row).getAllByRole("cell").at(-1)?.textContent)
+          // Now is the last figure; the actions cell follows it.
+          .map((row) => dataCells(row).at(-2)?.textContent)
       ).toEqual(["—", "—", "—"])
     );
     expect(appNames()).toEqual(["ccurl", "DDocker Desktop", "GGoogle Chrome"]);
@@ -293,17 +299,20 @@ describe("Network app table headers", () => {
     expect(appNames()[0]).toBe("DDocker Desktop");
   });
 
-  it("shows a ranked Now header without clickable columns in the bounded live list", async () => {
+  it("ranks the live list by Total and re-sorts on a header click", async () => {
     renderWithProviders(createElement(AppsNowCard));
     const table = await screen.findByRole("table", {
       name: "Network by app, now",
     });
-    const ranked = within(table).getByRole("columnheader", { name: /Now/ });
-    expect(ranked).toHaveAttribute("aria-sort", "descending");
-    expect(ranked).toHaveTextContent("Now ↓");
-    for (const head of within(table).getAllByRole("columnheader")) {
-      expect(within(head).queryByRole("button")).toBeNull();
-    }
+    const head = (label: string) =>
+      within(table).getByRole("columnheader", {
+        name: new RegExp(`^${label}`),
+      });
+    expect(head("Total")).toHaveAttribute("aria-sort", "descending");
+    expect(head("Total")).toHaveTextContent("Total ↓");
+    fireEvent.click(within(head("Up")).getByRole("button"));
+    expect(head("Up")).toHaveAttribute("aria-sort", "descending");
+    expect(head("Total")).not.toHaveAttribute("aria-sort");
   });
 });
 
@@ -341,5 +350,55 @@ describe("Network app rows act on the running app", () => {
     const other = screen.getByText("Other apps").closest("tr");
     if (!other) throw new Error("no Other apps row");
     expect(within(other).queryByRole("checkbox")).toBeNull();
+  });
+});
+
+describe("Apps, now", () => {
+  it("lists the top 12 apps by summed total, without idle apps, and shows all on request", async () => {
+    const transport = createMockTransport({ now: () => T, autoTick: false });
+    renderWithProviders(createElement(AppsNowCard), { transport });
+    await screen.findByRole("table", { name: "Network by app, now" });
+    await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+    // App i moves i kB/s; "Busy" moves 13 kB/s split over two processes,
+    // so only the group sum puts it first. "Idle" moved nothing.
+    const apps = Array.from({ length: 12 }, (_, i) =>
+      liveProcess({
+        pid: 100 + i,
+        name: `App ${i + 1}`,
+        net_rx_bps: (i + 1) * 1000,
+        net_tx_bps: 0,
+      })
+    );
+    act(() =>
+      transport.push({
+        kind: "processes",
+        ts_ms: T,
+        rows: [
+          ...apps,
+          ...[201, 202].map((pid) =>
+            liveProcess({
+              pid,
+              name: "Busy Helper",
+              app: "Busy",
+              net_rx_bps: 6500,
+              net_tx_bps: 0,
+            })
+          ),
+          liveProcess({ pid: 300, name: "Idle", net_rx_bps: 0, net_tx_bps: 0 }),
+        ],
+      })
+    );
+    const groupNames = () =>
+      within(screen.getByRole("table", { name: "Network by app, now" }))
+        .getAllByRole("row")
+        .flatMap((row) => row.getAttribute("data-name") ?? []);
+    await waitFor(() => expect(groupNames()[0]).toBe("Busy"));
+    expect(groupNames()).toEqual([
+      "Busy",
+      ...Array.from({ length: 11 }, (_, i) => `App ${12 - i}`),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Show all 13 apps" }));
+    expect(groupNames()).toHaveLength(13);
+    expect(groupNames()).not.toContain("Idle");
   });
 });

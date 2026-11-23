@@ -7,6 +7,7 @@ import type {
 } from "@core/generated/bindings";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
+import { FULL_TABLE } from "@core/process-interest";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { BrushProvider } from "~/stores/brush-store";
@@ -35,7 +36,14 @@ const names = (table: HTMLElement) =>
   within(table)
     .getAllByRole("row")
     .slice(1)
-    .map((r) => within(r).queryAllByRole("cell")[0]?.textContent ?? "");
+    .map(
+      (r) =>
+        within(r)
+          .queryAllByRole("cell")
+          // Selectable rows lead with the selection gutter.
+          .filter((cell) => cell.getAttribute("aria-label") !== "Selection")[0]
+          ?.textContent ?? ""
+    );
 
 /** The page at a 5m chart window unless `chartWindow` says otherwise. */
 function renderRoute(
@@ -96,8 +104,9 @@ describe("Network page Apps card (D-089)", () => {
     expect(
       screen.getByText("Drag across the chart to see what used it.")
     ).toBeVisible();
-    // Per-app history replaces the live per-process rates.
-    expect(views(transport.calls)).toEqual([]);
+    // Per-app history replaces the live per-process rates: the only interest
+    // is the full table without rates, which maps app rows to what Quit acts on.
+    expect(views(transport.calls)).toEqual([FULL_TABLE]);
   });
 
   it("sorts by now on request", async () => {

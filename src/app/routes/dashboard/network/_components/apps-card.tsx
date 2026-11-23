@@ -1,40 +1,47 @@
+/**
+ * Network's "Network by app" card: per-app bytes over the chart window or
+ * the brushed selection, on the shared grouped table so each app row quits
+ * the running app. A fixed range hands off to the recorded usage card.
+ */
 import type { TimeRange } from "@core/brush";
 import {
   formatBytes,
   formatClockSeconds,
+  formatPercent,
   formatRate,
   MISSING,
   type RateUnits,
 } from "@core/format";
 import type { NetworkByApp } from "@core/generated/bindings";
 import { networkByAppFailure } from "@core/history-state";
+import { appQuitTargets, type RunningApps } from "@core/process-groups";
 import { CommandFailure } from "@core/transport";
-import type { OnChangeFn, SortingState } from "@tanstack/react-table";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import {
-  APP_CELL,
   AppsNote,
   AppsShell,
-  OtherAppsRow,
-  ShareCell,
+  OtherChip,
   UnrecordedRange,
 } from "~/components/app-table";
 import {
-  columnHelper,
-  DataTable,
-  DataTableHead,
+  type ColumnSort,
   FullWidthRow,
-  gap,
-  useDataTable,
+  MeterCell,
 } from "~/components/data-table";
 import { HistoricalUsageCard } from "~/components/historical-usage-card";
+import {
+  type GroupColumn,
+  type GroupRows,
+  ProcessGroupTable,
+} from "~/components/process-group-table";
 import { SelectionChip } from "~/components/selection-chip";
-import { Table, TableCell, TableHeader, TableRow } from "~/components/ui/table";
+import { TableCell, TableRow } from "~/components/ui/table";
+import { useCanSignal, useEdition } from "~/hooks/use-edition";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
+import { useRunningApps } from "~/hooks/use-running-apps";
 import { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
-import { InitialChip } from "~/widgets/initial-chip";
 import {
   useCompleteEdge,
   useLatestBucket,
@@ -84,6 +91,9 @@ function HistoricalNetworkApps({ windowMs }: { windowMs: number }) {
 
 const MemoHistoricalNetworkApps = memo(HistoricalNetworkApps);
 
+/** "Network by app" sorts by Total until the reader picks another header. */
+const BY_TOTAL: ColumnSort<string> = { by: "total", dir: "desc" };
+
 function LiveAppsCard({ windowMs }: { windowMs: number }) {
   const fixed = useModuleEnd() !== null;
   const complete = useCompleteEdge(useOpenEdge());
@@ -91,9 +101,11 @@ function LiveAppsCard({ windowMs }: { windowMs: number }) {
   const totals = useNetworkByApp(range, { keepPrevious });
   const latest = useLatestBucket(complete);
   const units = useUnits();
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: "total", desc: true },
-  ]);
+  // Held here, not in the table, so it survives a brushed range loading.
+  const [sort, setSort] = useState(BY_TOTAL);
+  // Whether rows are selectable shapes the table (a checkbox gutter), so
+  // wait for the edition rather than add the gutter under the reader.
+  const known = useEdition() !== null;
 
   const data = heldFor(totals, windowMs);
   const now = useMemo(() => nowRates(latest.data), [latest.data]);
@@ -113,7 +125,7 @@ function LiveAppsCard({ windowMs }: { windowMs: number }) {
           : "Couldn't load app totals."}
       </AppsNote>
     );
-  } else if (!data) {
+  } else if (!data || !known) {
     body = <AppsNote>Loading app totals…</AppsNote>;
   } else if (unrecorded(data)) {
     body = <Unrecorded data={data} edge={complete} />;
@@ -147,8 +159,8 @@ function LiveAppsCard({ windowMs }: { windowMs: number }) {
           rows={rows}
           rest={rest}
           units={units.rate}
-          sorting={sorting}
-          onSortingChange={setSorting}
+          sort={sort}
+          onSortChange={setSort}
         />
       </>
     );
@@ -195,148 +207,194 @@ function Unrecorded({
   );
 }
 
+/**
+ * The named apps on the shared grouped table, then the remainder rows and
+ * the footnote. An app row has no members (per-app totals carry no
+ * processes); it selects and quits the running processes of its app.
+ */
 function AppsTable({
   rows,
   rest,
   units,
-  sorting,
-  onSortingChange,
+  sort,
+  onSortChange,
 }: {
   rows: readonly AppRow[];
   rest: readonly AppRow[];
   units: RateUnits;
-  sorting: SortingState;
-  onSortingChange: OnChangeFn<SortingState>;
+  sort: ColumnSort<string>;
+  onSortChange: (next: ColumnSort<string>) => void;
 }) {
-  const {
-    table,
-    rows: sorted,
-    holdProps,
-  } = useDataTable({
-    data: rows,
-    columns: APP_COLUMNS,
-    getRowId: appKey,
-    tiebreak: byName,
-    sorting,
-    onSortingChange,
-    hold: {},
-  });
-  const bytes = (n: number) => formatBytes(n);
+  // Null where this view cannot quit (App Store edition, remote hosts).
+  const running = useRunningApps();
+  const selectable = useCanSignal();
+  const groupRows = useMemo(() => appGroupRows(rows, running), [rows, running]);
+  const columns = useMemo(() => appColumns(units), [units]);
   return (
-    <div className="overflow-x-auto" {...holdProps}>
-      <Table aria-label="Network by app">
-        <TableHeader>
-          <DataTableHead table={table} />
-        </TableHeader>
-        <DataTable
-          table={table}
-          rows={sorted}
-          renderRow={({ original: r }) => (
-            <TableRow key={r.key} className="text-fg-subtle">
-              <TableCell className={APP_CELL}>
-                <span className="inline-flex items-center gap-2 text-foreground">
-                  <InitialChip text={r.name} />
-                  {r.name}
-                </span>
-              </TableCell>
-              <TableCell className={cn(APP_CELL, "figures text-right")}>
-                {bytes(r.rxBytes)}
-              </TableCell>
-              <TableCell className={cn(APP_CELL, "figures text-right")}>
-                {bytes(r.txBytes)}
-              </TableCell>
-              <TableCell
-                className={cn(APP_CELL, "figures text-right text-foreground")}
-              >
-                {bytes(r.totalBytes)}
-              </TableCell>
-              <ShareCell share={r.share} muted={false} />
-              <TableCell
-                className={cn(
-                  APP_CELL,
-                  "figures text-right",
-                  !r.nowBps && "text-fg-faint"
-                )}
-              >
-                {formatRate(r.nowBps, { units })}
-              </TableCell>
-            </TableRow>
-          )}
-          after={
-            <>
-              {rest.map((r, i) => (
-                <OtherAppsRow
-                  key={r.key}
-                  name={r.name}
-                  system={r.kind === "system"}
-                  first={i === 0}
-                >
-                  <TableCell className={cn(APP_CELL, "figures text-right")}>
-                    {bytes(r.rxBytes)}
-                  </TableCell>
-                  <TableCell className={cn(APP_CELL, "figures text-right")}>
-                    {bytes(r.txBytes)}
-                  </TableCell>
-                  <TableCell className={cn(APP_CELL, "figures text-right")}>
-                    {bytes(r.totalBytes)}
-                  </TableCell>
-                  <ShareCell share={r.share} muted />
-                  <TableCell
-                    className={cn(APP_CELL, "figures text-right text-fg-faint")}
-                  >
-                    {MISSING}
-                  </TableCell>
-                </OtherAppsRow>
-              ))}
-              <FullWidthRow
-                colSpan={table.getAllLeafColumns().length}
-                tone="footnote"
-                className="pt-0 pl-9"
-              >
-                macOS services (updates, backups, DNS). StatGlass can't see
-                these without a helper.
-              </FullWidthRow>
-            </>
-          }
-        />
-      </Table>
-    </div>
+    <ProcessGroupTable
+      rows={groupRows}
+      columns={columns}
+      nameHeader="App"
+      ariaLabel="Network by app"
+      sort={{ value: sort, onChange: onSortChange, client: true }}
+      freezeOrderOnHover
+      selectable={selectable}
+      after={(colSpan) => (
+        <RemainderRows rest={rest} selectable={selectable} colSpan={colSpan} />
+      )}
+      empty="No app sent or received anything in this range."
+    />
   );
 }
 
-const helper = columnHelper<AppRow>();
-const APP_COLUMNS = helper.columns([
-  helper.accessor("name", {
-    header: "App",
-    sortFn: "text",
-    meta: { align: "left" },
-  }),
-  helper.accessor("rxBytes", {
-    id: "down",
-    header: "Down",
-    meta: { align: "right" },
-  }),
-  helper.accessor("txBytes", {
-    id: "up",
-    header: "Up",
-    meta: { align: "right" },
-  }),
-  helper.accessor("totalBytes", {
-    id: "total",
-    header: "Total",
-    meta: { align: "right" },
-  }),
-  helper.accessor((r) => gap(r.share), {
-    id: "share",
-    header: "Share",
-    meta: { align: "right" },
-  }),
-  helper.accessor((r) => gap(r.nowBps), {
-    id: "now",
-    header: "Now",
-    meta: { align: "right" },
-  }),
-]);
-const appKey = (r: AppRow) => r.key;
-const byName = (a: AppRow, b: AppRow) =>
-  a.name.localeCompare(b.name) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+/**
+ * App rows as groups without members. The table breaks sort ties by name,
+ * then keeps input order, so ordering the input by key keeps names that
+ * collate equal ("é" and "é") in one order across frames.
+ */
+function appGroupRows(
+  rows: readonly AppRow[],
+  running: RunningApps | null
+): GroupRows<AppRow, never> {
+  return {
+    groups: [...rows].sort(byKey),
+    key: (r) => r.key,
+    name: (r) => r.name,
+    count: () => 1,
+    expandable: () => false,
+    members: () => [],
+    targets: (r) => appQuitTargets(running, r.name),
+    unavailable: () => "Not running",
+    memberKey: () => "",
+    memberName: () => "",
+    memberPid: () => 0,
+    memberTargets: () => [],
+  };
+}
+
+const byKey = (a: AppRow, b: AppRow) =>
+  a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+
+/** Down, Up, Total, Share and Now; every one sorts, unknown values last. */
+function appColumns(units: RateUnits): GroupColumn<AppRow, never>[] {
+  const bytes = (
+    id: string,
+    header: string,
+    value: (r: AppRow) => number,
+    strong = false
+  ): GroupColumn<AppRow, never> => ({
+    id,
+    header,
+    align: "right",
+    groupValue: value,
+    group: (r) => (
+      <span className={cn("figures", strong && "text-foreground")}>
+        {formatBytes(value(r))}
+      </span>
+    ),
+    member: () => null,
+  });
+  return [
+    bytes("down", "Down", (r) => r.rxBytes),
+    bytes("up", "Up", (r) => r.txBytes),
+    bytes("total", "Total", (r) => r.totalBytes, true),
+    {
+      id: "share",
+      header: "Share",
+      align: "right",
+      groupValue: (r) => r.share,
+      group: (r) => (
+        <MeterCell
+          fraction={r.share === null ? null : r.share / 100}
+          fill="var(--a)"
+        >
+          {formatPercent(r.share, { decimals: 1 })}
+        </MeterCell>
+      ),
+      member: () => null,
+    },
+    {
+      id: "now",
+      header: "Now",
+      align: "right",
+      groupValue: (r) => r.nowBps,
+      group: (r) => (
+        <span className={cn("figures", !r.nowBps && "text-fg-faint")}>
+          {formatRate(r.nowBps, { units })}
+        </span>
+      ),
+      member: () => null,
+    },
+  ];
+}
+
+/** Cells of the remainder rows, sized and weighted like the app rows above. */
+const REMAINDER_CELL = "whitespace-nowrap px-3 py-0 font-normal";
+
+/**
+ * "Other apps", protocol overhead and "System and other", then the
+ * footnote. They are not processes: the gutter and actions cells stay empty.
+ */
+function RemainderRows({
+  rest,
+  selectable,
+  colSpan,
+}: {
+  rest: readonly AppRow[];
+  selectable: boolean;
+  colSpan: number;
+}) {
+  const figure = cn(REMAINDER_CELL, "figures text-right");
+  return (
+    <>
+      {rest.map((r, i) => (
+        <TableRow
+          key={r.key}
+          className={cn(
+            "h-[29px] border-border-subtle border-b text-muted-foreground hover:bg-transparent",
+            i === 0 && "border-border border-t",
+            r.kind === "system" && "border-b-0"
+          )}
+        >
+          {selectable && <TableCell aria-label="Selection" />}
+          <TableCell className={REMAINDER_CELL}>
+            <span className="inline-flex items-center gap-2 align-middle">
+              {/* The chevron's and the initial chip's places in app rows. */}
+              <span aria-hidden className="-ml-1 inline-block size-4" />
+              {r.kind === "system" ? (
+                <OtherChip />
+              ) : (
+                <span aria-hidden className="inline-block w-4 flex-none" />
+              )}
+              {r.name}
+            </span>
+          </TableCell>
+          <TableCell className={figure}>{formatBytes(r.rxBytes)}</TableCell>
+          <TableCell className={figure}>{formatBytes(r.txBytes)}</TableCell>
+          <TableCell className={figure}>{formatBytes(r.totalBytes)}</TableCell>
+          <TableCell className={cn(REMAINDER_CELL, "text-right")}>
+            <MeterCell
+              fraction={r.share === null ? null : r.share / 100}
+              fill="var(--color-fg-faint)"
+            >
+              {formatPercent(r.share, { decimals: 1 })}
+            </MeterCell>
+          </TableCell>
+          <TableCell className={cn(figure, "text-fg-faint")}>
+            {MISSING}
+          </TableCell>
+          {selectable && <TableCell />}
+        </TableRow>
+      ))}
+      <FullWidthRow
+        colSpan={colSpan}
+        tone="footnote"
+        // Lines up with the app names: past the gutter, chevron slot and chip.
+        className={cn("pt-0", selectable ? "pl-22" : "pl-14")}
+      >
+        macOS services (updates, backups, DNS). StatGlass can't see these
+        without a helper.
+      </FullWidthRow>
+    </>
+  );
+}
