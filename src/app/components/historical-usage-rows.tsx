@@ -4,6 +4,7 @@
  * recorded process pages loaded so far, and what each row selects and quits
  * from the processes running now. Plus the metric columns those rows show.
  */
+import { recordedProcessStart } from "@core/chart-range";
 import type { ByteUnits } from "@core/format";
 import type {
   HistoricalUsageApp,
@@ -62,6 +63,8 @@ export function recordedGroupRows(
     memberKey: targetKey,
     memberName: (p) => p.name,
     memberPid: (p) => p.pid,
+    // A pid alone can name another process later; its start time cannot.
+    memberDetail: (p) => `Started ${recordedProcessStart(p.start_time_us)}`,
     memberTargets: (p) => {
       const live = match(p);
       return live === null ? [] : [live];
@@ -95,8 +98,7 @@ export function recordedColumns(
     header: HISTORICAL_LABELS[metric],
     align: "right",
     sortable: true,
-    // A comparison line under the figure needs room above and below.
-    className: ctx.compare ? "figures py-1" : "figures",
+    className: "figures",
     group: (app) => (
       <HistoricalUsageFigure
         figures={app.figures}

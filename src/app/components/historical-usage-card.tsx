@@ -36,7 +36,7 @@ import {
 } from "~/components/historical-usage-rows";
 import { ProcessGroupTable } from "~/components/process-group-table";
 import { Button } from "~/components/ui/button";
-import { useCanSignal, useEdition } from "~/hooks/use-edition";
+import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useHistoricalUsage } from "~/hooks/use-historical-usage";
 import { useRunningApps } from "~/hooks/use-running-apps";
 import { useUnits } from "~/hooks/use-units";
@@ -87,9 +87,9 @@ export function HistoricalUsageCard({
   });
   const host = useHostId();
   const client = useQueryClient();
-  // Whether rows are selectable is known once the edition answers; the table
-  // waits for it rather than gain its checkbox column a moment later.
-  const edition = useEdition();
+  // The table waits until selectability is known rather than gain its
+  // checkbox column a moment later.
+  const selectable = useCanSignalSettled();
   const change = (next: HistoricalUsageSort) => {
     setLocalSort(next);
     onSortChange?.(next);
@@ -151,7 +151,7 @@ export function HistoricalUsageCard({
             Retry
           </Button>
         </AppsNote>
-      ) : !query.data || !range || edition === null ? (
+      ) : !query.data || !range || selectable === null ? (
         <AppsNote>
           <span role="status">Loading recorded apps…</span>
         </AppsNote>
@@ -196,6 +196,7 @@ export function HistoricalUsageCard({
             sort={sort}
             onSort={change}
             compare={compare}
+            selectable={selectable}
           />
         </>
       )}
@@ -261,6 +262,7 @@ function HistoricalUsageTable({
   sort,
   onSort,
   compare,
+  selectable,
 }: {
   data: HistoricalUsageReply;
   previous: HistoricalUsageReply | undefined;
@@ -269,11 +271,11 @@ function HistoricalUsageTable({
   sort: HistoricalUsageSort;
   onSort: (sort: HistoricalUsageSort) => void;
   compare: boolean;
+  selectable: boolean;
 }) {
   const host = useHostId();
   const units = useUnits();
   const running = useRunningApps();
-  const selectable = useCanSignal();
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const members = useRecordedMembers();
   const spanMs = range.toMs - range.fromMs;

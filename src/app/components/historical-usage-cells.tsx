@@ -55,7 +55,8 @@ export function HistoricalUsageFigure({
       ? `Received ${historicalFigure(figures.network_rx_bytes, "network", units)}; sent ${historicalFigure(figures.network_tx_bytes, "network", units)}`
       : historicalCoverage(coverage, spanMs);
   return (
-    <>
+    // A comparison line under the figure needs room above and below.
+    <span className={compare ? "block py-1" : undefined}>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -89,6 +90,6 @@ export function HistoricalUsageFigure({
           · {historicalDelta(figures, previous, metric, units)}
         </span>
       )}
-    </>
+    </span>
   );
 }

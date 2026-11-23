@@ -1,3 +1,4 @@
+import { recordedProcessStart } from "@core/chart-range";
 import type { LiveProcess } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
 import { FULL_TABLE } from "@core/process-interest";
@@ -533,6 +534,32 @@ describe("recorded rows act on what is running now", () => {
       );
       expect(commits - before).toBe(0);
     }
+  });
+
+  it("names when each recorded process started, beside its pid", async () => {
+    const { user, processes } = setup();
+    await screen.findByText("Compiler");
+    await user.click(
+      screen.getByRole("button", { name: "Show Compiler processes" })
+    );
+    const pid = await screen.findByText("4000");
+    const page = await processes.mock.results[0]?.value;
+    const first = page?.status === "ok" ? page.data.processes[0] : undefined;
+    if (!first) throw new Error("no recorded process");
+    const started = `Started ${recordedProcessStart(first.start_time_us)}`;
+    expect(pid).toHaveAttribute("title", started);
+    expect(pid).toHaveTextContent(`4000, ${started}`);
+  });
+
+  it("shows recorded apps without selection when the edition cannot be read", async () => {
+    const transport = createMockTransport({ now: () => NOW, autoTick: false });
+    transport.getEdition = () => Promise.reject(new Error("edition offline"));
+    renderWithProviders(<HistoricalUsageCard range={RANGE} by="cpu" />, {
+      transport,
+    });
+    expect(await screen.findByText("Compiler")).toBeVisible();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText("Loading recorded apps…")).toBeNull();
   });
 
   it("offers no selection where this build cannot quit", async () => {
