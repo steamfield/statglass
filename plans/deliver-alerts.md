@@ -313,6 +313,7 @@ Test cases:
 ### Phase 4: destinations on the page, and host offline
 
 Scaffold: ef45f6db
+Tag: alerts-phase-4
 Demo: in `bun run dev:fast` add an ntfy destination, press Send test, see "Delivered"; with the `mac-offline` scenario and the host rule on, an offline alert appears in Recent.
 Depends on: phase 2, phase 3
 
