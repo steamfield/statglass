@@ -37,7 +37,7 @@
 //! Streams are tokio tasks: call [`LiveRegistry::subscribe`] from inside the runtime
 //! (the async `subscribe_live` command does).
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -53,7 +53,6 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::ipc::{LiveMsg, LiveProcess, LiveStatus, SubscriptionInfo};
-use crate::process_signal::SignalRefusal;
 
 /// One host's live data, as a stream needs it.
 pub trait LiveFeed: Send + Sync + 'static {
@@ -212,34 +211,6 @@ fn pick_holds(pick: &Pick, holds: &[u32]) -> Vec<u32> {
             .iter()
             .map(|&i| holds.get(i).copied().unwrap_or(0))
             .collect(),
-    }
-}
-
-fn live_process(
-    r: &ProcessSample,
-    quit_set: &HashSet<(i32, i64)>,
-    refusal: &impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
-) -> LiveProcess {
-    LiveProcess {
-        pid: r.pid,
-        start_time_us: r.start_time_us,
-        name: r.name.to_string(),
-        cpu_pct: r.cpu_pct,
-        mem_bytes: r.mem_bytes,
-        compressed_bytes: r.compressed_bytes,
-        threads: r.threads,
-        idle_wakeups_per_s: r.idle_wakeups_per_s,
-        energy: r.energy,
-        disk_read_bps: r.disk_read_bps,
-        disk_write_bps: r.disk_write_bps,
-        net_rx_bps: r.net_rx_bps,
-        net_tx_bps: r.net_tx_bps,
-        gpu_pct: r.gpu_pct,
-        ports: r.ports.as_deref().map(<[u16]>::to_vec),
-        user: r.user.to_string(),
-        refusal: refusal(r.pid, r.start_time_us, &r.name),
-        app: r.app.as_deref().unwrap_or(&r.name).to_string(),
-        app_quit: quit_set.contains(&(r.pid, r.start_time_us)),
     }
 }
 
@@ -692,7 +663,9 @@ impl Stream {
             }
             let refusal = crate::process_signal::refusals();
             let quit_set = crate::app_quit::live_quit_set(rows);
-            statglass_engine::select_processes(rows, view, |r| live_process(r, &quit_set, &refusal))
+            statglass_engine::select_processes(rows, view, |r| {
+                LiveProcess::from_sample(r, &quit_set, &refusal)
+            })
         };
         self.last_procs_ts = Some(ts_ms);
         self.send(LiveMsg::Processes {

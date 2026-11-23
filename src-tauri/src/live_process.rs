@@ -1,6 +1,9 @@
 //! `LiveProcess`: one process row of `LiveMsg::Processes`, re-exported from `ipc`.
 
+use std::collections::HashSet;
+
 use serde::Serialize;
+use statglass_engine::ProcessSample;
 use statglass_schema::JsSafeInt;
 
 use crate::process_signal::SignalRefusal;
@@ -51,8 +54,41 @@ pub struct LiveProcess {
     /// (D-089): "Google Chrome" for its helpers, `node` for a CLI. The process name when no
     /// app was resolved. Tables group rows by it.
     pub app: String,
-    /// Quit on this process's app acts on it: the app's main executable alone when it is
-    /// running, otherwise every process of the app. Decided over the whole sample, before
+    /// Quit on this process's app acts on it: the app's running main executables when it
+    /// has any, otherwise every process of the app. Decided over the whole sample, before
     /// the view's limit, by the rule `query_usage_by_app` uses for `quit_pids`.
     pub app_quit: bool,
+}
+
+impl LiveProcess {
+    /// The webview's row for one sampled process. `quit_set` is the batch's
+    /// [`crate::app_quit::live_quit_set`] and `refusal` is [`crate::process_signal::refusals`],
+    /// both read once per batch.
+    pub fn from_sample(
+        r: &ProcessSample,
+        quit_set: &HashSet<(i32, i64)>,
+        refusal: &impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
+    ) -> LiveProcess {
+        LiveProcess {
+            pid: r.pid,
+            start_time_us: r.start_time_us,
+            name: r.name.to_string(),
+            cpu_pct: r.cpu_pct,
+            mem_bytes: r.mem_bytes,
+            compressed_bytes: r.compressed_bytes,
+            threads: r.threads,
+            idle_wakeups_per_s: r.idle_wakeups_per_s,
+            energy: r.energy,
+            disk_read_bps: r.disk_read_bps,
+            disk_write_bps: r.disk_write_bps,
+            net_rx_bps: r.net_rx_bps,
+            net_tx_bps: r.net_tx_bps,
+            gpu_pct: r.gpu_pct,
+            ports: r.ports.as_deref().map(<[u16]>::to_vec),
+            user: r.user.to_string(),
+            refusal: refusal(r.pid, r.start_time_us, &r.name),
+            app: r.app.as_deref().unwrap_or(&r.name).to_string(),
+            app_quit: quit_set.contains(&(r.pid, r.start_time_us)),
+        }
+    }
 }
