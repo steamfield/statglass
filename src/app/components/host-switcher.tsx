@@ -44,7 +44,10 @@ export const HostSwitcher = memo(function HostSwitcher() {
             <SelectValue />
           </span>
         </SelectTrigger>
-        <SelectContent>
+        {/* Below the trigger, like a menu: the default item-aligned position
+            lays the selected host over the trigger, which lifts a long list
+            into the logo. */}
+        <SelectContent position="popper" side="bottom" align="start">
           {selection.hosts.map((host) => (
             <SelectItem key={host.id} value={host.id}>
               {host.is_local ? "This Mac" : host.display_name}

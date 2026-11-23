@@ -318,3 +318,25 @@ for (const theme of ["light", "dark"]) {
     ).toBeVisible();
   });
 }
+
+test("the host menu opens below its trigger with a later host selected", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 833 });
+  await page.goto("/?route=/dashboard/overview&scenario=hosts-many&ticks=0");
+  const trigger = page.getByRole("combobox", { name: "Selected machine" });
+  await trigger.click();
+  await page.getByRole("option", { name: "worker-8", exact: true }).click();
+  await expect(trigger).toContainText("worker-8");
+  // Measured closed: an open menu hides the page from the accessibility tree.
+  const below = await trigger.boundingBox();
+  await trigger.click();
+  const menu = page.getByRole("listbox");
+  await expect(menu.getByRole("option", { name: "This Mac" })).toBeVisible();
+  const open = await menu.boundingBox();
+  // Item-aligned placement laid worker-8 over the trigger, lifting the list
+  // above it into the logo.
+  expect(open?.y).toBeGreaterThanOrEqual(
+    (below?.y ?? 0) + (below?.height ?? 0)
+  );
+});
