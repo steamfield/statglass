@@ -4,7 +4,10 @@ import { FULL_TABLE, type ProcessView } from "@core/process-interest";
 import { useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
-import { ProcessGroupTable } from "~/components/process-group-table";
+import {
+  liveGroupRows,
+  ProcessGroupTable,
+} from "~/components/process-group-table";
 import {
   liveColumns,
   type ProcessSort,
@@ -13,7 +16,7 @@ import { SELECTION_BAR_PX } from "~/components/process-selection";
 import { SearchField } from "~/components/search-field";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
-import { useCanSignal } from "~/hooks/use-edition";
+import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
 import { useHostNoun } from "~/hooks/use-host-record";
 import {
@@ -33,7 +36,6 @@ import {
   countLine,
   GPU_COVERAGE,
   hiddenNote,
-  liveGroupRows,
   NETWORK_COVERAGE,
   selectableTargets,
   shownProcesses,
@@ -99,7 +101,7 @@ export default function ProcessesRoute() {
   const rows = live ?? EMPTY;
   const units = useUnits();
   // The App Store edition has no Quit or Force Quit (D-065).
-  const canSignal = useCanSignal();
+  const canSignal = useCanSignalSettled();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<ProcessSort>(() => COLUMN_SETS[chosen].sort);
   // The table's sort, unless it names a column the shown set does not have.

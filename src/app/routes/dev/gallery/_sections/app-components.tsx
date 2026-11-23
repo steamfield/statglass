@@ -33,7 +33,10 @@ import {
 } from "~/components/module-toggle-list";
 import { PopoverFooter } from "~/components/popover-footer";
 import { PopoverHeader } from "~/components/popover-header";
-import { ProcessGroupTable } from "~/components/process-group-table";
+import {
+  liveGroupRows,
+  ProcessGroupTable,
+} from "~/components/process-group-table";
 import { liveColumns } from "~/components/process-group-table/live-columns";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsRow } from "~/components/settings-row";
@@ -54,7 +57,6 @@ import { HostUpdateNoticeView } from "~/routes/dashboard/_components/host-update
 import { ChartChooser } from "~/routes/dashboard/containers/_components/chart-chooser";
 import { ComparisonChart } from "~/routes/dashboard/containers/_components/comparison-chart";
 import { HistoryNotice } from "~/routes/dashboard/containers/_components/history-notice";
-import { liveGroupRows } from "~/routes/dashboard/processes/_lib/processes";
 import cardStyles from "~/widgets/card.module.css";
 import type { Accent } from "~/widgets/lib/accent";
 import { TrayPreview } from "~/widgets/tray-preview";
