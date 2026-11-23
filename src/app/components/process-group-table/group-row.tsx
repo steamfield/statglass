@@ -46,7 +46,10 @@ function Chevron({
   );
 }
 
-/** A group row; `expandable` groups (more than one process) get the chevron and count. */
+/**
+ * A group row. Groups of several processes show their count; `expandable`
+ * ones (not held open by a search) also get the chevron.
+ */
 export function GroupRow<G, M>({
   group,
   rows,
@@ -91,7 +94,7 @@ export function GroupRow<G, M>({
           )}
           <InitialChip text={name} />
           <span className="truncate">{name}</span>
-          {expandable && (
+          {rows.count(group) > 1 && (
             <span className="font-normal text-label text-muted-foreground">
               {processCount(rows.count(group))}
             </span>

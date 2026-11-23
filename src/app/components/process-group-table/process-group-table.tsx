@@ -7,7 +7,7 @@
  * `group-table-body`, rows `group-row` and `member-row`, order
  * `use-group-order`.
  */
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { ColumnSort } from "~/components/data-table";
 import {
   ProcessSelectionSurface,
@@ -51,7 +51,7 @@ export function ProcessGroupTable<G, M>(props: Props<G, M>): ReactNode {
   const [showAll, setShowAll] = useState(false);
   // The selection surface holds for a selection, a pending quit or hover.
   const [surfaceHeld, setSurfaceHeld] = useState(false);
-  const { visible, holdProps, release } = useGroupOrder(
+  const { visible, holdProps } = useGroupOrder(
     {
       rows: props.rows,
       columns: props.columns,
@@ -65,7 +65,6 @@ export function ProcessGroupTable<G, M>(props: Props<G, M>): ReactNode {
       when: props.selectable && surfaceHeld,
     }
   );
-  useEffect(() => release, [release]);
   const colSpan = 1 + props.columns.length + (props.selectable ? 2 : 0);
   const body: BodyProps<G, M> = {
     table: props,

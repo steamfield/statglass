@@ -165,6 +165,20 @@ describe("ProcessGroupTable rows", () => {
     expect(names()).toHaveLength(6);
   });
 
+  it("gives a forced-open group no chevron, so a toggle cannot hide in it", () => {
+    render(
+      table(apps(ROWS), {
+        rows: groupRows(apps(ROWS), {
+          forcedOpen: (g) => g.name === "Google Chrome",
+        }),
+      })
+    );
+    expect(
+      screen.queryByRole("button", { name: /Google Chrome processes/ })
+    ).toBeNull();
+    expect(screen.getByText("3 processes")).toBeVisible();
+  });
+
   it("renders the empty row when there are no groups", () => {
     render(table([]));
     expect(screen.getByRole("cell", { name: "Nothing running" })).toBeVisible();
@@ -252,6 +266,25 @@ describe("ProcessGroupTable order", () => {
     expect(screen.getByRole("cell", { name: "5.0" })).toBeInTheDocument();
     fireEvent.pointerLeave(scroller);
     expect(names()).toEqual(["c", "b", "a"]);
+  });
+
+  it("keeps members opened during a hold where they first appeared", () => {
+    const frame = (helperA: number, helperB: number) =>
+      apps([
+        proc(1, "Safari", 1),
+        proc(2, "Helper A", helperA, "Safari"),
+        proc(3, "Helper B", helperB, "Safari"),
+      ]);
+    const { rerender } = render(
+      <Sorted groups={frame(6, 2)} freezeOrderOnHover height={300} />
+    );
+    fireEvent.pointerEnter(screen.getByTestId("process-table-scroll"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show Safari processes" })
+    );
+    expect(names()).toEqual(["Safari", "Helper A", "Helper B", "Safari"]);
+    rerender(<Sorted groups={frame(6, 8)} freezeOrderOnHover height={300} />);
+    expect(names()).toEqual(["Safari", "Helper A", "Helper B", "Safari"]);
   });
 
   it("re-sorts at once when a header is clicked while hovering", () => {

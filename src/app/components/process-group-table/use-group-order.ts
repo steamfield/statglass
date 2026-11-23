@@ -6,7 +6,7 @@
  * the table, rows keep the place they had and newcomers go last.
  */
 import { holdOrder } from "@core/held-order";
-import { useState } from "react";
+import { useRef } from "react";
 import { useRowHold } from "~/components/data-table";
 import type { ClientSort, GroupColumn, GroupRows, SortValue } from "./types";
 
@@ -16,7 +16,7 @@ export type VisibleRow<G, M> =
       kind: "group";
       key: string;
       group: G;
-      /** More than one process: it has a chevron and can open. */
+      /** More than one process and not forced open: it has a chevron. */
       expandable: boolean;
       open: boolean;
     }
@@ -166,7 +166,7 @@ function groupRows<G, M>(
     kind: "group",
     key,
     group,
-    expandable: rows.count(group) > 1,
+    expandable: rows.count(group) > 1 && !(rows.forcedOpen?.(group) ?? false),
     open,
   };
   if (!open) return [head];
@@ -195,8 +195,11 @@ export interface HoldOptions {
 
 /**
  * The visible rows with the row hold applied. A hold takes a snapshot of the
- * order it starts on; a new sort takes a fresh one, so a header click while
- * hovering re-sorts at once. Spread `holdProps` on the element around the rows.
+ * order it starts on and carries each held frame's order into the next, so a
+ * row that arrives during the hold (an opened group's members, a new app)
+ * keeps the place it first took. A new sort takes a fresh snapshot, so a
+ * header click while hovering re-sorts at once. Spread `holdProps` on the
+ * element around the rows.
  */
 export function useGroupOrder<G, M>(
   source: OrderSource<G, M>,
@@ -206,21 +209,24 @@ export function useGroupOrder<G, M>(
     pointer: options.freezeOrderOnHover,
     when: options.when,
   });
-  const live = flattenGroups(source, null);
   const resetKey = source.sort
     ? `${source.sort.value.by}:${source.sort.value.dir}`
     : "";
-  const [snapshot, setSnapshot] = useState<{
-    resetKey: string;
-    keys: readonly string[];
-  } | null>(null);
-  let next = snapshot;
-  if (!held) next = null;
-  else if (snapshot?.resetKey !== resetKey) {
-    next = { resetKey, keys: live.map((row) => row.key) };
+  // The last held order. Written during render like the selection surface's
+  // own held order, so both read the same sequence on every frame.
+  const carried = useRef<{ resetKey: string; keys: readonly string[] } | null>(
+    null
+  );
+  const live = flattenGroups(source, null);
+  if (!held) {
+    carried.current = null;
+    return { visible: live, holdProps, release };
   }
-  // Updating state during render re-renders before commit: still one commit.
-  if (next !== snapshot) setSnapshot(next);
-  const visible = next ? flattenGroups(source, next.keys) : live;
+  const keys =
+    carried.current?.resetKey === resetKey
+      ? carried.current.keys
+      : live.map((row) => row.key);
+  const visible = flattenGroups(source, keys);
+  carried.current = { resetKey, keys: visible.map((row) => row.key) };
   return { visible, holdProps, release };
 }
