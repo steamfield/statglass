@@ -57,6 +57,11 @@ describe("mock alert rules", () => {
     ["a cooldown over a day", [rule(1, { cooldown_secs: 86_401 })]],
     ["more than 32 rules", Array.from({ length: 33 }, (_, i) => rule(i + 1))],
     ["two rules with one id", [rule(1), rule(1, { name: "Memory twin" })]],
+    [
+      "a built-in id",
+      [rule(1, { id: "6b656c76-6f00-0000-0000-000000000001" })],
+    ],
+    ["an untrimmed name", [rule(1, { name: " Memory" })]],
   ];
 
   it.each(invalid)("rejects %s and stores nothing", async (_, rules) => {

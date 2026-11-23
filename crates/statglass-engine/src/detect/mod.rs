@@ -65,18 +65,12 @@ fn value(values: &[f32], i: usize) -> Option<f32> {
 /// among every rule in `alerts`, built-in and custom, on or off. The app shell reads
 /// stored alerts this far back at launch ([`Detectors::seed_alert_history`]).
 pub fn alert_history_ms(alerts: &AlertSettings) -> i64 {
-    every_rule(alerts)
+    alerts
+        .engine_rules()
+        .iter()
         .map(|r| i64::from(r.cooldown_secs) * 1000)
         .max()
         .unwrap_or(0)
-}
-
-/// The built-in rules, then the custom rules, each with its own `enabled` flag.
-fn every_rule(alerts: &AlertSettings) -> impl Iterator<Item = AlertRule> + '_ {
-    alerts
-        .builtin_rules()
-        .into_iter()
-        .chain(alerts.rules.iter().cloned())
 }
 
 /// Whether two versions of a rule watch for the same condition over the same duration.
@@ -141,7 +135,7 @@ impl Detectors {
     /// to the current layout at once.
     pub fn set_alerts(&mut self, settings: &AlertSettings) {
         let mut previous = std::mem::take(&mut self.alerts);
-        for rule in every_rule(settings) {
+        for rule in settings.engine_rules() {
             let kept = previous
                 .iter()
                 .position(|a| a.rule().id == rule.id)

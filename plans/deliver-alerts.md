@@ -130,10 +130,10 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-engine/src/detect/threshold.rs, crates/statglass-engine/src/detect/alerts.rs, crates/statglass-engine/src/detect/mod.rs, crates/statglass-engine/tests/perf_gates.rs | contracts, crates/statglass-engine/src/detect/detectors.rs | crates/statglass-engine/src/detect/threshold_tests.rs | opus | running | deliver/alerts-1a | threshold tests and the existing detect tests pass |
-| b | M | crates/statglass-schema/src/alert.rs, crates/statglass-schema/src/settings/alerts.rs, src-tauri/src/settings/alerts.rs | contracts, src-tauri/src/settings/overview.rs | crates/statglass-schema/src/alert_validation_tests.rs, crates/statglass-schema/src/settings/alerts_tests.rs, src-tauri/src/settings/alerts_tests.rs | opus | running | deliver/alerts-1b | validation and patch tests pass |
-| c | M | crates/statglass-notify/src/text.rs, crates/statglass-notify/src/units.rs, src-tauri/src/notify.rs | contracts, src/core/format/units.ts | crates/statglass-notify/tests/text.rs | opus | running | deliver/alerts-1c | text tests pass |
-| d | M | src/core/alerts.ts, src/core/alert-values.ts, src/core/alert-values.test.ts, src/core/events.ts, src/core/mock/settings.ts, src/core/mock/events.ts | contracts, src/core/format/units.ts | src/core/alerts.test.ts, src/core/mock-alerts.test.ts | opus | running | deliver/alerts-1d | core and mock tests pass |
+| a | M | crates/statglass-engine/src/detect/threshold.rs, crates/statglass-engine/src/detect/alerts.rs, crates/statglass-engine/src/detect/mod.rs, crates/statglass-engine/tests/perf_gates.rs | contracts, crates/statglass-engine/src/detect/detectors.rs | crates/statglass-engine/src/detect/threshold_tests.rs | opus | merged | deliver/alerts-1a | threshold tests and the existing detect tests pass |
+| b | M | crates/statglass-schema/src/alert.rs, crates/statglass-schema/src/settings/alerts.rs, src-tauri/src/settings/alerts.rs | contracts, src-tauri/src/settings/overview.rs | crates/statglass-schema/src/alert_validation_tests.rs, crates/statglass-schema/src/settings/alerts_tests.rs, src-tauri/src/settings/alerts_tests.rs | opus | merged | deliver/alerts-1b | validation and patch tests pass |
+| c | M | crates/statglass-notify/src/text.rs, crates/statglass-notify/src/units.rs, src-tauri/src/notify.rs | contracts, src/core/format/units.ts | crates/statglass-notify/tests/text.rs | opus | merged | deliver/alerts-1c | text tests pass |
+| d | M | src/core/alerts.ts, src/core/alert-values.ts, src/core/alert-values.test.ts, src/core/events.ts, src/core/mock/settings.ts, src/core/mock/events.ts | contracts, src/core/format/units.ts | src/core/alerts.test.ts, src/core/mock-alerts.test.ts | opus | merged | deliver/alerts-1d | core and mock tests pass |
 
 #### Lane a brief
 

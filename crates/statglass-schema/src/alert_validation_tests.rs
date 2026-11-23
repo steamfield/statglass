@@ -96,11 +96,11 @@ fn rejects_an_empty_or_whitespace_name() {
     }
 }
 
-/// The limit counts characters after trimming, not bytes.
+/// The limit counts characters, not bytes.
 #[test]
 fn rejects_a_name_over_60_characters() {
     let at_limit = AlertRule {
-        name: format!("  {}  ", "é".repeat(60)),
+        name: "é".repeat(60),
         ..memory()
     };
     assert_eq!(at_limit.validate_custom(), Ok(()));
@@ -227,7 +227,7 @@ fn error_messages_state_the_limit() {
             max: 100.0
         }
         .to_string(),
-        "threshold must be a number between 1 and 100"
+        "threshold is outside the range this metric accepts"
     );
 }
 

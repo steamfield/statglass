@@ -231,3 +231,18 @@ fn a_bad_stored_rule_is_dropped_without_resetting_the_settings() {
     };
     assert_eq!(owner.settings(), expected);
 }
+
+/// The loader counts stored rules from the raw value, so it can say how many the
+/// lenient decode skipped.
+#[test]
+fn stored_rule_count_reads_the_raw_list() {
+    use crate::settings::stored_rule_count;
+    let stored = serde_json::json!({ "alerts": { "rules": [{}, { "id": 7 }, null] } });
+    assert_eq!(stored_rule_count(&stored), 3);
+    assert_eq!(stored_rule_count(&serde_json::json!({ "alerts": {} })), 0);
+    assert_eq!(
+        stored_rule_count(&serde_json::json!({ "alerts": { "rules": null } })),
+        0
+    );
+    assert_eq!(stored_rule_count(&serde_json::json!({})), 0);
+}

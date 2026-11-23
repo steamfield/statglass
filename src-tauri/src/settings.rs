@@ -243,6 +243,16 @@ pub fn network_history_affecting(old: &Settings, new: &Settings) -> bool {
     old.history.network_history != new.history.network_history
 }
 
+/// How many custom alert rules the stored settings value lists, decodable or not. The
+/// decode skips entries it cannot read, so the loader compares this with what decoded
+/// to say how many it lost.
+fn stored_rule_count(stored: &serde_json::Value) -> usize {
+    stored
+        .pointer("/alerts/rules")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len)
+}
+
 /// Where the settings live on disk. Production is `tauri-plugin-store`'s
 /// `settings.json`; tests use memory.
 pub trait SettingsFile: Send + Sync {
@@ -320,8 +330,15 @@ impl SettingsOwner {
         let first_run = stored.is_none();
         let settings = match stored {
             None => defaults.clone(),
-            Some(value) => match serde_json::from_value::<Settings>(value) {
+            Some(value) => match serde_json::from_value::<Settings>(value.clone()) {
                 Ok(mut s) => {
+                    let undecoded = stored_rule_count(&value).saturating_sub(s.alerts.rules.len());
+                    if undecoded > 0 {
+                        tracing::warn!(
+                            undecoded,
+                            "dropping stored alert rules this build cannot decode"
+                        );
+                    }
                     for (rule, e) in s.alerts.drop_invalid() {
                         tracing::warn!(%rule, "dropping a stored alert rule: {e}");
                     }
