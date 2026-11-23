@@ -12,13 +12,22 @@ import { useTransport } from "~/lib/transport-context";
  * take it away.
  */
 export function useEdition(): Edition | null {
+  return useEditionQuery().data ?? null;
+}
+
+/**
+ * The one `get_edition` query. A failed read is not retried when another
+ * observer mounts: a table that waits on the answer would otherwise flip
+ * back to waiting each time a child that reads it mounts.
+ */
+function useEditionQuery() {
   const transport = useTransport();
-  const { data } = useQuery({
+  return useQuery({
     queryKey: appKeys.edition,
     queryFn: () => transport.getEdition(),
     staleTime: Number.POSITIVE_INFINITY,
+    retryOnMount: false,
   });
-  return data ?? null;
 }
 
 /**
@@ -29,13 +38,8 @@ export function useEdition(): Edition | null {
  * nothing waits forever.
  */
 export function useCanSignalSettled(): boolean | null {
-  const transport = useTransport();
   const local = useIsLocalHost();
-  const { data, isPending } = useQuery({
-    queryKey: appKeys.edition,
-    queryFn: () => transport.getEdition(),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
+  const { data, isPending } = useEditionQuery();
   if (!local) return false;
   if (isPending) return null;
   return data?.process_signal === true;
