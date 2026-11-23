@@ -72,12 +72,7 @@ for (const p of [
     await page.setViewportSize({ width: 1280, height: 1000 });
     await page.goto(`/?window=dashboard&route=${p.route}&ticks=0`);
     await expect(
-      page.getByRole("heading", {
-        name:
-          p.noun === "Disk"
-            ? /^Processes on this Mac · Live$/
-            : new RegExp(`^${p.noun} by app, last`),
-      })
+      page.getByRole("heading", { name: new RegExp(`^${p.noun} by app, last`) })
     ).toBeVisible();
     const brush = page.getByRole("slider", { name: "Select a time range" });
     const box = await brush.first().boundingBox();
@@ -90,20 +85,12 @@ for (const p of [
     await page.mouse.up();
     await expect(
       page.getByRole("heading", {
-        name:
-          p.noun === "Disk"
-            ? /^Processes on this Mac · selected/
-            : new RegExp(`^${p.noun} by app, selected`),
+        name: new RegExp(`^${p.noun} by app, selected`),
       })
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(
-      page.getByRole("heading", {
-        name:
-          p.noun === "Disk"
-            ? /^Processes on this Mac · Live$/
-            : new RegExp(`^${p.noun} by app, last`),
-      })
+      page.getByRole("heading", { name: new RegExp(`^${p.noun} by app, last`) })
     ).toBeVisible();
   });
 }

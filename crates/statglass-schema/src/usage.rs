@@ -39,7 +39,8 @@ pub struct UsageProc {
     pub avg_w: f64,
     /// Listed by the newest batch: still running as of then.
     pub running: bool,
-    /// Its app bundle's main executable.
+    /// Its app bundle's main executable. No consumer reads it now (Quit targets come from
+    /// the live batch's `app_quit`); kept so the wire format stays compatible.
     pub app_main: bool,
 }
 

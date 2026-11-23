@@ -249,7 +249,7 @@ mod tests {
 
     use super::*;
 
-    fn p(pid: i32, running: bool, main: bool) -> UsageProc {
+    fn p(pid: i32, running: bool) -> UsageProc {
         UsageProc {
             pid,
             start_time_us: 1,
@@ -262,7 +262,7 @@ mod tests {
             energy_j: 1.0,
             avg_w: 0.1,
             running,
-            app_main: main,
+            app_main: false,
         }
     }
 
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn disk_process_averages_use_covered_time_and_preserve_exited_identity() {
-        let mut proc = p(7, false, false);
+        let mut proc = p(7, false);
         proc.start_time_us = 123;
         proc.read_b = 600.;
         proc.write_b = 300.;
@@ -337,10 +337,7 @@ mod tests {
                 energy_j: 2.0,
                 ..EngineTotal::default()
             },
-            apps: vec![app(
-                "WindowServer",
-                vec![p(1, true, false), p(2, false, false)],
-            )],
+            apps: vec![app("WindowServer", vec![p(1, true), p(2, false)])],
             ..statglass_schema::usage::UsageByApp::default()
         };
         let out = usage_by_app(e, None, 8, |_, _, _| Some(SignalRefusal::WindowServer));

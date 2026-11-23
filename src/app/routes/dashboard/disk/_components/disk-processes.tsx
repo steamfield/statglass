@@ -3,21 +3,13 @@
  * their total, apps expanding to their processes.
  */
 import { formatBytes } from "@core/format";
-import type { ProcessUsage } from "@core/generated/bindings";
+import { requestedBytes } from "@core/usage-rows";
 import { useMemo } from "react";
 import {
   UsageAppsCard,
   type UsageTableConfig,
 } from "~/components/usage-apps-card";
 import { useHostNoun } from "~/hooks/use-host-record";
-
-/** Bytes read plus written; null when either was not measured. */
-export const requestedBytes = (
-  p: Pick<ProcessUsage, "read_bytes" | "write_bytes">
-) =>
-  p.read_bytes === null || p.write_bytes === null
-    ? null
-    : p.read_bytes + p.write_bytes;
 
 const appConfig = (mac: boolean): UsageTableConfig => ({
   by: "disk",

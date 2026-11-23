@@ -1,5 +1,6 @@
 import { relativeWindow } from "@core/chart-range";
 import { formatRate } from "@core/format";
+import { readRange, writeRange } from "@core/range-params";
 import { keyByLabel, labelValues } from "@core/series-key";
 import { type ReactNode, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -37,7 +38,6 @@ import { DiskRangeTotals } from "./_components/disk-range-totals";
 import { SpaceView } from "./_components/space-view";
 import { useSpaceVolumes } from "./_hooks/use-disk-space";
 import { volumeRows } from "./_lib/disk";
-import { readRange, writeRange } from "./_lib/range-params";
 
 export default function DiskRoute() {
   const [params] = useSearchParams();

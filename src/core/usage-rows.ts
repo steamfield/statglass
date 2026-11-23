@@ -44,6 +44,15 @@ export function usageValue(by: UsageKey, u: UsageFigures): number | null {
   }
 }
 
+/** Bytes read plus written; null when either was not measured. */
+export function requestedBytes(
+  u: Pick<UsageFigures, "read_bytes" | "write_bytes">
+): number | null {
+  return u.read_bytes === null || u.write_bytes === null
+    ? null
+    : u.read_bytes + u.write_bytes;
+}
+
 /** Keys whose rows add up, so shares and an "Other apps" row mean something. */
 export const additive = (by: UsageKey) => by !== "memory";
 

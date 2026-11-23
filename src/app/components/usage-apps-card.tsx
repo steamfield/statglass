@@ -13,7 +13,8 @@ import type {
   UsageKey,
 } from "@core/generated/bindings";
 import { appQuitTargets, type RunningApps } from "@core/process-groups";
-import { targetKey } from "@core/process-selection";
+import { type ProcessTarget, targetKey } from "@core/process-selection";
+import { writeRange } from "@core/range-params";
 import { remoteQueryText } from "@core/remote-errors";
 import {
   gpuShortfall,
@@ -26,7 +27,7 @@ import {
   usageValue,
   usageWhole,
 } from "@core/usage-rows";
-import { memo, type ReactNode, useMemo, useState } from "react";
+import { memo, type ReactNode, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import {
   AppsNote,
@@ -164,6 +165,7 @@ function LiveUsageAppsCard({ windowMs, config }: UsageAppsCardProps) {
         query={query}
         canSignal={canSignal}
         running={running}
+        selection={selection}
         scopeKey={
           selection
             ? `${selection.fromMs}:${selection.toMs}`
@@ -204,6 +206,8 @@ interface UsageTableProps {
   canSignal: boolean | null;
   /** The live batch by app; null where Quit is not offered or before it arrives. */
   running: RunningApps | null;
+  /** The brushed range the figures cover; null over the chart window. */
+  selection: TimeRange | null;
   /** Selection resets when it changes (another brushed range). */
   scopeKey: string;
 }
@@ -215,6 +219,7 @@ function UsageBody({
   query,
   canSignal,
   running,
+  selection,
   scopeKey,
 }: UsageTableProps) {
   const coverage = usageCoverage(data);
@@ -258,6 +263,7 @@ function UsageBody({
         query={query}
         canSignal={canSignal}
         running={running}
+        selection={selection}
         scopeKey={scopeKey}
       />
     </>
@@ -267,28 +273,96 @@ function UsageBody({
 const MemoUsageBody = memo(UsageBody);
 
 /**
- * The apps on the shared grouped table. Rust ranks them, so the order is
- * the answer's. An app row quits what Quit on that app acts on in the live
- * batch (`running`), so every table quits an app the same way; an app with
- * nothing running offers nothing. Rows and columns are rebuilt only
- * when the answer, the query or the running processes change, not each tick.
+ * The answer's rows and what each app's Quit acts on now. Only the listed
+ * apps' targets reach the table, so a process starting or exiting elsewhere
+ * on the Mac does not rebuild it.
  */
 function UsageTable({
   data,
   config,
   query,
-  canSignal,
   running,
-  scopeKey,
+  ...rest
 }: UsageTableProps) {
-  const location = useLocation();
-  const back = `${location.pathname}${location.search}`;
   const { by } = config;
   const ranked = useMemo(() => usageRows(data, by, query), [data, by, query]);
-  const rows = useMemo(
-    () => usageGroupRows(ranked, running, back),
-    [ranked, running, back]
+  const appTargets = useListedAppTargets(ranked, running);
+  return (
+    <MemoUsageGroupTable
+      data={data}
+      config={config}
+      query={query}
+      ranked={ranked}
+      appTargets={appTargets}
+      {...rest}
+    />
   );
+}
+
+/** Each listed app's quit targets by name; null before the first live batch. */
+type AppTargets = ReadonlyMap<string, readonly ProcessTarget[]>;
+
+/** What the targets depend on: each listed app's targets, by identity. */
+function appTargetsKey(targets: AppTargets): string {
+  return [...targets]
+    .map(([app, list]) => `${app}\u0000${list.map(targetKey).join(",")}`)
+    .join("\u0001");
+}
+
+/**
+ * The listed apps' quit targets, keeping one map while they hold: the
+ * running map changes whenever any process starts or exits, these only when
+ * a listed app's targets do.
+ */
+function useListedAppTargets(
+  ranked: readonly UsageRow[],
+  running: RunningApps | null
+): AppTargets | null {
+  const held = useRef<{ key: string; targets: AppTargets } | null>(null);
+  if (running === null) {
+    held.current = null;
+    return null;
+  }
+  const targets: AppTargets = new Map(
+    ranked.map((r) => [r.app.name, appQuitTargets(running, r.app.name)])
+  );
+  const key = appTargetsKey(targets);
+  // Written during render, like the table's held order: the same answer and
+  // targets give the same map on every frame.
+  if (held.current?.key !== key) held.current = { key, targets };
+  return held.current.targets;
+}
+
+/**
+ * The apps on the shared grouped table. Rust ranks them, so the order is
+ * the answer's and the ranked column's header only names it. An app row
+ * quits what Quit on that app acts on in the live batch, so every table
+ * quits an app the same way; an app with nothing running offers nothing.
+ */
+function UsageGroupTable({
+  data,
+  config,
+  query,
+  ranked,
+  appTargets,
+  canSignal,
+  selection,
+  scopeKey,
+}: Omit<UsageTableProps, "running"> & {
+  ranked: readonly UsageRow[];
+  appTargets: AppTargets | null;
+}) {
+  const location = useLocation();
+  const rows = useMemo(
+    () =>
+      usageGroupRows(ranked, appTargets, {
+        path: location.pathname,
+        search: location.search,
+        selection,
+      }),
+    [ranked, appTargets, location.pathname, location.search, selection]
+  );
+  const { by } = config;
   const whole = usageWhole(data, by);
   const columns = useMemo(
     () => usageGroupColumns(config, whole),
@@ -298,7 +372,9 @@ function UsageTable({
   const rest = useMemo(() => remainderRows(data, by), [data, by]);
   const searching = query.trim() !== "";
   return (
-    <div className="overflow-x-auto">
+    // `relative` holds the header's absolutely placed sr-only labels inside
+    // this scroller, or they widen the page on a narrow window.
+    <div className="relative overflow-x-auto">
       <ProcessGroupTable
         rows={rows}
         columns={columns}
@@ -334,18 +410,45 @@ function UsageTable({
   );
 }
 
+const MemoUsageGroupTable = memo(UsageGroupTable);
+
+/** Where a member's detail link comes back to, and the range it shows. */
+interface DetailScope {
+  path: string;
+  search: string;
+  selection: TimeRange | null;
+}
+
+/**
+ * A process's detail page link. The brushed range rides along twice: the
+ * detail page shows the process over it, and its back link returns to it,
+ * even before this page's URL mirror has caught up with the brush.
+ */
+function detailHref(p: ProcessUsage, scope: DetailScope): string {
+  const backParams = new URLSearchParams(scope.search);
+  writeRange(backParams, scope.selection);
+  const backSearch = backParams.toString();
+  const params = new URLSearchParams({
+    back: `${scope.path}${backSearch ? `?${backSearch}` : ""}`,
+  });
+  writeRange(params, scope.selection);
+  return `/dashboard/processes/${p.pid}/${p.start_time_us}?${params}`;
+}
+
 /**
  * How the usage answer reads as app groups. Members are the processes the
  * answer lists (the search matches while searching); running ones act on
- * themselves and link to their detail page, exited ones offer nothing.
+ * themselves, exited ones offer nothing. Running members link to their
+ * detail page; exited ones too over a brushed range, which the page can
+ * show them over. Before the first live batch no row says why it offers
+ * nothing, since nothing is known yet.
  */
 function usageGroupRows(
   ranked: readonly UsageRow[],
-  running: RunningApps | null,
-  back: string
+  appTargets: AppTargets | null,
+  scope: DetailScope
 ): GroupRows<UsageRow, ProcessUsage> {
-  const backQuery = `?back=${encodeURIComponent(back)}`;
-  const targets = (r: UsageRow) => appQuitTargets(running, r.app.name);
+  const targets = (r: UsageRow) => appTargets?.get(r.app.name) ?? [];
   return {
     groups: ranked,
     key: (r) => `app:${r.app.name}`,
@@ -355,14 +458,12 @@ function usageGroupRows(
     forcedOpen: (r) => r.matchedInside,
     targets,
     unavailable: (r) =>
-      running !== null && targets(r).length === 0 ? NOT_RUNNING : undefined,
+      appTargets !== null && targets(r).length === 0 ? NOT_RUNNING : undefined,
     memberKey: targetKey,
     memberName: (p) => p.name,
     memberPid: (p) => p.pid,
     memberHref: (p) =>
-      p.running
-        ? `/dashboard/processes/${p.pid}/${p.start_time_us}${backQuery}`
-        : undefined,
+      p.running || scope.selection !== null ? detailHref(p, scope) : undefined,
     memberTargets: (p) => (p.running ? [p] : []),
     memberUnavailable: (p) => (p.running ? undefined : EXITED),
     memberMuted: (p) => !p.running,
@@ -379,30 +480,29 @@ function Figure({ strong, children }: { strong: boolean; children: string }) {
 }
 
 /**
- * The ranked column, high to low, as the table's sort. Rust ranks the rows
- * by the page's key, so the header reports the order and a click on it
- * changes nothing; undefined when no column is ranked.
+ * The ranked column, high to low, as the table's order: its header shows
+ * the direction. No header sorts, since Rust ranks the rows by the page's
+ * key; undefined when no column is ranked.
  */
 function rankedSort(config: UsageTableConfig): ClientSort | undefined {
   const ranked = config.columns.find((c) => c.ranked);
   if (ranked === undefined) return undefined;
   return {
     value: { by: ranked.label, dir: "desc" },
-    onChange: keepRustOrder,
+    onChange: unsortable,
     client: false,
     nameSortable: false,
   };
 }
 
-/** A header click on a Rust-ranked table: the order stays the answer's. */
-function keepRustOrder(): void {
+/** `ClientSort.onChange` for a table with no sortable header: never called. */
+function unsortable(): void {
   return;
 }
 
 /**
  * The page's figure columns, then Share when the key adds up (`whole` is
- * what shares are of; null leaves Share out). Only the ranked column has a
- * sort header, which reports the order Rust ranked the rows in.
+ * what shares are of; null leaves Share out). None sorts.
  */
 function usageGroupColumns(
   config: UsageTableConfig,
@@ -413,7 +513,7 @@ function usageGroupColumns(
       id: c.label,
       header: c.label,
       align: "right",
-      sortable: c.ranked === true,
+      sortable: false,
       group: (r) => (
         <Figure strong={c.ranked === true}>{c.format(r.app)}</Figure>
       ),

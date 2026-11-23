@@ -1,8 +1,8 @@
 import { createMockTransport } from "@core/mock-transport";
-import { FULL_TABLE } from "@core/process-interest";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { Route, Routes } from "react-router";
+import { RUNNING_APPS_VIEW } from "~/hooks/use-running-apps";
 import DiskRoute from "../disk/route";
 import GpuRoute from "../gpu/route";
 import CpuRoute from "./route";
@@ -141,13 +141,13 @@ describe("CPU page over a range (D-099)", () => {
         /Avg · 5 min[\d.]+%Peak · 5 min\d+%/
       )
     );
-    // The live process table is gone. The apps table still reads the full
-    // live batch, so an app row quits what Quit on that app acts on.
+    // The live process table is gone. The apps table still reads the running
+    // processes every 10 s, so an app row quits what Quit on that app acts on.
     expect(
       transport.calls
         .filter((c) => c.command === "set_process_interest")
         .map((c) => c.args[2])
-    ).toEqual([FULL_TABLE]);
+    ).toEqual([RUNNING_APPS_VIEW]);
   });
 
   it("reads the window once per 10 s bucket, not every tick", async () => {
