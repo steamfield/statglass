@@ -1,4 +1,8 @@
-import type { AlertRule, SettingsSnapshot } from "@core/generated/bindings";
+import {
+  ALERT_LIMITS,
+  type AlertRule,
+  type SettingsSnapshot,
+} from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "./mock/fixtures";
 import { createMockTransport } from "./mock-transport";
 
@@ -76,6 +80,54 @@ describe("mock alert rules", () => {
     });
     expect(await t.getSettings()).toEqual(before);
     expect(seen).toEqual([]);
+  });
+
+  // Rust admits rules in list order: a rule's own problem, then a repeated id,
+  // then the count.
+  const firstProblem: [string, AlertRule[], string][] = [
+    [
+      "a repeated id whose rule has an empty name",
+      [rule(1), rule(1, { name: "" })],
+      ALERT_LIMITS.messages.name,
+    ],
+    [
+      "33 rules whose fifth is out of range",
+      Array.from({ length: 33 }, (_, i) =>
+        i === 4 ? rule(5, { cooldown_secs: 59 }) : rule(i + 1)
+      ),
+      ALERT_LIMITS.messages.cooldown,
+    ],
+  ];
+
+  it.each(firstProblem)(
+    "reports %s as Rust does",
+    async (_, rules, message) => {
+      const t = createMockTransport({ now: () => NOW });
+      const res = await t.updateSettings({ alerts: { rules } });
+      expect(res).toEqual({
+        status: "error",
+        error: { kind: "invalid_settings", message },
+      });
+    }
+  );
+
+  // Rust's `str::trim` keeps U+FEFF, which JS `trim()` strips, and strips
+  // U+0085, which JS keeps.
+  it("trims a name as Rust does", async () => {
+    const t = createMockTransport({ now: () => NOW });
+    const bom = String.fromCharCode(0xfeff);
+    const nel = String.fromCharCode(0x85);
+    const kept = await t.updateSettings({
+      alerts: { rules: [rule(1, { name: `${bom}Memory` })] },
+    });
+    expect(kept.status).toBe("ok");
+    const refused = await t.updateSettings({
+      alerts: { rules: [rule(1, { name: `Memory${nel}` })] },
+    });
+    expect(refused).toEqual({
+      status: "error",
+      error: { kind: "invalid_settings", message: ALERT_LIMITS.messages.name },
+    });
   });
 
   it("the alerts scenario holds a threshold alert and a process alert from the last day", async () => {

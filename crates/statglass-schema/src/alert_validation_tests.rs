@@ -206,6 +206,16 @@ fn rejects_a_builtin_id() {
 }
 
 #[test]
+fn the_host_offline_id_is_reserved() {
+    assert!(AlertRule::BUILTIN_IDS.contains(&AlertRule::HOST_OFFLINE_ID));
+    let rule = AlertRule {
+        id: AlertRule::HOST_OFFLINE_ID,
+        ..memory()
+    };
+    assert_eq!(rule.validate_custom(), Err(AlertRuleError::ReservedId));
+}
+
+#[test]
 fn rejects_a_non_threshold_condition() {
     let rule = AlertRule {
         when: Condition::ThermalStateAtLeast(ThermalState::Fair),

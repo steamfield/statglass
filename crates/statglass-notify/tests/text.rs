@@ -47,10 +47,23 @@ fn summary(metric: &'static str, op: Cmp, value: f32, for_secs: u32) -> String {
     )
 }
 
+/// The "Alerts are on" confirmation.
 fn text(title: &str, body: &str) -> Option<AlertText> {
     Some(AlertText {
         title: title.into(),
         body: body.into(),
+        rule: None,
+        kind: "alerts_on",
+    })
+}
+
+/// A fired alert of `kind` from the rule named by [`alert`].
+fn fired(kind: &'static str, title: &str, body: &str) -> Option<AlertText> {
+    Some(AlertText {
+        title: title.into(),
+        body: body.into(),
+        rule: Some("Memory is tight".into()),
+        kind,
     })
 }
 
@@ -240,7 +253,8 @@ fn threshold_alert_is_titled_with_the_rule_and_says_what_held() {
     let e = threshold("mem.pressure", Labels::new(), 84.2, Cmp::Gt, 80.0, 120);
     assert_eq!(
         alert_text(&e, &CELSIUS_DECIMAL),
-        text(
+        fired(
+            "threshold",
             "Memory is tight",
             "Memory pressure 84% · above 80% for 2 min"
         )
@@ -252,7 +266,11 @@ fn threshold_alert_without_a_duration_leaves_it_out() {
     let e = threshold("battery.charge", Labels::new(), 15.0, Cmp::Lt, 20.0, 0);
     assert_eq!(
         alert_text(&e, &CELSIUS_DECIMAL),
-        text("Memory is tight", "Battery charge 15% · below 20%")
+        fired(
+            "threshold",
+            "Memory is tight",
+            "Battery charge 15% · below 20%"
+        )
     );
 }
 
@@ -268,7 +286,8 @@ fn threshold_alert_names_the_series_and_uses_the_users_units() {
     );
     assert_eq!(
         alert_text(&disk, &FAHRENHEIT_BINARY),
-        text(
+        fired(
+            "threshold",
             "Memory is tight",
             "Free disk space (/) 12.3 GB · below 20 GB"
         )
@@ -283,7 +302,8 @@ fn threshold_alert_names_the_series_and_uses_the_users_units() {
     );
     assert_eq!(
         alert_text(&fan, &CELSIUS_DECIMAL),
-        text(
+        fired(
+            "threshold",
             "Memory is tight",
             "Fan speed (Fan 2) 5,200 rpm · above 4,000 rpm for 2 min"
         )
@@ -291,7 +311,8 @@ fn threshold_alert_names_the_series_and_uses_the_users_units() {
     let temp = threshold("thermal.hottest", Labels::new(), 97.0, Cmp::Gt, 95.0, 120);
     assert_eq!(
         alert_text(&temp, &FAHRENHEIT_BINARY),
-        text(
+        fired(
+            "threshold",
             "Memory is tight",
             "Hottest sensor 207 °F · above 203 °F for 2 min"
         )
@@ -305,7 +326,8 @@ fn process_alert_text_is_unchanged() {
             &hot(&["ffmpeg"], AlertRule::hot_process().id),
             &CELSIUS_DECIMAL
         ),
-        text(
+        fired(
+            "process_cpu",
             "ffmpeg is using 251% CPU",
             "Above 200% for 5 minutes. Open StatGlass's Timeline to see what else was running."
         )
@@ -348,7 +370,8 @@ fn thermal_alert_text_is_unchanged() {
     );
     assert_eq!(
         alert_text(&e, &CELSIUS_DECIMAL),
-        text(
+        fired(
+            "thermal_state",
             "Thermal state: Critical",
             "macOS is reducing performance to cool the Mac down."
         )
@@ -371,9 +394,9 @@ fn non_alert_events_have_no_text() {
 
 #[test]
 fn alerts_on_text_says_what_the_builtin_rules_will_notify() {
-    assert_eq!(alerts_on_text(&[], &CELSIUS_DECIMAL), None);
+    assert_eq!(alerts_on_text(&[], false, &CELSIUS_DECIMAL), None);
     assert_eq!(
-        alerts_on_text(&[AlertRule::thermal_serious()], &CELSIUS_DECIMAL),
+        alerts_on_text(&[AlertRule::thermal_serious()], false, &CELSIUS_DECIMAL),
         text(
             "Alerts are on",
             "You'll get a notification when the thermal state reaches Serious or worse."
@@ -382,6 +405,7 @@ fn alerts_on_text_says_what_the_builtin_rules_will_notify() {
     assert_eq!(
         alerts_on_text(
             &[AlertRule::hot_process(), AlertRule::thermal_serious()],
+            false,
             &CELSIUS_DECIMAL
         )
         .map(|t| t.body),
@@ -401,14 +425,14 @@ fn alerts_on_text_lists_custom_rules_by_summary() {
     let memory = rule("mem.pressure", Labels::new(), Cmp::Gt, 80.0, 120);
     let battery = rule("battery.charge", Labels::new(), Cmp::Lt, 20.0, 0);
     assert_eq!(
-        alerts_on_text(std::slice::from_ref(&memory), &CELSIUS_DECIMAL),
+        alerts_on_text(std::slice::from_ref(&memory), false, &CELSIUS_DECIMAL),
         text(
             "Alerts are on",
             "You'll get a notification for: Memory pressure above 80% for 2 min."
         )
     );
     assert_eq!(
-        alerts_on_text(&[memory.clone(), battery], &CELSIUS_DECIMAL).map(|t| t.body),
+        alerts_on_text(&[memory.clone(), battery], false, &CELSIUS_DECIMAL).map(|t| t.body),
         Some(
             "You'll get a notification for: Memory pressure above 80% for 2 min; \
              Battery charge below 20%."
@@ -416,9 +440,41 @@ fn alerts_on_text_lists_custom_rules_by_summary() {
         )
     );
     assert_eq!(
-        alerts_on_text(&[AlertRule::thermal_serious(), memory], &CELSIUS_DECIMAL).map(|t| t.body),
+        alerts_on_text(
+            &[AlertRule::thermal_serious(), memory],
+            false,
+            &CELSIUS_DECIMAL
+        )
+        .map(|t| t.body),
         Some(
             "You'll get a notification when the thermal state reaches Serious or worse. \
+             Also for: Memory pressure above 80% for 2 min."
+                .into()
+        )
+    );
+}
+
+/// Host offline reads as a "when" clause of its own, after the built-in rules.
+#[test]
+fn alerts_on_text_says_when_a_saved_host_is_offline() {
+    assert_eq!(
+        alerts_on_text(&[], true, &CELSIUS_DECIMAL),
+        text(
+            "Alerts are on",
+            "You'll get a notification when a saved host is offline for 5 minutes."
+        )
+    );
+    let memory = rule("mem.pressure", Labels::new(), Cmp::Gt, 80.0, 120);
+    assert_eq!(
+        alerts_on_text(
+            &[AlertRule::thermal_serious(), memory],
+            true,
+            &CELSIUS_DECIMAL
+        )
+        .map(|t| t.body),
+        Some(
+            "You'll get a notification when the thermal state reaches Serious or worse \
+             or when a saved host is offline for 5 minutes. \
              Also for: Memory pressure above 80% for 2 min."
                 .into()
         )

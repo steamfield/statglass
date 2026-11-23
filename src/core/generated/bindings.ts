@@ -404,7 +404,7 @@ export const events = {
 };
 
 /* Constants */
-export const ALERT_LIMITS = {"builtin_ids":["6b656c76-6f00-0000-0000-000000000001","6b656c76-6f00-0000-0000-000000000002"],"label_keys":{"disk.free":["vol"],"fan.rpm":["fan"]},"max_cooldown_secs":86400,"max_custom":32,"max_for_secs":3600,"max_name_chars":60,"min_cooldown_secs":60} as const;
+export const ALERT_LIMITS = {"builtin_ids":["6b656c76-6f00-0000-0000-000000000001","6b656c76-6f00-0000-0000-000000000002","6b656c76-6f00-0000-0000-000000000003"],"label_keys":{"disk.free":["vol"],"fan.rpm":["fan"]},"max_cooldown_secs":86400,"max_custom":32,"max_for_secs":3600,"max_name_chars":60,"messages":{"cooldown":"cooldown must be between 1 minute and 24 hours","duplicate_id":"two rules share one id","duration":"duration must be at most 1 hour","labels":"a rule watches every series of its metric or one series named by a label it carries","metric":"metric {metric} cannot be alerted on; choose one of the listed metrics","name":"rule name must be 1 to 60 characters with no leading or trailing spaces","not_threshold":"a custom rule must be a threshold on one metric","reserved_id":"rule id belongs to a built-in rule","too_many":"at most 32 custom rules","value":"threshold is outside the range this metric accepts"},"min_cooldown_secs":60} as const;
 
 export const ALERT_METRICS = [{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"CPU usage","max":100.0,"metric":"cpu.total","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"GPU usage","max":100.0,"metric":"gpu.util","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":80.0,"label":"Memory pressure","max":100.0,"metric":"mem.pressure","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":4000000000.0,"label":"Swap used","max":999999995904.0,"metric":"mem.swap_used","min":100000000.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":1000.0,"label":"Swapping out","max":1000000.0,"metric":"mem.swap_out","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":95.0,"label":"Hottest sensor","max":130.0,"metric":"thermal.hottest","min":30.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":4000.0,"label":"Fan speed","max":20000.0,"metric":"fan.rpm","min":500.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":60.0,"label":"System power","max":1000.0,"metric":"power.system","min":1.0},{"default_for_secs":0,"default_label":null,"default_op":"lt","default_value":20.0,"label":"Battery charge","max":100.0,"metric":"battery.charge","min":1.0},{"default_for_secs":0,"default_label":["vol","/"],"default_op":"lt","default_value":20000000000.0,"label":"Free disk space","max":100000000376832.0,"metric":"disk.free","min":100000000.0}] as const;
 
@@ -526,14 +526,19 @@ threshold: number | null;
 for_secs: number };
 
 /**
- *  The limits `AlertRule::validate_custom` enforces on a custom rule, for the mock
- *  transport to reject what Rust rejects and the rule editor to state them.
+ *  What [`AlertRule::validate_custom`] and [`crate::AlertSettings::validate`] check, from
+ *  the constants and catalog the validation itself reads.
  */
 export type AlertLimits = {
+	/**  [`AlertRule::MAX_CUSTOM`]. */
 	max_custom: number,
+	/**  [`AlertRule::MAX_NAME_CHARS`]. */
 	max_name_chars: number,
+	/**  [`AlertRule::MAX_FOR_SECS`]. */
 	max_for_secs: number,
+	/**  [`AlertRule::MIN_COOLDOWN_SECS`]. */
 	min_cooldown_secs: number,
+	/**  [`AlertRule::MAX_COOLDOWN_SECS`]. */
 	max_cooldown_secs: number,
 	/**  Ids a custom rule may not use. */
 	builtin_ids: string[],
@@ -542,6 +547,13 @@ export type AlertLimits = {
 	 *  unlabelled series are absent.
 	 */
 	label_keys: { [key in string]: string[] },
+	/**
+	 *  Each [`AlertRuleError`]'s Display text by a stable key ("name", "metric",
+	 *  "labels", "value", "duration", "cooldown", "reserved_id", "not_threshold",
+	 *  "too_many", "duplicate_id"). The "metric" text holds the placeholder `{metric}`
+	 *  where the error names the metric id, quoted.
+	 */
+	messages: { [key in string]: string },
 };
 
 /**  One alertable metric. */

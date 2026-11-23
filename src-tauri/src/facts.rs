@@ -313,47 +313,6 @@ pub const SAMPLING_INTERVALS_MS: [u32; 7] = SamplingSettings::INTERVALS_MS;
 pub const RETENTION_DAYS: [u16; 3] = HistorySettings::RETENTION_DAYS;
 pub const SIZE_LIMITS_MB: [u32; 5] = HistorySettings::SIZE_LIMITS_MB;
 
-/// The limits `AlertRule::validate_custom` enforces on a custom rule, for the mock
-/// transport to reject what Rust rejects and the rule editor to state them.
-#[derive(Clone, Debug, serde::Serialize, specta::Type)]
-pub struct AlertLimits {
-    pub max_custom: u32,
-    pub max_name_chars: u32,
-    pub max_for_secs: u32,
-    pub min_cooldown_secs: u32,
-    pub max_cooldown_secs: u32,
-    /// Ids a custom rule may not use.
-    pub builtin_ids: Vec<String>,
-    /// The label key a rule on each alertable metric may select by; metrics with one
-    /// unlabelled series are absent.
-    pub label_keys: BTreeMap<&'static str, Vec<&'static str>>,
-}
-
-/// [`AlertLimits`] from the constants and catalog the validation itself reads.
-pub fn alert_limits() -> AlertLimits {
-    use statglass_schema::AlertRule;
-    let catalog = statglass_schema::Catalog::builtin();
-    let label_keys = statglass_schema::ALERT_METRICS
-        .iter()
-        .filter_map(|m| {
-            let def = catalog.defs().iter().find(|d| d.id.as_str() == m.metric)?;
-            (!def.label_keys.is_empty()).then(|| (m.metric, def.label_keys.to_vec()))
-        })
-        .collect();
-    AlertLimits {
-        max_custom: u32::try_from(AlertRule::MAX_CUSTOM).unwrap_or(u32::MAX),
-        max_name_chars: u32::try_from(AlertRule::MAX_NAME_CHARS).unwrap_or(u32::MAX),
-        max_for_secs: AlertRule::MAX_FOR_SECS,
-        min_cooldown_secs: AlertRule::MIN_COOLDOWN_SECS,
-        max_cooldown_secs: AlertRule::MAX_COOLDOWN_SECS,
-        builtin_ids: AlertRule::BUILTIN_IDS
-            .iter()
-            .map(ToString::to_string)
-            .collect(),
-        label_keys,
-    }
-}
-
 /// Registers the Rust-owned facts used by the frontend and its mock transport.
 pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Builder<tauri::Wry> {
     builder
@@ -402,10 +361,10 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .constant("SAMPLING_PLANS", sampling_plans())
         // The metrics a custom alert rule may watch, with defaults and ranges.
         .constant("ALERT_METRICS", statglass_schema::ALERT_METRICS)
-        .constant("ALERT_LIMITS", alert_limits())
+        .constant("ALERT_LIMITS", statglass_schema::alert_limits())
         .typ::<SamplingPlan>()
         .typ::<statglass_schema::AlertMetric>()
-        .typ::<AlertLimits>()
+        .typ::<statglass_schema::AlertLimits>()
         .typ::<statglass_schema::Readout>()
 }
 

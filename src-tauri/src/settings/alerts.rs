@@ -34,11 +34,26 @@ impl AlertsPatch {
     }
 }
 
-/// The rules, built-in or custom, enabled in `new` and not enabled in `old` (switched
-/// on, or added already on): the moment to ask for notification permission and post the
-/// confirmation that makes macOS show its prompt (D-084). A rule edited while it stays
-/// on is not listed.
-pub fn alerts_switched_on(old: &Settings, new: &Settings) -> Vec<AlertRule> {
+/// What a settings change switched on: the moment to ask for notification permission
+/// and post the confirmation that makes macOS show its prompt (D-084).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SwitchedOn {
+    /// The rules, built-in or custom, enabled in `new` and not enabled in `old` (switched
+    /// on, or added already on). A rule edited while it stays on is not listed.
+    pub rules: Vec<AlertRule>,
+    /// The host-offline alert went from off to on.
+    pub host_offline: bool,
+}
+
+impl SwitchedOn {
+    /// Nothing was switched on.
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty() && !self.host_offline
+    }
+}
+
+/// What the change from `old` to `new` switched on.
+pub fn alerts_switched_on(old: &Settings, new: &Settings) -> SwitchedOn {
     let enabled_before: HashSet<Uuid> = old
         .alerts
         .engine_rules()
@@ -46,9 +61,14 @@ pub fn alerts_switched_on(old: &Settings, new: &Settings) -> Vec<AlertRule> {
         .filter(|rule| rule.enabled)
         .map(|rule| rule.id)
         .collect();
-    new.alerts
+    let rules = new
+        .alerts
         .engine_rules()
         .into_iter()
         .filter(|rule| rule.enabled && !enabled_before.contains(&rule.id))
-        .collect()
+        .collect();
+    SwitchedOn {
+        rules,
+        host_offline: new.alerts.host_offline && !old.alerts.host_offline,
+    }
 }
