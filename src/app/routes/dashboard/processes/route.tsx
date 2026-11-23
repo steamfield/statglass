@@ -1,10 +1,15 @@
 import type { LiveProcess } from "@core/generated/bindings";
+import { groupLiveProcesses } from "@core/process-groups";
 import { FULL_TABLE, type ProcessView } from "@core/process-interest";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
+import { ProcessGroupTable } from "~/components/process-group-table";
+import {
+  liveColumns,
+  type ProcessSort,
+} from "~/components/process-group-table/live-columns";
 import { SELECTION_BAR_PX } from "~/components/process-selection";
-import { type ProcessSort, ProcessTable } from "~/components/process-table";
 import { SearchField } from "~/components/search-field";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
@@ -26,13 +31,14 @@ import {
   type ColumnSet,
   columnSetOptions,
   countLine,
-  filterProcesses,
   GPU_COVERAGE,
   hiddenNote,
+  liveGroupRows,
   NETWORK_COVERAGE,
+  shownProcesses,
 } from "./_lib/processes";
 
-/** Header row plus the 4 px slack ProcessTable adds below its body. */
+/** Header row plus the 4 px slack the table adds below its body. */
 const TABLE_CHROME_PX = 33;
 
 const EMPTY: readonly LiveProcess[] = [];
@@ -99,7 +105,17 @@ export default function ProcessesRoute() {
   const [bodyRef, measured] = useElementSize("height", 480);
   const bodyHeight = Math.floor(measured);
 
-  const shown = useMemo(() => filterProcesses(rows, query), [rows, query]);
+  const groups = useMemo(() => groupLiveProcesses(rows, query), [rows, query]);
+  const shown = useMemo(() => shownProcesses(groups), [groups]);
+  const tableColumns = useMemo(
+    () =>
+      liveColumns(columns, {
+        cpuBarMaxPct: 100,
+        memUnits: units.bytes,
+        rateUnits: units.rate,
+      }),
+    [columns, units.bytes, units.rate]
+  );
   const loading = live === null;
   const coverage =
     set === "network" ? NETWORK_COVERAGE : set === "gpu" ? GPU_COVERAGE : null;
@@ -139,20 +155,28 @@ export default function ProcessesRoute() {
           className="min-h-0 flex-1"
         >
           <div ref={bodyRef} className="min-h-0 flex-1 px-1 pt-1">
-            <ProcessTable
-              rows={shown}
-              columns={columns}
-              sort={tableSort}
-              onSort={setSort}
+            <ProcessGroupTable
+              rows={liveGroupRows(groups)}
+              columns={tableColumns}
+              nameHeader="Process"
+              sort={{
+                value: tableSort,
+                onChange: (next) => {
+                  const by = columns.find((c) => c === next.by);
+                  if (by !== undefined) setSort({ by, dir: next.dir });
+                },
+                client: true,
+              }}
+              allTargets={shown}
               height={Math.max(
                 120,
                 bodyHeight -
                   TABLE_CHROME_PX -
                   (canSignal ? SELECTION_BAR_PX : 0)
               )}
-              memUnits={units.bytes}
               freezeOrderOnHover
               selectable={canSignal}
+              searching={query.trim() !== ""}
               empty={
                 loading
                   ? "Waiting for the first process sample…"
