@@ -175,6 +175,7 @@ Test cases:
 ### Phase 2: the Alerts page
 
 Scaffold: c3818790
+Tag: alerts-phase-2
 Demo: `bun run dev:fast`, open `/?route=/dashboard/alerts&scenario=alerts`: create a rule from a template, edit it, switch it off, delete it; Recent lists the scenario's alerts.
 Depends on: phase 1
 
