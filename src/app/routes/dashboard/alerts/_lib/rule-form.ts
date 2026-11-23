@@ -7,12 +7,15 @@
  * cooldowns) and `ALERT_METRICS` (threshold ranges), never from literals.
  * Rust validates again on save; its message is shown as is.
  */
+
+import { formatAlertValue } from "@core/alert-values";
 import {
   newRule,
   ruleSummary,
   thresholdFromDisplay,
   thresholdToDisplay,
 } from "@core/alerts";
+import { displayUnits } from "@core/format";
 import {
   ALERT_LIMITS,
   ALERT_METRICS,
@@ -57,16 +60,20 @@ function thresholdOf(rule: AlertRule) {
   return rule.when.threshold;
 }
 
-/** The typed threshold as a number; NaN when it is blank or not a number. */
+/**
+ * The typed threshold as a number; NaN when it is blank or not a number. A
+ * comma reads as the decimal separator ("80,5" is 80.5).
+ */
 function parseShown(shown: string): number {
-  const trimmed = shown.trim();
+  const trimmed = shown.trim().replace(",", ".");
   return trimmed === "" ? Number.NaN : Number(trimmed);
 }
 
-/** A display-unit number with its unit: "100%", "266 °F", "20 GB". */
-function withUnit(value: number, unit: string): string {
-  if (unit === "" || unit === "%") return `${value}${unit}`;
-  return `${value} ${unit}`;
+/** `text` without a trailing `unit`: "500" from "500 rpm", "1" from "1%". */
+function withoutUnit(text: string, unit: string): string {
+  return unit !== "" && text.endsWith(unit)
+    ? text.slice(0, -unit.length).trim()
+    : text;
 }
 
 /**
@@ -170,7 +177,10 @@ export function ruleFromForm(form: RuleForm, units: UnitSettings): AlertRule {
   };
 }
 
-/** "Between 1 and 100%" when `shown` is outside the metric's range, else null. */
+/**
+ * "Between 500 and 20,000 rpm" when `shown` is outside the metric's range,
+ * else null. The bounds read as `formatAlertValue` writes them.
+ */
 function rangeProblem(
   metric: string,
   shown: number,
@@ -181,15 +191,18 @@ function rangeProblem(
   const min = thresholdToDisplay(metric, entry.min, units);
   const max = thresholdToDisplay(metric, entry.max, units);
   if (shown >= min.value && shown <= max.value) return null;
-  return `Between ${min.value} and ${withUnit(max.value, max.unit)}`;
+  const display = displayUnits(units);
+  const low = formatAlertValue(metric, entry.min, display);
+  const high = formatAlertValue(metric, entry.max, display);
+  return `Between ${withoutUnit(low, min.unit)} and ${high}`;
 }
 
 /**
  * What stops the form from saving, as inline text, or null:
  * - "Enter a number" when `shown` is empty or not a finite number;
- * - "Between {min} and {max}{unit}" when it is outside the metric's
- *   `min`..`max`, both in the display unit, the unit after a space except
- *   "%" ("Between 1 and 100%", "Between 86 and 266 °F");
+ * - "Between {min} and {max}" when it is outside the metric's `min`..`max`,
+ *   both in the display unit and the unit once, after the maximum
+ *   ("Between 1 and 100%", "Between 86 and 266 °F");
  * - "Give the rule a name" when the trimmed name is empty;
  * - "Use at most {ALERT_LIMITS.max_name_chars} characters" when the
  *   trimmed name is longer.
@@ -209,6 +222,23 @@ export function formProblem(
     return `Use at most ${ALERT_LIMITS.max_name_chars} characters`;
   }
   return null;
+}
+
+/**
+ * `rules` with `rule` saved: replacing the stored rule of the same id, its
+ * `enabled` taken from the stored one (a switch flipped while the dialog was
+ * open wins), or appended when no stored rule has that id (a new rule, or
+ * one another window deleted while it was being edited).
+ */
+export function rulesWithSaved(
+  rules: readonly AlertRule[],
+  rule: AlertRule
+): AlertRule[] {
+  const stored = rules.find((r) => r.id === rule.id);
+  if (stored === undefined) return [...rules, rule];
+  return rules.map((r) =>
+    r.id === rule.id ? { ...rule, enabled: stored.enabled } : r
+  );
 }
 
 /**

@@ -17,6 +17,8 @@ export interface RuleRowProps {
   onEnabledChange: (enabled: boolean) => void;
   /** Present for custom rules: the "Edit <label>" button. */
   onEdit?: (() => void) | undefined;
+  /** Locks the switch and the edit button, while a rules write is pending. */
+  disabled?: boolean;
 }
 
 /** A `SettingsRow` with a switch and, when `onEdit` is given, an edit button. */
@@ -26,6 +28,7 @@ export function RuleRow({
   enabled,
   onEnabledChange,
   onEdit,
+  disabled = false,
 }: RuleRowProps): ReactNode {
   return (
     <SettingsRow label={label} sub={sub}>
@@ -35,6 +38,7 @@ export function RuleRow({
             variant="ghost"
             size="sm"
             aria-label={`Edit ${label}`}
+            disabled={disabled}
             onClick={onEdit}
           >
             Edit
@@ -43,6 +47,7 @@ export function RuleRow({
         <Switch
           aria-label={label}
           checked={enabled}
+          disabled={disabled}
           onCheckedChange={onEnabledChange}
         />
       </div>
