@@ -156,6 +156,7 @@ Rust contract: `ipc::LiveProcess { …, app: String, app_quit: bool }`; `app_qui
 ### Phase 1: grouped Processes page (MVP)
 
 Scaffold: b1250f54
+Tag: process-tables-phase-1
 Demo: `bun run dev:fast`, open `/?route=/dashboard/processes`: apps are rows, Google Chrome / node expand to their processes, ticking the Chrome group selects its quit target, the selection bar's Quit opens the batch dialog; search "node" shows the node group open; sorting by Memory orders groups by summed memory.
 Test cases:
 - Rust: `app_quit::quit_targets` main running → only main; no main → all running; main exited → all running; none running → empty.
@@ -207,6 +208,7 @@ Test cases:
 
 ### Phase 2: module live tables and Disk on the shared table
 
+Scaffold: 0cd076f9
 Demo: CPU, GPU, Memory, Power and Disk "by app" tables at 15m look and act as before, rendered by `ProcessGroupTable`; Disk shows "Disk by app" with no By process toggle; an expanded member's name opens its process detail page.
 Depends on: phase 1
 Test cases:
@@ -216,7 +218,7 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | L | src/app/components/usage-apps-card.tsx, src/app/components/app-table.tsx, src/app/routes/dashboard/disk/_components/disk-processes.tsx, src/app/routes/dashboard/disk/_components/disk-processes.test.tsx, src/app/routes/dashboard/disk/route.tsx, src/core/usage-rows.ts, src/core/usage-rows.test.ts, src-tauri/src/usage.rs, src-tauri/src/ipc.rs, src-tauri/src/commands.rs, src-tauri/src/app_quit.rs, src/core/generated/bindings.ts, src/core/mock/usage.ts, src/core/mock/remote-usage.ts | contracts, src/app/components/process-group-table/index.ts, src/app/hooks/use-running-apps.ts | src/app/components/usage-apps-card.test.tsx, src/app/routes/dashboard/disk/route.test.tsx | opus | pending | | usage and disk tests pass, cargo tests and bindings-check pass, screenshots compared |
+| a | L | src/app/components/usage-apps-card.tsx, src/app/components/app-table.tsx, src/app/routes/dashboard/disk/_components/disk-processes.tsx, src/app/routes/dashboard/disk/_components/disk-processes.test.tsx, src/app/routes/dashboard/disk/route.tsx, src/core/usage-rows.ts, src/core/usage-rows.test.ts, src-tauri/src/usage.rs, src-tauri/src/ipc.rs, src-tauri/src/commands.rs, src-tauri/src/app_quit.rs, src/core/generated/bindings.ts, src/core/mock/usage.ts, src/core/mock/remote-usage.ts | contracts, src/app/components/process-group-table/index.ts, src/app/hooks/use-running-apps.ts | src/app/components/usage-apps-card.test.tsx, src/app/routes/dashboard/disk/route.test.tsx | opus | running | | usage and disk tests pass, cargo tests and bindings-check pass, screenshots compared |
 
 #### Lane a brief
 
@@ -229,6 +231,7 @@ Test cases:
 
 ### Phase 3: recorded ranges and Network become actionable
 
+Scaffold: 0cd076f9
 Demo: scroll CPU (or Timeline) back to a fixed range: rows of apps that are running now are selectable and quit the running app, others are disabled; Network by app rows select and quit; with Network history off, "Apps, now" is a grouped live table.
 Depends on: phase 1
 Test cases:
@@ -239,8 +242,8 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src/app/components/historical-usage-card.tsx, src/app/components/historical-usage-processes.tsx | contracts, src/app/components/process-group-table/index.ts | src/app/components/historical-usage-card.test.tsx | opus | pending | | recorded table tests pass |
-| b | M | src/app/routes/dashboard/network/_components/apps-card.tsx, src/app/routes/dashboard/network/_components/apps-now-card.tsx | contracts, src/app/components/process-group-table/index.ts | src/app/routes/dashboard/network/route.test.tsx, src/app/routes/dashboard/network/_components/apps-card.test.tsx | opus | pending | | network tests pass |
+| a | M | src/app/components/historical-usage-card.tsx, src/app/components/historical-usage-processes.tsx | contracts, src/app/components/process-group-table/index.ts | src/app/components/historical-usage-card.test.tsx | opus | running | | recorded table tests pass |
+| b | M | src/app/routes/dashboard/network/_components/apps-card.tsx, src/app/routes/dashboard/network/_components/apps-now-card.tsx | contracts, src/app/components/process-group-table/index.ts | src/app/routes/dashboard/network/route.test.tsx, src/app/routes/dashboard/network/_components/apps-card.test.tsx | opus | running | | network tests pass |
 
 `use-running-apps.ts` and its test are in the shared phase 2/3 scaffold: `useRunningApps(): RunningApps | null`, full-table interest only while `useCanSignal()`, map identity kept while membership holds.
 
