@@ -13,7 +13,7 @@ import {
 } from "@tests/fixtures/network-by-app";
 import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
-import { createElement, Fragment } from "react";
+import { createElement, Fragment, Profiler } from "react";
 import { BrushProvider, useBrushStore } from "~/stores/brush-store";
 import { AppsCard } from "./apps-card";
 import { AppsNowCard } from "./apps-now-card";
@@ -60,11 +60,17 @@ function renderApps(
       complete_to_ms: to,
     },
   });
-  const result = renderWithProviders(<AppsCard windowMs={300_000} />, {
-    transport,
-  });
+  let commits = 0;
+  const result = renderWithProviders(
+    <Profiler id="apps" onRender={() => commits++}>
+      <AppsCard windowMs={300_000} />
+    </Profiler>,
+    { transport }
+  );
   return {
     ...result,
+    /** Commits of the card so far. */
+    commits: () => commits,
     update: async (next: NetworkByApp, bucket: NetworkByApp) => {
       totals = next;
       latest = bucket;
@@ -357,6 +363,41 @@ describe("Network app rows act on the running app", () => {
     const other = screen.getByText("Other apps").closest("tr");
     if (!other) throw new Error("no Other apps row");
     expect(within(other).queryByRole("checkbox")).toBeNull();
+  });
+
+  it("does not re-render when a process outside the listed apps starts or exits", async () => {
+    const result = renderApps();
+    await screen.findByRole("table", { name: "Network by app" });
+    await waitFor(() => expect(result.transport.subscriberCount()).toBe(1));
+    const chrome = liveProcess({
+      pid: 501,
+      name: "Google Chrome",
+      app: "Google Chrome",
+      app_quit: true,
+    });
+    const terminal = liveProcess({
+      pid: 900,
+      name: "Terminal",
+      app: "Terminal",
+    });
+    const batch = (ts: number, rows: ReturnType<typeof liveProcess>[]) =>
+      act(() => result.transport.push({ kind: "processes", ts_ms: ts, rows }));
+    batch(T, [chrome]);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: "Select Google Chrome" })
+      ).toBeEnabled()
+    );
+    const before = result.commits();
+    batch(T + 1000, [chrome, terminal]);
+    batch(T + 2000, [{ ...chrome, cpu_pct: 40 }]);
+    expect(result.commits()).toBe(before);
+    // A listed app exiting does change what its row offers.
+    batch(T + 3000, [terminal]);
+    expect(result.commits()).toBeGreaterThan(before);
+    expect(
+      screen.getByRole("checkbox", { name: "Select Google Chrome" })
+    ).toBeDisabled();
   });
 
   it("says Not running only once a process batch shows the app is absent", async () => {

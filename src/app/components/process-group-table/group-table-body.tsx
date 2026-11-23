@@ -62,7 +62,9 @@ function EmptyRow<G, M>({
 /** Every visible row in the document, for short tables without a fixed height. */
 export function PlainTable<G, M>(body: BodyProps<G, M>) {
   return (
-    <div className="overflow-x-auto" {...body.holdProps}>
+    // `relative` keeps the header's absolutely placed sr-only labels inside
+    // the scroller, or they widen the page on a narrow window.
+    <div className="relative overflow-x-auto" {...body.holdProps}>
       <Table
         aria-label={body.table.ariaLabel}
         className="w-full border-collapse text-small"
@@ -130,7 +132,7 @@ export function VirtualTable<G, M>(body: BodyProps<G, M> & { height: number }) {
       ref={scrollRef}
       data-testid="process-table-scroll"
       data-process-scroll
-      className="min-h-0 overflow-auto"
+      className="relative min-h-0 overflow-auto"
       style={{ maxHeight: viewport + HEAD_PX }}
       {...body.holdProps}
     >

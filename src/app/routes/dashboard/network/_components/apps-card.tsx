@@ -7,39 +7,37 @@ import type { TimeRange } from "@core/brush";
 import {
   formatBytes,
   formatClockSeconds,
-  formatPercent,
   formatRate,
   MISSING,
   type RateUnits,
 } from "@core/format";
 import type { NetworkByApp } from "@core/generated/bindings";
 import { networkByAppFailure } from "@core/history-state";
-import { appQuitTargets, type RunningApps } from "@core/process-groups";
 import { CommandFailure } from "@core/transport";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import {
   AppsNote,
   AppsShell,
-  OtherChip,
+  ShareMeter,
   UnrecordedRange,
 } from "~/components/app-table";
-import {
-  type ColumnSort,
-  FullWidthRow,
-  MeterCell,
-} from "~/components/data-table";
+import type { ColumnSort } from "~/components/data-table";
 import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import {
   type GroupColumn,
   type GroupRows,
   ProcessGroupTable,
+  RemainderNote,
+  RemainderRow,
 } from "~/components/process-group-table";
 import { SelectionChip } from "~/components/selection-chip";
-import { TableCell, TableRow } from "~/components/ui/table";
 import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
-import { useRunningApps } from "~/hooks/use-running-apps";
+import {
+  type AppQuitTargets,
+  useAppQuitTargets,
+} from "~/hooks/use-running-apps";
 import { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
 import {
@@ -206,8 +204,10 @@ function Unrecorded({
 
 /**
  * The named apps on the shared grouped table, then the remainder rows and
- * the footnote. An app row has no members (per-app totals carry no
- * processes); it selects and quits the running processes of its app.
+ * the note on what "System and other" holds. An app row has no members
+ * (per-app totals carry no processes); it selects and quits the running
+ * processes of its app. Only the listed apps' targets reach the rows, so a
+ * process starting or exiting elsewhere on the Mac rebuilds nothing.
  */
 function AppsTable({
   rows,
@@ -222,12 +222,13 @@ function AppsTable({
   sort: ColumnSort<string>;
   onSortChange: (next: ColumnSort<string>) => void;
 }) {
+  const names = useMemo(() => rows.map((r) => r.name), [rows]);
   // Null where this view cannot quit (App Store edition, remote hosts).
-  const running = useRunningApps();
+  const targets = useAppQuitTargets(names);
   // Null while the edition loads: the table waits rather than add its
   // checkbox column under the reader.
   const selectable = useCanSignalSettled();
-  const groupRows = useMemo(() => appGroupRows(rows, running), [rows, running]);
+  const groupRows = useMemo(() => appGroupRows(rows, targets), [rows, targets]);
   const columns = useMemo(() => appColumns(units), [units]);
   return (
     <ProcessGroupTable
@@ -238,12 +239,24 @@ function AppsTable({
       sort={{ value: sort, onChange: onSortChange, client: true }}
       freezeOrderOnHover
       selectable={selectable}
-      after={(colSpan) => (
-        <RemainderRows
-          rest={rest}
-          selectable={selectable === true}
-          colSpan={colSpan}
-        />
+      after={(table) => (
+        <>
+          {rest.map((r, i) => (
+            <RemainderRow
+              key={r.key}
+              table={table}
+              columns={columns}
+              name={r.name}
+              system={r.kind === "system"}
+              first={i === 0}
+              cell={remainderCell(r)}
+            />
+          ))}
+          <RemainderNote table={table}>
+            macOS services (updates, backups, DNS). StatGlass can't see these
+            without a helper.
+          </RemainderNote>
+        </>
       )}
       empty="No app sent or received anything in this range."
     />
@@ -255,11 +268,11 @@ function AppsTable({
  * process batch nothing is known to be not running, so no row says so yet.
  * The table breaks sort ties by name,
  * then keeps input order, so ordering the input by key keeps names that
- * collate equal ("é" and "é") in one order across frames.
+ * collate equal ("é" and "é") in one order across frames.
  */
 function appGroupRows(
   rows: readonly AppRow[],
-  running: RunningApps | null
+  targets: AppQuitTargets | null
 ): GroupRows<AppRow, never> {
   return {
     groups: [...rows].sort(byKey),
@@ -268,8 +281,8 @@ function appGroupRows(
     count: () => null,
     expandable: () => false,
     members: () => [],
-    targets: (r) => appQuitTargets(running, r.name),
-    unavailable: () => (running === null ? undefined : "Not running"),
+    targets: (r) => targets?.get(r.name) ?? [],
+    unavailable: () => (targets === null ? undefined : "Not running"),
     memberKey: () => "",
     memberName: () => "",
     memberPid: () => 0,
@@ -280,14 +293,16 @@ function appGroupRows(
 const byKey = (a: AppRow, b: AppRow) =>
   a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 
+type AppColumn = GroupColumn<AppRow, never>;
+
 /** Down, Up, Total, Share and Now; every one sorts, unknown values last. */
-function appColumns(units: RateUnits): GroupColumn<AppRow, never>[] {
+function appColumns(units: RateUnits): AppColumn[] {
   const bytes = (
     id: string,
     header: string,
     value: (r: AppRow) => number,
     strong = false
-  ): GroupColumn<AppRow, never> => ({
+  ): AppColumn => ({
     id,
     header,
     align: "right",
@@ -308,14 +323,7 @@ function appColumns(units: RateUnits): GroupColumn<AppRow, never>[] {
       header: "Share",
       align: "right",
       groupValue: (r) => r.share,
-      group: (r) => (
-        <MeterCell
-          fraction={r.share === null ? null : r.share / 100}
-          fill="var(--a)"
-        >
-          {formatPercent(r.share, { decimals: 1 })}
-        </MeterCell>
-      ),
+      group: (r) => <ShareMeter share={r.share} muted={false} />,
       member: () => null,
     },
     {
@@ -333,73 +341,26 @@ function appColumns(units: RateUnits): GroupColumn<AppRow, never>[] {
   ];
 }
 
-/** Cells of the remainder rows, sized and weighted like the app rows above. */
-const REMAINDER_CELL = "whitespace-nowrap px-3 py-0 font-normal";
-
 /**
- * "Other apps", protocol overhead and "System and other", then the
- * footnote. They are not processes: the gutter and actions cells stay empty.
+ * A remainder row's content in `column`: its bytes and a muted share. It
+ * has no rate of its own, so Now is missing.
  */
-function RemainderRows({
-  rest,
-  selectable,
-  colSpan,
-}: {
-  rest: readonly AppRow[];
-  selectable: boolean;
-  colSpan: number;
-}) {
-  const figure = cn(REMAINDER_CELL, "figures text-right");
-  return (
-    <>
-      {rest.map((r, i) => (
-        <TableRow
-          key={r.key}
-          className={cn(
-            "h-[29px] border-border-subtle border-b text-muted-foreground hover:bg-transparent",
-            i === 0 && "border-border border-t",
-            r.kind === "system" && "border-b-0"
-          )}
-        >
-          {selectable && <TableCell aria-label="Selection" />}
-          <TableCell className={REMAINDER_CELL}>
-            <span className="inline-flex items-center gap-2 align-middle">
-              {/* The chevron's and the initial chip's places in app rows. */}
-              <span aria-hidden className="-ml-1 inline-block size-4" />
-              {r.kind === "system" ? (
-                <OtherChip />
-              ) : (
-                <span aria-hidden className="inline-block w-4 flex-none" />
-              )}
-              {r.name}
-            </span>
-          </TableCell>
-          <TableCell className={figure}>{formatBytes(r.rxBytes)}</TableCell>
-          <TableCell className={figure}>{formatBytes(r.txBytes)}</TableCell>
-          <TableCell className={figure}>{formatBytes(r.totalBytes)}</TableCell>
-          <TableCell className={cn(REMAINDER_CELL, "text-right")}>
-            <MeterCell
-              fraction={r.share === null ? null : r.share / 100}
-              fill="var(--color-fg-faint)"
-            >
-              {formatPercent(r.share, { decimals: 1 })}
-            </MeterCell>
-          </TableCell>
-          <TableCell className={cn(figure, "text-fg-faint")}>
-            {MISSING}
-          </TableCell>
-          {selectable && <TableCell />}
-        </TableRow>
-      ))}
-      <FullWidthRow
-        colSpan={colSpan}
-        tone="footnote"
-        // Lines up with the app names: past the gutter, chevron slot and chip.
-        className={cn("pt-0", selectable ? "pl-22" : "pl-14")}
-      >
-        macOS services (updates, backups, DNS). StatGlass can't see these
-        without a helper.
-      </FullWidthRow>
-    </>
+function remainderCell(row: AppRow): (column: AppColumn) => ReactNode {
+  const figure = (bytes: number) => (
+    <span className="figures">{formatBytes(bytes)}</span>
   );
+  return (column) => {
+    switch (column.id) {
+      case "down":
+        return figure(row.rxBytes);
+      case "up":
+        return figure(row.txBytes);
+      case "total":
+        return figure(row.totalBytes);
+      case "share":
+        return <ShareMeter share={row.share} muted />;
+      default:
+        return <span className="figures text-fg-faint">{MISSING}</span>;
+    }
+  };
 }

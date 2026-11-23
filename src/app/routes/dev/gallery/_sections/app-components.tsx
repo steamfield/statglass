@@ -36,6 +36,8 @@ import { PopoverHeader } from "~/components/popover-header";
 import {
   liveGroupRows,
   ProcessGroupTable,
+  RemainderNote,
+  RemainderRow,
 } from "~/components/process-group-table";
 import { liveColumns } from "~/components/process-group-table/live-columns";
 import { SegmentedControl } from "~/components/segmented-control";
@@ -508,11 +510,65 @@ function ErrorStateSamples() {
   );
 }
 
-export function AppComponentsSection() {
+/** The shared grouped table with live rows, a remainder row and its note. */
+function ProcessGroupTableItem() {
   const [sort, setSort] = useState<ColumnSort<string>>({
     by: "cpu",
     dir: "desc",
   });
+  return (
+    <GalleryItem
+      name="ProcessGroupTable"
+      usedIn="Processes and module usage tables"
+    >
+      <div
+        className={`${cardStyles.card} flex flex-col`}
+        style={{ "--a": "var(--color-cpu)" } as CSSProperties}
+      >
+        <div className="flex items-center gap-3 px-4 pt-3.5 pb-1.5">
+          <h3 className="m-0 flex-1 font-semibold text-heading">
+            Top processes
+          </h3>
+          <span className="font-normal text-label text-muted-foreground">
+            % CPU is of one core; 14 cores = 1400%
+          </span>
+        </div>
+        <ProcessGroupTable
+          selectable
+          ariaLabel="Top processes"
+          rows={liveGroupRows(
+            groupLiveProcesses(PROCESS_ROWS, ""),
+            "/dev/gallery"
+          )}
+          columns={GALLERY_COLUMNS}
+          nameHeader="Process"
+          sort={{ value: sort, onChange: setSort, client: true }}
+          height={8 * 29}
+          after={(table) => (
+            <>
+              <RemainderRow
+                table={table}
+                columns={GALLERY_COLUMNS}
+                name="System and other"
+                system
+                first
+                cell={(c) =>
+                  c.id === "cpu" && <span className="figures">97.3</span>
+                }
+              />
+              <RemainderNote table={table}>
+                A remainder row and its note, as usage and Network tables end.
+              </RemainderNote>
+            </>
+          )}
+          empty="No processes"
+        />
+      </div>
+    </GalleryItem>
+  );
+}
+
+export function AppComponentsSection() {
   const [intervalMs, setIntervalMs] = useState("1000");
   const [temp, setTemp] = useState<"C" | "F">("C");
   const [style, setStyle] = useState<TrayStyle>("combined");
@@ -735,37 +791,7 @@ export function AppComponentsSection() {
         </GalleryItem>
       </div>
 
-      <GalleryItem
-        name="ProcessGroupTable"
-        usedIn="Processes and module usage tables"
-      >
-        <div
-          className={`${cardStyles.card} flex flex-col`}
-          style={{ "--a": "var(--color-cpu)" } as CSSProperties}
-        >
-          <div className="flex items-center gap-3 px-4 pt-3.5 pb-1.5">
-            <h3 className="m-0 flex-1 font-semibold text-heading">
-              Top processes
-            </h3>
-            <span className="font-normal text-label text-muted-foreground">
-              % CPU is of one core; 14 cores = 1400%
-            </span>
-          </div>
-          <ProcessGroupTable
-            selectable
-            ariaLabel="Top processes"
-            rows={liveGroupRows(
-              groupLiveProcesses(PROCESS_ROWS, ""),
-              "/dev/gallery"
-            )}
-            columns={GALLERY_COLUMNS}
-            nameHeader="Process"
-            sort={{ value: sort, onChange: setSort, client: true }}
-            height={8 * 29}
-            empty="No processes"
-          />
-        </div>
-      </GalleryItem>
+      <ProcessGroupTableItem />
 
       <div className="grid grid-cols-2 items-start gap-8">
         <GalleryItem name="ModuleToggleList" usedIn="Onboarding">
