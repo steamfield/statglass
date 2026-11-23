@@ -133,7 +133,7 @@ Test cases:
 | a | M | crates/statglass-engine/src/detect/threshold.rs, crates/statglass-engine/src/detect/alerts.rs, crates/statglass-engine/src/detect/mod.rs, crates/statglass-engine/tests/perf_gates.rs | contracts, crates/statglass-engine/src/detect/detectors.rs | crates/statglass-engine/src/detect/threshold_tests.rs | opus | running | deliver/alerts-1a | threshold tests and the existing detect tests pass |
 | b | M | crates/statglass-schema/src/alert.rs, crates/statglass-schema/src/settings/alerts.rs, src-tauri/src/settings/alerts.rs | contracts, src-tauri/src/settings/overview.rs | crates/statglass-schema/src/alert_validation_tests.rs, crates/statglass-schema/src/settings/alerts_tests.rs, src-tauri/src/settings/alerts_tests.rs | opus | running | deliver/alerts-1b | validation and patch tests pass |
 | c | M | crates/statglass-notify/src/text.rs, crates/statglass-notify/src/units.rs, src-tauri/src/notify.rs | contracts, src/core/format/units.ts | crates/statglass-notify/tests/text.rs | opus | running | deliver/alerts-1c | text tests pass |
-| d | M | src/core/alerts.ts, src/core/events.ts, src/core/mock/settings.ts, src/core/mock/events.ts | contracts, src/core/format/units.ts | src/core/alerts.test.ts, src/core/mock-alerts.test.ts | opus | running | deliver/alerts-1d | core and mock tests pass |
+| d | M | src/core/alerts.ts, src/core/alert-values.ts, src/core/alert-values.test.ts, src/core/events.ts, src/core/mock/settings.ts, src/core/mock/events.ts | contracts, src/core/format/units.ts | src/core/alerts.test.ts, src/core/mock-alerts.test.ts | opus | running | deliver/alerts-1d | core and mock tests pass |
 
 #### Lane a brief
 
@@ -279,7 +279,31 @@ Test cases:
 - Dispatch: an alert goes to every enabled destination and to no disabled one; each outcome is recorded with its time and emitted once; a non-alert event sends nothing; the test command sends "Test from StatGlass on <host>" to the given destination without saving it and returns the outcome; the newest record wins when two deliveries finish out of order.
 - Core and mock: `deliveryLabel` for delivered, each failure detail and null; `destinationAddress`; `generateTopic` shape; the mock stores, replaces, deletes, rejects a ninth, emits changes, and its test delivery fails when the `alert-delivery-fails` scenario is on.
 
-(Briefs follow the lane table rows and the contracts above; written in full before dispatch.)
+#### Lane a brief
+
+- Goal: validate destinations, build the HTTP request for each kind, send it through curl and classify the outcome, with the retry policy.
+- Interface: `Destination::validate` in the schema file; `build_request`, `config_text`, `arguments`, `run`, `deliver` in `statglass-notify` exactly as in the phase 3 contracts. `run` spawns `curl` with `arguments(timeout_secs)`, writes `config_text` to its stdin, reads stdout (the status code from `--write-out`) and stderr.
+- Behavior: every line under "Validation", "Request", "Curl config" and "Outcomes" in the phase 3 test cases, and RFC section 6.4. Exit code 0 with a 2xx code is `Delivered { status }`; any other code with exit 0 is `Failed { reason: Http, detail: "HTTP <code>" }`; exit 6 NameNotFound "Server name not found", 7 ConnectFailed "Could not connect", 28 TimedOut "Timed out after <n> s", 35 and 60 Tls "TLS error", a spawn failure with NotFound CurlMissing "curl is not installed at <path>", anything else Other with curl's first stderr line. `deliver` calls `run` up to three times, sleeping `backoff[0]` then `backoff[1]`, and retries only ConnectFailed, NameNotFound, TimedOut and Http with a 5xx code. An invalid destination or a control character is `Failed { reason: Rejected }` without spawning. The detail never contains the URL or a token.
+- Decisions already made: std `Command` only (no tokio, no HTTP crate, no new dependency); the crate stays synchronous and callers run it off their thread; no redirects; JSON bodies built with `serde_json`.
+- Out of scope: persistence, Tauri, the message wording (lane 1/c's `alert_text`), queues across restarts.
+- Done when: `cargo test -p statglass-notify` and `cargo test -p statglass-schema alert_destination` pass, clippy is clean for both crates.
+
+#### Lane b brief
+
+- Goal: keep the user's destinations on disk, serve them to the window, and send every local alert to the enabled ones.
+- Interface: everything under `src-tauri/src/alerts/` in the phase 3 contracts. Follow `src-tauri/src/star_prompt.rs` for the atomic 0600 write (`statglass_store::restrict`) and the owner-with-a-mutex shape. The scaffold has registered the commands and the event and calls `AlertsService::on_alert` from the host watcher; do not edit `lib.rs` or `state.rs`.
+- Behavior: every line under "Store" and "Dispatch" in the phase 3 test cases, and RFC section 6.5. The file holds `{ "destinations": [...] }`. Delivery runs on `tauri::async_runtime::spawn_blocking`, one task per destination; the outcome is recorded under the service lock, then `alert-destinations-changed` is emitted with the new view outside the lock. A record is replaced only by one with a later `at_ms`. Log a failed delivery with `tracing::warn!` carrying the destination id and the outcome, never the URL, topic or token. The message comes from `statglass_notify::alert_text`; an event it has no text for sends nothing.
+- Decisions already made: every alert goes to every enabled destination; no retry queue; the test command sends without saving; destinations are returned to the window in full, tokens included, since it is the user's own window.
+- Out of scope: the host-offline rule, the UI, remote hosts' alert events (only events from the local host are sent).
+- Done when: `cargo test -p statglass alerts` passes, `make architecture-check` passes, clippy is clean.
+
+#### Lane c brief
+
+- Goal: the client-side labels for destinations and a mock that behaves like the commands.
+- Interface: `src/core/alert-destinations.ts` and `src/core/mock/alert-destinations.ts` as in the phase 3 contracts; the mock class is constructed and registered by the scaffold, in the style of `src/core/mock/shell.ts`.
+- Behavior: every line under "Core and mock" in the phase 3 test cases. `destinationAddress` shows the ntfy server host and the topic's first 14 characters followed by an ellipsis when longer, or the webhook URL's host only, so a row never shows a full secret. The mock validates as Rust does (name length, URL scheme, topic characters, at most 8).
+- Out of scope: React, transport contract changes.
+- Done when: `bun run test -- src/core/alert-destinations.test.ts` passes, typecheck and lint are clean.
 
 ### Phase 4: destinations on the page, and host offline
 
@@ -291,9 +315,32 @@ Depends on: phase 2, phase 3
 | a | M | src/app/routes/dashboard/alerts/_components/destinations-panel.tsx, src/app/routes/dashboard/alerts/_components/destination-row.tsx, src/app/routes/dashboard/alerts/_components/destination-dialog.tsx, tests/e2e/alert-destinations.spec.ts | | | opus | pending | | |
 | b | M | src-tauri/src/alerts/host_offline.rs, src-tauri/src/alerts/host_watch.rs | | | opus | pending | | |
 
-(Test cases and briefs written during phases 2 and 3.)
+Phase 4 scaffold (owned by no lane): `route.tsx` renders `<DestinationsPanel>` between Rules and Recent; a third built-in row "A saved host is offline for 5 minutes" in the rules panel (sub line "Checked while this Mac is awake and online", shown only when a host is saved); `AlertCause::HostOffline { host, name }` and `HostBack { host, name, offline_secs }` in the schema with their text in `statglass-notify` ("m1-linux is offline" / "Not reachable for 5 minutes"; "m1-linux is back" / "Was offline for 42 minutes") and their labels in `src/core/events.ts`; a 30 s poll task started from `AppState` that feeds remote statuses to the watch and passes its events to the store, the notifier and `AlertsService`; the tests named in the table.
+
+Contracts:
+
+    src-tauri/src/alerts/host_offline.rs    pure state machine, no clock or I/O
+      pub struct HostObservation { host: HostId, name: String, reachable: bool, counts: bool }   // counts is false while the connection is switched off, an agent update is running, or this Mac has no network
+      pub struct HostOfflineWatch; new(after_ms: i64, max_step_ms: i64)
+      observe(&mut self, now_ms: i64, hosts: &[HostObservation]) -> Vec<HostNotice>
+      pub enum HostNotice { Offline { host, name, since_ms }, Back { host, name, offline_ms } }
+      reset(&mut self)
+    src-tauri/src/alerts/host_watch.rs      turns RemoteHostStatus values into observations and a notice into an Event; thin
+
+Test cases:
+- Watch: a host unreachable for 5 minutes of observed time gives one Offline; staying offline gives nothing more; reachable again after an Offline gives one Back with the offline span; a host that recovers before 5 minutes gives nothing; time between two observations more than `max_step_ms` apart (this Mac slept) is not counted and restarts the count; `counts: false` freezes and clears the count without a notice; a host removed while offline is forgotten with no Back; a host first seen unreachable at launch still needs 5 observed minutes; two hosts are tracked separately; switching the rule off and on (`reset`) forgets everything.
+- Wiring: an Offline notice becomes an `alert` event with `AlertCause::HostOffline` recorded for the local host, posted as a notification and sent to destinations; the task does nothing while `alerts.host_offline` is off or no host is saved.
+- Destinations panel: the fixed "Notifications on this Mac" row; one row per destination with name, kind and `destinationAddress`, then `deliveryLabel`; the switch saves the destination with `enabled` flipped; "Send test" calls the test command, shows "Sending…" then the outcome, and is disabled while in flight; `load_error` shows as one inline message; a pushed change updates the row without a refetch.
+- Destination dialog: the kind control switches between ntfy and Webhook fields and keeps the name; "Generate" fills a topic; Save validates through the command and shows its message inline; "Send test" works on the unsaved form; Delete for an existing destination; the token field is a password input.
+- E2E (`alert-destinations.spec.ts`, light and dark): add an ntfy destination with a generated topic, send a test and see "Delivered"; with `alert-delivery-fails`, see the failure text; screenshot per theme.
+
+(Briefs written before dispatch.)
 
 ## Log
+- Lane 1/d review (opus), three findings fixed: thresholds did not survive Rust's f32 round trip (200 °F came back as 200.00000457763673), so display values are cut to 7 significant digits and the mock stores `Math.fround`; the mock's messages are now Rust's exact strings; the mock mirrors the label and built-in-id rejections. Orchestrator: the limits the mock had copied became the generated constant `ALERT_LIMITS` (285e97c1); alerts.ts split, value formatting moved to `alert-values.ts`. Accepted choices: `ruleSummary` throws for a built-in rule (no page path calls it), `newRule` is named after the metric label, a null value shows as "—".
+- Lane 1/b review (opus), five findings sent back: undecodable rules were dropped without a count for the loader to log; `"rules": null` failed the whole settings decode; names are now required to arrive trimmed so the validated name is the stored one; the range message no longer prints raw catalog numbers; a misleading variable name.
+- Lane 1/c review (opus), four findings sent back: Rust rounded halves to even where the client rounds away from zero (80.5% read "80%" in the notification and "81%" on the page); non-finite and negative-zero values printed "NaN%" and "-0%"; a redundant re-match in `alert_text`; the failed-post warning did not name the notification. Minutes round down on both sides.
+- Lane 1/a review (opus), one finding sent back: a rename or cooldown edit replaced the evaluator and re-fired an episode that never cleared; the definition is now `when` and `for_secs` only. `every_rule` is replaced by `engine_rules()` at the phase merge.
 - Scaffold 71fb6f5c (opus builder), deviations accepted: `AlertEval` already routes thresholds through `ThresholdState` (a stub that lane a replaces); `recent_alerts` moved to `History::recent_alerts` to keep state.rs under its ceiling; `eventLabel(e)` keeps one argument and uses display defaults, `alertCauseLabel` takes `UnitSettings | null`; `mockEvents` takes the alerts scenario flag (lane d seeds through it, store.ts is scaffold-owned); `series_name` lives in `alert.rs`; f32 range limits reach TypeScript rounded (1e12 is 999999995904), so the mock compares as f32 with `Math.fround`. Open for the docs pass: `.claude/rules/rust/crates.md` edge list lacks `statglass-notify`.
 - User request during phase 1: alert on swap. `mem.swap_used` was already in `ALERT_METRICS`; `mem.swap_out` (pages per second) is added as the thrashing signal, with a pages/s formatter on both sides.
 - Plan critique (devils-advocate, opus), eight findings, all checked and accepted: (1) one invalid stored rule would have reset every setting through `load_with_defaults`, so validation runs on the patch path only, the load path drops bad rules and the rules list decodes leniently; (2) the type changes ripple into engine.rs, lifecycle.rs, state.rs, test literals, Cargo and crate-edges, now listed as scaffold-owned, and `SettingsError` stays untouched; (3) the gap rule uses the larger of the current and last-reading period, with a cadence-change test; (4) `disk.free` with "Any" fired on a mounted DMG, so new disk rules default to `vol=/` through `AlertMetric.default_label`; (5) fan labels are "0"/"1", so both sides name series through one `series_name` rule, and `for_secs` moved into `AlertCause::Threshold`; (6) the curl request spec (no `--fail`, `%{http_code}`, exit-code mapping, quoted and escaped config values, control-character rejection) is in RFC 6.4 and becomes phase 3 test cases; (7) the perf-gate case gets `mem.pressure` in its layout so the custom rule holds state; (8) new `AlertCause` variants and rules in Settings are safe (events are opaque CBOR, settings never leave the Mac), and `AlertSettings` moves to `settings/alerts.rs` to respect the schema file ceiling.
