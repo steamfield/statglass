@@ -2,16 +2,13 @@
  * The Alerts page's Recent panel: the alerts This Mac fired in the last
  * 7 days, newest first, each one a line that opens the Timeline at it.
  */
-import { BRUSH_STEP_MS } from "@core/brush";
-import { eventId, eventLabel, eventRange } from "@core/events";
+import type { TimeRange } from "@core/brush";
+import { eventId, eventLabel } from "@core/events";
 import { formatClock, monthName } from "@core/format";
 import type { ReactNode } from "react";
-import { useRef } from "react";
-import { useNavigate } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { SettingsPanel } from "~/components/settings-row";
-import { useHistoryHealth } from "~/hooks/use-history-health";
-import { useRangeNavigation } from "~/hooks/use-range-navigation";
+import { useOpenInTimeline } from "~/hooks/use-open-in-timeline";
 import { useHostClock } from "~/lib/host-clock";
 import { type AlertEvent, useRecentAlerts } from "../_hooks/use-recent-alerts";
 
@@ -20,63 +17,82 @@ const MAX_RECENT_ALERTS = 20;
 
 const EMPTY_TEXT = "No alerts in the last 7 days.";
 const LOADING_TEXT = "Loading alerts…";
+const ERROR_TEXT = "Couldn't load alerts";
+const OPEN_DESCRIPTION = "Open in Timeline";
+const NOT_KEPT_DESCRIPTION = "The history from this time is no longer kept";
 
 /**
  * A `SettingsPanel` titled "Recent": at most 20 alerts from
  * `useRecentAlerts`, newest first, each line its time on the host clock,
  * `eventLabel` and a control that opens the Timeline at that alert. "No
  * alerts in the last 7 days." when there are none or history is
- * unavailable.
+ * unavailable; "Couldn't load alerts" when the read failed otherwise.
  */
 export function RecentAlerts(): ReactNode {
-  const { alerts, isPending } = useRecentAlerts();
+  const { alerts, isPending, isError } = useRecentAlerts();
   const clock = useHostClock();
-  const { openAt, pending } = useOpenTimelineAt();
+  const { rangeFor, open, pending } = useOpenInTimeline();
   const shown = alerts.slice(0, MAX_RECENT_ALERTS);
   return (
     <SettingsPanel title="Recent">
-      {shown.length > 0 ? (
+      {shown.length > 0 && (
         <ul>
           {shown.map((alert) => (
             <RecentAlertLine
               key={eventId(alert)}
               alert={alert}
               nowMs={clock()}
-              disabled={pending}
-              onOpen={() => void openAt(alert)}
+              range={rangeFor(alert)}
+              busy={pending}
+              onOpen={(range) => void open(range)}
             />
           ))}
         </ul>
-      ) : (
-        <InlineMessage tone="status" className="px-4 py-3.5">
-          {isPending ? LOADING_TEXT : EMPTY_TEXT}
+      )}
+      {isError ? (
+        <InlineMessage tone="error" className="px-4 py-3.5">
+          {ERROR_TEXT}
         </InlineMessage>
+      ) : (
+        shown.length === 0 && (
+          <InlineMessage tone="status" className="px-4 py-3.5">
+            {isPending ? LOADING_TEXT : EMPTY_TEXT}
+          </InlineMessage>
+        )
       )}
     </SettingsPanel>
   );
 }
 
-/** One alert as a full-width row button: its label over its time. */
+/**
+ * One alert as a full-width row button: its label over its time. With no
+ * `range` (its history is no longer kept) the button is disabled and says
+ * why.
+ */
 function RecentAlertLine({
   alert,
   nowMs,
-  disabled,
+  range,
+  busy,
   onOpen,
 }: {
   alert: AlertEvent;
   nowMs: number;
-  disabled: boolean;
-  onOpen: () => void;
+  range: TimeRange | null;
+  busy: boolean;
+  onOpen: (range: TimeRange) => void;
 }) {
   const label = eventLabel(alert);
   return (
     <li className="border-border-subtle border-b last:border-b-0">
       <button
         type="button"
-        aria-description="Open in Timeline"
-        disabled={disabled}
-        onClick={onOpen}
-        className="flex min-h-12 w-full flex-col justify-center gap-0.5 px-4 py-2 text-left text-body outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        aria-description={range ? OPEN_DESCRIPTION : NOT_KEPT_DESCRIPTION}
+        disabled={busy || range === null}
+        onClick={() => {
+          if (range) onOpen(range);
+        }}
+        className="flex min-h-12 w-full flex-col justify-center gap-0.5 px-4 py-2 text-left text-body outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset enabled:hover:bg-muted"
       >
         <span className="min-w-0 truncate" title={label}>
           {label}
@@ -87,44 +103,6 @@ function RecentAlertLine({
       </button>
     </li>
   );
-}
-
-/**
- * Opens the Timeline on an absolute range around one alert, the way the
- * Overview's events card does: apply the range, then navigate once it is
- * the active one. A failed range save is reported by `useRangeNavigation`.
- */
-function useOpenTimelineAt() {
-  const clock = useHostClock();
-  const { health } = useHistoryHealth();
-  const { apply, pending, range: currentRange } = useRangeNavigation();
-  const navigate = useNavigate();
-  // A second click before the first range is saved would queue a second save.
-  const opening = useRef(false);
-
-  const openAt = async (alert: AlertEvent) => {
-    if (opening.current || pending) return;
-    const range = eventRange(
-      [alert],
-      BRUSH_STEP_MS,
-      clock(),
-      health?.trimmed_before_ms ?? 0
-    );
-    // Null only for an alert older than the retained history: nothing to show.
-    if (!range) return;
-    opening.current = true;
-    const applied = await apply({
-      absolute: { from_ms: range.fromMs, to_ms: range.toMs },
-    });
-    opening.current = false;
-    // `apply` returns false when the range is already active; navigate then too.
-    const alreadyActive =
-      currentRange?.endMs === range.toMs &&
-      currentRange.windowMs === range.toMs - range.fromMs;
-    if (applied || alreadyActive) navigate("/dashboard/timeline");
-  };
-
-  return { openAt, pending };
 }
 
 /**

@@ -53,7 +53,10 @@ async function choose(dialog: Locator, field: string, option: string) {
     .click();
 }
 
-/** Leaves the page and comes back, so the switches re-read stored settings. */
+/**
+ * Leaves the page and comes back, so the remounted switches show the
+ * app-wide settings mirror, which takes the `update_settings` result.
+ */
 async function revisitAlerts(page: Page) {
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
