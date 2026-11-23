@@ -3,9 +3,9 @@
 //!
 //! | Module | Owns |
 //! |---|---|
-//! | this one | [`AlertsService`]: the destination list and last delivery per destination, behind one lock; no file or process I/O of its own |
+//! | this one | [`AlertsService`]: the destination list and last delivery per destination, behind two locks (`writes` for list changes and the file, `view` for reads and records; take `writes` first); no file or process I/O of its own |
 //! | [`store`] | `alert-destinations.json` (atomic, 0600); the only module that touches the file |
-//! | [`dispatch`] | an alert event as a [`Message`], sent to each enabled destination off the calling thread |
+//! | [`dispatch`] | an alert event as a [`Message`], sent to each enabled destination off the calling thread, and [`AlertsService::deliver_to`]: one delivery, its failure log and its record |
 //! | [`commands`] | the four Tauri commands and the [`commands::AlertDestinationsChanged`] event |
 //!
 //! # Emitting
@@ -13,8 +13,9 @@
 //! The service never emits and holds no `AppHandle`, so every entry point runs in a test
 //! without Tauri. A method that changes what the window shows returns the new view
 //! ([`AlertsService::save`], [`AlertsService::delete`], [`AlertsService::record`]), and
-//! the caller emits it outside the lock: the commands after a save or delete, and the
-//! production send function ([`dispatch::background_sender`]) after recording an outcome.
+//! the caller emits it outside the locks: the commands after a save or delete, and the
+//! production send function ([`dispatch::background_sender`]) after
+//! [`AlertsService::deliver_to`] records an outcome.
 //! [`AlertsService::on_alert`] takes that send function as a parameter; tests pass one
 //! that records what would have been sent.
 //!
@@ -24,18 +25,21 @@
 pub mod commands;
 pub mod dispatch;
 pub mod store;
+#[cfg(test)]
+mod tests;
 
 use std::path::Path;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use statglass_notify::Message;
+use statglass_notify::{Message, alert_text};
 use statglass_schema::lock::LockExt;
 use statglass_schema::settings::UnitSettings;
-use statglass_schema::{DeliveryRecord, Destination, Event};
+use statglass_schema::{DeliveryRecord, Destination, DestinationError, Event, MAX_DESTINATIONS};
 use uuid::Uuid;
 
 use crate::error::CommandError;
+use store::{BadFileChange, Store};
 
 pub use dispatch::{background_sender, send_test};
 
@@ -60,7 +64,13 @@ pub struct DestinationView {
 
 /// Owner of the alert destinations and their delivery state. Thread-safe; held in
 /// `AppState`.
+///
+/// Two locks: `writes` serializes every change to the list together with its file
+/// write, so two saves never build on the same old list; `view` is held only to read or
+/// swap state, so a slow disk never delays a delivery being recorded or the window
+/// reading the list. Lock order is `writes` then `view`.
 pub struct AlertsService {
+    writes: Mutex<Store>,
     view: Mutex<AlertDestinationsView>,
 }
 
@@ -70,9 +80,21 @@ impl AlertsService {
     /// `alert-destinations.json.bad`, logged, and reported once through `load_error`.
     /// Never fails.
     pub fn open(dir: &Path) -> Self {
-        let _ = dir;
+        let (store, loaded) = Store::open(dir);
+        let view = AlertDestinationsView {
+            destinations: loaded
+                .destinations
+                .into_iter()
+                .map(|destination| DestinationView {
+                    destination,
+                    last: None,
+                })
+                .collect(),
+            load_error: loaded.load_error,
+        };
         Self {
-            view: Mutex::new(AlertDestinationsView::default()),
+            writes: Mutex::new(store),
+            view: Mutex::new(view),
         }
     }
 
@@ -85,13 +107,15 @@ impl AlertsService {
     ///
     /// # Errors
     ///
-    /// [`CommandError::InvalidArgument`] with the [`statglass_schema::DestinationError`]
-    /// message when it fails validation, or when it would be destination number
-    /// [`statglass_schema::MAX_DESTINATIONS`] + 1; [`CommandError::SettingsNotSaved`] when
-    /// the file cannot be written, leaving the list in memory unchanged.
+    /// [`CommandError::InvalidArgument`] with the [`DestinationError`] message when it
+    /// fails validation, or when it would be destination number [`MAX_DESTINATIONS`] + 1;
+    /// [`CommandError::SettingsNotSaved`] when the file cannot be written, leaving the
+    /// list in memory unchanged.
     pub fn save(&self, destination: Destination) -> Result<AlertDestinationsView, CommandError> {
-        let _ = destination;
-        Err(not_implemented())
+        destination.validate().map_err(invalid)?;
+        let mut store = self.writes.lock_ok();
+        let next = with_saved(self.destinations(), destination).map_err(invalid)?;
+        self.write_then_commit(&mut store, next)
     }
 
     /// Removes the destination with `id` and writes the file.
@@ -102,8 +126,14 @@ impl AlertsService {
     /// [`CommandError::SettingsNotSaved`] when the file cannot be written, leaving the
     /// list in memory unchanged.
     pub fn delete(&self, id: Uuid) -> Result<AlertDestinationsView, CommandError> {
-        let _ = id;
-        Err(not_implemented())
+        let mut store = self.writes.lock_ok();
+        let mut next = self.destinations();
+        let before = next.len();
+        next.retain(|d| d.id != id);
+        if next.len() == before {
+            return Err(invalid(DestinationError::UnknownId));
+        }
+        self.write_then_commit(&mut store, next)
     }
 
     /// Hands the message for `event` to `send` once per enabled destination. The message
@@ -117,21 +147,106 @@ impl AlertsService {
         units: &UnitSettings,
         send: impl Fn(Destination, Message),
     ) {
-        let _ = (event, host_name, units, send);
+        let Some(text) = alert_text(event, units) else {
+            return;
+        };
+        let message = Message::from_alert_text(text, host_name, event.ts_ms);
+        // Collected first so `send` runs without the lock: it may record an outcome.
+        let enabled: Vec<Destination> = self
+            .destinations()
+            .into_iter()
+            .filter(|d| d.enabled)
+            .collect();
+        for destination in enabled {
+            send(destination, message.clone());
+        }
     }
 
-    /// Records the outcome of a delivery to destination `id` and returns the new view to
-    /// emit. `None`, and nothing changes, when no destination has `id` or the destination
-    /// already holds a record with a later `at_ms` (deliveries can finish out of order).
-    pub fn record(&self, id: Uuid, record: DeliveryRecord) -> Option<AlertDestinationsView> {
-        let _ = (id, record);
-        None
+    /// Records the outcome of a delivery to `destination` and returns the new view to
+    /// emit. Records land in arrival order, which is completion order; `at_ms` is only
+    /// the time shown, since the wall clock can step back. `None`, and nothing changes,
+    /// when no destination has its id any more or its address changed since the
+    /// delivery started, so an outcome never lands on an address it was not sent to.
+    pub fn record(
+        &self,
+        destination: &Destination,
+        record: DeliveryRecord,
+    ) -> Option<AlertDestinationsView> {
+        let mut view = self.view.lock_ok();
+        let entry = view
+            .destinations
+            .iter_mut()
+            .find(|d| d.destination.id == destination.id)?;
+        if entry.destination.kind != destination.kind {
+            return None;
+        }
+        entry.last = Some(record);
+        Some(view.clone())
+    }
+
+    /// The saved destinations, without delivery state.
+    fn destinations(&self) -> Vec<Destination> {
+        self.view
+            .lock_ok()
+            .destinations
+            .iter()
+            .map(|d| d.destination.clone())
+            .collect()
+    }
+
+    /// Writes `next` to the file, then makes it the list in memory. A destination keeps
+    /// its last delivery while its address (`kind`) is unchanged; a rename or a toggle
+    /// keeps it, a new URL, topic or token clears it. The file goes first so a failed
+    /// write leaves memory as it was: the list in memory is always what is on disk. The
+    /// caller holds `writes`, so nothing else changed the list since `next` was built.
+    fn write_then_commit(
+        &self,
+        store: &mut Store,
+        next: Vec<Destination>,
+    ) -> Result<AlertDestinationsView, CommandError> {
+        let bad_file = store
+            .write(&next)
+            .map_err(|message| CommandError::SettingsNotSaved { message })?;
+        let mut view = self.view.lock_ok();
+        match bad_file {
+            Some(BadFileChange::MovedAside(message)) => view.load_error = Some(message),
+            Some(BadFileChange::Removed) => view.load_error = None,
+            None => {}
+        }
+        let previous = std::mem::take(&mut view.destinations);
+        view.destinations = next
+            .into_iter()
+            .map(|destination| DestinationView {
+                last: previous
+                    .iter()
+                    .find(|p| p.destination.id == destination.id)
+                    .filter(|p| p.destination.kind == destination.kind)
+                    .and_then(|p| p.last.clone()),
+                destination,
+            })
+            .collect();
+        Ok(view.clone())
     }
 }
 
-/// The placeholder error of the scaffold's stubs.
-fn not_implemented() -> CommandError {
-    CommandError::Internal {
-        message: "not implemented".into(),
+/// `destinations` with `destination` in place of the one sharing its id, or appended.
+fn with_saved(
+    mut destinations: Vec<Destination>,
+    destination: Destination,
+) -> Result<Vec<Destination>, DestinationError> {
+    if let Some(slot) = destinations.iter_mut().find(|d| d.id == destination.id) {
+        *slot = destination;
+    } else if destinations.len() >= MAX_DESTINATIONS {
+        return Err(DestinationError::TooMany);
+    } else {
+        destinations.push(destination);
+    }
+    Ok(destinations)
+}
+
+/// A refused change as the command error the dialog shows.
+fn invalid(error: DestinationError) -> CommandError {
+    CommandError::InvalidArgument {
+        message: error.to_string(),
     }
 }

@@ -388,7 +388,7 @@ fn each_outcome_is_recorded_with_its_time_and_emitted_once() {
         "Studio",
         &Settings::default().units,
         |d, _m| {
-            if let Some(view) = service.record(d.id, outcome_for(&d)) {
+            if let Some(view) = service.record(&d, outcome_for(&d)) {
                 emitted.lock().unwrap().push(view);
             }
         },
@@ -412,7 +412,13 @@ fn each_outcome_is_recorded_with_its_time_and_emitted_once() {
 
     // An outcome for a destination deleted meanwhile changes nothing and emits nothing.
     assert_eq!(
-        service.record(Uuid::from_u128(0xdead), delivered(NOW)),
+        service.record(
+            &Destination {
+                id: Uuid::from_u128(0xdead),
+                ..a.clone()
+            },
+            delivered(NOW)
+        ),
         None
     );
     assert_eq!(service.view(), view);
@@ -511,20 +517,25 @@ fn the_test_command_refuses_an_invalid_destination_without_sending() {
 }
 
 #[test]
-fn the_newest_record_wins_when_deliveries_finish_out_of_order() {
+fn records_land_in_arrival_order_even_when_the_clock_steps_back() {
     let dir = tempfile::tempdir().unwrap();
     let d = ntfy(1, true);
     let service = service_with(dir.path(), std::slice::from_ref(&d));
 
-    let newer = service.record(d.id, failed(NOW + 2_000, "HTTP 500"));
-    assert!(newer.is_some());
-    assert_eq!(service.record(d.id, delivered(NOW + 1_000)), None);
+    let first = service.record(&d, failed(NOW + 2_000, "HTTP 500"));
+    assert!(first.is_some());
+    // The wall clock stepped back (an NTP step after wake): the later arrival still wins.
+    let stepped_back = service.record(&d, delivered(NOW + 1_000));
+    assert_eq!(
+        stepped_back.map(|v| v.destinations[0].last.clone()),
+        Some(Some(delivered(NOW + 1_000)))
+    );
     assert_eq!(
         service.view().destinations[0].last,
-        Some(failed(NOW + 2_000, "HTTP 500"))
+        Some(delivered(NOW + 1_000))
     );
 
-    let later = service.record(d.id, delivered(NOW + 3_000));
+    let later = service.record(&d, delivered(NOW + 3_000));
     assert_eq!(
         later.map(|v| v.destinations[0].last.clone()),
         Some(Some(delivered(NOW + 3_000)))
