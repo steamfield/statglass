@@ -1,70 +1,79 @@
-import { formatRate } from "@core/format";
-import { useMemo } from "react";
-import { Link } from "react-router";
+/**
+ * "Apps, now": Network's live per-app rates while Network history is off.
+ * Live processes grouped by app on the shared grouped table, so a row quits
+ * its app and expands to its processes as on the Processes page.
+ */
+import type { LiveProcess } from "@core/generated/bindings";
+import {
+  groupLiveProcesses,
+  type LiveGroup,
+  netTotal,
+} from "@core/process-groups";
+import { FULL_TABLE, type ProcessView } from "@core/process-interest";
+import { useMemo, useState } from "react";
+import { Link, useLocation } from "react-router";
 import { AppsNote, AppsShell } from "~/components/app-table";
+import type { ColumnSort } from "~/components/data-table";
 import {
-  columnHelper,
-  DataTable,
-  DataTableHead,
-  useDataTable,
-} from "~/components/data-table";
-import { Table, TableCell, TableHeader, TableRow } from "~/components/ui/table";
+  liveGroupRows,
+  ProcessGroupTable,
+} from "~/components/process-group-table";
+import { liveColumns } from "~/components/process-group-table/live-columns";
+import { useCanSignalSettled } from "~/hooks/use-edition";
 import {
-  topRowsView,
   useProcessInterest,
   useProcessRows,
 } from "~/hooks/use-process-interest";
 import { useUnits } from "~/hooks/use-units";
-import { InitialChip } from "~/widgets/initial-chip";
-import { measuredTraffic } from "../_lib/network";
 
-const ROWS = 12;
-interface NowRow {
-  pid: number;
-  name: string;
-  bps: number;
-}
-const helper = columnHelper<NowRow>();
-const columns = helper.columns([
-  helper.accessor("name", {
-    header: "App",
-    meta: { align: "left" },
-  }),
-  helper.accessor("bps", {
-    header: "Now",
-    meta: { align: "right", ranked: true },
-  }),
-]);
-const processId = (row: NowRow) => String(row.pid);
+/** Groups listed before "Show all". */
+const TOP_GROUPS = 12;
 
 /**
- * "Network history off": no totals and no brush, only live rates
- * per process (D-081), with a way back to the setting.
+ * Every process with network rates. Grouping a top-N batch would undercount
+ * groups and could cut the process Quit on an app acts on.
+ */
+const NETWORK_VIEW: ProcessView = { ...FULL_TABLE, network: true };
+
+const BY_TOTAL: ColumnSort<string> = { by: "netTotal", dir: "desc" };
+
+/**
+ * App groups that sent or received something. A group's figures are member
+ * sums, so a group with a null total has only baseline samples (D-081).
+ */
+function trafficGroups(rows: readonly LiveProcess[]): LiveGroup[] {
+  return groupLiveProcesses(rows, "").filter(
+    (g) => (netTotal(g.figures) ?? 0) > 0
+  );
+}
+
+/**
+ * "Network history off": no totals and no brush, only live rates per app
+ * (D-081), with a way back to the setting.
  */
 export function AppsNowCard() {
-  useProcessInterest(topRowsView({ by: "netTotal", dir: "desc" }, ROWS, true));
+  useProcessInterest(NETWORK_VIEW);
   const live = useProcessRows();
   const units = useUnits();
+  // False in the App Store edition (no Quit, D-065); null while it loads,
+  // so the table waits rather than add its checkbox column under the reader.
+  const selectable = useCanSignalSettled();
+  const location = useLocation();
+  const back = `${location.pathname}${location.search}`;
+  const [sort, setSort] = useState(BY_TOTAL);
   const rows = useMemo(
-    () =>
-      live === null
-        ? []
-        : measuredTraffic(live)
-            .map((p) => ({
-              pid: p.pid,
-              name: p.name,
-              bps: (p.net_rx_bps ?? 0) + (p.net_tx_bps ?? 0),
-            }))
-            .sort((a, b) => b.bps - a.bps)
-            .slice(0, ROWS),
-    [live]
+    () => liveGroupRows(live === null ? [] : trafficGroups(live), back),
+    [live, back]
   );
-  const data = useDataTable({
-    data: rows,
-    columns,
-    getRowId: processId,
-    manualSorting: true,
-  });
+  const columns = useMemo(
+    () =>
+      liveColumns(["netRx", "netTx", "netTotal"], {
+        cpuBarMaxPct: 100,
+        memUnits: units.bytes,
+        rateUnits: units.rate,
+      }).map((c) => (c.id === "netTotal" ? { ...c, header: "Total" } : c)),
+    [units.bytes, units.rate]
+  );
 
   return (
     <AppsShell title="Apps, now">
@@ -78,33 +87,21 @@ export function AppsNowCard() {
           Turn it on in Settings
         </Link>
       </AppsNote>
-      <Table aria-label="Network by app, now">
-        <TableHeader>
-          <DataTableHead table={data.table} />
-        </TableHeader>
-        <DataTable
-          table={data.table}
-          rows={data.rows}
-          empty={
-            live === null
-              ? "Measuring network by process…"
-              : "None of your processes sent or received anything."
-          }
-          renderRow={({ original: r }) => (
-            <TableRow key={r.pid} className="text-small">
-              <TableCell className="px-3 py-1.75 text-foreground">
-                <span className="inline-flex items-center gap-2">
-                  <InitialChip text={r.name} />
-                  {r.name}
-                </span>
-              </TableCell>
-              <TableCell className="figures px-3 py-1.75 text-right text-foreground">
-                {formatRate(r.bps, { units: units.rate })}
-              </TableCell>
-            </TableRow>
-          )}
-        />
-      </Table>
+      <ProcessGroupTable
+        rows={rows}
+        columns={columns}
+        nameHeader="App"
+        ariaLabel="Network by app, now"
+        sort={{ value: sort, onChange: setSort, client: true }}
+        limit={TOP_GROUPS}
+        freezeOrderOnHover
+        selectable={selectable}
+        empty={
+          live === null
+            ? "Measuring network by process…"
+            : "None of your processes sent or received anything."
+        }
+      />
     </AppsShell>
   );
 }
