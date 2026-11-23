@@ -2,6 +2,7 @@ import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import { RUNNING_APPS_VIEW } from "~/hooks/use-running-apps";
 import GpuRoute from "./route";
 
 const T = 1_700_000_000_000; // a 10 s edge
@@ -41,14 +42,16 @@ describe("GPU page over a range (D-085, D-099)", () => {
         /Avg · 5 min[\d.]+%Peak · 5 min\d+%/
       )
     );
-    // The table reads the engine's ring. The page asks only for GPU time on
-    // the idle process samples, no rows, so Performance mode measures it.
+    // The table reads the engine's ring. The page asks for GPU time on the
+    // idle process samples, so Performance mode measures it; the apps table
+    // then adds the running processes (every 10 s) its app rows quit through.
     expect(calls(transport.calls, "set_process_interest")).toEqual([
       [
         true,
         { limit: 0, sort: ["gpu"], period_ms: 10_000, gpu: true },
         expect.any(Number),
       ],
+      [true, { ...RUNNING_APPS_VIEW, gpu: true }, expect.any(Number)],
     ]);
   });
 

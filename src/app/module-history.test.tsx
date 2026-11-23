@@ -119,7 +119,8 @@ it("Disk keeps its historical charts and explicitly omits unrecorded app attribu
         call.command === "query_historical_usage"
     )
   ).toBe(false);
-  expect(screen.queryByRole("table", { name: /Disk processes/ })).toBeNull();
+  // The unrecorded box stands in for the app table: no rows to offer.
+  expect(screen.queryByRole("table", { name: "Disk by app" })).toBeNull();
 });
 
 it("Network reads the capable remote source for a fixed interval", async () => {

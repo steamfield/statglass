@@ -1,6 +1,6 @@
-//! Which of an app's processes Quit acts on. One rule for every view that offers an app
-//! row's Quit: the live process table (`LiveProcess.app_quit`) and the per-app usage
-//! answer (`AppUsage.quit_pids`).
+//! Which of an app's processes Quit acts on, decided over each live batch
+//! (`LiveProcess.app_quit`). Every view that offers an app row's Quit reads it from there:
+//! the process table directly, per-app usage and recorded tables by app name.
 
 use std::collections::{HashMap, HashSet};
 

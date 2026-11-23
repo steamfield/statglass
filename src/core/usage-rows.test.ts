@@ -24,7 +24,6 @@ function app(
     write_bytes: 0,
     energy_j: 0,
     avg_w: 0,
-    quit_pids: [],
     processes: [],
     ...over,
   };

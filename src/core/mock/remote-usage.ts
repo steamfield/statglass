@@ -96,7 +96,6 @@ export function remoteUsage<T extends UsageQueries>(
         ...r.data,
         apps: r.data.apps.map((app) => ({
           ...app,
-          quit_pids: [],
           processes: app.processes.map((p) => ({ ...p, refusal: null })),
         })),
       });

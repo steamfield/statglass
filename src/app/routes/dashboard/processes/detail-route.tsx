@@ -8,6 +8,8 @@ import {
 } from "@core/format";
 import { diskTotal } from "@core/process-groups";
 import { FULL_TABLE } from "@core/process-interest";
+import { readRange } from "@core/range-params";
+import { requestedBytes } from "@core/usage-rows";
 import { Link, useParams, useSearchParams } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
@@ -20,8 +22,6 @@ import {
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
-import { requestedBytes } from "../disk/_components/disk-processes";
-import { readRange } from "../disk/_lib/range-params";
 import { detailBack } from "./_lib/back-link";
 
 /** Focused I/O inspection, using the same retained batch as the Disk table. */

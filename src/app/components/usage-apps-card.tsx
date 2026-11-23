@@ -1,16 +1,23 @@
+/**
+ * The per-app usage card of the CPU, GPU, Memory, Power and Disk pages:
+ * apps over the chart window or the brushed range, rendered by the shared
+ * grouped table, with coverage notes above and the remainder rows and
+ * footnote below.
+ */
 import { scopeWords, type TimeRange } from "@core/brush";
 import { percentOf } from "@core/chart-math";
-import { formatClockSeconds, formatSpan } from "@core/format";
+import { formatClockSeconds, formatPercent, formatSpan } from "@core/format";
 import type {
   ProcessUsage,
   UsageByApp,
   UsageKey,
 } from "@core/generated/bindings";
-import { targetKey } from "@core/process-selection";
+import { appQuitTargets, type RunningApps } from "@core/process-groups";
+import { type ProcessTarget, targetKey } from "@core/process-selection";
+import { writeRange } from "@core/range-params";
 import { remoteQueryText } from "@core/remote-errors";
 import {
   gpuShortfall,
-  processCount,
   type RemainderRow,
   remainderRows,
   type UsageFigures,
@@ -20,48 +27,45 @@ import {
   usageValue,
   usageWhole,
 } from "@core/usage-rows";
-import { ChevronRight } from "lucide-react";
-import { memo, type ReactNode, useMemo, useState } from "react";
+import { memo, type ReactNode, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import {
-  APP_CELL,
   AppsNote,
   AppsShell,
   OtherAppsRow,
   ShareCell,
   UnrecordedRange,
-  UsageHead,
-  usageColumns,
-  usageRowId,
 } from "~/components/app-table";
 import { brushScopeProps } from "~/components/brush-overlay";
-import { FullWidthRow, useDataTable } from "~/components/data-table";
+import { FullWidthRow, MeterCell } from "~/components/data-table";
 import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import {
-  ProcessSelectionRow,
-  ProcessSelectionSurface,
-  SharedProcessActions,
-  useProcessSelection,
-} from "~/components/process-selection";
+  type ClientSort,
+  type GroupColumn,
+  type GroupRows,
+  ProcessGroupTable,
+} from "~/components/process-group-table";
 import { SearchField } from "~/components/search-field";
 import { SelectionChip } from "~/components/selection-chip";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableRow,
-} from "~/components/ui/table";
-import { useCanSignal } from "~/hooks/use-edition";
+import { TableCell } from "~/components/ui/table";
+import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
+import { useRunningApps } from "~/hooks/use-running-apps";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { cn } from "~/lib/utils";
-import { InitialChip } from "~/widgets/initial-chip";
 import type { Accent } from "~/widgets/lib/accent";
 
 /** Apps listed before "Show all": enough to find the culprit, short enough to scan. */
 const COLLAPSED_APPS = 10;
+
+/** A remainder row's cells, sized like the grouped table's rows above them. */
+const REST_CELL = "h-[29px] whitespace-nowrap px-3 py-0 font-normal text-small";
+
+/** Why an app or process row offers no Quit. */
+const NOT_RUNNING = "Not running";
+const EXITED = "exited";
 
 /** What a cell can read: any row's figures, and an app's average footprint. */
 export type UsageCells = UsageFigures & { mem_avg_bytes?: number };
@@ -87,7 +91,6 @@ export interface UsageTableConfig {
 interface UsageAppsCardProps {
   windowMs: number;
   config: UsageTableConfig;
-  viewControl?: ReactNode;
 }
 
 /**
@@ -95,9 +98,10 @@ interface UsageAppsCardProps {
  * per-app use over the chart window (D-091), or over the brushed range
  * when there is one (D-099): which apps used the resource, not what is busy
  * now (that is the Processes page). Rows are apps that sum their processes
- * and expand to list them; an app's actions target its main process, with
- * individual processes selectable too. After the apps come "Other apps" and
- * "System and other", so additive columns add up to the host's figure.
+ * and expand to list them; an app's actions target what Quit on that app
+ * acts on in the live process batch, with individual processes selectable
+ * too. After the apps come "Other apps" and "System and other", so additive
+ * columns add up to the host's figure.
  */
 export function UsageAppsCard(props: UsageAppsCardProps) {
   const historical = useUsageHistorical(props.windowMs);
@@ -129,18 +133,16 @@ function HistoricalUsageApps({ windowMs, config }: UsageAppsCardProps) {
 
 const MemoHistoricalUsageApps = memo(HistoricalUsageApps);
 
-function LiveUsageAppsCard({
-  windowMs,
-  config,
-  viewControl,
-}: UsageAppsCardProps) {
+function LiveUsageAppsCard({ windowMs, config }: UsageAppsCardProps) {
   const fixedEnd = useModuleEnd();
   const { selection, range, keepPrevious } = useRangeScope(windowMs);
   const q = useUsageByApp(range, config.by, { keepPrevious });
   const [query, setQuery] = useState("");
   // The App Store edition has no Quit or Force Quit (D-065), and a remote
-  // host's processes are never signalled from here (D-117).
-  const canSignal = useCanSignal();
+  // host's processes are never signalled from here (D-117). Both are asked
+  // for at mount; the table waits for the edition so its columns hold still.
+  const canSignal = useCanSignalSettled();
+  const running = useRunningApps();
   const data = heldFor(q, windowMs);
   const shown: TimeRange | null = data
     ? { fromMs: data.from_ms, toMs: data.to_ms }
@@ -162,6 +164,8 @@ function LiveUsageAppsCard({
         config={config}
         query={query}
         canSignal={canSignal}
+        running={running}
+        selection={selection}
         scopeKey={
           selection
             ? `${selection.fromMs}:${selection.toMs}`
@@ -178,7 +182,6 @@ function LiveUsageAppsCard({
         title={`${config.noun} by app, ${scopeWords(selection ? (shown ?? selection) : fixedEnd === null ? null : range, windowMs)}`}
         aside={
           <>
-            {viewControl}
             <SearchField
               value={query}
               onChange={setQuery}
@@ -195,62 +198,39 @@ function LiveUsageAppsCard({
   );
 }
 
-const MemoUsageBody = memo(UsageBody);
+interface UsageTableProps {
+  data: UsageByApp;
+  config: UsageTableConfig;
+  query: string;
+  /** Selection and Quit are offered here; null while the edition loads (the table waits). */
+  canSignal: boolean | null;
+  /** The live batch by app; null where Quit is not offered or before it arrives. */
+  running: RunningApps | null;
+  /** The brushed range the figures cover; null over the chart window. */
+  selection: TimeRange | null;
+  /** Selection resets when it changes (another brushed range). */
+  scopeKey: string;
+}
 
+/** The notes over the table, or what stands in for it when nothing was measured. */
 function UsageBody({
   data,
   config,
   query,
   canSignal,
+  running,
+  selection,
   scopeKey,
-}: {
-  data: UsageByApp;
-  config: UsageTableConfig;
-  query: string;
-  canSignal: boolean;
-  scopeKey: string;
-}) {
-  const { by } = config;
-  const ranked = useMemo(() => usageRows(data, by, query), [data, by, query]);
-  // The selection surface holds for a selection or a pending quit too.
-  const [held, setHeld] = useState(false);
-  const columns = useMemo(() => usageColumns(config.columns), [config.columns]);
-  const model = useDataTable({
-    data: ranked,
-    columns,
-    getRowId: usageRowId,
-    manualSorting: true,
-    hold: { when: held },
-  });
-  const rows = useMemo(
-    () => model.rows.map((row) => row.original),
-    [model.rows]
-  );
-  const rest = useMemo(() => remainderRows(data, by), [data, by]);
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [showAll, setShowAll] = useState(false);
-  const searching = query.trim() !== "";
-  const shown = showAll || searching ? rows : rows.slice(0, COLLAPSED_APPS);
+}: UsageTableProps) {
   const coverage = usageCoverage(data);
   const noun = useHostNoun();
-  const share = usageWhole(data, by) !== null;
-  const span =
-    2 + config.columns.length + (share ? 1 : 0) + (canSignal ? 1 : 0);
-  const toggle = (name: string) =>
-    setExpanded((s) => {
-      const next = new Set(s);
-      if (!next.delete(name)) next.add(name);
-      return next;
-    });
-
   if (coverage.kind === "waiting") {
     return <AppsNote>Waiting for the first process sample…</AppsNote>;
   }
   if (coverage.kind === "unrecorded") {
     return <Unrecorded sinceMs={coverage.sinceMs} />;
   }
-
-  const content = (
+  return (
     <>
       {coverage.kind === "partial" && (
         <AppsNote>
@@ -270,123 +250,295 @@ function UsageBody({
           {noun} slept or sampling paused). Averages are over the sampled time.
         </AppsNote>
       )}
-      {by === "gpu" && <GpuShortfallNote data={data} />}
-      {data.other.clamped.includes(by) && (
+      {config.by === "gpu" && <GpuShortfallNote data={data} />}
+      {data.other.clamped.includes(config.by) && (
         <AppsNote>
           Apps measured above the system total somewhere in this range (the two
           are sampled differently), so System and other reads low there.
         </AppsNote>
       )}
-      <div className="overflow-x-auto" {...model.holdProps}>
-        <Table aria-label={`${config.noun} by app`}>
-          <TableHeader>
-            <UsageHead table={model.table} share={share} />
-          </TableHeader>
-          <TableBody>
-            {shown.length === 0 && (
-              <FullWidthRow colSpan={span}>
-                {searching
-                  ? `No app or process matches “${query.trim()}”.`
-                  : "No app used a measurable amount in this range."}
-              </FullWidthRow>
-            )}
-            <UsageAppRows
-              rows={shown}
-              data={data}
-              config={config}
-              share={share}
-              expanded={expanded}
-              toggle={toggle}
-            />
-            {!searching && rows.length > COLLAPSED_APPS && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={span} className="px-3 py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowAll((v) => !v)}
-                    className="rounded-chip font-medium text-fg-subtle text-small outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {showAll
-                      ? `Show top ${COLLAPSED_APPS}`
-                      : `Show all ${rows.length} apps`}
-                  </button>
-                </TableCell>
-              </TableRow>
-            )}
-            <RestRows rows={rest} config={config} searching={searching} />
-            <FullWidthRow colSpan={span} tone="footnote">
-              {config.footnote}
-            </FullWidthRow>
-          </TableBody>
-        </Table>
-      </div>
+      <UsageTable
+        data={data}
+        config={config}
+        query={query}
+        canSignal={canSignal}
+        running={running}
+        selection={selection}
+        scopeKey={scopeKey}
+      />
     </>
   );
-  const descriptors = shown.flatMap((r) => [
-    {
-      key: `app:${r.app.name}`,
-      label: r.app.name,
-      targets: appTargets(r),
-    },
-    ...(r.matchedInside || expanded.has(r.app.name)
-      ? r.processes.map((p) => ({
-          key: targetKey(p),
-          parentKey: `app:${r.app.name}`,
-          label: `${p.name} (${p.pid})`,
-          targets: [p],
-        }))
-      : []),
-  ]);
-  return canSignal ? (
-    <ProcessSelectionSurface
-      rows={descriptors}
-      allTargets={rows.flatMap((r) => r.processes)}
-      scopeKey={scopeKey}
-      onHoldChange={setHeld}
-    >
-      {content}
-    </ProcessSelectionSurface>
-  ) : (
-    content
+}
+
+const MemoUsageBody = memo(UsageBody);
+
+/**
+ * The answer's rows and what each app's Quit acts on now. Only the listed
+ * apps' targets reach the table, so a process starting or exiting elsewhere
+ * on the Mac does not rebuild it.
+ */
+function UsageTable({
+  data,
+  config,
+  query,
+  running,
+  ...rest
+}: UsageTableProps) {
+  const { by } = config;
+  const ranked = useMemo(() => usageRows(data, by, query), [data, by, query]);
+  const appTargets = useListedAppTargets(ranked, running);
+  return (
+    <MemoUsageGroupTable
+      data={data}
+      config={config}
+      query={query}
+      ranked={ranked}
+      appTargets={appTargets}
+      {...rest}
+    />
+  );
+}
+
+/** Each listed app's quit targets by name; null before the first live batch. */
+type AppTargets = ReadonlyMap<string, readonly ProcessTarget[]>;
+
+/** What the targets depend on: each listed app's targets, by identity. */
+function appTargetsKey(targets: AppTargets): string {
+  return [...targets]
+    .map(([app, list]) => `${app}\u0000${list.map(targetKey).join(",")}`)
+    .join("\u0001");
+}
+
+/**
+ * The listed apps' quit targets, keeping one map while they hold: the
+ * running map changes whenever any process starts or exits, these only when
+ * a listed app's targets do.
+ */
+function useListedAppTargets(
+  ranked: readonly UsageRow[],
+  running: RunningApps | null
+): AppTargets | null {
+  const held = useRef<{ key: string; targets: AppTargets } | null>(null);
+  if (running === null) {
+    held.current = null;
+    return null;
+  }
+  const targets: AppTargets = new Map(
+    ranked.map((r) => [r.app.name, appQuitTargets(running, r.app.name)])
+  );
+  const key = appTargetsKey(targets);
+  // Written during render, like the table's held order: the same answer and
+  // targets give the same map on every frame.
+  if (held.current?.key !== key) held.current = { key, targets };
+  return held.current.targets;
+}
+
+/**
+ * The apps on the shared grouped table. Rust ranks them, so the order is
+ * the answer's and the ranked column's header only names it. An app row
+ * quits what Quit on that app acts on in the live batch, so every table
+ * quits an app the same way; an app with nothing running offers nothing.
+ */
+function UsageGroupTable({
+  data,
+  config,
+  query,
+  ranked,
+  appTargets,
+  canSignal,
+  selection,
+  scopeKey,
+}: Omit<UsageTableProps, "running"> & {
+  ranked: readonly UsageRow[];
+  appTargets: AppTargets | null;
+}) {
+  const location = useLocation();
+  const rows = useMemo(
+    () =>
+      usageGroupRows(ranked, appTargets, {
+        path: location.pathname,
+        search: location.search,
+        selection,
+      }),
+    [ranked, appTargets, location.pathname, location.search, selection]
+  );
+  const { by } = config;
+  const whole = usageWhole(data, by);
+  const columns = useMemo(
+    () => usageGroupColumns(config, whole),
+    [config, whole]
+  );
+  const sort = useMemo(() => rankedSort(config), [config]);
+  const rest = useMemo(() => remainderRows(data, by), [data, by]);
+  const searching = query.trim() !== "";
+  return (
+    // `relative` holds the header's absolutely placed sr-only labels inside
+    // this scroller, or they widen the page on a narrow window.
+    <div className="relative overflow-x-auto">
+      <ProcessGroupTable
+        rows={rows}
+        columns={columns}
+        nameHeader="App"
+        ariaLabel={`${config.noun} by app`}
+        {...(sort === undefined ? {} : { sort })}
+        selectable={canSignal}
+        scopeKey={scopeKey}
+        limit={COLLAPSED_APPS}
+        searching={searching}
+        empty={
+          searching
+            ? `No app or process matches “${query.trim()}”.`
+            : "No app used a measurable amount in this range."
+        }
+        after={(colSpan) => (
+          <>
+            {!searching && (
+              <RestRows
+                rows={rest}
+                config={config}
+                share={whole !== null}
+                actions={canSignal === true}
+              />
+            )}
+            <FullWidthRow colSpan={colSpan} tone="footnote">
+              {config.footnote}
+            </FullWidthRow>
+          </>
+        )}
+      />
+    </div>
+  );
+}
+
+const MemoUsageGroupTable = memo(UsageGroupTable);
+
+/** Where a member's detail link comes back to, and the range it shows. */
+interface DetailScope {
+  path: string;
+  search: string;
+  selection: TimeRange | null;
+}
+
+/**
+ * A process's detail page link. The brushed range rides along twice: the
+ * detail page shows the process over it, and its back link returns to it,
+ * even before this page's URL mirror has caught up with the brush.
+ */
+function detailHref(p: ProcessUsage, scope: DetailScope): string {
+  const backParams = new URLSearchParams(scope.search);
+  writeRange(backParams, scope.selection);
+  const backSearch = backParams.toString();
+  const params = new URLSearchParams({
+    back: `${scope.path}${backSearch ? `?${backSearch}` : ""}`,
+  });
+  writeRange(params, scope.selection);
+  return `/dashboard/processes/${p.pid}/${p.start_time_us}?${params}`;
+}
+
+/**
+ * How the usage answer reads as app groups. Members are the processes the
+ * answer lists (the search matches while searching); running ones act on
+ * themselves, exited ones offer nothing. Running members link to their
+ * detail page; exited ones too over a brushed range, which the page can
+ * show them over. Before the first live batch no row says why it offers
+ * nothing, since nothing is known yet.
+ */
+function usageGroupRows(
+  ranked: readonly UsageRow[],
+  appTargets: AppTargets | null,
+  scope: DetailScope
+): GroupRows<UsageRow, ProcessUsage> {
+  const targets = (r: UsageRow) => appTargets?.get(r.app.name) ?? [];
+  return {
+    groups: ranked,
+    key: (r) => `app:${r.app.name}`,
+    name: (r) => r.app.name,
+    count: (r) => r.app.processes.length,
+    members: (r) => r.processes,
+    forcedOpen: (r) => r.matchedInside,
+    targets,
+    unavailable: (r) =>
+      appTargets !== null && targets(r).length === 0 ? NOT_RUNNING : undefined,
+    memberKey: targetKey,
+    memberName: (p) => p.name,
+    memberPid: (p) => p.pid,
+    memberHref: (p) =>
+      p.running || scope.selection !== null ? detailHref(p, scope) : undefined,
+    memberTargets: (p) => (p.running ? [p] : []),
+    memberUnavailable: (p) => (p.running ? undefined : EXITED),
+    memberMuted: (p) => !p.running,
+  };
+}
+
+/** Right-aligned figure in a usage cell; the ranked one is brighter on app rows. */
+function Figure({ strong, children }: { strong: boolean; children: string }) {
+  return (
+    <span className={cn("figures", strong && "text-foreground")}>
+      {children}
+    </span>
   );
 }
 
 /**
- * An app row acts on the processes Rust picked to quit the app (`quit_pids`):
- * its main process alone when it has one, since its helpers exit with it and
- * signalling them first would cut a graceful quit short; otherwise every
- * running member, so a group like `node` is selected and quit as a whole.
+ * The ranked column, high to low, as the table's order: its header shows
+ * the direction. No header sorts, since Rust ranks the rows by the page's
+ * key; undefined when no column is ranked.
  */
-function appTargets(row: UsageRow): readonly ProcessUsage[] {
-  return row.quit;
+function rankedSort(config: UsageTableConfig): ClientSort | undefined {
+  const ranked = config.columns.find((c) => c.ranked);
+  if (ranked === undefined) return undefined;
+  return {
+    value: { by: ranked.label, dir: "desc" },
+    onChange: unsortable,
+    client: false,
+    nameSortable: false,
+  };
 }
 
-function UsageAppRows({
-  rows,
-  data,
-  config,
-  share,
-  expanded,
-  toggle,
-}: {
-  rows: readonly UsageRow[];
-  data: UsageByApp;
-  config: UsageTableConfig;
-  share: boolean;
-  expanded: ReadonlySet<string>;
-  toggle: (name: string) => void;
-}) {
-  return rows.map((r) => (
-    <AppRows
-      key={r.app.name}
-      row={r}
-      data={data}
-      config={config}
-      share={share}
-      open={r.matchedInside || expanded.has(r.app.name)}
-      onToggle={() => toggle(r.app.name)}
-    />
-  ));
+/** `ClientSort.onChange` for a table with no sortable header: never called. */
+function unsortable(): void {
+  return;
+}
+
+/**
+ * The page's figure columns, then Share when the key adds up (`whole` is
+ * what shares are of; null leaves Share out). None sorts.
+ */
+function usageGroupColumns(
+  config: UsageTableConfig,
+  whole: number | null
+): GroupColumn<UsageRow, ProcessUsage>[] {
+  const figures = config.columns.map(
+    (c): GroupColumn<UsageRow, ProcessUsage> => ({
+      id: c.label,
+      header: c.label,
+      align: "right",
+      sortable: false,
+      group: (r) => (
+        <Figure strong={c.ranked === true}>{c.format(r.app)}</Figure>
+      ),
+      member: (p) => <Figure strong={false}>{c.format(p)}</Figure>,
+    })
+  );
+  if (whole === null) return figures;
+  const meter = (share: number | null, muted: boolean) => (
+    <MeterCell
+      fraction={share === null ? null : share / 100}
+      fill={muted ? "var(--color-fg-faint)" : "var(--a)"}
+    >
+      {formatPercent(share, { decimals: 1 })}
+    </MeterCell>
+  );
+  return [
+    ...figures,
+    {
+      id: "share",
+      header: "Share",
+      align: "right",
+      group: (r) => meter(r.share, false),
+      member: (p) => meter(percentOf(usageValue(config.by, p), whole), true),
+    },
+  ];
 }
 
 function GpuShortfallNote({ data }: { data: UsageByApp }) {
@@ -418,215 +570,40 @@ function Unrecorded({ sinceMs }: { sinceMs: number | null }) {
   );
 }
 
-function FigureCells({
-  u,
-  config,
-  strong,
-}: {
-  u: UsageCells;
-  config: UsageTableConfig;
-  strong: boolean;
-}) {
-  return config.columns.map((c) => (
-    <TableCell
-      key={c.label}
-      className={cn(
-        APP_CELL,
-        "figures text-right",
-        strong && c.ranked && "text-foreground"
-      )}
-    >
-      {c.format(u)}
-    </TableCell>
-  ));
-}
-
-function AppRows({
-  row,
-  data,
-  config,
-  share,
-  open,
-  onToggle,
-}: {
-  row: UsageRow;
-  data: UsageByApp;
-  config: UsageTableConfig;
-  share: boolean;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const { app } = row;
-  const many = app.processes.length > 1;
-  const selection = useProcessSelection();
-  const order = new Map(selection?.rows.map((r, i) => [r.key, i]));
-  const processes = selection
-    ? [...row.processes].sort(
-        (a, b) =>
-          (order.get(targetKey(a)) ?? 0) - (order.get(targetKey(b)) ?? 0)
-      )
-    : row.processes;
-  return (
-    <>
-      <ProcessSelectionRow
-        rowKey={`app:${app.name}`}
-        label={app.name}
-        targets={appTargets(row)}
-        className="group text-fg-subtle"
-        onKeyDown={(e) => {
-          if (many && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-            e.preventDefault();
-            if ((e.key === "ArrowRight") !== open) onToggle();
-          }
-        }}
-      >
-        <TableCell className={APP_CELL}>
-          <span className="inline-flex min-w-0 items-center gap-2 text-foreground">
-            {many ? (
-              <button
-                type="button"
-                onClick={onToggle}
-                aria-expanded={open}
-                aria-label={`${open ? "Hide" : "Show"} ${app.name} processes`}
-                className="-ml-1 grid size-4 place-items-center rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <ChevronRight
-                  aria-hidden
-                  className={cn(
-                    "size-3.5 transition-transform duration-(--motion-fast)",
-                    open && "rotate-90"
-                  )}
-                />
-              </button>
-            ) : (
-              <span aria-hidden className="-ml-1 inline-block size-4" />
-            )}
-            <InitialChip text={app.name} />
-            <span className="truncate">{app.name}</span>
-            {many && (
-              <span className="font-normal text-label text-muted-foreground">
-                {processCount(app.processes.length)}
-              </span>
-            )}
-          </span>
-        </TableCell>
-        <FigureCells u={app} config={config} strong />
-        {share && <ShareCell share={row.share} muted={false} />}
-        <ActionsCell processes={appTargets(row)} />
-      </ProcessSelectionRow>
-      {open &&
-        processes.map((p) => (
-          <ProcessRow
-            key={`${p.pid}:${p.start_time_us}`}
-            p={p}
-            config={config}
-            share={
-              share
-                ? percentOf(
-                    usageValue(config.by, p),
-                    usageWhole(data, config.by)
-                  )
-                : undefined
-            }
-          />
-        ))}
-    </>
-  );
-}
-
-function ProcessRow({
-  p,
-  config,
-  share,
-}: {
-  p: ProcessUsage;
-  config: UsageTableConfig;
-  /** Undefined when the table has no share column. */
-  share: number | null | undefined;
-}) {
-  return (
-    <ProcessSelectionRow
-      rowKey={targetKey(p)}
-      label={`${p.name} (${p.pid})`}
-      targets={[p]}
-      className={cn(
-        "group",
-        p.running ? "text-fg-subtle" : "text-muted-foreground"
-      )}
-    >
-      <TableCell className={cn(APP_CELL, "pl-[52px]")}>
-        <span className="inline-flex min-w-0 items-baseline gap-2">
-          <span className="truncate">{p.name}</span>
-          <span className="figures text-label text-muted-foreground">
-            {p.pid}
-          </span>
-        </span>
-      </TableCell>
-      <FigureCells u={p} config={config} strong={false} />
-      {share !== undefined && <ShareCell share={share} muted />}
-      {p.running ? (
-        <ActionsCell processes={[p]} />
-      ) : (
-        <TableCell
-          className={cn(APP_CELL, "text-right text-fg-faint text-label")}
-        >
-          exited
-        </TableCell>
-      )}
-    </ProcessSelectionRow>
-  );
-}
-
-function RestRow({
-  row,
-  config,
-  first,
-}: {
-  row: RemainderRow;
-  config: UsageTableConfig;
-  first: boolean;
-}) {
-  return (
-    <OtherAppsRow
-      name={row.name}
-      system={row.kind === "system"}
-      first={first}
-      indent
-      selectionCell={<SelectionSpacer />}
-    >
-      <FigureCells u={row.figures} config={config} strong={false} />
-      <ShareCell share={row.share} muted />
-      <TableCell className={APP_CELL} />
-    </OtherAppsRow>
-  );
-}
-
-/** Shared actions use the same targets as the row's selection. */
-function ActionsCell({ processes }: { processes: readonly ProcessUsage[] }) {
-  return (
-    <TableCell className={cn(APP_CELL, "py-0 text-right")}>
-      <span className="inline-flex h-6 items-center align-middle opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
-        <SharedProcessActions targets={processes} />
-      </span>
-    </TableCell>
-  );
-}
-
-function SelectionSpacer() {
-  return useProcessSelection() ? <TableCell aria-label="Selection" /> : null;
-}
-
+/**
+ * "Other apps" and "System and other" after the apps: their figures and
+ * share, an empty selection gutter and actions cell, since there is nothing
+ * to select or quit.
+ */
 function RestRows({
   rows,
   config,
-  searching,
+  share,
+  actions,
 }: {
   rows: readonly RemainderRow[];
   config: UsageTableConfig;
-  searching: boolean;
+  share: boolean;
+  /** The table has the selection gutter and the actions column. */
+  actions: boolean;
 }) {
-  if (searching) return null;
   return rows.map((row, i) => (
-    <RestRow key={row.kind} row={row} config={config} first={i === 0} />
+    <OtherAppsRow
+      key={row.kind}
+      name={row.name}
+      system={row.kind === "system"}
+      first={i === 0}
+      indent
+      selectionCell={actions ? <TableCell aria-label="Selection" /> : undefined}
+      cellClassName={REST_CELL}
+    >
+      {config.columns.map((c) => (
+        <TableCell key={c.label} className={cn(REST_CELL, "text-right")}>
+          <Figure strong={false}>{c.format(row.figures)}</Figure>
+        </TableCell>
+      ))}
+      {share && <ShareCell share={row.share} muted cellClassName={REST_CELL} />}
+      {actions && <TableCell />}
+    </OtherAppsRow>
   ));
 }

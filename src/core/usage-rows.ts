@@ -1,7 +1,8 @@
 /**
  * View shaping for the per-app usage tables (D-099). Rust decides the
- * averages, peaks, grouping, the remainder and which process an app's Quit
- * acts on; this module filters, ranks for display and words shares.
+ * averages, peaks, grouping and the remainder; this module filters, ranks
+ * for display and words shares. Which process an app's Quit acts on comes
+ * from the live batch (`appQuitTargets` in `process-groups`).
  */
 import { matchProcessQuery } from "@core/app-search";
 import { percentOf } from "@core/chart-math";
@@ -43,6 +44,15 @@ export function usageValue(by: UsageKey, u: UsageFigures): number | null {
   }
 }
 
+/** Bytes read plus written; null when either was not measured. */
+export function requestedBytes(
+  u: Pick<UsageFigures, "read_bytes" | "write_bytes">
+): number | null {
+  return u.read_bytes === null || u.write_bytes === null
+    ? null
+    : u.read_bytes + u.write_bytes;
+}
+
 /** Keys whose rows add up, so shares and an "Other apps" row mean something. */
 export const additive = (by: UsageKey) => by !== "memory";
 
@@ -54,8 +64,6 @@ export interface UsageRow {
   processes: readonly ProcessUsage[];
   /** The search matched a process, not the app's name: show it expanded. */
   matchedInside: boolean;
-  /** The processes the app row selects and quits (Rust's `quit_pids`). */
-  quit: readonly ProcessUsage[];
 }
 
 export interface RemainderRow {
@@ -103,11 +111,7 @@ export function usageRows(
   const matches = matchProcessQuery(query);
   const out: UsageRow[] = [];
   for (const app of data.apps) {
-    // A reused pid can list an exited process too; Rust picks running ones.
-    const quit = app.processes.filter(
-      (p) => p.running && app.quit_pids.includes(p.pid)
-    );
-    const row = { app, share: percentOf(usageValue(by, app), whole), quit };
+    const row = { app, share: percentOf(usageValue(by, app), whole) };
     if (!matches || matches({ name: app.name })) {
       out.push({ ...row, processes: app.processes, matchedInside: false });
       continue;

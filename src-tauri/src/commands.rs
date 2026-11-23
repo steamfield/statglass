@@ -314,14 +314,12 @@ pub async fn query_usage_by_app(
         });
         let cores = record.info.cpu_topology.iter().map(|c| c.cores.len()).sum();
         let refusals = local.then(crate::process_signal::refusals);
-        let mut answer =
-            crate::usage::usage_by_app(usage, stats.as_ref(), cores, |pid, start, name| {
-                refusals.as_ref().and_then(|r| r(pid, start, name))
-            });
-        if !local {
-            answer.apps.iter_mut().for_each(|a| a.quit_pids.clear());
-        }
-        Ok(answer)
+        Ok(crate::usage::usage_by_app(
+            usage,
+            stats.as_ref(),
+            cores,
+            |pid, start, name| refusals.as_ref().and_then(|r| r(pid, start, name)),
+        ))
     })
     .await
 }
