@@ -1,7 +1,14 @@
-import type {
-  Settings,
-  SettingsPatch,
-  SettingsSnapshot,
+/**
+ * `get_settings` and `update_settings` for the mock transport: applies a
+ * patch, rejects what Rust's settings validation rejects (including custom
+ * alert rules) with `invalid_settings`, and emits each saved change.
+ */
+import {
+  ALERT_METRICS,
+  type AlertRule,
+  type Settings,
+  type SettingsPatch,
+  type SettingsSnapshot,
 } from "@core/generated/bindings";
 import { validChartRange } from "../chart-range";
 import { INTERVALS_MS, menuBarOf, SIZE_LIMITS_MB } from "../settings-patch";
@@ -77,6 +84,10 @@ export class MockSettings {
         kind: "invalid_settings",
         message: `size limit ${next.history.size_limit_mb} MB`,
       });
+    }
+    const rulesProblem = alertRulesProblem(next.alerts?.rules ?? []);
+    if (rulesProblem !== null) {
+      return fail({ kind: "invalid_settings", message: rulesProblem });
     }
     if (JSON.stringify(next) === JSON.stringify(this.snapshot.settings)) {
       return ok(this.snapshot);
@@ -157,7 +168,68 @@ const ALL_OVERVIEW_CARDS = {
   containers: true,
   hosts: true,
 };
-const NO_ALERTS = { hot_process: false, thermal_serious: false };
+const NO_ALERTS = {
+  hot_process: false,
+  thermal_serious: false,
+  host_offline: false,
+  rules: [],
+};
+
+/** The custom rule limits of Rust's `AlertRule`. */
+const MAX_CUSTOM_RULES = 32;
+const MAX_NAME_CHARS = 60;
+const MAX_FOR_SECS = 3600;
+const MIN_COOLDOWN_SECS = 60;
+const MAX_COOLDOWN_SECS = 86_400;
+
+/**
+ * Why Rust's `AlertSettings::validate` would reject `rules`, in the words
+ * of its `AlertRuleError`, or null when it accepts them.
+ */
+function alertRulesProblem(rules: readonly AlertRule[]): string | null {
+  if (rules.length > MAX_CUSTOM_RULES) {
+    return `at most ${MAX_CUSTOM_RULES} custom rules`;
+  }
+  const ids = new Set<string>();
+  for (const rule of rules) {
+    if (ids.has(rule.id)) return `two rules share the id ${rule.id}`;
+    ids.add(rule.id);
+    const problem = alertRuleProblem(rule);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
+/** Why Rust's `AlertRule::validate_custom` would reject `rule`, or null. */
+function alertRuleProblem(rule: AlertRule): string | null {
+  const nameChars = [...rule.name.trim()].length;
+  if (nameChars === 0 || nameChars > MAX_NAME_CHARS) {
+    return `a rule name must be 1 to ${MAX_NAME_CHARS} characters`;
+  }
+  if (!("threshold" in rule.when) || rule.when.threshold === undefined) {
+    return "a custom rule must be a threshold rule";
+  }
+  const { series, value } = rule.when.threshold;
+  const metric = ALERT_METRICS.find((m) => m.metric === series.metric);
+  if (metric === undefined) return `${series.metric} cannot be alerted on`;
+  // Rust compares in f32, and the limits arrive already rounded to f32.
+  const asF32 = value === null ? Number.NaN : Math.fround(value);
+  const min = metric.min ?? Number.NaN;
+  const max = metric.max ?? Number.NaN;
+  if (!(asF32 >= min && asF32 <= max)) {
+    return `the threshold must be between ${metric.min} and ${metric.max}`;
+  }
+  if (rule.for_secs > MAX_FOR_SECS) {
+    return "the duration must be at most 1 hour";
+  }
+  if (
+    rule.cooldown_secs < MIN_COOLDOWN_SECS ||
+    rule.cooldown_secs > MAX_COOLDOWN_SECS
+  ) {
+    return "cooldown must be between 1 minute and 24 hours";
+  }
+  return null;
+}
 
 const NO_POPOVER = {
   cpu: "expanded",

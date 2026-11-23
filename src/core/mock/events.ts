@@ -11,11 +11,40 @@ const MIN = 60 * SEC;
 const HOUR = 60 * MIN;
 
 /**
- * The fixed day of events ending at `nowMs`. With `alertsScenario`, it also
- * holds the `alerts` scenario's custom threshold alert and process alert.
+ * The `alerts` scenario's custom threshold alert, 72 minutes before `nowMs`:
+ * memory pressure held above 80% for two minutes.
  */
-export function mockEvents(nowMs: number, _alertsScenario = false): Event[] {
+function memoryPressureAlert(nowMs: number): Event {
+  const firedMs = nowMs - (HOUR + 12 * MIN);
+  return {
+    ts_ms: firedMs,
+    start_ms: firedMs - 2 * MIN,
+    processes: [],
+    detail: {
+      kind: "alert",
+      rule_id: "c0ffee00-0000-4000-8000-0000000000a1",
+      rule_name: "Memory pressure above 80% for 2 min",
+      cause: {
+        type: "threshold",
+        metric: "mem.pressure",
+        labels: [],
+        value: 86.4,
+        op: "gt",
+        threshold: 80,
+        for_secs: 120,
+      },
+    },
+  };
+}
+
+/**
+ * The fixed day of events ending at `nowMs`, oldest first. It always holds
+ * a process alert; with `alertsScenario` it also holds the `alerts`
+ * scenario's custom threshold alert.
+ */
+export function mockEvents(nowMs: number, alertsScenario = false): Event[] {
   const at = (agoMs: number) => nowMs - agoMs;
+  const scenarioAlerts = alertsScenario ? [memoryPressureAlert(nowMs)] : [];
   return [
     {
       ts_ms: at(12 * HOUR + 28 * MIN),
@@ -45,6 +74,7 @@ export function mockEvents(nowMs: number, _alertsScenario = false): Event[] {
         cause: { type: "process_cpu", process: "ffmpeg", cpu_pct: 251 },
       },
     },
+    ...scenarioAlerts,
     {
       ts_ms: at(6 * MIN + 36 * SEC),
       start_ms: at(6 * MIN + 50 * SEC),
