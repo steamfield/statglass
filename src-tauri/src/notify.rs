@@ -48,6 +48,7 @@ pub fn alert(app: &AppHandle, event: &Event, units: &UnitSettings) {
 }
 
 fn post(app: &AppHandle, text: AlertText, what: &str) {
+    let title = text.title.clone();
     let shown = app
         .notification()
         .builder()
@@ -55,6 +56,6 @@ fn post(app: &AppHandle, text: AlertText, what: &str) {
         .body(text.body)
         .show();
     if let Err(e) = shown {
-        tracing::warn!("{what}: {e}");
+        tracing::warn!(title = %title, error = ?e, "{what}");
     }
 }

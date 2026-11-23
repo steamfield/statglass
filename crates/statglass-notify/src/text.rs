@@ -56,36 +56,50 @@ pub fn alert_text(event: &Event, units: &UnitSettings) -> Option<AlertText> {
             title: format!("Thermal state: {}", thermal_label(*state)),
             body: "macOS is reducing performance to cool the Mac down.".to_owned(),
         },
-        AlertCause::Threshold { .. } => AlertText {
-            title: rule_name.clone(),
-            body: threshold_body(cause, units)?,
-        },
+        AlertCause::Threshold {
+            metric,
+            labels,
+            value,
+            op,
+            threshold,
+            for_secs,
+        } => {
+            let held = ThresholdHeld {
+                metric: metric.as_str(),
+                labels,
+                value: *value,
+                op: *op,
+                threshold: *threshold,
+                for_secs: *for_secs,
+            };
+            AlertText {
+                title: rule_name.clone(),
+                body: threshold_body(&held, units),
+            }
+        }
     })
 }
 
-/// "<label> <value> · <comparison> <threshold>[ for <duration>]" for a threshold cause,
-/// `None` for any other cause.
-fn threshold_body(cause: &AlertCause, units: &UnitSettings) -> Option<String> {
-    let AlertCause::Threshold {
-        metric,
-        labels,
-        value,
-        op,
-        threshold,
-        for_secs,
-    } = cause
-    else {
-        return None;
-    };
-    let metric = metric.as_str();
-    Some(format!(
+/// What a threshold alert reports: the series, its value, and the rule it broke.
+struct ThresholdHeld<'a> {
+    metric: &'a str,
+    labels: &'a Labels,
+    value: f32,
+    op: Cmp,
+    threshold: f32,
+    for_secs: u32,
+}
+
+/// "<label> <value> · <comparison> <threshold>[ for <duration>]".
+fn threshold_body(held: &ThresholdHeld<'_>, units: &UnitSettings) -> String {
+    format!(
         "{} {} · {} {}{}",
-        series_label(metric, labels),
-        format_value(metric, *value, units),
-        comparison(*op),
-        format_value(metric, *threshold, units),
-        held_for(*for_secs),
-    ))
+        series_label(held.metric, held.labels),
+        format_value(held.metric, held.value, units),
+        comparison(held.op),
+        format_value(held.metric, held.threshold, units),
+        held_for(held.for_secs),
+    )
 }
 
 /// The one-off confirmation for rules just switched on, `None` for none. Built-in rules
@@ -227,5 +241,18 @@ fn thermal_label(state: ThermalState) -> &'static str {
         ThermalState::Fair => "Fair",
         ThermalState::Serious => "Serious",
         ThermalState::Critical => "Critical",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// From two minutes on, a duration reads in whole minutes rounded down.
+    #[test]
+    fn durations_from_two_minutes_read_in_whole_minutes_rounded_down() {
+        assert_eq!(held_for(150), " for 2 min");
+        assert_eq!(held_for(119), " for 119 s");
+        assert_eq!(held_for(0), "");
     }
 }
