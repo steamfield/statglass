@@ -404,6 +404,8 @@ export const events = {
 };
 
 /* Constants */
+export const ALERT_LIMITS = {"builtin_ids":["6b656c76-6f00-0000-0000-000000000001","6b656c76-6f00-0000-0000-000000000002"],"label_keys":{"disk.free":["vol"],"fan.rpm":["fan"]},"max_cooldown_secs":86400,"max_custom":32,"max_for_secs":3600,"max_name_chars":60,"min_cooldown_secs":60} as const;
+
 export const ALERT_METRICS = [{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"CPU usage","max":100.0,"metric":"cpu.total","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"GPU usage","max":100.0,"metric":"gpu.util","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":80.0,"label":"Memory pressure","max":100.0,"metric":"mem.pressure","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":4000000000.0,"label":"Swap used","max":999999995904.0,"metric":"mem.swap_used","min":100000000.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":1000.0,"label":"Swapping out","max":1000000.0,"metric":"mem.swap_out","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":95.0,"label":"Hottest sensor","max":130.0,"metric":"thermal.hottest","min":30.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":4000.0,"label":"Fan speed","max":20000.0,"metric":"fan.rpm","min":500.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":60.0,"label":"System power","max":1000.0,"metric":"power.system","min":1.0},{"default_for_secs":0,"default_label":null,"default_op":"lt","default_value":20.0,"label":"Battery charge","max":100.0,"metric":"battery.charge","min":1.0},{"default_for_secs":0,"default_label":["vol","/"],"default_op":"lt","default_value":20000000000.0,"label":"Free disk space","max":100000000376832.0,"metric":"disk.free","min":100000000.0}] as const;
 
 export const CHART_WINDOWS = ["5m","15m","30m","1h"] as const;
@@ -522,6 +524,25 @@ threshold: number | null;
  *  than one measured from reading spacing.
  */
 for_secs: number };
+
+/**
+ *  The limits `AlertRule::validate_custom` enforces on a custom rule, for the mock
+ *  transport to reject what Rust rejects and the rule editor to state them.
+ */
+export type AlertLimits = {
+	max_custom: number,
+	max_name_chars: number,
+	max_for_secs: number,
+	min_cooldown_secs: number,
+	max_cooldown_secs: number,
+	/**  Ids a custom rule may not use. */
+	builtin_ids: string[],
+	/**
+	 *  The label key a rule on each alertable metric may select by; metrics with one
+	 *  unlabelled series are absent.
+	 */
+	label_keys: { [key in string]: string[] },
+};
 
 /**  One alertable metric. */
 export type AlertMetric = {
