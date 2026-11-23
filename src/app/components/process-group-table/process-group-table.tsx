@@ -47,6 +47,12 @@ function useExpansion(expansion: Props<unknown, unknown>["expansion"]) {
 
 /** Renders `rows` as app groups and member processes; see `ProcessGroupTableProps`. */
 export function ProcessGroupTable<G, M>(props: Props<G, M>): ReactNode {
+  if (props.selectable === null) return null;
+  return <GroupTable {...props} selectable={props.selectable} />;
+}
+
+/** The table once it is known whether it offers selection. */
+function GroupTable<G, M>(props: Props<G, M> & { selectable: boolean }) {
   const { open, toggle } = useExpansion(props.expansion);
   const [showAll, setShowAll] = useState(false);
   // The selection surface holds for a selection, a pending quit or hover.
@@ -157,7 +163,7 @@ function BodyRow<G, M>({
         member={row.member}
         rows={rows}
         columns={columns}
-        actions={selectable}
+        actions={selectable === true}
       />
     );
   }
@@ -166,7 +172,7 @@ function BodyRow<G, M>({
       group={row.group}
       rows={rows}
       columns={columns}
-      actions={selectable}
+      actions={selectable === true}
       expandable={row.expandable}
       open={row.open}
       onToggle={() => onToggle(row.key)}
