@@ -8,6 +8,7 @@
  * Every limit and rejection text comes from `ALERT_DESTINATION_LIMITS`, which
  * Rust publishes from the constants `Destination::validate` reads.
  */
+import { sameAddress } from "@core/alert-destinations";
 import {
   ALERT_DESTINATION_LIMITS,
   type AlertDestinationsView,
@@ -173,21 +174,6 @@ function kindProblem(kind: DestinationKind): string | null {
   if (!validNtfyServer(kind.server)) return MESSAGES.url;
   if (!validTopic(kind.topic)) return MESSAGES.topic;
   return validToken(kind.token) ? null : MESSAGES.token;
-}
-
-/**
- * Whether two kinds send to the same place: the same kind with the same
- * server, topic and token, or the same URL. A rename or an enabled toggle
- * leaves the kind alone, so it keeps the last delivery.
- */
-function sameAddress(a: DestinationKind, b: DestinationKind): boolean {
-  if (a.type === "webhook") return b.type === "webhook" && a.url === b.url;
-  return (
-    b.type === "ntfy" &&
-    a.server === b.server &&
-    a.topic === b.topic &&
-    a.token === b.token
-  );
 }
 
 /** 1 to `max_name_chars` characters once Rust's `str::trim` has run. */

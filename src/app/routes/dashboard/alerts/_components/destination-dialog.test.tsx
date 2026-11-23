@@ -192,6 +192,10 @@ describe("Destination dialog", () => {
     );
     await user.click(dialog.getByRole("button", { name: "Send test" }));
     expect(await dialog.findByText(/Sending…/)).toBeVisible();
+    act(() => {
+      for (const run of held.splice(0)) run();
+    });
+    expect(await dialog.findByText(/Delivered \d\d:\d\d/)).toBeVisible();
     expect(calls(transport, "alert_destination_test")).toEqual([
       {
         id: NEW_ID,
@@ -205,10 +209,6 @@ describe("Destination dialog", () => {
         },
       },
     ]);
-    act(() => {
-      for (const run of held.splice(0)) run();
-    });
-    expect(await dialog.findByText(/Delivered \d\d:\d\d/)).toBeVisible();
     // A test saves nothing.
     expect(calls(transport, "alert_destination_save")).toEqual([]);
   });

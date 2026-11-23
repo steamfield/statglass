@@ -6,6 +6,7 @@
 import { generateTopic, newDestination } from "@core/alert-destinations";
 import type { Destination } from "@core/generated/bindings";
 import { type ReactNode, useId } from "react";
+import { InlineMessage } from "~/components/inline-message";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
@@ -69,6 +70,8 @@ export function destinationFromForm(form: DestinationForm): Destination {
 /** Props of `DestinationFields`. */
 export interface DestinationFieldsProps {
   form: DestinationForm;
+  /** The topic an existing ntfy destination is saved with; null when new. */
+  savedTopic: string | null;
   /** The form after one edit. */
   onChange: (form: DestinationForm) => void;
 }
@@ -91,17 +94,21 @@ const PHONE_STEPS = [
 /**
  * A "Delivery" panel: "Kind" (ntfy, Webhook) and "Name", then the kind's
  * fields. ntfy adds "Server", "Topic" with "Generate" and "Access token" (a
- * password input), with the phone steps under the panel; a webhook adds
- * "URL".
+ * password input), with the phone steps under the panel and, once the
+ * topic differs from `savedTopic`, a note that the phone must subscribe
+ * again; a webhook adds "URL".
  */
 export function DestinationFields({
   form,
+  savedTopic,
   onChange,
 }: DestinationFieldsProps): ReactNode {
   const id = useId();
   const isNtfy = form.kind === "ntfy";
+  const moved = savedTopic !== null && form.topic !== savedTopic;
+  const after = isNtfy && <PhoneSteps topicMoved={moved} />;
   return (
-    <SettingsPanel title="Delivery" after={isNtfy && <PhoneSteps />}>
+    <SettingsPanel title="Delivery" after={after}>
       <SettingsRow label="Kind">
         <SegmentedControl
           ariaLabel="Kind"
@@ -136,7 +143,10 @@ export function DestinationFields({
 }
 
 /** Server, topic with "Generate", and the optional access token. */
-function NtfyRows({ form, onChange }: DestinationFieldsProps) {
+function NtfyRows({
+  form,
+  onChange,
+}: Pick<DestinationFieldsProps, "form" | "onChange">) {
   const id = useId();
   const generate = () =>
     onChange({
@@ -184,13 +194,24 @@ function NtfyRows({ form, onChange }: DestinationFieldsProps) {
   );
 }
 
-/** The three steps to receive alerts on a phone, as plain numbered lines. */
-function PhoneSteps() {
+/**
+ * The three steps to receive alerts on a phone, as plain numbered lines,
+ * after a note when the topic has moved: a phone still on the old topic
+ * gets nothing once this is saved.
+ */
+function PhoneSteps({ topicMoved }: { topicMoved: boolean }) {
   return (
-    <ol className="m-0 list-decimal pl-5 text-muted-foreground text-small">
-      {PHONE_STEPS.map((step) => (
-        <li key={step}>{step}</li>
-      ))}
-    </ol>
+    <>
+      {topicMoved && (
+        <InlineMessage tone="note">
+          Your phone needs to subscribe to the new topic.
+        </InlineMessage>
+      )}
+      <ol className="m-0 list-decimal pl-5 text-muted-foreground text-small">
+        {PHONE_STEPS.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+    </>
   );
 }

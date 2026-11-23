@@ -19,12 +19,15 @@ import {
   useAlertDestinations,
 } from "../_hooks/use-alert-destinations";
 import {
+  type TestDelivery,
+  useTestDelivery,
+} from "../_hooks/use-test-delivery";
+import {
   DestinationFields,
   type DestinationForm,
   destinationFromForm,
   formFromDestination,
 } from "./destination-fields";
-import { type TestDelivery, useTestDelivery } from "./destination-row";
 
 /** The destination the dialog edits, and whether it is new. */
 export interface DestinationDraft {
@@ -39,6 +42,11 @@ export interface DestinationDialogProps {
   draft: DestinationDraft | null;
   /** Close without anything further: after Save, Delete, Cancel or Escape. */
   onClose: () => void;
+  /**
+   * Where focus goes once the dialog has closed, as Radix's
+   * `onCloseAutoFocus`: prevent the default to move it elsewhere.
+   */
+  onCloseAutoFocus?: ((event: Event) => void) | undefined;
 }
 
 /**
@@ -46,9 +54,11 @@ export interface DestinationDialogProps {
  * dialog's patterns. A kind control ("ntfy", "Webhook") switches the fields
  * and keeps the name. ntfy: "Name", "Server" (default https://ntfy.sh),
  * "Topic" with "Generate" (`generateTopic`), "Access token" (a password
- * input, optional) and three plain lines on subscribing from the phone.
+ * input, optional) and three plain lines on subscribing from the phone,
+ * with a note when an existing destination's topic has changed.
  * Webhook: "Name" and "URL". "Send test" sends the unsaved form and shows
- * "Sending…", then the outcome's `deliveryLabel`. "Save" validates through
+ * "Sending…", then the outcome's `deliveryLabel`; any edit clears that
+ * line and drops the answer of a test still out. "Save" validates through
  * the command, closes on success and shows a rejection's message inline,
  * keeping the form; a pending save disables Save only. "Delete" (existing
  * destinations only) removes it and closes. "Cancel" and Escape always
@@ -57,6 +67,7 @@ export interface DestinationDialogProps {
 export function DestinationDialog({
   draft,
   onClose,
+  onCloseAutoFocus,
 }: DestinationDialogProps): ReactNode {
   if (draft === null) return null;
   return (
@@ -64,6 +75,7 @@ export function DestinationDialog({
       key={draft.destination.id}
       draft={draft}
       onClose={onClose}
+      onCloseAutoFocus={onCloseAutoFocus}
     />
   );
 }
@@ -130,14 +142,18 @@ function toSave(
   return destinationFromForm({ ...form, enabled });
 }
 
+/** The topic an existing ntfy destination is saved with; null otherwise. */
+function savedTopic(draft: DestinationDraft): string | null {
+  const { kind } = draft.destination;
+  return draft.isNew || kind.type !== "ntfy" ? null : kind.topic;
+}
+
 /** The open dialog for one draft, holding its form until it closes. */
 function DestinationEditor({
   draft,
   onClose,
-}: {
-  draft: DestinationDraft;
-  onClose: () => void;
-}) {
+  onCloseAutoFocus,
+}: Required<DestinationDialogProps> & { draft: DestinationDraft }) {
   const { view } = useAlertDestinations();
   const { save, remove } = useAlertDestinationCommands();
   const [form, setForm] = useState(() =>
@@ -148,7 +164,7 @@ function DestinationEditor({
   const edit = (next: DestinationForm) => {
     setForm(next);
     clearError();
-    if (!test.sending) test.clear();
+    test.clear();
   };
   const onSave = () =>
     void write("alert_destination_save", () => save(toSave(form, view)));
@@ -158,6 +174,7 @@ function DestinationEditor({
     <Dialog open onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent
         aria-describedby={undefined}
+        onCloseAutoFocus={onCloseAutoFocus}
         className="flex max-h-[calc(100svh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]"
       >
         <header className="border-border-subtle border-b px-5 py-4 pr-12">
@@ -167,7 +184,11 @@ function DestinationEditor({
         </header>
         <div className="flex min-h-0 flex-col gap-5 overflow-y-auto px-5 py-4">
           <fieldset disabled={saving} className="flex min-w-0 flex-col gap-5">
-            <DestinationFields form={form} onChange={edit} />
+            <DestinationFields
+              form={form}
+              savedTopic={savedTopic(draft)}
+              onChange={edit}
+            />
           </fieldset>
           <TestLine test={test} />
           {error && <InlineMessage tone="error">{error}</InlineMessage>}

@@ -1,10 +1,13 @@
 import type {
   AlertDestinationsView,
+  DeliveryOutcome,
   Destination,
 } from "@core/generated/bindings";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
+import { appKeys } from "@core/query-keys";
 import type { CommandResult } from "@core/transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { DestinationsPanel } from "./destinations-panel";
@@ -185,5 +188,169 @@ describe("Send to panel edges", () => {
       await act(async () => transport.tick());
     }
     expect(renders).toBe(settled);
+  });
+});
+
+/** Holds every test send until `release` is called. */
+function holdTests(transport: MockTransport) {
+  const send = transport.testAlertDestination.bind(transport);
+  const held: (() => void)[] = [];
+  transport.testAlertDestination = (destination) =>
+    new Promise<CommandResult<DeliveryOutcome>>((resolve) => {
+      held.push(() => void send(destination).then(resolve));
+    });
+  return () => {
+    for (const run of held.splice(0)) run();
+  };
+}
+
+/** The live delivery part of the row named `name`'s sub line. */
+function rowStatus(name: string) {
+  const row = screen
+    .getByRole("switch", { name })
+    .closest("div.flex.min-h-12") as HTMLElement;
+  return within(row).getByRole("status");
+}
+
+async function sendTest(user: UserEvent, name: string) {
+  await user.click(
+    await screen.findByRole("button", { name: `Send test to ${name}` })
+  );
+}
+
+describe("Send to panel test deliveries", () => {
+  it("announces Sending… and the outcome in the row's status", async () => {
+    const transport = await seeded([PHONE]);
+    const release = holdTests(transport);
+    const { user } = renderWithProviders(<DestinationsPanel />, { transport });
+    await sendTest(user, "Phone");
+    expect(rowStatus("Phone")).toHaveTextContent("Sending…");
+    act(() => release());
+    await waitFor(() =>
+      expect(rowStatus("Phone")).toHaveTextContent(/Delivered \d\d:\d\d/)
+    );
+    expect(rowStatus("Phone").textContent).not.toContain("ntfy");
+  });
+
+  it("forgets a test once the topic it went to is saved over", async () => {
+    const transport = await seeded([PHONE]);
+    const { user } = renderWithProviders(<DestinationsPanel />, { transport });
+    await sendTest(user, "Phone");
+    await waitFor(() =>
+      expect(rowStatus("Phone")).toHaveTextContent(/Delivered/)
+    );
+    await user.click(screen.getByRole("button", { name: "Edit Phone" }));
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Edit destination" })
+    );
+    await user.click(dialog.getByRole("button", { name: "Generate" }));
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(rowStatus("Phone")).toHaveTextContent("");
+  });
+
+  it("drops a test still out when the address changes under it", async () => {
+    const transport = await seeded([PHONE]);
+    const release = holdTests(transport);
+    const { user } = renderWithProviders(<DestinationsPanel />, { transport });
+    await sendTest(user, "Phone");
+    await act(async () => {
+      await transport.saveAlertDestination({
+        ...PHONE,
+        kind: {
+          ...PHONE.kind,
+          topic: "statglass-moved",
+        } as Destination["kind"],
+      });
+    });
+    act(() => release());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Send test to Phone" })
+      ).toBeEnabled()
+    );
+    expect(rowStatus("Phone")).toHaveTextContent("");
+  });
+
+  it("shows a real delivery that arrives after a failed test", async () => {
+    const transport = createMockTransport({
+      scenarios: ["alert-delivery-fails"],
+      autoTick: false,
+    });
+    await transport.saveAlertDestination(PHONE);
+    const { user, queryClient } = renderWithProviders(<DestinationsPanel />, {
+      transport,
+    });
+    await sendTest(user, "Phone");
+    await waitFor(() =>
+      expect(rowStatus("Phone")).toHaveTextContent(/Failed .* HTTP 403/)
+    );
+    // An alert delivered since, as the pushed view carries it.
+    const at = new Date(2020, 0, 1, 9, 15).getTime();
+    act(() =>
+      queryClient.setQueryData<AlertDestinationsView>(
+        appKeys.alertDestinations,
+        {
+          destinations: [
+            {
+              destination: PHONE,
+              last: { at_ms: at, outcome: { kind: "delivered", status: 200 } },
+            },
+          ],
+          load_error: null,
+        }
+      )
+    );
+    await waitFor(() =>
+      expect(rowStatus("Phone")).toHaveTextContent("· Delivered 09:15")
+    );
+  });
+
+  it("ignores a dialog test's answer once the form has changed", async () => {
+    const transport = await seeded([PHONE]);
+    const release = holdTests(transport);
+    const { user, dialog } = await openEdit(transport, "Phone");
+    await user.click(dialog.getByRole("button", { name: "Send test" }));
+    expect(await dialog.findByText("Sending…")).toBeVisible();
+    await user.type(dialog.getByRole("textbox", { name: "Topic" }), "-b");
+    expect(dialog.queryByText("Sending…")).toBeNull();
+    act(() => release());
+    await act(async () => {});
+    expect(dialog.queryByText(/Delivered/)).toBeNull();
+  });
+
+  it("notes that the phone must subscribe again when a saved topic changes", async () => {
+    const transport = await seeded([PHONE]);
+    const note = "Your phone needs to subscribe to the new topic.";
+    const { user, dialog } = await openEdit(transport, "Phone");
+    expect(dialog.queryByText(note)).toBeNull();
+    await user.click(dialog.getByRole("button", { name: "Generate" }));
+    expect(dialog.getByText(note)).toBeVisible();
+    expect(dialog.getByRole("button", { name: "Generate" })).toBeEnabled();
+  });
+
+  it("says nothing about subscribing again for a new destination", async () => {
+    const transport = await seeded([]);
+    const { user } = renderWithProviders(<DestinationsPanel />, { transport });
+    await user.click(
+      await screen.findByRole("button", { name: "Add destination" })
+    );
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Add destination" })
+    );
+    await user.click(dialog.getByRole("button", { name: "Generate" }));
+    expect(dialog.queryByText(/subscribe to the new topic/)).toBeNull();
+  });
+
+  it("moves focus to Add destination after a delete", async () => {
+    const transport = await seeded([PHONE, HOOK]);
+    const { user, dialog } = await openEdit(transport, "Phone");
+    await user.click(dialog.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Add destination" })
+      ).toHaveFocus()
+    );
   });
 });
