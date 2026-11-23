@@ -99,6 +99,15 @@ function names(label = "Processes"): string[] {
     .filter(Boolean);
 }
 
+/** The body row whose name is `name`. */
+function row(name: string): HTMLElement {
+  const found = screen
+    .getAllByRole("row")
+    .find((r) => r.getAttribute("data-name") === name);
+  if (!found) throw new Error(`no row ${name}`);
+  return found;
+}
+
 function Sorted(
   props: Partial<ProcessGroupTableProps<App, LiveProcess>> & { groups: App[] }
 ) {
@@ -387,8 +396,38 @@ describe("ProcessGroupTable selection", () => {
       })
     );
     expect(
-      screen.getByRole("checkbox", { name: "Select Xcode" })
+      screen.getByRole("checkbox", { name: "Select Xcode (20)" })
     ).toBeDisabled();
+  });
+
+  it("explains a group or member that offers nothing where its actions would be", () => {
+    renderWithProviders(
+      table(apps(ROWS), {
+        selectable: true,
+        rows: groupRows(apps(ROWS), {
+          forcedOpen: () => true,
+          targets: (g) => (g.name === "Xcode" ? [] : g.quit),
+          unavailable: () => "Not running",
+          memberTargets: (p) => (p.pid === 12 ? [] : [p]),
+          memberUnavailable: (p) => `Exited ${p.pid}`,
+        }),
+      })
+    );
+    const xcode = row("Xcode");
+    expect(
+      within(xcode).getByRole("checkbox", { name: "Select Xcode (20)" })
+    ).toBeDisabled();
+    expect(within(xcode).getByText("Not running")).toBeVisible();
+    const helper = row("Chrome Helper (GPU)");
+    expect(
+      within(helper).getByRole("checkbox", {
+        name: "Select Chrome Helper (GPU) (12)",
+      })
+    ).toBeDisabled();
+    expect(within(helper).getByText("Exited 12")).toBeVisible();
+    // Rows with targets keep their actions, not the reason.
+    expect(screen.getAllByText("Not running")).toHaveLength(1);
+    expect(screen.queryByText("Exited 11")).toBeNull();
   });
 
   it("has no checkbox column when not selectable", () => {
@@ -505,5 +544,132 @@ describe("ProcessGroupTable contract options", () => {
     expect([...(seen.at(-1) ?? [])]).toEqual(["app:Google Chrome"]);
     expect(screen.getByText("Load more Google Chrome")).toBeVisible();
     expect(names()).toHaveLength(6);
+  });
+});
+
+describe("ProcessGroupTable expandability", () => {
+  const recorded: App = { name: "Figma", members: [], quit: [] };
+
+  it("expands a group whose count is unknown and lists what the page adds", () => {
+    render(
+      table([recorded, ...apps(ROWS)], {
+        rows: groupRows([recorded, ...apps(ROWS)], {
+          count: (g) => (g === recorded ? null : g.members.length),
+          expandable: (g) => g === recorded || g.members.length > 1,
+        }),
+        afterMembers: (g, span) => (
+          <tr>
+            <td colSpan={span}>Load {g.name} processes</td>
+          </tr>
+        ),
+      })
+    );
+    expect(row("Figma")).not.toHaveTextContent(/process/);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show Figma processes" })
+    );
+    expect(names()).toEqual(["Figma", "Google Chrome", "Xcode", "node"]);
+    expect(screen.getByText("Load Figma processes")).toBeVisible();
+  });
+
+  it("keeps a group that may not expand closed even when forced open", () => {
+    render(
+      table(apps(ROWS), {
+        rows: groupRows(apps(ROWS), {
+          expandable: () => false,
+          forcedOpen: () => true,
+        }),
+      })
+    );
+    expect(screen.queryByRole("button", { name: /processes/ })).toBeNull();
+    expect(names()).toEqual(["Google Chrome", "Xcode", "node"]);
+    expect(screen.getByText("3 processes")).toBeVisible();
+  });
+});
+
+describe("ProcessGroupTable sortable headers", () => {
+  const PORTS: GroupColumn<App, LiveProcess> = {
+    id: "ports",
+    header: "Ports",
+    align: "left",
+    sortable: true,
+    group: () => "",
+    member: () => "",
+  };
+
+  it("makes the name header plain text and a value-less column a sort button on a ranked table", async () => {
+    const changes: ColumnSort<string>[] = [];
+    const { user } = renderWithProviders(
+      table(apps(ROWS), {
+        columns: [CPU, PORTS],
+        sort: {
+          value: { by: "cpu", dir: "desc" },
+          onChange: (next) => changes.push(next),
+          client: false,
+          nameSortable: false,
+        },
+      })
+    );
+    expect(
+      screen.getByRole("columnheader", { name: "Process" })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Process" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Ports" }));
+    expect(changes).toEqual([{ by: "ports", dir: "asc" }]);
+  });
+
+  it("leaves a column with no values and no `sortable` as plain text", () => {
+    const { sortable: _, ...plain } = PORTS;
+    renderWithProviders(
+      table(apps(ROWS), {
+        columns: [plain],
+        sort: {
+          value: { by: "cpu", dir: "desc" },
+          onChange: () => undefined,
+          client: false,
+        },
+      })
+    );
+    expect(screen.queryByRole("button", { name: "Ports" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Process" })).toBeVisible();
+  });
+});
+
+describe("ProcessGroupTable group of one", () => {
+  const docker = proc(40, "com.docker.backend", 1, "Docker");
+
+  it("links and labels a group of one as its process", () => {
+    renderWithProviders(
+      table(apps([...ROWS, docker]), {
+        selectable: true,
+        rows: groupRows(apps([...ROWS, docker]), {
+          memberHref: (p) => `/dashboard/processes/${p.pid}`,
+        }),
+      })
+    );
+    expect(screen.getByRole("link", { name: "Xcode" })).toHaveAttribute(
+      "href",
+      "/dashboard/processes/20"
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select Xcode (20)" })
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Select Google Chrome" })
+    ).toBeEnabled();
+    // A group of several links nothing on its own row.
+    expect(screen.queryByRole("link", { name: "Google Chrome" })).toBeNull();
+  });
+
+  it("shows the process name beside the app when they differ", () => {
+    renderWithProviders(table(apps([...ROWS, docker]), { selectable: true }));
+    const group = row("Docker");
+    expect(within(group).getByText("com.docker.backend")).toBeVisible();
+    expect(
+      within(group).getByRole("checkbox", {
+        name: "Select com.docker.backend (40)",
+      })
+    ).toBeVisible();
+    expect(within(row("Xcode")).getAllByText(/Xcode/)).toHaveLength(1);
   });
 });

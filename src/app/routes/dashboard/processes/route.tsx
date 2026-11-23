@@ -2,7 +2,7 @@ import type { LiveProcess } from "@core/generated/bindings";
 import { groupLiveProcesses } from "@core/process-groups";
 import { FULL_TABLE, type ProcessView } from "@core/process-interest";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
 import { ProcessGroupTable } from "~/components/process-group-table";
 import {
@@ -35,6 +35,7 @@ import {
   hiddenNote,
   liveGroupRows,
   NETWORK_COVERAGE,
+  selectableTargets,
   shownProcesses,
 } from "./_lib/processes";
 
@@ -63,6 +64,7 @@ const isColumnSet = (value: string): value is ColumnSet =>
  */
 export default function ProcessesRoute() {
   const [params] = useSearchParams();
+  const location = useLocation();
   const processNetwork = useProcessNetwork();
   const processGpu = useProcessGpu();
   const caps = useProcessColumnCaps();
@@ -107,6 +109,7 @@ export default function ProcessesRoute() {
 
   const groups = useMemo(() => groupLiveProcesses(rows, query), [rows, query]);
   const shown = useMemo(() => shownProcesses(groups), [groups]);
+  const allTargets = useMemo(() => selectableTargets(groups), [groups]);
   const tableColumns = useMemo(
     () =>
       liveColumns(columns, {
@@ -156,7 +159,10 @@ export default function ProcessesRoute() {
         >
           <div ref={bodyRef} className="min-h-0 flex-1 px-1 pt-1">
             <ProcessGroupTable
-              rows={liveGroupRows(groups)}
+              rows={liveGroupRows(
+                groups,
+                `${location.pathname}${location.search}`
+              )}
               columns={tableColumns}
               nameHeader="Process"
               sort={{
@@ -167,7 +173,7 @@ export default function ProcessesRoute() {
                 },
                 client: true,
               }}
-              allTargets={shown}
+              allTargets={allTargets}
               height={Math.max(
                 120,
                 bodyHeight -

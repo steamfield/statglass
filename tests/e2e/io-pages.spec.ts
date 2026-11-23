@@ -73,16 +73,28 @@ for (const p of [
   });
 }
 
-test("quitting a process asks first, then removes it", async ({ page }) => {
+test("quitting an app asks first, then keeps its group while a helper runs", async ({
+  page,
+}) => {
   await page.goto("/?window=dashboard&route=/dashboard/processes&ticks=0");
-  const row = page.getByRole("row", { name: /Xcode/ });
-  await row.hover();
-  await row.getByRole("button", { name: /^Quit Xcode/ }).click();
+  const table = page.getByRole("table", { name: "Processes", exact: true });
+  // Xcode's group holds its main (2214) and SourceKitService (2240).
+  const xcode = table.locator('tr[data-name="Xcode"]').first();
+  await expect(xcode).toContainText("2 processes");
+  await xcode.hover();
+  await xcode
+    .getByRole("button", { name: "Quit Xcode (2214)", exact: true })
+    .click();
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toContainText("Quit Xcode?");
   await dialog.getByRole("button", { name: "Quit", exact: true }).click();
-  await expect(page.getByText(/Asked Xcode \(\d+\) to quit/)).toBeVisible();
-  await expect(page.getByRole("row", { name: /Xcode/ })).toHaveCount(0);
+  await expect(page.getByText("Asked Xcode (2214) to quit")).toBeVisible();
+  // The main is gone; the group stays and now reads as its one helper.
+  await expect(
+    xcode.getByRole("checkbox", { name: "Select SourceKitService (2240)" })
+  ).toBeVisible();
+  await expect(xcode).toContainText("SourceKitService");
+  await expect(xcode).not.toContainText("processes");
 });
 
 test("battery page on a desktop goes back to Overview", async ({ page }) => {
