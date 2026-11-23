@@ -136,8 +136,8 @@ fn webhook_request(url: &str, message: &Message) -> HttpRequest {
 
 /// `text` as a JSON string literal (RFC 8259): quoted, with quote and backslash escaped,
 /// newline, carriage return and tab written as `\n`, `\r` and `\t`, and every other
-/// character below U+0020 as `\u00XX`. Everything else, non-ASCII included, passes
-/// through as is.
+/// control character (below U+0020, DEL and U+0080 to U+009F) as `\u00XX`. Everything
+/// else, non-ASCII included, passes through as is.
 fn json_string(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
@@ -148,7 +148,9 @@ fn json_string(text: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if c < ' ' => out.push_str(&format!("\\u{:04x}", u32::from(c))),
+            // DEL and the C1 range are legal raw JSON, but curl's config refuses them in
+            // the body, so they are escaped too and the message still goes out.
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", u32::from(c))),
             c => out.push(c),
         }
     }
@@ -168,8 +170,8 @@ mod tests {
     }
 
     #[test]
-    fn every_control_character_below_space_is_escaped() {
-        for code in 0_u32..0x20 {
+    fn every_control_character_is_escaped() {
+        for code in (0_u32..0x20).chain(0x7f..0xa0) {
             let c = char::from_u32(code).unwrap();
             let expected = match c {
                 '\n' => r#""\n""#.to_owned(),
@@ -188,7 +190,7 @@ mod tests {
             "Memory pressure 84% · above 80%",
             "Température 95 °C",
             "日本語 🚨",
-            "a/b <c> {d} ~ \u{7f}",
+            "a/b <c> {d} ~ \u{a0}",
         ] {
             assert_eq!(json_string(text), format!("\"{text}\""));
         }

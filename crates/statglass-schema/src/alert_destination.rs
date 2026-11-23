@@ -81,7 +81,9 @@ impl Destination {
                 topic,
                 token,
             } => {
-                if !is_valid_url(server) {
+                // The request goes to `<server>/`, so a query or fragment would end up
+                // in front of that slash.
+                if !is_valid_url(server) || server.contains(['?', '#']) {
                     return Err(DestinationError::Url);
                 }
                 if !is_valid_topic(topic) {
@@ -124,30 +126,43 @@ fn is_valid_url(url: &str) -> bool {
 /// A host with an optional numeric port, and no user name or password: credentials
 /// belong in the ntfy token field, and a URL carrying them would be shown and logged by
 /// host. A non-numeric port also refuses userinfo whose password holds a `/`
-/// (`https://user:pa/ss@host/x`), where the cut at the first `/` leaves `user:pa`.
+/// (`https://user:pa/ss@host/x`), where the cut at the first `/` leaves `user:pa`. The
+/// host needs a character other than `.` and `-`; brackets only enclose an IPv6 literal.
 fn is_valid_authority(authority: &str) -> bool {
     if authority.contains('@') {
         return false;
     }
-    let (host, port) = match authority.strip_prefix('[') {
-        // An IPv6 literal: `[::1]` or `[::1]:8080`.
-        Some(bracketed) => match bracketed.split_once(']') {
-            Some((address, "")) => (address, None),
-            Some((address, after)) => match after.strip_prefix(':') {
-                Some(port) => (address, Some(port)),
-                None => return false,
-            },
-            None => return false,
-        },
-        None => match authority.split_once(':') {
-            Some((host, port)) => (host, Some(port)),
-            None => (authority, None),
-        },
+    let (host, port) = match host_and_port(authority) {
+        Some(parts) => parts,
+        None => return false,
     };
     let port_is_valid = port.is_none_or(|port| {
         (1..=5).contains(&port.len()) && port.chars().all(|c| c.is_ascii_digit())
     });
-    !host.is_empty() && port_is_valid
+    host.contains(|c: char| c != '.' && c != '-') && port_is_valid
+}
+
+/// `authority` split into host and optional port, or `None` when a bracket is unclosed,
+/// stray, or followed by anything but a port.
+fn host_and_port(authority: &str) -> Option<(&str, Option<&str>)> {
+    let Some(bracketed) = authority.strip_prefix('[') else {
+        if authority.contains(['[', ']']) {
+            return None;
+        }
+        return Some(match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        });
+    };
+    // An IPv6 literal: `[::1]` or `[::1]:8080`.
+    let (address, after) = bracketed.split_once(']')?;
+    if address.contains('[') {
+        return None;
+    }
+    if after.is_empty() {
+        return Some((address, None));
+    }
+    Some((address, Some(after.strip_prefix(':')?)))
 }
 
 /// 1 to [`Destination::MAX_TOPIC_CHARS`] ASCII letters, digits, hyphens or underscores.
@@ -173,7 +188,7 @@ pub enum DestinationError {
     )]
     Name,
     #[error(
-        "address must start with http:// or https://, name a host, and be at most {} characters with no spaces, quotes or backslashes",
+        "address must start with http:// or https://, name a host, and be at most {} characters with no spaces, quotes or backslashes, with no user name or password in it",
         Destination::MAX_URL_CHARS
     )]
     Url,
@@ -362,6 +377,61 @@ mod url_tests {
                 "{bad:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_host_needs_a_character_other_than_dots_and_hyphens() {
+        for bad in ["http://./", "http://-/", "http://.-./x"] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(webhook("http://a-b.c/").validate(), Ok(()));
+    }
+
+    #[test]
+    fn an_unclosed_or_stray_bracket_is_refused() {
+        for bad in [
+            "http://[::1/secret",
+            "http://a[b/",
+            "http://ab]/",
+            "http://[[::1]/",
+        ] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_ntfy_server_has_no_query_or_fragment() {
+        for bad in [
+            "https://ntfy.sh/?x",
+            "https://ntfy.sh#x",
+            "https://ntfy.sh/a?",
+        ] {
+            let destination = Destination {
+                kind: DestinationKind::Ntfy {
+                    server: bad.into(),
+                    topic: "alerts".into(),
+                    token: None,
+                },
+                ..webhook("https://ntfy.sh")
+            };
+            assert_eq!(
+                destination.validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(
+            webhook("https://hooks.example.com/x?a=1#b").validate(),
+            Ok(())
+        );
     }
 
     #[test]

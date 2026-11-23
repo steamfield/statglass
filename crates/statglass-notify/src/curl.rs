@@ -6,9 +6,14 @@
 //! value is double-quoted with backslash, quote, newline, carriage return and tab
 //! escaped. The body may hold newlines, carriage returns and tabs; any other control
 //! character, and any control character at all in the URL or a header, is refused before
-//! curl runs. Only http and https are allowed, redirects are not followed, and curl's
-//! exit code names transport failures while the status code decides the rest
-//! (plan/rfc-alerts.md 6.4).
+//! curl runs. Only http and https are allowed, redirects are not followed, URL globbing
+//! is off, and curl's exit code names transport failures while the status code decides
+//! the rest (plan/rfc-alerts.md 6.4).
+//!
+//! curl runs with an empty environment in `/`. Proxy variables (`http_proxy`,
+//! `https_proxy`, `ALL_PROXY`) and custom CA variables (`CURL_CA_BUNDLE`,
+//! `SSL_CERT_FILE`) are deliberately not honoured: a proxy inherited from whatever
+//! launched the app would receive the request and its `Authorization` header.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -28,9 +33,6 @@ const EXIT_OPERATION_TIMEDOUT: i32 = 28;
 const EXIT_SSL_CONNECT_ERROR: i32 = 35;
 /// curl's exit code for a certificate that failed verification.
 const EXIT_PEER_FAILED_VERIFICATION: i32 = 60;
-
-/// How a failed HTTP status reads in a `Failed { Http }` detail ("HTTP 403").
-const HTTP_DETAIL_PREFIX: &str = "HTTP ";
 
 /// The curl config for `request`: `url`, `request = "POST"`, one `header` line per
 /// header and a `data-raw` line, each value quoted and escaped. `Err` names the field
@@ -88,15 +90,18 @@ fn quoted(value: &str) -> String {
     out
 }
 
-/// curl's command-line arguments: `-q` first, then `--proto =http,https`,
+/// curl's command-line arguments: `-q` first, then `--globoff`, `--proto =http,https`,
 /// `--max-redirs 0`, `--max-time <timeout_secs>`, `--silent --show-error`,
 /// `--output /dev/null`, `--write-out %{http_code}` and `-K -`. Never the URL, a header
 /// or the body, which travel on stdin.
 pub fn arguments(timeout_secs: u32) -> Vec<String> {
-    // `-q` only works as the first argument; it keeps the user's ~/.curlrc out. There
-    // is no `--fail`: the status code is read from `--write-out` and decides the outcome.
+    // `-q` only works as the first argument; it keeps the user's ~/.curlrc out.
+    // `--globoff` sends `{a,b}` and `[1-9]` in a URL literally instead of expanding them
+    // into several requests. There is no `--fail`: the status code is read from
+    // `--write-out` and decides the outcome.
     [
         "-q",
+        "--globoff",
         "--proto",
         "=http,https",
         "--max-redirs",
@@ -117,43 +122,71 @@ pub fn arguments(timeout_secs: u32) -> Vec<String> {
     .collect()
 }
 
+/// One curl run: its outcome, and the HTTP status when the server answered.
+pub(crate) struct Attempt {
+    pub outcome: DeliveryOutcome,
+    /// The status the server answered with, `None` when no answer arrived.
+    pub http_status: Option<u16>,
+}
+
 /// Sends `request` once through the curl at `curl` and classifies the result: a 2xx
 /// status is `Delivered`, any other status `Failed { Http, "HTTP <code>" }`; exit 6
 /// `NameNotFound`, 7 `ConnectFailed`, 28 `TimedOut`, 35 and 60 `Tls`; a missing binary
 /// `CurlMissing`; a refused control character in the request `Rejected` without
-/// spawning; anything else `Other` with curl's first stderr line. Blocking.
+/// spawning; anything else `Other` with "curl error <n>". curl runs with an empty
+/// environment, so proxy and custom CA variables are deliberately not honoured.
+/// Blocking.
 pub fn run(curl: &Path, request: &HttpRequest, timeout_secs: u32) -> DeliveryOutcome {
+    attempt(curl, request, timeout_secs).outcome
+}
+
+/// [`run`], keeping the HTTP status for the retry policy.
+pub(crate) fn attempt(curl: &Path, request: &HttpRequest, timeout_secs: u32) -> Attempt {
     let config = match config_text(request) {
         Ok(config) => config,
-        Err(reason) => return failed(DeliveryFailure::Rejected, format!("Not sent: {reason}")),
+        Err(reason) => return no_answer(DeliveryFailure::Rejected, format!("Not sent: {reason}")),
     };
     let child = match spawn(curl, timeout_secs) {
         Ok(child) => child,
-        Err(outcome) => return outcome,
+        Err(attempt) => return attempt,
     };
     match finish(child, &config) {
         Ok(output) => classify(&output, &request.url, timeout_secs),
-        Err(error) => failed(
+        Err(error) => no_answer(
             DeliveryFailure::Other,
             format!("Could not pass the request to curl: {error}"),
         ),
     }
 }
 
-/// Starts curl with every stream piped, or the outcome that explains why it did not start.
-fn spawn(curl: &Path, timeout_secs: u32) -> Result<Child, DeliveryOutcome> {
-    Command::new(curl)
+/// The curl command: an empty environment, `/` as its directory, every stream piped.
+fn command(curl: &Path, timeout_secs: u32) -> Command {
+    let mut command = isolated(curl);
+    command
         .args(arguments(timeout_secs))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+}
+
+/// `program` with no inherited environment, run from `/`.
+fn isolated(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    command.env_clear().current_dir("/");
+    command
+}
+
+/// Starts curl, or the attempt that explains why it did not start.
+fn spawn(curl: &Path, timeout_secs: u32) -> Result<Child, Attempt> {
+    command(curl, timeout_secs)
         .spawn()
         .map_err(|error| match error.kind() {
-            io::ErrorKind::NotFound => failed(
+            io::ErrorKind::NotFound => no_answer(
                 DeliveryFailure::CurlMissing,
                 format!("curl is not installed at {}", curl.display()),
             ),
-            _ => failed(
+            _ => no_answer(
                 DeliveryFailure::Other,
                 format!("Could not run curl at {}: {error}", curl.display()),
             ),
@@ -176,92 +209,113 @@ fn finish(mut child: Child, config: &str) -> io::Result<Output> {
     child.wait_with_output()
 }
 
-/// The outcome of a finished curl run, from its exit code, the status code it wrote to
+/// The attempt of a finished curl run, from its exit code, the status code it wrote to
 /// stdout and its stderr.
-fn classify(output: &Output, url: &str, timeout_secs: u32) -> DeliveryOutcome {
-    match output.status.code() {
-        Some(0) => status_outcome(&String::from_utf8_lossy(&output.stdout)),
-        Some(EXIT_COULDNT_RESOLVE_HOST) => failed(
+fn classify(output: &Output, url: &str, timeout_secs: u32) -> Attempt {
+    let Some(code) = output.status.code() else {
+        return no_answer(
+            DeliveryFailure::Other,
+            "curl was stopped before it finished".into(),
+        );
+    };
+    let (reason, detail) = match code {
+        0 => return answered(&String::from_utf8_lossy(&output.stdout)),
+        EXIT_COULDNT_RESOLVE_HOST => (
             DeliveryFailure::NameNotFound,
             "Server name not found".into(),
         ),
-        Some(EXIT_COULDNT_CONNECT) => {
-            failed(DeliveryFailure::ConnectFailed, "Could not connect".into())
-        }
-        Some(EXIT_OPERATION_TIMEDOUT) => failed(
+        EXIT_COULDNT_CONNECT => (DeliveryFailure::ConnectFailed, "Could not connect".into()),
+        EXIT_OPERATION_TIMEDOUT => (
             DeliveryFailure::TimedOut,
             format!("Timed out after {timeout_secs} s"),
         ),
-        Some(EXIT_SSL_CONNECT_ERROR | EXIT_PEER_FAILED_VERIFICATION) => {
-            failed(DeliveryFailure::Tls, "TLS error".into())
+        EXIT_SSL_CONNECT_ERROR | EXIT_PEER_FAILED_VERIFICATION => {
+            (DeliveryFailure::Tls, "TLS error".into())
         }
-        Some(code) => failed(
+        code => (
             DeliveryFailure::Other,
-            curl_message(&output.stderr, url)
-                .unwrap_or_else(|| format!("curl exited with code {code}")),
+            curl_error(code, &output.stderr, url),
         ),
-        None => failed(
-            DeliveryFailure::Other,
-            "curl was stopped before it finished".into(),
-        ),
-    }
+    };
+    no_answer(reason, detail)
 }
 
-/// The outcome of a run that reached the server: `Delivered` for 2xx, `Failed { Http }`
+/// The attempt of a run that reached the server: `Delivered` for 2xx, `Failed { Http }`
 /// for any other status.
-fn status_outcome(written: &str) -> DeliveryOutcome {
+fn answered(written: &str) -> Attempt {
     let Ok(status) = written.trim().parse::<u16>() else {
-        return failed(
+        return no_answer(
             DeliveryFailure::Other,
             "curl reported no HTTP status".into(),
         );
     };
-    if (200..300).contains(&status) {
+    let outcome = if (200..300).contains(&status) {
         DeliveryOutcome::Delivered { status }
     } else {
-        failed(
-            DeliveryFailure::Http,
-            format!("{HTTP_DETAIL_PREFIX}{status}"),
-        )
-    }
-}
-
-/// curl's first stderr line without its "curl: " prefix, with the URL and its host
-/// replaced by "the server" so the detail never carries an address.
-fn curl_message(stderr: &[u8], url: &str) -> Option<String> {
-    let stderr = String::from_utf8_lossy(stderr);
-    let line = stderr
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())?;
-    let line = line.strip_prefix("curl: ").unwrap_or(line);
-    let mut message = line.replace(url, "the server");
-    let host = url
-        .split_once("://")
-        .map_or(url, |(_, rest)| rest)
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default();
-    if !host.is_empty() {
-        message = message.replace(host, "the server");
-    }
-    Some(message)
-}
-
-/// The status code of a `Failed { Http }` outcome, read back from its detail.
-pub(crate) fn http_status(outcome: &DeliveryOutcome) -> Option<u16> {
-    match outcome {
         DeliveryOutcome::Failed {
             reason: DeliveryFailure::Http,
-            detail,
-        } => detail.strip_prefix(HTTP_DETAIL_PREFIX)?.parse().ok(),
-        _ => None,
+            detail: format!("HTTP {status}"),
+        }
+    };
+    Attempt {
+        outcome,
+        http_status: Some(status),
     }
 }
 
-/// A `Failed` outcome.
-fn failed(reason: DeliveryFailure, detail: String) -> DeliveryOutcome {
-    DeliveryOutcome::Failed { reason, detail }
+/// "curl error <code>: <message>" from curl's first stderr line without its
+/// "curl: (<code>) " prefix, or just "curl error <code>" when there is no message or it
+/// names the URL or its host.
+fn curl_error(code: i32, stderr: &[u8], url: &str) -> String {
+    let label = format!("curl error {code}");
+    let stderr = String::from_utf8_lossy(stderr);
+    let Some(line) = stderr.lines().map(str::trim).find(|line| !line.is_empty()) else {
+        return label;
+    };
+    let message = line.strip_prefix("curl: ").unwrap_or(line);
+    let message = message
+        .strip_prefix(&format!("({code}) "))
+        .unwrap_or(message);
+    let host = url_host(url);
+    if message.is_empty() || message.contains(url) || contains_word(message, host) {
+        return label;
+    }
+    format!("{label}: {message}")
+}
+
+/// The host of `url`, without scheme, userinfo, port or path; empty when there is none.
+fn url_host(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host_and_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, after)| after);
+    match host_and_port.split_once(']') {
+        Some((bracketed, _)) => bracketed.trim_start_matches('['),
+        None => host_and_port.split(':').next().unwrap_or_default(),
+    }
+}
+
+/// Whether `word` appears in `text` with no letter, digit, `.`, `-` or `_` on either
+/// side. An empty word never appears.
+fn contains_word(text: &str, word: &str) -> bool {
+    let is_word_char = |c: char| c.is_alphanumeric() || matches!(c, '.' | '-' | '_');
+    !word.is_empty()
+        && text.match_indices(word).any(|(at, _)| {
+            let before = text.get(..at).and_then(|head| head.chars().next_back());
+            let after = text
+                .get(at + word.len()..)
+                .and_then(|tail| tail.chars().next());
+            !before.is_some_and(is_word_char) && !after.is_some_and(is_word_char)
+        })
+}
+
+/// A failed attempt that got no HTTP answer.
+fn no_answer(reason: DeliveryFailure, detail: String) -> Attempt {
+    Attempt {
+        outcome: DeliveryOutcome::Failed { reason, detail },
+        http_status: None,
+    }
 }
 
 #[cfg(test)]
@@ -331,22 +385,54 @@ mod tests {
     }
 
     #[test]
-    fn curl_messages_never_carry_the_address() {
-        let message = curl_message(
-            b"curl: (52) Empty reply from hooks.example.com:8080\nmore\n",
-            "https://hooks.example.com:8080/secret-path",
-        );
-        assert_eq!(message.as_deref(), Some("(52) Empty reply from the server"));
-        assert_eq!(curl_message(b"\n", "https://a.example/"), None);
+    fn curl_runs_with_an_empty_environment_in_the_root_directory() {
+        let curl = command(Path::new("/usr/bin/curl"), 10);
+        assert_eq!(curl.get_current_dir(), Some(Path::new("/")));
+        // `get_envs` lists only explicit changes, so run the same setup and read what the
+        // child actually sees.
+        let env = isolated(Path::new("/usr/bin/env")).output().unwrap();
+        assert!(env.status.success());
+        assert_eq!(String::from_utf8_lossy(&env.stdout), "");
+        let pwd = isolated(Path::new("/bin/pwd")).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&pwd.stdout), "/\n");
     }
 
     #[test]
-    fn only_a_failed_http_outcome_has_a_status() {
-        assert_eq!(http_status(&status_outcome("503")), Some(503));
-        assert_eq!(http_status(&status_outcome("204")), None);
+    fn an_unmapped_curl_error_keeps_its_message_unless_it_names_the_server() {
+        let url = "https://hooks.example.com:8080/secret-path";
         assert_eq!(
-            http_status(&failed(DeliveryFailure::Other, "HTTP 500".into())),
-            None
+            curl_error(52, b"curl: (52) Empty reply from server\nmore\n", url),
+            "curl error 52: Empty reply from server"
         );
+        assert_eq!(
+            curl_error(52, b"curl: (52) Empty reply from server\n", "http://e/"),
+            "curl error 52: Empty reply from server"
+        );
+        for stderr in [
+            &b"curl: (56) Recv failure from hooks.example.com\n"[..],
+            b"curl: (3) bad URL https://hooks.example.com:8080/secret-path\n",
+            b"\n",
+            b"",
+        ] {
+            assert_eq!(curl_error(56, stderr, url), "curl error 56", "{stderr:?}");
+        }
+        assert_eq!(
+            curl_error(
+                56,
+                b"curl: (56) Recv failure from hooks.example.community\n",
+                url
+            ),
+            "curl error 56: Recv failure from hooks.example.community"
+        );
+    }
+
+    #[test]
+    fn only_an_answer_carries_a_status() {
+        assert_eq!(answered("503").http_status, Some(503));
+        assert_eq!(
+            answered("204").outcome,
+            DeliveryOutcome::Delivered { status: 204 }
+        );
+        assert_eq!(answered("").http_status, None);
     }
 }

@@ -49,12 +49,12 @@ pub fn deliver(
     let request = build_request(destination, message);
     let mut waits = options.backoff.iter();
     loop {
-        let outcome = curl::run(&options.curl, &request, options.timeout_secs);
-        if !is_worth_retrying(&outcome) {
-            return outcome;
+        let attempt = curl::attempt(&options.curl, &request, options.timeout_secs);
+        if !is_worth_retrying(&attempt) {
+            return attempt.outcome;
         }
         let Some(wait) = waits.next() else {
-            return outcome;
+            return attempt.outcome;
         };
         std::thread::sleep(*wait);
     }
@@ -62,16 +62,16 @@ pub fn deliver(
 
 /// Whether another attempt can help: the network failed, or the server answered 5xx.
 /// A 4xx answer, a TLS failure or a refused request fails the same way again.
-fn is_worth_retrying(outcome: &DeliveryOutcome) -> bool {
-    match outcome {
+fn is_worth_retrying(attempt: &curl::Attempt) -> bool {
+    match &attempt.outcome {
         DeliveryOutcome::Delivered { .. } => false,
         DeliveryOutcome::Failed { reason, .. } => match reason {
             DeliveryFailure::ConnectFailed
             | DeliveryFailure::NameNotFound
             | DeliveryFailure::TimedOut => true,
-            DeliveryFailure::Http => {
-                curl::http_status(outcome).is_some_and(|status| (500..600).contains(&status))
-            }
+            DeliveryFailure::Http => attempt
+                .http_status
+                .is_some_and(|status| (500..600).contains(&status)),
             DeliveryFailure::CurlMissing
             | DeliveryFailure::Tls
             | DeliveryFailure::Rejected
