@@ -2,7 +2,7 @@
 //! and the threshold range [`crate::AlertRule::validate_custom`] accepts. Published to
 //! TypeScript as the generated constant `ALERT_METRICS`, so the Alerts page offers
 //! exactly what Rust accepts. Values are in the metric's catalog unit (percent, bytes,
-//! Celsius, rpm, watts).
+//! pages per second, Celsius, rpm, watts).
 
 use serde::Serialize;
 
@@ -66,6 +66,17 @@ pub const ALERT_METRICS: &[AlertMetric] = &[
         100.0,
     ),
     entry("mem.swap_used", "Swap used", Cmp::Gt, 4e9, 300, 1e8, 1e12),
+    // Pages per second leaving memory for swap: the direct sign of thrashing, where
+    // swap used can sit high for days without any.
+    entry(
+        "mem.swap_out",
+        "Swapping out",
+        Cmp::Gt,
+        1000.0,
+        120,
+        1.0,
+        1e6,
+    ),
     entry(
         "thermal.hottest",
         "Hottest sensor",

@@ -119,6 +119,12 @@ describe("ruleSummary", () => {
     expect(s("cpu.total", "gt", 90, 120)).toBe("CPU usage above 90% for 2 min");
   });
 
+  it("reads the swap-out rate in pages per second", () => {
+    expect(
+      ruleSummary(rule("mem.swap_out", [], "gt", 1000, 120), CELSIUS_DECIMAL)
+    ).toBe("Swapping out above 1,000 pages/s for 2 min");
+  });
+
   it("names the series a labelled rule watches", () => {
     expect(
       ruleSummary(

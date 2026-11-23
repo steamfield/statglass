@@ -220,6 +220,7 @@ fn values_take_the_catalog_unit_in_the_users_terms() {
     assert_eq!(v("power.system", 7.5), "7.5 W");
     assert_eq!(v("power.system", 72.4), "72 W");
     assert_eq!(v("fan.rpm", 12_500.0), "12,500 rpm");
+    assert_eq!(v("mem.swap_out", 1250.0), "1,250 pages/s");
     assert_eq!(v("thermal.hottest", 97.0), "97 °C");
     assert_eq!(v("disk.free", 12.3e9), "12.3 GB");
     assert_eq!(
@@ -421,5 +422,14 @@ fn alerts_on_text_lists_custom_rules_by_summary() {
              Also for: Memory pressure above 80% for 2 min."
                 .into()
         )
+    );
+}
+
+/// Swap-out rate reads in pages per second.
+#[test]
+fn summary_for_the_swap_out_rate() {
+    assert_eq!(
+        summary("mem.swap_out", Cmp::Gt, 1000.0, 120),
+        "Swapping out above 1,000 pages/s for 2 min"
     );
 }

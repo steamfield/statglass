@@ -57,7 +57,7 @@ The pattern to follow: rules are a list of plain sentences ("Memory pressure abo
    or maximum aggregation; a spike that ends does not fire. This is the existing `for_secs`
    meaning, and it is the one users describe.
 3. The metric picker offers a short list Rust publishes, not the whole catalog: CPU usage, GPU
-   usage, memory pressure, swap used, hottest sensor, fan speed, system power, battery charge and
+   usage, memory pressure, swap used, swap-out rate (the sign of thrashing), hottest sensor, fan speed, system power, battery charge and
    free disk space. Each comes with a sensible default threshold and duration, so picking a metric
    gives a working rule. Metrics this Mac does not measure are not offered.
 4. For a metric with several series (fans, volumes), the rule watches any of them or one the user

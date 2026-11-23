@@ -83,6 +83,7 @@ The scaffold also makes every ripple of these type changes compile, and owns tho
     gpu.util        GPU usage          gt  90        300   1     100
     mem.pressure    Memory pressure    gt  80        120   1     100
     mem.swap_used   Swap used          gt  4e9       300   1e8   1e12
+    mem.swap_out    Swapping out       gt  1000      120   1     1e6      (pages per second; shown as "1,000 pages/s"; the direct sign of memory thrashing, added at the user's request)
     thermal.hottest Hottest sensor     gt  95        120   30    130
     fan.rpm         Fan speed          gt  4000      120   500   20000
     power.system    System power       gt  60        300   1     1000
@@ -137,7 +138,7 @@ Test cases:
 
 - Goal: evaluate custom threshold rules in the engine next to the built-in rules, and let the rule set change at runtime without losing cooldowns.
 - Interface: implement `ThresholdState` in `detect/threshold.rs` and use it from `AlertEval` in `detect/alerts.rs` in place of `State::Unsupported`; implement `Detectors::set_alerts(&AlertSettings)` and `alert_history_ms(&AlertSettings)` in `detect/mod.rs` as stubbed. `TickInput::periods` is each series' sampling period in the unit the existing detectors already use (see `PowerSpike`'s gap handling in `detectors.rs`).
-- Behavior: every line under "Threshold evaluation", "Detectors::set_alerts" and "Allocation gate" in the test cases. Fired events carry `AlertCause::Threshold { metric, labels, value, op, threshold }` for the series that held, `start_ms` = when that series started holding, empty `processes`. The resumed-episode rule is the thermal rule's: after a reset inside a reported episode, the condition still met within the cooldown is the episode already reported. `set_alerts` matches evaluators by rule id: equal rule keeps its evaluator, a different definition under the same id gets a new evaluator carrying the old `last_fired`, an absent id is dropped; built-in evaluators always exist, on or off. In `perf_gates.rs`, the detectors case binds only fan, thermal and power keys with a 5-slot values array: add `mem.pressure` to its keys and values, add two enabled custom rules (`mem.pressure` gt 1 for 0 s with a 3600 s cooldown, which fires inside the warm-up ticks and then holds state, and `fan.rpm` gt 100000, which never holds), and keep the post-warm-up `out.is_empty()` assertion and the ceiling of 0.
+- Behavior: every line under "Threshold evaluation", "Detectors::set_alerts" and "Allocation gate" in the test cases. Fired events carry `AlertCause::Threshold { metric, labels, value, op, threshold, for_secs }` (`for_secs` is the rule's) for the series that held, `start_ms` = when that series started holding, empty `processes`. The resumed-episode rule is the thermal rule's: after a reset inside a reported episode, the condition still met within the cooldown is the episode already reported. `set_alerts` matches evaluators by rule id: equal rule keeps its evaluator, a different definition under the same id gets a new evaluator carrying the old `last_fired`, an absent id is dropped; built-in evaluators always exist, on or off. In `perf_gates.rs`, the detectors case binds only fan, thermal and power keys with a 5-slot values array: add `mem.pressure` to its keys and values, add two enabled custom rules (`mem.pressure` gt 1 for 0 s with a 3600 s cooldown, which fires inside the warm-up ticks and then holds state, and `fan.rpm` gt 100000, which never holds), and keep the post-warm-up `out.is_empty()` assertion and the ceiling of 0.
 - Decisions already made: no aggregation; "any matching series" semantics; a gap clears; nothing allocates on a tick that fires nothing (bind may allocate).
 - Out of scope: host-offline rules, remote hosts, hysteresis, any change to the built-in rules' behavior, new public API beyond the contracts.
 - Done when: `cargo test -p statglass-engine --lib detect` passes, `cargo test -p statglass-engine --test perf_gates detectors -- --nocapture` reports 0 for detectors, `cargo check --workspace --all-targets` is clean.
@@ -155,7 +156,7 @@ Test cases:
 
 - Goal: one place for what a rule and an alert say, used by macOS notifications now and destinations later.
 - Interface: `format_value`, `rule_summary`, `alert_text`, `alerts_on_text` in `statglass-notify` as stubbed; `src-tauri/src/notify.rs` keeps `alerts_on` and `alert` as thin wrappers that take `&UnitSettings`, get text from the crate and post through `tauri-plugin-notification`, with its own text functions and their tests removed (the scaffold moves the still-valid assertions into `crates/statglass-notify/tests/text.rs`).
-- Behavior: every line under "Text" in the test cases. `format_value` picks the unit from the catalog metric: percent as a whole number with "%", watts with one decimal under 10 and none above, rpm with thousands separators, Celsius converted when the setting is Fahrenheit and shown as whole degrees with the unit, bytes as GB or GiB with one decimal (binary only for `mem.*` when the memory unit is binary). Durations: under 120 s in seconds, otherwise whole minutes. Comparisons read "above" for gt and ge, "below" for lt and le. A metric missing from `ALERT_METRICS` falls back to its catalog id as the label.
+- Behavior: every line under "Text" in the test cases. `format_value` picks the unit from the catalog metric: percent as a whole number with "%", watts with one decimal under 10 and none above, rpm and pages per second with thousands separators ("4,000 rpm", "1,000 pages/s"), Celsius converted when the setting is Fahrenheit and shown as whole degrees with the unit, bytes as GB or GiB with one decimal and a trailing ".0" dropped ("20 GB", "3.7 GiB"; binary only for `mem.*` when the memory unit is binary). Durations: under 120 s in seconds, otherwise whole minutes. Comparisons read "above" for gt and ge, "below" for lt and le. A metric missing from `ALERT_METRICS` falls back to its catalog id as the label.
 - Decisions already made: wording is Rust-owned for notifications; the client has its own formatter for the page and the two must agree on the cases in the tests.
 - Out of scope: delivery, curl, destinations, localization.
 - Done when: `cargo test -p statglass-notify` and `cargo test -p statglass notify` pass, `cargo check --workspace --all-targets` is clean.
@@ -176,10 +177,49 @@ Depends on: phase 1
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src/app/routes/dashboard/alerts/_components/rules-panel.tsx, src/app/routes/dashboard/alerts/_components/rule-row.tsx, src/app/routes/dashboard/alerts/_components/rule-dialog.tsx, src/app/routes/dashboard/alerts/_lib/ | | | opus | pending | | |
-| b | M | src/app/routes/dashboard/alerts/_components/recent-alerts.tsx, src/app/routes/dashboard/alerts/_hooks/, tests/e2e/alerts.spec.ts | | | opus | pending | | |
+| a | M | src/app/routes/dashboard/alerts/_components/rules-panel.tsx, src/app/routes/dashboard/alerts/_components/rule-row.tsx, src/app/routes/dashboard/alerts/_components/rule-dialog.tsx, src/app/routes/dashboard/alerts/_lib/rule-form.ts | contracts, src/app/routes/dashboard/hosts/_components/host-settings-dialog.tsx | src/app/routes/dashboard/alerts/_components/rules-panel.test.tsx, src/app/routes/dashboard/alerts/_components/rule-dialog.test.tsx, src/app/routes/dashboard/alerts/_lib/rule-form.test.ts | opus | pending | | rules panel, dialog and form tests pass |
+| b | M | src/app/routes/dashboard/alerts/_components/recent-alerts.tsx, tests/e2e/alerts.spec.ts | contracts, src/app/routes/dashboard/timeline/route.tsx | src/app/routes/dashboard/alerts/_components/recent-alerts.test.tsx | opus | pending | | recent tests pass; the e2e spec is written |
 
-(Test cases and briefs written during phase 1.)
+Phase 2 scaffold (wiring, owned by no lane): `alerts/route.tsx` (PageHeader "Alerts" with a "New rule" button, the `editing` draft state, `<RulesPanel>`, `<RecentAlerts>`, `<RuleDialog>`), the router entry, the sidebar entry and its `alerts` icon between Containers and Settings and its removal from the remote-host tool list, the Settings route without `AlertsPanel` (file deleted), `alerts/_hooks/use-recent-alerts.ts` (alert events of the last 7 days for This Mac through `useEventsQuery`, newest first) and `alerts/_hooks/use-series-keys.ts` (the local host's live layout keys, a stable reference until the layout changes), component stubs, and the tests named below.
+
+Contracts:
+
+    alerts/_lib/rule-form.ts     pure form state for one rule
+      interface RuleForm { id, name, autoName: boolean, metric, labels: Record<string,string>, op: "gt" | "lt", shown: string, forSecs, cooldownSecs, enabled }
+      formFromRule(rule, units): RuleForm; formForMetric(metric: AlertMetric, id, units): RuleForm
+      withMetric(form, metric, units): RuleForm     // new defaults, keeps a typed name
+      ruleFromForm(form, units): AlertRule          // converts the shown threshold to the stored unit
+      formProblem(form, units): string | null       // "Enter a number", "Between 1 and 100%", "Give the rule a name"; null when it can be saved
+    alerts/_components/rule-dialog.tsx    RuleDialog({ draft: { rule: AlertRule; isNew: boolean } | null, onClose })
+    alerts/_components/rules-panel.tsx    RulesPanel({ onEdit: (rule: AlertRule) => void })
+    alerts/_components/rule-row.tsx       one rule's row: label, sub line, switch, edit button
+    alerts/_components/recent-alerts.tsx  RecentAlerts()
+
+Test cases:
+- Route: the sidebar lists Alerts between Containers and Settings on This Mac and not while a remote host is selected; Settings has no Alerts panel; the page shows Rules and Recent; "New rule" opens the dialog on the first available metric.
+- Rules panel: the two built-in rows come first with their current labels and write `{ alerts: { hot_process } }` / `{ alerts: { thermal_serious } }`; a custom row's label is the rule name; its sub line is the summary when the name differs from it, then "Last fired 2 h ago" as a Timeline link or "Never fired"; a rule whose metric has no live series reads "Not measured on this Mac"; the switch writes the whole rules list with that rule's `enabled` flipped; Edit calls `onEdit` with the rule; the panel does not re-render on a live tick (render-count test).
+- Rule dialog: the metric select lists only available metrics; choosing one fills comparison, threshold, duration and the name; a typed name survives a metric change; a labelled metric shows a series select with "Any" then series names, and Free disk space starts on "/"; the threshold is shown and stored through the display-unit conversion (°F, GiB); `formProblem` text shows inline and Save is disabled; Save sends one patch with the rule appended (new) or replaced (edit) and closes; an `invalid_settings` or `settings_not_saved` answer shows its message inline and keeps the dialog open with the form intact; Delete is shown only for an existing rule, removes it and closes; Cancel and Escape write nothing; the "Now" line shows the watched series' current value and is the only part that renders on a tick.
+- rule-form: round trip `formFromRule`/`ruleFromForm` for each metric kind; `withMetric` keeps a custom name and replaces an auto name; `formProblem` cases.
+- Recent: newest first, at most 20; each line is the time on the host clock, `eventLabel`, and a Timeline link; "No alerts in the last 7 days." when empty or while history is unavailable.
+- E2E (`alerts.spec.ts`, light and dark, scenario `alerts`): create a Memory pressure rule, see its row; edit the threshold and see the sentence change; switch it off; delete it; Recent lists the two seeded alerts; one full-page screenshot per theme at `test-results/screens/alerts-<theme>-<project>.png`.
+
+#### Lane a brief
+
+- Goal: the Rules panel and the rule editor on the Alerts page.
+- Interface: implement `rule-form.ts`, `RuleDialog`, `RulesPanel` and the row component as stubbed. Read settings with `useSettings`, write with the transport's `updateSettings` so the dialog sees the command result, take units from settings, series keys from `use-series-keys`, last-fired times from `use-recent-alerts` through `lastFiredByRule`, wording from `@core/alerts`. Build the panel from `SettingsPanel`/`SettingsRow`, the dialog from `~/components/ui/dialog`, `select`, `SegmentedControl` and `Button`, the way `hosts/_components/host-settings-dialog.tsx` does.
+- Behavior: every line under "Rules panel", "Rule dialog" and "rule-form" in the phase 2 test cases. Duration choices and cooldown choices come from `FOR_CHOICES_SECS` and `COOLDOWN_CHOICES_SECS`, labelled "Right away", "30 s", "1 min" and so on. The comparison control offers "above" and "below" (stored as gt and lt). New ids come from `crypto.randomUUID()`. The Timeline link is a 1 h window centered on the alert, built the way other pages link to a range (`@core/range-params`). Type roles, radii and colors come from the theme tokens only; no new shared component, no card grid, no badge, no eyebrow label. Load the `frontend-design-slop` skill before writing JSX and compare with the Settings and Hosts pages.
+- Decisions already made: built-in rules are switches only; no delete confirmation; one settings patch per change; Rust validation is the authority and its message is shown as is.
+- Out of scope: destinations, the Recent list, host-offline row, changing shared components, the route file.
+- Done when: `bun run test -- src/app/routes/dashboard/alerts` passes for the rules panel, dialog and rule-form tests, `bun run typecheck` and `bun run lint` are clean.
+
+#### Lane b brief
+
+- Goal: the Recent list, and the end-to-end spec for the whole page.
+- Interface: implement `RecentAlerts` as stubbed, reading `use-recent-alerts`; write `tests/e2e/alerts.spec.ts` in the style of `tests/e2e/remote-hosts.spec.ts`.
+- Behavior: every line under "Recent" and "E2E" in the phase 2 test cases. The spec drives the UI by accessible names from lane a's brief: the "New rule" button, a dialog titled "New rule" or "Edit rule", fields labelled "Metric", "Watch", "When it is", "Threshold", "For", "Then wait", "Name", buttons "Save", "Cancel", "Delete", and per-row controls "Edit <rule name>" and a switch named by the rule name. Lane a builds those in parallel, so run the spec's Recent assertions against your own work and report that the rest waits for the merge; the orchestrator runs it at the phase gate.
+- Decisions already made: Recent is a plain list in a `SettingsPanel`, no table, no chart.
+- Out of scope: the rules panel, the dialog, destinations.
+- Done when: `bun run test -- src/app/routes/dashboard/alerts/_components/recent-alerts.test.tsx` passes, the spec file typechecks and lints.
 
 ### Phase 3: destinations and delivery
 
@@ -188,11 +228,57 @@ Depends on: phase 1
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-notify/src/request.rs, crates/statglass-notify/src/curl.rs, crates/statglass-notify/src/deliver.rs | | | opus | pending | | |
-| b | M | src-tauri/src/alerts/ | | | opus | pending | | |
-| c | S | src/core/alert-destinations.ts, src/core/mock/alert-destinations.ts | | | opus | pending | | |
+| a | M | crates/statglass-notify/src/request.rs, crates/statglass-notify/src/curl.rs, crates/statglass-notify/src/deliver.rs, crates/statglass-schema/src/alert_destination.rs | contracts, src-tauri/src/addresses.rs | crates/statglass-notify/tests/deliver.rs, crates/statglass-schema/src/alert_destination_tests.rs | opus | pending | | delivery and validation tests pass |
+| b | M | src-tauri/src/alerts/ | contracts, src-tauri/src/star_prompt.rs | src-tauri/src/alerts_tests.rs | opus | pending | | store, command and dispatch tests pass |
+| c | S | src/core/alert-destinations.ts, src/core/mock/alert-destinations.ts | contracts, src/core/mock/shell.ts | src/core/alert-destinations.test.ts | opus | pending | | core and mock tests pass |
 
-(Test cases and briefs written during phase 1.)
+Phase 3 scaffold (owned by no lane): the schema types below with `validate` stubbed, the `statglass-notify` module stubs, `src-tauri/src/alerts/` module stubs, the four commands and the `alert-destinations-changed` event registered in `src-tauri/src/lib.rs`, `AppState.alerts` and the call from the host watcher's `BusMsg::Event` arm for local alert events in `src-tauri/src/state.rs` (kept inside its 600-line ceiling by putting logic in `alerts/`), regenerated bindings, the transport contract and native wiring (`getAlertDestinations`, `saveAlertDestination`, `deleteAlertDestination`, `testAlertDestination`, `onAlertDestinationsChanged`), the mock contract and its registration, and the tests named in the table.
+
+Contracts:
+
+    crates/statglass-schema/src/alert_destination.rs    destination data and its validation
+      pub struct Destination { id: Uuid, name: String, enabled: bool, kind: DestinationKind }
+      pub enum DestinationKind { Ntfy { server: String, topic: String, token: Option<String> }, Webhook { url: String } }   // tag = "type", snake_case
+      Destination::validate(&self) -> Result<(), DestinationError>; pub enum DestinationError { Name, Url, Topic, Token }
+      pub const MAX_DESTINATIONS: usize = 8
+      pub enum DeliveryOutcome { Delivered { status: u16 }, Failed { reason: DeliveryFailure, detail: String } }
+      pub enum DeliveryFailure { CurlMissing, NameNotFound, ConnectFailed, TimedOut, Tls, Http, Rejected, Other }
+      pub struct DeliveryRecord { at_ms: i64, outcome: DeliveryOutcome }
+    crates/statglass-notify/src/request.rs    turns a message and a destination into one HTTP request; pure
+      pub struct Message { title: String, body: String, host: String, rule: Option<String>, kind: String, fired_at_ms: i64 }
+      pub struct HttpRequest { url: String, headers: Vec<(String, String)>, body: String }
+      pub fn build_request(destination: &Destination, message: &Message) -> HttpRequest
+    crates/statglass-notify/src/curl.rs       runs one request through curl and classifies the result; the only module that spawns a process
+      pub fn config_text(request: &HttpRequest) -> Result<String, String>     // Err names the field holding a control character
+      pub fn arguments(timeout_secs: u32) -> Vec<String>
+      pub fn run(curl: &Path, request: &HttpRequest, timeout_secs: u32) -> DeliveryOutcome
+    crates/statglass-notify/src/deliver.rs    the retry policy
+      pub struct DeliverOptions { curl: PathBuf, timeout_secs: u32, backoff: [Duration; 2] }   // Default: /usr/bin/curl, 10, [2 s, 10 s]
+      pub fn deliver(destination: &Destination, message: &Message, options: &DeliverOptions) -> DeliveryOutcome
+    src-tauri/src/alerts/
+      mod.rs        AlertsService: the destination list, last delivery per destination, and the entry points the shell calls; no file or process I/O of its own
+      store.rs      reads and writes alert-destinations.json (atomic, 0600); the only module that touches the file
+      dispatch.rs   turns an alert event into a Message and sends it to each enabled destination off the calling thread
+      commands.rs   the four Tauri commands; thin
+      pub struct AlertDestinationsView { destinations: Vec<DestinationView>, load_error: Option<String> }
+      pub struct DestinationView { destination: Destination, last: Option<DeliveryRecord> }
+      AlertsService::open(dir: &Path) -> Self; view(); save(Destination) -> Result<AlertDestinationsView, CommandError>; delete(Uuid) -> Result<..>; on_alert(event: &Event, host_name: &str, units: &UnitSettings, send: impl Fn(Destination, Message) + ...)
+    src/core/alert-destinations.ts
+      destinationAddress(d: Destination): string            // "ntfy.sh/statglass-4f2a…" or the webhook's host
+      deliveryLabel(record: DeliveryRecord | null, timeOf: (ms: number) => string): string | null   // "Delivered 14:02", "Failed 14:02 · HTTP 403"
+      generateTopic(random: (n: number) => Uint8Array): string   // "statglass-" + 20 base32 chars
+      newDestination(kind: "ntfy" | "webhook", id: string): Destination
+
+Test cases:
+- Validation: a name of 1 to 40 chars after trimming; ntfy server and webhook URL must start with `http://` or `https://`, have a host, be at most 2,048 chars and hold no whitespace, control character, quote or backslash; a topic is 1 to 64 of `[A-Za-z0-9_-]`; a token is at most 256 chars with no whitespace or control character, and an empty token is None.
+- Request: ntfy posts to the server root with JSON `topic`, `title`, `message`, `priority` 4 and `tags` ["warning"], `Content-Type: application/json`, and `Authorization: Bearer <token>` only when a token is set; a trailing slash on the server is not doubled; the webhook body has `text` and `content` ("title: message"), `title`, `message`, `host`, `rule`, `kind`, `fired_at_ms`.
+- Curl config: quotes, backslashes, newlines, carriage returns and tabs in a title or process name arrive byte-exact in the body at a local listener; a body containing a line `output = "/tmp/statglass-pwn"` creates no file; another control character in any field is `Failed { reason: Rejected }` without spawning; `arguments` starts with `-q`, includes `--proto`, `=http,https`, `--max-redirs`, `0`, `-K`, `-`, and never holds the URL, a header or the body.
+- Outcomes against a local listener through real curl: 200 and 204 are Delivered; 403 is Failed Http "HTTP 403" after one request; 500 then 200 is Delivered after two; 500 three times is Failed Http "HTTP 500" after three; 302 is Failed Http "HTTP 302" and the redirect target sees nothing; a refused port is ConnectFailed; a `.invalid` host is NameNotFound; a listener that never answers with `timeout_secs` 1 is TimedOut; a curl path that does not exist is CurlMissing; `file:///etc/hosts` as a URL never reads the file.
+- Store: a missing file is an empty list with no error; save then open round-trips; the file mode is 0600; a malformed file is renamed to `alert-destinations.json.bad` and `load_error` says so; a save that cannot write returns `CommandError` and leaves the in-memory list unchanged; saving an existing id replaces it; a ninth destination is rejected; an invalid destination is rejected with its reason; deleting an unknown id is `InvalidArgument`.
+- Dispatch: an alert goes to every enabled destination and to no disabled one; each outcome is recorded with its time and emitted once; a non-alert event sends nothing; the test command sends "Test from StatGlass on <host>" to the given destination without saving it and returns the outcome; the newest record wins when two deliveries finish out of order.
+- Core and mock: `deliveryLabel` for delivered, each failure detail and null; `destinationAddress`; `generateTopic` shape; the mock stores, replaces, deletes, rejects a ninth, emits changes, and its test delivery fails when the `alert-delivery-fails` scenario is on.
+
+(Briefs follow the lane table rows and the contracts above; written in full before dispatch.)
 
 ### Phase 4: destinations on the page, and host offline
 
@@ -207,4 +293,6 @@ Depends on: phase 2, phase 3
 (Test cases and briefs written during phases 2 and 3.)
 
 ## Log
+- Scaffold 71fb6f5c (opus builder), deviations accepted: `AlertEval` already routes thresholds through `ThresholdState` (a stub that lane a replaces); `recent_alerts` moved to `History::recent_alerts` to keep state.rs under its ceiling; `eventLabel(e)` keeps one argument and uses display defaults, `alertCauseLabel` takes `UnitSettings | null`; `mockEvents` takes the alerts scenario flag (lane d seeds through it, store.ts is scaffold-owned); `series_name` lives in `alert.rs`; f32 range limits reach TypeScript rounded (1e12 is 999999995904), so the mock compares as f32 with `Math.fround`. Open for the docs pass: `.claude/rules/rust/crates.md` edge list lacks `statglass-notify`.
+- User request during phase 1: alert on swap. `mem.swap_used` was already in `ALERT_METRICS`; `mem.swap_out` (pages per second) is added as the thrashing signal, with a pages/s formatter on both sides.
 - Plan critique (devils-advocate, opus), eight findings, all checked and accepted: (1) one invalid stored rule would have reset every setting through `load_with_defaults`, so validation runs on the patch path only, the load path drops bad rules and the rules list decodes leniently; (2) the type changes ripple into engine.rs, lifecycle.rs, state.rs, test literals, Cargo and crate-edges, now listed as scaffold-owned, and `SettingsError` stays untouched; (3) the gap rule uses the larger of the current and last-reading period, with a cadence-change test; (4) `disk.free` with "Any" fired on a mounted DMG, so new disk rules default to `vol=/` through `AlertMetric.default_label`; (5) fan labels are "0"/"1", so both sides name series through one `series_name` rule, and `for_secs` moved into `AlertCause::Threshold`; (6) the curl request spec (no `--fail`, `%{http_code}`, exit-code mapping, quoted and escaped config values, control-character rejection) is in RFC 6.4 and becomes phase 3 test cases; (7) the perf-gate case gets `mem.pressure` in its layout so the custom rule holds state; (8) new `AlertCause` variants and rules in Settings are safe (events are opaque CBOR, settings never leave the Mac), and `AlertSettings` moves to `settings/alerts.rs` to respect the schema file ceiling.
