@@ -1,16 +1,15 @@
-import { BRUSH_STEP_MS, rangeScopeWords } from "@core/brush";
-import { eventId, eventLabel, eventPriority, eventRange } from "@core/events";
+import { rangeScopeWords } from "@core/brush";
+import { eventId, eventLabel, eventPriority } from "@core/events";
 import { formatClock, monthName } from "@core/format";
 import type { Event } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import { TriangleAlert } from "lucide-react";
-import { useId, useRef } from "react";
-import { useNavigate } from "react-router";
+import { useId } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { useEventsQuery } from "~/hooks/use-events";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useModuleEnd } from "~/hooks/use-module-end";
-import { useRangeNavigation } from "~/hooks/use-range-navigation";
+import { useOpenInTimeline } from "~/hooks/use-open-in-timeline";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
 import { Card } from "~/widgets/card";
@@ -31,36 +30,16 @@ export function OverviewEventsCard({
   const toMs = endMs ?? clock();
   const fromMs = toMs - windowMs;
   const query = useEventsQuery(windowMs, endMs);
-  const { health, error } = useHistoryHealth();
+  const { error } = useHistoryHealth();
   const unavailable = error ? historyUnavailable(error) : null;
-  const { apply, pending, range: currentRange } = useRangeNavigation();
-  const opening = useRef(false);
-  const navigate = useNavigate();
+  const { rangeFor, open, pending } = useOpenInTimeline();
   const events = query.events
     .filter((event) => event.ts_ms >= fromMs && event.ts_ms < toMs)
     .sort((a, b) => b.ts_ms - a.ts_ms);
   const scope = rangeScopeWords(windowMs, endMs);
-  const openEvent = async (event: Event) => {
-    if (opening.current || pending) return;
-    const range = eventRange(
-      [event],
-      BRUSH_STEP_MS,
-      clock(),
-      health?.trimmed_before_ms ?? 0
-    );
-    if (!range) return;
-    opening.current = true;
-    const applied = await apply({
-      absolute: { from_ms: range.fromMs, to_ms: range.toMs },
-    });
-    opening.current = false;
-    // A no-op is safe only when these absolute bounds are active.
-    if (
-      applied ||
-      (currentRange?.endMs === range.toMs &&
-        currentRange.windowMs === range.toMs - range.fromMs)
-    )
-      navigate("/dashboard/timeline");
+  const openEvent = (event: Event) => {
+    const range = rangeFor(event);
+    if (range) void open(range);
   };
 
   return (
@@ -108,7 +87,7 @@ export function OverviewEventsCard({
                   aria-description="Open in Timeline"
                   disabled={pending}
                   className="flex w-full items-baseline gap-2 rounded-control py-1 text-left text-fg-subtle text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => void openEvent(event)}
+                  onClick={() => openEvent(event)}
                 >
                   <span className="figures shrink-0 text-label text-muted-foreground">
                     {eventTime(event.ts_ms, toMs)}
