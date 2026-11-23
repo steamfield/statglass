@@ -1,5 +1,6 @@
 import { MISSING } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
+import { groupLiveProcesses } from "@core/process-groups";
 import {
   DEFAULT_MENU_BAR,
   type TrayStyle,
@@ -15,6 +16,7 @@ import { type CSSProperties, useState } from "react";
 import { CardGrid } from "~/components/card-grid";
 import { CollectingOverlay } from "~/components/collecting-overlay";
 import {
+  type ColumnSort,
   columnHelper,
   DataTable,
   DataTableHead,
@@ -31,7 +33,8 @@ import {
 } from "~/components/module-toggle-list";
 import { PopoverFooter } from "~/components/popover-footer";
 import { PopoverHeader } from "~/components/popover-header";
-import { type ProcessSort, ProcessTable } from "~/components/process-table";
+import { ProcessGroupTable } from "~/components/process-group-table";
+import { liveColumns } from "~/components/process-group-table/live-columns";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsRow } from "~/components/settings-row";
 import { Sidebar, type SidebarProps } from "~/components/sidebar";
@@ -51,6 +54,7 @@ import { HostUpdateNoticeView } from "~/routes/dashboard/_components/host-update
 import { ChartChooser } from "~/routes/dashboard/containers/_components/chart-chooser";
 import { ComparisonChart } from "~/routes/dashboard/containers/_components/comparison-chart";
 import { HistoryNotice } from "~/routes/dashboard/containers/_components/history-notice";
+import { liveGroupRows } from "~/routes/dashboard/processes/_lib/processes";
 import cardStyles from "~/widgets/card.module.css";
 import type { Accent } from "~/widgets/lib/accent";
 import { TrayPreview } from "~/widgets/tray-preview";
@@ -239,11 +243,17 @@ const SPECS = [
 ];
 
 // CPU page top processes.
+
+/** Helpers grouped under Safari, so the table shows an expandable app. */
+const SAFARI_HELPERS = new Set(["Safari Web Content"]);
+
 const PROCS: [string, number, number, number, number, number, string][] = [
   ["Xcode", 2214, 86.8, 74, 312, 41.2, "me"],
   ["kernel_task", 0, 43.4, 612, 1904, 18.8, "root"],
   ["WindowServer", 391, 33.6, 22, 840, 6.1, "_windowserver"],
   ["Safari", 1840, 25.2, 41, 226, 9.6, "me"],
+  ["Safari Web Content", 1902, 6.4, 18, 90, 1.2, "me"],
+  ["Safari Web Content", 1918, 2.1, 9, 34, 0.4, "me"],
   ["node", 5531, 15.4, 12, 64, 2.4, "me"],
   ["Figma", 1712, 12.6, 38, 118, 7.4, "me"],
   ["com.docker.backend", 988, 9.8, 29, 402, 3.1, "me"],
@@ -273,9 +283,15 @@ const PROCESS_ROWS: LiveProcess[] = PROCS.map(
         : name === "WindowServer"
           ? "window_server"
           : null,
-    app: name,
-    app_quit: true,
+    app: SAFARI_HELPERS.has(name) ? "Safari" : name,
+    // Safari's main process quits the app; its helpers exit with it.
+    app_quit: !SAFARI_HELPERS.has(name),
   })
+);
+
+const GALLERY_COLUMNS = liveColumns(
+  ["pid", "cpu", "threads", "wakeups", "energy", "user"],
+  { cpuBarMaxPct: 140, memUnits: "GB", rateUnits: "MBps" }
 );
 
 // Onboarding modules (Battery shown as absent to exercise that state).
@@ -491,7 +507,10 @@ function ErrorStateSamples() {
 }
 
 export function AppComponentsSection() {
-  const [sort, setSort] = useState<ProcessSort>({ by: "cpu", dir: "desc" });
+  const [sort, setSort] = useState<ColumnSort<string>>({
+    by: "cpu",
+    dir: "desc",
+  });
   const [intervalMs, setIntervalMs] = useState("1000");
   const [temp, setTemp] = useState<"C" | "F">("C");
   const [style, setStyle] = useState<TrayStyle>("combined");
@@ -715,7 +734,7 @@ export function AppComponentsSection() {
       </div>
 
       <GalleryItem
-        name="ProcessTable"
+        name="ProcessGroupTable"
         usedIn="Processes and module usage tables"
       >
         <div
@@ -730,23 +749,15 @@ export function AppComponentsSection() {
               % CPU is of one core; 14 cores = 1400%
             </span>
           </div>
-          <ProcessTable
+          <ProcessGroupTable
             selectable
             ariaLabel="Top processes"
-            rows={PROCESS_ROWS}
-            columns={[
-              "name",
-              "pid",
-              "cpu",
-              "threads",
-              "wakeups",
-              "energy",
-              "user",
-            ]}
-            sort={sort}
-            onSort={setSort}
-            cpuBarMaxPct={140}
+            rows={liveGroupRows(groupLiveProcesses(PROCESS_ROWS, ""))}
+            columns={GALLERY_COLUMNS}
+            nameHeader="Process"
+            sort={{ value: sort, onChange: setSort, client: true }}
             height={8 * 29}
+            empty="No processes"
           />
         </div>
       </GalleryItem>

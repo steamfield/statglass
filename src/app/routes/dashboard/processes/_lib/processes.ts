@@ -1,7 +1,45 @@
 import { matchProcessQuery } from "@core/app-search";
 import { countNoun, formatInteger } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
-import type { ProcessColumn, ProcessSort } from "~/components/process-table";
+import type { LiveGroup } from "@core/process-groups";
+import { targetKey } from "@core/process-selection";
+import type { GroupRows } from "~/components/process-group-table";
+import type {
+  ProcessColumn,
+  ProcessSort,
+} from "~/components/process-group-table/live-columns";
+
+/**
+ * How the Processes table reads app groups: the members listed are the
+ * search matches, a search that matched inside opens the group, Quit on the
+ * app acts on the members Rust marked `app_quit`, and each member links to
+ * its detail page.
+ */
+export function liveGroupRows(
+  groups: readonly LiveGroup[]
+): GroupRows<LiveGroup, LiveProcess> {
+  return {
+    groups,
+    key: (g) => g.key,
+    name: (g) => g.name,
+    count: (g) => g.members.length,
+    members: (g) => g.shown,
+    forcedOpen: (g) => g.matchedInside,
+    targets: (g) => g.quit,
+    memberKey: targetKey,
+    memberName: (p) => p.name,
+    memberPid: (p) => p.pid,
+    memberHref: (p) => `/dashboard/processes/${p.pid}/${p.start_time_us}`,
+    memberTargets: (p) => [p],
+  };
+}
+
+/** Every process the groups list: what the footer counts and Command-A selects. */
+export function shownProcesses(
+  groups: readonly LiveGroup[]
+): readonly LiveProcess[] {
+  return groups.flatMap((g) => g.shown);
+}
 
 /** The column-set control (plan 4.14); Network and GPU from v1.2. */
 export type ColumnSet =

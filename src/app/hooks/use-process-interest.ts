@@ -8,7 +8,7 @@ import { useShallow } from "zustand/react/shallow";
 import type {
   ProcessColumn,
   ProcessSort as TableSort,
-} from "~/components/process-table";
+} from "~/components/process-group-table/live-columns";
 import { useHost, useHostStore } from "~/stores/host-store";
 
 /**

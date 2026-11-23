@@ -13,6 +13,7 @@ export type SortValue = number | string | null;
 
 /** One column after the name column. */
 export interface GroupColumn<G, M> {
+  /** `"pid"` marks a PID column: member names then leave out their inline pid. */
   id: string;
   header: ReactNode;
   align: "left" | "right";
@@ -69,7 +70,7 @@ export interface Expansion {
   onChange: (open: ReadonlySet<string>) => void;
 }
 
-export interface ProcessGroupTableProps<G, M> {
+interface TableOptions<G, M> {
   rows: GroupRows<G, M>;
   columns: readonly GroupColumn<G, M>[];
   /** Header of the name column: "Process" or "App". */
@@ -85,8 +86,6 @@ export interface ProcessGroupTableProps<G, M> {
   scopeKey?: string;
   /** What Command-A selects; defaults to every group's and listed member's targets. */
   allTargets?: readonly ProcessTarget[];
-  /** Viewport height of the scrolling body in px: virtualizes rows. */
-  height?: number;
   /** Hold group order while the pointer is over the table. */
   freezeOrderOnHover?: boolean;
   /** Show the first `limit` groups and a Show all row; ignored while `searching`. */
@@ -94,12 +93,28 @@ export interface ProcessGroupTableProps<G, M> {
   searching?: boolean;
   /** Rows after the groups (remainder rows, a footnote), given the full colSpan. */
   after?: (colSpan: number) => ReactNode;
-  /**
-   * Rows after an open group's members that are not processes: a loading or
-   * error line, a note, Load more. Members themselves always come from
-   * `rows.members`, so selection, keyboard and Command-A cover them.
-   */
-  afterMembers?: (group: G, colSpan: number) => ReactNode;
   /** One full-width row while there are no groups. */
   empty: ReactNode;
 }
+
+/**
+ * `height` virtualizes rows at a fixed row height, so it cannot take
+ * `afterMembers`, whose rows can be absent or several per group.
+ */
+export type ProcessGroupTableProps<G, M> = TableOptions<G, M> &
+  (
+    | {
+        /** Viewport height of the scrolling body in px: virtualizes rows. */
+        height: number;
+        afterMembers?: never;
+      }
+    | {
+        height?: undefined;
+        /**
+         * Rows after an open group's members that are not processes: a loading or
+         * error line, a note, Load more. Members themselves always come from
+         * `rows.members`, so selection, keyboard and Command-A cover them.
+         */
+        afterMembers?: (group: G, colSpan: number) => ReactNode;
+      }
+  );
