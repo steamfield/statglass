@@ -10,7 +10,6 @@ import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Switch } from "~/components/ui/switch";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { useSettings } from "~/stores/settings-store";
-import { AlertsPanel } from "./_components/alerts-panel";
 import { CommandLinePanel } from "./_components/command-line-panel";
 import { GeneralPanel } from "./_components/general-panel";
 import { MenuBarPanel } from "./_components/menu-bar-panel";
@@ -81,7 +80,6 @@ export default function SettingsRoute() {
               modules={settings.modules}
               menuBar={settings.menu_bar}
             />
-            <AlertsPanel alerts={settings.alerts} />
           </div>
           <div className="flex flex-col gap-5">
             <SamplingPanel

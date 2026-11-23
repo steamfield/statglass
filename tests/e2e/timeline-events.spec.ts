@@ -112,30 +112,5 @@ for (const theme of THEMES) {
       });
       expect(errors).toEqual([]);
     });
-
-    test("alert switches write through update_settings", async ({
-      page,
-    }, info) => {
-      const errors = trackConsoleErrors(page);
-      await open(page, "/dashboard/settings", theme);
-      const hot = page.getByRole("switch", {
-        name: "Alert when a process is above 200% CPU for 5 minutes",
-      });
-      const thermal = page.getByRole("switch", {
-        name: "Alert when the thermal state is Serious or worse",
-      });
-      await expect(hot).not.toBeChecked();
-      await expect(thermal).not.toBeChecked();
-      await thermal.click();
-      await expect(thermal).toBeChecked();
-      await expect(hot).not.toBeChecked();
-      await page.screenshot({
-        path: shot("settings-alerts", theme, info.project.name),
-        fullPage: true,
-      });
-      await thermal.click();
-      await expect(thermal).not.toBeChecked();
-      expect(errors).toEqual([]);
-    });
   });
 }

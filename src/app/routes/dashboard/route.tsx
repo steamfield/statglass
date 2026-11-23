@@ -108,8 +108,12 @@ export default function DashboardLayout() {
     (host) => host.config.id === hostId
   );
   const { pathname, search } = useLocation();
+  // Hosts, Settings and Alerts belong to This Mac: they render in its store
+  // and on its clock whichever host is selected.
   const metricPage =
-    pathname !== "/dashboard/hosts" && pathname !== "/dashboard/settings";
+    pathname !== "/dashboard/hosts" &&
+    pathname !== "/dashboard/settings" &&
+    pathname !== "/dashboard/alerts";
   const hasRemote = remote !== undefined;
   const remoteDisconnected = hasRemote && remote.status.state !== "connected";
   const isDiskSpace =

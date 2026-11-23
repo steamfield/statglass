@@ -5,6 +5,7 @@ import {
   type RouteObject,
 } from "react-router";
 import { useWindowAppearance } from "~/hooks/use-window-appearance";
+import AlertsRoute from "~/routes/dashboard/alerts/route";
 import BatteryRoute from "~/routes/dashboard/battery/route";
 import ContainerDetailRoute from "~/routes/dashboard/containers/detail-route";
 import ContainersRoute from "~/routes/dashboard/containers/route";
@@ -80,6 +81,7 @@ export function appRoutes({
                   path: "containers/:engineId/:containerId",
                   element: <ContainerDetailRoute />,
                 },
+                { path: "alerts", element: <AlertsRoute /> },
                 { path: "settings", element: <SettingsRoute /> },
                 { path: "hosts", element: <HostsRoute /> },
                 ...PENDING_PAGES.map((page) => ({
