@@ -65,9 +65,10 @@ describe("Processes page", () => {
       screen.getByRole("searchbox", { name: /search processes/i }),
       "2240"
     );
+    // The search holds the group open, so it offers no toggle to close it.
     expect(
-      screen.getByRole("button", { name: "Hide Xcode processes" })
-    ).toHaveAttribute("aria-expanded", "true");
+      screen.queryByRole("button", { name: /Xcode processes/ })
+    ).toBeNull();
     expect(
       screen.getByRole("cell", { name: /SourceKitService/ })
     ).toBeVisible();
