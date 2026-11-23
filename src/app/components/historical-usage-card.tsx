@@ -30,6 +30,7 @@ import {
 } from "~/components/historical-usage-processes";
 import {
   type RecordedMembers,
+  type RecordedRunning,
   recordedAppKey,
   recordedColumns,
   recordedGroupRows,
@@ -38,7 +39,7 @@ import { ProcessGroupTable } from "~/components/process-group-table";
 import { Button } from "~/components/ui/button";
 import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useHistoricalUsage } from "~/hooks/use-historical-usage";
-import { useRunningApps } from "~/hooks/use-running-apps";
+import { useAppQuitTargets, useRunningMatches } from "~/hooks/use-running-apps";
 import { useUnits } from "~/hooks/use-units";
 import { useHostId } from "~/stores/host-store";
 import type { Accent } from "~/widgets/lib/accent";
@@ -269,7 +270,6 @@ function HistoricalUsageTable({
 }) {
   const host = useHostId();
   const units = useUnits();
-  const running = useRunningApps();
   // Null until known: the shared table renders nothing rather than gain its
   // checkbox column a moment later.
   const selectable = useCanSignalSettled();
@@ -280,8 +280,10 @@ function HistoricalUsageTable({
     () => (sort.dir === "asc" ? [...data.apps].reverse() : data.apps),
     [data.apps, sort.dir]
   );
-  // Memoised on the reply, the loaded pages and the running map, which keeps
-  // its identity while no process starts or exits: no re-render each second.
+  const running = useRecordedRunning(apps, members.loaded);
+  // Memoised on the reply, the loaded pages and what the listed rows act on
+  // now, which hold while no listed app or process starts or exits: no
+  // re-render each second, nor when an unrelated process comes or goes.
   const rows = useMemo(
     () => recordedGroupRows(apps, members.loaded, running),
     [apps, members.loaded, running]
@@ -350,7 +352,7 @@ function HistoricalUsageTable({
         selectable={selectable}
         scopeKey={`${host}:${range.fromMs}:${range.toMs}`}
         afterMembers={afterMembers}
-        after={(colSpan) => (
+        after={({ colSpan }) => (
           <FullWidthRow colSpan={colSpan} tone="footnote">
             Up to ten recorded apps for{" "}
             {HISTORICAL_LABELS[sort.by].toLowerCase()}; reversing the order
@@ -360,6 +362,24 @@ function HistoricalUsageTable({
         empty={null}
       />
     </>
+  );
+}
+
+/**
+ * What the listed apps and the loaded recorded processes act on now, kept
+ * while both hold.
+ */
+function useRecordedRunning(
+  apps: readonly HistoricalUsageApp[],
+  loaded: RecordedMembers
+): RecordedRunning {
+  const names = useMemo(() => apps.map((app) => app.name), [apps]);
+  const processes = useMemo(() => [...loaded.values()].flat(), [loaded]);
+  const appTargets = useAppQuitTargets(names);
+  const matches = useRunningMatches(processes);
+  return useMemo(
+    () => ({ apps: appTargets, processes: matches }),
+    [appTargets, matches]
   );
 }
 

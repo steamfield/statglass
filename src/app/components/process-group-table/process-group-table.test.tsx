@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import type { ColumnSort } from "~/components/data-table";
 import { useProcessRows } from "~/hooks/use-process-interest";
 import { ProcessGroupTable } from "./process-group-table";
+import { RemainderNote, RemainderRow } from "./remainder-row";
 import type { GroupColumn, GroupRows, ProcessGroupTableProps } from "./types";
 
 interface App {
@@ -333,7 +334,7 @@ describe("ProcessGroupTable limit and trailing rows", () => {
   it("renders trailing rows across every column", () => {
     render(
       table(apps(ROWS), {
-        after: (span) => (
+        after: ({ colSpan: span }) => (
           <tr>
             <td colSpan={span}>footnote {span}</td>
           </tr>
@@ -342,6 +343,48 @@ describe("ProcessGroupTable limit and trailing rows", () => {
     );
     expect(screen.getByRole("cell", { name: "footnote 2" })).toBeVisible();
   });
+});
+
+describe("ProcessGroupTable remainder rows", () => {
+  it.each([true, false])(
+    "lines a remainder row's cells up under the groups' (selectable %s)",
+    (selectable) => {
+      renderWithProviders(
+        table(apps(ROWS), {
+          selectable,
+          after: (t) => (
+            <>
+              <RemainderRow
+                table={t}
+                columns={[CPU]}
+                name="System and other"
+                system
+                first
+                cell={(c) => `${c.id} 9.0`}
+              />
+              <RemainderNote table={t}>What the rest holds.</RemainderNote>
+            </>
+          ),
+        })
+      );
+      const cellText = (r: HTMLElement) =>
+        within(r)
+          .getAllByRole("cell")
+          .map((c) => c.textContent);
+      const rest = screen.getByText("System and other").closest("tr");
+      if (!rest) throw new Error("no remainder row");
+      // Gutter, name, % CPU, actions: the group rows' cells, with nothing to select.
+      const group = cellText(row("Xcode"));
+      const cells = cellText(rest);
+      expect(cells).toHaveLength(group.length);
+      expect(cells.indexOf("cpu 9.0")).toBe(group.indexOf("20.0"));
+      expect(cells.filter((c) => c === "")).toHaveLength(selectable ? 2 : 0);
+      expect(within(rest).queryByRole("checkbox")).toBeNull();
+      expect(
+        screen.getByRole("cell", { name: "What the rest holds." })
+      ).toHaveAttribute("colspan", String(group.length));
+    }
+  );
 });
 
 describe("ProcessGroupTable virtualization", () => {

@@ -88,7 +88,7 @@ function GroupTable<G, M>(props: Props<G, M> & { selectable: boolean }) {
           showAll={showAll}
           onToggle={() => setShowAll((v) => !v)}
         />
-        {props.after?.(colSpan)}
+        {props.after?.({ colSpan, selectable: props.selectable })}
       </>
     ),
   };

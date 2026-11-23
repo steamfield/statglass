@@ -90,6 +90,15 @@ export interface ClientSort {
   nameSortable?: boolean;
 }
 
+/**
+ * What rows after the groups need to line up with them: the full colSpan,
+ * and whether the table has the checkbox gutter and actions column.
+ */
+export interface AfterRows {
+  colSpan: number;
+  selectable: boolean;
+}
+
 /** Expansion owned by the page, when it loads members for open groups. */
 export interface Expansion {
   open: ReadonlySet<string>;
@@ -121,8 +130,8 @@ interface TableOptions<G, M> {
   /** Show the first `limit` groups and a Show all row; ignored while `searching`. */
   limit?: number;
   searching?: boolean;
-  /** Rows after the groups (remainder rows, a footnote), given the full colSpan. */
-  after?: (colSpan: number) => ReactNode;
+  /** Rows after the groups (`RemainderRow`s, a footnote). */
+  after?: (table: AfterRows) => ReactNode;
   /** One full-width row while there are no groups. */
   empty: ReactNode;
 }

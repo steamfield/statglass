@@ -365,28 +365,28 @@ it("shows unrecorded history without inventing empty zero-valued app rows", asyn
   expect(apps).toHaveBeenCalledTimes(1);
 });
 
+const compilerMain = liveProcess({
+  pid: 9001,
+  name: "Compiler",
+  app: "Compiler",
+  app_quit: true,
+});
+const compilerHelper = liveProcess({
+  pid: 9002,
+  name: "Compiler Helper",
+  app: "Compiler",
+  app_quit: false,
+});
+
+async function running(
+  transport: ReturnType<typeof createMockTransport>,
+  rows: LiveProcess[]
+) {
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  act(() => transport.push({ kind: "processes", ts_ms: NOW, rows }));
+}
+
 describe("recorded rows act on what is running now", () => {
-  const compilerMain = liveProcess({
-    pid: 9001,
-    name: "Compiler",
-    app: "Compiler",
-    app_quit: true,
-  });
-  const compilerHelper = liveProcess({
-    pid: 9002,
-    name: "Compiler Helper",
-    app: "Compiler",
-    app_quit: false,
-  });
-
-  async function running(
-    transport: ReturnType<typeof createMockTransport>,
-    rows: LiveProcess[]
-  ) {
-    await waitFor(() => expect(transport.subscriberCount()).toBe(1));
-    act(() => transport.push({ kind: "processes", ts_ms: NOW, rows }));
-  }
-
   it("asks for every running process while it can quit them", async () => {
     const { transport } = setup();
     await screen.findByText("Compiler");
@@ -504,38 +504,6 @@ describe("recorded rows act on what is running now", () => {
     expect(screen.getByText("3 selected")).toBeVisible();
   });
 
-  it("does not re-render on a live tick that starts or ends no process", async () => {
-    const transport = createMockTransport({ now: () => NOW, autoTick: false });
-    let commits = 0;
-    const { user } = renderWithProviders(
-      <Profiler id="recorded" onRender={() => commits++}>
-        <HistoricalUsageCard range={RANGE} by="cpu" />
-      </Profiler>,
-      { transport }
-    );
-    await screen.findByText("Compiler");
-    await user.click(
-      screen.getByRole("button", { name: "Show Compiler processes" })
-    );
-    await screen.findByText("4099");
-    await running(transport, [compilerMain, compilerHelper]);
-    await screen.findByRole("checkbox", { name: "Select Compiler" });
-    for (let tick = 1; tick <= 3; tick++) {
-      const before = commits;
-      act(() =>
-        transport.push({
-          kind: "processes",
-          ts_ms: NOW + tick * 1000,
-          rows: [
-            { ...compilerMain, cpu_pct: tick * 10 },
-            { ...compilerHelper, cpu_pct: tick * 5 },
-          ],
-        })
-      );
-      expect(commits - before).toBe(0);
-    }
-  });
-
   it("says nothing is running only once the running processes are known", async () => {
     const { transport } = setup();
     // Hold back the batch the host sends as soon as the interest registers.
@@ -595,5 +563,79 @@ describe("recorded rows act on what is running now", () => {
         .filter((c) => c.command === "set_process_interest")
         .map((c) => c.args[2])
     ).not.toContainEqual(RUNNING_APPS_VIEW);
+  });
+});
+
+describe("recorded rows on the live process stream", () => {
+  it("does not re-render on a live tick that starts or ends no process", async () => {
+    const transport = createMockTransport({ now: () => NOW, autoTick: false });
+    let commits = 0;
+    const { user } = renderWithProviders(
+      <Profiler id="recorded" onRender={() => commits++}>
+        <HistoricalUsageCard range={RANGE} by="cpu" />
+      </Profiler>,
+      { transport }
+    );
+    await screen.findByText("Compiler");
+    await user.click(
+      screen.getByRole("button", { name: "Show Compiler processes" })
+    );
+    await screen.findByText("4099");
+    await running(transport, [compilerMain, compilerHelper]);
+    await screen.findByRole("checkbox", { name: "Select Compiler" });
+    for (let tick = 1; tick <= 3; tick++) {
+      const before = commits;
+      act(() =>
+        transport.push({
+          kind: "processes",
+          ts_ms: NOW + tick * 1000,
+          rows: [
+            { ...compilerMain, cpu_pct: tick * 10 },
+            { ...compilerHelper, cpu_pct: tick * 5 },
+          ],
+        })
+      );
+      expect(commits - before).toBe(0);
+    }
+  });
+
+  it("does not re-render when a process outside the listed apps and processes starts or exits", async () => {
+    const transport = createMockTransport({ now: () => NOW, autoTick: false });
+    let commits = 0;
+    const { user } = renderWithProviders(
+      <Profiler id="recorded" onRender={() => commits++}>
+        <HistoricalUsageCard range={RANGE} by="cpu" />
+      </Profiler>,
+      { transport }
+    );
+    await screen.findByText("Compiler");
+    await user.click(
+      screen.getByRole("button", { name: "Show Compiler processes" })
+    );
+    await screen.findByText("4099");
+    await running(transport, [compilerMain, compilerHelper]);
+    await screen.findByRole("checkbox", { name: "Select Compiler" });
+    const terminal = liveProcess({
+      pid: 7001,
+      name: "Terminal",
+      app: "Terminal",
+    });
+    const before = commits;
+    for (const rows of [
+      [compilerMain, compilerHelper, terminal],
+      [compilerMain, compilerHelper],
+    ]) {
+      act(() => transport.push({ kind: "processes", ts_ms: NOW + 1000, rows }));
+    }
+    expect(commits - before).toBe(0);
+    // A listed app's quit target exiting does change what its row offers.
+    act(() =>
+      transport.push({
+        kind: "processes",
+        ts_ms: NOW + 2000,
+        rows: [compilerHelper, terminal],
+      })
+    );
+    expect(commits).toBeGreaterThan(before);
   });
 });
