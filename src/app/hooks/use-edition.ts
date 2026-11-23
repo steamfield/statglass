@@ -22,6 +22,26 @@ export function useEdition(): Edition | null {
 }
 
 /**
+ * `useCanSignal`, but null while the edition is still loading on this Mac.
+ * Selection shapes a table (a checkbox column), so a table waits for this
+ * instead of adding the column under the reader. A remote host is known at
+ * once (false); an edition that fails to load counts as no Quit (false), so
+ * nothing waits forever.
+ */
+export function useCanSignalSettled(): boolean | null {
+  const transport = useTransport();
+  const local = useIsLocalHost();
+  const { data, isPending } = useQuery({
+    queryKey: appKeys.edition,
+    queryFn: () => transport.getEdition(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  if (!local) return false;
+  if (isPending) return null;
+  return data?.process_signal === true;
+}
+
+/**
  * Whether this view can quit processes: only on this Mac (a remote host's
  * processes are listed, D-117) and only in a build with `process_signal`
  * (the App Store edition has no Quit or Force Quit, D-065).
