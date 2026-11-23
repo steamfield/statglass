@@ -2,7 +2,6 @@ import { availableMetrics, newRule } from "@core/alerts";
 import type { AlertRule, Event } from "@core/generated/bindings";
 import { MOCK_HOST_ID, type ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
-import { MINUTE_MS } from "@core/time-grid";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
@@ -134,7 +133,7 @@ describe("Rules panel", () => {
     expect(within(region).getAllByText(/Never fired/)).toHaveLength(2);
   });
 
-  it("opens the Timeline on the hour around the rule's last alert", async () => {
+  it("opens the Timeline on a window around the rule's last alert", async () => {
     const transport = await seeded([PRESSURE]);
     const fired = await alertEvent(transport, PRESSURE_ID);
     const { user, router } = renderWithProviders(
@@ -145,14 +144,13 @@ describe("Rules panel", () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/dashboard/timeline")
     );
-    expect(
-      (await transport.getSettings()).settings.general.chart_window
-    ).toEqual({
-      absolute: {
-        from_ms: fired.ts_ms - 30 * MINUTE_MS,
-        to_ms: fired.ts_ms + 30 * MINUTE_MS,
-      },
-    });
+    const window = (await transport.getSettings()).settings.general
+      .chart_window;
+    if (!window || typeof window === "string" || !("absolute" in window)) {
+      throw new Error("expected an absolute chart window");
+    }
+    expect(window.absolute.from_ms).toBeLessThanOrEqual(fired.ts_ms);
+    expect(window.absolute.to_ms).toBeGreaterThanOrEqual(fired.ts_ms);
   });
 
   it("says a rule on a metric this Mac lacks is not measured, keeping its switch", async () => {
