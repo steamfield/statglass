@@ -1,7 +1,11 @@
 import { countNoun, formatInteger } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
 import type { LiveGroup } from "@core/process-groups";
-import { targetKey } from "@core/process-selection";
+import {
+  type ProcessTarget,
+  targetKey,
+  uniqueTargets,
+} from "@core/process-selection";
 import type { GroupRows } from "~/components/process-group-table";
 import type {
   ProcessColumn,
@@ -12,11 +16,14 @@ import type {
  * How the Processes table reads app groups: the members listed are the
  * search matches, a search that matched inside opens the group, Quit on the
  * app acts on the members Rust marked `app_quit`, and each member links to
- * its detail page.
+ * its detail page, whose back link returns to `back` (this page's path and
+ * query).
  */
 export function liveGroupRows(
-  groups: readonly LiveGroup[]
+  groups: readonly LiveGroup[],
+  back: string
 ): GroupRows<LiveGroup, LiveProcess> {
+  const backQuery = `?back=${encodeURIComponent(back)}`;
   return {
     groups,
     key: (g) => g.key,
@@ -28,16 +35,32 @@ export function liveGroupRows(
     memberKey: targetKey,
     memberName: (p) => p.name,
     memberPid: (p) => p.pid,
-    memberHref: (p) => `/dashboard/processes/${p.pid}/${p.start_time_us}`,
+    memberHref: (p) =>
+      `/dashboard/processes/${p.pid}/${p.start_time_us}${backQuery}`,
     memberTargets: (p) => [p],
   };
 }
 
-/** Every process the groups list: what the footer counts and Command-A selects. */
+/** Every process the groups list: what the footer counts. */
 export function shownProcesses(
   groups: readonly LiveGroup[]
 ): readonly LiveProcess[] {
   return groups.flatMap((g) => g.shown);
+}
+
+/**
+ * What Command-A selects and the selection refreshes from: every listed
+ * process plus each group's quit targets, which a member search can leave
+ * unlisted (search "2240" lists SourceKitService, but ticking Xcode selects
+ * its main).
+ */
+export function selectableTargets(
+  groups: readonly LiveGroup[]
+): readonly ProcessTarget[] {
+  return uniqueTargets([
+    ...shownProcesses(groups),
+    ...groups.flatMap((g) => g.quit),
+  ]);
 }
 
 /** The column-set control (plan 4.14); Network and GPU from v1.2. */

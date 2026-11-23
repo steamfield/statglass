@@ -10,6 +10,7 @@ import {
   uniqueTargets,
 } from "@core/process-selection";
 import { useState } from "react";
+import { groupLabel, memberLabel } from "./group-identity";
 import type { GroupRows } from "./types";
 import type { VisibleRow } from "./use-group-order";
 
@@ -26,7 +27,11 @@ export function selectionRows<G, M>(
     if (row.kind === "group") {
       const { group } = row;
       return [
-        { key: row.key, label: rows.name(group), targets: rows.targets(group) },
+        {
+          key: row.key,
+          label: groupLabel(rows, group),
+          targets: rows.targets(group),
+        },
       ];
     }
     const { member } = row;
@@ -34,7 +39,7 @@ export function selectionRows<G, M>(
       {
         key: row.key,
         parentKey: row.parentKey,
-        label: `${rows.memberName(member)} (${rows.memberPid(member)})`,
+        label: memberLabel(rows, member),
         targets: rows.memberTargets(member),
       },
     ];

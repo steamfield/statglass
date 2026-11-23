@@ -1,4 +1,10 @@
-import { IDLE_PROCESSES, PROCESSES } from "@core/mock/fixtures";
+import { displayUnits, formatRate } from "@core/format";
+import {
+  BACKGROUND_PROCESSES,
+  IDLE_PROCESSES,
+  PROCESSES,
+  withNetRates,
+} from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import {
   act,
@@ -106,6 +112,20 @@ describe("Processes page", () => {
       screen.getByRole("checkbox", { name: "Select Google Chrome" })
     );
     expect(screen.getByText(`${helpers.length} selected`)).toBeVisible();
+  });
+
+  it("keeps a ticked app's main in Command-A while a member search hides it", async () => {
+    const { user } = renderPage();
+    await screen.findByRole("cell", { name: /Xcode/ });
+    await user.type(
+      screen.getByRole("searchbox", { name: /search processes/i }),
+      "2240"
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Select Xcode" }));
+    expect(screen.getByText("1 selected")).toBeVisible();
+    await user.keyboard("{Meta>}a{/Meta}");
+    // SourceKitService, listed, and Xcode's main, which the search hides.
+    expect(screen.getByText("2 selected")).toBeVisible();
   });
 
   it("selects only the main executable of a bundled app", async () => {
@@ -274,7 +294,17 @@ describe("Processes page, network columns (D-081)", () => {
         "Safari"
       )
     );
-    expect(within(table).getAllByRole("row")[1]?.textContent).toMatch(/MB\/s/);
+    // The Safari row sums its members' down and up rates.
+    const safari = withNetRates(
+      [...PROCESSES, ...BACKGROUND_PROCESSES, ...IDLE_PROCESSES].filter(
+        (p) => p.app === "Safari"
+      )
+    ).reduce((n, p) => n + (p.net_rx_bps ?? 0) + (p.net_tx_bps ?? 0), 0);
+    expect(
+      within(within(table).getAllByRole("row")[1] as HTMLElement).getByText(
+        formatRate(safari, { units: displayUnits(null).rate })
+      )
+    ).toBeVisible();
     expect(screen.getByText(/cover your processes only/)).toBeVisible();
 
     await user.click(screen.getByRole("radio", { name: "CPU" }));

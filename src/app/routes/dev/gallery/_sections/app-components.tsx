@@ -752,7 +752,10 @@ export function AppComponentsSection() {
           <ProcessGroupTable
             selectable
             ariaLabel="Top processes"
-            rows={liveGroupRows(groupLiveProcesses(PROCESS_ROWS, ""))}
+            rows={liveGroupRows(
+              groupLiveProcesses(PROCESS_ROWS, ""),
+              "/dev/gallery"
+            )}
             columns={GALLERY_COLUMNS}
             nameHeader="Process"
             sort={{ value: sort, onChange: setSort, client: true }}

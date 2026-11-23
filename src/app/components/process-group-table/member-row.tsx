@@ -11,6 +11,7 @@ import {
 } from "~/components/process-selection";
 import { TableCell } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+import { memberLabel } from "./group-identity";
 import type { GroupColumn, GroupRows } from "./types";
 
 /** Body cell: 29 px rows, so the virtualizer's fixed estimate holds. */
@@ -48,23 +49,36 @@ export function ColumnCells<G, M>({
   ));
 }
 
-/** Quit and Force Quit on hover or focus, acting on the row's targets. */
+/**
+ * Quit and Force Quit on hover or focus, acting on the row's targets. A row
+ * with no targets and a `reason` shows the reason instead, always visible,
+ * since it is what explains the disabled checkbox.
+ */
 export function ActionsCell({
   targets,
+  reason,
 }: {
   targets: readonly ProcessTarget[];
+  reason: string | undefined;
 }) {
+  const unavailable = targets.length === 0 ? reason : undefined;
   return (
     <TableCell className="w-36 min-w-36 whitespace-nowrap py-0 pr-2 pl-1 text-right">
-      <span className="inline-flex h-6 items-center align-middle opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 group-data-[state=open]:opacity-100">
-        <SharedProcessActions targets={targets} />
-      </span>
+      {unavailable === undefined ? (
+        <span className="inline-flex h-6 items-center align-middle opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 group-data-[state=open]:opacity-100">
+          <SharedProcessActions targets={targets} />
+        </span>
+      ) : (
+        <span className="pr-1 text-label text-muted-foreground">
+          {unavailable}
+        </span>
+      )}
     </TableCell>
   );
 }
 
 /** A member's name, linked to its detail page when it has one. */
-function MemberName({
+export function MemberName({
   name,
   href,
 }: {
@@ -85,7 +99,8 @@ function MemberName({
 /**
  * A member process: its name indented under the group with the pid beside
  * it (unless the table has a PID column), then its own figures. A member
- * with no targets (it has exited) gets a disabled checkbox and no actions.
+ * with no targets (it has exited) gets a disabled checkbox and no actions,
+ * or its `memberUnavailable` reason where the actions would be.
  */
 export function MemberRow<G, M>({
   member,
@@ -106,7 +121,7 @@ export function MemberRow<G, M>({
   return (
     <ProcessSelectionRow
       rowKey={rows.memberKey(member)}
-      label={`${name} (${pid})`}
+      label={memberLabel(rows, member)}
       targets={targets}
       data-name={name}
       data-pid={pid}
@@ -123,7 +138,12 @@ export function MemberRow<G, M>({
         </span>
       </TableCell>
       <ColumnCells columns={columns} cell={(c) => c.member(member)} />
-      {actions && <ActionsCell targets={targets} />}
+      {actions && (
+        <ActionsCell
+          targets={targets}
+          reason={rows.memberUnavailable?.(member)}
+        />
+      )}
     </ProcessSelectionRow>
   );
 }

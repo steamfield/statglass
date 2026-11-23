@@ -17,7 +17,13 @@ export interface GroupColumn<G, M> {
   id: string;
   header: ReactNode;
   align: "left" | "right";
-  /** Client-sort value of a group row. Omit both values for an unsortable column. */
+  /**
+   * The header is a sort button. Defaults to whether the column has a
+   * `groupValue` or `memberValue`; a page whose rows Rust ranks (non-client
+   * sort) sets it without either value.
+   */
+  sortable?: boolean;
+  /** Client-sort value of a group row. */
   groupValue?: (group: G) => SortValue;
   /** Client-sort value of a member row, used inside its group. */
   memberValue?: (member: M) => SortValue;
@@ -33,14 +39,25 @@ export interface GroupRows<G, M> {
   /** Stable across frames: the selection, expansion and hold key. */
   key: (group: G) => string;
   name: (group: G) => string;
-  /** Shown as "N processes"; a group of one has no chevron and no count. */
-  count: (group: G) => number;
+  /**
+   * Shown as "N processes"; null when unknown (a recorded app before its
+   * processes load), which shows no count. A group of one reads as its
+   * process: its member's name, link and pid.
+   */
+  count: (group: G) => number | null;
+  /** Has a chevron and lists members when open. Defaults to a count over 1. */
+  expandable?: (group: G) => boolean;
   /** The members to list when the group is open. */
   members: (group: G) => readonly M[];
   /** Open regardless of the reader's toggle, e.g. a search matched inside. */
   forcedOpen?: (group: G) => boolean;
   /** What the group row selects and quits; empty disables it. */
   targets: (group: G) => readonly ProcessTarget[];
+  /**
+   * Why a group with no targets offers nothing ("Not running"): shown where
+   * its actions would be. Ignored while the group has targets.
+   */
+  unavailable?: (group: G) => string | undefined;
   memberKey: (member: M) => string;
   memberName: (member: M) => string;
   memberPid: (member: M) => number;
@@ -48,6 +65,8 @@ export interface GroupRows<G, M> {
   memberHref?: (member: M) => string | undefined;
   /** What the member row selects and quits; empty when it is not running. */
   memberTargets: (member: M) => readonly ProcessTarget[];
+  /** Why a member with no targets offers nothing, as for `unavailable`. */
+  memberUnavailable?: (member: M) => string | undefined;
   /** Dim the member (it has exited). */
   memberMuted?: (member: M) => boolean;
 }
@@ -62,6 +81,8 @@ export interface ClientSort {
   value: ColumnSort<string>;
   onChange: (next: ColumnSort<string>) => void;
   client: boolean;
+  /** The name header is a sort button too. Defaults to true. */
+  nameSortable?: boolean;
 }
 
 /** Expansion owned by the page, when it loads members for open groups. */

@@ -22,6 +22,7 @@ import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { requestedBytes } from "../disk/_components/disk-processes";
 import { readRange } from "../disk/_lib/range-params";
+import { detailBack } from "./_lib/back-link";
 
 /** Focused I/O inspection, using the same retained batch as the Disk table. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
@@ -47,17 +48,14 @@ export default function ProcessDetailRoute() {
     .flatMap((a) => a.processes)
     .find((p) => p.pid === pid && p.start_time_us === start);
   const process = selected ? retained : (live ?? retained);
-  const requestedBack = params.get("back");
-  const back = requestedBack?.startsWith("/dashboard/disk")
-    ? requestedBack
-    : "/dashboard/disk";
+  const back = detailBack(params.get("back"));
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Link
-        to={back}
+        to={back.to}
         className="self-start rounded-chip text-fg-subtle text-small outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        Back to Disk
+        {back.label}
       </Link>
       <PageHeader
         title={process?.name ?? "Process unavailable"}

@@ -7,8 +7,16 @@ import type { ColumnSort } from "~/components/data-table";
 import { ProcessSelectionHead } from "~/components/process-selection";
 import { TableHead, TableRow } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
-import type { ClientSort, ProcessGroupTableProps } from "./types";
+import type { ClientSort, GroupColumn, ProcessGroupTableProps } from "./types";
 import { NAME_COLUMN } from "./use-group-order";
+
+/** A column's header sorts when it says so, else when it has a sort value. */
+function columnSortable<G, M>(column: GroupColumn<G, M>): boolean {
+  return (
+    column.sortable ??
+    (column.groupValue !== undefined || column.memberValue !== undefined)
+  );
+}
 
 const HEADER = "h-auto whitespace-nowrap border-border border-b";
 
@@ -80,7 +88,7 @@ export function GroupTableHead<G, M>({
         <HeadCell
           id={NAME_COLUMN}
           align="left"
-          sort={sort}
+          sort={(sort?.nameSortable ?? true) ? sort : undefined}
           className={undefined}
         >
           {table.nameHeader}
@@ -90,7 +98,7 @@ export function GroupTableHead<G, M>({
             key={c.id}
             id={c.id}
             align={c.align}
-            sort={c.groupValue || c.memberValue ? sort : undefined}
+            sort={columnSortable(c) ? sort : undefined}
             className={c.className}
           >
             {c.header}

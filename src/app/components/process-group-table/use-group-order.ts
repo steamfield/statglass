@@ -8,6 +8,7 @@
 import { holdOrder } from "@core/held-order";
 import { useRef } from "react";
 import { useRowHold } from "~/components/data-table";
+import { canExpand, soleMember } from "./group-identity";
 import type { ClientSort, GroupColumn, GroupRows, SortValue } from "./types";
 
 /** One row of the flattened body: a group, one of its members, or its trailing rows. */
@@ -16,7 +17,7 @@ export type VisibleRow<G, M> =
       kind: "group";
       key: string;
       group: G;
-      /** More than one process and not forced open: it has a chevron. */
+      /** Expandable and not forced open: it has a chevron. */
       expandable: boolean;
       open: boolean;
     }
@@ -78,7 +79,7 @@ function groupSortValue<G, M>(
   const { rows } = source;
   if (by === NAME_COLUMN) return rows.name(group);
   const column = sortColumn(source.columns, by);
-  const only = rows.count(group) === 1 ? rows.members(group)[0] : undefined;
+  const only = soleMember(rows, group);
   if (only !== undefined && column?.memberValue) {
     return column.memberValue(only);
   }
@@ -128,13 +129,13 @@ export function sortMembers<G, M>(
   );
 }
 
-/** Whether a group lists its members: it has several, and is open or forced open. */
+/** Whether a group lists its members: it expands, and is open or forced open. */
 export function isGroupOpen<G, M>(
   source: OrderSource<G, M>,
   group: G
 ): boolean {
   const { rows, open } = source;
-  if (rows.count(group) <= 1) return false;
+  if (!canExpand(rows, group)) return false;
   return (rows.forcedOpen?.(group) ?? false) || open.has(rows.key(group));
 }
 
@@ -166,7 +167,7 @@ function groupRows<G, M>(
     kind: "group",
     key,
     group,
-    expandable: rows.count(group) > 1 && !(rows.forcedOpen?.(group) ?? false),
+    expandable: canExpand(rows, group) && !(rows.forcedOpen?.(group) ?? false),
     open,
   };
   if (!open) return [head];
