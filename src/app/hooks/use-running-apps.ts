@@ -1,10 +1,20 @@
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess, ProcessView } from "@core/generated/bindings";
 import { type RunningApps, runningByApp } from "@core/process-groups";
 import { FULL_TABLE } from "@core/process-interest";
 import { useMemo } from "react";
 import { useCanSignal } from "~/hooks/use-edition";
 import { useProcessInterest } from "~/hooks/use-process-interest";
 import { useHost, useHostStore } from "~/stores/host-store";
+
+/**
+ * What the running map asks for: every process, every 10 s. Quit targets may
+ * be that stale (the per-target results report a process that exited), and
+ * a page that wants the table each second (Processes) still wins the union.
+ */
+export const RUNNING_APPS_VIEW: ProcessView = {
+  ...FULL_TABLE,
+  period_ms: 10_000,
+};
 
 /** Each batch's membership key, so a selector rerun on the same batch is free. */
 const keys = new WeakMap<readonly LiveProcess[], string>();
@@ -34,7 +44,7 @@ function membershipKey(rows: readonly LiveProcess[]): string {
  */
 export function useRunningApps(): RunningApps | null {
   const canSignal = useCanSignal();
-  useProcessInterest(canSignal ? FULL_TABLE : null);
+  useProcessInterest(canSignal ? RUNNING_APPS_VIEW : null);
   const store = useHostStore();
   const key = useHost((s) =>
     canSignal && s.processes ? membershipKey(s.processes.rows) : null

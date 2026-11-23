@@ -30,7 +30,7 @@ function mount(element: ReactElement, chartWindow: ChartWindow = FIXED) {
 }
 
 it.each(PAGES)(
-  "%s fixed ranges show source history without recent app queries or Quit",
+  "%s fixed ranges show source history without recent app queries; apps not running offer no Quit",
   async (_name, Page, by) => {
     const { transport } = mount(<Page />);
     expect(await screen.findByText("Compiler")).toBeVisible();
@@ -50,7 +50,9 @@ it.each(PAGES)(
     const table = screen.getByRole("table", {
       name: "Recorded apps in this range",
     });
-    expect(within(table).queryByRole("checkbox")).toBeNull();
+    // Recorded rows act on what runs now; none of these apps is running.
+    const boxes = within(table).queryAllByRole("checkbox");
+    expect(boxes.every((box) => box.hasAttribute("disabled"))).toBe(true);
     expect(screen.queryByRole("button", { name: /^Quit/ })).toBeNull();
   }
 );

@@ -1,11 +1,11 @@
 import type { ProcessView } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
 import type { RunningApps } from "@core/process-groups";
-import { FULL_TABLE } from "@core/process-interest";
 import { act, waitFor } from "@testing-library/react";
 import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { describe, expect, it } from "vitest";
+import { RUNNING_APPS_VIEW } from "~/hooks/use-running-apps";
 import { useRunningApps } from "./use-running-apps";
 
 type Transport = ReturnType<typeof createMockTransport>;
@@ -38,7 +38,9 @@ describe("useRunningApps", () => {
   it("asks for the full table and maps running processes by app", async () => {
     const { transport, seen } = mount();
     expect(seen.at(-1)).toBeNull();
-    await waitFor(() => expect(views(transport)).toContainEqual(FULL_TABLE));
+    await waitFor(() =>
+      expect(views(transport)).toContainEqual(RUNNING_APPS_VIEW)
+    );
     await waitFor(() => expect(transport.subscriberCount()).toBe(1));
     push(transport, 1000);
     const running = seen.at(-1);
@@ -48,7 +50,9 @@ describe("useRunningApps", () => {
 
   it("keeps the map and skips renders while membership holds", async () => {
     const { transport, seen } = mount();
-    await waitFor(() => expect(views(transport)).toContainEqual(FULL_TABLE));
+    await waitFor(() =>
+      expect(views(transport)).toContainEqual(RUNNING_APPS_VIEW)
+    );
     await waitFor(() => expect(transport.subscriberCount()).toBe(1));
     push(transport, 1000);
     const first = seen.at(-1);
@@ -71,7 +75,7 @@ describe("useRunningApps", () => {
     );
     await waitFor(() => expect(transport.subscriberCount()).toBe(1));
     push(transport, 1000);
-    expect(views(transport)).not.toContainEqual(FULL_TABLE);
+    expect(views(transport)).not.toContainEqual(RUNNING_APPS_VIEW);
     expect(seen.every((m) => m === null)).toBe(true);
   });
 });

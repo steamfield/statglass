@@ -681,3 +681,26 @@ describe("ProcessGroupTable before selection is known", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 });
+
+describe("ProcessGroupTable ranked header", () => {
+  it("names the ranked column's order without a button when it does not sort", () => {
+    render(
+      table(apps(ROWS), {
+        columns: [{ ...CPU, sortable: false }],
+        sort: {
+          value: { by: "cpu", dir: "desc" },
+          onChange: () => {},
+          client: false,
+          nameSortable: false,
+        },
+      })
+    );
+    const ranked = screen.getByRole("columnheader", { name: /% CPU/ });
+    expect(ranked).toHaveAttribute("aria-sort", "descending");
+    expect(ranked).toHaveTextContent("% CPU ↓");
+    expect(within(ranked).queryByRole("button")).toBeNull();
+    expect(screen.queryAllByRole("button", { name: /Process|% CPU/ })).toEqual(
+      []
+    );
+  });
+});

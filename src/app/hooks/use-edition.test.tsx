@@ -1,6 +1,7 @@
 import { createMockTransport } from "@core/mock-transport";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { useCanSignalSettled } from "./use-edition";
 
@@ -30,5 +31,33 @@ describe("useCanSignalSettled", () => {
     transport.getEdition = () => Promise.reject(new Error("bridge down"));
     mount(transport);
     expect(await screen.findByText("false")).toBeVisible();
+  });
+
+  it("stays settled when a new reader mounts after a failed read", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    let calls = 0;
+    transport.getEdition = () => {
+      calls++;
+      return Promise.reject(new Error("bridge down"));
+    };
+    function Late() {
+      const [shown, setShown] = useState(false);
+      return (
+        <>
+          <Probe />
+          <button type="button" onClick={() => setShown(true)}>
+            Mount
+          </button>
+          {shown && <Probe />}
+        </>
+      );
+    }
+    const { user } = renderWithProviders(<Late />, { transport });
+    expect(await screen.findByText("false")).toBeVisible();
+    const before = calls;
+    await user.click(screen.getByRole("button", { name: "Mount" }));
+    expect(screen.getAllByText("false")).toHaveLength(2);
+    expect(screen.queryByText("waiting")).toBeNull();
+    expect(calls).toBe(before);
   });
 });

@@ -1,5 +1,4 @@
 import { formatRate, MISSING } from "@core/format";
-import type { LiveProcess } from "@core/generated/bindings";
 import { keyByLabel } from "@core/series-key";
 import type { InterfaceRow } from "~/components/interface-table";
 
@@ -45,17 +44,4 @@ export function networkSubtitle(
   if (primary === null) return "No active interface";
   if (linkBitsPerSec === null) return primary;
   return `${primary} · ${formatRate(linkBitsPerSec / 8, { units: "Mbps" })} link`;
-}
-
-/**
- * Process rows with measured traffic: a rate on both sides (not the
- * baseline sample, D-081) and something sent or received.
- */
-export function measuredTraffic(rows: readonly LiveProcess[]): LiveProcess[] {
-  return rows.filter(
-    (p) =>
-      p.net_rx_bps !== null &&
-      p.net_tx_bps !== null &&
-      p.net_rx_bps + p.net_tx_bps > 0
-  );
 }
