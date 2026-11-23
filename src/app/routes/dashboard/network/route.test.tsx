@@ -368,12 +368,23 @@ describe("Network page Apps card (D-089)", () => {
     const table = await screen.findByRole("table", {
       name: "Network by app, now",
     });
+    // Grouped by app: the Safari row sums its WebContent helpers.
     await vi.waitFor(() =>
-      expect(within(table).getAllByRole("row")[1]).toHaveTextContent(
-        "Safari22.1 MB/s"
+      expect(within(table).getAllByRole("row")[1]).toHaveAttribute(
+        "data-name",
+        "Safari"
       )
     );
-    expect(views(transport.calls).at(-1)).toMatchObject({ network: true });
+    // Grouping a top-N batch would undercount: every row, with network rates.
+    expect(views(transport.calls)).toContainEqual(
+      expect.objectContaining({ limit: null, network: true })
+    );
+    expect(
+      within(table).getByRole("checkbox", { name: "Select Safari" })
+    ).toBeEnabled();
+    expect(
+      within(table).getByRole("button", { name: "Show Safari processes" })
+    ).toBeVisible();
     expect(screen.queryByRole("slider")).toBeNull();
     expect(screen.queryByText(/Drag across the chart/)).toBeNull();
     expect(byAppCalls(transport.calls)).toEqual([]);

@@ -347,3 +347,51 @@ describe("UsageAppsCard (D-093, D-099)", () => {
     ).toBeVisible();
   });
 });
+
+describe("UsageAppsCard on the shared grouped table", () => {
+  it("links a running member to its detail page and leaves an exited one plain", async () => {
+    const { user } = render(full);
+    await table();
+    await user.click(
+      screen.getByRole("button", { name: "Show Google Chrome processes" })
+    );
+    expect(
+      screen.getByRole("link", { name: /Google Chrome Helper \(Renderer\)/ })
+    ).toHaveAttribute("href", "/dashboard/processes/11/11000");
+    expect(
+      screen.queryByRole("link", { name: /^Google Chrome Helper$/ })
+    ).toBeNull();
+  });
+
+  it("puts Other apps after the groups with nothing to select", async () => {
+    render((from, to) => ({
+      ...full(from, to),
+      total: { ...full(from, to).total, energy_j: 600 },
+    }));
+    const rendered = await table();
+    const other = within(rendered).getByText("Other apps").closest("tr");
+    if (!other) throw new Error("no row");
+    expect(within(other).queryByRole("checkbox")).toBeNull();
+    expect(within(other).queryByRole("button")).toBeNull();
+    const last = within(rendered).getByText("WindowServer").closest("tr");
+    expect(last?.compareDocumentPosition(other) ?? 0).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+
+  it("lists ten apps, then Show all", async () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      app(`App ${i + 1}`, [100 + i], [proc(100 + i, `App ${i + 1}`, 120 - i)])
+    );
+    const { user } = render((from, to) => ({
+      ...full(from, to),
+      apps: many,
+    }));
+    await table();
+    expect(screen.queryByText("App 11")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show all 12 apps" }));
+    expect(screen.getByText("App 12")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Show top 10" }));
+    expect(screen.queryByText("App 11")).toBeNull();
+  });
+});

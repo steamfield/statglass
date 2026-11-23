@@ -26,57 +26,44 @@ function render(page: React.ReactElement) {
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing scenario grouping; keep individual scenarios focused (architecture refactor section 10).
 describe("Disk and Memory pages over a range (D-099)", () => {
-  it("Disk: current process rates become retained interval totals on either brush", async () => {
+  it("Disk: the app table moves to the brushed range's recorded totals on either brush", async () => {
     const { transport, user } = render(<DiskRoute />);
-    const table = await screen.findByRole("table", {
-      name: "Disk processes · Live",
-    });
+    const table = await screen.findByRole("table", { name: "Disk by app" });
     expect(
-      within(table).getByRole("columnheader", { name: "Total/s" })
+      within(table).getByRole("columnheader", { name: /Total/ })
     ).toHaveAttribute("aria-sort", "descending");
-    await vi.waitFor(() =>
-      expect(
-        calls(transport.calls, "set_process_interest").length
-      ).toBeGreaterThan(0)
-    );
+    // One grouped table: the per-process view and its toggle are gone.
+    expect(
+      screen.queryByRole("button", { name: /^By (app|process)$/ })
+    ).toBeNull();
+    expect(screen.queryByRole("table", { name: /^Disk processes/ })).toBeNull();
     const brushes = await screen.findAllByRole("slider", {
       name: "Select a time range",
     });
     expect(brushes).toHaveLength(2);
     act(() => brushes[1]?.focus());
     await user.keyboard("{Enter}");
+    await vi.waitFor(() =>
+      expect(
+        calls(transport.calls, "query_usage_by_app").some(
+          (args) =>
+            args[0] === T - 10 * S && args[1] === T && args[2] === "disk"
+        )
+      ).toBe(true)
+    );
     expect(
       await screen.findByRole("heading", {
-        name: "Processes on this Mac · selected 10 s",
+        name: /^Disk by app, selected 10 s/,
       })
     ).toBeVisible();
-    expect(calls(transport.calls, "query_usage_by_app")).toContainEqual([
-      T - 10 * S,
-      T,
-      "disk",
-      200,
-    ]);
     expect(screen.getAllByTestId("brush-band")).toHaveLength(2);
-    const historical = screen.getByRole("table", {
-      name: "Disk processes · selected 10 s",
-    });
-    expect(
-      within(historical).getByRole("columnheader", { name: "Total Avg/s" })
-    ).toBeVisible();
-    expect(within(historical).getByText("6120 · Exited")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Live" }));
-    expect(
-      await screen.findByRole("table", { name: "Disk processes · Live" })
-    ).toBeVisible();
   });
 
-  it("keeps current process selection and bulk actions available", async () => {
+  it("selects an app and quits it from the Disk table", async () => {
     const { user } = render(<DiskRoute />);
-    await screen.findByRole("table", { name: "Disk processes · Live" });
+    await screen.findByRole("table", { name: "Disk by app" });
     await user.click(
-      await screen.findByRole("checkbox", {
-        name: "Select Xcode (2214)",
-      })
+      await screen.findByRole("checkbox", { name: "Select Xcode" })
     );
     expect(screen.getByText("1 selected", { exact: true })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Force Quit 1…" }));
@@ -238,7 +225,7 @@ describe("Disk and Memory pages over a range (D-099)", () => {
       ).toBe(true)
     );
     expect(
-      await screen.findByRole("table", { name: /^Disk processes · / })
+      await screen.findByRole("table", { name: "Disk by app" })
     ).toBeVisible();
     expect(screen.queryByRole("button", { name: /^Quit / })).toBeNull();
   });

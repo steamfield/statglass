@@ -11,6 +11,7 @@ import {
   NETWORK_BY_APP_FROM_MS,
   networkByApp,
 } from "@tests/fixtures/network-by-app";
+import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { createElement, Fragment } from "react";
 import { BrushProvider, useBrushStore } from "~/stores/brush-store";
@@ -303,5 +304,42 @@ describe("Network app table headers", () => {
     for (const head of within(table).getAllByRole("columnheader")) {
       expect(within(head).queryByRole("button")).toBeNull();
     }
+  });
+});
+
+describe("Network app rows act on the running app", () => {
+  it("selects a running app's quit targets; remainder rows offer nothing", async () => {
+    const result = renderApps();
+    await screen.findByRole("table", { name: "Network by app" });
+    await waitFor(() => expect(result.transport.subscriberCount()).toBe(1));
+    act(() =>
+      result.transport.push({
+        kind: "processes",
+        ts_ms: T,
+        rows: [
+          liveProcess({
+            pid: 501,
+            name: "Google Chrome",
+            app: "Google Chrome",
+            app_quit: true,
+          }),
+          liveProcess({
+            pid: 502,
+            name: "Google Chrome Helper",
+            app: "Google Chrome",
+            app_quit: false,
+          }),
+        ],
+      })
+    );
+    const chrome = await screen.findByRole("checkbox", {
+      name: "Select Google Chrome",
+    });
+    await waitFor(() => expect(chrome).toBeEnabled());
+    fireEvent.click(chrome);
+    expect(screen.getByText("1 selected")).toBeVisible();
+    const other = screen.getByText("Other apps").closest("tr");
+    if (!other) throw new Error("no Other apps row");
+    expect(within(other).queryByRole("checkbox")).toBeNull();
   });
 });

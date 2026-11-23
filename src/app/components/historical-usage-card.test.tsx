@@ -1,5 +1,8 @@
+import type { LiveProcess } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
+import { FULL_TABLE } from "@core/process-interest";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";
 import {
@@ -359,4 +362,113 @@ it("shows unrecorded history without inventing empty zero-valued app rows", asyn
   ).not.toBeInTheDocument();
   expect(screen.queryByText("Compiler")).not.toBeInTheDocument();
   expect(apps).toHaveBeenCalledTimes(1);
+});
+
+describe("recorded rows act on what is running now", () => {
+  const compilerMain = liveProcess({
+    pid: 9001,
+    name: "Compiler",
+    app: "Compiler",
+    app_quit: true,
+  });
+  const compilerHelper = liveProcess({
+    pid: 9002,
+    name: "Compiler Helper",
+    app: "Compiler",
+    app_quit: false,
+  });
+
+  async function running(
+    transport: ReturnType<typeof createMockTransport>,
+    rows: LiveProcess[]
+  ) {
+    await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+    act(() => transport.push({ kind: "processes", ts_ms: NOW, rows }));
+  }
+
+  it("asks for every running process while it can quit them", async () => {
+    const { transport } = setup();
+    await screen.findByText("Compiler");
+    await waitFor(() =>
+      expect(
+        transport.calls
+          .filter((c) => c.command === "set_process_interest")
+          .map((c) => c.args[2])
+      ).toContainEqual(FULL_TABLE)
+    );
+  });
+
+  it("quits a running app's quit targets after the dialog; an app not running offers nothing", async () => {
+    const { transport, user } = setup();
+    await screen.findByText("Compiler");
+    await running(transport, [compilerMain, compilerHelper]);
+    const browser = await screen.findByRole("checkbox", {
+      name: "Select Browser",
+    });
+    expect(browser).toBeDisabled();
+    expect(browser).toHaveAccessibleDescription("Not running");
+    await user.click(screen.getByRole("checkbox", { name: "Select Compiler" }));
+    expect(screen.getByText("1 selected")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Quit 1…" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      transport.calls.filter((c) => c.command === "process_signal")
+    ).toEqual([]);
+    await user.click(within(dialog).getByRole("button", { name: "Quit" }));
+    await waitFor(() =>
+      expect(
+        transport.calls
+          .filter((c) => c.command === "process_signal")
+          .map((c) => c.args.slice(1))
+      ).toEqual([[9001, compilerMain.start_time_us, "quit"]])
+    );
+  });
+
+  it("selects a recorded process only while that same process runs", async () => {
+    const { transport, user, processes } = setup();
+    await screen.findByText("Compiler");
+    await user.click(
+      screen.getByRole("button", { name: "Show Compiler recorded processes" })
+    );
+    await screen.findByText(/4000/);
+    const page = await processes.mock.results[0]?.value;
+    const first = page?.status === "ok" ? page.data.processes[0] : undefined;
+    if (!first) throw new Error("no recorded process");
+    await running(transport, [
+      compilerMain,
+      liveProcess({
+        pid: first.pid,
+        start_time_us: first.start_time_us,
+        name: "Compiler",
+        app: "Compiler",
+        app_quit: false,
+      }),
+    ]);
+    expect(
+      await screen.findByRole("checkbox", { name: "Select Compiler (4000)" })
+    ).toBeEnabled();
+    const exited = screen.getByRole("checkbox", {
+      name: "Select Compiler (4001)",
+    });
+    expect(exited).toBeDisabled();
+    expect(exited).toHaveAccessibleDescription("Not running");
+  });
+
+  it("offers no selection where this build cannot quit", async () => {
+    const transport = createMockTransport({
+      now: () => NOW,
+      autoTick: false,
+      scenarios: ["appstore"],
+    });
+    renderWithProviders(<HistoricalUsageCard range={RANGE} by="cpu" />, {
+      transport,
+    });
+    await screen.findByText("Compiler");
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(
+      transport.calls
+        .filter((c) => c.command === "set_process_interest")
+        .map((c) => c.args[2])
+    ).not.toContainEqual(FULL_TABLE);
+  });
 });
