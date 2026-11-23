@@ -160,21 +160,6 @@ export function appQuitTargets(
   return (running?.get(app) ?? []).filter((p) => p.app_quit);
 }
 
-/** The running process with this identity, or null when it has exited. */
-export function runningTarget(
-  running: RunningApps | null,
-  p: Pick<LiveProcess, "pid" | "start_time_us">
-): LiveProcess | null {
-  if (running === null) return null;
-  for (const members of running.values()) {
-    const found = members.find(
-      (q) => q.pid === p.pid && q.start_time_us === p.start_time_us
-    );
-    if (found !== undefined) return found;
-  }
-  return null;
-}
-
 /** Read plus write, bytes per second; null when either is unknown. */
 export function diskTotal(
   p: Pick<LiveFigures, "disk_read_bps" | "disk_write_bps">

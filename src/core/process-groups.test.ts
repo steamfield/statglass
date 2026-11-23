@@ -6,7 +6,6 @@ import {
   groupLiveProcesses,
   netTotal,
   runningByApp,
-  runningTarget,
 } from "./process-groups";
 
 const chrome = liveProcess({
@@ -164,16 +163,6 @@ describe("runningByApp and its lookups", () => {
     expect(appQuitTargets(running(), "google chrome")).toEqual([]);
     expect(appQuitTargets(running(), "Safari")).toEqual([]);
     expect(appQuitTargets(null, "node")).toEqual([]);
-  });
-
-  it("finds a recorded process only when pid and start time both match", () => {
-    expect(runningTarget(running(), { pid: 11, start_time_us: 11 })).toBe(
-      renderer
-    );
-    expect(
-      runningTarget(running(), { pid: 11, start_time_us: 999 })
-    ).toBeNull();
-    expect(runningTarget(null, { pid: 11, start_time_us: 11 })).toBeNull();
   });
 });
 
