@@ -53,7 +53,6 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::ipc::{LiveMsg, LiveProcess, LiveStatus, SubscriptionInfo};
-use crate::process_signal::SignalRefusal;
 
 /// One host's live data, as a stream needs it.
 pub trait LiveFeed: Send + Sync + 'static {
@@ -212,35 +211,6 @@ fn pick_holds(pick: &Pick, holds: &[u32]) -> Vec<u32> {
             .iter()
             .map(|&i| holds.get(i).copied().unwrap_or(0))
             .collect(),
-    }
-}
-
-/// One row for the webview. `refusal` is [`crate::process_signal::refusals`], read once
-/// per batch.
-fn live_process(
-    r: &ProcessSample,
-    refusal: &impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
-) -> LiveProcess {
-    LiveProcess {
-        pid: r.pid,
-        start_time_us: r.start_time_us,
-        name: r.name.to_string(),
-        cpu_pct: r.cpu_pct,
-        mem_bytes: r.mem_bytes,
-        compressed_bytes: r.compressed_bytes,
-        threads: r.threads,
-        idle_wakeups_per_s: r.idle_wakeups_per_s,
-        energy: r.energy,
-        disk_read_bps: r.disk_read_bps,
-        disk_write_bps: r.disk_write_bps,
-        net_rx_bps: r.net_rx_bps,
-        net_tx_bps: r.net_tx_bps,
-        gpu_pct: r.gpu_pct,
-        ports: r.ports.as_deref().map(<[u16]>::to_vec),
-        user: r.user.to_string(),
-        refusal: refusal(r.pid, r.start_time_us, &r.name),
-        app: r.name.to_string(),
-        app_quit: false,
     }
 }
 
@@ -692,7 +662,10 @@ impl Stream {
                 }
             }
             let refusal = crate::process_signal::refusals();
-            statglass_engine::select_processes(rows, view, |r| live_process(r, &refusal))
+            let quit_set = crate::app_quit::live_quit_set(rows);
+            statglass_engine::select_processes(rows, view, |r| {
+                LiveProcess::from_sample(r, &quit_set, &refusal)
+            })
         };
         self.last_procs_ts = Some(ts_ms);
         self.send(LiveMsg::Processes {

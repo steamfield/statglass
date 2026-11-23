@@ -22,6 +22,7 @@ mod history;
 mod hosts;
 pub mod ipc;
 pub mod live;
+mod live_process;
 mod logging;
 mod notify;
 mod platform;

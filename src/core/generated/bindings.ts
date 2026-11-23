@@ -2078,8 +2078,8 @@ export type LiveProcess = {
 	 */
 	app: string,
 	/**
-	 *  Quit on this process's app acts on it: the app's main executable alone when it is
-	 *  running, otherwise every process of the app. Decided over the whole sample, before
+	 *  Quit on this process's app acts on it: the app's running main executables when it
+	 *  has any, otherwise every process of the app. Decided over the whole sample, before
 	 *  the view's limit, by the rule `query_usage_by_app` uses for `quit_pids`.
 	 */
 	app_quit: boolean,
