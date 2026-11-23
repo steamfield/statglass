@@ -193,20 +193,31 @@ function withF32Thresholds(settings: Settings): Settings {
   return { ...settings, alerts: { ...settings.alerts, rules: stored } };
 }
 
+/** Rust's `AlertRuleError` texts, by variant key. */
+const RULE_MESSAGES = ALERT_LIMITS.messages;
+
+/**
+ * A name that starts or ends with what Rust's `char::is_whitespace` (and so
+ * `str::trim`) counts as whitespace. JS `trim()` differs from it: it also
+ * strips U+FEFF and keeps U+0085.
+ */
+const RUST_UNTRIMMED =
+  /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]|[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]$/;
+
 /**
  * Why Rust's `AlertSettings::validate` would reject `rules`, as the
- * Display text of its `AlertRuleError`, or null when it accepts them.
+ * Display text of its `AlertRuleError`, or null when it accepts them. Each
+ * rule in list order is checked as Rust's `admit` does: its own problem,
+ * then a repeated id, then the count.
  */
 function alertRulesProblem(rules: readonly AlertRule[]): string | null {
-  if (rules.length > ALERT_LIMITS.max_custom) {
-    return `at most ${ALERT_LIMITS.max_custom} custom rules`;
-  }
   const ids = new Set<string>();
   for (const rule of rules) {
-    if (ids.has(rule.id)) return "two rules share one id";
-    ids.add(rule.id);
     const problem = alertRuleProblem(rule);
     if (problem !== null) return problem;
+    if (ids.has(rule.id)) return RULE_MESSAGES.duplicate_id;
+    if (ids.size >= ALERT_LIMITS.max_custom) return RULE_MESSAGES.too_many;
+    ids.add(rule.id);
   }
   return null;
 }
@@ -214,19 +225,19 @@ function alertRulesProblem(rules: readonly AlertRule[]): string | null {
 /** Why Rust's `AlertRule::validate_custom` would reject `rule`, or null. */
 function alertRuleProblem(rule: AlertRule): string | null {
   if ((ALERT_LIMITS.builtin_ids as readonly string[]).includes(rule.id)) {
-    return "rule id belongs to a built-in rule";
+    return RULE_MESSAGES.reserved_id;
   }
   const nameChars = [...rule.name].length;
   if (
-    rule.name !== rule.name.trim() ||
+    RUST_UNTRIMMED.test(rule.name) ||
     nameChars === 0 ||
     nameChars > ALERT_LIMITS.max_name_chars
   ) {
-    return `rule name must be 1 to ${ALERT_LIMITS.max_name_chars} characters with no leading or trailing spaces`;
+    return RULE_MESSAGES.name;
   }
   const threshold = rule.when.threshold;
   if (threshold === undefined) {
-    return "a custom rule must be a threshold on one metric";
+    return RULE_MESSAGES.not_threshold;
   }
   return (
     thresholdProblem(threshold.series, threshold.value) ??
@@ -244,16 +255,19 @@ function thresholdProblem(
 ): string | null {
   const metric = ALERT_METRICS.find((m) => m.metric === series.metric);
   if (metric === undefined) {
-    return `metric ${JSON.stringify(series.metric)} cannot be alerted on; choose one of the listed metrics`;
+    return RULE_MESSAGES.metric.replace(
+      "{metric}",
+      JSON.stringify(series.metric)
+    );
   }
   if (!labelsAllowed(series)) {
-    return "a rule watches every series of its metric or one series named by a label it carries";
+    return RULE_MESSAGES.labels;
   }
   // The stored value is already f32, and the limits arrive rounded to f32.
   const min = metric.min ?? Number.NaN;
   const max = metric.max ?? Number.NaN;
   if (value === null || !(value >= min && value <= max)) {
-    return "threshold is outside the range this metric accepts";
+    return RULE_MESSAGES.value;
   }
   return null;
 }
@@ -270,13 +284,13 @@ function labelsAllowed(series: SeriesSelector): boolean {
 /** Why Rust rejects a rule's hold time or cooldown, or null. */
 function timingProblem(forSecs: number, cooldownSecs: number): string | null {
   if (forSecs > ALERT_LIMITS.max_for_secs) {
-    return "duration must be at most 1 hour";
+    return RULE_MESSAGES.duration;
   }
   if (
     cooldownSecs < ALERT_LIMITS.min_cooldown_secs ||
     cooldownSecs > ALERT_LIMITS.max_cooldown_secs
   ) {
-    return "cooldown must be between 1 minute and 24 hours";
+    return RULE_MESSAGES.cooldown;
   }
   return null;
 }

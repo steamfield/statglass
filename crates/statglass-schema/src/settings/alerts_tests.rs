@@ -123,6 +123,20 @@ fn engine_rules_list_builtins_first_then_custom_rules() {
     assert_eq!(rules[2], rule(1, 80.0));
 }
 
+/// Host offline is watched by the shell, so its switch never adds an engine rule.
+#[test]
+fn host_offline_is_never_an_engine_rule() {
+    let a = AlertSettings {
+        host_offline: true,
+        ..AlertSettings::default()
+    };
+    let ids: Vec<Uuid> = a.engine_rules().iter().map(|r| r.id).collect();
+    assert_eq!(
+        ids,
+        [AlertRule::hot_process().id, AlertRule::thermal_serious().id]
+    );
+}
+
 /// The stored file holds one valid rule, one out of range and one with a condition
 /// from a newer build. It decodes with every other setting intact; the newer entry is
 /// skipped, and `drop_invalid` removes the out-of-range one and says why.

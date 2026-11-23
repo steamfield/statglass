@@ -46,7 +46,11 @@ fn rules_patch(rules: Vec<AlertRule>) -> SettingsPatch {
 }
 
 fn switched_on(old: &Settings, new: &Settings) -> Vec<Uuid> {
-    alerts_switched_on(old, new).iter().map(|r| r.id).collect()
+    alerts_switched_on(old, new)
+        .rules
+        .iter()
+        .map(|r| r.id)
+        .collect()
 }
 
 /// Switching an alert on reaches the engine (its rules are engine settings).
@@ -82,6 +86,29 @@ fn alerts_switched_on_lists_only_newly_enabled_rules() {
     assert!(switched_on(&with(true, true), &with(true, false)).is_empty());
     assert!(switched_on(&with(true, true), &with(true, true)).is_empty());
     assert_eq!(switched_on(&with(false, false), &with(true, true)).len(), 2);
+}
+
+/// Turning host offline on is reported (it is no engine rule); keeping it on or
+/// turning it off is not.
+#[test]
+fn turning_host_offline_on_is_switched_on() {
+    let with = |host_offline| {
+        with_alerts(AlertSettings {
+            host_offline,
+            ..AlertSettings::default()
+        })
+    };
+    let on = alerts_switched_on(&with(false), &with(true));
+    assert_eq!(
+        on,
+        SwitchedOn {
+            rules: vec![],
+            host_offline: true,
+        }
+    );
+    assert!(!on.is_empty());
+    assert!(alerts_switched_on(&with(true), &with(true)).is_empty());
+    assert!(alerts_switched_on(&with(true), &with(false)).is_empty());
 }
 
 #[test]

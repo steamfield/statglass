@@ -12,13 +12,22 @@ use statglass_schema::{
 const SECONDS_BELOW: u32 = 120;
 const MS_PER_MINUTE: i64 = 60_000;
 const ALERTS_ON_TITLE: &str = "Alerts are on";
+/// The [`AlertText::kind`] of the "Alerts are on" confirmation.
+const ALERTS_ON_KIND: &str = "alerts_on";
+const HOST_OFFLINE_CLAUSE: &str = "a saved host is offline for 5 minutes";
 const TIMELINE_HINT: &str = "Open StatGlass's Timeline to see what else was running.";
 
-/// A notification's title and body.
+/// A notification's title and body, with what it is about, so a message can be built
+/// from it without reading the event again.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlertText {
     pub title: String,
     pub body: String,
+    /// The name of the rule that fired, `None` for the "Alerts are on" confirmation.
+    pub rule: Option<String>,
+    /// The `AlertCause` serde tag ("threshold", "process_cpu", "thermal_state"), or
+    /// "alerts_on" for the confirmation.
+    pub kind: &'static str,
 }
 
 /// A custom rule as one sentence: the metric's label, the series in parentheses when
@@ -50,12 +59,12 @@ pub fn alert_text(event: &Event, units: &UnitSettings) -> Option<AlertText> {
     else {
         return None;
     };
-    Some(match cause {
+    let (title, body) = match cause {
         AlertCause::ProcessCpu { process, cpu_pct } => process_text(event, process, *cpu_pct),
-        AlertCause::ThermalState { state } => AlertText {
-            title: format!("Thermal state: {}", thermal_label(*state)),
-            body: "macOS is reducing performance to cool the Mac down.".to_owned(),
-        },
+        AlertCause::ThermalState { state } => (
+            format!("Thermal state: {}", thermal_label(*state)),
+            "macOS is reducing performance to cool the Mac down.".to_owned(),
+        ),
         AlertCause::Threshold {
             metric,
             labels,
@@ -72,12 +81,24 @@ pub fn alert_text(event: &Event, units: &UnitSettings) -> Option<AlertText> {
                 threshold: *threshold,
                 for_secs: *for_secs,
             };
-            AlertText {
-                title: rule_name.clone(),
-                body: threshold_body(&held, units),
-            }
+            (rule_name.clone(), threshold_body(&held, units))
         }
+    };
+    Some(AlertText {
+        title,
+        body,
+        rule: Some(rule_name.clone()),
+        kind: cause_kind(cause),
     })
+}
+
+/// The serde tag of `cause`.
+fn cause_kind(cause: &AlertCause) -> &'static str {
+    match cause {
+        AlertCause::ProcessCpu { .. } => "process_cpu",
+        AlertCause::ThermalState { .. } => "thermal_state",
+        AlertCause::Threshold { .. } => "threshold",
+    }
 }
 
 /// What a threshold alert reports: the series, its value, and the rule it broke.
@@ -102,16 +123,21 @@ fn threshold_body(held: &ThresholdHeld<'_>, units: &UnitSettings) -> String {
     )
 }
 
-/// The one-off confirmation for rules just switched on, `None` for none. Built-in rules
-/// read as "when ..." clauses; custom rules follow by their summary, as "for: ..." on
-/// their own or "Also for: ..." after the built-in sentence.
-pub fn alerts_on_text(rules: &[AlertRule], units: &UnitSettings) -> Option<AlertText> {
+/// The one-off confirmation for rules just switched on, and the host-offline alert when
+/// `host_offline` is true, `None` for none. Built-in rules and host offline read as
+/// "when ..." clauses; custom rules follow by their summary, as "for: ..." on their own
+/// or "Also for: ..." after the built-in sentence.
+pub fn alerts_on_text(
+    rules: &[AlertRule],
+    host_offline: bool,
+    units: &UnitSettings,
+) -> Option<AlertText> {
     let summaries: Vec<String> = rules
         .iter()
         .filter(|rule| matches!(rule.when, Condition::Threshold { .. }))
         .map(|rule| rule_summary(rule, units))
         .collect();
-    let body = match (builtin_clauses(rules), summaries.is_empty()) {
+    let body = match (builtin_clauses(rules, host_offline), summaries.is_empty()) {
         (None, true) => return None,
         (None, false) => format!("You'll get a notification for: {}.", summaries.join("; ")),
         (Some(when), true) => format!("You'll get a notification when {when}."),
@@ -123,13 +149,19 @@ pub fn alerts_on_text(rules: &[AlertRule], units: &UnitSettings) -> Option<Alert
     Some(AlertText {
         title: ALERTS_ON_TITLE.to_owned(),
         body,
+        rule: None,
+        kind: ALERTS_ON_KIND,
     })
 }
 
-/// The clauses of the built-in rules among `rules`, joined as "a, when b or when c",
-/// `None` when there are none.
-fn builtin_clauses(rules: &[AlertRule]) -> Option<String> {
-    let clauses: Vec<String> = rules.iter().filter_map(builtin_clause).collect();
+/// The clauses of the built-in rules among `rules`, then host offline when
+/// `host_offline` is true, joined as "a, when b or when c", `None` when there are none.
+fn builtin_clauses(rules: &[AlertRule], host_offline: bool) -> Option<String> {
+    let clauses: Vec<String> = rules
+        .iter()
+        .filter_map(builtin_clause)
+        .chain(host_offline.then(|| HOST_OFFLINE_CLAUSE.to_owned()))
+        .collect();
     match clauses.as_slice() {
         [] => None,
         [one] => Some(one.clone()),
@@ -162,8 +194,9 @@ fn builtin_clause(rule: &AlertRule) -> Option<String> {
 }
 
 /// The notification for a process CPU alert. One alert names every process whose run
-/// completed on that tick, hottest first (`process` is the hottest).
-fn process_text(event: &Event, process: &str, cpu_pct: f32) -> AlertText {
+/// completed on that tick, hottest first (`process` is the hottest). Returns the title
+/// and body.
+fn process_text(event: &Event, process: &str, cpu_pct: f32) -> (String, String) {
     let minutes = (event.ts_ms - event.start_ms) / MS_PER_MINUTE;
     let others: Vec<&str> = event
         .processes
@@ -187,10 +220,10 @@ fn process_text(event: &Event, process: &str, cpu_pct: f32) -> AlertText {
     } else {
         format!(" {also}: {}.", others.join(", "))
     };
-    AlertText {
-        title: format!("{process} is using {cpu_pct:.0}% CPU"),
-        body: format!("{held}{also} {TIMELINE_HINT}"),
-    }
+    (
+        format!("{process} is using {cpu_pct:.0}% CPU"),
+        format!("{held}{also} {TIMELINE_HINT}"),
+    )
 }
 
 /// The CPU threshold of the built-in rule that fired `event`, when it is a process CPU

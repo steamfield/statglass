@@ -28,11 +28,11 @@ pub fn request_permission(app: &AppHandle) {
     }
 }
 
-/// Posts a one-off confirmation that `rules` were switched on, with values in `units`.
-/// On macOS the first delivery is what shows the permission prompt, so this makes it
-/// appear now.
-pub fn alerts_on(app: &AppHandle, rules: &[AlertRule], units: &UnitSettings) {
-    let Some(text) = alerts_on_text(rules, units) else {
+/// Posts a one-off confirmation that `rules`, and the host-offline alert when
+/// `host_offline` is true, were switched on, with values in `units`. On macOS the first
+/// delivery is what shows the permission prompt, so this makes it appear now.
+pub fn alerts_on(app: &AppHandle, rules: &[AlertRule], host_offline: bool, units: &UnitSettings) {
+    let Some(text) = alerts_on_text(rules, host_offline, units) else {
         return;
     };
     post(app, text, "posting the alerts-on confirmation");

@@ -438,7 +438,12 @@ impl SettingsEffects for ShellEffects<'_> {
         let switched_on = alerts_switched_on(old, new);
         if !switched_on.is_empty() {
             notify::request_permission(self.app);
-            notify::alerts_on(self.app, &switched_on, &new.units);
+            notify::alerts_on(
+                self.app,
+                &switched_on.rules,
+                switched_on.host_offline,
+                &new.units,
+            );
         }
         tracing::info!(revision = now.revision, "settings changed");
         let event = SettingsChanged {

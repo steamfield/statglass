@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::alert_limits::alert_label_keys;
 use crate::alert_metrics::alert_metric;
-use crate::catalog::Catalog;
 use crate::series::{Labels, SeriesSelector};
 
 const HOT_PROCESS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0001);
@@ -32,8 +32,11 @@ pub struct AlertRule {
 }
 
 impl AlertRule {
+    /// The id of the built-in "saved host offline" alert. The shell watches host
+    /// status for it; it is not an engine rule.
+    pub const HOST_OFFLINE_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0003);
     /// The ids of the built-in rules. A custom rule may not use one.
-    pub const BUILTIN_IDS: [Uuid; 2] = [HOT_PROCESS_ID, THERMAL_SERIOUS_ID];
+    pub const BUILTIN_IDS: [Uuid; 3] = [HOT_PROCESS_ID, THERMAL_SERIOUS_ID, Self::HOST_OFFLINE_ID];
     /// The most custom rules one settings file holds.
     pub const MAX_CUSTOM: usize = 32;
     /// The longest `for_secs` a custom rule may wait: one hour.
@@ -125,9 +128,7 @@ fn labels_allowed(metric: &str, labels: &Labels) -> bool {
     if labels.len() > 1 {
         return false;
     }
-    let carried = Catalog::builtin()
-        .get(metric)
-        .map_or(&[][..], |def| def.label_keys);
+    let carried = alert_label_keys(metric);
     labels.keys().all(|key| carried.contains(&key))
 }
 
@@ -163,9 +164,12 @@ pub fn series_name(metric: &str, labels: &Labels) -> Option<String> {
 /// Alerts page can show it as is.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AlertRuleError {
-    #[error("rule name must be 1 to 60 characters with no leading or trailing spaces")]
+    #[error(
+        "rule name must be 1 to {} characters with no leading or trailing spaces",
+        AlertRule::MAX_NAME_CHARS
+    )]
     Name,
-    #[error("metric {0:?} cannot be alerted on; choose one of the listed metrics")]
+    #[error("{}", metric_message(&format!("{:?}", .0)))]
     Metric(String),
     #[error("a rule watches every series of its metric or one series named by a label it carries")]
     Labels,
@@ -181,10 +185,16 @@ pub enum AlertRuleError {
     ReservedId,
     #[error("a custom rule must be a threshold on one metric")]
     NotThreshold,
-    #[error("at most 32 custom rules")]
+    #[error("at most {} custom rules", AlertRule::MAX_CUSTOM)]
     TooMany,
     #[error("two rules share one id")]
     DuplicateId,
+}
+
+/// The [`AlertRuleError::Metric`] message with `quoted_metric` in place of the metric
+/// id, shared by the error's Display text and the template published to the client.
+pub(crate) fn metric_message(quoted_metric: &str) -> String {
+    format!("metric {quoted_metric} cannot be alerted on; choose one of the listed metrics")
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -386,6 +396,37 @@ mod name_tests {
         assert_eq!(
             value.to_string(),
             "threshold is outside the range this metric accepts"
+        );
+    }
+
+    /// `secs` as the messages word it: whole hours, else whole minutes.
+    fn spoken(secs: u32) -> String {
+        let (n, unit) = if secs.is_multiple_of(3600) {
+            (secs / 3600, "hour")
+        } else {
+            (secs / 60, "minute")
+        };
+        format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
+    }
+
+    /// The duration and cooldown messages word their limits; changing a limit fails
+    /// here until the wording follows.
+    #[test]
+    fn the_duration_and_cooldown_messages_follow_their_limits() {
+        assert_eq!(
+            AlertRuleError::Duration.to_string(),
+            format!(
+                "duration must be at most {}",
+                spoken(AlertRule::MAX_FOR_SECS)
+            )
+        );
+        assert_eq!(
+            AlertRuleError::Cooldown.to_string(),
+            format!(
+                "cooldown must be between {} and {}",
+                spoken(AlertRule::MIN_COOLDOWN_SECS),
+                spoken(AlertRule::MAX_COOLDOWN_SECS)
+            )
         );
     }
 }

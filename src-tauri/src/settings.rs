@@ -28,7 +28,7 @@ pub mod cli_access;
 mod menu_bar;
 mod overview;
 mod popover;
-pub use alerts::{AlertsPatch, alerts_switched_on};
+pub use alerts::{AlertsPatch, SwitchedOn, alerts_switched_on};
 pub use menu_bar::{BarsPatch, ItemsPatch, MenuBarPatch, ReadoutsPatch};
 pub use overview::OverviewPatch;
 pub use popover::PopoverPatch;
