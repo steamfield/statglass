@@ -8,6 +8,7 @@
  * Every limit and rejection text comes from `ALERT_DESTINATION_LIMITS`, which
  * Rust publishes from the constants `Destination::validate` reads.
  */
+import { sameAddress } from "@core/alert-destinations";
 import {
   ALERT_DESTINATION_LIMITS,
   type AlertDestinationsView,
@@ -87,12 +88,18 @@ export class MockAlertDestinations {
     const saved = structuredClone(destination);
     const known = rows.some((row) => row.destination.id === saved.id);
     if (known) {
-      // Replacing keeps the row's place and its last delivery.
+      // Replacing keeps the row's place; the last delivery stays only while
+      // the address is the same, as Rust's `AlertsService::save` does.
       return ok(
         this.commit(
           rows.map((row) =>
             row.destination.id === saved.id
-              ? { ...row, destination: saved }
+              ? {
+                  destination: saved,
+                  last: sameAddress(row.destination.kind, saved.kind)
+                    ? row.last
+                    : null,
+                }
               : row
           )
         )
@@ -113,7 +120,11 @@ export class MockAlertDestinations {
       }
       return ok(this.commit(rows.filter((row) => row.destination.id !== id)));
     };
-  /** As `alert_destination_test`: validates, sends nothing real, records nothing. */
+  /**
+   * As `alert_destination_test`: validates and sends nothing real. A test
+   * never becomes a destination's `last` delivery, saved or not, because
+   * Rust's `dispatch::send_test` records nothing.
+   */
   readonly testAlertDestination: MockTransport["testAlertDestination"] = async (
     destination
   ) => {

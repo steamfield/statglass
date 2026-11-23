@@ -9,6 +9,7 @@ import {
   deliveryLabel,
   destinationAddress,
   generateTopic,
+  sameAddress,
 } from "./alert-destinations";
 import { createMockTransport } from "./mock-transport";
 
@@ -158,6 +159,34 @@ describe("generateTopic", () => {
     const b = generateTopic(counter);
     expect(a).toMatch(/^statglass-[a-z2-7]{20}$/);
     expect(a).not.toBe(b);
+  });
+});
+
+describe("sameAddress", () => {
+  const phone = ntfy(1);
+  const hook: Destination = {
+    ...ntfy(2),
+    kind: { type: "webhook", url: "https://chat.example.com/hooks/1" },
+  };
+  const ntfyKind = (overrides: object) => ({ ...phone.kind, ...overrides });
+  it.each([
+    ["the same ntfy kind", phone.kind, true],
+    ["another topic", ntfyKind({ topic: "statglass-other" }), false],
+    ["another server", ntfyKind({ server: "https://ntfy.example" }), false],
+    ["a token added", ntfyKind({ token: "tk_1" }), false],
+    ["a webhook", hook.kind, false],
+  ] as const)("compares %s with an ntfy kind", (_, kind, same) => {
+    expect(sameAddress(phone.kind, kind as Destination["kind"])).toBe(same);
+  });
+  it("compares webhooks by URL", () => {
+    expect(sameAddress(hook.kind, { ...hook.kind })).toBe(true);
+    expect(
+      sameAddress(hook.kind, {
+        type: "webhook",
+        url: "https://chat.example.com/x",
+      })
+    ).toBe(false);
+    expect(sameAddress(hook.kind, phone.kind)).toBe(false);
   });
 });
 

@@ -3,7 +3,11 @@
  * panel and the destination dialog. Pure, no React. A row never shows a full
  * secret: addresses are cut to the server host and a short topic prefix.
  */
-import type { DeliveryRecord, Destination } from "@core/generated/bindings";
+import type {
+  DeliveryRecord,
+  Destination,
+  DestinationKind,
+} from "@core/generated/bindings";
 
 /** How much of an ntfy topic a row shows before the ellipsis. */
 const SHOWN_TOPIC_CHARS = 4;
@@ -58,6 +62,21 @@ function urlHost(url: string): string {
   }
   if (BRACKET.test(authority)) return "";
   return authority.split(":", 1)[0] ?? "";
+}
+
+/**
+ * Whether two kinds send to the same place: the same kind with the same
+ * server, topic and token, or the same URL. Rust keeps a destination's last
+ * delivery only while this holds, so a rename or an enabled toggle keeps it.
+ */
+export function sameAddress(a: DestinationKind, b: DestinationKind): boolean {
+  if (a.type === "webhook") return b.type === "webhook" && a.url === b.url;
+  return (
+    b.type === "ntfy" &&
+    a.server === b.server &&
+    a.topic === b.topic &&
+    a.token === b.token
+  );
 }
 
 /**

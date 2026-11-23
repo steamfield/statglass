@@ -184,8 +184,10 @@ describe("Send to panel", () => {
     expect(
       screen.getByRole("button", { name: "Send test to Phone" })
     ).toBeDisabled();
-    expect(calls(transport, "alert_destination_test")).toEqual([PHONE]);
     act(() => release());
+    await waitFor(() =>
+      expect(calls(transport, "alert_destination_test")).toEqual([PHONE])
+    );
     expect(
       await within(sendToRegion()).findByText(/Delivered \d\d:\d\d/)
     ).toBeVisible();
