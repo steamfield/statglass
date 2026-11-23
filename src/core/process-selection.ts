@@ -16,6 +16,11 @@ export interface SelectableProcessRow {
   label: string;
   targets: readonly ProcessTarget[];
   parentKey?: string;
+  /**
+   * The row opens to list more rows, so arrow keys stop on it even when it
+   * has nothing to select (a recorded app that is not running).
+   */
+  expandable?: boolean;
 }
 
 /** Hold siblings in place while keeping newly expanded children under their app. */

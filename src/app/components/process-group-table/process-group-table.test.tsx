@@ -419,13 +419,20 @@ describe("ProcessGroupTable selection", () => {
     expect(screen.getByText(/1 selected/i)).toBeVisible();
   });
 
-  it("selects every target with the header checkbox", () => {
-    renderWithProviders(
-      table(apps(ROWS), { selectable: true, allTargets: ROWS })
+  it("selects each group's quit targets and the listed members with the header checkbox", async () => {
+    const { user } = renderWithProviders(
+      table(apps(ROWS), { selectable: true })
     );
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: "Select all matching processes" })
+    const all = () =>
+      screen.getByRole("checkbox", { name: "Select all matching processes" });
+    // Collapsed, Chrome's helpers stay out, as Quit on Chrome leaves them.
+    fireEvent.click(all());
+    expect(screen.getByText(/3 selected/i)).toBeVisible();
+    fireEvent.click(all());
+    await user.click(
+      screen.getByRole("button", { name: "Show Google Chrome processes" })
     );
+    fireEvent.click(all());
     expect(screen.getByText(/5 selected/i)).toBeVisible();
   });
 
@@ -439,7 +446,7 @@ describe("ProcessGroupTable selection", () => {
       })
     );
     expect(
-      screen.getByRole("checkbox", { name: "Select Xcode (20)" })
+      screen.getByRole("checkbox", { name: "Select Xcode" })
     ).toBeDisabled();
   });
 
@@ -458,7 +465,7 @@ describe("ProcessGroupTable selection", () => {
     );
     const xcode = row("Xcode");
     const xcodeBox = within(xcode).getByRole("checkbox", {
-      name: "Select Xcode (20)",
+      name: "Select Xcode",
     });
     expect(xcodeBox).toBeDisabled();
     expect(xcodeBox).toHaveAccessibleDescription("Not running");
@@ -472,6 +479,30 @@ describe("ProcessGroupTable selection", () => {
     // Rows with targets keep their actions, not the reason.
     expect(screen.getAllByText("Not running")).toHaveLength(2);
     expect(screen.queryByText("Exited 11")).toBeNull();
+  });
+
+  it("moves by arrow key onto a group with nothing to select that can open", () => {
+    // A recorded app that is not running: no targets, but it lists processes.
+    renderWithProviders(
+      table(apps(ROWS), {
+        selectable: true,
+        rows: groupRows(apps(ROWS), {
+          count: () => null,
+          expandable: () => true,
+          targets: (g) => (g.name === "Xcode" ? [] : g.quit),
+          memberTargets: () => [],
+        }),
+      })
+    );
+    row("Google Chrome").focus();
+    fireEvent.keyDown(row("Google Chrome"), { key: "ArrowDown" });
+    expect(row("Xcode")).toHaveFocus();
+    fireEvent.keyDown(row("Xcode"), { key: "ArrowRight" });
+    expect(
+      screen.getByRole("button", { name: "Hide Xcode processes" })
+    ).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(row("Xcode"), { key: "ArrowDown" });
+    expect(row("node")).toHaveFocus();
   });
 
   it("has no checkbox column when not selectable", () => {

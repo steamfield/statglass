@@ -20,7 +20,7 @@ import {
 } from "~/components/usage-columns";
 import { usageGroupRows } from "~/components/usage-group-rows";
 import type { UsageTableConfig } from "~/components/usage-table-config";
-import { useAppQuitTargets } from "~/hooks/use-running-apps";
+import { useAppQuitTargets, useRunningMatches } from "~/hooks/use-running-apps";
 
 /** Apps listed before "Show all": enough to find the culprit, short enough to scan. */
 const COLLAPSED_APPS = 10;
@@ -55,15 +55,21 @@ export function UsageGroupTable({
   const ranked = useMemo(() => usageRows(data, by, query), [data, by, query]);
   const names = useMemo(() => ranked.map((r) => r.app.name), [ranked]);
   const appTargets = useAppQuitTargets(names);
+  const processes = useMemo(() => ranked.flatMap((r) => r.processes), [ranked]);
+  const matches = useRunningMatches(processes);
   const location = useLocation();
   const rows = useMemo(
     () =>
-      usageGroupRows(ranked, appTargets, {
-        path: location.pathname,
-        search: location.search,
-        selection,
-      }),
-    [ranked, appTargets, location.pathname, location.search, selection]
+      usageGroupRows(
+        ranked,
+        { apps: appTargets, processes: matches },
+        {
+          path: location.pathname,
+          search: location.search,
+          selection,
+        }
+      ),
+    [ranked, appTargets, matches, location.pathname, location.search, selection]
   );
   const whole = usageWhole(data, by);
   const columns = useMemo(

@@ -111,14 +111,17 @@ function SelectionSession({
     });
   }, [allTargets]);
   const keys = new Set(selected.map(targetKey));
-  const selectedRows = selected.map((p) => ({
-    key: targetKey(p),
-    label: `${p.name} (${p.pid})`,
-    targets: [p],
-  }));
+  const selectedRows = selected.map(
+    (p): SelectableProcessRow => ({
+      key: targetKey(p),
+      label: `${p.name} (${p.pid})`,
+      targets: [p],
+    })
+  );
   const activeRows = only ? selectedRows : ordered;
-  const selectable = activeRows.filter((r) =>
-    r.targets.some((p) => p.running !== false)
+  // Arrow keys stop on rows that select something or open to list more.
+  const navigable = activeRows.filter(
+    (r) => r.expandable || r.targets.some((p) => p.running !== false)
   );
   const visibleKeys = new Set(rows.flatMap((r) => r.targets.map(targetKey)));
   const hidden = selected.filter((p) => !visibleKeys.has(targetKey(p))).length;
@@ -166,7 +169,7 @@ function SelectionSession({
       clear,
       select,
       focus,
-      selectable,
+      navigable,
       viewportHeight: root.current?.clientHeight,
     });
   const dragging = useRef(false);
@@ -177,9 +180,9 @@ function SelectionSession({
     selected,
     allTargets: only ? selected : allTargets,
     keys,
-    focused: selectable.some((r) => r.key === focused)
+    focused: navigable.some((r) => r.key === focused)
       ? focused
-      : (selectable[0]?.key ?? null),
+      : (navigable[0]?.key ?? null),
     held,
     flow,
     select,

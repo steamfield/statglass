@@ -365,6 +365,72 @@ describe("Network app rows act on the running app", () => {
     expect(within(other).queryByRole("checkbox")).toBeNull();
   });
 
+  it("drops the selection when another brushed range is shown", async () => {
+    const transport = createMockTransport({
+      now: () => T + 5000,
+      autoTick: false,
+    });
+    transport.queryNetworkByApp = async (_host, from, to) => ({
+      status: "ok",
+      data: { ...networkByApp(), from_ms: from, to_ms: to, complete_to_ms: to },
+    });
+    const ranges = {
+      Earlier: { fromMs: T - 120_000, toMs: T - 100_000 },
+      Later: { fromMs: T - 60_000, toMs: T - 40_000 },
+    };
+    function BrushedApps() {
+      const brush = useBrushStore();
+      return (
+        <>
+          {Object.entries(ranges).map(([name, range]) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => brush.getState().select(range)}
+            >
+              {name}
+            </button>
+          ))}
+          <AppsCard windowMs={300_000} />
+        </>
+      );
+    }
+    const { user } = renderWithProviders(
+      <BrushProvider>
+        <BrushedApps />
+      </BrushProvider>,
+      { transport }
+    );
+    const chrome = () =>
+      screen.getByRole("checkbox", { name: "Select Google Chrome" });
+    await user.click(screen.getByRole("button", { name: "Earlier" }));
+    await screen.findByRole("table", { name: "Network by app" });
+    await user.click(screen.getByRole("button", { name: "Later" }));
+    await screen.findByRole("table", { name: "Network by app" });
+    await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+    act(() =>
+      transport.push({
+        kind: "processes",
+        ts_ms: T,
+        rows: [
+          liveProcess({
+            pid: 501,
+            name: "Google Chrome",
+            app: "Google Chrome",
+            app_quit: true,
+          }),
+        ],
+      })
+    );
+    await waitFor(() => expect(chrome()).toBeEnabled());
+    fireEvent.click(chrome());
+    expect(screen.getByText("1 selected")).toBeVisible();
+    // Earlier is cached, so the table stays on screen through the switch.
+    await user.click(screen.getByRole("button", { name: "Earlier" }));
+    await waitFor(() => expect(chrome()).not.toBeChecked());
+    expect(screen.queryByText("1 selected")).toBeNull();
+  });
+
   it("does not re-render when a process outside the listed apps starts or exits", async () => {
     const result = renderApps();
     await screen.findByRole("table", { name: "Network by app" });

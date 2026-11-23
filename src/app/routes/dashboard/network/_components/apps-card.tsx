@@ -33,9 +33,15 @@ import {
 import { SelectionChip } from "~/components/selection-chip";
 import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
-import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
+import {
+  heldFor,
+  selectionScopeKey,
+  useOpenEdge,
+  useRangeScope,
+} from "~/hooks/use-range-scope";
 import {
   type AppQuitTargets,
+  NOT_RUNNING,
   useAppQuitTargets,
 } from "~/hooks/use-running-apps";
 import { useUnits } from "~/hooks/use-units";
@@ -156,6 +162,7 @@ function LiveAppsCard({ windowMs }: { windowMs: number }) {
           units={units.rate}
           sort={sort}
           onSortChange={setSort}
+          scopeKey={selectionScopeKey(selection, windowMs)}
         />
       </>
     );
@@ -215,12 +222,15 @@ function AppsTable({
   units,
   sort,
   onSortChange,
+  scopeKey,
 }: {
   rows: readonly AppRow[];
   rest: readonly AppRow[];
   units: RateUnits;
   sort: ColumnSort<string>;
   onSortChange: (next: ColumnSort<string>) => void;
+  /** Selection resets when it changes (another brushed range). */
+  scopeKey: string;
 }) {
   const names = useMemo(() => rows.map((r) => r.name), [rows]);
   // Null where this view cannot quit (App Store edition, remote hosts).
@@ -239,6 +249,7 @@ function AppsTable({
       sort={{ value: sort, onChange: onSortChange, client: true }}
       freezeOrderOnHover
       selectable={selectable}
+      scopeKey={scopeKey}
       after={(table) => (
         <>
           {rest.map((r, i) => (
@@ -282,7 +293,7 @@ function appGroupRows(
     expandable: () => false,
     members: () => [],
     targets: (r) => targets?.get(r.name) ?? [],
-    unavailable: () => (targets === null ? undefined : "Not running"),
+    unavailable: () => (targets === null ? undefined : NOT_RUNNING),
     memberKey: () => "",
     memberName: () => "",
     memberPid: () => 0,

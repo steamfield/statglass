@@ -5,6 +5,7 @@ import {
   PROCESSES,
   withNetRates,
 } from "@core/mock/fixtures";
+import { withAppQuit } from "@core/mock/usage";
 import { createMockTransport } from "@core/mock-transport";
 import {
   act,
@@ -126,6 +127,17 @@ describe("Processes page", () => {
     await user.keyboard("{Meta>}a{/Meta}");
     // SourceKitService, listed, and Xcode's main, which the search hides.
     expect(screen.getByText("2 selected")).toBeVisible();
+  });
+
+  it("selects with Command-A what each app's Quit acts on, not a collapsed app's helpers", async () => {
+    const { user } = renderPage();
+    await screen.findByRole("cell", { name: /Xcode/ });
+    await user.click(screen.getByRole("checkbox", { name: "Select Xcode" }));
+    await user.keyboard("{Meta>}a{/Meta}");
+    const all = [...PROCESSES, ...BACKGROUND_PROCESSES, ...IDLE_PROCESSES];
+    const quit = withAppQuit(all).filter((p) => p.app_quit);
+    expect(quit.length).toBeLessThan(all.length);
+    expect(screen.getByText(`${quit.length} selected`)).toBeVisible();
   });
 
   it("selects only the main executable of a bundled app", async () => {

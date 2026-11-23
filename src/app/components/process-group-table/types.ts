@@ -41,8 +41,8 @@ export interface GroupRows<G, M> {
   name: (group: G) => string;
   /**
    * Shown as "N processes"; null when unknown (a recorded app before its
-   * processes load), which shows no count. A group of one reads as its
-   * process: its member's name, link and pid.
+   * processes load), which shows no count. A group of one whose targets are
+   * its member's reads as its process: its member's name, link and pid.
    */
   count: (group: G) => number | null;
   /** Has a chevron and lists members when open. Defaults to a count over 1. */
@@ -123,8 +123,6 @@ interface TableOptions<G, M> {
   selectable: boolean | null;
   /** Selection resets when it changes (another range, another host). */
   scopeKey?: string;
-  /** What Command-A selects; defaults to every group's and listed member's targets. */
-  allTargets?: readonly ProcessTarget[];
   /** Hold group order while the pointer is over the table. */
   freezeOrderOnHover?: boolean;
   /** Show the first `limit` groups and a Show all row; ignored while `searching`. */

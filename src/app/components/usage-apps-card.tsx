@@ -16,7 +16,11 @@ import { UsageBody } from "~/components/usage-body";
 import type { UsageTableConfig } from "~/components/usage-table-config";
 import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
-import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
+import {
+  heldFor,
+  selectionScopeKey,
+  useRangeScope,
+} from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 
 export type {
@@ -101,11 +105,7 @@ function LiveUsageAppsCard({ windowMs, config }: UsageAppsCardProps) {
         query={query}
         canSignal={canSignal}
         selection={selection}
-        scopeKey={
-          selection
-            ? `${selection.fromMs}:${selection.toMs}`
-            : `live:${windowMs}`
-        }
+        scopeKey={selectionScopeKey(selection, windowMs)}
       />
     );
   }

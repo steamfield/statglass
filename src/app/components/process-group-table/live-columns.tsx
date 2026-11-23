@@ -65,7 +65,7 @@ const PORTS_SHOWN = 3;
  * "3000, 5173", or "5432, 6379, 8080 +4" past three. Blank for a process
  * listening on none, which is most rows; a dash only when ports were not read.
  */
-export function portsText(ports: readonly number[] | null): string {
+function portsText(ports: readonly number[] | null): string {
   if (ports == null) return MISSING;
   const head = ports.slice(0, PORTS_SHOWN).join(", ");
   const rest = ports.length - PORTS_SHOWN;

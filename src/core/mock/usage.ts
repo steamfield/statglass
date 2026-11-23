@@ -35,7 +35,7 @@ export const APP_OF: Record<string, string> = {
 const BUNDLED = new Set(Object.values(APP_OF));
 
 /**
- * Marks `app_quit` across one batch, as Rust's `app_quit::quit_targets` does:
+ * Marks `app_quit` across one batch, as Rust's `app_quit::live_quit_set` does:
  * a bundled app's running main executable alone, else every member.
  */
 export function withAppQuit(rows: readonly LiveProcess[]): LiveProcess[] {

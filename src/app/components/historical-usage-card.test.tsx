@@ -425,6 +425,40 @@ describe("recorded rows act on what is running now", () => {
     );
   });
 
+  it("keeps the selection across a sort by another metric, and closes open apps", async () => {
+    const { transport, user, apps } = setup();
+    await screen.findByText("Compiler");
+    await running(transport, [compilerMain, compilerHelper]);
+    await user.click(
+      await screen.findByRole("checkbox", { name: "Select Compiler" })
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Show Compiler processes" })
+    );
+    await user.click(
+      within(screen.getByRole("columnheader", { name: "Peak RAM" })).getByRole(
+        "button"
+      )
+    );
+    await waitFor(() =>
+      expect(apps).toHaveBeenLastCalledWith(
+        expect.objectContaining({ by: "memory" })
+      )
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("columnheader", { name: /Peak RAM/ })
+      ).toHaveAttribute("aria-sort", "descending")
+    );
+    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(
+      await screen.findByRole("checkbox", { name: "Select Compiler" })
+    ).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Show Compiler processes" })
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("selects a recorded process only while that same process runs", async () => {
     const { transport, user, processes } = setup();
     await screen.findByText("Compiler");

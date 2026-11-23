@@ -1,31 +1,25 @@
 //! Which of an app's processes Quit acts on, decided over each live batch
-//! (`LiveProcess.app_quit`). Every view that offers an app row's Quit reads it from there:
-//! the process table directly, per-app usage and recorded tables by app name.
+//! (`LiveProcess.app_quit`, from [`live_quit_set`]). Every view that offers an app row's
+//! Quit reads it from there: the process table directly, per-app usage and recorded
+//! tables by app name.
 
 use std::collections::{HashMap, HashSet};
 
 use statglass_engine::ProcessSample;
 
-/// The indices into `procs` that Quit on their app acts on: its running main executables
-/// alone when there are any (one per running instance of the app), since quitting them
-/// quits the app and signalling its helpers first would cut a graceful quit short;
-/// otherwise every running process. Empty when none is running.
-pub fn quit_targets<P>(
-    procs: &[P],
-    running: impl Fn(&P) -> bool,
-    main: impl Fn(&P) -> bool,
-) -> Vec<usize> {
-    let indices = |keep: &dyn Fn(&P) -> bool| -> Vec<usize> {
-        procs
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| keep(p))
-            .map(|(i, _)| i)
-            .collect()
-    };
-    let mains = indices(&|p| running(p) && main(p));
+/// The indices into `procs` (one app's processes, all running) that Quit on the app acts
+/// on: its main executables alone when there are any (one per running instance of the
+/// app), since quitting them quits the app and signalling its helpers first would cut a
+/// graceful quit short; otherwise every process. Empty when `procs` is.
+fn quit_targets<P>(procs: &[P], main: impl Fn(&P) -> bool) -> Vec<usize> {
+    let mains: Vec<usize> = procs
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| main(p))
+        .map(|(i, _)| i)
+        .collect();
     if mains.is_empty() {
-        indices(&|p| running(p))
+        (0..procs.len()).collect()
     } else {
         mains
     }
@@ -45,7 +39,7 @@ pub fn live_quit_set(rows: &[ProcessSample]) -> HashSet<(i32, i64)> {
     groups
         .values()
         .flat_map(|members| {
-            quit_targets(members, |_| true, |r| r.app_main)
+            quit_targets(members, |r| r.app_main)
                 .into_iter()
                 .filter_map(|i| members.get(i))
                 .map(|r| (r.pid, r.start_time_us))
@@ -58,43 +52,24 @@ mod tests {
     use super::{live_quit_set, quit_targets};
     use statglass_engine::ProcessSample;
 
-    /// (running, main)
-    type P = (bool, bool);
-
-    fn targets(procs: &[P]) -> Vec<usize> {
-        quit_targets(procs, |p| p.0, |p| p.1)
+    /// Whether each process is its app's main executable.
+    fn targets(mains: &[bool]) -> Vec<usize> {
+        quit_targets(mains, |&main| main)
     }
 
     #[test]
-    fn running_main_alone() {
-        assert_eq!(
-            targets(&[(true, false), (true, true), (true, false)]),
-            vec![1]
-        );
+    fn main_alone() {
+        assert_eq!(targets(&[false, true, false]), vec![1]);
     }
 
     #[test]
-    fn no_main_means_every_running_process() {
-        assert_eq!(
-            targets(&[(true, false), (false, false), (true, false)]),
-            vec![0, 2]
-        );
+    fn no_main_means_every_process() {
+        assert_eq!(targets(&[false, false, false]), vec![0, 1, 2]);
     }
 
     #[test]
-    fn exited_main_falls_back_to_running_members() {
-        assert_eq!(
-            targets(&[(false, true), (true, false), (true, false)]),
-            vec![1, 2]
-        );
-    }
-
-    #[test]
-    fn nothing_running_is_empty() {
-        assert_eq!(
-            targets(&[(false, true), (false, false)]),
-            Vec::<usize>::new()
-        );
+    fn no_process_is_empty() {
+        assert_eq!(targets(&[]), Vec::<usize>::new());
     }
 
     fn sample(pid: i32, name: &str, app: Option<&str>, app_main: bool) -> ProcessSample {

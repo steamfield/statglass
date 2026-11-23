@@ -77,7 +77,8 @@ export function HistoricalUsageCard({
   useEffect(() => setLocalSort({ by, dir: "desc" }), [by]);
   const selected = controlledSort ?? localSort;
   const sort = visibleSort(selected, by, columns);
-  const query = useHistoricalUsage(range, sort.by);
+  // Held across a header click, so the table keeps its selection (§4.14).
+  const query = useHistoricalUsage(range, sort.by, { holdAcrossMetrics: true });
   const names = useMemo(
     () => query.data?.apps.map((app) => app.name) ?? [],
     [query.data]
@@ -186,7 +187,7 @@ export function HistoricalUsageCard({
             <HistoricalCoverage data={previous.data} by={sort.by} previous />
           )}
           <HistoricalUsageTable
-            key={`${host}:${range.fromMs}:${range.toMs}:${sort.by}`}
+            key={`${host}:${range.fromMs}:${range.toMs}`}
             data={query.data}
             previous={previous.data}
             range={range}
@@ -275,6 +276,15 @@ function HistoricalUsageTable({
   const selectable = useCanSignalSettled();
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const members = useRecordedMembers();
+  // Another metric ranks other apps and pages their processes by it, so open
+  // groups and loaded pages start over; the selection (owned by the table)
+  // survives the header click (§4.14).
+  const [openFor, setOpenFor] = useState(sort.by);
+  if (openFor !== sort.by) {
+    setOpenFor(sort.by);
+    setOpen(new Set());
+    members.reset();
+  }
   const spanMs = range.toMs - range.fromMs;
   const apps = useMemo(
     () => (sort.dir === "asc" ? [...data.apps].reverse() : data.apps),
@@ -386,7 +396,7 @@ function useRecordedRunning(
 /**
  * The recorded processes each open app's loader has reported, by app name.
  * `report` keeps the map when nothing changed, so a loader's effect costs no
- * render.
+ * render; `reset` forgets every page.
  */
 function useRecordedMembers() {
   const [loaded, setLoaded] = useState<RecordedMembers>(() => new Map());
@@ -397,7 +407,8 @@ function useRecordedMembers() {
       ),
     []
   );
-  return { loaded, report };
+  const reset = useCallback(() => setLoaded(new Map()), []);
+  return { loaded, report, reset };
 }
 
 function visibleSort(

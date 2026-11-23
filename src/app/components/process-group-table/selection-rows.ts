@@ -31,6 +31,7 @@ export function selectionRows<G, M>(
           key: row.key,
           label: groupLabel(rows, group),
           targets: rows.targets(group),
+          expandable: row.expandable,
         },
       ];
     }
@@ -46,7 +47,11 @@ export function selectionRows<G, M>(
   });
 }
 
-/** What Command-A selects by default: every group's targets and every listed member's. */
+/**
+ * What Command-A selects: every group's targets (even a group whose quit
+ * target a member search leaves unlisted) and every listed member's. A
+ * collapsed group's helpers stay out, as its own Quit leaves them.
+ */
 export function visibleTargets<G, M>(
   visible: readonly VisibleRow<G, M>[],
   rows: GroupRows<G, M>
