@@ -404,6 +404,8 @@ export const events = {
 };
 
 /* Constants */
+export const ALERT_METRICS = [{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"CPU usage","max":100.0,"metric":"cpu.total","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"GPU usage","max":100.0,"metric":"gpu.util","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":80.0,"label":"Memory pressure","max":100.0,"metric":"mem.pressure","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":4000000000.0,"label":"Swap used","max":999999995904.0,"metric":"mem.swap_used","min":100000000.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":95.0,"label":"Hottest sensor","max":130.0,"metric":"thermal.hottest","min":30.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":4000.0,"label":"Fan speed","max":20000.0,"metric":"fan.rpm","min":500.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":60.0,"label":"System power","max":1000.0,"metric":"power.system","min":1.0},{"default_for_secs":0,"default_label":null,"default_op":"lt","default_value":20.0,"label":"Battery charge","max":100.0,"metric":"battery.charge","min":1.0},{"default_for_secs":0,"default_label":["vol","/"],"default_op":"lt","default_value":20000000000.0,"label":"Free disk space","max":100000000376832.0,"metric":"disk.free","min":100000000.0}] as const;
+
 export const CHART_WINDOWS = ["5m","15m","30m","1h"] as const;
 
 export const CHART_WINDOW_MS = {"15m":900000,"1h":3600000,"30m":1800000,"5m":300000} as const;
@@ -508,24 +510,87 @@ export type AgentUpdateProgress = {
 export type AgentUpdateVia = "push" | "add_host";
 
 /**  Why an alert fired. */
-export type AlertCause = { type: "process_cpu"; process: string; cpu_pct: number | null } | { type: "thermal_state"; state: ThermalState };
+export type AlertCause = { type: "process_cpu"; process: string; cpu_pct: number | null } | { type: "thermal_state"; state: ThermalState } |
+/**  A custom threshold rule held on the series `metric` with `labels`. */
+{ type: "threshold"; metric: MetricId; labels: Labels;
+/**  The series' value on the tick the rule fired, in the catalog unit. */
+value: number | null; op: Cmp;
+/**  The rule's threshold, in the catalog unit. */
+threshold: number | null;
+/**
+ *  The rule's `for_secs`, so the alert text names the rule's duration rather
+ *  than one measured from reading spacing.
+ */
+for_secs: number };
+
+/**  One alertable metric. */
+export type AlertMetric = {
+	/**  The catalog metric id. */
+	metric: string,
+	/**  What the metric is called in rule sentences and notifications. */
+	label: string,
+	/**  The comparison a new rule starts with. */
+	default_op: Cmp,
+	/**  The threshold a new rule starts with, in the catalog unit. */
+	default_value: number | null,
+	/**  How long a new rule's condition must hold, in seconds. */
+	default_for_secs: number,
+	/**  The lowest threshold a rule may use. */
+	min: number | null,
+	/**  The highest threshold a rule may use. */
+	max: number | null,
+	/**
+	 *  The series a new rule watches, as a `(key, value)` label, or `None` for every
+	 *  series of the metric. Disk rules start on the boot volume so a mounted installer
+	 *  image, which is always full, does not fire them.
+	 */
+	default_label: [string, string] | null,
+};
+
+export type AlertRule = {
+	id: string,
+	name: string,
+	when: Condition,
+	/**  How long the condition must hold before the rule fires. */
+	for_secs: number,
+	/**  Minimum time between two firings. */
+	cooldown_secs: number,
+	enabled: boolean,
+};
 
 /**
- *  The built-in alert rules (v1.2), each off until the user turns it on. Turning one on
- *  posts a one-off "Alerts are on" notification: macOS asks for notification permission
- *  on a first delivery, not when the app asks (D-084), so this brings the prompt up
- *  while the user is in Settings rather than with the first real alert.
+ *  The built-in alert rules, each off until the user turns it on, and the custom rules.
+ *  Turning a rule on posts a one-off "Alerts are on" notification: macOS asks for
+ *  notification permission on a first delivery, not when the app asks (D-084), so this
+ *  brings the prompt up while the user is looking rather than with the first real alert.
  */
 export type AlertSettings = {
 	/**  [`AlertRule::hot_process`]: a process above 200% CPU for 5 minutes. */
 	hot_process: boolean,
 	/**  [`AlertRule::thermal_serious`]: thermal state Serious or worse. */
 	thermal_serious: boolean,
+	/**
+	 *  A saved host offline for 5 minutes. Absent from a file written before custom
+	 *  rules: off.
+	 */
+	host_offline?: boolean,
+	/**
+	 *  The user's threshold rules, at most [`AlertRule::MAX_CUSTOM`]. Absent from a file
+	 *  written before custom rules: none. An entry this build cannot decode (a condition
+	 *  from a newer build) is skipped on load.
+	 */
+	rules?: AlertRule[],
 };
 
+/**
+ *  A partial change to [`AlertSettings`]. `rules`, when present, replaces the whole
+ *  custom rule list; the patch path validates the result before anything is saved.
+ */
 export type AlertsPatch = {
 	hot_process?: boolean | null,
 	thermal_serious?: boolean | null,
+	host_offline?: boolean | null,
+	rules?: AlertRule[] | null,
 };
 
 /**  One app's bytes over a range. Bytes are exact below 2^53. */
@@ -725,6 +790,8 @@ export type ClusterInfo = {
 	dvfs_mhz: number[],
 };
 
+export type Cmp = "gt" | "ge" | "lt" | "le";
+
 export type CommandError = { kind: "update"; message: string } |
 /**  SSH login to the other Mac failed (key, agent or account). */
 { kind: "remote_auth"; message: string } |
@@ -813,6 +880,20 @@ export type CommandError = { kind: "update"; message: string } |
  *  out, or an answer that is not an address (a captive portal).
  */
 { kind: "public_ip"; message: string };
+
+export type Condition =
+/**  Any series matching `series` compared with `value` in the metric's unit. */
+({ threshold: {
+	series: SeriesSelector,
+	op: Cmp,
+	value: number | null,
+} }) & { process_cpu_above?: never; thermal_state_at_least?: never } |
+/**  `thermal.state` at or above this level. */
+({ thermal_state_at_least: ThermalState }) & { process_cpu_above?: never; threshold?: never } |
+/**  Any process above this CPU (percent of one core). */
+({ process_cpu_above: {
+	percent_of_core: number | null,
+} }) & { thermal_state_at_least?: never; threshold?: never };
 
 export type CoreKind = "performance" | "efficiency" |
 /**
@@ -2892,7 +2973,7 @@ export type Settings = {
 	units: UnitSettings,
 	general: GeneralSettings,
 	onboarding: OnboardingSettings,
-	/**  Absent from a settings file written before v1.2: both alerts off. */
+	/**  Absent from a settings file written before v1.2: every alert off. */
 	alerts?: AlertSettings,
 };
 

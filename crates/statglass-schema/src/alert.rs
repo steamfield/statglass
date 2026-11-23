@@ -1,12 +1,17 @@
 //! Alert rules as plain data (architecture.md infra 7). Rules evaluate inside the engine,
-//! so the same rule runs locally (v1.2) and on a remote agent (v4). v1.2 ships two
-//! built-in rules, [`AlertRule::hot_process`] and [`AlertRule::thermal_serious`], each
-//! switched on in settings ([`crate::settings::AlertSettings`]).
+//! so the same rule runs locally (v1.2) and on a remote agent (v4). Two rules are
+//! built in, [`AlertRule::hot_process`] and [`AlertRule::thermal_serious`], each
+//! switched on in settings ([`crate::settings::AlertSettings`]). Users add custom
+//! threshold rules on the metrics in [`crate::ALERT_METRICS`]; a custom rule must pass
+//! [`AlertRule::validate_custom`] before it is saved (plan/rfc-alerts.md).
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::series::SeriesSelector;
+use crate::series::{Labels, SeriesSelector};
+
+const HOT_PROCESS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0001);
+const THERMAL_SERIOUS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0002);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct AlertRule {
@@ -21,10 +26,23 @@ pub struct AlertRule {
 }
 
 impl AlertRule {
+    /// The ids of the built-in rules. A custom rule may not use one.
+    pub const BUILTIN_IDS: [Uuid; 2] = [HOT_PROCESS_ID, THERMAL_SERIOUS_ID];
+    /// The most custom rules one settings file holds.
+    pub const MAX_CUSTOM: usize = 32;
+    /// The longest `for_secs` a custom rule may wait: one hour.
+    pub const MAX_FOR_SECS: u32 = 3600;
+    /// The shortest cooldown a custom rule may have: one minute.
+    pub const MIN_COOLDOWN_SECS: u32 = 60;
+    /// The longest cooldown a custom rule may have: 24 hours.
+    pub const MAX_COOLDOWN_SECS: u32 = 86_400;
+    /// The longest custom rule name, in characters after trimming.
+    pub const MAX_NAME_CHARS: usize = 60;
+
     /// Built-in: a process above 200% CPU for 5 minutes.
     pub fn hot_process() -> Self {
         Self {
-            id: Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0001),
+            id: HOT_PROCESS_ID,
             name: "Process above 200% CPU for 5 minutes".into(),
             when: Condition::ProcessCpuAbove {
                 percent_of_core: 200.0,
@@ -38,7 +56,7 @@ impl AlertRule {
     /// Built-in: thermal state Serious or worse.
     pub fn thermal_serious() -> Self {
         Self {
-            id: Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0002),
+            id: THERMAL_SERIOUS_ID,
             name: "Thermal state Serious or worse".into(),
             when: Condition::ThermalStateAtLeast(ThermalState::Serious),
             for_secs: 0,
@@ -46,6 +64,50 @@ impl AlertRule {
             enabled: false,
         }
     }
+
+    /// Checks a user-written rule: a threshold on one metric of [`crate::ALERT_METRICS`],
+    /// at most one label the catalog metric carries, a finite value inside the metric's
+    /// range, a name of 1 to [`Self::MAX_NAME_CHARS`] characters after trimming,
+    /// `for_secs` up to [`Self::MAX_FOR_SECS`], a cooldown between
+    /// [`Self::MIN_COOLDOWN_SECS`] and [`Self::MAX_COOLDOWN_SECS`], and an id that is
+    /// not a built-in one.
+    pub fn validate_custom(&self) -> Result<(), AlertRuleError> {
+        Err(AlertRuleError::NotThreshold)
+    }
+}
+
+/// The display name of one series of `metric` in a rule or an alert: `None` for a
+/// series without labels, "Fan {n+1}" for `fan.rpm` with a numeric `fan` label `n`
+/// (fans are numbered from 0 in the catalog and from 1 on screen), otherwise the single
+/// label's value ("/" for the boot volume).
+pub fn series_name(_metric: &str, _labels: &Labels) -> Option<String> {
+    None
+}
+
+/// Why a custom rule was refused. Each message states the limit it broke, so the
+/// Alerts page can show it as is.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum AlertRuleError {
+    #[error("rule name must be 1 to 60 characters")]
+    Name,
+    #[error("metric {0:?} cannot be alerted on; choose one of the listed metrics")]
+    Metric(String),
+    #[error("a rule watches every series of its metric or one series named by a label it carries")]
+    Labels,
+    #[error("threshold must be a number between {min} and {max}")]
+    Value { min: f32, max: f32 },
+    #[error("duration must be at most 1 hour")]
+    Duration,
+    #[error("cooldown must be between 1 minute and 24 hours")]
+    Cooldown,
+    #[error("rule id belongs to a built-in rule")]
+    ReservedId,
+    #[error("a custom rule must be a threshold on one metric")]
+    NotThreshold,
+    #[error("at most 32 custom rules")]
+    TooMany,
+    #[error("two rules share one id")]
+    DuplicateId,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -107,7 +169,7 @@ impl ThermalState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::series::{Labels, MetricId};
+    use crate::series::MetricId;
 
     fn rules() -> Vec<AlertRule> {
         let id = |n| Uuid::from_u128(n);
@@ -186,3 +248,7 @@ mod tests {
         assert!(ThermalState::Critical >= ThermalState::Serious);
     }
 }
+
+#[cfg(test)]
+#[path = "alert_validation_tests.rs"]
+mod validation_tests;

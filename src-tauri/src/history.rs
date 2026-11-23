@@ -8,7 +8,10 @@ use crate::ipc::{
 };
 use statglass_engine::{HistoryStore, HousekeepingHandle};
 use statglass_schema::lock::LockExt;
-use statglass_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier, TimeRange};
+use statglass_schema::{
+    AlertSettings, Event, EventDetail, HostId, HostRecord, Labels, MetricId, SeriesKey, Tier,
+    TimeRange,
+};
 use statglass_store::{
     BucketRow, ExportQuery, HistoryQuery, HistoryResult, ProcResolution, RangeStats, Reader,
     Retention, TierChoice, Writer,
@@ -99,6 +102,26 @@ impl History {
     }
     pub fn reset(&self, now_ms: i64) -> Result<Writer, CommandError> {
         Ok(self.storage.reset(now_ms)?)
+    }
+    /// The alert events of the last [`statglass_engine::detect::alert_history_ms`] for
+    /// `alerts`, which the engine seeds its alert cooldowns from so a restart does not
+    /// re-fire a rule. Empty when history is unavailable or the read fails: the rules then
+    /// start with no cooldown. One small indexed query at launch.
+    pub fn recent_alerts(&self, host: HostId, now: i64, alerts: &AlertSettings) -> Vec<Event> {
+        if !self.is_available() {
+            return Vec::new();
+        }
+        let from = now - statglass_engine::detect::alert_history_ms(alerts);
+        match self.read(|r| r.events(host, from, now.saturating_add(1))) {
+            Ok(events) => events
+                .into_iter()
+                .filter(|e| matches!(e.detail, EventDetail::Alert { .. }))
+                .collect(),
+            Err(e) => {
+                tracing::warn!("reading recent alerts, alert cooldowns start fresh: {e:?}");
+                Vec::new()
+            }
+        }
     }
     pub fn spawn_pruner(
         &self,

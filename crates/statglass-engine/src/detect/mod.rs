@@ -9,6 +9,7 @@
 
 mod alerts;
 mod detectors;
+mod threshold;
 mod window;
 
 use statglass_collect::ProcessSample;
@@ -61,11 +62,11 @@ fn value(values: &[f32], i: usize) -> Option<f32> {
 }
 
 /// How far back an alert rule's last firing still holds it off: the longest cooldown
-/// of the built-in rules. The app shell reads stored alerts this far back at launch
-/// ([`Detectors::seed_alert_history`]).
-pub fn alert_history_ms() -> i64 {
-    AlertSettings::default()
-        .rules()
+/// among every rule in `alerts`, built-in and custom, on or off. The app shell reads
+/// stored alerts this far back at launch ([`Detectors::seed_alert_history`]).
+pub fn alert_history_ms(alerts: &AlertSettings) -> i64 {
+    alerts
+        .builtin_rules()
         .iter()
         .map(|r| i64::from(r.cooldown_secs) * 1000)
         .max()
@@ -74,7 +75,7 @@ pub fn alert_history_ms() -> i64 {
 
 /// Every detector plus the alert rules, fed by the engine once per persisted tick.
 /// Every built-in rule has an evaluator, on or off, so a rule switched off and on again
-/// keeps its cooldown.
+/// keeps its cooldown; each custom rule has one while it is in the settings.
 pub struct Detectors {
     detectors: Vec<Box<dyn Detector>>,
     alerts: Vec<AlertEval>,
@@ -83,7 +84,7 @@ pub struct Detectors {
 }
 
 impl Detectors {
-    pub fn new(th: DetectorThresholds, alerts: AlertSettings) -> Self {
+    pub fn new(th: DetectorThresholds, alerts: &AlertSettings) -> Self {
         let mut d = Self {
             detectors: vec![
                 Box::new(FansRamped::new(th)),
@@ -119,11 +120,14 @@ impl Detectors {
         self.window.set_idle_ms(idle_ms);
     }
 
-    /// Switches the built-in alert rules. A rule that stays on keeps its progress; one
-    /// switched off forgets its progress (it sees nothing while off) but keeps its
-    /// cooldown, so switching it back on cannot re-fire it at once.
-    pub fn set_alerts(&mut self, settings: AlertSettings) {
-        for rule in settings.rules() {
+    /// Applies the alert settings, matching evaluators by rule id. A rule that stays the
+    /// same keeps its progress; one switched off forgets its progress (it sees nothing
+    /// while off) but keeps its cooldown, so switching it back on cannot re-fire it at
+    /// once. A custom rule whose definition changed gets a new evaluator that keeps the
+    /// old one's cooldown; a custom rule no longer in the settings is dropped; a new one
+    /// is bound to the current layout at once.
+    pub fn set_alerts(&mut self, settings: &AlertSettings) {
+        for rule in settings.builtin_rules() {
             match self.alerts.iter_mut().find(|a| a.rule().id == rule.id) {
                 Some(eval) => eval.set_enabled(rule.enabled),
                 None => {
@@ -207,3 +211,6 @@ impl Detectors {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod threshold_tests;

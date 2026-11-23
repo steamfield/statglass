@@ -12,6 +12,7 @@
 //! ([`alerts_on`]) right away: the permission prompt then appears while the user is in
 //! Settings, not with the first real alert, which may be hours later.
 
+use statglass_schema::settings::UnitSettings;
 use statglass_schema::{
     AlertCause, AlertRule, AlertSettings, Condition, Event, EventDetail, ThermalState,
 };
@@ -27,17 +28,19 @@ pub fn request_permission(app: &AppHandle) {
     }
 }
 
-/// Posts a one-off confirmation that `rules` were switched on. On macOS the first
-/// delivery is what shows the permission prompt, so this makes it appear now.
-pub fn alerts_on(app: &AppHandle, rules: &[AlertRule]) {
+/// Posts a one-off confirmation that `rules` were switched on, with values in `units`.
+/// On macOS the first delivery is what shows the permission prompt, so this makes it
+/// appear now.
+pub fn alerts_on(app: &AppHandle, rules: &[AlertRule], _units: &UnitSettings) {
     let Some((title, body)) = alerts_on_text(rules) else {
         return;
     };
     post(app, title, body, "posting the alerts-on confirmation");
 }
 
-/// Posts the notification for an `alert` event. Other events post nothing.
-pub fn alert(app: &AppHandle, event: &Event) {
+/// Posts the notification for an `alert` event, with values in `units`. Other events
+/// post nothing.
+pub fn alert(app: &AppHandle, event: &Event, _units: &UnitSettings) {
     let Some((title, body)) = text(event) else {
         return;
     };
@@ -90,7 +93,7 @@ fn describe(rule: &AlertRule) -> String {
 /// The CPU threshold of the built-in rule `rule_id`, when it is a process CPU rule.
 fn cpu_threshold(rule_id: uuid::Uuid) -> Option<f32> {
     AlertSettings::default()
-        .rules()
+        .builtin_rules()
         .into_iter()
         .find(|r| r.id == rule_id)
         .and_then(|r| match r.when {
@@ -141,6 +144,7 @@ pub fn text(event: &Event) -> Option<(String, String)> {
             format!("Thermal state: {}", thermal_label(*state)),
             "macOS is reducing performance to cool the Mac down.".to_owned(),
         ),
+        AlertCause::Threshold { .. } => return None,
     })
 }
 

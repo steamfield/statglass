@@ -359,7 +359,10 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .constant("HISTORY_TIERS", history_tiers())
         .constant("HISTORY_PROJECTION", history_projection())
         .constant("SAMPLING_PLANS", sampling_plans())
+        // The metrics a custom alert rule may watch, with defaults and ranges.
+        .constant("ALERT_METRICS", statglass_schema::ALERT_METRICS)
         .typ::<SamplingPlan>()
+        .typ::<statglass_schema::AlertMetric>()
         .typ::<statglass_schema::Readout>()
 }
 

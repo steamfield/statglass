@@ -200,10 +200,10 @@ impl AppState {
                 .recorder
                 .attach(writer.clone(), data_dir.join(crate::history::DB_FILE));
         }
-        source.seed_alert_history(recent_alerts(
-            &state.history,
+        source.seed_alert_history(state.history.recent_alerts(
             local,
             statglass_engine::wall_ms(),
+            &current.alerts,
         ));
         // Charts opened right after launch draw the hour before it from the store.
         warm_live_ring(&state.history, &entry, local, statglass_engine::wall_ms());
@@ -438,7 +438,7 @@ impl SettingsEffects for ShellEffects<'_> {
         let switched_on = alerts_switched_on(old, new);
         if !switched_on.is_empty() {
             notify::request_permission(self.app);
-            notify::alerts_on(self.app, &switched_on);
+            notify::alerts_on(self.app, &switched_on, &new.units);
         }
         tracing::info!(revision = now.revision, "settings changed");
         let event = SettingsChanged {
@@ -451,10 +451,6 @@ impl SettingsEffects for ShellEffects<'_> {
     }
 }
 
-/// The alert events of the last [`statglass_engine::detect::alert_history_ms`], which the
-/// engine seeds its alert cooldowns from so a restart does not re-fire a rule. Empty
-/// when history is unavailable or the read fails: the rules then start with no
-/// cooldown. One small indexed query at launch.
 /// [`AppState::route`] over its parts. The host registry decides whether `host` exists:
 /// a remote's session is in place before its host is registered and after it is
 /// discarded, and a host in either window is unknown.
@@ -469,23 +465,6 @@ pub(crate) fn route(
         Ok(Route::Local)
     } else {
         remotes.source(host).map(Route::Remote)
-    }
-}
-
-fn recent_alerts(history: &History, host: HostId, now: i64) -> Vec<statglass_schema::Event> {
-    if !history.is_available() {
-        return Vec::new();
-    }
-    let from = now - statglass_engine::detect::alert_history_ms();
-    match history.read(|r| r.events(host, from, now.saturating_add(1))) {
-        Ok(events) => events
-            .into_iter()
-            .filter(|e| matches!(e.detail, statglass_schema::EventDetail::Alert { .. }))
-            .collect(),
-        Err(e) => {
-            tracing::warn!("reading recent alerts, alert cooldowns start fresh: {e:?}");
-            Vec::new()
-        }
     }
 }
 
@@ -600,8 +579,10 @@ pub(crate) fn spawn_host_watcher(
                     }
                 }
                 BusMsg::Event(e) => {
-                    if entry.record().is_local {
-                        notify::alert(&app, &e);
+                    if entry.record().is_local
+                        && let Some(state) = app.try_state::<AppState>()
+                    {
+                        notify::alert(&app, &e, &state.settings.settings().units);
                     }
                     let event = EventRecorded {
                         host: entry.record().id,
@@ -682,16 +663,16 @@ mod tests {
         }
         writer.flush().unwrap();
 
-        let recent = recent_alerts(&history, id.id, NOW);
+        let recent = history.recent_alerts(id.id, NOW, &AlertSettings::default());
         assert_eq!(recent, [alert(5 * MIN)]);
 
         // Seeded, the rule stays quiet on Serious; unseeded it fires at once.
         let fires = |seed: &[Event]| -> usize {
             let mut d = Detectors::new(
                 DetectorThresholds::DEFAULT,
-                AlertSettings {
-                    hot_process: false,
+                &AlertSettings {
                     thermal_serious: true,
+                    ..AlertSettings::default()
                 },
             );
             d.bind(&[SeriesKey::parse("thermal.state").unwrap()]);

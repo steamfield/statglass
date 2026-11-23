@@ -9,8 +9,8 @@ use statglass_schema::durable_usage::{
     HistoricalUsageReply, HistoricalUsageRequest, UsageProcessReply, UsageProcessRequest,
 };
 use statglass_schema::{
-    AlertRule, Capabilities, Cursor, Event, Gap, HostId, HostRecord, Module, SeriesKey,
-    SeriesSelector, Settings, Snapshot, Tier,
+    AlertMetric, AlertRule, Capabilities, Cursor, Event, Gap, HostId, HostRecord, Module,
+    SeriesKey, SeriesSelector, Settings, Snapshot, Tier,
 };
 
 #[test]
@@ -27,6 +27,7 @@ fn ipc_types_export_to_typescript() {
         .register::<Gap>()
         .register::<Settings>()
         .register::<AlertRule>()
+        .register::<AlertMetric>()
         .register::<Event>()
         .register::<Snapshot>()
         .register::<HistoricalUsageRequest>()

@@ -116,6 +116,7 @@ export const SCENARIOS = [
   "docker-stop-failed",
   "docker-rerank",
   "star-prompt",
+  "alerts",
 ] as const;
 
 /** The schema version the mock's "newer StatGlass" wrote, and the one it reads. */
@@ -200,6 +201,11 @@ export interface ScenarioFlags {
   powerDisabled: boolean;
   /** Eligible to show the GitHub star hover-card toast in the dashboard. */
   starPrompt: boolean;
+  /**
+   * The Alerts page's scenario: the event history holds a custom threshold
+   * alert and a process alert from the last day.
+   */
+  alerts: boolean;
 }
 
 export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
@@ -221,6 +227,7 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
     compactPopover: has("popover-compact"),
     powerDisabled: has("power-disabled"),
     starPrompt: has("star-prompt"),
+    alerts: has("alerts"),
     noFans: has("no-fans"),
     paused: has("paused"),
     stale: has("stale"),

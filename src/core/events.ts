@@ -3,6 +3,7 @@
  * and the Power chart, and merging a pushed `event-recorded` into a list
  * already fetched.
  */
+import { alertCauseLabel } from "@core/alerts";
 import { selectedRange } from "@core/brush";
 import { formatPercent } from "@core/format";
 import type { Event, HostId } from "@core/generated/bindings";
@@ -23,7 +24,8 @@ function blame(processes: readonly string[]): string {
 
 /**
  * What happened, without the time: "Fans ramped up · kernel_task + Xcode
- * build", "ANE 1.4 W · Photos face analysis".
+ * build", "ANE 1.4 W · Photos face analysis", "Alert · Memory pressure
+ * 84%". A threshold alert's value reads in the display defaults (°F, GB).
  */
 export function eventLabel(e: Event): string {
   const d = e.detail;
@@ -37,9 +39,14 @@ export function eventLabel(e: Event): string {
     case "power_spike":
       return `${d.component === "ane" ? "ANE" : "Package"} ${watts(d.watts)}${blame(e.processes.slice(0, 1))}`;
     case "alert":
-      return d.cause.type === "process_cpu"
-        ? `Alert · ${d.cause.process} at ${pct(d.cause.cpu_pct)} CPU`
-        : `Alert · thermal state ${THERMAL_LABEL[d.cause.state]}`;
+      switch (d.cause.type) {
+        case "process_cpu":
+          return `Alert · ${d.cause.process} at ${pct(d.cause.cpu_pct)} CPU`;
+        case "thermal_state":
+          return `Alert · thermal state ${THERMAL_LABEL[d.cause.state]}`;
+        case "threshold":
+          return `Alert · ${alertCauseLabel(d.cause, null)}`;
+      }
   }
 }
 

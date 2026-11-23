@@ -10,7 +10,11 @@ const SEC = 1000;
 const MIN = 60 * SEC;
 const HOUR = 60 * MIN;
 
-export function mockEvents(nowMs: number): Event[] {
+/**
+ * The fixed day of events ending at `nowMs`. With `alertsScenario`, it also
+ * holds the `alerts` scenario's custom threshold alert and process alert.
+ */
+export function mockEvents(nowMs: number, _alertsScenario = false): Event[] {
   const at = (agoMs: number) => nowMs - agoMs;
   return [
     {

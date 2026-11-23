@@ -7,7 +7,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::alert::ThermalState;
+use crate::alert::{Cmp, ThermalState};
+use crate::series::{Labels, MetricId};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct Event {
@@ -105,8 +106,26 @@ impl PowerComponent {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AlertCause {
-    ProcessCpu { process: String, cpu_pct: f32 },
-    ThermalState { state: ThermalState },
+    ProcessCpu {
+        process: String,
+        cpu_pct: f32,
+    },
+    ThermalState {
+        state: ThermalState,
+    },
+    /// A custom threshold rule held on the series `metric` with `labels`.
+    Threshold {
+        metric: MetricId,
+        labels: Labels,
+        /// The series' value on the tick the rule fired, in the catalog unit.
+        value: f32,
+        op: Cmp,
+        /// The rule's threshold, in the catalog unit.
+        threshold: f32,
+        /// The rule's `for_secs`, so the alert text names the rule's duration rather
+        /// than one measured from reading spacing.
+        for_secs: u32,
+    },
 }
 
 /// Detector thresholds (v1-local-monitor.md 1.2-C). Times are wall-clock milliseconds,
@@ -236,6 +255,23 @@ mod tests {
                     cause: AlertCause::ProcessCpu {
                         process: "Xcode".into(),
                         cpu_pct: 250.0,
+                    },
+                },
+            },
+            Event {
+                ts_ms: 4_000,
+                start_ms: 3_880,
+                processes: vec![],
+                detail: EventDetail::Alert {
+                    rule_id: Uuid::from_u128(7),
+                    rule_name: "Fan high".into(),
+                    cause: AlertCause::Threshold {
+                        metric: MetricId::from_static("fan.rpm"),
+                        labels: Labels::single("fan", "1"),
+                        value: 5200.0,
+                        op: Cmp::Gt,
+                        threshold: 4000.0,
+                        for_secs: 120,
                     },
                 },
             },

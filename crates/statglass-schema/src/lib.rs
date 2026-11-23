@@ -18,7 +18,7 @@
 //! | Gaps | [`Gap`], [`GapReason`] (`as_str`/`parse` give the `gaps.reason` text), nullable [`Gap::module`] set only for `module_disabled`, [`Module::as_str`] for `gaps.module` |
 //! | Capabilities | [`Capabilities`], [`ModuleCap`], [`UnsupportedReason`], [`Entitlement`] |
 //! | Settings | [`Settings`] with [`Settings::validate`] |
-//! | Alerts (v1.2) | [`AlertRule`] (built-ins [`AlertRule::hot_process`], [`AlertRule::thermal_serious`]), [`Condition`], [`SeriesSelector`], [`AlertSettings`] |
+//! | Alerts (v1.2) | [`AlertRule`] (built-ins [`AlertRule::hot_process`], [`AlertRule::thermal_serious`]), [`Condition`], [`SeriesSelector`], [`AlertSettings`]; custom rules [`AlertRule::validate_custom`], [`AlertRuleError`], [`ALERT_METRICS`], [`series_name`] |
 //! | Events (v1.2) | [`Event`], [`EventDetail`] (`kind` gives the `events.kind` text), [`DetectorThresholds::DEFAULT`] |
 //! | UI view | [`Snapshot::from_frame`] over a [`FrameView`] |
 //! | Forward compatibility | Wire-facing and stored enums have an `Unknown` variant for values from newer peers or builds; never produced locally, skipped by consumers (D-040) |
@@ -41,6 +41,7 @@
 //! byte counts must use a 32-bit or smaller type instead.
 
 mod alert;
+mod alert_metrics;
 mod caps;
 mod cardinality;
 mod catalog;
@@ -62,7 +63,8 @@ mod snapshot;
 mod time_range;
 pub mod usage;
 
-pub use alert::{AlertRule, Cmp, Condition, ThermalState};
+pub use alert::{AlertRule, AlertRuleError, Cmp, Condition, ThermalState, series_name};
+pub use alert_metrics::{ALERT_METRICS, AlertMetric, alert_metric};
 pub use caps::{Capabilities, DiskDevice, Entitlement, ModuleCap, UnsupportedReason};
 pub use cardinality::{LABEL_VALUE_MAX, bound_label_value};
 pub use catalog::{CATALOG, Catalog, CatalogError, MetricDef, MetricKind, Module, Unit};

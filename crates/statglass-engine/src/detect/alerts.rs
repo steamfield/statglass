@@ -15,6 +15,9 @@
 //! The process rule fires once for every process whose run completed on that batch:
 //! one alert naming them all (hottest first, `cause` the hottest), since a second alert
 //! on the same tick would only be held off by the cooldown and lost.
+//!
+//! A custom threshold rule fires for the first matching series to hold, naming it
+//! ([`ThresholdState`]).
 
 use std::sync::Arc;
 
@@ -23,6 +26,7 @@ use statglass_schema::{
 };
 
 use super::detectors::Runs;
+use super::threshold::ThresholdState;
 use super::{Detector, TickInput, find, value};
 
 enum State {
@@ -33,9 +37,11 @@ enum State {
         since: Option<i64>,
         fired: bool,
     },
-    /// A condition this build does not evaluate (series thresholds have no built-in rule
-    /// yet); the rule never fires.
-    Unsupported,
+    Threshold {
+        eval: ThresholdState,
+        /// The layout the rule is bound to, to name the series that held.
+        layout: Vec<SeriesKey>,
+    },
 }
 
 pub struct AlertEval {
@@ -71,7 +77,10 @@ impl AlertEval {
                 since: None,
                 fired: false,
             },
-            Condition::Threshold { .. } => State::Unsupported,
+            Condition::Threshold { series, op, value } => State::Threshold {
+                eval: ThresholdState::new(series.clone(), *op, *value, for_ms),
+                layout: Vec::new(),
+            },
         };
         Self {
             rule,
@@ -136,8 +145,14 @@ impl AlertEval {
 
 impl Detector for AlertEval {
     fn bind(&mut self, series: &[SeriesKey]) {
-        if let State::Thermal { idx, .. } = &mut self.state {
-            *idx = find(series, "thermal.state");
+        match &mut self.state {
+            State::Thermal { idx, .. } => *idx = find(series, "thermal.state"),
+            State::Threshold { eval, layout } => {
+                eval.bind(series);
+                layout.clear();
+                layout.extend_from_slice(series);
+            }
+            State::Process(_) => {}
         }
         self.reset();
     }
@@ -221,7 +236,27 @@ impl Detector for AlertEval {
                     fired = Some((start, Vec::new(), AlertCause::ThermalState { state }));
                 }
             }
-            State::Unsupported => {}
+            State::Threshold { eval, layout } => {
+                let Some(held) = eval.on_reading(ts, input.values, input.periods) else {
+                    return;
+                };
+                // A hold that completes inside the cooldown is spent.
+                eval.mark_reported();
+                let Condition::Threshold { op, value, .. } = &self.rule.when else {
+                    return;
+                };
+                if let Some(key) = layout.get(held.key_index).filter(|_| cooled) {
+                    let cause = AlertCause::Threshold {
+                        metric: key.metric.clone(),
+                        labels: key.labels.clone(),
+                        value: held.value,
+                        op: *op,
+                        threshold: *value,
+                        for_secs: self.rule.for_secs,
+                    };
+                    fired = Some((held.since, Vec::new(), cause));
+                }
+            }
         }
         if let Some((since, processes, cause)) = fired {
             out.push(self.alert(ts, since, processes, cause));
@@ -249,7 +284,11 @@ impl Detector for AlertEval {
                 *since = None;
                 *fired = false;
             }
-            State::Unsupported => {}
+            State::Threshold { eval, .. } => {
+                if eval.reset() {
+                    self.resumed = Resumed::Episode;
+                }
+            }
         }
     }
 }

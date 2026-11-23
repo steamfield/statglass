@@ -676,9 +676,10 @@ fn detectors_allocate_nothing_per_tick() {
     .collect();
     let mut d = Detectors::new(
         DetectorThresholds::DEFAULT,
-        AlertSettings {
+        &AlertSettings {
             hot_process: true,
             thermal_serious: true,
+            ..AlertSettings::default()
         },
     );
     d.bind(&series);

@@ -13,7 +13,6 @@ use std::sync::{Mutex, MutexGuard};
 
 use serde::Deserialize;
 use statglass_engine::EngineSettings;
-use statglass_schema::AlertRule;
 use statglass_schema::Module;
 use statglass_schema::Settings;
 use statglass_schema::lock::LockExt;
@@ -24,10 +23,12 @@ use statglass_schema::settings::{
 use crate::error::CommandError;
 use crate::ipc::SettingsSnapshot;
 
+mod alerts;
 pub mod cli_access;
 mod menu_bar;
 mod overview;
 mod popover;
+pub use alerts::{AlertsPatch, alerts_switched_on};
 pub use menu_bar::{BarsPatch, ItemsPatch, MenuBarPatch, ReadoutsPatch};
 pub use overview::OverviewPatch;
 pub use popover::PopoverPatch;
@@ -137,15 +138,6 @@ pub struct OnboardingPatch {
     pub completed: Option<bool>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
-#[serde(default)]
-pub struct AlertsPatch {
-    #[specta(optional)]
-    pub hot_process: Option<bool>,
-    #[specta(optional)]
-    pub thermal_serious: Option<bool>,
-}
-
 fn set<T>(slot: &mut T, v: Option<T>) {
     if let Some(v) = v {
         *slot = v;
@@ -214,13 +206,17 @@ impl SettingsPatch {
         if let Some(p) = &self.docker {
             s.docker = p.clone();
         }
-        if let Some(p) = self.alerts {
-            set(&mut s.alerts.hot_process, p.hot_process);
-            set(&mut s.alerts.thermal_serious, p.thermal_serious);
+        if let Some(p) = &self.alerts {
+            p.clone().apply(&mut s.alerts);
         }
         s.validate().map_err(|e| CommandError::InvalidSettings {
             message: e.to_string(),
         })?;
+        s.alerts
+            .validate()
+            .map_err(|e| CommandError::InvalidSettings {
+                message: e.to_string(),
+            })?;
         Ok(s)
     }
 }
@@ -245,18 +241,6 @@ pub fn prune_affecting(old: &Settings, new: &Settings) -> bool {
 /// start or stop recording per-app bytes.
 pub fn network_history_affecting(old: &Settings, new: &Settings) -> bool {
     old.history.network_history != new.history.network_history
-}
-
-/// The alert rules that went from off to on: the moment to ask for notification
-/// permission and post the confirmation that makes macOS show its prompt (D-084).
-pub fn alerts_switched_on(old: &Settings, new: &Settings) -> Vec<AlertRule> {
-    old.alerts
-        .rules()
-        .into_iter()
-        .zip(new.alerts.rules())
-        .filter(|(was, now)| !was.enabled && now.enabled)
-        .map(|(_, now)| now)
-        .collect()
 }
 
 /// Where the settings live on disk. Production is `tauri-plugin-store`'s
@@ -328,20 +312,27 @@ impl SettingsOwner {
         Self::load_with_defaults(file, Settings::default())
     }
 
-    /// Platform defaults only apply when stored settings cannot be used.
+    /// Platform defaults only apply when stored settings cannot be used. A stored custom
+    /// alert rule that no longer validates is dropped with a warning; it never sends the
+    /// whole file back to defaults.
     pub fn load_with_defaults(file: Box<dyn SettingsFile>, defaults: Settings) -> Self {
         let stored = file.load();
         let first_run = stored.is_none();
         let settings = match stored {
             None => defaults.clone(),
             Some(value) => match serde_json::from_value::<Settings>(value) {
-                Ok(s) => match s.validate() {
-                    Ok(()) => s,
-                    Err(e) => {
-                        tracing::warn!("stored settings are invalid ({e}); using defaults");
-                        defaults.clone()
+                Ok(mut s) => {
+                    for (rule, e) in s.alerts.drop_invalid() {
+                        tracing::warn!(%rule, "dropping a stored alert rule: {e}");
                     }
-                },
+                    match s.validate() {
+                        Ok(()) => s,
+                        Err(e) => {
+                            tracing::warn!("stored settings are invalid ({e}); using defaults");
+                            defaults.clone()
+                        }
+                    }
+                }
                 Err(e) => {
                     tracing::warn!("stored settings do not decode ({e}); using defaults");
                     defaults.clone()
@@ -473,10 +464,10 @@ mod tests {
 
     /// A settings file in memory that outlives the owner, so a test can "restart".
     #[derive(Clone, Default)]
-    struct MemFile {
-        value: Arc<Mutex<Option<serde_json::Value>>>,
-        fail: Arc<Mutex<bool>>,
-        saves: Arc<Mutex<u32>>,
+    pub(super) struct MemFile {
+        pub(super) value: Arc<Mutex<Option<serde_json::Value>>>,
+        pub(super) fail: Arc<Mutex<bool>>,
+        pub(super) saves: Arc<Mutex<u32>>,
     }
 
     impl SettingsFile for MemFile {
@@ -494,9 +485,9 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct Recorder {
-        calls: RefCell<Vec<String>>,
-        refuse: bool,
+    pub(super) struct Recorder {
+        pub(super) calls: RefCell<Vec<String>>,
+        pub(super) refuse: bool,
     }
 
     impl SettingsEffects for Recorder {
@@ -922,45 +913,7 @@ mod tests {
         );
         assert!(s.general.show_in_dock);
     }
-
-    /// Switching an alert on reaches the engine (its rules are engine settings).
-    #[test]
-    fn alerts_patch_applies_and_affects_the_engine() {
-        let patch: SettingsPatch =
-            serde_json::from_str(r#"{"alerts":{"thermal_serious":true}}"#).unwrap();
-        let old = Settings::default();
-        let new = patch.apply(&old).unwrap();
-        assert!(new.alerts.thermal_serious && !new.alerts.hot_process);
-        assert!(engine_affecting(&old, &new));
-    }
-
-    /// Only rules going from off to on post the confirmation (and its permission
-    /// prompt); one staying on or going off does not.
-    #[test]
-    fn alerts_switched_on_lists_only_newly_enabled_rules() {
-        let with = |hot_process, thermal_serious| Settings {
-            alerts: statglass_schema::AlertSettings {
-                hot_process,
-                thermal_serious,
-            },
-            ..Settings::default()
-        };
-        let ids = |old, new| -> Vec<uuid::Uuid> {
-            alerts_switched_on(&old, &new)
-                .iter()
-                .map(|r| r.id)
-                .collect()
-        };
-        assert_eq!(
-            ids(with(false, false), with(true, false)),
-            [AlertRule::hot_process().id]
-        );
-        assert_eq!(
-            ids(with(true, false), with(true, true)),
-            [AlertRule::thermal_serious().id]
-        );
-        assert!(ids(with(true, true), with(true, false)).is_empty());
-        assert!(ids(with(true, true), with(true, true)).is_empty());
-        assert_eq!(ids(with(false, false), with(true, true)).len(), 2);
-    }
 }
+
+#[cfg(test)]
+mod alerts_tests;
