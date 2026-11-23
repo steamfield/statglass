@@ -15,7 +15,9 @@ use crate::alert::{AlertRule, AlertRuleError};
 /// Turning a rule on posts a one-off "Alerts are on" notification: macOS asks for
 /// notification permission on a first delivery, not when the app asks (D-084), so this
 /// brings the prompt up while the user is looking rather than with the first real alert.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, specta::Type)]
+// `Deserialize` is written by hand below; the `serde(default)` attributes here shape the
+// generated TypeScript only, keeping the two built-in switches required there.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
 pub struct AlertSettings {
     /// [`AlertRule::hot_process`]: a process above 200% CPU for 5 minutes.
     pub hot_process: bool,
@@ -28,25 +30,45 @@ pub struct AlertSettings {
     /// The user's threshold rules, at most [`AlertRule::MAX_CUSTOM`]. Absent from a file
     /// written before custom rules: none. An entry this build cannot decode (a condition
     /// from a newer build) is skipped on load.
-    #[serde(default, deserialize_with = "known_rules")]
-    #[specta(type = Vec<AlertRule>)]
+    #[serde(default)]
     pub rules: Vec<AlertRule>,
 }
 
-/// `deserialize_with` for [`AlertSettings::rules`]: decodes each entry on its own and
-/// skips one that does not decode, as `deserialize_known_modules` drops unknown modules.
-fn known_rules<'de, D>(deserializer: D) -> Result<Vec<AlertRule>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let entries = Vec::<StoredRule>::deserialize(deserializer)?;
-    Ok(entries
+/// Decodes from a mirror with every field optional, so a missing switch is off and a
+/// missing or `null` rule list is empty. Rule entries decode one at a time and one that
+/// does not decode is skipped, as `deserialize_known_modules` drops unknown modules.
+impl<'de> Deserialize<'de> for AlertSettings {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Stored {
+            #[serde(default)]
+            hot_process: Option<bool>,
+            #[serde(default)]
+            thermal_serious: Option<bool>,
+            #[serde(default)]
+            host_offline: Option<bool>,
+            #[serde(default)]
+            rules: Option<Vec<StoredRule>>,
+        }
+        let stored = Stored::deserialize(deserializer)?;
+        Ok(AlertSettings {
+            hot_process: stored.hot_process.unwrap_or_default(),
+            thermal_serious: stored.thermal_serious.unwrap_or_default(),
+            host_offline: stored.host_offline.unwrap_or_default(),
+            rules: known_rules(stored.rules.unwrap_or_default()),
+        })
+    }
+}
+
+/// The entries this build decoded, in stored order.
+fn known_rules(entries: Vec<StoredRule>) -> Vec<AlertRule> {
+    entries
         .into_iter()
         .filter_map(|entry| match entry {
             StoredRule::Known(rule) => Some(rule),
             StoredRule::Unknown(_) => None,
         })
-        .collect())
+        .collect()
 }
 
 /// One stored rule entry: a rule this build decodes, or anything else (a condition
@@ -128,3 +150,27 @@ impl AlertSettings {
 #[cfg(test)]
 #[path = "alerts_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod decode_tests {
+    use super::*;
+
+    #[test]
+    fn null_rules_decode_as_no_rules() {
+        let json = r#"{"hot_process":true,"thermal_serious":false,"rules":null}"#;
+        let alerts: AlertSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            alerts,
+            AlertSettings {
+                hot_process: true,
+                ..AlertSettings::default()
+            }
+        );
+    }
+
+    #[test]
+    fn an_empty_alerts_object_decodes_as_every_alert_off() {
+        let alerts: AlertSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(alerts, AlertSettings::default());
+    }
+}

@@ -1,9 +1,12 @@
 //! The alerts part of a settings patch, and which rules a change switched on.
 
+use std::collections::HashSet;
+
 use super::set;
 use serde::Deserialize;
 use statglass_schema::settings::AlertSettings;
 use statglass_schema::{AlertRule, Settings};
+use uuid::Uuid;
 
 /// A partial change to [`AlertSettings`]. `rules`, when present, replaces the whole
 /// custom rule list; the patch path validates the result before anything is saved.
@@ -36,15 +39,16 @@ impl AlertsPatch {
 /// confirmation that makes macOS show its prompt (D-084). A rule edited while it stays
 /// on is not listed.
 pub fn alerts_switched_on(old: &Settings, new: &Settings) -> Vec<AlertRule> {
-    let was_enabled = old.alerts.engine_rules();
+    let enabled_before: HashSet<Uuid> = old
+        .alerts
+        .engine_rules()
+        .into_iter()
+        .filter(|rule| rule.enabled)
+        .map(|rule| rule.id)
+        .collect();
     new.alerts
         .engine_rules()
         .into_iter()
-        .filter(|now| now.enabled)
-        .filter(|now| {
-            !was_enabled
-                .iter()
-                .any(|was| was.id == now.id && was.enabled)
-        })
+        .filter(|rule| rule.enabled && !enabled_before.contains(&rule.id))
         .collect()
 }

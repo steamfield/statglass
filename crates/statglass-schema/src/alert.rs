@@ -90,10 +90,11 @@ impl AlertRule {
     }
 }
 
-/// A rule name is 1 to [`AlertRule::MAX_NAME_CHARS`] characters once trimmed.
+/// A rule name is 1 to [`AlertRule::MAX_NAME_CHARS`] characters and already trimmed, so
+/// the name that is checked is the name that is stored.
 fn check_name(name: &str) -> Result<(), AlertRuleError> {
-    let chars = name.trim().chars().count();
-    if chars == 0 || chars > AlertRule::MAX_NAME_CHARS {
+    let chars = name.chars().count();
+    if name != name.trim() || chars == 0 || chars > AlertRule::MAX_NAME_CHARS {
         return Err(AlertRuleError::Name);
     }
     Ok(())
@@ -162,13 +163,15 @@ pub fn series_name(metric: &str, labels: &Labels) -> Option<String> {
 /// Alerts page can show it as is.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AlertRuleError {
-    #[error("rule name must be 1 to 60 characters")]
+    #[error("rule name must be 1 to 60 characters with no leading or trailing spaces")]
     Name,
     #[error("metric {0:?} cannot be alerted on; choose one of the listed metrics")]
     Metric(String),
     #[error("a rule watches every series of its metric or one series named by a label it carries")]
     Labels,
-    #[error("threshold must be a number between {min} and {max}")]
+    /// `min` and `max` are the metric's range in its catalog unit, for callers that
+    /// format it in the user's display unit.
+    #[error("threshold is outside the range this metric accepts")]
     Value { min: f32, max: f32 },
     #[error("duration must be at most 1 hour")]
     Duration,
@@ -326,3 +329,63 @@ mod tests {
 #[cfg(test)]
 #[path = "alert_validation_tests.rs"]
 mod validation_tests;
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+    use crate::series::MetricId;
+
+    fn named(name: &str) -> AlertRule {
+        AlertRule {
+            id: Uuid::from_u128(0xa1e7),
+            name: name.into(),
+            when: Condition::Threshold {
+                series: SeriesSelector {
+                    metric: MetricId::from_static("mem.pressure"),
+                    labels: Labels::new(),
+                },
+                op: Cmp::Gt,
+                value: 80.0,
+            },
+            for_secs: 120,
+            cooldown_secs: 1800,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn rejects_a_name_with_leading_or_trailing_whitespace() {
+        for name in [" Memory", "Memory ", "\tMemory\n"] {
+            assert_eq!(
+                named(name).validate_custom(),
+                Err(AlertRuleError::Name),
+                "{name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_a_trimmed_name_of_60_characters_counted_as_chars() {
+        assert_eq!(named(&"é".repeat(60)).validate_custom(), Ok(()));
+        assert_eq!(
+            named(&"é".repeat(61)).validate_custom(),
+            Err(AlertRuleError::Name)
+        );
+    }
+
+    #[test]
+    fn the_name_and_value_messages_state_the_rule_without_raw_numbers() {
+        assert_eq!(
+            AlertRuleError::Name.to_string(),
+            "rule name must be 1 to 60 characters with no leading or trailing spaces"
+        );
+        let value = AlertRuleError::Value {
+            min: 1e8,
+            max: 1e14,
+        };
+        assert_eq!(
+            value.to_string(),
+            "threshold is outside the range this metric accepts"
+        );
+    }
+}
