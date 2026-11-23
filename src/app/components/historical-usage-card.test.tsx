@@ -628,7 +628,8 @@ describe("recorded rows act on what is running now", () => {
     );
     await user.keyboard("{Meta>}a{/Meta}");
     expect(screen.getByText("3 selected")).toBeVisible();
-  });
+    // About 1 s locally; a loaded CI runner took it past the 5 s default.
+  }, 15_000);
 
   it("says nothing is running only once the running processes are known", async () => {
     const { transport } = setup();
