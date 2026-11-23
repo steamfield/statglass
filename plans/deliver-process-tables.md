@@ -209,6 +209,7 @@ Test cases:
 ### Phase 2: module live tables and Disk on the shared table
 
 Scaffold: 0cd076f9
+Tag: process-tables-phase-2
 Demo: CPU, GPU, Memory, Power and Disk "by app" tables at 15m look and act as before, rendered by `ProcessGroupTable`; Disk shows "Disk by app" with no By process toggle; an expanded member's name opens its process detail page.
 Depends on: phase 1
 Test cases:
@@ -232,6 +233,7 @@ Test cases:
 ### Phase 3: recorded ranges and Network become actionable
 
 Scaffold: 0cd076f9
+Tag: process-tables-phase-3
 Demo: scroll CPU (or Timeline) back to a fixed range: rows of apps that are running now are selectable and quit the running app, others are disabled; Network by app rows select and quit; with Network history off, "Apps, now" is a grouped live table.
 Depends on: phase 1
 Test cases:
@@ -276,3 +278,4 @@ Test cases:
 - Lane 3/a merged after its review fixes. Accepted: shared-chevron and bare-pid label edits in scaffold tests; recorded members carry no detail link; `GroupRows.memberDetail` added for the recorded start time. Orchestrator: `retryOnMount: false` on the edition query (one shared `useEditionQuery`), since a failed read refetched on every new observer and flipped `useCanSignalSettled` back to waiting, which looped under a gate.
 - Lane 2/a review (opus), eight findings accepted: (1) detail links lost the brushed range, so the range moves into the href via a shared `@core/range-params`, and exited members link while a range is selected; (2) module pages pulled the full table at 1 Hz (and GPU per-process at 1 Hz) only for quit targets, so the orchestrator made `useRunningApps` ask for `RUNNING_APPS_VIEW` (full table every 10 s); (3) the usage table rebuilt on any process churn, so targets are memoised on the listed apps' targets; (4) missing tests; (5) `requestedBytes` moves to `@core/usage-rows`; (6) a vacuous module-history assertion; (7) e2e specs for the removed Disk table, granted to 2/a; (8) `UsageProc.app_main` is unread after `quit_pids`, kept on the wire (one-way door) with its doc updated. 2/a also drops its no-op ranked header button now that the shared head names a non-sortable ranked column's order. Note for the final review: the recorded and Network tables also re-memoise on any running-map change (finding 3's pattern).
 - Lane 2/a merged after its review fixes. Accepted outside ownership: CPU/GPU route interest assertions (RUNNING_APPS_VIEW), the schema doc, range-params move. Open for the integration pass: the header's absolutely placed Actions label escapes an unpositioned overflow-x scroller (2/a worked around it locally); usage-apps-card.tsx is 609 lines with six responsibilities; remainder rows are duplicated across usage, Network and recorded tables.
+- Phases 2 and 3 gate: 2398 frontend tests, 284 chromium e2e, rust-check, architecture-check, bindings-check. Engine perf_gates fail callsPerTick.trayOnly.iokit (26.5 > 26) on this machine with or without these changes (the original checkout measures 26.73); environmental, threshold not raised. The shared CARGO_TARGET_DIR cached build-script paths into a removed lane worktree (tauri-plugin-updater); fixed with cargo clean -p for those packages.
