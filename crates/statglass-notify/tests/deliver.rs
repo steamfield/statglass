@@ -380,6 +380,7 @@ fn a_webhook_receives_every_field_with_text_and_content_for_chat_apps() {
 fn arguments_lock_down_curl_and_never_carry_the_request() {
     let args = arguments(10);
     assert_eq!(args.first().map(String::as_str), Some("-q"));
+    assert_eq!(args.get(1).map(String::as_str), Some("--globoff"));
     let pairs = [
         ("--proto", "=http,https"),
         ("--max-redirs", "0"),
@@ -490,6 +491,42 @@ fn hostile_rule_and_process_names_reach_a_webhook_byte_exact() {
     assert_eq!(received.len(), 1);
     assert_eq!(received[0].body, expected.body.as_bytes());
     assert!(!expected.body.is_empty());
+}
+
+#[test]
+fn a_url_with_glob_characters_is_one_request_to_that_literal_path() {
+    let listener = Listener::answering(&[200, 200, 200, 200]);
+    let destination = webhook(&listener.url("/a{1,2}/b[1-2]"));
+    assert_eq!(
+        deliver(&destination, &message(), &fast(5)),
+        DeliveryOutcome::Delivered { status: 200 }
+    );
+    let received = listener.received();
+    assert_eq!(received.len(), 1);
+    assert!(
+        received[0].head.starts_with("POST /a{1,2}/b[1-2] HTTP/1.1"),
+        "{}",
+        received[0].head
+    );
+}
+
+#[test]
+fn a_delete_or_c1_control_in_a_title_is_escaped_and_delivered() {
+    let listener = Listener::answering(&[200]);
+    let destination = webhook(&listener.url("/hook"));
+    let titled = Message {
+        title: "proc\u{7f}name\u{85}".into(),
+        ..message()
+    };
+    assert_eq!(
+        deliver(&destination, &titled, &fast(5)),
+        DeliveryOutcome::Delivered { status: 200 }
+    );
+    let received = listener.received();
+    assert_eq!(received.len(), 1);
+    let body = String::from_utf8(received[0].body.clone()).unwrap();
+    assert!(body.contains(r#""title":"proc\u007fname\u0085""#), "{body}");
+    assert!(!body.contains('\u{7f}'), "{body}");
 }
 
 #[test]
