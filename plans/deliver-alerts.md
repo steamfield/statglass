@@ -114,6 +114,7 @@ Layout: no new shared component, no `utils` file. Each new module above has the 
 ### Phase 1: custom threshold rules, end to end below the UI (MVP)
 
 Scaffold: b1c942cd
+Tag: alerts-phase-1
 Demo: `cargo test -p statglass-engine threshold` shows a rule firing once, holding through a cooldown and clearing; `cargo test -p statglass-notify` prints the notification wording; `bun run test -- src/core/alerts.test.ts src/core/mock-transport.test.ts` shows a rule saved through the mock and rejected when invalid.
 
 Test cases:
