@@ -338,6 +338,18 @@ While the pointer is over the table, row order is frozen and values keep updatin
 
 Quit and Force Quit (D-029) appear as a row action on hover and in the row's context menu. Quit asks the process to exit: `NSRunningApplication.terminate` when the process is a regular app, `SIGTERM` otherwise. Force Quit uses `forceTerminate` or `SIGKILL`. Both open a confirm dialog naming the process and PID; the Force Quit dialog also says that unsaved data in that process will be lost. The actions are disabled, with a tooltip saying why, for PID 1 (`launchd`), `kernel_task`, `WindowServer` and StatGlass's own processes, and Rust refuses them again regardless of what the UI sends. A process owned by another user fails with `EPERM`; the UI shows a toast ("StatGlass can't quit processes owned by another user") and does not offer to escalate. If the process has already exited, or its PID now belongs to a different process, the command reports that and the table drops the row on the next tick.
 
+#### One grouped table everywhere (2026-11-23, D-137)
+
+Every process and app table is grouped by app, with no flat mode: an app row
+expands to its processes, shows "N processes", and sums its members' figures
+(ports as a union, user only when shared). Search keeps a whole group when the
+app name matches, otherwise only the matching members, with the group held
+open. A group of one reads as its process (its PID, its detail link). The app
+row's Quit acts on the members Rust marks `app_quit`, which replaces the
+`quit_pid` rule below. Recorded ranges and Network app rows are now actionable
+for apps running now and disabled ("Not running") otherwise; this replaces the
+read-only exception below. Disk shows "Disk by app" only.
+
 #### Shared selection and bulk Quit (2026-10-13)
 
 Processes and the CPU, GPU, Memory, Disk and Power usage tables share
