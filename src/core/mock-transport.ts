@@ -83,6 +83,7 @@ export {
 export { applyPatch } from "./mock/settings";
 export { cliLinkFixture } from "./mock/shell";
 
+import { MockAlertDestinations } from "./mock/alert-destinations";
 import { MockChannels } from "./mock/channels";
 import { MockCommands } from "./mock/commands";
 import { MockPower } from "./mock/power";
@@ -184,6 +185,7 @@ export function createMockTransport(
     ...queries.methods,
     ...remote.routeUsage(usage.methods),
     ...shell.methods,
+    ...new MockAlertDestinations(commands, emitters, flags).methods,
     ...settings.methods,
     ...store.methods,
     ...ring.methods,

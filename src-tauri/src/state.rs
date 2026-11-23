@@ -73,6 +73,8 @@ pub struct AppState {
     pub live: LiveRegistry,
     pub settings: SettingsOwner,
     pub star_prompt: crate::star_prompt::StarPromptOwner,
+    /// Alert destinations and their deliveries (`alert-destinations.json`).
+    pub alerts: crate::alerts::AlertsService,
     pub history: Arc<History>,
     pub remotes: crate::remote::RemoteManager,
     appearance: Mutex<WindowAppearance>,
@@ -176,6 +178,7 @@ impl AppState {
             live: LiveRegistry::new(),
             settings,
             star_prompt,
+            alerts: crate::alerts::AlertsService::open(&data_dir),
             history: Arc::new(history),
             remotes: crate::remote::RemoteManager::default(),
             appearance: Mutex::new(WindowAppearance {
@@ -546,8 +549,8 @@ fn reconcile_login_item(wanted: bool) {
 }
 
 /// Follows one host's bus for the app's own needs: the `capabilities-changed` and
-/// `event-recorded` events, alert notifications, `chip_known`, and Performance mode for window
-/// appearance. The latest frame is the hub's.
+/// `event-recorded` events, alert notifications and deliveries, `chip_known`, and Performance
+/// mode for window appearance. The latest frame is the hub's.
 pub(crate) fn spawn_host_watcher(
     app: AppHandle,
     entry: Arc<HostEntry>,
@@ -587,7 +590,12 @@ pub(crate) fn spawn_host_watcher(
                     if entry.record().is_local
                         && let Some(state) = app.try_state::<AppState>()
                     {
-                        notify::alert(&app, &e, &state.settings.settings().units);
+                        let units = state.settings.settings().units;
+                        notify::alert(&app, &e, &units);
+                        let sender = crate::alerts::background_sender(&app);
+                        state
+                            .alerts
+                            .on_alert(&e, &entry.record().display_name, &units, sender);
                     }
                     let event = EventRecorded {
                         host: entry.record().id,
