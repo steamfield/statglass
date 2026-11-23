@@ -662,10 +662,7 @@ impl Stream {
                 }
             }
             let refusal = crate::process_signal::refusals();
-            let quit_set = crate::app_quit::live_quit_set(rows);
-            statglass_engine::select_processes(rows, view, |r| {
-                LiveProcess::from_sample(r, &quit_set, &refusal)
-            })
+            LiveProcess::select(rows, view, &refusal)
         };
         self.last_procs_ts = Some(ts_ms);
         self.send(LiveMsg::Processes {

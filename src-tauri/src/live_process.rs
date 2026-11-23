@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use serde::Serialize;
-use statglass_engine::ProcessSample;
+use statglass_engine::{ProcessSample, ProcessView, select_processes};
 use statglass_schema::JsSafeInt;
 
 use crate::process_signal::SignalRefusal;
@@ -61,6 +61,18 @@ pub struct LiveProcess {
 }
 
 impl LiveProcess {
+    /// The rows `view` asks for out of one sampled batch. Which processes Quit on their app
+    /// acts on is decided over the whole batch first, so a helper kept by the view's limit
+    /// still knows its app's main was running even when the main itself was cut.
+    pub fn select(
+        rows: &[ProcessSample],
+        view: &ProcessView,
+        refusal: &impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
+    ) -> Vec<LiveProcess> {
+        let quit_set = crate::app_quit::live_quit_set(rows);
+        select_processes(rows, view, |r| Self::from_sample(r, &quit_set, refusal))
+    }
+
     /// The webview's row for one sampled process. `quit_set` is the batch's
     /// [`crate::app_quit::live_quit_set`] and `refusal` is [`crate::process_signal::refusals`],
     /// both read once per batch.
@@ -90,5 +102,54 @@ impl LiveProcess {
             app: r.app.as_deref().unwrap_or(&r.name).to_string(),
             app_quit: quit_set.contains(&(r.pid, r.start_time_us)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LiveProcess;
+    use statglass_engine::{ProcessSample, ProcessSort, ProcessView};
+
+    fn sample(pid: i32, name: &str, app_main: bool, cpu_pct: f32) -> ProcessSample {
+        ProcessSample {
+            pid,
+            start_time_us: i64::from(pid),
+            name: name.into(),
+            app: Some("Safari".into()),
+            app_main,
+            cpu_pct,
+            mem_bytes: 0,
+            compressed_bytes: None,
+            threads: 1,
+            idle_wakeups_per_s: 0.0,
+            energy: 0.0,
+            energy_j: 0.0,
+            interval_s: 1.0,
+            disk_read_bps: 0.0,
+            disk_write_bps: 0.0,
+            net_rx_bps: None,
+            net_tx_bps: None,
+            gpu_pct: None,
+            ports: None,
+            user: "me".into(),
+        }
+    }
+
+    #[test]
+    fn quit_targets_come_from_the_whole_batch_before_the_limit() {
+        let rows = [
+            sample(1, "Safari", true, 0.1),
+            sample(2, "Safari Web Content", false, 90.0),
+        ];
+        let view = ProcessView {
+            limit: Some(1),
+            sort: vec![ProcessSort::Cpu],
+            ..ProcessView::default()
+        };
+        let picked = LiveProcess::select(&rows, &view, &|_, _, _| None);
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].pid, 2);
+        assert_eq!(picked[0].app, "Safari");
+        assert!(!picked[0].app_quit, "the cut main is still the quit target");
     }
 }

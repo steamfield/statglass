@@ -336,7 +336,7 @@ export function mockUsageByApp({
       .sort((a, b) => keyOf(by, b) - keyOf(by, a) || a.pid - b.pid);
     // A row that used none of the key says nothing about it (`usage.rs`).
     if (keyOf(by, usage) <= 0) continue;
-    const main = running.find((r) => r.main);
+    const mains = running.filter((r) => r.main);
     apps.push({
       name,
       ...usage,
@@ -345,8 +345,8 @@ export function mockUsageByApp({
           ? Math.round(memNow + (memThen - memNow) / 3)
           : memNow,
       avg_w: secs > 0 ? usage.energy_j / secs : 0,
-      quit_pids:
-        main !== undefined ? [main.proc.pid] : running.map((r) => r.proc.pid),
+      // Every running main, else every running member (`app_quit.rs`).
+      quit_pids: (mains.length > 0 ? mains : running).map((r) => r.proc.pid),
       processes: processesKept,
     });
   }
