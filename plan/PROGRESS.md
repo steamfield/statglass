@@ -4,6 +4,15 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## One grouped, actionable process table everywhere (D-137) (2026-11-23)
+
+Every process table (Processes, CPU, GPU, Memory, Power, Disk, Network and the recorded apps on long ranges and Timeline) is now one shared `ProcessGroupTable` in `src/app/components/process-group-table/`, configured by columns and row data. Processes groups by app the way the module pages do, so Chrome, node or python sit under one app row that selects and quits the whole app. Every table selects and quits: app rows act on what Quit on that app acts on in the live batch (Rust computes `LiveProcess.app` and `app_quit` over the whole batch), member rows on their process, and recorded rows map to running processes and are disabled with "Not running" when nothing they name runs. Disk drops its By process toggle. Rust drops `AppUsage.quit_pids`; `UsageProc.app_main` stays on the wire, unread. Command-A selects every group's quit targets plus visible members on every table.
+
+Two follow-up fixes: a recorded by-app card over a long rolling window no longer empties and remounts every 10 s (it holds the last window's answer, open apps and selection while the next loads), and the host menu opens below its trigger instead of over the logo.
+
+- **Verified**: `make rust-check`, `make architecture-check`, `cargo test -p statglass -p statglass-schema`, `make bindings-check`, `bun run check` (2411 tests), Chromium e2e (287), `make e2e-perf` (16 passed; CPU, GPU and Power pages about 9 ms/s of main thread, no long tasks), and the browser dev server on Processes, CPU, Disk, Network and the 6 h CPU page. The engine `perf_gates` iokit calls-per-tick check reads 26.5 against 26 on this machine with or without these changes (26.73 on main); environmental, threshold not raised.
+- **Open**: `aria-expanded` on group rows needs the tables to become treegrids (about 135 test queries change); native QA of Quit and Force Quit from each page in `tauri dev`; the Network Interfaces table overflows by 66 px at 360 px wide.
+
 ## Connection causes, visible retries and Docker engine states (D-136) (2026-11-22)
 
 Hosts now say why a host can't connect and what StatGlass is doing about it. Rust classifies each route's failure from SSH stderr (name not found, SSH refused, no route, timeout) and refines it with this Mac's interfaces (offline, Tailscale off, Tailscale up but the host silent). The source publishes its retry schedule, stops dialing while this Mac is offline, and a failing card replaces its charts with a reconnect panel: cause, "Next attempt in N s" or "Trying … gives up after 10 s", attempt count and last reading, plus Retry now and a page notice when offline. Containers shows one focal card when the engine is unreachable, with reasons from Rust and an Open Docker Desktop / OrbStack / Rancher Desktop button that launches the installed app.

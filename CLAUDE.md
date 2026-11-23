@@ -124,6 +124,7 @@ If a fix doesn't resolve the issue after 2 attempts without running a new diagno
 - **Git commands run from the worktree root** with root-relative paths.
 - **One plain command per Bash call in isolated worktree sessions.** Claude Code's worktree isolation refuses `cd <worktree> && ...`, loops, and variable assignments wrapped around git or file operations as too complex to verify. The session is already in the worktree: run `git status`, `git add <root-relative path>`, `git commit ...` as separate calls.
 - **A fresh worktree needs `bun install`** before hooks, lint or tests work there.
+- **Worktrees sharing one `CARGO_TARGET_DIR` cache build-script paths.** A build in one worktree records absolute paths into the shared target (tauri-plugin-updater's permissions, `statglass`'s `build.rs` output), and once that worktree is removed `make rust-check` fails reading them. After removing a worktree that built into a shared target, run `cargo clean -p tauri-plugin-updater -p statglass` with that target.
 - **Lifecycle is orchestrator-owned.** Subagents in a worktree commit and push their branch only — never `ExitWorktree`, `git merge`, or `git worktree remove`.
 
 ## README media
