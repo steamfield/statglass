@@ -82,8 +82,11 @@ for (const theme of THEMES) {
       table.getByRole("columnheader", { name: /Net total/ })
     ).toBeVisible();
     // Asking for rates brings a batch that carries them (no tick needed).
-    await expect(table.getByRole("row").nth(1)).toContainText("Safari");
-    await expect(table.getByRole("row").nth(1)).toContainText("22.1 MB/s");
+    // The Safari group sums its members: Safari 21.4 + 0.7 and Safari Web
+    // Content 0.06 + 0.01 MB/s (the mock's NET_RATES).
+    const safari = table.getByRole("row").nth(1);
+    await expect(safari).toHaveAttribute("data-name", "Safari");
+    await expect(safari).toContainText("22.2 MB/s");
     await shot(page, `processes-network-${theme}`, info.project.name);
     expect(errors).toEqual([]);
   });

@@ -1,4 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+
+/** An app's group row on the Processes table (its members stay collapsed). */
+const groupRow = (table: Locator, app: string) =>
+  table.locator(`tr[data-name="${app}"]`).first();
+
+/** The selection bar's count, once it shows one. */
+async function selectedCount(page: Page): Promise<number> {
+  const bar = page.getByText(/^\d+ selected$/);
+  await expect(bar).toBeVisible();
+  return Number.parseInt((await bar.textContent()) ?? "", 10);
+}
 
 for (const theme of ["dark", "light"] as const) {
   test(`bulk selection, hidden review and confirmation (${theme})`, async ({
@@ -8,10 +19,11 @@ for (const theme of ["dark", "light"] as const) {
     await page.goto(
       `/?window=dashboard&route=/dashboard/processes&theme=${theme}&ticks=0`
     );
-    const xcode = page.getByRole("cell", { name: "Xcode", exact: true });
-    const figma = page.getByRole("cell", { name: "Figma", exact: true });
-    await xcode.click();
-    await figma.click({ modifiers: ["Meta"] });
+    // Xcode is a group (its main and SourceKitService) that selects its main;
+    // Figma is a group of one that reads as its process.
+    const table = page.getByRole("table", { name: "Processes", exact: true });
+    await groupRow(table, "Xcode").click();
+    await groupRow(table, "Figma").click({ modifiers: ["Meta"] });
     await expect(page.getByText("2 selected", { exact: true })).toBeVisible();
     await page.getByRole("searchbox").fill("node");
     await expect(page.getByText("2 selected · 2 hidden")).toBeVisible();
@@ -52,7 +64,9 @@ test("batch results fit above the footer of a full live table", async ({
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/?window=dashboard&route=/dashboard/processes&ticks=0");
-  await page.getByRole("checkbox", { name: "Select Xcode (2214)" }).click();
+  await page
+    .getByRole("checkbox", { name: "Select Xcode", exact: true })
+    .click();
   await page.getByRole("checkbox", { name: "Select Figma (1712)" }).click();
   await page.getByRole("button", { name: "Quit 2…", exact: true }).click();
   await page
@@ -75,12 +89,13 @@ test("native selection modifiers, virtual keyboard navigation and gutter draggin
 }) => {
   await page.goto("/?window=dashboard&route=/dashboard/processes&ticks=0");
   const table = page.getByRole("table", { name: "Processes", exact: true });
-  const xcode = table.getByRole("row", { name: /Xcode/ });
+  const xcode = groupRow(table, "Xcode");
+  const figma = groupRow(table, "Figma");
   await xcode.click();
-  await table
-    .getByRole("row", { name: /Figma/ })
-    .click({ modifiers: ["Shift"] });
-  await expect(page.getByText("6 selected", { exact: true })).toBeVisible();
+  await figma.click({ modifiers: ["Shift"] });
+  // A range takes every group between the two, each as its quit targets.
+  const range = await selectedCount(page);
+  expect(range).toBeGreaterThan(2);
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await xcode.focus();
   await page.keyboard.press("Meta+End");
@@ -88,21 +103,27 @@ test("native selection modifiers, virtual keyboard navigation and gutter draggin
   await page.keyboard.press("Space");
   await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
   await page.keyboard.press("Meta+a");
-  await expect(page.getByText("800 selected", { exact: true })).toBeVisible();
+  // Every process, including members of collapsed groups, which count as hidden.
+  await expect(page.getByText(/^800 selected · \d+ hidden$/)).toBeVisible();
   await page.keyboard.press("Escape");
   await page.keyboard.press("Home");
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   const start = await xcode.locator("[data-selection-gutter]").boundingBox();
-  const end = await table.getByRole("row", { name: /Figma/ }).boundingBox();
+  const end = await figma.boundingBox();
   if (!start || !end) throw new Error("Missing drag rows");
   await page.mouse.move(start.x + 2, start.y + start.height / 2);
   await page.mouse.down();
   await page.mouse.move(start.x + 2, end.y + end.height / 2, { steps: 8 });
   await page.mouse.up();
-  await expect(page.getByText("6 selected", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(`${range} selected`, { exact: true })
+  ).toBeVisible();
   await xcode.click({ button: "right" });
   await expect(
-    page.getByRole("menuitem", { name: "Quit 6 processes…", exact: true })
+    page.getByRole("menuitem", {
+      name: `Quit ${range} processes…`,
+      exact: true,
+    })
   ).toBeVisible();
 });
 
