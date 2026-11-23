@@ -44,14 +44,25 @@ pub struct Loaded {
     pub load_error: Option<String>,
 }
 
+/// What a write did about a bad file that could not be moved aside at launch, so the
+/// service can bring `load_error` up to date.
+#[derive(Debug, PartialEq, Eq)]
+pub enum BadFileChange {
+    /// It was moved to [`BAD_FILE`] just before the write; the new `load_error` text.
+    MovedAside(String),
+    /// It was gone (the user removed it), so there is nothing left to report.
+    Removed,
+}
+
 /// The destinations file in one directory. Not thread-safe on its own: the service
 /// serializes every write through one lock.
 pub struct Store {
     path: PathBuf,
     bad_path: PathBuf,
-    /// A bad file is still at [`DESTINATIONS_FILE`] because moving it aside failed at
-    /// launch. Until it moves, a write would destroy it, so writes are refused.
-    bad_file_in_place: bool,
+    /// Why the launch file was bad, while it is still at [`DESTINATIONS_FILE`] because
+    /// moving it aside failed. Until it moves, a write would destroy it, so writes are
+    /// refused.
+    bad_file_in_place: Option<String>,
 }
 
 impl Store {
@@ -61,7 +72,7 @@ impl Store {
         let mut store = Self {
             path: dir.join(DESTINATIONS_FILE),
             bad_path: dir.join(BAD_FILE),
-            bad_file_in_place: false,
+            bad_file_in_place: None,
         };
         let loaded = match store.read() {
             Ok(destinations) => Loaded {
@@ -70,28 +81,44 @@ impl Store {
             },
             Err(cause) => Loaded {
                 destinations: Vec::new(),
-                load_error: Some(store.set_aside(&cause)),
+                load_error: Some(store.set_aside(cause)),
             },
         };
         (store, loaded)
     }
 
-    /// Replaces the file with `destinations`, atomically and owner-only.
+    /// Replaces the file with `destinations`, atomically and owner-only. First moves
+    /// aside a bad file left in place at launch, and says what became of it.
     ///
     /// # Errors
     ///
     /// A sentence naming the step that failed, when the bad file from launch still
     /// cannot be moved aside or the new file cannot be written. The old file is intact.
-    pub fn write(&mut self, destinations: &[Destination]) -> Result<(), String> {
-        if self.bad_file_in_place {
-            std::fs::rename(&self.path, &self.bad_path).map_err(|e| {
-                format!("{DESTINATIONS_FILE} could not be read at launch and moving it to {BAD_FILE} failed ({e}), so it was not overwritten")
-            })?;
-            self.bad_file_in_place = false;
-        }
+    pub fn write(&mut self, destinations: &[Destination]) -> Result<Option<BadFileChange>, String> {
+        let change = self.move_bad_file_aside()?;
         let encoded = serde_json::to_string_pretty(&DestinationsFileRef { destinations })
             .map_err(|e| format!("encoding {DESTINATIONS_FILE}: {e}"))?;
-        write_atomically(&self.path, &encoded)
+        create_parent(&self.path)?;
+        write_atomically(&self.path, &encoded)?;
+        Ok(change)
+    }
+
+    /// Retries the move that failed at launch. `None` when there was nothing to move.
+    fn move_bad_file_aside(&mut self) -> Result<Option<BadFileChange>, String> {
+        let Some(cause) = &self.bad_file_in_place else {
+            return Ok(None);
+        };
+        let change = match std::fs::rename(&self.path, &self.bad_path) {
+            Ok(()) => BadFileChange::MovedAside(moved_aside(cause)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => BadFileChange::Removed,
+            Err(e) => {
+                return Err(format!(
+                    "{DESTINATIONS_FILE} could not be read at launch and moving it to {BAD_FILE} failed ({e}), so it was not overwritten"
+                ));
+            }
+        };
+        self.bad_file_in_place = None;
+        Ok(Some(change))
     }
 
     /// The saved destinations; an empty list when there is no file.
@@ -107,20 +134,34 @@ impl Store {
     }
 
     /// Moves a bad file to [`BAD_FILE`], logs why, and returns the `load_error` text.
-    fn set_aside(&mut self, cause: &str) -> String {
+    fn set_aside(&mut self, cause: String) -> String {
         let message = match std::fs::rename(&self.path, &self.bad_path) {
-            Ok(()) => format!(
-                "{DESTINATIONS_FILE} could not be used ({cause}); it was moved to {BAD_FILE}"
-            ),
+            Ok(()) => moved_aside(&cause),
             Err(e) => {
-                self.bad_file_in_place = true;
-                format!(
+                let message = format!(
                     "{DESTINATIONS_FILE} could not be used ({cause}) and moving it to {BAD_FILE} failed ({e}); it is left in place and will not be overwritten"
-                )
+                );
+                self.bad_file_in_place = Some(cause);
+                message
             }
         };
         tracing::warn!("{message}");
         message
+    }
+}
+
+/// The `load_error` text for a bad file that is now at [`BAD_FILE`].
+fn moved_aside(cause: &str) -> String {
+    format!("{DESTINATIONS_FILE} could not be used ({cause}); it was moved to {BAD_FILE}")
+}
+
+/// Creates the directory `path` lives in, if it is missing.
+fn create_parent(path: &Path) -> Result<(), String> {
+    match path.parent() {
+        Some(dir) => {
+            std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))
+        }
+        None => Ok(()),
     }
 }
 

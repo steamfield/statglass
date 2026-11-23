@@ -1,13 +1,16 @@
 //! Cases `src-tauri/src/alerts_tests.rs` leaves out: a bad file that cannot be moved
-//! aside, saves and deletes racing on two threads, the record-ordering rule at its
-//! boundary, and that no error, log line or `Debug` output names a destination's
-//! secrets. Real temp directories throughout.
+//! aside, saves and deletes racing on two threads, records and address changes,
+//! [`AlertsService::deliver_to`], and that no error, log line or `Debug` output names a
+//! destination's secrets. Real temp directories throughout.
 
 use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Barrier, Mutex};
 
-use statglass_schema::{DeliveryOutcome, DeliveryRecord, Destination, DestinationKind};
+use statglass_notify::Message;
+use statglass_schema::{
+    DeliveryFailure, DeliveryOutcome, DeliveryRecord, Destination, DestinationKind,
+};
 use uuid::Uuid;
 
 use super::store::{BAD_FILE, DESTINATIONS_FILE};
@@ -51,6 +54,27 @@ fn delivered(at_ms: i64) -> DeliveryRecord {
     }
 }
 
+fn failed(at_ms: i64) -> DeliveryRecord {
+    DeliveryRecord {
+        at_ms,
+        outcome: DeliveryOutcome::Failed {
+            reason: DeliveryFailure::Http,
+            detail: "HTTP 403".into(),
+        },
+    }
+}
+
+fn test_message() -> Message {
+    Message {
+        title: "Memory pressure 84%".into(),
+        body: "Above 80% for 2 min".into(),
+        host: "Studio".into(),
+        rule: Some("Memory is tight".into()),
+        kind: "threshold".into(),
+        fired_at_ms: 1,
+    }
+}
+
 fn set_mode(path: &Path, mode: u32) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
@@ -91,9 +115,32 @@ fn a_bad_file_that_cannot_be_moved_aside_is_never_overwritten() {
 
     // Once the way is clear, the next save moves the bad file first.
     std::fs::remove_dir_all(dir.path().join(BAD_FILE)).unwrap();
-    assert_eq!(service.save(ntfy(1)).unwrap().destinations.len(), 1);
+    let view = service.save(ntfy(1)).unwrap();
+    assert_eq!(view.destinations.len(), 1);
+    let message = view.load_error.expect("load_error is kept");
+    assert!(
+        message.ends_with(&format!("it was moved to {BAD_FILE}")),
+        "{message}"
+    );
     assert_eq!(std::fs::read(dir.path().join(BAD_FILE)).unwrap(), garbage);
     assert_eq!(AlertsService::open(dir.path()).view().destinations.len(), 1);
+}
+
+#[test]
+fn a_bad_file_the_user_removed_no_longer_blocks_saving() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(DESTINATIONS_FILE), b"{ not json").unwrap();
+    std::fs::create_dir(dir.path().join(BAD_FILE)).unwrap();
+    std::fs::write(dir.path().join(BAD_FILE).join("keep"), b"").unwrap();
+    let service = AlertsService::open(dir.path());
+    assert!(service.view().load_error.is_some());
+
+    std::fs::remove_file(dir.path().join(DESTINATIONS_FILE)).unwrap();
+    let view = service.save(ntfy(1)).unwrap();
+    assert_eq!(view.destinations.len(), 1);
+    assert_eq!(view.load_error, None, "nothing is left to report");
+    assert!(dir.path().join(BAD_FILE).join("keep").exists());
+    assert_eq!(AlertsService::open(dir.path()).view(), view);
 }
 
 #[test]
@@ -139,27 +186,107 @@ fn a_save_racing_a_delete_keeps_memory_and_file_in_step() {
 }
 
 #[test]
-fn a_record_replaces_only_an_older_one_and_survives_an_edit() {
+fn a_record_lasts_while_the_address_is_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = AlertsService::open(dir.path());
+    let d = webhook(1);
+    service.save(d.clone()).unwrap();
+
+    assert!(service.record(&d, failed(2_000)).is_some());
+    let renamed_and_off = Destination {
+        name: "Renamed".into(),
+        enabled: false,
+        ..d.clone()
+    };
+    let view = service.save(renamed_and_off).unwrap();
+    assert_eq!(view.destinations[0].last, Some(failed(2_000)));
+
+    // A corrected URL starts clean, and an outcome still in flight for the old URL
+    // does not land on it.
+    let moved = Destination {
+        kind: DestinationKind::Webhook {
+            url: "https://chat.example.com/fixed".into(),
+        },
+        ..d.clone()
+    };
+    assert_eq!(
+        service.save(moved.clone()).unwrap().destinations[0].last,
+        None
+    );
+    assert_eq!(service.record(&d, failed(3_000)), None);
+    assert_eq!(service.view().destinations[0].last, None);
+    assert!(service.record(&moved, delivered(4_000)).is_some());
+
+    // A destination deleted and added again starts with no record.
+    service.delete(d.id).unwrap();
+    let view = service.save(moved).unwrap();
+    assert_eq!(view.destinations[0].last, None);
+}
+
+#[test]
+fn deliver_to_records_the_outcome_at_the_time_it_finished() {
     let dir = tempfile::tempdir().unwrap();
     let service = AlertsService::open(dir.path());
     let d = ntfy(1);
     service.save(d.clone()).unwrap();
+    let message = test_message();
 
-    assert!(service.record(d.id, delivered(1_000)).is_some());
-    assert_eq!(service.record(d.id, delivered(999)), None, "older");
-    assert_eq!(service.record(d.id, delivered(1_000)), None, "same time");
+    let seen = Mutex::new(None);
+    let view = service.deliver_to(
+        &d,
+        &message,
+        |dest, msg| {
+            *seen.lock().unwrap() = Some((dest.clone(), msg.clone()));
+            failed(0).outcome
+        },
+        || 7_000,
+    );
+    assert_eq!(
+        seen.into_inner().unwrap(),
+        Some((d.clone(), message.clone()))
+    );
+    let view = view.expect("recorded");
+    assert_eq!(view.destinations[0].last, Some(failed(7_000)));
+    assert_eq!(service.view(), view);
+}
 
-    let renamed = Destination {
-        name: "Renamed".into(),
-        ..d.clone()
+#[test]
+fn deliver_to_drops_an_outcome_for_a_deleted_or_moved_destination() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = AlertsService::open(dir.path());
+    let (gone, moving) = (ntfy(1), webhook(2));
+    service.save(gone.clone()).unwrap();
+    service.save(moving.clone()).unwrap();
+    let message = test_message();
+
+    let after_delete = service.deliver_to(
+        &gone,
+        &message,
+        |_, _| {
+            service.delete(gone.id).unwrap();
+            delivered(0).outcome
+        },
+        || 1,
+    );
+    assert_eq!(after_delete, None);
+
+    let moved = Destination {
+        kind: DestinationKind::Webhook {
+            url: "https://chat.example.com/elsewhere".into(),
+        },
+        ..moving.clone()
     };
-    let view = service.save(renamed).unwrap();
-    assert_eq!(view.destinations[0].last, Some(delivered(1_000)));
-
-    // A destination deleted and added again starts with no record.
-    service.delete(d.id).unwrap();
-    let view = service.save(d).unwrap();
-    assert_eq!(view.destinations[0].last, None);
+    let after_move = service.deliver_to(
+        &moving,
+        &message,
+        |_, _| {
+            service.save(moved.clone()).unwrap();
+            delivered(0).outcome
+        },
+        || 1,
+    );
+    assert_eq!(after_move, None);
+    assert_eq!(service.view().destinations[0].last, None);
 }
 
 /// Collects every log line written while `f` runs.
@@ -236,7 +363,16 @@ fn no_error_log_or_debug_output_names_a_secret() {
         texts.push(format!("{error:?}"));
     }
 
-    service.record(ntfy(1).id, delivered(5));
+    // A failed delivery's log line, through the same path production uses.
+    let message = test_message();
+    texts.push(logged(|| {
+        service.deliver_to(&ntfy(1), &message, |_, _| failed(0).outcome, || 5);
+    }));
+    assert!(
+        texts
+            .last()
+            .is_some_and(|log| log.contains("alert delivery failed"))
+    );
     texts.push(format!("{:?}", service.view()));
     for text in &texts {
         assert_no_secret(text);

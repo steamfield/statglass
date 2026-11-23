@@ -3,9 +3,9 @@
 //!
 //! | Module | Owns |
 //! |---|---|
-//! | this one | [`AlertsService`]: the destination list and last delivery per destination, behind one lock; no file or process I/O of its own |
+//! | this one | [`AlertsService`]: the destination list and last delivery per destination, behind two locks (`writes` for list changes and the file, `view` for reads and records; take `writes` first); no file or process I/O of its own |
 //! | [`store`] | `alert-destinations.json` (atomic, 0600); the only module that touches the file |
-//! | [`dispatch`] | an alert event as a [`Message`], sent to each enabled destination off the calling thread |
+//! | [`dispatch`] | an alert event as a [`Message`], sent to each enabled destination off the calling thread, and [`AlertsService::deliver_to`]: one delivery, its failure log and its record |
 //! | [`commands`] | the four Tauri commands and the [`commands::AlertDestinationsChanged`] event |
 //!
 //! # Emitting
@@ -13,8 +13,9 @@
 //! The service never emits and holds no `AppHandle`, so every entry point runs in a test
 //! without Tauri. A method that changes what the window shows returns the new view
 //! ([`AlertsService::save`], [`AlertsService::delete`], [`AlertsService::record`]), and
-//! the caller emits it outside the lock: the commands after a save or delete, and the
-//! production send function ([`dispatch::background_sender`]) after recording an outcome.
+//! the caller emits it outside the locks: the commands after a save or delete, and the
+//! production send function ([`dispatch::background_sender`]) after
+//! [`AlertsService::deliver_to`] records an outcome.
 //! [`AlertsService::on_alert`] takes that send function as a parameter; tests pass one
 //! that records what would have been sent.
 //!
@@ -38,7 +39,7 @@ use statglass_schema::{DeliveryRecord, Destination, DestinationError, Event, MAX
 use uuid::Uuid;
 
 use crate::error::CommandError;
-use store::Store;
+use store::{BadFileChange, Store};
 
 pub use dispatch::{background_sender, send_test};
 
@@ -161,20 +162,22 @@ impl AlertsService {
         }
     }
 
-    /// Records the outcome of a delivery to destination `id` and returns the new view to
-    /// emit. `None`, and nothing changes, when no destination has `id` or the destination
-    /// already holds a record with a later `at_ms` (deliveries can finish out of order).
-    pub fn record(&self, id: Uuid, record: DeliveryRecord) -> Option<AlertDestinationsView> {
+    /// Records the outcome of a delivery to `destination` and returns the new view to
+    /// emit. Records land in arrival order, which is completion order; `at_ms` is only
+    /// the time shown, since the wall clock can step back. `None`, and nothing changes,
+    /// when no destination has its id any more or its address changed since the
+    /// delivery started, so an outcome never lands on an address it was not sent to.
+    pub fn record(
+        &self,
+        destination: &Destination,
+        record: DeliveryRecord,
+    ) -> Option<AlertDestinationsView> {
         let mut view = self.view.lock_ok();
         let entry = view
             .destinations
             .iter_mut()
-            .find(|d| d.destination.id == id)?;
-        if entry
-            .last
-            .as_ref()
-            .is_some_and(|last| last.at_ms >= record.at_ms)
-        {
+            .find(|d| d.destination.id == destination.id)?;
+        if entry.destination.kind != destination.kind {
             return None;
         }
         entry.last = Some(record);
@@ -191,19 +194,25 @@ impl AlertsService {
             .collect()
     }
 
-    /// Writes `next` to the file, then makes it the list in memory, keeping each
-    /// remaining destination's last delivery. The file goes first so a failed write
-    /// leaves memory as it was: the list in memory is always what is on disk. The caller
-    /// holds `writes`, so nothing else changed the list since `next` was built from it.
+    /// Writes `next` to the file, then makes it the list in memory. A destination keeps
+    /// its last delivery while its address (`kind`) is unchanged; a rename or a toggle
+    /// keeps it, a new URL, topic or token clears it. The file goes first so a failed
+    /// write leaves memory as it was: the list in memory is always what is on disk. The
+    /// caller holds `writes`, so nothing else changed the list since `next` was built.
     fn write_then_commit(
         &self,
         store: &mut Store,
         next: Vec<Destination>,
     ) -> Result<AlertDestinationsView, CommandError> {
-        store
+        let bad_file = store
             .write(&next)
             .map_err(|message| CommandError::SettingsNotSaved { message })?;
         let mut view = self.view.lock_ok();
+        match bad_file {
+            Some(BadFileChange::MovedAside(message)) => view.load_error = Some(message),
+            Some(BadFileChange::Removed) => view.load_error = None,
+            None => {}
+        }
         let previous = std::mem::take(&mut view.destinations);
         view.destinations = next
             .into_iter()
@@ -211,6 +220,7 @@ impl AlertsService {
                 last: previous
                     .iter()
                     .find(|p| p.destination.id == destination.id)
+                    .filter(|p| p.destination.kind == destination.kind)
                     .and_then(|p| p.last.clone()),
                 destination,
             })
