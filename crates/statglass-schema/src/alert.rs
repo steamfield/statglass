@@ -106,7 +106,7 @@ fn check_threshold(series: &SeriesSelector, value: f32) -> Result<(), AlertRuleE
     let Some(alertable) = alert_metric(metric) else {
         return Err(AlertRuleError::Metric(metric.to_owned()));
     };
-    if !labels_fit(metric, &series.labels) {
+    if !labels_allowed(metric, &series.labels) {
         return Err(AlertRuleError::Labels);
     }
     let in_range = value.is_finite() && alertable.min <= value && value <= alertable.max;
@@ -120,7 +120,7 @@ fn check_threshold(series: &SeriesSelector, value: f32) -> Result<(), AlertRuleE
 }
 
 /// Whether `labels` is empty (every series) or one pair whose key `metric` carries.
-fn labels_fit(metric: &str, labels: &Labels) -> bool {
+fn labels_allowed(metric: &str, labels: &Labels) -> bool {
     if labels.len() > 1 {
         return false;
     }
