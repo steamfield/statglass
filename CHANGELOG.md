@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.13.2](https://github.com/steamfield/statglass/compare/v0.13.1...v0.13.2) - 2026-11-23
+
+### Added
+
+- One shared grouped process table (`ProcessGroupTable`) on Processes, CPU, GPU,
+  Memory, Power, Disk, Network and Timeline, with selection, Quit and Force Quit
+  everywhere (D-137). Processes groups by app; Command-A selects every group's quit
+  targets plus visible members.
+- `LiveProcess.app` and `LiveProcess.app_quit`, computed in Rust over the whole batch.
+- Recorded app rows map to running processes and are disabled with "Not running"
+  when nothing they name runs.
+
+### Changed
+
+- Disk by app drops its By process toggle.
+- The running-app map for quit targets samples the full process table every 10 s.
+
+### Removed
+
+- `AppUsage.quit_pids`. `UsageProc.app_main` stays on the wire, unread.
+
+### Fixed
+
+- Recorded by-app cards over a rolling window hold the last answer, open apps and
+  selection while the window moves, instead of emptying every 10 s.
+- The host switcher menu opens below its trigger.
+
 ## [0.13.1](https://github.com/steamfield/statglass/compare/v0.13.0...v0.13.1) - 2026-11-22
 
 ### Fixed
