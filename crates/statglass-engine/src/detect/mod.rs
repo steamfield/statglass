@@ -14,7 +14,7 @@ mod window;
 
 use statglass_collect::ProcessSample;
 use statglass_schema::{
-    AlertSettings, DetectorThresholds, Event, EventDetail, PowerComponent, SeriesKey,
+    AlertRule, AlertSettings, DetectorThresholds, Event, EventDetail, PowerComponent, SeriesKey,
 };
 
 pub use alerts::AlertEval;
@@ -65,12 +65,26 @@ fn value(values: &[f32], i: usize) -> Option<f32> {
 /// among every rule in `alerts`, built-in and custom, on or off. The app shell reads
 /// stored alerts this far back at launch ([`Detectors::seed_alert_history`]).
 pub fn alert_history_ms(alerts: &AlertSettings) -> i64 {
-    alerts
-        .builtin_rules()
-        .iter()
+    every_rule(alerts)
         .map(|r| i64::from(r.cooldown_secs) * 1000)
         .max()
         .unwrap_or(0)
+}
+
+/// The built-in rules, then the custom rules, each with its own `enabled` flag.
+fn every_rule(alerts: &AlertSettings) -> impl Iterator<Item = AlertRule> + '_ {
+    alerts
+        .builtin_rules()
+        .into_iter()
+        .chain(alerts.rules.iter().cloned())
+}
+
+/// Whether two versions of a rule watch for the same thing, ignoring whether it is on.
+fn same_definition(a: &AlertRule, b: &AlertRule) -> bool {
+    *a == AlertRule {
+        enabled: a.enabled,
+        ..b.clone()
+    }
 }
 
 /// Every detector plus the alert rules, fed by the engine once per persisted tick.
@@ -127,14 +141,33 @@ impl Detectors {
     /// old one's cooldown; a custom rule no longer in the settings is dropped; a new one
     /// is bound to the current layout at once.
     pub fn set_alerts(&mut self, settings: &AlertSettings) {
-        for rule in settings.builtin_rules() {
-            match self.alerts.iter_mut().find(|a| a.rule().id == rule.id) {
-                Some(eval) => eval.set_enabled(rule.enabled),
-                None => {
-                    let mut eval = AlertEval::new(rule);
-                    eval.bind(&self.series);
-                    self.alerts.push(eval);
+        let mut previous = std::mem::take(&mut self.alerts);
+        for rule in every_rule(settings) {
+            let kept = previous
+                .iter()
+                .position(|a| a.rule().id == rule.id)
+                .map(|i| previous.swap_remove(i));
+            let eval = self.evaluator_for(rule, kept);
+            self.alerts.push(eval);
+        }
+    }
+
+    /// The evaluator for `rule`: `kept` (its evaluator so far) switched on or off when
+    /// the definition is the same, otherwise a new one bound to the current layout that
+    /// keeps `kept`'s cooldown.
+    fn evaluator_for(&self, rule: AlertRule, kept: Option<AlertEval>) -> AlertEval {
+        match kept {
+            Some(mut eval) if same_definition(eval.rule(), &rule) => {
+                eval.set_enabled(rule.enabled);
+                eval
+            }
+            kept => {
+                let mut eval = AlertEval::new(rule);
+                eval.bind(&self.series);
+                if let Some(old) = &kept {
+                    eval.keep_cooldown_from(old);
                 }
+                eval
             }
         }
     }
