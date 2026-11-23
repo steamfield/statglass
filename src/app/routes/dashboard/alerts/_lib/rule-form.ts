@@ -60,13 +60,31 @@ function thresholdOf(rule: AlertRule) {
   return rule.when.threshold;
 }
 
+/** A comma followed by exactly three digits: "1,000", "0,125". */
+const COMMA_THEN_THREE_DIGITS = /,\d{3}(?!\d)/;
+
 /**
- * The typed threshold as a number; NaN when it is blank or not a number. A
- * comma reads as the decimal separator ("80,5" is 80.5).
+ * True when a comma in `shown` may be a thousands separator: more than one
+ * comma, a comma beside a dot ("1,000.5"), or a comma followed by exactly
+ * three digits ("1,000"). Such text is refused rather than guessed at.
+ */
+function hasThousandsSeparator(shown: string): boolean {
+  const commas = shown.split(",").length - 1;
+  if (commas === 0) return false;
+  return (
+    commas > 1 || shown.includes(".") || COMMA_THEN_THREE_DIGITS.test(shown)
+  );
+}
+
+/**
+ * The typed threshold as a number; NaN when it is blank, not a number, or
+ * may hold a thousands separator. A lone comma reads as the decimal
+ * separator ("80,5" is 80.5).
  */
 function parseShown(shown: string): number {
-  const trimmed = shown.trim().replace(",", ".");
-  return trimmed === "" ? Number.NaN : Number(trimmed);
+  const trimmed = shown.trim();
+  if (trimmed === "" || hasThousandsSeparator(trimmed)) return Number.NaN;
+  return Number(trimmed.replace(",", "."));
 }
 
 /** `text` without a trailing `unit`: "500" from "500 rpm", "1" from "1%". */
@@ -199,6 +217,8 @@ function rangeProblem(
 
 /**
  * What stops the form from saving, as inline text, or null:
+ * - "Enter a number without thousands separators" when a comma in `shown`
+ *   may group digits ("1,000", "1,000.5");
  * - "Enter a number" when `shown` is empty or not a finite number;
  * - "Between {min} and {max}" when it is outside the metric's `min`..`max`,
  *   both in the display unit and the unit once, after the maximum
@@ -212,6 +232,9 @@ export function formProblem(
   form: RuleForm,
   units: UnitSettings
 ): string | null {
+  if (hasThousandsSeparator(form.shown.trim())) {
+    return "Enter a number without thousands separators";
+  }
   const shown = parseShown(form.shown);
   if (!Number.isFinite(shown)) return "Enter a number";
   const range = rangeProblem(form.metric, shown, units);

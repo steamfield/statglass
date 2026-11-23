@@ -4,6 +4,7 @@ import type {
   SettingsPatch,
   SettingsSnapshot,
 } from "@core/generated/bindings";
+import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { MINUTE_MS } from "@core/time-grid";
 import type { CommandResult } from "@core/transport";
@@ -140,5 +141,44 @@ describe("Rules panel edges", () => {
       await act(async () => transport.tick());
     }
     expect(renders).toBe(settled);
+  });
+
+  it("shows no last-fired line when the alerts could not be read", async () => {
+    const transport = await seeded([PRESSURE]);
+    transport.queryEvents = async () => ({
+      status: "error",
+      error: { kind: "store_busy", message: "history.sqlite is locked" },
+    });
+    renderWithProviders(<RulesPanel onEdit={vi.fn()} />, { transport });
+    await waitFor(() =>
+      expect(
+        subLine(/^Any one process, for the whole 5 minutes$/)
+      ).toBeInTheDocument()
+    );
+    expect(
+      subLine(/^Memory pressure above 80% for 2 min$/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Never fired|Last fired/)).toBeNull();
+  });
+
+  it("writes the last-fired time as plain text when its history is gone", async () => {
+    const transport = await seeded([PRESSURE]);
+    const health = await transport.historyHealth(MOCK_HOST_ID);
+    if (health.status === "error") {
+      throw new Error(JSON.stringify(health.error));
+    }
+    transport.setHistoryHealth({
+      ...health.data,
+      trimmed_before_ms: Date.now() - 30 * MINUTE_MS,
+    });
+    renderWithProviders(<RulesPanel onEdit={vi.fn()} />, { transport });
+    await waitFor(() =>
+      expect(
+        subLine(/^Memory pressure above 80% for 2 min · Last fired 1 h ago$/)
+      ).toBeInTheDocument()
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Last fired/ })).toBeNull()
+    );
   });
 });

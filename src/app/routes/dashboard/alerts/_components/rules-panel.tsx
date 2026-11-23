@@ -2,7 +2,7 @@
  * The Alerts page's Rules panel: the built-in rules, then the user's
  * threshold rules, one switch row each.
  */
-import { availableMetrics, lastFiredByRule, ruleSummary } from "@core/alerts";
+import { availableMetrics, ruleSummary } from "@core/alerts";
 import {
   ALERT_LIMITS,
   type AlertRule,
@@ -13,15 +13,14 @@ import {
 import { settingsErrorText } from "@core/settings-patch";
 import { MINUTE_MS } from "@core/time-grid";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { SettingsPanel } from "~/components/settings-row";
 import { useNow } from "~/hooks/use-now";
-import { useRangeNavigation } from "~/hooks/use-range-navigation";
+import { useOpenInTimeline } from "~/hooks/use-open-in-timeline";
 import { useSettings, useUpdateSettings } from "~/stores/settings-store";
-import { useRecentAlerts } from "../_hooks/use-recent-alerts";
+import { type AlertEvent, useRecentAlerts } from "../_hooks/use-recent-alerts";
 import { useSeriesKeys } from "../_hooks/use-series-keys";
-import { lastFiredText, windowAroundAlert } from "../_lib/last-fired";
+import { lastFiredText } from "../_lib/last-fired";
 import { RuleRow } from "./rule-row";
 
 /** Props of `RulesPanel`. */
@@ -61,6 +60,12 @@ const NOT_MEASURED = "Not measured on this Mac";
 const NEVER_FIRED = "Never fired";
 
 /**
+ * A rule's newest alert in the last 7 days, "never" when it has none, or
+ * "unknown" when the alerts could not be read.
+ */
+type LastAlert = AlertEvent | "never" | "unknown";
+
+/**
  * A `SettingsPanel` titled "Rules". The two built-in rows come first
  * ("A process above 200% CPU for 5 minutes", "Thermal state Serious or
  * worse") and write `{ alerts: { hot_process } }` / `{ alerts: {
@@ -76,8 +81,7 @@ export function RulesPanel({ onEdit }: RulesPanelProps): ReactNode {
   const units = useSettings((s) => s.units);
   const { pending, write } = useAlertsWrite();
   const measured = useMeasuredMetrics();
-  const { alerts: recent } = useRecentAlerts();
-  const lastFired = useMemo(() => lastFiredByRule(recent), [recent]);
+  const lastAlert = useLastAlerts();
   if (alerts === null || units === null) return null;
   // Absent from a settings file written before custom rules: none.
   const rules = alerts.rules ?? [];
@@ -91,9 +95,7 @@ export function RulesPanel({ onEdit }: RulesPanelProps): ReactNode {
         <RuleRow
           key={b.id}
           label={b.label}
-          sub={
-            <RuleSub prefix={b.description} firedAtMs={lastFired.get(b.id)} />
-          }
+          sub={<RuleSub prefix={b.description} lastAlert={lastAlert(b.id)} />}
           enabled={alerts[b.setting]}
           disabled={pending}
           onEnabledChange={(on) => write({ [b.setting]: on })}
@@ -107,7 +109,7 @@ export function RulesPanel({ onEdit }: RulesPanelProps): ReactNode {
             <RuleSub
               prefix={sentenceUnlessName(rule, units)}
               measured={measured.has(ruleMetric(rule))}
-              firedAtMs={lastFired.get(rule.id)}
+              lastAlert={lastAlert(rule.id)}
             />
           }
           enabled={rule.enabled}
@@ -160,6 +162,24 @@ function useAlertsWrite() {
   return { pending, write: (alerts: AlertsPatch) => void write(alerts) };
 }
 
+/**
+ * Each rule's `LastAlert`, looked up by rule id. The list is newest first,
+ * so the first alert seen for a rule is its newest.
+ */
+function useLastAlerts(): (ruleId: string) => LastAlert {
+  const { alerts, isError } = useRecentAlerts();
+  const newest = useMemo(() => {
+    const byRule = new Map<string, AlertEvent>();
+    for (const alert of alerts) {
+      if (!byRule.has(alert.detail.rule_id)) {
+        byRule.set(alert.detail.rule_id, alert);
+      }
+    }
+    return byRule;
+  }, [alerts]);
+  return (ruleId) => (isError ? "unknown" : (newest.get(ruleId) ?? "never"));
+}
+
 /** The metric ids this Mac has a live series for; changes only with the layout. */
 function useMeasuredMetrics(): ReadonlySet<string> {
   const seriesKeys = useSeriesKeys();
@@ -187,54 +207,50 @@ function sentenceUnlessName(
 
 /**
  * A row's sub line: `prefix` (a description or sentence), then the
- * last-fired link, "Never fired", or "Not measured on this Mac".
+ * last-fired line, "Never fired", or "Not measured on this Mac". Nothing
+ * follows the prefix when the alerts could not be read.
  */
 function RuleSub({
   prefix,
   measured = true,
-  firedAtMs,
+  lastAlert,
 }: {
   prefix: string | null;
   measured?: boolean;
-  firedAtMs: number | undefined;
+  lastAlert: LastAlert;
 }) {
   const lead = prefix === null ? "" : `${prefix} · `;
   if (!measured) return `${lead}${NOT_MEASURED}`;
-  if (firedAtMs === undefined) return `${lead}${NEVER_FIRED}`;
+  if (lastAlert === "unknown") return prefix;
+  if (lastAlert === "never") return `${lead}${NEVER_FIRED}`;
   return (
     <>
       {lead}
-      <LastFiredLink firedAtMs={firedAtMs} />
+      <LastFired alert={lastAlert} />
     </>
   );
 }
 
 /**
- * "Last fired 2 h ago", opening the Timeline on the hour around that alert.
- * Its clock moves once a minute, re-rendering only this link.
+ * "Last fired 2 h ago", opening the Timeline on the range the Recent list
+ * opens for that alert; plain text when none of its time is kept. Its clock
+ * moves once a minute, re-rendering only this line.
  */
-function LastFiredLink({ firedAtMs }: { firedAtMs: number }) {
+function LastFired({ alert }: { alert: AlertEvent }) {
   const nowMs = useNow(MINUTE_MS);
-  const { apply, pending, range } = useRangeNavigation();
-  const navigate = useNavigate();
-  const open = async () => {
-    const window = windowAroundAlert(firedAtMs);
-    const applied = await apply(window);
-    // Applying the window already in force is a no-op that still opens it.
-    const already =
-      range?.endMs === window.absolute.to_ms &&
-      range.windowMs === window.absolute.to_ms - window.absolute.from_ms;
-    if (applied || already) navigate("/dashboard/timeline");
-  };
+  const { rangeFor, open, pending } = useOpenInTimeline();
+  const text = lastFiredText(alert.ts_ms, nowMs);
+  const range = rangeFor(alert);
+  if (range === null) return text;
   return (
     <button
       type="button"
       disabled={pending}
       aria-description="Open in Timeline"
       className="rounded-control text-link underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => void open()}
+      onClick={() => void open(range)}
     >
-      {lastFiredText(firedAtMs, nowMs)}
+      {text}
     </button>
   );
 }

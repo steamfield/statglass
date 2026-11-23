@@ -1,5 +1,5 @@
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
-import { lastFiredText, windowAroundAlert } from "./last-fired";
+import { lastFiredText } from "./last-fired";
 
 const NOW = Date.UTC(2026, 10, 23, 12, 0, 0);
 
@@ -14,13 +14,5 @@ describe("lastFiredText", () => {
     ["three and a half days ago", 3.5 * DAY_MS, "Last fired 3 d ago"],
   ])("reads %s", (_case, agoMs, text) => {
     expect(lastFiredText(NOW - agoMs, NOW)).toBe(text);
-  });
-});
-
-describe("windowAroundAlert", () => {
-  it("is the absolute hour centered on the alert", () => {
-    expect(windowAroundAlert(NOW)).toEqual({
-      absolute: { from_ms: NOW - 30 * MINUTE_MS, to_ms: NOW + 30 * MINUTE_MS },
-    });
   });
 });

@@ -162,6 +162,18 @@ describe("Rule dialog edges", () => {
     expect(thresholdValue((await storedRules(transport))[0])).toBe(80.5);
   });
 
+  it.each(["1,000", "1,000.5", "0,125"])(
+    "refuses %s, which may hold a thousands separator",
+    async (typed) => {
+      const { user } = await open(ruleOn("fan.rpm"));
+      await setThreshold(user, typed);
+      expect(
+        screen.getByText("Enter a number without thousands separators")
+      ).toBeVisible();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    }
+  );
+
   it("prints the range in the metric's own format", async () => {
     const { user } = await open(ruleOn("fan.rpm"));
     await setThreshold(user, "100");
