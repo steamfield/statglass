@@ -30,10 +30,11 @@ statglass-store         -> schema
 statglass-engine        -> schema, collect, store
 statglass-remote        -> schema, proto, store, engine
 statglass-remote-helper -> remote
+statglass-notify        -> schema
 statglass-query         -> schema
 statglass-cli           -> query, schema
 statglass-agent         -> schema, proto, store, engine, remote
-statglass (src-tauri)   -> schema, proto, store, engine, remote, query
+statglass (src-tauri)   -> schema, proto, store, engine, remote, query, notify
 ```
 
 The policy records dev edges separately (including store's protocol fixtures). Do not
@@ -59,6 +60,9 @@ can proceed autonomously within their agreed scope.
   its own history and the metrics socket, plus the one-shot commands the controller runs
   over SSH. Install paths and unit text live in `statglass_remote::agent_layout`, shared
   with the controller.
+- `statglass-notify` says what an alert rule and a fired alert say, and delivers a message
+  to a destination through `/usr/bin/curl` (D-138). It depends on the schema only, so the
+  headless agent can link it later. It is synchronous; callers run it off their thread.
 - `src-tauri` is a thin shell: commands, windows, tray, settings ownership. Business logic
   that isn't Tauri-specific belongs in a crate, where it is testable without a webview.
 

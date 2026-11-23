@@ -515,6 +515,8 @@ Acceptance: from a clean checkout and a configured identity, `bun tauri build --
 
 #### Phase 2.3a: Alert rules editor
 
+Superseded by [rfc-alerts.md](rfc-alerts.md) (D-138), implemented 2026-11-23: rules live in settings and are edited on an Alerts page; aggregation, `scope`, `alert_rule_test` and per-rule outputs below were not built. The checkboxes are left as written for the record.
+
 Engine and schema:
 - [ ] Rule fields: aggregation, comparator, sustain, cooldown, outputs, `scope` (`Local` only); `rule_version` migration from v1.2
 - [ ] `alert_rule_test` against the 10 s tier
