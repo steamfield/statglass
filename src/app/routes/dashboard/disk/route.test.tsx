@@ -129,7 +129,7 @@ describe("Disk and Memory pages over a range (D-099)", () => {
       await user.keyboard("{Escape}");
       expect(
         await screen.findByRole("heading", {
-          name: "Processes on this Mac · Live",
+          name: "Disk by app, last 5 minutes",
         })
       ).toBeVisible();
     } finally {
@@ -396,7 +396,7 @@ it("discloses the recorded totals interval and each direction's measured coverag
   expect(totals).toHaveTextContent("Written · 60 s —");
   expect(
     screen.getByRole("heading", {
-      name: "Processes on this Mac · selected 10 s",
+      name: "Disk by app, selected 10 s",
     })
   ).toBeVisible();
 });

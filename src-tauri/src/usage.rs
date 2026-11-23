@@ -1,7 +1,7 @@
 //! `query_usage_by_app` and `query_usage_series` (D-093, D-099): the engine's per-app use
-//! over a range, with what the Quit actions need and what the host measured beyond
-//! StatGlass's processes. Which process an app row's Quit acts on is decided here, so every
-//! view that offers it agrees.
+//! over a range, with what the Quit actions need (each process's refusal) and what the host
+//! measured beyond StatGlass's processes. Which process an app row's Quit acts on comes from
+//! the live batch (`LiveProcess.app_quit`), not from this answer.
 
 use serde::Serialize;
 use statglass_schema::JsSafeInt;
@@ -19,16 +19,6 @@ pub const CPU_TOTAL: &str = "cpu.total";
 pub const GPU_UTIL: &str = "gpu.util";
 pub const DISK_READ: &str = "disk.read_total";
 pub const DISK_WRITE: &str = "disk.write_total";
-
-/// The processes an app row's Quit acts on: the running main executable alone (quitting
-/// it quits the app and its helpers, and signalling helpers first would cut a graceful
-/// quit short), else every running process.
-fn quit_pids(processes: &[UsageProc]) -> Vec<i32> {
-    crate::app_quit::quit_targets(processes, |p| p.running, |p| p.app_main)
-        .into_iter()
-        .filter_map(|i| processes.get(i).map(|p| p.pid))
-        .collect()
-}
 
 /// A running process's refusal, `None` for an exited one.
 fn refusal_of(
@@ -63,7 +53,6 @@ pub fn usage_by_app(
         write_bytes: a.write_b,
         energy_j: a.energy_j,
         avg_w: a.avg_w,
-        quit_pids: quit_pids(&a.processes),
         processes: a
             .processes
             .iter()
@@ -338,23 +327,6 @@ mod tests {
     }
 
     #[test]
-    fn quit_targets_the_main_executable_else_every_running_process() {
-        // Chrome: helpers and the main process; Quit goes to the main one.
-        assert_eq!(quit_pids(&[p(2, true, false), p(1, true, true)]), vec![1]);
-        // The main process exited: the helpers left are quit together.
-        assert_eq!(
-            quit_pids(&[p(2, true, false), p(3, true, false), p(1, false, true)]),
-            vec![2, 3]
-        );
-        // A CLI group (several `node` processes): every running one.
-        assert_eq!(
-            quit_pids(&[p(5, false, false), p(6, true, false), p(7, true, false)]),
-            vec![6, 7]
-        );
-        assert_eq!(quit_pids(&[p(5, false, false)]), Vec::<i32>::new());
-    }
-
-    #[test]
     fn exited_processes_carry_no_refusal() {
         let e = statglass_schema::usage::UsageByApp {
             from_ms: 0,
@@ -375,7 +347,6 @@ mod tests {
         let procs = &out.apps[0].processes;
         assert_eq!(procs[0].refusal, Some(SignalRefusal::WindowServer));
         assert_eq!(procs[1].refusal, None);
-        assert_eq!(out.apps[0].quit_pids, vec![1]);
         assert_eq!(out.covered_ms, 10_000);
     }
 

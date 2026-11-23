@@ -56,7 +56,8 @@ pub struct LiveProcess {
     pub app: String,
     /// Quit on this process's app acts on it: the app's running main executables when it
     /// has any, otherwise every process of the app. Decided over the whole sample, before
-    /// the view's limit, by the rule `query_usage_by_app` uses for `quit_pids`.
+    /// the view's limit (`app_quit::live_quit_set`); per-app and recorded tables quit
+    /// through it by app name.
     pub app_quit: bool,
 }
 

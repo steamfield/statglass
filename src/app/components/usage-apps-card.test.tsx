@@ -1,10 +1,13 @@
 import type {
   AppUsage,
+  LiveProcess,
   ProcessUsage,
   UsageByApp,
 } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
+import { FULL_TABLE } from "@core/process-interest";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { UsageAppsCard, type UsageTableConfig } from "./usage-apps-card";
 
@@ -79,11 +82,7 @@ function proc(
   };
 }
 
-function app(
-  name: string,
-  quit: number[],
-  processes: ProcessUsage[]
-): AppUsage {
+function app(name: string, processes: ProcessUsage[]): AppUsage {
   const j = processes.reduce((s, p) => s + (p.energy_j ?? 0), 0);
   return {
     name,
@@ -95,27 +94,49 @@ function app(
     write_bytes: null,
     energy_j: j,
     avg_w: j / 600,
-    quit_pids: quit,
     processes,
   };
 }
 
 const APPS: AppUsage[] = [
-  app(
-    "Google Chrome",
-    [10],
-    [
-      proc(11, "Google Chrome Helper (Renderer)", 300),
-      proc(10, "Google Chrome", 100),
-      proc(12, "Google Chrome Helper", 50, { running: false }),
-    ]
-  ),
-  app(
-    "WindowServer",
-    [391],
-    [proc(391, "WindowServer", 80, { refusal: "window_server" })]
-  ),
+  app("Google Chrome", [
+    proc(11, "Google Chrome Helper (Renderer)", 300),
+    proc(10, "Google Chrome", 100),
+    proc(12, "Google Chrome Helper", 50, { running: false }),
+  ]),
+  app("WindowServer", [
+    proc(391, "WindowServer", 80, { refusal: "window_server" }),
+  ]),
 ];
+
+/**
+ * The live batch while the APPS answer is on screen: Chrome's main is what
+ * Quit on Chrome acts on, its helper is not, WindowServer is refused.
+ */
+const LIVE: LiveProcess[] = [
+  running(10, "Google Chrome", "Google Chrome", true),
+  running(11, "Google Chrome Helper (Renderer)", "Google Chrome", false),
+  running(391, "WindowServer", "WindowServer", true, {
+    refusal: "window_server",
+  }),
+];
+
+function running(
+  pid: number,
+  name: string,
+  appName: string,
+  appQuit: boolean,
+  over: Partial<LiveProcess> = {}
+): LiveProcess {
+  return liveProcess({
+    pid,
+    start_time_us: pid * 1000,
+    name,
+    app: appName,
+    app_quit: appQuit,
+    ...over,
+  });
+}
 
 function render(answer: (fromMs: number, toMs: number) => UsageByApp | null) {
   const transport = createMockTransport({ now: () => NOW, autoTick: false });
@@ -137,6 +158,30 @@ function render(answer: (fromMs: number, toMs: number) => UsageByApp | null) {
   );
   act(() => transport.tick());
   return r;
+}
+
+type Transport = ReturnType<typeof createMockTransport>;
+
+/**
+ * Pushes `rows` as the live process batch once the card has asked for the
+ * full table (and the mock has sent its own first batch), so app rows
+ * quit what these rows say.
+ */
+async function goLive(
+  transport: Transport,
+  rows: readonly LiveProcess[] = LIVE
+) {
+  await waitFor(() =>
+    expect(
+      transport.calls.some(
+        (c) =>
+          c.command === "set_process_interest" &&
+          JSON.stringify(c.args[2]) === JSON.stringify(FULL_TABLE)
+      )
+    ).toBe(true)
+  );
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  act(() => transport.push({ kind: "processes", ts_ms: NOW, rows: [...rows] }));
 }
 
 const full = (fromMs: number, toMs: number): UsageByApp => ({
@@ -167,15 +212,23 @@ const full = (fromMs: number, toMs: number): UsageByApp => ({
 const table = () => screen.findByRole("table", { name: "Energy by app" });
 
 describe("UsageAppsCard (D-093, D-099)", () => {
-  it("keeps the ranked header descending and every column noninteractive", async () => {
-    render(full);
+  it("keeps the ranked header descending, Rust's order, and no other column sortable", async () => {
+    const { user } = render(full);
     const rendered = await table();
-    const ranked = within(rendered).getByRole("columnheader", {
-      name: /Energy/,
-    });
-    expect(ranked).toHaveAttribute("aria-sort", "descending");
-    expect(ranked).toHaveTextContent("Energy ↓");
+    const ranked = () =>
+      within(rendered).getByRole("columnheader", { name: /Energy/ });
+    expect(ranked()).toHaveAttribute("aria-sort", "descending");
+    expect(ranked()).toHaveTextContent("Energy ↓");
+    // The ranked header reports the order; clicking it re-sorts nothing.
+    await user.click(within(ranked()).getByRole("button"));
+    expect(ranked()).toHaveAttribute("aria-sort", "descending");
+    expect(
+      within(rendered)
+        .getAllByRole("row")
+        .flatMap((r) => r.getAttribute("data-name") ?? [])
+    ).toEqual(["Google Chrome", "WindowServer"]);
     for (const head of within(rendered).getAllByRole("columnheader")) {
+      if (head === ranked()) continue;
       expect(within(head).queryByRole("button")).toBeNull();
     }
   });
@@ -183,6 +236,7 @@ describe("UsageAppsCard (D-093, D-099)", () => {
   it("quits an app through its main process only, after the dialog", async () => {
     const { user, transport } = render(full);
     await table();
+    await goLive(transport);
     await user.click(
       screen.getByRole("button", { name: "Quit Google Chrome (10)" })
     );
@@ -204,8 +258,9 @@ describe("UsageAppsCard (D-093, D-099)", () => {
   });
 
   it("selects an app as its main process and adds members individually", async () => {
-    const { user } = render(full);
+    const { user, transport } = render(full);
     await table();
+    await goLive(transport);
     await user.click(
       screen.getByRole("checkbox", { name: "Select Google Chrome" })
     );
@@ -238,20 +293,21 @@ describe("UsageAppsCard (D-093, D-099)", () => {
   });
 
   it("selects every member of a group without a main process from its row, and quits them", async () => {
-    const node = app(
-      "node",
-      [21, 22],
-      [
-        proc(21, "node", 40),
-        proc(22, "node", 30),
-        proc(23, "node", 5, { running: false }),
-      ]
-    );
+    const node = app("node", [
+      proc(21, "node", 40),
+      proc(22, "node", 30),
+      proc(23, "node", 5, { running: false }),
+    ]);
     const { user, transport } = render((from, to) => ({
       ...full(from, to),
       apps: [...APPS, node],
     }));
     await table();
+    await goLive(transport, [
+      ...LIVE,
+      running(21, "node", "node", true),
+      running(22, "node", "node", true),
+    ]);
     // A plain click on the group row, the way you would pick the whole group.
     await user.click(screen.getByText("node"));
     expect(screen.getByText("2 selected")).toBeVisible();
@@ -303,8 +359,9 @@ describe("UsageAppsCard (D-093, D-099)", () => {
   });
 
   it("disables Quit on a process macOS needs", async () => {
-    render(full);
+    const { transport } = render(full);
     await table();
+    await goLive(transport);
     expect(
       screen.getByRole("button", { name: "Quit WindowServer (391)" })
     ).toHaveAttribute("aria-disabled", "true");
@@ -357,7 +414,10 @@ describe("UsageAppsCard on the shared grouped table", () => {
     );
     expect(
       screen.getByRole("link", { name: /Google Chrome Helper \(Renderer\)/ })
-    ).toHaveAttribute("href", "/dashboard/processes/11/11000");
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/dashboard\/processes\/11\/11000(\?|$)/)
+    );
     expect(
       screen.queryByRole("link", { name: /^Google Chrome Helper$/ })
     ).toBeNull();
@@ -381,7 +441,7 @@ describe("UsageAppsCard on the shared grouped table", () => {
 
   it("lists ten apps, then Show all", async () => {
     const many = Array.from({ length: 12 }, (_, i) =>
-      app(`App ${i + 1}`, [100 + i], [proc(100 + i, `App ${i + 1}`, 120 - i)])
+      app(`App ${i + 1}`, [proc(100 + i, `App ${i + 1}`, 120 - i)])
     );
     const { user } = render((from, to) => ({
       ...full(from, to),

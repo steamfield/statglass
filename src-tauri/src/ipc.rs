@@ -568,10 +568,6 @@ pub struct AppUsage {
     pub write_bytes: f64,
     pub energy_j: f64,
     pub avg_w: f64,
-    /// The processes that selecting or quitting the app's row acts on: its running main
-    /// executable alone (quitting it quits its helpers), or, for a group without one
-    /// (several `node` processes), every running process. Empty when none is running.
-    pub quit_pids: Vec<i32>,
     /// Ordered like the apps.
     pub processes: Vec<ProcessUsage>,
 }

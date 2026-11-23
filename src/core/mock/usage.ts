@@ -3,8 +3,7 @@
  * processes grouped by app, each holding its current rates over the covered
  * span, plus two that exited during it. Mirrors `usage.rs` in the engine and
  * the app shell: children are kept above a floor and apps above a looser one,
- * totals count every process, an app row's Quit goes to its running main
- * executable or else every running process, exited processes carry no refusal,
+ * totals count every process, exited processes carry no refusal,
  * and `other` is the host's series less the apps' totals, clamped at 0.
  */
 import type {
@@ -133,7 +132,6 @@ type Proc = Omit<
 /** One mock process over the span: what it used, and for how much of it. */
 interface Row {
   app: string;
-  main: boolean;
   share: number;
   proc: Proc;
   watts: number;
@@ -187,7 +185,6 @@ export function mockUsageByApp({
   const rows: Row[] = [];
   const add = (
     app: string,
-    main: boolean,
     share: number,
     p: {
       pid: number;
@@ -207,7 +204,6 @@ export function mockUsageByApp({
     const energy_j = p.watts * s;
     rows.push({
       app,
-      main,
       share,
       watts: p.watts * share,
       memBytes: p.memBytes,
@@ -233,7 +229,7 @@ export function mockUsageByApp({
   for (const p of processes) {
     if (user !== null && p.user !== user) continue;
     const app = APP_OF[p.name] ?? p.name;
-    add(app, app === p.name && BUNDLED.has(app), 1, {
+    add(app, 1, {
       pid: p.pid,
       start_time_us: p.start_time_us,
       name: p.name,
@@ -248,7 +244,7 @@ export function mockUsageByApp({
     });
   }
   for (const [app, name, pid, watts, cpu, mib, writeBps] of exited) {
-    add(app, false, 1 / 3, {
+    add(app, 1 / 3, {
       pid,
       start_time_us: 1_759_500_000_000_000 + pid * 1_000_000,
       name,
@@ -336,7 +332,6 @@ export function mockUsageByApp({
       .sort((a, b) => keyOf(by, b) - keyOf(by, a) || a.pid - b.pid);
     // A row that used none of the key says nothing about it (`usage.rs`).
     if (keyOf(by, usage) <= 0) continue;
-    const mains = running.filter((r) => r.main);
     apps.push({
       name,
       ...usage,
@@ -345,8 +340,6 @@ export function mockUsageByApp({
           ? Math.round(memNow + (memThen - memNow) / 3)
           : memNow,
       avg_w: secs > 0 ? usage.energy_j / secs : 0,
-      // Every running main, else every running member (`app_quit.rs`).
-      quit_pids: (mains.length > 0 ? mains : running).map((r) => r.proc.pid),
       processes: processesKept,
     });
   }

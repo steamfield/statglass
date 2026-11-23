@@ -1,23 +1,15 @@
 import { formatPercent } from "@core/format";
-import type { UsageRow } from "@core/usage-rows";
-import type { Table } from "@tanstack/react-table";
 import type { ReactNode } from "react";
-import {
-  columnHelper,
-  DataTableHead,
-  MeterCell,
-  type TableFeatures,
-} from "~/components/data-table";
+import { MeterCell } from "~/components/data-table";
 import { InlineMessage } from "~/components/inline-message";
-import { ProcessSelectionHead } from "~/components/process-selection";
 import { SectionCard } from "~/components/section-card";
-import { TableCell, TableHead, TableRow } from "~/components/ui/table";
+import { TableCell, TableRow } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import type { Accent } from "~/widgets/lib/accent";
 
 /**
- * Parts of the per-app tables: the Network Apps card and the Power
- * page's energy table (D-093), which follows it.
+ * Parts of the per-app tables: the card shell, notes, remainder rows and
+ * the share meter the usage, recorded and Network app tables share.
  */
 
 /** Cell padding and size shared by the per-app tables. */
@@ -102,6 +94,7 @@ export function OtherAppsRow({
   indent = false,
   children,
   selectionCell,
+  cellClassName = APP_CELL,
 }: {
   name: string;
   system: boolean;
@@ -109,6 +102,8 @@ export function OtherAppsRow({
   indent?: boolean;
   children: ReactNode;
   selectionCell?: ReactNode;
+  /** The name cell's size and padding, to match the rows above. */
+  cellClassName?: string;
 }) {
   return (
     <TableRow
@@ -119,7 +114,7 @@ export function OtherAppsRow({
       )}
     >
       {selectionCell}
-      <TableCell className={APP_CELL}>
+      <TableCell className={cellClassName}>
         <span className="inline-flex items-center gap-2">
           {indent && <span aria-hidden className="-ml-1 inline-block size-4" />}
           {system ? (
@@ -139,12 +134,15 @@ export function OtherAppsRow({
 export function ShareCell({
   share,
   muted,
+  cellClassName = APP_CELL,
 }: {
   share: number | null;
   muted: boolean;
+  /** Size and padding, to match the rows around it. */
+  cellClassName?: string;
 }) {
   return (
-    <TableCell className={cn(APP_CELL, "text-right")}>
+    <TableCell className={cn(cellClassName, "text-right")}>
       <MeterCell
         fraction={share === null ? null : share / 100}
         fill={muted ? "var(--color-fg-faint)" : "var(--a)"}
@@ -152,54 +150,5 @@ export function ShareCell({
         {formatPercent(share, { decimals: 1 })}
       </MeterCell>
     </TableCell>
-  );
-}
-
-const usageHelper = columnHelper<UsageRow>();
-export const usageRowId = (row: UsageRow) => row.app.name;
-
-/** The app, then the page's figures; Rust ranks the rows, so none sorts. */
-export function usageColumns(
-  columns: readonly { label: string; ranked?: boolean }[]
-) {
-  return usageHelper.columns([
-    usageHelper.display({
-      id: "app",
-      header: "App",
-      meta: { align: "left" },
-    }),
-    ...columns.map((column) =>
-      usageHelper.display({
-        id: column.label,
-        header: column.label,
-        meta: {
-          align: "right",
-          ...(column.ranked ? { ranked: true } : {}),
-        },
-      })
-    ),
-  ]);
-}
-
-export function UsageHead({
-  table,
-  share,
-}: {
-  table: Table<TableFeatures, UsageRow>;
-  share: boolean;
-}) {
-  return (
-    <DataTableHead
-      table={table}
-      leading={<ProcessSelectionHead />}
-      trailing={
-        <>
-          {share && <TableHead className="text-right">Share</TableHead>}
-          <TableHead className="w-[132px]">
-            <span className="sr-only">Actions</span>
-          </TableHead>
-        </>
-      }
-    />
   );
 }
