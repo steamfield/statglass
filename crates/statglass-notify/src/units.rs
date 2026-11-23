@@ -1,12 +1,168 @@
-//! Metric values in the user's units, for rule sentences and alert text.
+//! Metric values in the user's units, for rule sentences and alert text. The rules
+//! agree with the client's formatters (`src/core/format`) on every alertable metric.
 
-use statglass_schema::settings::UnitSettings;
+use statglass_schema::settings::{MemoryUnit, TemperatureUnit, UnitSettings};
+use statglass_schema::{CATALOG, Unit};
+
+/// What a value that was not measured (NaN or infinite) reads as, as on the client.
+const MISSING: &str = "\u{2014}";
+const BYTES_PER_GB: f64 = 1e9;
+const BYTES_PER_GIB: f64 = 1_073_741_824.0;
+/// Watts read with one decimal below this, whole above it.
+const WATTS_DECIMAL_BELOW: f64 = 10.0;
+/// Metrics whose byte values follow the memory unit setting; every other byte metric
+/// (disk space) is decimal GB, as Finder shows it.
+const MEMORY_PREFIX: &str = "mem.";
 
 /// `value` of `metric`, given in the catalog unit, as the user reads it: percent as a
 /// whole number ("84%"), watts with one decimal under 10 and none from 10 ("7.5 W",
-/// "72 W"), rpm with thousands separators ("4,000 rpm"), Celsius in the temperature
-/// setting as whole degrees ("95 °C", "203 °F"), and bytes in GB, or in GiB for `mem.*`
-/// when the memory setting is binary, with at most one decimal ("20 GB", "3.7 GiB").
-pub fn format_value(_metric: &str, _value: f32, _units: &UnitSettings) -> String {
-    String::new()
+/// "72 W"), rpm and pages per second with thousands separators ("4,000 rpm",
+/// "1,000 pages/s"), Celsius in the temperature setting as whole degrees ("95 °C",
+/// "203 °F"), and bytes in GB, or in GiB for `mem.*` when the memory setting is binary,
+/// with at most one decimal ("20 GB", "3.7 GiB"). Any other unit, and a metric this
+/// build does not know, reads as a whole number with thousands separators. Halves round
+/// away from zero, as the client rounds them; a value that is not finite reads as "—".
+pub fn format_value(metric: &str, value: f32, units: &UnitSettings) -> String {
+    if !value.is_finite() {
+        return MISSING.to_owned();
+    }
+    let value = f64::from(value);
+    match catalog_unit(metric) {
+        Some(Unit::Percent) => format!("{}%", whole(value)),
+        Some(Unit::Watts) => format_watts(value),
+        Some(Unit::Rpm) => format!("{} rpm", grouped(value)),
+        Some(Unit::PagesPerSec) => format!("{} pages/s", grouped(value)),
+        Some(Unit::Celsius) => format_temperature(value, units.temperature),
+        Some(Unit::Bytes) => format_bytes(value, binary_bytes(metric, units)),
+        _ => grouped(value),
+    }
+}
+
+/// The catalog unit of `metric`, `None` when this build does not know the metric.
+fn catalog_unit(metric: &str) -> Option<Unit> {
+    CATALOG
+        .iter()
+        .find(|def| def.id.as_str() == metric)
+        .map(|def| def.unit)
+}
+
+fn format_watts(watts: f64) -> String {
+    if watts < WATTS_DECIMAL_BELOW {
+        format!("{} W", one_decimal(watts))
+    } else {
+        format!("{} W", whole(watts))
+    }
+}
+
+fn format_temperature(celsius: f64, unit: TemperatureUnit) -> String {
+    match unit {
+        TemperatureUnit::Celsius => format!("{} °C", whole(celsius)),
+        TemperatureUnit::Fahrenheit => format!("{} °F", whole(celsius * 9.0 / 5.0 + 32.0)),
+    }
+}
+
+/// Whether `metric`'s bytes read in GiB rather than GB.
+fn binary_bytes(metric: &str, units: &UnitSettings) -> bool {
+    metric.starts_with(MEMORY_PREFIX) && units.memory == MemoryUnit::Binary
+}
+
+fn format_bytes(bytes: f64, binary: bool) -> String {
+    if binary {
+        format!("{} GiB", trimmed_decimal(bytes / BYTES_PER_GIB))
+    } else {
+        format!("{} GB", trimmed_decimal(bytes / BYTES_PER_GB))
+    }
+}
+
+/// `value` with one decimal, the decimal left out when it is zero ("20", "3.7").
+fn trimmed_decimal(value: f64) -> String {
+    let text = one_decimal(value);
+    match text.strip_suffix(".0") {
+        Some(whole) => whole.to_owned(),
+        None => text,
+    }
+}
+
+/// `value` rounded to a whole number with a comma between each group of three digits
+/// ("12,500").
+fn grouped(value: f64) -> String {
+    let rounded = whole(value);
+    let (sign, digits) = match rounded.strip_prefix('-') {
+        Some(digits) => ("-", digits),
+        None => ("", rounded.as_str()),
+    };
+    let mut out = String::with_capacity(rounded.len() + digits.len() / 3);
+    out.push_str(sign);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+/// `value` rounded to a whole number, halves away from zero ("81" for 80.5).
+fn whole(value: f64) -> String {
+    format!("{:.0}", without_negative_zero(value.round()))
+}
+
+/// `value` rounded to one decimal, halves away from zero ("7.3" for 7.25).
+fn one_decimal(value: f64) -> String {
+    format!(
+        "{:.1}",
+        without_negative_zero((value * 10.0).round() / 10.0)
+    )
+}
+
+/// `rounded`, with -0 (a small negative value rounded) as 0 so it never prints "-0".
+fn without_negative_zero(rounded: f64) -> f64 {
+    if rounded == 0.0 { 0.0 } else { rounded }
+}
+
+#[cfg(test)]
+mod tests {
+    use statglass_schema::settings::NetworkUnit;
+
+    use super::*;
+
+    const CELSIUS_DECIMAL: UnitSettings = UnitSettings {
+        temperature: TemperatureUnit::Celsius,
+        network: NetworkUnit::BytesPerSec,
+        memory: MemoryUnit::Decimal,
+    };
+
+    const CELSIUS_BINARY: UnitSettings = UnitSettings {
+        memory: MemoryUnit::Binary,
+        ..CELSIUS_DECIMAL
+    };
+
+    /// Exact halves round away from zero, as the client's formatters round them.
+    #[test]
+    fn halves_round_away_from_zero() {
+        let v = |metric, value| format_value(metric, value, &CELSIUS_DECIMAL);
+        assert_eq!(v("mem.pressure", 80.5), "81%");
+        assert_eq!(v("power.system", 72.5), "73 W");
+        assert_eq!(v("power.system", 7.25), "7.3 W");
+        assert_eq!(v("fan.rpm", 4000.5), "4,001 rpm");
+        assert_eq!(v("thermal.hottest", 94.5), "95 °C");
+        assert_eq!(
+            format_value("mem.swap_used", 2.25 * 1_073_741_824.0, &CELSIUS_BINARY),
+            "2.3 GiB"
+        );
+    }
+
+    #[test]
+    fn a_value_that_is_not_finite_reads_as_missing() {
+        let v = |metric, value| format_value(metric, value, &CELSIUS_DECIMAL);
+        assert_eq!(v("mem.pressure", f32::NAN), MISSING);
+        assert_eq!(v("disk.free", f32::INFINITY), MISSING);
+        assert_eq!(v("fan.rpm", f32::NEG_INFINITY), MISSING);
+    }
+
+    #[test]
+    fn a_small_negative_value_rounds_to_zero_without_a_sign() {
+        assert_eq!(format_value("mem.pressure", -0.4, &CELSIUS_DECIMAL), "0%");
+        assert_eq!(format_value("fan.rpm", -0.4, &CELSIUS_DECIMAL), "0 rpm");
+    }
 }
