@@ -87,12 +87,18 @@ export class MockAlertDestinations {
     const saved = structuredClone(destination);
     const known = rows.some((row) => row.destination.id === saved.id);
     if (known) {
-      // Replacing keeps the row's place and its last delivery.
+      // Replacing keeps the row's place; the last delivery stays only while
+      // the address is the same, as Rust's `AlertsService::save` does.
       return ok(
         this.commit(
           rows.map((row) =>
             row.destination.id === saved.id
-              ? { ...row, destination: saved }
+              ? {
+                  destination: saved,
+                  last: sameAddress(row.destination.kind, saved.kind)
+                    ? row.last
+                    : null,
+                }
               : row
           )
         )
@@ -113,7 +119,11 @@ export class MockAlertDestinations {
       }
       return ok(this.commit(rows.filter((row) => row.destination.id !== id)));
     };
-  /** As `alert_destination_test`: validates, sends nothing real, records nothing. */
+  /**
+   * As `alert_destination_test`: validates and sends nothing real. A test
+   * never becomes a destination's `last` delivery, saved or not, because
+   * Rust's `dispatch::send_test` records nothing.
+   */
   readonly testAlertDestination: MockTransport["testAlertDestination"] = async (
     destination
   ) => {
@@ -163,6 +173,21 @@ function kindProblem(kind: DestinationKind): string | null {
   if (!validNtfyServer(kind.server)) return MESSAGES.url;
   if (!validTopic(kind.topic)) return MESSAGES.topic;
   return validToken(kind.token) ? null : MESSAGES.token;
+}
+
+/**
+ * Whether two kinds send to the same place: the same kind with the same
+ * server, topic and token, or the same URL. A rename or an enabled toggle
+ * leaves the kind alone, so it keeps the last delivery.
+ */
+function sameAddress(a: DestinationKind, b: DestinationKind): boolean {
+  if (a.type === "webhook") return b.type === "webhook" && a.url === b.url;
+  return (
+    b.type === "ntfy" &&
+    a.server === b.server &&
+    a.topic === b.topic &&
+    a.token === b.token
+  );
 }
 
 /** 1 to `max_name_chars` characters once Rust's `str::trim` has run. */
