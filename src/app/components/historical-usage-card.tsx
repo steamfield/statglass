@@ -1,10 +1,15 @@
+/**
+ * The recorded apps card for a fixed range: the range and coverage notes,
+ * the previous-interval comparison, and the recorded apps table, whose rows
+ * select and quit what is running now under the same app name or identity.
+ */
 import type { TimeRange } from "@core/brush";
 import { recordedDate } from "@core/chart-range";
 import { formatSpan } from "@core/format";
 import type {
   HistoricalUsageApp,
-  HistoricalUsageFigures,
   HistoricalUsageMetric,
+  HistoricalUsageProcess,
   HistoricalUsageReply,
 } from "@core/generated/bindings";
 import { USAGE_HISTORY_MAX_RANGE_MS } from "@core/generated/bindings";
@@ -12,41 +17,39 @@ import {
   HISTORICAL_COLUMNS,
   HISTORICAL_LABELS,
   historicalCoverage,
-  historicalValue,
 } from "@core/historical-usage";
 import { historyKeys } from "@core/query-keys";
 import { remoteQueryText } from "@core/remote-errors";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppsNote, AppsShell, UnrecordedRange } from "~/components/app-table";
+import { type ColumnSort, FullWidthRow } from "~/components/data-table";
 import {
-  APP_CELL,
-  AppsNote,
-  AppsShell,
-  UnrecordedRange,
-} from "~/components/app-table";
+  RecordedProcessLoader,
+  RecordedProcessStatus,
+} from "~/components/historical-usage-processes";
 import {
-  type ColumnSort,
-  columnHelper,
-  DataTable,
-  DataTableHead,
-  gap,
-  useColumnSort,
-  useDataTable,
-} from "~/components/data-table";
-import { HistoricalUsageCells } from "~/components/historical-usage-cells";
-import { HistoricalUsageProcesses } from "~/components/historical-usage-processes";
+  type RecordedMembers,
+  recordedAppKey,
+  recordedColumns,
+  recordedGroupRows,
+} from "~/components/historical-usage-rows";
+import { ProcessGroupTable } from "~/components/process-group-table";
 import { Button } from "~/components/ui/button";
-import { Table, TableCell, TableHeader, TableRow } from "~/components/ui/table";
+import { useCanSignal, useEdition } from "~/hooks/use-edition";
 import { useHistoricalUsage } from "~/hooks/use-historical-usage";
+import { useRunningApps } from "~/hooks/use-running-apps";
 import { useUnits } from "~/hooks/use-units";
-import { cn } from "~/lib/utils";
 import { useHostId } from "~/stores/host-store";
-import { InitialChip } from "~/widgets/initial-chip";
 import type { Accent } from "~/widgets/lib/accent";
 
+/** The recorded ranking: a metric and its direction. */
 export type HistoricalUsageSort = ColumnSort<HistoricalUsageMetric>;
 
+/**
+ * Recorded app usage over `range`, ranked by Rust by the sorted metric.
+ * Controlled when `sort` is given; `compare` adds the preceding equal interval.
+ */
 export function HistoricalUsageCard({
   range,
   by,
@@ -84,6 +87,9 @@ export function HistoricalUsageCard({
   });
   const host = useHostId();
   const client = useQueryClient();
+  // Whether rows are selectable is known once the edition answers; the table
+  // waits for it rather than gain its checkbox column a moment later.
+  const edition = useEdition();
   const change = (next: HistoricalUsageSort) => {
     setLocalSort(next);
     onSortChange?.(next);
@@ -145,7 +151,7 @@ export function HistoricalUsageCard({
             Retry
           </Button>
         </AppsNote>
-      ) : !query.data || !range ? (
+      ) : !query.data || !range || edition === null ? (
         <AppsNote>
           <span role="status">Loading recorded apps…</span>
         </AppsNote>
@@ -264,92 +270,116 @@ function HistoricalUsageTable({
   onSort: (sort: HistoricalUsageSort) => void;
   compare: boolean;
 }) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const host = useHostId();
   const units = useUnits();
+  const running = useRunningApps();
+  const selectable = useCanSignal();
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const members = useRecordedMembers();
+  const spanMs = range.toMs - range.fromMs;
   const apps = useMemo(
     () => (sort.dir === "asc" ? [...data.apps].reverse() : data.apps),
     [data.apps, sort.dir]
   );
-  const { sorting, onSortingChange } = useColumnSort(sort, onSort, columns);
-  const definitions = useMemo(
-    () =>
-      helper.columns([
-        helper.accessor("name", {
-          header: "App",
-          enableSorting: false,
-          meta: { align: "left" },
-        }),
-        ...columns.map((metric) =>
-          helper.accessor((app) => gap(historicalValue(app.figures, metric)), {
-            id: metric,
-            header: HISTORICAL_LABELS[metric],
-            meta: { align: "right" },
-          })
-        ),
-      ]),
-    [columns]
+  // Memoised on the reply, the loaded pages and the running map, which keeps
+  // its identity while no process starts or exits: no re-render each second.
+  const rows = useMemo(
+    () => recordedGroupRows(apps, members.loaded, running),
+    [apps, members.loaded, running]
   );
-  const { table, rows } = useDataTable({
-    data: apps,
-    columns: definitions,
-    getRowId: appName,
-    manualSorting: true,
-    sorting,
-    onSortingChange,
-  });
-  const prior = new Map(previous?.apps.map((app) => [app.name, app.figures]));
-  const toggle = (name: string) =>
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (!next.delete(name)) next.add(name);
-      return next;
-    });
-  if (rows.length === 0)
+  const groupColumns = useMemo(
+    () =>
+      recordedColumns(columns, {
+        units: units.bytes,
+        spanMs,
+        compare,
+        previous: new Map(previous?.apps.map((app) => [app.name, app.figures])),
+      }),
+    [columns, units.bytes, spanMs, compare, previous]
+  );
+  const tableSort = useMemo(
+    () => ({
+      value: sort,
+      onChange: (next: ColumnSort<string>) => {
+        const by = columns.find((metric) => metric === next.by);
+        if (by) onSort({ by, dir: next.dir });
+      },
+      client: false,
+      nameSortable: false,
+    }),
+    [sort, onSort, columns]
+  );
+  const expansion = useMemo(() => ({ open, onChange: setOpen }), [open]);
+  const afterMembers = useCallback(
+    (app: HistoricalUsageApp, colSpan: number) => (
+      <RecordedProcessStatus
+        range={range}
+        by={sort.by}
+        appName={app.name}
+        colSpan={colSpan}
+        selectable={selectable}
+      />
+    ),
+    [range, sort.by, selectable]
+  );
+  if (apps.length === 0)
     return (
       <UnrecordedRange>
         Attribution was not recorded for this interval.
       </UnrecordedRange>
     );
   return (
-    <div className="overflow-x-auto">
-      <Table aria-label="Recorded apps in this range">
-        <TableHeader>
-          <DataTableHead table={table} />
-        </TableHeader>
-        <DataTable
-          table={table}
-          rows={rows}
-          renderRow={({ original: app }) => (
-            <HistoricalAppRows
-              key={app.name}
-              name={app.name}
-              figures={app.figures}
-              details={app.process_details_available}
-              previous={prior.get(app.name)}
-              compare={compare}
-              columns={columns}
-              range={range}
-              by={sort.by}
-              units={units.bytes}
-              open={expanded.has(app.name)}
-              toggle={() => toggle(app.name)}
-            />
-          )}
-          footnote={
-            <>
-              Up to ten recorded apps for{" "}
-              {HISTORICAL_LABELS[sort.by].toLowerCase()}; reversing the order
-              keeps those same apps. CPU power estimates CPU energy only.
-            </>
-          }
-        />
-      </Table>
-    </div>
+    <>
+      {apps
+        .filter((app) => open.has(recordedAppKey(app)))
+        .map((app) => (
+          <RecordedProcessLoader
+            key={app.name}
+            range={range}
+            by={sort.by}
+            appName={app.name}
+            onMembers={members.report}
+          />
+        ))}
+      <ProcessGroupTable
+        rows={rows}
+        columns={groupColumns}
+        nameHeader="App"
+        ariaLabel="Recorded apps in this range"
+        sort={tableSort}
+        expansion={expansion}
+        selectable={selectable}
+        scopeKey={`${host}:${range.fromMs}:${range.toMs}`}
+        afterMembers={afterMembers}
+        after={(colSpan) => (
+          <FullWidthRow colSpan={colSpan} tone="footnote">
+            Up to ten recorded apps for{" "}
+            {HISTORICAL_LABELS[sort.by].toLowerCase()}; reversing the order
+            keeps those same apps. CPU power estimates CPU energy only.
+          </FullWidthRow>
+        )}
+        empty={null}
+      />
+    </>
   );
 }
 
-const helper = columnHelper<HistoricalUsageApp>();
-const appName = (app: HistoricalUsageApp) => app.name;
+/**
+ * The recorded processes each open app's loader has reported, by app name.
+ * `report` keeps the map when nothing changed, so a loader's effect costs no
+ * render.
+ */
+function useRecordedMembers() {
+  const [loaded, setLoaded] = useState<RecordedMembers>(() => new Map());
+  const report = useCallback(
+    (app: string, list: readonly HistoricalUsageProcess[]) =>
+      setLoaded((current) =>
+        current.get(app) === list ? current : new Map(current).set(app, list)
+      ),
+    []
+  );
+  return { loaded, report };
+}
 
 function visibleSort(
   sort: HistoricalUsageSort,
@@ -358,81 +388,6 @@ function visibleSort(
 ): HistoricalUsageSort {
   if (columns.includes(sort.by)) return sort;
   return { by: columns.includes(by) ? by : (columns[0] ?? by), dir: "desc" };
-}
-
-function HistoricalAppRows({
-  name,
-  figures,
-  details,
-  previous,
-  compare,
-  columns,
-  range,
-  by,
-  units,
-  open,
-  toggle,
-}: {
-  name: string;
-  figures: HistoricalUsageFigures;
-  details: boolean;
-  previous: HistoricalUsageFigures | undefined;
-  compare: boolean;
-  columns: readonly HistoricalUsageMetric[];
-  range: TimeRange;
-  by: HistoricalUsageMetric;
-  units: ReturnType<typeof useUnits>["bytes"];
-  open: boolean;
-  toggle: () => void;
-}) {
-  return (
-    <>
-      <TableRow className="text-fg-subtle">
-        <TableCell className={APP_CELL}>
-          <span className="inline-flex items-center gap-2 text-foreground">
-            {details ? (
-              <button
-                type="button"
-                aria-expanded={open}
-                aria-label={`${open ? "Hide" : "Show"} ${name} recorded processes`}
-                onClick={toggle}
-                className="-ml-1 grid size-4 place-items-center rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <ChevronRight
-                  aria-hidden
-                  className={cn(
-                    "size-3.5 transition-transform duration-(--motion-fast)",
-                    open && "rotate-90"
-                  )}
-                />
-              </button>
-            ) : (
-              <span aria-hidden className="-ml-1 inline-block size-4" />
-            )}
-            <InitialChip text={name} />
-            <span>{name}</span>
-          </span>
-        </TableCell>
-        <HistoricalUsageCells
-          figures={figures}
-          previous={previous}
-          compare={compare}
-          columns={columns}
-          units={units}
-          spanMs={range.toMs - range.fromMs}
-        />
-      </TableRow>
-      {open && (
-        <HistoricalUsageProcesses
-          range={range}
-          appName={name}
-          by={by}
-          columns={columns}
-          units={units}
-        />
-      )}
-    </>
-  );
 }
 
 function comparisonRange(

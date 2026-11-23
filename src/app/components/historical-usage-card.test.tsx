@@ -4,7 +4,7 @@ import { FULL_TABLE } from "@core/process-interest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
-import { useState } from "react";
+import { Profiler, useState } from "react";
 import {
   HistoricalUsageCard,
   type HistoricalUsageSort,
@@ -183,20 +183,20 @@ it("loads process instances lazily and refresh discards old continuation pages",
   await screen.findByText("Compiler");
   expect(processes).not.toHaveBeenCalled();
   await user.click(
-    screen.getByRole("button", { name: "Show Compiler recorded processes" })
+    screen.getByRole("button", { name: "Show Compiler processes" })
   );
-  await screen.findByText("PID 4099");
-  expect(screen.queryByText("PID 4100")).not.toBeInTheDocument();
+  await screen.findByText("4099");
+  expect(screen.queryByText("4100")).not.toBeInTheDocument();
   await user.click(
     screen.getByRole("button", { name: "Load more recorded processes" })
   );
-  await screen.findByText("PID 4124");
+  await screen.findByText("4124");
   expect(processes.mock.calls[1]?.[0].cursor).not.toBeNull();
   await user.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(processes).toHaveBeenCalledTimes(3));
   expect(processes.mock.calls[2]?.[0].cursor).toBeNull();
-  await screen.findByText("PID 4099");
-  expect(screen.queryByText("PID 4124")).not.toBeInTheDocument();
+  await screen.findByText("4099");
+  expect(screen.queryByText("4124")).not.toBeInTheDocument();
 });
 
 it("keeps a fixed answer cached across live ticks and exposes partial resource coverage to keyboard users", async () => {
@@ -322,9 +322,9 @@ it("restarts a stale process continuation instead of retaining earlier pages", a
   const { user, processes } = setup();
   await screen.findByText("Compiler");
   await user.click(
-    screen.getByRole("button", { name: "Show Compiler recorded processes" })
+    screen.getByRole("button", { name: "Show Compiler processes" })
   );
-  await screen.findByText("PID 4099");
+  await screen.findByText("4099");
   processes.mockResolvedValueOnce({
     status: "error",
     error: {
@@ -337,9 +337,9 @@ it("restarts a stale process continuation instead of retaining earlier pages", a
   );
   await screen.findByRole("alert");
   await user.click(screen.getByRole("button", { name: "Reload processes" }));
-  await screen.findByText("PID 4099");
+  await screen.findByText("4099");
   expect(processes.mock.calls.at(-1)?.[0].cursor).toBeNull();
-  expect(screen.queryByText("PID 4124")).not.toBeInTheDocument();
+  expect(screen.queryByText("4124")).not.toBeInTheDocument();
 });
 
 it("shows unrecorded history without inventing empty zero-valued app rows", async () => {
@@ -428,7 +428,7 @@ describe("recorded rows act on what is running now", () => {
     const { transport, user, processes } = setup();
     await screen.findByText("Compiler");
     await user.click(
-      screen.getByRole("button", { name: "Show Compiler recorded processes" })
+      screen.getByRole("button", { name: "Show Compiler processes" })
     );
     await screen.findByText(/4000/);
     const page = await processes.mock.results[0]?.value;
@@ -452,6 +452,87 @@ describe("recorded rows act on what is running now", () => {
     });
     expect(exited).toBeDisabled();
     expect(exited).toHaveAccessibleDescription("Not running");
+  });
+
+  /** A live process standing for a recorded one: same pid and start time. */
+  const runningAs = (p: { pid: number; start_time_us: number }) =>
+    liveProcess({
+      pid: p.pid,
+      start_time_us: p.start_time_us,
+      name: "Compiler",
+      app: "Compiler",
+      app_quit: false,
+    });
+
+  it("adds processes from Load more to Command-A", async () => {
+    const { transport, user, processes } = setup();
+    await screen.findByText("Compiler");
+    await user.click(
+      screen.getByRole("button", { name: "Show Compiler processes" })
+    );
+    await screen.findByText("4099");
+    const request = processes.mock.calls[0]?.[0];
+    const first = await processes.mock.results[0]?.value;
+    if (!request || first?.status !== "ok") throw new Error("no first page");
+    // Read the next page ahead, so a process from it runs before it lists.
+    const second = await transport.queryUsageProcesses({
+      ...request,
+      cursor: first.data.next_cursor,
+    });
+    const [listed] = first.data.processes;
+    const later = second.status === "ok" ? second.data.processes[0] : null;
+    if (!listed || !later) throw new Error("no recorded processes");
+    await running(transport, [
+      compilerMain,
+      runningAs(listed),
+      runningAs(later),
+    ]);
+    await user.click(screen.getByRole("checkbox", { name: "Select Compiler" }));
+    await user.keyboard("{Meta>}a{/Meta}");
+    // Compiler's quit target and the one listed process that runs.
+    expect(screen.getByText("2 selected")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Load more recorded processes" })
+    );
+    await screen.findByText(String(later.pid));
+    // Load more took focus; Command-A works from a row.
+    act(() =>
+      screen.getByRole("checkbox", { name: "Select Compiler" }).focus()
+    );
+    await user.keyboard("{Meta>}a{/Meta}");
+    expect(screen.getByText("3 selected")).toBeVisible();
+  });
+
+  it("does not re-render on a live tick that starts or ends no process", async () => {
+    const transport = createMockTransport({ now: () => NOW, autoTick: false });
+    let commits = 0;
+    const { user } = renderWithProviders(
+      <Profiler id="recorded" onRender={() => commits++}>
+        <HistoricalUsageCard range={RANGE} by="cpu" />
+      </Profiler>,
+      { transport }
+    );
+    await screen.findByText("Compiler");
+    await user.click(
+      screen.getByRole("button", { name: "Show Compiler processes" })
+    );
+    await screen.findByText("4099");
+    await running(transport, [compilerMain, compilerHelper]);
+    await screen.findByRole("checkbox", { name: "Select Compiler" });
+    for (let tick = 1; tick <= 3; tick++) {
+      const before = commits;
+      act(() =>
+        transport.push({
+          kind: "processes",
+          ts_ms: NOW + tick * 1000,
+          rows: [
+            { ...compilerMain, cpu_pct: tick * 10 },
+            { ...compilerHelper, cpu_pct: tick * 5 },
+          ],
+        })
+      );
+      expect(commits - before).toBe(0);
+    }
   });
 
   it("offers no selection where this build cannot quit", async () => {
