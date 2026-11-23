@@ -87,9 +87,6 @@ export function HistoricalUsageCard({
   });
   const host = useHostId();
   const client = useQueryClient();
-  // The table waits until selectability is known rather than gain its
-  // checkbox column a moment later.
-  const selectable = useCanSignalSettled();
   const change = (next: HistoricalUsageSort) => {
     setLocalSort(next);
     onSortChange?.(next);
@@ -151,7 +148,7 @@ export function HistoricalUsageCard({
             Retry
           </Button>
         </AppsNote>
-      ) : !query.data || !range || selectable === null ? (
+      ) : !query.data || !range ? (
         <AppsNote>
           <span role="status">Loading recorded apps…</span>
         </AppsNote>
@@ -196,7 +193,6 @@ export function HistoricalUsageCard({
             sort={sort}
             onSort={change}
             compare={compare}
-            selectable={selectable}
           />
         </>
       )}
@@ -262,7 +258,6 @@ function HistoricalUsageTable({
   sort,
   onSort,
   compare,
-  selectable,
 }: {
   data: HistoricalUsageReply;
   previous: HistoricalUsageReply | undefined;
@@ -271,11 +266,13 @@ function HistoricalUsageTable({
   sort: HistoricalUsageSort;
   onSort: (sort: HistoricalUsageSort) => void;
   compare: boolean;
-  selectable: boolean;
 }) {
   const host = useHostId();
   const units = useUnits();
   const running = useRunningApps();
+  // Null until known: the shared table renders nothing rather than gain its
+  // checkbox column a moment later.
+  const selectable = useCanSignalSettled();
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const members = useRecordedMembers();
   const spanMs = range.toMs - range.fromMs;
@@ -319,7 +316,7 @@ function HistoricalUsageTable({
         by={sort.by}
         appName={app.name}
         colSpan={colSpan}
-        selectable={selectable}
+        selectable={selectable === true}
       />
     ),
     [range, sort.by, selectable]

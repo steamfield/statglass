@@ -43,7 +43,8 @@ export const recordedAppKey = (app: Pick<HistoricalUsageApp, "name">) =>
  * quits the running processes of the same app name that Quit acts on; a
  * recorded process selects the live process with its pid and start time.
  * Rows with no running match offer nothing ("Not running"). `running` is
- * null where this view cannot quit or before the first live batch.
+ * null where this view cannot quit or before the first live batch; rows
+ * then offer nothing and give no reason, since none is known yet.
  */
 export function recordedGroupRows(
   apps: readonly HistoricalUsageApp[],
@@ -51,6 +52,7 @@ export function recordedGroupRows(
   running: RunningApps | null
 ): GroupRows<HistoricalUsageApp, HistoricalUsageProcess> {
   const match = (p: HistoricalUsageProcess) => runningTarget(running, p);
+  const reason = () => (running === null ? undefined : NOT_RUNNING);
   return {
     groups: apps,
     key: recordedAppKey,
@@ -59,7 +61,7 @@ export function recordedGroupRows(
     expandable: (app) => app.process_details_available,
     members: (app) => members.get(app.name) ?? NONE,
     targets: (app) => appQuitTargets(running, app.name),
-    unavailable: () => NOT_RUNNING,
+    unavailable: reason,
     memberKey: targetKey,
     memberName: (p) => p.name,
     memberPid: (p) => p.pid,
@@ -69,7 +71,7 @@ export function recordedGroupRows(
       const live = match(p);
       return live === null ? [] : [live];
     },
-    memberUnavailable: () => NOT_RUNNING,
+    memberUnavailable: reason,
     // Only a known running map can say a process has exited.
     memberMuted: (p) => running !== null && match(p) === null,
   };

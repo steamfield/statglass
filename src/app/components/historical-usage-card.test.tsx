@@ -536,6 +536,23 @@ describe("recorded rows act on what is running now", () => {
     }
   });
 
+  it("says nothing is running only once the running processes are known", async () => {
+    const { transport } = setup();
+    // Hold back the batch the host sends as soon as the interest registers.
+    vi.spyOn(transport, "setProcessInterest").mockReturnValue(
+      new Promise(() => undefined)
+    );
+    const browser = await screen.findByRole("checkbox", {
+      name: "Select Browser",
+    });
+    expect(browser).toBeDisabled();
+    expect(screen.queryByText("Not running")).toBeNull();
+    await running(transport, [compilerMain]);
+    expect(
+      screen.getByRole("checkbox", { name: "Select Browser" })
+    ).toHaveAccessibleDescription("Not running");
+  });
+
   it("names when each recorded process started, beside its pid", async () => {
     const { user, processes } = setup();
     await screen.findByText("Compiler");
