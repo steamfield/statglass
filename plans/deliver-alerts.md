@@ -312,13 +312,14 @@ Test cases:
 
 ### Phase 4: destinations on the page, and host offline
 
+Scaffold: ef45f6db
 Demo: in `bun run dev:fast` add an ntfy destination, press Send test, see "Delivered"; with the `mac-offline` scenario and the host rule on, an offline alert appears in Recent.
 Depends on: phase 2, phase 3
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src/app/routes/dashboard/alerts/_components/destinations-panel.tsx, src/app/routes/dashboard/alerts/_components/destination-row.tsx, src/app/routes/dashboard/alerts/_components/destination-dialog.tsx, tests/e2e/alert-destinations.spec.ts | | | opus | pending | | |
-| b | M | src-tauri/src/alerts/host_offline.rs, src-tauri/src/alerts/host_watch.rs | | | opus | pending | | |
+| a | M | src/app/routes/dashboard/alerts/_components/destinations-panel.tsx, src/app/routes/dashboard/alerts/_components/destination-row.tsx, src/app/routes/dashboard/alerts/_components/destination-dialog.tsx, src/core/mock/alert-destinations.ts, tests/e2e/alert-destinations.spec.ts | contracts, src/app/routes/dashboard/alerts/_components/rule-dialog.tsx | src/app/routes/dashboard/alerts/_components/destinations-panel.test.tsx, src/app/routes/dashboard/alerts/_components/destination-dialog.test.tsx | opus | running | deliver/alerts-4a | |
+| b | M | src-tauri/src/alerts/host_offline.rs, src-tauri/src/alerts/host_watch.rs, src-tauri/src/alerts/host_poll.rs | contracts, src-tauri/src/alerts/fire.rs | src-tauri/src/alerts/host_offline_tests.rs, src-tauri/src/alerts/host_watch_tests.rs | opus | running | deliver/alerts-4b | |
 
 Phase 4 scaffold (owned by no lane): `route.tsx` renders `<DestinationsPanel>` between Rules and Recent; a third built-in row "A saved host is offline for 5 minutes" in the rules panel (sub line "Checked while this Mac is awake and online", shown only when a host is saved); `AlertCause::HostOffline { host, name }` and `HostBack { host, name, offline_secs }` in the schema with their text in `statglass-notify` ("m1-linux is offline" / "Not reachable for 5 minutes"; "m1-linux is back" / "Was offline for 42 minutes") and their labels in `src/core/events.ts`; a 30 s poll task started from `AppState` that feeds remote statuses to the watch and passes its events to the store, the notifier and `AlertsService`; the tests named in the table.
 
@@ -358,6 +359,8 @@ Test cases:
 - Done when: `cargo test -p statglass host_offline` and `host_watch` pass, clippy and `make architecture-check` are clean.
 
 ## Log
+- A real delivery through `statglass_notify::deliver` to ntfy.sh on a random throwaway topic returned `Delivered { status: 200 }`, and ntfy's JSON endpoint returned the message intact (title, quotes, backslash, the middle dot, priority 4, tag warning).
+- Phase 4 scaffold ef45f6db (opus builder). Accepted: `AlertLimits` names the three built-in ids and `AlertRule::HOST_OFFLINE_AFTER_SECS` is the one five-minute constant; `RemoteManager::saved_statuses()`; `alerts/fire.rs` is the one place that says what happens when an alert fires (record, notify, deliver, publish), shared by engine alerts and the host-offline poll; `alertLabel(e)` gives the bare cause for the Alerts page while the Timeline keeps `eventLabel`; the destinations panel owns its dialog draft. To fix in lanes: the poll wakes every 30 s even with the rule off (lane 4/b makes it wait for a change instead); the mock keeps a destination's last delivery across an address change and never records a test delivery (lane 4/a aligns it with Rust).
 - Lane 3/b review (opus), six findings fixed: a delivery record no longer outlives an address change or lands on an edited destination; a bad file the user removed no longer blocks saves for the session; `load_error` is updated when the file is later moved; records are accepted in arrival order instead of by wall-clock time, which a clock step could freeze; the record-and-log decision moved into `AlertsService::deliver_to` and is tested; the two-lock order is documented. Confirmed sound: lock order, no file I/O under the read lock, a hand-edited invalid destination cannot reach curl, only local alerts are sent.
 - Phase 3 merged from `deliver/alerts-p3`; gate green on the landing branch (2,704 frontend tests, schema, notify, app and engine suites, bindings and architecture checks); tagged `alerts-phase-3`.
 - Phase 2 gate green (2,541 frontend tests; chromium e2e for alerts, shell screens, Timeline events and Overview activity, 24 passed) and tagged `alerts-phase-2`. The dark screenshot was compared with Settings: same panels, rows, type roles and switch placement. Left for the phase 4 scaffold: Recent lines repeat "Alert ·" before every entry, which is redundant on a page of alerts.
