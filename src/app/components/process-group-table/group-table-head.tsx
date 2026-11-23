@@ -20,22 +20,30 @@ function columnSortable<G, M>(column: GroupColumn<G, M>): boolean {
 
 const HEADER = "h-auto whitespace-nowrap border-border border-b";
 
-/** One column header; a button that sorts by it when the column is sortable. */
+/**
+ * One column header; a button that sorts by it when the column is sortable.
+ * The column the rows are ranked by shows its direction either way, so a
+ * Rust-ranked table names its order without a button that does nothing.
+ */
 function HeadCell({
   id,
   align,
+  current,
   sort,
   className,
   children,
 }: {
   id: string;
   align: "left" | "right";
+  /** The order the rows are in, sortable or not. */
+  current: ColumnSort<string> | undefined;
   /** Absent: the column does not sort. */
   sort: ClientSort | undefined;
   className: string | undefined;
   children: ReactNode;
 }) {
-  const dir = sort?.value.by === id ? sort.value.dir : null;
+  const dir = current?.by === id ? current.dir : null;
+  const arrow = dir && <span aria-hidden>{dir === "desc" ? " ↓" : " ↑"}</span>;
   const right = align === "right";
   const next = (): ColumnSort<string> => {
     if (dir) return { by: id, dir: dir === "desc" ? "asc" : "desc" };
@@ -63,10 +71,13 @@ function HeadCell({
           )}
         >
           {children}
-          {dir && <span aria-hidden>{dir === "desc" ? " ↓" : " ↑"}</span>}
+          {arrow}
         </button>
       ) : (
-        children
+        <>
+          {children}
+          {arrow}
+        </>
       )}
     </TableHead>
   );
@@ -88,6 +99,7 @@ export function GroupTableHead<G, M>({
         <HeadCell
           id={NAME_COLUMN}
           align="left"
+          current={sort?.value}
           sort={(sort?.nameSortable ?? true) ? sort : undefined}
           className={undefined}
         >
@@ -98,6 +110,7 @@ export function GroupTableHead<G, M>({
             key={c.id}
             id={c.id}
             align={c.align}
+            current={sort?.value}
             sort={columnSortable(c) ? sort : undefined}
             className={c.className}
           >
