@@ -1,23 +1,38 @@
 /**
  * Custom alert rules for the Alerts page (plan/rfc-alerts.md): rule
  * sentences and alert labels in the user's units, the metrics and series a
- * rule may watch, a new rule's defaults, threshold unit conversion and when
- * each rule last fired. Rust validates rules and owns the notification
- * wording; the sentences here match it for the same rule.
+ * rule may watch, a new rule's defaults and when each rule last fired. Rust
+ * validates rules and owns the notification wording; the sentences here
+ * match it for the same rule. Value text and threshold unit conversion live
+ * in `@core/alert-values`.
  */
-import type {
-  AlertCause,
-  AlertMetric,
-  AlertRule,
-  Event,
-  UnitSettings,
+import { formatAlertValue } from "@core/alert-values";
+import { displayUnits, formatPercent } from "@core/format";
+import {
+  ALERT_METRICS,
+  type AlertCause,
+  type AlertMetric,
+  type AlertRule,
+  type Cmp,
+  type Event,
+  type Labels,
+  type UnitSettings,
 } from "@core/generated/bindings";
+import { parseLabels } from "@core/series-key";
+import { THERMAL_LABEL } from "@core/thermal";
+
+// The rule dialog's tests import the conversions from here.
+export { thresholdFromDisplay, thresholdToDisplay } from "@core/alert-values";
 
 /** The "for" choices of the rule dialog, in seconds ("Right away" is 0). */
-export const FOR_CHOICES_SECS: readonly number[] = [];
+export const FOR_CHOICES_SECS: readonly number[] = [
+  0, 30, 60, 120, 300, 600, 1800,
+];
 
 /** The "then wait" (cooldown) choices of the rule dialog, in seconds. */
-export const COOLDOWN_CHOICES_SECS: readonly number[] = [];
+export const COOLDOWN_CHOICES_SECS: readonly number[] = [
+  60, 300, 900, 1800, 3600, 21_600, 86_400,
+];
 
 /** One series a rule may watch, or every series ("Any", no labels). */
 export interface SeriesChoice {
@@ -25,98 +40,171 @@ export interface SeriesChoice {
   labels: Record<string, string>;
 }
 
-/** A threshold in the unit the user reads it in. */
-export interface DisplayThreshold {
-  value: number;
-  unit: string;
+/** The cooldown a new rule starts with: 30 minutes. */
+const NEW_RULE_COOLDOWN_SECS = 1800;
+
+/** Durations below this read in seconds, longer ones in whole minutes. */
+const SECONDS_WORDING_BELOW = 120;
+
+const FAN_METRIC = "fan.rpm";
+const FAN_LABEL = "fan";
+
+/** What a rule sentence calls `metric`: its alert label, else its id. */
+function metricLabel(metric: string): string {
+  return ALERT_METRICS.find((m) => m.metric === metric)?.label ?? metric;
+}
+
+/** "30 s" under two minutes, whole minutes rounded down from there. */
+function formatHold(secs: number): string {
+  if (secs < SECONDS_WORDING_BELOW) return `${secs} s`;
+  return `${Math.floor(secs / 60)} min`;
+}
+
+/** "above" for gt and ge, "below" for lt and le. */
+function comparisonWord(op: Cmp): string {
+  return op === "gt" || op === "ge" ? "above" : "below";
+}
+
+/** "Fan speed (Fan 1)", or just "Memory pressure" for every series. */
+function seriesLabel(metric: string, labels: Labels): string {
+  const name = seriesName(metric, Object.fromEntries(labels));
+  const label = metricLabel(metric);
+  return name === null ? label : `${label} (${name})`;
+}
+
+/** The metric part of a display-form key: "fan.rpm" from "fan.rpm{fan=0}". */
+function metricOfKey(key: string): string {
+  const open = key.indexOf("{");
+  return open < 0 ? key : key.slice(0, open);
 }
 
 /**
  * A custom rule as one sentence, as Rust's `rule_summary` writes it:
  * "Memory pressure above 80% for 2 min", "Free disk space (/) below 20 GB".
+ * Throws for a built-in rule, which has no threshold to describe.
  */
-export function ruleSummary(_rule: AlertRule, _units: UnitSettings): string {
-  throw new Error("not implemented");
+export function ruleSummary(rule: AlertRule, units: UnitSettings): string {
+  if (!("threshold" in rule.when) || rule.when.threshold === undefined) {
+    throw new Error(
+      `ruleSummary: rule ${rule.id} is not a threshold rule; only custom rules have a summary`
+    );
+  }
+  const { series, op, value } = rule.when.threshold;
+  const shown = formatAlertValue(series.metric, value, displayUnits(units));
+  const hold = rule.for_secs > 0 ? ` for ${formatHold(rule.for_secs)}` : "";
+  return `${seriesLabel(series.metric, series.labels)} ${comparisonWord(op)} ${shown}${hold}`;
 }
 
 /**
  * What an alert's cause measured, in the user's units: "Memory pressure
- * 84%", "Fan speed (Fan 2) 5,200 rpm", "ffmpeg at 251% CPU". `null` units
- * take the display defaults (°F, GB), as `displayUnits` does.
+ * 84%", "Fan speed (Fan 2) 5,200 rpm", "ffmpeg at 251% CPU", "thermal
+ * state Serious". `null` units take the display defaults (°F, GB), as
+ * `displayUnits` does.
  */
 export function alertCauseLabel(
-  _cause: AlertCause,
-  _units: UnitSettings | null
+  cause: AlertCause,
+  units: UnitSettings | null
 ): string {
-  throw new Error("not implemented");
+  switch (cause.type) {
+    case "process_cpu":
+      return `${cause.process} at ${formatPercent(cause.cpu_pct)} CPU`;
+    case "thermal_state":
+      return `thermal state ${THERMAL_LABEL[cause.state]}`;
+    case "threshold": {
+      const shown = formatAlertValue(
+        cause.metric,
+        cause.value,
+        displayUnits(units)
+      );
+      return `${seriesLabel(cause.metric, cause.labels)} ${shown}`;
+    }
+  }
 }
 
 /**
  * The `ALERT_METRICS` entries this host measures: those with at least one
  * live series among `seriesKeys` (display-form keys, "fan.rpm{fan=0}").
  */
-export function availableMetrics(
-  _seriesKeys: readonly string[]
-): AlertMetric[] {
-  throw new Error("not implemented");
+export function availableMetrics(seriesKeys: readonly string[]): AlertMetric[] {
+  const live = new Set(seriesKeys.map(metricOfKey));
+  return ALERT_METRICS.filter((m) => live.has(m.metric)).map((m) => ({
+    ...m,
+    default_label: m.default_label ? [...m.default_label] : null,
+  }));
 }
 
 /**
  * The series a rule on `metric` may watch: "Any" first, then one entry per
- * live series, named by `seriesName`.
+ * live labelled series, named by `seriesName`. An unlabelled series is
+ * covered by "Any" and gets no entry of its own.
  */
 export function seriesChoices(
-  _metric: string,
-  _seriesKeys: readonly string[]
+  metric: string,
+  seriesKeys: readonly string[]
 ): SeriesChoice[] {
-  throw new Error("not implemented");
+  const choices: SeriesChoice[] = [{ label: "Any", labels: {} }];
+  for (const key of seriesKeys) {
+    if (metricOfKey(key) !== metric) continue;
+    const labels = parseLabels(key);
+    const name = seriesName(metric, labels);
+    if (name !== null) choices.push({ label: name, labels });
+  }
+  return choices;
 }
 
 /**
- * A new, enabled rule on `metric` with its default comparison, threshold,
- * duration and series (`default_label`), and a 30 minute cooldown.
+ * A new, enabled rule on `metric` named after it, with its default
+ * comparison, threshold, duration and series (`default_label`), and a 30
+ * minute cooldown.
  */
-export function newRule(_metric: AlertMetric, _id: string): AlertRule {
-  throw new Error("not implemented");
+export function newRule(metric: AlertMetric, id: string): AlertRule {
+  const labels: Labels = metric.default_label
+    ? [[...metric.default_label]]
+    : [];
+  return {
+    id,
+    name: metric.label,
+    when: {
+      threshold: {
+        series: { metric: metric.metric, labels },
+        op: metric.default_op,
+        value: metric.default_value,
+      },
+    },
+    for_secs: metric.default_for_secs,
+    cooldown_secs: NEW_RULE_COOLDOWN_SECS,
+    enabled: true,
+  };
 }
 
 /**
- * The display name of one series, as Rust's `series_name` gives it: `null`
- * without labels, "Fan {n+1}" for `fan.rpm` with a numeric `fan` label,
- * otherwise the single label's value.
+ * The display name of one series, as Rust's `series_name` gives it from
+ * the first label: `null` without labels, "Fan {n+1}" for `fan.rpm` with a
+ * numeric `fan` label, otherwise that label's value.
  */
 export function seriesName(
-  _metric: string,
-  _labels: Record<string, string>
+  metric: string,
+  labels: Record<string, string>
 ): string | null {
-  throw new Error("not implemented");
-}
-
-/**
- * A stored threshold (catalog unit) in the unit the user enters it in: °F
- * when set, GB or GiB for bytes (GiB only for `mem.*` with the binary
- * memory setting), the catalog unit otherwise.
- */
-export function thresholdToDisplay(
-  _metric: string,
-  _value: number,
-  _units: UnitSettings
-): DisplayThreshold {
-  throw new Error("not implemented");
-}
-
-/** The inverse of `thresholdToDisplay`: an entered value in the catalog unit. */
-export function thresholdFromDisplay(
-  _metric: string,
-  _shown: number,
-  _units: UnitSettings
-): number {
-  throw new Error("not implemented");
+  const first = Object.entries(labels)[0];
+  if (first === undefined) return null;
+  const [key, value] = first;
+  if (metric === FAN_METRIC && key === FAN_LABEL && /^\d+$/.test(value)) {
+    return `Fan ${Number(value) + 1}`;
+  }
+  return value;
 }
 
 /** The newest alert time (`ts_ms`) per rule id among `events`. */
-export function lastFiredByRule(
-  _events: readonly Event[]
-): Map<string, number> {
-  throw new Error("not implemented");
+export function lastFiredByRule(events: readonly Event[]): Map<string, number> {
+  const newest = new Map<string, number>();
+  for (const event of events) {
+    if (event.detail.kind !== "alert") continue;
+    const ruleId = event.detail.rule_id;
+    const seen = newest.get(ruleId);
+    if (seen === undefined || event.ts_ms > seen) {
+      newest.set(ruleId, event.ts_ms);
+    }
+  }
+  return newest;
 }

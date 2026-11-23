@@ -1,7 +1,16 @@
-import type {
-  Settings,
-  SettingsPatch,
-  SettingsSnapshot,
+/**
+ * `get_settings` and `update_settings` for the mock transport: applies a
+ * patch, rejects what Rust's settings validation rejects (including custom
+ * alert rules) with `invalid_settings`, and emits each saved change.
+ */
+import {
+  ALERT_LIMITS,
+  ALERT_METRICS,
+  type AlertRule,
+  type SeriesSelector,
+  type Settings,
+  type SettingsPatch,
+  type SettingsSnapshot,
 } from "@core/generated/bindings";
 import { validChartRange } from "../chart-range";
 import { INTERVALS_MS, menuBarOf, SIZE_LIMITS_MB } from "../settings-patch";
@@ -52,7 +61,7 @@ export class MockSettings {
     if (this.options.settingsNotSaved) {
       return fail({ kind: "settings_not_saved", message: "disk full" });
     }
-    const next = applyPatch(this.snapshot.settings, patch);
+    const next = withF32Thresholds(applyPatch(this.snapshot.settings, patch));
     const chartWindow = next.general.chart_window;
     if (chartWindow !== undefined && !validChartRange(chartWindow)) {
       return fail({
@@ -77,6 +86,10 @@ export class MockSettings {
         kind: "invalid_settings",
         message: `size limit ${next.history.size_limit_mb} MB`,
       });
+    }
+    const rulesProblem = alertRulesProblem(next.alerts?.rules ?? []);
+    if (rulesProblem !== null) {
+      return fail({ kind: "invalid_settings", message: rulesProblem });
     }
     if (JSON.stringify(next) === JSON.stringify(this.snapshot.settings)) {
       return ok(this.snapshot);
@@ -157,7 +170,116 @@ const ALL_OVERVIEW_CARDS = {
   containers: true,
   hosts: true,
 };
-const NO_ALERTS = { hot_process: false, thermal_serious: false };
+const NO_ALERTS = {
+  hot_process: false,
+  thermal_serious: false,
+  host_offline: false,
+  rules: [],
+};
+
+/**
+ * `settings` with each custom rule's threshold rounded to f32, as Rust
+ * stores it and a later `get_settings` returns it.
+ */
+function withF32Thresholds(settings: Settings): Settings {
+  const rules = settings.alerts?.rules;
+  if (settings.alerts === undefined || rules === undefined) return settings;
+  const stored = rules.map((rule) => {
+    const threshold = rule.when.threshold;
+    if (threshold === undefined || threshold.value === null) return rule;
+    const value = Math.fround(threshold.value);
+    return { ...rule, when: { threshold: { ...threshold, value } } };
+  });
+  return { ...settings, alerts: { ...settings.alerts, rules: stored } };
+}
+
+/**
+ * Why Rust's `AlertSettings::validate` would reject `rules`, as the
+ * Display text of its `AlertRuleError`, or null when it accepts them.
+ */
+function alertRulesProblem(rules: readonly AlertRule[]): string | null {
+  if (rules.length > ALERT_LIMITS.max_custom) {
+    return `at most ${ALERT_LIMITS.max_custom} custom rules`;
+  }
+  const ids = new Set<string>();
+  for (const rule of rules) {
+    if (ids.has(rule.id)) return "two rules share one id";
+    ids.add(rule.id);
+    const problem = alertRuleProblem(rule);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
+/** Why Rust's `AlertRule::validate_custom` would reject `rule`, or null. */
+function alertRuleProblem(rule: AlertRule): string | null {
+  if ((ALERT_LIMITS.builtin_ids as readonly string[]).includes(rule.id)) {
+    return "rule id belongs to a built-in rule";
+  }
+  const nameChars = [...rule.name].length;
+  if (
+    rule.name !== rule.name.trim() ||
+    nameChars === 0 ||
+    nameChars > ALERT_LIMITS.max_name_chars
+  ) {
+    return `rule name must be 1 to ${ALERT_LIMITS.max_name_chars} characters with no leading or trailing spaces`;
+  }
+  const threshold = rule.when.threshold;
+  if (threshold === undefined) {
+    return "a custom rule must be a threshold on one metric";
+  }
+  return (
+    thresholdProblem(threshold.series, threshold.value) ??
+    timingProblem(rule.for_secs, rule.cooldown_secs)
+  );
+}
+
+/**
+ * Why Rust rejects a rule watching `series` at `value`: a metric outside
+ * `ALERT_METRICS`, labels it does not carry, or a value outside its range.
+ */
+function thresholdProblem(
+  series: SeriesSelector,
+  value: number | null
+): string | null {
+  const metric = ALERT_METRICS.find((m) => m.metric === series.metric);
+  if (metric === undefined) {
+    return `metric ${JSON.stringify(series.metric)} cannot be alerted on; choose one of the listed metrics`;
+  }
+  if (!labelsAllowed(series)) {
+    return "a rule watches every series of its metric or one series named by a label it carries";
+  }
+  // The stored value is already f32, and the limits arrive rounded to f32.
+  const min = metric.min ?? Number.NaN;
+  const max = metric.max ?? Number.NaN;
+  if (value === null || !(value >= min && value <= max)) {
+    return "threshold is outside the range this metric accepts";
+  }
+  return null;
+}
+
+/** No labels, or one pair whose key the metric carries (`ALERT_LIMITS`). */
+function labelsAllowed(series: SeriesSelector): boolean {
+  const keysByMetric: Readonly<Record<string, readonly string[]>> =
+    ALERT_LIMITS.label_keys;
+  const carried = keysByMetric[series.metric] ?? [];
+  if (series.labels.length > 1) return false;
+  return series.labels.every(([key]) => carried.includes(key));
+}
+
+/** Why Rust rejects a rule's hold time or cooldown, or null. */
+function timingProblem(forSecs: number, cooldownSecs: number): string | null {
+  if (forSecs > ALERT_LIMITS.max_for_secs) {
+    return "duration must be at most 1 hour";
+  }
+  if (
+    cooldownSecs < ALERT_LIMITS.min_cooldown_secs ||
+    cooldownSecs > ALERT_LIMITS.max_cooldown_secs
+  ) {
+    return "cooldown must be between 1 minute and 24 hours";
+  }
+  return null;
+}
 
 const NO_POPOVER = {
   cpu: "expanded",
