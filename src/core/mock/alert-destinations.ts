@@ -47,7 +47,16 @@ const EDGE_WHITESPACE = new RegExp(
 const SPACE_OR_CONTROL = new RegExp(`[${RUST_WHITESPACE}\\p{Cc}]`, "u");
 /** What a URL may not hold beyond whitespace and control characters. */
 const URL_FORBIDDEN = /["\\]/;
+/** Matched in lower case only, as Rust does. */
 const URL_SCHEMES = ["http://", "https://"] as const;
+/** What ends a URL's authority. */
+const AUTHORITY_END = /[/?#]/;
+/** A port: 1 to 5 ASCII digits. */
+const PORT = /^[0-9]{1,5}$/;
+/** A host needs one character that is not a dot or a hyphen. */
+const HOST_CHAR = /[^.-]/;
+/** A bracket outside the leading one of an IPv6 literal. */
+const BRACKET = /[[\]]/;
 const TOPIC_CHARS = /^[A-Za-z0-9_-]+$/;
 
 /** Mock owner of the alert destinations, registered by `createMockTransport`. */
@@ -90,9 +99,7 @@ export class MockAlertDestinations {
       );
     }
     if (rows.length >= LIMITS.max_destinations) {
-      return invalid(
-        `at most ${LIMITS.max_destinations} destinations can be saved`
-      );
+      return invalid(MESSAGES.too_many);
     }
     return ok(this.commit([...rows, { destination: saved, last: null }]));
   };
@@ -102,7 +109,7 @@ export class MockAlertDestinations {
       this.commands.record("alert_destination_delete", id);
       const rows = this.view.destinations;
       if (!rows.some((row) => row.destination.id === id)) {
-        return invalid(`no destination has id ${id}`);
+        return invalid(MESSAGES.unknown_id);
       }
       return ok(this.commit(rows.filter((row) => row.destination.id !== id)));
     };
@@ -153,7 +160,7 @@ function destinationProblem(destination: Destination): string | null {
 /** Why Rust would refuse a destination's address, topic or token, or null. */
 function kindProblem(kind: DestinationKind): string | null {
   if (kind.type === "webhook") return validUrl(kind.url) ? null : MESSAGES.url;
-  if (!validUrl(kind.server)) return MESSAGES.url;
+  if (!validNtfyServer(kind.server)) return MESSAGES.url;
   if (!validTopic(kind.topic)) return MESSAGES.topic;
   return validToken(kind.token) ? null : MESSAGES.token;
 }
@@ -165,23 +172,64 @@ function validName(name: string): boolean {
 }
 
 /**
- * An `http://` or `https://` URL of at most `max_url_chars` characters that
- * names a host and holds no whitespace, control character, quote or
- * backslash.
+ * A valid URL with no query or fragment: the request goes to `<server>/`, so
+ * either would end up in front of that slash.
+ */
+function validNtfyServer(server: string): boolean {
+  return validUrl(server) && !server.includes("?") && !server.includes("#");
+}
+
+/**
+ * An `http://` or `https://` URL (lower case) of at most `max_url_chars`
+ * characters with a valid authority, holding no whitespace, control
+ * character, quote or backslash.
  */
 function validUrl(url: string): boolean {
   if (charCount(url) > LIMITS.max_url_chars) return false;
   if (SPACE_OR_CONTROL.test(url) || URL_FORBIDDEN.test(url)) return false;
   const scheme = URL_SCHEMES.find((s) => url.startsWith(s));
   if (scheme === undefined) return false;
-  return hostOf(url.slice(scheme.length)) !== "";
+  const authority = url.slice(scheme.length).split(AUTHORITY_END, 1)[0] ?? "";
+  return validAuthority(authority);
 }
 
-/** The host in what follows a URL's scheme: no credentials, port or path. */
-function hostOf(afterScheme: string): string {
-  const authority = afterScheme.split(/[/?#]/, 1)[0] ?? "";
-  const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
-  return hostAndPort.replace(/:\d*$/, "");
+/**
+ * A host with an optional port of 1 to 5 digits and no user name or password
+ * (no `@`). The host needs a character other than `.` and `-`.
+ */
+function validAuthority(authority: string): boolean {
+  if (authority.includes("@")) return false;
+  const parts = hostAndPort(authority);
+  if (parts === null) return false;
+  const portIsValid = parts.port === null || PORT.test(parts.port);
+  return HOST_CHAR.test(parts.host) && portIsValid;
+}
+
+/**
+ * `authority` split into host and optional port, or null when a bracket is
+ * unclosed, stray, or followed by anything but a port. Brackets only enclose
+ * an IPv6 literal (`[::1]:8080`).
+ */
+function hostAndPort(
+  authority: string
+): { host: string; port: string | null } | null {
+  if (!authority.startsWith("[")) {
+    if (BRACKET.test(authority)) return null;
+    const colon = authority.indexOf(":");
+    if (colon === -1) return { host: authority, port: null };
+    return {
+      host: authority.slice(0, colon),
+      port: authority.slice(colon + 1),
+    };
+  }
+  const close = authority.indexOf("]");
+  if (close === -1) return null;
+  const host = authority.slice(1, close);
+  if (host.includes("[")) return null;
+  const afterHost = authority.slice(close + 1);
+  if (afterHost === "") return { host, port: null };
+  if (!afterHost.startsWith(":")) return null;
+  return { host, port: afterHost.slice(1) };
 }
 
 /** 1 to `max_topic_chars` of `[A-Za-z0-9_-]`. */

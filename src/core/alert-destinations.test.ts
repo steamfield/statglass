@@ -92,7 +92,7 @@ describe("deliveryLabel", () => {
 });
 
 describe("destinationAddress", () => {
-  it("shows the ntfy host and a topic cut to 14 characters", () => {
+  it("shows the ntfy host and a topic cut to 4 characters", () => {
     expect(
       destinationAddress(
         ntfy(1, {
@@ -104,16 +104,20 @@ describe("destinationAddress", () => {
           },
         })
       )
-    ).toBe("ntfy.sh/statglass-4f2a…");
+    ).toBe("ntfy.sh/stat…");
   });
 
-  it("shows a topic of 14 characters or fewer whole", () => {
+  it("always elides the topic, and shows the host alone for a short topic", () => {
     const address = (topic: string, server = "https://ntfy.example.com/") =>
       destinationAddress(
         ntfy(1, { kind: { type: "ntfy", server, topic, token: null } })
       );
-    expect(address("alerts")).toBe("ntfy.example.com/alerts");
-    expect(address("statglass-4f2a")).toBe("ntfy.example.com/statglass-4f2a");
+    expect(address("alerts")).toBe("ntfy.example.com/aler…");
+    expect(address("abcde")).toBe("ntfy.example.com/abcd…");
+    expect(address("abcd")).toBe("ntfy.example.com");
+    expect(address("alerts", "http://ntfy.local:8080")).toBe(
+      "ntfy.local/aler…"
+    );
   });
 
   it("shows only a webhook's host, never its path or query", () => {
@@ -122,6 +126,17 @@ describe("destinationAddress", () => {
         webhook(1, "https://chat.example.com/hooks/T0/B0/private?key=abc")
       )
     ).toBe("chat.example.com");
+  });
+
+  it.each([
+    ["a port", "https://chat.example.com:8443/hooks/x", "chat.example.com"],
+    ["an IPv6 literal", "http://[::1]:8080/x", "[::1]"],
+    ["credentials", "https://user:secret@chat.example.com/x", ""],
+    ["an upper-case scheme", "HTTPS://chat.example.com/x", ""],
+    ["no address yet", "", ""],
+    ["an unclosed bracket", "http://[::1/secret", ""],
+  ])("reads a webhook host from a URL with %s", (_, url, shown) => {
+    expect(destinationAddress(webhook(1, url))).toBe(shown);
   });
 });
 

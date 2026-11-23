@@ -1,12 +1,18 @@
 /**
  * Labels and defaults for alert destinations, for the Alerts page's "Send to"
  * panel and the destination dialog. Pure, no React. A row never shows a full
- * secret: addresses are cut to the server host and a topic prefix.
+ * secret: addresses are cut to the server host and a short topic prefix.
  */
 import type { DeliveryRecord, Destination } from "@core/generated/bindings";
 
 /** How much of an ntfy topic a row shows before the ellipsis. */
-const SHOWN_TOPIC_CHARS = 14;
+const SHOWN_TOPIC_CHARS = 4;
+/** The schemes Rust accepts, in lower case only. */
+const URL_SCHEMES = ["http://", "https://"] as const;
+/** What ends a URL's authority. */
+const AUTHORITY_END = /[/?#]/;
+/** A bracket anywhere but around an IPv6 literal. */
+const BRACKET = /[[\]]/;
 /** The public ntfy server a new ntfy destination starts on. */
 const DEFAULT_NTFY_SERVER = "https://ntfy.sh";
 /** What every generated topic starts with, so the user can tell it is ours. */
@@ -19,32 +25,39 @@ const BITS_PER_BASE32_CHAR = 5;
 const BITS_PER_BYTE = 8;
 
 /**
- * Where a destination sends, safe to show in a row: the ntfy server's host and
- * the topic's first 14 characters with an ellipsis when longer
- * ("ntfy.sh/statglass-4f2a…"), or a webhook URL's host only.
+ * A short address that tells destination rows apart without showing the
+ * secret parts. For ntfy it is the server's host, "/" and the topic's first 4
+ * characters with an ellipsis ("ntfy.sh/stat…"), or the host alone when the
+ * topic is 4 characters or fewer. For a webhook it is the URL's host only,
+ * never its port, credentials, path or query. A webhook host can itself
+ * identify the endpoint for some providers. Empty when no host can be read.
  */
 export function destinationAddress(d: Destination): string {
   if (d.kind.type === "webhook") return urlHost(d.kind.url);
-  return `${urlHost(d.kind.server)}/${shortTopic(d.kind.topic)}`;
+  const topicChars = [...d.kind.topic];
+  const host = urlHost(d.kind.server);
+  if (topicChars.length <= SHOWN_TOPIC_CHARS) return host;
+  return `${host}/${topicChars.slice(0, SHOWN_TOPIC_CHARS).join("")}…`;
 }
 
 /**
- * The host (and port, when given) of an http(s) URL, without its scheme,
- * credentials, path, query or fragment. Parsed by hand rather than with
- * `URL`, which throws on the empty address of a destination still being
- * filled in.
+ * The host of an `http://` or `https://` URL (lower-case scheme, as Rust
+ * accepts), with brackets kept around an IPv6 literal. Empty when the scheme
+ * is not one of those, the authority carries a user name or password, or a
+ * bracket is out of place. Parsed by hand rather than with `URL`, which
+ * throws on the empty address of a destination still being filled in.
  */
 function urlHost(url: string): string {
-  const afterScheme = url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
-  const authority = afterScheme.split(/[/?#]/, 1)[0] ?? "";
-  return authority.slice(authority.lastIndexOf("@") + 1);
-}
-
-/** The topic's first characters, with an ellipsis when some were cut. */
-function shortTopic(topic: string): string {
-  const chars = [...topic];
-  if (chars.length <= SHOWN_TOPIC_CHARS) return topic;
-  return `${chars.slice(0, SHOWN_TOPIC_CHARS).join("")}…`;
+  const scheme = URL_SCHEMES.find((s) => url.startsWith(s));
+  if (scheme === undefined) return "";
+  const authority = url.slice(scheme.length).split(AUTHORITY_END, 1)[0] ?? "";
+  if (authority.includes("@")) return "";
+  if (authority.startsWith("[")) {
+    const close = authority.indexOf("]");
+    return close === -1 ? "" : authority.slice(0, close + 1);
+  }
+  if (BRACKET.test(authority)) return "";
+  return authority.split(":", 1)[0] ?? "";
 }
 
 /**
