@@ -54,7 +54,7 @@ export function UsageAppsCard(props: UsageAppsCardProps) {
 }
 
 function HistoricalUsageApps({ windowMs, config }: UsageAppsCardProps) {
-  const { range } = useRangeScope(windowMs);
+  const { range, keepPrevious } = useRangeScope(windowMs);
   if (config.by === "disk") {
     return (
       <AppsShell accent="disk" title="Disk by app">
@@ -65,6 +65,7 @@ function HistoricalUsageApps({ windowMs, config }: UsageAppsCardProps) {
   return (
     <HistoricalUsageCard
       range={range}
+      rolling={keepPrevious}
       by={config.by}
       accent={config.accent}
       title={`${config.noun} by app`}

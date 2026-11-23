@@ -484,6 +484,15 @@ export const sameDiskIo = (previous: Key, next: Key) =>
   Number(previous[5]) - Number(previous[4]) ===
     Number(next[5]) - Number(next[4]);
 
+/**
+ * Recorded app use, or one app's recorded processes, over a rolling window
+ * that moved: same kind, metric, apps and span.
+ */
+export const sameUsageWindow = (previous: Key, next: Key) =>
+  sameAt(previous, next, [0, 1, 2, 5, 6]) &&
+  Number(previous[4]) - Number(previous[3]) ===
+    Number(next[4]) - Number(next[3]);
+
 /** The same heatmap metric; another metric is drawn on another scale. */
 export const sameHeatmapMetric = (previous: Key, next: Key) =>
   sameAt(previous, next, [0, 1, 2, 3]);

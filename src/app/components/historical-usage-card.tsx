@@ -58,10 +58,16 @@ export function HistoricalUsageCard({
   columns = HISTORICAL_COLUMNS,
   title = "Apps in this range",
   compare = false,
+  rolling = false,
   sort: controlledSort,
   onSortChange,
 }: {
   range: TimeRange | null;
+  /**
+   * `range` is the chart window ending at the open edge, so it moves every
+   * 10 s: the table keeps its rows, open apps and selection across it.
+   */
+  rolling?: boolean;
   by: HistoricalUsageMetric;
   accent?: Accent;
   columns?: readonly HistoricalUsageMetric[];
@@ -77,13 +83,16 @@ export function HistoricalUsageCard({
   useEffect(() => setLocalSort({ by, dir: "desc" }), [by]);
   const selected = controlledSort ?? localSort;
   const sort = visibleSort(selected, by, columns);
-  // Held across a header click, so the table keeps its selection (§4.14).
-  const query = useHistoricalUsage(range, sort.by, { holdAcrossMetrics: true });
+  const { query, otherMetric, comparable, refreshing } = useRecordedApps(
+    range,
+    sort.by,
+    rolling
+  );
   const { previousRange, previous } = useComparison(
     range,
     compare,
     sort.by,
-    query
+    comparable
   );
   const host = useHostId();
   const client = useQueryClient();
@@ -154,7 +163,7 @@ export function HistoricalUsageCard({
         </AppsNote>
       ) : (
         <>
-          {query.isFetching && (
+          {refreshing && (
             <AppsNote>
               <span role="status">Refreshing recorded apps…</span>
             </AppsNote>
@@ -162,7 +171,7 @@ export function HistoricalUsageCard({
           <HistoricalCoverage
             data={query.data}
             by={sort.by}
-            held={query.isPlaceholderData}
+            held={otherMetric}
           />
           {compare && previousRange && (
             <AppsNote>
@@ -189,7 +198,7 @@ export function HistoricalUsageCard({
             <HistoricalCoverage data={previous.data} by={sort.by} previous />
           )}
           <HistoricalUsageTable
-            key={`${host}:${range.fromMs}:${range.toMs}`}
+            key={tableScope(host, range, rolling)}
             data={query.data}
             previous={previous.data}
             range={range}
@@ -197,6 +206,7 @@ export function HistoricalUsageCard({
             sort={sort}
             onSort={change}
             compare={compare}
+            rolling={rolling}
           />
         </>
       )}
@@ -266,6 +276,7 @@ function HistoricalUsageTable({
   sort,
   onSort,
   compare,
+  rolling,
 }: {
   data: HistoricalUsageReply;
   previous: HistoricalUsageReply | undefined;
@@ -274,6 +285,7 @@ function HistoricalUsageTable({
   sort: HistoricalUsageSort;
   onSort: (sort: HistoricalUsageSort) => void;
   compare: boolean;
+  rolling: boolean;
 }) {
   const host = useHostId();
   const units = useUnits();
@@ -333,11 +345,12 @@ function HistoricalUsageTable({
         range={range}
         by={sort.by}
         appName={app.name}
+        rolling={rolling}
         colSpan={colSpan}
         selectable={selectable === true}
       />
     ),
-    [range, sort.by, selectable]
+    [range, sort.by, rolling, selectable]
   );
   if (apps.length === 0)
     return (
@@ -355,6 +368,7 @@ function HistoricalUsageTable({
             range={range}
             by={sort.by}
             appName={app.name}
+            rolling={rolling}
             onMembers={members.report}
           />
         ))}
@@ -366,7 +380,7 @@ function HistoricalUsageTable({
         sort={tableSort}
         expansion={expansion}
         selectable={selectable}
-        scopeKey={`${host}:${range.fromMs}:${range.toMs}`}
+        scopeKey={tableScope(host, range, rolling)}
         afterMembers={afterMembers}
         after={({ colSpan }) => (
           <FullWidthRow colSpan={colSpan} tone="footnote">
@@ -417,6 +431,44 @@ function useRecordedMembers() {
   return { loaded, report, reset };
 }
 
+/**
+ * The recorded apps over `range` by `by`, whether the answer on screen is
+ * another metric's held one (nothing shown describes `by`), and whether to
+ * say it is refreshing: not while the last rolling window's answer holds,
+ * which happens every 10 s.
+ */
+function useRecordedApps(
+  range: TimeRange | null,
+  by: HistoricalUsageMetric,
+  rolling: boolean
+) {
+  // Held across a header click, so the table keeps its selection (§4.14).
+  const query = useHistoricalUsage(range, by, {
+    holdAcrossMetrics: true,
+    rolling,
+  });
+  const otherMetric = query.isPlaceholderData && query.data?.by !== by;
+  const windowMoved = query.isPlaceholderData && !otherMetric;
+  return {
+    query,
+    otherMetric,
+    /** The answer to compare against: none while another metric's holds. */
+    comparable: otherMetric ? undefined : query.data,
+    refreshing: query.isFetching && !windowMoved,
+  };
+}
+
+/**
+ * What the table's open apps and selection belong to: the range, or for a
+ * rolling window its span, so they outlive the window moving.
+ */
+function tableScope(host: string, range: TimeRange, rolling: boolean) {
+  const span = range.toMs - range.fromMs;
+  return rolling
+    ? `${host}:live:${span}`
+    : `${host}:${range.fromMs}:${range.toMs}`;
+}
+
 function visibleSort(
   sort: HistoricalUsageSort,
   by: HistoricalUsageMetric,
@@ -427,20 +479,16 @@ function visibleSort(
 }
 
 /**
- * The preceding equal interval for the apps in the current answer. Nothing
- * is compared while a previous metric's answer is held on screen, so a
- * header click does not query the old app list.
+ * The preceding equal interval for the apps in `data`, the current answer.
+ * The card passes nothing while another metric's answer is held on screen,
+ * so a header click does not query the old app list.
  */
 function useComparison(
   range: TimeRange | null,
   compare: boolean,
   by: HistoricalUsageMetric,
-  current: {
-    data: HistoricalUsageReply | undefined;
-    isPlaceholderData: boolean;
-  }
+  data: HistoricalUsageReply | undefined
 ) {
-  const data = current.isPlaceholderData ? undefined : current.data;
   const names = useMemo(() => data?.apps.map((app) => app.name) ?? [], [data]);
   const previousRange = comparisonRange(range, compare, names.length);
   const previous = useHistoricalUsage(previousRange, by, { appNames: names });

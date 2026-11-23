@@ -3,15 +3,39 @@ import {
   type HistoricalUsageMetric,
   USAGE_HISTORY_MAX_RANGE_MS,
 } from "@core/generated/bindings";
-import { historyKeys } from "@core/query-keys";
+import { historyKeys, sameUsageWindow } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import {
+  type QueryKey,
   useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
+
+interface PreviousQuery {
+  queryKey: QueryKey;
+  meta?: Record<string, unknown> | undefined;
+}
+
+/**
+ * Whether the answer under `previous` may stand in while `next` loads in a
+ * rolling view: `previous` was read for the rolling window too, over the
+ * same span, and `sameUsageWindow` says it is the same view. A brushed
+ * selection's answer never stands in.
+ */
+function rollingHold(
+  rolling: boolean,
+  previous: PreviousQuery | undefined,
+  next: QueryKey
+): boolean {
+  return (
+    rolling &&
+    previous?.meta?.rolling === true &&
+    sameUsageWindow(previous.queryKey, next)
+  );
+}
 
 /** Fixed answers are cached until explicit refresh or history invalidation. Live
  * callers advance their bounds at the existing open-bucket edge, never at 1Hz.
@@ -22,8 +46,15 @@ export function useHistoricalUsage(
   {
     appNames = [],
     holdAcrossMetrics = false,
+    rolling = false,
   }: {
     appNames?: readonly string[];
+    /**
+     * The range is the chart window ending at the open edge, so it moves
+     * every 10 s: the last window's answer stays on screen while the next
+     * one loads, so a table over it never empties.
+     */
+    rolling?: boolean;
     /**
      * Another metric over the same range keeps the last answer on screen
      * while it loads, so a table over it (and its selection) stays mounted.
@@ -36,12 +67,15 @@ export function useHistoricalUsage(
   const from = range?.fromMs ?? 0;
   const to = range?.toMs ?? 0;
   const sameRange = historyKeys.historicalUsageRange(host, from, to);
+  const queryKey = historyKeys.historicalUsage(host, from, to, by, appNames);
   return useQuery({
-    queryKey: historyKeys.historicalUsage(host, from, to, by, appNames),
+    queryKey,
+    meta: { rolling },
     placeholderData: (previous, previousQuery) =>
-      holdAcrossMetrics &&
-      previousQuery !== undefined &&
-      sameRange.every((part, i) => previousQuery.queryKey[i] === part)
+      (holdAcrossMetrics &&
+        previousQuery !== undefined &&
+        sameRange.every((part, i) => previousQuery.queryKey[i] === part)) ||
+      rollingHold(rolling, previousQuery, queryKey)
         ? previous
         : undefined,
     queryFn: () =>
@@ -59,10 +93,12 @@ export function useHistoricalUsage(
   });
 }
 
+/** One app's recorded processes, paged; `rolling` as `useHistoricalUsage`. */
 export function useHistoricalProcesses(
   range: TimeRange,
   by: HistoricalUsageMetric,
-  appName: string
+  appName: string,
+  rolling = false
 ) {
   const transport = useTransport();
   const host = useHostId();
@@ -76,6 +112,11 @@ export function useHistoricalProcesses(
   );
   const query = useInfiniteQuery({
     queryKey,
+    meta: { rolling },
+    placeholderData: <T>(
+      previous: T | undefined,
+      previousQuery: PreviousQuery | undefined
+    ) => (rollingHold(rolling, previousQuery, queryKey) ? previous : undefined),
     queryFn: ({ pageParam }) =>
       unwrap(
         transport.queryUsageProcesses({

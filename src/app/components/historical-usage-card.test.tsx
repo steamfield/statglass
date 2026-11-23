@@ -212,6 +212,65 @@ it("compares a new metric only once its own answer arrives, not the held one", a
   await waitFor(() => expect(comparisons()).toHaveLength(1));
 });
 
+it("keeps its rows and open app while a rolling window moves to the next answer", async () => {
+  const transport = createMockTransport({ now: () => NOW, autoTick: false });
+  const readApps = transport.queryHistoricalUsage.bind(transport);
+  const readProcesses = transport.queryUsageProcesses.bind(transport);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const moved = (to: number) => to !== RANGE.toMs;
+  vi.spyOn(transport, "queryHistoricalUsage").mockImplementation(async (q) => {
+    if (moved(q.to_ms)) await gate;
+    return readApps(q);
+  });
+  vi.spyOn(transport, "queryUsageProcesses").mockImplementation(async (q) => {
+    if (moved(q.to_ms)) await gate;
+    return readProcesses(q);
+  });
+  function Rolling() {
+    const [step, setStep] = useState(0);
+    const shift = step * 10_000;
+    return (
+      <>
+        <button type="button" onClick={() => setStep((s) => s + 1)}>
+          Advance
+        </button>
+        <HistoricalUsageCard
+          range={{ fromMs: RANGE.fromMs + shift, toMs: RANGE.toMs + shift }}
+          by="cpu"
+          rolling
+        />
+      </>
+    );
+  }
+  const { user } = renderWithProviders(<Rolling />, { transport });
+  const table = await screen.findByRole("table", {
+    name: "Recorded apps in this range",
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Show Compiler processes" })
+  );
+  await screen.findByText("4099");
+  await user.click(screen.getByRole("button", { name: "Advance" }));
+  // The next window is still loading: the same table, rows and open app.
+  expect(
+    screen.getByRole("table", { name: "Recorded apps in this range" })
+  ).toBe(table);
+  expect(screen.getByText("4099")).toBeVisible();
+  expect(screen.queryByText(/Loading recorded|Refreshing recorded/)).toBeNull();
+  await act(async () => release());
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Hide Compiler processes" })
+    ).toBeVisible()
+  );
+  expect(
+    screen.getByRole("table", { name: "Recorded apps in this range" })
+  ).toBe(table);
+});
+
 it("loads process instances lazily and refresh discards old continuation pages", async () => {
   const { user, processes } = setup();
   await screen.findByText("Compiler");

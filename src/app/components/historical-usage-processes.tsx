@@ -21,6 +21,8 @@ interface AppQuery {
   range: TimeRange;
   by: HistoricalUsageMetric;
   appName: string;
+  /** The range is a moving window: the last window's pages hold meanwhile. */
+  rolling: boolean;
 }
 
 const NONE: readonly HistoricalUsageProcess[] = [];
@@ -34,6 +36,7 @@ export function RecordedProcessLoader({
   range,
   by,
   appName,
+  rolling,
   onMembers,
 }: AppQuery & {
   onMembers: (
@@ -41,7 +44,7 @@ export function RecordedProcessLoader({
     members: readonly HistoricalUsageProcess[]
   ) => void;
 }) {
-  const { data } = useHistoricalProcesses(range, by, appName);
+  const { data } = useHistoricalProcesses(range, by, appName, rolling);
   const members = useMemo(
     () => data?.pages.flatMap((page) => page.processes) ?? NONE,
     [data]
@@ -58,10 +61,11 @@ export function RecordedProcessStatus({
   range,
   by,
   appName,
+  rolling,
   colSpan,
   selectable,
 }: AppQuery & { colSpan: number; selectable: boolean }) {
-  const query = useHistoricalProcesses(range, by, appName);
+  const query = useHistoricalProcesses(range, by, appName, rolling);
   const indent = selectable ? "pl-21" : "pl-13";
   if (query.isError)
     return (
@@ -99,7 +103,8 @@ export function RecordedProcessStatus({
               size="sm"
               // Line the label up with the member names, past the button's padding.
               className="-ml-2.5"
-              disabled={query.isFetchingNextPage}
+              // A held window's cursor does not page the next window.
+              disabled={query.isFetchingNextPage || query.isPlaceholderData}
               onClick={() => void query.fetchNextPage()}
             >
               {query.isFetchingNextPage

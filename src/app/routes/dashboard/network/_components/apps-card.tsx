@@ -82,10 +82,11 @@ export function AppsCard({ windowMs }: { windowMs: number }) {
 }
 
 function HistoricalNetworkApps({ windowMs }: { windowMs: number }) {
-  const { range } = useRangeScope(windowMs);
+  const { range, keepPrevious } = useRangeScope(windowMs);
   return (
     <HistoricalUsageCard
       range={range}
+      rolling={keepPrevious}
       by="network"
       accent="net"
       title="Network by app"
