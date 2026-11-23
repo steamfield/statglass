@@ -559,7 +559,7 @@ describe("UsageAppsCard on the shared grouped table", () => {
       ...full(fromMs, toMs),
       apps: [...APPS, app("Slack", [proc(41, "Slack Helper", 90)])],
     });
-    const { transport } = render(withSlack);
+    const { transport, user } = render(withSlack);
     await table();
     await goLive(transport, [
       ...LIVE,
@@ -568,11 +568,17 @@ describe("UsageAppsCard on the shared grouped table", () => {
     ]);
     const slack = await screen.findByRole("checkbox", { name: "Select Slack" });
     expect(slack).toBeEnabled();
-    expect(screen.queryByRole("checkbox", { name: /Slack Helper/ })).toBeNull();
-    expect(screen.queryByRole("link", { name: /Slack/ })).toBeNull();
     expect(
       screen.getByRole("button", { name: "Quit Slack (40)" })
     ).toBeInTheDocument();
+    // The helper that used the CPU stays one click away, under its app.
+    expect(screen.queryByRole("checkbox", { name: /Slack Helper/ })).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Show Slack processes" })
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select Slack Helper (41)" })
+    ).toBeEnabled();
   });
 
   it("disables a member once it leaves the live batch, though the range still lists it running", async () => {

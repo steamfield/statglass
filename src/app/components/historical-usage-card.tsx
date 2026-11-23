@@ -79,14 +79,12 @@ export function HistoricalUsageCard({
   const sort = visibleSort(selected, by, columns);
   // Held across a header click, so the table keeps its selection (§4.14).
   const query = useHistoricalUsage(range, sort.by, { holdAcrossMetrics: true });
-  const names = useMemo(
-    () => query.data?.apps.map((app) => app.name) ?? [],
-    [query.data]
+  const { previousRange, previous } = useComparison(
+    range,
+    compare,
+    sort.by,
+    query
   );
-  const previousRange = comparisonRange(range, compare, names.length);
-  const previous = useHistoricalUsage(previousRange, sort.by, {
-    appNames: names,
-  });
   const host = useHostId();
   const client = useQueryClient();
   const change = (next: HistoricalUsageSort) => {
@@ -161,7 +159,11 @@ export function HistoricalUsageCard({
               <span role="status">Refreshing recorded apps…</span>
             </AppsNote>
           )}
-          <HistoricalCoverage data={query.data} by={sort.by} />
+          <HistoricalCoverage
+            data={query.data}
+            by={sort.by}
+            held={query.isPlaceholderData}
+          />
           {compare && previousRange && (
             <AppsNote>
               <span className="figures">
@@ -206,11 +208,15 @@ function HistoricalCoverage({
   data,
   by,
   previous = false,
+  held = false,
 }: {
   data: HistoricalUsageReply;
   by: HistoricalUsageMetric;
   previous?: boolean;
+  /** `data` is another metric's answer, held on screen: say nothing about `by`. */
+  held?: boolean;
 }) {
+  if (held) return null;
   const coverage = data.range.coverage.find((c) => c.metric === by)?.coverage;
   const resolutions = [
     ...new Set(data.range.spans.map((span) => span.resolution_ms)),
@@ -418,6 +424,27 @@ function visibleSort(
 ): HistoricalUsageSort {
   if (columns.includes(sort.by)) return sort;
   return { by: columns.includes(by) ? by : (columns[0] ?? by), dir: "desc" };
+}
+
+/**
+ * The preceding equal interval for the apps in the current answer. Nothing
+ * is compared while a previous metric's answer is held on screen, so a
+ * header click does not query the old app list.
+ */
+function useComparison(
+  range: TimeRange | null,
+  compare: boolean,
+  by: HistoricalUsageMetric,
+  current: {
+    data: HistoricalUsageReply | undefined;
+    isPlaceholderData: boolean;
+  }
+) {
+  const data = current.isPlaceholderData ? undefined : current.data;
+  const names = useMemo(() => data?.apps.map((app) => app.name) ?? [], [data]);
+  const previousRange = comparisonRange(range, compare, names.length);
+  const previous = useHistoricalUsage(previousRange, by, { appNames: names });
+  return { previousRange, previous };
 }
 
 function comparisonRange(

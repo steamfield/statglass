@@ -10,7 +10,7 @@ import { ProcessSelectionRow } from "~/components/process-selection";
 import { TableCell } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import { InitialChip } from "~/widgets/initial-chip";
-import { groupLabel, soleMember } from "./group-identity";
+import { canExpand, groupLabel, soleMember } from "./group-identity";
 import { ActionsCell, CELL, ColumnCells, MemberName, ROW } from "./member-row";
 import type { GroupColumn, GroupRows } from "./types";
 
@@ -69,7 +69,9 @@ function GroupName<G, M>({ group, rows }: { group: G; rows: GroupRows<G, M> }) {
     return (
       <>
         <span className="truncate">{name}</span>
-        {count !== null && count > 1 && <Aside>{processCount(count)}</Aside>}
+        {count !== null && (count > 1 || canExpand(rows, group)) && (
+          <Aside>{processCount(count)}</Aside>
+        )}
       </>
     );
   }

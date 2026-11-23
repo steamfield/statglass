@@ -179,6 +179,39 @@ it("compares the current membership against exactly the preceding equal interval
   await screen.findAllByText(/Previous .*pp/);
 });
 
+it("compares a new metric only once its own answer arrives, not the held one", async () => {
+  const transport = createMockTransport({ now: () => NOW, autoTick: false });
+  const original = transport.queryHistoricalUsage.bind(transport);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const apps = vi
+    .spyOn(transport, "queryHistoricalUsage")
+    .mockImplementation(async (q) => {
+      // Hold the new metric's own answer so the CPU answer stays on screen.
+      if (q.by === "memory" && q.to_ms === RANGE.toMs) await gate;
+      return original(q);
+    });
+  const { user } = renderWithProviders(
+    <HistoricalUsageCard range={RANGE} by="cpu" compare />,
+    { transport }
+  );
+  await waitFor(() => expect(apps).toHaveBeenCalledTimes(2));
+  await user.click(await screen.findByRole("button", { name: "Peak RAM" }));
+  await waitFor(() =>
+    expect(apps.mock.calls.some(([q]) => q.by === "memory")).toBe(true)
+  );
+  const comparisons = () =>
+    apps.mock.calls.filter(
+      ([q]) => q.by === "memory" && q.to_ms === RANGE.fromMs
+    );
+  // While CPU's answer is held, nothing is compared against its app list.
+  expect(comparisons()).toEqual([]);
+  await act(async () => release());
+  await waitFor(() => expect(comparisons()).toHaveLength(1));
+});
+
 it("loads process instances lazily and refresh discards old continuation pages", async () => {
   const { user, processes } = setup();
   await screen.findByText("Compiler");

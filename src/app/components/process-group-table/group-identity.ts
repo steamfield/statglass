@@ -6,11 +6,22 @@
 import { type ProcessTarget, targetKey } from "@core/process-selection";
 import type { GroupRows } from "./types";
 
-/** Whether a group has a chevron and lists members: `rows.expandable`, else a count over 1. */
+/**
+ * Whether a group has a chevron and lists members: `rows.expandable`, else a
+ * count over 1, or a group of one that does not read as its process (its
+ * listed member is not what the app's Quit acts on), so the member stays
+ * reachable.
+ */
 export function canExpand<G, M>(rows: GroupRows<G, M>, group: G): boolean {
   if (rows.expandable) return rows.expandable(group);
   const count = rows.count(group);
-  return count !== null && count > 1;
+  if (count === null) return false;
+  if (count > 1) return true;
+  return (
+    count === 1 &&
+    rows.members(group).length === 1 &&
+    soleMember(rows, group) === undefined
+  );
 }
 
 /** The same processes, by pid and start time, in any order. */
