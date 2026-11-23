@@ -47,7 +47,7 @@ import {
 import { SearchField } from "~/components/search-field";
 import { SelectionChip } from "~/components/selection-chip";
 import { TableCell } from "~/components/ui/table";
-import { useCanSignal } from "~/hooks/use-edition";
+import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
@@ -139,8 +139,8 @@ function LiveUsageAppsCard({ windowMs, config }: UsageAppsCardProps) {
   const [query, setQuery] = useState("");
   // The App Store edition has no Quit or Force Quit (D-065), and a remote
   // host's processes are never signalled from here (D-117). Both are asked
-  // for at mount, so the table's first render already knows them.
-  const canSignal = useCanSignal();
+  // for at mount; the table waits for the edition so its columns hold still.
+  const canSignal = useCanSignalSettled();
   const running = useRunningApps();
   const data = heldFor(q, windowMs);
   const shown: TimeRange | null = data
@@ -200,8 +200,8 @@ interface UsageTableProps {
   data: UsageByApp;
   config: UsageTableConfig;
   query: string;
-  /** Selection and Quit are offered here. */
-  canSignal: boolean;
+  /** Selection and Quit are offered here; null while the edition loads (the table waits). */
+  canSignal: boolean | null;
   /** The live batch by app; null where Quit is not offered or before it arrives. */
   running: RunningApps | null;
   /** Selection resets when it changes (another brushed range). */
@@ -321,7 +321,7 @@ function UsageTable({
                 rows={rest}
                 config={config}
                 share={whole !== null}
-                actions={canSignal}
+                actions={canSignal === true}
               />
             )}
             <FullWidthRow colSpan={colSpan} tone="footnote">
@@ -354,7 +354,8 @@ function usageGroupRows(
     members: (r) => r.processes,
     forcedOpen: (r) => r.matchedInside,
     targets,
-    unavailable: (r) => (targets(r).length === 0 ? NOT_RUNNING : undefined),
+    unavailable: (r) =>
+      running !== null && targets(r).length === 0 ? NOT_RUNNING : undefined,
     memberKey: targetKey,
     memberName: (p) => p.name,
     memberPid: (p) => p.pid,
