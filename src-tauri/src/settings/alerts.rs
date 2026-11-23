@@ -1,5 +1,6 @@
 //! The alerts part of a settings patch, and which rules a change switched on.
 
+use super::set;
 use serde::Deserialize;
 use statglass_schema::settings::AlertSettings;
 use statglass_schema::{AlertRule, Settings};
@@ -23,15 +24,10 @@ impl AlertsPatch {
     /// Applies the patch to `alerts`: each switch present is set, and `rules`, when
     /// present, replaces the custom rules.
     pub fn apply(self, alerts: &mut AlertSettings) {
-        if let Some(v) = self.hot_process {
-            alerts.hot_process = v;
-        }
-        if let Some(v) = self.thermal_serious {
-            alerts.thermal_serious = v;
-        }
-        if let Some(v) = self.host_offline {
-            alerts.host_offline = v;
-        }
+        set(&mut alerts.hot_process, self.hot_process);
+        set(&mut alerts.thermal_serious, self.thermal_serious);
+        set(&mut alerts.host_offline, self.host_offline);
+        set(&mut alerts.rules, self.rules);
     }
 }
 
@@ -40,11 +36,15 @@ impl AlertsPatch {
 /// confirmation that makes macOS show its prompt (D-084). A rule edited while it stays
 /// on is not listed.
 pub fn alerts_switched_on(old: &Settings, new: &Settings) -> Vec<AlertRule> {
-    old.alerts
-        .builtin_rules()
+    let was_enabled = old.alerts.engine_rules();
+    new.alerts
+        .engine_rules()
         .into_iter()
-        .zip(new.alerts.builtin_rules())
-        .filter(|(was, now)| !was.enabled && now.enabled)
-        .map(|(_, now)| now)
+        .filter(|now| now.enabled)
+        .filter(|now| {
+            !was_enabled
+                .iter()
+                .any(|was| was.id == now.id && was.enabled)
+        })
         .collect()
 }

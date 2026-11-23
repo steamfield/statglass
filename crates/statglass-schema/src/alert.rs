@@ -8,10 +8,16 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::alert_metrics::alert_metric;
+use crate::catalog::Catalog;
 use crate::series::{Labels, SeriesSelector};
 
 const HOT_PROCESS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0001);
 const THERMAL_SERIOUS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000_0000_0002);
+
+/// The fan speed metric and its label, whose values number fans from 0.
+const FAN_METRIC: &str = "fan.rpm";
+const FAN_LABEL: &str = "fan";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct AlertRule {
@@ -72,16 +78,84 @@ impl AlertRule {
     /// [`Self::MIN_COOLDOWN_SECS`] and [`Self::MAX_COOLDOWN_SECS`], and an id that is
     /// not a built-in one.
     pub fn validate_custom(&self) -> Result<(), AlertRuleError> {
-        Err(AlertRuleError::NotThreshold)
+        if Self::BUILTIN_IDS.contains(&self.id) {
+            return Err(AlertRuleError::ReservedId);
+        }
+        check_name(&self.name)?;
+        let Condition::Threshold { series, value, .. } = &self.when else {
+            return Err(AlertRuleError::NotThreshold);
+        };
+        check_threshold(series, *value)?;
+        check_timing(self.for_secs, self.cooldown_secs)
     }
+}
+
+/// A rule name is 1 to [`AlertRule::MAX_NAME_CHARS`] characters once trimmed.
+fn check_name(name: &str) -> Result<(), AlertRuleError> {
+    let chars = name.trim().chars().count();
+    if chars == 0 || chars > AlertRule::MAX_NAME_CHARS {
+        return Err(AlertRuleError::Name);
+    }
+    Ok(())
+}
+
+/// The watched metric is alertable, the selector names at most one label the catalog
+/// metric carries, and the value is finite and inside the metric's range.
+fn check_threshold(series: &SeriesSelector, value: f32) -> Result<(), AlertRuleError> {
+    let metric = series.metric.as_str();
+    let Some(alertable) = alert_metric(metric) else {
+        return Err(AlertRuleError::Metric(metric.to_owned()));
+    };
+    if !labels_fit(metric, &series.labels) {
+        return Err(AlertRuleError::Labels);
+    }
+    let in_range = value.is_finite() && alertable.min <= value && value <= alertable.max;
+    if !in_range {
+        return Err(AlertRuleError::Value {
+            min: alertable.min,
+            max: alertable.max,
+        });
+    }
+    Ok(())
+}
+
+/// Whether `labels` is empty (every series) or one pair whose key `metric` carries.
+fn labels_fit(metric: &str, labels: &Labels) -> bool {
+    if labels.len() > 1 {
+        return false;
+    }
+    let carried = Catalog::builtin()
+        .get(metric)
+        .map_or(&[][..], |def| def.label_keys);
+    labels.keys().all(|key| carried.contains(&key))
+}
+
+/// `for_secs` is at most [`AlertRule::MAX_FOR_SECS`] and the cooldown lies between
+/// [`AlertRule::MIN_COOLDOWN_SECS`] and [`AlertRule::MAX_COOLDOWN_SECS`].
+fn check_timing(for_secs: u32, cooldown_secs: u32) -> Result<(), AlertRuleError> {
+    if for_secs > AlertRule::MAX_FOR_SECS {
+        return Err(AlertRuleError::Duration);
+    }
+    let cooldowns = AlertRule::MIN_COOLDOWN_SECS..=AlertRule::MAX_COOLDOWN_SECS;
+    if !cooldowns.contains(&cooldown_secs) {
+        return Err(AlertRuleError::Cooldown);
+    }
+    Ok(())
 }
 
 /// The display name of one series of `metric` in a rule or an alert: `None` for a
 /// series without labels, "Fan {n+1}" for `fan.rpm` with a numeric `fan` label `n`
 /// (fans are numbered from 0 in the catalog and from 1 on screen), otherwise the single
 /// label's value ("/" for the boot volume).
-pub fn series_name(_metric: &str, _labels: &Labels) -> Option<String> {
-    None
+pub fn series_name(metric: &str, labels: &Labels) -> Option<String> {
+    let (key, value) = labels.iter().next()?;
+    let fan_index = (metric == FAN_METRIC && key == FAN_LABEL)
+        .then(|| value.parse::<u32>().ok())
+        .flatten();
+    match fan_index {
+        Some(n) => Some(format!("Fan {}", n.saturating_add(1))),
+        None => Some(value.to_owned()),
+    }
 }
 
 /// Why a custom rule was refused. Each message states the limit it broke, so the
