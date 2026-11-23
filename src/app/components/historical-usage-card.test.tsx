@@ -1,11 +1,11 @@
 import { recordedProcessStart } from "@core/chart-range";
 import type { LiveProcess } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
-import { FULL_TABLE } from "@core/process-interest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { liveProcess } from "@tests/fixtures/processes";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler, useState } from "react";
+import { RUNNING_APPS_VIEW } from "~/hooks/use-running-apps";
 import {
   HistoricalUsageCard,
   type HistoricalUsageSort,
@@ -395,7 +395,7 @@ describe("recorded rows act on what is running now", () => {
         transport.calls
           .filter((c) => c.command === "set_process_interest")
           .map((c) => c.args[2])
-      ).toContainEqual(FULL_TABLE)
+      ).toContainEqual(RUNNING_APPS_VIEW)
     );
   });
 
@@ -594,6 +594,6 @@ describe("recorded rows act on what is running now", () => {
       transport.calls
         .filter((c) => c.command === "set_process_interest")
         .map((c) => c.args[2])
-    ).not.toContainEqual(FULL_TABLE);
+    ).not.toContainEqual(RUNNING_APPS_VIEW);
   });
 });

@@ -7,9 +7,9 @@ import type {
 } from "@core/generated/bindings";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import { FULL_TABLE } from "@core/process-interest";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
+import { RUNNING_APPS_VIEW } from "~/hooks/use-running-apps";
 import { BrushProvider } from "~/stores/brush-store";
 import { AppsCard } from "./_components/apps-card";
 import NetworkRoute from "./route";
@@ -106,7 +106,7 @@ describe("Network page Apps card (D-089)", () => {
     ).toBeVisible();
     // Per-app history replaces the live per-process rates: the only interest
     // is the full table without rates, which maps app rows to what Quit acts on.
-    expect(views(transport.calls)).toEqual([FULL_TABLE]);
+    expect(views(transport.calls)).toEqual([RUNNING_APPS_VIEW]);
   });
 
   it("sorts by now on request", async () => {
