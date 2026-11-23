@@ -101,8 +101,12 @@ interface TableOptions<G, M> {
   sort?: ClientSort;
   /** Omit and the table keeps its own expansion, collapsed to start. */
   expansion?: Expansion;
-  /** Checkbox gutter, selection bar and Quit actions. */
-  selectable: boolean;
+  /**
+   * Checkbox gutter, selection bar and Quit actions. Null while that is not
+   * known yet (`useCanSignalSettled`): the table renders nothing rather than
+   * add the gutter under the reader a moment later.
+   */
+  selectable: boolean | null;
   /** Selection resets when it changes (another range, another host). */
   scopeKey?: string;
   /** What Command-A selects; defaults to every group's and listed member's targets. */
