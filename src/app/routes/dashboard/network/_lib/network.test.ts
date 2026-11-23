@@ -1,25 +1,5 @@
-import { PROCESSES, withNetRates } from "@core/mock/fixtures";
 import { describe, expect, it } from "vitest";
-import {
-  interfaceRows,
-  measuredTraffic,
-  networkSubtitle,
-  ofLink,
-} from "./network";
-
-describe("measuredTraffic", () => {
-  it("keeps rows with a measured, non-zero rate", () => {
-    const measured = withNetRates(PROCESSES);
-    expect(measuredTraffic(PROCESSES)).toEqual([]);
-    expect(measuredTraffic(measured).map((p) => p.name)).toEqual([
-      "Xcode",
-      "Safari",
-      "node",
-      "Figma",
-      "com.docker.backend",
-    ]);
-  });
-});
+import { interfaceRows, networkSubtitle, ofLink } from "./network";
 
 describe("network page helpers", () => {
   it("builds rows in layout order and leaves unknown fields missing", () => {

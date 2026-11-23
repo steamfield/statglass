@@ -36,7 +36,7 @@ import {
 } from "~/components/process-group-table";
 import { SelectionChip } from "~/components/selection-chip";
 import { TableCell, TableRow } from "~/components/ui/table";
-import { useCanSignal, useEdition } from "~/hooks/use-edition";
+import { useCanSignalSettled } from "~/hooks/use-edition";
 import { useModuleEnd, useUsageHistorical } from "~/hooks/use-module-end";
 import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
 import { useRunningApps } from "~/hooks/use-running-apps";
@@ -103,9 +103,6 @@ function LiveAppsCard({ windowMs }: { windowMs: number }) {
   const units = useUnits();
   // Held here, not in the table, so it survives a brushed range loading.
   const [sort, setSort] = useState(BY_TOTAL);
-  // Whether rows are selectable shapes the table (a checkbox gutter), so
-  // wait for the edition rather than add the gutter under the reader.
-  const known = useEdition() !== null;
 
   const data = heldFor(totals, windowMs);
   const now = useMemo(() => nowRates(latest.data), [latest.data]);
@@ -125,7 +122,7 @@ function LiveAppsCard({ windowMs }: { windowMs: number }) {
           : "Couldn't load app totals."}
       </AppsNote>
     );
-  } else if (!data || !known) {
+  } else if (!data) {
     body = <AppsNote>Loading app totals…</AppsNote>;
   } else if (unrecorded(data)) {
     body = <Unrecorded data={data} edge={complete} />;
@@ -227,7 +224,9 @@ function AppsTable({
 }) {
   // Null where this view cannot quit (App Store edition, remote hosts).
   const running = useRunningApps();
-  const selectable = useCanSignal();
+  // Null while the edition loads: the table waits rather than add its
+  // checkbox column under the reader.
+  const selectable = useCanSignalSettled();
   const groupRows = useMemo(() => appGroupRows(rows, running), [rows, running]);
   const columns = useMemo(() => appColumns(units), [units]);
   return (
@@ -240,7 +239,11 @@ function AppsTable({
       freezeOrderOnHover
       selectable={selectable}
       after={(colSpan) => (
-        <RemainderRows rest={rest} selectable={selectable} colSpan={colSpan} />
+        <RemainderRows
+          rest={rest}
+          selectable={selectable === true}
+          colSpan={colSpan}
+        />
       )}
       empty="No app sent or received anything in this range."
     />
@@ -248,7 +251,9 @@ function AppsTable({
 }
 
 /**
- * App rows as groups without members. The table breaks sort ties by name,
+ * App rows as groups without members, so no count. Before the first
+ * process batch nothing is known to be not running, so no row says so yet.
+ * The table breaks sort ties by name,
  * then keeps input order, so ordering the input by key keeps names that
  * collate equal ("é" and "é") in one order across frames.
  */
@@ -260,11 +265,11 @@ function appGroupRows(
     groups: [...rows].sort(byKey),
     key: (r) => r.key,
     name: (r) => r.name,
-    count: () => 1,
+    count: () => null,
     expandable: () => false,
     members: () => [],
     targets: (r) => appQuitTargets(running, r.name),
-    unavailable: () => "Not running",
+    unavailable: () => (running === null ? undefined : "Not running"),
     memberKey: () => "",
     memberName: () => "",
     memberPid: () => 0,

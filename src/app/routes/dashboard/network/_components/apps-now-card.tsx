@@ -14,15 +14,17 @@ import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { AppsNote, AppsShell } from "~/components/app-table";
 import type { ColumnSort } from "~/components/data-table";
-import { ProcessGroupTable } from "~/components/process-group-table";
+import {
+  liveGroupRows,
+  ProcessGroupTable,
+} from "~/components/process-group-table";
 import { liveColumns } from "~/components/process-group-table/live-columns";
-import { useCanSignal, useEdition } from "~/hooks/use-edition";
+import { useCanSignalSettled } from "~/hooks/use-edition";
 import {
   useProcessInterest,
   useProcessRows,
 } from "~/hooks/use-process-interest";
 import { useUnits } from "~/hooks/use-units";
-import { liveGroupRows } from "../../processes/_lib/processes";
 
 /** Groups listed before "Show all". */
 const TOP_GROUPS = 12;
@@ -39,7 +41,7 @@ const BY_TOTAL: ColumnSort<string> = { by: "netTotal", dir: "desc" };
  * App groups that sent or received something. A group's figures are member
  * sums, so a group with a null total has only baseline samples (D-081).
  */
-export function trafficGroups(rows: readonly LiveProcess[]): LiveGroup[] {
+function trafficGroups(rows: readonly LiveProcess[]): LiveGroup[] {
   return groupLiveProcesses(rows, "").filter(
     (g) => (netTotal(g.figures) ?? 0) > 0
   );
@@ -53,15 +55,15 @@ export function AppsNowCard() {
   useProcessInterest(NETWORK_VIEW);
   const live = useProcessRows();
   const units = useUnits();
-  // The App Store edition has no Quit or Force Quit (D-065).
-  const canSignal = useCanSignal();
-  // Selectability shapes the table (a checkbox gutter): wait for the edition.
-  const known = useEdition() !== null;
+  // False in the App Store edition (no Quit, D-065); null while it loads,
+  // so the table waits rather than add its checkbox column under the reader.
+  const selectable = useCanSignalSettled();
   const location = useLocation();
+  const back = `${location.pathname}${location.search}`;
   const [sort, setSort] = useState(BY_TOTAL);
-  const groups = useMemo(
-    () => (live === null ? [] : trafficGroups(live)),
-    [live]
+  const rows = useMemo(
+    () => liveGroupRows(live === null ? [] : trafficGroups(live), back),
+    [live, back]
   );
   const columns = useMemo(
     () =>
@@ -85,23 +87,21 @@ export function AppsNowCard() {
           Turn it on in Settings
         </Link>
       </AppsNote>
-      {known && (
-        <ProcessGroupTable
-          rows={liveGroupRows(groups, `${location.pathname}${location.search}`)}
-          columns={columns}
-          nameHeader="App"
-          ariaLabel="Network by app, now"
-          sort={{ value: sort, onChange: setSort, client: true }}
-          limit={TOP_GROUPS}
-          freezeOrderOnHover
-          selectable={canSignal}
-          empty={
-            live === null
-              ? "Measuring network by process…"
-              : "None of your processes sent or received anything."
-          }
-        />
-      )}
+      <ProcessGroupTable
+        rows={rows}
+        columns={columns}
+        nameHeader="App"
+        ariaLabel="Network by app, now"
+        sort={{ value: sort, onChange: setSort, client: true }}
+        limit={TOP_GROUPS}
+        freezeOrderOnHover
+        selectable={selectable}
+        empty={
+          live === null
+            ? "Measuring network by process…"
+            : "None of your processes sent or received anything."
+        }
+      />
     </AppsShell>
   );
 }

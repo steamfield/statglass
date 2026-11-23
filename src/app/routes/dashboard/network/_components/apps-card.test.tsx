@@ -35,7 +35,12 @@ const header = (label: string) =>
   screen.getByRole("columnheader", { name: new RegExp(`^${label}`) });
 const clickHeader = (label: string) =>
   fireEvent.click(within(header(label)).getByRole("button"));
-function renderApps() {
+type MockTransport = ReturnType<typeof createMockTransport>;
+
+function renderApps(
+  options: Parameters<typeof createMockTransport>[0] = {},
+  configure: (transport: MockTransport) => void = () => {}
+) {
   let totals = networkByApp({ other_apps_rx_bytes: 100 });
   let latest = networkByApp({
     apps: [{ name: "Google Chrome", rx_bytes: 11e6, tx_bytes: 0 }],
@@ -43,7 +48,9 @@ function renderApps() {
   const transport = createMockTransport({
     now: () => T + 5000,
     autoTick: false,
+    ...options,
   });
+  configure(transport);
   transport.queryNetworkByApp = async (_host, from, to) => ({
     status: "ok",
     data: {
@@ -351,9 +358,120 @@ describe("Network app rows act on the running app", () => {
     if (!other) throw new Error("no Other apps row");
     expect(within(other).queryByRole("checkbox")).toBeNull();
   });
+
+  it("says Not running only once a process batch shows the app is absent", async () => {
+    // The engine's first batch is late: interest is taken, nothing sent yet.
+    const result = renderApps({}, (transport) => {
+      transport.setProcessInterest = async () => ({ status: "ok", data: null });
+    });
+    await screen.findByRole("table", { name: "Network by app" });
+    await waitFor(() => expect(result.transport.subscriberCount()).toBe(1));
+    // Before the first batch nothing is known to be not running.
+    expect(screen.queryByText("Not running")).toBeNull();
+    act(() =>
+      result.transport.push({
+        kind: "processes",
+        ts_ms: T,
+        rows: [liveProcess({ pid: 501, name: "Google Chrome" })],
+      })
+    );
+    const docker = await screen.findByRole("checkbox", {
+      name: "Select Docker Desktop",
+    });
+    await waitFor(() =>
+      expect(docker).toHaveAccessibleDescription("Not running")
+    );
+    expect(docker).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Select Google Chrome" })
+    ).toBeEnabled();
+  });
+});
+
+describe("Network app tables without Quit", () => {
+  const noEdition = (transport: MockTransport) => {
+    transport.getEdition = () => Promise.reject(new Error("x"));
+  };
+
+  it.each([
+    ["a failed edition read", {}, noEdition],
+    ["the App Store edition", { scenarios: ["appstore" as const] }, () => {}],
+  ])(
+    "Network by app renders without selection after %s",
+    async (_label, options, configure) => {
+      renderApps(options, configure);
+      const table = await screen.findByRole("table", {
+        name: "Network by app",
+      });
+      expect(within(table).getAllByRole("row").length).toBeGreaterThan(4);
+      expect(within(table).queryAllByRole("checkbox")).toEqual([]);
+      expect(within(table).queryByText("Actions")).toBeNull();
+      expect(within(table).queryByText("Not running")).toBeNull();
+    }
+  );
+
+  it.each([
+    ["a failed edition read", {}, noEdition],
+    ["the App Store edition", { scenarios: ["appstore" as const] }, () => {}],
+  ])(
+    "Apps, now renders without selection after %s",
+    async (_label, options, configure) => {
+      const transport = createMockTransport({ autoTick: false, ...options });
+      configure(transport);
+      renderWithProviders(createElement(AppsNowCard), { transport });
+      const table = await screen.findByRole("table", {
+        name: "Network by app, now",
+      });
+      expect(within(table).queryAllByRole("checkbox")).toEqual([]);
+      expect(within(table).queryByText("Actions")).toBeNull();
+    }
+  );
 });
 
 describe("Apps, now", () => {
+  it("selects a group's quit members and quits them after the dialog", async () => {
+    const transport = createMockTransport({ now: () => T, autoTick: false });
+    const { user } = renderWithProviders(createElement(AppsNowCard), {
+      transport,
+    });
+    await screen.findByRole("table", { name: "Network by app, now" });
+    await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+    const traffic = { net_rx_bps: 1000, net_tx_bps: 0 };
+    act(() =>
+      transport.push({
+        kind: "processes",
+        ts_ms: T,
+        rows: [
+          liveProcess({ pid: 201, name: "Busy", app: "Busy", ...traffic }),
+          liveProcess({
+            pid: 202,
+            name: "Busy Helper",
+            app: "Busy",
+            app_quit: false,
+            ...traffic,
+          }),
+        ],
+      })
+    );
+    await user.click(
+      await screen.findByRole("checkbox", { name: "Select Busy" })
+    );
+    expect(screen.getByText("1 selected")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Quit 1…" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      transport.calls.filter((c) => c.command === "process_signal")
+    ).toEqual([]);
+    await user.click(within(dialog).getByRole("button", { name: "Quit" }));
+    await waitFor(() =>
+      expect(
+        transport.calls
+          .filter((c) => c.command === "process_signal")
+          .map((c) => c.args.slice(1))
+      ).toEqual([[201, 201, "quit"]])
+    );
+  });
+
   it("lists the top 12 apps by summed total, without idle apps, and shows all on request", async () => {
     const transport = createMockTransport({ now: () => T, autoTick: false });
     renderWithProviders(createElement(AppsNowCard), { transport });
