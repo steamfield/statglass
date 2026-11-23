@@ -6,11 +6,11 @@ import {
   formatRate,
   formatSpan,
 } from "@core/format";
+import { diskTotal } from "@core/process-groups";
 import { FULL_TABLE } from "@core/process-interest";
 import { Link, useParams, useSearchParams } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
-import { diskTotal } from "~/components/process-table";
 import { SectionCard } from "~/components/section-card";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import {

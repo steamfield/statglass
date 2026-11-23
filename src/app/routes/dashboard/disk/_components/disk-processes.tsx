@@ -2,6 +2,7 @@ import { matchProcessQuery } from "@core/app-search";
 import { scopeWords, type TimeRange } from "@core/brush";
 import { formatBytes, formatRate, formatSpan } from "@core/format";
 import type { LiveProcess, ProcessUsage } from "@core/generated/bindings";
+import { diskTotal } from "@core/process-groups";
 import { FULL_TABLE } from "@core/process-interest";
 import { targetKey } from "@core/process-selection";
 import { remoteQueryText } from "@core/remote-errors";
@@ -24,7 +25,6 @@ import {
   SharedProcessActions,
   useProcessSelection,
 } from "~/components/process-selection";
-import { diskTotal } from "~/components/process-table";
 import { SearchField } from "~/components/search-field";
 import { Button } from "~/components/ui/button";
 import {

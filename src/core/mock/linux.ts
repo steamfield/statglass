@@ -380,6 +380,8 @@ function proc(
     ports: null,
     user,
     refusal: pid === 1 ? "launchd" : null,
+    app: name,
+    app_quit: true,
   };
 }
 

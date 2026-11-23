@@ -273,6 +273,8 @@ const PROCESS_ROWS: LiveProcess[] = PROCS.map(
         : name === "WindowServer"
           ? "window_server"
           : null,
+    app: name,
+    app_quit: true,
   })
 );
 

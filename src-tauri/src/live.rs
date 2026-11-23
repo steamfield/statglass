@@ -239,6 +239,8 @@ fn live_process(
         ports: r.ports.as_deref().map(<[u16]>::to_vec),
         user: r.user.to_string(),
         refusal: refusal(r.pid, r.start_time_us, &r.name),
+        app: r.name.to_string(),
+        app_quit: false,
     }
 }
 

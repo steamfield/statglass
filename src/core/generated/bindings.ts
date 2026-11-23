@@ -2071,6 +2071,18 @@ export type LiveProcess = {
 	 *  collector's list (D-092).
 	 */
 	refusal: SignalRefusal | null,
+	/**
+	 *  The app this process belongs to, by the identity rule per-app usage groups by
+	 *  (D-089): "Google Chrome" for its helpers, `node` for a CLI. The process name when no
+	 *  app was resolved. Tables group rows by it.
+	 */
+	app: string,
+	/**
+	 *  Quit on this process's app acts on it: the app's main executable alone when it is
+	 *  running, otherwise every process of the app. Decided over the whole sample, before
+	 *  the view's limit, by the rule `query_usage_by_app` uses for `quit_pids`.
+	 */
+	app_quit: boolean,
 };
 
 export type LiveStatus = {

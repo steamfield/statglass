@@ -15,8 +15,8 @@ import {
 } from "@core/format";
 import { batteryTime } from "@core/format/battery";
 import type { LiveProcess, PowerSource } from "@core/generated/bindings";
+import { netTotal } from "@core/process-groups";
 import { topBy } from "@core/top-by";
-import { netTotal } from "~/components/process-table";
 import type { BatteryDetail } from "~/hooks/use-battery";
 import { pressureState } from "~/routes/dashboard/memory/_lib/pressure";
 import type { MetricCardProps } from "~/widgets/metric-card";

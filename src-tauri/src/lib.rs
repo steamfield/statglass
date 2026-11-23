@@ -6,6 +6,7 @@
 
 mod addresses;
 pub mod app_menu;
+mod app_quit;
 mod bench;
 mod calibration;
 mod cli_link;

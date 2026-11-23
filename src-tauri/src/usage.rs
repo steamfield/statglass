@@ -24,13 +24,9 @@ pub const DISK_WRITE: &str = "disk.write_total";
 /// it quits the app and its helpers, and signalling helpers first would cut a graceful
 /// quit short), else every running process.
 fn quit_pids(processes: &[UsageProc]) -> Vec<i32> {
-    if let Some(main) = processes.iter().find(|p| p.running && p.app_main) {
-        return vec![main.pid];
-    }
-    processes
-        .iter()
-        .filter(|p| p.running)
-        .map(|p| p.pid)
+    crate::app_quit::quit_targets(processes, |p| p.running, |p| p.app_main)
+        .into_iter()
+        .filter_map(|i| processes.get(i).map(|p| p.pid))
         .collect()
 }
 

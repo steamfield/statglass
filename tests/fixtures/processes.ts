@@ -25,6 +25,8 @@ export function liveProcess(
     ports: null,
     user: "me",
     refusal: null,
+    app: over.name ?? `process${over.pid}`,
+    app_quit: true,
     ...over,
   };
 }

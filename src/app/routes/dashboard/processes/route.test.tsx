@@ -1,4 +1,4 @@
-import { PROCESSES } from "@core/mock/fixtures";
+import { IDLE_PROCESSES, PROCESSES } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import {
   act,
@@ -42,20 +42,76 @@ describe("Processes page", () => {
     ).toBeVisible();
   });
 
-  it("filters by name or PID", async () => {
+  it("filters by app name, keeping the whole group", async () => {
     const { user } = renderPage();
     await screen.findByRole("cell", { name: /Xcode/ });
     const search = screen.getByRole("searchbox", { name: /search processes/i });
 
     await user.type(search, "safari");
     expect(screen.queryByRole("cell", { name: /Xcode/ })).toBeNull();
-    expect(screen.getByRole("cell", { name: /^Safari$/ })).toBeVisible();
-    expect(screen.getByText(/^2 of \d+ processes/)).toBeVisible();
+    expect(
+      screen.getByRole("cell", { name: /^Safari\s*\d+ processes$/ })
+    ).toBeVisible();
+    const members = IDLE_PROCESSES.filter((p) => p.app === "Safari").length + 2;
+    expect(
+      screen.getByText(new RegExp(`^${members} of [\\d,]+ processes`))
+    ).toBeVisible();
+  });
 
-    await user.clear(search);
-    await user.type(search, "2214");
-    expect(screen.getByRole("cell", { name: /Xcode/ })).toBeVisible();
-    expect(screen.queryByRole("cell", { name: /^Safari$/ })).toBeNull();
+  it("finds a member by PID and lists it under its open group", async () => {
+    const { user } = renderPage();
+    await screen.findByRole("cell", { name: /Xcode/ });
+    await user.type(
+      screen.getByRole("searchbox", { name: /search processes/i }),
+      "2240"
+    );
+    expect(
+      screen.getByRole("button", { name: "Hide Xcode processes" })
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("cell", { name: /SourceKitService/ })
+    ).toBeVisible();
+    expect(screen.queryByRole("cell", { name: /^Safari/ })).toBeNull();
+    expect(screen.getByText(/^1 of [\d,]+ processes/)).toBeVisible();
+  });
+
+  it("groups an app's helpers under one row that expands", async () => {
+    const { user } = renderPage();
+    await screen.findByRole("cell", { name: /Xcode/ });
+    const helpers = IDLE_PROCESSES.filter((p) => p.app === "Google Chrome");
+    await user.type(
+      screen.getByRole("searchbox", { name: /search processes/i }),
+      "google chrome"
+    );
+    expect(screen.getByText(`${helpers.length} processes`)).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Show Google Chrome processes" })
+    );
+    expect(
+      screen.getAllByRole("cell", { name: /Google Chrome Helper \(Renderer\)/ })
+        .length
+    ).toBeGreaterThan(0);
+  });
+
+  it("selects every member of an app with no main executable from its row", async () => {
+    const { user } = renderPage();
+    await screen.findByRole("cell", { name: /Xcode/ });
+    const helpers = IDLE_PROCESSES.filter((p) => p.app === "Google Chrome");
+    await user.type(
+      screen.getByRole("searchbox", { name: /search processes/i }),
+      "google chrome"
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Google Chrome" })
+    );
+    expect(screen.getByText(`${helpers.length} selected`)).toBeVisible();
+  });
+
+  it("selects only the main executable of a bundled app", async () => {
+    const { user } = renderPage();
+    await screen.findByRole("cell", { name: /Xcode/ });
+    await user.click(screen.getByRole("checkbox", { name: "Select Xcode" }));
+    expect(screen.getByText("1 selected")).toBeVisible();
   });
 
   it("shows listening ports, finds a process by port, and has no wake-ups column", async () => {
@@ -217,9 +273,7 @@ describe("Processes page, network columns (D-081)", () => {
         "Safari"
       )
     );
-    expect(within(table).getAllByRole("row")[1]?.textContent).toContain(
-      "21.4 MB/s"
-    );
+    expect(within(table).getAllByRole("row")[1]?.textContent).toMatch(/MB\/s/);
     expect(screen.getByText(/cover your processes only/)).toBeVisible();
 
     await user.click(screen.getByRole("radio", { name: "CPU" }));

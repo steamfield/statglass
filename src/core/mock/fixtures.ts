@@ -18,6 +18,7 @@ import type {
 import { trayStyleMenuBar } from "@core/settings-patch";
 import { MINUTE_MS } from "../time-grid";
 import { LINUX_HOST_NAME, linuxCapabilities, linuxHostInfo } from "./linux";
+import { APP_OF } from "./usage";
 
 export const BLOCKED_REMOTE_UPDATE = {
   status: "compatibility_blocked",
@@ -542,6 +543,8 @@ function proc(
     ports: null,
     user,
     refusal: refusal(pid, name),
+    app: APP_OF[name] ?? name,
+    app_quit: true,
   };
 }
 

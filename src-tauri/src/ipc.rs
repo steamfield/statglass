@@ -258,6 +258,14 @@ pub struct LiveProcess {
     /// rule `process_signal` checks, with StatGlass's own processes from the self-CPU
     /// collector's list (D-092).
     pub refusal: Option<SignalRefusal>,
+    /// The app this process belongs to, by the identity rule per-app usage groups by
+    /// (D-089): "Google Chrome" for its helpers, `node` for a CLI. The process name when no
+    /// app was resolved. Tables group rows by it.
+    pub app: String,
+    /// Quit on this process's app acts on it: the app's main executable alone when it is
+    /// running, otherwise every process of the app. Decided over the whole sample, before
+    /// the view's limit, by the rule `query_usage_by_app` uses for `quit_pids`.
+    pub app_quit: bool,
 }
 
 /// What `subscribe_live` did before returning.

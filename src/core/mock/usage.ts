@@ -36,6 +36,19 @@ export const APP_OF: Record<string, string> = {
 const BUNDLED = new Set(Object.values(APP_OF));
 
 /**
+ * Marks `app_quit` across one batch, as Rust's `app_quit::quit_targets` does:
+ * a bundled app's running main executable alone, else every member.
+ */
+export function withAppQuit(rows: readonly LiveProcess[]): LiveProcess[] {
+  const isMain = (p: LiveProcess) => p.name === p.app && BUNDLED.has(p.app);
+  const withMain = new Set(rows.filter(isMain).map((p) => p.app));
+  return rows.map((p) => ({
+    ...p,
+    app_quit: withMain.has(p.app) ? isMain(p) : true,
+  }));
+}
+
+/**
  * Processes that ran during the window and have exited, for the first third
  * of the covered span: `[app, name, pid, watts, cpu %, MiB, write B/s]`.
  */

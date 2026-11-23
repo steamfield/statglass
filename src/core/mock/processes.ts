@@ -13,6 +13,7 @@ import {
 } from "./protocol";
 import type { MockRemotes } from "./remote";
 import type { MockRing } from "./ring";
+import { withAppQuit } from "./usage";
 export class MockProcesses {
   interest: { view: ProcessView; stream: number | null } | null = null;
   lastBatchMs: number | null = null;
@@ -26,7 +27,9 @@ export class MockProcesses {
     private readonly push: (msg: LiveMsg) => void
   ) {}
   readonly processRows = () =>
-    this.ring.gen.processes().filter((p) => !this.signalled.has(p.pid));
+    withAppQuit(
+      this.ring.gen.processes().filter((p) => !this.signalled.has(p.pid))
+    );
   readonly interestActive = () =>
     this.interest !== null &&
     (this.interest.stream === null ||
