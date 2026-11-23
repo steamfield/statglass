@@ -164,17 +164,13 @@ for (const theme of ["light", "dark"]) {
     await expect(
       page.getByRole("columnheader", { name: "Peak RAM" })
     ).toHaveAttribute("aria-sort", "descending");
-    await page
-      .getByRole("button", { name: "Show Compiler recorded processes" })
-      .click();
-    await expect(page.getByText("PID 4099", { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: "Show Compiler processes" }).click();
+    await expect(page.locator('tr[data-pid="4099"]')).toBeVisible();
     await page
       .getByRole("button", { name: "Load more recorded processes" })
       .click();
-    await expect(page.getByText("PID 4124", { exact: false })).toBeVisible();
-    await page
-      .getByRole("button", { name: "Hide Compiler recorded processes" })
-      .click();
+    await expect(page.locator('tr[data-pid="4124"]')).toBeVisible();
+    await page.getByRole("button", { name: "Hide Compiler processes" }).click();
     await page
       .getByRole("table", { name: "Recorded apps in this range" })
       .scrollIntoViewIfNeeded();

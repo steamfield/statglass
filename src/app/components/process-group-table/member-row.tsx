@@ -118,6 +118,7 @@ export function MemberRow<G, M>({
   const pid = rows.memberPid(member);
   const targets = rows.memberTargets(member);
   const muted = rows.memberMuted?.(member) ?? false;
+  const detail = rows.memberDetail?.(member);
   return (
     <ProcessSelectionRow
       rowKey={rows.memberKey(member)}
@@ -132,8 +133,14 @@ export function MemberRow<G, M>({
         <span className="inline-flex min-w-0 max-w-64 items-baseline gap-2">
           <MemberName name={name} href={rows.memberHref?.(member)} />
           {!columns.some((c) => c.id === PID_COLUMN) && (
-            <span className="figures text-label text-muted-foreground">
+            <span
+              className="figures text-label text-muted-foreground"
+              title={detail}
+            >
               {pid}
+              {detail !== undefined && (
+                <span className="sr-only">, {detail}</span>
+              )}
             </span>
           )}
         </span>

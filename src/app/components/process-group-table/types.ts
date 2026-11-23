@@ -61,6 +61,11 @@ export interface GroupRows<G, M> {
   memberKey: (member: M) => string;
   memberName: (member: M) => string;
   memberPid: (member: M) => number;
+  /**
+   * Extra identity for the member's pid, e.g. when a recorded process
+   * started: its pid's tooltip, and read after the pid by screen readers.
+   */
+  memberDetail?: (member: M) => string | undefined;
   /** The process detail page for a member; its name renders as a link to it. */
   memberHref?: (member: M) => string | undefined;
   /** What the member row selects and quits; empty when it is not running. */
