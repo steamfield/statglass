@@ -131,7 +131,7 @@ describe("Rules panel", () => {
     expect(
       within(region).getAllByText(/CPU usage above 90% for 5 min/)
     ).toHaveLength(1);
-    expect(within(region).getByText(/Never fired/)).toBeInTheDocument();
+    expect(within(region).getAllByText(/Never fired/)).toHaveLength(2);
   });
 
   it("opens the Timeline on the hour around the rule's last alert", async () => {
@@ -160,7 +160,7 @@ describe("Rules panel", () => {
     renderWithProviders(<RulesPanel onEdit={vi.fn()} />, { transport });
     await waitFor(() => {
       expect(screen.getAllByText(/Not measured on this Mac/)).toHaveLength(1);
-      expect(screen.getAllByText(/Never fired/)).toHaveLength(1);
+      expect(screen.getAllByText(/Never fired/)).toHaveLength(2);
     });
     expect(screen.getByRole("switch", { name: "Low battery" })).toBeChecked();
   });
@@ -223,7 +223,7 @@ describe("Rules panel", () => {
     );
     await screen.findByText("layout");
     await screen.findByText(/Last fired 1 h ago/);
-    await screen.findByText(/Never fired/);
+    await screen.findAllByText(/Never fired/);
     // Drain subscription, settings and query startup before counting.
     await act(async () => {});
     const settled = renders;
