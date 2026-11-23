@@ -121,6 +121,15 @@ impl AlertEval {
         };
     }
 
+    /// Swaps in an edit of the same definition (a new name, cooldown or switch): the
+    /// progress and the episode already reported stay, later alerts carry the new name
+    /// and the cooldown is read from the new rule. Switching off forgets progress, as
+    /// [`Self::set_enabled`] does.
+    pub(super) fn set_rule(&mut self, rule: AlertRule) {
+        self.set_enabled(rule.enabled);
+        self.rule = rule;
+    }
+
     /// Takes over `previous`'s last firing, for a rule whose definition changed: the
     /// new evaluator starts its progress over but stays held off by the old cooldown.
     pub(super) fn keep_cooldown_from(&mut self, previous: &AlertEval) {
