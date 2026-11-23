@@ -71,8 +71,70 @@ impl Destination {
     /// a token of at most [`Self::MAX_TOKEN_CHARS`] characters with no whitespace or
     /// control character (an empty token is no token).
     pub fn validate(&self) -> Result<(), DestinationError> {
-        Err(DestinationError::Name)
+        let name_chars = self.name.trim().chars().count();
+        if !(1..=Self::MAX_NAME_CHARS).contains(&name_chars) {
+            return Err(DestinationError::Name);
+        }
+        match &self.kind {
+            DestinationKind::Ntfy {
+                server,
+                topic,
+                token,
+            } => {
+                if !is_valid_url(server) {
+                    return Err(DestinationError::Url);
+                }
+                if !is_valid_topic(topic) {
+                    return Err(DestinationError::Topic);
+                }
+                match token.as_deref() {
+                    Some(token) if !is_valid_token(token) => Err(DestinationError::Token),
+                    _ => Ok(()),
+                }
+            }
+            DestinationKind::Webhook { url } => {
+                if is_valid_url(url) {
+                    Ok(())
+                } else {
+                    Err(DestinationError::Url)
+                }
+            }
+        }
     }
+}
+
+/// An http or https URL that names a host, fits [`Destination::MAX_URL_CHARS`] and holds
+/// no whitespace, control character, quote or backslash. The scheme is matched in lower
+/// case only, as every address the destination dialog produces is.
+fn is_valid_url(url: &str) -> bool {
+    let forbidden = |c: char| c.is_whitespace() || c.is_control() || c == '"' || c == '\\';
+    if url.chars().count() > Destination::MAX_URL_CHARS || url.contains(forbidden) {
+        return false;
+    }
+    let Some(rest) = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host_and_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, after)| after);
+    !host_and_port.is_empty() && !host_and_port.starts_with(':')
+}
+
+/// 1 to [`Destination::MAX_TOPIC_CHARS`] ASCII letters, digits, hyphens or underscores.
+fn is_valid_topic(topic: &str) -> bool {
+    let allowed = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    (1..=Destination::MAX_TOPIC_CHARS).contains(&topic.len()) && topic.chars().all(allowed)
+}
+
+/// At most [`Destination::MAX_TOKEN_CHARS`] characters with no whitespace or control
+/// character. Empty is valid: it counts as no token.
+fn is_valid_token(token: &str) -> bool {
+    token.chars().count() <= Destination::MAX_TOKEN_CHARS
+        && !token.contains(|c: char| c.is_whitespace() || c.is_control())
 }
 
 /// Why a destination was refused. Each message states the rule it broke, so the

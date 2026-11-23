@@ -5,9 +5,10 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use statglass_schema::{DeliveryOutcome, Destination};
+use statglass_schema::{DeliveryFailure, DeliveryOutcome, Destination};
 
-use crate::request::Message;
+use crate::curl;
+use crate::request::{Message, build_request};
 
 /// How [`deliver`] sends: which curl, how long one attempt may take, and the waits
 /// before the second and third attempts.
@@ -39,6 +40,42 @@ pub fn deliver(
     message: &Message,
     options: &DeliverOptions,
 ) -> DeliveryOutcome {
-    let _ = (destination, message, options);
-    crate::curl::not_implemented()
+    if let Err(error) = destination.validate() {
+        return DeliveryOutcome::Failed {
+            reason: DeliveryFailure::Rejected,
+            detail: format!("Not sent: {error}"),
+        };
+    }
+    let request = build_request(destination, message);
+    let mut waits = options.backoff.iter();
+    loop {
+        let outcome = curl::run(&options.curl, &request, options.timeout_secs);
+        if !is_worth_retrying(&outcome) {
+            return outcome;
+        }
+        let Some(wait) = waits.next() else {
+            return outcome;
+        };
+        std::thread::sleep(*wait);
+    }
+}
+
+/// Whether another attempt can help: the network failed, or the server answered 5xx.
+/// A 4xx answer, a TLS failure or a refused request fails the same way again.
+fn is_worth_retrying(outcome: &DeliveryOutcome) -> bool {
+    match outcome {
+        DeliveryOutcome::Delivered { .. } => false,
+        DeliveryOutcome::Failed { reason, .. } => match reason {
+            DeliveryFailure::ConnectFailed
+            | DeliveryFailure::NameNotFound
+            | DeliveryFailure::TimedOut => true,
+            DeliveryFailure::Http => {
+                curl::http_status(outcome).is_some_and(|status| (500..600).contains(&status))
+            }
+            DeliveryFailure::CurlMissing
+            | DeliveryFailure::Tls
+            | DeliveryFailure::Rejected
+            | DeliveryFailure::Other => false,
+        },
+    }
 }
