@@ -155,6 +155,7 @@ Rust contract: `ipc::LiveProcess { …, app: String, app_quit: bool }`; `app_qui
 
 ### Phase 1: grouped Processes page (MVP)
 
+Scaffold: b1250f54
 Demo: `bun run dev:fast`, open `/?route=/dashboard/processes`: apps are rows, Google Chrome / node expand to their processes, ticking the Chrome group selects its quit target, the selection bar's Quit opens the batch dialog; search "node" shows the node group open; sorting by Memory orders groups by summed memory.
 Test cases:
 - Rust: `app_quit::quit_targets` main running → only main; no main → all running; main exited → all running; none running → empty.
@@ -173,9 +174,9 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | S | src-tauri/src/app_quit.rs, src-tauri/src/live.rs | contracts, src-tauri/src/usage.rs | | sonnet | pending | | cargo tests, clippy and architecture-check pass |
-| b | S | src/core/process-groups.ts | contracts, src/core/usage-rows.ts | src/core/process-groups.test.ts | sonnet | pending | | process-groups tests pass, typecheck clean |
-| c | M | src/app/components/process-group-table/process-group-table.tsx, src/app/components/process-group-table/group-row.tsx, src/app/components/process-group-table/member-row.tsx, src/app/components/process-group-table/use-group-order.ts, src/app/components/process-group-table/live-columns.tsx, src/app/routes/dashboard/processes/route.tsx, src/app/routes/dashboard/processes/_lib/processes.ts, src/app/components/process-table.tsx, src/app/components/process-table.test.tsx, src/app/components/process-table-freeze.test.tsx, src/app/hooks/use-process-interest.ts, src/app/routes/dev/gallery/_sections/app-components.tsx | contracts, src/app/components/usage-apps-card.tsx, src/app/components/process-table.tsx | src/app/components/process-group-table/process-group-table.test.tsx, src/app/routes/dashboard/processes/route.test.tsx | opus | pending | | component and route tests pass, typecheck and lint clean, screenshots compared |
+| a | S | src-tauri/src/app_quit.rs, src-tauri/src/live.rs | contracts, src-tauri/src/usage.rs | | sonnet | running | deliver/process-tables-1a | cargo tests, clippy and architecture-check pass |
+| b | S | src/core/process-groups.ts | contracts, src/core/usage-rows.ts | src/core/process-groups.test.ts | sonnet | running | deliver/process-tables-1b | process-groups tests pass, typecheck clean |
+| c | M | src/app/components/process-group-table/process-group-table.tsx, src/app/components/process-group-table/group-row.tsx, src/app/components/process-group-table/member-row.tsx, src/app/components/process-group-table/use-group-order.ts, src/app/components/process-group-table/live-columns.tsx, src/app/routes/dashboard/processes/route.tsx, src/app/routes/dashboard/processes/_lib/processes.ts, src/app/components/process-table.tsx, src/app/components/process-table.test.tsx, src/app/components/process-table-freeze.test.tsx, src/app/hooks/use-process-interest.ts, src/app/routes/dev/gallery/_sections/app-components.tsx | contracts, src/app/components/usage-apps-card.tsx, src/app/components/process-table.tsx | src/app/components/process-group-table/process-group-table.test.tsx, src/app/routes/dashboard/processes/route.test.tsx | opus | running | deliver/process-tables-1c | component and route tests pass, typecheck and lint clean, screenshots compared |
 
 #### Lane a brief
 
