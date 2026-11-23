@@ -414,19 +414,20 @@ describe("ProcessGroupTable selection", () => {
       })
     );
     const xcode = row("Xcode");
-    expect(
-      within(xcode).getByRole("checkbox", { name: "Select Xcode (20)" })
-    ).toBeDisabled();
-    expect(within(xcode).getByText("Not running")).toBeVisible();
+    const xcodeBox = within(xcode).getByRole("checkbox", {
+      name: "Select Xcode (20)",
+    });
+    expect(xcodeBox).toBeDisabled();
+    expect(xcodeBox).toHaveAccessibleDescription("Not running");
+    expect(within(xcode).getAllByText("Not running")).toHaveLength(2);
     const helper = row("Chrome Helper (GPU)");
-    expect(
-      within(helper).getByRole("checkbox", {
-        name: "Select Chrome Helper (GPU) (12)",
-      })
-    ).toBeDisabled();
-    expect(within(helper).getByText("Exited 12")).toBeVisible();
+    const helperBox = within(helper).getByRole("checkbox", {
+      name: "Select Chrome Helper (GPU) (12)",
+    });
+    expect(helperBox).toBeDisabled();
+    expect(helperBox).toHaveAccessibleDescription("Exited 12");
     // Rows with targets keep their actions, not the reason.
-    expect(screen.getAllByText("Not running")).toHaveLength(1);
+    expect(screen.getAllByText("Not running")).toHaveLength(2);
     expect(screen.queryByText("Exited 11")).toBeNull();
   });
 

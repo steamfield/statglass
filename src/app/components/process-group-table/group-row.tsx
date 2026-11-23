@@ -117,6 +117,7 @@ export function GroupRow<G, M>({
       rowKey={rows.key(group)}
       label={groupLabel(rows, group)}
       targets={targets}
+      disabledReason={rows.unavailable?.(group)}
       data-name={name}
       className={cn(ROW, "text-fg-subtle")}
       onKeyDown={onKeyDown}

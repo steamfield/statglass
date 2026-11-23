@@ -123,6 +123,7 @@ export function MemberRow<G, M>({
       rowKey={rows.memberKey(member)}
       label={memberLabel(rows, member)}
       targets={targets}
+      disabledReason={rows.memberUnavailable?.(member)}
       data-name={name}
       data-pid={pid}
       className={cn(ROW, muted ? "text-muted-foreground" : "text-fg-subtle")}

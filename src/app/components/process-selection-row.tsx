@@ -3,7 +3,7 @@ import {
   targetKey,
   uniqueTargets,
 } from "@core/process-selection";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useId } from "react";
 import { ProcessRowActions } from "~/components/process-actions";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -53,6 +53,7 @@ export function ProcessSelectionRow({
   rowKey,
   label,
   targets,
+  disabledReason,
   children,
   className,
   ...props
@@ -60,8 +61,11 @@ export function ProcessSelectionRow({
   rowKey: string;
   label: string;
   targets: readonly ProcessTarget[];
+  /** Why the row has nothing to select ("Not running"): the disabled checkbox's description. */
+  disabledReason?: string | undefined;
 }) {
   const ctx = useProcessSelection();
+  const reasonId = useId();
   if (!ctx)
     return (
       <tr className={className} {...props}>
@@ -74,6 +78,7 @@ export function ProcessSelectionRow({
   const some = count > 0;
   const chosen = some ? ctx.selected : available;
   const actions = chosen.filter((p) => quitExclusion(p) === null).length;
+  const reason = available.length === 0 ? disabledReason : undefined;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -133,6 +138,9 @@ export function ProcessSelectionRow({
             <Checkbox
               disabled={!available.length}
               aria-label={`Select ${label}`}
+              {...(reason === undefined
+                ? {}
+                : { title: reason, "aria-describedby": reasonId })}
               className={NEUTRAL_CHECKBOX}
               checked={all ? true : some ? "indeterminate" : false}
               onClick={(e) => {
@@ -144,6 +152,11 @@ export function ProcessSelectionRow({
                 });
               }}
             />
+            {reason !== undefined && (
+              <span id={reasonId} className="sr-only">
+                {reason}
+              </span>
+            )}
           </td>
           {children}
         </tr>
