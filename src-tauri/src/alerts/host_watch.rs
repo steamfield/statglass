@@ -6,23 +6,28 @@
 use statglass_schema::{AlertCause, AlertRule, Event, EventDetail};
 
 use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch};
-use crate::remote::{RemoteState, SavedHostStatus};
+use crate::remote::{RemoteFailureKind, RemoteState, SavedHostStatus};
 
 /// The `rule_name` of every host-offline alert.
 pub const HOST_OFFLINE_RULE_NAME: &str = "Saved host offline";
 
 /// What `saved` looks like to the watch: reachable while its session is connected;
 /// not counted while its connection is switched off, an agent update is in progress,
-/// or this Mac is waiting for a network.
+/// or the last failure was this Mac's (no network, or Tailscale off here).
 pub fn observation(saved: &SavedHostStatus) -> HostObservation {
     let status = &saved.status;
+    let cause_is_this_mac = status.waiting_for_network
+        || matches!(
+            status.failure_kind,
+            Some(RemoteFailureKind::LocalOffline | RemoteFailureKind::TailscaleDown)
+        );
     HostObservation {
         host: saved.host,
         name: saved.name.clone(),
         reachable: status.state == RemoteState::Connected,
         counts: status.state != RemoteState::Disabled
             && status.update.is_none()
-            && !status.waiting_for_network,
+            && !cause_is_this_mac,
     }
 }
 
@@ -40,9 +45,10 @@ pub fn notice_event(notice: HostNotice, now_ms: i64) -> Event {
         HostNotice::Back {
             host,
             name,
+            since_ms,
             offline_ms,
         } => (
-            now_ms.saturating_sub(offline_ms),
+            since_ms,
             AlertCause::HostBack {
                 host,
                 name,
@@ -68,12 +74,13 @@ fn whole_secs(ms: i64) -> u32 {
 }
 
 /// One poll: every saved host observed at `now_ms`, and the alert events the watch's
-/// notices become.
+/// notices become. The i-th event is stamped `now_ms + i`: the store keys events on
+/// host, time and kind, so two alerts on one millisecond would keep only the last (the
+/// engine separates its own the same way).
 pub fn poll(watch: &mut HostOfflineWatch, now_ms: i64, hosts: &[SavedHostStatus]) -> Vec<Event> {
     let observations: Vec<HostObservation> = hosts.iter().map(observation).collect();
-    watch
-        .observe(now_ms, &observations)
-        .into_iter()
-        .map(|notice| notice_event(notice, now_ms))
+    (now_ms..)
+        .zip(watch.observe(now_ms, &observations))
+        .map(|(ts_ms, notice)| notice_event(notice, ts_ms))
         .collect()
 }

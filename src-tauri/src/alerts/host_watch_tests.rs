@@ -7,7 +7,8 @@ use uuid::Uuid;
 use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch};
 use super::host_watch::{HOST_OFFLINE_RULE_NAME, notice_event, observation, poll};
 use crate::remote::{
-    AgentUpdateProgress, RemoteHostStatus, RemoteState, SavedHostStatus, UpdatePhase,
+    AgentUpdateProgress, RemoteFailureKind, RemoteHostStatus, RemoteState, SavedHostStatus,
+    UpdatePhase,
 };
 
 const HOST: HostId = HostId(Uuid::from_u128(0xb0));
@@ -66,6 +67,33 @@ fn a_mac_waiting_for_network_does_not_count() {
 }
 
 #[test]
+fn a_failure_caused_by_this_mac_does_not_count() {
+    for kind in [
+        RemoteFailureKind::LocalOffline,
+        RemoteFailureKind::TailscaleDown,
+    ] {
+        let status = RemoteHostStatus {
+            failure_kind: Some(kind),
+            ..in_state(RemoteState::Offline)
+        };
+        assert_eq!(
+            observation(&saved(status)),
+            observed(false, false),
+            "{kind:?}"
+        );
+    }
+}
+
+#[test]
+fn a_failure_on_the_host_side_still_counts() {
+    let status = RemoteHostStatus {
+        failure_kind: Some(RemoteFailureKind::Unreachable),
+        ..in_state(RemoteState::Offline)
+    };
+    assert_eq!(observation(&saved(status)), observed(false, true));
+}
+
+#[test]
 fn an_agent_update_in_progress_does_not_count() {
     let status = RemoteHostStatus {
         update: Some(AgentUpdateProgress {
@@ -115,6 +143,7 @@ fn a_back_notice_is_a_host_back_alert_with_its_offline_span_in_seconds() {
     let notice = HostNotice::Back {
         host: HOST,
         name: NAME.into(),
+        since_ms: 9_000_000 - 2_520_400,
         offline_ms: 2_520_400,
     };
     assert_eq!(
@@ -149,5 +178,109 @@ fn a_poll_turns_five_offline_minutes_into_one_host_offline_alert() {
                 name: NAME.into()
             }
         )]
+    );
+}
+
+const OTHER: HostId = HostId(Uuid::from_u128(0xb1));
+
+/// Polls `hosts_at(t)` every 30 s from 0 to `to_ms` inclusive and returns each event's
+/// time and cause.
+fn poll_every_30s(
+    to_ms: i64,
+    hosts_at: impl Fn(i64) -> Vec<SavedHostStatus>,
+) -> Vec<(i64, AlertCause)> {
+    let mut watch = HostOfflineWatch::new(300_000, 90_000);
+    let mut seen = Vec::new();
+    for now in (0..=to_ms).step_by(30_000) {
+        for event in poll(&mut watch, now, &hosts_at(now)) {
+            let EventDetail::Alert { cause, .. } = event.detail else {
+                panic!("not an alert: {event:?}");
+            };
+            seen.push((event.ts_ms, cause));
+        }
+    }
+    seen
+}
+
+fn named(host: HostId, name: &str, state: RemoteState) -> SavedHostStatus {
+    SavedHostStatus {
+        host,
+        name: name.into(),
+        status: in_state(state),
+    }
+}
+
+#[test]
+fn two_hosts_offline_on_one_poll_get_distinct_timestamps() {
+    let events = poll_every_30s(300_000, |_| {
+        vec![
+            named(HOST, NAME, RemoteState::Offline),
+            named(OTHER, "pi", RemoteState::Offline),
+        ]
+    });
+    assert_eq!(
+        events,
+        [
+            (
+                300_000,
+                AlertCause::HostOffline {
+                    host: HOST,
+                    name: NAME.into()
+                }
+            ),
+            (
+                300_001,
+                AlertCause::HostOffline {
+                    host: OTHER,
+                    name: "pi".into()
+                }
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_back_and_an_offline_on_one_poll_get_distinct_timestamps() {
+    // HOST is down 0..10 min, OTHER from 5 min on: at 10 min one is back as the other
+    // reaches five minutes.
+    let events = poll_every_30s(600_000, |t| {
+        let first = if t < 600_000 {
+            RemoteState::Offline
+        } else {
+            RemoteState::Connected
+        };
+        let second = if t < 300_000 {
+            RemoteState::Connected
+        } else {
+            RemoteState::Offline
+        };
+        vec![named(HOST, NAME, first), named(OTHER, "pi", second)]
+    });
+    assert_eq!(
+        events,
+        [
+            (
+                300_000,
+                AlertCause::HostOffline {
+                    host: HOST,
+                    name: NAME.into()
+                }
+            ),
+            (
+                600_000,
+                AlertCause::HostBack {
+                    host: HOST,
+                    name: NAME.into(),
+                    offline_secs: 600
+                }
+            ),
+            (
+                600_001,
+                AlertCause::HostOffline {
+                    host: OTHER,
+                    name: "pi".into()
+                }
+            ),
+        ]
     );
 }

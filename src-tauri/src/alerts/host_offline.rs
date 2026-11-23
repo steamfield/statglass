@@ -7,7 +7,8 @@
 //! Mac that slept between two polls never counts its sleep toward the five minutes. A
 //! longer step (or the clock going backwards) restarts every host's count. A host
 //! already reported offline stays reported across such a step, so it still gets its
-//! [`HostNotice::Back`] when it is reachable again.
+//! [`HostNotice::Back`] when it is reachable again; the span it reports then ends at
+//! the last observation that saw the host down, since nobody saw when it came back.
 
 use std::collections::BTreeMap;
 
@@ -42,13 +43,17 @@ pub enum HostNotice {
         since_ms: i64,
     },
     /// A host reported [`HostNotice::Offline`] is reachable again, after being
-    /// unreachable for `offline_ms` since it was first seen so.
+    /// unreachable for `offline_ms` since `since_ms`.
     Back {
         /// The saved host.
         host: HostId,
         /// Its name at this observation, which may differ from the offline notice's.
         name: String,
-        /// From the start of the reported run to this observation.
+        /// When the reported unreachable run began.
+        since_ms: i64,
+        /// Up to this observation when the previous one was at most `max_step_ms`
+        /// earlier; otherwise up to the last observation that saw the host down, a
+        /// lower bound. Never negative.
         offline_ms: i64,
     },
 }
@@ -59,8 +64,9 @@ pub enum HostNotice {
 enum Track {
     /// Unreachable since `since_ms`, not yet for the rule's time.
     Counting { since_ms: i64 },
-    /// Reported offline; unreachable since `since_ms`.
-    Reported { since_ms: i64 },
+    /// Reported offline; unreachable since `since_ms`, last seen down at
+    /// `last_down_ms`.
+    Reported { since_ms: i64, last_down_ms: i64 },
 }
 
 /// The watch over every saved host.
@@ -127,24 +133,63 @@ fn step(
     continuous: bool,
     after_ms: i64,
 ) -> (Option<Track>, Option<HostNotice>) {
-    if let Some(Track::Reported { since_ms }) = before {
-        if seen.reachable && seen.counts {
-            let back = HostNotice::Back {
-                host: seen.host,
-                name: seen.name.clone(),
-                offline_ms: now_ms.saturating_sub(since_ms).max(0),
-            };
-            return (None, Some(back));
+    match before {
+        Some(Track::Reported {
+            since_ms,
+            last_down_ms,
+        }) => reported_step(since_ms, last_down_ms, seen, now_ms, continuous),
+        Some(Track::Counting { since_ms }) if continuous => {
+            counting_step(Some(since_ms), seen, now_ms, after_ms)
         }
-        return (before, None);
+        _ => counting_step(None, seen, now_ms, after_ms),
     }
+}
+
+/// A reported host: back once a counted observation sees it reachable, otherwise
+/// still reported, remembering its last counted unreachable observation.
+fn reported_step(
+    since_ms: i64,
+    last_down_ms: i64,
+    seen: &HostObservation,
+    now_ms: i64,
+    continuous: bool,
+) -> (Option<Track>, Option<HostNotice>) {
+    if !seen.counts {
+        let still = Track::Reported {
+            since_ms,
+            last_down_ms,
+        };
+        return (Some(still), None);
+    }
+    if !seen.reachable {
+        let still = Track::Reported {
+            since_ms,
+            last_down_ms: now_ms,
+        };
+        return (Some(still), None);
+    }
+    let until_ms = if continuous { now_ms } else { last_down_ms };
+    let back = HostNotice::Back {
+        host: seen.host,
+        name: seen.name.clone(),
+        since_ms,
+        offline_ms: until_ms.saturating_sub(since_ms).max(0),
+    };
+    (None, Some(back))
+}
+
+/// A host not yet reported: `counting_since` is the start of its unreachable run when
+/// the count carries on from the previous observation.
+fn counting_step(
+    counting_since: Option<i64>,
+    seen: &HostObservation,
+    now_ms: i64,
+    after_ms: i64,
+) -> (Option<Track>, Option<HostNotice>) {
     if seen.reachable || !seen.counts {
         return (None, None);
     }
-    let since_ms = match before {
-        Some(Track::Counting { since_ms }) if continuous => since_ms,
-        _ => now_ms,
-    };
+    let since_ms = counting_since.unwrap_or(now_ms);
     if now_ms.saturating_sub(since_ms) < after_ms {
         return (Some(Track::Counting { since_ms }), None);
     }
@@ -153,7 +198,11 @@ fn step(
         name: seen.name.clone(),
         since_ms,
     };
-    (Some(Track::Reported { since_ms }), Some(offline))
+    let reported = Track::Reported {
+        since_ms,
+        last_down_ms: now_ms,
+    };
+    (Some(reported), Some(offline))
 }
 
 #[cfg(test)]
@@ -193,18 +242,34 @@ mod tests {
         watch
     }
 
+    /// The Back notice for `HOST` under `name`, for the run [`reported`] started at 0.
+    fn back(name: &str, offline_ms: i64) -> HostNotice {
+        HostNotice::Back {
+            host: HOST,
+            name: name.into(),
+            since_ms: 0,
+            offline_ms,
+        }
+    }
+
     #[test]
-    fn a_reported_host_back_after_this_mac_slept_is_still_announced() {
+    fn a_host_back_after_this_mac_slept_reports_only_the_time_it_was_seen_down() {
         let mut watch = reported();
-        let notices = watch.observe(60 * MIN, &[seen("a", true, true)]);
         assert_eq!(
-            notices,
-            [HostNotice::Back {
-                host: HOST,
-                name: "a".into(),
-                offline_ms: 60 * MIN
-            }]
+            watch.observe(5 * MIN + 30_000, &[seen("a", false, true)]),
+            []
         );
+        // This Mac sleeps nine hours; the host recovered at some unseen point.
+        let notices = watch.observe(9 * 60 * MIN, &[seen("a", true, true)]);
+        assert_eq!(notices, [back("a", 5 * MIN + 30_000)]);
+    }
+
+    #[test]
+    fn a_clock_stepping_backwards_never_gives_a_negative_span() {
+        let mut watch = reported();
+        assert_eq!(watch.observe(-10 * MIN, &[seen("a", false, true)]), []);
+        let notices = watch.observe(-10 * MIN + 30_000, &[seen("a", true, true)]);
+        assert_eq!(notices, [back("a", 0)]);
     }
 
     #[test]
@@ -222,14 +287,7 @@ mod tests {
             []
         );
         let notices = watch.observe(6 * MIN, &[seen("b", true, true)]);
-        assert_eq!(
-            notices,
-            [HostNotice::Back {
-                host: HOST,
-                name: "b".into(),
-                offline_ms: 6 * MIN
-            }]
-        );
+        assert_eq!(notices, [back("b", 6 * MIN)]);
     }
 
     #[test]
@@ -241,14 +299,7 @@ mod tests {
             []
         );
         let notices = watch.observe(6 * MIN, &[seen("a", true, true)]);
-        assert_eq!(
-            notices,
-            [HostNotice::Back {
-                host: HOST,
-                name: "a".into(),
-                offline_ms: 6 * MIN
-            }]
-        );
+        assert_eq!(notices, [back("a", 6 * MIN)]);
     }
 
     #[test]
