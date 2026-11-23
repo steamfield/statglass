@@ -118,10 +118,36 @@ fn is_valid_url(url: &str) -> bool {
         return false;
     };
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-    let host_and_port = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, after)| after);
-    !host_and_port.is_empty() && !host_and_port.starts_with(':')
+    is_valid_authority(authority)
+}
+
+/// A host with an optional numeric port, and no user name or password: credentials
+/// belong in the ntfy token field, and a URL carrying them would be shown and logged by
+/// host. A non-numeric port also refuses userinfo whose password holds a `/`
+/// (`https://user:pa/ss@host/x`), where the cut at the first `/` leaves `user:pa`.
+fn is_valid_authority(authority: &str) -> bool {
+    if authority.contains('@') {
+        return false;
+    }
+    let (host, port) = match authority.strip_prefix('[') {
+        // An IPv6 literal: `[::1]` or `[::1]:8080`.
+        Some(bracketed) => match bracketed.split_once(']') {
+            Some((address, "")) => (address, None),
+            Some((address, after)) => match after.strip_prefix(':') {
+                Some(port) => (address, Some(port)),
+                None => return false,
+            },
+            None => return false,
+        },
+        None => match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        },
+    };
+    let port_is_valid = port.is_none_or(|port| {
+        (1..=5).contains(&port.len()) && port.chars().all(|c| c.is_ascii_digit())
+    });
+    !host.is_empty() && port_is_valid
 }
 
 /// 1 to [`Destination::MAX_TOPIC_CHARS`] ASCII letters, digits, hyphens or underscores.
@@ -161,6 +187,14 @@ pub enum DestinationError {
         Destination::MAX_TOKEN_CHARS
     )]
     Token,
+    /// A save would keep more than [`MAX_DESTINATIONS`]. Returned by the app's
+    /// destination service, never by [`Destination::validate`].
+    #[error("at most {MAX_DESTINATIONS} destinations can be saved")]
+    TooMany,
+    /// A change named an id no saved destination has. Returned by the app's destination
+    /// service, never by [`Destination::validate`].
+    #[error("no saved destination has that id")]
+    UnknownId,
 }
 
 /// What one delivery to a destination came to, after its retries.
@@ -225,7 +259,7 @@ pub struct DestinationLimits {
     /// [`Destination::MAX_TOKEN_CHARS`].
     pub max_token_chars: u32,
     /// Each [`DestinationError`]'s Display text by a stable key ("name", "url",
-    /// "topic", "token").
+    /// "topic", "token", "too_many", "unknown_id").
     pub messages: std::collections::BTreeMap<&'static str, String>,
 }
 
@@ -243,6 +277,8 @@ pub fn destination_limits() -> DestinationLimits {
             ("url", DestinationError::Url),
             ("topic", DestinationError::Topic),
             ("token", DestinationError::Token),
+            ("too_many", DestinationError::TooMany),
+            ("unknown_id", DestinationError::UnknownId),
         ]
         .into_iter()
         .map(|(key, error)| (key, error.to_string()))
@@ -253,3 +289,92 @@ pub fn destination_limits() -> DestinationLimits {
 #[cfg(test)]
 #[path = "alert_destination_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+
+    fn webhook(url: &str) -> Destination {
+        Destination {
+            id: Uuid::from_u128(0xde59),
+            name: "Hook".into(),
+            enabled: true,
+            kind: DestinationKind::Webhook { url: url.into() },
+        }
+    }
+
+    #[test]
+    fn a_url_with_a_user_name_or_password_is_refused() {
+        for bad in [
+            "https://user@hooks.example.com/x",
+            "https://user:secret@hooks.example.com/x",
+            "https://@hooks.example.com/",
+            "https://user:pa/ss@hooks.example.com/x",
+            "http://user:secret@[::1]:8080/x",
+        ] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+        // An `@` after the authority is part of the path or query, not userinfo.
+        for ok in [
+            "https://hooks.example.com/@team",
+            "https://hooks.example.com/x?to=a@b",
+        ] {
+            assert_eq!(webhook(ok).validate(), Ok(()), "{ok:?}");
+        }
+    }
+
+    #[test]
+    fn the_scheme_is_matched_in_lower_case_only() {
+        for bad in ["HTTPS://ntfy.sh", "Http://ntfy.sh", "hTTps://ntfy.sh/"] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_port_is_1_to_5_digits() {
+        for ok in [
+            "http://ntfy.local:8080",
+            "http://[::1]:8080/x",
+            "http://[::1]/x",
+        ] {
+            assert_eq!(webhook(ok).validate(), Ok(()), "{ok:?}");
+        }
+        for bad in [
+            "http://ntfy.local:",
+            "http://ntfy.local:port",
+            "http://ntfy.local:123456",
+            "http://:8080/x",
+            "http://[::1/x",
+            "http://[::1]x/",
+            "http://[]:80/",
+        ] {
+            assert_eq!(
+                webhook(bad).validate(),
+                Err(DestinationError::Url),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_service_errors_have_their_own_messages_in_the_limits() {
+        let messages = destination_limits().messages;
+        assert_eq!(
+            messages.get("too_many").map(String::as_str),
+            Some("at most 8 destinations can be saved")
+        );
+        assert_eq!(
+            messages.get("unknown_id").map(String::as_str),
+            Some("no saved destination has that id")
+        );
+        assert_eq!(messages.len(), 6);
+    }
+}
