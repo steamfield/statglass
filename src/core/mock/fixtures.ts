@@ -117,6 +117,7 @@ export const SCENARIOS = [
   "docker-rerank",
   "star-prompt",
   "alerts",
+  "alert-delivery-fails",
 ] as const;
 
 /** The schema version the mock's "newer StatGlass" wrote, and the one it reads. */
@@ -206,6 +207,8 @@ export interface ScenarioFlags {
    * alert and a process alert from the last day.
    */
   alerts: boolean;
+  /** Every test delivery to an alert destination fails (`alert_destination_test`). */
+  alertDeliveryFails: boolean;
 }
 
 export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
@@ -228,6 +231,7 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
     powerDisabled: has("power-disabled"),
     starPrompt: has("star-prompt"),
     alerts: has("alerts"),
+    alertDeliveryFails: has("alert-delivery-fails"),
     noFans: has("no-fans"),
     paused: has("paused"),
     stale: has("stale"),

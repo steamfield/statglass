@@ -102,6 +102,16 @@ export function createTauriTransport(label: string): Transport {
       syncUnlisten(
         events.starPromptChanged.listen((e) => cb(e.payload.status))
       ),
+    getAlertDestinations: () => commands.alertDestinationsGet(),
+    saveAlertDestination: (destination) =>
+      commands.alertDestinationSave(destination),
+    deleteAlertDestination: (id) => commands.alertDestinationDelete(id),
+    testAlertDestination: (destination) =>
+      commands.alertDestinationTest(destination),
+    onAlertDestinationsChanged: (cb) =>
+      syncUnlisten(
+        events.alertDestinationsChanged.listen((e) => cb(e.payload.view))
+      ),
     async openUrl(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
       await openUrl(url);

@@ -8,11 +8,14 @@
  * callers branch on `status` instead of catching (error-handling.md).
  */
 import type {
+  AlertDestinationsView,
   ByteCount,
   Capabilities,
   CapabilitiesChanged,
   CliLinkStatus,
   CommandError,
+  DeliveryOutcome,
+  Destination,
   DiskIoDevices,
   DiskIoPage,
   DiskIoRequest,
@@ -454,6 +457,24 @@ export interface Transport {
   ): Promise<CommandResult<StarPromptStatus>>;
   /** A star, dismiss or snooze was saved, from any window or the app menu. */
   onStarPromptChanged(cb: (status: StarPromptStatus) => void): Unsubscribe;
+  /** Every alert destination with its last delivery, and a launch load error. */
+  getAlertDestinations(): Promise<AlertDestinationsView>;
+  /** Adds a destination or replaces the one with its id; `invalid_argument` with the reason. */
+  saveAlertDestination(
+    destination: Destination
+  ): Promise<CommandResult<AlertDestinationsView>>;
+  /** Removes a destination; `invalid_argument` for an unknown id. */
+  deleteAlertDestination(
+    id: string
+  ): Promise<CommandResult<AlertDestinationsView>>;
+  /** Sends a test message to a destination, saved or not, and answers its outcome. */
+  testAlertDestination(
+    destination: Destination
+  ): Promise<CommandResult<DeliveryOutcome>>;
+  /** A destination was saved or deleted, or a delivery to one finished. */
+  onAlertDestinationsChanged(
+    cb: (view: AlertDestinationsView) => void
+  ): Unsubscribe;
   /** Open an http(s) URL in the default browser (sensor dump GitHub issue). */
   openUrl(url: string): Promise<void>;
   /** Close this window (onboarding Skip and Done). */

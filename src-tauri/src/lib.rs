@@ -5,6 +5,9 @@
 //! window code builds on.
 
 mod addresses;
+pub mod alerts;
+#[cfg(test)]
+mod alerts_tests;
 pub mod app_menu;
 mod app_quit;
 mod bench;
@@ -144,6 +147,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             windows::window_visible,
             commands::report_popover_paint, popover::commands::report_popover_content_height,
             star_prompt::get_star_prompt_status, star_prompt::act_on_star_prompt,
+            alerts::commands::alert_destinations_get, alerts::commands::alert_destination_save,
+            alerts::commands::alert_destination_delete, alerts::commands::alert_destination_test,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,
@@ -157,6 +162,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             remote::RemoteHostsChanged,
             ipc::EventRecorded,
             star_prompt::StarPromptChanged,
+            alerts::commands::AlertDestinationsChanged,
         ]);
     facts::register(builder)
 }

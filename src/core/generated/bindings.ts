@@ -386,10 +386,43 @@ export const commands = {
 	 *  [`CommandError::SettingsNotSaved`] when `star-prompt.json` can't be written.
 	 */
 	actOnStarPrompt: (action: StarPromptAction) => typedError<StarPromptStatus, CommandError>(__TAURI_INVOKE("act_on_star_prompt", { action })),
+	/**
+	 *  Every destination with its last delivery, and why the file could not be read at
+	 *  launch, if it could not.
+	 */
+	alertDestinationsGet: () => __TAURI_INVOKE<AlertDestinationsView>("alert_destinations_get"),
+	/**
+	 *  Adds a destination, or replaces the one with its id.
+	 *
+	 *  # Errors
+	 *
+	 *  `invalid_argument` with the reason when it fails validation or would be one too
+	 *  many; `settings_not_saved` when the file cannot be written.
+	 */
+	alertDestinationSave: (destination: Destination) => typedError<AlertDestinationsView, CommandError>(__TAURI_INVOKE("alert_destination_save", { destination })),
+	/**
+	 *  Removes a destination.
+	 *
+	 *  # Errors
+	 *
+	 *  `invalid_argument` when no destination has `id`; `settings_not_saved` when the file
+	 *  cannot be written.
+	 */
+	alertDestinationDelete: (id: string) => typedError<AlertDestinationsView, CommandError>(__TAURI_INVOKE("alert_destination_delete", { id })),
+	/**
+	 *  Sends a test message to `destination`, saved or not, and returns what came of it.
+	 *  Takes up to the delivery's timeout and retries.
+	 *
+	 *  # Errors
+	 *
+	 *  `invalid_argument` with the reason when `destination` is invalid.
+	 */
+	alertDestinationTest: (destination: Destination) => typedError<DeliveryOutcome, CommandError>(__TAURI_INVOKE("alert_destination_test", { destination })),
 };
 
 /** Events */
 export const events = {
+	alertDestinationsChanged: makeEvent<AlertDestinationsChanged>("alert-destinations-changed"),
 	capabilitiesChanged: makeEvent<CapabilitiesChanged>("capabilities-changed"),
 	eventRecorded: makeEvent<EventRecorded>("event-recorded"),
 	historyHealthChanged: makeEvent<HistoryHealthChanged>("history-health-changed"),
@@ -524,6 +557,28 @@ threshold: number | null;
  *  than one measured from reading spacing.
  */
 for_secs: number };
+
+/**
+ *  Sent to every window when a destination is saved or deleted, or a delivery to one
+ *  finishes, so the Alerts page updates without a refetch.
+ */
+export type AlertDestinationsChanged = {
+	view: AlertDestinationsView,
+};
+
+/**  Every destination with its last delivery, as the Alerts page shows them. */
+export type AlertDestinationsView = {
+	/**
+	 *  In the order they were added. Returned in full, tokens included: this is the
+	 *  user's own window.
+	 */
+	destinations: DestinationView[],
+	/**
+	 *  Why the destinations file could not be read at launch (it was moved aside to
+	 *  `alert-destinations.json.bad`), `None` when it loaded or did not exist.
+	 */
+	load_error: string | null,
+};
 
 /**
  *  What [`AlertRule::validate_custom`] and [`crate::AlertSettings::validate`] check, from
@@ -937,6 +992,78 @@ export type CoreKind = "performance" | "efficiency" |
 "uniform" |
 /**  A core type this build does not know, from a newer peer (D-040). */
 "unknown";
+
+/**  Why a delivery failed, as far as the caller needs to tell failures apart. */
+export type DeliveryFailure =
+/**  The curl binary is not where it was expected. */
+"curl_missing" |
+/**  The server's name did not resolve. */
+"name_not_found" |
+/**  The server refused or could not be reached. */
+"connect_failed" |
+/**  No answer before the timeout. */
+"timed_out" |
+/**  The TLS handshake or certificate check failed. */
+"tls" |
+/**  The server answered with a status other than 2xx (redirects included). */
+"http" |
+/**
+ *  Refused before sending: the destination is invalid or a value holds a control
+ *  character.
+ */
+"rejected" |
+/**  Anything else; the detail carries curl's message. */
+"other";
+
+/**  What one delivery to a destination came to, after its retries. */
+export type DeliveryOutcome =
+/**  The server answered with this 2xx status. */
+{ kind: "delivered"; status: number } |
+/**
+ *  Nothing was delivered. `detail` is a short sentence for the destination row
+ *  ("HTTP 403", "Timed out after 10 s"); it never holds the URL or a token.
+ */
+{ kind: "failed"; reason: DeliveryFailure; detail: string };
+
+/**  The last delivery to a destination: when it finished and what it came to. */
+export type DeliveryRecord = {
+	/**  When the delivery finished, wall-clock ms. JS-safe (see the crate docs). */
+	at_ms: number,
+	outcome: DeliveryOutcome,
+};
+
+/**  One place a fired alert is sent to, saved in `alert-destinations.json`. */
+export type Destination = {
+	id: string,
+	/**
+	 *  What the user calls it ("Phone"). 1 to [`Destination::MAX_NAME_CHARS`]
+	 *  characters after trimming.
+	 */
+	name: string,
+	/**  A disabled destination is kept but receives nothing. */
+	enabled: boolean,
+	kind: DestinationKind,
+};
+
+/**  How a destination is reached. */
+export type DestinationKind =
+/**
+ *  An ntfy server (`https://ntfy.sh` or self-hosted) and topic, with an access token
+ *  for a protected topic. An empty token counts as no token.
+ */
+{ type: "ntfy"; server: string; topic: string; token: string | null } |
+/**
+ *  Any URL that accepts a JSON POST (Slack and Discord incoming webhooks read its
+ *  `text` and `content` fields).
+ */
+{ type: "webhook"; url: string };
+
+/**  One destination and the last delivery to it. */
+export type DestinationView = {
+	destination: Destination,
+	/**  `None` until something has been sent to it since launch. */
+	last: DeliveryRecord | null,
+};
 
 /**  One block device a host's `disk.*` series cover. */
 export type DiskDevice = {
