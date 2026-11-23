@@ -68,7 +68,7 @@ pub mod usage;
 pub use alert::{AlertRule, AlertRuleError, Cmp, Condition, ThermalState, series_name};
 pub use alert_destination::{
     DeliveryFailure, DeliveryOutcome, DeliveryRecord, Destination, DestinationError,
-    DestinationKind, MAX_DESTINATIONS,
+    DestinationKind, DestinationLimits, MAX_DESTINATIONS, destination_limits,
 };
 pub use alert_limits::{AlertLimits, alert_label_keys, alert_limits};
 pub use alert_metrics::{ALERT_METRICS, AlertMetric, alert_metric};

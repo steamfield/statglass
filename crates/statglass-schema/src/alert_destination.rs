@@ -147,6 +147,47 @@ pub struct DeliveryRecord {
     pub outcome: DeliveryOutcome,
 }
 
+/// The limits [`Destination::validate`] enforces and the text of every
+/// [`DestinationError`], published to TypeScript as `ALERT_DESTINATION_LIMITS` so the
+/// mock transport rejects what Rust rejects, in Rust's words.
+#[derive(Clone, Debug, Serialize, specta::Type)]
+pub struct DestinationLimits {
+    /// [`MAX_DESTINATIONS`].
+    pub max_destinations: u32,
+    /// [`Destination::MAX_NAME_CHARS`].
+    pub max_name_chars: u32,
+    /// [`Destination::MAX_URL_CHARS`].
+    pub max_url_chars: u32,
+    /// [`Destination::MAX_TOPIC_CHARS`].
+    pub max_topic_chars: u32,
+    /// [`Destination::MAX_TOKEN_CHARS`].
+    pub max_token_chars: u32,
+    /// Each [`DestinationError`]'s Display text by a stable key ("name", "url",
+    /// "topic", "token").
+    pub messages: std::collections::BTreeMap<&'static str, String>,
+}
+
+/// [`DestinationLimits`] from the constants the validation itself reads.
+pub fn destination_limits() -> DestinationLimits {
+    let chars = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    DestinationLimits {
+        max_destinations: chars(MAX_DESTINATIONS),
+        max_name_chars: chars(Destination::MAX_NAME_CHARS),
+        max_url_chars: chars(Destination::MAX_URL_CHARS),
+        max_topic_chars: chars(Destination::MAX_TOPIC_CHARS),
+        max_token_chars: chars(Destination::MAX_TOKEN_CHARS),
+        messages: [
+            ("name", DestinationError::Name),
+            ("url", DestinationError::Url),
+            ("topic", DestinationError::Topic),
+            ("token", DestinationError::Token),
+        ]
+        .into_iter()
+        .map(|(key, error)| (key, error.to_string()))
+        .collect(),
+    }
+}
+
 #[cfg(test)]
 #[path = "alert_destination_tests.rs"]
 mod tests;
