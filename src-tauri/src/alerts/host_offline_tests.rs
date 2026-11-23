@@ -45,10 +45,11 @@ fn offline(n: u128, since_ms: i64) -> HostNotice {
     }
 }
 
-fn back(n: u128, offline_ms: i64) -> HostNotice {
+fn back(n: u128, since_ms: i64, offline_ms: i64) -> HostNotice {
     HostNotice::Back {
         host: host(n),
         name: name(n),
+        since_ms,
         offline_ms,
     }
 }
@@ -95,7 +96,10 @@ fn a_host_reachable_again_after_offline_is_back_once_with_its_offline_span() {
     });
     assert_eq!(
         notices,
-        [(6 * MIN, offline(1, MIN)), (43 * MIN, back(1, 42 * MIN))]
+        [
+            (6 * MIN, offline(1, MIN)),
+            (43 * MIN, back(1, MIN, 42 * MIN))
+        ]
     );
 }
 
@@ -172,7 +176,7 @@ fn two_hosts_are_tracked_separately() {
         [
             (5 * MIN, offline(1, 0)),
             (7 * MIN, offline(2, 2 * MIN)),
-            (10 * MIN, back(1, 10 * MIN)),
+            (10 * MIN, back(1, 0, 10 * MIN)),
         ]
     );
 }
