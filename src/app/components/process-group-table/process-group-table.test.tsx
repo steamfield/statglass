@@ -674,3 +674,10 @@ describe("ProcessGroupTable group of one", () => {
     expect(within(row("Xcode")).getAllByText(/Xcode/)).toHaveLength(1);
   });
 });
+
+describe("ProcessGroupTable before selection is known", () => {
+  it("renders nothing while selectable is null", () => {
+    renderWithProviders(table(apps(ROWS), { selectable: null }));
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+});
