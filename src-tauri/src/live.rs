@@ -37,7 +37,7 @@
 //! Streams are tokio tasks: call [`LiveRegistry::subscribe`] from inside the runtime
 //! (the async `subscribe_live` command does).
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -215,10 +215,9 @@ fn pick_holds(pick: &Pick, holds: &[u32]) -> Vec<u32> {
     }
 }
 
-/// One row for the webview. `refusal` is [`crate::process_signal::refusals`], read once
-/// per batch.
 fn live_process(
     r: &ProcessSample,
+    quit_set: &HashSet<(i32, i64)>,
     refusal: &impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
 ) -> LiveProcess {
     LiveProcess {
@@ -239,8 +238,8 @@ fn live_process(
         ports: r.ports.as_deref().map(<[u16]>::to_vec),
         user: r.user.to_string(),
         refusal: refusal(r.pid, r.start_time_us, &r.name),
-        app: r.name.to_string(),
-        app_quit: false,
+        app: r.app.as_deref().unwrap_or(&r.name).to_string(),
+        app_quit: quit_set.contains(&(r.pid, r.start_time_us)),
     }
 }
 
@@ -692,7 +691,8 @@ impl Stream {
                 }
             }
             let refusal = crate::process_signal::refusals();
-            statglass_engine::select_processes(rows, view, |r| live_process(r, &refusal))
+            let quit_set = crate::app_quit::live_quit_set(rows);
+            statglass_engine::select_processes(rows, view, |r| live_process(r, &quit_set, &refusal))
         };
         self.last_procs_ts = Some(ts_ms);
         self.send(LiveMsg::Processes {
