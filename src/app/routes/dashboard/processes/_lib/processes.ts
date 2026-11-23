@@ -1,4 +1,3 @@
-import { matchProcessQuery } from "@core/app-search";
 import { countNoun, formatInteger } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
 import type { LiveGroup } from "@core/process-groups";
@@ -139,19 +138,6 @@ export const NETWORK_COVERAGE =
 /** The footer note while the GPU set shows (D-085). */
 export const GPU_COVERAGE =
   "GPU shares cover your processes only and are approximate while a long GPU compute job runs.";
-
-/**
- * Client-side search (plan 4.14): a case-insensitive substring of the name,
- * or a PID or listening port that starts with the digits typed. Blank keeps
- * every row.
- */
-export function filterProcesses(
-  rows: readonly LiveProcess[],
-  query: string
-): readonly LiveProcess[] {
-  const matches = matchProcessQuery(query);
-  return matches ? rows.filter(matches) : rows;
-}
 
 export function threadCount(rows: readonly LiveProcess[]): number {
   let n = 0;

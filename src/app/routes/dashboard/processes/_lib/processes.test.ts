@@ -1,10 +1,9 @@
-import { PROCESSES, withPorts } from "@core/mock/fixtures";
+import { PROCESSES } from "@core/mock/fixtures";
 import { describe, expect, it } from "vitest";
 import {
   COLUMN_SETS,
   columnSetOptions,
   countLine,
-  filterProcesses,
   hiddenNote,
 } from "./processes";
 
@@ -47,29 +46,6 @@ describe("columnSetOptions", () => {
       }).map((o) => o.value)
     ).not.toContain("gpu");
     expect(COLUMN_SETS.gpu.sort).toEqual({ by: "gpu", dir: "desc" });
-  });
-});
-
-describe("filterProcesses", () => {
-  it("matches names case-insensitively and PIDs by prefix", () => {
-    expect(filterProcesses(PROCESSES, "XCO").map((p) => p.name)).toEqual([
-      "Xcode",
-    ]);
-    expect(filterProcesses(PROCESSES, "18").map((p) => p.pid)).toEqual([1840]);
-    expect(filterProcesses(PROCESSES, "  ")).toBe(PROCESSES);
-  });
-
-  it("matches listening ports by prefix", () => {
-    const rows = withPorts(PROCESSES);
-    expect(filterProcesses(rows, "5432").map((p) => p.name)).toEqual([
-      "com.docker.backend",
-    ]);
-    expect(filterProcesses(rows, "51").map((p) => p.pid)).toEqual([5531]);
-    expect(filterProcesses(rows, "300").map((p) => p.pid)).toEqual([5531]);
-  });
-
-  it("does not treat digits inside a name query as a PID", () => {
-    expect(filterProcesses(PROCESSES, "node1")).toEqual([]);
   });
 });
 
