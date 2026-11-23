@@ -228,6 +228,7 @@ Test cases:
 ### Phase 3: destinations and delivery
 
 Scaffold: a0e11584
+Tag: alerts-phase-3
 Demo: `cargo test -p statglass-notify deliver` posts an ntfy and a webhook message to a local listener through real curl; in `bun run dev` a saved ntfy destination receives "Send test".
 Depends on: phase 1
 
@@ -357,6 +358,8 @@ Test cases:
 - Done when: `cargo test -p statglass host_offline` and `host_watch` pass, clippy and `make architecture-check` are clean.
 
 ## Log
+- Lane 3/b review (opus), six findings fixed: a delivery record no longer outlives an address change or lands on an edited destination; a bad file the user removed no longer blocks saves for the session; `load_error` is updated when the file is later moved; records are accepted in arrival order instead of by wall-clock time, which a clock step could freeze; the record-and-log decision moved into `AlertsService::deliver_to` and is tested; the two-lock order is documented. Confirmed sound: lock order, no file I/O under the read lock, a hand-edited invalid destination cannot reach curl, only local alerts are sent.
+- Phase 3 merged from `deliver/alerts-p3`; gate green on the landing branch (2,704 frontend tests, schema, notify, app and engine suites, bindings and architecture checks); tagged `alerts-phase-3`.
 - Phase 2 gate green (2,541 frontend tests; chromium e2e for alerts, shell screens, Timeline events and Overview activity, 24 passed) and tagged `alerts-phase-2`. The dark screenshot was compared with Settings: same panels, rows, type roles and switch placement. Left for the phase 4 scaffold: Recent lines repeat "Alert ·" before every entry, which is redundant on a page of alerts.
 - Lane 3/a security review (opus, with experiments against local listeners), six findings fixed: curl expanded `{}` and `[]` in a URL into several requests (`--globoff`); a process name with DEL or a C1 control made the body unsendable (every control character is JSON-escaped); curl inherited `http_proxy` and sent the bearer token to the proxy (empty environment, directory `/`; proxies are deliberately not honoured); an ntfy server with a query or fragment and hosts of only dots or dashes are refused; the stderr scrubbing is replaced by "curl error N" with curl's text only when it names neither URL nor host; retry no longer parses the user-facing detail. The quoting of the config itself held up under test. Accepted: curl.rs at about 300 production lines, one responsibility.
 - Lane 2/b review (opus): four findings fixed (a failed read no longer reads as "No alerts"; the open-in-Timeline logic copied from the Overview events card became the shared hook `use-open-in-timeline`, used by the card, Recent and the rules panel, so both links on the page open the same window; a row whose history is gone is a disabled button that says so; a misleading spec comment). Rejected: a duplicate React key for two alerts on one tick, because the engine separates same-kind events on a tick by a millisecond. Accepted choices: `eventRange` as the window, "HH:MM" today and a dated form earlier, a loading line.
