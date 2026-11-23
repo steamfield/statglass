@@ -3,6 +3,9 @@
  * custom rule, its edit button.
  */
 import type { ReactNode } from "react";
+import { SettingsRow } from "~/components/settings-row";
+import { Button } from "~/components/ui/button";
+import { Switch } from "~/components/ui/switch";
 
 /** Props of `RuleRow`. */
 export interface RuleRowProps {
@@ -17,6 +20,32 @@ export interface RuleRowProps {
 }
 
 /** A `SettingsRow` with a switch and, when `onEdit` is given, an edit button. */
-export function RuleRow(_props: RuleRowProps): ReactNode {
-  return null;
+export function RuleRow({
+  label,
+  sub,
+  enabled,
+  onEnabledChange,
+  onEdit,
+}: RuleRowProps): ReactNode {
+  return (
+    <SettingsRow label={label} sub={sub}>
+      <div className="flex items-center gap-3">
+        {onEdit && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Edit ${label}`}
+            onClick={onEdit}
+          >
+            Edit
+          </Button>
+        )}
+        <Switch
+          aria-label={label}
+          checked={enabled}
+          onCheckedChange={onEnabledChange}
+        />
+      </div>
+    </SettingsRow>
+  );
 }

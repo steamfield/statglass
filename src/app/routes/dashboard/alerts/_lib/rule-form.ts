@@ -7,11 +7,20 @@
  * cooldowns) and `ALERT_METRICS` (threshold ranges), never from literals.
  * Rust validates again on save; its message is shown as is.
  */
-import type {
-  AlertMetric,
-  AlertRule,
-  UnitSettings,
+import {
+  newRule,
+  ruleSummary,
+  thresholdFromDisplay,
+  thresholdToDisplay,
+} from "@core/alerts";
+import {
+  ALERT_LIMITS,
+  ALERT_METRICS,
+  type AlertMetric,
+  type AlertRule,
+  type UnitSettings,
 } from "@core/generated/bindings";
+import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 
 /** The rule dialog's fields for one rule. */
 export interface RuleForm {
@@ -36,13 +45,53 @@ export interface RuleForm {
   enabled: boolean;
 }
 
+const SECOND_MS = 1000;
+
+/** The threshold condition of a custom rule; built-in rules have none. */
+function thresholdOf(rule: AlertRule) {
+  if (!("threshold" in rule.when) || rule.when.threshold === undefined) {
+    throw new Error(
+      `rule form: rule ${rule.id} is not a threshold rule; only custom rules are edited`
+    );
+  }
+  return rule.when.threshold;
+}
+
+/** The typed threshold as a number; NaN when it is blank or not a number. */
+function parseShown(shown: string): number {
+  const trimmed = shown.trim();
+  return trimmed === "" ? Number.NaN : Number(trimmed);
+}
+
+/** A display-unit number with its unit: "100%", "266 °F", "20 GB". */
+function withUnit(value: number, unit: string): string {
+  if (unit === "" || unit === "%") return `${value}${unit}`;
+  return `${value} ${unit}`;
+}
+
 /**
  * The form for a stored rule: the threshold in the display unit
  * (`thresholdToDisplay`), `autoName` true when the name equals the rule's
  * `ruleSummary`. A `ge`/`le` comparison reads as `gt`/`lt`.
  */
-export function formFromRule(_rule: AlertRule, _units: UnitSettings): RuleForm {
-  throw new Error("not implemented");
+export function formFromRule(rule: AlertRule, units: UnitSettings): RuleForm {
+  const { series, op, value } = thresholdOf(rule);
+  const shown =
+    value === null
+      ? ""
+      : String(thresholdToDisplay(series.metric, value, units).value);
+  return {
+    id: rule.id,
+    name: rule.name,
+    autoName: rule.name === ruleSummary(rule, units),
+    metric: series.metric,
+    labels: Object.fromEntries(series.labels),
+    op: op === "gt" || op === "ge" ? "gt" : "lt",
+    shown,
+    forSecs: rule.for_secs,
+    cooldownSecs: rule.cooldown_secs,
+    enabled: rule.enabled,
+  };
 }
 
 /**
@@ -52,11 +101,16 @@ export function formFromRule(_rule: AlertRule, _units: UnitSettings): RuleForm {
  * an automatic name.
  */
 export function formForMetric(
-  _metric: AlertMetric,
-  _id: string,
-  _units: UnitSettings
+  metric: AlertMetric,
+  id: string,
+  units: UnitSettings
 ): RuleForm {
-  throw new Error("not implemented");
+  const rule = newRule(metric, id);
+  return {
+    ...formFromRule(rule, units),
+    name: ruleSummary(rule, units),
+    autoName: true,
+  };
 }
 
 /**
@@ -65,11 +119,32 @@ export function formForMetric(
  * an automatic one becomes the new sentence. Id, cooldown and enabled stay.
  */
 export function withMetric(
-  _form: RuleForm,
-  _metric: AlertMetric,
-  _units: UnitSettings
+  form: RuleForm,
+  metric: AlertMetric,
+  units: UnitSettings
 ): RuleForm {
-  throw new Error("not implemented");
+  const fresh = formForMetric(metric, form.id, units);
+  return {
+    ...fresh,
+    name: form.autoName ? fresh.name : form.name,
+    autoName: form.autoName,
+    cooldownSecs: form.cooldownSecs,
+    enabled: form.enabled,
+  };
+}
+
+/**
+ * `form` with `change` applied. While the name is automatic it follows the
+ * new sentence; a threshold that is not a number leaves it as it was.
+ */
+export function withChange(
+  form: RuleForm,
+  change: Partial<Omit<RuleForm, "id" | "metric" | "name" | "autoName">>,
+  units: UnitSettings
+): RuleForm {
+  const next = { ...form, ...change };
+  if (!next.autoName || !Number.isFinite(parseShown(next.shown))) return next;
+  return { ...next, name: ruleSummary(ruleFromForm(next, units), units) };
 }
 
 /**
@@ -78,8 +153,35 @@ export function withMetric(
  * (`thresholdFromDisplay`), labels as one `[key, value]` pair or none.
  * Call only when `formProblem` is null.
  */
-export function ruleFromForm(_form: RuleForm, _units: UnitSettings): AlertRule {
-  throw new Error("not implemented");
+export function ruleFromForm(form: RuleForm, units: UnitSettings): AlertRule {
+  return {
+    id: form.id,
+    name: form.name.trim(),
+    when: {
+      threshold: {
+        series: { metric: form.metric, labels: Object.entries(form.labels) },
+        op: form.op,
+        value: thresholdFromDisplay(form.metric, parseShown(form.shown), units),
+      },
+    },
+    for_secs: form.forSecs,
+    cooldown_secs: form.cooldownSecs,
+    enabled: form.enabled,
+  };
+}
+
+/** "Between 1 and 100%" when `shown` is outside the metric's range, else null. */
+function rangeProblem(
+  metric: string,
+  shown: number,
+  units: UnitSettings
+): string | null {
+  const entry = ALERT_METRICS.find((m) => m.metric === metric);
+  if (!entry || entry.min === null || entry.max === null) return null;
+  const min = thresholdToDisplay(metric, entry.min, units);
+  const max = thresholdToDisplay(metric, entry.max, units);
+  if (shown >= min.value && shown <= max.value) return null;
+  return `Between ${min.value} and ${withUnit(max.value, max.unit)}`;
 }
 
 /**
@@ -94,8 +196,29 @@ export function ruleFromForm(_form: RuleForm, _units: UnitSettings): AlertRule {
  * Checked in that order.
  */
 export function formProblem(
-  _form: RuleForm,
-  _units: UnitSettings
+  form: RuleForm,
+  units: UnitSettings
 ): string | null {
-  throw new Error("not implemented");
+  const shown = parseShown(form.shown);
+  if (!Number.isFinite(shown)) return "Enter a number";
+  const range = rangeProblem(form.metric, shown, units);
+  if (range !== null) return range;
+  const name = form.name.trim();
+  if (name === "") return "Give the rule a name";
+  if ([...name].length > ALERT_LIMITS.max_name_chars) {
+    return `Use at most ${ALERT_LIMITS.max_name_chars} characters`;
+  }
+  return null;
+}
+
+/**
+ * A duration choice as the dialog's selects label it: "Right away", "30 s",
+ * "5 min", "24 h".
+ */
+export function durationText(secs: number): string {
+  const ms = secs * SECOND_MS;
+  if (secs === 0) return "Right away";
+  if (ms < MINUTE_MS) return `${secs} s`;
+  if (ms < HOUR_MS) return `${Math.floor(ms / MINUTE_MS)} min`;
+  return `${Math.floor(ms / HOUR_MS)} h`;
 }
