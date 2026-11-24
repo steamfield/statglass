@@ -99,7 +99,7 @@ Makefile targets added in the scaffold (lane a owns the Makefile afterwards and 
 ### Phase 1: workspace, mobile shell, iOS agent setup and Rust iOS target (MVP)
 
 Scaffold: 2a87b887
-Tag: phase-1
+Tag: ios-app-phase-1
 Demo: in the landing worktree, `bun run check` and `bun run test:e2e --project chromium` pass with the desktop unchanged; `make mobile-check` passes; `make mobile-rust-check` passes; `bunx expo run:ios` from `apps/mobile` (after `bunx expo prebuild`) shows the first-launch screen in the simulator.
 
 Test cases:
@@ -840,4 +840,4 @@ Depends on: phase 4, phase 5, phase 6
 - 1/c fixes landed; merged.
 - 1/a lane review: 4 findings, all verified and sent back: split must validate section contents at export time with named errors; restore core restrictions for src/desktop-transport/** in Biome with a probe; move export/split code to src-tauri/src/bindings.rs (added to Owns) with scratch-file cleanup on every path; two stale comments.
 - Phase 2 and 6 briefs drafted (Plan agent, opus) and adopted. Decisions on its open questions: russh version and crypto backend are chosen and pinned in the phase 2 scaffold with `cargo info russh`, checked against `make mobile-rust-check` and the Linux cross-check; dead-route drop goes to phase 3 lane c; "a non-retryable failure ends the race" is kept, because a host-key mismatch is a security signal (RFC 2.7) and must not be bypassed by a later target; popover card content stays duplicated between `popover-cards.tsx` and `apps/mobile/src/cards/` in this run and is listed as a follow-up in the final report (card-content models in core).
-- Phase 1 gate green after boundary fixes (b6bed68b); tagged phase-1.
+- Phase 1 gate green after boundary fixes (b6bed68b); tagged ios-app-phase-1 (plain phase-1 is taken by an earlier run; later phases use ios-app-phase-N).
