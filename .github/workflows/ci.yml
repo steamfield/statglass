@@ -87,6 +87,68 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # iPhone app (apps/mobile): everything in `make mobile-check` runs on Linux
+  # (Biome, tsc, jest-expo, the iOS JS export, expo install --check and the
+  # single-React check). Xcode builds and the iOS Rust target stay local
+  # (D-118, D-131). Runs only when the app, a shared package or its tooling
+  # changed.
+  # ---------------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mobile: ${{ steps.filter.outputs.mobile }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Detect changed areas
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            mobile:
+              - 'apps/mobile/**'
+              - 'packages/**'
+              - 'bun.lock'
+              - 'scripts/mobile/**'
+              - 'src/app/styles/theme.css'
+              - '.github/workflows/ci.yml'
+
+  mobile:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      # Expo's CLI, Metro and jest-expo run on Node, never Bun.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Cache bun dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-linux-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-linux-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Mobile checks
+        run: scripts/mobile/check.sh
+
+  # ---------------------------------------------------------------------------
   # Dependency audit: cargo-deny (deny.toml) and bun audit. Licenses, bans and
   # sources only change with our lockfiles, so they block. Advisories also change
   # when RustSec or npm publish one, which would fail unrelated PRs, so that

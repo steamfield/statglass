@@ -1,0 +1,16 @@
+# Native projects come from `expo prebuild` (continuous native generation).
+# Anchored so the native module's own ios/ source stays tracked.
+/ios/
+/android/
+
+# Expo CLI state, route types and the env declaration it writes.
+.expo/
+expo-env.d.ts
+
+# `expo export` output used by scripts/mobile/check.sh.
+/dist/
+
+# Built by scripts/mobile/build-rust-ios.sh from crates/statglass-mobile:
+# the XCFramework and the UniFFI Swift bindings.
+modules/statglass-native/ios/StatglassCore.xcframework/
+modules/statglass-native/ios/generated/
