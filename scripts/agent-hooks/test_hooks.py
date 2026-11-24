@@ -213,6 +213,27 @@ class HookTests(unittest.TestCase):
         self.assertEqual(self.write_decision("enforce-boundaries.sh", config, 'import x from "../../package.json";'), "deny")
         self.assertIsNone(self.write_decision("enforce-boundaries.sh", config, 'import type { ExpoConfig } from "expo/config";'))
 
+    def test_desktop_widgets_and_app_reject_adapter_and_native_imports(self):
+        widget = str(self.root / "src/app/widgets/x.tsx")
+        self.assertEqual(self.write_decision(
+            "enforce-boundaries.sh", widget, 'import { commands } from "@desktop/commands";'), "deny")
+        route = str(self.root / "src/app/routes/popover/x.tsx")
+        for path, text in [
+            (route, 'import { View } from "react-native";'),
+            (route, 'import Svg from "react-native-svg";'),
+            (str(self.root / "src/desktop-transport/native.ts"), 'import { CameraView } from "expo-camera";'),
+            (str(self.root / "src/main.tsx"), 'import { registerRootComponent } from "expo";'),
+        ]:
+            with self.subTest(path=path, text=text):
+                self.assertEqual(self.write_decision("enforce-boundaries.sh", path, text), "deny")
+        allowed = ('import { createRoot } from "react-dom/client";\nimport { formatBytes } from "@core/format";\n'
+                   'import { commands } from "@desktop/commands";\nimport { exponent } from "./exponent";')
+        for path in [route, str(self.root / "src/main.tsx")]:
+            with self.subTest(path=path):
+                self.assertIsNone(self.write_decision("enforce-boundaries.sh", path, allowed))
+        self.assertIsNone(self.write_decision(
+            "enforce-boundaries.sh", str(self.root / "apps/mobile/src/app/x.tsx"), 'import { View } from "react-native";'))
+
     def test_generated_bindings_are_blocked_for_edits_and_shell_writes(self):
         for path in [
             str(self.root / "packages/core/src/generated/types.ts"),

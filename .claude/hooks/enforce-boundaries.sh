@@ -9,6 +9,8 @@
 # 2. src/app/widgets/ is render-only: no transport, stores, router, or Tauri APIs
 # 3. apps/mobile/ never imports react-dom, Tauri, the desktop app or desktop
 #    adapters, and its relative imports never leave apps/mobile/
+# 4. The desktop app (src/app/, src/desktop-transport/, src/main.tsx) never
+#    imports react-native or Expo
 
 input=$(cat)
 
@@ -63,14 +65,14 @@ fi
 
 # --- Rule 2: src/app/widgets/ is render-only ---
 if [[ "$file_path" =~ /src/app/widgets/.*\.(ts|tsx)$ ]]; then
-    if printf '%s' "$text" | grep -qE -e "from[[:space:]]+[\"'](@core/transport|@tauri-apps/|react-router|zustand|@tanstack/react-query|~/stores/|~/routes/)"; then
+    if printf '%s' "$text" | grep -qE -e "from[[:space:]]+[\"'](@core/transport|@tauri-apps/|react-router|zustand|@tanstack/react-query|~/stores/|~/routes/|@desktop/)"; then
         deny "BLOCKED: Architecture boundary violation.
 
 src/app/widgets/ components are render-only. They take data and callbacks as
 props so the same component renders in the popover, overview cards, board
 windows and composer preview, and its prop contract matches the v3 WidgetKit
 feed. They must not import @core/transport, stores, react-router, TanStack
-Query, or @tauri-apps/*.
+Query, @tauri-apps/* or the desktop adapters (@desktop/*).
 
 Options:
   - Subscribe/fetch in the route or a hook under src/app/hooks/, pass values down
@@ -112,6 +114,21 @@ Options:
   - Use the shared logic through @core/* (move it there with its second consumer)
   - Write the phone's own renderer or hook under apps/mobile/src/
   - See .claude/rules/mobile/expo.md and .claude/rules/shared-packages.md"
+    fi
+fi
+
+# --- Rule 4: the desktop app never imports React Native or Expo ---
+if [[ ( "$file_path" =~ /src/(app|desktop-transport)/.*\.(ts|tsx)$ || "$file_path" == */src/main.tsx ) \
+   && "$file_path" != */apps/mobile/* ]]; then
+    if printf '%s' "$text" | grep -qE -e "from[[:space:]]+[\"'](react-native|react-native-[^\"'/]+|expo|expo-[^\"'/]+|@expo)([\"'/])"; then
+        deny "BLOCKED: Architecture boundary violation.
+
+The desktop app renders with React DOM inside Tauri webviews. It must not
+import react-native, expo, expo-* or @expo/*; those belong to apps/mobile.
+
+Options:
+  - Use the desktop's own component or a DOM/Tauri equivalent
+  - Share logic through packages/core (@core/*), never a native package"
     fi
 fi
 

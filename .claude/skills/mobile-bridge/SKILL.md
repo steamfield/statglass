@@ -61,7 +61,9 @@ callback payloads as module events tagged with the subscription id, or add a typ
 error. Swift never reads fields out of metric JSON.
 
 Check: `bun run --cwd apps/mobile expo prebuild --platform ios`, then `bun run --cwd
-apps/mobile expo run:ios` builds and launches; `make mobile-check` passes.
+apps/mobile expo run:ios` builds and launches, or `make mobile-native-check` passes once phase 4
+adds it (simulator `xcodebuild` build and native module tests). `make mobile-check` is JS-only
+and never proves the Swift compiled.
 
 ## 5. MobileTransport
 

@@ -4759,7 +4759,7 @@ Date: 2026-11-24. Accepts RFC section 10, decision 9, and answers open question 
 
 Date: 2026-11-24. Accepts RFC section 10, decision 10, and answers open question 5. Keeps D-118 and D-131.
 
-- No GitHub-hosted macOS job is added for the iPhone app. Linux CI runs mobile lint, typecheck, jest-expo, `expo export` for iOS, `expo install --check` and the single-React check. The iOS Rust target check, simulator builds and native module tests run locally (`make mobile-check`, `make mobile-rust-check`).
+- No GitHub-hosted macOS job is added for the iPhone app. Linux CI runs mobile lint, typecheck, jest-expo, `expo export` for iOS, `expo install --check` and the single-React check. The iOS Rust target check runs locally through `make mobile-rust-check`. The simulator build and native module tests run locally through `make mobile-native-check` (prebuild, then `xcodebuild` build and test for the simulator), which phase 4 adds; until then through `bun run --cwd apps/mobile expo run:ios`. `make mobile-check` is the Linux-capable JS check and says nothing about Swift.
 - Release builds are local only, with no EAS (open question 5): prebuild, the XCFramework, an `xcodebuild` archive and upload with an App Store Connect API key from the local keychain, as desktop releases are cut.
 - Bundle id `com.tryopendata.statglass.mobile` on the existing individual developer account. `app.config.ts` reads bundle id, team and name from environment variables with those defaults, so forks sign their own copies. No credentials in the repository.
 - The mobile app versions independently (`mobile-vX.Y.Z`, monotonic build numbers).
