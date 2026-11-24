@@ -8,7 +8,7 @@ Scoped runs are the default during iteration; escalate only as far as needed (th
 ladder is in `.claude/rules/testing.md`).
 
 ```bash
-bun run test -- src/core/format          # Frontend, scoped by path substring
+bun run test -- packages/core/src/format # Frontend, scoped by path substring
 bun run test -- -t "bytes"               # Frontend, filter by test name
 cargo test -p statglass-store rollup        # Rust, one crate + name filter
 bun run test                             # Whole frontend suite, when the change is done
