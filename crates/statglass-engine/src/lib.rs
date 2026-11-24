@@ -111,7 +111,8 @@ pub use source::{
 /// Container names for the Linux cgroup and process collectors, and the Docker-backed
 /// refresher the agent runs (D-116).
 pub use statglass_collect::ContainerNames;
-#[cfg(unix)]
+// The refresher reads the Docker daemon, which iOS builds leave out.
+#[cfg(all(unix, not(target_os = "ios")))]
 pub use statglass_collect::NameRefresher;
 /// The rows of a [`ProcessBatch`], re-exported for the same reason.
 pub use statglass_collect::ProcessSample;
@@ -130,9 +131,11 @@ pub use statglass_collect::{IfaceAddrs, egress_interface, interface_addresses};
 pub use ticker::{FakeClock, FakeTicker, ThreadTicker, Ticker, leeway_for};
 pub use usage::{USAGE_BUCKET_MS, USAGE_KEEP_MS, UsageSeries, UsageSeriesApp};
 
-#[cfg(unix)]
+// Docker and the disk-space scan have no use on iPhone (no Docker daemon, no user
+// file tree to size), so iOS builds leave them and their bollard/hyper stack out.
+#[cfg(all(unix, not(target_os = "ios")))]
 pub mod disk_space;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "ios")))]
 pub mod docker;
 
 pub use history_store::{HistoryStore, HistoryStoreError, HistoryUnavailableReason};

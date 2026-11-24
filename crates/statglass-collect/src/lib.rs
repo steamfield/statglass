@@ -35,8 +35,12 @@ mod cadence;
 pub mod calib;
 pub mod calls;
 mod container_names;
+// Counter and interface-rate helpers shared by the macOS and Linux collectors only;
+// other targets (iOS) have no collector that reads them.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod counters;
 pub mod host_info;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod net;
 mod process;
 pub mod process_control;
@@ -51,7 +55,8 @@ use std::sync::Arc;
 
 pub use cadence::{Cadence, Every, IDLE_MS, LIVE_OR_IDLE, period_elapsed};
 pub use container_names::ContainerNames;
-#[cfg(unix)]
+// The refresher reads the Docker daemon, which iOS builds leave out.
+#[cfg(all(unix, not(target_os = "ios")))]
 pub use container_names::NameRefresher;
 pub use process::{ProcessGpu, ProcessNet, ProcessSample};
 pub use statglass_schema::{Entitlement, Module, SeriesKey, UnsupportedReason};
@@ -723,11 +728,15 @@ mod tests {
     }
 }
 
-#[cfg(unix)]
+// Docker and the disk-space scan have no use on iPhone (no Docker daemon, no user
+// file tree to size), so iOS builds leave them and their bollard/hyper stack out.
+#[cfg(all(unix, not(target_os = "ios")))]
 pub mod disk_space;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "ios")))]
 pub mod docker;
+#[cfg(not(target_os = "ios"))]
 pub mod docker_runtimes;
+#[cfg(not(target_os = "ios"))]
 pub mod docker_storage;
 
 mod usage_observation;

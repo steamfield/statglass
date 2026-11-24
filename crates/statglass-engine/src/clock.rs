@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct ClockReading {
     /// Millisecond Unix epoch.
     pub wall_ms: i64,
-    /// Monotonic nanoseconds that advance during sleep (`CLOCK_MONOTONIC_RAW` on macOS,
-    /// which is `mach_continuous_time`; `CLOCK_BOOTTIME` on Linux).
+    /// Monotonic nanoseconds that advance during sleep (`CLOCK_MONOTONIC_RAW` on macOS and
+    /// iOS, which is `mach_continuous_time`; `CLOCK_BOOTTIME` on Linux).
     pub continuous_ns: u64,
 }
 
@@ -29,9 +29,11 @@ pub fn wall_ms() -> i64 {
         .unwrap_or(0)
 }
 
-#[cfg(target_os = "macos")]
+// Darwin's CLOCK_MONOTONIC_RAW is mach_continuous_time on macOS and iOS alike. Apple
+// platforms define no CLOCK_BOOTTIME, so the Linux clock id is for everything else.
+#[cfg(target_vendor = "apple")]
 const CONTINUOUS_CLOCK: libc::clockid_t = libc::CLOCK_MONOTONIC_RAW;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 const CONTINUOUS_CLOCK: libc::clockid_t = libc::CLOCK_BOOTTIME;
 
 /// Monotonic nanoseconds that keep advancing while the machine sleeps.
@@ -71,5 +73,13 @@ mod tests {
         assert!(b.continuous_ns > a.continuous_ns);
         assert!(b.continuous_ms_since(&a) >= 4);
         assert_eq!(a.continuous_ms_since(&b), 0);
+    }
+
+    #[test]
+    fn continuous_clock_never_goes_backwards() {
+        let first = continuous_ns();
+        let second = continuous_ns();
+        assert!(first > 0, "the platform clock read failed");
+        assert!(second >= first, "{second} is before {first}");
     }
 }

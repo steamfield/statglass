@@ -23,6 +23,10 @@ serde_json.workspace = true
 ciborium.workspace = true
 sha2 = "0.10"
 tokio = { workspace = true, features = ["time", "net", "rt", "macros", "io-util"] }
+
+# The Docker client stack. iOS builds compile the docker modules out (no daemon to
+# reach from an iPhone), so the stack stays off that target.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
 futures-util = "0.3"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
