@@ -426,7 +426,8 @@ function copyForKind(
 /**
  * Pure presentation model for a remote host's connection state (ce:handling-errors):
  * names the failing route(s), explains why, surfaces durable history coverage, and
- * picks the contextual `@steamfield/ui/gif` theme and primary recovery action.
+ * picks a `ConnectionGifTheme` (the desktop maps it to `@steamfield/ui`'s `GifTheme`)
+ * and the primary recovery action.
  */
 export function remoteConnectionView(
   remote: RemoteHostRecord,

@@ -10,7 +10,7 @@ function escapeLabel(s: string): string {
 /**
  * Display form of a series key, `cpu.load{core=P0}`, the same text Rust's
  * `Display` writes: `\ , = { }` inside label names and values are escaped
- * with a backslash. Labels arrive sorted by key (bindings.ts `Labels`), so
+ * with a backslash. Labels arrive sorted by key (types.ts `Labels`), so
  * equal keys always produce equal strings. Used as the map key in the live
  * store.
  */

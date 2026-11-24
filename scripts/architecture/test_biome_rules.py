@@ -114,10 +114,19 @@ class BiomeRules(unittest.TestCase):
                                      directory="src/app/widgets", name="index.ts")
 
     def test_browser_rejects_node_builtins_in_prefixed_and_bare_forms(self):
-        for directory in ("packages/core/src", "src/app", "src/app/widgets"):
+        for directory in ("packages/core/src", "src/desktop-transport", "src/app", "src/app/widgets"):
             for module in ("node:fs", "fs", "fs/promises"):
                 with self.subTest(directory=directory, module=module):
                     self.assert_rejected(f'import {{ readFile }} from "{module}";\n', directory=directory)
+
+    def test_desktop_transport_rejects_react_and_the_app_but_allows_tauri(self):
+        for module in ("~/stores/foo", "react", "zustand", "../../app/router"):
+            with self.subTest(module=module):
+                self.assert_rejected(f'import {{ x }} from "{module}";\n', directory="src/desktop-transport")
+        for source in ('import { invoke } from "@tauri-apps/api/core";\n',
+                       'import type { Transport } from "@core/transport";\n'):
+            with self.subTest(source=source):
+                self.assert_allowed(source, directory="src/desktop-transport")
 
     def test_tests_keep_node_runtime_access(self):
         for directory in ("packages/core/src", "src/app"):

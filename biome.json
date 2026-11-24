@@ -226,6 +226,98 @@
       }
     },
     {
+      "includes": [
+        "src/desktop-transport/**",
+        "!src/desktop-transport/commands.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react": "src/desktop-transport/ has no React imports.",
+                  "react-dom": "src/desktop-transport/ has no React imports.",
+                  "react-dom/client": "src/desktop-transport/ has no React imports.",
+                  "react/jsx-runtime": "src/desktop-transport/ has no React imports.",
+                  "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
+                  "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
+                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
+                },
+                "patterns": [
+                  {
+                    "group": ["~/**"],
+                    "message": "src/desktop-transport/ must not import the app layer (~/)."
+                  },
+                  {
+                    "group": ["**/app/**", "**/app"],
+                    "message": "src/desktop-transport/ must not import the app layer through relative paths."
+                  },
+                  {
+                    "group": [
+                      "node:*",
+                      "assert",
+                      "assert/**",
+                      "buffer",
+                      "child_process",
+                      "cluster",
+                      "console",
+                      "constants",
+                      "crypto",
+                      "dgram",
+                      "diagnostics_channel",
+                      "dns",
+                      "dns/**",
+                      "domain",
+                      "events",
+                      "fs",
+                      "fs/**",
+                      "http",
+                      "http2",
+                      "https",
+                      "inspector",
+                      "inspector/**",
+                      "module",
+                      "net",
+                      "os",
+                      "path",
+                      "path/**",
+                      "perf_hooks",
+                      "process",
+                      "punycode",
+                      "querystring",
+                      "readline",
+                      "readline/**",
+                      "repl",
+                      "stream",
+                      "stream/**",
+                      "string_decoder",
+                      "sys",
+                      "timers",
+                      "timers/**",
+                      "tls",
+                      "trace_events",
+                      "tty",
+                      "url",
+                      "util",
+                      "util/**",
+                      "v8",
+                      "vm",
+                      "wasi",
+                      "worker_threads",
+                      "zlib"
+                    ],
+                    "message": "Browser code has no Node runtime; keep Node imports in tooling."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/app/**", "!src/app/widgets/**"],
       "linter": {
         "rules": {
@@ -539,7 +631,9 @@
             },
             "noRestrictedGlobals": {
               "level": "off",
-              "options": { "deniedGlobals": {} }
+              "options": {
+                "deniedGlobals": {}
+              }
             }
           }
         }
