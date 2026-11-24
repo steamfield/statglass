@@ -2,7 +2,7 @@
 
 Skill: deliver. Profile: deliver. On resume, re-read shared/lane-dag.md before anything else.
 plan_graph: /Users/riley/.claude/plugins/cache/claude-essentials/ce/6.0.0/shared/scripts/plan_graph.py
-Status: done pending merge approval (2026-11-23). Started: 2026-11-23. Timebox: none. Landing branch: deliver/alerts (worktree /Users/riley/Projects/statglass/.claude/worktrees/deliver-alerts, cut from origin/main 6f2924fb).
+Status: done (2026-11-23). Started: 2026-11-23. Timebox: none. Landing branch: deliver/alerts (worktree /Users/riley/Projects/statglass/.claude/worktrees/deliver-alerts, cut from origin/main 6f2924fb).
 Gate: `make rust-check && make architecture-check && cargo test -p statglass-schema -p statglass-notify -p statglass && cargo test -p statglass-engine --lib --test events && make bindings-check && bun run check` (about 4 min cold, frontend part 62 s). Filtered tests: `bun run test -- <path>` and `cargo test -p <crate> <name filter>`. Typecheck: `bun run typecheck` and `cargo check --workspace --all-targets`.
 Runner: plain commands. Every cargo and make command, in this checkout and in lane worktrees, is prefixed with `CARGO_TARGET_DIR=/Users/riley/Projects/statglass/.claude/worktrees/deliver-alerts/target` so lanes share one build cache.
 Worktree setup: `bun install --frozen-lockfile && make stub-dist`.
@@ -360,6 +360,7 @@ Test cases:
 - Done when: `cargo test -p statglass host_offline` and `host_watch` pass, clippy and `make architecture-check` are clean.
 
 ## Log
+- Final gate on the merged branch: `make check` ran every target green up to `updater-patch-test`, which cannot resolve its workspace from a nested worktree (the vendored crate is untouched; the same limit is recorded for D-133); `bun run check` 2,788 tests, `make bindings-check`, and Chromium e2e for the alerts, destinations, shell, hosts and Timeline specs (40 passed). Merged to main locally with `--no-ff`; not pushed.
 - Phase 4 gate green and tagged `alerts-phase-4`. Whole-feature runs on the merged branch: full Chromium e2e 295 passed, `make e2e-perf` 16 passed.
 - Final review (opus, whole diff, four chains traced end to end), seven findings accepted and fixed: re-saving a rule sent a threshold rebuilt from its 7-digit display text, which replaced the evaluator and could re-fire an ongoing episode (the form now sends the stored value unless the text was edited); Recent ignored the user's units; the host-offline watch started empty on every launch and re-announced a long-offline host (it is seeded from stored alerts); the destinations query could be stale on return to the page; the host row's last-fired link pointed at the recovery; `lastFiredByRule` had a second copy in the panel; destination names were saved untrimmed.
 - Fix review (opus), all seven confirmed. Two follow-ups fixed: a seeded host that is already reachable is forgotten without a "back" notice (the app was not watching when it recovered), and the seed read runs off the async worker. Rejected: relaxing the trimmed-name rule for destinations saved earlier, since destinations first ship with this change and no stored destination predates the rule.
