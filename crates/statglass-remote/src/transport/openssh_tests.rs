@@ -199,15 +199,15 @@ async fn explicit_close_kills_and_reaps_ssh() {
     assert!(!exists(pid.0));
 }
 
-#[tokio::test]
-async fn inherited_stderr_does_not_delay_a_host_key_error() {
-    let (_dir, dialer) = fake_ssh(
-        r#"
+const SSH_WITH_INHERITED_STDERR: &str = r#"
 /bin/sleep 30 >&2 &
 printf '%s\n' 'Host key verification failed.' >&2
 printf '%s\n' "$!"
-"#,
-    );
+"#;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn inherited_stderr_does_not_delay_a_host_key_error() {
+    let (_dir, dialer) = fake_ssh(SSH_WITH_INHERITED_STDERR);
     let endpoint = endpoint();
     let target = &endpoint.targets[0];
     let stream = dialer.dial(&endpoint, target).await.unwrap();
@@ -220,10 +220,9 @@ printf '%s\n' "$!"
     let descendant = TestChild(line.trim().parse().unwrap());
     assert!(exists(descendant.0));
 
-    tokio::time::pause();
-    let start = tokio::time::Instant::now();
-    stream.close.close().await;
-    assert_eq!(start.elapsed(), Duration::ZERO);
+    timeout(Duration::from_secs(2), stream.close.close())
+        .await
+        .expect("close must not wait for an inherited stderr");
     assert!(exists(descendant.0));
     assert!(matches!(
         dialer.classify(&DialFailure {
@@ -233,6 +232,49 @@ printf '%s\n' "$!"
         }),
         RemoteError::HostKey(text) if text == "studio.local: Host key verification failed."
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stderr_pump_drains_buffered_bytes_when_started_after_ssh_exits() {
+    let (_dir, dialer) = fake_ssh(SSH_WITH_INHERITED_STDERR);
+    let endpoint = endpoint();
+    let mut child = dialer
+        .command(&endpoint, &endpoint.targets[0])
+        .unwrap()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    timeout(WAIT, stdout.read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    let descendant = TestChild(line.trim().parse().unwrap());
+    assert!(exists(descendant.0));
+    assert!(
+        timeout(WAIT, child.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
+
+    let (exit, exited) = oneshot::channel();
+    let tail = StderrTail::default();
+    exit.send(()).unwrap();
+    let pump = tokio::spawn(pump_stderr(
+        child.stderr.take().unwrap(),
+        tail.clone(),
+        exited,
+    ));
+    timeout(Duration::from_secs(2), pump)
+        .await
+        .expect("the drain must finish while the descendant holds stderr open")
+        .unwrap();
+    assert!(exists(descendant.0));
+    assert_eq!(tail.text(), "Host key verification failed.");
 }
 
 #[tokio::test]

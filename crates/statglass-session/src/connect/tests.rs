@@ -307,6 +307,26 @@ async fn non_retryable_failure_ends_the_race_during_grace() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn preferred_success_wins_over_host_key_failure_in_the_same_poll() {
+    let bad_key = Step::fails(100, || RemoteError::HostKey("changed".into()));
+    let (dialer, endpoint, _) = fixture(vec![Step::answers(0, HOST), bad_key]);
+    let start = Instant::now();
+    let connection = connect(&dialer, &endpoint, LOCAL, None);
+    tokio::pin!(connection);
+    poll_fn(|cx| {
+        assert!(connection.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    // Leave the race unpolled until the greeting and the failure are both ready.
+    sleep(Duration::from_millis(100)).await;
+
+    let session = connection.await.unwrap();
+    assert_eq!(start.elapsed(), Duration::from_millis(100));
+    assert_eq!(session.target, endpoint.targets[0]);
+}
+
+#[tokio::test(start_paused = true)]
 async fn successful_routes_must_identify_the_same_host() {
     let (dialer, endpoint, _) = fixture(vec![Step::answers(200, HOST), Step::answers(0, OTHER)]);
     assert!(matches!(
@@ -315,6 +335,27 @@ async fn successful_routes_must_identify_the_same_host() {
     ));
     assert_eq!(dialer.steps[0].dropped.load(SeqCst), 1);
     assert_eq!(dialer.steps[1].dropped.load(SeqCst), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn same_route_identity_conflict_names_the_preferred_target_first() {
+    let (dialer, endpoint, _) = fixture(vec![
+        Step::default(),
+        Step::answers(200, OTHER),
+        Step::answers(0, HOST),
+    ]);
+    let start = Instant::now();
+    let error = failed(connect(&dialer, &endpoint, LOCAL, None).await);
+    assert_eq!(start.elapsed(), Duration::from_millis(200));
+    assert_eq!(dialer.steps[1].dropped.load(SeqCst), 1);
+    assert_eq!(dialer.steps[2].dropped.load(SeqCst), 1);
+    let RemoteError::Identity(text) = error else {
+        panic!("expected an identity conflict, got {error:?}");
+    };
+    assert_eq!(
+        text,
+        "studio.tailnet.ts.net and 100.64.0.2 identify different hosts"
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -490,6 +531,44 @@ async fn an_oversized_greeting_is_rejected_from_its_prefix() {
         *dialer.classified.lock_ok(),
         [(HandshakeFailure::Invalid, String::new(), 1)]
     );
+}
+
+async fn assert_greeting_failure(frame: Vec<u8>, outcome: HandshakeFailure) {
+    let (dialer, endpoint, _) = fixture(vec![Step {
+        frame: Some(frame),
+        ack: AckBehavior::Close,
+        ..Step::default()
+    }]);
+    assert!(matches!(
+        failed(connect(&dialer, &endpoint, LOCAL, None).await),
+        RemoteError::Transport(text) if text == "scripted classification"
+    ));
+    assert_eq!(*dialer.classified.lock_ok(), [(outcome, String::new(), 1)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn peer_closing_before_the_first_byte_reads_as_closed() {
+    assert_greeting_failure(Vec::new(), HandshakeFailure::Closed).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn ping_as_the_first_frame_reads_as_not_hello() {
+    let ping = statglass_proto::encode_frame(&Message::Ping {
+        nonce: 42,
+        t0_ms: 0,
+    })
+    .unwrap();
+    assert_greeting_failure(ping, HandshakeFailure::NotHello).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_zero_length_greeting_reads_as_invalid() {
+    assert_greeting_failure(0_u32.to_be_bytes().to_vec(), HandshakeFailure::Invalid).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_undecodable_greeting_body_reads_as_invalid() {
+    assert_greeting_failure(vec![0, 0, 0, 1, 0xff], HandshakeFailure::Invalid).await;
 }
 
 #[tokio::test(start_paused = true)]

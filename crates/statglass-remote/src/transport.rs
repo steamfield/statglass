@@ -255,8 +255,9 @@ async fn pump_stderr(
 }
 
 fn drain_stderr(stderr: &ChildStderr, output: &StderrTail) -> io::Result<()> {
-    // A ProxyCommand can inherit the pipe. A duplicate preserves Tokio's nonblocking
-    // flag and lets us read buffered bytes without waiting for readiness or EOF.
+    // A ProxyCommand can inherit the pipe, so the drain must not wait for EOF.
+    // This relies on Tokio setting O_NONBLOCK on ChildStderr and the duplicate
+    // preserving the file status flags.
     let mut pipe = File::from(stderr.as_fd().try_clone_to_owned()?).take(STDERR_TAIL_BYTES as u64);
     let mut bytes = Vec::new();
     let result = pipe.read_to_end(&mut bytes);

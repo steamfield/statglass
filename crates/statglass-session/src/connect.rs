@@ -55,7 +55,7 @@ pub async fn connect(
     let mut preferred: Option<(usize, SshSession)> = None;
     let mut failures = Vec::new();
     let mut grace = None;
-    while !attempts.is_empty() {
+    'race: while !attempts.is_empty() {
         // Poll all targets together, including on the first turn. Keeping the futures
         // here makes returning from the race drop every unfinished attempt.
         let ready = poll_fn(|cx| {
@@ -78,7 +78,8 @@ pub async fn connect(
             completed = ready => completed,
             () = wait_for_grace(grace) => break,
         };
-        for (index, target, result) in completed {
+        let mut completed = completed.into_iter().peekable();
+        while let Some((index, target, result)) = completed.next() {
             match result {
                 Err(error) if !error.retryable() => return Err(error),
                 Err(error) => failures.push((
@@ -90,10 +91,15 @@ pub async fn connect(
                     },
                 )),
                 Ok(session) => {
-                    if let Some((_, best)) = &preferred
+                    if let Some((best_index, best)) = &preferred
                         && best.hello.host.id != session.hello.host.id
                     {
-                        return Err(conflicting_identity(&best.target, target));
+                        let (first, second) = if index < *best_index {
+                            (target, &best.target)
+                        } else {
+                            (&best.target, target)
+                        };
+                        return Err(conflicting_identity(first, second));
                     }
                     if preferred.as_ref().is_none_or(|(best, _)| index < *best) {
                         preferred = Some((index, session));
@@ -101,11 +107,12 @@ pub async fn connect(
                     grace.get_or_insert_with(|| Instant::now() + ROUTE_GRACE);
                 }
             }
-        }
-        if let Some((best, _)) = &preferred
-            && attempts.first().is_none_or(|(index, ..)| index > best)
-        {
-            break;
+            if let Some((best, _)) = &preferred
+                && attempts.first().is_none_or(|(index, ..)| index > best)
+                && completed.peek().is_none_or(|(index, ..)| index > best)
+            {
+                break 'race;
+            }
         }
     }
     preferred
