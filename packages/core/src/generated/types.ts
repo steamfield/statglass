@@ -330,6 +330,16 @@ export type BarsPatch = {
 	memory?: boolean | null,
 };
 
+/**  A build's crate version and the session protocol range it negotiates. */
+export type BuildInfo = {
+	/**  The workspace version, for example `0.14.0`. */
+	version: string,
+	/**  The oldest protocol version this build still speaks. */
+	protocol_min: number,
+	/**  The protocol version this build offers. */
+	protocol_max: number,
+};
+
 /**  A byte count as a plain JS `number`; exact below 2^53 (8 PiB). */
 export type ByteCount = number;
 

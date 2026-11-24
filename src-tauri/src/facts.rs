@@ -371,6 +371,8 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .typ::<statglass_schema::AlertLimits>()
         .typ::<statglass_schema::DestinationLimits>()
         .typ::<statglass_schema::Readout>()
+        // What the iPhone facade's `version()` returns; no desktop command uses it.
+        .typ::<statglass_schema::BuildInfo>()
 }
 
 #[cfg(test)]
