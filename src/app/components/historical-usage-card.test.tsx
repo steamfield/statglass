@@ -269,7 +269,8 @@ it("keeps its rows and open app while a rolling window moves to the next answer"
   expect(
     screen.getByRole("table", { name: "Recorded apps in this range" })
   ).toBe(table);
-});
+  // About 4 s locally; a loaded CI runner ran past the 5 s default.
+}, 15_000);
 
 it("loads process instances lazily and refresh discards old continuation pages", async () => {
   const { user, processes } = setup();
@@ -290,7 +291,8 @@ it("loads process instances lazily and refresh discards old continuation pages",
   expect(processes.mock.calls[2]?.[0].cursor).toBeNull();
   await screen.findByText("4099");
   expect(screen.queryByText("4124")).not.toBeInTheDocument();
-});
+  // About 4 s locally; a loaded CI runner ran past the 5 s default.
+}, 15_000);
 
 it("keeps a fixed answer cached across live ticks and exposes partial resource coverage to keyboard users", async () => {
   const transport = createMockTransport({ now: () => NOW, autoTick: false });
@@ -433,7 +435,8 @@ it("restarts a stale process continuation instead of retaining earlier pages", a
   await screen.findByText("4099");
   expect(processes.mock.calls.at(-1)?.[0].cursor).toBeNull();
   expect(screen.queryByText("4124")).not.toBeInTheDocument();
-});
+  // About 4 s locally; a loaded CI runner ran past the 5 s default.
+}, 15_000);
 
 it("shows unrecorded history without inventing empty zero-valued app rows", async () => {
   const transport = createMockTransport({ now: () => NOW, autoTick: false });
