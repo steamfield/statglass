@@ -1,10 +1,7 @@
-import {
-  commands,
-  type DockerLogBatch,
-  type DockerSnapshot,
-} from "@core/generated/bindings";
+import type { DockerLogBatch, DockerSnapshot } from "@core/generated/types";
+import type { Transport } from "@core/transport/contracts";
+import { commands } from "@desktop/commands";
 import { Channel } from "@tauri-apps/api/core";
-import type { Transport } from "./contracts";
 
 export function nativeDocker(): Pick<
   Transport,

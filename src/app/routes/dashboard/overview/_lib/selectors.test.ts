@@ -1,4 +1,4 @@
-import type { SeriesKey } from "@core/generated/bindings";
+import type { SeriesKey } from "@core/generated/types";
 import { type HostLive, initialHostLive, reduceLive } from "@core/live-state";
 import { frameMsg, layoutMsg } from "@tests/live-frames";
 import { selectVolumeCapacity } from "~/stores/live-selectors";

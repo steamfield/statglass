@@ -4,7 +4,7 @@
  * fan ramp lands at 14:02 and the ANE spike 6.6 minutes before now, where
  * the power chart marks it.
  */
-import { ALERT_LIMITS, type Event } from "@core/generated/bindings";
+import { ALERT_LIMITS, type Event } from "@core/generated/types";
 
 const SEC = 1000;
 const MIN = 60 * SEC;

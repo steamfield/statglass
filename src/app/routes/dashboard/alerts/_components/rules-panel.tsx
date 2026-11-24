@@ -11,7 +11,7 @@ import {
   type Event,
   type RemoteHostRecord,
   type UnitSettings,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { settingsErrorText } from "@core/settings-patch";
 import { MINUTE_MS } from "@core/time-grid";
 import { type ReactNode, useCallback, useMemo, useState } from "react";

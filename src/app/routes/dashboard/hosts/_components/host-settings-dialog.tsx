@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { useId } from "react";
 import { ConfirmDialog } from "~/components/confirm-dialog";
 import { InlineMessage } from "~/components/inline-message";

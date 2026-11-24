@@ -1,4 +1,4 @@
-import type { AppUsage, UsageByApp } from "@core/generated/bindings";
+import type { AppUsage, UsageByApp } from "@core/generated/types";
 import {
   gpuShortfall,
   remainderRows,

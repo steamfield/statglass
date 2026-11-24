@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { RemoteUpdateStatus } from "@core/generated/bindings";
+import type { RemoteUpdateStatus } from "@core/generated/types";
 import { hostKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

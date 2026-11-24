@@ -1,7 +1,4 @@
-import type {
-  RemoteHostConfig,
-  RemoteHostRecord,
-} from "@core/generated/bindings";
+import type { RemoteHostConfig, RemoteHostRecord } from "@core/generated/types";
 import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";

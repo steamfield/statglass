@@ -1,4 +1,4 @@
-import type { DockerHistoryPoint } from "@core/generated/bindings";
+import type { DockerHistoryPoint } from "@core/generated/types";
 import { mockContainer } from "@core/mock/docker";
 import { describe, expect, it } from "vitest";
 import {

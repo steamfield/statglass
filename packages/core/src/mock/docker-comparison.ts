@@ -5,7 +5,7 @@ import {
   type DockerContainer,
   type DockerCoverage,
   type DockerSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { CommandResult } from "@core/transport";
 import { MiB } from "./docker-fixtures";
 import { maskUncovered, mockHistoryPoints } from "./docker-history";

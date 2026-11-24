@@ -1,10 +1,10 @@
-import type { ChartWindow, CliLinkState } from "@core/generated/bindings";
-import { relativeWindow } from "./chart-range";
-import { CHART_WINDOWS } from "./live-window";
-import type { ScenarioName } from "./mock/fixtures";
-import { SCENARIOS } from "./mock/fixtures";
-import { DAY_MS } from "./time-grid";
-import type { Transport } from "./transport";
+import { relativeWindow } from "@core/chart-range";
+import type { ChartWindow, CliLinkState } from "@core/generated/types";
+import { CHART_WINDOWS } from "@core/live-window";
+import type { ScenarioName } from "@core/mock/fixtures";
+import { SCENARIOS } from "@core/mock/fixtures";
+import { DAY_MS } from "@core/time-grid";
+import type { Transport } from "@core/transport";
 
 const CLI_LINK_STATES: readonly CliLinkState[] = [
   "missing",
@@ -59,7 +59,7 @@ export async function createAppTransport(search: string): Promise<Transport> {
     "__TAURI_INTERNALS__" in window &&
     import.meta.env.VITE_TRANSPORT !== "mock"
   ) {
-    const { createTauriTransport } = await import("./transport/native");
+    const { createTauriTransport } = await import("./native");
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     return createTauriTransport(getCurrentWindow().label);
   }
@@ -70,12 +70,12 @@ export async function createAppTransport(search: string): Promise<Transport> {
       (SCENARIOS as readonly string[]).includes(s)
     );
   const { createMockTransport, cliLinkFixture } = await import(
-    "./mock-transport"
+    "@core/mock-transport"
   );
   const cliLink = CLI_LINK_STATES.find((s) => s === params.get("cli_link"));
   const bridge =
     typeof window !== "undefined" && window.parent !== window
-      ? (await import("./mock/embed-bridge")).createEmbedBridge(window)
+      ? (await import("@core/mock/embed-bridge")).createEmbedBridge(window)
       : null;
   const windowLabel = params.get("window") ?? "dashboard";
   const chartWindow = parseChartWindow(params.get("chart_window"));

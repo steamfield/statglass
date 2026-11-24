@@ -5,7 +5,7 @@ import {
   type AlertMetric,
   type AlertRule,
   type UnitSettings,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import {
   formForMetric,
   formFromRule,

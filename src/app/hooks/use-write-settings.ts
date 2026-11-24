@@ -1,4 +1,4 @@
-import type { SettingsPatch } from "@core/generated/bindings";
+import type { SettingsPatch } from "@core/generated/types";
 import { settingsErrorText } from "@core/settings-patch";
 import { useCallback } from "react";
 import { toast } from "sonner";

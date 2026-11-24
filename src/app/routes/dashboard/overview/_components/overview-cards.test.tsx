@@ -1,4 +1,4 @@
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import {
   capabilities,

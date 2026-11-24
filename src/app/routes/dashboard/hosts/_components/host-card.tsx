@@ -1,4 +1,4 @@
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { Settings } from "lucide-react";
 import { memo, useId } from "react";
 import { Link } from "react-router";

@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import type { SpaceVolume } from "@core/generated/bindings";
+import type { SpaceVolume } from "@core/generated/types";
 import { remoteQueryText } from "@core/remote-errors";
 import type { ComponentProps, ReactNode } from "react";
 import { useState } from "react";

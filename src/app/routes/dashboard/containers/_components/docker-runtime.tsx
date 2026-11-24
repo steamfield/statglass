@@ -8,7 +8,7 @@ import {
   formatDateTime,
   formatPercent,
 } from "@core/format";
-import type { DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSnapshot } from "@core/generated/types";
 import { RetainedHistory } from "./retained-history";
 
 export function DockerRuntime({ snapshot }: { snapshot: DockerSnapshot }) {

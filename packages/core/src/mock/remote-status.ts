@@ -1,4 +1,4 @@
-import type { RemoteHostStatus } from "@core/generated/bindings";
+import type { RemoteHostStatus } from "@core/generated/types";
 import { CLOCK_STEP_THRESHOLD_MS } from "@core/host-clock";
 import type { MockRemotes } from "./remote";
 import { syncRrJobs } from "./rr";

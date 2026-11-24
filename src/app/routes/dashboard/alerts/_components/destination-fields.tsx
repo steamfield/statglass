@@ -4,7 +4,7 @@
  * The fields report each edit as the next form.
  */
 import { generateTopic, newDestination } from "@core/alert-destinations";
-import type { Destination } from "@core/generated/bindings";
+import type { Destination } from "@core/generated/types";
 import { type ReactNode, useId } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { SegmentedControl } from "~/components/segmented-control";

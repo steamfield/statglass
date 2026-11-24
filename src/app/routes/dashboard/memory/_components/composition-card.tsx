@@ -1,6 +1,6 @@
 import { ratio } from "@core/chart-math";
 import { bytesParts, formatBytes, formatPercent, MISSING } from "@core/format";
-import type { MetricStat } from "@core/generated/bindings";
+import type { MetricStat } from "@core/generated/types";
 import { useMemo } from "react";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";

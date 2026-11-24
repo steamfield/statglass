@@ -8,7 +8,7 @@ import type {
   HostVitals,
   RemoteHostStatus,
   RemoteRouteFailure,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { ScenarioName } from "./fixtures";
 import type { MockRemotes } from "./remote";
 

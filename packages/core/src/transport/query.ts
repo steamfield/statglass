@@ -1,4 +1,4 @@
-import type { CommandError } from "@core/generated/bindings";
+import type { CommandError } from "@core/generated/types";
 import type { CommandResult } from "./contracts";
 
 /** Raised by query functions so TanStack Query sees a failed command. */

@@ -1,4 +1,4 @@
-import type { PerformanceReason } from "@core/generated/bindings";
+import type { PerformanceReason } from "@core/generated/types";
 import { performanceChanges, performanceWhy } from "@core/performance";
 import { type ReactNode, useId } from "react";
 import {

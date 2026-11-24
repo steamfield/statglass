@@ -34,10 +34,7 @@
  * fill tests give 37 and 2.5).
  */
 
-import {
-  HISTORY_PROJECTION,
-  type HistoryGrowth,
-} from "@core/generated/bindings";
+import { HISTORY_PROJECTION, type HistoryGrowth } from "@core/generated/types";
 
 const MB = 1_000_000;
 

@@ -7,7 +7,7 @@ import type {
   RemoteFailureKind,
   RemoteHostRecord,
   RemoteRouteFailure,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { ConfiguredRoute, ConnectionCopy } from "./remote-connection";
 
 /** The configured routes as one phrase for copy: both routes joined by "or", the only route, or "the saved SSH route" when none is set. */

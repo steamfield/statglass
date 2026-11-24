@@ -1,9 +1,5 @@
 import { formatBytes } from "@core/format";
-import type {
-  SpaceFile,
-  SpaceNode,
-  SpaceTarget,
-} from "@core/generated/bindings";
+import type { SpaceFile, SpaceNode, SpaceTarget } from "@core/generated/types";
 import { spaceKey } from "@core/space-treemap";
 import { Copy, File, Folder, FolderSearch } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";

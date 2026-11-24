@@ -1,5 +1,5 @@
 import { formatBytes, formatPercent, MISSING } from "@core/format";
-import type { PerformanceReason, Settings } from "@core/generated/bindings";
+import type { PerformanceReason, Settings } from "@core/generated/types";
 import {
   approxSize,
   DEFAULT_SERIES,

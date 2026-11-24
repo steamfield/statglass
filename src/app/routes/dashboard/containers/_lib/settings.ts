@@ -1,4 +1,4 @@
-import type { DockerSettings } from "@core/generated/bindings";
+import type { DockerSettings } from "@core/generated/types";
 
 /** Undefined is omission; null deliberately clears the selected engine. */
 export function mergeDockerSettings(

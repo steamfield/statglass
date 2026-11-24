@@ -14,7 +14,7 @@ import type {
   ModuleCap,
   Settings,
   SignalRefusal,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { trayStyleMenuBar } from "@core/settings-patch";
 import { MINUTE_MS } from "../time-grid";
 import { LINUX_HOST_NAME, linuxCapabilities, linuxHostInfo } from "./linux";

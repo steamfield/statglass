@@ -1,4 +1,4 @@
-import { METRIC_CODES, type ThermalState } from "@core/generated/bindings";
+import { METRIC_CODES, type ThermalState } from "@core/generated/types";
 
 /** `thermal.state` (`NSProcessInfo.thermalState`) as the word the UI shows. */
 export const THERMAL_LABEL: Record<ThermalState, string> = {

@@ -1,4 +1,4 @@
-import type { DockerContainer } from "@core/generated/bindings";
+import type { DockerContainer } from "@core/generated/types";
 import { Button } from "~/components/ui/button";
 import { lifecycleLabel } from "../_lib/presentation";
 export function ContainerMetadata({

@@ -1,4 +1,4 @@
-import type { UnitSettings } from "@core/generated/bindings";
+import type { UnitSettings } from "@core/generated/types";
 import type { ByteUnits, RateUnits } from "./bytes";
 import type { TemperatureUnits } from "./temperature";
 

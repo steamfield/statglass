@@ -6,7 +6,7 @@
  * only arranges and sums the rows a view shows.
  */
 import { matchProcessQuery } from "@core/app-search";
-import type { LiveProcess } from "./generated/bindings";
+import type { LiveProcess } from "./generated/types";
 
 /** A group's figures: member sums, the ports union, and the user when shared. */
 export interface LiveFigures {

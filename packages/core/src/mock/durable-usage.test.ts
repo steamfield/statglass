@@ -1,7 +1,7 @@
 import type {
   HistoricalUsageRequest,
   UsageProcessRequest,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MockTransport } from "./contracts";

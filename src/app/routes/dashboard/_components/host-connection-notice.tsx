@@ -1,5 +1,5 @@
 import { windowEnding } from "@core/chart-range";
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { hostKeys } from "@core/query-keys";
 import {
   remoteConnectionView,

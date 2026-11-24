@@ -26,8 +26,8 @@ import type {
   LiveStatus,
   MetricKind,
   SeriesKey,
-} from "@core/generated/bindings";
-import { RING_MAX_ROWS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { RING_MAX_ROWS } from "@core/generated/types";
 import { seriesKeyString } from "@core/series-key";
 
 export interface LayoutInfo {

@@ -1,4 +1,4 @@
-import type { CliLinkStatus } from "@core/generated/bindings";
+import type { CliLinkStatus } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "../../../../../../tests/test-utils";

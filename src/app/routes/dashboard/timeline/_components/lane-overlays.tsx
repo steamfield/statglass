@@ -1,5 +1,5 @@
 import { cssPercent } from "@core/format";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { cn } from "~/lib/utils";
 import { GapBand } from "~/widgets/gap-band";
 import type { LaneData } from "../_hooks/use-timeline-data";

@@ -1,4 +1,4 @@
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
+import { USAGE_KEEP_MS } from "@core/generated/types";
 import {
   chartRange,
   chartRangeLabel,

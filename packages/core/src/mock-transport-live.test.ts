@@ -2,7 +2,7 @@
  * The mock's D-066 live channel and the commands added with it, so the
  * frontend tests and the dev server exercise what Rust sends.
  */
-import type { LiveMsg, LiveProcess } from "@core/generated/bindings";
+import type { LiveMsg, LiveProcess } from "@core/generated/types";
 import { initialHostLive, reduceLive } from "./live-state";
 import {
   MOCK_HOST_ID,

@@ -2,7 +2,7 @@ import type {
   PerformanceReason,
   PlanFigures,
   Settings,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { samplingPlan } from "@core/sampling-plans";
 import { menuBarOf, SETTINGS_MODULES } from "@core/settings-patch";
 

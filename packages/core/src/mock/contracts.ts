@@ -10,7 +10,7 @@ import type {
   SeriesKey,
   StarPromptStatus,
   UpdateStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { Transport } from "../transport";
 import type { ScenarioFlags, ScenarioName } from "./fixtures";
 /**

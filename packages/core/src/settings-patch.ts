@@ -14,10 +14,10 @@ import {
   SAMPLING_INTERVALS_MS,
   SETTINGS_MODULES as SETTINGS_MODULE_ORDER,
   type SettingsPatch,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { commandError } from "./command-error";
 
-export { RETENTION_DAYS, SIZE_LIMITS_MB } from "@core/generated/bindings";
+export { RETENTION_DAYS, SIZE_LIMITS_MB } from "@core/generated/types";
 
 /**
  * Modules with a settings entry: every module except `sensors` (it rides with

@@ -4,7 +4,7 @@ import type {
   LiveProcess,
   ProcessUsage,
   UsageByApp,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { unwrap } from "@core/transport";

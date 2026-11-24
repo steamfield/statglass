@@ -5,10 +5,7 @@
 import { deliveryLabel } from "@core/alert-destinations";
 import { commandErrorText } from "@core/command-error";
 import { formatClock } from "@core/format";
-import type {
-  AlertDestinationsView,
-  Destination,
-} from "@core/generated/bindings";
+import type { AlertDestinationsView, Destination } from "@core/generated/types";
 import type { CommandResult } from "@core/transport";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { InlineMessage } from "~/components/inline-message";

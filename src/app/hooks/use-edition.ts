@@ -1,4 +1,4 @@
-import type { Edition } from "@core/generated/bindings";
+import type { Edition } from "@core/generated/types";
 import { appKeys } from "@core/query-keys";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";

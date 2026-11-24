@@ -2,7 +2,7 @@ import type {
   SpaceNode,
   SpaceReport,
   SpaceScanStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { describe, expect, it } from "vitest";
 import {
   agoLabel,

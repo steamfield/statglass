@@ -1,4 +1,4 @@
-import type { HistoryRequest } from "@core/generated/bindings";
+import type { HistoryRequest } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 
 it("walks update phases through status pushes, then reports the target on reconnect", async () => {

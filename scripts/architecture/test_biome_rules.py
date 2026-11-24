@@ -15,6 +15,7 @@ IMPORT_RULE = "style/noRestrictedImports"
 FUNCTION_RULE = "complexity/noExcessiveLinesPerFunction"
 FILE_RULE = "style/noExcessiveLinesPerFile"
 COMPLEXITY_RULE = "complexity/noExcessiveCognitiveComplexity"
+GLOBALS_RULE = "style/noRestrictedGlobals"
 
 
 class BiomeRules(unittest.TestCase):
@@ -49,31 +50,52 @@ class BiomeRules(unittest.TestCase):
                 self.assert_rejected(f'import {{ value }} from "{module}";\n')
         self.assert_allowed('import { createStore } from "zustand/vanilla";\n')
 
+    def test_core_rejects_platform_imports(self):
+        # Core runs on the desktop and the phone: no React, React Native, Expo, Tauri,
+        # desktop UI kit or desktop adapter imports, in source or tests.
+        for module in ("react", "react-dom", "react-native", "react-native/Libraries/Image",
+                       "expo", "expo-router", "expo-secure-store/build", "@tauri-apps/api/core",
+                       "@steamfield/ui", "@steamfield/ui/gif", "@desktop/commands"):
+            for name in ("probe.ts", "probe.test.ts"):
+                with self.subTest(module=module, name=name):
+                    self.assert_rejected(f'import {{ value }} from "{module}";\n', name=name)
+        self.assert_allowed('import type { Snapshot } from "@core/generated/types";\n')
+
+    def test_core_rejects_dom_globals_outside_tests(self):
+        for source in ('export const width = window.innerWidth;\n',
+                       'export const title = document.title;\n',
+                       'export const online = navigator.onLine;\n'):
+            with self.subTest(source=source):
+                self.assert_rejected(source, rule=GLOBALS_RULE)
+                self.assert_allowed(source, name="probe.test.ts", rule=GLOBALS_RULE)
+        self.assert_allowed('export function width(window: { innerWidth: number }) {\n'
+                            '  return window.innerWidth;\n}\n', rule=GLOBALS_RULE)
+
     def test_widgets_reject_transport_generated_commands_and_app_hooks(self):
-        for module, symbol in (("@core/transport", "Transport"), ("@core/generated/bindings", "commands"),
-                               ("@core/generated/bindings", "events"), ("~/hooks/use-transport", "useTransport"),
+        for module, symbol in (("@core/transport", "Transport"), ("@desktop/commands", "commands"),
+                               ("@desktop/commands", "events"), ("~/hooks/use-transport", "useTransport"),
                                ("../hooks/use-remote-hosts", "useRemoteHosts"),
                                ("../routes/dashboard/containers/_hooks/use-docker", "useDocker"),
-                               ("../../core/transport", "Transport"), ("../../core/generated/bindings", "commands"),
-                               ("../router", "router"), ("@core/app-transport", "appTransport"),
+                               ("../../core/transport", "Transport"), ("../../desktop-transport/commands", "commands"),
+                               ("../router", "router"), ("@desktop/app-transport", "createAppTransport"),
                                ("@core/mock-transport", "createMockTransport"), ("@core/mock/fixtures", "MOCK_HOST_ID")):
             with self.subTest(module=module, symbol=symbol):
                 self.assert_rejected(f'import {{ {symbol} }} from "{module}";\n', directory="src/app/widgets")
 
     def test_app_reaches_tauri_only_through_transport(self):
-        for module, symbol in (("@core/transport/native", "createNativeTransport"),
-                               ("@core/transport/native-docker", "dockerCommands"),
-                               ("@core/generated/bindings", "commands"), ("@core/generated/bindings", "events")):
+        for module, symbol in (("@desktop/native", "createTauriTransport"),
+                               ("@desktop/native-docker", "nativeDocker"),
+                               ("@desktop/commands", "commands"), ("@desktop/commands", "events")):
             with self.subTest(module=module, symbol=symbol):
                 self.assert_rejected(f'import {{ {symbol} }} from "{module}";\n', directory="src/app")
-        for source in ('import type { Snapshot } from "@core/generated/bindings";\n',
+        for source in ('import type { Snapshot } from "@core/generated/types";\n',
                        'import { useTransport } from "@core/transport";\n'):
             with self.subTest(source=source):
                 self.assert_allowed(source, directory="src/app")
 
     def test_widgets_allow_generated_types_constants_and_presentation_helpers(self):
-        for source in ('import type { Snapshot } from "@core/generated/bindings";\n',
-                       'import { HISTORY_PAGE_LIMIT } from "@core/generated/bindings";\n',
+        for source in ('import type { Snapshot } from "@core/generated/types";\n',
+                       'import { HISTORY_PAGE_LIMIT } from "@core/generated/types";\n',
                        'import { cn } from "~/lib/utils";\n',
                        'import { enter } from "~/lib/motion/variants";\n',
                        'import type { LegendProps } from "../legend";\n'):
@@ -85,7 +107,7 @@ class BiomeRules(unittest.TestCase):
         # sibling widgets pass, re-exports that would leak the app do not.
         self.assert_allowed('export { Legend, type LegendProps } from "../legend";\n',
                             directory="src/app/widgets", name="index.ts")
-        for module, symbol in (("@core/transport", "useTransport"), ("@core/generated/bindings", "commands"),
+        for module, symbol in (("@core/transport", "useTransport"), ("@desktop/commands", "commands"),
                                ("~/hooks/use-transport", "useTransport"), ("@core/mock/fixtures", "MOCK_HOST_ID")):
             with self.subTest(module=module, symbol=symbol):
                 self.assert_rejected(f'export {{ {symbol} }} from "{module}";\n',

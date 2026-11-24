@@ -1,4 +1,4 @@
-import type { RemoteHostConfig } from "@core/generated/bindings";
+import type { RemoteHostConfig } from "@core/generated/types";
 import { fail, ok } from "./protocol";
 import type { MockRemotes } from "./remote";
 import { APP_VERSION, isLinuxAlias } from "./remote-linux";

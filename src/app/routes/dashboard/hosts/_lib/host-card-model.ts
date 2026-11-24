@@ -11,7 +11,7 @@ import type {
   HostVitals,
   RemoteHostRecord,
   RrJob,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { remoteConnectionView } from "@core/remote-connection";
 import {
   agentVersionState,

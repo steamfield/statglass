@@ -6,7 +6,7 @@ import {
   type DockerHistoryPage,
   type DockerSettings,
   type DockerSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { Transport } from "@core/transport";
 import { comparison } from "./docker-comparison";
 import { currentCoverage } from "./docker-coverage";

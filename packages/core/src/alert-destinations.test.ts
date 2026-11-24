@@ -3,7 +3,7 @@ import type {
   DeliveryFailure,
   DeliveryRecord,
   Destination,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { describe, expect, it } from "vitest";
 import {
   deliveryLabel,

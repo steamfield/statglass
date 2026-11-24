@@ -1,6 +1,6 @@
 import { windowRange } from "@core/brush";
 import { resampleBuckets, type SlotGrid } from "@core/chart-math";
-import { RING_SPAN_MS } from "@core/generated/bindings";
+import { RING_SPAN_MS } from "@core/generated/types";
 import { useMemo } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleEnd } from "~/hooks/use-module-end";

@@ -1,4 +1,4 @@
-import type { LiveProcess, SeriesStats } from "@core/generated/bindings";
+import type { LiveProcess, SeriesStats } from "@core/generated/types";
 import { liveProcess } from "@tests/fixtures/processes";
 import { describe, expect, it } from "vitest";
 import { EXITED, mockUsageByApp } from "./usage";

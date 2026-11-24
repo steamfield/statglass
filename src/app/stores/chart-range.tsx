@@ -1,6 +1,6 @@
 import type { TimeRange } from "@core/brush";
 import { recordedDate } from "@core/chart-range";
-import { RING_SPAN_MS } from "@core/generated/bindings";
+import { RING_SPAN_MS } from "@core/generated/types";
 import {
   createContext,
   type ReactNode,

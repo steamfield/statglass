@@ -1,4 +1,4 @@
-import type { HistoryPage, HistoryPoint } from "@core/generated/bindings";
+import type { HistoryPage, HistoryPoint } from "@core/generated/types";
 import { mergeTail, tailRange } from "./history-tail";
 
 const MIN = 60_000;

@@ -1,4 +1,4 @@
-import type { Gap } from "@core/generated/bindings";
+import type { Gap } from "@core/generated/types";
 import { sleepMarkers, timelineBands } from "./gaps";
 import { axisTicks } from "./time";
 

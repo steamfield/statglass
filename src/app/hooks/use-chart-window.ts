@@ -1,5 +1,5 @@
 import { chartRange } from "@core/chart-range";
-import type { ChartWindow } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
 import { DEFAULT_CHART_WINDOW, effectiveWindow } from "@core/live-window";
 import { useCallback, useMemo } from "react";
 import { useGridInterval } from "~/hooks/use-grid-interval";

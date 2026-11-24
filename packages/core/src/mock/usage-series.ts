@@ -12,8 +12,8 @@ import type {
   UsageByApp,
   UsageKey,
   UsageSeries,
-} from "@core/generated/bindings";
-import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/types";
 import { floorTo } from "@core/time-grid";
 
 /** An app's range average in the series' unit for `by`. */

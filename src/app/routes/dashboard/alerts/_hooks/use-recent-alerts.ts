@@ -3,7 +3,7 @@
  * Recent list and the rules' last-fired lines. Reads through the shared
  * events query, so a pushed alert shows without a refetch.
  */
-import type { Event, EventDetail } from "@core/generated/bindings";
+import type { Event, EventDetail } from "@core/generated/types";
 import { historyUnavailable } from "@core/history-state";
 import { DAY_MS } from "@core/time-grid";
 import { useMemo } from "react";

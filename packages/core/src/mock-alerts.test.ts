@@ -2,7 +2,7 @@ import {
   ALERT_LIMITS,
   type AlertRule,
   type SettingsSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { MOCK_HOST_ID } from "./mock/fixtures";
 import { createMockTransport } from "./mock-transport";
 

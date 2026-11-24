@@ -1,4 +1,4 @@
-import type { DockerLogBatch } from "@core/generated/bindings";
+import type { DockerLogBatch } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

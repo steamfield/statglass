@@ -6,7 +6,7 @@ import {
   mergeEvent,
   RecentEvents,
 } from "./events";
-import type { Event } from "./generated/bindings";
+import type { Event } from "./generated/types";
 
 const ev = (ts: number, detail: Event["detail"], processes: string[] = []) => ({
   ts_ms: ts,

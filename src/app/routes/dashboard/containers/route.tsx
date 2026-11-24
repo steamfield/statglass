@@ -1,4 +1,4 @@
-import type { DockerSettings, DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSettings, DockerSnapshot } from "@core/generated/types";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation, useSearchParams } from "react-router";

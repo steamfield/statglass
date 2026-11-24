@@ -1,6 +1,6 @@
 import { errorTone } from "@core/command-error";
 import { formatClock } from "@core/format";
-import type { DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSnapshot } from "@core/generated/types";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { InlineMessage } from "~/components/inline-message";
 import { SectionCard } from "~/components/section-card";

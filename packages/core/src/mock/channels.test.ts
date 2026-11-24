@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
 import { MockChannels } from "./channels";
 import { MockCommands } from "./commands";
 import type { LiveSub } from "./contracts";

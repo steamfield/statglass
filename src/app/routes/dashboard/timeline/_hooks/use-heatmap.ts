@@ -1,4 +1,4 @@
-import type { HeatmapMetric } from "@core/generated/bindings";
+import type { HeatmapMetric } from "@core/generated/types";
 import { heatmapDays } from "@core/heatmap-days";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys, sameHeatmapMetric } from "@core/query-keys";

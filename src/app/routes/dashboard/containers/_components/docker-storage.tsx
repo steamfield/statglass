@@ -1,6 +1,6 @@
 import { commandErrorText } from "@core/command-error";
 import { formatDateTime } from "@core/format";
-import type { DockerStorageResource } from "@core/generated/bindings";
+import type { DockerStorageResource } from "@core/generated/types";
 import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

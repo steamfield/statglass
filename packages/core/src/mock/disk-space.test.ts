@@ -1,4 +1,4 @@
-import type { SpaceSubtree } from "@core/generated/bindings";
+import type { SpaceSubtree } from "@core/generated/types";
 import type { CommandResult } from "@core/transport";
 import { describe, expect, it } from "vitest";
 import { createMockDiskSpace, MOCK_SCAN_MS } from "./disk-space";

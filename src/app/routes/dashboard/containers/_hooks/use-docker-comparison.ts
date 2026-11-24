@@ -1,4 +1,4 @@
-import type { DockerComparisonRequest } from "@core/generated/bindings";
+import type { DockerComparisonRequest } from "@core/generated/types";
 import { dockerKeys, sameDockerComparison } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";

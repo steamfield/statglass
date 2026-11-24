@@ -1,4 +1,4 @@
-import type { SeriesStats } from "@core/generated/bindings";
+import type { SeriesStats } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import type { CommandResult } from "@core/transport";
 import { act, screen } from "@testing-library/react";

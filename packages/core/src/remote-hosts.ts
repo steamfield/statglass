@@ -4,7 +4,7 @@ import type {
   RemoteHostRecord,
   UpdatePhase,
   UpdateStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 /** The route on its own, including any history sync notice. */
 export function routeLabel(remote: RemoteHostRecord): string {

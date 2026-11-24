@@ -1,5 +1,5 @@
 import { chartRange, customRange, dateInput } from "@core/chart-range";
-import type { ChartWindow } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { useId, useState } from "react";
 import { SegmentedControl } from "~/components/segmented-control";

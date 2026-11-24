@@ -1,4 +1,4 @@
-import type { SeriesStats } from "@core/generated/bindings";
+import type { SeriesStats } from "@core/generated/types";
 import { laneComparison, laneSummary } from "./summaries";
 
 const units = { rate: "MBps", temperature: "C" } as const;

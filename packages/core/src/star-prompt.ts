@@ -1,7 +1,7 @@
 /**
  * Pure star-prompt constants, calm-moment display guard, and non-PII system diagnostics formatter.
  */
-import type { StarPromptStatus } from "@core/generated/bindings";
+import type { StarPromptStatus } from "@core/generated/types";
 
 /** Repository URL opened when the user chooses to star StatGlass on GitHub. */
 export const GITHUB_REPO_URL = "https://github.com/steamfield/statglass";

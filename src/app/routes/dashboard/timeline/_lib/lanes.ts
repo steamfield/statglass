@@ -3,7 +3,7 @@
  * each one queries. A lane's `module` decides its query key and which
  * `module_disabled` gaps cover it.
  */
-import type { Module } from "@core/generated/bindings";
+import type { Module } from "@core/generated/types";
 import type { Accent } from "~/widgets/lib/accent";
 import type { Combine } from "./buckets";
 

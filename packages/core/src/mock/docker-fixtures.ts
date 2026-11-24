@@ -2,7 +2,7 @@ import type {
   DockerContainer,
   DockerEngine,
   DockerSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { DAY_MS } from "@core/time-grid";
 
 import { MOCK_HOST_ID } from "./fixtures";

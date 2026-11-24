@@ -1,4 +1,4 @@
-import type { DockerSettings, DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSettings, DockerSnapshot } from "@core/generated/types";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {

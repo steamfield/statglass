@@ -11,7 +11,7 @@ import {
   CHART_WINDOWS as PRESETS,
   RING_SPAN_MS,
   DEFAULT_CHART_WINDOW as RUST_DEFAULT,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { samplingPlan } from "@core/sampling-plans";
 import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 

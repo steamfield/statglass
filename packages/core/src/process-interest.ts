@@ -7,7 +7,7 @@
  * whenever the subscription's `stream` changes (a resubscribe gets a new id,
  * and Rust drops interest tagged with the old one).
  */
-import type { ProcessSort, ProcessView } from "@core/generated/bindings";
+import type { ProcessSort, ProcessView } from "@core/generated/types";
 
 export type { ProcessSort, ProcessView };
 

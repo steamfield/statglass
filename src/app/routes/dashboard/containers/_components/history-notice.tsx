@@ -1,5 +1,5 @@
 import { formatDateTime } from "@core/format";
-import type { DockerCoverage, DockerSnapshot } from "@core/generated/bindings";
+import type { DockerCoverage, DockerSnapshot } from "@core/generated/types";
 import { useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {

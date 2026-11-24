@@ -3,7 +3,7 @@
  * Live processes grouped by app on the shared grouped table, so a row quits
  * its app and expands to its processes as on the Processes page.
  */
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import {
   groupLiveProcesses,
   type LiveGroup,

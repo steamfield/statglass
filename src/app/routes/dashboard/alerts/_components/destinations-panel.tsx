@@ -4,7 +4,7 @@
  */
 import { newDestination } from "@core/alert-destinations";
 import { commandErrorText } from "@core/command-error";
-import type { AlertDestinationsView } from "@core/generated/bindings";
+import type { AlertDestinationsView } from "@core/generated/types";
 import { appKeys } from "@core/query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, type Ref, useRef, useState } from "react";

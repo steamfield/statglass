@@ -1,4 +1,4 @@
-import { ITEM_MODES } from "@core/generated/bindings";
+import { ITEM_MODES } from "@core/generated/types";
 import {
   barPatch,
   itemModeLabel,

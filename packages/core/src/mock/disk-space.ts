@@ -7,7 +7,7 @@ import type {
   SpaceScanStatus,
   SpaceSubtree,
   SpaceTarget,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { DAY_MS } from "@core/time-grid";
 import type { MockTransport } from "./contracts";
 import { MOCK_HIGHLIGHTS } from "./disk-space-fixture";

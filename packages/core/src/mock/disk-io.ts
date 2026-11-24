@@ -6,7 +6,7 @@ import type {
   DiskIoPoint,
   DiskIoRequest,
   Gap,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { floorTo, MINUTE_MS } from "@core/time-grid";
 import type { ScenarioName } from "./fixtures";
 import { mockBuckets } from "./protocol";

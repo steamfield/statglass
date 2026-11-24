@@ -1,4 +1,4 @@
-import type { Settings } from "@core/generated/bindings";
+import type { Settings } from "@core/generated/types";
 import { modulePresence, unavailableText } from "@core/module-state";
 import { modulePatch, SETTINGS_MODULES } from "@core/settings-patch";
 import { ModuleToggleRow } from "~/components/module-toggle-list";

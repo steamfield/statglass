@@ -1,5 +1,5 @@
-import type { HostId, UsageKey } from "@core/generated/bindings";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
+import type { HostId, UsageKey } from "@core/generated/types";
+import { USAGE_KEEP_MS } from "@core/generated/types";
 import { HOUR_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";

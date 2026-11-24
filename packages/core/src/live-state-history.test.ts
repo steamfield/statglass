@@ -3,7 +3,7 @@
  * `backfill_earlier` chunks prepended in front of the ring, and a new
  * `layout_no` with an older frame restarting it.
  */
-import type { LiveMsg, SeriesKey } from "@core/generated/bindings";
+import type { LiveMsg, SeriesKey } from "@core/generated/types";
 import { statusMsg } from "@tests/live-frames";
 import {
   type HostLive,

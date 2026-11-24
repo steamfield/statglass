@@ -2,7 +2,7 @@ import type {
   DockerEngine,
   DockerSettings,
   DockerSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { useEffect, useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";

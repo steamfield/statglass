@@ -6,12 +6,12 @@ import type {
   HistoricalUsageRequest,
   UsageHistoryRange,
   UsageProcessRequest,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import {
   USAGE_BUCKET_MS,
   USAGE_HISTORY_MAX_RANGE_MS,
   USAGE_PROCESS_PAGE_MAX,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { historicalValue } from "@core/historical-usage";
 import { floorTo, MINUTE_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";

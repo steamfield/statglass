@@ -12,7 +12,7 @@ import type {
   Settings,
   Tier,
   UsageKey,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { HOUR_MS } from "./time-grid";
 
 /**

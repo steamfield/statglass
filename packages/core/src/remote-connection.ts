@@ -2,8 +2,7 @@ import { formatDateTime } from "@core/format";
 import type {
   RemoteFailureKind,
   RemoteHostRecord,
-} from "@core/generated/bindings";
-import type { GifTheme } from "@steamfield/ui/gif";
+} from "@core/generated/types";
 import {
   buildRouteLines,
   networkCauseCopy,
@@ -34,6 +33,18 @@ export type RemoteConnectionTone = "info" | "warning" | "destructive";
 
 export type RemotePrimaryAction = "retry" | "enable" | "open_hosts";
 
+/**
+ * The illustration a connection failure shows. Each app maps these names onto its
+ * own artwork; on the desktop they are `@steamfield/ui/gif` theme names.
+ */
+export type ConnectionGifTheme =
+  | "not-found"
+  | "server-error"
+  | "network-error"
+  | "timeout"
+  | "coming-soon"
+  | "overloaded";
+
 export interface ConfiguredRoute {
   readonly kind: "lan" | "tailscale";
   readonly label: "LAN" | "Tailscale";
@@ -54,7 +65,7 @@ export interface RemoteConnectionView {
   /** Durable mirrored history watermark (remote host clock epoch ms), or null when none. */
   readonly syncedThroughMs: number | null;
   readonly hasSavedHistory: boolean;
-  readonly gifTheme: GifTheme | null;
+  readonly gifTheme: ConnectionGifTheme | null;
   readonly gifSeed: string;
   readonly primaryAction: RemotePrimaryAction | null;
   readonly showRetry: boolean;

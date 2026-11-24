@@ -1,5 +1,5 @@
 import { formatPercent } from "@core/format";
-import type { ProcessesAt } from "@core/generated/bindings";
+import type { ProcessesAt } from "@core/generated/types";
 import { topBy } from "@core/top-by";
 import type { CSSProperties } from "react";
 import {

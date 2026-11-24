@@ -5,7 +5,7 @@
  */
 import { BRUSH_STEP_MS, type TimeRange } from "@core/brush";
 import { eventRange } from "@core/events";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { useHistoryHealth } from "~/hooks/use-history-health";

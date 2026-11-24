@@ -6,7 +6,7 @@
  * functions the engine, the tray and the live stream run on, so Settings can
  * say what another choice would do by reading a row.
  */
-import { SAMPLING_PLANS, type SamplingPlan } from "@core/generated/bindings";
+import { SAMPLING_PLANS, type SamplingPlan } from "@core/generated/types";
 
 export type { SamplingPlan };
 

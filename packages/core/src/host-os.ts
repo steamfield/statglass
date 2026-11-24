@@ -4,7 +4,7 @@
  * "host" and its own version string.
  */
 import { type ByteUnits, formatBytes, formatMarketingMemory } from "./format";
-import type { HostInfo, OsKind } from "./generated/bindings";
+import type { HostInfo, OsKind } from "./generated/types";
 
 /** "Mac" for a Mac, otherwise "host": "Not available on this host". */
 export function hostNoun(os: OsKind | undefined): "Mac" | "host" {

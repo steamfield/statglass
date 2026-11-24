@@ -1,4 +1,4 @@
-import type { Capabilities, Settings } from "@core/generated/bindings";
+import type { Capabilities, Settings } from "@core/generated/types";
 import {
   isListed,
   isUnknownChip,

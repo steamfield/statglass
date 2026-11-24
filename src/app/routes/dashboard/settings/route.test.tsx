@@ -1,4 +1,4 @@
-import { HISTORY_PROJECTION } from "@core/generated/bindings";
+import { HISTORY_PROJECTION } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from "@core/star-prompt";

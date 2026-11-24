@@ -1,4 +1,4 @@
-import type { HistoryPage, HostId } from "@core/generated/bindings";
+import type { HistoryPage, HostId } from "@core/generated/types";
 import { type Transport, unwrap } from "@core/transport";
 
 export interface HistoryProbe {

@@ -9,7 +9,7 @@ import type {
   HeatmapDay,
   HeatmapDaySpec,
   HeatmapMetric,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { LaneUnits } from "./format";
 
 /**

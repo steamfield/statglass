@@ -3,7 +3,7 @@ import type {
   CliLinkStatus,
   StarPromptStatus,
   UpdateStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";

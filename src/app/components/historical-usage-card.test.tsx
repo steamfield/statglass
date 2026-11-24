@@ -1,5 +1,5 @@
 import { recordedProcessStart } from "@core/chart-range";
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { liveProcess } from "@tests/fixtures/processes";

@@ -1,4 +1,4 @@
-import type { CommandError, HostId } from "@core/generated/bindings";
+import type { CommandError, HostId } from "@core/generated/types";
 import type { CommandResult } from "../transport";
 import type { MockCall } from "./contracts";
 import { MOCK_HOST_ID } from "./fixtures";

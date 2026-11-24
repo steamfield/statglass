@@ -12,7 +12,7 @@ import type {
   ProcessUsage,
   UsageByApp,
   UsageKey,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 /** The figures an app, a process or a remainder row carries. */
 export type UsageFigures = Pick<

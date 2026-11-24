@@ -6,7 +6,7 @@
 import { alertCauseLabel } from "@core/alerts";
 import { selectedRange } from "@core/brush";
 import { formatPercent } from "@core/format";
-import type { Event, HostId, UnitSettings } from "@core/generated/bindings";
+import type { Event, HostId, UnitSettings } from "@core/generated/types";
 import { THERMAL_LABEL } from "@core/thermal";
 import { MINUTE_MS } from "@core/time-grid";
 

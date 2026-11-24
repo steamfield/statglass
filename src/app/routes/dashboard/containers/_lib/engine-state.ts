@@ -9,7 +9,7 @@ import type {
   DockerSnapshot,
   DockerStatus,
   DockerUnavailableReason,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 /** The single recovery action the state card offers. */
 export type EngineAction =

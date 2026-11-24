@@ -12,7 +12,7 @@ import type {
   ProcessSignalError,
   SignalKind,
   SignalRefusal,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 export type { ProcessSignalError, SignalKind, SignalRefusal };
 

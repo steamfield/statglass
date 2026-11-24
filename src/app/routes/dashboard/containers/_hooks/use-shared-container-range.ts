@@ -1,6 +1,6 @@
 import { chartRange, validChartRange, windowEnding } from "@core/chart-range";
-import type { ChartWindow } from "@core/generated/bindings";
-import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
+import { DOCKER_BUCKET_MS } from "@core/generated/types";
 import { floorTo, MINUTE_MS } from "@core/time-grid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";

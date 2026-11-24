@@ -1,5 +1,5 @@
 import { chartRange, relativeWindow } from "@core/chart-range";
-import type { ChartWindow } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
 import { settingsErrorText } from "@core/settings-patch";
 import { DAY_MS } from "@core/time-grid";
 import {

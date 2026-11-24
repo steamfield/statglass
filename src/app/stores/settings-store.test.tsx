@@ -1,4 +1,4 @@
-import type { SettingsSnapshot } from "@core/generated/bindings";
+import type { SettingsSnapshot } from "@core/generated/types";
 import {
   defaultSettings,
   MOCK_HOST_ID,

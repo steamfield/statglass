@@ -8,8 +8,8 @@ import type {
   DockerComparisonRequest,
   DockerRankedContainer,
   DockerSnapshot,
-} from "@core/generated/bindings";
-import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { DOCKER_BUCKET_MS } from "@core/generated/types";
 import {
   type Dispatch,
   type SetStateAction,

@@ -1,4 +1,4 @@
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { hostKeys } from "@core/query-keys";
 import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";

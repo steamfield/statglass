@@ -7,7 +7,7 @@ import type { ByteUnits } from "@core/format";
 import type {
   HistoricalUsageFigures,
   HistoricalUsageMetric,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import {
   historicalCoverage,
   historicalDelta,

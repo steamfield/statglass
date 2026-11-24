@@ -7,7 +7,7 @@
  * Values are raw units from the catalog (percent, Hz, bytes, bytes/s, W,
  * °C). `null` means no current value: a gap or a missing series, never 0.
  */
-import type { PowerSource } from "@core/generated/bindings";
+import type { PowerSource } from "@core/generated/types";
 import {
   type HostLive,
   type LayoutInfo,

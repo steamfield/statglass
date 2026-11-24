@@ -1,5 +1,5 @@
 import { availableMetrics, newRule } from "@core/alerts";
-import type { AlertRule } from "@core/generated/bindings";
+import type { AlertRule } from "@core/generated/types";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";

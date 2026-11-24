@@ -2,7 +2,7 @@ import type {
   CommandError,
   RemoteHostPreparation,
   RemoteSshHostTrust,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { Switch } from "~/components/ui/switch";
 import { HOST_INPUT } from "./host-input";
 export function AddHostFields({

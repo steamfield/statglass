@@ -1,4 +1,4 @@
-import { METRIC_CODES } from "@core/generated/bindings";
+import { METRIC_CODES } from "@core/generated/types";
 import { describe, expect, it } from "vitest";
 import { thermalState } from "./thermal";
 

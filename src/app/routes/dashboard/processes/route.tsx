@@ -1,4 +1,4 @@
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import { groupLiveProcesses } from "@core/process-groups";
 import { FULL_TABLE, type ProcessView } from "@core/process-interest";
 import { useMemo, useState } from "react";

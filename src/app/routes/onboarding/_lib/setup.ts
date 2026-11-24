@@ -1,4 +1,4 @@
-import type { Capabilities, HostInfo } from "@core/generated/bindings";
+import type { Capabilities, HostInfo } from "@core/generated/types";
 import { modulePresence } from "@core/module-state";
 import { SETTINGS_MODULES, type SettingsModule } from "@core/settings-patch";
 

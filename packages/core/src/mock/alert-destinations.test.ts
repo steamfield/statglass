@@ -7,7 +7,7 @@
 import {
   ALERT_DESTINATION_LIMITS,
   type Destination,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { describe, expect, it } from "vitest";
 import { createMockTransport } from "../mock-transport";
 

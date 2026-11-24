@@ -14,7 +14,7 @@ import type {
   HostInfo,
   LiveProcess,
   Module,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { HOUR_MS } from "@core/time-grid";
 
 /** M1 cpufreq `scaling_available_frequencies`, MHz ascending. */

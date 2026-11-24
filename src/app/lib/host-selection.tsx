@@ -1,4 +1,4 @@
-import type { HostId, HostRecord } from "@core/generated/bindings";
+import type { HostId, HostRecord } from "@core/generated/types";
 import { createContext, useContext } from "react";
 
 export interface HostSelection {

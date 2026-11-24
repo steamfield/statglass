@@ -1,4 +1,4 @@
-import type { WindowVisibilityChanged } from "@core/generated/bindings";
+import type { WindowVisibilityChanged } from "@core/generated/types";
 import type { Event } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { createTauriTransport } from "./native";

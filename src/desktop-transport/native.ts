@@ -1,7 +1,8 @@
-import { commands, events, type LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
+import type { Transport, Unsubscribe } from "@core/transport/contracts";
+import { commands, events } from "@desktop/commands";
 import { Channel } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Transport, Unsubscribe } from "./contracts";
 import { nativeDiskSpace } from "./native-disk-space";
 import { nativeDocker } from "./native-docker";
 import { nativeHistory } from "./native-history";

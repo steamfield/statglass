@@ -1,4 +1,4 @@
-import type { LiveMsg, NetworkByApp } from "@core/generated/bindings";
+import type { LiveMsg, NetworkByApp } from "@core/generated/types";
 import { createMockTransport } from "../mock-transport";
 import { MOCK_HOST_ID } from "./fixtures";
 import {

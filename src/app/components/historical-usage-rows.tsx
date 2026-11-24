@@ -11,7 +11,7 @@ import type {
   HistoricalUsageFigures,
   HistoricalUsageMetric,
   HistoricalUsageProcess,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { HISTORICAL_LABELS } from "@core/historical-usage";
 import { targetKey } from "@core/process-selection";
 import { HistoricalUsageFigure } from "~/components/historical-usage-cells";

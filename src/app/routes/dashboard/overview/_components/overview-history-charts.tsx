@@ -1,6 +1,6 @@
 import type { TimeRange } from "@core/brush";
 import { formatRate } from "@core/format";
-import type { DiskIoPage } from "@core/generated/bindings";
+import type { DiskIoPage } from "@core/generated/types";
 import { useMemo } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { COMPACT_PLOT_INSET } from "~/components/charts/layout";

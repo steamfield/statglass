@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import type { DockerStorageSnapshot } from "@core/generated/bindings";
+import type { DockerStorageSnapshot } from "@core/generated/types";
 import { InlineMessage } from "~/components/inline-message";
 import { storageKindLabel } from "../_lib/storage-presentation";
 export function StorageInventorySummary({

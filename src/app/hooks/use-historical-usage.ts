@@ -2,7 +2,7 @@ import type { TimeRange } from "@core/brush";
 import {
   type HistoricalUsageMetric,
   USAGE_HISTORY_MAX_RANGE_MS,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { historyKeys, sameUsageWindow } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import {

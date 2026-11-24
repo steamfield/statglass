@@ -5,7 +5,7 @@ import {
   formatSignedDelta,
   MISSING,
 } from "@core/format";
-import type { MetricStat, SeriesStats } from "@core/generated/bindings";
+import type { MetricStat, SeriesStats } from "@core/generated/types";
 import { formatMetric, type LaneUnits } from "./format";
 import type { LaneId } from "./lanes";
 

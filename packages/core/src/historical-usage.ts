@@ -11,7 +11,7 @@ import type {
   HistoricalUsageFigures,
   HistoricalUsageMetric,
   UsageResourceCoverage,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 export const HISTORICAL_COLUMNS: readonly HistoricalUsageMetric[] = [
   "cpu",

@@ -30,6 +30,7 @@ export default defineConfig({
         "**/*.test.{ts,tsx}",
         "**/*.d.ts",
         "packages/core/src/generated/**",
+        "src/desktop-transport/commands.ts",
         "src/main.tsx",
       ],
     },

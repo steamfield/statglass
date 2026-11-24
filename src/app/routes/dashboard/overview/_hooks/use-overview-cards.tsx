@@ -1,4 +1,4 @@
-import type { OverviewSettings } from "@core/generated/bindings";
+import type { OverviewSettings } from "@core/generated/types";
 import type { UiModule } from "@core/module-state";
 import type { ReactNode } from "react";
 import { UnavailableCard } from "~/components/unavailable-card";

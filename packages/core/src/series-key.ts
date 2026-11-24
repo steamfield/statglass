@@ -1,4 +1,4 @@
-import type { Labels, SeriesKey } from "@core/generated/bindings";
+import type { Labels, SeriesKey } from "@core/generated/types";
 
 /** The characters Rust's `Labels::canonical` escapes with a backslash. */
 const ESCAPED = /[\\,={}]/g;

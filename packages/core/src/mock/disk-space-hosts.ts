@@ -1,4 +1,4 @@
-import type { HostId, RemoteHostRecord } from "@core/generated/bindings";
+import type { HostId, RemoteHostRecord } from "@core/generated/types";
 import type { CommandResult, Transport } from "@core/transport";
 import { MOCK_HOST_ID } from "./fixtures";
 import { fail } from "./protocol";

@@ -1,4 +1,4 @@
-import type { SpaceNode } from "@core/generated/bindings";
+import type { SpaceNode } from "@core/generated/types";
 import { describe, expect, it } from "vitest";
 import {
   FRAME_HEADER,

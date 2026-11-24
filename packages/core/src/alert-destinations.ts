@@ -7,7 +7,7 @@ import type {
   DeliveryRecord,
   Destination,
   DestinationKind,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 /** How much of an ntfy topic a row shows before the ellipsis. */
 const SHOWN_TOPIC_CHARS = 4;
