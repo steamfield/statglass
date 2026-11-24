@@ -168,7 +168,7 @@ fn publish_status(
 }
 
 /// High-frequency facts are refreshed by the host list's five-second poll.
-// Keep aligned with CLOCK_STEP_THRESHOLD_MS in src/core/host-clock.ts.
+// Keep aligned with CLOCK_STEP_THRESHOLD_MS in packages/core/src/host-clock.ts.
 const CLOCK_STEP_THRESHOLD_MS: f64 = 1000.0;
 
 fn rendered_status_changed(

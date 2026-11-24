@@ -17,7 +17,7 @@ rust_changed=0
 while IFS= read -r -d '' file; do
     [[ ! -f "$repo_root/$file" ]] && continue
     case "$file" in
-        src/core/generated/*) ;;
+        packages/core/src/generated/*) ;;
         src/*.ts|src/*.tsx|src/*.css|tests/*.ts|tests/*.tsx)
                         # A file may be written many times in one turn.
                         already_listed=false

@@ -1,4 +1,4 @@
-//! Writes `src/core/generated/bindings.ts` and the tray rate table without launching
+//! Writes `packages/core/src/generated/bindings.ts` and the tray rate table without launching
 //! the app. Run by `make bindings` and by CI's drift check.
 
 fn main() -> anyhow::Result<()> {

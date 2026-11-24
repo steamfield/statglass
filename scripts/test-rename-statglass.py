@@ -150,7 +150,7 @@ class RenameTests(unittest.TestCase):
 
     def test_binary_generated_ignored_and_untracked_excluded(self):
         binary = self.put('binary.dat', b'kelvo\x00Kelvo')
-        generated = self.put('src/core/generated/bindings.ts', 'kelvo')
+        generated = self.put('packages/core/src/generated/bindings.ts', 'kelvo')
         self.put('.gitignore', 'ignored/\n')
         self.commit()
         ignored = self.put('ignored/kelvo.txt', 'kelvo')

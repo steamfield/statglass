@@ -18,7 +18,7 @@ COMPLEXITY_RULE = "complexity/noExcessiveCognitiveComplexity"
 
 
 class BiomeRules(unittest.TestCase):
-    def lint(self, source, *, directory="src/core", name="probe.ts", rule=IMPORT_RULE):
+    def lint(self, source, *, directory="packages/core/src", name="probe.ts", rule=IMPORT_RULE):
         self.assertTrue(BIOME.is_file(), "Run bun install before architecture fixtures")
         with tempfile.TemporaryDirectory(prefix="architecture-fixture-", dir=ROOT / directory) as temp:
             path = Path(temp) / name
@@ -92,13 +92,13 @@ class BiomeRules(unittest.TestCase):
                                      directory="src/app/widgets", name="index.ts")
 
     def test_browser_rejects_node_builtins_in_prefixed_and_bare_forms(self):
-        for directory in ("src/core", "src/app", "src/app/widgets"):
+        for directory in ("packages/core/src", "src/app", "src/app/widgets"):
             for module in ("node:fs", "fs", "fs/promises"):
                 with self.subTest(directory=directory, module=module):
                     self.assert_rejected(f'import {{ readFile }} from "{module}";\n', directory=directory)
 
     def test_tests_keep_node_runtime_access(self):
-        for directory in ("src/core", "src/app"):
+        for directory in ("packages/core/src", "src/app"):
             self.assert_allowed('import { readFile } from "node:fs";\n', directory=directory, name="probe.test.ts")
 
     @staticmethod

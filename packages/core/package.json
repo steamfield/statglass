@@ -1,0 +1,11 @@
+{
+  "name": "@statglass/core",
+  "private": true,
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Platform-free StatGlass client code shared by the desktop and iPhone apps. Consumed as raw TypeScript through the @core/* alias.",
+  "dependencies": {
+    "d3-hierarchy": "^3.1.2"
+  }
+}

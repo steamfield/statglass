@@ -83,7 +83,7 @@ fi
 # organizing, which would drop an import added one Edit before its use), then
 # lint report-only. This is where the core/widget boundary rules surface.
 # Run from the repo root so biome.json resolves; biome.json's files.includes
-# skips src/core/generated/. The local binary is fast; bunx is the fallback.
+# skips packages/core/src/generated/. The local binary is fast; bunx is the fallback.
 biome_bin="$repo_root/node_modules/.bin/biome"
 [[ -x "$biome_bin" ]] || biome_bin="bunx biome"
 
@@ -91,7 +91,7 @@ errors=""
 notes=""
 
 case "$rel_path" in
-    src/core/generated/*)
+    packages/core/src/generated/*)
         ;;
     *.ts|*.tsx|*.js|*.mjs|*.json|*.jsonc|*.css)
         (cd "$repo_root" && $biome_bin format --write --no-errors-on-unmatched "$rel_path") >/dev/null 2>&1 || true

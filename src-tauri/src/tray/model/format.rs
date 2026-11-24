@@ -90,7 +90,7 @@ pub(super) fn words_name(module: Module) -> &'static str {
     }
 }
 
-/// One row of the table `src/core/tray-layout.test.ts` checks the menu bar preview's
+/// One row of the table `packages/core/src/tray-layout.test.ts` checks the menu bar preview's
 /// copies of [`rate_line`] and [`rate_text`] against. `make bindings` writes it.
 #[derive(serde::Serialize)]
 pub struct RateGolden {

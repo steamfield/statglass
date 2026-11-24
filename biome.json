@@ -8,7 +8,7 @@
   "files": {
     "includes": [
       "**",
-      "!**/src/core/generated",
+      "!**/packages/core/src/generated",
       "!**/dist",
       "!**/target",
       "!**/vendor",
@@ -18,7 +18,9 @@
       "!**/coverage",
       "!**/playwright-report",
       "!**/test-results",
-      "!**/docs-site"
+      "!**/docs-site",
+      "!**/apps/mobile/ios",
+      "!**/apps/mobile/.expo"
     ]
   },
   "formatter": {
@@ -100,7 +102,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/core/**", "!src/core/generated/**"],
+      "includes": ["packages/core/src/**", "!packages/core/src/generated/**"],
       "linter": {
         "rules": {
           "style": {
@@ -108,10 +110,10 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "react": "src/core/ has no React imports.",
-                  "react-dom": "src/core/ has no React imports.",
-                  "react-dom/client": "src/core/ has no React imports.",
-                  "react/jsx-runtime": "src/core/ has no React imports.",
+                  "react": "packages/core/src/ has no React imports.",
+                  "react-dom": "packages/core/src/ has no React imports.",
+                  "react-dom/client": "packages/core/src/ has no React imports.",
+                  "react/jsx-runtime": "packages/core/src/ has no React imports.",
                   "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
                   "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
                   "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
@@ -119,11 +121,11 @@
                 "patterns": [
                   {
                     "group": ["~/**"],
-                    "message": "src/core/ must not import the app layer (~/)."
+                    "message": "packages/core/src/ must not import the app layer (~/)."
                   },
                   {
                     "group": ["**/app/**", "**/app"],
-                    "message": "src/core/ must not import the app layer through relative paths."
+                    "message": "packages/core/src/ must not import the app layer through relative paths."
                   },
                   {
                     "group": [
@@ -454,7 +456,10 @@
       }
     },
     {
-      "includes": ["src/core/**/*.test.ts", "src/core/**/*.test.tsx"],
+      "includes": [
+        "packages/core/src/**/*.test.ts",
+        "packages/core/src/**/*.test.tsx"
+      ],
       "linter": {
         "rules": {
           "style": {
@@ -462,10 +467,10 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "react": "src/core/ has no React imports.",
-                  "react-dom": "src/core/ has no React imports.",
-                  "react-dom/client": "src/core/ has no React imports.",
-                  "react/jsx-runtime": "src/core/ has no React imports.",
+                  "react": "packages/core/src/ has no React imports.",
+                  "react-dom": "packages/core/src/ has no React imports.",
+                  "react-dom/client": "packages/core/src/ has no React imports.",
+                  "react/jsx-runtime": "packages/core/src/ has no React imports.",
                   "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
                   "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
                   "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
@@ -473,11 +478,11 @@
                 "patterns": [
                   {
                     "group": ["~/**"],
-                    "message": "src/core/ must not import the app layer (~/)."
+                    "message": "packages/core/src/ must not import the app layer (~/)."
                   },
                   {
                     "group": ["**/app/**", "**/app"],
-                    "message": "src/core/ must not import the app layer through relative paths."
+                    "message": "packages/core/src/ must not import the app layer through relative paths."
                   }
                 ]
               }
@@ -498,6 +503,38 @@
                   {
                     "group": ["@tauri-apps/**"],
                     "message": "Go through @core/transport so the mock transport can stand in."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/mobile/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react-dom": "apps/mobile renders with React Native; react-dom is desktop only.",
+                  "react-dom/client": "apps/mobile renders with React Native; react-dom is desktop only."
+                },
+                "patterns": [
+                  {
+                    "group": ["react-dom/**"],
+                    "message": "apps/mobile renders with React Native; react-dom is desktop only."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "apps/mobile never calls Tauri; it talks to Rust through statglass-native."
+                  },
+                  {
+                    "group": ["~/**", "**/src/app/**", "@desktop/**"],
+                    "message": "apps/mobile must not import the desktop app; shared code lives in packages/core."
                   }
                 ]
               }

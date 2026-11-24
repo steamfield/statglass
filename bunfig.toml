@@ -1,0 +1,5 @@
+[install]
+# Keep the pre-workspace layout: the desktop relies on hoisted transitive
+# packages (for example @tanstack/table-core for ColumnMeta augmentation).
+# apps/mobile pins react and react-native through Metro resolveRequest.
+linker = "hoisted"

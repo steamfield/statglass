@@ -1,6 +1,6 @@
 .PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
-.PHONY: verification-test updater-patch-test
+.PHONY: verification-test updater-patch-test mobile-check mobile-rust-check
 
 # All library crates are portable by default. New workspace crates enter this gate
 # automatically; only the macOS shell and separately checked helper are excluded.
@@ -21,7 +21,7 @@ help:
 	@echo "  make dev-web       Browser only, mock transport"
 	@echo "  make build         Production app bundle"
 	@echo "  make agent-linux   Static Linux agent binaries (aarch64, x86_64 musl) for the app bundle; needs zig and cargo-zigbuild"
-	@echo "  make bindings      Regenerate src/core/generated/ from Rust (tauri-specta)"
+	@echo "  make bindings      Regenerate packages/core/src/generated/ from Rust (tauri-specta)"
 	@echo ""
 	@echo "Quality:"
 	@echo "  make test          Frontend + Rust tests"
@@ -117,6 +117,15 @@ typecheck: stub-dist
 
 check: agent-config-check agent-config-test agent-hooks-test verification-test architecture-check architecture-test rust-check appstore-check rust-test updater-patch-test
 	bun run check
+
+# iPhone app checks that need no Xcode (lint, typecheck, jest, JS export,
+# Expo dependency drift, single React). Runs on Linux CI too.
+mobile-check:
+	scripts/mobile/check.sh
+
+# statglass-mobile and its dependency closure for the iOS simulator target.
+mobile-rust-check:
+	scripts/mobile/check-rust-ios.sh
 
 # The patched dependency is outside the workspace; keep its native permission
 # regression in the local quality gate as well as release acceptance.
@@ -232,7 +241,7 @@ bench-vs-stats:
 stub-dist:
 	@mkdir -p dist
 
-# Writes src/core/generated/bindings.ts from the tauri-specta builder in a debug
+# Writes packages/core/src/generated/bindings.ts from the tauri-specta builder in a debug
 # build of the app shell, without launching the app. The pre-push hook diffs the result.
 bindings: stub-dist
 	cargo run --quiet -p statglass --example export_bindings
@@ -242,12 +251,12 @@ bindings: stub-dist
 e2e-perf:
 	PLAYWRIGHT_PERFORMANCE=1 bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium --workers=1
 
-# Fails if src/core/generated differs from the commit after regenerating, including
+# Fails if packages/core/src/generated differs from the commit after regenerating, including
 # new untracked files.
 bindings-check: bindings
-	@if [ -n "$$(git status --porcelain -- src/core/generated)" ]; then \
-		git status --porcelain -- src/core/generated; \
-		echo "bindings-check: src/core/generated is stale. Run 'make bindings' and commit the result."; \
+	@if [ -n "$$(git status --porcelain -- packages/core/src/generated)" ]; then \
+		git status --porcelain -- packages/core/src/generated; \
+		echo "bindings-check: packages/core/src/generated is stale. Run 'make bindings' and commit the result."; \
 		exit 1; \
 	fi
 

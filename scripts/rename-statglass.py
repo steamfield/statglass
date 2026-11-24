@@ -31,7 +31,7 @@ PROTECTED = {
     'plan/ux-history-feasibility-1000.jsonl', 'plan/ux-native-execution.md',
     'plan/ux-timeline-execution.md',
 }
-PROTECTED_PREFIXES = ('.agents/rules/', 'src/core/generated/')
+PROTECTED_PREFIXES = ('.agents/rules/', 'packages/core/src/generated/')
 # The catalog fixture is re-signed under its new release-channel basename.
 CATALOG_FIXTURES = {
     'crates/kelvo-update/tests/fixtures/release.json':

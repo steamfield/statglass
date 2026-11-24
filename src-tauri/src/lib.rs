@@ -57,14 +57,14 @@ pub use state::AppState;
 /// `.claude/rules/generated-bindings.md`.
 pub const BINDINGS_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../src/core/generated/bindings.ts"
+    "/../packages/core/src/generated/bindings.ts"
 );
 
 /// The tray's rate strings for sample inputs, written with the bindings so
 /// `bindings-check` fails when the preview's test would check a stale table.
 pub const TRAY_RATES_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../src/core/generated/tray-rates.json"
+    "/../packages/core/src/generated/tray-rates.json"
 );
 
 /// The bundle identifier of debug builds; release builds use `tauri.conf.json`'s.

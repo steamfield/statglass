@@ -1,7 +1,7 @@
 //! IPC-only types: what commands take and return, what live channels carry, and the
 //! events Rust emits (v1-local-monitor.md 6.3). The data vocabulary itself (`HostRecord`,
 //! `Capabilities`, `Settings`, `SeriesKey`, `Gap`) comes from `statglass-schema`; the types
-//! here wrap it for the webview. Exported to `src/core/generated/` by tauri-specta.
+//! here wrap it for the webview. Exported to `packages/core/src/generated/` by tauri-specta.
 //!
 //! Every `i64` timestamp carries `#[specta(type = JsSafeInt)]` (D-039).
 

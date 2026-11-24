@@ -1,5 +1,5 @@
+import { liveProcess } from "@tests/fixtures/processes";
 import { describe, expect, it } from "vitest";
-import { liveProcess } from "../../tests/fixtures/processes";
 import {
   appQuitTargets,
   diskTotal,

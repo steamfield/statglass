@@ -12,6 +12,8 @@
   "include": [
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
+    "packages/core/src/**/*.test.ts",
+    "packages/core/src/**/*.test.tsx",
     "src/vite-env.d.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx",

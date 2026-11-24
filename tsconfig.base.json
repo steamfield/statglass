@@ -6,7 +6,7 @@
     "jsx": "react-jsx",
     "paths": {
       "~/*": ["./src/app/*"],
-      "@core/*": ["./src/core/*"],
+      "@core/*": ["./packages/core/src/*"],
       "@tests/*": ["./tests/*"]
     },
     "esModuleInterop": true,
