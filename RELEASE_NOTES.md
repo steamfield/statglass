@@ -1,24 +1,27 @@
-# StatGlass 0.13.2
+# StatGlass 0.14.0
 
 StatGlass is a free, open-source system monitor for Apple Silicon Macs running macOS
 26 or later.
 
-Every process table now works the same way, and you can quit apps from any of them.
+You can now set your own alerts and have them reach your phone, and dashboard pages
+settle in instead of flashing on.
 
 ## Changes
 
-- Processes groups processes by app. Chrome, node or python sit under one app row
-  that expands to list its processes, and selecting the app row selects everything
-  Quit on that app acts on, so you no longer have to search to select them all.
-- The process tables on CPU, GPU, Memory, Power, Disk, Network and Timeline can now
-  select, Quit and Force Quit, with the same rows, keys and selection as Processes.
-  Apps shown from recorded history act on what is running now, and say "Not
-  running" when nothing they name is.
-- Disk by app no longer has a separate By process view; expand an app to see its
-  processes.
+- Alerts has its own page in the sidebar. A rule is one sentence: a metric, a
+  threshold and how long it has to hold, such as "Memory pressure above 80% for
+  2 min". Pick from CPU, GPU, memory pressure, swap used, swap-out rate, the hottest
+  sensor, fan speed, system power, battery charge and free disk space.
+- Every alert becomes a Timeline event and a macOS notification, and goes to each
+  destination you add: ntfy (the easy way to get it on your phone) or a webhook.
+  Send test shows each destination working before you rely on it, and every
+  destination shows its last delivery.
+- A new built-in rule tells you when a saved host has been offline for five minutes,
+  and again when it's back. Time your Mac spends asleep doesn't count.
+- Opening a dashboard page fades the header and then each card into place one after
+  another. It plays once when the page opens and never on live updates. Reduce Motion
+  and Performance mode turn it off.
 
 ## Fixes
 
-- On ranges longer than an hour, the "by app" table no longer goes blank for a moment
-  every 10 seconds, and keeps the apps you opened and your selection.
-- The host menu in the sidebar opens below its button instead of over the logo.
+- `cookie` 0.18.3 for RUSTSEC-2026-0594.

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.14.0](https://github.com/steamfield/statglass/compare/v0.13.2...v0.14.0) - 2026-11-24
+
+### Added
+
+- Custom alert rules (D-138): one metric, one comparison and one duration from the
+  metrics Rust publishes (`ALERT_METRICS`, `ALERT_LIMITS`), stored in
+  `Settings.alerts.rules`, validated in Rust and evaluated by the engine on the
+  persisted tick.
+- Alert destinations: ntfy and webhooks, kept in `alert-destinations.json` (0600),
+  delivered through `/usr/bin/curl` with the request on stdin, with Send test and the
+  last outcome per destination.
+- A built-in host-offline rule: one notice when a saved host stays unreachable for
+  five minutes, one when it returns, counting only time the Mac is awake.
+- `statglass-notify` crate owning alert wording and delivery.
+- Dashboard page entrance (D-139): the header and each card fade and rise in reading
+  order once per page open (`usePageEntrance`), off under Reduce Motion and
+  Performance mode.
+
+### Changed
+
+- The Alerts panel moved from Settings to its own Alerts page.
+- The CSS `pageEnter`/`data-stagger` row entrance is replaced by `usePageEntrance`;
+  `--motion-stagger` is 40 ms, with new `--motion-page` and `--ease-enter` tokens.
+
+### Fixed
+
+- `cookie` 0.18.3 for RUSTSEC-2026-0594.
+
 ## [0.13.2](https://github.com/steamfield/statglass/compare/v0.13.1...v0.13.2) - 2026-11-23
 
 ### Added
