@@ -73,15 +73,19 @@ export default function SettingsRoute() {
     <div className="flex flex-col gap-5">
       <PageHeader title="Settings" />
       {settings && (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] items-start gap-5">
-          <div className="flex flex-col gap-5">
+        // Each panel enters on its own as the page opens (`usePageEntrance`).
+        <div
+          data-enter-group
+          className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] items-start gap-5"
+        >
+          <div data-enter-group className="flex flex-col gap-5">
             <ModulesPanel modules={settings.modules} />
             <MenuBarPanel
               modules={settings.modules}
               menuBar={settings.menu_bar}
             />
           </div>
-          <div className="flex flex-col gap-5">
+          <div data-enter-group className="flex flex-col gap-5">
             <SamplingPanel
               sampling={settings.sampling}
               history={settings.history}

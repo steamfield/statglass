@@ -12,8 +12,8 @@ export type EnterVariant = "lift" | "fade";
  *   const e = enter(i);
  *   <div className={cn("...", e.className)} style={{ ...style, ...e.style }} />
  *
- * Runs once per mount. A dashboard route change mounts a fresh page, so pages
- * replay on navigation with no trigger.
+ * Runs once per mount. Dashboard pages enter through `usePageEntrance`
+ * instead, which the shell applies.
  */
 export function enter(
   index: number,
@@ -23,16 +23,4 @@ export function enter(
     className: styles[variant] ?? "",
     style: { "--i": index } as CSSProperties,
   };
-}
-
-/**
- * Class for the element that hosts a route's `<Outlet />`: each child of the
- * route's root lifts in reading order on navigation. A child that staggers
- * its own children (CardGrid) carries `data-stagger` and `stagger(i)` on them.
- */
-export const pageEnter: string = styles.page ?? "";
-
-/** Inline style for the `index`th child of a `data-stagger` container. */
-export function stagger(index: number): CSSProperties {
-  return { "--j": index } as CSSProperties;
 }

@@ -49,6 +49,7 @@ export function Card({
     <Comp
       aria-labelledby={labelledBy}
       aria-label={ariaLabel}
+      data-card
       data-variant={variant}
       className={cn(styles.card, className)}
       style={accentVars(accent, origin) as CSSProperties}

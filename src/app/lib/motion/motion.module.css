@@ -28,48 +28,7 @@
 
 /* Layered so a Tailwind utility on the same element still wins. */
 @layer components {
-  /*
-   * Page choreography: on the element that hosts a route (`<Outlet />`), each
-   * child of the route's root (the header, then each row of cards) lifts in
-   * reading order. A route change mounts a fresh root, so every navigation
-   * replays it. A child marked `data-stagger` (CardGrid) does not move itself;
-   * its own children continue the count from its position with `--j`.
-   */
-  .page > * > * {
-    --i: 0;
-  }
-  .page > * > :nth-child(2) {
-    --i: 1;
-  }
-  .page > * > :nth-child(3) {
-    --i: 2;
-  }
-  .page > * > :nth-child(4) {
-    --i: 3;
-  }
-  .page > * > :nth-child(5) {
-    --i: 4;
-  }
-  .page > * > :nth-child(6) {
-    --i: 5;
-  }
-  .page > * > :nth-child(7) {
-    --i: 6;
-  }
-  .page > * > :nth-child(n + 8) {
-    --i: 7;
-  }
-
   @media (prefers-reduced-motion: no-preference) {
-    .page > * > :not([data-stagger]),
-    .page [data-stagger] > :not([data-stagger]) {
-      animation: lift var(--motion-enter) var(--ease-out) backwards;
-      animation-delay: calc(
-        min(var(--i, 0) + var(--j, 0), var(--stagger-cap, 8)) *
-        var(--motion-stagger)
-      );
-    }
-
     .lift,
     .fade {
       animation: lift var(--motion-enter) var(--ease-out) backwards;

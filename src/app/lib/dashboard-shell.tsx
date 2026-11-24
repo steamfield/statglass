@@ -62,7 +62,7 @@ export function DashboardBody({
   }
   return (
     <div
-      data-stagger
+      data-enter-group
       className={cn(
         "flex flex-col gap-4 transition-opacity duration-(--motion-crossfade)",
         dimBody && "opacity-50",

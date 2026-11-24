@@ -13,10 +13,14 @@
  *                              menus, the sidebar indicator
  *   --motion-entry      300ms  card hover glow, dialogs
  *   --motion-enter      280ms  one-shot entrance (lift) when a surface appears
- *   --motion-stagger     30ms  delay step between entering items, index capped
+ *   --motion-page       400ms  a dashboard page's cards settling in on open
+ *                              (`usePageEntrance`; opacity is done by 300ms)
+ *   --motion-stagger     40ms  delay step between entering items, index capped
  *   --motion-crossfade  150ms  keyed state swap, threshold colour change
  *   --motion-scan       900ms  one pass of the chart loading mark along the baseline
  *   --ease-out          decelerating, no overshoot (also drives the `ease-out` utility)
+ *   --ease-enter        quartic decelerate for page entrances: slower to land
+ *                       than expo-out, so the settle is seen rather than a pop
  *   --ease-tick         gentler decelerate for per-tick tweens; expo-out does
  *                       90% of the move in the first third, which reads as a jump
  *
@@ -29,6 +33,7 @@
 @theme static {
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-tick: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-enter: cubic-bezier(0.25, 1, 0.5, 1);
   /* Stock `transition-*` utilities (used by the shadcn primitives) follow the
      tokens too, so they go instant under reduced motion. */
   --default-transition-duration: var(--motion-fast);
@@ -41,6 +46,7 @@
   --motion-fast: 0ms;
   --motion-entry: 0ms;
   --motion-enter: 0ms;
+  --motion-page: 0ms;
   --motion-stagger: 0ms;
   --motion-crossfade: 0ms;
   --motion-scan: 0ms;
@@ -53,7 +59,8 @@
     --motion-fast: 150ms;
     --motion-entry: 300ms;
     --motion-enter: 280ms;
-    --motion-stagger: 30ms;
+    --motion-page: 400ms;
+    --motion-stagger: 40ms;
     --motion-crossfade: 150ms;
     --motion-scan: 900ms;
   }
@@ -68,6 +75,7 @@
   --motion-fast: 0ms;
   --motion-entry: 0ms;
   --motion-enter: 0ms;
+  --motion-page: 0ms;
   --motion-stagger: 0ms;
   --motion-crossfade: 0ms;
   --motion-scan: 0ms;

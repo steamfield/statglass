@@ -15,7 +15,7 @@ import {
 } from "~/lib/dashboard-shell";
 import { HostClockContext } from "~/lib/host-clock";
 import { useHostSelection } from "~/lib/host-selection";
-import { pageEnter } from "~/lib/motion/enter";
+import { usePageEntrance } from "~/lib/motion/page-entrance";
 import { useTransport } from "~/lib/transport-context";
 import { HostStoreProvider, useHostId } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
@@ -116,9 +116,9 @@ export default function DashboardLayout() {
     pathname !== "/dashboard/alerts";
   const hasRemote = remote !== undefined;
   const remoteDisconnected = hasRemote && remote.status.state !== "connected";
-  const isDiskSpace =
-    pathname === "/dashboard/disk" &&
-    new URLSearchParams(search).get("view") === "space";
+  const view = new URLSearchParams(search).get("view");
+  const isDiskSpace = pathname === "/dashboard/disk" && view === "space";
+
   const liveOnlyPage =
     pathname === "/dashboard/processes" ||
     pathname === "/dashboard/containers" ||
@@ -127,6 +127,13 @@ export default function DashboardLayout() {
     metricPage &&
     remoteDisconnected &&
     (remote.status.synced_through_ms === null || liveOnlyPage);
+  // A page opens on a new route, Disk's I/O and Space views, or another host
+  // on a metric page (Settings, Hosts and Alerts show This Mac's whichever is
+  // selected). Range, filter and Containers' view params keep the same
+  // header and controls in place, so they never replay it.
+  const pageRef = usePageEntrance<HTMLDivElement>(
+    `${metricPage ? hostId : ""}|${pathname}|${isDiskSpace ? "space" : ""}`
+  );
   const stale =
     metricPage && ((sampling.stale && !sampling.paused) || remoteDisconnected);
   // Keep readable mirrored history crisp when a remote host is disconnected;
@@ -163,7 +170,7 @@ export default function DashboardLayout() {
           className="min-w-0 flex-1 overflow-y-auto px-3 pb-6 sm:px-6"
         >
           <DashboardShellContext.Provider value={shell}>
-            <div className={pageEnter}>
+            <div ref={pageRef}>
               {!metricPage && local && local.id !== hostId ? (
                 <HostClockContext.Provider value={localNow}>
                   <HostStoreProvider hostId={local.id}>
