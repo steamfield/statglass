@@ -34,7 +34,7 @@ apps/mobile/
 - Get data only through hooks in `src/hooks/` built on `@core/*`, so the meaning of a value matches the desktop.
 - Import core through the `@core/*` alias, never a relative path out of `apps/mobile`, so Metro, jest and tsc resolve it one way.
 - Use query keys from `@core/query-keys`, never an inline array, so invalidation stays greppable and matches desktop.
-- Create one `QueryClient`, in `src/lib/providers.tsx` (one query retry, no mutation retry, no focus refetch), so tests and the app run the same policy.
+- Create the app's one `QueryClient` with `createQueryClient()` from `src/lib/query-client.ts`, inside `Providers` (one query retry, no mutation retry, no focus refetch), so tests and the app run the same policy.
 - Only `src/transport/` talks to the native module; screens and hooks take the `Transport` contract (or a `Pick` of it), so the mock transport drives demo mode and tests.
 - Render gaps as gaps and errors as the specific RFC section 3 state from `@core/remote-errors`, never a generic failure or a zero.
 - A live view that loses its session shows reconnecting or offline from `RemoteHostStatus`, never a frozen last value.

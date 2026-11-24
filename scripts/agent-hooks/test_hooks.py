@@ -240,6 +240,8 @@ class HookTests(unittest.TestCase):
             "packages/core/src/generated/tray-rates.json",
             str(self.root / "src/desktop-transport/commands.ts"),
             "src/desktop-transport/commands.ts",
+            str(self.root / "apps/mobile/src/theme.generated.css"),
+            "apps/mobile/src/theme.generated.ts",
         ]:
             with self.subTest(path=path):
                 self.assertEqual(self.write_decision("block-generated-edits.sh", path), "deny")

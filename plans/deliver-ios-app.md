@@ -71,7 +71,8 @@ Layout after phase 1 (new or moved paths only):
       jest.config.cjs             jest-expo on Node
       src/app/_layout.tsx         providers and router; wiring only
       src/app/index.tsx           first-launch screen
-      src/lib/providers.tsx       QueryClient (one retry, no focus refetch) and safe area
+      src/lib/query-client.ts     createQueryClient (one retry, no focus refetch)
+      src/lib/providers.tsx       Providers: one client per app mount, safe area
       src/global.css              NativeWind tokens imported from the shared theme source
       test/                       jest-expo + RNTL with real providers
     crates/statglass-mobile/      UniFFI facade crate (phase 1: version() only)

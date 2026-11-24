@@ -10,6 +10,7 @@
       "**",
       "!**/packages/core/src/generated",
       "!**/src/desktop-transport/commands.ts",
+      "!**/apps/mobile/src/theme.generated.*",
       "!**/dist",
       "!**/target",
       "!**/vendor",
