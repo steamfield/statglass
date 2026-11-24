@@ -1,5 +1,6 @@
 //! Install/remove one registered source; generation guards reject old callbacks.
 use super::*;
+use statglass_remote::OpenSshDialer;
 pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
     let id = saved.record.id;
@@ -17,11 +18,8 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     }
     let history = Arc::new(History::open(&dir));
     history.register_host(&saved.record);
-    let mirror = Arc::new(Mirror::new(
-        history.store(),
-        id,
-        saved.config.mirror_budget_mb,
-    ));
+    let budget_mb = saved.config.mirror_budget_mb;
+    let mirror = Arc::new(Mirror::new(history.store(), id, budget_mb));
     let generation = Uuid::new_v4();
     state.remotes.generations.lock_ok().insert(id, generation);
     let handle = app.clone();
@@ -51,7 +49,8 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     let source = RemoteSource::new(
         saved.record.clone(),
         state.local,
-        saved.endpoint(),
+        Arc::<OpenSshDialer>::default(),
+        saved.endpoint().endpoint(),
         cb,
         Some(mirror.clone()),
     );
