@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Dashboard pages enter card by card (D-139) (2026-11-24)
+
+Opening a dashboard page (navigation, first open, Disk's I/O and Space views, another host) now fades and rises its header and then each card into place one after another, instead of lifting whole rows 3 px over 280 ms, which read as a flash. `usePageEntrance` in `src/app/lib/motion/page-entrance.ts` replaces the CSS `pageEnter`/`data-stagger` choreography; Settings panels enter one by one too. Cards that mount a beat late (the chart window, settings) still enter; ticks, range changes and later data never replay it.
+
+- **Verified**: `page-entrance.test.tsx` (order, cap, no replay on update, late batch, window end, 0 ms token; the route-root case revert-verified), `tests/e2e/motion.spec.ts` on Chromium and WebKit, and the browser dev server, including a frame paused mid-entrance on Overview.
+- **Open**: not run in the Tauri app or measured with `make bench`; the entrance runs once per navigation and adds nothing per tick.
+
 ## Alerts you set, delivered to your phone (D-138) (2026-11-23)
 
 Alerts has its own page in the sidebar. A custom rule is one metric, one comparison and one duration ("Memory pressure above 80% for 2 min"), picked from the metrics Rust publishes: CPU, GPU, memory pressure, swap used, swap-out rate, hottest sensor, fan speed, system power, battery charge and free disk space. Rules live in `Settings.alerts.rules`, are validated in Rust and evaluated by the engine on the persisted tick. Every fired alert is a Timeline event, a macOS notification and a message to each enabled destination: ntfy (the recommended path to a phone) or a webhook, each with Send test and its last delivery shown. A third built-in rule reports a saved host that stays offline for five minutes and says when it is back. The Alerts panel left Settings. Reasoning and scope: [rfc-alerts.md](rfc-alerts.md); execution record with every review finding: `plans/deliver-alerts.md`.

@@ -1,6 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { CardGrid } from "~/components/card-grid";
-import { enter, stagger } from "./enter";
+import { enter } from "./enter";
 import { Swap } from "./swap";
 
 describe("enter", () => {
@@ -10,28 +9,6 @@ describe("enter", () => {
     expect(lift.style).toEqual({ "--i": 3 });
     expect(lift.className).not.toBe("");
     expect(fade.className).not.toBe(lift.className);
-  });
-
-  it("numbers a staggered container's children with --j", () => {
-    expect(stagger(2)).toEqual({ "--j": 2 });
-  });
-});
-
-describe("CardGrid", () => {
-  it("staggers its cards in order", () => {
-    const { container } = render(
-      <CardGrid items={["a", "b", "c"]} getKey={(k) => k}>
-        {(k) => <span>{k}</span>}
-      </CardGrid>
-    );
-    const grid = container.firstElementChild as HTMLElement;
-    expect(grid).toHaveAttribute("data-stagger");
-    const cells = Array.from(grid.children) as HTMLElement[];
-    expect(cells.map((c) => c.style.getPropertyValue("--j"))).toEqual([
-      "0",
-      "1",
-      "2",
-    ]);
   });
 });
 

@@ -26,7 +26,7 @@ src/app/                # React layer - uses ~/ alias
   widgets/              # Widget registry + render-only widget components
   hooks/                # Shared hooks
   lib/                  # React utilities (cn(), providers)
-    motion/             # Motion primitives (enter, pageEnter, Swap, NumberTicker); widgets may use them
+    motion/             # Motion primitives (enter, usePageEntrance, Swap, NumberTicker); widgets may use them
 
 src/core/               # Framework-agnostic TypeScript - uses @core/ alias
   generated/            # tauri-specta bindings (generated, never hand-edit)

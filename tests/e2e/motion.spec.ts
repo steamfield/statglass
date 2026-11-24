@@ -5,13 +5,17 @@ import { chartsReady } from "./helpers/charts-ready";
  * One-shot motion (motion.md "Choreography") on the mock transport with the
  * tick stopped (`ticks=0`), so the only animations are the entrances:
  *
- * - a page's sections lift in on load and again on navigation, and nothing is
- *   left running or stuck invisible afterwards;
+ * - a page's header and each card enter on load and again on navigation
+ *   (`usePageEntrance`), and nothing is left running or stuck invisible;
  * - under reduced motion nothing animates and everything is visible at once;
  * - Low Power Mode engages Performance mode, which stops all motion.
  */
 
-/** Record CSS entrances and one-shot chart Web Animations from page load on. */
+/**
+ * Record CSS entrances and one-shot Web Animations (chart reveals, page
+ * entrances) from page load on. Every page-entrance target is marked
+ * `data-entered` so a test can find it after the animation ends.
+ */
 async function recordAnimations(page: Page) {
   await page.addInitScript(() => {
     const names: string[] = [];
@@ -26,6 +30,10 @@ async function recordAnimations(page: Page) {
     const animate = Element.prototype.animate;
     Element.prototype.animate = function (keyframes, options) {
       const animation = animate.call(this, keyframes, options);
+      if (animation.id === "page-enter") {
+        names.push("page-enter");
+        this.setAttribute("data-entered", "");
+      }
       if (animation.id === "reveal") {
         names.push("reveal");
         this.setAttribute(
@@ -41,13 +49,16 @@ async function recordAnimations(page: Page) {
 const started = (page: Page) =>
   page.evaluate(() => (window as unknown as { __anims: string[] }).__anims);
 
-/** Every entering element: the route root's children and CardGrid's cells. */
+/** Every element that enters with a page: its header, its cards, and anything marked entering. */
 const sectionOpacities = (page: Page) =>
   page.evaluate(() =>
     Array.from(
-      document.querySelectorAll("main > div > * > *, main [data-stagger] > *")
+      document.querySelectorAll("main header, main [data-card], [data-entered]")
     ).map((el) => getComputedStyle(el).opacity)
   );
+
+const entrances = async (page: Page) =>
+  (await started(page)).filter((n) => n === "page-enter").length;
 
 const running = (page: Page) =>
   page.evaluate(
@@ -248,40 +259,29 @@ test("live-motion validation accepts shortened reversals and rejects long transi
   await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   await page.evaluate(async () => {
-    const element = Array.from(
-      document.querySelectorAll("main > div > * > *, main [data-stagger] > *")
-    ).find((el) => /lift/.test(getComputedStyle(el).animationName));
-    if (!(element instanceof HTMLElement))
-      throw new Error("No entering element");
-    const name = getComputedStyle(element).animationName;
-    element.style.animationName = "none";
-    getComputedStyle(element).animationName;
-    element.style.animationName = name;
-    getComputedStyle(element).animationName;
-    const entrance = element
-      .getAnimations()
-      .find((a) => a instanceof CSSAnimation && /lift/.test(a.animationName));
-    if (!entrance) throw new Error("No entrance animation");
+    const card = document.querySelector("main [data-card]");
+    if (!card) throw new Error("No card");
+    const entrance = card.animate(
+      [
+        { opacity: 0, transform: "translateY(8px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 400, id: "page-enter" }
+    );
     entrance.updatePlaybackRate(0);
     await entrance.ready;
   });
-  expect(
-    (await unexpectedRunning(page)).some((name) => /lift/.test(name))
-  ).toBe(true);
+  expect(await unexpectedRunning(page)).toContain("Animation");
 });
 
-test("Overview sections and cards lift in, then settle with nothing running", async ({
+test("Overview's header and cards enter, then settle with nothing running", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await recordAnimations(page);
   await openOverview(page);
 
-  await expect
-    .poll(
-      async () => (await started(page)).filter((n) => /lift/.test(n)).length
-    )
-    .toBeGreaterThan(6);
+  await expect.poll(() => entrances(page)).toBeGreaterThan(6);
   await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
@@ -298,15 +298,13 @@ test("navigating replays the page entrance and slides the sidebar pill", async (
 
   const pill = page.locator("[data-sidebar-pill]");
   const before = await pill.evaluate((el) => el.style.transform);
-  const liftCount = async () =>
-    (await started(page)).filter((n) => /lift/.test(n)).length;
-  const lifts = await liftCount();
+  const lifts = await entrances(page);
 
   await page.locator("[data-sidebar-item][href='/dashboard/cpu']").click();
   await expect(
     page.getByRole("heading", { name: "CPU", exact: true })
   ).toBeVisible();
-  await expect.poll(liftCount).toBeGreaterThan(lifts);
+  await expect.poll(() => entrances(page)).toBeGreaterThan(lifts);
   await expect
     .poll(() => pill.evaluate((el) => el.style.transform))
     .not.toBe(before);
@@ -329,11 +327,7 @@ test("live ticks never replay an entrance", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true })
   ).toBeVisible();
-  await expect
-    .poll(
-      async () => (await started(page)).filter((n) => /lift/.test(n)).length
-    )
-    .toBeGreaterThan(0);
+  await expect.poll(() => entrances(page)).toBeGreaterThan(0);
   await expect
     .poll(() => unexpectedRunning(page), { timeout: 4000 })
     .toEqual([]);
@@ -344,7 +338,9 @@ test("live ticks never replay an entrance", async ({ page }) => {
   // Three ticks of fresh values re-render every card.
   await page.clock.runFor(3000);
   expect(
-    (await started(page)).filter((n) => /lift|fade|swap|reveal|scan/.test(n))
+    (await started(page)).filter((n) =>
+      /page-enter|lift|fade|swap|reveal|scan/.test(n)
+    )
   ).toEqual([]);
   expect(await unexpectedRunning(page)).toEqual([]);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
@@ -384,6 +380,7 @@ test("Low Power Mode engages Performance mode and stops all motion", async ({
       tick: s.getPropertyValue("--motion-tick").trim(),
       count: s.getPropertyValue("--motion-count").trim(),
       enter: s.getPropertyValue("--motion-enter").trim(),
+      page: s.getPropertyValue("--motion-page").trim(),
       crossfade: s.getPropertyValue("--motion-crossfade").trim(),
     };
   });
@@ -391,46 +388,44 @@ test("Low Power Mode engages Performance mode and stops all motion", async ({
     tick: "0ms",
     count: "0ms",
     enter: "0ms",
+    page: "0ms",
     crossfade: "0ms",
   });
 });
 
-test("Overview cards have one animated ancestor and its headers enter separately", async ({
+test("each Overview card enters on its own, never through an animated ancestor", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
+  await recordAnimations(page);
   await openOverview(page);
   const card = page
     .getByRole("main")
     .getByRole("link", { name: "CPU", exact: true });
-  await expect(card).toBeVisible();
-  const names = await card.evaluate((card) => {
-    const names: string[] = [];
-    for (
-      let ancestor = card.parentElement;
-      ancestor && ancestor.tagName !== "MAIN";
-      ancestor = ancestor.parentElement
-    ) {
-      const name = getComputedStyle(ancestor).animationName;
-      if (name !== "none") names.push(name);
-    }
-    return names;
-  });
-  expect(names).toHaveLength(1);
-  expect(names[0]).toMatch(/lift/);
-  const titleMotion = await page
-    .getByRole("heading", { name: "Overview", exact: true })
-    .evaluate((title) => {
-      const header = title.closest("header");
-      if (!header) throw new Error("Missing page header");
-      return getComputedStyle(header).animationName;
-    });
-  expect(titleMotion).toMatch(/lift/);
+  await expect(card).toHaveAttribute("data-entered", "");
+  expect(
+    await card.evaluate((card) => {
+      const entered: string[] = [];
+      for (
+        let ancestor = card.parentElement;
+        ancestor && ancestor.tagName !== "MAIN";
+        ancestor = ancestor.parentElement
+      )
+        if (ancestor.hasAttribute("data-entered"))
+          entered.push(ancestor.tagName);
+      return entered;
+    })
+  ).toEqual([]);
+  await expect(
+    page
+      .getByRole("heading", { name: "Overview", exact: true })
+      .locator("xpath=ancestor::header")
+  ).toHaveAttribute("data-entered", "");
   expect(
     await page
       .getByRole("region", { name: "This Mac" })
-      .evaluate((header) => getComputedStyle(header).animationName)
-  ).toMatch(/lift/);
+      .evaluate((el) => el.closest("[data-entered]") !== null)
+  ).toBe(true);
 });
 
 async function openLoadingCpu(page: Page, scenario = "default") {

@@ -4632,3 +4632,16 @@ Threshold rules on remote hosts' metrics, agent-side evaluation and delivery (th
 - Users ask for alerts from servers while the Mac sleeps: evaluate rules in the agent and deliver from there.
 - A user behind a mandatory proxy cannot deliver: add an explicit proxy setting rather than inheriting the environment.
 - Rules prove noisy: add hysteresis or a preview against history before adding more rule kinds.
+
+## D-139: Dashboard pages enter card by card from one hook, not row by row in CSS
+
+Date: 2026-11-24. Refines D-086's page choreography.
+
+- **Why**: the CSS entrance lifted each child of a route's root (the header, then whole rows) 3 px over 280 ms on expo-out, which lands 90% of the move in the first third. On screen it read as cards flashing in. Rows of two or three cards moved as one, and anything that mounted a beat later (a module page's cards wait for the chart window, D-091; Settings waits for its settings) appeared with no entrance at all.
+- **What**: `usePageEntrance(pageKey)` on the dashboard's outlet host. The key is the host, route and Disk's `view` param, so range and filter params, which are data, never replay it. Units are cards (`data-card` on the `Card` widget) and blocks holding no card; rows, `data-enter-group` containers and the route's root are walked. Opacity finishes at 300 ms, an 8 px rise with a 0.985 scale settles over 400 ms (`--motion-page`, `--ease-enter`), 40 ms apart capped at 8 steps.
+- **Initial render only**: one Web Animations call per unit with `backwards` fill, so nothing stays on the element and re-renders can't replay it. A MutationObserver catches units mounted within 800 ms of opening and enters them as their own batch, then disconnects; content inside an entered unit and anything mounted later appears in place.
+- **Off** under Reduce Motion and Performance mode through the 0 ms token, like every other entrance. The sidebar and title bar still never animate.
+
+### Revisit when
+
+- A page's cards routinely mount more than 800 ms after it opens (a slow first settings read on a remote host): widen the window or key it on the page's own ready signal.

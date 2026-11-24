@@ -15,7 +15,7 @@ import {
 } from "~/lib/dashboard-shell";
 import { HostClockContext } from "~/lib/host-clock";
 import { useHostSelection } from "~/lib/host-selection";
-import { pageEnter } from "~/lib/motion/enter";
+import { usePageEntrance } from "~/lib/motion/page-entrance";
 import { useTransport } from "~/lib/transport-context";
 import { HostStoreProvider, useHostId } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
@@ -116,9 +116,13 @@ export default function DashboardLayout() {
     pathname !== "/dashboard/alerts";
   const hasRemote = remote !== undefined;
   const remoteDisconnected = hasRemote && remote.status.state !== "connected";
-  const isDiskSpace =
-    pathname === "/dashboard/disk" &&
-    new URLSearchParams(search).get("view") === "space";
+  const view = new URLSearchParams(search).get("view");
+  const isDiskSpace = pathname === "/dashboard/disk" && view === "space";
+  // A page opens on a new route, a sub-view (Disk space) or another host;
+  // range and filter params are data updates and never replay it.
+  const pageRef = usePageEntrance<HTMLDivElement>(
+    `${hostId}|${pathname}|${view ?? ""}`
+  );
   const liveOnlyPage =
     pathname === "/dashboard/processes" ||
     pathname === "/dashboard/containers" ||
@@ -163,7 +167,7 @@ export default function DashboardLayout() {
           className="min-w-0 flex-1 overflow-y-auto px-3 pb-6 sm:px-6"
         >
           <DashboardShellContext.Provider value={shell}>
-            <div className={pageEnter}>
+            <div ref={pageRef}>
               {!metricPage && local && local.id !== hostId ? (
                 <HostClockContext.Provider value={localNow}>
                   <HostStoreProvider hostId={local.id}>

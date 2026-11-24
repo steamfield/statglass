@@ -5,12 +5,13 @@ export type MotionDuration =
   | "fast"
   | "entry"
   | "enter"
+  | "page"
   | "stagger"
   | "crossfade"
   | "scan";
 
 /** The easing tokens, by suffix. */
-export type MotionEase = "out" | "tick";
+export type MotionEase = "out" | "tick" | "enter";
 
 /**
  * Tokens live on the window root, alongside `data-performance`, so they are

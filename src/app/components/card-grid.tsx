@@ -1,5 +1,4 @@
 import type { CSSProperties, ReactNode } from "react";
-import { stagger } from "~/lib/motion/enter";
 import type { Corner } from "~/widgets/lib/accent";
 
 const ORIGINS: readonly Corner[] = ["tl", "tr", "bl", "br"];
@@ -28,8 +27,7 @@ export interface CardGridProps<T> {
 
 /**
  * Grid of module cards that assigns rotating glow origins by index. Inside a
- * routed page the cards lift in one at a time (`data-stagger`), continuing the
- * page's reading order.
+ * dashboard page each card enters on its own (`usePageEntrance`).
  */
 export function CardGrid<T>({
   items,
@@ -39,16 +37,11 @@ export function CardGrid<T>({
 }: CardGridProps<T>) {
   return (
     <div
-      data-stagger
       className="grid grid-cols-[repeat(auto-fill,minmax(var(--col),1fr))] gap-4"
       style={{ "--col": `${minColumnWidth}px` } as CSSProperties}
     >
       {items.map((item, i) => (
-        <div
-          key={getKey(item)}
-          className="min-w-0 [&>*]:h-full"
-          style={stagger(i)}
-        >
+        <div key={getKey(item)} className="min-w-0 [&>*]:h-full">
           {children(item, cardOrigin(i), i)}
         </div>
       ))}

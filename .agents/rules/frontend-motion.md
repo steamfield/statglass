@@ -24,12 +24,14 @@ is visible, everything else runs once per interaction.
 | `--motion-count` | 450ms | A headline number counting to its next value (`NumberTicker`, read from JS) | off |
 | `--motion-fast` | 150ms | Hover/press feedback, toggles, segmented thumb, menus, sidebar pill | off |
 | `--motion-entry` | 300ms | Hover glow, dialogs | off |
-| `--motion-enter` | 280ms | One-shot entrance (lift) | off |
-| `--motion-stagger` | 30ms | Delay step between entering items, index capped at 8 | off |
+| `--motion-enter` | 280ms | One-shot entrance (lift), chart reveal | off |
+| `--motion-page` | 400ms | A dashboard page's header and cards entering (`usePageEntrance`); opacity done at 75% | off |
+| `--motion-stagger` | 40ms | Delay step between entering items, index capped at 8 | off |
 | `--motion-crossfade` | 150ms | Keyed state swap | off |
 | `--motion-scan` | 900ms | One pass of the chart loading mark (`ChartLoading`) | off |
 | `--ease-out` | `cubic-bezier(0.16,1,0.3,1)` | Everything except per-tick tweens | |
 | `--ease-tick` | `cubic-bezier(0.33,1,0.68,1)` | Per-tick tweens | |
+| `--ease-enter` | `cubic-bezier(0.25,1,0.5,1)` | Page entrances: a quartic settle that is seen, where expo-out reads as a pop | |
 
 Every token is 0ms outside `prefers-reduced-motion: no-preference`, so reduced motion needs
 no JS branch: a transition or animation with a 0ms duration is instant. Write transitions
@@ -37,11 +39,17 @@ and keyframe rules inside that media block anyway.
 
 ## Choreography (`src/app/lib/motion/`)
 
-- `pageEnter` on the element hosting a route's `<Outlet />`: each child of the route's root
-  (header, then each row) lifts in reading order. A route change mounts a fresh root, so
-  navigation replays it. The dashboard shell applies it; pages get it for free.
-- `data-stagger` on a container plus `stagger(i)` on its children (CardGrid) staggers them
-  one by one, continuing the page's count.
+- `usePageEntrance(pageKey)` returns a ref for the element hosting a route's `<Outlet />`
+  (D-139). When the key changes (route, Disk's sub-view, host) and on first mount, the
+  page's header, then each card (`data-card`, set by the `Card` widget) and each block
+  holding no card (a banner, a table) fades in and rises in reading order: one Web
+  Animations call per unit with `backwards` fill, so a 1 Hz re-render can't replay it.
+  Elements holding cards, `data-enter-group` containers (`DashboardBody`, the Settings
+  columns) and the route's root are walked, never moved. Units that mount within 800 ms
+  of opening enter as their own batch; later ones are data updates and appear in place.
+  The dashboard shell applies it; pages get it for free. Mark a container
+  `data-enter-group` when its content mounts after the page opens and should still enter
+  piece by piece.
 - `enter(i, "lift" | "fade")` spread onto any element that should enter on mount
   (onboarding frame).
 - `<Swap k={state}>` remounts small leaf content when a state changes and fades it in
