@@ -1,0 +1,16 @@
+[package]
+name = "statglass-notify"
+description = "What an alert says: rule sentences, notification text and value formatting for alerts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+statglass-schema.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true
+
+[lints]
+workspace = true

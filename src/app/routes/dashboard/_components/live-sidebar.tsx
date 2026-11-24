@@ -73,13 +73,25 @@ const LOCAL_TOOLS: readonly SidebarEntry[] = [
     icon: "containers" as const,
   },
   {
+    id: "alerts",
+    href: "/dashboard/alerts",
+    label: "Alerts",
+    icon: "alerts" as const,
+  },
+  {
     id: "settings",
     href: "/dashboard/settings",
     label: "Settings",
     icon: "settings" as const,
   },
 ];
-const REMOTE_TOOLS = LOCAL_TOOLS.filter((entry) => entry.id !== "containers");
+// Alert rules are This Mac's, so a remote host never lists Alerts.
+const REMOTE_CGROUP_TOOLS = LOCAL_TOOLS.filter(
+  (entry) => entry.id !== "alerts"
+);
+const REMOTE_TOOLS = REMOTE_CGROUP_TOOLS.filter(
+  (entry) => entry.id !== "containers"
+);
 const countBehind = (hosts: Parameters<typeof hostsNeedingUpdate>[0]) =>
   hostsNeedingUpdate(hosts).length;
 
@@ -163,11 +175,14 @@ export function LiveSidebar() {
         view.tone === "destructive" ? ("error" as const) : ("idle" as const),
     };
   }, [activeRemote]);
-  const tools = useMemo(
-    () =>
-      withHostAttention(local || cgroups ? LOCAL_TOOLS : REMOTE_TOOLS, behind),
-    [local, cgroups, behind]
-  );
+  const tools = useMemo(() => {
+    const listed = local
+      ? LOCAL_TOOLS
+      : cgroups
+        ? REMOTE_CGROUP_TOOLS
+        : REMOTE_TOOLS;
+    return withHostAttention(listed, behind);
+  }, [local, cgroups, behind]);
   const configuredMs = useSettings((s) => s.sampling.interval_ms);
   const sampling = useSampling();
   const cpu = useCpu();

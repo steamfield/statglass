@@ -4134,6 +4134,7 @@ dependencies = [
  "specta",
  "specta-typescript",
  "statglass-engine",
+ "statglass-notify",
  "statglass-proto",
  "statglass-query",
  "statglass-remote",
@@ -4243,6 +4244,14 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "statglass-notify"
+version = "0.13.2"
+dependencies = [
+ "statglass-schema",
  "uuid",
 ]
 

@@ -36,6 +36,8 @@ statglass-remote.workspace = true
 statglass-update.workspace = true
 # The `statglass` CLI's query contract, served on `cli/query.sock` (D-126).
 statglass-query.workspace = true
+# What alert notifications and destination messages say (plan/rfc-alerts.md).
+statglass-notify.workspace = true
 # `specta` implements specta::Type for `tauri::ipc::Channel`, so `subscribe_live` exports.
 tauri = { version = "2.12.1", features = ["specta", "tray-icon"] }
 tauri-plugin-opener = "2.7.0"

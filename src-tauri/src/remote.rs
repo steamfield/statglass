@@ -159,6 +159,25 @@ impl RemoteManager {
         self.apply_rr(host, &mut status);
         Some((enabled, status))
     }
+    /// Every saved host's id, name and current status (with any agent update in
+    /// progress), for the host-offline watch. Takes the two locks one after the other.
+    pub(crate) fn saved_statuses(&self) -> Vec<SavedHostStatus> {
+        let names: Vec<(HostId, String)> = self
+            .saved
+            .lock_ok()
+            .iter()
+            .map(|(id, h)| (*id, h.config.name.clone()))
+            .collect();
+        let statuses = self.statuses.lock_ok().clone();
+        names
+            .into_iter()
+            .map(|(host, name)| {
+                let mut status = statuses.get(&host).cloned().unwrap_or_default();
+                self.apply_update(host, &mut status);
+                SavedHostStatus { host, name, status }
+            })
+            .collect()
+    }
     /// Every saved host's record, registered or not.
     pub(crate) fn saved_records(&self) -> Vec<HostRecord> {
         self.saved
@@ -186,6 +205,14 @@ impl RemoteManager {
             .get(&host)
             .map_or_else(Vec::new, |m| m.sink.recent_rows(from, to))
     }
+}
+/// One saved host as [`RemoteManager::saved_statuses`] reports it.
+#[derive(Clone, Debug)]
+pub struct SavedHostStatus {
+    pub host: HostId,
+    /// The name the user gave it.
+    pub name: String,
+    pub status: RemoteHostStatus,
 }
 impl From<statglass_remote::RemoteError> for CommandError {
     fn from(error: statglass_remote::RemoteError) -> Self {

@@ -47,7 +47,10 @@ export class MockStore {
       cap_met: true,
     };
     // A Linux agent (D-116) has no ANE, so it never reports an ANE spike.
-    this.events = mockEvents(startMs).filter(
+    this.events = mockEvents(startMs, {
+      alerts: flags.alerts,
+      hostOffline: flags.hostOfflineAlerts,
+    }).filter(
       (e) =>
         !flags.linux ||
         e.detail.kind !== "power_spike" ||

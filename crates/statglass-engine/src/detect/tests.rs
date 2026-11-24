@@ -75,7 +75,7 @@ struct Script {
 
 impl Script {
     fn new(alerts: AlertSettings) -> Self {
-        let mut d = Detectors::new(DetectorThresholds::DEFAULT, alerts);
+        let mut d = Detectors::new(DetectorThresholds::DEFAULT, &alerts);
         d.bind(&layout());
         Self {
             d,
@@ -675,6 +675,7 @@ fn alerts(hot_process: bool, thermal_serious: bool) -> AlertSettings {
     AlertSettings {
         hot_process,
         thermal_serious,
+        ..AlertSettings::default()
     }
 }
 
@@ -736,20 +737,20 @@ fn alerts_off_by_default_and_switchable() {
     s.run(400, |_| vec![(THERMAL, 3.0)], hot);
     assert!(!s.kinds().contains(&"alert"), "{:?}", s.kinds());
 
-    s.d.set_alerts(alerts(true, true));
+    s.d.set_alerts(&alerts(true, true));
     s.run(400, |_| vec![(THERMAL, 3.0)], hot);
     let n = s.kinds().iter().filter(|k| **k == "alert").count();
     assert_eq!(n, 2, "{:?}", s.events);
 
     // Off means off: another hot process, after the cooldown, gets no alert.
-    s.d.set_alerts(alerts(false, true));
+    s.d.set_alerts(&alerts(false, true));
     let other = |_: i64| vec![proc("x264", 8, 400.0, 1.0)];
     s.run(1800, |_| vec![(THERMAL, 3.0)], none);
     s.run(400, |_| vec![(THERMAL, 3.0)], other);
     assert_eq!(s.kinds().iter().filter(|k| **k == "alert").count(), 2);
 
     // Turning one on again keeps the other's state: no second thermal alert.
-    s.d.set_alerts(alerts(true, true));
+    s.d.set_alerts(&alerts(true, true));
     s.run(100, |_| vec![(THERMAL, 3.0)], none);
     assert_eq!(s.kinds().iter().filter(|k| **k == "alert").count(), 2);
 }
@@ -849,9 +850,9 @@ fn alert_cooldown_survives_a_restart() {
 fn alert_cooldown_survives_switching_off_and_on() {
     let mut s = Script::new(alerts(false, true));
     s.run(60, |_| vec![(THERMAL, 2.0)], none);
-    s.d.set_alerts(alerts(false, false));
+    s.d.set_alerts(&alerts(false, false));
     s.run(60, |_| vec![(THERMAL, 2.0)], none);
-    s.d.set_alerts(alerts(false, true));
+    s.d.set_alerts(&alerts(false, true));
     s.run(1800, |_| vec![(THERMAL, 2.0)], none);
     assert_eq!(thermal_alerts(&s), [0]);
     s.run(30, |_| vec![(THERMAL, 1.0)], none);
@@ -965,7 +966,7 @@ fn replay(json: &str) -> (Vec<Event>, i64) {
     let r: serde_json::Value = serde_json::from_str(json).unwrap();
     let interval = r["interval_ms"].as_i64().unwrap();
     let ticks = r["ticks"].as_array().unwrap();
-    let mut d = Detectors::new(DetectorThresholds::DEFAULT, alerts(true, true));
+    let mut d = Detectors::new(DetectorThresholds::DEFAULT, &alerts(true, true));
     d.bind(&layout());
     let mut out = Vec::new();
     for (i, t) in ticks.iter().enumerate() {

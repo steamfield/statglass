@@ -121,6 +121,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-128 | Docker coverage records carry a Rust-derived kind, masking and label | Accepted |
 | D-131 | Developer ID releases from a tag-triggered macOS job | Accepted |
 | D-133 | Charts hold back until their history has arrived, then reveal once | Accepted |
+| D-138 | Custom alert rules, phone delivery through ntfy and webhooks, and a host-offline rule | Accepted |
 
 ---
 
@@ -4607,3 +4608,27 @@ Date: 2026-11-23. Amends D-029, D-093 and v1 §4.14 (shared selection, 2026-10-1
 - **Rows that only know an app name act on what runs now**: usage, recorded and Network app rows take `app_quit` members of the running app with the same name (`useRunningApps`, full process table every 10 s, only where this view can quit); a recorded process row targets the live process with the same pid and start time. Rows with no running match are disabled with "Not running", shown only once the first process batch has arrived.
 - **Command-A selects what each row would quit**: every group's quit targets plus the members listed open, never a collapsed group's helpers.
 - **Selection waits to be known**: `selectable` is null until the edition answers (`useCanSignalSettled`), and the table renders nothing meanwhile rather than add the checkbox column under the reader. A failed edition read means no Quit, never a permanent wait.
+
+## D-138: Custom alert rules, phone delivery through ntfy and webhooks, and a host-offline rule
+
+Date: 2026-11-23. Extends D-083 and D-084. Supersedes v2 phase 2.3a and takes the host-offline part of v4 phase 4.2c. Product and design reasoning: [rfc-alerts.md](rfc-alerts.md).
+
+- **Rules are settings**: custom threshold rules live in `Settings.alerts.rules` next to the built-in switches. One metric, one comparison, one duration; the condition must hold on every reading for the whole duration. Validation runs when a patch is applied. On load a rule that does not decode or no longer validates is dropped with a warning, because a failed settings load resets every setting.
+- **Rust publishes what a rule may watch**: `ALERT_METRICS` (metric, label, defaults, range) and `ALERT_LIMITS` (limits, built-in ids, label keys and the text of every rejection) are generated constants. The client and the mock transport copy no limit and no wording.
+- **Evaluation**: a rule binds to every series its selector matches and fires for the first to hold; a failed reading clears a series, and so does silence longer than three periods, taking the larger of the current period and the period at the last reading so a cadence change is not read as a gap. A rename or cooldown edit keeps the evaluator; only `when` or `for_secs` replace it, carrying the cooldown. Nothing allocates on a quiet tick.
+- **Wording has one Rust owner**: `statglass-notify` (depends on the schema only) says what a rule and an alert say, for macOS notifications and for destinations. The client formats the page itself and the two agree on rounding (halves away from zero, minutes rounded down).
+- **Destinations hold secrets, so they are not settings**: `alert-destinations.json`, mode 0600, with its own owner in `src-tauri/src/alerts/`. Rows show an abbreviated address; logs and errors never carry a URL, topic or token.
+- **Delivery is curl with the request on stdin**: `/usr/bin/curl -q --globoff -K -`, the config quoted and escaped, `data-raw`, `--proto =http,https`, no redirects, a 10 s limit, an empty environment and `/` as the directory. Proxies and custom CA variables are deliberately not honoured: with `http_proxy` inherited, the bearer token went to the proxy. URLs with a user name or password are refused. No HTTP or TLS dependency is added (D-058), and the crate escapes JSON itself.
+- **Every alert goes everywhere**: a Timeline event, a macOS notification and each enabled destination. Up to three attempts on a network error or a 5xx answer, one on a 4xx, no queue across restarts. Each destination shows its last outcome and has Send test.
+- **Host offline is evaluated on this Mac**: a pure watch fed by a 30 s read of remote statuses, counting only time observed in steps of at most 90 s, so a sleeping Mac never counts toward the five minutes. It does not wake at all while the rule is off or no host is saved. One notice when a host stays unreachable for five minutes, one when it returns.
+- **One place says what firing means**: `src-tauri/src/alerts/fire.rs` records, notifies, delivers and publishes, for engine alerts and host notices alike.
+
+### Not decided here
+
+Threshold rules on remote hosts' metrics, agent-side evaluation and delivery (the reason `statglass-notify` depends only on the schema), a history preview, per-rule routing, quiet hours, and proxy support for delivery.
+
+### Revisit when
+
+- Users ask for alerts from servers while the Mac sleeps: evaluate rules in the agent and deliver from there.
+- A user behind a mandatory proxy cannot deliver: add an explicit proxy setting rather than inheriting the environment.
+- Rules prove noisy: add hysteresis or a preview against history before adding more rule kinds.

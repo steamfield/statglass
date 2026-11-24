@@ -15,14 +15,15 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 mod agent;
+mod alerts;
 mod chart_window;
 mod overview;
 mod popover;
+pub use alerts::AlertSettings;
 pub use chart_window::ChartWindow;
 pub use overview::OverviewSettings;
 pub use popover::{CardDensity, PopoverSettings};
 
-use crate::alert::AlertRule;
 use crate::catalog::Module;
 pub use crate::history::HistorySettings;
 
@@ -54,7 +55,7 @@ pub struct Settings {
     pub units: UnitSettings,
     pub general: GeneralSettings,
     pub onboarding: OnboardingSettings,
-    /// Absent from a settings file written before v1.2: both alerts off.
+    /// Absent from a settings file written before v1.2: every alert off.
     #[serde(default)]
     pub alerts: AlertSettings,
 }
@@ -514,34 +515,6 @@ pub struct OnboardingSettings {
     pub completed: bool,
 }
 
-/// The built-in alert rules (v1.2), each off until the user turns it on. Turning one on
-/// posts a one-off "Alerts are on" notification: macOS asks for notification permission
-/// on a first delivery, not when the app asks (D-084), so this brings the prompt up
-/// while the user is in Settings rather than with the first real alert.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-pub struct AlertSettings {
-    /// [`AlertRule::hot_process`]: a process above 200% CPU for 5 minutes.
-    pub hot_process: bool,
-    /// [`AlertRule::thermal_serious`]: thermal state Serious or worse.
-    pub thermal_serious: bool,
-}
-
-impl AlertSettings {
-    /// The built-in rules, each with `enabled` from these settings.
-    pub fn rules(&self) -> [AlertRule; 2] {
-        [
-            AlertRule {
-                enabled: self.hot_process,
-                ..AlertRule::hot_process()
-            },
-            AlertRule {
-                enabled: self.thermal_serious,
-                ..AlertRule::thermal_serious()
-            },
-        ]
-    }
-}
-
 /// The modules that have their own settings entry (every module except `Sensors`).
 pub const SETTINGS_MODULES: [Module; 7] = [
     Module::Cpu,
@@ -755,7 +728,7 @@ mod tests {
         assert!(s.general.launch_at_login && !s.general.show_in_dock && s.general.check_updates);
         assert!(!s.onboarding.completed);
         assert_eq!(s.alerts, AlertSettings::default());
-        assert!(s.alerts.rules().iter().all(|r| !r.enabled));
+        assert!(s.alerts.engine_rules().iter().all(|r| !r.enabled));
     }
 
     /// A settings file from before v1.2 has no `alerts`: both stay off.
@@ -885,18 +858,6 @@ mod tests {
             "\"charging\"",
             "snake_case on the wire"
         );
-    }
-
-    #[test]
-    fn alert_settings_switch_the_builtin_rules() {
-        let a = AlertSettings {
-            hot_process: true,
-            thermal_serious: false,
-        };
-        let [hot, thermal] = a.rules();
-        assert!(hot.enabled && !thermal.enabled);
-        assert_eq!(hot.id, AlertRule::hot_process().id);
-        assert_ne!(hot.id, thermal.id);
     }
 
     #[test]

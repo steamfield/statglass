@@ -386,10 +386,43 @@ export const commands = {
 	 *  [`CommandError::SettingsNotSaved`] when `star-prompt.json` can't be written.
 	 */
 	actOnStarPrompt: (action: StarPromptAction) => typedError<StarPromptStatus, CommandError>(__TAURI_INVOKE("act_on_star_prompt", { action })),
+	/**
+	 *  Every destination with its last delivery, and why the file could not be read at
+	 *  launch, if it could not.
+	 */
+	alertDestinationsGet: () => __TAURI_INVOKE<AlertDestinationsView>("alert_destinations_get"),
+	/**
+	 *  Adds a destination, or replaces the one with its id.
+	 *
+	 *  # Errors
+	 *
+	 *  `invalid_argument` with the reason when it fails validation or would be one too
+	 *  many; `settings_not_saved` when the file cannot be written.
+	 */
+	alertDestinationSave: (destination: Destination) => typedError<AlertDestinationsView, CommandError>(__TAURI_INVOKE("alert_destination_save", { destination })),
+	/**
+	 *  Removes a destination.
+	 *
+	 *  # Errors
+	 *
+	 *  `invalid_argument` when no destination has `id`; `settings_not_saved` when the file
+	 *  cannot be written.
+	 */
+	alertDestinationDelete: (id: string) => typedError<AlertDestinationsView, CommandError>(__TAURI_INVOKE("alert_destination_delete", { id })),
+	/**
+	 *  Sends a test message to `destination`, saved or not, and returns what came of it.
+	 *  Takes up to the delivery's timeout and retries.
+	 *
+	 *  # Errors
+	 *
+	 *  `invalid_argument` with the reason when `destination` is invalid.
+	 */
+	alertDestinationTest: (destination: Destination) => typedError<DeliveryOutcome, CommandError>(__TAURI_INVOKE("alert_destination_test", { destination })),
 };
 
 /** Events */
 export const events = {
+	alertDestinationsChanged: makeEvent<AlertDestinationsChanged>("alert-destinations-changed"),
 	capabilitiesChanged: makeEvent<CapabilitiesChanged>("capabilities-changed"),
 	eventRecorded: makeEvent<EventRecorded>("event-recorded"),
 	historyHealthChanged: makeEvent<HistoryHealthChanged>("history-health-changed"),
@@ -404,6 +437,12 @@ export const events = {
 };
 
 /* Constants */
+export const ALERT_DESTINATION_LIMITS = {"max_destinations":8,"max_name_chars":40,"max_token_chars":256,"max_topic_chars":64,"max_url_chars":2048,"messages":{"name":"destination name must be 1 to 40 characters with no leading or trailing spaces","token":"access token must be at most 256 characters with no spaces","too_many":"at most 8 destinations can be saved","topic":"topic must be 1 to 64 letters, digits, hyphens or underscores","unknown_id":"no saved destination has that id","url":"address must start with http:// or https://, name a host, and be at most 2048 characters with no spaces, quotes or backslashes, with no user name or password in it"}} as const;
+
+export const ALERT_LIMITS = {"builtin_ids":["6b656c76-6f00-0000-0000-000000000001","6b656c76-6f00-0000-0000-000000000002","6b656c76-6f00-0000-0000-000000000003"],"host_offline_id":"6b656c76-6f00-0000-0000-000000000003","hot_process_id":"6b656c76-6f00-0000-0000-000000000001","label_keys":{"disk.free":["vol"],"fan.rpm":["fan"]},"max_cooldown_secs":86400,"max_custom":32,"max_for_secs":3600,"max_name_chars":60,"messages":{"cooldown":"cooldown must be between 1 minute and 24 hours","duplicate_id":"two rules share one id","duration":"duration must be at most 1 hour","labels":"a rule watches every series of its metric or one series named by a label it carries","metric":"metric {metric} cannot be alerted on; choose one of the listed metrics","name":"rule name must be 1 to 60 characters with no leading or trailing spaces","not_threshold":"a custom rule must be a threshold on one metric","reserved_id":"rule id belongs to a built-in rule","too_many":"at most 32 custom rules","value":"threshold is outside the range this metric accepts"},"min_cooldown_secs":60,"thermal_serious_id":"6b656c76-6f00-0000-0000-000000000002"} as const;
+
+export const ALERT_METRICS = [{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"CPU usage","max":100.0,"metric":"cpu.total","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"GPU usage","max":100.0,"metric":"gpu.util","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":80.0,"label":"Memory pressure","max":100.0,"metric":"mem.pressure","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":4000000000.0,"label":"Swap used","max":999999995904.0,"metric":"mem.swap_used","min":100000000.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":1000.0,"label":"Swapping out","max":1000000.0,"metric":"mem.swap_out","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":95.0,"label":"Hottest sensor","max":130.0,"metric":"thermal.hottest","min":30.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":4000.0,"label":"Fan speed","max":20000.0,"metric":"fan.rpm","min":500.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":60.0,"label":"System power","max":1000.0,"metric":"power.system","min":1.0},{"default_for_secs":0,"default_label":null,"default_op":"lt","default_value":20.0,"label":"Battery charge","max":100.0,"metric":"battery.charge","min":1.0},{"default_for_secs":0,"default_label":["vol","/"],"default_op":"lt","default_value":20000000000.0,"label":"Free disk space","max":100000000376832.0,"metric":"disk.free","min":100000000.0}] as const;
+
 export const CHART_WINDOWS = ["5m","15m","30m","1h"] as const;
 
 export const CHART_WINDOW_MS = {"15m":900000,"1h":3600000,"30m":1800000,"5m":300000} as const;
@@ -508,24 +547,160 @@ export type AgentUpdateProgress = {
 export type AgentUpdateVia = "push" | "add_host";
 
 /**  Why an alert fired. */
-export type AlertCause = { type: "process_cpu"; process: string; cpu_pct: number | null } | { type: "thermal_state"; state: ThermalState };
+export type AlertCause = { type: "process_cpu"; process: string; cpu_pct: number | null } | { type: "thermal_state"; state: ThermalState } |
+/**  A custom threshold rule held on the series `metric` with `labels`. */
+{ type: "threshold"; metric: MetricId; labels: Labels;
+/**  The series' value on the tick the rule fired, in the catalog unit. */
+value: number | null; op: Cmp;
+/**  The rule's threshold, in the catalog unit. */
+threshold: number | null;
+/**
+ *  The rule's `for_secs`, so the alert text names the rule's duration rather
+ *  than one measured from reading spacing.
+ */
+for_secs: number } |
+/**
+ *  A saved remote host stayed unreachable for the built-in host-offline rule's
+ *  time. The event's `start_ms` is when it was first seen unreachable.
+ */
+{ type: "host_offline"; host: HostId;
+/**  The host's name when the alert fired, so the text reads alone. */
+name: string } |
+/**  A host reported by [`AlertCause::HostOffline`] is reachable again. */
+{ type: "host_back"; host: HostId; name: string;
+/**  How long it was unreachable, in whole seconds. */
+offline_secs: number };
 
 /**
- *  The built-in alert rules (v1.2), each off until the user turns it on. Turning one on
- *  posts a one-off "Alerts are on" notification: macOS asks for notification permission
- *  on a first delivery, not when the app asks (D-084), so this brings the prompt up
- *  while the user is in Settings rather than with the first real alert.
+ *  Sent to every window when a destination is saved or deleted, or a delivery to one
+ *  finishes, so the Alerts page updates without a refetch.
+ */
+export type AlertDestinationsChanged = {
+	view: AlertDestinationsView,
+};
+
+/**  Every destination with its last delivery, as the Alerts page shows them. */
+export type AlertDestinationsView = {
+	/**
+	 *  In the order they were added. Returned in full, tokens included: this is the
+	 *  user's own window.
+	 */
+	destinations: DestinationView[],
+	/**
+	 *  Why the destinations file could not be read at launch (it was moved aside to
+	 *  `alert-destinations.json.bad`), `None` when it loaded or did not exist.
+	 */
+	load_error: string | null,
+};
+
+/**
+ *  What [`AlertRule::validate_custom`] and [`crate::AlertSettings::validate`] check, from
+ *  the constants and catalog the validation itself reads.
+ */
+export type AlertLimits = {
+	/**  [`AlertRule::MAX_CUSTOM`]. */
+	max_custom: number,
+	/**  [`AlertRule::MAX_NAME_CHARS`]. */
+	max_name_chars: number,
+	/**  [`AlertRule::MAX_FOR_SECS`]. */
+	max_for_secs: number,
+	/**  [`AlertRule::MIN_COOLDOWN_SECS`]. */
+	min_cooldown_secs: number,
+	/**  [`AlertRule::MAX_COOLDOWN_SECS`]. */
+	max_cooldown_secs: number,
+	/**  Ids a custom rule may not use. */
+	builtin_ids: string[],
+	/**  The id of the built-in "process above 200% CPU" rule, [`AlertRule::hot_process`]. */
+	hot_process_id: string,
+	/**
+	 *  The id of the built-in "thermal state Serious or worse" rule,
+	 *  [`AlertRule::thermal_serious`].
+	 */
+	thermal_serious_id: string,
+	/**  The id of the built-in "saved host offline" alert, [`AlertRule::HOST_OFFLINE_ID`]. */
+	host_offline_id: string,
+	/**
+	 *  The label key a rule on each alertable metric may select by; metrics with one
+	 *  unlabelled series are absent.
+	 */
+	label_keys: { [key in string]: string[] },
+	/**
+	 *  Each [`AlertRuleError`]'s Display text by a stable key ("name", "metric",
+	 *  "labels", "value", "duration", "cooldown", "reserved_id", "not_threshold",
+	 *  "too_many", "duplicate_id"). The "metric" text holds the placeholder `{metric}`
+	 *  where the error names the metric id, quoted.
+	 */
+	messages: { [key in string]: string },
+};
+
+/**  One alertable metric. */
+export type AlertMetric = {
+	/**  The catalog metric id. */
+	metric: string,
+	/**  What the metric is called in rule sentences and notifications. */
+	label: string,
+	/**  The comparison a new rule starts with. */
+	default_op: Cmp,
+	/**  The threshold a new rule starts with, in the catalog unit. */
+	default_value: number | null,
+	/**  How long a new rule's condition must hold, in seconds. */
+	default_for_secs: number,
+	/**  The lowest threshold a rule may use. */
+	min: number | null,
+	/**  The highest threshold a rule may use. */
+	max: number | null,
+	/**
+	 *  The series a new rule watches, as a `(key, value)` label, or `None` for every
+	 *  series of the metric. Disk rules start on the boot volume so a mounted installer
+	 *  image, which is always full, does not fire them.
+	 */
+	default_label: [string, string] | null,
+};
+
+export type AlertRule = {
+	id: string,
+	name: string,
+	when: Condition,
+	/**  How long the condition must hold before the rule fires. */
+	for_secs: number,
+	/**  Minimum time between two firings. */
+	cooldown_secs: number,
+	enabled: boolean,
+};
+
+/**
+ *  The built-in alert rules, each off until the user turns it on, and the custom rules.
+ *  Turning a rule on posts a one-off "Alerts are on" notification: macOS asks for
+ *  notification permission on a first delivery, not when the app asks (D-084), so this
+ *  brings the prompt up while the user is looking rather than with the first real alert.
  */
 export type AlertSettings = {
 	/**  [`AlertRule::hot_process`]: a process above 200% CPU for 5 minutes. */
 	hot_process: boolean,
 	/**  [`AlertRule::thermal_serious`]: thermal state Serious or worse. */
 	thermal_serious: boolean,
+	/**
+	 *  A saved host offline for 5 minutes. Absent from a file written before custom
+	 *  rules: off.
+	 */
+	host_offline?: boolean,
+	/**
+	 *  The user's threshold rules, at most [`AlertRule::MAX_CUSTOM`]. Absent from a file
+	 *  written before custom rules: none. An entry this build cannot decode (a condition
+	 *  from a newer build) is skipped on load.
+	 */
+	rules?: AlertRule[],
 };
 
+/**
+ *  A partial change to [`AlertSettings`]. `rules`, when present, replaces the whole
+ *  custom rule list; the patch path validates the result before anything is saved.
+ */
 export type AlertsPatch = {
 	hot_process?: boolean | null,
 	thermal_serious?: boolean | null,
+	host_offline?: boolean | null,
+	rules?: AlertRule[] | null,
 };
 
 /**  One app's bytes over a range. Bytes are exact below 2^53. */
@@ -725,6 +900,8 @@ export type ClusterInfo = {
 	dvfs_mhz: number[],
 };
 
+export type Cmp = "gt" | "ge" | "lt" | "le";
+
 export type CommandError = { kind: "update"; message: string } |
 /**  SSH login to the other Mac failed (key, agent or account). */
 { kind: "remote_auth"; message: string } |
@@ -814,6 +991,20 @@ export type CommandError = { kind: "update"; message: string } |
  */
 { kind: "public_ip"; message: string };
 
+export type Condition =
+/**  Any series matching `series` compared with `value` in the metric's unit. */
+({ threshold: {
+	series: SeriesSelector,
+	op: Cmp,
+	value: number | null,
+} }) & { process_cpu_above?: never; thermal_state_at_least?: never } |
+/**  `thermal.state` at or above this level. */
+({ thermal_state_at_least: ThermalState }) & { process_cpu_above?: never; threshold?: never } |
+/**  Any process above this CPU (percent of one core). */
+({ process_cpu_above: {
+	percent_of_core: number | null,
+} }) & { thermal_state_at_least?: never; threshold?: never };
+
 export type CoreKind = "performance" | "efficiency" |
 /**
  *  Every core is the same kind: a host without heterogeneous cores (most Linux
@@ -823,6 +1014,101 @@ export type CoreKind = "performance" | "efficiency" |
 "uniform" |
 /**  A core type this build does not know, from a newer peer (D-040). */
 "unknown";
+
+/**  Why a delivery failed, as far as the caller needs to tell failures apart. */
+export type DeliveryFailure =
+/**  The curl binary is not where it was expected. */
+"curl_missing" |
+/**  The server's name did not resolve. */
+"name_not_found" |
+/**  The server refused or could not be reached. */
+"connect_failed" |
+/**  No answer before the timeout. */
+"timed_out" |
+/**  The TLS handshake or certificate check failed. */
+"tls" |
+/**  The server answered with a status other than 2xx (redirects included). */
+"http" |
+/**
+ *  Refused before sending: the destination is invalid or a value holds a control
+ *  character.
+ */
+"rejected" |
+/**  Anything else; the detail carries curl's message. */
+"other";
+
+/**  What one delivery to a destination came to, after its retries. */
+export type DeliveryOutcome =
+/**  The server answered with this 2xx status. */
+{ kind: "delivered"; status: number } |
+/**
+ *  Nothing was delivered. `detail` is a short sentence for the destination row
+ *  ("HTTP 403", "Timed out after 10 s"); it never holds the URL or a token.
+ */
+{ kind: "failed"; reason: DeliveryFailure; detail: string };
+
+/**  The last delivery to a destination: when it finished and what it came to. */
+export type DeliveryRecord = {
+	/**  When the delivery finished, wall-clock ms. JS-safe (see the crate docs). */
+	at_ms: number,
+	outcome: DeliveryOutcome,
+};
+
+/**  One place a fired alert is sent to, saved in `alert-destinations.json`. */
+export type Destination = {
+	id: string,
+	/**
+	 *  What the user calls it ("Phone"). 1 to [`Destination::MAX_NAME_CHARS`]
+	 *  characters after trimming.
+	 */
+	name: string,
+	/**  A disabled destination is kept but receives nothing. */
+	enabled: boolean,
+	kind: DestinationKind,
+};
+
+/**  How a destination is reached. */
+export type DestinationKind =
+/**
+ *  An ntfy server (`https://ntfy.sh` or self-hosted) and topic, with an access token
+ *  for a protected topic. An empty token counts as no token.
+ */
+{ type: "ntfy"; server: string; topic: string; token: string | null } |
+/**
+ *  Any URL that accepts a JSON POST (Slack and Discord incoming webhooks read its
+ *  `text` and `content` fields).
+ */
+{ type: "webhook"; url: string };
+
+/**
+ *  The limits [`Destination::validate`] enforces and the text of every
+ *  [`DestinationError`], published to TypeScript as `ALERT_DESTINATION_LIMITS` so the
+ *  mock transport rejects what Rust rejects, in Rust's words.
+ */
+export type DestinationLimits = {
+	/**  [`MAX_DESTINATIONS`]. */
+	max_destinations: number,
+	/**  [`Destination::MAX_NAME_CHARS`]. */
+	max_name_chars: number,
+	/**  [`Destination::MAX_URL_CHARS`]. */
+	max_url_chars: number,
+	/**  [`Destination::MAX_TOPIC_CHARS`]. */
+	max_topic_chars: number,
+	/**  [`Destination::MAX_TOKEN_CHARS`]. */
+	max_token_chars: number,
+	/**
+	 *  Each [`DestinationError`]'s Display text by a stable key ("name", "url",
+	 *  "topic", "token", "too_many", "unknown_id").
+	 */
+	messages: { [key in string]: string },
+};
+
+/**  One destination and the last delivery to it. */
+export type DestinationView = {
+	destination: Destination,
+	/**  `None` until something has been sent to it since launch. */
+	last: DeliveryRecord | null,
+};
 
 /**  One block device a host's `disk.*` series cover. */
 export type DiskDevice = {
@@ -2892,7 +3178,7 @@ export type Settings = {
 	units: UnitSettings,
 	general: GeneralSettings,
 	onboarding: OnboardingSettings,
-	/**  Absent from a settings file written before v1.2: both alerts off. */
+	/**  Absent from a settings file written before v1.2: every alert off. */
 	alerts?: AlertSettings,
 };
 

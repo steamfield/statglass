@@ -579,6 +579,8 @@ Acceptance: a pinned remote temperature updates every 5 s and shows "–" within
 
 #### Phase 4.2c: Remote alerts and host offline
 
+The host-offline rule and its recovery notice are implemented on the controller (D-138, [rfc-alerts.md](rfc-alerts.md)). Rule scopes, agent-side evaluation and `AlertFired` handling remain open.
+
 - [ ] `RuleScope::Host` and `RuleScope::AllRemote`; Scope field in the editor
 - [ ] `AlertRules` push on change and on handshake; agent persists and evaluates them
 - [ ] `AlertFired` handling, `delivered_alerts` dedupe, collapsed notification for alerts older than 15 minutes

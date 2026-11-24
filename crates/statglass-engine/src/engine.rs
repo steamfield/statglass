@@ -73,7 +73,7 @@ pub const STALE_DEN: i64 = 2;
 const ERROR_LOG_EVERY_MS: i64 = 60_000;
 
 /// What the engine needs from settings.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EngineSettings {
     /// Base tick chosen by the user, one of `SamplingSettings::INTERVALS_MS`.
     pub interval_ms: u32,
@@ -84,7 +84,7 @@ pub struct EngineSettings {
     /// Modules the menu bar shows a value from ([`Settings::menu_bar_shows`]). Their
     /// `Interest::Live` collectors run every tick with no window open (D-067).
     pub menu_bar: BTreeSet<Module>,
-    /// The built-in alert rules switched on.
+    /// The alert rules: the built-in switches and the custom rules.
     pub alerts: AlertSettings,
     /// The Performance mode setting. Low Power Mode turns the mode on as well; the
     /// engine resolves both at tick time ([`PerformanceReason::resolve`], D-088).
@@ -108,7 +108,7 @@ impl EngineSettings {
             slow_on_battery: s.sampling.slow_on_battery,
             disabled,
             menu_bar,
-            alerts: s.alerts,
+            alerts: s.alerts.clone(),
             performance_mode: s.sampling.performance_mode,
         }
     }
@@ -297,7 +297,7 @@ impl Engine {
             })
             .collect();
         let interval_ms = settings.interval_ms;
-        let detect = Detectors::new(DetectorThresholds::DEFAULT, settings.alerts);
+        let detect = Detectors::new(DetectorThresholds::DEFAULT, &settings.alerts);
         Self {
             host,
             catalog: Catalog::builtin(),

@@ -662,23 +662,49 @@ fn window_open_ticks_stay_within_allocation_and_call_budgets() {
 fn detectors_allocate_nothing_per_tick() {
     use statglass_engine::ProcessSample;
     use statglass_engine::detect::Detectors;
-    use statglass_schema::{AlertSettings, DetectorThresholds, SeriesKey};
+    use statglass_schema::{
+        AlertRule, AlertSettings, Cmp, Condition, DetectorThresholds, Labels, MetricId, SeriesKey,
+        SeriesSelector,
+    };
 
+    // Two custom rules on: one that fires inside the warm-up and then holds its state
+    // through the measured ticks, and one that never holds.
+    let custom = |n: u128, metric: &'static str, value: f32, cooldown_secs: u32| AlertRule {
+        id: uuid::Uuid::from_u128(0xc000 + n),
+        name: format!("Rule {n}"),
+        when: Condition::Threshold {
+            series: SeriesSelector {
+                metric: MetricId::from_static(metric),
+                labels: Labels::new(),
+            },
+            op: Cmp::Gt,
+            value,
+        },
+        for_secs: 0,
+        cooldown_secs,
+        enabled: true,
+    };
     let series: Vec<SeriesKey> = [
         "fan.rpm{fan=0}",
         "fan.rpm{fan=1}",
         "thermal.state",
         "power.package",
         "power.ane",
+        "mem.pressure",
     ]
     .iter()
     .map(|k| SeriesKey::parse(k).unwrap())
     .collect();
     let mut d = Detectors::new(
         DetectorThresholds::DEFAULT,
-        AlertSettings {
+        &AlertSettings {
             hot_process: true,
             thermal_serious: true,
+            rules: vec![
+                custom(1, "mem.pressure", 1.0, 3600),
+                custom(2, "fan.rpm", 100_000.0, 1800),
+            ],
+            ..AlertSettings::default()
         },
     );
     d.bind(&series);
@@ -716,9 +742,10 @@ fn detectors_allocate_nothing_per_tick() {
             before = allocs();
         }
         let wobble = (t % 7) as f32;
-        let values = [1800.0 + wobble, 1700.0, 0.0, 4.0 + wobble / 10.0, 0.0];
-        d.on_tick(T0 + t * 1000, &values, &[1000; 5], Some(&rows), &mut out);
-        // The sustained run reports at 120 s, inside warm-up; the alert needs 300 s.
+        let values = [1800.0 + wobble, 1700.0, 0.0, 4.0 + wobble / 10.0, 0.0, 40.0];
+        d.on_tick(T0 + t * 1000, &values, &[1000; 6], Some(&rows), &mut out);
+        // The sustained run reports at 120 s and the memory rule on the first tick, both
+        // inside warm-up; the process alert needs 300 s.
         if t < warmup - 1 {
             out.clear();
         }

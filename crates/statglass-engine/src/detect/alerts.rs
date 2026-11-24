@@ -15,6 +15,9 @@
 //! The process rule fires once for every process whose run completed on that batch:
 //! one alert naming them all (hottest first, `cause` the hottest), since a second alert
 //! on the same tick would only be held off by the cooldown and lost.
+//!
+//! A custom threshold rule fires for the first matching series to hold, naming it
+//! ([`ThresholdState`]).
 
 use std::sync::Arc;
 
@@ -23,6 +26,7 @@ use statglass_schema::{
 };
 
 use super::detectors::Runs;
+use super::threshold::ThresholdState;
 use super::{Detector, TickInput, find, value};
 
 enum State {
@@ -33,9 +37,11 @@ enum State {
         since: Option<i64>,
         fired: bool,
     },
-    /// A condition this build does not evaluate (series thresholds have no built-in rule
-    /// yet); the rule never fires.
-    Unsupported,
+    Threshold {
+        eval: ThresholdState,
+        /// The layout the rule is bound to, to name the series that held.
+        layout: Vec<SeriesKey>,
+    },
 }
 
 pub struct AlertEval {
@@ -71,7 +77,10 @@ impl AlertEval {
                 since: None,
                 fired: false,
             },
-            Condition::Threshold { .. } => State::Unsupported,
+            Condition::Threshold { series, op, value } => State::Threshold {
+                eval: ThresholdState::new(series.clone(), *op, *value, for_ms),
+                layout: Vec::new(),
+            },
         };
         Self {
             rule,
@@ -112,6 +121,21 @@ impl AlertEval {
         };
     }
 
+    /// Swaps in an edit of the same definition (a new name, cooldown or switch): the
+    /// progress and the episode already reported stay, later alerts carry the new name
+    /// and the cooldown is read from the new rule. Switching off forgets progress, as
+    /// [`Self::set_enabled`] does.
+    pub(super) fn set_rule(&mut self, rule: AlertRule) {
+        self.set_enabled(rule.enabled);
+        self.rule = rule;
+    }
+
+    /// Takes over `previous`'s last firing, for a rule whose definition changed: the
+    /// new evaluator starts its progress over but stays held off by the old cooldown.
+    pub(super) fn keep_cooldown_from(&mut self, previous: &AlertEval) {
+        self.last_fired = previous.last_fired;
+    }
+
     /// Past the cooldown at `ts`. A clock that stepped back before the last firing does
     /// not hold the rule off.
     fn cooled(&self, ts: i64) -> bool {
@@ -136,10 +160,18 @@ impl AlertEval {
 
 impl Detector for AlertEval {
     fn bind(&mut self, series: &[SeriesKey]) {
-        if let State::Thermal { idx, .. } = &mut self.state {
-            *idx = find(series, "thermal.state");
-        }
+        // Forget progress before binding, so a reported episode in progress is noted
+        // before the new binding wipes it.
         self.reset();
+        match &mut self.state {
+            State::Thermal { idx, .. } => *idx = find(series, "thermal.state"),
+            State::Threshold { eval, layout } => {
+                eval.bind(series);
+                layout.clear();
+                layout.extend_from_slice(series);
+            }
+            State::Process(_) => {}
+        }
     }
 
     fn on_tick(&mut self, input: &TickInput<'_>, out: &mut Vec<Event>) {
@@ -221,7 +253,13 @@ impl Detector for AlertEval {
                     fired = Some((start, Vec::new(), AlertCause::ThermalState { state }));
                 }
             }
-            State::Unsupported => {}
+            State::Threshold { eval, layout } => {
+                let resumed = !matches!(
+                    std::mem::replace(&mut self.resumed, Resumed::No),
+                    Resumed::No
+                );
+                fired = threshold_tick(&self.rule, eval, layout, input, cooled, resumed);
+            }
         }
         if let Some((since, processes, cause)) = fired {
             out.push(self.alert(ts, since, processes, cause));
@@ -249,7 +287,49 @@ impl Detector for AlertEval {
                 *since = None;
                 *fired = false;
             }
-            State::Unsupported => {}
+            State::Threshold { eval, .. } => {
+                if eval.reset() {
+                    self.resumed = Resumed::Episode;
+                }
+            }
         }
     }
+}
+
+/// One tick of a threshold rule: the alert to raise, as (since, processes, cause), when
+/// a bound series completed its hold outside the cooldown.
+///
+/// On the first tick after progress was forgotten inside a reported episode (`resumed`)
+/// and within the cooldown, the episode is marked reported up front, so a condition
+/// still met is that episode and not a new one.
+fn threshold_tick(
+    rule: &AlertRule,
+    eval: &mut ThresholdState,
+    layout: &[SeriesKey],
+    input: &TickInput<'_>,
+    cooled: bool,
+    resumed: bool,
+) -> Option<(i64, Vec<String>, AlertCause)> {
+    if resumed && !cooled {
+        eval.mark_reported();
+    }
+    let held = eval.on_reading(input.ts_ms, input.values, input.periods)?;
+    // A hold that completes inside the cooldown is spent.
+    eval.mark_reported();
+    if !cooled {
+        return None;
+    }
+    let Condition::Threshold { op, value, .. } = &rule.when else {
+        return None;
+    };
+    let key = layout.get(held.key_index)?;
+    let cause = AlertCause::Threshold {
+        metric: key.metric.clone(),
+        labels: key.labels.clone(),
+        value: held.value,
+        op: *op,
+        threshold: *value,
+        for_secs: rule.for_secs,
+    };
+    Some((held.since, Vec::new(), cause))
 }

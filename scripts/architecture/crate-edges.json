@@ -39,12 +39,14 @@
       "statglass-engine",
       "statglass-remote",
       "statglass-update",
-      "statglass-query"
+      "statglass-query",
+      "statglass-notify"
     ],
     "dev": []
   },
   "statglass-update": { "normal": [], "dev": [] },
   "statglass-query": { "normal": ["statglass-schema"], "dev": [] },
+  "statglass-notify": { "normal": ["statglass-schema"], "dev": [] },
   "statglass-cli": {
     "normal": ["statglass-query", "statglass-schema"],
     "dev": []

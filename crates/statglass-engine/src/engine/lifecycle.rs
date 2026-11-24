@@ -164,12 +164,12 @@ impl Engine {
             return;
         }
         if next.alerts != self.settings.alerts {
-            self.detect.set_alerts(next.alerts);
+            self.detect.set_alerts(&next.alerts);
         }
         let was_network_off = self.settings.disabled.contains(&Module::Network);
         let cadence_only = EngineSettings {
             menu_bar: next.menu_bar.clone(),
-            alerts: next.alerts,
+            alerts: next.alerts.clone(),
             performance_mode: next.performance_mode,
             ..self.settings.clone()
         } == next;

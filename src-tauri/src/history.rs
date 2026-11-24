@@ -8,7 +8,10 @@ use crate::ipc::{
 };
 use statglass_engine::{HistoryStore, HousekeepingHandle};
 use statglass_schema::lock::LockExt;
-use statglass_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier, TimeRange};
+use statglass_schema::{
+    AlertSettings, Event, EventDetail, HostId, HostRecord, Labels, MetricId, SeriesKey, Tier,
+    TimeRange,
+};
 use statglass_store::{
     BucketRow, ExportQuery, HistoryQuery, HistoryResult, ProcResolution, RangeStats, Reader,
     Retention, TierChoice, Writer,
@@ -99,6 +102,38 @@ impl History {
     }
     pub fn reset(&self, now_ms: i64) -> Result<Writer, CommandError> {
         Ok(self.storage.reset(now_ms)?)
+    }
+    /// The alert events of the last [`statglass_engine::detect::alert_history_ms`] for
+    /// `alerts`, which the engine seeds its alert cooldowns from so a restart does not
+    /// re-fire a rule. Empty when history is unavailable or the read fails: the rules then
+    /// start with no cooldown. One small indexed query at launch.
+    pub fn recent_alerts(&self, host: HostId, now: i64, alerts: &AlertSettings) -> Vec<Event> {
+        if !self.is_available() {
+            return Vec::new();
+        }
+        let from = now - statglass_engine::detect::alert_history_ms(alerts);
+        match self.alerts_since(host, from, now) {
+            Ok(events) => events,
+            Err(e) => {
+                tracing::warn!("reading recent alerts, alert cooldowns start fresh: {e:?}");
+                Vec::new()
+            }
+        }
+    }
+    /// The alert events `host` recorded from `from_ms` through `now`. An error when
+    /// history is unavailable or the read fails; callers check
+    /// [`History::is_available`] first when the two need telling apart.
+    pub fn alerts_since(
+        &self,
+        host: HostId,
+        from_ms: i64,
+        now: i64,
+    ) -> Result<Vec<Event>, CommandError> {
+        let events = self.read(|r| r.events(host, from_ms, now.saturating_add(1)))?;
+        Ok(events
+            .into_iter()
+            .filter(|e| matches!(e.detail, EventDetail::Alert { .. }))
+            .collect())
     }
     pub fn spawn_pruner(
         &self,

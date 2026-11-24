@@ -20,6 +20,7 @@ statglass-engine = { path = "crates/statglass-engine" }
 statglass-remote = { path = "crates/statglass-remote" }
 statglass-update = { path = "crates/statglass-update" }
 statglass-query = { path = "crates/statglass-query" }
+statglass-notify = { path = "crates/statglass-notify" }
 
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"

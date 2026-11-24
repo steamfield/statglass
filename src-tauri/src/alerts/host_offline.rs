@@ -1,0 +1,362 @@
+//! The built-in "saved host offline" rule as a pure state machine (plan/rfc-alerts.md
+//! 4.10, 6.1): fed what each saved host looked like at one moment, it says when a host
+//! has stayed unreachable for the rule's time and when it comes back. No clock and no
+//! I/O: the caller passes the time of every observation.
+//!
+//! Time counts only across consecutive observations at most `max_step_ms` apart, so a
+//! Mac that slept between two polls never counts its sleep toward the five minutes. A
+//! longer step (or the clock going backwards) restarts every host's count. A host
+//! already reported offline stays reported across such a step, so it still gets its
+//! [`HostNotice::Back`] when it is reachable again; the span it reports then ends at
+//! the last observation that saw the host down, since nobody saw when it came back.
+
+use std::collections::BTreeMap;
+
+use statglass_schema::HostId;
+
+/// What one saved host looked like at one poll.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostObservation {
+    /// The saved host.
+    pub host: HostId,
+    /// The host's name, carried into its notices.
+    pub name: String,
+    /// The host's session is connected.
+    pub reachable: bool,
+    /// Whether this observation may count toward the rule at all: false while the
+    /// user has switched the host's connection off, an agent update is running, or
+    /// this Mac has no network.
+    pub counts: bool,
+}
+
+/// What the watch reports about one host.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HostNotice {
+    /// The host has been unreachable for the rule's time, counted from `since_ms`,
+    /// the observation it was first seen unreachable at.
+    Offline {
+        /// The saved host.
+        host: HostId,
+        /// Its name at this observation.
+        name: String,
+        /// When the unreachable run that reached the rule's time began.
+        since_ms: i64,
+    },
+    /// A host reported [`HostNotice::Offline`] is reachable again, after being
+    /// unreachable for `offline_ms` since `since_ms`.
+    Back {
+        /// The saved host.
+        host: HostId,
+        /// Its name at this observation, which may differ from the offline notice's.
+        name: String,
+        /// When the reported unreachable run began.
+        since_ms: i64,
+        /// Up to this observation when the previous one was at most `max_step_ms`
+        /// earlier; otherwise up to the last observation that saw the host down, a
+        /// lower bound. Never negative.
+        offline_ms: i64,
+    },
+}
+
+/// A host an earlier run of the app reported offline, with no recovery stored since.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReportedHost {
+    /// The saved host.
+    pub host: HostId,
+    /// When its reported unreachable run began.
+    pub since_ms: i64,
+}
+
+/// Where one host stands. A host that is reachable, or not counted and not reported,
+/// has no entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Track {
+    /// Unreachable since `since_ms`, not yet for the rule's time.
+    Counting { since_ms: i64 },
+    /// Reported offline; unreachable since `since_ms`, last seen down at
+    /// `last_down_ms`.
+    Reported { since_ms: i64, last_down_ms: i64 },
+    /// Reported offline by an earlier run, down since `since_ms`, and not yet seen by
+    /// a counted observation of this one.
+    Seeded { since_ms: i64 },
+}
+
+/// The watch over every saved host.
+#[derive(Debug)]
+pub struct HostOfflineWatch {
+    /// Observed unreachable time after which a host is offline.
+    after_ms: i64,
+    /// The longest gap between two observations that still counts as observed time.
+    max_step_ms: i64,
+    /// When the previous observation was made, `None` before the first.
+    last_ms: Option<i64>,
+    hosts: BTreeMap<HostId, Track>,
+}
+
+impl HostOfflineWatch {
+    /// A watch that reports a host offline after `after_ms` of observed unreachable
+    /// time, counting only steps of at most `max_step_ms`.
+    pub fn new(after_ms: i64, max_step_ms: i64) -> Self {
+        Self {
+            after_ms,
+            max_step_ms,
+            last_ms: None,
+            hosts: BTreeMap::new(),
+        }
+    }
+
+    /// Takes every saved host as observed at `now_ms` and returns the notices this
+    /// observation produces, at most one per host. A host missing from `hosts` was
+    /// removed: it is forgotten without a notice.
+    pub fn observe(&mut self, now_ms: i64, hosts: &[HostObservation]) -> Vec<HostNotice> {
+        let continuous = self
+            .last_ms
+            .is_some_and(|last| (0..=self.max_step_ms).contains(&now_ms.saturating_sub(last)));
+        self.last_ms = Some(now_ms);
+        self.hosts
+            .retain(|id, _| hosts.iter().any(|seen| seen.host == *id));
+        hosts
+            .iter()
+            .filter_map(|seen| {
+                let before = self.hosts.get(&seen.host).copied();
+                let (after, notice) = step(before, seen, now_ms, continuous, self.after_ms);
+                match after {
+                    Some(track) => self.hosts.insert(seen.host, track),
+                    None => self.hosts.remove(&seen.host),
+                };
+                notice
+            })
+            .collect()
+    }
+
+    /// Starts each of `reported` as reported offline by an earlier run, so a launch
+    /// does not announce it again. Its first counted observation decides: reachable,
+    /// it is forgotten without a notice, since nothing was watching when it recovered
+    /// (the rule may have been off); unreachable, it is an ordinary reported host from
+    /// `since_ms`, which gets its [`HostNotice::Back`] when it returns. A host missing
+    /// from an observation is forgotten as any removed host is.
+    pub fn seed(&mut self, reported: impl IntoIterator<Item = ReportedHost>) {
+        for seed in reported {
+            let track = Track::Seeded {
+                since_ms: seed.since_ms,
+            };
+            self.hosts.insert(seed.host, track);
+        }
+    }
+
+    /// Forgets every host, as when the rule is switched off.
+    pub fn reset(&mut self) {
+        self.last_ms = None;
+        self.hosts.clear();
+    }
+}
+
+/// One host's move from `before` given `seen` at `now_ms`. `continuous` says whether
+/// the time since the previous observation counts.
+fn step(
+    before: Option<Track>,
+    seen: &HostObservation,
+    now_ms: i64,
+    continuous: bool,
+    after_ms: i64,
+) -> (Option<Track>, Option<HostNotice>) {
+    match before {
+        Some(Track::Reported {
+            since_ms,
+            last_down_ms,
+        }) => reported_step(since_ms, last_down_ms, seen, now_ms, continuous),
+        Some(Track::Seeded { since_ms }) => (seeded_step(since_ms, seen, now_ms), None),
+        Some(Track::Counting { since_ms }) if continuous => {
+            counting_step(Some(since_ms), seen, now_ms, after_ms)
+        }
+        _ => counting_step(None, seen, now_ms, after_ms),
+    }
+}
+
+/// A host seeded from an earlier run: kept until a counted observation, then
+/// forgotten when reachable or reported (from `since_ms`) when not. Never a notice.
+fn seeded_step(since_ms: i64, seen: &HostObservation, now_ms: i64) -> Option<Track> {
+    if !seen.counts {
+        return Some(Track::Seeded { since_ms });
+    }
+    (!seen.reachable).then_some(Track::Reported {
+        since_ms,
+        last_down_ms: now_ms,
+    })
+}
+
+/// A reported host: back once a counted observation sees it reachable, otherwise
+/// still reported, remembering its last counted unreachable observation.
+fn reported_step(
+    since_ms: i64,
+    last_down_ms: i64,
+    seen: &HostObservation,
+    now_ms: i64,
+    continuous: bool,
+) -> (Option<Track>, Option<HostNotice>) {
+    if !seen.counts {
+        let still = Track::Reported {
+            since_ms,
+            last_down_ms,
+        };
+        return (Some(still), None);
+    }
+    if !seen.reachable {
+        let still = Track::Reported {
+            since_ms,
+            last_down_ms: now_ms,
+        };
+        return (Some(still), None);
+    }
+    let until_ms = if continuous { now_ms } else { last_down_ms };
+    let back = HostNotice::Back {
+        host: seen.host,
+        name: seen.name.clone(),
+        since_ms,
+        offline_ms: until_ms.saturating_sub(since_ms).max(0),
+    };
+    (None, Some(back))
+}
+
+/// A host not yet reported: `counting_since` is the start of its unreachable run when
+/// the count carries on from the previous observation.
+fn counting_step(
+    counting_since: Option<i64>,
+    seen: &HostObservation,
+    now_ms: i64,
+    after_ms: i64,
+) -> (Option<Track>, Option<HostNotice>) {
+    if seen.reachable || !seen.counts {
+        return (None, None);
+    }
+    let since_ms = counting_since.unwrap_or(now_ms);
+    if now_ms.saturating_sub(since_ms) < after_ms {
+        return (Some(Track::Counting { since_ms }), None);
+    }
+    let offline = HostNotice::Offline {
+        host: seen.host,
+        name: seen.name.clone(),
+        since_ms,
+    };
+    let reported = Track::Reported {
+        since_ms,
+        last_down_ms: now_ms,
+    };
+    (Some(reported), Some(offline))
+}
+
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    use super::*;
+
+    const MIN: i64 = 60_000;
+    const HOST: HostId = HostId(Uuid::from_u128(7));
+
+    fn seen(name: &str, reachable: bool, counts: bool) -> HostObservation {
+        HostObservation {
+            host: HOST,
+            name: name.into(),
+            reachable,
+            counts,
+        }
+    }
+
+    /// A watch on the production timings that has just reported `HOST` offline, with
+    /// the unreachable run starting at 0 and the last observation at 5 minutes.
+    fn reported() -> HostOfflineWatch {
+        let mut watch = HostOfflineWatch::new(5 * MIN, 90_000);
+        for step in 0..10 {
+            assert_eq!(watch.observe(step * 30_000, &[seen("a", false, true)]), []);
+        }
+        let notices = watch.observe(5 * MIN, &[seen("a", false, true)]);
+        assert_eq!(
+            notices,
+            [HostNotice::Offline {
+                host: HOST,
+                name: "a".into(),
+                since_ms: 0
+            }]
+        );
+        watch
+    }
+
+    /// The Back notice for `HOST` under `name`, for the run [`reported`] started at 0.
+    fn back(name: &str, offline_ms: i64) -> HostNotice {
+        HostNotice::Back {
+            host: HOST,
+            name: name.into(),
+            since_ms: 0,
+            offline_ms,
+        }
+    }
+
+    #[test]
+    fn a_host_back_after_this_mac_slept_reports_only_the_time_it_was_seen_down() {
+        let mut watch = reported();
+        assert_eq!(
+            watch.observe(5 * MIN + 30_000, &[seen("a", false, true)]),
+            []
+        );
+        // This Mac sleeps nine hours; the host recovered at some unseen point.
+        let notices = watch.observe(9 * 60 * MIN, &[seen("a", true, true)]);
+        assert_eq!(notices, [back("a", 5 * MIN + 30_000)]);
+    }
+
+    #[test]
+    fn a_clock_stepping_backwards_never_gives_a_negative_span() {
+        let mut watch = reported();
+        assert_eq!(watch.observe(-10 * MIN, &[seen("a", false, true)]), []);
+        let notices = watch.observe(-10 * MIN + 30_000, &[seen("a", true, true)]);
+        assert_eq!(notices, [back("a", 0)]);
+    }
+
+    #[test]
+    fn a_reported_host_still_unreachable_after_a_sleep_is_not_reported_again() {
+        let mut watch = reported();
+        assert_eq!(watch.observe(60 * MIN, &[seen("a", false, true)]), []);
+        assert_eq!(watch.observe(70 * MIN, &[seen("a", false, true)]), []);
+    }
+
+    #[test]
+    fn a_host_renamed_while_offline_comes_back_under_its_new_name() {
+        let mut watch = reported();
+        assert_eq!(
+            watch.observe(5 * MIN + 30_000, &[seen("b", false, true)]),
+            []
+        );
+        let notices = watch.observe(6 * MIN, &[seen("b", true, true)]);
+        assert_eq!(notices, [back("b", 6 * MIN)]);
+    }
+
+    #[test]
+    fn a_reported_host_is_not_back_until_a_counted_observation_sees_it() {
+        let mut watch = reported();
+        // Connected but mid agent update: not this rule's business yet.
+        assert_eq!(
+            watch.observe(5 * MIN + 30_000, &[seen("a", true, false)]),
+            []
+        );
+        let notices = watch.observe(6 * MIN, &[seen("a", true, true)]);
+        assert_eq!(notices, [back("a", 6 * MIN)]);
+    }
+
+    #[test]
+    fn the_clock_going_backwards_restarts_the_count() {
+        let mut watch = HostOfflineWatch::new(5 * MIN, 90_000);
+        assert_eq!(watch.observe(10 * MIN, &[seen("a", false, true)]), []);
+        let mut notices = Vec::new();
+        for step in 0..=10 {
+            notices.extend(watch.observe(4 * MIN + step * 30_000, &[seen("a", false, true)]));
+        }
+        assert_eq!(
+            notices,
+            [HostNotice::Offline {
+                host: HOST,
+                name: "a".into(),
+                since_ms: 4 * MIN
+            }]
+        );
+    }
+}

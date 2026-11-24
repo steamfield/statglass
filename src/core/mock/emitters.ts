@@ -1,4 +1,5 @@
 import type {
+  AlertDestinationsView,
   CapabilitiesChanged,
   EventRecorded,
   HistoryHealthChanged,
@@ -25,6 +26,7 @@ export function createMockEmitters() {
     remotes: createEmitter<RemoteHostsChanged>(),
     event: createEmitter<EventRecorded>(),
     starPrompt: createEmitter<StarPromptStatus>(),
+    alertDestinations: createEmitter<AlertDestinationsView>(),
   };
 }
 export type MockEmitters = ReturnType<typeof createMockEmitters>;
