@@ -4,7 +4,7 @@
 use statglass_schema::HostId;
 use uuid::Uuid;
 
-use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch};
+use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch, ReportedHost};
 
 const STEP: i64 = 30_000;
 const MIN: i64 = 60_000;
@@ -197,4 +197,43 @@ fn reset_forgets_every_host() {
     });
     // Host 1 coming back is no news after a reset; host 2 starts a fresh count.
     assert_eq!(after, [(start + 5 * MIN, offline(2, start))]);
+}
+
+// ---- seeded from an earlier run ----------------------------------------------------
+
+/// `n` as an earlier run reported it: down since `since_ms`, reported at `last_down_ms`.
+fn reported_earlier(n: u128, since_ms: i64, last_down_ms: i64) -> ReportedHost {
+    ReportedHost {
+        host: host(n),
+        since_ms,
+        last_down_ms,
+    }
+}
+
+#[test]
+fn a_seeded_host_still_unreachable_gives_nothing() {
+    let mut w = watch();
+    w.seed([reported_earlier(1, -3 * 60 * MIN, -3 * 60 * MIN + 5 * MIN)]);
+    let notices = run(&mut w, 0, 60 * MIN, |_| vec![seen(1, false)]);
+    assert_eq!(notices, []);
+}
+
+#[test]
+fn a_seeded_host_reachable_at_launch_gives_one_back_from_its_stored_start() {
+    let mut w = watch();
+    let since = -3 * 60 * MIN;
+    let reported_at = since + 5 * MIN;
+    w.seed([reported_earlier(1, since, reported_at)]);
+    let notices = run(&mut w, 0, 30 * MIN, |_| vec![seen(1, true)]);
+    // Nobody watched between the report and launch: the span ends at the report.
+    assert_eq!(notices, [(0, back(1, since, reported_at - since))]);
+}
+
+#[test]
+fn a_seeded_host_no_longer_saved_is_forgotten() {
+    let mut w = watch();
+    w.seed([reported_earlier(1, -10 * MIN, -5 * MIN)]);
+    assert_eq!(run(&mut w, 0, MIN, |_| vec![seen(2, true)]), []);
+    // Saved again later, it is a new host to the watch: reachable gives no Back.
+    assert_eq!(run(&mut w, 90_000, 5 * MIN, |_| vec![seen(1, true)]), []);
 }

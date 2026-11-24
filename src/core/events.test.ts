@@ -106,22 +106,24 @@ describe("alertLabel", () => {
   it("leaves out the Alert lead for a list of alerts", () => {
     expect(
       alertLabel(
-        alert({ type: "host_offline", host: "remote-linux", name: "m1-linux" })
+        alert({ type: "host_offline", host: "remote-linux", name: "m1-linux" }),
+        null
       )
     ).toBe("m1-linux is offline");
     expect(
       alertLabel(
-        alert({ type: "process_cpu", process: "ffmpeg", cpu_pct: 251 })
+        alert({ type: "process_cpu", process: "ffmpeg", cpu_pct: 251 }),
+        null
       )
     ).toBe("ffmpeg at 251% CPU");
     expect(
-      alertLabel(alert({ type: "thermal_state", state: "critical" }))
+      alertLabel(alert({ type: "thermal_state", state: "critical" }), null)
     ).toBe("Thermal state Critical");
   });
 
   it("reads any other event as eventLabel does", () => {
     const fans = ev(0, { kind: "fans_ramped", from_rpm: 1, to_rpm: 2 });
-    expect(alertLabel(fans)).toBe(eventLabel(fans));
+    expect(alertLabel(fans, null)).toBe(eventLabel(fans));
   });
 
   it("shows an unknown figure as ? rather than 0", () => {

@@ -97,13 +97,25 @@ const BAD_URLS = [
 ];
 
 const CASES: [string, Destination, Rule | null][] = [
-  ...["P", "Phone", "  Phone  ", "n".repeat(40), ` ${"n".repeat(40)} `].map(
+  ...["P", "Phone", "My phone", "n".repeat(40)].map(
     (name): [string, Destination, null] => [`name ${name}`, named(name), null]
   ),
   ["name of 40 accented letters", named("é".repeat(40)), null],
-  ...["", "   ", "\t", "n".repeat(41)].map(
-    (name): [string, Destination, Rule] => [`name ${name}`, named(name), "name"]
-  ),
+  ...[
+    "",
+    "   ",
+    "\t",
+    "n".repeat(41),
+    "  Phone  ",
+    " Phone",
+    "Phone\n",
+    "Phone ",
+    ` ${"n".repeat(40)} `,
+  ].map((name): [string, Destination, Rule] => [
+    `name ${name}`,
+    named(name),
+    "name",
+  ]),
   ...[
     "https://ntfy.sh",
     "http://ntfy.local:8080",

@@ -1,11 +1,11 @@
 //! Glue between the remote hosts' statuses and [`HostOfflineWatch`]: a status becomes a
 //! [`HostObservation`], a [`HostNotice`] becomes the alert [`Event`] the store, the
-//! notifier and the destinations take. Thin; the rule itself is in
-//! [`super::host_offline`].
+//! notifier and the destinations take; at launch, the stored alerts say which hosts are
+//! still reported offline. Thin; the rule itself is in [`super::host_offline`].
 
-use statglass_schema::{AlertCause, AlertRule, Event, EventDetail};
+use statglass_schema::{AlertCause, AlertRule, Event, EventDetail, HostId};
 
-use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch};
+use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch, ReportedHost};
 use crate::remote::{RemoteFailureKind, RemoteState, SavedHostStatus};
 
 /// The `rule_name` of every host-offline alert.
@@ -65,6 +65,52 @@ pub fn notice_event(notice: HostNotice, now_ms: i64) -> Event {
             rule_name: HOST_OFFLINE_RULE_NAME.into(),
             cause,
         },
+    }
+}
+
+/// How far back the stored alerts are read at launch for hosts already reported
+/// offline. A host whose last offline alert is older is counted from scratch.
+pub const SEED_LOOK_BACK_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
+/// The hosts among `saved` that an earlier run reported offline and never reported
+/// back, from this Mac's `stored` alert events at `now_ms`: for each host, its newest
+/// host-offline-rule event within [`SEED_LOOK_BACK_MS`], when that event is a
+/// [`AlertCause::HostOffline`]. Its `start_ms` is when the run began, its `ts_ms` the
+/// last time the host was known down.
+pub fn reported_hosts(stored: &[Event], saved: &[HostId], now_ms: i64) -> Vec<ReportedHost> {
+    let from_ms = now_ms.saturating_sub(SEED_LOOK_BACK_MS);
+    saved
+        .iter()
+        .filter_map(|host| {
+            let newest = stored
+                .iter()
+                .filter(|e| e.ts_ms >= from_ms && cause_host(e) == Some(*host))
+                .max_by_key(|e| e.ts_ms)?;
+            let EventDetail::Alert {
+                cause: AlertCause::HostOffline { .. },
+                ..
+            } = newest.detail
+            else {
+                return None;
+            };
+            Some(ReportedHost {
+                host: *host,
+                since_ms: newest.start_ms,
+                last_down_ms: newest.ts_ms,
+            })
+        })
+        .collect()
+}
+
+/// The host a host-offline-rule alert is about; `None` for any other event.
+fn cause_host(event: &Event) -> Option<HostId> {
+    match &event.detail {
+        EventDetail::Alert {
+            rule_id,
+            cause: AlertCause::HostOffline { host, .. } | AlertCause::HostBack { host, .. },
+            ..
+        } if *rule_id == AlertRule::HOST_OFFLINE_ID => Some(*host),
+        _ => None,
     }
 }
 

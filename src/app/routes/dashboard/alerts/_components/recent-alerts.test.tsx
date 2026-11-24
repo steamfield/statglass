@@ -46,6 +46,28 @@ function processAlert(tsMs: number, process: string): Event {
   };
 }
 
+function thresholdAlert(tsMs: number, metric: string, value: number): Event {
+  return {
+    ts_ms: tsMs,
+    start_ms: tsMs - 2 * 60_000,
+    processes: [],
+    detail: {
+      kind: "alert",
+      rule_id: "c0ffee00-0000-4000-8000-0000000000a1",
+      rule_name: "Watch this",
+      cause: {
+        type: "threshold",
+        metric,
+        labels: [],
+        value,
+        op: "gt",
+        threshold: value / 2,
+        for_secs: 120,
+      },
+    },
+  };
+}
+
 describe("Recent alerts", () => {
   it("lists each alert with its time and label, newest first, and no other events", async () => {
     const transport = createMockTransport({
@@ -65,11 +87,32 @@ describe("Recent alerts", () => {
     alerts.forEach((alert, i) => {
       const item = items[i];
       expect(item).toHaveTextContent(formatClock(alert.ts_ms));
-      expect(item).toHaveTextContent(alertLabel(alert));
+      expect(item).toHaveTextContent(alertLabel(alert, null));
     });
     // A list of alerts does not say "Alert" on every line.
     expect(items[0]).toHaveTextContent(/^Memory pressure 86%/);
     expect(items[1]).toHaveTextContent(/^ffmpeg at 251% CPU/);
+  });
+
+  it("writes threshold values in the user's units", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    const saved = await transport.updateSettings({
+      units: { temperature: "celsius", memory: "binary" },
+    });
+    if (saved.status === "error") throw new Error(JSON.stringify(saved.error));
+    const now = Date.now();
+    holding(transport, [
+      thresholdAlert(now - 2 * HOUR_MS, "thermal.hottest", 96),
+      thresholdAlert(now - HOUR_MS, "mem.swap_used", 5 * 2 ** 30),
+    ]);
+    renderWithProviders(<RecentAlerts />, { transport });
+    const items = await waitFor(() => {
+      const found = within(recentRegion()).getAllByRole("listitem");
+      expect(found).toHaveLength(2);
+      return found;
+    });
+    expect(items[0]).toHaveTextContent(/^Swap used 5 GiB/);
+    expect(items[1]).toHaveTextContent(/^Hottest sensor 96 °C/);
   });
 
   it("lists a saved host going offline and coming back", async () => {
@@ -118,7 +161,7 @@ describe("Recent alerts", () => {
       transport,
       route: "/dashboard/alerts",
     });
-    await user.click(await screen.findByText(alertLabel(newest)));
+    await user.click(await screen.findByText(alertLabel(newest, null)));
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/dashboard/timeline")
     );

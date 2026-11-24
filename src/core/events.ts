@@ -6,7 +6,7 @@
 import { alertCauseLabel } from "@core/alerts";
 import { selectedRange } from "@core/brush";
 import { formatPercent } from "@core/format";
-import type { Event, HostId } from "@core/generated/bindings";
+import type { Event, HostId, UnitSettings } from "@core/generated/bindings";
 import { THERMAL_LABEL } from "@core/thermal";
 import { MINUTE_MS } from "@core/time-grid";
 
@@ -25,8 +25,10 @@ function blame(processes: readonly string[]): string {
 /**
  * What happened, without the time: "Fans ramped up · kernel_task + Xcode
  * build", "ANE 1.4 W · Photos face analysis", "Alert · Memory pressure
- * 84%", "Alert · m1-linux is offline". A threshold alert's value reads in
- * the display defaults (°F, GB).
+ * 84%", "Alert · m1-linux is offline". Takes no units: a threshold
+ * alert's value always reads in the display defaults (°F, GB), so the
+ * Timeline, Overview and Power chart label an event the same way whatever
+ * the unit settings hold.
  */
 export function eventLabel(e: Event): string {
   const d = e.detail;
@@ -47,16 +49,18 @@ export function eventLabel(e: Event): string {
 /**
  * `eventLabel` without the "Alert · " lead, for a list that holds only
  * alerts (the Alerts page's Recent): "Memory pressure 84%", "Thermal state
- * Critical", "m1-linux is back after 42 min". Other events read as
- * `eventLabel` has them.
+ * Critical", "m1-linux is back after 42 min". A threshold value reads in
+ * `units` ("Hottest sensor 96 °C"), or in the display defaults while they
+ * are null (settings not loaded yet). Other events read as `eventLabel`
+ * has them.
  */
-export function alertLabel(e: Event): string {
+export function alertLabel(e: Event, units: UnitSettings | null): string {
   const d = e.detail;
   if (d.kind !== "alert") return eventLabel(e);
   // Alone on a line, the thermal cause starts a sentence.
   return d.cause.type === "thermal_state"
     ? `Thermal state ${THERMAL_LABEL[d.cause.state]}`
-    : alertCauseLabel(d.cause, null);
+    : alertCauseLabel(d.cause, units);
 }
 
 /** Identity of a stored event: the store keeps one row per time and kind. */

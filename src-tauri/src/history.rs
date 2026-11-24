@@ -112,16 +112,28 @@ impl History {
             return Vec::new();
         }
         let from = now - statglass_engine::detect::alert_history_ms(alerts);
-        match self.read(|r| r.events(host, from, now.saturating_add(1))) {
-            Ok(events) => events
-                .into_iter()
-                .filter(|e| matches!(e.detail, EventDetail::Alert { .. }))
-                .collect(),
+        match self.alerts_since(host, from, now) {
+            Ok(events) => events,
             Err(e) => {
                 tracing::warn!("reading recent alerts, alert cooldowns start fresh: {e:?}");
                 Vec::new()
             }
         }
+    }
+    /// The alert events `host` recorded from `from_ms` through `now`. An error when
+    /// history is unavailable or the read fails; callers check
+    /// [`History::is_available`] first when the two need telling apart.
+    pub fn alerts_since(
+        &self,
+        host: HostId,
+        from_ms: i64,
+        now: i64,
+    ) -> Result<Vec<Event>, CommandError> {
+        let events = self.read(|r| r.events(host, from_ms, now.saturating_add(1)))?;
+        Ok(events
+            .into_iter()
+            .filter(|e| matches!(e.detail, EventDetail::Alert { .. }))
+            .collect())
     }
     pub fn spawn_pruner(
         &self,

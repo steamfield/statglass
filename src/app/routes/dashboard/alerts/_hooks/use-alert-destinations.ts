@@ -26,9 +26,9 @@ export interface AlertDestinations {
 }
 
 /**
- * The destinations view (`getAlertDestinations`), read once and then
- * replaced by every pushed `alert-destinations-changed` view, so a save in
- * another window or a finished delivery shows without a refetch.
+ * The destinations view (`getAlertDestinations`), read on every mount and
+ * then replaced by every pushed `alert-destinations-changed` view, so a
+ * save in another window or a finished delivery shows without a refetch.
  */
 export function useAlertDestinations(): AlertDestinations {
   const transport = useTransport();
@@ -37,6 +37,9 @@ export function useAlertDestinations(): AlertDestinations {
     queryKey: appKeys.alertDestinations,
     queryFn: () => transport.getAlertDestinations(),
     staleTime: Number.POSITIVE_INFINITY,
+    // The push listener lives only while mounted, so a cached view may have
+    // missed changes; the read is an in-memory command and cheap.
+    refetchOnMount: "always",
   });
   useEffect(
     () =>

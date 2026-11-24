@@ -306,9 +306,11 @@ describe("newRule", () => {
 
 describe("lastFiredByRule", () => {
   it("keeps the newest alert per rule and ignores other events", () => {
+    const newestA = alert(3000, "a");
+    const onlyB = alert(1000, "b");
     const events: Event[] = [
-      alert(3000, "a"),
-      alert(1000, "b"),
+      newestA,
+      onlyB,
       alert(1000, "a"),
       {
         ts_ms: 9000,
@@ -319,10 +321,37 @@ describe("lastFiredByRule", () => {
     ];
     expect(lastFiredByRule(events)).toEqual(
       new Map([
-        ["a", 3000],
-        ["b", 1000],
+        ["a", newestA],
+        ["b", onlyB],
       ])
     );
+  });
+
+  it("does not count a host's recovery notice as a firing", () => {
+    const host = { host: "remote-linux", name: "m1-linux" };
+    const offline: Event = {
+      ts_ms: 1000,
+      start_ms: 0,
+      processes: [],
+      detail: {
+        kind: "alert",
+        rule_id: "h",
+        rule_name: "Saved host offline",
+        cause: { type: "host_offline", ...host },
+      },
+    };
+    const back: Event = {
+      ...offline,
+      ts_ms: 5000,
+      detail: {
+        ...offline.detail,
+        kind: "alert",
+        rule_id: "h",
+        rule_name: "Saved host offline",
+        cause: { type: "host_back", ...host, offline_secs: 4 },
+      },
+    };
+    expect(lastFiredByRule([offline, back])).toEqual(new Map([["h", offline]]));
   });
 });
 

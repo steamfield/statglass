@@ -1,3 +1,4 @@
+import type { AlertRule } from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
@@ -108,6 +109,53 @@ describe("Alerts page wiring", () => {
     expect(
       within(dialog).getByRole("textbox", { name: "Threshold" })
     ).toHaveValue("90");
+  });
+
+  it("keeps a rule's threshold bit for bit when only its name is edited", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    const swap: AlertRule = {
+      id: "c0ffee00-0000-4000-8000-0000000000d1",
+      name: "Swap watch",
+      when: {
+        threshold: {
+          series: { metric: "mem.swap_used", labels: [] },
+          op: "gt",
+          value: 4e9,
+        },
+      },
+      for_secs: 300,
+      cooldown_secs: 1800,
+      enabled: true,
+    };
+    const seeded = await transport.updateSettings({
+      units: { memory: "binary" },
+      alerts: { rules: [swap] },
+    });
+    if (seeded.status === "error")
+      throw new Error(JSON.stringify(seeded.error));
+    const { user } = renderWithProviders(<AlertsRoute />, {
+      transport,
+      route: "/dashboard/alerts",
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Edit Swap watch" })
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Edit rule" });
+    expect(
+      within(dialog).getByRole("textbox", { name: "Threshold" })
+    ).toHaveValue("3.72529");
+    const name = within(dialog).getByRole("textbox", { name: "Name" });
+    await user.clear(name);
+    await user.type(name, "Swap is growing");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Edit rule" })).toBeNull()
+    );
+    const stored = (await transport.getSettings()).settings.alerts?.rules;
+    expect(stored).toEqual([{ ...swap, name: "Swap is growing" }]);
+    const when = stored?.[0]?.when;
+    const value = when && "threshold" in when ? when.threshold?.value : null;
+    expect(Object.is(value, 4e9)).toBe(true);
   });
 });
 

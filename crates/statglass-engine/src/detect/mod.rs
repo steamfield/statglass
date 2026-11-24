@@ -332,6 +332,45 @@ mod rule_edit_tests {
         assert_eq!(r.fired, fired(&[(120, "Memory")]));
     }
 
+    /// "`name`: memory pressure above `value`" for 2 min with a 60 s cooldown.
+    fn memory_above(name: &str, value: f32) -> AlertRule {
+        AlertRule {
+            when: Condition::Threshold {
+                series: SeriesSelector {
+                    metric: MetricId::from_static("mem.pressure"),
+                    labels: Labels::new(),
+                },
+                op: Cmp::Gt,
+                value,
+            },
+            ..memory(name, 120, 60)
+        }
+    }
+
+    /// The threshold the mock stores (`Math.fround`) for 72.3 typed in the dialog. A
+    /// later save that leaves the threshold text alone sends this stored value back
+    /// unchanged, so a rename sees the very same f32.
+    const SAVED_THRESHOLD: f32 = 72.3;
+
+    /// The episode reported at 120 s never clears. A rename that sends the stored
+    /// threshold back keeps it silent past the 60 s cooldown; a threshold off by one
+    /// f32 step is a new definition and reports the same episode again.
+    #[test]
+    fn a_rename_with_the_stored_threshold_keeps_a_reported_episode_silent() {
+        let mut r = Run::new(memory_above("Memory", SAVED_THRESHOLD));
+        r.run_to(130, 90.0);
+        r.edit(memory_above("Memory is tight", SAVED_THRESHOLD));
+        r.run_to(600, 90.0);
+        assert_eq!(r.fired, fired(&[(120, "Memory")]));
+
+        let mut moved = Run::new(memory_above("Memory", SAVED_THRESHOLD));
+        moved.run_to(130, 90.0);
+        let one_step_off = f32::from_bits(SAVED_THRESHOLD.to_bits() + 1);
+        moved.edit(memory_above("Memory is tight", one_step_off));
+        moved.run_to(600, 90.0);
+        assert_eq!(moved.fired.len(), 2, "{:?}", moved.fired);
+    }
+
     #[test]
     fn a_rename_during_a_hold_completes_it_on_schedule_under_the_new_name() {
         let mut r = Run::new(memory("Memory", 120, 1800));

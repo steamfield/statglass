@@ -2,12 +2,13 @@
  * The Alerts page's Rules panel: the built-in rules, then the user's
  * threshold rules, one switch row each.
  */
-import { availableMetrics, ruleSummary } from "@core/alerts";
+import { availableMetrics, lastFiredByRule, ruleSummary } from "@core/alerts";
 import {
   ALERT_LIMITS,
   type AlertRule,
   type AlertSettings,
   type AlertsPatch,
+  type Event,
   type RemoteHostRecord,
   type UnitSettings,
 } from "@core/generated/bindings";
@@ -20,7 +21,7 @@ import { useNow } from "~/hooks/use-now";
 import { useOpenInTimeline } from "~/hooks/use-open-in-timeline";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useSettings, useUpdateSettings } from "~/stores/settings-store";
-import { type AlertEvent, useRecentAlerts } from "../_hooks/use-recent-alerts";
+import { useRecentAlerts } from "../_hooks/use-recent-alerts";
 import { useSeriesKeys } from "../_hooks/use-series-keys";
 import { lastFiredText } from "../_lib/last-fired";
 import { RuleRow } from "./rule-row";
@@ -68,7 +69,7 @@ const NEVER_FIRED = "Never fired";
  * A rule's newest alert in the last 7 days, "never" when it has none, or
  * "unknown" when the alerts could not be read.
  */
-type LastAlert = AlertEvent | "never" | "unknown";
+type LastAlert = Event | "never" | "unknown";
 
 /**
  * A `SettingsPanel` titled "Rules". The built-in rows come first ("A
@@ -178,21 +179,10 @@ function useAlertsWrite() {
   return { pending, write: (alerts: AlertsPatch) => void write(alerts) };
 }
 
-/**
- * Each rule's `LastAlert`, looked up by rule id. The list is newest first,
- * so the first alert seen for a rule is its newest.
- */
+/** Each rule's `LastAlert` (`lastFiredByRule`), looked up by rule id. */
 function useLastAlerts(): (ruleId: string) => LastAlert {
   const { alerts, isError } = useRecentAlerts();
-  const newest = useMemo(() => {
-    const byRule = new Map<string, AlertEvent>();
-    for (const alert of alerts) {
-      if (!byRule.has(alert.detail.rule_id)) {
-        byRule.set(alert.detail.rule_id, alert);
-      }
-    }
-    return byRule;
-  }, [alerts]);
+  const newest = useMemo(() => lastFiredByRule(alerts), [alerts]);
   return (ruleId) => (isError ? "unknown" : (newest.get(ruleId) ?? "never"));
 }
 
@@ -252,7 +242,7 @@ function RuleSub({
  * opens for that alert; plain text when none of its time is kept. Its clock
  * moves once a minute, re-rendering only this line.
  */
-function LastFired({ alert }: { alert: AlertEvent }) {
+function LastFired({ alert }: { alert: Event }) {
   const nowMs = useNow(MINUTE_MS);
   const { rangeFor, open, pending } = useOpenInTimeline();
   const text = lastFiredText(alert.ts_ms, nowMs);

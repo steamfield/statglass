@@ -54,7 +54,7 @@ impl fmt::Debug for DestinationKind {
 }
 
 impl Destination {
-    /// The longest destination name, in characters after trimming.
+    /// The longest destination name, in characters.
     pub const MAX_NAME_CHARS: usize = 40;
     /// The longest ntfy server or webhook URL, in characters.
     pub const MAX_URL_CHARS: usize = 2048;
@@ -64,15 +64,16 @@ impl Destination {
     pub const MAX_TOKEN_CHARS: usize = 256;
 
     /// Checks a destination before it is saved or sent to: a name of 1 to
-    /// [`Self::MAX_NAME_CHARS`] characters after trimming; an ntfy server or webhook URL
+    /// [`Self::MAX_NAME_CHARS`] characters with no leading or trailing whitespace, so
+    /// the name that is checked is the name that is stored; an ntfy server or webhook URL
     /// that starts with `http://` or `https://`, names a host, is at most
     /// [`Self::MAX_URL_CHARS`] characters and holds no whitespace, control character,
     /// quote or backslash; a topic of 1 to [`Self::MAX_TOPIC_CHARS`] of `[A-Za-z0-9_-]`;
     /// a token of at most [`Self::MAX_TOKEN_CHARS`] characters with no whitespace or
     /// control character (an empty token is no token).
     pub fn validate(&self) -> Result<(), DestinationError> {
-        let name_chars = self.name.trim().chars().count();
-        if !(1..=Self::MAX_NAME_CHARS).contains(&name_chars) {
+        let name_chars = self.name.chars().count();
+        if self.name != self.name.trim() || !(1..=Self::MAX_NAME_CHARS).contains(&name_chars) {
             return Err(DestinationError::Name);
         }
         match &self.kind {
@@ -183,7 +184,7 @@ fn is_valid_token(token: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DestinationError {
     #[error(
-        "destination name must be 1 to {} characters",
+        "destination name must be 1 to {} characters with no leading or trailing spaces",
         Destination::MAX_NAME_CHARS
     )]
     Name,

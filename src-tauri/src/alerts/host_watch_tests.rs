@@ -4,8 +4,10 @@
 use statglass_schema::{AlertCause, AlertRule, Event, EventDetail, HostId};
 use uuid::Uuid;
 
-use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch};
-use super::host_watch::{HOST_OFFLINE_RULE_NAME, notice_event, observation, poll};
+use super::host_offline::{HostNotice, HostObservation, HostOfflineWatch, ReportedHost};
+use super::host_watch::{
+    HOST_OFFLINE_RULE_NAME, SEED_LOOK_BACK_MS, notice_event, observation, poll, reported_hosts,
+};
 use crate::remote::{
     AgentUpdateProgress, RemoteFailureKind, RemoteHostStatus, RemoteState, SavedHostStatus,
     UpdatePhase,
@@ -283,4 +285,92 @@ fn a_back_and_an_offline_on_one_poll_get_distinct_timestamps() {
             ),
         ]
     );
+}
+
+// ---- seeds from stored alerts ------------------------------------------------------
+
+const NOW: i64 = 1_791_158_400_000;
+const HOUR: i64 = 3_600_000;
+
+fn went_offline(host: HostId, ts_ms: i64, start_ms: i64) -> Event {
+    host_alert(
+        ts_ms,
+        start_ms,
+        AlertCause::HostOffline {
+            host,
+            name: NAME.into(),
+        },
+    )
+}
+
+fn came_back(host: HostId, ts_ms: i64, start_ms: i64) -> Event {
+    host_alert(
+        ts_ms,
+        start_ms,
+        AlertCause::HostBack {
+            host,
+            name: NAME.into(),
+            offline_secs: 60,
+        },
+    )
+}
+
+#[test]
+fn a_host_whose_newest_alert_is_offline_is_seeded_as_reported() {
+    let stored = [
+        went_offline(HOST, NOW - 30 * HOUR, NOW - 31 * HOUR),
+        came_back(HOST, NOW - 29 * HOUR, NOW - 31 * HOUR),
+        went_offline(HOST, NOW - 2 * HOUR, NOW - 3 * HOUR),
+    ];
+    assert_eq!(
+        reported_hosts(&stored, &[HOST], NOW),
+        [ReportedHost {
+            host: HOST,
+            since_ms: NOW - 3 * HOUR,
+            last_down_ms: NOW - 2 * HOUR,
+        }]
+    );
+}
+
+#[test]
+fn a_host_already_reported_back_is_not_seeded() {
+    let stored = [
+        came_back(HOST, NOW - HOUR, NOW - 3 * HOUR),
+        went_offline(HOST, NOW - 2 * HOUR, NOW - 3 * HOUR),
+    ];
+    assert_eq!(reported_hosts(&stored, &[HOST], NOW), []);
+}
+
+#[test]
+fn an_offline_alert_older_than_the_look_back_is_not_seeded() {
+    let old = NOW - SEED_LOOK_BACK_MS - 1;
+    let stored = [went_offline(HOST, old, old - HOUR)];
+    assert_eq!(reported_hosts(&stored, &[HOST], NOW), []);
+    let edge = NOW - SEED_LOOK_BACK_MS;
+    let stored = [went_offline(HOST, edge, edge - HOUR)];
+    assert_eq!(reported_hosts(&stored, &[HOST], NOW).len(), 1);
+}
+
+#[test]
+fn only_saved_hosts_are_seeded_each_from_its_own_alerts() {
+    let stored = [
+        went_offline(HOST, NOW - 2 * HOUR, NOW - 3 * HOUR),
+        went_offline(OTHER, NOW - HOUR, NOW - 2 * HOUR),
+        came_back(OTHER, NOW - HOUR / 2, NOW - 2 * HOUR),
+    ];
+    assert_eq!(reported_hosts(&stored, &[OTHER], NOW), []);
+    let hosts: Vec<HostId> = reported_hosts(&stored, &[HOST, OTHER], NOW)
+        .iter()
+        .map(|r| r.host)
+        .collect();
+    assert_eq!(hosts, [HOST]);
+}
+
+#[test]
+fn other_rules_alerts_do_not_seed() {
+    let mut foreign = went_offline(HOST, NOW - HOUR, NOW - 2 * HOUR);
+    if let EventDetail::Alert { rule_id, .. } = &mut foreign.detail {
+        *rule_id = AlertRule::BUILTIN_IDS[0];
+    }
+    assert_eq!(reported_hosts(&[foreign], &[HOST], NOW), []);
 }

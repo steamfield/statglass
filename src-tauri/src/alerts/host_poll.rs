@@ -2,7 +2,9 @@
 //! built-in host-offline rule is on and a remote host is saved, the saved hosts'
 //! statuses go through [`host_watch::poll`] and every alert it returns is fired like
 //! any other ([`fire::record_and_announce`]). With the rule off or no host saved the
-//! watch is reset, so switching the rule back on starts every count again.
+//! watch is reset, so switching the rule back on starts every count again. At launch
+//! the watch starts from the stored alerts, so a host already reported offline is not
+//! announced again.
 //!
 //! The backgrounded app has a strict idle-CPU budget, so with nothing to watch the task
 //! has no timer at all: it sleeps until `settings-changed` or `hosts-changed` is
@@ -12,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use statglass_schema::AlertRule;
+use statglass_schema::{AlertRule, HostId};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_specta::Event as _;
 use tokio::sync::Notify;
@@ -56,6 +58,9 @@ pub fn spawn(app: AppHandle) {
     }
     tauri::async_runtime::spawn(async move {
         let mut watch = HostOfflineWatch::new(OFFLINE_AFTER_MS, MAX_STEP_MS);
+        if let Some(state) = app.try_state::<AppState>() {
+            seed_from_history(&state, &mut watch);
+        }
         loop {
             let wake = match app.try_state::<AppState>() {
                 Some(state) => poll_once(&app, &state, &mut watch),
@@ -72,6 +77,36 @@ pub fn spawn(app: AppHandle) {
             }
         }
     });
+}
+
+/// Starts `watch` with the saved hosts this Mac's stored alerts still report offline
+/// ([`host_watch::reported_hosts`]), so a launch does not announce them again and
+/// still sends their recovery. With history unavailable or unreadable nothing is
+/// seeded and every count starts fresh.
+fn seed_from_history(state: &AppState, watch: &mut HostOfflineWatch) {
+    if !state.history.is_available() {
+        tracing::debug!("history unavailable: the host-offline watch starts unseeded");
+        return;
+    }
+    let now_ms = statglass_engine::wall_ms();
+    let from_ms = now_ms.saturating_sub(host_watch::SEED_LOOK_BACK_MS);
+    let stored = match state.history.alerts_since(state.local, from_ms, now_ms) {
+        Ok(stored) => stored,
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                "reading host-offline alerts; the watch starts unseeded"
+            );
+            return;
+        }
+    };
+    let saved: Vec<HostId> = state
+        .remotes
+        .saved_statuses()
+        .iter()
+        .map(|s| s.host)
+        .collect();
+    watch.seed(host_watch::reported_hosts(&stored, &saved, now_ms));
 }
 
 /// One poll: observe the saved hosts when [`should_watch`] says so, else reset, and
