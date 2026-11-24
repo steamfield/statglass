@@ -327,7 +327,6 @@ fn a_host_whose_newest_alert_is_offline_is_seeded_as_reported() {
         [ReportedHost {
             host: HOST,
             since_ms: NOW - 3 * HOUR,
-            last_down_ms: NOW - 2 * HOUR,
         }]
     );
 }

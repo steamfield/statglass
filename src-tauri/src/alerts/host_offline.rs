@@ -58,15 +58,13 @@ pub enum HostNotice {
     },
 }
 
-/// A host an earlier run of the app already reported offline, with no recovery since.
+/// A host an earlier run of the app reported offline, with no recovery stored since.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReportedHost {
     /// The saved host.
     pub host: HostId,
     /// When its reported unreachable run began.
     pub since_ms: i64,
-    /// The last time it was known to be down: when it was reported.
-    pub last_down_ms: i64,
 }
 
 /// Where one host stands. A host that is reachable, or not counted and not reported,
@@ -78,6 +76,9 @@ enum Track {
     /// Reported offline; unreachable since `since_ms`, last seen down at
     /// `last_down_ms`.
     Reported { since_ms: i64, last_down_ms: i64 },
+    /// Reported offline by an earlier run, down since `since_ms`, and not yet seen by
+    /// a counted observation of this one.
+    Seeded { since_ms: i64 },
 }
 
 /// The watch over every saved host.
@@ -128,16 +129,16 @@ impl HostOfflineWatch {
             .collect()
     }
 
-    /// Starts each of `reported` as already reported offline, so a launch neither
-    /// announces it again nor loses its recovery: the first counted observation that
-    /// sees it reachable gives one [`HostNotice::Back`], with the span ending at
-    /// `last_down_ms` since the time in between was not observed. A host missing from
-    /// that observation is forgotten as any removed host is.
+    /// Starts each of `reported` as reported offline by an earlier run, so a launch
+    /// does not announce it again. Its first counted observation decides: reachable,
+    /// it is forgotten without a notice, since nothing was watching when it recovered
+    /// (the rule may have been off); unreachable, it is an ordinary reported host from
+    /// `since_ms`, which gets its [`HostNotice::Back`] when it returns. A host missing
+    /// from an observation is forgotten as any removed host is.
     pub fn seed(&mut self, reported: impl IntoIterator<Item = ReportedHost>) {
         for seed in reported {
-            let track = Track::Reported {
+            let track = Track::Seeded {
                 since_ms: seed.since_ms,
-                last_down_ms: seed.last_down_ms,
             };
             self.hosts.insert(seed.host, track);
         }
@@ -164,11 +165,24 @@ fn step(
             since_ms,
             last_down_ms,
         }) => reported_step(since_ms, last_down_ms, seen, now_ms, continuous),
+        Some(Track::Seeded { since_ms }) => (seeded_step(since_ms, seen, now_ms), None),
         Some(Track::Counting { since_ms }) if continuous => {
             counting_step(Some(since_ms), seen, now_ms, after_ms)
         }
         _ => counting_step(None, seen, now_ms, after_ms),
     }
+}
+
+/// A host seeded from an earlier run: kept until a counted observation, then
+/// forgotten when reachable or reported (from `since_ms`) when not. Never a notice.
+fn seeded_step(since_ms: i64, seen: &HostObservation, now_ms: i64) -> Option<Track> {
+    if !seen.counts {
+        return Some(Track::Seeded { since_ms });
+    }
+    (!seen.reachable).then_some(Track::Reported {
+        since_ms,
+        last_down_ms: now_ms,
+    })
 }
 
 /// A reported host: back once a counted observation sees it reachable, otherwise

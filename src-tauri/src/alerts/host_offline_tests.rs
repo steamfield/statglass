@@ -201,39 +201,54 @@ fn reset_forgets_every_host() {
 
 // ---- seeded from an earlier run ----------------------------------------------------
 
-/// `n` as an earlier run reported it: down since `since_ms`, reported at `last_down_ms`.
-fn reported_earlier(n: u128, since_ms: i64, last_down_ms: i64) -> ReportedHost {
+/// `n` as an earlier run reported it: down since `since_ms`.
+fn reported_earlier(n: u128, since_ms: i64) -> ReportedHost {
     ReportedHost {
         host: host(n),
         since_ms,
-        last_down_ms,
     }
 }
 
 #[test]
-fn a_seeded_host_still_unreachable_gives_nothing() {
+fn a_seeded_host_reachable_at_launch_is_forgotten_without_a_notice() {
     let mut w = watch();
-    w.seed([reported_earlier(1, -3 * 60 * MIN, -3 * 60 * MIN + 5 * MIN)]);
-    let notices = run(&mut w, 0, 60 * MIN, |_| vec![seen(1, false)]);
-    assert_eq!(notices, []);
+    w.seed([reported_earlier(1, -3 * 60 * MIN)]);
+    assert_eq!(run(&mut w, 0, 30 * MIN, |_| vec![seen(1, true)]), []);
+    // Forgotten, not reported: going down again takes five observed minutes.
+    let notices = run(&mut w, 30 * MIN + STEP, 40 * MIN, |_| vec![seen(1, false)]);
+    assert_eq!(notices, [(35 * MIN + STEP, offline(1, 30 * MIN + STEP))]);
 }
 
 #[test]
-fn a_seeded_host_reachable_at_launch_gives_one_back_from_its_stored_start() {
+fn a_seeded_host_still_down_gives_nothing_then_one_back_when_it_returns() {
     let mut w = watch();
     let since = -3 * 60 * MIN;
-    let reported_at = since + 5 * MIN;
-    w.seed([reported_earlier(1, since, reported_at)]);
-    let notices = run(&mut w, 0, 30 * MIN, |_| vec![seen(1, true)]);
-    // Nobody watched between the report and launch: the span ends at the report.
-    assert_eq!(notices, [(0, back(1, since, reported_at - since))]);
+    w.seed([reported_earlier(1, since)]);
+    let notices = run(&mut w, 0, 60 * MIN, |t| vec![seen(1, t >= 20 * MIN)]);
+    assert_eq!(notices, [(20 * MIN, back(1, since, 20 * MIN - since))]);
+}
+
+#[test]
+fn a_seeded_host_waits_for_a_counted_observation() {
+    let mut w = watch();
+    w.seed([reported_earlier(1, -10 * MIN)]);
+    // Uncounted while an agent update runs, then counted and down, then back.
+    let notices = run(&mut w, 0, 3 * MIN, |t| {
+        vec![match t {
+            t if t < MIN => uncounted(1, true),
+            t if t < 2 * MIN => seen(1, false),
+            _ => seen(1, true),
+        }]
+    });
+    assert_eq!(notices, [(2 * MIN, back(1, -10 * MIN, 12 * MIN))]);
 }
 
 #[test]
 fn a_seeded_host_no_longer_saved_is_forgotten() {
     let mut w = watch();
-    w.seed([reported_earlier(1, -10 * MIN, -5 * MIN)]);
+    w.seed([reported_earlier(1, -10 * MIN)]);
     assert_eq!(run(&mut w, 0, MIN, |_| vec![seen(2, true)]), []);
-    // Saved again later, it is a new host to the watch: reachable gives no Back.
-    assert_eq!(run(&mut w, 90_000, 5 * MIN, |_| vec![seen(1, true)]), []);
+    // Saved again and down, it is a new host to the watch: five minutes to report.
+    let notices = run(&mut w, 90_000, 7 * MIN, |_| vec![seen(1, false)]);
+    assert_eq!(notices, [(90_000 + 5 * MIN, offline(1, 90_000))]);
 }

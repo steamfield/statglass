@@ -75,8 +75,7 @@ pub const SEED_LOOK_BACK_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 /// The hosts among `saved` that an earlier run reported offline and never reported
 /// back, from this Mac's `stored` alert events at `now_ms`: for each host, its newest
 /// host-offline-rule event within [`SEED_LOOK_BACK_MS`], when that event is a
-/// [`AlertCause::HostOffline`]. Its `start_ms` is when the run began, its `ts_ms` the
-/// last time the host was known down.
+/// [`AlertCause::HostOffline`], whose `start_ms` is when the run began.
 pub fn reported_hosts(stored: &[Event], saved: &[HostId], now_ms: i64) -> Vec<ReportedHost> {
     let from_ms = now_ms.saturating_sub(SEED_LOOK_BACK_MS);
     saved
@@ -96,7 +95,6 @@ pub fn reported_hosts(stored: &[Event], saved: &[HostId], now_ms: i64) -> Vec<Re
             Some(ReportedHost {
                 host: *host,
                 since_ms: newest.start_ms,
-                last_down_ms: newest.ts_ms,
             })
         })
         .collect()
