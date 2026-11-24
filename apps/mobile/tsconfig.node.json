@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": [
+    "app.config.ts",
+    "*.cjs",
+    "*.mjs",
+    "scripts/**/*.mjs",
+    "types/**/*.d.ts",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "test/**/*.mjs",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": []
+}

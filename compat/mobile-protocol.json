@@ -1,0 +1,4 @@
+{
+  "$comment": "Protocol range and features of the current and previous App Store builds of StatGlass for iPhone, so hosts and the app can check what they must keep supporting (support window: last three desktop minors, agents from the last 90 days). Empty until the first release.",
+  "builds": []
+}
