@@ -35,12 +35,12 @@ crates/                    Rust workspace
   statglass-collect/          Collector trait; macos/ (sysinfo, IOReport, SMC/HID, IOKit); linux/ (/proc, sysfs, cgroups)
   statglass-store/            SQLite: series interning, tiered rollups, gaps, cursors, pruning
   statglass-engine/           sampler loop, rollups, detectors, bus, history lifecycle and queries
-  statglass-remote/           SSH sessions, protocol server/client, isolated history mirrors
+  statglass-session/          client session: Endpoint, Dialer seam, handshake and route race, RemoteError (no process spawning)
+  statglass-ssh/              russh dialer with the Signer seam (Secure Enclave on the phone)
+  statglass-remote/           OpenSSH dialer, controller management, protocol server, isolated history mirrors
   statglass-remote-helper/    bundled stdio-to-local-socket bridge
   statglass-mobile/           iPhone app's UniFFI facade (staticlib -> XCFramework); never depends on statglass-remote
-  statglass-session/          planned: client session, RemoteSource, Mirror, dialer seam (no process spawning)
   statglass-ipc/              planned: IPC types both apps use, live producer, CommandError
-  statglass-ssh/              planned: russh dialer with the Secure Enclave signer callback
 src-tauri/                 app shell: HostRegistry, LocalSource, settings owner, tray, windows, commands
 src/
   app/                     desktop React (~ ~/): routes/<route>/{_components,_hooks,_lib}, components/{ui,charts}, widgets/, hooks/
@@ -186,7 +186,7 @@ bun run check              # biome check + typecheck + test
 bun run --cwd apps/mobile dev    # iPhone app: Metro for the simulator build (first build: ios-simulator skill)
 bun run --cwd apps/mobile test   # jest-expo (never bun test)
 make mobile-check          # mobile lint, tsc, jest, expo export, expo install --check, single-React check
-make mobile-rust-check     # statglass-mobile cargo check + clippy for aarch64-apple-ios-sim
+make mobile-rust-check     # statglass-mobile, -session, -ssh cargo check + clippy for aarch64-apple-ios-sim
 make check                 # Frontend + Rust: what the pre-push hook runs, with bindings-check and e2e-perf
 make architecture-check    # Cargo dependency graph + Rust production file ceilings
 make architecture-test     # Positive/negative architecture-rule fixtures

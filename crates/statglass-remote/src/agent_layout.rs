@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use crate::{RemoteError, Result};
 
 /// What `statglass-agent serve --stdio` prints to stderr when its daemon is not running,
-/// before exiting with status 3. The controller recognises it in the SSH stderr and
-/// reports [`RemoteError::AgentNotRunning`], with no wire change.
-pub const AGENT_NOT_RUNNING: &str = "statglass-agent: not running";
+/// before exiting with status 3. The shared handshake recognises it in the dialer's
+/// stderr and reports [`RemoteError::AgentNotRunning`], with no wire change.
+pub use statglass_session::AGENT_NOT_RUNNING;
 
 /// The unit name in both layouts.
 pub const UNIT_NAME: &str = "statglass-agent.service";

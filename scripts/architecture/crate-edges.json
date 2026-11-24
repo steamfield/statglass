@@ -10,7 +10,7 @@
     "normal": ["statglass-schema", "statglass-collect", "statglass-store"],
     "dev": ["statglass-collect", "statglass-store"]
   },
-  "statglass-remote": {
+  "statglass-session": {
     "normal": [
       "statglass-schema",
       "statglass-proto",
@@ -18,6 +18,26 @@
       "statglass-engine"
     ],
     "dev": []
+  },
+  "statglass-ssh": {
+    "normal": ["statglass-session"],
+    "dev": [
+      "statglass-session",
+      "statglass-schema",
+      "statglass-proto",
+      "statglass-engine",
+      "statglass-store"
+    ]
+  },
+  "statglass-remote": {
+    "normal": [
+      "statglass-schema",
+      "statglass-proto",
+      "statglass-store",
+      "statglass-engine",
+      "statglass-session"
+    ],
+    "dev": ["statglass-session"]
   },
   "statglass-remote-helper": { "normal": ["statglass-remote"], "dev": [] },
   "statglass-agent": {

@@ -239,7 +239,7 @@ impl From<statglass_remote::RemoteError> for CommandError {
             RemoteError::Transport(_)
             | RemoteError::Timeout(_)
             | RemoteError::Unreachable { .. }
-            | RemoteError::BothRoutes { .. }
+            | RemoteError::Routes(_)
             | RemoteError::Io(_)
             | RemoteError::Codec(_)
             | RemoteError::Protocol(_) => Self::RemoteUnreachable { message },

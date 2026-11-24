@@ -11,10 +11,18 @@ fn unreachable(kind: UnreachableKind) -> RemoteError {
 }
 
 fn both(lan: RemoteError, tailscale: RemoteError) -> RemoteError {
-    RemoteError::BothRoutes {
-        lan: Box::new(lan),
-        tailscale: Box::new(tailscale),
-    }
+    RemoteError::Routes(vec![
+        crate::RouteError {
+            route: Route::Lan,
+            host: "studio.local".into(),
+            error: lan,
+        },
+        crate::RouteError {
+            route: Route::Tailscale,
+            host: "studio".into(),
+            error: tailscale,
+        },
+    ])
 }
 
 const ONLINE: LocalNetwork = LocalNetwork {

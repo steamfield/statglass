@@ -66,14 +66,16 @@ impl ConnectionFailureKind {
         }
     }
 
-    /// The failure kind a connection error reports. Both failed routes report the more
-    /// actionable of their two causes.
+    /// The failure kind a connection error reports. Several failed targets report the
+    /// most actionable of their causes.
     pub fn from_error(e: &RemoteError) -> Self {
         match e {
             RemoteError::Unreachable { kind, .. } => Self::from_unreachable(*kind),
-            RemoteError::BothRoutes { lan, tailscale } => {
-                Self::from_error(lan).most_actionable(Self::from_error(tailscale))
-            }
+            RemoteError::Routes(routes) => routes
+                .iter()
+                .map(|failure| Self::from_error(&failure.error))
+                .reduce(Self::most_actionable)
+                .unwrap_or(Self::Unreachable),
             RemoteError::Timeout(_) => Self::Timeout,
             RemoteError::Authentication(_) => Self::Authentication,
             RemoteError::HostKey(_) => Self::HostKey,
@@ -104,20 +106,17 @@ impl ConnectionFailureKind {
     }
 }
 
-/// Each route's cause in `e`: both routes when `e` combines them, the one route of a
-/// single-route host, otherwise none.
+/// Each target's cause in `e`: one per target when `e` combines them, the one route of
+/// a single-route host, otherwise none.
 fn route_failures_of(e: &RemoteError, single_route: Option<Route>) -> Vec<RouteFailure> {
-    if let RemoteError::BothRoutes { lan, tailscale } = e {
-        return vec![
-            RouteFailure {
-                route: Route::Lan,
-                kind: ConnectionFailureKind::from_error(lan),
-            },
-            RouteFailure {
-                route: Route::Tailscale,
-                kind: ConnectionFailureKind::from_error(tailscale),
-            },
-        ];
+    if let RemoteError::Routes(routes) = e {
+        return routes
+            .iter()
+            .map(|failure| RouteFailure {
+                route: failure.route,
+                kind: ConnectionFailureKind::from_error(&failure.error),
+            })
+            .collect();
     }
     single_route
         .map(|route| RouteFailure {
