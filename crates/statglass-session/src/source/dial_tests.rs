@@ -43,7 +43,12 @@ impl Dialer for FakeDialer {
     }
 
     fn classify(&self, failure: &DialFailure<'_>) -> RemoteError {
-        panic!("fake peer did not greet the client: {:?}", failure.outcome);
+        // Return, don't panic: a panic here lands on the source's thread or the
+        // promotion task, and the test would time out with no cause.
+        RemoteError::Protocol(format!(
+            "fake peer did not greet the client: {:?}",
+            failure.outcome
+        ))
     }
 }
 
