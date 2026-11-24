@@ -1,6 +1,6 @@
 # RFC: Alerts you set, delivered to your phone
 
-Status: Accepted for implementation, 2026-11-23. Execution plan: [plans/deliver-alerts.md](../plans/deliver-alerts.md).
+Status: Implemented, 2026-11-23. Execution plan: [plans/deliver-alerts.md](../plans/deliver-alerts.md).
 Decision entry: D-138. Supersedes phase 2.3a of [v2](v2-customization-widgets.md) and takes the
 host-offline part of phase 4.2c of [v4](v4-remote-hosts.md); the rest of 4.2c stays future work.
 
@@ -231,6 +231,11 @@ cooldown.
 - Alerts evaluated on this Mac stop when it sleeps. The page says so on the host-offline row;
   agent-side evaluation is the fix and is out of scope.
 - macOS notification delivery from a bundled, notarized build is still unobserved (D-084).
+- A LAN-only host reads as offline after five minutes when a laptop leaves that network; nothing
+  tells StatGlass which network a host belongs to.
+- Delivery does not use proxy settings. An inherited `http_proxy` would receive the ntfy token, so
+  the environment is cleared; a user behind a mandatory proxy cannot deliver until an explicit
+  proxy setting exists.
 
 ## 8. Verification
 
