@@ -2,10 +2,10 @@
  * Root layout: global styles, the app's providers, the status bar and the
  * navigation stack. Wiring only; screens own their content.
  */
-import "../global.css";
+import "@/global.css";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { Providers } from "../lib/providers";
+import { Providers } from "@/lib/providers";
 
 /** Mounts the providers around the root stack. */
 export default function RootLayout() {

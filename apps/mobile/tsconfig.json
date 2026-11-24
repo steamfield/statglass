@@ -5,7 +5,8 @@
     "lib": ["DOM", "ESNext"],
     "types": [],
     "paths": {
-      "@core/*": ["../../packages/core/src/*"]
+      "@core/*": ["../../packages/core/src/*"],
+      "@/*": ["./src/*"]
     }
   },
   "include": [

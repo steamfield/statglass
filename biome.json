@@ -244,7 +244,9 @@
                   "react/jsx-runtime": "src/desktop-transport/ has no React imports.",
                   "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
                   "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
-                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
+                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/.",
+                  "react-native": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile.",
+                  "expo": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile."
                 },
                 "patterns": [
                   {
@@ -254,6 +256,18 @@
                   {
                     "group": ["**/app/**", "**/app"],
                     "message": "src/desktop-transport/ must not import the app layer through relative paths."
+                  },
+                  {
+                    "group": [
+                      "react-native/**",
+                      "react-native-*",
+                      "react-native-*/**",
+                      "expo/**",
+                      "expo-*",
+                      "expo-*/**",
+                      "@expo/**"
+                    ],
+                    "message": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile."
                   },
                   {
                     "group": [
@@ -319,7 +333,7 @@
       }
     },
     {
-      "includes": ["src/app/**", "!src/app/widgets/**"],
+      "includes": ["src/app/**", "src/main.tsx", "!src/app/widgets/**"],
       "linter": {
         "rules": {
           "style": {
@@ -327,7 +341,9 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "@desktop/commands": "Go through @core/transport so the mock transport can stand in; generated types and constants come from @core/generated/types."
+                  "@desktop/commands": "Go through @core/transport so the mock transport can stand in; generated types and constants come from @core/generated/types.",
+                  "react-native": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile.",
+                  "expo": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile."
                 },
                 "patterns": [
                   {
@@ -337,6 +353,18 @@
                   {
                     "group": ["@desktop/native", "@desktop/native-*"],
                     "message": "The native adapter calls Tauri directly; go through @core/transport so the mock transport can stand in."
+                  },
+                  {
+                    "group": [
+                      "react-native/**",
+                      "react-native-*",
+                      "react-native-*/**",
+                      "expo/**",
+                      "expo-*",
+                      "expo-*/**",
+                      "@expo/**"
+                    ],
+                    "message": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile."
                   },
                   {
                     "group": [
@@ -418,7 +446,9 @@
                   "react-router": "Widgets take hrefs/callbacks as props.",
                   "@tanstack/react-query": "Widgets take data as props; query in the route or a hook.",
                   "zustand": "Widgets take state as props.",
-                  "@desktop/commands": "Widgets take data and callbacks as props; generated types and constants come from @core/generated/types."
+                  "@desktop/commands": "Widgets take data and callbacks as props; generated types and constants come from @core/generated/types.",
+                  "react-native": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile.",
+                  "expo": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile."
                 },
                 "patterns": [
                   {
@@ -448,6 +478,18 @@
                       "@core/mock/**"
                     ],
                     "message": "Widgets are render-only: take data as props; subscribe in the route or a hook."
+                  },
+                  {
+                    "group": [
+                      "react-native/**",
+                      "react-native-*",
+                      "react-native-*/**",
+                      "expo/**",
+                      "expo-*",
+                      "expo-*/**",
+                      "@expo/**"
+                    ],
+                    "message": "The desktop app renders with React DOM; React Native and Expo belong to apps/mobile."
                   },
                   {
                     "group": [
@@ -682,8 +724,85 @@
                     "message": "apps/mobile never calls Tauri; it talks to Rust through statglass-native."
                   },
                   {
-                    "group": ["~/**", "**/src/app/**", "@desktop/**"],
-                    "message": "apps/mobile must not import the desktop app; shared code lives in packages/core."
+                    "group": ["~/**", "@desktop/**"],
+                    "message": "apps/mobile must not import the desktop app; shared code comes from @core/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/mobile/src/**", "apps/mobile/modules/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react-dom": "apps/mobile renders with React Native; react-dom is desktop only.",
+                  "react-dom/client": "apps/mobile renders with React Native; react-dom is desktop only."
+                },
+                "patterns": [
+                  {
+                    "group": ["react-dom/**"],
+                    "message": "apps/mobile renders with React Native; react-dom is desktop only."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "apps/mobile never calls Tauri; it talks to Rust through statglass-native."
+                  },
+                  {
+                    "group": ["~/**", "@desktop/**"],
+                    "message": "apps/mobile must not import the desktop app; shared code comes from @core/."
+                  },
+                  {
+                    "group": ["../**"],
+                    "message": "Relative imports stay in the current directory; import other app code through @/ and shared code through @core/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/mobile/test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react-dom": "apps/mobile renders with React Native; react-dom is desktop only.",
+                  "react-dom/client": "apps/mobile renders with React Native; react-dom is desktop only."
+                },
+                "patterns": [
+                  {
+                    "group": ["react-dom/**"],
+                    "message": "apps/mobile renders with React Native; react-dom is desktop only."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "apps/mobile never calls Tauri; it talks to Rust through statglass-native."
+                  },
+                  {
+                    "group": ["~/**", "@desktop/**"],
+                    "message": "apps/mobile must not import the desktop app; shared code comes from @core/."
+                  },
+                  {
+                    "group": [
+                      "../**",
+                      "!../app.config",
+                      "!../metro-resolve.cjs",
+                      "!../scripts/*.mjs"
+                    ],
+                    "message": "Tests import app code through @/ and shared code through @core/; only the root configs and scripts/ are reached relatively."
                   }
                 ]
               }
