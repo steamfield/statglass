@@ -20,9 +20,10 @@ test("shows the app name, what it does and the three ways in", async () => {
     screen.getByText(/Watch the Macs and Linux servers you monitor/)
   ).toBeOnTheScreen();
   const buttons = screen.getAllByRole("button");
-  expect(buttons.map((button) => button.props.accessibilityLabel)).toEqual(
-    ACTIONS.map((action) => action.label)
-  );
+  expect(buttons).toHaveLength(ACTIONS.length);
+  ACTIONS.forEach(({ label }, index) => {
+    expect(screen.getByRole("button", { name: label })).toBe(buttons[index]);
+  });
 });
 
 test.each(ACTIONS)(

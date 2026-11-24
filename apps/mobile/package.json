@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "expo start",
     "ios": "expo run:ios",
-    "typecheck": "expo customize tsconfig.json && tsc --noEmit",
+    "routes:types": "expo customize tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "jest",
     "export:ios": "expo export --platform ios --output-dir dist/ios",
     "expo:check": "expo install --check"

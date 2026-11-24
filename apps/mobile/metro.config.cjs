@@ -10,12 +10,16 @@ const { createResolveRequest } = require("./metro-resolve.cjs");
 const appRoot = __dirname;
 const packagesRoot = path.resolve(appRoot, "../../packages");
 
-const config = getDefaultConfig(appRoot);
+const defaults = getDefaultConfig(appRoot);
 
-config.watchFolders = [...(config.watchFolders ?? []), packagesRoot];
-config.resolver.resolveRequest = createResolveRequest({
-  appRoot,
-  coreSrc: path.join(packagesRoot, "core/src"),
+module.exports = withNativewind({
+  ...defaults,
+  watchFolders: [...(defaults.watchFolders ?? []), packagesRoot],
+  resolver: {
+    ...defaults.resolver,
+    resolveRequest: createResolveRequest({
+      appRoot,
+      coreSrc: path.join(packagesRoot, "core/src"),
+    }),
+  },
 });
-
-module.exports = withNativewind(config);

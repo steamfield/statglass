@@ -3,7 +3,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["DOM", "ESNext"],
-    "types": ["node"],
+    "types": [],
     "paths": {
       "@core/*": ["../../packages/core/src/*"]
     }
@@ -11,12 +11,11 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "test/**/*.ts",
-    "test/**/*.tsx",
-    "*.ts",
-    "*.d.ts",
+    "modules/**/*.ts",
+    "modules/**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "nativewind-env.d.ts"
-  ]
+  ],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

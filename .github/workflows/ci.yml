@@ -113,6 +113,11 @@ jobs:
               - 'bun.lock'
               - 'scripts/mobile/**'
               - 'src/app/styles/theme.css'
+              - 'package.json'
+              - 'tsconfig.base.json'
+              - 'biome.json'
+              - 'bunfig.toml'
+              - '.node-version'
               - '.github/workflows/ci.yml'
 
   mobile:

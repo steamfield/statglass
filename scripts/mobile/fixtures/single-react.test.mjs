@@ -38,16 +38,42 @@ test("fails a bundle with two React copies and names both", () => {
   });
 });
 
-test("fails an export directory with no source maps", () => {
-  const run = runCheck(fixture("no-maps"));
+test("fails a bundle with two React Native copies and names both", () => {
+  assert.deepEqual(runCheck(fixture("two-react-natives")), {
+    status: 1,
+    stdout: "",
+    stderr:
+      "single-react: react-native is bundled 2 times:\n" +
+      "  /apps/mobile/node_modules/react-native\n" +
+      "  /node_modules/react-native\n",
+  });
+});
 
-  assert.equal(run.status, 1);
-  assert.match(run.stderr, /no source maps under .*no-maps/);
+test("fails a bundle whose maps list no React at all", () => {
+  const dir = fixture("no-react");
+
+  assert.deepEqual(runCheck(dir), {
+    status: 1,
+    stdout: "",
+    stderr: `single-react: react not found in the bundle's source maps under ${dir}\n`,
+  });
+});
+
+test("fails an export directory with no source maps", () => {
+  const dir = fixture("no-maps");
+
+  assert.deepEqual(runCheck(dir), {
+    status: 1,
+    stdout: "",
+    stderr: `single-react: no source maps under ${dir}; export with \`expo export --source-maps\`\n`,
+  });
 });
 
 test("fails without an export directory argument", () => {
-  const run = runCheck();
-
-  assert.equal(run.status, 1);
-  assert.match(run.stderr, /usage: node scripts\/mobile\/single-react\.mjs/);
+  assert.deepEqual(runCheck(), {
+    status: 1,
+    stdout: "",
+    stderr:
+      "single-react: usage: node scripts/mobile/single-react.mjs <expo export dir>\n",
+  });
 });

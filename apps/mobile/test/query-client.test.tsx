@@ -4,18 +4,17 @@
  */
 import { expect, test } from "@jest/globals";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { Text } from "react-native";
-import { Providers } from "../src/lib/providers";
-import { createQueryClient } from "../src/lib/query-client";
+import { renderWithProviders } from "./render";
 
 function ReadStatus({ read }: { read: () => Promise<string> }) {
-  const query = useQuery({ queryKey: ["status"], queryFn: read });
+  // retryDelay 0 skips TanStack's 1 s backoff; the retry count stays the app's.
+  const query = useQuery({
+    queryKey: ["status"],
+    queryFn: read,
+    retryDelay: 0,
+  });
   return <Text>{query.isError ? "read failed" : "reading"}</Text>;
 }
 
@@ -28,35 +27,14 @@ function WriteStatus({ write }: { write: () => Promise<string> }) {
   );
 }
 
-/**
- * The production client with garbage collection off, so no cache timer
- * outlives the test and keeps jest's worker alive.
- */
-function clientWithoutGc() {
-  const client = createQueryClient();
-  const defaults = client.getDefaultOptions();
-  client.setDefaultOptions({
-    queries: { ...defaults.queries, gcTime: Number.POSITIVE_INFINITY },
-    mutations: { ...defaults.mutations, gcTime: Number.POSITIVE_INFINITY },
-  });
-  return client;
-}
-
 test("retries a failed read once, then shows the error", async () => {
-  const client = clientWithoutGc();
-  // Retry 1 waits TanStack's default first backoff (1 s) before trying again.
-  client.setQueryDefaults(["status"], { retryDelay: 0 });
   let attempts = 0;
   const read = async () => {
     attempts += 1;
     throw new Error("host unreachable");
   };
 
-  await render(
-    <Providers client={client}>
-      <ReadStatus read={read} />
-    </Providers>
-  );
+  await renderWithProviders(<ReadStatus read={read} />);
 
   expect(await screen.findByText("read failed")).toBeOnTheScreen();
   expect(attempts).toBe(2);
@@ -69,11 +47,7 @@ test("does not retry a failed write", async () => {
     throw new Error("host refused");
   };
 
-  await render(
-    <Providers client={clientWithoutGc()}>
-      <WriteStatus write={write} />
-    </Providers>
-  );
+  await renderWithProviders(<WriteStatus write={write} />);
   await fireEvent.press(screen.getByText("idle"));
 
   expect(await screen.findByText("write failed")).toBeOnTheScreen();

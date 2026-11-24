@@ -16,6 +16,11 @@ const SINGLE_COPY_PACKAGES = ["react", "react-native"];
 
 const SOURCE_MAP = /\.map$/;
 
+/** A failed check or bad input; the message alone explains it. */
+class CheckError extends Error {
+  name = "CheckError";
+}
+
 /**
  * The installed directory of `packageName` that `sourcePath` belongs to, or
  * null when the file is not part of that package.
@@ -57,11 +62,25 @@ async function sourceMapsIn(dir) {
     .map((entry) => path.join(entry.parentPath, entry.name));
 }
 
-/** @param {string} mapFile */
+/**
+ * The module paths one source map lists.
+ * @param {string} mapFile
+ * @throws {CheckError} when the file is not a JSON source map
+ */
 async function sourcesOf(mapFile) {
-  const map = JSON.parse(await readFile(mapFile, "utf8"));
+  let map;
+  try {
+    map = JSON.parse(await readFile(mapFile, "utf8"));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new CheckError(`${mapFile} is not JSON: ${error.message}`, {
+      cause: error,
+    });
+  }
   if (!Array.isArray(map.sources)) {
-    throw new Error(`${mapFile} has no "sources" array; is it a source map?`);
+    throw new CheckError(
+      `${mapFile} has no "sources" array; is it a source map?`
+    );
   }
   return map.sources;
 }
@@ -82,13 +101,13 @@ function duplicateReport(copies) {
 async function main() {
   const exportDir = process.argv[2];
   if (!exportDir) {
-    throw new Error(
+    throw new CheckError(
       "usage: node scripts/mobile/single-react.mjs <expo export dir>"
     );
   }
   const maps = await sourceMapsIn(exportDir);
   if (maps.length === 0) {
-    throw new Error(
+    throw new CheckError(
       `no source maps under ${exportDir}; export with \`expo export --source-maps\``
     );
   }
@@ -98,7 +117,7 @@ async function main() {
     (name) => copies.get(name).length === 0
   );
   if (missing.length > 0) {
-    throw new Error(
+    throw new CheckError(
       `${missing.join(" and ")} not found in the bundle's source maps under ${exportDir}`
     );
   }
@@ -114,6 +133,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`single-react: ${error.message}`);
+  const detail = error instanceof CheckError ? error.message : error.stack;
+  console.error(`single-react: ${detail}`);
   process.exitCode = 1;
 });

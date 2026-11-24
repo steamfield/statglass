@@ -4,12 +4,13 @@
  */
 import { Text, View } from "react-native";
 import { ActionButton } from "../components/action-button";
-import { SafeAreaView } from "../components/styled";
 
 /** The app's opening screen before any host is paired. */
 export default function FirstLaunch() {
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    // Safe-area padding comes from the insets SafeAreaProvider exposes to
+    // NativeWind; className does not reach SafeAreaView itself.
+    <View className="flex-1 bg-background pt-safe pb-safe">
       <View className="flex-1 justify-center gap-3 px-6">
         <Text
           accessibilityRole="header"
@@ -35,6 +36,6 @@ export default function FirstLaunch() {
         />
         <ActionButton label="Try demo hosts" href="/demo" weight="plain" />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }

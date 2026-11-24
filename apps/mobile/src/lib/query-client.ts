@@ -1,6 +1,7 @@
 /**
- * The app's TanStack Query client and the defaults every query and mutation
- * starts from.
+ * The defaults every TanStack Query read and write starts from, and the
+ * factory for a client that uses them. The root layout makes the app's one
+ * client through `Providers`; tests make one per render.
  */
 import { QueryClient } from "@tanstack/react-query";
 
@@ -13,10 +14,7 @@ export const QUERY_DEFAULTS = {
   mutations: { retry: false },
 } as const;
 
-/** A client with the app's defaults. Tests make their own per render. */
+/** A new client with the app's defaults. */
 export function createQueryClient(): QueryClient {
   return new QueryClient({ defaultOptions: QUERY_DEFAULTS });
 }
-
-/** The single production client, shared by every screen. */
-export const queryClient = createQueryClient();

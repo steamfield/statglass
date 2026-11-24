@@ -60,28 +60,71 @@ test("puts only the values that change in the dark media block", () => {
   ]);
 });
 
-test("fails when the theme has no .dark rule", () => {
-  const lightOnly = "@theme static { --color-background: #fafafa; }";
+test("resolves references nested inside another color function", () => {
+  const mixed = `@theme static {
+  --color-cpu: #06b6d4;
+  --color-glow: color-mix(in srgb, var(--color-cpu) 50%, transparent);
+}
+.dark { --color-cpu: #000000; }`;
 
-  assert.throws(() => readSchemeColors(lightOnly), /no \.dark block/);
+  const { light, dark } = readSchemeColors(mixed);
+
+  assert.equal(light.glow, "#06b6d480");
+  assert.equal(dark.glow, "#00000080");
 });
 
-test("fails on a reference to a token that does not exist", () => {
-  const dangling = `@theme static { --color-a: #000; }
-.dark { --color-a: var(--color-missing); }`;
+const FAILURES = [
+  {
+    name: "a theme without a .dark rule",
+    css: "@theme static { --color-background: #fafafa; }",
+    message: "theme.css has no top-level .dark block",
+  },
+  {
+    name: "a .dark rule nested inside another block",
+    css: `@theme static { --color-a: #000; }
+@media (prefers-contrast: more) { .dark { --color-a: #fff; } }`,
+    message: "theme.css has no top-level .dark block",
+  },
+  {
+    name: "a token set in .dark only",
+    css: `@theme static { --color-a: #000; }
+.dark { --color-b: #fff; }`,
+    message: "theme.css: --color-b is set in .dark but not in @theme static",
+  },
+  {
+    name: "a reference to a token that does not exist",
+    css: `@theme static { --color-a: #000; }
+.dark { --color-a: var(--color-missing); }`,
+    message:
+      "theme.css dark: --color-a uses var(--color-missing), which is not defined",
+  },
+  {
+    name: "a reference to a variable that is not a color token",
+    css: `@theme static { --color-a: color-mix(in srgb, #000 var(--ramp-2), transparent); }
+.dark { --color-a: #000; }`,
+    message:
+      "theme.css light: --color-a uses --ramp-2, which is not a color token",
+  },
+  {
+    name: "two tokens that refer to each other",
+    css: `@theme static { --color-a: var(--color-b); --color-b: var(--color-a); }
+.dark { --color-a: #000; }`,
+    message:
+      "theme.css light: --color-b refers back to itself through --color-a",
+  },
+  {
+    name: "a value that is not a color",
+    css: `@theme static { --color-a: 12px; }
+.dark { --color-a: #000; }`,
+    message: 'theme.css: --color-a "12px" is not a color',
+  },
+];
 
-  assert.throws(
-    () => readSchemeColors(dangling),
-    /dark: var\(--color-missing\) is not defined/
-  );
-});
-
-test("fails on a value that is not a color", () => {
-  const broken = `@theme static { --color-a: 12px; }
-.dark { --color-a: #000; }`;
-
-  assert.throws(
-    () => readSchemeColors(broken),
-    /--color-a "12px" is not a color/
-  );
-});
+for (const failure of FAILURES) {
+  test(`fails on ${failure.name}`, () => {
+    assert.throws(() => readSchemeColors(failure.css), {
+      name: "ThemeSourceError",
+      message: failure.message,
+    });
+  });
+}
