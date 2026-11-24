@@ -65,6 +65,7 @@ xcodebuild -create-xcframework \
 	-output "$XCFRAMEWORK" >/dev/null ||
 	fail "xcodebuild -create-xcframework failed for $XCFRAMEWORK"
 
+rm -rf "$SWIFT_DIR"
 mkdir -p "$SWIFT_DIR"
 cp "$staging"/bindings/*.swift "$SWIFT_DIR/" || fail "uniffi-bindgen wrote no Swift file"
 
