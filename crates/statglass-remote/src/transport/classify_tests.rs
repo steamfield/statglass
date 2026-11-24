@@ -1,16 +1,20 @@
-//! SSH stderr classification and dual-route combination.
+//! SSH stderr classification through the dialer seam.
 use super::*;
 use crate::UnreachableKind;
 
-/// What `dial` sees when ssh exits before the greeting: the stream closes.
-fn closed() -> std::result::Result<Result<Message>, tokio::time::error::Elapsed> {
-    Ok(Err(RemoteError::Io(
-        std::io::ErrorKind::UnexpectedEof.into(),
-    )))
+fn classify(stderr: &str, outcome: HandshakeFailure) -> RemoteError {
+    OpenSshDialer::default().classify(&DialFailure {
+        target: &Target {
+            route: Route::Lan,
+            host: "studio.local".into(),
+        },
+        stderr,
+        outcome,
+    })
 }
 
 fn kind_of(detail: &str) -> Option<UnreachableKind> {
-    match stderr_error("studio.local", detail.into(), &closed()) {
+    match classify(detail, HandshakeFailure::Closed) {
         RemoteError::Unreachable { kind, detail } => {
             assert!(detail.starts_with("studio.local: "), "{detail}");
             Some(kind)
@@ -62,27 +66,21 @@ fn classification_ignores_banner_lines_before_the_error() {
 #[test]
 fn timeouts_auth_and_host_keys_keep_their_variants() {
     assert!(matches!(
-        stderr_error(
-            "studio.local",
-            "ssh: connect to host studio.local port 22: Operation timed out".into(),
-            &closed()
+        classify(
+            "ssh: connect to host studio.local port 22: Operation timed out",
+            HandshakeFailure::Closed
         ),
         RemoteError::Timeout(_)
     ));
     assert!(matches!(
-        stderr_error(
-            "studio.local",
-            "user@studio.local: Permission denied (publickey).".into(),
-            &closed()
+        classify(
+            "user@studio.local: Permission denied (publickey).",
+            HandshakeFailure::Closed
         ),
         RemoteError::Authentication(_)
     ));
     assert!(matches!(
-        stderr_error(
-            "studio.local",
-            "Host key verification failed.".into(),
-            &closed()
-        ),
+        classify("Host key verification failed.", HandshakeFailure::Closed),
         RemoteError::HostKey(_)
     ));
 }
@@ -90,63 +88,50 @@ fn timeouts_auth_and_host_keys_keep_their_variants() {
 #[test]
 fn unrecognized_stderr_stays_a_transport_error() {
     assert!(matches!(
-        stderr_error(
-            "studio.local",
-            "kex_exchange_identification: read: Connection reset by peer".into(),
-            &closed()
+        classify(
+            "kex_exchange_identification: read: Connection reset by peer",
+            HandshakeFailure::Closed
         ),
         RemoteError::Transport(_)
     ));
 }
 
 #[test]
-fn two_retryable_route_failures_combine_into_both_routes() {
-    let lan = RemoteError::Unreachable {
-        kind: UnreachableKind::NameNotResolved,
-        detail: "studio.local: dns".into(),
-    };
-    let tailscale = RemoteError::Timeout("studio: timed out".into());
-    match combine(lan, tailscale) {
-        RemoteError::Routes(routes) => match routes.as_slice() {
-            [lan, tailscale] => {
-                assert_eq!((lan.route, tailscale.route), (Route::Lan, Route::Tailscale));
-                assert!(matches!(
-                    lan.error,
-                    RemoteError::Unreachable {
-                        kind: UnreachableKind::NameNotResolved,
-                        ..
-                    }
-                ));
-                assert!(matches!(tailscale.error, RemoteError::Timeout(_)));
-            }
-            other => panic!("expected two routes, got {other:?}"),
-        },
-        other => panic!("expected Routes, got {other:?}"),
+fn stalled_hello_uses_timeout_even_with_an_ssh_banner() {
+    let timed_out = HandshakeFailure::TimedOut;
+    assert!(matches!(
+        classify("Warning: Permanently added", timed_out),
+        RemoteError::Timeout(text) if text == "studio.local: Warning: Permanently added"
+    ));
+    assert!(matches!(
+        classify("", timed_out),
+        RemoteError::Timeout(text) if text == "studio.local: The host did not answer in time."
+    ));
+    assert!(matches!(
+        classify("Host key verification failed.", timed_out),
+        RemoteError::HostKey(text) if text == "studio.local: Host key verification failed."
+    ));
+}
+
+#[test]
+fn empty_stderr_uses_the_handshake_sentence() {
+    for (outcome, expected) in [
+        (
+            HandshakeFailure::Closed,
+            "studio.local: The connection closed before StatGlass could start on the host.",
+        ),
+        (
+            HandshakeFailure::Invalid,
+            "studio.local: The host sent an invalid StatGlass greeting.",
+        ),
+        (
+            HandshakeFailure::NotHello,
+            "studio.local: The host did not send a StatGlass greeting.",
+        ),
+    ] {
+        assert!(
+            matches!(classify("", outcome), RemoteError::Transport(text) if text == expected),
+            "{outcome:?}"
+        );
     }
-}
-
-#[test]
-fn a_non_retryable_route_still_wins_alone() {
-    let combined = combine(
-        RemoteError::Timeout("studio.local: timed out".into()),
-        RemoteError::HostKey("studio: changed".into()),
-    );
-    assert!(matches!(combined, RemoteError::HostKey(_)));
-}
-
-#[test]
-fn both_routes_is_retryable_and_keeps_the_combined_text() {
-    let both = combine(
-        RemoteError::Transport("a".into()),
-        RemoteError::Transport("b".into()),
-    );
-    assert!(both.retryable());
-    assert_eq!(both.to_string(), "LAN: a; Tailscale: b");
-    assert!(
-        RemoteError::Unreachable {
-            kind: UnreachableKind::Refused,
-            detail: "x".into()
-        }
-        .retryable()
-    );
 }
