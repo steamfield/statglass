@@ -1,0 +1,34 @@
+[package]
+name = "statglass-session"
+description = "Client side of a StatGlass remote session: dialer seam, handshake, sources and mirrors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# The shared dialer conformance suite (`statglass_session::conformance`) that the
+# OpenSSH and russh dialers run against a live host, plus the test session constructor.
+conformance = ["dep:tempfile"]
+
+[dependencies]
+statglass-engine.workspace = true
+statglass-proto.workspace = true
+statglass-schema.workspace = true
+statglass-store.workspace = true
+# No `process`: this crate never spawns a program, so the phone can link it.
+tokio = { workspace = true, features = ["rt", "sync", "time", "io-util", "macros"] }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+libc = "0.2.190"
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

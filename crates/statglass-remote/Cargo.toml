@@ -11,6 +11,7 @@ jiff.workspace = true
 statglass-engine.workspace = true
 statglass-proto.workspace = true
 statglass-schema.workspace = true
+statglass-session.workspace = true
 statglass-store.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "net", "io-util", "io-std", "fs", "process", "macros"] }
 serde.workspace = true
@@ -22,6 +23,7 @@ uuid.workspace = true
 libc = "0.2.190"
 
 [dev-dependencies]
+statglass-session = { workspace = true, features = ["conformance"] }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true
 sha2 = "0.10.9"

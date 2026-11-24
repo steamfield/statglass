@@ -1,7 +1,12 @@
-use crate::{RemoteError, Result, UnreachableKind, codec};
+use crate::{RemoteError, Result, Route, SshSession, UnreachableKind, codec};
 use serde::{Deserialize, Serialize};
-use statglass_proto::{Hello, Message, Negotiated, Offer};
+use statglass_proto::{Message, Offer};
 use statglass_schema::HostId;
+pub(crate) use statglass_session::command::{helper_command, sh_c, sh_word, shell_quote};
+use statglass_session::{
+    BoxFuture, Close, DialFailure, DialedStream, Dialer, Endpoint, HANDSHAKE_TIMEOUT,
+    RemoteCommand, RouteError, StderrTail, Target,
+};
 use std::{process::Stdio, time::Duration};
 use tokio::{
     io::AsyncReadExt,
@@ -18,107 +23,8 @@ pub struct EndpointConfig {
     pub command: RemoteCommand,
 }
 
-/// The program an SSH session starts on the remote host.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RemoteCommand {
-    /// The app's bundled `statglass-remote-helper` at this absolute path. Empty uses the
-    /// normal per-user installation. Serialized as the bare path string, the format of
-    /// the old `helper_path` field.
-    MacHelper(String),
-    /// The headless Linux agent (D-116). `system` selects the root layout; `socket`, when
-    /// set, is the daemon's socket, passed explicitly so the session and the user
-    /// manager agree on it whatever the login environment says.
-    Agent {
-        bin: String,
-        system: bool,
-        #[serde(default)]
-        socket: Option<String>,
-    },
-}
-
-impl Default for RemoteCommand {
-    fn default() -> Self {
-        Self::MacHelper(String::new())
-    }
-}
-
-impl RemoteCommand {
-    /// The remote command line that starts the stdio session.
-    pub fn serve_command(&self) -> Result<String> {
-        match self {
-            Self::MacHelper(path) => Ok(helper_command(path, "serve --stdio")),
-            Self::Agent {
-                bin,
-                system,
-                socket,
-            } => {
-                let mut inner = format!("exec {} serve --stdio", sh_word(bin)?);
-                if *system {
-                    inner.push_str(" --system");
-                }
-                if let Some(socket) = socket {
-                    inner.push_str(" --socket ");
-                    inner.push_str(&sh_word(socket)?);
-                }
-                sh_c(&inner)
-            }
-        }
-    }
-}
-
-/// `script` for the remote login shell to hand to `/bin/sh` untouched, whatever that
-/// shell is (zsh, fish and nu each have their own syntax). The script travels as one
-/// single-quoted word, so it may hold no `'`, and no double backslash, which fish reads
-/// as an escape even inside single quotes. Values go in through [`sh_word`].
-pub(crate) fn sh_c(script: &str) -> Result<String> {
-    if script.contains('\'') || script.contains("\\\\") {
-        return Err(RemoteError::Protocol(
-            "remote script cannot be quoted for every login shell".into(),
-        ));
-    }
-    Ok(format!("exec /bin/sh -c '{script}'"))
-}
-
-/// `value` as one double-quoted `/bin/sh` word that survives [`sh_c`]'s outer quotes:
-/// `"`, `$` and backquote are escaped; `'`, backslashes and control characters are
-/// refused, since no quoting carries them through every login shell.
-pub(crate) fn sh_word(value: &str) -> Result<String> {
-    if value.is_empty()
-        || value
-            .chars()
-            .any(|c| c == '\'' || c == '\\' || c.is_control())
-    {
-        return Err(RemoteError::Protocol(format!(
-            "unsupported characters in remote path {value:?}"
-        )));
-    }
-    let mut word = String::with_capacity(value.len() + 2);
-    word.push('"');
-    for c in value.chars() {
-        if matches!(c, '"' | '$' | '`') {
-            word.push('\\');
-        }
-        word.push(c);
-    }
-    word.push('"');
-    Ok(word)
-}
 /// SSH's own limit for TCP connect and authentication on one route, 5 s.
 const SSH_CONNECT_TIMEOUT_ARG: &str = "-oConnectTimeout=5";
-/// How long a dial waits for the StatGlass greeting, counted from spawning `ssh`, so it
-/// also bounds SSH's own connect.
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-/// The longest one failing connection attempt runs. Both routes of a dual-route host
-/// dial at once under the same limit, and the preference grace only applies after a
-/// route has succeeded, so this bounds those too.
-pub const DIAL_TIMEOUT_MS: i64 = HANDSHAKE_TIMEOUT.as_millis() as i64;
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Route {
-    Lan,
-    Tailscale,
-}
 impl EndpointConfig {
     pub fn validate(&self) -> Result<()> {
         if self.lan.is_none() && self.tailscale.is_none() {
@@ -140,6 +46,67 @@ impl EndpointConfig {
             _ => None,
         }
     }
+
+    /// The dialer endpoint: the LAN alias, then the Tailscale alias, as targets. Port,
+    /// user and host keys come from the OpenSSH config and known_hosts.
+    pub fn endpoint(&self) -> Endpoint {
+        let routes = [(Route::Lan, &self.lan), (Route::Tailscale, &self.tailscale)];
+        Endpoint {
+            targets: routes
+                .into_iter()
+                .filter_map(|(route, alias)| {
+                    alias.as_ref().map(|host| Target {
+                        route,
+                        host: host.clone(),
+                    })
+                })
+                .collect(),
+            port: None,
+            user: None,
+            host_keys: Vec::new(),
+            command: self.command.clone(),
+        }
+    }
+}
+
+/// Dials through `/usr/bin/ssh` with the user's OpenSSH config and known_hosts.
+#[derive(Clone, Debug, Default)]
+pub struct OpenSshDialer;
+
+impl Dialer for OpenSshDialer {
+    fn dial<'a>(
+        &'a self,
+        _endpoint: &'a Endpoint,
+        _target: &'a Target,
+    ) -> BoxFuture<'a, Result<DialedStream>> {
+        Box::pin(async { Err(RemoteError::Transport("not implemented".into())) })
+    }
+
+    fn classify(&self, _failure: &DialFailure<'_>) -> RemoteError {
+        RemoteError::Transport("not implemented".into())
+    }
+}
+
+/// An `ssh` child and its stderr pump. Dropping it kills the child (`kill_on_drop`);
+/// `close` kills and reaps it.
+struct ChildClose {
+    child: Child,
+    stderr_task: codec::AbortOnDrop,
+}
+
+impl Close for ChildClose {
+    fn close(self: Box<Self>) -> BoxFuture<'static, ()> {
+        Box::pin(async move {
+            let ChildClose {
+                mut child,
+                stderr_task,
+            } = *self;
+            // Kill fails only when the child already exited; wait then reaps it.
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            drop(stderr_task);
+        })
+    }
 }
 fn validate_alias(alias: &str) -> Result<()> {
     if alias.is_empty()
@@ -150,9 +117,6 @@ fn validate_alias(alias: &str) -> Result<()> {
         return Err(RemoteError::Protocol("invalid SSH alias".into()));
     }
     Ok(())
-}
-pub fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
 }
 /// A dedicated connection whose lifetime belongs entirely to StatGlass.
 pub fn ssh_command(alias: &str) -> Result<Command> {
@@ -178,48 +142,6 @@ pub fn ssh_command(alias: &str) -> Result<Command> {
     ]);
     command.kill_on_drop(true);
     Ok(command)
-}
-pub fn helper_command(path: &str, operation: &str) -> String {
-    let path = if path.is_empty() {
-        "\"$HOME\"/Applications/StatGlass.app/Contents/MacOS/statglass-remote-helper".to_string()
-    } else {
-        shell_quote(path)
-    };
-    format!("exec {path} {operation}")
-}
-pub struct SshSession {
-    pub hello: Hello,
-    pub negotiated: Negotiated,
-    pub route: Route,
-    pub reader: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>>,
-    pub writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>>,
-    pub(crate) child: Option<Child>,
-    _stderr: Option<codec::AbortOnDrop>,
-}
-impl SshSession {
-    #[cfg(test)]
-    pub(crate) fn test(stream: tokio::io::DuplexStream, hello: Hello) -> Self {
-        let (reader, writer) = tokio::io::split(stream);
-        Self {
-            negotiated: statglass_proto::negotiate(
-                &Offer::local(statglass_proto::local_features()),
-                &Offer::from(&hello),
-            )
-            .unwrap(),
-            hello,
-            route: Route::Lan,
-            reader: Box::pin(reader),
-            writer: Box::pin(writer),
-            child: None,
-            _stderr: None,
-        }
-    }
-    pub async fn close(mut self) {
-        if let Some(child) = &mut self.child {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-        }
-    }
 }
 
 async fn dial(
@@ -248,7 +170,7 @@ async fn dial(
         .stderr
         .take()
         .ok_or_else(|| RemoteError::Transport("SSH stderr missing".into()))?;
-    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let captured = StderrTail::default();
     let output = captured.clone();
     let task = codec::AbortOnDrop(tokio::spawn(async move {
         let mut buf = [0; 1024];
@@ -256,10 +178,7 @@ async fn dial(
             if n == 0 {
                 break;
             }
-            if let Ok(mut text) = output.lock() {
-                let keep = n.min(8192_usize.saturating_sub(text.len()));
-                text.extend_from_slice(&buf[..keep]);
-            }
+            output.push(buf.get(..n).unwrap_or_default());
         }
     }));
     // Counted from the spawn: ConnectTimeout ends a silent TCP connect sooner, and this
@@ -271,10 +190,7 @@ async fn dial(
             let _ = child.kill().await;
             let _ = child.wait().await;
             tokio::task::yield_now().await;
-            let detail = captured
-                .lock()
-                .map(|b| String::from_utf8_lossy(&b).trim().to_string())
-                .unwrap_or_default();
+            let detail = captured.text();
             tracing::debug!(?other, %detail, "remote handshake failed");
             return Err(stderr_error(alias, detail, &other));
         }
@@ -302,15 +218,20 @@ async fn dial(
         reason: e.to_string(),
     })?;
     codec::write(&mut writer, &Message::HelloAck(negotiated.ack())).await?;
-    Ok(SshSession {
-        hello,
-        negotiated,
+    let target = Target {
         route,
+        host: alias.to_string(),
+    };
+    let stream = DialedStream {
         reader: Box::pin(reader),
         writer: Box::pin(writer),
-        child: Some(child),
-        _stderr: Some(task),
-    })
+        stderr: captured,
+        close: Box::new(ChildClose {
+            child,
+            stderr_task: task,
+        }),
+    };
+    Ok(SshSession::new(hello, negotiated, target, stream))
 }
 
 /// The error for a session that ended before its `Hello`, from the remote's stderr.
@@ -438,7 +359,8 @@ where
 /// One error for a dual-route host whose LAN (`a`) and Tailscale (`b`) dials both
 /// failed. A non-retryable side wins alone, a stopped agent on either side reads as
 /// [`RemoteError::AgentNotRunning`], and otherwise both causes are kept in
-/// [`RemoteError::BothRoutes`].
+/// [`RemoteError::Routes`]. The aliases are not threaded through this race, so each
+/// [`RouteError::host`] is empty; the N-target race in `statglass_session` fills it.
 fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
     if !a.retryable() {
         return a;
@@ -450,10 +372,18 @@ fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
     {
         return RemoteError::AgentNotRunning(format!("LAN: {a}; Tailscale: {b}"));
     }
-    RemoteError::BothRoutes {
-        lan: Box::new(a),
-        tailscale: Box::new(b),
-    }
+    RemoteError::Routes(vec![
+        RouteError {
+            route: Route::Lan,
+            host: String::new(),
+            error: a,
+        },
+        RouteError {
+            route: Route::Tailscale,
+            host: String::new(),
+            error: b,
+        },
+    ])
 }
 
 #[cfg(test)]
@@ -466,8 +396,8 @@ fn the_dial_limit_covers_the_ssh_connect_limit() {
         .trim_start_matches("-oConnectTimeout=")
         .parse()
         .unwrap();
-    assert!(connect_secs * 1000 < DIAL_TIMEOUT_MS);
-    assert_eq!(DIAL_TIMEOUT_MS, 10_000);
+    assert!(connect_secs * 1000 < crate::DIAL_TIMEOUT_MS);
+    assert_eq!(crate::DIAL_TIMEOUT_MS, 10_000);
 }
 
 #[cfg(test)]
@@ -539,7 +469,7 @@ mod tests {
                 RemoteError::Transport("dns failed".into()),
                 RemoteError::Timeout("Operation timed out".into()),
             ),
-            RemoteError::BothRoutes { .. }
+            RemoteError::Routes(_)
         ));
         assert!(matches!(
             combine(
@@ -685,10 +615,6 @@ mod tests {
         assert!(args.contains(&"-oStrictHostKeyChecking=yes".into()));
         assert!(ssh_command("-oProxyCommand=evil").is_err());
     }
-    #[test]
-    fn quotes_remote_paths_without_expansion() {
-        assert_eq!(shell_quote("/a'b/$x"), "'/a'\\''b/$x'");
-    }
 
     /// `remote-hosts.json` as the shell writes it today: the endpoint's fields are the
     /// config's aliases plus the top-level `helper_path`.
@@ -745,59 +671,5 @@ mod tests {
                 endpoint
             );
         }
-    }
-
-    #[test]
-    fn agent_serve_command_is_one_word_for_any_login_shell() {
-        let system = RemoteCommand::Agent {
-            bin: "/usr/local/bin/statglass-agent".into(),
-            system: true,
-            socket: None,
-        };
-        assert_eq!(
-            system.serve_command().unwrap(),
-            r#"exec /bin/sh -c 'exec "/usr/local/bin/statglass-agent" serve --stdio --system'"#
-        );
-        let user = RemoteCommand::Agent {
-            bin: "/home/my user/.local/bin/statglass-agent".into(),
-            system: false,
-            socket: Some("/run/user/1000/k\"$x`/metrics.sock".into()),
-        };
-        let command = user.serve_command().unwrap();
-        assert_eq!(
-            command,
-            r#"exec /bin/sh -c 'exec "/home/my user/.local/bin/statglass-agent" serve --stdio --socket "/run/user/1000/k\"\$x\`/metrics.sock"'"#
-        );
-        // What /bin/sh actually receives: the words come back exactly.
-        let script = command
-            .strip_prefix("exec /bin/sh -c '")
-            .and_then(|s| s.strip_suffix('\''))
-            .unwrap()
-            .replace("exec ", "printf '%s\\n' ");
-        let out = std::process::Command::new("/bin/sh")
-            .args(["-c", &script])
-            .output()
-            .unwrap();
-        assert_eq!(
-            String::from_utf8(out.stdout).unwrap(),
-            "/home/my user/.local/bin/statglass-agent\nserve\n--stdio\n--socket\n/run/user/1000/k\"$x`/metrics.sock\n"
-        );
-        for bad in ["/a'b", "/a\\b", "/a\nb", ""] {
-            let command = RemoteCommand::Agent {
-                bin: bad.into(),
-                system: true,
-                socket: None,
-            };
-            assert!(matches!(
-                command.serve_command(),
-                Err(RemoteError::Protocol(_))
-            ));
-        }
-        assert!(sh_c("echo 'x'").is_err());
-        assert!(sh_c("echo a\\\\b").is_err());
-        assert_eq!(
-            RemoteCommand::default().serve_command().unwrap(),
-            helper_command("", "serve --stdio")
-        );
     }
 }

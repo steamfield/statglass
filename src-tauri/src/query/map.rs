@@ -108,7 +108,7 @@ pub(super) fn from_remote(e: &RemoteError, host: &str, last_seen: Option<String>
         RemoteError::Transport(_)
         | RemoteError::Timeout(_)
         | RemoteError::Unreachable { .. }
-        | RemoteError::BothRoutes { .. }
+        | RemoteError::Routes(_)
         | RemoteError::Io(_)
         | RemoteError::AgentNotRunning(_)
         | RemoteError::Authentication(_)

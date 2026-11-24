@@ -107,17 +107,21 @@ fn two_retryable_route_failures_combine_into_both_routes() {
     };
     let tailscale = RemoteError::Timeout("studio: timed out".into());
     match combine(lan, tailscale) {
-        RemoteError::BothRoutes { lan, tailscale } => {
-            assert!(matches!(
-                *lan,
-                RemoteError::Unreachable {
-                    kind: UnreachableKind::NameNotResolved,
-                    ..
-                }
-            ));
-            assert!(matches!(*tailscale, RemoteError::Timeout(_)));
-        }
-        other => panic!("expected BothRoutes, got {other:?}"),
+        RemoteError::Routes(routes) => match routes.as_slice() {
+            [lan, tailscale] => {
+                assert_eq!((lan.route, tailscale.route), (Route::Lan, Route::Tailscale));
+                assert!(matches!(
+                    lan.error,
+                    RemoteError::Unreachable {
+                        kind: UnreachableKind::NameNotResolved,
+                        ..
+                    }
+                ));
+                assert!(matches!(tailscale.error, RemoteError::Timeout(_)));
+            }
+            other => panic!("expected two routes, got {other:?}"),
+        },
+        other => panic!("expected Routes, got {other:?}"),
     }
 }
 
@@ -132,10 +136,10 @@ fn a_non_retryable_route_still_wins_alone() {
 
 #[test]
 fn both_routes_is_retryable_and_keeps_the_combined_text() {
-    let both = RemoteError::BothRoutes {
-        lan: Box::new(RemoteError::Transport("a".into())),
-        tailscale: Box::new(RemoteError::Transport("b".into())),
-    };
+    let both = combine(
+        RemoteError::Transport("a".into()),
+        RemoteError::Transport("b".into()),
+    );
     assert!(both.retryable());
     assert_eq!(both.to_string(), "LAN: a; Tailscale: b");
     assert!(
