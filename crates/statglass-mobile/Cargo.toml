@@ -1,0 +1,32 @@
+[package]
+name = "statglass-mobile"
+description = "UniFFI facade the iPhone app links: the Rust core behind a Swift-callable API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# staticlib for the iOS XCFramework; lib so tests and the bindgen binary can link it.
+crate-type = ["staticlib", "lib"]
+
+[features]
+# Builds the `uniffi-bindgen` binary that writes the Swift bindings on the host. Off by
+# default so the iOS static library carries no bindings generator.
+bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
+
+[[bin]]
+name = "uniffi-bindgen"
+required-features = ["bindgen"]
+
+[dependencies]
+statglass-schema.workspace = true
+statglass-proto.workspace = true
+statglass-store.workspace = true
+statglass-engine.workspace = true
+uniffi.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

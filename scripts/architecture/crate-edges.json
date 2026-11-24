@@ -47,6 +47,15 @@
   "statglass-update": { "normal": [], "dev": [] },
   "statglass-query": { "normal": ["statglass-schema"], "dev": [] },
   "statglass-notify": { "normal": ["statglass-schema"], "dev": [] },
+  "statglass-mobile": {
+    "normal": [
+      "statglass-schema",
+      "statglass-proto",
+      "statglass-store",
+      "statglass-engine"
+    ],
+    "dev": []
+  },
   "statglass-cli": {
     "normal": ["statglass-query", "statglass-schema"],
     "dev": []

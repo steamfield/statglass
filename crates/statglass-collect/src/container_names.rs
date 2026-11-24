@@ -84,14 +84,14 @@ impl ContainerNames {
 /// Fills a [`ContainerNames`] from the local Docker daemon. Async, for a task on the
 /// caller's runtime; the policy of when to call [`NameRefresher::refresh`] is the
 /// caller's.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "ios")))]
 pub struct NameRefresher {
     names: ContainerNames,
     home: std::path::PathBuf,
     adapter: Option<crate::docker::DockerAdapter>,
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "ios")))]
 impl NameRefresher {
     /// Docker sockets are looked for as the app does ([`crate::docker::candidates`]),
     /// under `home` and at `/var/run/docker.sock`.
