@@ -24,8 +24,11 @@ Decide first whether the behavior belongs in a shared crate (`statglass-session`
 `statglass-ipc`) so the desktop gets it too; the facade only exposes it. Then add or change
 the method in `crates/statglass-mobile`:
 
-- New data types go in `statglass-ipc` (or the facade, for phone-only types) and derive
-  `specta::Type`; the result is JSON in `{ status, data | error }` with `CommandError`.
+- Every type the facade returns lives in a crate the `src-tauri` specta exporter depends
+  on (`statglass-ipc` from phase 3, `statglass-schema` or `statglass-proto` until then)
+  and derives `specta::Type`; `src-tauri` has no edge to the facade, so a type defined
+  there never reaches TypeScript. The result is JSON in `{ status, data | error }` with
+  `CommandError`.
 - The exported body runs inside `catch_unwind`; a panic maps to `CommandError::Internal`.
 - Streams push through a UniFFI callback interface; never block the caller.
 
@@ -34,7 +37,8 @@ mobile-rust-check`, `make rust-check`, `make architecture-check`.
 
 ## 2. Types export
 
-Register any new type with the one specta exporter, then run `make bindings`. It rewrites
+Register any new type with the one specta exporter (a type no desktop command returns gets
+a `.typ::<T>()` line in `src-tauri/src/facts.rs`, as `BuildInfo` does), then run `make bindings`. It rewrites
 `packages/core/src/generated/types.ts` and `src/desktop-transport/commands.ts`; never edit
 either by hand (the write hooks block it).
 

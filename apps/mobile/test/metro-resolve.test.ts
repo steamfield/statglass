@@ -1,6 +1,6 @@
 /**
  * The workspace resolver Metro uses: `@core/*` goes to the shared package's
- * source and React resolves from the app, wherever the import comes from.
+ * source, `@/*` to the app's own src/, and React resolves from the app, wherever the import comes from.
  * Metro's own resolver is stood in by one that reports which directory it
  * resolved from, since that decides which installed copy a bundle gets.
  */
@@ -43,6 +43,12 @@ test("maps @core/<path> to packages/core/src/<path>", () => {
   const resolved = resolve(metroContext, "@core/format", "ios");
 
   expect(resolved.filePath).toBe(path.join(coreSrc, "format"));
+});
+
+test("maps @/<path> to the app's own src/<path>", () => {
+  const resolved = resolve(metroContext, "@/lib/providers", "ios");
+
+  expect(resolved.filePath).toBe(path.join(appRoot, "src", "lib/providers"));
 });
 
 test.each([

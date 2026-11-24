@@ -714,7 +714,7 @@ export interface UnavailableCardProps { module: UiModule; state: ModuleState }
 Route stubs saying "Not built yet":
 
 - `apps/mobile/src/app/(hosts)/_layout.tsx` (Stack, large titles; implemented)
-- `(hosts)/index.tsx` (stub, lane a fills it). The two dynamic routes under `(hosts)/[host]/` (`index.tsx`, `[module].tsx`) are final in the scaffold: one-line re-exports of `HostScreen` from `~/host` and `ModuleScreen` from `~/module`, which the scaffold stubs and lane d implements. No lane edits the route files (the plan graph can't list bracketed paths).
+- `(hosts)/index.tsx` (stub, lane a fills it). The two dynamic routes under `(hosts)/[host]/` (`index.tsx`, `[module].tsx`) are final in the scaffold: one-line re-exports of `HostScreen` from `@/host` and `ModuleScreen` from `@/module` (mobile's `@/*` alias for `apps/mobile/src/*`), which the scaffold stubs and lane d implements. No lane edits the route files (the plan graph can't list bracketed paths).
 - `settings/_layout.tsx`, `settings/index.tsx`
 
 #### Lane a brief

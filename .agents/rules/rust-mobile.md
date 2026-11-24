@@ -17,7 +17,7 @@ Rust rules (`crates.md`, `error-handling.md`, `platform.md`, `lints.md`) all app
 - Return every command result as JSON in the desktop's shape, `{ "status": "ok", "data" } | { "status": "error", "error": CommandError }`, so `MobileTransport` and the desktop map one error type.
 - Wrap the body of every exported function and callback entry in `std::panic::catch_unwind` and map a panic to `CommandError::Internal`; a panic that crosses FFI is undefined behavior.
 - Build iOS with the `mobile-release` profile (inherits release, `panic = "unwind"`), because the workspace release profile aborts and `catch_unwind` catches nothing there.
-- Exported types live in `statglass-ipc` or the facade and reach TypeScript through the one specta export into `packages/core/src/generated/types.ts`; never a second exporter.
+- Every type the facade returns lives in a crate the `src-tauri` specta exporter depends on (`statglass-ipc` from phase 3, `statglass-schema` or `statglass-proto` until then), derives `specta::Type` and is registered there, so it reaches `packages/core/src/generated/types.ts` through the one export. The facade defines none of its own (`src-tauri` has no edge to it), and there is never a second exporter.
 - Keep the facade a shell: registry, session scheduler, mirror paths and policy, command surface. Session, sync and mirror logic belongs in the shared crates so the desktop runs the same code.
 - Nothing exported blocks the caller: lifecycle calls return at once or are async, and streams push through UniFFI callbacks.
 

@@ -44,6 +44,7 @@ mod alert;
 mod alert_destination;
 mod alert_limits;
 mod alert_metrics;
+mod build_info;
 mod caps;
 mod cardinality;
 mod catalog;
@@ -72,6 +73,7 @@ pub use alert_destination::{
 };
 pub use alert_limits::{AlertLimits, alert_label_keys, alert_limits};
 pub use alert_metrics::{ALERT_METRICS, AlertMetric, alert_metric};
+pub use build_info::BuildInfo;
 pub use caps::{Capabilities, DiskDevice, Entitlement, ModuleCap, UnsupportedReason};
 pub use cardinality::{LABEL_VALUE_MAX, bound_label_value};
 pub use catalog::{CATALOG, Catalog, CatalogError, MetricDef, MetricKind, Module, Unit};

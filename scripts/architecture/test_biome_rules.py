@@ -128,6 +128,41 @@ class BiomeRules(unittest.TestCase):
             with self.subTest(source=source):
                 self.assert_allowed(source, directory="src/desktop-transport")
 
+    def test_mobile_rejects_desktop_imports_and_relative_escapes(self):
+        # The fixture sits one directory below src/, so "../x" already leaves
+        # the fixture's directory: every cross-directory import goes through
+        # @/ or @core/. modules/ shares the override but has no directory yet.
+        for module in ("react-dom", "@tauri-apps/api", "~/x", "@desktop/native", "../x",
+                       "../../../src/desktop-transport/x", "../../../packages/core/src/x"):
+            with self.subTest(module=module):
+                self.assert_rejected(f'import {{ x }} from "{module}";\n', directory="apps/mobile/src", name="probe.tsx")
+        for module in ("@core/format", "@/x", "./x"):
+            with self.subTest(module=module):
+                self.assert_allowed(f'import {{ x }} from "{module}";\n', directory="apps/mobile/src", name="probe.tsx")
+
+    def test_mobile_tests_reach_only_root_configs_and_scripts_relatively(self):
+        for module in ("../src/lib/providers", "../../../packages/core/src/x", "~/x", "react-dom"):
+            with self.subTest(module=module):
+                self.assert_rejected(f'import {{ x }} from "{module}";\n', directory="apps/mobile/test")
+        for module in ("../app.config", "../metro-resolve.cjs", "../scripts/theme-render.mjs",
+                       "@/lib/providers", "@core/format", "./render"):
+            with self.subTest(module=module):
+                self.assert_allowed(f'import {{ x }} from "{module}";\n', directory="apps/mobile/test")
+
+    def test_desktop_rejects_react_native_and_expo(self):
+        for directory in ("src/app", "src/app/widgets", "src/desktop-transport"):
+            for module in ("react-native", "react-native/Libraries/Image", "react-native-svg",
+                           "expo", "expo-router", "@expo/vector-icons"):
+                with self.subTest(directory=directory, module=module):
+                    self.assert_rejected(f'import {{ x }} from "{module}";\n', directory=directory)
+
+    def test_desktop_entry_point_shares_the_app_override(self):
+        # src/main.tsx is one fixed file, so a fixture can't sit beside it, and
+        # Biome's stdin mode skips path overrides. Check the override lists it.
+        overrides = json.loads((ROOT / "biome.json").read_text())["overrides"]
+        app = [o["includes"] for o in overrides if o["includes"][0] == "src/app/**"]
+        self.assertEqual(app, [["src/app/**", "src/main.tsx", "!src/app/widgets/**"]])
+
     def test_tests_keep_node_runtime_access(self):
         for directory in ("packages/core/src", "src/app"):
             self.assert_allowed('import { readFile } from "node:fs";\n', directory=directory, name="probe.test.ts")

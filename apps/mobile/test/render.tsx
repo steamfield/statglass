@@ -4,8 +4,8 @@
  */
 import { render } from "@testing-library/react-native";
 import type { ReactElement } from "react";
-import { Providers } from "../src/lib/providers";
-import { createQueryClient } from "../src/lib/query-client";
+import { Providers } from "@/lib/providers";
+import { createQueryClient } from "@/lib/query-client";
 
 /**
  * A client with the app's defaults and cache garbage collection off, so no

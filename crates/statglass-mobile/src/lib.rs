@@ -11,7 +11,8 @@
 mod build_info;
 mod envelope;
 
-pub use build_info::BuildInfo;
+// The result type lives in schema so the app shell's specta export reaches it.
+pub use statglass_schema::BuildInfo;
 
 uniffi::setup_scaffolding!();
 

@@ -3,7 +3,7 @@
  * add a Linux server, try the demo hosts).
  */
 import { Text, View } from "react-native";
-import { ActionButton } from "../components/action-button";
+import { ActionButton } from "@/components/action-button";
 
 /** The app's opening screen before any host is paired. */
 export default function FirstLaunch() {

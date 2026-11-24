@@ -17,20 +17,31 @@ scope are in `plan/rfc-ios-app.md`; what the two apps share is section 4.6 and
 
 ```
 apps/mobile/
-  src/app/          # Expo Router routes: layout and wiring only
-  src/hooks/        # Thin data hooks over @statglass/core
-  src/widgets/      # Native widget renderers (react-native-svg) over shared widget models
+  src/app/          # Expo Router routes: params, layout and wiring only
+  src/data/         # PhoneTransport seam and context, demo transport, phone settings store,
+                    #   and the data hooks (hosts list, vitals, live store, streams, history, events)
+  src/hosts/        # Hosts list rows
+  src/host/         # HostScreen: pager, header, connection pill, card stack, card menu
+  src/module/       # ModuleScreen: range control, scrubbable chart, events list
+  src/cards/        # Popover cards: presentational over core selectors, plus their prop types
+  src/widgets/      # Widget twins (react-native-svg) over shared widget models; token colors
+  src/ui/           # Shared primitives such as the Dynamic Type Text roles
+  src/components/   # Phase 1 placeholders (action button, "not built yet")
+  src/lock/         # App lock gate and background blur
   src/transport/    # MobileTransport: the only code that calls statglass-native
-  src/lib/          # Providers and small React Native utilities
+  src/lib/          # Providers, the QueryClient and small React Native utilities
   modules/statglass-native/  # Expo module: Swift, podspec, vendored XCFramework
   test/             # jest-expo + React Native Testing Library
 ```
 
+`@/*` maps to `apps/mobile/src/*` and `@core/*` to `packages/core/src/*`, in tsconfig, the
+Metro resolver (`metro-resolve.cjs`) and jest's `moduleNameMapper` alike.
+
 ## Data
 
 - Keep route files thin: read params, call hooks, render; data and state logic live in hooks or core so tests reach them without a router.
-- Get data only through hooks in `src/hooks/` built on `@core/*`, so the meaning of a value matches the desktop.
-- Import core through the `@core/*` alias, never a relative path out of `apps/mobile`, so Metro, jest and tsc resolve it one way.
+- Get data only through the hooks in `src/data/`, built on `@core/*` and the `PhoneTransport` from `usePhoneTransport()`, so the meaning of a value matches the desktop and demo mode swaps the transport in one place.
+- Import other app code through `@/` and core through `@core/`. A relative import stays in the importing file's directory (`./x`); Biome rejects `../` in `src/` and `modules/`, and tests reach only `../app.config`, `../metro-resolve.cjs` and `../scripts/*.mjs` relatively.
 - Use query keys from `@core/query-keys`, never an inline array, so invalidation stays greppable and matches desktop.
 - Create the app's one `QueryClient` with `createQueryClient()` from `src/lib/query-client.ts`, inside `Providers` (one query retry, no mutation retry, no focus refetch), so tests and the app run the same policy.
 - Only `src/transport/` talks to the native module; screens and hooks take the `Transport` contract (or a `Pick` of it), so the mock transport drives demo mode and tests.
@@ -39,7 +50,7 @@ apps/mobile/
 
 ## Imports
 
-- Never import `react-dom`, `@tauri-apps/*`, `@desktop/*`, `~/` or anything under the root `src/app/`; Biome and the write hook both reject it, because the desktop and phone render differently.
+- Never import `react-dom`, `@tauri-apps/*`, `@desktop/*`, `~/` (the desktop's alias) or anything outside `apps/mobile` except through `@core/`; Biome and the write hook both reject it, because the desktop and phone render differently.
 - Install native-facing packages with `bunx expo install` so versions match the SDK; `expo install --check` in `make mobile-check` catches drift.
 - Resolve `react` and `react-native` only from `apps/mobile/node_modules`; the single-React check fails the export otherwise.
 
