@@ -1,6 +1,7 @@
 ---
 paths:
   - src/**/*.test.ts
+  - packages/**/*.test.ts
   - src/**/*.test.tsx
   - tests/**
 ---
@@ -15,7 +16,7 @@ This file covers what's specific to the frontend suite.
 ```bash
 bun run test                    # Vitest, single run
 bun run test:watch              # Vitest watch mode
-bun run test -- src/core/format # Scoped by path substring
+bun run test -- packages/core/src/format # Scoped by path substring
 bun run test:e2e                # Playwright against the Vite dev server + mock transport
 bun run test:e2e:ui             # Playwright with UI
 make e2e-perf                  # Production React + mock, Chromium, one worker (macOS budgets)

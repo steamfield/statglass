@@ -159,6 +159,90 @@ class HookTests(unittest.TestCase):
                 self.assertIn(f"left sibling-worktree orphan alone: {pid}", result.stderr)
                 self.assertNotIn(pid, own_line)
 
+    def write_decision(self, hook, path, text="export const value = 1;\n", tool="Write"):
+        tool_input = {"file_path": path}
+        if tool == "Edit":
+            tool_input.update(old_string="x", new_string=text)
+        else:
+            tool_input["content"] = text
+        result = self.hook(hook, {"tool_name": tool, "tool_input": tool_input})
+        return json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision")
+
+    def test_shared_core_rejects_framework_and_platform_imports(self):
+        core = str(self.root / "packages/core/src/x.ts")
+        for text in [
+            'import { useState } from "react";',
+            "import { View } from 'react-native';",
+            'import Svg from "react-native-svg";',
+            'import { CameraView } from "expo-camera";',
+            'import { invoke } from "@tauri-apps/api/core";',
+            'import type { GifTheme } from "@steamfield/ui/gif";',
+            'import { commands } from "@desktop/commands";',
+            'import { cn } from "~/lib/utils";',
+        ]:
+            with self.subTest(text=text):
+                self.assertEqual(self.write_decision("enforce-boundaries.sh", core, text), "deny")
+        self.assertEqual(self.write_decision(
+            "enforce-boundaries.sh", core, 'import { useState } from "react";', tool="Edit"), "deny")
+        for path, text in [
+            (core, 'import { formatBytes } from "@core/format";\nimport { reactive } from "reactivity";'),
+            (core, 'import type { LiveMsg } from "@core/generated/types";\nexport const expose = 1;'),
+            ("packages/core/src/format.ts", 'import { hierarchy } from "d3-hierarchy";'),
+        ]:
+            with self.subTest(path=path, text=text):
+                self.assertIsNone(self.write_decision("enforce-boundaries.sh", path, text))
+
+    def test_mobile_app_rejects_desktop_imports_and_leaving_the_app(self):
+        screen = str(self.root / "apps/mobile/src/app/x.tsx")
+        for text in [
+            'import { createRoot } from "react-dom/client";',
+            'import { listen } from "@tauri-apps/api/event";',
+            'import { createAppTransport } from "@desktop/app-transport";',
+            'import { Card } from "~/widgets/card";',
+            'import { CpuCard } from "../../../../src/app/widgets/cpu-card";',
+            'import { formatBytes } from "../../../../packages/core/src/format";',
+        ]:
+            with self.subTest(text=text):
+                self.assertEqual(self.write_decision("enforce-boundaries.sh", screen, text), "deny")
+        allowed = ('import { View } from "react-native";\nimport { formatBytes } from "@core/format";\n'
+                   'import { Providers } from "../../lib/providers";\nimport { theme } from "../theme";')
+        for path in [screen, "apps/mobile/src/app/x.tsx"]:
+            with self.subTest(path=path):
+                self.assertIsNone(self.write_decision("enforce-boundaries.sh", path, allowed))
+        config = str(self.root / "apps/mobile/app.config.ts")
+        self.assertEqual(self.write_decision("enforce-boundaries.sh", config, 'import x from "../../package.json";'), "deny")
+        self.assertIsNone(self.write_decision("enforce-boundaries.sh", config, 'import type { ExpoConfig } from "expo/config";'))
+
+    def test_generated_bindings_are_blocked_for_edits_and_shell_writes(self):
+        for path in [
+            str(self.root / "packages/core/src/generated/types.ts"),
+            "packages/core/src/generated/tray-rates.json",
+            str(self.root / "src/desktop-transport/commands.ts"),
+            "src/desktop-transport/commands.ts",
+        ]:
+            with self.subTest(path=path):
+                self.assertEqual(self.write_decision("block-generated-edits.sh", path), "deny")
+                self.assertEqual(self.write_decision("block-generated-edits.sh", path, tool="Edit"), "deny")
+        for path in [
+            str(self.root / "src/desktop-transport/native.ts"),
+            str(self.root / "src/desktop-transport/commands.test.ts"),
+            str(self.root / "packages/core/src/format.ts"),
+            str(self.root / "apps/mobile/src/app/index.tsx"),
+        ]:
+            with self.subTest(path=path):
+                self.assertIsNone(self.write_decision("block-generated-edits.sh", path))
+        for command in [
+            "cp /tmp/commands.ts src/desktop-transport/commands.ts",
+            "echo x > packages/core/src/generated/types.ts",
+            "sed -i '' 's/a/b/' src/desktop-transport/commands.ts",
+        ]:
+            with self.subTest(command=command):
+                self.assertEqual(self.decision("pre-bash.sh", command).get("permissionDecision"), "deny")
+        for command in ["make bindings", "cat src/desktop-transport/commands.ts",
+                        "cp /tmp/native.ts src/desktop-transport/native.ts"]:
+            with self.subTest(command=command):
+                self.assertNotEqual(self.decision("pre-bash.sh", command).get("permissionDecision"), "deny")
+
     def test_stop_formats_only_files_written_by_that_session(self):
         source = self.root / "src"
         source.mkdir()

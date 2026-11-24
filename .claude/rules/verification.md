@@ -2,6 +2,9 @@
 paths:
   - "src/**/*.ts"
   - "src/**/*.tsx"
+  - "packages/**/*.ts"
+  - "apps/mobile/**/*.ts"
+  - "apps/mobile/**/*.tsx"
   - "src-tauri/**/*.rs"
   - "crates/**/*.rs"
 ---
@@ -19,7 +22,8 @@ UI work is not done until it has been compared against `plan/design-system.md` a
 screens already built. Take a screenshot of the running view (browser dev server with the
 mock transport) and put it next to the neighboring screens it should match, and the dev
 gallery (`/?route=/dev/gallery`) when you touched a shared component. Name every difference
-you are leaving in place and why.
+you are leaving in place and why. Mobile screens are compared the same way in the iOS
+Simulator against the desktop popover (the `ios-simulator` skill).
 
 ## A clean exit code is not a pass
 
@@ -28,7 +32,7 @@ pass rate, assert the work actually happened: the test count is non-zero, the fi
 expected to be checked was in the run.
 
 The same trap has a second form: **verifying a proxy instead of the thing**. Regenerating
-`src/core/generated/` is not a green typecheck; run the check CI runs, not the one that
+`packages/core/src/generated/` is not a green typecheck; run the check CI runs, not the one that
 seems equivalent. When a command's real work is done by a subprocess, check the
 subprocess's output, not the wrapper's status.
 

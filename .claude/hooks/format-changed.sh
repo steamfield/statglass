@@ -17,8 +17,8 @@ rust_changed=0
 while IFS= read -r -d '' file; do
     [[ ! -f "$repo_root/$file" ]] && continue
     case "$file" in
-        packages/core/src/generated/*) ;;
-        src/*.ts|src/*.tsx|src/*.css|tests/*.ts|tests/*.tsx)
+        packages/core/src/generated/*|src/desktop-transport/commands.ts) ;;
+        src/*.ts|src/*.tsx|src/*.css|tests/*.ts|tests/*.tsx|packages/*.ts|packages/*.tsx|apps/mobile/*.ts|apps/mobile/*.tsx|apps/mobile/*.css)
                         # A file may be written many times in one turn.
                         already_listed=false
                         for listed in "${frontend_files[@]}"; do

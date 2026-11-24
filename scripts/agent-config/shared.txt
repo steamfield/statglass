@@ -3,6 +3,9 @@
 # Commands are indexed directly from .claude/commands/*.md.
 # After changes, run make agent-config and commit the generated outputs.
 skill:frontend-design-slop
+skill:ios-simulator
+skill:mobile-bridge
+skill:widget-model
 rule:data-boundary.md
 rule:frontend/error-handling.md
 rule:frontend/motion.md
@@ -10,10 +13,15 @@ rule:frontend/react.md
 rule:frontend/styling.md
 rule:frontend/testing.md
 rule:generated-bindings.md
+rule:mobile/expo.md
+rule:mobile/native-module.md
+rule:mobile/testing.md
 rule:rust/crates.md
 rule:rust/error-handling.md
 rule:rust/lints.md
+rule:rust/mobile.md
 rule:rust/platform.md
 rule:rust/testing.md
+rule:shared-packages.md
 rule:testing.md
 rule:verification.md
