@@ -22,9 +22,13 @@ const STAGGER_CAP = 8;
  */
 const ENTRANCE_WINDOW_MS = 800;
 
-/** Opacity finishes at 75% of `--motion-page` (300 ms of 400); the rise settles over all of it. */
+/**
+ * Opacity finishes at 75% of `--motion-page` (300 ms of 400); the rise settles
+ * over all of it. Translate only: a scale would change what a measurement
+ * mid-entrance (a hover, a test) reads as the card's size.
+ */
 const CARD_FRAMES: Keyframe[] = [
-  { opacity: 0, transform: "translateY(8px) scale(0.985)" },
+  { opacity: 0, transform: "translateY(8px)" },
   { opacity: 1, offset: 0.75 },
   { opacity: 1, transform: "none" },
 ];
