@@ -58,6 +58,17 @@ pub enum HostNotice {
     },
 }
 
+/// A host an earlier run of the app already reported offline, with no recovery since.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReportedHost {
+    /// The saved host.
+    pub host: HostId,
+    /// When its reported unreachable run began.
+    pub since_ms: i64,
+    /// The last time it was known to be down: when it was reported.
+    pub last_down_ms: i64,
+}
+
 /// Where one host stands. A host that is reachable, or not counted and not reported,
 /// has no entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,6 +126,21 @@ impl HostOfflineWatch {
                 notice
             })
             .collect()
+    }
+
+    /// Starts each of `reported` as already reported offline, so a launch neither
+    /// announces it again nor loses its recovery: the first counted observation that
+    /// sees it reachable gives one [`HostNotice::Back`], with the span ending at
+    /// `last_down_ms` since the time in between was not observed. A host missing from
+    /// that observation is forgotten as any removed host is.
+    pub fn seed(&mut self, reported: impl IntoIterator<Item = ReportedHost>) {
+        for seed in reported {
+            let track = Track::Reported {
+                since_ms: seed.since_ms,
+                last_down_ms: seed.last_down_ms,
+            };
+            self.hosts.insert(seed.host, track);
+        }
     }
 
     /// Forgets every host, as when the rule is switched off.

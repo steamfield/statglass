@@ -176,9 +176,13 @@ function kindProblem(kind: DestinationKind): string | null {
   return validToken(kind.token) ? null : MESSAGES.token;
 }
 
-/** 1 to `max_name_chars` characters once Rust's `str::trim` has run. */
+/**
+ * 1 to `max_name_chars` characters that Rust's `str::trim` leaves as they
+ * are: a name with leading or trailing whitespace is refused.
+ */
 function validName(name: string): boolean {
-  const chars = charCount(name.replace(EDGE_WHITESPACE, ""));
+  if (name.replace(EDGE_WHITESPACE, "") !== name) return false;
+  const chars = charCount(name);
   return chars > 0 && chars <= LIMITS.max_name_chars;
 }
 

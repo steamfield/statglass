@@ -1,6 +1,7 @@
 import { availableMetrics, newRule, ruleSummary } from "@core/alerts";
 import {
   ALERT_LIMITS,
+  ALERT_METRICS,
   type AlertMetric,
   type AlertRule,
   type UnitSettings,
@@ -25,6 +26,11 @@ const DISPLAY_UNITS: UnitSettings = {
   network: "bytes_per_sec",
   memory: "binary",
 };
+
+const UNIT_CHOICES = [
+  ["°C and decimal bytes", METRIC_UNITS],
+  ["°F and binary bytes", DISPLAY_UNITS],
+] as const;
 
 function metric(id: string): AlertMetric {
   const found = availableMetrics([id])[0];
@@ -69,29 +75,61 @@ function thresholdOf(r: AlertRule) {
 
 describe("rule form round trip", () => {
   it.each([
-    ["a percent", rule("mem.pressure", { value: 85 }), METRIC_UNITS],
-    ["a temperature in °F", rule("thermal.hottest"), DISPLAY_UNITS],
-    ["memory bytes in GiB", rule("mem.swap_used"), DISPLAY_UNITS],
-    ["one volume", rule("disk.free", { value: 50e9 }), METRIC_UNITS],
-    ["one fan", rule("fan.rpm", { labels: [["fan", "1"]] }), METRIC_UNITS],
-    ["a page rate", rule("mem.swap_out"), METRIC_UNITS],
-    [
-      "every series of a labelled metric",
-      rule("fan.rpm", { labels: [] }),
-      METRIC_UNITS,
-    ],
-  ])("stores %s rule as it read it", (_kind, stored, units) => {
-    const back = ruleFromForm(formFromRule(stored, units), units);
-    const got = thresholdOf(back);
-    const want = thresholdOf(stored);
-    // Unit conversion leaves float noise; everything else is exact.
-    expect({
-      ...back,
-      when: { threshold: { ...got, value: want.value } },
-    }).toEqual(stored);
-    expect(Math.abs((got.value ?? 0) - (want.value ?? 0))).toBeLessThan(
-      Math.abs(want.value ?? 1) * 1e-6
-    );
+    ["one volume", rule("disk.free", { value: 50e9 })],
+    ["one fan", rule("fan.rpm", { labels: [["fan", "1"]] })],
+    ["every series of a labelled metric", rule("fan.rpm", { labels: [] })],
+  ])("stores %s rule as it read it", (_kind, stored) => {
+    for (const units of [METRIC_UNITS, DISPLAY_UNITS]) {
+      expect(ruleFromForm(formFromRule(stored, units), units)).toEqual(stored);
+    }
+  });
+
+  it.each(
+    ALERT_METRICS.flatMap((m) =>
+      UNIT_CHOICES.map(([name, units]) => [m.metric, name, units] as const)
+    )
+  )(
+    "sends an untouched %s threshold back exactly in %s",
+    (id, _name, units) => {
+      // Fractional values in every unit, which the cut display text loses.
+      for (const value of [Math.fround(4e9 / 3), Math.fround(71.123_456)]) {
+        const entry = ALERT_METRICS.find((m) => m.metric === id);
+        if (!entry || entry.min === null || entry.max === null) {
+          throw new Error(`${id} has no range`);
+        }
+        const inRange = Math.min(Math.max(value, entry.min), entry.max);
+        const stored = rule(id, { value: inRange });
+        const back = ruleFromForm(formFromRule(stored, units), units);
+        expect(Object.is(thresholdOf(back).value, inRange)).toBe(true);
+      }
+    }
+  );
+
+  it("sends the converted value once the threshold is edited", () => {
+    const stored = rule("mem.swap_used", { value: 4e9 });
+    const form = formFromRule(stored, DISPLAY_UNITS);
+    expect(form.shown).toBe("3.72529");
+    const typed = ruleFromForm({ ...form, shown: "5" }, DISPLAY_UNITS);
+    expect(thresholdOf(typed).value).toBe(5 * 2 ** 30);
+    const comma = ruleFromForm({ ...form, shown: "3,5" }, DISPLAY_UNITS);
+    expect(thresholdOf(comma).value).toBe(3.5 * 2 ** 30);
+  });
+
+  it("reads the shown text as the parser does before calling it edited", () => {
+    const stored = rule("mem.swap_used", { value: 4e9 });
+    const form = formFromRule(stored, DISPLAY_UNITS);
+    for (const shown of [" 3.72529 ", "3,72529"]) {
+      const back = ruleFromForm({ ...form, shown }, DISPLAY_UNITS);
+      expect(thresholdOf(back).value).toBe(4e9);
+    }
+  });
+
+  it("converts the text again after a metric change", () => {
+    const swap = formFromRule(rule("mem.swap_used"), DISPLAY_UNITS);
+    const disk = withMetric(swap, metric("disk.free"), DISPLAY_UNITS);
+    expect(thresholdOf(ruleFromForm(disk, DISPLAY_UNITS)).value).toBe(20e9);
+    const typed = ruleFromForm({ ...disk, shown: "30" }, DISPLAY_UNITS);
+    expect(thresholdOf(typed).value).toBe(30e9);
   });
 
   it("shows the threshold in the display unit", () => {
@@ -129,6 +167,8 @@ describe("formForMetric", () => {
       labels: { vol: "/" },
       op: "lt",
       shown: "20",
+      storedValue: 20e9,
+      storedShown: "20",
       forSecs: 0,
       cooldownSecs: 1800,
       enabled: true,
@@ -152,6 +192,8 @@ describe("withMetric", () => {
       labels: {},
       op: "gt",
       shown: "80",
+      storedValue: 80,
+      storedShown: "80",
       forSecs: 120,
       cooldownSecs: 3600,
       enabled: true,
@@ -181,6 +223,8 @@ describe("formProblem", () => {
     labels: {},
     op: "gt",
     shown: "90",
+    storedValue: 90,
+    storedShown: "90",
     forSecs: 300,
     cooldownSecs: 1800,
     enabled: true,

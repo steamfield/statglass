@@ -43,6 +43,14 @@ export interface RuleForm {
   op: "gt" | "lt";
   /** The threshold as the user sees and types it, in the display unit. */
   shown: string;
+  /**
+   * The threshold the form opened with, in the catalog unit, and the text
+   * it was first shown as. While `shown` still reads as `storedShown`, Save
+   * sends `storedValue` unchanged: converting the cut display text back
+   * would move it (4e9 bytes shows as 3.72529 GiB, which is 3,999,999,738).
+   */
+  storedValue: number | null;
+  storedShown: string;
   forSecs: number;
   cooldownSecs: number;
   enabled: boolean;
@@ -84,7 +92,26 @@ function hasThousandsSeparator(shown: string): boolean {
 function parseShown(shown: string): number {
   const trimmed = shown.trim();
   if (trimmed === "" || hasThousandsSeparator(trimmed)) return Number.NaN;
-  return Number(trimmed.replace(",", "."));
+  return Number(normalShown(trimmed));
+}
+
+/** `shown` as the parser reads it: trimmed, a lone decimal comma as a dot. */
+function normalShown(shown: string): string {
+  return shown.trim().replace(",", ".");
+}
+
+/**
+ * The threshold to store in the catalog unit: the stored value itself while
+ * the text still reads as it was shown, else the typed text converted.
+ */
+function thresholdOfForm(form: RuleForm, units: UnitSettings): number {
+  if (
+    form.storedValue !== null &&
+    normalShown(form.shown) === normalShown(form.storedShown)
+  ) {
+    return form.storedValue;
+  }
+  return thresholdFromDisplay(form.metric, parseShown(form.shown), units);
 }
 
 /** `text` without a trailing `unit`: "500" from "500 rpm", "1" from "1%". */
@@ -113,6 +140,8 @@ export function formFromRule(rule: AlertRule, units: UnitSettings): RuleForm {
     labels: Object.fromEntries(series.labels),
     op: op === "gt" || op === "ge" ? "gt" : "lt",
     shown,
+    storedValue: value,
+    storedShown: shown,
     forSecs: rule.for_secs,
     cooldownSecs: rule.cooldown_secs,
     enabled: rule.enabled,
@@ -164,7 +193,12 @@ export function withMetric(
  */
 export function withChange(
   form: RuleForm,
-  change: Partial<Omit<RuleForm, "id" | "metric" | "name" | "autoName">>,
+  change: Partial<
+    Omit<
+      RuleForm,
+      "id" | "metric" | "name" | "autoName" | "storedValue" | "storedShown"
+    >
+  >,
   units: UnitSettings
 ): RuleForm {
   const next = { ...form, ...change };
@@ -174,9 +208,9 @@ export function withChange(
 
 /**
  * The rule to store: the name trimmed (Rust rejects surrounding spaces),
- * the shown threshold converted to the catalog unit
- * (`thresholdFromDisplay`), labels as one `[key, value]` pair or none.
- * Call only when `formProblem` is null.
+ * the threshold as stored when its text is untouched, else the shown text
+ * converted to the catalog unit (`thresholdFromDisplay`), labels as one
+ * `[key, value]` pair or none. Call only when `formProblem` is null.
  */
 export function ruleFromForm(form: RuleForm, units: UnitSettings): AlertRule {
   return {
@@ -186,7 +220,7 @@ export function ruleFromForm(form: RuleForm, units: UnitSettings): AlertRule {
       threshold: {
         series: { metric: form.metric, labels: Object.entries(form.labels) },
         op: form.op,
-        value: thresholdFromDisplay(form.metric, parseShown(form.shown), units),
+        value: thresholdOfForm(form, units),
       },
     },
     for_secs: form.forSecs,

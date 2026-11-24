@@ -211,15 +211,19 @@ export function seriesName(
   return value;
 }
 
-/** The newest alert time (`ts_ms`) per rule id among `events`. */
-export function lastFiredByRule(events: readonly Event[]): Map<string, number> {
-  const newest = new Map<string, number>();
+/**
+ * The newest alert event per rule id among `events`: when each rule last
+ * fired. A `host_back` cause is the recovery notice of a rule that fired
+ * earlier, not a firing, so it is skipped. Other events are ignored.
+ */
+export function lastFiredByRule(events: readonly Event[]): Map<string, Event> {
+  const newest = new Map<string, Event>();
   for (const event of events) {
-    if (event.detail.kind !== "alert") continue;
-    const ruleId = event.detail.rule_id;
-    const seen = newest.get(ruleId);
-    if (seen === undefined || event.ts_ms > seen) {
-      newest.set(ruleId, event.ts_ms);
+    const detail = event.detail;
+    if (detail.kind !== "alert" || detail.cause.type === "host_back") continue;
+    const seen = newest.get(detail.rule_id);
+    if (seen === undefined || event.ts_ms > seen.ts_ms) {
+      newest.set(detail.rule_id, event);
     }
   }
   return newest;

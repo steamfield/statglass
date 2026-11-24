@@ -154,6 +154,26 @@ describe("Destination dialog", () => {
     ]);
   });
 
+  it("saves the name without the spaces typed around it", async () => {
+    const { user, dialog, transport } = await opened(newNtfy());
+    await user.type(dialog.getByRole("textbox", { name: "Name" }), "  Chat  ");
+    await user.click(dialog.getByRole("radio", { name: "Webhook" }));
+    await user.type(
+      dialog.getByRole("textbox", { name: "URL" }),
+      "https://chat.example.com/hooks/42"
+    );
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    await expectClosed();
+    expect(await stored(transport)).toEqual([
+      {
+        id: NEW_ID,
+        name: "Chat",
+        enabled: true,
+        kind: { type: "webhook", url: "https://chat.example.com/hooks/42" },
+      },
+    ]);
+  });
+
   it("shows why the command refused a save and keeps the form", async () => {
     const { user, dialog, transport } = await opened(newNtfy());
     await user.type(dialog.getByRole("textbox", { name: "Name" }), "Phone");

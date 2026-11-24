@@ -41,17 +41,21 @@ fn url_of_len(len: usize) -> String {
 }
 
 #[test]
-fn a_name_is_1_to_40_characters_after_trimming() {
-    for ok in [
-        "P",
-        "Phone",
-        "  Phone  ",
-        &"n".repeat(40),
-        &format!(" {} ", "n".repeat(40)),
-    ] {
+fn a_name_is_1_to_40_characters_with_no_surrounding_spaces() {
+    for ok in ["P", "Phone", "My phone", &"n".repeat(40)] {
         assert_eq!(named(ok).validate(), Ok(()), "{ok:?}");
     }
-    for bad in ["", "   ", "\t", &"n".repeat(41)] {
+    for bad in [
+        "",
+        "   ",
+        "\t",
+        &"n".repeat(41),
+        "  Phone  ",
+        " Phone",
+        "Phone\n",
+        "Phone\u{a0}",
+        &format!(" {} ", "n".repeat(40)),
+    ] {
         assert_eq!(
             named(bad).validate(),
             Err(DestinationError::Name),
@@ -209,7 +213,7 @@ fn an_empty_token_counts_as_no_token() {
 fn each_error_states_its_rule_without_the_refused_value() {
     assert_eq!(
         DestinationError::Name.to_string(),
-        "destination name must be 1 to 40 characters"
+        "destination name must be 1 to 40 characters with no leading or trailing spaces"
     );
     assert_eq!(
         DestinationError::Url.to_string(),

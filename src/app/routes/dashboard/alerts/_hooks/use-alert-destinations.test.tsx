@@ -3,7 +3,7 @@ import type { Destination } from "@core/generated/bindings";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, screen } from "@testing-library/react";
-import { renderWithProviders } from "@tests/test-utils";
+import { createTestQueryClient, renderWithProviders } from "@tests/test-utils";
 import {
   type AlertDestinationCommands,
   useAlertDestinationCommands,
@@ -55,6 +55,19 @@ describe("useAlertDestinations", () => {
     });
     expect(await screen.findByText("destinations: Phone")).toBeVisible();
     expect(reads(transport)).toBe(1);
+  });
+
+  it("reads again on return, so a change made while away shows", async () => {
+    const transport = transportWith();
+    const queryClient = createTestQueryClient();
+    const first = renderWithProviders(<Probe />, { transport, queryClient });
+    await screen.findByText("destinations: none");
+    first.unmount();
+    // Saved while the page was closed: no listener hears the push.
+    await transport.saveAlertDestination(PHONE);
+    renderWithProviders(<Probe />, { transport, queryClient });
+    expect(await screen.findByText("destinations: Phone")).toBeVisible();
+    expect(reads(transport)).toBe(2);
   });
 
   it("reports a failed read as an error, not as no destinations", async () => {
@@ -116,7 +129,8 @@ describe("useAlertDestinationCommands", () => {
       status: "error",
       error: {
         kind: "invalid_argument",
-        message: "destination name must be 1 to 40 characters",
+        message:
+          "destination name must be 1 to 40 characters with no leading or trailing spaces",
       },
     });
     expect(screen.getByText("destinations: none")).toBeVisible();

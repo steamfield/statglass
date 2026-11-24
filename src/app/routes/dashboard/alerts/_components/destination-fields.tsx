@@ -50,9 +50,12 @@ function defaultServer(): string {
   return kind.type === "ntfy" ? kind.server : "";
 }
 
-/** The destination the form describes, with only the chosen kind's fields. */
+/**
+ * The destination the form describes, with only the chosen kind's fields
+ * and the name trimmed (Rust refuses surrounding spaces).
+ */
 export function destinationFromForm(form: DestinationForm): Destination {
-  const base = { id: form.id, name: form.name, enabled: form.enabled };
+  const base = { id: form.id, name: form.name.trim(), enabled: form.enabled };
   if (form.kind === "webhook") {
     return { ...base, kind: { type: "webhook", url: form.url } };
   }
