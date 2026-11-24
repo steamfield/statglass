@@ -4,6 +4,16 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## StatGlass for iPhone accepted; agent guidance for mobile and shared code (D-140 to D-150) (2026-11-24)
+
+The iPhone RFC (`plan/rfc-ios-app.md`, revision 2) is accepted: its ten section 10 decisions and the answers to its open questions are D-140 to D-150. The run that builds it is `plans/deliver-ios-app.md` (RFC phases 0 to 4, verified in the iOS Simulator). This entry covers phase 1 lane c, the agent setup every later lane and Codex run follows.
+
+- Rules: `mobile/expo.md`, `mobile/native-module.md`, `mobile/testing.md`, `shared-packages.md` (the seven guards in RFC 4.6) and `rust/mobile.md`. Existing rules, `CLAUDE.md` and this folder's README point at `packages/core/src`, `src/desktop-transport/` (`@desktop/*`) and the split bindings (`packages/core/src/generated/types.ts`, `src/desktop-transport/commands.ts`).
+- Skills: `ios-simulator`, `mobile-bridge` and `widget-model`, registered in `scripts/agent-config/shared.txt` and linked into `.agents/`. `.claude/delegate.md` lists what a foreman or Codex contract for this repo carries.
+- Hooks: the write hook rejects React, React Native, Expo, `@tauri-apps/*`, `@steamfield/ui` and `@desktop/*` imports in `packages/core/src/` (and now really rejects `~/`, which the old pattern missed), and `react-dom`, Tauri, desktop imports or relative paths that leave the app in `apps/mobile/`. The generated-file guards cover `src/desktop-transport/commands.ts` for edits and shell writes.
+- Verified: `make agent-config-check agent-config-test agent-hooks-test verification-test`; the new hook fixtures were each checked against a broken rule. `codex debug prompt-input` lists the three new skills.
+- Open: `.claude/commands/statglass:test.md` still shows `bun run test -- src/core/format` as its example; the mobile rules describe directories (`src/hooks`, `src/widgets`, `src/transport`) that later phases create.
+
 ## Dashboard pages enter card by card (D-139) (2026-11-24)
 
 Opening a dashboard page (navigation, first open, Disk's I/O and Space views, another host on a metric page) now fades and rises its header and then each card into place one after another, instead of lifting whole rows 3 px over 280 ms, which read as a flash. `usePageEntrance` in `src/app/lib/motion/page-entrance.ts` replaces the CSS `pageEnter`/`data-stagger` choreography; Settings panels enter one by one too. Cards that mount a beat late (the chart window, settings) still enter; ticks, range changes and later data never replay it.

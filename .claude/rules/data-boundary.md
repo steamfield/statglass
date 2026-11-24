@@ -2,7 +2,9 @@
 paths:
   - "crates/**/*.rs"
   - "src-tauri/**/*.rs"
-  - "src/core/**/*.ts"
+  - "packages/core/src/**/*.ts"
+  - "apps/mobile/src/**/*.ts"
+  - "apps/mobile/src/**/*.tsx"
   - "src/app/**/*.ts"
   - "src/app/**/*.tsx"
 ---
@@ -37,7 +39,7 @@ Don't hardcode a list of metric keys that "behave differently" in a component.
 ## The client owns view-dependent shaping
 
 These transforms depend on the chart, the window or the screen, so they belong in
-`src/core/`:
+`packages/core/src/`, where both apps share them:
 
 - Laying rows on a grid sized to a chart's window, and downsampling to its pixel width.
 - Stacking, axis ceilings, colors and layout.
@@ -58,7 +60,7 @@ history.
 
 ## Keep the mock in step
 
-The browser dev server, Vitest and Playwright run on `src/core/mock-transport.ts`. When Rust
+The browser dev server, Vitest and Playwright run on `packages/core/src/mock-transport.ts`. When Rust
 starts publishing a new fact (a period, a semantic flag, a new message), reproduce it in the
 mock in the same change, or the mock and the real app drift apart.
 

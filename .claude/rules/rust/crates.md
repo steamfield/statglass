@@ -35,6 +35,7 @@ statglass-query         -> schema
 statglass-cli           -> query, schema
 statglass-agent         -> schema, proto, store, engine, remote
 statglass (src-tauri)   -> schema, proto, store, engine, remote, query, notify
+statglass-mobile        -> schema, proto, store, engine (never remote)
 ```
 
 The policy records dev edges separately (including store's protocol fixtures). Do not
@@ -63,6 +64,11 @@ can proceed autonomously within their agreed scope.
 - `statglass-notify` says what an alert rule and a fired alert say, and delivers a message
   to a destination through `/usr/bin/curl` (D-138). It depends on the schema only, so the
   headless agent can link it later. It is synchronous; callers run it off their thread.
+- `statglass-mobile` is the iPhone app's UniFFI facade (`.claude/rules/rust/mobile.md`).
+  It never depends on `statglass-remote`, which spawns processes and serves hosts; the
+  planned `statglass-session` (client session, `RemoteSource`, `Mirror`), `statglass-ipc`
+  (IPC types, live producer, `CommandError`) and `statglass-ssh` (russh dialer) give it
+  what it needs (RFC `plan/rfc-ios-app.md` 4.2).
 - `src-tauri` is a thin shell: commands, windows, tray, settings ownership. Business logic
   that isn't Tauri-specific belongs in a crate, where it is testable without a webview.
 
