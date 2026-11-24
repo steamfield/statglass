@@ -1,7 +1,7 @@
 import type {
   CommandError,
   RemoteHostPreparation,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { InlineMessage } from "~/components/inline-message";
 import type { SetupPhase } from "../_hooks/use-add-host-connection";
 import { AddHostLinux } from "./add-host-linux";

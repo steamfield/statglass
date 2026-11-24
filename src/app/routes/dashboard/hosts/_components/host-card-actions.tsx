@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { hostKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQueryClient } from "@tanstack/react-query";

@@ -1,4 +1,4 @@
-import type { DockerContainer } from "@core/generated/bindings";
+import type { DockerContainer } from "@core/generated/types";
 import { mockContainer } from "@core/mock/docker";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

@@ -5,11 +5,7 @@
  * `power` and `sensors` capability pair; an unknown chip hides it entirely
  * (CPU and GPU watts still show on their own pages).
  */
-import type {
-  Capabilities,
-  ModuleCap,
-  Settings,
-} from "@core/generated/bindings";
+import type { Capabilities, ModuleCap, Settings } from "@core/generated/types";
 
 /** The seven modules the sidebar, popover and Overview list, in order. */
 export const UI_MODULES = [

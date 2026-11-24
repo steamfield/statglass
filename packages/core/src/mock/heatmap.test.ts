@@ -1,4 +1,4 @@
-import type { HeatmapDaySpec } from "@core/generated/bindings";
+import type { HeatmapDaySpec } from "@core/generated/types";
 import { createMockTransport } from "../mock-transport";
 import { MOCK_HOST_ID } from "./fixtures";
 import { mockCpuHours, mockHeatmap } from "./heatmap";

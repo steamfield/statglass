@@ -1,4 +1,4 @@
-import type { StoredProcess } from "@core/generated/bindings";
+import type { StoredProcess } from "@core/generated/types";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { CrosshairTooltip } from "./crosshair-tooltip";

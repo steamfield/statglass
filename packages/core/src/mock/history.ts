@@ -14,7 +14,7 @@ import {
   METRIC_MODULES,
   type SeriesStats,
   type Tier,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { seriesKeyString } from "@core/series-key";
 import { ceilTo, DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import type { ScenarioFlags } from "./fixtures";

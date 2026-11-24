@@ -3,7 +3,7 @@ import type {
   NetworkUnit,
   Settings,
   TemperatureUnit,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { PageHeader } from "~/components/page-header";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";

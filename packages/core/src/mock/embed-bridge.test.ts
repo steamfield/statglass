@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
 import { createMockTransport } from "../mock-transport";
 import { createEmbedBridge, type EmbedWindow } from "./embed-bridge";
 import { MOCK_HOST_ID } from "./fixtures";

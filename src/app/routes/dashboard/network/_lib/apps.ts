@@ -1,6 +1,6 @@
 import { scopeWords, type TimeRange } from "@core/brush";
 import { percentOf } from "@core/chart-math";
-import type { NetworkByApp } from "@core/generated/bindings";
+import type { NetworkByApp } from "@core/generated/types";
 
 /** One row of the Apps table: a named app or one of the remainder rows. */
 export interface AppRow {

@@ -18,7 +18,7 @@ import type {
   CommandError,
   LinuxPreparation,
   RemoteHostPreparation,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { linuxHostInfo } from "./linux";
 
 const GB = 1_000_000_000;

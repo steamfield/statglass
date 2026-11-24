@@ -1,6 +1,6 @@
 import { MISSING, wattsParts } from "@core/format";
 import { batteryTime } from "@core/format/battery";
-import type { PowerSource } from "@core/generated/bindings";
+import type { PowerSource } from "@core/generated/types";
 import type { BatteryDetail } from "~/hooks/use-battery";
 
 /** `LiveStatus.power_source` (D-092), "unknown" before the first status. */

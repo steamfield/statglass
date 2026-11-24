@@ -1,7 +1,7 @@
 import type {
   RemoteHostPreparation,
   RemoteSshHostTrust,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { Button } from "~/components/ui/button";
 import { DialogFooter } from "~/components/ui/dialog";
 import type { SetupPhase } from "../_hooks/use-add-host-connection";

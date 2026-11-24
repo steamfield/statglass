@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import type { UsageKey, UsageSeries } from "@core/generated/bindings";
+import type { UsageKey, UsageSeries } from "@core/generated/types";
 import { historyKeys } from "@core/query-keys";
 import { ceilTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";

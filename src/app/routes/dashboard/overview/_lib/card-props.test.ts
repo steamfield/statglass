@@ -1,4 +1,4 @@
-import { type LiveProcess, METRIC_CODES } from "@core/generated/bindings";
+import { type LiveProcess, METRIC_CODES } from "@core/generated/types";
 import { liveProcess } from "@tests/fixtures/processes";
 import {
   batteryCard,

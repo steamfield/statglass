@@ -1,4 +1,4 @@
-import type { CommandError } from "@core/generated/bindings";
+import type { CommandError } from "@core/generated/types";
 import { CommandFailure } from "./transport/query";
 
 function isCommandError(error: unknown): error is CommandError {

@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import type { DiskDevice, DiskIoPage } from "@core/generated/bindings";
+import type { DiskDevice, DiskIoPage } from "@core/generated/types";
 import { historyKeys, hostKeys, sameDiskIo } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";

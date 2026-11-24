@@ -4,8 +4,8 @@ import type {
   HistoryGrowth,
   HistoryHealth,
   Settings,
-} from "@core/generated/bindings";
-import { HISTORY_PROJECTION } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { HISTORY_PROJECTION } from "@core/generated/types";
 import { DAY_MS } from "@core/time-grid";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";

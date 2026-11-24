@@ -2,7 +2,7 @@ import type {
   DockerContainer,
   DockerSnapshot,
   DockerStorageOperation,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

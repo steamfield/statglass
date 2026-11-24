@@ -1,5 +1,5 @@
-import { commands } from "@core/generated/bindings";
-import type { Transport } from "./contracts";
+import type { Transport } from "@core/transport/contracts";
+import { commands } from "@desktop/commands";
 
 export function nativeHistory(): Pick<
   Transport,

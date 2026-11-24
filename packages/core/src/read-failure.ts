@@ -8,7 +8,7 @@
  * client never times it itself. Paused and stale are their own states and
  * never count as a failed read.
  */
-import { RING_SPAN_MS } from "@core/generated/bindings";
+import { RING_SPAN_MS } from "@core/generated/types";
 import type { HostLive } from "./live-state";
 
 export interface ReadFailure {

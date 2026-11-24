@@ -1,4 +1,4 @@
-import type { PerformanceReason } from "@core/generated/bindings";
+import type { PerformanceReason } from "@core/generated/types";
 import { isPerformanceOn } from "@core/performance";
 import type { StatusPillProps } from "~/widgets/status-pill";
 

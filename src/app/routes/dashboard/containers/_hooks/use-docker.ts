@@ -1,4 +1,4 @@
-import type { DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSnapshot } from "@core/generated/types";
 import { dockerKeys, sameDockerContainer } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";

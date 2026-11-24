@@ -5,7 +5,7 @@
 import type { TimeRange } from "@core/brush";
 import { alertLabel, eventId } from "@core/events";
 import { formatClock, monthName } from "@core/format";
-import type { UnitSettings } from "@core/generated/bindings";
+import type { UnitSettings } from "@core/generated/types";
 import type { ReactNode } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { SettingsPanel } from "~/components/settings-row";

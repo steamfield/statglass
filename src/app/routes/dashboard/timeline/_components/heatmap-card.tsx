@@ -1,5 +1,5 @@
 import { commandError } from "@core/command-error";
-import type { HeatmapMetric } from "@core/generated/bindings";
+import type { HeatmapMetric } from "@core/generated/types";
 import { historyUnavailable } from "@core/history-state";
 import { failureReason } from "@core/remote-errors";
 import { memo, useCallback, useState } from "react";

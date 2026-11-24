@@ -1,7 +1,7 @@
 import { rangeScopeWords } from "@core/brush";
 import { eventId, eventLabel, eventPriority } from "@core/events";
 import { formatClock, monthName } from "@core/format";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { historyUnavailable } from "@core/history-state";
 import { TriangleAlert } from "lucide-react";
 import { useId } from "react";

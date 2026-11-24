@@ -13,7 +13,7 @@ import {
   MISSING,
   type RateUnits,
 } from "@core/format";
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import {
   diskTotal,
   type LiveFigures,

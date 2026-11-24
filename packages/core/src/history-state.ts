@@ -12,7 +12,7 @@ import type {
   Gap,
   HistoryHealth,
   Module,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { sizeLimitLabel } from "@core/history-projection";
 import { commandError } from "./command-error";
 
@@ -21,7 +21,7 @@ import { commandError } from "./command-error";
  * D-070), generated from Rust. Stored processes and heatmap hours newer than
  * this may not be readable yet; `query_history` answers through now (D-092).
  */
-export { HISTORY_COMMIT_MS } from "@core/generated/bindings";
+export { HISTORY_COMMIT_MS } from "@core/generated/types";
 
 const MODULE_LABEL: Partial<Record<Module, string>> = {
   cpu: "CPU",

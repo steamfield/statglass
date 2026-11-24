@@ -1,7 +1,7 @@
 import type {
   DockerContainer,
   DockerRankedContainer,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { Row } from "@tanstack/react-table";
 import type { Virtualizer } from "@tanstack/react-virtual";
 import {

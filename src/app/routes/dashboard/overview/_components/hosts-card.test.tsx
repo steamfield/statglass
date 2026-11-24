@@ -1,4 +1,4 @@
-import type { HostRecord, RemoteHostRecord } from "@core/generated/bindings";
+import type { HostRecord, RemoteHostRecord } from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { fireEvent, screen, within } from "@testing-library/react";

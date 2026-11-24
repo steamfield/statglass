@@ -1,5 +1,5 @@
-import type { ChartWindow } from "@core/generated/bindings";
-import { USAGE_KEEP_MS } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
+import { USAGE_KEEP_MS } from "@core/generated/types";
 import { act, screen } from "@testing-library/react";
 import { ChartRangeProvider } from "~/stores/chart-range";
 import { type HostStore, useHostStore } from "~/stores/host-store";

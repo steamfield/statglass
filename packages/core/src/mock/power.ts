@@ -1,4 +1,4 @@
-import type { LiveStatus, PerformanceReason } from "@core/generated/bindings";
+import type { LiveStatus, PerformanceReason } from "@core/generated/types";
 import { samplingPlan } from "../sampling-plans";
 import type { MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";

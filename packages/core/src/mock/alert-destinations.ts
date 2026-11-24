@@ -15,7 +15,7 @@ import {
   type DeliveryOutcome,
   type Destination,
   type DestinationKind,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import type { MockEmitters } from "./emitters";

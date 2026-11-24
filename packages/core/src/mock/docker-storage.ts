@@ -4,7 +4,7 @@ import type {
   DockerStorageResource,
   DockerStorageReview,
   DockerStorageSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import type { Transport } from "@core/transport";
 

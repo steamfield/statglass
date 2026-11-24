@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { UpdateStatus } from "@core/generated/bindings";
+import type { UpdateStatus } from "@core/generated/types";
 import { useState } from "react";
 import { SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";

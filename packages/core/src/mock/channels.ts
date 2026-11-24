@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
 import type { HistoryRow, LiveSub } from "./contracts";
 import type { MockPower } from "./power";
 import {

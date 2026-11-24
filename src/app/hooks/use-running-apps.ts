@@ -6,7 +6,7 @@
  * their answer's identity until the listed rows' part of it changes, so a
  * process starting or exiting elsewhere on the Mac re-renders nothing.
  */
-import type { LiveProcess, ProcessView } from "@core/generated/bindings";
+import type { LiveProcess, ProcessView } from "@core/generated/types";
 import {
   appQuitTargets,
   type RunningApps,

@@ -3,7 +3,7 @@
  * `ProcessGroupTable`, and where a member's detail link goes.
  */
 import type { TimeRange } from "@core/brush";
-import type { ProcessUsage } from "@core/generated/bindings";
+import type { ProcessUsage } from "@core/generated/types";
 import { targetKey } from "@core/process-selection";
 import { writeRange } from "@core/range-params";
 import type { UsageRow } from "@core/usage-rows";

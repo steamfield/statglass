@@ -1,4 +1,4 @@
-import type { Appearance, Settings } from "@core/generated/bindings";
+import type { Appearance, Settings } from "@core/generated/types";
 import {
   formatSystemDiagnostics,
   GITHUB_ISSUES_URL,

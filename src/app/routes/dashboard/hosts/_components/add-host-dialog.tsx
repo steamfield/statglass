@@ -4,7 +4,7 @@ import type {
   RemoteHostConfig,
   RemoteHostPreparation,
   RemoteSshHostTrust,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { isHostKeyError, sshEndpointError } from "@core/remote-errors";
 import { useState } from "react";
 import {

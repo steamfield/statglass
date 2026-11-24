@@ -1,4 +1,4 @@
-import { DOCKER_MAX_RANGE_MS } from "@core/generated/bindings";
+import { DOCKER_MAX_RANGE_MS } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { unwrap } from "@core/transport";
 import { afterEach, expect, it, vi } from "vitest";

@@ -1,5 +1,5 @@
 import { appendLogLines, emptyLogBuffer } from "@core/docker-log-buffer";
-import type { DockerLogBatch } from "@core/generated/bindings";
+import type { DockerLogBatch } from "@core/generated/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";

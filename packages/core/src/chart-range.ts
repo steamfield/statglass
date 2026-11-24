@@ -1,5 +1,5 @@
-import type { ChartWindow } from "@core/generated/bindings";
-import { RETENTION_DAYS, USAGE_KEEP_MS } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
+import { RETENTION_DAYS, USAGE_KEEP_MS } from "@core/generated/types";
 import {
   CHART_WINDOW_MS,
   windowAllowed,

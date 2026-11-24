@@ -1,7 +1,7 @@
+import { MOCK_SCAN_MS } from "@core/mock/disk-space";
+import { MOCK_HOST_ID } from "@core/mock/fixtures";
+import type { CommandResult, Transport } from "@core/transport";
 import { createAppTransport } from "./app-transport";
-import { MOCK_SCAN_MS } from "./mock/disk-space";
-import { MOCK_HOST_ID } from "./mock/fixtures";
-import type { CommandResult, Transport } from "./transport";
 
 function data<T>(result: CommandResult<T>): T {
   if (result.status === "error") throw new Error(result.error.kind);

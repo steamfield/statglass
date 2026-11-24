@@ -8,7 +8,7 @@
 import { clamp01 } from "@core/chart-math";
 import { recordedDate } from "@core/chart-range";
 import { formatSpan } from "@core/format";
-import { NET_BUCKET_MS } from "@core/generated/bindings";
+import { NET_BUCKET_MS } from "@core/generated/types";
 import { windowWords } from "@core/live-window";
 import { ceilTo, floorTo, MINUTE_MS } from "@core/time-grid";
 

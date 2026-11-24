@@ -1,4 +1,4 @@
-import type { LiveMsg, ProcessView } from "@core/generated/bindings";
+import type { LiveMsg, ProcessView } from "@core/generated/types";
 import { floorTo } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";

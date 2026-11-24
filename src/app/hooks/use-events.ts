@@ -1,5 +1,5 @@
 import { mergeEvent, RecentEvents } from "@core/events";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { historyKeys, sameHost } from "@core/query-keys";
 import { MINUTE_MS } from "@core/time-grid";
 import { type Transport, unwrap } from "@core/transport";

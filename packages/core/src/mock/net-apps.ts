@@ -31,7 +31,7 @@ import {
   NET_BUCKET_MS,
   type NetworkByApp,
   type NetworkSpan,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { ceilTo, floorTo } from "@core/time-grid";
 
 /** Per-app history starts this long after the ring's first row. */

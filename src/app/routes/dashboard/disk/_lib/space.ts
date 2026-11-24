@@ -3,7 +3,7 @@ import type {
   SpaceNode,
   SpaceReport,
   SpaceScanStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { SpaceTileKind } from "@core/space-treemap";
 import { MINUTE_MS } from "@core/time-grid";
 

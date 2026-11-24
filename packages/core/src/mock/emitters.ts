@@ -11,7 +11,7 @@ import type {
   UpdateStatus,
   WindowAppearanceChanged,
   WindowVisibilityChanged,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { createEmitter } from "./emitter";
 export function createMockEmitters() {
   return {

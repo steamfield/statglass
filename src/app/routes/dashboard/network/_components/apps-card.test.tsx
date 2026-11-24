@@ -1,4 +1,4 @@
-import type { NetworkByApp } from "@core/generated/bindings";
+import type { NetworkByApp } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import {
   act,

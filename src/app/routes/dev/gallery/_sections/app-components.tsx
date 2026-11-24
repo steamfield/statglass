@@ -1,5 +1,5 @@
 import { MISSING } from "@core/format";
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import { groupLiveProcesses } from "@core/process-groups";
 import {
   DEFAULT_MENU_BAR,

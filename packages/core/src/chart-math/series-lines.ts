@@ -1,4 +1,4 @@
-import type { DockerHistoryPoint } from "@core/generated/bindings";
+import type { DockerHistoryPoint } from "@core/generated/types";
 import { splitRuns } from "./gaps";
 
 export type ComparisonMetric = "cpu" | "memory";

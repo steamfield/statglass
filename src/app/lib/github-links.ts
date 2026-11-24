@@ -1,4 +1,4 @@
-import type { StarPromptAction } from "@core/generated/bindings";
+import type { StarPromptAction } from "@core/generated/types";
 import type { Transport } from "@core/transport";
 import { toast } from "sonner";
 

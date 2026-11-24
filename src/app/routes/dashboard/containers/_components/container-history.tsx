@@ -10,7 +10,7 @@ import type {
   DockerEvent,
   DockerHistoryPage,
   DockerMetrics,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { memo, useMemo } from "react";
 import { SectionCard } from "~/components/section-card";
 import { ChartFrame, ChartGrid, chartY } from "~/widgets/chart-frame";

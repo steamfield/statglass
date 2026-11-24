@@ -3,7 +3,7 @@ import type {
   RemoteHostRecord,
   SpaceScanStatus,
   SpaceTarget,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { diskSpaceKeys, sameSpaceReport } from "@core/query-keys";
 import { CommandFailure, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

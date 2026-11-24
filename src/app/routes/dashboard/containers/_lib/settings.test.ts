@@ -1,4 +1,4 @@
-import type { DockerSettings } from "@core/generated/bindings";
+import type { DockerSettings } from "@core/generated/types";
 import { expect, it } from "vitest";
 import { mergeDockerSettings } from "./settings";
 

@@ -7,8 +7,8 @@ import type {
   ProcessView,
   SeriesKey,
   SeriesSelector,
-} from "@core/generated/bindings";
-import { METRIC_KINDS, PERFORMANCE_VISIBLE_MS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { METRIC_KINDS, PERFORMANCE_VISIBLE_MS } from "@core/generated/types";
 import { DAY_MS, floorTo, HOUR_MS } from "@core/time-grid";
 import type {
   ProcessSignalError,

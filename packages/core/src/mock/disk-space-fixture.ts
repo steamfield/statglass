@@ -4,7 +4,7 @@
  * get a few generated files and a "smaller items" remainder, so every folder
  * opens onto something.
  */
-import type { SpaceHighlights } from "@core/generated/bindings";
+import type { SpaceHighlights } from "@core/generated/types";
 
 export type SpaceSpec =
   | { t: "dir"; name: string; kids: SpaceSpec[] }

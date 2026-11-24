@@ -1,5 +1,5 @@
 import { formatHoursMinutes, MISSING } from "@core/format";
-import type { PowerSource } from "@core/generated/bindings";
+import type { PowerSource } from "@core/generated/types";
 import { MINUTE_MS } from "@core/time-grid";
 
 /** Time to empty on battery, time to full while charging (IOPowerSources). */

@@ -881,7 +881,7 @@ mod tests {
     /// export turned `LiveMsg` into an externally tagged shape).
     #[test]
     fn generated_bindings_describe_flat_live_msg() {
-        let ts = std::fs::read_to_string(crate::BINDINGS_PATH).unwrap();
+        let ts = std::fs::read_to_string(crate::TYPES_PATH).unwrap();
         assert!(
             ts.contains(r#"({ kind: "frame"; ts_ms: number;"#),
             "LiveMsg frame shape"

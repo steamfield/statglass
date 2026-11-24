@@ -3,7 +3,7 @@ import type {
   HistoricalUsageRequest,
   RemoteHostRecord,
   UsageProcessRequest,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import { validateUsageRequest } from "./durable-usage";

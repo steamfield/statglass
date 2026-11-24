@@ -10,7 +10,7 @@
  * hosts in one window); `useHost` reads the nearest provider's host unless a
  * host id is passed.
  */
-import type { HostId, LiveMsg, SeriesSelector } from "@core/generated/bindings";
+import type { HostId, LiveMsg, SeriesSelector } from "@core/generated/types";
 import {
   awaitHistory,
   type Connection,

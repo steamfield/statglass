@@ -16,7 +16,7 @@ import {
   rateParts,
 } from "@core/format";
 import { batteryTime } from "@core/format/battery";
-import { METRIC_CODES } from "@core/generated/bindings";
+import { METRIC_CODES } from "@core/generated/types";
 import { spanWords } from "@core/live-window";
 import { mirrorSubject } from "~/components/charts/mirror-chart";
 import { CopyValue } from "~/components/copy-value";

@@ -1,5 +1,5 @@
-import type { MenuBarSettings, NetworkUnit } from "@core/generated/bindings";
 import rateGolden from "@core/generated/tray-rates.json";
+import type { MenuBarSettings, NetworkUnit } from "@core/generated/types";
 import { DEFAULT_MENU_BAR, trayStyleMenuBar } from "./settings-patch";
 import {
   combinedWidthPt,

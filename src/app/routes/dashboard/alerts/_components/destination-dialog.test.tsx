@@ -1,5 +1,5 @@
 import { newDestination } from "@core/alert-destinations";
-import type { DeliveryOutcome, Destination } from "@core/generated/bindings";
+import type { DeliveryOutcome, Destination } from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import type { CommandResult } from "@core/transport";

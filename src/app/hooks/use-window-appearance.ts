@@ -1,4 +1,4 @@
-import type { Appearance } from "@core/generated/bindings";
+import type { Appearance } from "@core/generated/types";
 import { isPerformanceOn } from "@core/performance";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useWindowAppearanceFlags } from "~/lib/queries/appearance";

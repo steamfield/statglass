@@ -2,7 +2,7 @@ import type {
   RemoteFailureKind,
   RemoteHostRecord,
   RemoteRouteFailure,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { mockHostVitals } from "@core/mock/remote-updates";
 import { remoteConnectionView } from "./remote-connection";
 

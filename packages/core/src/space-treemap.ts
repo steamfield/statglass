@@ -1,4 +1,4 @@
-import type { SpaceKind, SpaceNode } from "@core/generated/bindings";
+import type { SpaceKind, SpaceNode } from "@core/generated/types";
 import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
 
 /**

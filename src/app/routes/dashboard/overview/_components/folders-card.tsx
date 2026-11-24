@@ -1,6 +1,6 @@
 import { commandErrorText } from "@core/command-error";
 import { formatBytes } from "@core/format";
-import type { SpaceCategory, SpaceHighlight } from "@core/generated/bindings";
+import type { SpaceCategory, SpaceHighlight } from "@core/generated/types";
 import { MINUTE_MS } from "@core/time-grid";
 import { useId, useState } from "react";
 import { Link } from "react-router";

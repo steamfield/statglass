@@ -17,7 +17,7 @@ import {
   type Event,
   type Labels,
   type UnitSettings,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { parseLabels } from "@core/series-key";
 import { THERMAL_LABEL } from "@core/thermal";
 

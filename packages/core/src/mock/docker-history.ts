@@ -4,7 +4,7 @@ import {
   type DockerCoverage,
   type DockerHistoryPoint,
   type DockerHistoryRequest,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { mockMasks } from "./docker-coverage";
 import { engine, MiB } from "./docker-fixtures";

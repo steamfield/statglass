@@ -4,7 +4,7 @@ import {
   ALERT_METRICS,
   type AlertRule,
   type UnitSettings,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { settingsErrorText } from "@core/settings-patch";

@@ -6,7 +6,7 @@
  */
 import { commandErrorText } from "@core/command-error";
 import { formatDateTime } from "@core/format";
-import type { DockerRuntimeKind } from "@core/generated/bindings";
+import type { DockerRuntimeKind } from "@core/generated/types";
 import { AppWindow, Check, Copy, History, RefreshCw } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ErrorStateCard } from "~/components/error-state-card";

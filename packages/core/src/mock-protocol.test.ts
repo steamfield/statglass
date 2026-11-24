@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
 import fixture from "@tests/fixtures/live-protocol.json";
 import { MOCK_HOST_ID } from "./mock/fixtures";
 import { createMockTransport } from "./mock-transport";

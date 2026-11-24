@@ -9,7 +9,7 @@ import type { TimeRange } from "@core/brush";
 import type {
   HistoricalUsageMetric,
   HistoricalUsageProcess,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { remoteQueryText } from "@core/remote-errors";
 import { useEffect, useMemo } from "react";
 import { FullWidthRow } from "~/components/data-table";

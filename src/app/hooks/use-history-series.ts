@@ -1,4 +1,4 @@
-import { HISTORY_TIERS, RING_SPAN_MS } from "@core/generated/bindings";
+import { HISTORY_TIERS, RING_SPAN_MS } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { historyKeys, sameModuleSeries } from "@core/query-keys";
 import { seriesKeyString } from "@core/series-key";

@@ -11,7 +11,7 @@ import type {
   Settings,
   SettingsPatch,
   SettingsSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { settingsInvalidation } from "@core/query-keys";
 import type { CommandResult } from "@core/transport";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";

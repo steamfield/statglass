@@ -20,7 +20,7 @@ import {
   type Cmp,
   type Event,
   type UnitSettings,
-} from "./generated/bindings";
+} from "./generated/types";
 
 const CELSIUS_DECIMAL: UnitSettings = {
   temperature: "celsius",

@@ -1,5 +1,5 @@
 import { formatClockSeconds } from "@core/format";
-import type { ProcessesAt } from "@core/generated/bindings";
+import type { ProcessesAt } from "@core/generated/types";
 import { gapExplanation } from "@core/history-state";
 import { tooltipBeside } from "~/components/charts/chart-tooltip";
 import { CrosshairLine } from "~/components/charts/crosshair-line";

@@ -1,9 +1,5 @@
-import type {
-  MenuBarSettings,
-  Readout,
-  Settings,
-} from "@core/generated/bindings";
-import { READOUTS } from "@core/generated/bindings";
+import type { MenuBarSettings, Readout, Settings } from "@core/generated/types";
+import { READOUTS } from "@core/generated/types";
 import {
   type ModulePresence,
   modulePresence,

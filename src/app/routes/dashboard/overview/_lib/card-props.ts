@@ -14,7 +14,7 @@ import {
   type TemperatureUnits,
 } from "@core/format";
 import { batteryTime } from "@core/format/battery";
-import type { LiveProcess, PowerSource } from "@core/generated/bindings";
+import type { LiveProcess, PowerSource } from "@core/generated/types";
 import { netTotal } from "@core/process-groups";
 import { topBy } from "@core/top-by";
 import type { BatteryDetail } from "~/hooks/use-battery";

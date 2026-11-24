@@ -1,4 +1,4 @@
-import type { SpaceFile, SpaceNode } from "@core/generated/bindings";
+import type { SpaceFile, SpaceNode } from "@core/generated/types";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useState } from "react";

@@ -1,4 +1,4 @@
-import type { HistoryPage } from "./generated/bindings";
+import type { HistoryPage } from "./generated/types";
 import { historyGrid } from "./history-grid";
 
 it("keeps exact series labels, missing buckets and explicit gaps on the history grid", () => {

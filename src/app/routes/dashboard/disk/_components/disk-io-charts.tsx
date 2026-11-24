@@ -6,7 +6,7 @@ import {
   MISSING,
   resolutionLabel,
 } from "@core/format";
-import type { DiskIoPage, DiskIoPoint } from "@core/generated/bindings";
+import type { DiskIoPage, DiskIoPoint } from "@core/generated/types";
 import type { gapBands } from "@core/history-state";
 import { spanWords } from "@core/live-window";
 import { useCallback, useLayoutEffect, useRef } from "react";

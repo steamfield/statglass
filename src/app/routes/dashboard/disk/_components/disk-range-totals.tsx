@@ -5,7 +5,7 @@ import {
   formatSpan,
   MISSING,
 } from "@core/format";
-import type { DiskIoPage } from "@core/generated/bindings";
+import type { DiskIoPage } from "@core/generated/types";
 
 /** Totals describe the server's source buckets, which can outsize the brush. */
 export function DiskRangeTotals({

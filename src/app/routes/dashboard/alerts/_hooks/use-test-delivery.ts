@@ -4,7 +4,7 @@
  * ended.
  */
 import { commandErrorText } from "@core/command-error";
-import type { DeliveryRecord, Destination } from "@core/generated/bindings";
+import type { DeliveryRecord, Destination } from "@core/generated/types";
 import { useRef, useState } from "react";
 import { useAlertDestinationCommands } from "./use-alert-destinations";
 

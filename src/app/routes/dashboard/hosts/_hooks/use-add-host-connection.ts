@@ -3,7 +3,7 @@ import type {
   CommandError,
   RemoteHostConfig,
   RemoteHostPreparation,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { hostKeys } from "@core/query-keys";
 import { isHostKeyError } from "@core/remote-errors";
 import { useQueryClient } from "@tanstack/react-query";

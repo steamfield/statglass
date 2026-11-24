@@ -1,4 +1,4 @@
-import { METRIC_CODES } from "@core/generated/bindings";
+import { METRIC_CODES } from "@core/generated/types";
 
 /**
  * What `power.cpu_source` says about `power.cpu` (D-054, D-065), as the

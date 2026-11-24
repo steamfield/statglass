@@ -1,4 +1,4 @@
-import type { Settings } from "@core/generated/bindings";
+import type { Settings } from "@core/generated/types";
 import { defaultSettings, scenarioFlags } from "@core/mock/fixtures";
 import { menuBarOf } from "@core/settings-patch";
 import {

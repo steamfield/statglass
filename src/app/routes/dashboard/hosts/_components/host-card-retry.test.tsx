@@ -1,4 +1,4 @@
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { mockHostVitals } from "@core/mock/remote-updates";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { TooltipProvider } from "~/components/ui/tooltip";

@@ -8,7 +8,7 @@ import type {
   DockerContainer,
   DockerCoverage,
   DockerHistoryPoint,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { useMemo } from "react";
 import { useBrushOverlay } from "~/components/area-brush";
 import { CrosshairLine } from "~/components/charts/crosshair-line";

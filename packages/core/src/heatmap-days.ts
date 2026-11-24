@@ -12,7 +12,7 @@
  * forward past the jump, an ambiguous one resolves to the earlier instant.
  */
 import { pad2 } from "@core/format";
-import type { HeatmapDaySpec } from "@core/generated/bindings";
+import type { HeatmapDaySpec } from "@core/generated/types";
 
 /** `2026-10-04` for the local date of `d`. */
 export function localDateIso(d: Date): string {

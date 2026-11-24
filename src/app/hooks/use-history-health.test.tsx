@@ -1,4 +1,4 @@
-import type { HistoryHealth } from "@core/generated/bindings";
+import type { HistoryHealth } from "@core/generated/types";
 import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { useEventsQuery } from "./use-events";

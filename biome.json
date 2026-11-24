@@ -9,6 +9,7 @@
     "includes": [
       "**",
       "!**/packages/core/src/generated",
+      "!**/src/desktop-transport/commands.ts",
       "!**/dist",
       "!**/target",
       "!**/vendor",
@@ -116,7 +117,10 @@
                   "react/jsx-runtime": "packages/core/src/ has no React imports.",
                   "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
                   "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
-                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
+                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/.",
+                  "react-native": "packages/core/src/ runs on every app; React Native code lives in apps/mobile.",
+                  "expo": "packages/core/src/ runs on every app; Expo code lives in apps/mobile.",
+                  "@steamfield/ui": "packages/core/src/ owns no UI; map core values onto @steamfield/ui in the app."
                 },
                 "patterns": [
                   {
@@ -126,6 +130,129 @@
                   {
                     "group": ["**/app/**", "**/app"],
                     "message": "packages/core/src/ must not import the app layer through relative paths."
+                  },
+                  {
+                    "group": [
+                      "react-native/**",
+                      "expo/**",
+                      "expo-*",
+                      "expo-*/**"
+                    ],
+                    "message": "packages/core/src/ runs on every app; React Native and Expo code lives in apps/mobile."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "packages/core/src/ runs on every app; Tauri adapters live in src/desktop-transport/."
+                  },
+                  {
+                    "group": ["@steamfield/ui/**"],
+                    "message": "packages/core/src/ owns no UI; map core values onto @steamfield/ui in the app."
+                  },
+                  {
+                    "group": ["@desktop/**"],
+                    "message": "packages/core/src/ must not import the desktop adapters."
+                  },
+                  {
+                    "group": [
+                      "node:*",
+                      "assert",
+                      "assert/**",
+                      "buffer",
+                      "child_process",
+                      "cluster",
+                      "console",
+                      "constants",
+                      "crypto",
+                      "dgram",
+                      "diagnostics_channel",
+                      "dns",
+                      "dns/**",
+                      "domain",
+                      "events",
+                      "fs",
+                      "fs/**",
+                      "http",
+                      "http2",
+                      "https",
+                      "inspector",
+                      "inspector/**",
+                      "module",
+                      "net",
+                      "os",
+                      "path",
+                      "path/**",
+                      "perf_hooks",
+                      "process",
+                      "punycode",
+                      "querystring",
+                      "readline",
+                      "readline/**",
+                      "repl",
+                      "stream",
+                      "stream/**",
+                      "string_decoder",
+                      "sys",
+                      "timers",
+                      "timers/**",
+                      "tls",
+                      "trace_events",
+                      "tty",
+                      "url",
+                      "util",
+                      "util/**",
+                      "v8",
+                      "vm",
+                      "wasi",
+                      "worker_threads",
+                      "zlib"
+                    ],
+                    "message": "Browser code has no Node runtime; keep Node imports in tooling."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "packages/core/src/ runs on every app; take what you need from window as an argument.",
+                  "document": "packages/core/src/ runs on every app; the DOM belongs to the desktop app.",
+                  "navigator": "packages/core/src/ runs on every app; take what you need from navigator as an argument."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "src/desktop-transport/**",
+        "!src/desktop-transport/commands.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react": "src/desktop-transport/ has no React imports.",
+                  "react-dom": "src/desktop-transport/ has no React imports.",
+                  "react-dom/client": "src/desktop-transport/ has no React imports.",
+                  "react/jsx-runtime": "src/desktop-transport/ has no React imports.",
+                  "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
+                  "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
+                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
+                },
+                "patterns": [
+                  {
+                    "group": ["~/**"],
+                    "message": "src/desktop-transport/ must not import the app layer (~/)."
+                  },
+                  {
+                    "group": ["**/app/**", "**/app"],
+                    "message": "src/desktop-transport/ must not import the app layer through relative paths."
                   },
                   {
                     "group": [
@@ -199,10 +326,7 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "@core/generated/bindings": {
-                    "importNames": ["commands", "events"],
-                    "message": "Go through @core/transport so the mock transport can stand in; generated types and constants are allowed."
-                  }
+                  "@desktop/commands": "Go through @core/transport so the mock transport can stand in; generated types and constants come from @core/generated/types."
                 },
                 "patterns": [
                   {
@@ -210,10 +334,7 @@
                     "message": "Go through @core/transport so the mock transport can stand in."
                   },
                   {
-                    "group": [
-                      "@core/transport/native",
-                      "@core/transport/native-*"
-                    ],
+                    "group": ["@desktop/native", "@desktop/native-*"],
                     "message": "The native adapter calls Tauri directly; go through @core/transport so the mock transport can stand in."
                   },
                   {
@@ -296,10 +417,7 @@
                   "react-router": "Widgets take hrefs/callbacks as props.",
                   "@tanstack/react-query": "Widgets take data as props; query in the route or a hook.",
                   "zustand": "Widgets take state as props.",
-                  "@core/generated/bindings": {
-                    "importNames": ["commands", "events"],
-                    "message": "Widgets take data and callbacks as props; generated types and constants are allowed."
-                  }
+                  "@desktop/commands": "Widgets take data and callbacks as props; generated types and constants come from @core/generated/types."
                 },
                 "patterns": [
                   {
@@ -324,7 +442,7 @@
                   },
                   {
                     "group": [
-                      "@core/app-transport",
+                      "@desktop/**",
                       "@core/mock-transport",
                       "@core/mock/**"
                     ],
@@ -473,7 +591,10 @@
                   "react/jsx-runtime": "packages/core/src/ has no React imports.",
                   "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
                   "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
-                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
+                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/.",
+                  "react-native": "packages/core/src/ runs on every app; React Native code lives in apps/mobile.",
+                  "expo": "packages/core/src/ runs on every app; Expo code lives in apps/mobile.",
+                  "@steamfield/ui": "packages/core/src/ owns no UI; map core values onto @steamfield/ui in the app."
                 },
                 "patterns": [
                   {
@@ -483,8 +604,35 @@
                   {
                     "group": ["**/app/**", "**/app"],
                     "message": "packages/core/src/ must not import the app layer through relative paths."
+                  },
+                  {
+                    "group": [
+                      "react-native/**",
+                      "expo/**",
+                      "expo-*",
+                      "expo-*/**"
+                    ],
+                    "message": "packages/core/src/ runs on every app; React Native and Expo code lives in apps/mobile."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "packages/core/src/ runs on every app; Tauri adapters live in src/desktop-transport/."
+                  },
+                  {
+                    "group": ["@steamfield/ui/**"],
+                    "message": "packages/core/src/ owns no UI; map core values onto @steamfield/ui in the app."
+                  },
+                  {
+                    "group": ["@desktop/**"],
+                    "message": "packages/core/src/ must not import the desktop adapters."
                   }
                 ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "off",
+              "options": {
+                "deniedGlobals": {}
               }
             }
           }

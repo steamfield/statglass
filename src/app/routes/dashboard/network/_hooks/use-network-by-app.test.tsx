@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import type { NetworkByApp } from "@core/generated/bindings";
+import type { NetworkByApp } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

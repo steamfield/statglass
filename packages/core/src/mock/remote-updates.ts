@@ -6,7 +6,7 @@ import type {
   RemoteHostStatus,
   RrJob,
   UpdatePhase,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import type { ScenarioName } from "./fixtures";

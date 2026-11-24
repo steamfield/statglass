@@ -10,7 +10,7 @@ import type {
   DockerSnapshot,
   DockerStatus,
   DockerUnavailableReason,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { currentCoverage, mockCoverage } from "./docker-coverage";
 import {

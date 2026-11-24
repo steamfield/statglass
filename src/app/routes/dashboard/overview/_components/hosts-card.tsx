@@ -1,5 +1,5 @@
 import { formatPercent } from "@core/format";
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { connectionLabel } from "@core/remote-hosts";
 import { useId } from "react";
 import { Link } from "react-router";

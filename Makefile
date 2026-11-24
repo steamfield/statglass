@@ -241,8 +241,9 @@ bench-vs-stats:
 stub-dist:
 	@mkdir -p dist
 
-# Writes packages/core/src/generated/bindings.ts from the tauri-specta builder in a debug
-# build of the app shell, without launching the app. The pre-push hook diffs the result.
+# Writes packages/core/src/generated/types.ts and src/desktop-transport/commands.ts from the
+# tauri-specta builder in a debug build of the app shell, without launching the app. The
+# pre-push hook diffs the result.
 bindings: stub-dist
 	cargo run --quiet -p statglass --example export_bindings
 
@@ -251,12 +252,15 @@ bindings: stub-dist
 e2e-perf:
 	PLAYWRIGHT_PERFORMANCE=1 bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium --workers=1
 
-# Fails if packages/core/src/generated differs from the commit after regenerating, including
-# new untracked files.
+# Everything `make bindings` writes.
+GENERATED_BINDINGS := packages/core/src/generated src/desktop-transport/commands.ts
+
+# Fails if a generated output differs from the commit after regenerating, including new
+# untracked files.
 bindings-check: bindings
-	@if [ -n "$$(git status --porcelain -- packages/core/src/generated)" ]; then \
-		git status --porcelain -- packages/core/src/generated; \
-		echo "bindings-check: packages/core/src/generated is stale. Run 'make bindings' and commit the result."; \
+	@if [ -n "$$(git status --porcelain -- $(GENERATED_BINDINGS))" ]; then \
+		git status --porcelain -- $(GENERATED_BINDINGS); \
+		echo "bindings-check: generated bindings are stale. Run 'make bindings' and commit the result."; \
 		exit 1; \
 	fi
 

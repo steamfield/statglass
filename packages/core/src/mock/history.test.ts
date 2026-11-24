@@ -1,4 +1,4 @@
-import type { Gap, HistoryRequest } from "@core/generated/bindings";
+import type { Gap, HistoryRequest } from "@core/generated/types";
 import { MOCK_HOST_ID, scenarioFlags } from "./fixtures";
 import { buildSpecs } from "./generator";
 import { mockGaps, mockHistory, mockRecentHistory } from "./history";

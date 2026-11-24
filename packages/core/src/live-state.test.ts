@@ -1,4 +1,4 @@
-import type { LiveMsg, MetricKind, SeriesKey } from "@core/generated/bindings";
+import type { LiveMsg, MetricKind, SeriesKey } from "@core/generated/types";
 import { layoutMsg, statusMsg } from "@tests/live-frames";
 import {
   type HostLive,

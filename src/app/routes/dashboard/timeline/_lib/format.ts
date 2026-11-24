@@ -9,7 +9,7 @@ import {
   type RateUnits,
   type TemperatureUnits,
 } from "@core/format";
-import { METRIC_UNITS } from "@core/generated/bindings";
+import { METRIC_UNITS } from "@core/generated/types";
 
 type Unit = (typeof METRIC_UNITS)[keyof typeof METRIC_UNITS];
 

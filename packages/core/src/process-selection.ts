@@ -1,4 +1,4 @@
-import type { LiveProcess } from "./generated/bindings";
+import type { LiveProcess } from "./generated/types";
 import { holdOrder } from "./held-order";
 
 /** Identity and last observed eligibility, never a name-based kill pattern. */

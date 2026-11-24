@@ -1,4 +1,4 @@
-import type { SeriesSelector } from "@core/generated/bindings";
+import type { SeriesSelector } from "@core/generated/types";
 
 /**
  * Every metric the popover reads (cards, header, footer), so its live

@@ -13,8 +13,8 @@ import type {
   SeriesStats,
   UsageByApp,
   UsageKey,
-} from "@core/generated/bindings";
-import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/types";
 import { ceilTo, floorTo } from "@core/time-grid";
 
 /** Helpers and services, by the app the identity rule charges them to. */

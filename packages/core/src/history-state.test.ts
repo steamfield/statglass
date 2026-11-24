@@ -1,8 +1,4 @@
-import type {
-  CommandError,
-  Gap,
-  HistoryHealth,
-} from "@core/generated/bindings";
+import type { CommandError, Gap, HistoryHealth } from "@core/generated/types";
 import {
   clearHistoryFailure,
   collectingHeader,

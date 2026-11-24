@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import type { SpaceNode, SpaceSubtree } from "@core/generated/bindings";
+import type { SpaceNode, SpaceSubtree } from "@core/generated/types";
 import {
   FRAME_HEADER,
   labelWidth,

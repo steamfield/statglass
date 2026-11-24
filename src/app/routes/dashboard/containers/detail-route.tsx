@@ -4,8 +4,8 @@ import type {
   ChartWindow,
   DockerContainer,
   DockerSnapshot,
-} from "@core/generated/bindings";
-import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { DOCKER_BUCKET_MS } from "@core/generated/types";
 import { dockerKeys } from "@core/query-keys";
 import { floorTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";

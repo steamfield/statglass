@@ -1,4 +1,4 @@
-import type { HostId } from "@core/generated/bindings";
+import type { HostId } from "@core/generated/types";
 import { type ProcessTarget, uniqueTargets } from "@core/process-selection";
 import {
   type ProcessSignalResult,

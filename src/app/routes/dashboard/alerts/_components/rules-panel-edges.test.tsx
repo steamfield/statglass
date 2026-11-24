@@ -3,7 +3,7 @@ import type {
   AlertRule,
   SettingsPatch,
   SettingsSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { MINUTE_MS } from "@core/time-grid";

@@ -2,7 +2,7 @@ import {
   HOLD_FACTOR,
   type SeriesKey,
   type SeriesSelector,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 /** Whether `key` has `sel`'s metric and every one of its labels. */
 export function matches(key: SeriesKey, sel: SeriesSelector): boolean {

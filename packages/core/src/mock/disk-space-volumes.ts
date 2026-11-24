@@ -5,7 +5,7 @@
  * the mount point is the name, nothing is protected, and "/" is the boot
  * volume. Sizes match the `disk.*` series in `mock/linux.ts`.
  */
-import type { SpaceVolume } from "@core/generated/bindings";
+import type { SpaceVolume } from "@core/generated/types";
 import {
   BOOT_PROTECTED,
   BOOT_SIBLINGS,

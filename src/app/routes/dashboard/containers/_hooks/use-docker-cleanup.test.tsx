@@ -1,4 +1,4 @@
-import type { DockerStorageOperation } from "@core/generated/bindings";
+import type { DockerStorageOperation } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { dockerKeys } from "@core/query-keys";
 import type { CommandResult } from "@core/transport";

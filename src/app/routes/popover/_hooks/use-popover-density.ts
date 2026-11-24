@@ -1,4 +1,4 @@
-import type { CardDensity, PopoverSettings } from "@core/generated/bindings";
+import type { CardDensity, PopoverSettings } from "@core/generated/types";
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { useSettings, useUpdateSettings } from "~/stores/settings-store";

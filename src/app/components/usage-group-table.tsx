@@ -4,7 +4,7 @@
  * the page's footnote.
  */
 import type { TimeRange } from "@core/brush";
-import type { UsageByApp } from "@core/generated/bindings";
+import type { UsageByApp } from "@core/generated/types";
 import { remainderRows, usageRows, usageWhole } from "@core/usage-rows";
 import { useMemo } from "react";
 import { useLocation } from "react-router";

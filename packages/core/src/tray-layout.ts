@@ -12,8 +12,8 @@ import type {
   NetworkUnit,
   Readout,
   TemperatureUnit,
-} from "@core/generated/bindings";
-import { READOUTS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { READOUTS } from "@core/generated/types";
 import { SETTINGS_MODULES, type SettingsModule } from "@core/settings-patch";
 
 /** Current values; `null` is a gap (a dash, an empty track). */

@@ -12,7 +12,7 @@ import {
   METRIC_PERIODS_MS,
   type Module,
   type SeriesKey,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { seriesKey, seriesKeyString } from "@core/series-key";
 import {
   BACKGROUND_PROCESSES,

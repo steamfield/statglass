@@ -1,4 +1,4 @@
-import type { CardDensity } from "@core/generated/bindings";
+import type { CardDensity } from "@core/generated/types";
 import { SlidersHorizontal } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {

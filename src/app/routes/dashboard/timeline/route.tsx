@@ -1,7 +1,7 @@
 import type { TimeRange } from "@core/brush";
 import { recordedDate, relativeWindow, windowEnding } from "@core/chart-range";
 import { commandError, errorTone } from "@core/command-error";
-import type { ModuleCap } from "@core/generated/bindings";
+import type { ModuleCap } from "@core/generated/types";
 import { historyUnavailable } from "@core/history-state";
 import { failureReason } from "@core/remote-errors";
 import { DAY_MS } from "@core/time-grid";

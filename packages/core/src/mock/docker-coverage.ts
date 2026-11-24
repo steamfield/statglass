@@ -3,7 +3,7 @@ import type {
   DockerCoverageKind,
   DockerCoverageMasking,
   DockerSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 
 /** Rust's `coverage_meaning`, for the reasons the mock publishes. */
 const MEANING: Record<string, readonly [DockerCoverageKind, string]> = {

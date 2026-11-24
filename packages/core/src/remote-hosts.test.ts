@@ -7,7 +7,7 @@ import type {
   RemoteSync,
   UpdatePhase,
   UpdateStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { mockHostVitals } from "./mock/remote-updates";
 import {
   agentVersionLine,

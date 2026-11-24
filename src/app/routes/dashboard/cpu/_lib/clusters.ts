@@ -1,4 +1,4 @@
-import type { ClusterInfo, HostInfo } from "@core/generated/bindings";
+import type { ClusterInfo, HostInfo } from "@core/generated/types";
 
 export interface ClusterView {
   /** "P" or "E", for the heatmap's cluster gap. */

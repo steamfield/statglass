@@ -7,7 +7,7 @@ import {
 import type {
   DockerContainer,
   DockerHistoryPoint,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { useCallback, useMemo } from "react";
 import { useDismissOutside } from "~/components/brush-overlay";
 import { useChartCursor } from "~/components/charts/use-chart-cursor";

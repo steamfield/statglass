@@ -1,4 +1,4 @@
-import { ALERT_LIMITS, type Event } from "@core/generated/bindings";
+import { ALERT_LIMITS, type Event } from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";

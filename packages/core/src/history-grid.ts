@@ -1,5 +1,5 @@
-import type { HistoryPage } from "@core/generated/bindings";
-import { METRIC_MODULES } from "@core/generated/bindings";
+import type { HistoryPage } from "@core/generated/types";
+import { METRIC_MODULES } from "@core/generated/types";
 import { seriesKeyString } from "@core/series-key";
 
 /** Lay server-averaged buckets on the chart grid without filling missing samples or gaps. */

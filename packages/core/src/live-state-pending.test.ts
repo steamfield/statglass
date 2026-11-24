@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
 import { statusMsg } from "@tests/live-frames";
 import {
   awaitHistory,

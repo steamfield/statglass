@@ -5,7 +5,7 @@ import type {
   DockerHealth,
   DockerLifecycle,
   DockerStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { historyUnavailable } from "@core/history-state";
 import { remoteErrorText } from "@core/remote-errors";
 import type { ColumnSort } from "~/components/data-table";

@@ -11,7 +11,7 @@ import {
   type Settings,
   type SettingsPatch,
   type SettingsSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { validChartRange } from "../chart-range";
 import { INTERVALS_MS, menuBarOf, SIZE_LIMITS_MB } from "../settings-patch";
 import type { MockCommands } from "./commands";

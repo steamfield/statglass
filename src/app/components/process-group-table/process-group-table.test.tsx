@@ -1,4 +1,4 @@
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import {
   act,

@@ -1,6 +1,6 @@
 import { thresholdFromDisplay, thresholdToDisplay } from "./alert-values";
 import { ruleSummary, seriesName } from "./alerts";
-import type { AlertRule, UnitSettings } from "./generated/bindings";
+import type { AlertRule, UnitSettings } from "./generated/types";
 
 const FAHRENHEIT_BINARY: UnitSettings = {
   temperature: "fahrenheit",

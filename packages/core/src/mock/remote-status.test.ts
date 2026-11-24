@@ -1,4 +1,4 @@
-import type { RemoteHostStatus } from "@core/generated/bindings";
+import type { RemoteHostStatus } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 
 it("polls live facts but emits rendered changes and accumulated clock steps", async () => {

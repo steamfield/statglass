@@ -2,7 +2,7 @@ import {
   type LiveMsg,
   RING_SPAN_MS,
   type SeriesKey,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { layoutMsg, statusMsg } from "@tests/live-frames";
 import {
   type HostLive,

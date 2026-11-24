@@ -1,5 +1,5 @@
 import { countNoun, formatInteger } from "@core/format";
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import type { LiveGroup } from "@core/process-groups";
 import type {
   ProcessColumn,

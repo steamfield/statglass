@@ -1,4 +1,4 @@
-import type { AlertRule } from "@core/generated/bindings";
+import type { AlertRule } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, render, screen, waitFor, within } from "@testing-library/react";

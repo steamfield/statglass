@@ -1,5 +1,5 @@
 import { formatPercent } from "@core/format";
-import type { DockerCoverage } from "@core/generated/bindings";
+import type { DockerCoverage } from "@core/generated/types";
 import { mockContainer, mockHistoryPoints } from "@core/mock/docker";
 import { render, screen, within } from "@testing-library/react";
 import { ComparisonValues } from "./comparison-values";

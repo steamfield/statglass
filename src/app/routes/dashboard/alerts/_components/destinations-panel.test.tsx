@@ -3,7 +3,7 @@ import type {
   AlertDestinationsView,
   DeliveryOutcome,
   Destination,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import type { CommandResult } from "@core/transport";

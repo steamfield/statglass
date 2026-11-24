@@ -4,7 +4,7 @@ import type {
   DockerContainerAction,
   DockerSnapshot,
   DockerStorageOperation,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import {
   createContext,
   type ReactNode,

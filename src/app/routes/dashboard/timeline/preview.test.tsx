@@ -1,6 +1,6 @@
-import { createAppTransport } from "@core/app-transport";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import type { Transport } from "@core/transport";
+import { createAppTransport } from "@desktop/app-transport";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WindowControl } from "~/components/window-control";

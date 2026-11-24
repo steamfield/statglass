@@ -1,7 +1,7 @@
 import { matchText } from "@core/app-search";
 import { seriesColor } from "@core/chart-math/series-lines";
 import { formatBytes, formatPercent } from "@core/format";
-import type { DockerContainer } from "@core/generated/bindings";
+import type { DockerContainer } from "@core/generated/types";
 import { useState } from "react";
 import { SeriesSwatch } from "~/components/charts/chart-tooltip";
 import { SearchField } from "~/components/search-field";

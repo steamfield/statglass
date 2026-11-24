@@ -1,4 +1,4 @@
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { mockHostVitals } from "@core/mock/remote-updates";
 import { remoteConnectionView } from "./remote-connection";
 

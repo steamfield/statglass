@@ -96,7 +96,7 @@ import type {
   UsageSeries,
   WindowAppearance,
   WindowAppearanceChanged,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { ProcessSignalResult, SignalKind } from "../process-signal";
 
 export type CommandResult<T> =

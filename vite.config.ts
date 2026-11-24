@@ -10,6 +10,9 @@ const host = process.env.TAURI_DEV_HOST;
 export const alias = {
   "~": fileURLToPath(new URL("./src/app", import.meta.url)),
   "@core": fileURLToPath(new URL("./packages/core/src", import.meta.url)),
+  "@desktop": fileURLToPath(
+    new URL("./src/desktop-transport", import.meta.url)
+  ),
   "@tests": fileURLToPath(new URL("./tests", import.meta.url)),
 };
 

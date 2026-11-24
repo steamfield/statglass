@@ -6,7 +6,7 @@ import type {
   AlertRule,
   SettingsSnapshot,
   UnitSettings,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { settingsErrorText } from "@core/settings-patch";
 import type { CommandResult } from "@core/transport";
 import { type ReactNode, useEffect, useRef, useState } from "react";

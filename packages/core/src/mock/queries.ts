@@ -2,8 +2,8 @@ import type {
   ExportOutcome,
   HistoryRequest,
   RemoteHostStatus,
-} from "@core/generated/bindings";
-import { HISTORY_TIERS, METRIC_MODULES } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { HISTORY_TIERS, METRIC_MODULES } from "@core/generated/types";
 import { DAY_MS } from "@core/time-grid";
 import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";

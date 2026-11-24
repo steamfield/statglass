@@ -1,4 +1,4 @@
-import { type LiveMsg, RING_SPAN_MS } from "@core/generated/bindings";
+import { type LiveMsg, RING_SPAN_MS } from "@core/generated/types";
 import { MINUTE_MS } from "../time-grid";
 import type { LiveOptions, LiveSubscription } from "../transport";
 import type { MockChannels } from "./channels";

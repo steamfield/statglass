@@ -16,7 +16,7 @@ import {
   isPresent,
   MISSING,
 } from "@core/format";
-import { METRIC_UNITS, type UnitSettings } from "@core/generated/bindings";
+import { METRIC_UNITS, type UnitSettings } from "@core/generated/types";
 
 /** A threshold in the unit the user reads it in. */
 export interface DisplayThreshold {

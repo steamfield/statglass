@@ -13,7 +13,7 @@ import type {
   HeatmapDay,
   HeatmapMetric,
   HeatmapRequest,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { rng, seedOf } from "./rng";
 
 /** Average CPU % per local hour of `date` (`YYYY-MM-DD`), by the rules above. */

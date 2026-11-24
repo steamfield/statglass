@@ -4,7 +4,7 @@ import type {
   NetworkByApp,
   ProcessView,
   SettingsSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, within } from "@testing-library/react";

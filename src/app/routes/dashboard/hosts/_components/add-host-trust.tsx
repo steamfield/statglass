@@ -2,7 +2,7 @@ import type {
   CommandError,
   RemoteHostPreparation,
   RemoteSshHostTrust,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { Button } from "~/components/ui/button";
 import { SshSetupHelp } from "./ssh-setup-help";
 

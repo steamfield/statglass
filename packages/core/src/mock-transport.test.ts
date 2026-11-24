@@ -1,4 +1,4 @@
-import type { ChartWindow, LiveMsg } from "@core/generated/bindings";
+import type { ChartWindow, LiveMsg } from "@core/generated/types";
 import { MOCK_HOST_ID } from "./mock/fixtures";
 import { createMockTransport, type MockTransport } from "./mock-transport";
 
