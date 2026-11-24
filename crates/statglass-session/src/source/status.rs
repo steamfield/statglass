@@ -36,7 +36,7 @@ pub struct RouteFailure {
 }
 
 impl ConnectionFailureKind {
-    /// How actionable this cause is from this Mac; lower wins when two routes fail
+    /// How actionable this cause is from this Mac; lower wins when targets fail
     /// differently (local_offline, tailscale_down, agent_not_running, refused, timeout,
     /// no_route, name_not_resolved, unreachable, then the blocking kinds).
     pub fn priority(self) -> u8 {
@@ -147,8 +147,8 @@ pub struct ConnectionStatus {
     /// The id a host answered with when it is not the paired one
     /// ([`RemoteError::IdentityMismatch`]), so the shell can offer re-pairing.
     pub identity_changed: Option<HostId>,
-    /// Per-route causes of the last failure: both routes for a dual-route host whose
-    /// routes both failed, the one route for a single-route host, otherwise empty.
+    /// One failure per target when the connection error combines them, or the one
+    /// target of a single-target endpoint. Empty if no cause is attributable to a route.
     pub route_failures: Vec<RouteFailure>,
     /// This Mac's wall-clock time of the next automatic attempt; `None` while dialing,
     /// connected, waiting for the network or waiting for a manual retry.
@@ -239,8 +239,7 @@ impl ConnectionStatus {
         self.waiting_for_network = false;
     }
 
-    /// Records a failed connection attempt. `single_route` is the host's only route, or
-    /// `None` for a host with both routes configured.
+    /// Records a failed connection attempt. `single_route` is set for a single-target endpoint.
     pub(super) fn record_failure(&mut self, e: &RemoteError, single_route: Option<Route>) {
         self.connected = false;
         self.route_failures = route_failures_of(e, single_route);

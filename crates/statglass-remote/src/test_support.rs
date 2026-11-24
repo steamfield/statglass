@@ -26,14 +26,6 @@ pub(crate) fn bare_host(id: u128, name: &str, os: OsKind) -> HostRecord {
     }
 }
 
-/// A local Mac named "Mac" on macOS 27.0 with a chip the sensor map knows.
-pub(crate) fn mac_host(id: u128) -> HostRecord {
-    let mut record = bare_host(id, "Mac", OsKind::MacOs);
-    record.info.os_version = "27.0".into();
-    record.info.chip_known = true;
-    record
-}
-
 /// A ceiling for [`eventually`] on a loaded machine; a condition that holds returns at once.
 pub(crate) const WAIT: Duration = Duration::from_secs(10);
 

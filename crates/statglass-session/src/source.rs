@@ -1,5 +1,6 @@
 use crate::{
-    EndpointConfig, HostClock, MirrorSink, RemoteError, Result, Route, SshSession, codec, server,
+    Dialer, Endpoint, HostClock, MirrorSink, PROMOTION_DEBOUNCE, RemoteError, Result, Route,
+    SshSession, codec, connect, wire,
 };
 use statglass_engine::{
     BusMsg, EngineStatus, FrameLayout, LiveFrame, ProcessBatch, Source, SourceError, SourceHandle,
@@ -19,6 +20,8 @@ use tokio::{sync::watch, time::Instant};
 
 mod backoff;
 mod control;
+#[cfg(test)]
+mod dial_tests;
 mod queries;
 mod recent;
 mod status;
@@ -39,7 +42,8 @@ struct ControlState {
 pub struct RemoteSource {
     record: HostRecord,
     local: HostId,
-    endpoints: EndpointConfig,
+    dialer: Arc<dyn Dialer>,
+    endpoint: Endpoint,
     on_status: StatusCallback,
     mirror: Option<Arc<dyn MirrorSink>>,
     clock: HostClock,
@@ -56,7 +60,8 @@ impl RemoteSource {
     pub fn new(
         record: HostRecord,
         local: HostId,
-        endpoints: EndpointConfig,
+        dialer: Arc<dyn Dialer>,
+        endpoint: Endpoint,
         on_status: StatusCallback,
         mirror: Option<Arc<dyn MirrorSink>>,
     ) -> Arc<Self> {
@@ -64,7 +69,8 @@ impl RemoteSource {
         Arc::new(Self {
             record,
             local,
-            endpoints,
+            dialer,
+            endpoint,
             on_status,
             mirror,
             clock: HostClock::default(),
@@ -170,7 +176,13 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
             match replacement.take() {
                 Some(session) => Ok(session),
                 None => {
-                    crate::connect(&source.endpoints, source.local, Some(source.record.id)).await
+                    connect(
+                        &*source.dialer,
+                        &source.endpoint,
+                        source.local,
+                        Some(source.record.id),
+                    )
+                    .await
                 }
             }
         };
@@ -209,7 +221,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
                 continue;
             }
             Err(e) => {
-                status.record_failure(&e, source.endpoints.single_route());
+                status.record_failure(&e, source.endpoint.single_route());
                 status.apply_network(crate::network::probe());
                 if !e.retryable() {
                     status.schedule_retry(backoff.attempt(), None);
@@ -474,21 +486,17 @@ impl Session<'_> {
             return Ok(SessionAction::Stop);
         }
         self.retry = next.retry;
-        if next.network != self.network && self.route == Route::Tailscale {
+        if next.network != self.network {
             self.network = next.network;
-            if let Some(lan) = &self.source.endpoints.lan {
-                let config = EndpointConfig {
-                    lan: Some(lan.clone()),
-                    tailscale: None,
-                    command: self.source.endpoints.command.clone(),
-                };
+            if let Some(endpoint) = self.source.endpoint.better_than(self.route) {
                 // Debounced, cancellable promotion runs beside the old stream.
                 let tx = self.promotion_tx.clone();
+                let dialer = self.source.dialer.clone();
                 let local = self.source.local;
                 let expected = self.source.record.id;
                 self.promotion_task = Some(codec::AbortOnDrop(tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    let result = crate::connect(&config, local, Some(expected)).await;
+                    tokio::time::sleep(PROMOTION_DEBOUNCE).await;
+                    let result = connect(&*dialer, &endpoint, local, Some(expected)).await;
                     let _ = tx.send(result).await;
                 })));
             }
@@ -659,7 +667,7 @@ impl Session<'_> {
                     self.watermark_failed = false;
                     self.status.history_error = None;
                 }
-                let s = server::status_from_wire(wire);
+                let s = wire::status_from_wire(wire);
                 *self.source.status.lock_ok() = s.clone();
                 self.sink.live.publish(BusMsg::Status(s));
                 (self.source.on_status)(self.status.clone());
@@ -676,7 +684,7 @@ impl Session<'_> {
                     .live
                     .publish(BusMsg::Processes(Arc::new(ProcessBatch {
                         ts_ms: p.ts_ms,
-                        rows: p.rows.into_iter().map(server::process_from_wire).collect(),
+                        rows: p.rows.into_iter().map(wire::process_from_wire).collect(),
                         gpu_span_ms: p.gpu_span_ms,
                     })));
             }
@@ -976,19 +984,15 @@ fn adapt_page_bytes(current: u32, elapsed: Duration) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MirrorError;
+    use crate::{MirrorError, test_support::fixture_hello};
     use statglass_proto::{SyncPage, WireLayout};
     fn fixture_source(mirror: Option<Arc<dyn MirrorSink>>) -> Arc<RemoteSource> {
-        use crate::ServerProvider;
-        let hello = crate::server::tests::provider().hello();
+        let hello = fixture_hello();
         RemoteSource::new(
             HostRecord::from_identity(hello.host, false),
             HostId(uuid::Uuid::nil()),
-            EndpointConfig {
-                lan: Some("fixture".into()),
-                tailscale: None,
-                command: crate::RemoteCommand::default(),
-            },
+            Arc::new(crate::test_support::UnusedDialer),
+            crate::test_support::endpoint(&[(Route::Lan, "fixture")]),
             Arc::new(|_| {}),
             mirror,
         )
@@ -1689,21 +1693,10 @@ mod tests {
     }
     #[tokio::test(start_paused = true)]
     async fn an_authenticated_but_stalled_application_times_out_and_closes_its_stream() {
-        use crate::ServerProvider;
         use tokio::io::AsyncReadExt;
 
-        let hello = crate::server::tests::provider().hello();
-        let source = RemoteSource::new(
-            HostRecord::from_identity(hello.host.clone(), false),
-            HostId(uuid::Uuid::nil()),
-            EndpointConfig {
-                lan: Some("fixture".into()),
-                tailscale: None,
-                command: crate::RemoteCommand::default(),
-            },
-            Arc::new(|_| {}),
-            None,
-        );
+        let hello = fixture_hello();
+        let source = fixture_source(None);
         let (client, mut application) = tokio::io::duplex(65536);
         let session = SshSession::test(client, hello);
         let live = statglass_engine::LiveHub::default();
@@ -1803,7 +1796,6 @@ mod tests {
 
     #[tokio::test]
     async fn catchup_continues_immediately_after_pages_and_stale_samples_do_not_freeze_clock() {
-        use crate::ServerProvider;
         struct Mirror {
             cursors: Mutex<HashMap<Tier, Cursor>>,
             pages: AtomicU32,
@@ -1848,7 +1840,7 @@ mod tests {
                 Ok(())
             }
         }
-        let hello = crate::server::tests::provider().hello();
+        let hello = fixture_hello();
         let epoch = hello.db_instance_uuid;
         let mirror = Arc::new(Mirror {
             cursors: Mutex::new(HashMap::new()),
@@ -1856,17 +1848,7 @@ mod tests {
             budgets: AtomicU32::new(0),
             truncated: AtomicU32::new(0),
         });
-        let source = RemoteSource::new(
-            HostRecord::from_identity(hello.host.clone(), false),
-            HostId(uuid::Uuid::nil()),
-            EndpointConfig {
-                lan: Some("test".into()),
-                tailscale: None,
-                command: crate::RemoteCommand::default(),
-            },
-            Arc::new(|_| {}),
-            Some(mirror.clone()),
-        );
+        let source = fixture_source(Some(mirror.clone()));
         let (client, mut peer) = tokio::io::duplex(1024 * 1024);
         let session = SshSession::test(client, hello);
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();

@@ -1,7 +1,8 @@
 use crate::{RemoteError, Result, codec, socket};
-use statglass_engine::{BusMsg, EngineStatus, LiveHub, ProcessSample};
+use statglass_engine::{BusMsg, LiveHub, ProcessSample};
 use statglass_proto::{Hello, Message, RemoteInterest, SourceStatus, SyncRequest, WireProcess};
 use statglass_schema::{OsKind, SyncKinds};
+use statglass_session::wire::status_to_wire;
 use std::{
     path::PathBuf,
     sync::{
@@ -131,7 +132,8 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     let last_process = tokio::time::Instant::now() - Duration::from_secs(3600);
     codec::write(&mut writer, &Message::SourceStatus(provider.status())).await?;
     let headline = headline_metrics(hello.host.info.os);
-    let (answering, mut replies) = crate::calls::Answering::new(provider.clone(), session, release);
+    let (answering, mut replies) =
+        crate::answering::Answering::new(provider.clone(), session, release);
     let mut connection = Connection {
         answering,
         provider,
@@ -158,7 +160,7 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
 }
 
 struct Connection<W> {
-    answering: crate::calls::Answering,
+    answering: crate::answering::Answering,
     provider: Arc<dyn ServerProvider>,
     hub: LiveHub,
     headline: &'static [&'static str],
@@ -413,39 +415,6 @@ async fn send_frame<W: AsyncWrite + Unpin>(
     )
     .await
 }
-pub fn status_to_wire(s: &EngineStatus, history_available: bool) -> SourceStatus {
-    SourceStatus {
-        interval_ms: s.interval_ms,
-        paused: s.paused,
-        asleep: s.asleep,
-        on_battery: s.on_battery,
-        low_power_mode: s.low_power_mode,
-        backed_off: s.backed_off,
-        backgrounded: s.backgrounded,
-        display_idle: s.display_idle,
-        history_held_until: s.history_held_until,
-        performance: s.performance,
-        power_source: s.power_source,
-        primary_iface: s.primary_iface.as_ref().map(ToString::to_string),
-        history_available,
-    }
-}
-pub(crate) fn status_from_wire(s: SourceStatus) -> EngineStatus {
-    EngineStatus {
-        interval_ms: s.interval_ms,
-        paused: s.paused,
-        asleep: s.asleep,
-        on_battery: s.on_battery,
-        low_power_mode: s.low_power_mode,
-        backed_off: s.backed_off,
-        backgrounded: s.backgrounded,
-        display_idle: s.display_idle,
-        history_held_until: s.history_held_until,
-        performance: s.performance,
-        power_source: s.power_source,
-        primary_iface: s.primary_iface.map(Into::into),
-    }
-}
 fn process_to_wire(p: &ProcessSample) -> WireProcess {
     WireProcess {
         pid: p.pid,
@@ -467,30 +436,6 @@ fn process_to_wire(p: &ProcessSample) -> WireProcess {
         interval_s: p.interval_s,
         energy_j: p.energy_j,
         app: p.app.as_ref().map(ToString::to_string),
-        app_main: p.app_main,
-    }
-}
-pub(crate) fn process_from_wire(p: WireProcess) -> ProcessSample {
-    ProcessSample {
-        pid: p.pid,
-        start_time_us: p.start_time_us,
-        name: p.name.into(),
-        cpu_pct: p.cpu_pct,
-        mem_bytes: p.mem_bytes,
-        compressed_bytes: p.compressed_bytes,
-        threads: p.threads,
-        idle_wakeups_per_s: p.idle_wakeups_per_s,
-        energy: p.energy,
-        disk_read_bps: p.disk_read_bps,
-        disk_write_bps: p.disk_write_bps,
-        user: p.user.into(),
-        net_rx_bps: p.net_rx_bps,
-        net_tx_bps: p.net_tx_bps,
-        gpu_pct: p.gpu_pct,
-        ports: p.ports.map(Into::into),
-        interval_s: p.interval_s,
-        energy_j: p.energy_j,
-        app: p.app.map(Into::into),
         app_main: p.app_main,
     }
 }
@@ -657,7 +602,7 @@ pub(crate) mod tests {
         let (mut client, server) = tokio::io::duplex(1024 * 1024);
         let task = tokio::spawn(serve_connection(server, provider()));
         ack(&mut client).await;
-        for id in 0..=crate::calls::MAX_IN_FLIGHT as u32 {
+        for id in 0..=crate::answering::MAX_IN_FLIGHT as u32 {
             let query = statglass_proto::Query::SpaceSubtree {
                 report: id,
                 node: None,
@@ -669,7 +614,7 @@ pub(crate) mod tests {
         codec::write(&mut client, &Message::Ping { nonce: 9, t0_ms: 0 })
             .await
             .unwrap();
-        let busy = crate::calls::MAX_IN_FLIGHT as u32;
+        let busy = crate::answering::MAX_IN_FLIGHT as u32;
         assert!(matches!(
             codec::read(&mut client).await.unwrap(),
             Message::Reply { id, answer: statglass_proto::Answer::Error { .. } } if id == busy
@@ -679,7 +624,7 @@ pub(crate) mod tests {
             Message::Pong { nonce: 9, .. }
         ));
         let mut answered = Vec::new();
-        for _ in 0..crate::calls::MAX_IN_FLIGHT {
+        for _ in 0..crate::answering::MAX_IN_FLIGHT {
             let Message::Reply {
                 id,
                 answer: statglass_proto::Answer::SpacePath(text),
@@ -693,7 +638,7 @@ pub(crate) mod tests {
         answered.sort_unstable();
         assert_eq!(
             answered,
-            (0..crate::calls::MAX_IN_FLIGHT as u32).collect::<Vec<_>>()
+            (0..crate::answering::MAX_IN_FLIGHT as u32).collect::<Vec<_>>()
         );
         task.abort();
     }

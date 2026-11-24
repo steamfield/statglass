@@ -85,6 +85,47 @@ fn both_routes_keep_each_cause_and_pick_the_most_actionable() {
 }
 
 #[test]
+fn multiple_targets_on_one_route_keep_their_individual_failures() {
+    let error = RemoteError::Routes(vec![
+        crate::RouteError {
+            route: Route::Lan,
+            host: "studio.local".into(),
+            error: unreachable(UnreachableKind::NameNotResolved),
+        },
+        crate::RouteError {
+            route: Route::Tailscale,
+            host: "studio.tailnet.ts.net".into(),
+            error: RemoteError::Timeout("timed out".into()),
+        },
+        crate::RouteError {
+            route: Route::Tailscale,
+            host: "100.64.0.1".into(),
+            error: unreachable(UnreachableKind::Refused),
+        },
+    ]);
+    let mut status = ConnectionStatus::default();
+    status.record_failure(&error, None);
+    assert_eq!(status.failure_kind, Some(K::Refused));
+    assert_eq!(
+        status.route_failures,
+        vec![
+            RouteFailure {
+                route: Route::Lan,
+                kind: K::NameNotResolved
+            },
+            RouteFailure {
+                route: Route::Tailscale,
+                kind: K::Timeout
+            },
+            RouteFailure {
+                route: Route::Tailscale,
+                kind: K::Refused
+            },
+        ]
+    );
+}
+
+#[test]
 fn a_dual_route_error_that_was_not_combined_records_no_routes() {
     let mut status = ConnectionStatus::default();
     status.record_failure(&RemoteError::Authentication("denied".into()), None);

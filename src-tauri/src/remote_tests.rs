@@ -1,5 +1,6 @@
 //! Shell configuration and cancellation behavior.
 use super::*;
+use statglass_remote::OpenSshDialer;
 #[test]
 fn invalid_host_configuration_is_rejected_before_ssh_or_storage() {
     let valid = RemoteHostConfig {
@@ -196,11 +197,13 @@ fn a_session_without_a_registered_host_is_unknown() {
     let source = RemoteSource::new(
         record.clone(),
         local,
+        Arc::<OpenSshDialer>::default(),
         EndpointConfig {
             lan: Some("fixture".into()),
             tailscale: None,
             command: RemoteCommand::default(),
-        },
+        }
+        .endpoint(),
         Arc::new(|_| {}),
         None,
     );

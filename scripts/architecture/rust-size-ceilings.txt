@@ -8,9 +8,9 @@ crates/statglass-collect/src/macos/nstat/ffi.rs 550
 crates/statglass-engine/src/docker/storage.rs 600
 crates/statglass-engine/src/engine/tick.rs 550
 crates/statglass-engine/src/usage.rs 850
-crates/statglass-remote/src/source.rs 1000
 crates/statglass-schema/src/settings.rs 650
 crates/statglass-schema/src/snapshot.rs 550
+crates/statglass-session/src/source.rs 1000
 crates/statglass-store/src/reader.rs 850
 crates/statglass-store/src/writer/docker.rs 600
 crates/statglass-store/src/writer/mod.rs 700

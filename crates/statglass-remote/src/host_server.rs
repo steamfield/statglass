@@ -3,7 +3,7 @@
 //! per-host data it reads; history comes from that host's [`HistoryStore`].
 use crate::ServerProvider;
 use crate::host_queries::SpaceAccess;
-use crate::server::status_to_wire;
+use crate::status_to_wire;
 use statglass_engine::disk_space::SpaceService;
 use statglass_engine::{HistoryStore, LiveHub};
 use statglass_proto::{
