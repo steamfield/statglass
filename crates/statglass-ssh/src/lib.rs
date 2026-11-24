@@ -3,6 +3,11 @@
 //! device). It implements `statglass_session::Dialer`.
 mod dialer;
 mod signer;
+mod stream;
+
+#[cfg(test)]
+#[path = "../tests/support/server.rs"]
+mod test_server;
 
 pub use dialer::{RusshConfig, RusshDialer};
 #[cfg(any(test, feature = "software-signer"))]
