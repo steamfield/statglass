@@ -15,9 +15,10 @@ const WALK = `${CARD}, ${GROUP}`;
 const STAGGER_CAP = 8;
 
 /**
- * How long after a page opens late content still counts as part of it: the
- * lazy route chunk and the chart window (D-091) arrive a frame or two after
- * the header. Anything mounted later is a data update and appears in place.
+ * How long after a page opens late content still counts as part of it: a
+ * module page's cards wait for the chart window (D-091) and Settings for its
+ * settings read, a frame or two after the header. Anything mounted later is a
+ * data update and appears in place.
  */
 const ENTRANCE_WINDOW_MS = 800;
 
@@ -70,20 +71,26 @@ function insideEntered(
   return false;
 }
 
-/** The units that mounted in `records` and haven't entered yet, in order. */
+/**
+ * The units that mounted in `records` and haven't entered yet, in order. One
+ * batch can hold a unit and, in a later record, something inside it (a chart
+ * measuring itself in a layout effect); that inner node belongs to the unit.
+ */
 function addedUnits(
   records: readonly MutationRecord[],
   host: Element,
   entered: WeakSet<Element>
 ): Element[] {
   const units: Element[] = [];
+  const isNew = (node: Node): node is Element =>
+    node instanceof Element &&
+    node.isConnected &&
+    !insideEntered(node, host, entered) &&
+    !units.some((unit) => unit.contains(node));
   for (const record of records)
-    for (const node of record.addedNodes) {
-      if (!(node instanceof Element) || !node.isConnected) continue;
-      if (insideEntered(node, host, entered)) continue;
-      addUnits(node, units, host);
-    }
-  return units.filter((unit) => !entered.has(unit));
+    for (const node of record.addedNodes)
+      if (isNew(node)) addUnits(node, units, host);
+  return units;
 }
 
 /**
@@ -91,7 +98,9 @@ function addedUnits(
  * changes (and on first mount), the page's cards and blocks fade in and rise
  * into place one after another, in reading order: one Web Animations call
  * per unit with `backwards` fill, so nothing is left on the element and a
- * 1 Hz re-render can't replay it. Units that mount within
+ * 1 Hz re-render can't replay it. A key change or unmount cancels what is
+ * still running, which leaves each element as it is at rest (StrictMode's
+ * second mount starts clean). Units that mount within
  * `ENTRANCE_WINDOW_MS` continue the entrance as their own staggered batch.
  * A 0 ms `--motion-page` (Reduce Motion, Performance mode) skips it all.
  */
@@ -108,17 +117,20 @@ export function usePageEntrance<T extends HTMLElement>(
     const step = motionMs("stagger", host);
     const easing = motionEase("enter", host);
     const entered = new WeakSet<Element>();
+    const running: Animation[] = [];
 
     const play = (units: readonly Element[]) =>
       units.forEach((unit, i) => {
         entered.add(unit);
-        unit.animate(unit.matches(CARD) ? CARD_FRAMES : BLOCK_FRAMES, {
-          duration,
-          delay: Math.min(i, STAGGER_CAP) * step,
-          easing,
-          fill: "backwards",
-          id: "page-enter",
-        });
+        running.push(
+          unit.animate(unit.matches(CARD) ? CARD_FRAMES : BLOCK_FRAMES, {
+            duration,
+            delay: Math.min(i, STAGGER_CAP) * step,
+            easing,
+            fill: "backwards",
+            id: "page-enter",
+          })
+        );
       });
 
     const first: Element[] = [];
@@ -133,6 +145,7 @@ export function usePageEntrance<T extends HTMLElement>(
     return () => {
       clearTimeout(timer);
       observer.disconnect();
+      for (const animation of running) animation.cancel();
     };
   }, [pageKey]);
   return ref;

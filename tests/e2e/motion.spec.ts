@@ -14,7 +14,9 @@ import { chartsReady } from "./helpers/charts-ready";
 /**
  * Record CSS entrances and one-shot Web Animations (chart reveals, page
  * entrances) from page load on. Every page-entrance target is marked
- * `data-entered` so a test can find it after the animation ends.
+ * `data-entered` so a test can find it after the animation ends. An entrance
+ * started on an element that is still entering, or inside one that entered,
+ * is recorded as `page-enter:double` or `page-enter:nested`.
  */
 async function recordAnimations(page: Page) {
   await page.addInitScript(() => {
@@ -27,13 +29,24 @@ async function recordAnimations(page: Page) {
           Number(e.target.dataset.reveals ?? 0) + 1
         );
     });
+    // Defined in the init script: Playwright serializes only this function.
+    const notePageEnter = (el: Element) => {
+      if (
+        el
+          .getAnimations()
+          .some((a) => a.id === "page-enter" && a.playState === "running")
+      )
+        names.push("page-enter:double");
+      if (el.parentElement?.closest("[data-entered]"))
+        names.push("page-enter:nested");
+      names.push("page-enter");
+      el.setAttribute("data-entered", "");
+    };
     const animate = Element.prototype.animate;
     Element.prototype.animate = function (keyframes, options) {
+      if (typeof options === "object" && options.id === "page-enter")
+        notePageEnter(this);
       const animation = animate.call(this, keyframes, options);
-      if (animation.id === "page-enter") {
-        names.push("page-enter");
-        this.setAttribute("data-entered", "");
-      }
       if (animation.id === "reveal") {
         names.push("reveal");
         this.setAttribute(
@@ -57,8 +70,13 @@ const sectionOpacities = (page: Page) =>
     ).map((el) => getComputedStyle(el).opacity)
   );
 
-const entrances = async (page: Page) =>
-  (await started(page)).filter((n) => n === "page-enter").length;
+/** Elements on screen that entered with their page (StrictMode calls twice). */
+const entrances = (page: Page) =>
+  page.evaluate(() => document.querySelectorAll("main [data-entered]").length);
+
+/** Entrances that doubled up or started inside an element that entered. */
+const misplaced = async (page: Page) =>
+  (await started(page)).filter((n) => n.startsWith("page-enter:"));
 
 const running = (page: Page) =>
   page.evaluate(
@@ -135,7 +153,7 @@ const unexpectedRunning = (page: Page) =>
           ? a.animationName
           : a instanceof CSSTransition
             ? a.transitionProperty
-            : a.constructor.name
+            : a.id || a.constructor.name
       );
   });
 
@@ -207,7 +225,7 @@ async function reverseRing(page: Page, duration: number | null = null) {
   }, original);
 }
 
-test("live-motion validation accepts shortened reversals and rejects long transitions and entrances", async ({
+test("live-motion validation accepts shortened reversals and rejects long transitions", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -254,24 +272,30 @@ test("live-motion validation accepts shortened reversals and rejects long transi
     scroll.effect.updateTiming({ duration: 400 });
   });
   expect(await unexpectedRunning(page)).toContain("Animation");
+});
 
+test("live-motion validation rejects a page entrance", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await openOverview(page);
   await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  // Catch a real page entrance mid-flight on the next navigation.
+  await page.locator("[data-sidebar-item][href='/dashboard/cpu']").click();
   await page.evaluate(async () => {
-    const card = document.querySelector("main [data-card]");
-    if (!card) throw new Error("No card");
-    const entrance = card.animate(
-      [
-        { opacity: 0, transform: "translateY(8px)" },
-        { opacity: 1, transform: "none" },
-      ],
-      { duration: 400, id: "page-enter" }
-    );
-    entrance.updatePlaybackRate(0);
-    await entrance.ready;
+    for (let frame = 0; frame < 30; frame++) {
+      const entrance = document
+        .getAnimations()
+        .find((a) => a.id === "page-enter" && a.playState === "running");
+      if (entrance) {
+        entrance.updatePlaybackRate(0);
+        await entrance.ready;
+        return;
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    throw new Error("No page entrance running");
   });
-  expect(await unexpectedRunning(page)).toContain("Animation");
+  expect(await unexpectedRunning(page)).toContain("page-enter");
 });
 
 test("Overview's header and cards enter, then settle with nothing running", async ({
@@ -281,10 +305,12 @@ test("Overview's header and cards enter, then settle with nothing running", asyn
   await recordAnimations(page);
   await openOverview(page);
 
-  await expect.poll(() => entrances(page)).toBeGreaterThan(6);
+  // The header, This Mac and the eight module cards at least.
+  await expect.poll(() => entrances(page)).toBeGreaterThanOrEqual(10);
   await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
+  expect(await misplaced(page)).toEqual([]);
 });
 
 test("navigating replays the page entrance and slides the sidebar pill", async ({
@@ -298,13 +324,13 @@ test("navigating replays the page entrance and slides the sidebar pill", async (
 
   const pill = page.locator("[data-sidebar-pill]");
   const before = await pill.evaluate((el) => el.style.transform);
-  const lifts = await entrances(page);
 
   await page.locator("[data-sidebar-item][href='/dashboard/cpu']").click();
   await expect(
     page.getByRole("heading", { name: "CPU", exact: true })
   ).toBeVisible();
-  await expect.poll(() => entrances(page)).toBeGreaterThan(lifts);
+  // CPU's header and its three cards replaced Overview's.
+  await expect.poll(() => entrances(page)).toBe(4);
   await expect
     .poll(() => pill.evaluate((el) => el.style.transform))
     .not.toBe(before);
@@ -316,6 +342,7 @@ test("navigating replays the page entrance and slides the sidebar pill", async (
   await chartsReady(page);
   await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
+  expect(await misplaced(page)).toEqual([]);
 });
 
 test("live ticks never replay an entrance", async ({ page }) => {
@@ -335,6 +362,9 @@ test("live ticks never replay an entrance", async ({ page }) => {
   await page.evaluate(() => {
     (window as unknown as { __anims: string[] }).__anims.length = 0;
   });
+  // Ticks landed while the page was still opening.
+  expect(await misplaced(page)).toEqual([]);
+
   // Three ticks of fresh values re-render every card.
   await page.clock.runFor(3000);
   expect(

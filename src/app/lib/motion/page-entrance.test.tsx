@@ -56,18 +56,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const targets = (animate: ReturnType<typeof mockElementAnimate>) =>
+/** `Element.animate` stubbed to return an animation whose `cancel` is a spy. */
+function mockAnimate() {
+  const animate = mockElementAnimate();
+  const cancel = vi.fn();
+  animate.mockImplementation(() => ({ cancel }) as unknown as Animation);
+  return Object.assign(animate, { cancel });
+}
+
+const targets = (animate: ReturnType<typeof mockAnimate>) =>
   animate.mock.contexts.map((el) =>
     el instanceof Element ? (el.textContent ?? "").trim() : ""
   );
-const delays = (animate: ReturnType<typeof mockElementAnimate>) =>
+const delays = (animate: ReturnType<typeof mockAnimate>) =>
   animate.mock.calls.map(([, options]) =>
     typeof options === "object" ? options.delay : undefined
   );
 
 describe("usePageEntrance", () => {
   it("enters the header, then each card in reading order, never the group holding them", () => {
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     const { getByTestId } = render(<Page />);
     expect(targets(animate)).toEqual(["Title 0", "card 0", "card 1", "card 2"]);
     expect(delays(animate)).toEqual([0, 40, 80, 120]);
@@ -81,13 +89,13 @@ describe("usePageEntrance", () => {
   });
 
   it("caps the stagger so a long page doesn't trickle in", () => {
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     render(<Page cards={12} />);
     expect(delays(animate).at(-1)).toBe(320);
   });
 
   it("does not replay on a data update, and replays when the page changes", () => {
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     const { rerender } = render(<Page />);
     animate.mockClear();
     rerender(<Page value={1} />);
@@ -100,7 +108,7 @@ describe("usePageEntrance", () => {
   });
 
   it("continues the entrance for cards that mount while the page opens, as their own batch", async () => {
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     const { rerender, getByTestId } = render(<Page cards={0} />);
     animate.mockClear();
     vi.advanceTimersByTime(100);
@@ -111,7 +119,7 @@ describe("usePageEntrance", () => {
   });
 
   it("enters content that fills the route's root after its header", async () => {
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     const { rerender } = render(<Page row={false} />);
     expect(targets(animate)).toEqual(["Title 0"]);
     animate.mockClear();
@@ -120,15 +128,52 @@ describe("usePageEntrance", () => {
   });
 
   it("leaves content added inside an entered card alone", async () => {
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     const { rerender } = render(<Page />);
     animate.mockClear();
     await act(async () => rerender(<Page lateDetail />));
     expect(animate).not.toHaveBeenCalled();
   });
 
+  it("enters a card once when something inside it lands in the same batch", async () => {
+    const animate = mockAnimate();
+    const { getByTestId } = render(<Page />);
+    animate.mockClear();
+    await act(async () => {
+      const card = document.createElement("section");
+      card.setAttribute("data-card", "");
+      card.textContent = "new card";
+      getByTestId("row").append(card);
+      const chart = document.createElement("div");
+      chart.textContent = "chart";
+      card.append(chart);
+    });
+    expect(targets(animate)).toEqual(["new cardchart"]);
+  });
+
+  it("leaves rows added to an entered block alone", async () => {
+    const animate = mockAnimate();
+    const { getByRole } = render(<Page />);
+    animate.mockClear();
+    await act(async () => {
+      const row = document.createElement("p");
+      row.textContent = "new row";
+      getByRole("banner").append(row);
+    });
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("cancels what is still running when the page changes or unmounts", () => {
+    const animate = mockAnimate();
+    const { rerender, unmount } = render(<Page />);
+    rerender(<Page pageKey="/dashboard/gpu" />);
+    expect(animate.cancel).toHaveBeenCalledTimes(4);
+    unmount();
+    expect(animate.cancel).toHaveBeenCalledTimes(8);
+  });
+
   it("lets cards that mount after the opening window appear in place", async () => {
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     const { rerender } = render(<Page />);
     animate.mockClear();
     vi.advanceTimersByTime(1000);
@@ -138,7 +183,7 @@ describe("usePageEntrance", () => {
 
   it("does nothing when the token is 0 ms (Reduce Motion, Performance mode)", () => {
     root.style.setProperty("--motion-page", "0ms");
-    const animate = mockElementAnimate();
+    const animate = mockAnimate();
     render(<Page />);
     expect(animate).not.toHaveBeenCalled();
   });

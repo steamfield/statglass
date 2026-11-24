@@ -43,10 +43,12 @@ and keyframe rules inside that media block anyway.
 ## Choreography (`src/app/lib/motion/`)
 
 - `usePageEntrance(pageKey)` returns a ref for the element hosting a route's `<Outlet />`
-  (D-139). When the key changes (route, Disk's sub-view, host) and on first mount, the
+  (D-139). When the key changes (route, Disk's Space view, the host on a metric page) and
+  on first mount, the
   page's header, then each card (`data-card`, set by the `Card` widget) and each block
   holding no card (a banner, a table) fades in and rises in reading order: one Web
-  Animations call per unit with `backwards` fill, so a 1 Hz re-render can't replay it.
+  Animations call per unit with `backwards` fill, so a 1 Hz re-render can't replay it;
+  a key change or unmount cancels what is still running (StrictMode mounts twice).
   Elements holding cards, `data-enter-group` containers (`DashboardBody`, the Settings
   columns) and the route's root are walked, never moved. Units that mount within 800 ms
   of opening enter as their own batch; later ones are data updates and appear in place.

@@ -118,11 +118,7 @@ export default function DashboardLayout() {
   const remoteDisconnected = hasRemote && remote.status.state !== "connected";
   const view = new URLSearchParams(search).get("view");
   const isDiskSpace = pathname === "/dashboard/disk" && view === "space";
-  // A page opens on a new route, a sub-view (Disk space) or another host;
-  // range and filter params are data updates and never replay it.
-  const pageRef = usePageEntrance<HTMLDivElement>(
-    `${hostId}|${pathname}|${view ?? ""}`
-  );
+
   const liveOnlyPage =
     pathname === "/dashboard/processes" ||
     pathname === "/dashboard/containers" ||
@@ -131,6 +127,13 @@ export default function DashboardLayout() {
     metricPage &&
     remoteDisconnected &&
     (remote.status.synced_through_ms === null || liveOnlyPage);
+  // A page opens on a new route, Disk's I/O and Space views, or another host
+  // on a metric page (Settings, Hosts and Alerts show This Mac's whichever is
+  // selected). Range, filter and Containers' view params keep the same
+  // header and controls in place, so they never replay it.
+  const pageRef = usePageEntrance<HTMLDivElement>(
+    `${metricPage ? hostId : ""}|${pathname}|${isDiskSpace ? "space" : ""}`
+  );
   const stale =
     metricPage && ((sampling.stale && !sampling.paused) || remoteDisconnected);
   // Keep readable mirrored history crisp when a remote host is disconnected;
