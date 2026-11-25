@@ -1,9 +1,9 @@
 import type { HostId, RemoteHostStatus } from "@core/generated/types";
 import { createLiveSession, onLiveHostChanged } from "@core/live-session";
-import { POPOVER_CARD_SERIES } from "@core/popover/series";
 import { MINUTE_MS } from "@core/time-grid";
 import { AppState } from "react-native";
 import type { LiveStore, PhoneLive } from "./live";
+import { PHONE_LIVE_SERIES } from "./live-series";
 import type { PhoneTransport } from "./seam";
 
 function applyPhoneState(store: LiveStore, host: HostId, next: PhoneLive) {
@@ -57,7 +57,7 @@ export function subscribeHostLive(
       applyPhoneState(store, host, { ...held, awaitingFrame: true });
     return createLiveSession(
       host,
-      { series: POPOVER_CARD_SERIES, backfillMs: MINUTE_MS },
+      { series: PHONE_LIVE_SERIES, backfillMs: MINUTE_MS },
       {
         initial: store.getState(),
         subscribe: async (id, onMessage, options) => {
