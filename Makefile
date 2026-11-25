@@ -177,6 +177,7 @@ remote-scripts-test:
 # the Linux agent behind sshd in a container. Ignored by `cargo test`; needs Docker.
 ssh-docker-test:
 	@test -x scripts/ssh-docker/run.sh || { echo "ssh-docker-test: scripts/ssh-docker/run.sh is missing or not executable" >&2; exit 1; }
+	python3 -B -m unittest discover -s scripts/ssh-docker -p 'test_*.py'
 	scripts/ssh-docker/run.sh
 
 # The Linux agent (D-116), bundled as app resources and uploaded to hosts by Add host.

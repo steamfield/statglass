@@ -9,7 +9,9 @@ use tokio::{sync::watch, time::timeout};
 
 const LIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const SYNC_TIMEOUT: Duration = Duration::from_secs(60);
-const HISTORY_READY_TIMEOUT: Duration = Duration::from_secs(90);
+// A cold agent closes its first full M1 bucket up to two minutes after it starts: the
+// partial first minute, then a whole one.
+const HISTORY_READY_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// A live host to run the suite against.
 pub struct ConformanceHost {
