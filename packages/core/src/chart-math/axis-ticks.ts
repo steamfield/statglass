@@ -2,6 +2,7 @@ import {
   formatBucketTime,
   formatClock,
   formatClockSeconds,
+  monthName,
 } from "@core/format";
 import { hostTime } from "@core/host-clock";
 import { ceilTo, DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
@@ -47,7 +48,16 @@ const TIME_STEPS = [
   LONGEST_GRID_STEP,
 ];
 
+/** "Nov 25": ticks over several days sit at local midnight, so the time adds nothing. */
+const formatDay = (ms: number) => {
+  const d = new Date(ms);
+  return `${monthName(d)} ${d.getDate()}`;
+};
+
 function clockLabels(spanMs: number) {
+  if (spanMs > 2 * DAY_MS) {
+    return { format: formatDay, maxChars: 6, resolutionMs: DAY_MS };
+  }
   if (spanMs >= DAY_MS) {
     // "Nov 25, 13:05" is the widest label, allowing for a two-digit day.
     return {

@@ -6,6 +6,7 @@ import {
   formatPercent,
   formatRate,
   formatWatts,
+  monthName,
 } from "@core/format";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { CHART_CAPTION_CHAR_WIDTH_PX } from "@core/widget-models/chart-annotation";
@@ -64,6 +65,8 @@ const toMs = Date.UTC(2026, 10, 25, 18, 3, 17);
 const widthPx = 360;
 const historical = { clockOffsetMs: 0, nowMs: toMs + MINUTE_MS };
 const formatWithDate = (ms: number) => formatBucketTime(ms, MINUTE_MS, true);
+const formatDay = (ms: number) =>
+  `${monthName(new Date(ms))} ${new Date(ms).getDate()}`;
 const displayedClock = (ms: number) =>
   ms - new Date(ms).getTimezoneOffset() * MINUTE_MS;
 
@@ -86,8 +89,8 @@ describe("time ticks", () => {
     ["5 m", 5 * MINUTE_MS, MINUTE_MS, formatClockSeconds],
     ["1 h", HOUR_MS, 5 * MINUTE_MS, formatClock],
     ["24 h", DAY_MS, HOUR_MS, formatWithDate],
-    ["7 d", 7 * DAY_MS, DAY_MS, formatWithDate],
-    ["30 d", 30 * DAY_MS, DAY_MS, formatWithDate],
+    ["7 d", 7 * DAY_MS, DAY_MS, formatDay],
+    ["30 d", 30 * DAY_MS, DAY_MS, formatDay],
   ] as const)(
     "places evenly spaced clock labels in a %s window",
     (_, span, grid, format) => {
@@ -112,6 +115,20 @@ describe("time ticks", () => {
       expectLabelsToFit(ticks, widthPx, 1);
     }
   );
+
+  it("labels a multi-day window by date so a phone-width plot gets several", () => {
+    // The phone's live 7 d chart: about 300 pt of plot at caption scale 1.4.
+    const ticks = timeTicks(toMs - 7 * DAY_MS, toMs, 300, {
+      clockOffsetMs: 0,
+      nowMs: toMs,
+      captionScale: 1.4,
+    });
+    const dated = ticks.filter(({ label }) => label !== "now");
+    expect(dated.length).toBeGreaterThanOrEqual(2);
+    for (const tick of dated) expect(tick.label).toBe(formatDay(tick.value));
+    expect(ticks.at(-1)?.label).toBe("now");
+    expectLabelsToFit(ticks, 300, 1.4);
+  });
 
   it.each([-47_000, 47_000])(
     "aligns and labels on the host clock with a %d ms offset",
