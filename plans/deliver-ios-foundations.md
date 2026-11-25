@@ -137,7 +137,44 @@ Depends on: phase 1
 
 Inline after the three lanes merge, before the gate: delete `PairAction` (`src/pairing/screens/action.tsx`) and `CARD_SURFACE` (`src/cards/module-card.tsx`), which no single lane can remove because their importers span all three; add the rem and touch-token note to `.claude/rules/mobile/expo.md` and run `make agent-config`. The scaffold's `test/ui/style-conventions.test.ts` is expected to fail in every lane's worktree and pass on the landing branch after the merges.
 
-(Test cases and briefs written during phase 1.)
+Test cases (`apps/mobile/test/ui/style-conventions.test.ts`, a source scan over `apps/mobile/src`):
+
+- No class in `src` contains `[44px]`.
+- No `View`, `Pressable` or `Animated.View` opening tag outside `src/ui/card.tsx` and `src/ui/button.tsx` carries `rounded-xl`, `border-border` and `bg-card` together.
+- No opening tag outside `src/ui/button.tsx` carries a `rounded-*` class together with `bg-primary` (a hand-rolled filled button).
+- No file in `src` names `PairAction` or `CARD_SURFACE` (passes after the inline deletion).
+- Every existing screen test passes unchanged, apart from `test/handover/pair.test.tsx`, which renders `Button` where it rendered `PairAction`.
+
+Rules shared by the three lanes:
+
+- Replace every `min-h-[44px]` with `min-h-touch` and every `min-w-[44px]` with `min-w-touch`.
+- A `View` whose classes include the card surface (`rounded-xl border border-border bg-card`, or `CARD_SURFACE`) becomes `<Card>`: `p-3` is the default padding, `p-4` is `padding="lg"`, anything else is `padding="none"` with the padding left in `className`. A `Pressable` with the surface becomes `<PressableCard>`. Both add `overflow-hidden`, which is intended.
+- `<PairAction>` becomes `<Button>` (`secondary` becomes `variant="secondary"`). A hand-rolled filled button (a `Pressable` with `rounded-xl` or `rounded-lg` and `bg-primary` wrapping one `Text`) becomes `<Button>`; the `rounded-lg` one becoming `rounded-xl` and its label centring are accepted differences.
+- A text-only `Pressable` with `min-h-[44px] min-w-[44px] justify-center active:opacity-70` around one `<Text variant="label" tone="link">` becomes `<Button variant="link">`. Any other text-only `Pressable` (different text variant, padding, weight or disabled styling) keeps its `Pressable` and only gets the token.
+- Accessibility props (`accessibilityLabel`, `accessibilityHint`, `accessibilityState`, `testID`) carry over exactly. A site that needs a prop `Button` does not have keeps its `Pressable` and is listed in the hand-off.
+- Do not delete or edit the definitions of `PairAction` (`src/pairing/screens/action.tsx`) or `CARD_SURFACE` (`src/cards/module-card.tsx`); the orchestrator removes them after all three lanes merge.
+- `TextInput`s, the `rounded-full` connection pill and the `rounded` chart annotation chip are not cards and stay as they are.
+
+#### Lane a brief
+
+- Goal: the hosts list, host screen, connection banner, welcome screen, lock gate and routes use `Button`, `Card` and the touch token.
+- Behavior: the shared rules above, in the owned folders. Known sites: the "Add a host" filled button and the text-only action beside it in `hosts/hosts-list.tsx`; the host row card in `hosts/host-row.tsx` (`PressableCard`, `className="gap-2"`); the unlock button and its card in `lock/app-lock-gate.tsx`; `PairAction` in `welcome/welcome-screen.tsx` and `app/pair-hosts.tsx`; the banner action in `connection/problem-banner.tsx` (token only). In `host/host-page.tsx` the content's horizontal padding moves from the StyleSheet's 16 to the `px-4` class its neighbours use.
+- Out of scope: the files other lanes own; any change to `Button` or `Card` themselves.
+- Done when: the filtered tests for the owned test folders pass; the mobile suite fails only in `test/ui/style-conventions.test.ts`; typecheck and Biome are clean; the hand-off lists every site left as a `Pressable` and why.
+
+#### Lane b brief
+
+- Goal: the module pages use `Card`, `Button` and the touch token.
+- Behavior: the shared rules above, in `src/module/`. Known sites: the card surfaces in `pages/cpu/index.tsx`, `pages/cpu/core-load.tsx`, `pages/gpu/index.tsx`, `pages/gpu/frequency.tsx`, `pages/memory/index.tsx`, `pages/network/index.tsx`; the `CARD_SURFACE` users in `pages/power/index.tsx`, `pages/power/thermal-history.tsx`, `pages/power/ring-cards.tsx` and `pages/battery/battery-day.tsx` (the ring card keeps its width classes in `className`); the three link buttons in `module-notice.tsx`, `module-chart.tsx` and `pages/network/history-chart.tsx`.
+- Out of scope: the module-page prelude and history hooks (phase 3); `CardGlow`.
+- Done when: `bun run --cwd apps/mobile test -- test/module` passes; the mobile suite fails only in `test/ui/style-conventions.test.ts`; typecheck and Biome are clean.
+
+#### Lane c brief
+
+- Goal: settings, pairing, handover, the debug screen, the popover cards and the shared `ui` components use `Button`, `Card` and the touch token.
+- Behavior: the shared rules above, in the owned folders. Known sites: every `PairAction` in `pairing/` and `handover/` and in `test/handover/pair.test.tsx`; the card surfaces in `pairing/screens/preview.tsx`, `handover/update-selection.tsx`, `handover/choices.tsx` (`PressableCard`, `padding="none"`) and `debug/debug-screen.tsx`; `cards/module-card.tsx` and `cards/unavailable-card.tsx` render through `Card`/`PressableCard` while `CARD_SURFACE` stays exported; the Retry button in `ui/retry-panel.tsx` and the Connect button in `debug/debug-screen.tsx`; tokens in `settings/`, `ui/reorder-list.tsx`, `ui/segmented-control.tsx` and `ui/sheet.tsx`.
+- Out of scope: `ui/button.tsx`, `ui/card.tsx` and `ui/text.tsx` themselves; inline `minHeight: 44` styles (`ui/demo-badge.tsx`, `ui/swipe-row.tsx`).
+- Done when: the filtered tests for the owned test folders pass; the mobile suite fails only in `test/ui/style-conventions.test.ts`; typecheck and Biome are clean.
 
 ### Phase 3: data, session and module boundaries
 
