@@ -30,6 +30,7 @@ const CONNECTED: MobileRemoteHost = {
     route: "tailscale",
     sync: "current",
     failure: null,
+    incompatible_side: null,
     message: null,
     route_failures: [],
   },
@@ -110,32 +111,32 @@ test("requires a development build when the native module is absent", async () =
   expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
 });
 
-test("starts with the current cellular sync setting and updates the open debug core", async () => {
+test("starts with the current cellular live setting and updates the open debug core", async () => {
   const { native } = debugModule();
   await renderWithProviders(
     <>
       <NativeCoreBridge />
       <ExpoRoot context={routes} location="/debug" />
     </>,
-    { settings: { syncOnCellular: true } }
+    { settings: { liveOnCellular: false } }
   );
   expect(await screen.findByText(KEY_LINE)).toBeOnTheScreen();
   expect(native.start).toHaveBeenCalledWith(
     JSON.stringify({
       hosts: [],
-      data: { sync_on_cellular: true },
+      data: { live_on_cellular: false },
     } satisfies MobileConfig)
   );
 
   await act(() => router.push("/data"));
-  const cellularSync = screen.getByRole("switch", {
-    name: "Sync history on cellular",
+  const cellularLive = screen.getByRole("switch", {
+    name: "Live updates on cellular",
   });
-  expect(cellularSync).toBeChecked();
-  await fireEvent(cellularSync, "valueChange", false);
+  expect(cellularLive).not.toBeChecked();
+  await fireEvent(cellularLive, "valueChange", true);
   expect(native.call).toHaveBeenCalledWith(
     "set_data_policy",
-    '{"sync_on_cellular":false}'
+    '{"live_on_cellular":true}'
   );
   expect(native.start).toHaveBeenCalledTimes(1);
 });
@@ -148,7 +149,7 @@ test("starts once, shows the key, then connects with the submitted Mac and displ
     [
       JSON.stringify({
         hosts: [],
-        data: { sync_on_cellular: false },
+        data: { live_on_cellular: true },
       } satisfies MobileConfig),
     ],
   ]);

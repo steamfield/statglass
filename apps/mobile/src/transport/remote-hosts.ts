@@ -1,15 +1,23 @@
 /**
- * The phone's remote hosts in the desktop's `RemoteHostRecord` shape, which
- * the phone's screens and the mock transport share. Fields only a Mac
- * controller has (remote runs, agent updates) get their "none" values.
+ * The phone's remote hosts in the shape shared with the mock transport.
  */
-import type { MobileRemoteHost, RemoteHostRecord } from "@core/generated/types";
+import type { MobileRemoteHost } from "@core/generated/types";
+import type { PhoneRemoteHostRecord } from "@core/phone-connection";
 
 /** `host` as a `RemoteHostRecord`. */
-export function toRemoteHostRecord(host: MobileRemoteHost): RemoteHostRecord {
-  const { id, name, targets, mirror_budget_mb, os, connection, ...status } =
-    host;
-  const { state, route, sync, failure, message, route_failures } = connection;
+export function toRemoteHostRecord(
+  host: MobileRemoteHost
+): PhoneRemoteHostRecord {
+  const { id, name, targets, os, connection, ...status } = host;
+  const {
+    state,
+    route,
+    sync,
+    failure,
+    message,
+    route_failures,
+    incompatible_side,
+  } = connection;
   return {
     config: {
       id,
@@ -18,7 +26,6 @@ export function toRemoteHostRecord(host: MobileRemoteHost): RemoteHostRecord {
       tailscale:
         targets.find((target) => target.route === "tailscale")?.host ?? null,
       enabled: true,
-      mirror_budget_mb,
     },
     os,
     status: {
@@ -28,6 +35,7 @@ export function toRemoteHostRecord(host: MobileRemoteHost): RemoteHostRecord {
       sync,
       error: message,
       failure_kind: failure,
+      incompatible_side,
       route_failures,
       rr: null,
       update: null,

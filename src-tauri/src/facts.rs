@@ -378,6 +378,8 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .typ::<statglass_ipc::mobile::MobileCall>()
         .typ::<statglass_ipc::mobile::MobileRemoteHost>()
         .typ::<statglass_ipc::mobile::MobileEvent>()
+        .typ::<statglass_ipc::mobile::HostHistoryPage>()
+        .typ::<statglass_ipc::mobile::HostAddressesInfo>()
 }
 
 #[cfg(test)]

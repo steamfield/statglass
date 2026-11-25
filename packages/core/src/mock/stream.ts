@@ -19,6 +19,7 @@ import {
   ok,
   pickFor,
   project,
+  RECENT_MS,
 } from "./protocol";
 import type { MockRemotes } from "./remote";
 import { staysFailing } from "./remote-network-scenarios";
@@ -204,6 +205,7 @@ export class MockStream {
           info: ok({
             host,
             stream: this.nextStream++,
+            recent_ms: RECENT_MS,
             backfill_start_ms: null,
             backfill_rows: 0,
             earlier_start_ms: null,
@@ -262,6 +264,7 @@ export class MockStream {
       info: ok({
         host,
         stream: sub.stream,
+        recent_ms: RECENT_MS,
         backfill_start_ms: first?.kind === "backfill" ? first.start_ms : null,
         backfill_rows: h?.recentRows ?? 0,
         earlier_start_ms: h?.earlierStart ?? null,

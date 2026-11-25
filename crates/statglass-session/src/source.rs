@@ -35,7 +35,7 @@ use control::Control;
 pub use policy::{NETWORK_CHANGE_PROBE, SourceOptions, SyncPolicy};
 use quiesce::{ActiveRun, MirrorWork, MirrorWrite, RunStatus};
 use route_watch::RouteWatch;
-pub use status::{ConnectionFailureKind, ConnectionStatus, RouteFailure};
+pub use status::{ConnectionFailureKind, ConnectionStatus, IncompatibleSide, RouteFailure};
 
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
 #[derive(Clone, Default)]
@@ -359,18 +359,7 @@ async fn session_loop(
     let mut reader = codec::AbortOnDrop(task);
     let initial = control.borrow_and_update().clone();
     let detail = initial.interest.detail;
-    let answers = session
-        .negotiated
-        .features
-        .contains(statglass_proto::QUERY_FEATURE);
-    let (line, calls) = crate::calls::open(
-        &source.line,
-        answers,
-        session
-            .negotiated
-            .features
-            .contains(statglass_proto::USAGE_HISTORY_FEATURE),
-    );
+    let (line, calls) = crate::calls::open(&source.line, session.negotiated.features.clone());
     let mut state = Session {
         layout: None,
         summary_layout: None,
@@ -991,7 +980,8 @@ mod tests {
             page_size: 100,
             cursor: Some("opaque-snapshot-page2".into()),
         };
-        let (_line, mut queued) = crate::calls::open(&source.line, true, true);
+        let (_line, mut queued) =
+            crate::calls::open(&source.line, statglass_proto::local_features());
         request.page_size = 101;
         assert!(matches!(
             source.usage_processes(request.clone()).await,
@@ -1050,7 +1040,8 @@ mod tests {
             page_size: 1,
             cursor: None,
         };
-        let (_line, mut queued) = crate::calls::open(&source.line, true, true);
+        let (_line, mut queued) =
+            crate::calls::open(&source.line, statglass_proto::local_features());
         for answer in [
             statglass_proto::Answer::Error {
                 code: statglass_proto::ErrorCode::InvalidArgument,

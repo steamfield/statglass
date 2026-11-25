@@ -18,23 +18,23 @@ test("applies rapid cellular settings in order while the first write is pending"
     </>,
     { transport }
   );
-  const history = () =>
-    screen.getByRole("switch", { name: "Sync history on cellular" });
-  await fireEvent(history(), "valueChange", true);
-  await fireEvent(history(), "valueChange", false);
+  const live = () =>
+    screen.getByRole("switch", { name: "Live updates on cellular" });
+  await fireEvent(live(), "valueChange", false);
+  await fireEvent(live(), "valueChange", true);
   expect(native.call.mock.calls).toEqual([
-    ["set_data_policy", '{"sync_on_cellular":false}'],
+    ["set_data_policy", '{"live_on_cellular":true}'],
   ]);
   await act(() => reply.resolve(ok(null)));
   expect(native.call.mock.calls).toEqual([
-    ["set_data_policy", '{"sync_on_cellular":false}'],
-    ["set_data_policy", '{"sync_on_cellular":true}'],
-    ["set_data_policy", '{"sync_on_cellular":false}'],
+    ["set_data_policy", '{"live_on_cellular":true}'],
+    ["set_data_policy", '{"live_on_cellular":false}'],
+    ["set_data_policy", '{"live_on_cellular":true}'],
   ]);
   transport.dispose();
 });
 
-test("sends only the current history sync policy on mount and change for a native transport", async () => {
+test("sends only the current live policy on mount and change for a native transport", async () => {
   const native = new FakeNative();
   const transport = createNativeTransport(native);
   await renderWithProviders(
@@ -45,22 +45,22 @@ test("sends only the current history sync policy on mount and change for a nativ
     { transport }
   );
   expect(native.call.mock.calls).toEqual([
-    ["set_data_policy", '{"sync_on_cellular":false}'],
+    ["set_data_policy", '{"live_on_cellular":true}'],
   ]);
-  await fireEvent(
-    screen.getByRole("switch", { name: "Live updates on cellular" }),
-    "valueChange",
-    false
-  );
-  expect(native.call).toHaveBeenCalledTimes(1);
   await fireEvent(
     screen.getByRole("switch", { name: "Sync history on cellular" }),
     "valueChange",
     true
   );
+  expect(native.call).toHaveBeenCalledTimes(1);
+  await fireEvent(
+    screen.getByRole("switch", { name: "Live updates on cellular" }),
+    "valueChange",
+    false
+  );
   expect(native.call.mock.calls).toEqual([
-    ["set_data_policy", '{"sync_on_cellular":false}'],
-    ["set_data_policy", '{"sync_on_cellular":true}'],
+    ["set_data_policy", '{"live_on_cellular":true}'],
+    ["set_data_policy", '{"live_on_cellular":false}'],
   ]);
   transport.dispose();
 });
@@ -76,10 +76,10 @@ test("can change cellular settings with the real demo transport chosen", async (
     </>,
     { transport, demo: true }
   );
-  const history = () =>
-    screen.getByRole("switch", { name: "Sync history on cellular" });
-  expect(history()).not.toBeChecked();
-  await fireEvent(history(), "valueChange", true);
-  expect(history()).toBeChecked();
+  const live = () =>
+    screen.getByRole("switch", { name: "Live updates on cellular" });
+  expect(live()).toBeChecked();
+  await fireEvent(live(), "valueChange", false);
+  expect(live()).not.toBeChecked();
   expect(native.call).not.toHaveBeenCalled();
 });

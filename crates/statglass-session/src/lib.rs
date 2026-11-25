@@ -41,6 +41,6 @@ pub use pages::{page_from_wire, page_to_wire};
 pub use pairing::pair;
 pub use session::SshSession;
 pub use source::{
-    ConnectionFailureKind, ConnectionStatus, NETWORK_CHANGE_PROBE, RemoteSource, RouteFailure,
-    SourceOptions, StatusCallback, SyncPolicy,
+    ConnectionFailureKind, ConnectionStatus, IncompatibleSide, NETWORK_CHANGE_PROBE, RemoteSource,
+    RouteFailure, SourceOptions, StatusCallback, SyncPolicy,
 };

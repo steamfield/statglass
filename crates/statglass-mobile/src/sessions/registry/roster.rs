@@ -21,14 +21,12 @@ impl Registry {
         let rows = {
             let state = self.state.lock_ok();
             let run = state.run.as_ref().ok_or_else(not_started)?;
-            let budget = run.budget();
             run.desired
                 .iter()
                 .map(|host| match run.entries.get(&host.id) {
                     Some(entry) => RemoteHostRow::Running(entry.clone()),
                     None => RemoteHostRow::Unopened(Box::new(unopened_host(
                         host,
-                        budget,
                         run.open_errors.get(&host.id),
                     ))),
                 })

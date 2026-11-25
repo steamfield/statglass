@@ -4,6 +4,13 @@ use crate::{RemoteError, Route, UnreachableKind};
 use serde::{Deserialize, Serialize};
 use statglass_schema::HostId;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IncompatibleSide {
+    Host,
+    App,
+}
+
 /// Typed classification of why the last remote connection attempt failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,6 +37,8 @@ pub enum ConnectionFailureKind {
     LocalOffline,
     /// The failing route is Tailscale and Tailscale is not up on this Mac.
     TailscaleDown,
+    PhoneKeyUnavailable,
+    Internal,
 }
 
 /// One configured route's failure from the last connection attempt.
@@ -61,6 +70,8 @@ impl ConnectionFailureKind {
             Self::Incompatible => 12,
             Self::IdentityChanged => 13,
             Self::Protocol => 14,
+            Self::PhoneKeyUnavailable => 15,
+            Self::Internal => 16,
         }
     }
 
@@ -154,6 +165,7 @@ pub struct ConnectionStatus {
     /// The last attempt failed because the peer's protocol is incompatible
     /// ([`RemoteError::Incompatible`]); only a coordinated upgrade reconnects it.
     pub incompatible: bool,
+    pub incompatible_side: Option<IncompatibleSide>,
     /// The id a host answered with when it is not the paired one
     /// ([`RemoteError::IdentityMismatch`]), so the shell can offer re-pairing.
     pub identity_changed: Option<HostId>,
@@ -288,6 +300,7 @@ mod tests {
             &crate::RemoteError::IncompatiblePeer {
                 version: "0.1.0".into(),
                 reason: "protocol 1 is below 2".into(),
+                side: None,
             },
             None,
         );

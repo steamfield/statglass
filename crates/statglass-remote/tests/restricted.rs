@@ -1,6 +1,7 @@
 use statglass_engine::{BusMsg, HistoryStore, LiveHub, ProcessBatch, disk_space::SpaceService};
 use statglass_proto::{
-    Answer, ErrorCode, Hello, LiveTier, Message, Offer, Query, RemoteInterest, SyncRequest,
+    Answer, ErrorCode, Hello, HistoryQuery, LiveTier, Message, Offer, Query, RemoteInterest,
+    SyncRequest,
 };
 use statglass_remote::{
     DeviceSeenLog, DeviceTag, HostServer, ServedHost, ServerProvider, SessionScope, encode_preface,
@@ -21,6 +22,13 @@ use std::{
 };
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use uuid::Uuid;
+
+#[path = "support/history_seed.rs"]
+mod history_seed;
+
+// Compile the seed seam before the history and concurrency test targets exist.
+const _: fn(&Path, &[statglass_schema::SeriesKey], i64) -> Arc<HistoryStore> =
+    history_seed::seed_by_retention;
 
 fn restricted() -> SessionScope {
     SessionScope::Restricted {
@@ -343,7 +351,7 @@ async fn assert_sync_and_recent(client: &mut DuplexStream) {
 }
 
 #[tokio::test]
-async fn every_query_is_refused_before_it_reaches_the_provider() {
+async fn every_other_query_is_refused_before_it_reaches_the_provider() {
     let dir = tempfile::tempdir().unwrap();
     let (fixture, space) = fixture(dir.path(), DeviceSeenLog::new(dir.path().join("seen")));
     let (mut client, server) = connection(fixture.clone());
@@ -374,6 +382,42 @@ async fn every_query_is_refused_before_it_reaches_the_provider() {
     assert!(server.await.unwrap().is_err());
     assert!(fixture.queries.lock_ok().is_empty());
     assert_eq!(space.status().phase, SpacePhase::Idle);
+}
+
+#[tokio::test]
+async fn restricted_history_and_addresses_reach_the_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let (fixture, _) = fixture(dir.path(), DeviceSeenLog::new(dir.path().join("seen")));
+    let (mut client, server) = connection(fixture.clone());
+    handshake(&mut client, restricted()).await;
+
+    let history = Query::History(HistoryQuery {
+        series: vec![statglass_schema::SeriesSelector {
+            metric: statglass_schema::MetricId::parse("cpu.total").unwrap(),
+            labels: Default::default(),
+        }],
+        from_ms: 0,
+        to_ms: Some(30_000),
+        max_points: 3,
+        events_for: None,
+    });
+    for (id, query) in [(1, history.clone()), (2, Query::NetworkAddresses)] {
+        assert!(SessionScope::Full.allows(&query));
+        assert!(restricted().allows(&query));
+        codec::write(&mut client, &Message::Request { id, query })
+            .await
+            .unwrap();
+        let Message::Reply { id: received, .. } = read(&mut client).await else {
+            panic!("expected a query reply");
+        };
+        assert_eq!(received, id);
+    }
+    assert_eq!(
+        *fixture.queries.lock_ok(),
+        [history, Query::NetworkAddresses]
+    );
+    drop(client);
+    assert!(server.await.unwrap().is_err());
 }
 
 #[tokio::test]

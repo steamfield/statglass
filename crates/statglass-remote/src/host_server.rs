@@ -1,14 +1,15 @@
 //! The metrics server for one host this process samples: the [`ServerProvider`] the app
 //! and the headless agent both serve over their metrics socket. [`ServedHost`] is the
 //! per-host data it reads; history comes from that host's [`HistoryStore`].
+use crate::history_query::limits::HistoryLimits;
 use crate::host_queries::SpaceAccess;
 use crate::status_to_wire;
 use crate::{DeviceSeenLog, ServerProvider};
 use statglass_engine::disk_space::SpaceService;
 use statglass_engine::{HistoryStore, LiveHub};
 use statglass_proto::{
-    Answer, Hello, Message, Query, RemoteInterest, SourceStatus, SyncRequest, WireBucket,
-    WireLayout,
+    Answer, Hello, HostAddresses, Message, Query, RemoteInterest, SourceStatus, SyncRequest,
+    WireBucket, WireLayout,
 };
 use statglass_schema::{Capabilities, HostRecord, SyncKinds, Tier, floor_to};
 use std::collections::HashMap;
@@ -20,6 +21,9 @@ pub trait ServedHost: Send + Sync + 'static {
     fn record(&self) -> HostRecord;
     fn capabilities(&self) -> Capabilities;
     fn hub(&self) -> &LiveHub;
+    fn network_addresses(&self) -> HostAddresses {
+        HostAddresses::unavailable("not implemented")
+    }
     /// Replace one session's interest; the default interest releases its demand.
     fn set_remote_interest(&self, session: u64, interest: RemoteInterest);
 }
@@ -61,6 +65,7 @@ impl InterestSet {
 pub struct HostServer<H> {
     host: Arc<H>,
     history: Arc<HistoryStore>,
+    pub(crate) history_limits: Arc<HistoryLimits>,
     space: Option<SpaceAccess>,
     device_seen: Option<DeviceSeenLog>,
 }
@@ -70,6 +75,7 @@ impl<H: ServedHost> HostServer<H> {
         Self {
             host,
             history,
+            history_limits: Arc::new(HistoryLimits::default()),
             space: None,
             device_seen: None,
         }

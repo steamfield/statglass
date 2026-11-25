@@ -14,8 +14,8 @@ use support::DockerFixture;
 struct SoftwareNativeKey(Arc<SoftwareSigner>);
 
 impl NativeSigner for SoftwareNativeKey {
-    fn public_key(&self) -> Vec<u8> {
-        self.0.public_key().to_vec()
+    fn public_key(&self) -> Result<Vec<u8>, NativeSignerError> {
+        Ok(self.0.public_key().to_vec())
     }
 
     fn sign(&self, message: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {
@@ -123,12 +123,7 @@ fn mobile_core_streams_and_reads_its_mirror() {
             .await;
         assert_eq!(data(&info)["stream"], stream);
         fixture.expect_cpu(stream).await;
-        fixture
-            .expect_minute_history(|method, args| {
-                let core = &core;
-                async move { data(&core.call(method.into(), args.to_string()).await) }
-            })
-            .await;
+        assert!(!fixture.dir.path().join("mirrors").exists());
         assert!(data(&core.quiesce()).is_null());
         assert!(data(&core.quiesced().await).is_null());
     });

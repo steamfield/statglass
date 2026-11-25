@@ -28,15 +28,18 @@ pub use codec::{
     read_frame, write_frame,
 };
 pub use handshake::{
-    HandshakeError, Negotiated, Offer, QUERY_FEATURE, USAGE_HISTORY_FEATURE, local_features,
-    negotiate,
+    ADDRESSES_QUERY_FEATURE, HISTORY_QUERY_FEATURE, HandshakeError, Negotiated, Offer,
+    QUERY_FEATURE, USAGE_HISTORY_FEATURE, local_features, negotiate,
 };
 pub use message::{
     ErrorCode, Hello, HelloAck, HostSummary, LayoutMismatch, LiveFrame, LiveProcesses, LiveTier,
     Message, RemoteInterest, SourceStatus, SyncPage, SyncRequest, WireBucket, WireEvent, WireGap,
     WireLayout, WireProcess,
 };
-pub use query::{Answer, Query};
+pub use query::{
+    Answer, HistoryAnswer, HistoryClamp, HistoryQuery, HostAddresses, PublicIp, Query,
+    WireHistoryPoint, WireHistorySeries, WireSeriesStats,
+};
 
 /// The protocol version this build speaks.
 pub const PROTO_VERSION: u16 = 1;

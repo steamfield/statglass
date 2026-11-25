@@ -53,6 +53,9 @@ import type {
   HistoryHealthChanged,
   HistoryPage,
   HistoryRequest,
+  HostAddressesInfo,
+  HostHistoryPage,
+  HostHistoryRequest,
   HostId,
   HostRecord,
   HostsChanged,
@@ -105,6 +108,14 @@ import type { ProcessSignalResult, SignalKind } from "../process-signal";
 export type CommandResult<T> =
   | { status: "ok"; data: T }
   | { status: "error"; error: CommandError };
+
+/** Reads the phone asks of a monitored host. */
+export interface PhoneQueries {
+  hostHistory(
+    request: HostHistoryRequest
+  ): Promise<CommandResult<HostHistoryPage>>;
+  networkAddresses(host: HostId): Promise<CommandResult<HostAddressesInfo>>;
+}
 
 export type Unsubscribe = () => void;
 

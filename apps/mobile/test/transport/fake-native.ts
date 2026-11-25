@@ -35,6 +35,7 @@ export class FakeNative
         return ok({
           host,
           stream,
+          recent_ms: 120_000,
           backfill_start_ms: null,
           backfill_rows: 0,
           earlier_start_ms: null,

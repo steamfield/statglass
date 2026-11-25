@@ -14,6 +14,7 @@ import { fail, ok } from "./protocol";
 import type { MockRemotes } from "./remote";
 import { APP_VERSION } from "./remote-linux";
 import {
+  NO_READINGS,
   seedMacOffline,
   seedNetworkCauseHosts,
 } from "./remote-network-scenarios";
@@ -60,19 +61,7 @@ export function seedUpdateScenarios(
       last_seen_ms: null,
       synced_through_ms: null,
       failure_kind: "unreachable",
-      vitals: {
-        cores: 8,
-        cpu_pct: null,
-        memory_pct: null,
-        load_1m: null,
-        memory_pressure: null,
-        disk_used_bytes: null,
-        disk_free_bytes: null,
-        disk_total_bytes: null,
-        disk_low: false,
-        net_rx_bps: null,
-        net_tx_bps: null,
-      },
+      vitals: { cores: 8, ...NO_READINGS },
       error:
         "SSH command failed (127): /usr/local/bin/statglass-agent: No such file or directory",
       clock_offset_ms: null,
@@ -100,19 +89,7 @@ export function seedUpdateScenarios(
       sync: "idle",
       error:
         "LAN: m4-mini.local: ssh: Could not resolve hostname m4-mini.local: nodename nor servname provided; Tailscale: m4-mini-ts: ssh: connect to host m4-mini-ts port 22: Operation timed out",
-      vitals: {
-        cores: 10,
-        cpu_pct: null,
-        memory_pct: null,
-        load_1m: null,
-        memory_pressure: null,
-        disk_used_bytes: null,
-        disk_free_bytes: null,
-        disk_total_bytes: null,
-        disk_low: false,
-        net_rx_bps: null,
-        net_tx_bps: null,
-      },
+      vitals: { cores: 10, ...NO_READINGS },
     };
   }
   if (scenarios.includes("hosts-outdated")) {
@@ -196,6 +173,7 @@ export function mockHostVitals(linux = false): HostVitals {
     disk_free_bytes: 220_000_000_000,
     disk_total_bytes: 500_000_000_000,
     disk_low: false,
+    as_of_ms: null,
     net_rx_bps: 1_250_000,
     net_tx_bps: 148_000,
   };

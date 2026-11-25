@@ -12,8 +12,8 @@ type DebugCore =
   | { status: "error"; message: string }
   | { status: "ready"; transport: NativeTransport; keyLine: string };
 
-async function loadDebugCore(syncOnCellular: boolean): Promise<DebugCore> {
-  const transport = await openDebugCore(syncOnCellular);
+async function loadDebugCore(liveOnCellular: boolean): Promise<DebugCore> {
+  const transport = await openDebugCore(liveOnCellular);
   if (transport === null) return { status: "missing" };
   const keyLine = await unwrap(transport.authorizedKeyLine("statglass-iphone"));
   return { status: "ready", transport, keyLine };
@@ -21,10 +21,10 @@ async function loadDebugCore(syncOnCellular: boolean): Promise<DebugCore> {
 
 export function useDebugCore(): DebugCore {
   const [state, setState] = useState<DebugCore>({ status: "loading" });
-  const syncOnCellular = usePhoneSettings(
-    (settings) => settings.syncOnCellular
+  const liveOnCellular = usePhoneSettings(
+    (settings) => settings.liveOnCellular
   );
-  const load = useEffectEvent(() => loadDebugCore(syncOnCellular));
+  const load = useEffectEvent(() => loadDebugCore(liveOnCellular));
 
   useEffect(() => {
     let active = true;

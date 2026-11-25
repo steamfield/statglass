@@ -3,15 +3,13 @@
 
 use std::sync::Arc;
 
+use statglass_session::RemoteSource;
 use statglass_session::network::LocalNetwork;
-use statglass_session::{RemoteSource, SyncPolicy};
 
 /// The running sessions, as backgrounding, foregrounding and path changes see them.
 pub(crate) trait SessionControl: Send + Sync {
     /// Every running source, the open host's first (the host with a live stream).
     fn sources(&self) -> Vec<Arc<RemoteSource>>;
-    /// Applies `policy` to every running source and to sources started later.
-    fn set_sync_policy(&self, policy: SyncPolicy);
     /// Tells every running source the local network changed.
     fn network_changed(&self, net: LocalNetwork);
 }

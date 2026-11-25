@@ -1,6 +1,31 @@
 import type { HistoryRequest } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 
+it("emits status updates for the phone's open error and incompatible side", async () => {
+  const transport = createMockTransport({ scenarios: ["host-unreachable"] });
+  const changed = vi.fn();
+  const stop = transport.onRemoteHostsChanged(changed);
+  try {
+    const [host] = await transport.listRemoteHosts();
+    if (!host) throw new Error("Missing remote host fixture");
+    const id = host.config.id;
+    const openError = {
+      kind: "internal",
+      message: "Session did not open",
+    } as const;
+    transport.pushRemoteStatus(id, { open_error: openError });
+    transport.pushRemoteStatus(id, { incompatible_side: "host" });
+    transport.pushRemoteStatus(id, { incompatible_side: "host" });
+    expect(changed).toHaveBeenCalledTimes(2);
+    expect(await transport.listRemoteHosts()).toMatchObject([
+      { status: { open_error: openError, incompatible_side: "host" } },
+    ]);
+  } finally {
+    stop();
+    transport.dispose();
+  }
+});
+
 it("walks update phases through status pushes, then reports the target on reconnect", async () => {
   vi.useFakeTimers();
   const transport = createMockTransport({
@@ -106,6 +131,7 @@ it("never invents measured vitals for a host that has never connected", async ()
       disk_free_bytes: null,
       disk_total_bytes: null,
       disk_low: false,
+      as_of_ms: null,
       net_rx_bps: null,
       net_tx_bps: null,
     };

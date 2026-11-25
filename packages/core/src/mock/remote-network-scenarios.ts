@@ -12,7 +12,7 @@ import type {
 import type { ScenarioName } from "./fixtures";
 import type { MockRemotes } from "./remote";
 
-const NO_READINGS: Omit<HostVitals, "cores"> = {
+export const NO_READINGS: Omit<HostVitals, "cores"> = {
   cpu_pct: null,
   memory_pct: null,
   load_1m: null,
@@ -21,6 +21,7 @@ const NO_READINGS: Omit<HostVitals, "cores"> = {
   disk_free_bytes: null,
   disk_total_bytes: null,
   disk_low: false,
+  as_of_ms: null,
   net_rx_bps: null,
   net_tx_bps: null,
 };

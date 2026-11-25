@@ -10,12 +10,13 @@ export const REMOTE: MobileRemoteHost = {
     { route: "lan", host: "studio.local" },
     { route: "tailscale", host: "studio.tail.test" },
   ],
-  mirror_budget_mb: 25,
+  open_error: null,
   connection: {
     state: "offline",
     route: "tailscale",
     sync: "idle",
     failure: "timeout",
+    incompatible_side: null,
     message: "Timed out",
     route_failures: [{ route: "tailscale", kind: "timeout" }],
   },
@@ -27,6 +28,7 @@ export const REMOTE: MobileRemoteHost = {
   waiting_for_network: true,
   clock_offset_ms: -5,
   vitals: {
+    as_of_ms: null,
     cpu_pct: 6,
     memory_pct: 7,
     net_rx_bps: 8,

@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Persistent, direct SSH sessions. No network listener, collector, or Tauri dependency.
+pub mod addresses;
 pub mod agent_install;
 pub mod agent_layout;
 mod answering;
@@ -8,6 +9,7 @@ pub mod control;
 pub mod device_keys;
 pub mod device_seen;
 pub mod effective_user;
+pub mod history_query;
 mod host_queries;
 mod host_server;
 pub mod install;

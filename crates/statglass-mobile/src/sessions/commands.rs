@@ -2,12 +2,10 @@ use serde::Serialize;
 use serde_json::Value;
 use statglass_engine::Source;
 use statglass_ipc::error::CommandError;
-use statglass_ipc::history;
 use statglass_ipc::mobile::MobileCall;
-use statglass_schema::HostId;
 use std::sync::Arc;
 
-use super::{host::HostEntry, internal, registry::Registry};
+use super::{internal, registry::Registry};
 
 impl Registry {
     pub(super) async fn call(self: &Arc<Self>, call: MobileCall) -> Result<Value, CommandError> {
@@ -28,10 +26,6 @@ impl Registry {
                 })
                 .await
             }
-            MobileCall::SetHostsRecentInterest { on } => {
-                self.set_recent_interest(on)?;
-                Ok(Value::Null)
-            }
             MobileCall::SubscribeLive(request) => {
                 let entry = self.entry(request.host)?;
                 value(self.live.subscribe(entry, request, self.events.clone())?)
@@ -40,18 +34,9 @@ impl Registry {
                 self.live.unsubscribe(stream);
                 Ok(Value::Null)
             }
-            MobileCall::QueryHistory(request) => {
-                let entry = self.entry(request.host)?;
-                blocking(move || entry.query_history(&request)).await
-            }
-            MobileCall::QueryEvents {
-                host,
-                from_ms,
-                to_ms,
-            } => {
-                let entry = self.entry(host)?;
-                blocking(move || entry.query_events(host, from_ms, to_ms)).await
-            }
+            MobileCall::HostHistory(request) => value(self.host_history(request).await?),
+            MobileCall::NetworkAddresses { host } => value(self.network_addresses(host).await?),
+            MobileCall::SetProcessInterest { .. } => Ok(Value::Null),
             MobileCall::BuildInfo
             | MobileCall::SetHosts { .. }
             | MobileCall::SetDataPolicy(_)
@@ -59,33 +44,6 @@ impl Registry {
                 Err(internal("core call reached the session registry"))
             }
         }
-    }
-}
-
-impl HostEntry {
-    pub(super) fn query_history(
-        &self,
-        request: &history::HistoryRequest,
-    ) -> Result<Value, CommandError> {
-        let from = request.from_ms;
-        self.with_history(|store| {
-            value(history::query_history(
-                store,
-                request,
-                self.policy.auto_choice(),
-                || self.mirror.recent_rows(from, request.to_ms),
-                |key, bucket| self.hub.history_hold_ms(key, bucket, from),
-            )?)
-        })
-    }
-
-    pub(super) fn query_events(
-        &self,
-        host: HostId,
-        from_ms: i64,
-        to_ms: i64,
-    ) -> Result<Value, CommandError> {
-        self.with_history(|store| value(history::query_events(store, host, from_ms, to_ms)?))
     }
 }
 
