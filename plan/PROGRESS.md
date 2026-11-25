@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## StatGlass for iPhone 1.0.0 code complete, App Store handoff (D-154 to D-159) (2026-11-25)
+
+`plans/deliver-ios-app.md` phases 7 to 13 landed (tags `ios-app-phase-7` to `ios-app-phase-13`): the foundation fixes from the architecture, error and test audits, pairing in the app with one "Add a host" flow, the Mac handing its other hosts to the phone, design parity with the macOS popover (primitives, surfaces, module pages for every module), and App Store readiness (release config, icons and launch screen, release-only routes, the `/docs/iphone` privacy and support page, NAT64-safe IPv4 literals, `make mobile-archive` and `make mobile-release-check` with the runbook in `.github/releasing-mobile.md`). The phone keeps no mirror (D-154); a host screen opens with the host's last five minutes from its recent rows and loads its charts the way the desktop does (D-159).
+
+- Verified: `bun run check`, `make mobile-check`, `make mobile-rust-check`, `make check` (with `updater-patch-test` run from the main checkout), `make ssh-docker-test`; the iOS Simulator on demo hosts (light, dark, AX1) and against the Docker Linux agent over russh. Every lane, the final diff and its fixes were reviewed.
+- Open, needing the maintainer: the Apple Distribution certificate for the App Store export, the device pass on a physical iPhone, store screenshots and the App Store Connect record. Real hosts need the macOS release after 0.15.0 for module-page history. Everything else is in `plan/handoff-ios-app-store.md`.
+
 ## Utilities sidebar group and the Disk space page (D-153) (2026-11-25)
 
 `plans/deliver-utilities.md` (tag `utilities-phase-1`) moved the disk space report out of Disk's Activity | Space switcher. The sidebar has a Utilities group with a Disk space row that shows a live dot while a scan runs on any screen; `/dashboard/disk-space` opens on the last scan's largest folders (Scan again is the one primary) or the volume picker, and a `?vol=` link leads with that volume. Disk moves Volumes up under Disk I/O, flags a boot volume under the low-space threshold ("Low space", icon and word) and links each scannable volume to Disk space; the Overview folders card links there too. Old `?view=space` links redirect.
