@@ -131,7 +131,7 @@ function FoldersBody({
           >
             Run report
           </Button>
-          <OpenDiskSpaceLink />
+          {!report.busy && <OpenDiskSpaceLink />}
         </div>
       </div>
     );

@@ -3,7 +3,11 @@ import { expect, test } from "@playwright/test";
 
 for (const theme of ["dark", "light"] as const) {
   for (const width of [360, 1280]) {
-    test(`Disk I/O ${theme} ${width}px keeps attribution visible and accessible`, async ({
+    const capacity =
+      width === 1280
+        ? "shows volume capacity on the first screen"
+        : "fits volume capacity";
+    test(`Disk I/O ${theme} ${width}px ${capacity} and keeps Disk by app present and accessible`, async ({
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
@@ -76,6 +80,36 @@ for (const theme of ["dark", "light"] as const) {
       expect(axe.violations).toEqual([]);
     });
   }
+
+  test(`Disk I/O ${theme} 1280px shows an accessible low-space warning on the first screen`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(
+      `/?window=dashboard&route=/dashboard/disk&theme=${theme}&scenario=disk-low-space`
+    );
+    const volumes = page.getByRole("region", { name: "Volume capacity" });
+    await expect(
+      volumes.getByText("Low space", { exact: true })
+    ).toBeInViewport({ ratio: 1 });
+    await expect(
+      volumes.getByRole("button", {
+        name: "See what's using space on Macintosh HD",
+      })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: /^Average request time:/ })
+    ).toBeVisible();
+    await page.screenshot({
+      path: `test-results/screens/disk-io-low-space-${theme}-${info.project.name}.png`,
+    });
+    const axe = await new AxeBuilder({ page })
+      .include('section[aria-label="Volume capacity"]')
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    expect(axe.violations).toEqual([]);
+  });
 }
 
 test("Disk compares workload with request time and preserves brushed process identity through Back", async ({

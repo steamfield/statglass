@@ -1,5 +1,7 @@
 import type { ScenarioName } from "@core/mock/fixtures";
+import { seriesKey } from "@core/series-key";
 import { screen, waitFor, within } from "@testing-library/react";
+import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { useRoutes } from "react-router";
 import DiskSpaceRoute from "../disk-space/route";
@@ -9,6 +11,7 @@ const DISK = "/dashboard/disk";
 const SPACE = "/dashboard/disk-space";
 const BOOT_ACTION = "See what's using space on Macintosh HD";
 const SPACE_ACTION = /^See what's using space/;
+const EXTERNAL = "/Volumes/SanDisk Extreme";
 
 function DiskPages() {
   return useRoutes([
@@ -61,29 +64,78 @@ it("shows a low-space flag beside the action and omits it at the threshold", asy
   renderDisk(["disk-low-space"]);
   const link = await screen.findByRole("button", { name: BOOT_ACTION });
   expect(link.closest("td")).toHaveTextContent(
-    /12 GB free · See what's using space$/
+    /^Low space · See what's using space$/
   );
   expect(link.closest("td")).toHaveAccessibleName(
-    /^Low disk space\. 12 GB free\b/
+    "Low space See what's using space"
   );
+  const boot = screen.getByRole("row", { name: /^\/ / });
+  expect(within(boot).getByRole("cell", { name: "12.0 GB" })).toBeVisible();
   const data = screen.getByRole("row", { name: /^\/System\/Volumes\/Data / });
   expect(within(data).getByText("20.0 GB")).toBeVisible();
-  expect(within(data).queryByText(/GB free$/)).toBeNull();
+  expect(within(data).queryByText("Low space")).toBeNull();
   expect(within(data).queryByRole("button")).toBeNull();
 });
 
-it.each([
-  ["normal capacity", [], "612 GB"],
-  ["low space", ["disk-low-space"] satisfies ScenarioName[], "12 GB free"],
-])(
-  "shows %s but no Disk space action in the App Store edition",
-  async (_label, scenarios, free) => {
-    renderDisk(["appstore", ...scenarios]);
-    const boot = await screen.findByRole("row", { name: /^\/ / });
-    expect(within(boot).getByText(free)).toBeVisible();
-    const capacity = screen.getByRole("region", { name: "Volume capacity" });
-    expect(
-      within(capacity).queryByRole("button", { name: SPACE_ACTION })
-    ).toBeNull();
-  }
-);
+it("omits the warning for a small non-boot volume and a boot volume without a free reading", async () => {
+  const { transport } = renderDisk();
+  await screen.findByRole("row", { name: /^\/ / });
+  const push = pushLayout(transport, 99, [
+    seriesKey("disk.used", { vol: "/" }),
+    seriesKey("disk.total", { vol: "/" }),
+    seriesKey("disk.free", { vol: "/" }),
+    seriesKey("disk.total", { vol: EXTERNAL }),
+    seriesKey("disk.free", { vol: EXTERNAL }),
+  ]);
+  push(Date.now() + 1000, [900e9, 1000e9, null, 16e9, 15e9]);
+
+  const action = await screen.findByRole("button", {
+    name: "See what's using space on SanDisk Extreme",
+  });
+  const externalRow = screen.getByRole("row", {
+    name: /^\/Volumes\/SanDisk Extreme /,
+  });
+  expect(externalRow).toContainElement(action);
+  expect(
+    within(externalRow).getByRole("cell", { name: "15.0 GB" })
+  ).toBeVisible();
+  expect(action.closest("td")).toHaveTextContent(/^See what's using space$/);
+  const boot = screen.getByRole("row", { name: /^\/ / });
+  expect(within(boot).getByRole("cell", { name: "—" })).toBeVisible();
+  expect(within(boot).queryByText("Low space")).toBeNull();
+});
+
+it("omits the Actions column when the rows have no scan target or warning", async () => {
+  const { transport } = renderDisk(["disk-space-boot-only"]);
+  await screen.findByRole("button", { name: BOOT_ACTION });
+  const push = pushLayout(transport, 99, [
+    seriesKey("disk.total", { vol: EXTERNAL }),
+    seriesKey("disk.free", { vol: EXTERNAL }),
+  ]);
+  push(Date.now() + 1000, [64e9, 32e9]);
+  await screen.findByRole("row", { name: /^\/Volumes\/SanDisk Extreme / });
+  const capacity = screen.getByRole("region", { name: "Volume capacity" });
+  expect(
+    within(capacity).queryByRole("columnheader", { name: "Actions" })
+  ).toBeNull();
+});
+
+it("omits the Actions column in the App Store edition with normal capacity", async () => {
+  renderDisk(["appstore"]);
+  await screen.findByRole("row", { name: /^\/ / });
+  const capacity = screen.getByRole("region", { name: "Volume capacity" });
+  expect(
+    within(capacity).queryByRole("columnheader", { name: "Actions" })
+  ).toBeNull();
+});
+
+it("shows the boot warning without a scan action in the App Store edition", async () => {
+  renderDisk(["appstore", "disk-low-space"]);
+  expect(await screen.findByRole("cell", { name: "Low space" })).toBeVisible();
+  const boot = screen.getByRole("row", { name: /^\/ / });
+  expect(within(boot).getByRole("cell", { name: "12.0 GB" })).toBeVisible();
+  const capacity = screen.getByRole("region", { name: "Volume capacity" });
+  expect(
+    within(capacity).queryByRole("button", { name: SPACE_ACTION })
+  ).toBeNull();
+});
