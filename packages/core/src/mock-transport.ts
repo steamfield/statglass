@@ -182,7 +182,7 @@ export function createMockTransport(
     kind: "mock",
     flags,
     calls: commands.calls,
-    hostHistory: createMockHostHistory(queries.methods),
+    hostHistory: createMockHostHistory(queries.methods, now, remote.remotes),
     networkAddresses,
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,

@@ -112,16 +112,12 @@ test("opens each settings section and keeps cellular and appearance choices on r
   await fireEvent.press(screen.getByRole("button", { name: "Data" }));
   const live = () =>
     screen.getByRole("switch", { name: "Live updates on cellular" });
-  const history = () =>
-    screen.getByRole("switch", { name: "Sync history on cellular" });
+  expect(screen.getAllByRole("switch")).toHaveLength(1);
   expect(live()).toBeChecked();
-  expect(history()).not.toBeChecked();
   await fireEvent(live(), "valueChange", false);
-  await fireEvent(history(), "valueChange", true);
   await act(() => router.back());
   await fireEvent.press(screen.getByRole("button", { name: "Data" }));
   expect(live()).not.toBeChecked();
-  expect(history()).toBeChecked();
   await act(() => router.back());
 
   await fireEvent.press(screen.getByRole("button", { name: "Appearance" }));

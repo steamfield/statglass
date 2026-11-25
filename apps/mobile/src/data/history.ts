@@ -6,19 +6,26 @@ import {
   formatRate,
   formatWatts,
 } from "@core/format";
-import type { HostId } from "@core/generated/types";
+import type { HostId, Module, SeriesSelector } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { historyUnavailable } from "@core/history-state";
 import { hostClock } from "@core/host-clock";
 import type { PopoverCard } from "@core/popover/card-order";
-import { historyKeys, sameHost, sameModuleSeries } from "@core/query-keys";
+import { historyKeys } from "@core/query-keys";
 import { failureReason, remoteQueryText } from "@core/remote-errors";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import type { Accent } from "@core/widget-models/tokens";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
-import { useFocusedAppEffect } from "./live";
+import { CancelledError, useQuery } from "@tanstack/react-query";
+import { useIsFocused } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppState } from "react-native";
+import { shallow } from "zustand/shallow";
+import {
+  useFocusedAppEffect,
+  useHostLive,
+  useHostLiveSubscription,
+} from "./live";
 import { usePhoneTransport } from "./transport-context";
 
 interface HistoryModule {
@@ -94,69 +101,140 @@ export interface HistoryRange {
 /** Keep history and events on the same host-clock window while reading it. */
 export function useHistoryRange(
   windowMs: number,
-  offsetMs: number,
-  offlineEndMs: number | null
+  offsetMs: number
 ): HistoryRange {
   const [wallMs, setWallMs] = useState(Date.now);
   useFocusedAppEffect(
     useCallback(() => {
-      if (offlineEndMs !== null) return undefined;
       const now = Date.now();
       setWallMs((previous) =>
         Math.abs(now - previous) >= 1000 ? now : previous
       );
       const timer = setInterval(() => setWallMs(Date.now()), MINUTE_MS);
       return () => clearInterval(timer);
-    }, [offlineEndMs])
+    }, [])
   );
   return useMemo(() => {
-    const toMs = offlineEndMs ?? Math.floor(hostClock(offsetMs, wallMs)());
-    return { fromMs: toMs - windowMs, toMs, fixed: offlineEndMs !== null };
-  }, [offlineEndMs, offsetMs, wallMs, windowMs]);
+    const toMs = Math.floor(hostClock(offsetMs, wallMs)());
+    return { fromMs: toMs - windowMs, toMs, fixed: false };
+  }, [offsetMs, wallMs, windowMs]);
 }
 
-const HISTORY_POINTS = 240;
+const HISTORY_CACHE_MS = 30_000;
+const BUSY_ATTEMPTS = 3;
+type PlotWidth = number | { columns: number } | null;
 
-/** Read a module's buckets and hold the previous plot bounds during a rolling refresh. */
+/** One reply for a chart's points, range statistics and optional module events. */
+export function useHostHistory(
+  host: HostId,
+  selection: readonly SeriesSelector[],
+  range: HistoryRange,
+  width: PlotWidth,
+  eventsFor: Module | null = null
+) {
+  const transport = usePhoneTransport();
+  const focused = useIsFocused();
+  const [foreground, setForeground] = useState(
+    () =>
+      AppState.currentState !== "inactive" &&
+      AppState.currentState !== "background"
+  );
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      setForeground(state === "active");
+    });
+    return () => subscription.remove();
+  }, []);
+  const { fromMs, toMs, fixed } = range;
+  const measured = typeof width === "number" ? width : (width?.columns ?? 0);
+  const ready = Number.isFinite(measured) && measured >= 1;
+  const budget =
+    typeof width === "number"
+      ? Math.min(200, Math.max(30, Math.floor(width / 2.5)))
+      : Math.floor(measured);
+  const rolling = fixed === false;
+  const query = useQuery({
+    queryKey: historyKeys.hostHistory(
+      host,
+      selection,
+      rolling ? toMs - fromMs : fromMs,
+      rolling ? "now" : toMs,
+      budget,
+      eventsFor
+    ),
+    enabled: focused && foreground && ready,
+    subscribed: focused && foreground && ready,
+    staleTime: HISTORY_CACHE_MS,
+    gcTime: HISTORY_CACHE_MS,
+    retry: (failures, error) => {
+      const kind = commandError(error)?.kind;
+      return kind === "remote_busy"
+        ? failures < BUSY_ATTEMPTS - 1
+        : kind === "internal" && failures === 0;
+    },
+    retryDelay: 1000,
+    queryFn: async ({ signal }) => {
+      if (signal.aborted) throw new CancelledError();
+      const page = await unwrap(
+        transport.hostHistory({
+          host,
+          series: [...selection],
+          from_ms: fromMs,
+          to_ms: toMs,
+          max_points: budget,
+          events_for: eventsFor,
+        })
+      );
+      return { range, page };
+    },
+  });
+  const { data, isSuccess, isFetching, isStale, refetch } = query;
+  // The rolling key keeps the previous reply on screen during a refresh and
+  // lets a remount within the cache window reuse it.
+  useEffect(() => {
+    if (
+      ready &&
+      focused &&
+      foreground &&
+      rolling &&
+      isSuccess &&
+      isStale &&
+      !isFetching &&
+      Math.abs(toMs - data.range.toMs) >= HISTORY_CACHE_MS
+    ) {
+      void refetch({ cancelRefetch: false });
+    }
+  }, [
+    data,
+    focused,
+    foreground,
+    isFetching,
+    isStale,
+    isSuccess,
+    ready,
+    refetch,
+    rolling,
+    toMs,
+  ]);
+  return query;
+}
+
+/** Read a module's buckets and keep the reply's plot bounds during refresh. */
 export function useModuleHistory(
   host: HostId,
   module: PopoverCard,
-  range: HistoryRange
+  range: HistoryRange,
+  width: number | null
 ) {
-  const transport = usePhoneTransport();
-  const { fromMs, toMs, fixed } = range;
   const keys = useMemo(
     () => HISTORY_MODULES[module].series.map(({ key }) => key),
     [module]
   );
-  const queryKey = historyKeys.moduleSeries(
-    host,
-    keys,
-    toMs - fromMs,
-    toMs,
-    HISTORY_POINTS,
-    fixed
+  const selection = useMemo(
+    () => keys.map((metric) => ({ metric, labels: [] })),
+    [keys]
   );
-  const query = useQuery({
-    queryKey,
-    queryFn: async () => ({
-      range,
-      page: await unwrap(
-        transport.hostHistory({
-          host,
-          series: keys.map((metric) => ({ metric, labels: [] })),
-          from_ms: fromMs,
-          to_ms: toMs,
-          max_points: HISTORY_POINTS,
-          events_for: null,
-        })
-      ),
-    }),
-    placeholderData: (previous, previousQuery) =>
-      previousQuery && sameModuleSeries(previousQuery.queryKey, queryKey)
-        ? previous
-        : undefined,
-  });
+  const query = useHostHistory(host, selection, range, width, module);
   const displayedRange = query.data?.range ?? range;
   const data = query.data?.page;
   const grid = useMemo(
@@ -169,40 +247,44 @@ export function useModuleHistory(
   return { ...query, data, grid, displayedRange };
 }
 
-/** Read events for the selected window, keeping rows while the same span advances. */
-export function useEvents(host: HostId, fromMs: number, toMs: number) {
-  const transport = usePhoneTransport();
-  const queryKey = historyKeys.events(host, toMs - fromMs, toMs);
-  const windowKey = queryKey.slice(0, -1);
-  return useQuery({
-    queryKey,
-    queryFn: async () => {
-      // This stub has no module input. The shared module reply will supply the events.
-      const page = await unwrap(
-        transport.hostHistory({
-          host,
-          series: [{ metric: "cpu.total", labels: [] }],
-          from_ms: fromMs,
-          to_ms: toMs,
-          max_points: 1,
-          events_for: "cpu",
-        })
-      );
-      return page.events;
-    },
-    placeholderData: (previous, previousQuery) =>
-      previousQuery &&
-      sameHost(previousQuery.queryKey, queryKey) &&
-      previousQuery.queryKey.length === queryKey.length &&
-      windowKey.every((part, index) => previousQuery.queryKey[index] === part)
-        ? previous
-        : undefined,
-  });
+/** Project event rows from the shared reply. The chart presents its read state. */
+export function useEvents(history: ReturnType<typeof useModuleHistory>) {
+  const { data, grid: _grid, displayedRange: _range, ...query } = history;
+  const events = data?.events;
+  const rows = { ...query, isPending: false, isError: false, error: null };
+  return history.isSuccess && events
+    ? { ...rows, data: events, isSuccess: true as const }
+    : { ...rows, data: events, isSuccess: false as const };
+}
+
+/** Current readings have their own subscription and do not depend on history. */
+export function useModuleLiveValues(host: HostId, module: PopoverCard) {
+  useHostLiveSubscription(host);
+  return useHostLive(
+    host,
+    (state) =>
+      HISTORY_MODULES[module].series.map(({ key }) =>
+        state.stale ||
+        state.connection !== "live" ||
+        state.status?.paused ||
+        state.status?.display_idle
+          ? null
+          : (state.held[key] ?? null)
+      ),
+    shallow
+  );
 }
 
 /** Explain a failed history or events read using the store or connection error. */
-export function historyReadError(error: unknown, what: "history" | "events") {
+export function historyReadError(
+  error: unknown,
+  what: "history" | "events",
+  hostName = "this host"
+) {
   const typed = commandError(error);
+  if (typed?.kind === "remote_unsupported")
+    return `Update StatGlass on ${hostName} to see ${what}`;
+  if (typed?.kind === "remote_busy") return `StatGlass on ${hostName} is busy`;
   return (
     (typed && historyUnavailable(typed)?.message) ||
     remoteQueryText(error, what) ||

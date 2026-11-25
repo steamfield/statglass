@@ -30,7 +30,6 @@ export interface PhoneSettings {
   cardOrder: PopoverCard[] | null;
   appearance: "system" | "light" | "dark";
   liveOnCellular: boolean;
-  syncOnCellular: boolean;
   appLock: boolean;
 }
 
@@ -50,7 +49,6 @@ export const DEFAULT_PHONE_SETTINGS: PhoneSettings = {
   cardOrder: null,
   appearance: "system",
   liveOnCellular: true,
-  syncOnCellular: false,
   appLock: false,
 };
 
@@ -65,9 +63,14 @@ type PhoneSettingsStore = StoreApi<PhoneSettings>;
 export function createPhoneSettingsStore(
   initial: Partial<PhoneSettings> = {}
 ): PhoneSettingsStore {
+  const recognised = Object.fromEntries(
+    Object.entries(initial).filter(([key]) =>
+      Object.hasOwn(DEFAULT_PHONE_SETTINGS, key)
+    )
+  );
   return createStore<PhoneSettings>()(() => ({
     ...DEFAULT_PHONE_SETTINGS,
-    ...initial,
+    ...recognised,
   }));
 }
 

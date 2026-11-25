@@ -37,7 +37,8 @@ export const historyKeys = {
     series: readonly SeriesSelector[],
     fromMs: number,
     toMs: number | "now",
-    budget: number
+    budget: number,
+    eventsFor: Module | null = null
   ) =>
     [
       ...historyKeys.host(host),
@@ -46,6 +47,7 @@ export const historyKeys = {
       fromMs,
       toMs,
       budget,
+      eventsFor,
     ] as const,
   recent: (hostId: HostId, windowMs: number) =>
     [...historyKeys.host(hostId), "recent", windowMs] as const,
