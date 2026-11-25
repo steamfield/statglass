@@ -129,6 +129,7 @@ fn mobile_core_streams_and_reads_its_mirror() {
                 async move { data(&core.call(method.into(), args.to_string()).await) }
             })
             .await;
-        assert!(data(&core.quiesce().await).is_null());
+        assert!(data(&core.quiesce()).is_null());
+        assert!(data(&core.quiesced().await).is_null());
     });
 }
