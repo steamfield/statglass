@@ -2,7 +2,7 @@
 //! Epoch is the outer lock: ingestion records coverage only after the durable writer
 //! acknowledges, then removes matching recent rows. Recent snapshots take epoch before
 //! recent as well, so delayed snapshots cannot overwrite acknowledged durable data.
-use crate::{MirrorError, MirrorSink};
+use crate::{MirrorError, MirrorPolicy, MirrorSink};
 use statglass_proto::{SyncPage, WireBucket, WireLayout};
 use statglass_schema::{Catalog, HostId, SyncKinds, Tier, lock::LockExt};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,7 +12,7 @@ use uuid::Uuid;
 pub struct Mirror {
     history: Arc<statglass_engine::HistoryStore>,
     host: HostId,
-    budget: u32,
+    policy: MirrorPolicy,
     recent: Mutex<Vec<statglass_store::BucketRow>>,
     epoch: Mutex<MirrorEpoch>,
     /// For the cardinality caps on ingest (D-116).
@@ -41,6 +41,18 @@ impl MirrorEpoch {
 }
 
 impl MirrorSink for Mirror {
+    fn sync_tiers(&self) -> &[Tier] {
+        self.policy.sync_tiers()
+    }
+
+    fn history_floor(&self, tier: Tier, now_ms: i64) -> i64 {
+        self.policy.floor(tier, now_ms)
+    }
+
+    fn recent_first(&self) -> bool {
+        self.policy.recent_first()
+    }
+
     fn recent_watermark(&self) -> Result<Option<i64>, MirrorError> {
         Ok(self.sync_watermark()?.s10_ms)
     }
@@ -70,6 +82,11 @@ impl MirrorSink for Mirror {
             return Err(MirrorError::EpochChanged {
                 operation: "history",
             });
+        }
+        if page.tier == Tier::S10 && !self.policy.sync_tiers().contains(&Tier::S10) {
+            return Err(MirrorError::InvalidInput(
+                "This mirror only keeps S10 history in memory",
+            ));
         }
         self.cap(&mut page.layouts, &mut page.rows);
         let page = crate::page_from_wire(page, kinds)?;
@@ -121,6 +138,7 @@ impl MirrorSink for Mirror {
                 operation: "recent-history",
             });
         }
+        // Both policies accept the host's S10 snapshots for the live ring.
         if tier != Tier::S10 {
             return Err(MirrorError::InvalidInput(
                 "Unsupported or oversized recent-history snapshot",
@@ -193,7 +211,7 @@ impl MirrorSink for Mirror {
 
     fn enforce_budget(&self, now_ms: i64) -> Result<(), MirrorError> {
         if self.history.size_on_disk().map_err(MirrorError::from)?
-            > u64::from(self.budget) * 1_000_000
+            > self.policy.retention().max_bytes
         {
             self.prune(now_ms)?;
         }
@@ -201,10 +219,7 @@ impl MirrorSink for Mirror {
     }
     fn prune(&self, now_ms: i64) -> Result<(), MirrorError> {
         let _current = self.epoch.lock_ok();
-        let retention = statglass_store::Retention {
-            max_bytes: u64::from(self.budget) * 1_000_000,
-            ..statglass_store::Retention::mirror_default()
-        };
+        let retention = self.policy.retention();
         let report = self
             .history
             .writer()
@@ -223,25 +238,24 @@ impl MirrorSink for Mirror {
 }
 impl Mirror {
     pub fn new(history: Arc<statglass_engine::HistoryStore>, host: HostId, budget: u32) -> Self {
+        Self::with_policy(history, host, MirrorPolicy::desktop(budget))
+    }
+
+    /// A mirror that keeps and syncs what `policy` says.
+    pub fn with_policy(
+        history: Arc<statglass_engine::HistoryStore>,
+        host: HostId,
+        policy: MirrorPolicy,
+    ) -> Self {
         Self {
             history,
             host,
-            budget,
+            policy,
             recent: Mutex::default(),
             epoch: Mutex::default(),
             catalog: Catalog::builtin(),
             cap_warned: AtomicBool::new(false),
         }
-    }
-
-    /// A mirror that keeps and syncs what `policy` says. Scaffold stub: only the budget
-    /// is applied until phase 3 lane b stores the policy.
-    pub fn with_policy(
-        history: Arc<statglass_engine::HistoryStore>,
-        host: HostId,
-        policy: crate::MirrorPolicy,
-    ) -> Self {
-        Self::new(history, host, policy.budget_mb())
     }
 
     /// Applies the cardinality caps to a remote page or snapshot before anything is

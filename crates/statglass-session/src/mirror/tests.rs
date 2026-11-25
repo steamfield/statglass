@@ -13,6 +13,85 @@ fn mirror(dir: &Path, id: u128) -> Mirror {
     assert!(history.register_host(&record).is_some());
     Mirror::new(history, record.id, 100)
 }
+
+fn phone_mirror(dir: &Path) -> Mirror {
+    let desktop = mirror(dir, 2);
+    Mirror::with_policy(
+        desktop.store(),
+        desktop.host,
+        crate::MirrorPolicy::phone(crate::PHONE_MIRROR_HOST_MB),
+    )
+}
+
+#[test]
+fn phone_mirror_uses_its_own_floors_and_prunes_at_the_same_boundaries() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = phone_mirror(dir.path());
+    let day = 86_400_000;
+    assert_eq!(m.sync_tiers(), &[Tier::M1, Tier::M15]);
+    assert!(m.recent_first());
+    assert_eq!(m.history_floor(Tier::M1, TS), TS - day);
+    assert_eq!(m.history_floor(Tier::M15, TS), TS - 30 * day);
+
+    let epoch = Uuid::new_v4();
+    for (tier, floor, width) in [
+        (Tier::M1, TS - day, 60_000),
+        (Tier::M15, TS - 30 * day, 900_000),
+    ] {
+        m.cursor(tier, epoch, SyncKinds::ALL).unwrap();
+        let mut p = page(epoch);
+        p.tier = tier;
+        p.rows[0].bucket_ts = floor - width;
+        p.rows.push(WireBucket {
+            seq: 2,
+            bucket_ts: floor,
+            ..row()
+        });
+        p.last_seq = 2;
+        m.ingest(p, SyncKinds::ALL).unwrap();
+    }
+    m.prune(TS).unwrap();
+    let spans = m.store().read(|r| r.tier_spans(m.host)).unwrap();
+    assert_eq!(
+        spans
+            .iter()
+            .map(|(t, s)| (*t, s.from_ms))
+            .collect::<Vec<_>>(),
+        [(Tier::M1, TS - day), (Tier::M15, TS - 30 * day)]
+    );
+}
+
+#[test]
+fn phone_mirror_accepts_s10_recent_rows_without_advancing_the_durable_watermark() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = phone_mirror(dir.path());
+    let epoch = Uuid::new_v4();
+    assert_eq!(m.recent_watermark().unwrap(), None);
+    assert!(matches!(
+        m.recent(epoch, Tier::S10, TS + 10_000, vec![layout()], vec![row()]),
+        Err(MirrorError::EpochChanged { .. })
+    ));
+    m.cursor(Tier::M1, epoch, SyncKinds::ALL).unwrap();
+    let mut minute = page(epoch);
+    minute.tier = Tier::M1;
+    m.ingest(minute, SyncKinds::ALL).unwrap();
+    assert_eq!(m.sync_watermark().unwrap().m1_ms, Some(TS + 60_000));
+
+    assert!(matches!(
+        m.ingest(page(epoch), SyncKinds::ALL),
+        Err(MirrorError::InvalidInput(_))
+    ));
+    m.recent(epoch, Tier::S10, TS + 10_000, vec![layout()], vec![row()])
+        .unwrap();
+    let ring = m.ring_history(TS + 15_000).unwrap();
+    assert_eq!(ring.tier, Tier::S10);
+    assert_eq!(ring.series[0].points[0].avg, 2.);
+    assert_eq!(m.recent_watermark().unwrap(), None);
+
+    m.recent(epoch, Tier::S10, TS + 20_000, vec![], vec![])
+        .unwrap();
+    assert!(m.ring_history(TS + 25_000).unwrap().series.is_empty());
+}
 fn keys() -> Vec<statglass_schema::SeriesKey> {
     vec![statglass_schema::SeriesKey::parse("cpu.total").unwrap()]
 }
@@ -204,7 +283,7 @@ fn unmet_fixed_overhead_budget_is_visible_in_history_health() {
     let dir = tempfile::tempdir().unwrap();
     let mut m = mirror(dir.path(), 2);
     // Exercise the defensive path even though UI validation rejects zero budgets.
-    m.budget = 0;
+    m.policy = MirrorPolicy::desktop(0);
     assert!(m.prune(TS).is_err());
     assert!(!m.history.health().cap_met);
 }
@@ -214,7 +293,7 @@ fn per_page_budget_check_reports_an_unmet_cap_before_catchup_completes() {
     let dir = tempfile::tempdir().unwrap();
     let mut m = mirror(dir.path(), 2);
     assert!(m.enforce_budget(TS).is_ok());
-    m.budget = 0;
+    m.policy = MirrorPolicy::desktop(0);
     assert!(m.enforce_budget(TS).is_err());
     assert!(!m.history.health().cap_met);
 }
@@ -255,7 +334,7 @@ fn mirror_failures_keep_actionable_categories() {
         mirror.ingest(oversized, SyncKinds::ALL),
         Err(MirrorError::ResourceLimit(_))
     ));
-    mirror.budget = 0;
+    mirror.policy = MirrorPolicy::desktop(0);
     assert!(matches!(
         mirror.enforce_budget(TS),
         Err(MirrorError::ResourceLimit(_))
