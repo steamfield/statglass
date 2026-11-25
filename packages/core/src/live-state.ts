@@ -321,7 +321,7 @@ function heldFrom(
  * so selectors see changes; the row ring is appended in place.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
-export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
+export function reduceLive<S extends HostLive>(state: S, msg: LiveMsg): S {
   switch (msg.kind) {
     case "caps":
       return { ...state, capabilities: msg.capabilities };
@@ -420,11 +420,11 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
  * `fromMs` belong to the old one and go. A row on the held timeline that is
  * not newer is a duplicate, and the caller drops it.
  */
-function onTimeline(
-  state: HostLive,
+function onTimeline<S extends HostLive>(
+  state: S,
   timeline: number,
   fromMs: number
-): HostLive {
+): S {
   if (state.timeline === timeline) return state;
   if (state.timeline === null) return { ...state, timeline };
   state = { ...state, historyPending: null };
@@ -458,10 +458,10 @@ function settleRecent(pending: HistoryPending, rows: number): HistoryPending {
   return recent > 0 ? { recent } : null;
 }
 
-function onBackfillPlan(
-  state: HostLive,
+function onBackfillPlan<S extends HostLive>(
+  state: S,
   msg: Extract<LiveMsg, { kind: "backfill_plan" }>
-): HostLive {
+): S {
   const { earlier_start_ms: earlier, recent_rows: recent } = msg;
   if (earlier !== null && state.lastTsMs !== null) return state;
   const historyPending =
@@ -470,7 +470,7 @@ function onBackfillPlan(
   return { ...state, historyPending };
 }
 
-function settleEarlier(state: HostLive): HostLive {
+function settleEarlier<S extends HostLive>(state: S): S {
   if (typeof state.historyPending !== "number") return state;
   return (state.columns.firstTsMs() ?? Infinity) <= state.historyPending ||
     state.columns.length === state.columns.capacity
@@ -518,10 +518,10 @@ export function clearRows<S extends HostLive>(state: S): S {
  * channel sent before it. Rows go in front of the oldest held row; rows that
  * overlap what is held, or no longer fit, are dropped.
  */
-function prependEarlier(
-  state: HostLive,
+function prependEarlier<S extends HostLive>(
+  state: S,
   msg: Extract<LiveMsg, { kind: "backfill_earlier" }>
-): HostLive {
+): S {
   const pending = state.historyPending;
   if (typeof pending === "number" && msg.start_ms <= pending)
     state = { ...state, historyPending: null };

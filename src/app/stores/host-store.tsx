@@ -151,7 +151,7 @@ function useLiveSubscription(
       }
     );
 
-    // Registration can replace the source while paused or idle.
+    // Registration can replace the source while the window is hidden, paused, or idle.
     const stopHostsChanged = transport.onHostsChanged(({ hosts }) => {
       if (hosts.some((h) => h.id === hostId && !h.is_local)) session.retry();
     });

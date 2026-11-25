@@ -5,8 +5,11 @@
  */
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
+import { hostKeys } from "@core/query-keys";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act, render } from "@testing-library/react";
 import { statusMsg } from "@tests/live-frames";
+import { createTestQueryClient } from "@tests/test-utils";
 import { useProcessInterest } from "~/hooks/use-process-interest";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { TransportProvider } from "~/lib/transport-context";
@@ -171,6 +174,113 @@ describe("a live channel that ends silently (#14)", () => {
     mount(paused);
     await wait(60_000);
     expect(subscribes(paused)).toHaveLength(1);
+  });
+
+  it("rebinds a re-registered remote before the hidden window shows", async () => {
+    const t = createMockTransport({
+      autoTick: false,
+      scenarios: ["multi-host"],
+    });
+    const remote = (await t.listRemoteHosts())[0];
+    if (!remote) throw new Error("Missing remote fixture");
+    setVisibility("hidden");
+    t.setWindowVisible(false);
+    const view = render(
+      <TransportProvider transport={t}>
+        <HostStoreProvider hostId={remote.config.id}>
+          <Probe />
+        </HostStoreProvider>
+      </TransportProvider>
+    );
+    try {
+      await wait(0);
+      expect(subscribes(t)).toHaveLength(1);
+      await act(() => t.emitHostsChanged());
+      expect(subscribes(t)).toHaveLength(2);
+      act(() => {
+        t.setWindowVisible(true);
+        setVisibility("visible");
+      });
+      await wait(0);
+      expect(subscribes(t)).toHaveLength(2);
+    } finally {
+      view.unmount();
+      t.dispose();
+    }
+  });
+
+  it("pauses watchdog replacements until cached terminal host status clears", async () => {
+    const t = createMockTransport({
+      autoTick: false,
+      scenarios: ["multi-host"],
+    });
+    const remote = (await t.listRemoteHosts()).find(
+      ({ status }) => status.state === "connected"
+    );
+    if (!remote) throw new Error("Missing connected remote fixture");
+    const client = createTestQueryClient();
+    client.setQueryData(hostKeys.remote(), [
+      {
+        ...remote,
+        status: {
+          ...remote.status,
+          state: "error",
+          failure_kind: "authentication",
+        },
+      },
+    ]);
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={t}>
+          <HostStoreProvider hostId={remote.config.id}>
+            <Probe />
+          </HostStoreProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    try {
+      await wait(0);
+      expect(view.getByTestId("state")).toHaveTextContent("live false");
+      await wait(3000);
+      expect(view.getByTestId("state")).toHaveTextContent("live true");
+      await wait(20_000);
+      expect(subscribes(t)).toHaveLength(1);
+
+      client.setQueryData(hostKeys.remote(), [remote]);
+      await wait(5000);
+      expect(subscribes(t)).toHaveLength(2);
+    } finally {
+      view.unmount();
+      t.dispose();
+    }
+  });
+
+  it("keeps the live indicator while a settings change opens a new stream", async () => {
+    const t = createMockTransport({ autoTick: false });
+    function view(backfillMs: number) {
+      return (
+        <TransportProvider transport={t}>
+          <HostStoreProvider hostId={MOCK_HOST_ID} backfillMs={backfillMs}>
+            <Probe />
+          </HostStoreProvider>
+        </TransportProvider>
+      );
+    }
+    const rendered = render(view(60_000));
+    try {
+      await wait(0);
+      await tick(t);
+      expect(rendered.getByTestId("state")).toHaveTextContent("live false");
+      const pending = vi
+        .spyOn(t, "subscribeLive")
+        .mockImplementation(() => new Promise(() => {}));
+      rendered.rerender(view(HOUR));
+      expect(pending).toHaveBeenCalledTimes(1);
+      expect(rendered.getByTestId("state")).toHaveTextContent("live false");
+    } finally {
+      rendered.unmount();
+      t.dispose();
+    }
   });
 
   it("re-sends process interest with the new stream", async () => {

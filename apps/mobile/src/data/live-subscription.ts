@@ -49,8 +49,11 @@ export function subscribeHostLive(
   let release: (() => void) | undefined;
   let parked = false;
   let notifyVisible: ((visible: boolean) => void) | undefined;
-  const start = () =>
-    createLiveSession(
+  const start = () => {
+    const held = store.getState();
+    if (held.frameVersion > 0)
+      applyPhoneState(store, host, { ...held, awaitingFrame: true });
+    return createLiveSession(
       host,
       { series: POPOVER_CARD_SERIES, backfillMs: MINUTE_MS },
       {
@@ -97,6 +100,7 @@ export function subscribeHostLive(
         status,
       }
     );
+  };
   let session = visible ? start() : undefined;
   const appState = AppState.addEventListener("change", (state) => {
     const active = state === "active";
@@ -117,8 +121,13 @@ export function subscribeHostLive(
     notifyVisible?.(active);
   });
   const stopHostsChanged = transport.onHostsChanged(({ hosts }) => {
-    if (hosts.some((record) => record.id === host && !record.is_local))
-      session?.retry();
+    if (
+      !session ||
+      !hosts.some((record) => record.id === host && !record.is_local)
+    )
+      return;
+    if (visible) session.retry();
+    else parked = true;
   });
   return () => {
     appState.remove();

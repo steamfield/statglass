@@ -21,8 +21,14 @@ import type {
   Transport,
 } from "./transport";
 
+/** Delays after a failed subscribe, capped at the last step. */
 const RETRY_MS = [500, 1000, 2000, 5000];
+/** Frame periods without a sample before the stream reads stale (plan 4.17). */
 const STALE_INTERVALS = 3;
+/**
+ * Additional stale periods before replacing a stream Rust may have ended silently.
+ * The wait doubles per attempt without a frame, capped at a minute.
+ */
 const RECONNECT_INTERVALS = 3;
 
 export interface LiveSessionState extends HostLive {
@@ -67,14 +73,18 @@ export interface LiveSessionDeps<S> {
   status(): RemoteHostStatus | null;
 }
 
-function prepareCatchUp<S extends LiveSessionState>(state: S, now: number): S {
+function prepareCatchUp<S extends LiveSessionState>(
+  state: S,
+  now: number,
+  backfillMs: number
+): S {
   const { interval_ms: interval = 0 } = state.status ?? {};
   const { lastTsMs, recentMs } = state;
   // Earlier chunks can only prepend. Leave two ticks for subscription setup and
-  // refill the ring when their first row could fall inside the missed span.
+  // refill the ring when either subscription window could leave a hole.
   return lastTsMs !== null &&
     recentMs !== null &&
-    now - lastTsMs + 2 * interval >= recentMs
+    now - lastTsMs + 2 * interval >= Math.min(recentMs, backfillMs)
     ? clearRows(state)
     : state;
 }
@@ -105,8 +115,7 @@ class LiveSession<S extends LiveSessionState> {
     this.state = deps.initial;
     this.unlisten = deps.onVisible((visible) => this.onVisibility(visible));
     // The desktop registers while hidden so Rust can start the channel on show.
-    if (this.state.frameVersion === 0) void this.connect(0);
-    else this.replace(false);
+    void this.connect(0);
   }
 
   stop() {
@@ -117,10 +126,9 @@ class LiveSession<S extends LiveSessionState> {
     this.publish(settleSubscribe(this.state));
   }
 
+  /** Rebind an owned stream even while its view is hidden. */
   retry() {
-    const { clearTimeout } = this.deps.clock;
-    clearTimeout(this.retryTimer);
-    this.whenVisible(() => this.replace(false));
+    if (!this.stopped) this.replace(false);
   }
 
   private publish(next: S) {
@@ -185,7 +193,6 @@ class LiveSession<S extends LiveSessionState> {
     if (reduced === state) return;
     if (msg.kind === "frame") {
       this.publish({
-        ...state,
         ...reduced,
         frameVersion: state.frameVersion + 1,
         awaitingFrame: false,
@@ -195,7 +202,7 @@ class LiveSession<S extends LiveSessionState> {
       this.armWatchdog();
       return;
     }
-    this.publish({ ...state, ...reduced });
+    this.publish(reduced);
     if (msg.kind === "status") this.armWatchdog();
   }
 
@@ -270,7 +277,13 @@ class LiveSession<S extends LiveSessionState> {
   private async connect(attempt: number) {
     const current = ++this.generation;
     this.publish(
-      awaitHistory(prepareCatchUp(this.state, this.deps.clock.now()))
+      awaitHistory(
+        prepareCatchUp(
+          this.state,
+          this.deps.clock.now(),
+          this.request.backfillMs ?? MINUTE_MS
+        )
+      )
     );
     try {
       const sub = await this.deps.subscribe(
@@ -303,7 +316,11 @@ class LiveSession<S extends LiveSessionState> {
   }
 }
 
-/** Own one live stream, including any replacements and their outstanding replies. */
+/**
+ * Own one live stream, including replacements and their outstanding replies.
+ * Rust uses `backfillMs` as its recovery horizon. Keep the full request on each
+ * reconnect so later show or wake can still recover the whole window.
+ */
 export function createLiveSession<S extends LiveSessionState>(
   host: HostId,
   request: LiveRequest,

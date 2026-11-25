@@ -131,12 +131,11 @@ export function useLastFrame(host: HostId) {
   return useLiveSelection(host, (state) => state.lastFrame);
 }
 
-/** Show a terminal failure only while it is still the latest host status. */
+/** Show a terminal failure from the current remote host status. */
 export function useLiveFailure(host: HostId) {
-  const client = useQueryClient();
-  const terminal = useLiveSelection(host, (state) => state.terminal);
-  if (!terminal || terminal !== cachedRemoteStatus(client, host)) return null;
-  return hostStatusSummary(terminal, { nowMs: Date.now() }).label || null;
+  const { data: status } = useRemoteStatus(host);
+  if (status?.state !== "error" || status.failure_kind === null) return null;
+  return hostStatusSummary(status, { nowMs: Date.now() }).label || null;
 }
 
 /** Read one host's remote status and refresh the shared list when it changes. */

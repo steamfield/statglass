@@ -92,6 +92,8 @@ test("background and blur release the stream until the focused app is active", a
       expect(subscribe).toHaveBeenCalledTimes(0);
       await appState("active");
       await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+      await act(() => transport.tick());
+      expect(screen.getByText("Live · 1s")).toBeOnTheScreen();
       await appState("background");
       expect(transport.subscriberCount()).toBe(0);
       await advance(10_000);
@@ -109,10 +111,95 @@ test("background and blur release the stream until the focused app is active", a
       await act(() => router.back());
       await waitFor(() => expect(transport.subscriberCount()).toBe(1));
       expect(subscribe).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Reconnecting")).toBeOnTheScreen();
+      await act(() => transport.tick());
+      expect(screen.getByText("Live · 1s")).toBeOnTheScreen();
     } finally {
       await view.unmount();
     }
     expect(transport.subscriberCount()).toBe(0);
+  } finally {
+    transport.dispose();
+    jest.useRealTimers();
+  }
+});
+
+test("a reply that arrives in the background is released before one foreground subscription", async () => {
+  jest.useFakeTimers();
+  const appState = mockAppState();
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const original = transport.subscribeLive;
+  let reply: (() => void) | undefined;
+  const pending = new Promise<void>((resolve) => {
+    reply = resolve;
+  });
+  const subscribe = jest
+    .spyOn(transport, "subscribeLive")
+    .mockImplementationOnce(async (...args) => {
+      await pending;
+      return original(...args);
+    });
+  try {
+    const view = await renderWithProviders(
+      <ExpoRoot
+        context={context}
+        location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+      />,
+      { transport }
+    );
+    try {
+      await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+      await appState("background");
+      await act(async () => reply?.());
+      expect(transport.subscriberCount()).toBe(0);
+      await advance(10_000);
+      expect(subscribe).toHaveBeenCalledTimes(1);
+      await appState("active");
+      await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+      expect(subscribe).toHaveBeenCalledTimes(2);
+    } finally {
+      await view.unmount();
+    }
+  } finally {
+    transport.dispose();
+    jest.useRealTimers();
+  }
+});
+
+test("registration leaves a backgrounded phone unsubscribed until it is active", async () => {
+  jest.useFakeTimers();
+  const appState = mockAppState();
+  const transport = createMockTransport({
+    autoTick: false,
+    historyRows: 2,
+    scenarios: ["hosts-dashboard"],
+  });
+  try {
+    const remote = (await transport.listRemoteHosts()).find(
+      ({ status }) => status.state === "connected"
+    );
+    if (!remote) throw new Error("Missing connected remote fixture");
+    const subscribe = jest.spyOn(transport, "subscribeLive");
+    const view = await renderWithProviders(
+      <ExpoRoot
+        context={context}
+        location={new URL(`statglass:///${remote.config.id}`)}
+      />,
+      { transport }
+    );
+    try {
+      await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+      await appState("background");
+      await act(() => transport.emitHostsChanged());
+      await advance(1000);
+      expect(subscribe).toHaveBeenCalledTimes(1);
+
+      await appState("active");
+      await advance(1000);
+      expect(subscribe).toHaveBeenCalledTimes(2);
+    } finally {
+      await view.unmount();
+    }
   } finally {
     transport.dispose();
     jest.useRealTimers();
@@ -203,6 +290,8 @@ test("a recovered host shows Reconnecting while its stream is still in backoff",
         await screen.findByText("Reconnecting", {}, { timeout: 250 })
       ).toBeOnTheScreen();
       expect(subscribe).toHaveBeenCalledTimes(1);
+      await advance(1000);
+      expect(subscribe).toHaveBeenCalledTimes(2);
     } finally {
       await view.unmount();
     }
