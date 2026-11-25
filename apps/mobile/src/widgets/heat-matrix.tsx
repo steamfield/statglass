@@ -1,3 +1,4 @@
+import type { GapBandModel } from "@core/widget-models/gap-band";
 import type { HeatMatrixModel } from "@core/widget-models/heat-matrix";
 import { useColorScheme, View } from "react-native";
 import Svg, { Defs, Path, Pattern, Rect } from "react-native-svg";
@@ -19,9 +20,11 @@ const GAP_STRIPE = [
 export function HeatMatrix({
   model,
   height,
+  gapBands = [],
 }: {
   model: HeatMatrixModel;
   height: number;
+  gapBands?: readonly Pick<GapBandModel, "key" | "leftFrac" | "widthFrac">[];
 }) {
   const scheme = useColorScheme() ?? "light";
   const { cells, rows, columns, legend, loading, notice } = model;
@@ -116,6 +119,17 @@ export function HeatMatrix({
                     />
                   );
                 })}
+              {!loading &&
+                gapBands.map(({ key, leftFrac, widthFrac }) => (
+                  <Rect
+                    key={key}
+                    x={`${leftFrac * 100}%`}
+                    width={`${widthFrac * 100}%`}
+                    height={CELL_HEIGHT}
+                    fill={GAP_FILL}
+                    testID="heat-gap-band"
+                  />
+                ))}
             </Svg>
           </View>
           <Text variant="value" className="w-1/5 text-right">

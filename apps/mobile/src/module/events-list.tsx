@@ -1,11 +1,13 @@
 import { eventId, eventLabel } from "@core/events";
 import { formatHistoryTime } from "@core/format";
 import type { Event } from "@core/generated/types";
-import { type ReactNode, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { FlatList, View } from "react-native";
 import { Text } from "@/ui/text";
 
 const NO_EVENTS: readonly Event[] = [];
+
+export const EventLabelContext = createContext(eventLabel);
 
 function EventsHeading({ empty }: { empty: boolean }) {
   return (
@@ -21,9 +23,10 @@ function EventsHeading({ empty }: { empty: boolean }) {
 }
 
 function EventRow({ event, showDate }: { event: Event; showDate: boolean }) {
+  const formatEvent = useContext(EventLabelContext);
   return (
     <View className="gap-0.5 border-border border-t py-2">
-      <Text variant="body">{eventLabel(event)}</Text>
+      <Text variant="body">{formatEvent(event)}</Text>
       <Text variant="caption" className="tabular-nums">
         {formatHistoryTime(event.ts_ms, showDate)}
       </Text>

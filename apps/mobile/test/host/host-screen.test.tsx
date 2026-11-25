@@ -6,7 +6,6 @@ import {
   phoneCommandFailures,
 } from "@core/mock/phone-errors";
 import { createMockTransport } from "@core/mock-transport";
-import { POPOVER_CARD_SERIES } from "@core/popover/series";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
@@ -22,6 +21,7 @@ import {
   View,
 } from "react-native";
 import { useHostLiveSubscription } from "@/data/live";
+import { PHONE_LIVE_SERIES } from "@/data/live-series";
 import { useCompactStream } from "@/data/live-stream";
 import { HostScreen } from "@/host";
 
@@ -110,7 +110,7 @@ test("paging updates the native title and switches the focused subscription and 
   expect(subscribe.mock.lastCall).toEqual([
     MOCK_HOST_ID,
     expect.any(Function),
-    { series: POPOVER_CARD_SERIES, backfillMs: 60_000 },
+    { series: PHONE_LIVE_SERIES, backfillMs: 60_000 },
   ]);
 
   await fireEvent(screen.getByLabelText("Hosts pager"), "momentumScrollEnd", {

@@ -49,6 +49,22 @@ test("paints missing buckets with hatching and a measured zero with the accent",
   );
 });
 
+test("hatches a pause over a bucket that still has a measured average", async () => {
+  const model = heatMatrixModel({
+    ...HEAT_MATRIX_FIXTURE,
+    rows: [{ key: "zone-1", label: "Zone 01", current: 40, values: [40] }],
+  });
+  await renderWithProviders(
+    <HeatMatrix
+      model={model}
+      height={80}
+      gapBands={[{ key: "pause", leftFrac: 0.25, widthFrac: 0.5 }]}
+    />
+  );
+  expect(screen.getByTestId("heat-cell")).toBeOnTheScreen();
+  expect(screen.getByTestId("heat-gap-band")).toHaveProp("width", "50%");
+});
+
 test("announces a loading matrix without drawing missing buckets", async () => {
   const model = heatMatrixModel({ ...HEAT_MATRIX_FIXTURE, loading: true });
   await renderWithProviders(<HeatMatrix model={model} height={80} />);

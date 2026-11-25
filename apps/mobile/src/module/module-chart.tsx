@@ -54,6 +54,7 @@ interface ModuleChartProps {
   format(v: number): string;
   range: HistoryRange;
   events: readonly Event[];
+  formatEvent?: ((event: Event) => string) | undefined;
   clockOffsetMs: number;
   height: number;
   accent?: Accent;
@@ -242,6 +243,7 @@ export function ModuleChart({
   format,
   range,
   events,
+  formatEvent = eventLabel,
   clockOffsetMs,
   height,
   accent = "cpu",
@@ -275,7 +277,7 @@ export function ModuleChart({
   const annotations = annotationsModel(
     events.map((event) => ({
       tsMs: event.ts_ms,
-      label: eventLabel(event),
+      label: formatEvent(event),
       variant: "pill",
     })),
     toMs,
