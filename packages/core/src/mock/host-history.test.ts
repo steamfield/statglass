@@ -234,7 +234,8 @@ describe("mock host history clock and connection", () => {
     const fixed = await unwrap(transport.hostHistory(range));
     const open = await unwrap(transport.hostHistory({ ...range, to_ms: null }));
     expect(open).toEqual(fixed);
-    expect(open.complete_to_ms).toBe(mockNow);
+    // The 10 s bucket ending at now stays open for one more sampler tick.
+    expect(open.complete_to_ms).toBe(mockNow - 10_000);
   });
 
   it("ends an open remote history range using the monitored host clock", async () => {
@@ -258,7 +259,8 @@ describe("mock host history clock and connection", () => {
         to_ms: null,
       })
     );
-    expect(page.complete_to_ms).toBe(end);
+    // Host clock, with the bucket ending at `end` still open.
+    expect(page.complete_to_ms).toBe(end - 10_000);
     expect(page.series[0]?.points.at(-1)?.t).toBeGreaterThan(now);
   });
 

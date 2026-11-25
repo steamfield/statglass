@@ -1,14 +1,221 @@
-//! Tier selection shared by history reads and CSV export.
+//! Tier selection and captured history reads.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::Entry};
+use std::sync::Arc;
 
 use rusqlite::params;
-use statglass_schema::{HostId, Tier};
+use statglass_schema::{Gap, HostId, SeriesKey, SeriesSelector, Tier, floor_to};
 
-use super::Reader;
-use crate::db;
-use crate::error::Result;
-use crate::types::{HistoryQuery, Retention, TierChoice, TierCoverage};
+use super::{HistoryBucketRow, Merge, Positions, Reader, f32_at};
+use crate::db::{self, tier_width};
+use crate::error::{Result, StoreError};
+use crate::slots::Slots;
+use crate::types::{BucketRow, HistoryQuery, HistoryResult, Retention, TierChoice, TierCoverage};
 
 impl Reader {
+    /// Keeps metadata and rows on one SQLite read snapshot, including when the writer
+    /// publishes a new layout. A caller that already owns a transaction keeps it.
+    pub fn with_history_snapshot<T>(
+        &mut self,
+        read: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<T> {
+        if self.in_transaction() {
+            return read(self);
+        }
+        self.conn.execute_batch("BEGIN DEFERRED")?;
+        let result = read(self);
+        let end = self.conn.execute_batch("ROLLBACK");
+        let value = result?;
+        end?;
+        Ok(value)
+    }
+
+    /// Captures source rows once. The caller can merge those same rows at another
+    /// point budget without moving the range, fetching new data, or weighting slots.
+    pub fn history_snapshot<R: AsRef<[BucketRow]>>(
+        &mut self,
+        q: &HistoryQuery,
+        max_series: Option<usize>,
+        recent: impl FnOnce(HistoryGrid) -> R,
+    ) -> Result<HistorySnapshot<R>> {
+        self.with_history_snapshot(|reader| {
+            let host = reader.host_ref(q.host)?;
+            let tier = reader.resolve_tier(host, q.from_ms, q.to_ms, q.tier)?;
+            let grid = HistoryGrid::new(tier, q.from_ms)?;
+            let gaps = reader.gaps_in(host, q.from_ms, q.to_ms)?;
+            let mut snapshot = HistorySnapshot {
+                query: q.clone(),
+                grid,
+                gaps,
+                layouts: BTreeMap::new(),
+                rows: Vec::new(),
+                recent: None,
+                selection: max_series.map(HistorySelection::new),
+            };
+            if q.to_ms <= q.from_ms || q.selectors.is_empty() {
+                return Ok(snapshot);
+            }
+            let layouts = reader.history_layouts(host, tier, grid.base, q.to_ms, &q.selectors)?;
+            if let Some(selection) = &mut snapshot.selection {
+                for layout in layouts.values() {
+                    selection.add(layout, &q.selectors, true);
+                }
+            }
+            snapshot.layouts = layouts
+                .into_iter()
+                .filter_map(|(id, series)| {
+                    let positions: Vec<_> = series
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, key)| {
+                            snapshot.selection.as_ref().map_or_else(
+                                || q.selectors.iter().any(|s| s.matches(key)),
+                                |selection| selection.keys.contains(key),
+                            )
+                        })
+                        .map(|(index, _)| index)
+                        .collect();
+                    (!positions.is_empty()).then_some((id, CapturedLayout { series, positions }))
+                })
+                .collect();
+            snapshot.rows =
+                reader.history_bucket_rows(host, tier, grid.base, q.to_ms, &snapshot.layouts)?;
+            #[cfg(test)]
+            {
+                reader.history_rows_read = snapshot.rows.len();
+            }
+            let recent = recent(grid);
+            if let Some(selection) = &mut snapshot.selection {
+                for row in recent
+                    .as_ref()
+                    .iter()
+                    .filter(|row| in_recent_range(row, tier, grid.base, q.to_ms))
+                {
+                    selection.add(&row.series, &q.selectors, false);
+                }
+            }
+            snapshot.recent = Some(recent);
+            Ok(snapshot)
+        })
+    }
+
+    fn history_layouts(
+        &mut self,
+        host: i64,
+        tier: Tier,
+        from: i64,
+        to: i64,
+        selectors: &[SeriesSelector],
+    ) -> Result<BTreeMap<u32, Arc<[SeriesKey]>>> {
+        // Discover active IDs from the covering tier index, without fetching any blobs.
+        let mut ids = BTreeSet::new();
+        for (table, _) in db::bucket_sources(tier)? {
+            let sql = format!(
+                "SELECT DISTINCT layout_id FROM {table}
+                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3"
+            );
+            let mut stmt = self.conn.prepare_cached(&sql)?;
+            for id in stmt.query_map(params![host, from, to], |row| row.get(0))? {
+                ids.insert(id?);
+            }
+        }
+        let mut layouts = BTreeMap::new();
+        for id in ids {
+            let keys = self.layout(id)?;
+            if keys
+                .iter()
+                .any(|key| selectors.iter().any(|s| s.matches(key)))
+            {
+                layouts.insert(id, keys);
+            }
+        }
+        Ok(layouts)
+    }
+
+    fn history_bucket_rows(
+        &self,
+        host_ref: i64,
+        tier: Tier,
+        from: i64,
+        to: i64,
+        layouts: &BTreeMap<u32, CapturedLayout>,
+    ) -> Result<Vec<HistoryBucketRow>> {
+        if layouts.is_empty() {
+            return Ok(Vec::new());
+        }
+        // IDs come from the database. Inline them so many relayouts do not exceed the
+        // SQLite parameter limit. Apply the filter to both legs of the M15 union.
+        let ids = layouts
+            .keys()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = db::bucket_sources(tier)?
+            .iter()
+            .map(|(table, weight)| {
+                format!(
+                "SELECT bucket_ts, layout_id, blob, {weight} FROM {table}
+                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 AND layout_id IN ({ids})"
+            )
+            })
+            .collect::<Vec<_>>()
+            .join(" UNION ALL ");
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!("{sql} ORDER BY bucket_ts"))?;
+        let mut rows = stmt.query(params![host_ref, from, to])?;
+        let mut captured = Vec::new();
+        while let Some(row) = rows.next()? {
+            let ts = row.get(0)?;
+            let layout_id = row.get(1)?;
+            let layout = layouts.get(&layout_id).ok_or_else(|| {
+                StoreError::Corrupt(format!("row refers to missing layout {layout_id}"))
+            })?;
+            let blob = row.get_ref(2)?.as_blob().map_err(|error| {
+                StoreError::Corrupt(format!("bucket at {ts} has invalid stats: {error}"))
+            })?;
+            let mut values = Vec::with_capacity(layout.positions.len());
+            for &position in &layout.positions {
+                let start = position * 3;
+                let (Some(min), Some(max), Some(avg)) = (
+                    f32_at(blob, start),
+                    f32_at(blob, start + 1),
+                    f32_at(blob, start + 2),
+                ) else {
+                    return Err(StoreError::Corrupt(format!(
+                        "bucket at {ts} is shorter than its layout"
+                    )));
+                };
+                values.push([min, max, avg]);
+            }
+            captured.push((ts, layout_id, values, row.get(3)?));
+        }
+        Ok(captured)
+    }
+
+    /// Fine-tier coverage measured back from the requested end. A missing prune mark
+    /// means the store has not removed any rows from that tier.
+    pub fn history_tier_coverage(&mut self, host: HostId, to_ms: i64) -> Result<TierCoverage> {
+        let host_ref = self.host_ref(host)?;
+        let s10 = self
+            .pruned(host_ref, Tier::S10)?
+            .map(|(_, cutoff)| cutoff)
+            .max(db::read_s10_hole_until(&self.conn)?);
+        let minutes = self
+            .pruned(host_ref, Tier::M1)?
+            .map(|(_, cutoff)| cutoff)
+            .max(
+                self.pruned_key(host_ref, db::M1_ROLLED)?
+                    .map(|(_, cutoff)| cutoff),
+            );
+        let duration =
+            |cutoff: Option<i64>| cutoff.map_or(i64::MAX, |cutoff| to_ms.saturating_sub(cutoff));
+        Ok(TierCoverage {
+            s10_ms: Some(duration(s10)),
+            m1_ms: Some(duration(minutes)),
+        })
+    }
+
     /// The tier a [`TierChoice::Auto`] read of `host` over `[from_ms, to_ms)` uses, without
     /// reading it.
     pub fn auto_tier_for(&mut self, host: HostId, from_ms: i64, to_ms: i64) -> Result<Tier> {
@@ -97,4 +304,242 @@ fn covered_tier(
         }
     }
     Ok(Tier::M15)
+}
+
+/// The persisted grid and the bounds of the tier read from the live hub.
+#[derive(Clone, Copy)]
+pub struct HistoryGrid {
+    tier: Tier,
+    width: i64,
+    base: i64,
+    pub recent_width: i64,
+    pub recent_base: i64,
+}
+
+impl HistoryGrid {
+    fn new(tier: Tier, from_ms: i64) -> Result<Self> {
+        let width = tier_width(tier)?;
+        let base = floor_to(from_ms, width);
+        let (recent_width, recent_base) = if tier == Tier::M15 {
+            let width = tier_width(Tier::M1)?;
+            (width, floor_to(from_ms, width))
+        } else {
+            (width, base)
+        };
+        Ok(Self {
+            tier,
+            width,
+            base,
+            recent_width,
+            recent_base,
+        })
+    }
+}
+
+struct CapturedLayout {
+    series: Arc<[SeriesKey]>,
+    /// Source indexes in the order in which each row's triples were packed.
+    positions: Vec<usize>,
+}
+
+/// Source buckets and gaps captured by one history read.
+pub struct HistorySnapshot<R> {
+    query: HistoryQuery,
+    grid: HistoryGrid,
+    gaps: Vec<Gap>,
+    layouts: BTreeMap<u32, CapturedLayout>,
+    rows: Vec<HistoryBucketRow>,
+    recent: Option<R>,
+    selection: Option<HistorySelection>,
+}
+
+impl<R: AsRef<[BucketRow]>> HistorySnapshot<R> {
+    pub fn series_clamped(&self) -> bool {
+        self.selection.as_ref().is_some_and(|s| s.clamped)
+    }
+
+    /// Builds points and the newest closed source bucket end represented by them.
+    pub fn merge(&self, budget: u32, now: i64) -> Result<(HistoryResult, i64)> {
+        self.merge_with_gaps(budget, now, &[])
+    }
+
+    /// Source buckets fully covered by a gap contribute no measurements to the chart.
+    /// A bucket that overlaps the boundary is kept as a single measured aggregate.
+    pub fn merge_chart(&self, budget: u32, now: i64) -> Result<(HistoryResult, i64)> {
+        self.merge_with_gaps(budget, now, &self.gaps)
+    }
+
+    fn merge_with_gaps(&self, budget: u32, now: i64, gaps: &[Gap]) -> Result<(HistoryResult, i64)> {
+        let q = &self.query;
+        let Some(recent) = &self.recent else {
+            return Ok((
+                HistoryResult {
+                    tier: self.grid.tier,
+                    bucket_ms: self.grid.width,
+                    series: Vec::new(),
+                    gaps: self.gaps.clone(),
+                },
+                q.from_ms,
+            ));
+        };
+        let slots = Slots::new(self.grid.base, q.to_ms, self.grid.width, budget);
+        let mut merge = Merge::new(q, slots);
+        merge.closed_before = now;
+        merge.gaps = gaps;
+        merge.keys = self.selection.as_ref().map(|s| &s.keys);
+        let recent = merge.recent(recent.as_ref(), self.grid.tier);
+        let recent_ts: HashSet<i64> = recent.iter().map(|r| r.bucket_ts).collect();
+        let mut matches: HashMap<u32, Positions> = HashMap::new();
+        for (ts, layout_id, stats, weight) in &self.rows {
+            let layout = self.layouts.get(layout_id).ok_or_else(|| {
+                StoreError::Corrupt(format!("row refers to missing layout {layout_id}"))
+            })?;
+            // Only the source tier held in the hub can replace a stored row.
+            if *weight == 1
+                && recent_ts.contains(ts)
+                && recent
+                    .iter()
+                    .any(|r| r.bucket_ts == *ts && r.series == layout.series)
+            {
+                continue;
+            }
+            let positions = match matches.entry(*layout_id) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let mut positions = Vec::with_capacity(layout.positions.len());
+                    for (packed, &source) in layout.positions.iter().enumerate() {
+                        let key = layout.series.get(source).ok_or_else(|| {
+                            StoreError::Corrupt(format!(
+                                "layout {layout_id} lacks captured position {source}"
+                            ))
+                        })?;
+                        positions.push((merge.series_index(key), packed));
+                    }
+                    entry.insert(positions)
+                }
+            };
+            merge.add(
+                *ts,
+                positions,
+                |i| stats.as_flattened().get(i).copied(),
+                *weight,
+            )?;
+        }
+        merge.add_recent(&recent)?;
+        let complete_to_ms = merge.complete_to_ms.min(q.to_ms);
+        Ok((
+            HistoryResult {
+                tier: self.grid.tier,
+                bucket_ms: merge.slots.slot_w,
+                series: merge.finish(),
+                gaps: self.gaps.clone(),
+            },
+            complete_to_ms,
+        ))
+    }
+}
+
+struct HistorySelection {
+    keys: BTreeSet<SeriesKey>,
+    limit: usize,
+    clamped: bool,
+}
+
+impl HistorySelection {
+    fn new(limit: usize) -> Self {
+        Self {
+            keys: BTreeSet::new(),
+            limit,
+            clamped: false,
+        }
+    }
+
+    fn add(&mut self, layout: &[SeriesKey], selectors: &[SeriesSelector], durable: bool) {
+        for key in layout
+            .iter()
+            .filter(|key| selectors.iter().any(|s| s.matches(key)))
+        {
+            if self.keys.contains(key) {
+                continue;
+            }
+            if self.keys.len() == self.limit {
+                self.clamped = true;
+                // Disk reads already used this selection. A recent-only key can
+                // fill a vacancy, but cannot replace a key whose rows were fetched.
+                if !durable || self.keys.last().is_none_or(|last| key >= last) {
+                    continue;
+                }
+                self.keys.pop_last();
+            }
+            self.keys.insert(key.clone());
+        }
+    }
+}
+
+pub(super) fn in_recent_range(row: &BucketRow, tier: Tier, from: i64, to: i64) -> bool {
+    let want = if tier == Tier::M15 { Tier::M1 } else { tier };
+    row.tier == want && row.bucket_ts >= from && row.bucket_ts < to
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blob::{pack_f32s, pack_u32s};
+    use uuid::Uuid;
+
+    #[test]
+    fn history_snapshot_retains_only_selected_triples() {
+        let dir = crate::test_dir("history-projection");
+        let path = dir.path().join("history.sqlite");
+        let (conn, _) = db::open_writer(&path, 0).unwrap();
+        let host = HostId(Uuid::nil());
+        conn.execute(
+            "INSERT INTO hosts (id, uuid, is_local, name, info, created_ms)
+             VALUES (1, ?1, 1, 'fixture', x'', 0)",
+            [host.to_string()],
+        )
+        .unwrap();
+        conn.execute_batch("INSERT INTO series (id, host_id, metric_id, labels)
+            VALUES (1, 1, 'net.rx', 'iface=en0'), (2, 1, 'cpu.total', ''), (3, 1, 'net.rx', 'iface=en1');").unwrap();
+        conn.execute(
+            "INSERT INTO layouts (id, host_id, series_ids, hash, created_ms)
+             VALUES (1, 1, ?1, x'01', 0)",
+            [pack_u32s(&[1, 2, 3])],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tier_10s (host_id, bucket_ts, layout_id, seq, blob)
+             VALUES (1, 0, 1, 1, ?1)",
+            [pack_f32s(&[1., 3., 2., 4., 6., 5., 7., 9., 8.])],
+        )
+        .unwrap();
+        let q = HistoryQuery {
+            host,
+            from_ms: 0,
+            to_ms: 10_000,
+            tier: TierChoice::Fixed(Tier::S10),
+            max_points: 1,
+            selectors: vec![SeriesSelector {
+                metric: statglass_schema::MetricId::from_static("net.rx"),
+                labels: Default::default(),
+            }],
+        };
+        let mut reader = Reader::open(&path).unwrap();
+        let mut snapshot = reader
+            .history_snapshot(&q, Some(2), |_| Vec::new())
+            .unwrap();
+        assert_eq!(snapshot.rows[0].2.as_slice(), &[[1., 3., 2.], [7., 9., 8.]]);
+        // Change the packing order without changing the selected set or the source layout.
+        // Recomputing the packed indexes from the original layout would swap the results.
+        snapshot.layouts.get_mut(&1).unwrap().positions.swap(0, 1);
+        snapshot.rows[0].2.swap(0, 1);
+        let (read, _) = snapshot.merge(1, 10_000).unwrap();
+        assert_eq!(
+            read.series
+                .iter()
+                .map(|s| s.points[0].avg)
+                .collect::<Vec<_>>(),
+            [2., 8.]
+        );
+    }
 }

@@ -16,6 +16,10 @@ import {
   type SeriesHistoryStats,
 } from "../generated/types";
 import { floorTo } from "../time-grid";
+
+/** One sampler tick: the bucket still filling is not complete yet. */
+const SAMPLER_TICK_MS = 1_000;
+
 import type { PhoneQueries, Transport } from "../transport";
 import { MOCK_HOST_ID } from "./fixtures";
 import { fail, invalid, mockBuckets, ok, rangeError } from "./protocol";
@@ -199,7 +203,12 @@ async function readLocalHistory(
   const through = Math.min(to_ms, snapshot);
   const answer = {
     ...page,
-    complete_to_ms: Math.max(from_ms, floorTo(through, bucketMs)),
+    // Rust's rule: the last closed source bucket, leaving the open one (one
+    // sampler tick) for live data, never past the request or before its start.
+    complete_to_ms: Math.max(
+      from_ms,
+      Math.min(to_ms, floorTo(snapshot - SAMPLER_TICK_MS, bucketMs))
+    ),
     events: matched.slice(-HISTORY_MAX_EVENTS),
     stats: seriesStats(page, from_ms, through),
     clamped,

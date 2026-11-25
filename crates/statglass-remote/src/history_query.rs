@@ -3,6 +3,9 @@
 use crate::{HostServer, ServedHost};
 use statglass_proto::{Answer, HistoryQuery};
 
+#[cfg(test)]
+#[path = "../tests/support/history_seed.rs"]
+mod history_seed;
 pub mod limits;
 mod read;
 

@@ -5,6 +5,15 @@ use statglass_schema::HostId;
 use statglass_store::{BucketRow, HistoryQuery, HistoryResult, StoreError};
 
 impl HistoryStore {
+    /// Captures a history response's metadata and source rows on one pooled reader
+    /// and one SQLite snapshot. The caller can build its reply after the checkout.
+    pub fn with_history_snapshot<T>(
+        &self,
+        read: impl FnOnce(&mut statglass_store::Reader) -> statglass_store::Result<T>,
+    ) -> Result<T, HistoryStoreError> {
+        self.read(|reader| reader.with_history_snapshot(read))
+    }
+
     pub fn history_through_now(
         &self,
         query: &HistoryQuery,
@@ -63,5 +72,32 @@ impl HistoryStore {
         recent: impl FnOnce() -> Vec<statglass_store::usage::UsageBucket>,
     ) -> Result<statglass_schema::durable_usage::UsageProcessReply, HistoryStoreError> {
         self.read(|reader| reader.usage_processes_after(request, recent))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_snapshot_keeps_one_database_view_across_a_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(dir.path());
+        let host = crate::test_support::mac_host(7);
+        let writer = store.register_host(&host).unwrap();
+        store
+            .with_history_snapshot(|reader| {
+                assert_eq!(reader.hosts()?.as_slice(), std::slice::from_ref(&host));
+                let mut renamed = host.clone();
+                renamed.display_name = "Renamed while reading".into();
+                writer.upsert_host(renamed)?;
+                assert_eq!(reader.hosts()?.as_slice(), std::slice::from_ref(&host));
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            store.read(|reader| reader.hosts()).unwrap()[0].display_name,
+            "Renamed while reading"
+        );
     }
 }
