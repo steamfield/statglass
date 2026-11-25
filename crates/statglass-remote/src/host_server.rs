@@ -21,8 +21,12 @@ pub trait ServedHost: Send + Sync + 'static {
     fn record(&self) -> HostRecord;
     fn capabilities(&self) -> Capabilities;
     fn hub(&self) -> &LiveHub;
+    /// Opts in to the address query advertised in the handshake.
+    fn serves_addresses(&self) -> bool {
+        false
+    }
     fn network_addresses(&self) -> HostAddresses {
-        HostAddresses::unavailable("no local address")
+        HostAddresses::unavailable("addresses not served by this host")
     }
     /// Replace one session's interest; the default interest releases its demand.
     fn set_remote_interest(&self, session: u64, interest: RemoteInterest);
@@ -109,7 +113,9 @@ impl<H: ServedHost> ServerProvider for HostServer<H> {
 
     fn hello(&self) -> Hello {
         let mut features = statglass_proto::local_features();
-        features.insert(ADDRESSES_QUERY_FEATURE.into());
+        if self.host.serves_addresses() {
+            features.insert(ADDRESSES_QUERY_FEATURE.into());
+        }
         Hello {
             proto_version: statglass_proto::PROTO_VERSION,
             min_compatible: statglass_proto::MIN_COMPATIBLE,
@@ -238,6 +244,9 @@ mod tests {
         fn hub(&self) -> &LiveHub {
             &self.hub
         }
+        fn serves_addresses(&self) -> bool {
+            true
+        }
         fn network_addresses(&self) -> HostAddresses {
             self.addresses.clone()
         }
@@ -321,6 +330,40 @@ mod tests {
                 ..
             }
         )
+    }
+
+    #[test]
+    fn addresses_are_unavailable_without_host_opt_in() {
+        struct HostWithoutAddresses(Arc<Host>);
+
+        impl ServedHost for HostWithoutAddresses {
+            fn record(&self) -> HostRecord {
+                self.0.record()
+            }
+            fn capabilities(&self) -> Capabilities {
+                self.0.capabilities()
+            }
+            fn hub(&self) -> &LiveHub {
+                self.0.hub()
+            }
+            fn set_remote_interest(&self, session: u64, interest: RemoteInterest) {
+                self.0.set_remote_interest(session, interest);
+            }
+        }
+
+        let server = HostServer::new(
+            Arc::new(HostWithoutAddresses(host())),
+            Arc::new(HistoryStore::unavailable()),
+        );
+        let features = server.hello().features;
+        let answer = server.answer(1, Query::NetworkAddresses);
+        assert!(!features.contains(ADDRESSES_QUERY_FEATURE));
+        assert_eq!(
+            answer,
+            Answer::NetworkAddresses(HostAddresses::unavailable(
+                "addresses not served by this host"
+            ))
+        );
     }
 
     #[test]

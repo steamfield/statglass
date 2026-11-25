@@ -111,6 +111,10 @@ impl ServedHost for AgentHost {
         &self.hub
     }
 
+    fn serves_addresses(&self) -> bool {
+        true
+    }
+
     fn network_addresses(&self) -> HostAddresses {
         self.addresses.network_addresses(&self.hub)
     }

@@ -1,8 +1,8 @@
 //! Addresses supplied by the monitored host (D-093, D-153).
 
 use std::io;
-use std::net::IpAddr;
-use std::process::{Command, ExitStatus};
+use std::net::{IpAddr, Ipv4Addr};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use statglass_engine::{ClockReading, IfaceAddrs, LiveHub, continuous_ns, now};
@@ -15,6 +15,7 @@ const PUBLIC_IP_URL: &str = "https://api.ipify.org";
 const PUBLIC_IP_TIMEOUT_SECS: &str = "5";
 const SUCCESS_TTL_NS: u64 = 24 * 60 * 60 * 1_000_000_000;
 const FAILURE_TTL_NS: u64 = 10 * 60 * 1_000_000_000;
+const LOOKUP_INTERRUPTED: &str = "public IP lookup did not finish";
 
 /// One cache per served host, shared by all its clients.
 #[derive(Default)]
@@ -22,10 +23,10 @@ pub struct AddressResolver {
     cache: Arc<Mutex<Cache>>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 struct Network {
     primary: Option<String>,
-    primary_addrs: Option<IfaceAddrs>,
+    primary_ipv4: Option<Vec<Ipv4Addr>>,
     egress: Option<String>,
     addrs: IfaceAddrs,
 }
@@ -39,16 +40,24 @@ impl Network {
         let read = |iface| canonical_addresses(read(iface));
         let addrs = egress.as_deref().or(primary).map(read).unwrap_or_default();
         // A tunnel's address can stay put while the LAN underneath it changes.
-        let primary_addrs = match (primary, egress.as_deref()) {
-            (Some(primary), Some(egress)) if primary != egress => Some(read(primary)),
+        let primary_ipv4 = match (primary, egress.as_deref()) {
+            (Some(primary), Some(egress)) if primary != egress => Some(read(primary).ipv4),
             _ => None,
         };
         Self {
             primary: primary.map(str::to_owned),
-            primary_addrs,
+            primary_ipv4,
             egress,
             addrs,
         }
+    }
+
+    // IPv6 privacy addresses rotate independently of the route used for this lookup.
+    fn same_route(&self, other: &Self) -> bool {
+        self.primary == other.primary
+            && self.egress == other.egress
+            && self.primary_ipv4 == other.primary_ipv4
+            && self.addrs.ipv4 == other.addrs.ipv4
     }
 }
 
@@ -75,27 +84,40 @@ enum Cache {
     },
 }
 
-struct Lookup(Arc<Mutex<Cache>>);
+struct Lookup(Option<Arc<Mutex<Cache>>>);
 
 impl Lookup {
-    fn finish(self, now_ns: u64, result: Result<IpAddr, PublicIpError>) -> PublicIp {
+    fn finish(mut self, now_ns: u64, result: Result<IpAddr, PublicIpError>) {
         let state = match result {
             Ok(ip) => PublicIp::Known { ip },
             Err(error) => unavailable(error.to_string()),
         };
+        self.settle(now_ns, state);
+    }
+
+    fn settle(&mut self, now_ns: u64, state: PublicIp) {
+        // Disarm this lookup before publishing. Another request can claim the next slot.
+        let Some(cache) = self.0.take() else { return };
         let ttl_ns = match &state {
             PublicIp::Known { .. } => SUCCESS_TTL_NS,
             _ => FAILURE_TTL_NS,
         };
-        let mut cache = self.0.lock_ok();
-        if let Cache::Pending(Some(network)) = std::mem::take(&mut *cache) {
-            *cache = Cache::Ready {
+        let mut cache = cache.lock_ok();
+        if let Cache::Pending(network) = &mut *cache {
+            *cache = network.take().map_or(Cache::Empty, |network| Cache::Ready {
                 network,
-                state: state.clone(),
+                state,
                 expires_ns: now_ns.saturating_add(ttl_ns),
-            };
+            });
         }
-        state
+    }
+}
+
+impl Drop for Lookup {
+    fn drop(&mut self) {
+        if self.0.is_some() {
+            self.settle(continuous_ns(), unavailable(LOOKUP_INTERRUPTED));
+        }
     }
 }
 
@@ -153,15 +175,30 @@ impl AddressResolver {
     ) -> PublicIp {
         let mut cache = self.cache.lock_ok();
         if network.addrs.ipv4.is_empty() && network.addrs.ipv6.is_empty() {
+            // A temporary absence of IPv6 on the same route need not expire the public IP.
             match &mut *cache {
-                Cache::Pending(active) => *active = None,
-                _ => *cache = Cache::Empty,
+                Cache::Pending(active)
+                    if active
+                        .as_ref()
+                        .is_some_and(|active| !active.same_route(network)) =>
+                {
+                    *active = None;
+                }
+                Cache::Ready {
+                    network: cached, ..
+                } if !cached.same_route(network) => {
+                    *cache = Cache::Empty;
+                }
+                _ => {}
             }
             return unavailable("no local address");
         }
         match &mut *cache {
             Cache::Pending(active) => {
-                if active.as_ref() != Some(network) {
+                if active
+                    .as_ref()
+                    .is_some_and(|active| !active.same_route(network))
+                {
                     *active = None;
                 }
                 return PublicIp::Pending;
@@ -170,15 +207,19 @@ impl AddressResolver {
                 network: cached,
                 state,
                 expires_ns,
-            } if cached == network && now_ns < *expires_ns => return state.clone(),
+            } if cached.same_route(network) && now_ns < *expires_ns => return state.clone(),
             _ => {}
         }
         *cache = Cache::Pending(Some(network.clone()));
         drop(cache);
 
-        if let Err(error) = spawn(Lookup(Arc::clone(&self.cache))) {
-            return Lookup(Arc::clone(&self.cache))
-                .finish(now_ns, Err(PublicIpError::StartWorker(error)));
+        if let Err(error) = spawn(Lookup(Some(Arc::clone(&self.cache)))) {
+            // The failed spawn dropped its closure and settled the pending slot.
+            tracing::warn!(
+                error = &error as &dyn std::error::Error,
+                "starting public IP lookup"
+            );
+            return unavailable(LOOKUP_INTERRUPTED);
         }
         PublicIp::Pending
     }
@@ -208,16 +249,24 @@ fn unavailable(reason: impl Into<String>) -> PublicIp {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PublicIpError {
-    #[error("could not start the public IP lookup")]
-    StartWorker(#[source] io::Error),
     #[error("curl not installed")]
     MissingCurl,
     #[error("could not run curl")]
     Start(#[source] io::Error),
+    #[error("could not resolve api.ipify.org")]
+    Resolve,
+    #[error("could not connect to api.ipify.org")]
+    Connect,
+    #[error("api.ipify.org returned an HTTP error")]
+    Http,
     #[error("public IP lookup timed out")]
     Timeout,
-    #[error("curl exited with {0}")]
-    CurlFailed(ExitStatus),
+    #[error("could not establish a secure connection to api.ipify.org")]
+    Tls,
+    #[error("could not verify the TLS certificate for api.ipify.org")]
+    Certificate,
+    #[error("curl could not read the public IP")]
+    CurlFailed,
     #[error("response is not text")]
     InvalidText,
     #[error("response is not an address")]
@@ -237,8 +286,6 @@ fn lookup_with(
         "-q",
         "--silent",
         "--fail",
-        "--noproxy",
-        "*",
         "--max-time",
         PUBLIC_IP_TIMEOUT_SECS,
         PUBLIC_IP_URL,
@@ -248,9 +295,15 @@ fn lookup_with(
         _ => PublicIpError::Start(error),
     })?;
     if !out.status.success() {
+        tracing::debug!(status = %out.status, "curl public IP lookup failed");
         return Err(match out.status.code() {
+            Some(6) => PublicIpError::Resolve,
+            Some(7) => PublicIpError::Connect,
+            Some(22) => PublicIpError::Http,
             Some(28) => PublicIpError::Timeout,
-            _ => PublicIpError::CurlFailed(out.status),
+            Some(35) => PublicIpError::Tls,
+            Some(60) => PublicIpError::Certificate,
+            _ => PublicIpError::CurlFailed,
         });
     }
     parse_ip(&out.stdout)
@@ -320,7 +373,7 @@ mod tests {
     fn network() -> Network {
         Network {
             primary: Some("en0".into()),
-            primary_addrs: None,
+            primary_ipv4: None,
             egress: Some("utun3".into()),
             addrs: IfaceAddrs {
                 ipv4: vec![[192, 0, 2, 10].into()],
@@ -334,10 +387,8 @@ mod tests {
     }
 
     #[test]
-    fn addresses_wait_for_a_request_and_a_local_address() {
+    fn addresses_wait_for_a_local_address() {
         let mut resolver = Resolver::new();
-        resolver.advance(3600);
-        assert_eq!(resolver.spawns, 0);
         for primary in [None, Some("en0")] {
             let empty = Network::read(primary, None, |_| IfaceAddrs::default());
             let answer = resolver.answer(empty);
@@ -422,6 +473,60 @@ mod tests {
     }
 
     #[test]
+    fn addresses_retry_an_abandoned_lookup_after_the_failure_ttl() {
+        let mut resolver = Resolver::new();
+        assert_eq!(resolver.answer(network()).public_ip, PublicIp::Pending);
+        // Bracket the drop's continuous clock, then drive the request clock without waiting.
+        let before = continuous_ns();
+        drop(resolver.pending.take().unwrap());
+        let after = continuous_ns();
+        resolver.now_ns = before;
+        resolver.advance(599);
+        assert_eq!(
+            resolver.answer(network()).public_ip,
+            unavailable("public IP lookup did not finish")
+        );
+        assert_eq!(resolver.spawns, 1);
+        resolver.now_ns = after;
+        resolver.advance(600);
+        assert_eq!(resolver.answer(network()).public_ip, PublicIp::Pending);
+        assert_eq!(resolver.spawns, 2);
+    }
+
+    #[test]
+    fn addresses_report_rotated_ipv6_without_refreshing_the_public_ip() {
+        let read = |primary: Option<_>, egress| {
+            Network::read(Some("en0"), Some("utun3".into()), |iface| IfaceAddrs {
+                ipv4: Vec::new(),
+                ipv6: if iface == "en0" { primary } else { egress }
+                    .into_iter()
+                    .collect(),
+            })
+        };
+        let first = "2001:db8::1".parse().unwrap();
+        let rotated = "2001:db8::2".parse().unwrap();
+        let mut resolver = Resolver::new();
+        assert_eq!(
+            resolver.answer(read(Some(first), Some(first))).public_ip,
+            PublicIp::Pending
+        );
+        // Rotation during the lookup also leaves it valid.
+        assert_eq!(
+            resolver.answer(read(Some(rotated), Some(first))).public_ip,
+            PublicIp::Pending
+        );
+        resolver.finish_curl(Ok(ip()));
+        assert_eq!(
+            resolver.answer(read(Some(rotated), None)).public_ip,
+            unavailable("no local address")
+        );
+        let answer = resolver.answer(read(Some(rotated), Some(rotated)));
+        assert_eq!(answer.ipv6, [rotated]);
+        assert_eq!(answer.public_ip, PublicIp::Known { ip: ip() });
+        assert_eq!(resolver.spawns, 1);
+    }
+
+    #[test]
     fn addresses_refresh_when_the_local_ip_primary_or_egress_changes() {
         for changed in [
             Network {
@@ -503,7 +608,13 @@ mod tests {
             let args = command.get_args().collect::<Vec<_>>();
             assert!(args.contains(&std::ffi::OsStr::new("https://api.ipify.org")));
             assert!(args.windows(2).any(|pair| pair == ["--max-time", "5"]));
-            assert!(args.windows(2).any(|pair| pair == ["--noproxy", "*"]));
+            assert!(!args.contains(&std::ffi::OsStr::new("--noproxy")));
+            assert!(command.get_envs().all(|(name, _)| {
+                !matches!(
+                    name.to_str(),
+                    Some("https_proxy" | "HTTPS_PROXY" | "all_proxy" | "ALL_PROXY")
+                )
+            }));
             Err(io::ErrorKind::NotFound.into())
         }));
         for _ in 0..599 {
@@ -543,6 +654,37 @@ mod tests {
         assert_eq!(resolver.spawns, 1);
         resolver.advance(1);
         assert_eq!(resolver.answer(network()).public_ip, PublicIp::Pending);
+    }
+
+    #[test]
+    fn addresses_explain_curl_exit_codes_without_exposing_raw_output() {
+        use std::os::unix::process::ExitStatusExt;
+        let actual: Vec<_> = [6, 7, 22, 28, 35, 60, 99]
+            .into_iter()
+            .map(|code| {
+                lookup_with(|_| {
+                    Ok(std::process::Output {
+                        status: std::process::ExitStatus::from_raw(code << 8),
+                        stdout: Vec::new(),
+                        stderr: b"curl: private proxy name".to_vec(),
+                    })
+                })
+                .unwrap_err()
+                .to_string()
+            })
+            .collect();
+        assert_eq!(
+            actual,
+            [
+                "could not resolve api.ipify.org",
+                "could not connect to api.ipify.org",
+                "api.ipify.org returned an HTTP error",
+                "public IP lookup timed out",
+                "could not establish a secure connection to api.ipify.org",
+                "could not verify the TLS certificate for api.ipify.org",
+                "curl could not read the public IP",
+            ]
+        );
     }
 
     #[test]
