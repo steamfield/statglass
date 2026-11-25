@@ -110,6 +110,11 @@ pub const RECENT_MS: i64 = 120_000;
 /// 1 s).
 pub const EARLIER_CHUNK_ROWS: usize = 600;
 
+/// How long a window waits for a pending refill (D-159) before it shows what the ring
+/// holds. A refill normally lands within a few seconds; one that never comes (live
+/// detail withheld, or the screen left before it asked) must not hold a chart empty.
+pub const REFILL_WAIT_MS: i64 = 10_000;
+
 /// Older history starts after the first frame, or this long after the stream started if
 /// no frame comes (paused, or a slow interval).
 pub const EARLIER_AFTER: Duration = Duration::from_secs(1);
@@ -269,8 +274,9 @@ struct Stream {
     earlier_go: bool,
     earlier_at: Instant,
     /// The plan told the window to wait for a refill the source had not made yet
-    /// ([`LiveHub::refill_pending`]); if the refill adds nothing, a plan says so.
-    awaiting_refill: bool,
+    /// ([`LiveHub::refill_pending`]), until this frame time at the latest; if the
+    /// refill adds nothing or never comes, a plan says so.
+    awaiting_refill: Option<i64>,
 }
 
 impl Stream {
@@ -305,7 +311,7 @@ impl Stream {
             earlier: VecDeque::new(),
             earlier_go: false,
             earlier_at: Instant::now(),
-            awaiting_refill: false,
+            awaiting_refill: None,
         }
     }
 
@@ -405,7 +411,9 @@ impl Stream {
             self.sent_until = i64::MIN;
             self.last_frame_ts = None;
         } else {
-            if self.awaiting_refill && !self.feed.hub().refill_pending() {
+            if let Some(deadline) = self.awaiting_refill
+                && (!self.feed.hub().refill_pending() || f.ts_ms >= deadline)
+            {
                 if self
                     .feed
                     .hub()
@@ -420,9 +428,9 @@ impl Stream {
                     self.last_frame_ts = None;
                     return Ok(());
                 }
-                // The refill the window waits for added nothing, so no new timeline
-                // follows to end the wait.
-                self.awaiting_refill = false;
+                // The refill the window waits for added nothing, or has not come in
+                // REFILL_WAIT_MS, so no new timeline follows to end the wait.
+                self.awaiting_refill = None;
                 self.send(LiveMsg::BackfillPlan {
                     recent_rows: 0,
                     earlier_start_ms: None,

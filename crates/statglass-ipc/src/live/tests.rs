@@ -1690,6 +1690,36 @@ async fn a_refill_that_adds_nothing_still_ends_the_wait() {
     assert_eq!(drain(&rx).await, ["frame 1 @23000"], "the plan goes once");
 }
 
+/// A refill that never comes (live detail withheld) must not hold the window empty:
+/// after `REFILL_WAIT_MS` of frames the stream says to stop waiting.
+#[tokio::test(start_paused = true)]
+async fn a_refill_that_never_comes_ends_the_wait_after_the_bound() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    feed.tick(&l, 20_000, 1.0);
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    drain(&rx).await;
+
+    feed.tick(&l, 20_000 + REFILL_WAIT_MS - 1_000, 2.0);
+    let waiting = drain(&rx).await;
+    assert!(
+        waiting.iter().all(|m| !m.starts_with("plan")),
+        "{waiting:?}"
+    );
+    feed.tick(&l, 20_000 + REFILL_WAIT_MS, 3.0);
+    assert_eq!(
+        drain(&rx).await,
+        [
+            "plan 0 None".to_string(),
+            format!("frame 1 @{}", 20_000 + REFILL_WAIT_MS)
+        ]
+    );
+}
+
 /// The refill can land while a frame from before it still sits on the bus. That frame
 /// must not end the wait with an empty plan: the stream restarts on the ring's new
 /// timeline instead, so the window takes the whole range at once.

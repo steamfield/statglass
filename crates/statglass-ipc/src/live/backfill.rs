@@ -123,7 +123,7 @@ impl Stream {
         }
         if stepped_from.is_some() || self.last_ts.is_some() {
             if stepped_from.is_some() {
-                self.awaiting_refill = false;
+                self.awaiting_refill = None;
                 self.send_plan(&segs, None)?;
             }
             for seg in segs.into_iter().flat_map(chunks) {
@@ -150,9 +150,9 @@ impl Stream {
         out.earlier_start = earlier.first().map(|s| s.start_ms);
         // A source still to refill its ring has more history than the ring holds: the
         // window waits for the whole range, which arrives on a new timeline.
-        self.awaiting_refill =
-            out.earlier_start.is_none() && self.backfill_ms > 0 && hub.refill_pending();
-        let wait_from = self.awaiting_refill.then(|| anchor - self.backfill_ms);
+        let waits = out.earlier_start.is_none() && self.backfill_ms > 0 && hub.refill_pending();
+        self.awaiting_refill = waits.then(|| anchor + REFILL_WAIT_MS);
+        let wait_from = waits.then(|| anchor - self.backfill_ms);
         self.send_plan(&recent, out.earlier_start.or(wait_from))?;
         for seg in &recent {
             out.first.get_or_insert(seg.start_ms);

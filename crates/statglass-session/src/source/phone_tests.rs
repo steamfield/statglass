@@ -455,12 +455,11 @@ async fn desktop_detail_still_syncs_all_tiers_before_requesting_recent_rows() {
     ));
 }
 
-/// The phone keeps no mirror (D-154), so live detail asks the host for its recent rows
-/// once and the ring shows the minutes before the connection, not only frames since.
 #[tokio::test(start_paused = true)]
-async fn without_live_detail_no_window_waits_for_a_refill() {
-    // Cellular can withhold live detail; the refill then never runs, so nothing may
-    // promise it.
+async fn a_refill_is_promised_before_live_detail_reaches_the_session() {
+    // A screen subscribes a frame before its demand turns live detail on, so the
+    // promise cannot wait for detail; a window that never gets the refill stops
+    // waiting on its own (`REFILL_WAIT_MS`).
     let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
@@ -468,9 +467,11 @@ async fn without_live_detail_no_window_waits_for_a_refill() {
     for _ in 0..10 {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(!phone.live.refill_pending());
+    assert!(phone.live.refill_pending());
 }
 
+/// The phone keeps no mirror (D-154), so live detail asks the host for its recent rows
+/// once and the ring shows the minutes before the connection, not only frames since.
 #[tokio::test(start_paused = true)]
 async fn phone_detail_refills_the_ring_from_recent_rows_once() {
     use statglass_proto::{WireBucket, WireLayout};
