@@ -5310,7 +5310,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "statglass"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -5363,7 +5363,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-agent"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "qrcode",
@@ -5386,7 +5386,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-cli"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "clap",
  "serde",
@@ -5398,7 +5398,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-collect"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "block2",
  "bollard",
@@ -5423,7 +5423,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-engine"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -5449,7 +5449,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-ipc"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5466,7 +5466,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-mobile"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "p256",
  "serde",
@@ -5487,7 +5487,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-notify"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "statglass-schema",
  "uuid",
@@ -5495,7 +5495,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-proto"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "ciborium",
  "serde",
@@ -5506,7 +5506,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-query"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "jiff",
  "rustix",
@@ -5521,7 +5521,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-remote"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "jiff",
  "libc",
@@ -5544,7 +5544,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-remote-helper"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "serde_json",
  "statglass-remote",
@@ -5554,7 +5554,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-schema"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "ciborium",
  "compact_str",
@@ -5570,7 +5570,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-session"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "libc",
  "serde",
@@ -5588,7 +5588,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-ssh"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "p256",
  "russh",
@@ -5606,7 +5606,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-store"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "ciborium",
@@ -5626,7 +5626,7 @@ dependencies = [
 
 [[package]]
 name = "statglass-update"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "base64 0.23.1",
  "minisign-verify",
