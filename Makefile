@@ -1,6 +1,6 @@
 .PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test ssh-docker-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
-.PHONY: verification-test updater-patch-test mobile-check mobile-rust-check
+.PHONY: verification-test updater-patch-test mobile-check mobile-rust-check mobile-native-check
 
 # All library crates are portable by default. New workspace crates enter this gate
 # automatically; only the macOS shell and separately checked helper are excluded.
@@ -127,6 +127,10 @@ mobile-check:
 # statglass-mobile and its dependency closure for the iOS simulator target.
 mobile-rust-check:
 	scripts/mobile/check-rust-ios.sh
+
+# The XCFramework, its Swift bindings and the native module, built for the simulator.
+mobile-native-check:
+	scripts/mobile/native-check.sh
 
 # The patched dependency is outside the workspace; keep its native permission
 # regression in the local quality gate as well as release acceptance.

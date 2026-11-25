@@ -51,6 +51,14 @@ test("maps @/<path> to the app's own src/<path>", () => {
   expect(resolved.filePath).toBe(path.join(appRoot, "src", "lib/providers"));
 });
 
+test("maps @native/<path> to the app's local Expo modules/<path>", () => {
+  const resolved = resolve(metroContext, "@native/statglass-native", "ios");
+
+  expect(resolved.filePath).toBe(
+    path.join(appRoot, "modules", "statglass-native")
+  );
+});
+
 test.each([
   "react",
   "react/jsx-runtime",

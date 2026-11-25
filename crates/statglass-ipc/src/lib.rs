@@ -9,6 +9,7 @@
 pub mod error; // CommandError and every From<crate error> it needs (scaffold-owned)
 pub mod history; // TierRequest, HistoryRequest/HistoryPage/HistorySeries/HistoryPoint, query_history, query_events
 pub mod live; // LiveFeed, LiveSink, LiveRegistry, RecentFeed, LiveMsg/LiveStatus/SubscriptionInfo, LiveRequest
+pub mod mobile; // MobileConfig/MobileHost/MobileCall/MobileRemoteHost/MobileEvent: the phone core's surface
 pub mod process; // LiveProcess, SignalRefusal (data only), RefusalSource, live_quit_set
 pub mod status; // RemoteConnection, RemoteState/RemoteRoute/RemoteSync/RemoteFailureKind/RemoteRouteFailure
 pub mod vitals; // HostVitals, MemoryPressure, host_vitals

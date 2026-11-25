@@ -595,6 +595,15 @@ export type CoreKind = "performance" | "efficiency" |
 /**  A core type this build does not know, from a newer peer (D-040). */
 "unknown";
 
+/**  The phone's choices about mobile data, from its settings. */
+export type DataPolicy = {
+	/**
+	 *  Sync history while the phone's path is cellular (expensive). Off: history waits
+	 *  for Wi-Fi; live frames still flow.
+	 */
+	sync_on_cellular: boolean,
+};
+
 /**  Why a delivery failed, as far as the caller needs to tell failures apart. */
 export type DeliveryFailure =
 /**  The curl binary is not where it was expected. */
@@ -2062,6 +2071,161 @@ export type Micros = number;
 export type Millis = number;
 
 /**
+ *  One call from the app. `call(method, args_json)` receives the tag and the content
+ *  separately; the facade reassembles them into this. Each variant names its result.
+ */
+export type MobileCall =
+/**  `BuildInfo`: the core's version and protocol range (also `version()`). */
+{ method: "build_info" } |
+/**  `null`. Replaces the hosts the core runs sessions for. */
+{ method: "set_hosts"; args: {
+	hosts: MobileHost[],
+} } |
+/**  `null`. Applies the data policy to every source. */
+{ method: "set_data_policy"; args: DataPolicy } |
+/**  `string`: the `authorized_keys` line for this phone's key. */
+{ method: "authorized_key_line"; args: {
+	comment: string,
+} } |
+/**  `HostRecord[]`, in the order the hosts were set. */
+{ method: "list_hosts" } |
+/**  `MobileRemoteHost[]`, same order. */
+{ method: "list_remote_hosts" } |
+/**  `HostRecord`. */
+{ method: "get_host"; args: {
+	host: HostId,
+} } |
+/**  `Capabilities`. */
+{ method: "get_capabilities"; args: {
+	host: HostId,
+} } |
+/**  `HostVitals`. */
+{ method: "host_vitals"; args: {
+	host: HostId,
+} } |
+/**  `null`. Summary history demand from the hosts list. */
+{ method: "set_hosts_recent_interest"; args: {
+	on: boolean,
+} } |
+/**  `null`. Dials a host now. */
+{ method: "retry_remote_host"; args: {
+	host: HostId,
+} } |
+/**  `SubscriptionInfo`. Messages arrive through `CoreEvents::live` tagged `stream`. */
+{ method: "subscribe_live"; args: MobileLiveRequest } |
+/**  `null`. Ends a stream; unknown streams are ignored. */
+{ method: "unsubscribe_live"; args: {
+	stream: number,
+} } |
+/**  `HistoryPage`. */
+{ method: "query_history"; args: HistoryRequest } |
+/**  `Event[]`, oldest first. */
+{ method: "query_events"; args: {
+	host: HostId,
+	from_ms: number,
+	to_ms: number,
+} };
+
+/**  What the session asks the host to run. */
+export type MobileCommand =
+/**  A paired, forced-command key: the session sends the bare `serve` token. */
+{ kind: "restricted" } |
+/**  A full key on a Mac: the bundled helper at `path` (empty: the per-user install). */
+{ kind: "mac_helper"; path: string } |
+/**  A full key on a Linux host running the headless agent. */
+{ kind: "agent"; bin: string; system: boolean; socket: string | null };
+
+/**
+ *  What the core starts with. The app's data directory comes from Swift, which owns the
+ *  file protection and backup exclusion of the mirrors (RFC 3.4, 3.8).
+ */
+export type MobileConfig = {
+	hosts: MobileHost[],
+	data: DataPolicy,
+};
+
+/**  Something the core tells the app outside a live stream, through `CoreEvents::event`. */
+export type MobileEvent =
+/**  Every host record, in order, when one changes. */
+{ kind: "hosts_changed"; hosts: HostRecord[] } |
+/**  A remote host's status changed; read `list_remote_hosts` again. */
+{ kind: "remote_hosts_changed" };
+
+/**  A host the phone reaches over SSH, as pairing (phase 7) or the debug screen gives it. */
+export type MobileHost = {
+	id: HostId,
+	/**  The name shown until the host introduces itself. */
+	name: string,
+	user: string,
+	/**  `None`: 22. */
+	port: number | null,
+	/**  Dial targets in preference order, at most four (`statglass_session::MAX_TARGETS`). */
+	targets: MobileTarget[],
+	/**  The host keys pairing pinned; at least one. */
+	host_keys: MobileHostKey[],
+	command: MobileCommand,
+};
+
+/**  A pinned host key, as `ssh-keygen -l` prints it. */
+export type MobileHostKey = {
+	/**  For example `ssh-ed25519`. */
+	algorithm: string,
+	/**  `SHA256:` followed by the unpadded base64 fingerprint. */
+	sha256: string,
+};
+
+/**
+ *  A live stream the app opens. The app picks `stream`, unique among its open streams,
+ *  so it can route messages before the call returns.
+ */
+export type MobileLiveRequest = {
+	host: HostId,
+	stream: number,
+	/**  Ring history to send first, ms; `None`: the desktop default (60 s). */
+	backfill_ms: number | null,
+	/**  Only these series; `None`: every series. */
+	series: SeriesSelector[] | null,
+	/**  At most one frame per this many ms; `None`: every tick. */
+	min_period_ms: number | null,
+};
+
+/**
+ *  A remote host's state as the phone shows it: the platform-neutral part of the
+ *  desktop's `RemoteHostStatus`, with nothing about remote runs or agent updates.
+ */
+export type MobileRemoteHost = {
+	id: HostId,
+	name: string,
+	os: OsKind,
+	targets: MobileTarget[],
+	/**  This host's share of the phone's mirror storage. */
+	mirror_budget_mb: number,
+	connection: RemoteConnection,
+	/**  Host clock, ms. */
+	last_seen_ms: number | null,
+	/**  End of the newest mirrored bucket on disk (host clock). */
+	synced_through_ms: number | null,
+	/**  The phone's wall-clock time of the next automatic attempt. */
+	next_attempt_ms: number | null,
+	attempt: number,
+	dialing: boolean,
+	waiting_for_network: boolean,
+	clock_offset_ms: number | null,
+	vitals: HostVitals,
+	/**  The host's `Hello.app_version`, kept after it disconnects. */
+	agent_version: string | null,
+	/**  The id the host answered with when it is not the paired one. */
+	identity_changed: HostId | null,
+};
+
+/**  One way to reach a host. */
+export type MobileTarget = {
+	route: RemoteRoute,
+	/**  A DNS name, `.local` name or address literal; resolved by the system resolver. */
+	host: string,
+};
+
+/**
  *  A UI and settings module. Every metric belongs to exactly one.
  *
  *  Serialized in snake_case (`"cpu"`), the same text the store writes to `gaps.module`.
@@ -2545,6 +2709,20 @@ export type RemoteAccessSettings = {
  *  user service (D-116).
  */
 export type RemoteAgentLayout = "system" | "user";
+
+/**  The platform-neutral part of a remote host's status. */
+export type RemoteConnection = {
+	state: RemoteState,
+	route: RemoteRoute | null,
+	sync: RemoteSync,
+	failure: RemoteFailureKind | null,
+	message: string | null,
+	/**
+	 *  Per-route causes of the last failure; empty while connected or when the failure
+	 *  was not specific to a route.
+	 */
+	route_failures: RemoteRouteFailure[],
+};
 
 /**  Whether the agent's login can use the Docker socket to name containers. */
 export type RemoteDockerAccess =

@@ -2,7 +2,7 @@
 //! keeps a Rust panic from crossing the FFI boundary.
 //!
 //! The shape matches the desktop's typed command results, `{"status":"ok","data":...}`
-//! or `{"status":"error","error":{"kind":...}}`, so the TypeScript side maps both the
+//! or `{"status":"error","error":CommandError}`, so the TypeScript side maps both the
 //! same way.
 
 use std::any::Any;
@@ -10,36 +10,46 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use serde::Serialize;
 use serde_json::json;
+use statglass_ipc::error::CommandError;
 
 /// One exported call's outcome, serialized as the command envelope.
 #[derive(Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 enum Envelope<T> {
     Ok { data: T },
-    Error { error: FacadeError },
-}
-
-/// The error side of the envelope, serialized like the desktop's `CommandError`.
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum FacadeError {
-    /// The call panicked; `message` carries the panic text when there is one.
-    Internal { message: String },
+    Error { error: CommandError },
 }
 
 /// Runs `body`, catching any panic, and returns its result as the JSON envelope.
 pub(crate) fn run<T: Serialize>(body: impl FnOnce() -> T) -> String {
+    run_result(|| Ok(body()))
+}
+
+/// Runs a fallible `body`, catching any panic, and returns its result or its
+/// `CommandError` as the JSON envelope.
+pub(crate) fn run_result<T: Serialize>(body: impl FnOnce() -> Result<T, CommandError>) -> String {
     // The body's state is dropped with the panic and never observed again, so a
     // broken invariant inside it cannot leak to the caller.
-    let envelope = match catch_unwind(AssertUnwindSafe(body)) {
+    let outcome = catch_unwind(AssertUnwindSafe(body))
+        .unwrap_or_else(|payload| Err(panicked(payload.as_ref())));
+    encode(outcome)
+}
+
+/// The envelope of an outcome already computed (an awaited task's result).
+pub(crate) fn encode<T: Serialize>(outcome: Result<T, CommandError>) -> String {
+    let envelope = match outcome {
         Ok(data) => Envelope::Ok { data },
-        Err(payload) => Envelope::Error {
-            error: FacadeError::Internal {
-                message: panic_message(payload.as_ref()),
-            },
-        },
+        Err(error) => Envelope::Error { error },
     };
     serde_json::to_string(&envelope).unwrap_or_else(|err| serialize_failure(&err))
+}
+
+/// The `internal` error for a panic payload: an exported body, or a task it awaited,
+/// panicked.
+pub(crate) fn panicked(payload: &(dyn Any + Send)) -> CommandError {
+    CommandError::Internal {
+        message: panic_message(payload),
+    }
 }
 
 /// The text of a panic payload, or a fixed description when it carries no string.
@@ -106,6 +116,22 @@ mod tests {
         assert_eq!(
             parsed(&text)["error"]["message"],
             "panic in statglass-mobile: ring net gone"
+        );
+    }
+
+    #[test]
+    fn a_command_error_is_an_error_envelope_with_its_kind() {
+        let text = run_result(|| -> Result<u8, CommandError> {
+            Err(CommandError::InvalidArgument {
+                message: "no such method".into(),
+            })
+        });
+        assert_eq!(
+            parsed(&text),
+            json!({
+                "status": "error",
+                "error": { "kind": "invalid_argument", "message": "no such method" },
+            })
         );
     }
 

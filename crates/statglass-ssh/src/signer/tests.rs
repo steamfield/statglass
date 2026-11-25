@@ -51,3 +51,24 @@ fn rejects_malformed_der_and_invalid_p256_scalars() {
         ));
     }
 }
+
+#[test]
+fn authorized_key_line_from_a_public_point_matches_the_software_key() {
+    let key = SoftwareSigner::generate();
+
+    let line = authorized_key_line(key.public_key(), "phone").unwrap();
+
+    assert_eq!(line, key.authorized_key_line("phone"));
+}
+
+#[test]
+fn authorized_key_line_rejects_a_point_that_is_not_uncompressed_p256() {
+    let key = SoftwareSigner::generate();
+
+    for point in [&key.public_key()[..64], &[0_u8; 65][..], &[][..]] {
+        assert!(matches!(
+            authorized_key_line(point, "phone"),
+            Err(SignerError::Invalid(_))
+        ));
+    }
+}
