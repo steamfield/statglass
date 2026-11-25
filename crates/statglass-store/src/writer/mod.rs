@@ -26,7 +26,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -51,6 +51,7 @@ mod txn;
 mod usage;
 mod usage_prune;
 
+pub use discard::HistoryCacheEpoch;
 pub use intern::NET_NEW_NAMES_PER_HOUR;
 
 type Reply<T> = mpsc::SyncSender<Result<T>>;
@@ -134,6 +135,7 @@ impl WriteStats {
 #[derive(Clone)]
 pub struct Writer {
     tx: mpsc::Sender<Op>,
+    history_epoch: Arc<AtomicU64>,
     docker_admission: Arc<std::sync::Mutex<docker::Admission>>,
     docker_coordination: Arc<std::sync::Mutex<()>>,
     usage_tickets: Arc<usage::UsageTickets>,
@@ -350,12 +352,6 @@ impl Writer {
         self.s10_paused.load(Ordering::Relaxed)
     }
 
-    /// Deletes every history row of `host` (Settings, "Clear history"). Series, layouts
-    /// and the host record stay. A remote cursor into the cleared span gets `Truncated`.
-    pub fn clear_host(&self, host: HostId, now_ms: i64) -> Result<()> {
-        self.call(|r| Op::ClearHost(host, now_ms, r))
-    }
-
     /// Deletes every row of `host` stamped at or after `from_ms`, and commits: buckets of
     /// every tier, process snapshots and their roll-ups, network rows of every tier,
     /// events, and gaps that start there. A closed gap that began earlier and ended later
@@ -397,6 +393,7 @@ impl Writer {
 
     /// Commits, checkpoints the WAL and stops the thread.
     pub(crate) fn shutdown(&self) -> Result<()> {
+        self.history_epoch.fetch_add(1, Ordering::Release);
         self.call(Op::Shutdown)
     }
 }
@@ -423,12 +420,14 @@ pub(crate) fn spawn(
     let docker_admission = Arc::clone(&state.docker_admission);
     let docker_coordination = Arc::clone(&state.docker_coordination);
     let usage_tickets = Arc::clone(&state.usage_batch.tickets);
+    let history_epoch = state.history_epoch.clone();
     let handle = std::thread::Builder::new()
         .name("statglass-store-writer".into())
         .spawn(move || state.run())?;
     Ok((
         Writer {
             tx,
+            history_epoch,
             docker_admission,
             docker_coordination,
             usage_tickets,
@@ -441,6 +440,7 @@ pub(crate) fn spawn(
 }
 
 struct State {
+    history_epoch: Arc<AtomicU64>,
     docker_admission: Arc<std::sync::Mutex<docker::Admission>>,
     docker_coordination: Arc<std::sync::Mutex<()>>,
     docker_pending: Vec<docker::Applied>,
@@ -518,6 +518,7 @@ impl State {
             )?
             .max(0) as u64;
         Ok(State {
+            history_epoch: Arc::default(),
             docker_admission: Arc::new(std::sync::Mutex::new(docker::Admission {
                 logical_bytes,
                 allowance: crate::docker::allowance(150_000_000),

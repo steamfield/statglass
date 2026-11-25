@@ -210,7 +210,7 @@ async fn history_ranges_replace_only_waiting_queries_for_the_same_chart() {
 
     first.send(()).expect("finish active history");
     expect_done(&mut client, 1).await;
-    for id in [3, 4, 5] {
+    for id in [5, 3, 4] {
         started(&mut reads, id)
             .await
             .send(())
@@ -239,7 +239,7 @@ async fn history_queue_rejects_a_ninth_waiter_and_still_accepts_replacements() {
     expect_done(&mut client, 12).await;
     first.send(()).expect("finish active history");
     expect_done(&mut client, 1).await;
-    for id in (3..=9).chain([11]) {
+    for id in [11].into_iter().chain(3..=9) {
         started(&mut reads, id)
             .await
             .send(())
@@ -248,6 +248,41 @@ async fn history_queue_rejects_a_ninth_waiter_and_still_accepts_replacements() {
     }
     drop(client);
     assert!(server.await.expect("join session").is_err());
+}
+
+#[tokio::test]
+async fn disconnect_drops_waiting_history_without_starting_another_read() {
+    let (host, mut reads) = host();
+    let (mut client, server) = session(host).await;
+    let cpu = ["cpu.total"];
+    request(&mut client, 1, history(1, 200, &cpu)).await;
+    let first = started(&mut reads, 1).await;
+    for id in 2..=4 {
+        request(&mut client, id, history(i64::from(id), 200 + id, &cpu)).await;
+    }
+    codec::write(&mut client, &Message::Ping { nonce: 1, t0_ms: 0 })
+        .await
+        .expect("send a barrier after the queued requests");
+    assert!(matches!(
+        receive(&mut client).await,
+        Message::Pong { nonce: 1, .. }
+    ));
+    drop(client);
+    assert!(
+        timeout(DEADLINE, server)
+            .await
+            .expect("session ended")
+            .expect("join session")
+            .is_err()
+    );
+    first.send(()).expect("finish the active history read");
+    assert!(
+        timeout(DEADLINE, reads.recv())
+            .await
+            .expect("history worker ended")
+            .is_none(),
+        "a queued read started after disconnect"
+    );
 }
 
 #[test]

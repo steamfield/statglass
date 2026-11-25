@@ -97,7 +97,8 @@ impl Answering {
             return self.start_history(id, history);
         }
         // Waiting history has its own bound and takes no slots from other queries.
-        if self.in_flight - self.history.lock_ok().waiting.len() >= MAX_IN_FLIGHT {
+        let waiting = self.history.lock_ok().waiting.len();
+        if self.in_flight.saturating_sub(waiting) >= MAX_IN_FLIGHT {
             return Some(busy_reply(id));
         }
         self.in_flight += 1;
@@ -123,18 +124,17 @@ impl Answering {
         let mut queue = self.history.lock_ok();
         if queue.running {
             let pending = PendingHistory::new(id, query);
-            let superseded = queue
+            if let Some(older) = queue
                 .waiting
-                .iter()
-                .position(|older| pending.same_chart(older))
-                .and_then(|position| queue.waiting.remove(position));
+                .iter_mut()
+                .find(|older| pending.same_chart(older))
+            {
+                return Some(busy_reply(std::mem::replace(older, pending).id));
+            }
             if queue.waiting.len() >= MAX_IN_FLIGHT {
                 return Some(busy_reply(id));
             }
             queue.waiting.push_back(pending);
-            if let Some(older) = superseded {
-                return Some(busy_reply(older.id));
-            }
         } else {
             if self.in_flight >= MAX_IN_FLIGHT {
                 return Some(busy_reply(id));
@@ -192,19 +192,26 @@ fn busy_reply(id: u32) -> Message {
 /// Answers on the blocking pool and encodes the reply frame there, with an error in its
 /// place when the answer would not fit in a frame.
 async fn answer(provider: Arc<dyn ServerProvider>, session: u64, id: u32, query: Query) -> Vec<u8> {
-    let permit = if matches!(query, Query::History(_))
+    let (cached, permit) = if let Query::History(history) = &query
         && let Some(limits) = provider.history_limits()
     {
-        let Ok(permit) = limits.try_acquire() else {
-            return statglass_proto::encode_frame(&busy_reply(id)).unwrap_or_default();
-        };
-        Some(permit)
+        if let Some(cached) = limits.cached_answer(history) {
+            (Some(cached), None)
+        } else {
+            let Ok(permit) = limits.try_acquire() else {
+                return statglass_proto::encode_frame(&busy_reply(id)).unwrap_or_default();
+            };
+            (None, Some(permit))
+        }
     } else {
-        None
+        (None, None)
     };
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let answer = provider.answer(session, query);
+        let answer = match cached {
+            Some(history) => Answer::History((*history).clone()),
+            None => provider.answer(session, query),
+        };
         let frame = statglass_proto::encode_frame(&Message::Reply { id, answer })
             .ok()
             .filter(|bytes| bytes.len() <= codec::MAX_WIRE_BYTES + 4);

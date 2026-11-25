@@ -3,25 +3,31 @@
 #[path = "support/history_seed.rs"]
 mod history_seed;
 
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use statglass_engine::{
     ClockReading, Engine, EngineParts, FakeTicker, HistoryStore, LiveHub, NoPowerSignals,
-    SourceSink,
+    NoScaleStore, SourceSink,
 };
 use statglass_proto::{
-    Answer, Hello, HistoryAnswer, HistoryQuery, LiveTier, Message, Offer, Query, RemoteInterest,
-    SyncRequest, WireHistorySeries,
+    Answer, ErrorCode, Hello, HistoryAnswer, HistoryQuery, LiveTier, Message, Offer, Query,
+    RemoteInterest, SyncRequest, WireHistorySeries,
 };
 use statglass_remote::{
-    HostServer, ServedHost, ServerProvider, history_query::limits::HistoryLimits, serve_connection,
+    HostServer, ServedHost, ServerProvider,
+    history_query::limits::{HISTORY_MAX_CONCURRENT, HistoryLimits},
+    serve_connection,
 };
 use statglass_schema::{
     Capabilities, HostId, HostRecord, SeriesKey, SeriesSelector, Settings, SyncKinds, Tier,
     floor_to,
 };
 use statglass_session::codec;
-use statglass_store::{BucketRow, TierChoice};
+use statglass_store::{BucketRow, HistoryQuery as StoreQuery, TierChoice};
 use tokio::{
     io::DuplexStream,
     sync::{mpsc, oneshot},
@@ -30,8 +36,13 @@ use tokio::{
 
 const DAY_MS: i64 = 86_400_000;
 const SERIES: usize = 32;
-const TICKS: u32 = 8;
+const TICKS: u32 = 16;
 const DEADLINE: Duration = Duration::from_secs(5);
+// Allow scheduler jitter around the same single-collector pump on a loaded test host.
+const PUMP_TOLERANCE: Duration = Duration::from_millis(25);
+
+type Read = oneshot::Sender<()>;
+type SessionTask = tokio::task::JoinHandle<statglass_remote::Result<()>>;
 
 struct Host {
     record: HostRecord,
@@ -56,7 +67,7 @@ struct Session {
     host: Arc<Host>,
     history: Arc<HistoryStore>,
     scaffold: bool,
-    started: mpsc::UnboundedSender<oneshot::Sender<()>>,
+    started: mpsc::UnboundedSender<Read>,
 }
 
 impl ServerProvider for Session {
@@ -196,7 +207,7 @@ async fn receive(client: &mut DuplexStream) -> Message {
         .expect("read a server message")
 }
 
-async fn subscribe(client: &mut DuplexStream) {
+async fn handshake(client: &mut DuplexStream) {
     let Message::Hello(hello) = receive(client).await else {
         panic!("expected Hello");
     };
@@ -210,6 +221,9 @@ async fn subscribe(client: &mut DuplexStream) {
         .await
         .expect("acknowledge Hello");
     assert!(matches!(receive(client).await, Message::SourceStatus(_)));
+}
+
+async fn subscribe(client: &mut DuplexStream) {
     codec::write(
         client,
         &Message::Subscribe {
@@ -237,7 +251,157 @@ async fn tick_frame(client: &mut DuplexStream) -> i64 {
     }
 }
 
-async fn run_ticks(dir: &Path, now_ms: i64, series: &[SeriesKey], with_history: bool) -> Vec<i64> {
+async fn connect(session: Arc<Session>) -> (DuplexStream, SessionTask) {
+    let (mut client, peer) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(serve_connection(peer, session));
+    handshake(&mut client).await;
+    (client, task)
+}
+
+async fn reply(client: &mut DuplexStream, expected: u32) -> Answer {
+    loop {
+        match receive(client).await {
+            Message::Reply { id, answer } => {
+                assert_eq!(id, expected);
+                return answer;
+            }
+            Message::HostSummary(_) | Message::SourceStatus(_) => {}
+            other => panic!("unexpected message from history session: {other:?}"),
+        }
+    }
+}
+
+async fn history_pair(
+    client: &mut DuplexStream,
+    now_ms: i64,
+    selectors: &[SeriesSelector],
+    session: u32,
+) {
+    for id in 1..=2 {
+        let query = Query::History(HistoryQuery {
+            series: selectors.to_vec(),
+            from_ms: now_ms - 30 * DAY_MS,
+            to_ms: Some(now_ms),
+            max_points: 200 + 2 * session + id,
+            events_for: None,
+        });
+        codec::write(client, &Message::Request { id, query })
+            .await
+            .expect("queue history");
+    }
+}
+
+async fn started(reads: &mut mpsc::UnboundedReceiver<Read>) -> Read {
+    timeout(DEADLINE, reads.recv())
+        .await
+        .expect("history read must start")
+        .expect("read started")
+}
+
+struct HistoryLoad {
+    clients: Vec<(DuplexStream, SessionTask)>,
+    reads: mpsc::UnboundedReceiver<Read>,
+    held: Vec<Read>,
+}
+
+impl HistoryLoad {
+    async fn start(
+        session: Arc<Session>,
+        mut reads: mpsc::UnboundedReceiver<Read>,
+        now_ms: i64,
+        selectors: &[SeriesSelector],
+    ) -> Self {
+        let mut clients = Vec::new();
+        let mut held = Vec::new();
+        for lane in 0..HISTORY_MAX_CONCURRENT {
+            let (mut client, task) = connect(session.clone()).await;
+            history_pair(&mut client, now_ms, selectors, lane as u32).await;
+            held.push(started(&mut reads).await);
+            clients.push((client, task));
+        }
+
+        let (mut excess, task) = connect(session).await;
+        history_pair(
+            &mut excess,
+            now_ms,
+            selectors,
+            HISTORY_MAX_CONCURRENT as u32,
+        )
+        .await;
+        for id in 1..=2 {
+            tokio::select! {
+                answer = reply(&mut excess, id) => {
+                    assert!(matches!(answer, Answer::Error { code: ErrorCode::Busy, .. }));
+                }
+                read = reads.recv() => panic!("saturated host started an excess read: {}", read.is_some()),
+            }
+        }
+        drop(excess);
+        assert!(task.await.expect("join excess session").is_err());
+        Self {
+            clients,
+            reads,
+            held,
+        }
+    }
+
+    async fn finish(mut self) {
+        for release in self.held {
+            release.send(()).expect("finish the first history read");
+        }
+        for (client, _) in &mut self.clients {
+            assert_history(reply(client, 1).await);
+        }
+        for _ in 0..HISTORY_MAX_CONCURRENT {
+            started(&mut self.reads)
+                .await
+                .send(())
+                .expect("finish the queued history read");
+        }
+        for (mut client, task) in self.clients {
+            assert_history(reply(&mut client, 2).await);
+            drop(client);
+            assert!(task.await.expect("join history session").is_err());
+        }
+    }
+}
+
+fn assert_history(answer: Answer) {
+    let Answer::History(answer) = answer else {
+        panic!("expected history, got {answer:?}");
+    };
+    assert_eq!(answer.series.len(), SERIES);
+    assert!(answer.series.iter().all(|series| !series.points.is_empty()));
+}
+
+fn memory_points(history: &HistoryStore, host: HostId, from_ms: i64, to_ms: i64) -> usize {
+    history
+        .read(|reader| {
+            reader.history(&StoreQuery {
+                host,
+                selectors: vec![SeriesSelector {
+                    metric: statglass_schema::MetricId::parse("mem.used").expect("valid metric"),
+                    labels: Default::default(),
+                }],
+                from_ms,
+                to_ms,
+                tier: TierChoice::Fixed(Tier::S10),
+                max_points: TICKS,
+            })
+        })
+        .expect("read the writer's S10 buckets")
+        .series
+        .iter()
+        .map(|series| series.points.len())
+        .sum()
+}
+
+async fn run_ticks(
+    dir: &Path,
+    now_ms: i64,
+    series: &[SeriesKey],
+    with_history: bool,
+) -> (Vec<i64>, Duration) {
     let (history, record, scaffold) = fixture(dir, series, now_ms);
     let host = Arc::new(Host {
         record,
@@ -247,91 +411,111 @@ async fn run_ticks(dir: &Path, now_ms: i64, series: &[SeriesKey], with_history: 
         wall_ms: now_ms,
         ..Default::default()
     });
+    let mut parts = EngineParts::platform(Arc::new(NoScaleStore));
+    parts
+        .collectors
+        .retain(|collector| collector.id().0 == "memory");
+    parts.ticker = Box::new(ticker);
+    parts.power = Box::new(NoPowerSignals);
+    parts.hints = None;
+    let writer = history.writer().expect("open history writer");
     let mut engine = Engine::new(
         host.record.id,
-        EngineParts {
-            collectors: Vec::new(),
-            ticker: Box::new(ticker),
-            power: Box::new(NoPowerSignals),
-            hints: None,
-        },
+        parts,
         SourceSink {
             live: host.hub.clone(),
-            store: Some(history.writer().expect("open history writer")),
+            store: Some(writer.clone()),
         },
         &Settings::default(),
     );
     engine.start();
+    drop(engine.control().set_detail_interest(true));
+    assert!(engine.pump());
     let period_ms = clock.period().expect("ticker started").as_millis() as i64;
-    let (started, mut reads) = mpsc::unbounded_channel();
+
+    let (started, reads) = mpsc::unbounded_channel();
     let session = Arc::new(Session {
         server: HostServer::new(host.clone(), history.clone()),
-        host,
-        history,
+        host: host.clone(),
+        history: history.clone(),
         scaffold,
         started,
     });
-    let (mut client, server) = tokio::io::duplex(64 * 1024);
-    let server = tokio::spawn(serve_connection(server, session));
+    let (mut client, server) = connect(session.clone()).await;
     subscribe(&mut client).await;
+    let load = if with_history {
+        let selectors: Vec<_> = series
+            .iter()
+            .map(|key| SeriesSelector {
+                metric: key.metric.clone(),
+                labels: key.labels.clone(),
+            })
+            .collect();
+        Some(HistoryLoad::start(session, reads, now_ms, &selectors).await)
+    } else {
+        None
+    };
+    let (mut delivered, before_flush) = sample_ticks(
+        &mut engine,
+        &clock,
+        &mut client,
+        now_ms,
+        period_ms,
+        1..=TICKS - 2,
+    )
+    .await;
 
-    let selectors: Vec<_> = series
-        .iter()
-        .map(|key| SeriesSelector {
-            metric: key.metric.clone(),
-            labels: key.labels.clone(),
-        })
-        .collect();
-    let mut delivered = Vec::new();
-    for id in 1..=TICKS {
-        let release = if with_history {
-            let query = Query::History(HistoryQuery {
-                series: selectors.clone(),
-                from_ms: now_ms - 30 * DAY_MS,
-                to_ms: Some(now_ms),
-                max_points: 200 + id,
-                events_for: None,
-            });
-            codec::write(&mut client, &Message::Request { id, query })
-                .await
-                .expect("request history");
-            Some(
-                timeout(DEADLINE, reads.recv())
-                    .await
-                    .expect("history read must start")
-                    .expect("read started"),
-            )
-        } else {
-            None
-        };
-        let started = std::time::Instant::now();
-        assert!(clock.tick());
-        assert!(engine.pump());
-        let delivered_ms = tick_frame(&mut client).await;
-        assert!(
-            started.elapsed() < Duration::from_millis(period_ms as u64),
-            "the frame missed the next sampler deadline"
-        );
-        assert_eq!(delivered_ms, now_ms + period_ms * i64::from(id));
-        delivered.push(delivered_ms);
-
-        if let Some(release) = release {
-            release.send(()).expect("release history read");
-            let Message::Reply {
-                id: actual,
-                answer: Answer::History(answer),
-            } = receive(&mut client).await
-            else {
-                panic!("expected a history answer");
-            };
-            assert_eq!(actual, id);
-            assert_eq!(answer.series.len(), SERIES);
-            assert!(answer.series.iter().all(|series| !series.points.is_empty()));
-        }
+    assert_eq!(
+        memory_points(&history, host.record.id, now_ms, now_ms + 10_000),
+        0,
+        "the completed S10 bucket is still in the writer's batch"
+    );
+    tokio::task::spawn_blocking(move || writer.flush())
+        .await
+        .expect("join writer flush")
+        .expect("flush while reads are pending");
+    assert_eq!(
+        memory_points(&history, host.record.id, now_ms, now_ms + 10_000),
+        1
+    );
+    let (after_ticks, after_flush) = sample_ticks(
+        &mut engine,
+        &clock,
+        &mut client,
+        now_ms,
+        period_ms,
+        TICKS - 1..=TICKS,
+    )
+    .await;
+    delivered.extend(after_ticks);
+    if let Some(load) = load {
+        load.finish().await;
     }
     drop(client);
-    assert!(server.await.expect("join server").is_err());
-    delivered
+    assert!(server.await.expect("join live session").is_err());
+    (delivered, before_flush.max(after_flush))
+}
+
+async fn sample_ticks(
+    engine: &mut Engine,
+    clock: &statglass_engine::FakeClock,
+    client: &mut DuplexStream,
+    now_ms: i64,
+    period_ms: i64,
+    ticks: std::ops::RangeInclusive<u32>,
+) -> (Vec<i64>, Duration) {
+    let mut delivered = Vec::new();
+    let mut max_pump = Duration::ZERO;
+    for tick in ticks {
+        assert!(clock.tick());
+        let started = Instant::now();
+        assert!(engine.pump());
+        max_pump = max_pump.max(started.elapsed());
+        let delivered_ms = tick_frame(client).await;
+        assert_eq!(delivered_ms, now_ms + period_ms * i64::from(tick));
+        delivered.push(delivered_ms);
+    }
+    (delivered, max_pump)
 }
 
 #[tokio::test]
@@ -342,8 +526,14 @@ async fn every_sample_reaches_the_same_deadline_with_back_to_back_history_querie
     let series: Vec<_> = (0..SERIES)
         .map(|i| SeriesKey::parse(&format!("net.rx{{iface=eth{i}}}")).expect("valid fixture key"))
         .collect();
-    assert_eq!(
-        run_ticks(loaded.path(), now_ms, &series, true).await,
-        run_ticks(baseline.path(), now_ms, &series, false).await,
+    let (baseline_ticks, baseline_pump) = run_ticks(baseline.path(), now_ms, &series, false).await;
+    let (loaded_ticks, loaded_pump) = run_ticks(loaded.path(), now_ms, &series, true).await;
+    assert_eq!(loaded_ticks, baseline_ticks);
+    println!(
+        "max engine.pump latency {loaded_pump:?} with pending reads, baseline {baseline_pump:?}, tolerance {PUMP_TOLERANCE:?}"
+    );
+    assert!(
+        loaded_pump <= baseline_pump + PUMP_TOLERANCE,
+        "max engine.pump latency {loaded_pump:?} with pending reads, baseline {baseline_pump:?}, tolerance {PUMP_TOLERANCE:?}"
     );
 }

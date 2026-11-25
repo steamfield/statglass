@@ -252,11 +252,6 @@ impl HistoryStore {
 }
 
 impl HistoryStore {
-    /// Changes when the store is detached or replaced, invalidating cached reads.
-    pub fn generation(&self) -> u64 {
-        self.inner().generation
-    }
-
     /// Runs `f` on a pooled read connection. Blocking: call it off the main thread.
     pub fn read<T>(
         &self,

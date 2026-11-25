@@ -1,11 +1,43 @@
 //! Discarding a host's rows from a time on, and clearing a host's history.
 
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+
 use rusqlite::params;
 use statglass_schema::{HostId, Tier};
 
-use super::State;
+use super::{Op, State, Writer};
 use crate::db;
 use crate::error::Result;
+
+/// A cache token for one open writer. Clearing history or closing the writer expires it.
+pub struct HistoryCacheEpoch {
+    epoch: Arc<AtomicU64>,
+    value: u64,
+}
+
+impl HistoryCacheEpoch {
+    pub fn is_current(&self) -> bool {
+        self.epoch.load(Ordering::Acquire) == self.value
+    }
+}
+
+impl Writer {
+    /// Deletes every history row of `host` (Settings, "Clear history"). Series, layouts
+    /// and the host record stay. A remote cursor into the cleared span gets `Truncated`.
+    pub fn clear_host(&self, host: HostId, now_ms: i64) -> Result<()> {
+        self.call(|r| Op::ClearHost(host, now_ms, r))
+    }
+
+    pub fn history_cache_epoch(&self) -> HistoryCacheEpoch {
+        HistoryCacheEpoch {
+            value: self.history_epoch.load(Ordering::Acquire),
+            epoch: self.history_epoch.clone(),
+        }
+    }
+}
 
 impl State {
     pub(super) fn discard_from(&mut self, host: HostId, from: i64) -> Result<()> {
@@ -83,6 +115,7 @@ impl State {
             Ok(())
         })?;
         self.commit()?;
+        self.history_epoch.fetch_add(1, Ordering::Release);
         self.incremental_vacuum()?;
         Ok(())
     }
