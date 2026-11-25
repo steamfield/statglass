@@ -7,10 +7,6 @@ use statglass_session::network::LocalNetwork;
 use statglass_session::{RemoteSource, SyncPolicy};
 
 /// The running sessions, as backgrounding, foregrounding and path changes see them.
-#[expect(
-    dead_code,
-    reason = "phase 4 lane d's lifecycle calls these; it removes this expectation"
-)]
 pub(crate) trait SessionControl: Send + Sync {
     /// Every running source, the open host's first (the host with a live stream).
     fn sources(&self) -> Vec<Arc<RemoteSource>>;
