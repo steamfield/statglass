@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, ensure};
-use statglass_remote::{PairCommands, SocketPaths, pairing::shell_quote};
+use statglass_remote::{PairCommands, SocketPaths, command::shell_quote};
 
 const HELPER: &str = "statglass-remote-helper";
 

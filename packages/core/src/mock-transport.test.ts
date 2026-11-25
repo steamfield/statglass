@@ -2,6 +2,8 @@ import type { ChartWindow, LiveMsg } from "@core/generated/types";
 import { MOCK_HOST_ID } from "./mock/fixtures";
 import { createMockTransport, type MockTransport } from "./mock-transport";
 
+import { unwrap } from "./transport";
+
 const NOW = 1_800_000_000_000;
 
 async function subscribe(
@@ -14,6 +16,31 @@ async function subscribe(
 }
 
 describe("mock transport", () => {
+  it("uses the transport clock for pairing offers, scans and expiry", async () => {
+    let now = NOW;
+    const transport = createMockTransport({ autoTick: false, now: () => now });
+    try {
+      await unwrap(
+        transport.updateSettings({ remote_access: { enabled: true } })
+      );
+      const offer = await unwrap(transport.pairingStart());
+      expect(offer.expires_ms).toBe(NOW + 600_000);
+      const status = () => unwrap(transport.pairingStatus(offer.nonce));
+      expect(await status()).toEqual({ kind: "waiting" });
+      now = offer.expires_ms - 1;
+      expect(await status()).toEqual({
+        kind: "pending",
+        device_name: "Travel iPhone",
+        model: "iPhone 16",
+        code: offer.code,
+      });
+      now = offer.expires_ms;
+      expect(await status()).toEqual({ kind: "expired" });
+    } finally {
+      transport.dispose();
+    }
+  });
+
   it("in Performance mode GPU per process is measured only while a view asks", async () => {
     const t = createMockTransport({ now: () => NOW });
     const gpuMs = async () => {

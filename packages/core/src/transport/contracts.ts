@@ -485,7 +485,7 @@ export interface Transport {
   /** Approves the phone waiting on `nonce` and installs its device key. */
   pairingApprove(nonce: string): Promise<CommandResult<PairingStatus>>;
   /** Denies the phone waiting on `nonce`; no device key is installed. */
-  pairingDeny(nonce: string): Promise<CommandResult<null>>;
+  pairingDeny(nonce: string): Promise<CommandResult<PairingStatus>>;
   /** Withdraws the offer `nonce` and removes its one-time pairing key. */
   pairingCancel(nonce: string): Promise<CommandResult<null>>;
   /** The phones paired with this Mac, with when each last connected. */

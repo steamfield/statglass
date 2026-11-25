@@ -110,8 +110,7 @@ export function PairingOfferView({
         return unwrap(transport.pairingStatus(nonce));
       if (decision === "approve")
         return unwrap(transport.pairingApprove(nonce));
-      await unwrap(transport.pairingDeny(nonce));
-      return unwrap(transport.pairingStatus(nonce));
+      return unwrap(transport.pairingDeny(nonce));
     },
     onSuccess: async (result) => {
       await client.cancelQueries({ queryKey: statusKey });

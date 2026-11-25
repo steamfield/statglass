@@ -5,12 +5,13 @@ import type {
 } from "@core/generated/types";
 import {
   buildRouteLines,
-  macMonitoringCopy,
   networkCauseCopy,
   networkHint,
   routePhrase,
   timeoutCopy,
 } from "./remote-connection-network";
+
+import { macMonitoringAdvice } from "./remote-errors";
 
 export type RemoteConnectionKind =
   | "connected"
@@ -215,6 +216,28 @@ export type ConnectionCopy = Pick<
   | "sidebarLabel"
   | "pillLabel"
 >;
+
+/** Connection status and retry copy for a Mac that stopped sharing metrics. */
+function macMonitoringCopy(
+  remote: RemoteHostRecord,
+  kind: "app_not_running" | "monitoring_off",
+  fact: string
+): ConnectionCopy {
+  const { title, recovery } = macMonitoringAdvice(kind, remote.config.name);
+  const label = kind === "app_not_running" ? "App closed" : "Monitoring off";
+  return {
+    tone: "warning",
+    title,
+    summary: recovery,
+    shortReason: title,
+    meta: fact,
+    gifTheme: null,
+    primaryAction: "retry",
+    showRetry: remote.config.enabled,
+    sidebarLabel: label,
+    pillLabel: label,
+  };
+}
 
 function blockingCopy(
   remote: RemoteHostRecord,

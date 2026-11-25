@@ -31,7 +31,7 @@ fn pair_forced_refuses_invalid_nonce_and_non_pair_ssh_commands() {
 }
 
 #[test]
-fn pair_forced_returns_failure_for_empty_stdin_and_missing_home() {
+fn pair_forced_handles_empty_stdin_with_inherited_or_missing_home() {
     let dir = tempfile::tempdir().unwrap();
     let empty = agent()
         .env("HOME", dir.path())
@@ -46,11 +46,9 @@ fn pair_forced_returns_failure_for_empty_stdin_and_missing_home() {
     let missing = agent()
         .env_remove("HOME")
         .args(["pair", "--nonce", NONCE])
+        .stdin(Stdio::null())
         .output()
         .unwrap();
-    assert_eq!(missing.status.code(), Some(1));
-    assert!(
-        String::from_utf8_lossy(&missing.stderr)
-            .contains("HOME is needed to locate the pairing socket")
-    );
+    assert_eq!(missing.status.code(), Some(2));
+    assert!(missing.stdout.is_empty() && missing.stderr.is_empty());
 }

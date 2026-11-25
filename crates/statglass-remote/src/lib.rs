@@ -7,6 +7,7 @@ pub mod authorized_keys;
 pub mod control;
 pub mod device_keys;
 pub mod device_seen;
+pub mod effective_user;
 mod host_queries;
 mod host_server;
 pub mod install;
@@ -26,7 +27,7 @@ pub use authorized_keys::AuthorizedKeys;
 pub use device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice};
 pub use device_seen::DeviceSeenLog;
 pub use host_server::{HostServer, InterestSet, ServedHost};
-pub use pairing::{PairCommands, PairingError, PairingHost, run_forced};
+pub use pairing::{PairCommands, PairingError, PairingHost};
 pub use scope::{
     MAX_PREFACE_BYTES, PREFACE_MAGIC, ScopeError, SessionScope, encode_preface, read_preface,
 };
@@ -46,5 +47,6 @@ pub use statglass_session::{
     RemoteSource, Result, Route, RouteError, RouteFailure, SshSession, StatusCallback,
     SyncWatermark, Target, UnreachableKind, network, page_from_wire, page_to_wire,
 };
+pub use statglass_session::{MAX_TARGETS, command};
 pub use stdio::stdio_bridge;
 pub use transport::{EndpointConfig, OpenSshDialer, connect, ssh_command};

@@ -3,6 +3,7 @@
 //! the phones paired with this Mac.
 mod bundle;
 mod helper_link;
+mod status;
 
 use std::{
     collections::HashMap,
@@ -15,17 +16,18 @@ use std::{
 };
 
 use qrcode::{QrCode, render::svg};
-use serde::Serialize;
 use statglass_engine::wall_ms;
-use statglass_proto::pairing::{BundleHost, PairError, PairReply, encode_payload};
+use statglass_proto::pairing::{BundleHost, encode_payload};
 use statglass_remote::{
-    AuthorizedKeys, ControlRequest, ControlResponse, DeviceKeys, DeviceKeysError, DeviceSeenLog,
-    DeviceTag, PairingError, PairingHost,
+    AuthorizedKeys, ControlRequest, ControlResponse, DeviceKeys, DeviceSeenLog, DeviceTag,
+    PairingHost,
 };
-use statglass_schema::{HostRecord, JsSafeInt, lock::LockExt};
+use statglass_schema::{HostRecord, lock::LockExt};
 use tauri::State;
 
-use crate::error::CommandError;
+use crate::error::{CommandError, PairingFailure};
+pub use status::{PairedDeviceInfo, PairingOffer, PairingStatus};
+use status::{device_keys_error, pairing_error, pairing_message, unavailable};
 
 /// The local pairing host and its settings, initialized before the control socket starts.
 #[derive(Default)]
@@ -39,14 +41,7 @@ struct LocalPairing {
     host: Result<PairingHost, String>,
     keys: Result<Arc<AuthorizedKeys>, String>,
     seen: DeviceSeenLog,
-    offers: Mutex<OfferLifecycle>,
-}
-
-#[derive(Default)]
-struct OfferLifecycle {
-    closing: bool,
-    open: HashMap<String, i64>,
-    monitoring_off: HashMap<String, i64>,
+    monitoring_off: Mutex<HashMap<String, i64>>,
 }
 
 impl PairingState {
@@ -66,7 +61,7 @@ impl PairingState {
             keys,
             enabled: AtomicBool::new(false),
             seen: device_seen(data_dir),
-            offers: Mutex::default(),
+            monitoring_off: Mutex::default(),
         };
         if self.local.set(Arc::new(local)).is_err() {
             tracing::warn!("iPhone pairing was already initialized");
@@ -91,28 +86,14 @@ impl PairingState {
     ) -> Option<ControlResponse> {
         let local = self.local.get()?;
         let host = local.host.as_ref().ok()?;
-        let nonce = match &request {
-            ControlRequest::PairStart { start, .. } => Some(start.nonce.clone()),
-            ControlRequest::PairStatus { nonce } | ControlRequest::PairAbandon { nonce, .. } => {
-                Some(nonce.clone())
-            }
-            _ => None,
-        };
-        let mut offers = local.offers.lock_ok();
-        let response = host.control_reply(request, now_ms);
-        if let (Some(nonce), Some(reply)) = (nonce, &response.pairing) {
-            offers.observe_reply(host, &nonce, reply);
-        }
-        Some(response)
+        Some(host.control_reply(request, now_ms))
     }
 
     pub(crate) fn shutdown(&self) {
         if let Some(local) = self.local.get()
             && let Ok(host) = &local.host
         {
-            let mut offers = local.offers.lock_ok();
-            offers.closing = true;
-            offers.open.retain(|nonce, _| !cancel_offer(host, nonce));
+            host.cancel_open(wall_ms());
         }
     }
 
@@ -124,11 +105,11 @@ impl PairingState {
             .local
             .get()
             .cloned()
-            .ok_or_else(|| pairing_message("iPhone pairing has not started."))?;
+            .ok_or_else(|| unavailable("iPhone pairing has not started."))?;
         tauri::async_runtime::spawn_blocking(move || task(&local))
             .await
             .map_err(|error| {
-                pairing_message(format!("The pairing command could not finish. {error}"))
+                unavailable(format!("The pairing command could not finish. {error}"))
             })?
     }
 }
@@ -141,57 +122,49 @@ impl LocalPairing {
     fn host(&self) -> Result<&PairingHost, CommandError> {
         self.host
             .as_ref()
-            .map_err(|message| pairing_message(message.clone()))
+            .map_err(|message| unavailable(message.clone()))
     }
 
     fn keys(&self) -> Result<&AuthorizedKeys, CommandError> {
         self.keys
             .as_deref()
-            .map_err(|message| pairing_message(message.clone()))
+            .map_err(|message| unavailable(message.clone()))
     }
 
     fn check_monitoring(&self) -> Result<(), CommandError> {
         bundle::check_monitoring(self.enabled.load(Ordering::Relaxed))
-            .map_err(|error| pairing_message(error.to_string()))
+            .map_err(|error| unavailable(error.to_string()))
     }
 
     fn start(&self) -> Result<PairingOffer, CommandError> {
         self.check_monitoring()?;
         self.host()?;
         let bundle =
-            bundle::build(&self.record).map_err(|error| pairing_message(format!("{error:#}")))?;
+            bundle::build(&self.record).map_err(|error| unavailable(format!("{error:#}")))?;
         self.offer(bundle, wall_ms())
     }
 
     fn offer(&self, bundle: BundleHost, now_ms: i64) -> Result<PairingOffer, CommandError> {
-        // Serialize key installation with shutdown. Preflight runs before this lock.
-        let mut offers = self.offers.lock_ok();
-        if offers.closing {
-            return Err(pairing_message("StatGlass is quitting."));
-        }
         self.check_monitoring()?;
         let host = self.host()?;
         host.expire(now_ms);
-        offers
-            .open
-            .retain(|nonce, deadline| *deadline > now_ms || !cancel_offer(host, nonce));
-        offers
-            .monitoring_off
+        self.monitoring_off
+            .lock_ok()
             .retain(|_, deadline| *deadline > now_ms);
         let payload = host
             .offer(bundle, Duration::ZERO, now_ms)
             .map_err(pairing_error)?;
-        offers
-            .open
-            .insert(payload.nonce.clone(), payload.expires_ms);
         let text = encode_payload(&payload);
         let qr = match QrCode::new(&text) {
             Ok(qr) => qr,
             Err(error) => {
-                if cancel_offer(host, &payload.nonce) {
-                    offers.open.remove(&payload.nonce);
+                if let Err(cleanup) = host.cancel(&payload.nonce) {
+                    tracing::warn!(
+                        error = &cleanup as &dyn std::error::Error,
+                        "removing a pairing key after QR generation failed"
+                    );
                 }
-                return Err(pairing_message(format!(
+                return Err(unavailable(format!(
                     "The pairing QR could not be generated. {error}"
                 )));
             }
@@ -206,68 +179,36 @@ impl LocalPairing {
     }
 
     fn decision(&self, nonce: &str, approve: bool) -> Result<PairingStatus, CommandError> {
-        let mut offers = self.offers.lock_ok();
-        if offers.monitoring_off.contains_key(nonce) {
+        let mut monitoring_off = self.monitoring_off.lock_ok();
+        if monitoring_off.contains_key(nonce) {
             return Ok(monitoring_off_status());
         }
         let host = self.host()?;
-        let enabled = self.enabled.load(Ordering::Relaxed);
         let now_ms = wall_ms();
-        let reply = if approve && enabled {
+        if !self.enabled.load(Ordering::Relaxed) {
+            let (reply, deadline) = host.withdraw_if_open(nonce, now_ms);
+            if let Some(deadline) = deadline {
+                monitoring_off.insert(nonce.into(), deadline);
+                return Ok(monitoring_off_status());
+            }
+            return Ok(reply.into());
+        }
+        let reply = if approve {
             host.approve(nonce, now_ms).map_err(pairing_error)?
         } else {
             host.pending(nonce, now_ms)
         };
-        if !enabled && matches!(reply, PairReply::Waiting | PairReply::Pending { .. }) {
-            // A later poll still needs the reason after the host has returned Denied.
-            let deadline = offers.open.get(nonce).copied().unwrap_or(now_ms);
-            offers.monitoring_off.insert(nonce.into(), deadline);
-            if cancel_offer(host, nonce) {
-                offers.open.remove(nonce);
-            }
-            return Ok(monitoring_off_status());
-        }
-        offers.observe_reply(host, nonce, &reply);
         Ok(reply.into())
     }
 
-    fn withdraw(
-        &self,
-        nonce: &str,
-        command: impl FnOnce(&PairingHost, &str) -> Result<(), PairingError>,
-    ) -> Result<(), CommandError> {
-        let mut offers = self.offers.lock_ok();
-        command(self.host()?, nonce).map_err(pairing_error)?;
-        offers.open.remove(nonce);
-        Ok(())
-    }
-}
-
-impl OfferLifecycle {
-    fn observe_reply(&mut self, host: &PairingHost, nonce: &str, reply: &PairReply) {
-        if self.open.contains_key(nonce)
-            && match reply {
-                PairReply::Approved { .. } => true,
-                // These replies can precede successful removal of the key line.
-                PairReply::Denied | PairReply::Expired => cancel_offer(host, nonce),
-                _ => false,
-            }
-        {
-            self.open.remove(nonce);
-        }
-    }
-}
-
-fn cancel_offer(host: &PairingHost, nonce: &str) -> bool {
-    match host.cancel(nonce) {
-        Ok(()) | Err(PairingError::Pair(PairError::Unknown)) => true,
-        Err(error) => {
-            tracing::warn!(
-                error = &error as &dyn std::error::Error,
-                "removing an open pairing offer"
-            );
-            false
-        }
+    fn deny(&self, nonce: &str) -> Result<PairingStatus, CommandError> {
+        let monitoring_off = self.monitoring_off.lock_ok();
+        let reply = self.host()?.deny(nonce).map_err(pairing_error)?;
+        Ok(if monitoring_off.contains_key(nonce) {
+            monitoring_off_status()
+        } else {
+            reply.into()
+        })
     }
 }
 
@@ -295,106 +236,22 @@ fn devices(
         .collect())
 }
 
-/// One open pairing, as the sheet shows it.
-#[derive(Clone, Debug, Serialize, specta::Type)]
-pub struct PairingOffer {
-    pub nonce: String,
-    /// The six-character code the phone shows back for the user to compare.
-    pub code: String,
-    /// The QR carrying the pairing payload, as an SVG document.
-    pub qr_svg: String,
-    /// The same payload as text, for pasting when the camera can't read the QR.
-    pub text: String,
-    #[specta(type = JsSafeInt)]
-    pub expires_ms: i64,
-}
-
-/// Where an open pairing stands.
-#[derive(Clone, Debug, Serialize, specta::Type)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum PairingStatus {
-    /// No phone has used the QR yet.
-    Waiting,
-    /// A phone used the QR and waits for the user's approval.
-    Pending {
-        device_name: String,
-        model: String,
-        code: String,
-    },
-    /// Approved: `device` is the new device's tag.
-    Paired {
-        device: String,
-    },
-    Denied,
-    Expired,
-    Failed {
-        message: String,
-    },
-}
-
-/// One phone with a key in this Mac's `authorized_keys`.
-#[derive(Clone, Debug, Serialize, specta::Type)]
-pub struct PairedDeviceInfo {
-    pub tag: String,
-    pub name: String,
-    pub fingerprint: String,
-    /// When the phone last connected; `None` when it never has.
-    #[specta(type = Option<JsSafeInt>)]
-    pub last_seen_ms: Option<i64>,
-}
-
-impl From<PairReply> for PairingStatus {
-    fn from(reply: PairReply) -> Self {
-        match reply {
-            PairReply::Waiting => Self::Waiting,
-            PairReply::Pending {
-                device_name,
-                model,
-                code,
-            } => Self::Pending {
-                device_name,
-                model,
-                code,
-            },
-            PairReply::Approved { device, .. } => Self::Paired { device },
-            PairReply::Denied => Self::Denied,
-            PairReply::Expired => Self::Expired,
-            PairReply::Error { error } => Self::Failed {
-                message: error.to_string(),
-            },
-        }
-    }
-}
-
-fn pairing_message(message: impl Into<String>) -> CommandError {
-    CommandError::Pairing {
-        message: message.into(),
-    }
-}
-
-pub(crate) fn pairing_error(error: PairingError) -> CommandError {
-    match error {
-        PairingError::Keys(error) => device_keys_error(error),
-        PairingError::Pair(error) => pairing_message(error.to_string()),
-    }
-}
-
-pub(crate) fn device_keys_error(error: DeviceKeysError) -> CommandError {
-    // The I/O error retains its source chain even when its Display is just the path and operation.
-    pairing_message(format!(
-        "Could not update or read paired devices. {:#}",
-        anyhow::Error::new(error)
-    ))
-}
-
-/// Opens a pairing offer and returns its QR. Scaffold stub (phase 5 lane c).
+/// Opens a pairing offer and returns its QR.
+///
+/// # Errors
+///
+/// Returns `pairing` if preflight, key installation, or QR generation fails, or the app is quitting.
 #[tauri::command]
 #[specta::specta]
 pub async fn pairing_start(state: State<'_, PairingState>) -> Result<PairingOffer, CommandError> {
     state.run(LocalPairing::start).await
 }
 
-/// Where the offer `nonce` stands. Scaffold stub (phase 5 lane c).
+/// Where the offer `nonce` stands.
+///
+/// # Errors
+///
+/// Returns `pairing` if the pairing host or command worker is unavailable.
 #[tauri::command]
 #[specta::specta]
 pub async fn pairing_status(
@@ -404,7 +261,12 @@ pub async fn pairing_status(
     state.run(move |local| local.decision(&nonce, false)).await
 }
 
-/// Approves the phone waiting on `nonce`. Scaffold stub (phase 5 lane c).
+/// Approves the phone waiting on `nonce`.
+///
+/// # Errors
+///
+/// Returns `pairing` if the host or worker is unavailable, the offer is unknown or
+/// still waiting for a phone, or a key edit fails.
 #[tauri::command]
 #[specta::specta]
 pub async fn pairing_approve(
@@ -414,19 +276,27 @@ pub async fn pairing_approve(
     state.run(move |local| local.decision(&nonce, true)).await
 }
 
-/// Denies the phone waiting on `nonce`. Scaffold stub (phase 5 lane c).
+/// Denies the phone waiting on `nonce` and returns the offer's resulting status.
+///
+/// # Errors
+///
+/// Returns `pairing` if the host or worker is unavailable, the offer is unknown,
+/// or the pairing line cannot be removed.
 #[tauri::command]
 #[specta::specta]
 pub async fn pairing_deny(
     nonce: String,
     state: State<'_, PairingState>,
-) -> Result<(), CommandError> {
-    state
-        .run(move |local| local.withdraw(&nonce, PairingHost::deny))
-        .await
+) -> Result<PairingStatus, CommandError> {
+    state.run(move |local| local.deny(&nonce)).await
 }
 
-/// Withdraws the offer `nonce`. Scaffold stub (phase 5 lane c).
+/// Withdraws the offer `nonce`.
+///
+/// # Errors
+///
+/// Returns `pairing` if the host or worker is unavailable, the offer is unknown,
+/// or the pairing line cannot be removed.
 #[tauri::command]
 #[specta::specta]
 pub async fn pairing_cancel(
@@ -434,11 +304,15 @@ pub async fn pairing_cancel(
     state: State<'_, PairingState>,
 ) -> Result<(), CommandError> {
     state
-        .run(move |local| local.withdraw(&nonce, PairingHost::cancel))
+        .run(move |local| local.host()?.cancel(&nonce).map_err(pairing_error))
         .await
 }
 
-/// The phones paired with this Mac. Scaffold stub (phase 5 lane c).
+/// The phones paired with this Mac.
+///
+/// # Errors
+///
+/// Returns `pairing` if the command worker or authorized keys file cannot be readied.
 #[tauri::command]
 #[specta::specta]
 pub async fn paired_devices(
@@ -447,15 +321,20 @@ pub async fn paired_devices(
     state.run(|local| devices(local.keys()?, &local.seen)).await
 }
 
-/// Removes the device `tag`; false when no device has it. Scaffold stub (phase 5 lane c).
+/// Removes the device `tag`. Returns false when no device has it.
+///
+/// # Errors
+///
+/// Returns `pairing` if the tag is invalid, the command worker is unavailable,
+/// or the authorized keys file cannot be edited.
 #[tauri::command]
 #[specta::specta]
 pub async fn revoke_device(
     tag: String,
     state: State<'_, PairingState>,
 ) -> Result<bool, CommandError> {
-    let tag =
-        DeviceTag::parse(&tag).ok_or_else(|| pairing_message("Invalid paired device tag."))?;
+    let tag = DeviceTag::parse(&tag)
+        .ok_or_else(|| pairing_message(PairingFailure::Invalid, "Invalid paired device tag."))?;
     state
         .run(move |local| local.keys()?.revoke(tag).map_err(device_keys_error))
         .await
@@ -464,7 +343,9 @@ pub async fn revoke_device(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use statglass_proto::pairing::{BundleRoute, BundleTarget, PairStart, decode_payload};
+    use statglass_proto::pairing::{
+        BundleRoute, BundleTarget, PairReply, PairStart, decode_payload,
+    };
     use statglass_remote::{ControlRequest, EcdsaP256Public, PairCommands};
     use statglass_schema::{HostId, HostInfo, OsKind};
     use tauri::{
@@ -513,7 +394,7 @@ pub(crate) mod tests {
             keys: Ok(keys),
             enabled: AtomicBool::new(false),
             seen: device_seen(dir),
-            offers: Mutex::default(),
+            monitoring_off: Mutex::default(),
         };
         mock_builder()
             .manage(PairingState {
@@ -531,7 +412,7 @@ pub(crate) mod tests {
         let state = app.state::<PairingState>();
         state.set_enabled(true);
         let local = state.local.get().unwrap();
-        let now = 1_800_000_000_000;
+        let now = wall_ms();
         let bundle = BundleHost {
             host_id: HostId(uuid::Uuid::nil()),
             name: "Test Mac".into(),
@@ -589,7 +470,7 @@ pub(crate) mod tests {
         let app = app(dir.path());
         let state = app.state::<PairingState>();
         assert!(
-            matches!(pairing_start(app.state()).await, Err(CommandError::Pairing { message })
+            matches!(pairing_start(app.state()).await, Err(CommandError::Pairing { reason: PairingFailure::Unavailable, message })
             if message.contains("Allow remote monitoring"))
         );
         assert!(paired_devices(app.state()).await.unwrap().is_empty());
@@ -625,15 +506,20 @@ pub(crate) mod tests {
         assert_eq!(decoded.nonce, first.nonce);
 
         let start = |nonce: &str| {
-            host.start(
-                &PairStart {
-                    nonce: nonce.into(),
-                    device_name: "Travel iPhone".into(),
-                    model: "iPhone 16".into(),
-                    device_key: DEVICE_KEY.into(),
+            host.control_reply(
+                ControlRequest::PairStart {
+                    start: PairStart {
+                        nonce: nonce.into(),
+                        device_name: "Travel iPhone".into(),
+                        model: "iPhone 16".into(),
+                        device_key: DEVICE_KEY.into(),
+                    },
+                    attempt: [1; 16],
                 },
                 now,
             )
+            .pairing
+            .unwrap()
         };
         assert!(matches!(
             pairing_status(first.nonce.clone(), app.state())
@@ -670,9 +556,12 @@ pub(crate) mod tests {
 
         let denied = make_offer(now);
         assert_eq!(start(&denied.nonce), PairReply::Waiting);
-        pairing_deny(denied.nonce.clone(), app.state())
-            .await
-            .unwrap();
+        assert!(matches!(
+            pairing_deny(denied.nonce.clone(), app.state())
+                .await
+                .unwrap(),
+            PairingStatus::Denied
+        ));
         assert!(matches!(
             pairing_status(denied.nonce, app.state()).await.unwrap(),
             PairingStatus::Denied

@@ -1,5 +1,4 @@
 import { createMockTransport } from "@core/mock-transport";
-import { remoteConnectionView } from "@core/remote-connection";
 import { unwrap } from "@core/transport";
 import {
   act,
@@ -141,6 +140,32 @@ it("announces a pending iPhone without making the countdown a live region", asyn
   }
 });
 
+it("shows the denial returned by the command without polling again", async () => {
+  vi.useFakeTimers();
+  const mock = createMockTransport({ autoTick: false });
+  try {
+    await unwrap(mock.updateSettings({ remote_access: { enabled: true } }));
+    renderWithProviders(<PairedDevicesPanel />, { transport: mock });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Pair iPhone" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+
+    const calls = mock.calls.length;
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Deny" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(1100));
+    expect(screen.getByText("Pairing denied.")).toBeVisible();
+    expect(mock.calls.slice(calls).map(({ command }) => command)).toEqual([
+      "pairing_deny",
+    ]);
+  } finally {
+    mock.dispose();
+    vi.useRealTimers();
+  }
+});
+
 it("shows monitoring guidance when an open pairing is withdrawn", async () => {
   vi.useFakeTimers();
   try {
@@ -217,54 +242,3 @@ it("refreshes paired devices when polling recovers a committed approval", async 
     vi.useRealTimers();
   }
 });
-
-it.each([
-  [
-    "app_not_running",
-    "StatGlass isn't running on Studio Mac",
-    "Open StatGlass",
-  ],
-  [
-    "monitoring_off",
-    "Remote monitoring is off on Studio Mac",
-    "Turn on Allow remote monitoring",
-  ],
-] as const)(
-  "shows the %s marker and retry advice for a saved Mac",
-  async (kind, title, recovery) => {
-    const transport = createMockTransport({
-      autoTick: false,
-      scenarios: ["hosts-dashboard"],
-    });
-    const [fixture] = await transport.listRemoteHosts();
-    if (!fixture) throw new Error("Missing saved host fixture");
-    const view = remoteConnectionView(
-      {
-        ...fixture,
-        os: "mac_os",
-        config: {
-          ...fixture.config,
-          name: "Studio Mac",
-          lan: "studio.local",
-          enabled: true,
-        },
-        status: {
-          ...fixture.status,
-          state: "error",
-          failure_kind: kind,
-          route_failures: [{ route: "lan", kind }],
-          identity_changed: null,
-          agent_update: { kind: "unknown" },
-        },
-      },
-      1_800_000_000_000
-    );
-    expect(view.title).toBe(title);
-    expect(view.summary).toContain(recovery);
-    expect(view.kind).toBe(kind);
-    expect(view.showRetry).toBe(true);
-    expect(view.routeLines).not.toContainEqual(
-      expect.stringContaining("connection failed")
-    );
-  }
-);

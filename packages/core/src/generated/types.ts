@@ -569,7 +569,7 @@ export type CommandError = { kind: "update"; message: string } |
 /**  The other Mac's StatGlass has remote monitoring turned off. */
 { kind: "remote_monitoring_off"; message: string } |
 /**  Pairing a phone, or editing the paired devices, failed (RFC 2.4, 2.5). */
-{ kind: "pairing"; message: string };
+{ kind: "pairing"; reason: PairingFailure; message: string };
 
 export type Condition =
 /**  Any series matching `series` compared with `value` in the metric's unit. */
@@ -2433,6 +2433,9 @@ export type PairedDeviceInfo = {
 	/**  When the phone last connected; `None` when it never has. */
 	last_seen_ms: number | null,
 };
+
+/**  Why a pairing request failed. */
+export type PairingFailure = "denied" | "expired" | "used" | "unknown" | "unavailable" | "invalid";
 
 /**  One open pairing, as the sheet shows it. */
 export type PairingOffer = {

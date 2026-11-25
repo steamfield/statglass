@@ -9,6 +9,7 @@ use statglass_schema::{HostId, JsSafeInt};
 use statglass_store::StoreError;
 
 mod remote;
+pub use remote::PairingFailure;
 #[cfg(all(unix, not(target_os = "ios")))]
 mod services;
 
@@ -135,7 +136,10 @@ pub enum CommandError {
     RemoteMonitoringOff { message: String },
     /// Pairing a phone, or editing the paired devices, failed (RFC 2.4, 2.5).
     #[error("pairing: {message}")]
-    Pairing { message: String },
+    Pairing {
+        reason: PairingFailure,
+        message: String,
+    },
 }
 
 impl CommandError {

@@ -180,7 +180,12 @@ fn app_control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
                 Err(e) => control_response(app, false, e.to_string()),
             }
         }
-        _ => control_response(app, false, "Unsupported control request".into()),
+        ControlRequest::PairStart { .. }
+        | ControlRequest::PairStatus { .. }
+        | ControlRequest::PairAbandon { .. } => {
+            tracing::warn!("pairing control request reached the settings handler");
+            control_response(app, false, "Unsupported control request".into())
+        }
     }
 }
 

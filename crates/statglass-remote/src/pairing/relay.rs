@@ -15,6 +15,8 @@ const CONTROL_BUDGET: Duration = Duration::from_secs(9);
 const ABANDON_BUDGET: Duration = Duration::from_secs(2);
 
 /// Relays PairStart and polls PairStatus once a second. Returns 0 on approval and 2 otherwise.
+///
+/// This entry point is unbound to a nonce. Forced commands must use [`run_forced_for_nonce`].
 pub async fn run_forced<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     stdin: R,
     stdout: W,

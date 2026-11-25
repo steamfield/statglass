@@ -6,6 +6,7 @@ use crate::{
     DialedStream, Dialer, Endpoint, ForcedToken, PinnedHostKey, RemoteCommand, RemoteError, Route,
     Target, codec,
 };
+pub use statglass_proto::pairing::PairError;
 use statglass_proto::pairing::{
     BundleHost, BundleRoute, MAX_PAIR_FRAME_BYTES, PAIR_RECEIPT_GRACE, PairReply, PairStart,
     PairingPayload, decode_pair_body, encode_pair_frame,
@@ -214,6 +215,12 @@ async fn dial_pairing_target(
         })?
 }
 
+/// Reads a length-prefixed pairing frame.
+///
+/// # Errors
+///
+/// Returns `Protocol` for zero or over [`MAX_PAIR_FRAME_BYTES`], a codec `Decode` error
+/// for malformed CBOR or trailing bytes, and an I/O error for a failed read.
 pub async fn read_pair_frame<T: serde::de::DeserializeOwned>(
     reader: &mut (impl AsyncRead + Unpin),
 ) -> crate::Result<T> {
@@ -228,6 +235,12 @@ pub async fn read_pair_frame<T: serde::de::DeserializeOwned>(
     Ok(decode_pair_body(&body)?)
 }
 
+/// Encodes and writes a length-prefixed pairing frame.
+///
+/// # Errors
+///
+/// Returns a codec error if serialization fails or the body exceeds [`MAX_PAIR_FRAME_BYTES`],
+/// an I/O error for a failed write, or `Transport` if the peer stops reading.
 pub async fn write_pair_frame(
     writer: &mut (impl AsyncWrite + Unpin),
     value: &impl serde::Serialize,
@@ -239,7 +252,7 @@ pub async fn write_pair_frame(
 mod tests {
     use super::*;
     use crate::{BoxFuture, Close, DialFailure, StderrTail};
-    use statglass_proto::pairing::{BundleHostKey, BundleTarget, PAYLOAD_VERSION, PairError};
+    use statglass_proto::pairing::{BundleHostKey, BundleTarget, PAYLOAD_VERSION};
     use std::sync::Mutex;
     use tokio::io::{DuplexStream, duplex};
 
