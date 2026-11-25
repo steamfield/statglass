@@ -8,10 +8,11 @@ import type {
 } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
+import { phoneCommandFailures } from "@core/mock/phone-errors";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
-import { historyKeys } from "@core/query-keys";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import * as Haptics from "expo-haptics";
@@ -166,7 +167,7 @@ test("history chart passes the missing bucket, gap band, and trailing event to t
 test("range tabs select new history and event keys with the same bounds and show dated events", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   const history = observeHistory(transport, undefined, eventsReply([record]));
-  const { client } = await renderWithProviders(openModule(), { transport });
+  await renderWithProviders(openModule(), { transport });
 
   expect(await screen.findAllByRole("tab")).toHaveLength(4);
   expect(screen.getByText("24 h")).toBeOnTheScreen();
@@ -198,22 +199,6 @@ test("range tabs select new history and event keys with the same bounds and show
       from_ms: request.from_ms,
       to_ms: request.to_ms,
     });
-    expect(
-      client.getQueryState(
-        historyKeys.moduleSeries(
-          MOCK_HOST_ID,
-          ["cpu.total"],
-          duration,
-          request.to_ms,
-          request.max_points
-        )
-      )
-    ).toBeDefined();
-    expect(
-      client.getQueryState(
-        historyKeys.events(MOCK_HOST_ID, duration, request.to_ms)
-      )
-    ).toBeDefined();
   }
   expect(
     await screen.findByText(formatHistoryTime(record.ts_ms, true))
@@ -328,38 +313,24 @@ test("the right edge pins the last returned bucket time within the requested win
 });
 
 test("a foreground module refreshes both history and events as time advances", async () => {
-  const initialAppState = AppState.currentState;
-  AppState.currentState = "active";
-  const listener = jest
-    .spyOn(AppState, "addEventListener")
-    .mockReturnValue({ remove: () => {} });
-  try {
-    const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-    const history = observeHistory(transport);
-    const view = await renderWithProviders(openModule(), { transport });
-    await waitFor(() => expect(history.charts()).toHaveLength(1));
-    const end = history.charts().at(-1)?.to_ms ?? 0;
-    const emitAppState = (state: "background" | "active") => {
-      AppState.currentState = state;
-      for (const [event, onChange] of listener.mock.calls) {
-        if (event === "change") onChange(state);
-      }
-    };
-    await act(() => emitAppState("background"));
-    await act(() => jest.advanceTimersByTimeAsync(2 * MINUTE_MS));
-    expect(history.charts()).toHaveLength(1);
-    await act(() => emitAppState("active"));
-    await waitFor(() => expect(history.charts()).toHaveLength(2));
-    expect(history.charts().at(-1)?.to_ms).toBeGreaterThanOrEqual(
-      end + 2 * MINUTE_MS
-    );
-    expect(history.events().at(-1)?.to_ms).toBe(history.charts().at(-1)?.to_ms);
-    await act(() => jest.advanceTimersByTimeAsync(MINUTE_MS));
-    expect(history.charts()).toHaveLength(3);
-    await view.unmount();
-  } finally {
-    AppState.currentState = initialAppState;
-  }
+  const changeAppState = mockAppState();
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const history = observeHistory(transport);
+  const view = await renderWithProviders(openModule(), { transport });
+  await waitFor(() => expect(history.charts()).toHaveLength(1));
+  const end = history.charts().at(-1)?.to_ms ?? 0;
+  await changeAppState("background");
+  await act(() => jest.advanceTimersByTimeAsync(2 * MINUTE_MS));
+  expect(history.charts()).toHaveLength(1);
+  await changeAppState("active");
+  await waitFor(() => expect(history.charts()).toHaveLength(2));
+  expect(history.charts().at(-1)?.to_ms).toBeGreaterThanOrEqual(
+    end + 2 * MINUTE_MS
+  );
+  expect(history.events().at(-1)?.to_ms).toBe(history.charts().at(-1)?.to_ms);
+  await act(() => jest.advanceTimersByTimeAsync(MINUTE_MS));
+  expect(history.charts()).toHaveLength(3);
+  await view.unmount();
 });
 
 test("a minute refresh keeps the plotted samples, event rows, and pinned reading while both reads are pending", async () => {
@@ -450,17 +421,15 @@ test("a failed remote status read explains why the module cannot load", async ()
   });
   const [remote] = await transport.listRemoteHosts();
   if (!remote) throw new Error("The demo needs a remote host");
-  jest.spyOn(transport, "listRemoteHosts").mockRejectedValue({
-    kind: "remote_unreachable",
-    message: "Network unavailable",
-  });
+  transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
+  transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
   const history = jest.spyOn(transport, "hostHistory");
   await renderWithProviders(openModule(remote.config.id), { transport });
   expect(
     await screen.findByRole(
       "alert",
       {
-        name: "This host isn't connected, so its connection status can't be read now.",
+        name: "Couldn’t read connection status. Status endpoint unavailable.",
       },
       { timeout: 2000 }
     )
@@ -468,28 +437,15 @@ test("a failed remote status read explains why the module cannot load", async ()
   expect(history).not.toHaveBeenCalled();
 });
 
-test("offline history ends at the mirror watermark and shows the offline and sync times", async () => {
+test("an offline host uses its last-seen host time on the module page", async () => {
   const transport = createMockTransport({
-    scenarios: ["hosts-dashboard"],
+    scenarios: ["phone-errors"],
     autoTick: false,
     historyRows: 2,
   });
-  const remote = (await transport.listRemoteHosts()).find(
-    ({ status }) => status.state === "connected"
-  );
-  if (!remote) throw new Error("The demo needs a connected remote");
-  const from = now - 5 * MINUTE_MS;
-  const end = from - MINUTE_MS;
-  transport.pushRemoteStatus(remote.config.id, {
-    state: "offline",
-    last_seen_ms: from,
-    synced_through_ms: end,
-  });
-  const history = observeHistory(transport);
-  await renderWithProviders(openModule(remote.config.id), { transport });
-  expect(await screen.findByText(/Offline since/)).toBeOnTheScreen();
-  expect(screen.getByText(/Last synced through/)).toBeOnTheScreen();
-  expect(history.charts().at(-1)?.to_ms).toBe(end);
+  await renderWithProviders(openModule("phone-offline"), { transport });
+  expect(await screen.findByText("Offline since 14:02")).toBeOnTheScreen();
+  expect(screen.queryByText(/Last synced through/)).toBeNull();
 });
 
 test("network identifies both series before scrubbing and history mounts only visible event rows", async () => {

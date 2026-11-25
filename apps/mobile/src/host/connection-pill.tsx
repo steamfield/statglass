@@ -1,24 +1,27 @@
-import { formatClock } from "@core/format";
-import type { HostId, RemoteHostStatus } from "@core/generated/types";
+import type { HostId } from "@core/generated/types";
+import {
+  hostStatusSummary,
+  type PhoneRemoteHostStatus,
+} from "@core/remote-errors";
 import { useEffect, useState } from "react";
 import { AccessibilityInfo, Platform, View } from "react-native";
 import { shallow } from "zustand/shallow";
 import { useHostLive, useLastFrame, useLiveFailure } from "@/data/live";
 import { Text } from "@/ui/text";
 
-/** Label an offline remote with its last-seen time when the status supplies one. */
-export function offlineLabel(remote: RemoteHostStatus | undefined) {
-  if (!remote || !["offline", "error", "disabled"].includes(remote.state))
-    return null;
-  return remote.last_seen_ms === null
-    ? "Offline"
-    : `Offline since ${formatClock(remote.last_seen_ms)}`;
+const routeNames = { lan: "LAN", tailscale: "Tailscale" };
+
+/** The remote status line used by both the host and module pages. */
+export function offlineLabel(remote: PhoneRemoteHostStatus | undefined) {
+  return remote && remote.state !== "connected"
+    ? hostStatusSummary(remote, { nowMs: Date.now() }).label
+    : null;
 }
 
 /** Select connection changes that affect the page, leaving frame age to the pill. */
 export function useConnection(
   host: HostId,
-  remote: RemoteHostStatus | undefined,
+  remote: PhoneRemoteHostStatus | undefined,
   statusError: string | null
 ) {
   const { connection, stale, paused, idle } = useHostLive(
@@ -32,11 +35,16 @@ export function useConnection(
     shallow
   );
   const failure = useLiveFailure(host);
-  const offline = statusError ?? failure ?? offlineLabel(remote);
+  const offline = statusError ?? offlineLabel(remote) ?? failure;
 
-  if (offline) return { state: "offline", label: offline } as const;
-  if (remote?.state === "connecting") {
-    return { state: "reconnecting", label: "Reconnecting" } as const;
+  if (offline) {
+    return {
+      state:
+        !statusError && remote?.state === "connecting"
+          ? "reconnecting"
+          : "offline",
+      label: offline,
+    } as const;
   }
   if (paused || idle) {
     return {
@@ -49,13 +57,14 @@ export function useConnection(
   }
   if (connection !== "live")
     return { state: "waiting", label: "Connecting" } as const;
-  const route =
-    remote?.route === "lan"
-      ? "LAN"
-      : remote?.route === "tailscale"
-        ? "Tailscale"
-        : null;
-  return { state: "live", label: "Live", route } as const;
+  const route = remote?.route ? routeNames[remote.route] : null;
+  return {
+    state: "live",
+    label: remote
+      ? hostStatusSummary(remote, { nowMs: Date.now() }).label
+      : "Live",
+    route,
+  } as const;
 }
 
 function useFrameAge(lastFrame: number | null) {
@@ -112,8 +121,8 @@ export function ConnectionPill({
           ? "Connecting"
           : state === "live" && active
             ? connection.route
-              ? `Live · ${connection.route} ${age}`
-              : `Live · ${age}`
+              ? `${label} · ${connection.route} ${age}`
+              : `${label} · ${age}`
             : label}
       </Text>
     </View>

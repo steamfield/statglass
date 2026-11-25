@@ -1,5 +1,12 @@
-import type { RemoteHostRecord } from "@core/generated/types";
-import { createMockTransport, type MockTransport } from "@core/mock-transport";
+import { withFailures } from "@core/mock/failures";
+import { MOCK_HOST_ID, type ScenarioName } from "@core/mock/fixtures";
+import {
+  PHONE_CLOCK_OFFSET_MS,
+  PHONE_LAST_SEEN_MS,
+  phoneCommandFailures,
+  phoneSparklineFixture,
+} from "@core/mock/phone-errors";
+import { createMockTransport } from "@core/mock-transport";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { ExpoRoot, router, Stack, useLocalSearchParams } from "expo-router";
@@ -10,6 +17,7 @@ import {
   screen,
   waitFor,
 } from "expo-router/testing-library";
+import { AccessibilityInfo } from "react-native";
 import HostsLayout from "@/app/(hosts)/_layout";
 import HostsRoute from "@/app/(hosts)/index";
 import { useHostSparkline } from "@/data/hosts";
@@ -17,7 +25,7 @@ import type { PhoneSettings } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
 import * as Chart from "@/widgets/stream-area";
 
-const NOW = Date.UTC(2026, 10, 24, 14, 0);
+const NOW = new Date(2026, 10, 24, 14, 0).getTime();
 const MINUTE = 60_000;
 
 function HostDetails() {
@@ -54,6 +62,14 @@ function renderHosts(
 function demo() {
   return createMockTransport({
     scenarios: ["hosts-dashboard", "host-incompatible"],
+    historyRows: 2,
+  });
+}
+
+function sparklineDemo(scenarios: readonly ScenarioName[] = ["default"]) {
+  return withFailures({
+    ...createMockTransport({ scenarios, historyRows: 2 }),
+    hostHistory: phoneSparklineFixture,
   });
 }
 
@@ -82,8 +98,8 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
     error: null,
   });
   transport.pushRemoteStatus("remote-offline", {
-    last_seen_ms: NOW,
-    clock_offset_ms: 2 * MINUTE,
+    last_seen_ms: PHONE_LAST_SEEN_MS,
+    clock_offset_ms: PHONE_CLOCK_OFFSET_MS,
   });
   await renderHosts(transport, {
     hostOrder: ["remote-build"],
@@ -91,7 +107,7 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
   });
 
   const build = await screen.findByRole("button", {
-    name: /^Build server, Linux, Connecting, CPU 18%, Memory 42%, Network 1\.4 MB\/s/,
+    name: "Build server, Linux, Connecting, CPU —, Memory —, Network —",
   });
   expect(
     screen.getAllByRole("button", { name: /CPU.*, Memory.*, Network/ })
@@ -103,10 +119,14 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
     screen.getByRole("button", { name: /macOS, Live, CPU 18%, Memory 42%/ })
   ).toBeOnTheScreen();
   expect(
-    screen.getByRole("button", { name: /offline, Linux, Offline since 14:02/ })
+    screen.getByRole("button", {
+      name: "offline, Linux, Offline since 14:02, CPU —, Memory —, Network —",
+    })
   ).toBeOnTheScreen();
   expect(
-    screen.getByRole("button", { name: /legacy, Linux, Needs attention/ })
+    screen.getByRole("button", {
+      name: /legacy, Linux, Needs attention · Incompatible StatGlass connection/,
+    })
   ).toBeOnTheScreen();
   expect(screen.getByText("Demo")).toBeOnTheScreen();
   await fireEvent.press(build);
@@ -115,38 +135,11 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
   ).toBeOnTheScreen();
 });
 
-const sparklinePage: MockTransport["hostHistory"] = async (request) => {
-  return {
-    status: "ok",
-    data: {
-      tier: "m1",
-      bucket_ms: MINUTE,
-      complete_to_ms: request.to_ms ?? request.from_ms,
-      gaps: [],
-      events: [],
-      stats: [],
-      clamped: [],
-      series: [
-        {
-          key: { metric: "cpu.total", labels: [] },
-          hold_ms: MINUTE,
-          points: [
-            { t: request.from_ms, min: 11, max: 13, avg: 12 },
-            { t: request.from_ms + 2 * MINUTE, min: 15, max: 17, avg: 16 },
-          ],
-        },
-      ],
-    },
-  };
-};
-
 test("uses minute CPU buckets, preserves a missing slot, and polls only while focused", async () => {
-  const transport = createMockTransport();
+  const transport = sparklineDemo();
   const chart = jest.spyOn(Chart, "StreamArea");
   const vitals = jest.spyOn(transport, "hostVitals");
-  const history = jest
-    .spyOn(transport, "hostHistory")
-    .mockImplementation(sparklinePage);
+  const history = jest.spyOn(transport, "hostHistory");
   const [local] = await transport.listHosts();
   await renderHosts(transport);
   await waitFor(() => expect(chart).toHaveBeenCalled());
@@ -228,11 +221,9 @@ test.each([false, true])(
     const transport = demo();
     if (multiple)
       transport.pushRemoteStatus("remote-build", { state: "offline" });
-    const offlineError = new Error("The host timed out.");
-    const buildError = new Error("The network is unreachable.");
-    jest.spyOn(transport, "retryRemoteHost").mockImplementation(async (id) => {
-      throw id === "remote-offline" ? offlineError : buildError;
-    });
+    const { retryTimeout, retryNetwork } = phoneCommandFailures;
+    if (multiple) transport.failNext("retryRemoteHost", retryNetwork);
+    transport.failNext("retryRemoteHost", retryTimeout);
     const warn = jest
       .spyOn(console, "warn")
       .mockImplementation(() => undefined);
@@ -251,7 +242,7 @@ test.each([false, true])(
     expect(
       await screen.findByRole("alert", { name: summary })
     ).toBeOnTheScreen();
-    const logged = [["remote-offline", offlineError]];
+    const logged = [["remote-offline", retryTimeout]];
     if (multiple) {
       expect(
         screen.getByText("Build server: The network is unreachable.")
@@ -259,11 +250,15 @@ test.each([false, true])(
       expect(
         screen.getByText("Lab server: The host timed out.")
       ).toBeOnTheScreen();
-      logged.push(["remote-build", buildError]);
+      logged.push(["remote-build", retryNetwork]);
     }
     expect(warn.mock.calls).toHaveLength(logged.length);
     for (const [id, error] of logged) {
-      expect(warn).toHaveBeenCalledWith(expect.any(String), id, error);
+      expect(warn).toHaveBeenCalledWith(
+        expect.any(String),
+        id,
+        expect.objectContaining({ error })
+      );
     }
   }
 );
@@ -272,19 +267,9 @@ test("a sparkline requested by id waits for status and ends at the remote host's
   const transport = demo();
   const id = "remote-build";
   transport.pushRemoteStatus(id, { clock_offset_ms: -10 * MINUTE });
-  const records = await transport.listRemoteHosts();
-  const status = Promise.withResolvers<RemoteHostRecord[]>();
-  const readStatus = jest
-    .spyOn(transport, "listRemoteHosts")
-    .mockReturnValue(status.promise);
-  const hostHistory = transport.hostHistory;
-  const requestedAt: number[] = [];
-  const history = jest
-    .spyOn(transport, "hostHistory")
-    .mockImplementation((request) => {
-      requestedAt.push(Date.now());
-      return hostHistory(request);
-    });
+  transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
+  const readStatus = jest.spyOn(transport, "listRemoteHosts");
+  const history = jest.spyOn(transport, "hostHistory");
   function SparklineScreen() {
     useHostSparkline(id);
     return null;
@@ -295,20 +280,16 @@ test("a sparkline requested by id waits for status and ends at the remote host's
   });
   expect(history).not.toHaveBeenCalled();
   await waitFor(() => expect(readStatus).toHaveBeenCalled());
-  await act(() => status.resolve(records));
+  await act(() => jest.advanceTimersByTimeAsync(1000));
   await waitFor(() => expect(history).toHaveBeenCalled());
-  const [phoneNow] = requestedAt;
-  if (phoneNow === undefined)
+  expect(readStatus).toHaveBeenCalledTimes(2);
+  const [request] = history.mock.calls[0] ?? [];
+  if (!request || request.to_ms === null)
     throw new Error("Expected the history request time");
-  expect(history.mock.calls).toEqual([
-    [
-      expect.objectContaining({
-        host: id,
-        from_ms: phoneNow - 40 * MINUTE,
-        to_ms: phoneNow - 10 * MINUTE,
-      }),
-    ],
-  ]);
+  expect(request.host).toBe(id);
+  expect(request.to_ms - request.from_ms).toBe(30 * MINUTE);
+  expect(request.to_ms).toBeGreaterThanOrEqual(NOW + 1000 - 10 * MINUTE);
+  expect(request.to_ms).toBeLessThanOrEqual(Date.now() - 10 * MINUTE);
 });
 
 test("uses integer epoch milliseconds even with a fractional monotonic clock", async () => {
@@ -327,8 +308,7 @@ test("uses integer epoch milliseconds even with a fractional monotonic clock", a
 });
 
 test("describes the CPU sparkline in the host row's accessible name", async () => {
-  const transport = createMockTransport();
-  jest.spyOn(transport, "hostHistory").mockImplementation(sparklinePage);
+  const transport = sparklineDemo();
   await renderHosts(transport);
   expect(
     await screen.findByRole("button", {
@@ -338,21 +318,22 @@ test("describes the CPU sparkline in the host row's accessible name", async () =
 });
 
 test("loads registry changes on return from a different screen", async () => {
-  const transport = createMockTransport();
-  const original = await transport.listHosts();
-  const list = jest.spyOn(transport, "listHosts");
+  const transport = demo();
+  const [remote] = await transport.listRemoteHosts();
+  if (!remote) throw new Error("Expected a demo remote host");
   await renderHosts(transport);
   expect(
-    await screen.findByRole("button", { name: /MacBook Pro, macOS, Live/ })
+    await screen.findByRole("button", {
+      name: new RegExp(`^${remote.config.name},`),
+    })
   ).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole("button", { name: "Settings" }));
-  list.mockResolvedValue(
-    original.map((host) => ({ ...host, display_name: "Updated host" }))
+  await act(() =>
+    transport.updateRemoteHost({ ...remote.config, name: "Updated host" })
   );
-  await act(() => transport.emitHostsChanged());
   await act(() => router.back());
   expect(
-    await screen.findByRole("button", { name: /Updated host, macOS, Live/ })
+    await screen.findByRole("button", { name: /^Updated host,/ })
   ).toBeOnTheScreen();
 });
 
@@ -369,7 +350,7 @@ test("retries a protocol-coded failure when the transport is still retrying", as
   await renderHosts(transport);
   expect(
     await screen.findByRole("button", {
-      name: /build, Linux, Offline since 14:00/,
+      name: /build, Linux, Needs attention · Couldn’t read host response/,
     })
   ).toBeOnTheScreen();
   await pullToRefresh();
@@ -381,12 +362,12 @@ test("retries a protocol-coded failure when the transport is still retrying", as
 
 test("a failed status read replaces stale Live and explains the failure", async () => {
   const transport = demo();
-  const listStatuses = jest.spyOn(transport, "listRemoteHosts");
   await renderHosts(transport);
   expect(
     await screen.findByRole("button", { name: /build, Linux, Live/ })
   ).toBeOnTheScreen();
-  listStatuses.mockRejectedValue(new Error("Status endpoint unavailable."));
+  transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
+  transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
   await act(() =>
     transport.pushRemoteStatus("remote-build", { state: "offline" })
   );
@@ -404,8 +385,7 @@ test("a failed status read replaces stale Live and explains the failure", async 
 
 test("offers the demo and pairing when the transport has no hosts", async () => {
   const transport = createMockTransport();
-  jest.spyOn(transport, "listHosts").mockResolvedValue([]);
-  await renderHosts(transport);
+  await renderHosts(transport, { removed: [MOCK_HOST_ID] });
   expect(
     await screen.findByRole("header", { name: "No hosts yet" })
   ).toBeOnTheScreen();
@@ -422,10 +402,8 @@ test("offers the demo and pairing when the transport has no hosts", async () => 
 
 test("shows a failed host read as an error and recovers on refresh", async () => {
   const transport = createMockTransport();
-  jest
-    .spyOn(transport, "listHosts")
-    .mockRejectedValueOnce(new Error("Host registry unavailable."))
-    .mockRejectedValueOnce(new Error("Host registry unavailable."));
+  transport.failNext("listHosts", phoneCommandFailures.registry);
+  transport.failNext("listHosts", phoneCommandFailures.registry);
   await renderHosts(transport);
   expect(
     await screen.findByRole(
@@ -453,7 +431,128 @@ test("shows missing readings as dashes", async () => {
   await renderHosts(transport);
   expect(
     await screen.findByRole("button", {
-      name: /unreachable, Linux, Offline, CPU —, Memory —, Network —/,
+      name: "unreachable, Linux, Needs attention · Host unreachable, CPU —, Memory —, Network —",
     })
+  ).toBeOnTheScreen();
+});
+
+test("going offline removes the previous readings and sparkline and stops polling them", async () => {
+  const transport = sparklineDemo(["hosts-dashboard"]);
+  const host = "remote-build";
+  const hidden = (await transport.listHosts())
+    .filter(({ id }) => id !== host)
+    .map(({ id }) => id);
+  const vitals = jest.spyOn(transport, "hostVitals");
+  const history = jest.spyOn(transport, "hostHistory");
+  await renderHosts(transport, { removed: hidden });
+  expect(
+    await screen.findByRole("button", {
+      name: /build, Linux, Live, CPU 18%, Memory 42%, Network 1\.4 MB\/s, CPU history/,
+    })
+  ).toBeOnTheScreen();
+  await act(() =>
+    transport.pushRemoteStatus(host, {
+      state: "offline",
+      last_seen_ms: PHONE_LAST_SEEN_MS,
+      clock_offset_ms: PHONE_CLOCK_OFFSET_MS,
+    })
+  );
+  expect(await screen.findByText("Offline since 14:02")).toBeOnTheScreen();
+  expect(
+    screen.getByRole("button", {
+      name: "build, Linux, Offline since 14:02, CPU —, Memory —, Network —",
+    })
+  ).toBeOnTheScreen();
+  expect(
+    screen.queryByLabelText("CPU history over the last 30 minutes")
+  ).toBeNull();
+  vitals.mockClear();
+  history.mockClear();
+  await act(() => jest.advanceTimersByTimeAsync(MINUTE));
+  expect(vitals).not.toHaveBeenCalled();
+  expect(history).not.toHaveBeenCalled();
+});
+
+test("reconnecting hides cached readings until the vitals and history reads succeed", async () => {
+  const transport = sparklineDemo(["hosts-dashboard"]);
+  const host = "remote-build";
+  const hidden = (await transport.listHosts())
+    .filter(({ id }) => id !== host)
+    .map(({ id }) => id);
+  await renderHosts(transport, { removed: hidden });
+  const liveReadings =
+    /build, Linux, Live, CPU 18%, Memory 42%, Network 1\.4 MB\/s, CPU history/;
+  expect(
+    await screen.findByRole("button", { name: liveReadings })
+  ).toBeOnTheScreen();
+
+  await act(() =>
+    transport.pushRemoteStatus(host, {
+      state: "connecting",
+      failure_kind: "unreachable",
+      last_seen_ms: PHONE_LAST_SEEN_MS,
+    })
+  );
+  await screen.findByText("Offline since 14:02");
+  transport.failNext("hostVitals", phoneCommandFailures.retryNetwork);
+  transport.failNext("hostHistory", phoneCommandFailures.retryNetwork);
+  await act(() =>
+    transport.pushRemoteStatus(host, {
+      state: "connected",
+      failure_kind: null,
+    })
+  );
+  await screen.findByText("Live");
+  expect(
+    screen.getByRole("button", {
+      name: "build, Linux, Live, CPU —, Memory —, Network —",
+    })
+  ).toBeOnTheScreen();
+  expect(
+    screen.queryByLabelText("CPU history over the last 30 minutes")
+  ).toBeNull();
+  await act(() => jest.advanceTimersByTimeAsync(1000));
+  expect(
+    await screen.findByRole("button", { name: liveReadings })
+  ).toBeOnTheScreen();
+});
+
+test("shows the phone offline once only while every listed remote waits for the network", async () => {
+  const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+  const transport = createMockTransport({
+    scenarios: ["phone-errors"],
+    historyRows: 2,
+  });
+  const visible = ["phone-local-offline", "phone-timeout"];
+  const hidden = (await transport.listHosts())
+    .filter(({ id }) => !visible.includes(id))
+    .map(({ id }) => id);
+  await renderHosts(transport, { removed: hidden });
+  expect(await screen.findByText("Waiting for network")).toBeOnTheScreen();
+  expect(screen.queryByText("This iPhone is offline")).toBeNull();
+
+  await act(() =>
+    transport.pushRemoteStatus("phone-timeout", {
+      state: "connecting",
+      waiting_for_network: true,
+    })
+  );
+  expect(await screen.findByText("This iPhone is offline")).toBeOnTheScreen();
+  expect(screen.getAllByText("This iPhone is offline")).toHaveLength(1);
+  expect(announce).toHaveBeenCalledTimes(1);
+  expect(announce).toHaveBeenCalledWith("This iPhone is offline");
+  expect(screen.getAllByText("Waiting for network")).toHaveLength(2);
+});
+
+test("shows the next agent retry in phone time beside its short reason", async () => {
+  const transport = createMockTransport({
+    scenarios: ["phone-errors"],
+    historyRows: 2,
+  });
+  await renderHosts(transport);
+  expect(
+    await screen.findByText(
+      "Needs attention · StatGlass agent isn’t running · Retrying at 14:03"
+    )
   ).toBeOnTheScreen();
 });

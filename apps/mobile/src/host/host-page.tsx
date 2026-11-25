@@ -10,6 +10,7 @@ import {
   selectPowerSource,
 } from "@core/live-selectors";
 import type { PopoverCard } from "@core/popover/card-order";
+import { phoneProblem } from "@core/remote-errors";
 import { useRouter } from "expo-router";
 import { memo, useEffect, useMemo, useState } from "react";
 import { Animated, Easing, ScrollView, View } from "react-native";
@@ -21,11 +22,9 @@ import { MemoryCard } from "@/cards/memory-card";
 import { NetworkCard } from "@/cards/network-card";
 import { PowerCard } from "@/cards/power-card";
 import { UnavailableCard } from "@/cards/unavailable-card";
-import {
-  connectionStatusError,
-  useHostLive,
-  useRemoteStatus,
-} from "@/data/live";
+import { ProblemBanner } from "@/connection/problem-banner";
+import { useHostConnection } from "@/data/hosts";
+import { connectionStatusError, useHostLive } from "@/data/live";
 import { useCompactStream, useNetworkBars } from "@/data/live-stream";
 import { usePhoneSettings } from "@/data/phone-settings";
 import { motionEasings } from "@/theme.generated";
@@ -189,10 +188,17 @@ export function HostPage({
   width: number;
   active: boolean;
 }) {
-  const status = useRemoteStatus(host.id, active && !host.is_local);
+  const status = useHostConnection(host.id, active && !host.is_local);
+  const record = status.isError ? null : status.data;
+  const problem = record
+    ? phoneProblem(
+        { ...record, config: { ...record.config, name: host.display_name } },
+        Date.now()
+      )
+    : null;
   const connection = useConnection(
     host.id,
-    status.data,
+    record?.status,
     !host.is_local && status.isError
       ? connectionStatusError(status.error)
       : null
@@ -215,6 +221,13 @@ export function HostPage({
           active={active}
         />
       </View>
+      {problem && (
+        <ProblemBanner
+          key={`${host.id}:${problem.kind}`}
+          host={host.id}
+          problem={problem}
+        />
+      )}
       <CardStack host={host} dimmed={dimmed} />
     </ScrollView>
   );

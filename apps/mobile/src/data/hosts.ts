@@ -1,30 +1,25 @@
-import { formatClock } from "@core/format";
-import type {
-  HostId,
-  HostRecord,
-  RemoteHostStatus,
-} from "@core/generated/types";
+import type { HostId, HostRecord } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { hostClock } from "@core/host-clock";
+import { phoneWaitingForNetwork } from "@core/phone-connection";
 import { historyKeys, hostKeys } from "@core/query-keys";
-import { failureReason, type PhoneRemoteHostRecord } from "@core/remote-errors";
+import {
+  failureReason,
+  hostStatusSummary,
+  type PhoneRemoteHostRecord,
+  type PhoneRemoteHostStatus,
+  phoneProblem,
+} from "@core/remote-errors";
 import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useIsFocused } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { usePhoneTransport } from "./transport-context";
 
 const CPU = "cpu.total";
 const SPARKLINE_MS = 30 * MINUTE_MS;
-const needsAttention = new Set<RemoteHostStatus["failure_kind"]>([
-  "authentication",
-  "host_key",
-  "incompatible",
-  "identity_changed",
-  "protocol",
-]);
 
 /** Refresh the shared host queries from one subscription per focused list. */
 export function useHostListUpdates() {
@@ -53,37 +48,92 @@ export function useHostListUpdates() {
   );
 }
 
-function useRemoteStatuses<T>(select: (records: PhoneRemoteHostRecord[]) => T) {
+function useRemoteStatuses<T>(
+  select: (records: PhoneRemoteHostRecord[]) => T,
+  enabled = true
+) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
   return useQuery({
     queryKey: hostKeys.remote(),
     queryFn: () => transport.listRemoteHosts(),
-    enabled: focused,
+    enabled: focused && enabled,
     select,
   });
 }
 
-/** One host's connection status, updated by the list's shared event subscription. */
-export function useHostStatus(id: HostId) {
+/** One host's connection record, updated by the screen's event subscription. */
+export function useHostStatus(id: HostId, enabled = true) {
   return useRemoteStatuses(
-    (records) => records.find(({ config }) => config.id === id)?.status ?? null
+    (records) => records.find(({ config }) => config.id === id) ?? null,
+    enabled
   );
 }
 
+/** A focused host page owns status updates while the hosts list is blurred. */
+export function useHostConnection(id: HostId, active: boolean) {
+  const transport = usePhoneTransport();
+  const cache = useQueryClient();
+  const focused = useIsFocused();
+  useEffect(() => {
+    if (!active || !focused) return;
+    return transport.onRemoteHostsChanged(() => {
+      void cache.invalidateQueries({ queryKey: hostKeys.remote() });
+    });
+  }, [active, cache, focused, transport]);
+  return useHostStatus(id, active);
+}
+
+/** Report network loss once for the visible remote hosts. */
+export function useHostsWaitingForNetwork(hosts: readonly HostRecord[]) {
+  const status = useRemoteStatuses((records) => {
+    const remotes = hosts.filter(({ is_local }) => !is_local);
+    return (
+      remotes.length > 0 &&
+      remotes.every(({ id }) =>
+        records.some(
+          ({ config, status }) =>
+            config.id === id && phoneWaitingForNetwork(status)
+        )
+      )
+    );
+  });
+  return status.isSuccess && status.data;
+}
+
 /** Host headlines, polled every five seconds on the focused screen. */
-export function useHostVitals(id: HostId) {
+export function useHostVitals(id: HostId, connected: boolean) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
   return useQuery({
     queryKey: hostKeys.vitals(id),
     queryFn: () => unwrap(transport.hostVitals(id)),
-    enabled: focused,
+    enabled: focused && connected,
     refetchInterval: 5_000,
   });
 }
 
 const sparklineKey = (id: HostId) => historyKeys.recent(id, SPARKLINE_MS);
+
+/** Discard readings from the previous connection before the row goes live again. */
+export function useClearOfflineHostReadings(id: HostId, connected: boolean) {
+  const cache = useQueryClient();
+  useEffect(() => {
+    if (connected) return;
+    void cache.resetQueries({ queryKey: hostKeys.vitals(id), exact: true });
+    void cache.resetQueries({ queryKey: sparklineKey(id), exact: true });
+  }, [cache, connected, id]);
+}
+
+/** Adapt the shared summary to the debug screen's existing label props. */
+export function hostStatusLabel(
+  local: boolean,
+  status: PhoneRemoteHostStatus | null
+) {
+  if (local) return { text: "Live", tone: "live" } as const;
+  const summary = hostStatusSummary(status, { nowMs: Date.now() });
+  return { text: summary.label, tone: summary.tone };
+}
 
 /** The last thirty minutes of CPU history. */
 export function useHostSparkline(id: HostId) {
@@ -98,7 +148,12 @@ export function useHostSparkline(id: HostId) {
     // The visible hosts query and registry events already keep this cache fresh.
     staleTime: Infinity,
   });
-  const offsetMs = local.data ? 0 : (status.data?.clock_offset_ms ?? null);
+  const remote = status.data?.status;
+  const offsetMs = local.data
+    ? 0
+    : remote?.state === "connected"
+      ? remote.clock_offset_ms
+      : null;
   const now = useMemo(() => hostClock(offsetMs ?? 0), [offsetMs]);
   return useQuery({
     queryKey: sparklineKey(id),
@@ -133,41 +188,6 @@ export function useHostSparkline(id: HostId) {
   });
 }
 
-function connectionKind(status: RemoteHostStatus) {
-  switch (status.state) {
-    case "connected":
-      return "live";
-    case "disabled":
-      return "disabled";
-    case "connecting":
-      return status.error === null ? "connecting" : "offline";
-    default:
-      return needsAttention.has(status.failure_kind) ? "attention" : "offline";
-  }
-}
-
-/** The row's compact connection wording and color role. */
-export function hostStatusLabel(
-  local: boolean,
-  status: RemoteHostStatus | null
-) {
-  if (local) return { text: "Live", tone: "live" } as const;
-  if (!status) return { text: "Status unavailable", tone: "muted" } as const;
-  const kind = connectionKind(status);
-  if (kind === "live") return { text: "Live", tone: "live" } as const;
-  if (kind === "attention")
-    return { text: "Needs attention", tone: "warning" } as const;
-  if (kind === "connecting")
-    return { text: "Connecting", tone: "muted" } as const;
-  if (status.last_seen_ms !== null && kind === "offline") {
-    const time = formatClock(
-      status.last_seen_ms + (status.clock_offset_ms ?? 0)
-    );
-    return { text: `Offline since ${time}`, tone: "muted" } as const;
-  }
-  return { text: "Offline", tone: "muted" } as const;
-}
-
 export interface HostRetryFailure {
   id: HostId;
   displayName: string;
@@ -182,10 +202,12 @@ export function useRefreshHosts() {
   return async (hosts: readonly HostRecord[]) => {
     const offline = new Set(
       statuses.data
-        ?.filter(
-          ({ config, status }) =>
-            config.enabled && connectionKind(status) === "offline"
-        )
+        ?.filter((record) => {
+          return (
+            record.config.enabled &&
+            phoneProblem(record, Date.now())?.action === "retry"
+          );
+        })
         .map(({ config }) => config.id)
     );
     const failures = await Promise.all(
