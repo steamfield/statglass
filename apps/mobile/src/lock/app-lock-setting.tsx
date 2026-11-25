@@ -7,6 +7,7 @@ import {
 } from "@/data/phone-settings";
 import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
+import { setNativeSnapshotCover } from "./snapshot-cover";
 
 /** Enables app lock only after iOS has authenticated the device owner. */
 export function AppLockSetting() {
@@ -56,8 +57,11 @@ export function AppLockSetting() {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: "Turn on App Lock",
       });
-      if (result.success) set({ appLock: true });
-      else if (result.error !== "user_cancel")
+      if (result.success) {
+        // Arm the cover before publishing the setting so UIKit can act on it immediately.
+        setNativeSnapshotCover(true);
+        set({ appLock: true });
+      } else if (result.error !== "user_cancel")
         setPromptError("iOS couldn’t verify your identity. Try again.");
     } catch (error) {
       console.warn("Could not authenticate to enable app lock", error);
