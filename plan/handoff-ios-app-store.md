@@ -9,29 +9,24 @@ file says what has and hasn't been done against it.
 
 ## Blocked on you, in order
 
-### 1. Distribution certificate
+### 1. Distribution certificate (done)
 
-`make mobile-archive` builds and signs `StatGlass.xcarchive`, but the App Store export
-fails because this Mac has no "Apple Distribution" certificate for team `YWA9Q642YP`.
-Creating one changes your Apple developer account, so the run left it to you. Either:
+With your go-ahead, the export now passes `-allowProvisioningUpdates`, and on its first run
+Xcode created a cloud-managed "Apple Distribution: Riley Hilliard (YWA9Q642YP)" certificate
+and the App Store profile for `com.tryopendata.statglass.mobile`. On 2026-11-25
+`make mobile-archive` exported `StatGlass.ipa` 1.0.0 (1131), 22.4 MB, signed by that
+certificate with `get-task-allow` false, and `make mobile-release-check` passed on it.
 
-- In Xcode, Settings > Accounts > the team > Manage Certificates > + > Apple Distribution.
-  Then rerun the archive.
-- Or let Xcode create the certificate and the App Store profile during export by adding
-  `-allowProvisioningUpdates` to the `xcodebuild -exportArchive` line in
-  `scripts/mobile/archive.sh` (a one-line change; say so and an agent can make it).
+That first real run needed four fixes, now on main: the export runs with only system tools
+on PATH (Homebrew's rsync broke Xcode's IPA copy), the checker reads Rust's symbols with
+`nm --no-llvm-bc`, Expo frameworks without their own privacy manifest are checked against
+the app's, and the entitlements are read from the IPA instead of the development-signed
+archive. Two lines in the output are expected: the Hermes SDK signature line (CocoaPods'
+copy is unsigned; Xcode signs the embedded one) and the advisory strings
+`IOHIDEventSystemClient IOReport`, which are text in the Rust library, not imports.
 
-Then, from a clean checkout of main:
-
-```sh
-make mobile-check
-make mobile-archive
-make mobile-release-check
-```
-
-`mobile-release-check` has not run against an exported IPA yet, only its fixtures
-(`make mobile-release-check-test`). Read its Hermes signature line and the advisory
-strings it prints.
+Build 1131 was cut before these fixes merged, so rebuild from main before uploading; the
+build number is the commit count and must exceed any build you already uploaded.
 
 ### 2. Device pass on the iPhone 13 Pro
 

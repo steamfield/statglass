@@ -6,6 +6,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
 fixture="$scratch/release fixture"
 archive="$fixture/StatGlass.xcarchive"
+ipa="$fixture/StatGlass.ipa"
 app="$archive/Products/Applications/StatGlass.app"
 framework="$app/Frameworks/Fixture.framework"
 plist="$app/Info.plist"
@@ -60,6 +61,14 @@ install_name='@rpath/Fixture.framework/Fixture'
 "${clang[@]}" -c "$scratch/private.c" -o "$scratch/private.o"
 xcrun ar -rcs "$rust_lib" "$scratch/strings.o"
 xcrun ar -rcs "$scratch/private.a" "$scratch/private.o"
+# Rust embeds bitcode from a newer LLVM than Xcode's nm reads; a body it cannot parse
+# stands in for it, and the private import must still be found.
+"${clang[@]}" -fembed-bitcode -c "$scratch/private.c" -o "$scratch/private-bc.o"
+read -r bc_size bc_offset < <(xcrun otool -l "$scratch/private-bc.o" |
+  awk '/sectname __bitcode/ { found = 1 } found && $1 == "size" { size = $2 } found && $1 == "offset" { print size, $2; exit }')
+head -c $((bc_size - 40)) /dev/zero | tr '\0' '\377' |
+  dd of="$scratch/private-bc.o" bs=1 seek=$((bc_offset + 40)) conv=notrunc 2>/dev/null
+xcrun ar -rcs "$scratch/private-bc.a" "$scratch/private-bc.o"
 
 plutil -create xml1 "$plist"
 plutil -insert CFBundleExecutable -string StatGlass "$plist"
@@ -135,7 +144,15 @@ expect_failure() {
 }
 
 codesign --force --sign - "$app/StatGlass"
-output=$("$checker" "$archive") || fail "valid archive"
+# The IPA holds a signed copy of the app, the way Xcode's export lays it out.
+package_ipa() {
+  rm -rf -- "$scratch/payload" "$ipa"
+  mkdir -p "$scratch/payload/Payload"
+  cp -R "$app" "$scratch/payload/Payload/"
+  ditto -c -k "$scratch/payload" "$ipa"
+}
+package_ipa
+output=$("$checker" "$archive" "$ipa") || fail "valid archive"
 for advisory in IOReport PrivateFrameworks; do
   grep -Eq "advisory.*$advisory" <<< "$output" || fail "valid archive should report the advisory strings"
 done
@@ -143,106 +160,124 @@ pass "valid archive with a framework and advisory strings"
 
 mkdir "$framework/Fixture_Privacy.bundle"
 mv "$framework/PrivacyInfo.xcprivacy" "$framework/Fixture_Privacy.bundle/"
-"$checker" "$archive" > "$scratch/nested.log" || { cat "$scratch/nested.log"; fail "valid nested framework manifest"; }
+"$checker" "$archive" "$ipa" > "$scratch/nested.log" || { cat "$scratch/nested.log"; fail "valid nested framework manifest"; }
 mv "$framework/Fixture_Privacy.bundle/PrivacyInfo.xcprivacy" "$framework/"
 rmdir "$framework/Fixture_Privacy.bundle"
 pass "valid nested framework manifest"
 
 expect_failure 'usage: release-check.sh' "$checker"
-expect_failure 'expected exactly one archived .app' "$checker" "$scratch/missing.xcarchive"
+expect_failure 'expected exactly one archived .app' "$checker" "$scratch/missing.xcarchive" "$ipa"
 
 plutil -remove ITSAppUsesNonExemptEncryption "$plist"
-expect_failure 'missing or invalid ITSAppUsesNonExemptEncryption' "$checker" "$archive"
+expect_failure 'missing or invalid ITSAppUsesNonExemptEncryption' "$checker" "$archive" "$ipa"
 cp "$scratch/good.plist" "$plist"
 
 plutil -insert NSMicrophoneUsageDescription -string 'Use the microphone.' "$plist"
-expect_failure 'NSMicrophoneUsageDescription must be absent' "$checker" "$archive"
+expect_failure 'NSMicrophoneUsageDescription must be absent' "$checker" "$archive" "$ipa"
 cp "$scratch/good.plist" "$plist"
 
 plutil -replace NSCameraUsageDescription -string "Allow \$(PRODUCT_NAME) to access your camera." "$plist"
-expect_failure 'NSCameraUsageDescription uses a generic purpose string' "$checker" "$archive"
+expect_failure 'NSCameraUsageDescription uses a generic purpose string' "$checker" "$archive" "$ipa"
 plutil -replace NSCameraUsageDescription -string "Allow StatGlass to access your camera." "$plist"
-expect_failure 'NSCameraUsageDescription uses a generic purpose string' "$checker" "$archive"
+expect_failure 'NSCameraUsageDescription uses a generic purpose string' "$checker" "$archive" "$ipa"
 cp "$scratch/good.plist" "$plist"
 
 plutil -replace NSAppTransportSecurity.NSAllowsArbitraryLoads -bool true "$plist"
-expect_failure 'NSAllowsArbitraryLoads must be false' "$checker" "$archive"
+expect_failure 'NSAllowsArbitraryLoads must be false' "$checker" "$archive" "$ipa"
 cp "$scratch/good.plist" "$plist"
 
 plutil -replace UISupportedInterfaceOrientations -json '["UIInterfaceOrientationLandscapeLeft"]' "$plist"
-expect_failure 'UISupportedInterfaceOrientations must contain only portrait orientations' "$checker" "$archive"
+expect_failure 'UISupportedInterfaceOrientations must contain only portrait orientations' "$checker" "$archive" "$ipa"
 cp "$scratch/good.plist" "$plist"
 
 plutil -replace CFBundleShortVersionString -string 0.0.0 "$plist"
-expect_failure 'invalid CFBundleShortVersionString (0.0.0)' "$checker" "$archive"
+expect_failure 'invalid CFBundleShortVersionString (0.0.0)' "$checker" "$archive" "$ipa"
 cp "$scratch/good.plist" "$plist"
 
 plutil -remove NSPrivacyAccessedAPITypes.0 "$framework/PrivacyInfo.xcprivacy"
-expect_failure 'Fixture imports _mach_absolute_time without a SystemBootTime reason' "$checker" "$archive"
+expect_failure 'Fixture imports _mach_absolute_time without a SystemBootTime reason' "$checker" "$archive" "$ipa"
 cp "$scratch/framework-privacy.plist" "$framework/PrivacyInfo.xcprivacy"
 plutil -remove NSPrivacyAccessedAPITypes.1 "$framework/PrivacyInfo.xcprivacy"
-expect_failure 'Fixture imports _NSFileSystemFreeSize without a DiskSpace reason' "$checker" "$archive"
+expect_failure 'Fixture imports _NSFileSystemFreeSize without a DiskSpace reason' "$checker" "$archive" "$ipa"
 cp "$scratch/framework-privacy.plist" "$framework/PrivacyInfo.xcprivacy"
 plutil -remove NSPrivacyAccessedAPITypes.2 "$framework/PrivacyInfo.xcprivacy"
-expect_failure "Fixture imports _objc_msgSend\$fileModificationDate without a FileTimestamp reason" "$checker" "$archive"
+expect_failure "Fixture imports _objc_msgSend\$fileModificationDate without a FileTimestamp reason" "$checker" "$archive" "$ipa"
 cp "$scratch/framework-privacy.plist" "$framework/PrivacyInfo.xcprivacy"
 plutil -replace NSPrivacyAccessedAPITypes.0.NSPrivacyAccessedAPITypeReasons -json '["35F9.1","BAD.1"]' "$framework/PrivacyInfo.xcprivacy"
-expect_failure 'invalid required-reason declaration' "$checker" "$archive"
+expect_failure 'invalid required-reason declaration' "$checker" "$archive" "$ipa"
 cp "$scratch/framework-privacy.plist" "$framework/PrivacyInfo.xcprivacy"
 plutil -replace NSPrivacyTracking -bool true "$framework/PrivacyInfo.xcprivacy"
-expect_failure 'privacy manifest declares tracking or data collection' "$checker" "$archive"
+expect_failure 'privacy manifest declares tracking or data collection' "$checker" "$archive" "$ipa"
 rm "$framework/PrivacyInfo.xcprivacy"
-expect_failure 'PrivacyInfo.xcprivacy is missing from' "$checker" "$archive"
+"$checker" "$archive" "$ipa" > "$scratch/out" 2>&1 || {
+  cat "$scratch/out" >&2
+  fail "a framework without a manifest should fall back to the app's"
+}
+plutil -remove NSPrivacyAccessedAPITypes.1 "$manifest"
+expect_failure 'Fixture imports _NSFileSystemFreeSize without a DiskSpace reason' "$checker" "$archive" "$ipa"
+cp "$scratch/framework-privacy.plist" "$manifest"
 cp "$scratch/framework-privacy.plist" "$framework/PrivacyInfo.xcprivacy"
+pass "a framework without a manifest is checked against the app's"
 
 cp "$scratch/private" "$app/StatGlass"
-expect_failure 'StatGlass imports forbidden symbol _IOReportFixture' "$checker" "$archive"
+expect_failure 'StatGlass imports forbidden symbol _IOReportFixture' "$checker" "$archive" "$ipa"
 cp "$scratch/good-executable" "$app/StatGlass"
 cp "$scratch/private.a" "$rust_lib"
-expect_failure 'libstatglass_mobile.a imports forbidden symbol _IOReportFixture' "$checker" "$archive"
+expect_failure 'libstatglass_mobile.a imports forbidden symbol _IOReportFixture' "$checker" "$archive" "$ipa"
+cp "$scratch/good.a" "$rust_lib"
+cp "$scratch/private-bc.a" "$rust_lib"
+expect_failure 'libstatglass_mobile.a imports forbidden symbol _IOReportFixture' "$checker" "$archive" "$ipa"
 cp "$scratch/good.a" "$rust_lib"
 
 cp "$scratch/private-load" "$app/StatGlass"
-expect_failure 'disallowed load command /System/Library/PrivateFrameworks/' "$checker" "$archive"
+expect_failure 'disallowed load command /System/Library/PrivateFrameworks/' "$checker" "$archive" "$ipa"
 cp "$scratch/traversal" "$app/StatGlass"
-expect_failure 'disallowed load command /System/Library/Frameworks/../' "$checker" "$archive"
+expect_failure 'disallowed load command /System/Library/Frameworks/../' "$checker" "$archive" "$ipa"
 mkdir -p "$archive/External"
 cp -R "$framework" "$archive/External/"
 cp "$scratch/outside-load" "$app/StatGlass"
-expect_failure 'out-of-bundle load command @rpath/Fixture.framework/Fixture' "$checker" "$archive"
+expect_failure 'out-of-bundle load command @rpath/Fixture.framework/Fixture' "$checker" "$archive" "$ipa"
 cp "$scratch/good-executable" "$app/StatGlass"
 
 mv "$framework/Fixture" "$scratch/embedded"
-expect_failure 'unresolved in-bundle load command @rpath/Fixture.framework/Fixture' "$checker" "$archive"
+expect_failure 'unresolved in-bundle load command @rpath/Fixture.framework/Fixture' "$checker" "$archive" "$ipa"
 mv "$scratch/embedded" "$framework/Fixture"
 
 cp "$scratch/placeholder.png" "$icon"
-expect_failure 'icon-light.png matches a placeholder icon hash' "$checker" "$archive"
+expect_failure 'icon-light.png matches a placeholder icon hash' "$checker" "$archive" "$ipa"
 cp "$catalog/AppIcon.appiconset/icon.png" "$icon"
 cp "$scratch/placeholder.png" "$generated_icon"
 cp "$scratch/placeholder.png" "$catalog/AppIcon.appiconset/icon.png"
 compile_icon
-expect_failure 'App-Icon-1024x1024@1x.png matches a placeholder icon hash' "$checker" "$archive"
+expect_failure 'App-Icon-1024x1024@1x.png matches a placeholder icon hash' "$checker" "$archive" "$ipa"
 cp "$icon" "$generated_icon"
 cp "$icon" "$catalog/AppIcon.appiconset/icon.png"
 compile_icon
 
 mv "$app/Assets.car" "$scratch/Assets.car"
-expect_failure 'Assets.car is missing' "$checker" "$archive"
+expect_failure 'Assets.car is missing' "$checker" "$archive" "$ipa"
 mv "$scratch/Assets.car" "$app/Assets.car"
 
 plutil -create xml1 "$scratch/entitlements.plist"
 plutil -insert get-task-allow -bool true "$scratch/entitlements.plist"
 codesign --force --sign - --entitlements "$scratch/entitlements.plist" "$app/StatGlass"
-expect_failure 'get-task-allow entitlement must be absent' "$checker" "$archive"
+package_ipa
+expect_failure 'get-task-allow entitlement must not be true' "$checker" "$archive" "$ipa"
+plutil -replace get-task-allow -bool false "$scratch/entitlements.plist"
+codesign --force --sign - --entitlements "$scratch/entitlements.plist" "$app/StatGlass"
+package_ipa
+"$checker" "$archive" "$ipa" > "$scratch/out" 2>&1 || { cat "$scratch/out" >&2; fail "distribution signing writes get-task-allow false"; }
+pass "get-task-allow false passes"
 cp "$scratch/good-executable" "$app/StatGlass"
+package_ipa
+expect_failure 'missing exported IPA' "$checker" "$archive" "$scratch/missing.ipa"
 
 mv "$app/main.jsbundle" "$scratch/main.jsbundle"
-expect_failure 'main.jsbundle is missing or empty' "$checker" "$archive"
+expect_failure 'main.jsbundle is missing or empty' "$checker" "$archive" "$ipa"
 mv "$scratch/main.jsbundle" "$app/main.jsbundle"
 
 mkdir "$app/Frameworks/EXDevMenu.framework"
-expect_failure 'development client or menu in the bundle' "$checker" "$archive"
+expect_failure 'development client or menu in the bundle' "$checker" "$archive" "$ipa"
 rmdir "$app/Frameworks/EXDevMenu.framework"
 
 git -C "$fixture" init -q
@@ -256,5 +291,13 @@ fi
 [[ $(plutil -extract destination raw -expect string "$export_options") == export ]] ||
   fail "ExportOptions.plist destination must be export"
 pass "local export only"
+
+# The export command runs from its -exportArchive line to the first line without a
+# trailing backslash.
+sed -n '/-exportArchive/,/[^\\]$/p' scripts/mobile/archive.sh | grep -q -- -allowProvisioningUpdates ||
+  fail "the export must let Xcode create a missing distribution certificate"
+grep -q -- '-exportArchive' <(grep -- 'PATH=/usr/bin:/bin:/usr/sbin:/sbin xcodebuild' scripts/mobile/archive.sh) ||
+  fail "the export must run with system tools only (Homebrew rsync breaks the IPA copy)"
+pass "export provisions its own signing"
 
 printf 'release-check-test: %d cases passed\n' "$passed"

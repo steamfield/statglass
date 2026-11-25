@@ -136,9 +136,9 @@ mobile-native-check:
 mobile-archive:
 	scripts/mobile/archive.sh
 
-# App Store checks on the archive: Info.plist, privacy manifest, symbols, icon, entitlements.
+# App Store checks on the archive and its exported IPA: Info.plist, privacy manifest, symbols, icon, entitlements.
 mobile-release-check:
-	scripts/mobile/release-check.sh apps/mobile/dist/ios/StatGlass.xcarchive
+	scripts/mobile/release-check.sh apps/mobile/dist/ios/StatGlass.xcarchive apps/mobile/dist/ios/StatGlass.ipa
 
 # release-check.sh against fixture bundles (no Xcode project needed).
 mobile-release-check-test:
