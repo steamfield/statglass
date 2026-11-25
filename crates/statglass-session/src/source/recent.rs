@@ -9,16 +9,21 @@ impl Session<'_> {
             .is_some_and(|mirror| mirror.recent_first())
     }
 
-    fn prepare_recent_epoch(&mut self) -> std::result::Result<(), crate::MirrorError> {
+    async fn prepare_recent_epoch(&mut self) -> Result<quiesce::WriteResult> {
         if !self.mirror_epoch_ready
-            && let Some(mirror) = &self.source.mirror
+            && let Some(mirror) = self.source.mirror.clone()
         {
             // The mirror accepts recent rows only after it has seen this database epoch.
             let tier = mirror.sync_tiers().first().copied().unwrap_or(Tier::S10);
-            mirror.cursor(tier, self.epoch, self.kinds)?;
-            self.mirror_epoch_ready = true;
+            let (epoch, kinds) = (self.epoch, self.kinds);
+            let result = self
+                .mirror_write
+                .read(move || mirror.cursor(tier, epoch, kinds).map(|_| ()))
+                .await?;
+            self.mirror_epoch_ready = result.is_ok();
+            return Ok(result);
         }
-        Ok(())
+        Ok(Ok(()))
     }
 
     pub(super) async fn request_recent(&mut self) -> Result<()> {
@@ -38,8 +43,8 @@ impl Session<'_> {
             && self.recent_timed_out.is_none()
             && (recent_first || self.next_tier >= self.tiers.len())
         {
-            self.recent_due = false;
-            if recent_first && let Err(error) = self.prepare_recent_epoch() {
+            if recent_first && let Err(error) = self.prepare_recent_epoch().await? {
+                self.recent_due = false;
                 self.watermark_failed = true;
                 self.status.history_error = Some(format!(
                     "reading the mirror cursor for recent history: {error}"
@@ -64,6 +69,7 @@ impl Session<'_> {
                     match watermark {
                         Ok(from) => from.unwrap_or_else(|| now.saturating_sub(300_000)),
                         Err(error) => {
+                            self.recent_due = false;
                             self.watermark_failed = true;
                             self.status.history_error =
                                 Some(format!("reading the mirror watermark: {error}"));
@@ -78,6 +84,15 @@ impl Session<'_> {
             } else {
                 now.saturating_sub(300_000)
             };
+            let request_changed = {
+                let control = self.control.borrow();
+                control.network != self.network
+                    || (control.interest.detail, control.recent_interest) != (detail, recent)
+            };
+            if request_changed {
+                return Ok(());
+            }
+            self.recent_due = false;
             if self.watermark_failed {
                 self.watermark_failed = false;
                 self.status.history_error = None;

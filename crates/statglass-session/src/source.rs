@@ -285,7 +285,7 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink, active: Arc<ActiveRun>
                     status.schedule_retry(backoff.attempt(), None);
                     (source.on_status)(status.clone());
                     let _ = control
-                        .wait_for(|s| s.interrupts(&before) || s.retry != before.retry)
+                        .wait_for(|s| s.interrupts(&before) || s.retry_requested_since(&before))
                         .await;
                     continue;
                 }
@@ -333,8 +333,7 @@ fn ends_backoff(before: &ControlState, now: &ControlState) -> bool {
     now.stop
         || now.asleep != before.asleep
         || now.quiesce != before.quiesce
-        || now.resumed != before.resumed
-        || now.retry != before.retry
+        || now.retry_requested_since(before)
         || now.network != before.network
 }
 async fn session_loop(
@@ -377,7 +376,7 @@ async fn session_loop(
         summary_layout: None,
         source_timeline: None,
         timeline: source.next_timeline.fetch_add(1, Ordering::Relaxed),
-        retry: before.retry,
+        retry: initial.retry,
         network: before.network,
         route_watch: RouteWatch::default(),
         last_sync: Instant::now() - Duration::from_secs(600),
@@ -776,7 +775,8 @@ impl Session<'_> {
                             result
                         });
                 } else {
-                    self.mirror_write_finished(MirrorWork::Page { more, requested }, Ok(()));
+                    self.mirror_write_finished(MirrorWork::Page { more, requested }, Ok(()))
+                        .await?;
                 }
             }
             Message::Truncated {
@@ -807,12 +807,10 @@ impl Session<'_> {
                 if tier != expected.0 {
                     return Err(RemoteError::Protocol("invalid truncation".into()));
                 }
-                if let Some(mirror) = &self.source.mirror
-                    && let Err(error) = mirror.truncated(tier, self.epoch, earliest_ts_ms)
-                {
-                    self.history_failed = true;
-                    self.watermark_failed = false;
-                    self.status.history_error = Some(error.to_string());
+                if let Some(mirror) = self.source.mirror.clone() {
+                    self.mirror_write.start(MirrorWork::Truncated, move || {
+                        mirror.truncated(tier, remote_epoch, earliest_ts_ms)
+                    });
                 }
                 self.floors.insert(tier, earliest_ts_ms);
                 self.restart_cursor.insert(tier);
@@ -838,16 +836,9 @@ impl Session<'_> {
                     ));
                 }
                 if let Some(mirror) = self.source.mirror.clone() {
-                    match mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows) {
-                        Err(error) => {
-                            self.watermark_failed = false;
-                            self.status.history_error = Some(error.to_string());
-                        }
-                        Ok(()) if !self.ring_filled && self.control.borrow().interest.detail => {
-                            self.refill_ring(mirror).await?;
-                        }
-                        Ok(()) => {}
-                    }
+                    self.mirror_write.start(MirrorWork::Recent, move || {
+                        mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows)
+                    });
                 }
             }
             Message::Error { message, .. } => {
@@ -893,7 +884,11 @@ impl Session<'_> {
                 "remote application heartbeat timed out".into(),
             ));
         }
-        if self.outstanding_ping.is_none() && self.last_ping.elapsed() >= Duration::from_secs(15) {
+        let probing = self.route_watch.probing();
+        if !probing
+            && self.outstanding_ping.is_none()
+            && self.last_ping.elapsed() >= Duration::from_secs(15)
+        {
             self.send_heartbeat().await?;
         }
         if self.recent_pending && self.last_recent.elapsed() > Duration::from_secs(30) {
@@ -918,6 +913,9 @@ impl Session<'_> {
             self.status.catching_up = false;
             (self.source.on_status)(self.status.clone());
         }
+        if probing {
+            return Ok(SessionAction::Continue);
+        }
         let period = if self.source.controller_battery.load(Ordering::Relaxed) {
             300
         } else {
@@ -925,6 +923,7 @@ impl Session<'_> {
         };
         if !self.mirror_write.running()
             && self.in_flight.is_none()
+            && !self.recent_pending
             && self.next_tier >= self.tiers.len()
         {
             if self.status.catching_up {
@@ -1371,7 +1370,7 @@ mod tests {
         let reply = codec::read(&mut reader).await;
         session.incoming(Some(reply)).await.unwrap();
         let (work, result) = session.mirror_write.finish().await.unwrap();
-        session.mirror_write_finished(work, result);
+        session.mirror_write_finished(work, result).await.unwrap();
         assert_eq!(mirror.0.load(Ordering::SeqCst), 1);
         assert!(!session.history_failed);
     }
@@ -1576,6 +1575,8 @@ mod tests {
         for _ in 0..2 {
             session.recent_pending = true;
             session.incoming(Some(Ok(recent.clone()))).await.unwrap();
+            let (work, result) = session.mirror_write.finish().await.unwrap();
+            session.mirror_write_finished(work, result).await.unwrap();
         }
         assert_eq!(mirror.0.load(Ordering::SeqCst), 1, "refilled once");
         assert_ne!(
@@ -1597,6 +1598,8 @@ mod tests {
         assert_eq!(session.next_tier, session.tiers.len(), "no sync forced");
         session.recent_pending = true;
         session.incoming(Some(Ok(recent.clone()))).await.unwrap();
+        let (work, result) = session.mirror_write.finish().await.unwrap();
+        session.mirror_write_finished(work, result).await.unwrap();
         assert_eq!(mirror.0.load(Ordering::SeqCst), 1, "still refilled once");
 
         // Closing the window and opening it again syncs, then refills once more.
@@ -1607,6 +1610,8 @@ mod tests {
         assert_eq!(session.next_tier, 0, "detail starting forces a sync");
         session.recent_pending = true;
         session.incoming(Some(Ok(recent))).await.unwrap();
+        let (work, result) = session.mirror_write.finish().await.unwrap();
+        session.mirror_write_finished(work, result).await.unwrap();
         assert_eq!(mirror.0.load(Ordering::SeqCst), 2, "refilled again");
     }
     #[tokio::test]

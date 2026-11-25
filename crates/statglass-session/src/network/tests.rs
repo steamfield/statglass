@@ -170,7 +170,7 @@ fn a_mac_with_only_bridge_addresses_reads_offline() {
         LocalNetwork {
             online: false,
             tailscale_up: false,
-            lan_up: true,
+            lan_up: false,
         }
     );
 }
@@ -200,13 +200,13 @@ fn summary(entries: &[(&str, &str)]) -> LocalNetwork {
 }
 
 #[test]
-fn a_carrier_nat_address_on_wifi_is_online_without_a_lan_or_tailscale_address() {
+fn a_carrier_nat_address_on_wifi_is_online_and_on_lan_without_tailscale() {
     assert_eq!(
         summary(&[("en0", "100.72.1.5")]),
         LocalNetwork {
             online: true,
             tailscale_up: false,
-            lan_up: false,
+            lan_up: true,
         }
     );
 }
@@ -262,7 +262,13 @@ fn cellular_and_tunnels_leave_lan_down_until_a_usable_lan_address_appears() {
             lan_up: false
         }
     );
-    for addr in ["192.168.1.5", "::ffff:10.0.0.3", "fd00::2", "2600:1700::3"] {
+    for addr in [
+        "192.168.1.5",
+        "::ffff:10.0.0.3",
+        "fd00::2",
+        "2600:1700::3",
+        "8.8.4.4",
+    ] {
         assert_eq!(
             summary(&[cellular, tailnet, ("en0", addr)]),
             LocalNetwork {
@@ -271,24 +277,13 @@ fn cellular_and_tunnels_leave_lan_down_until_a_usable_lan_address_appears() {
             }
         );
     }
-    assert!(
-        !summary(&[
-            ("en0", "fe80::2"),
-            ("en0", "ff02::1"),
-            ("en0", "203.0.113.1")
-        ])
-        .lan_up
-    );
+    assert!(!summary(&[("en0", "fe80::2"), ("en0", "ff02::1"),]).lan_up);
 }
 
 #[test]
-fn bridge_lan_addresses_count_for_lan_without_changing_the_online_heuristic() {
-    assert_eq!(
-        summary(&[("bridge0", "192.168.1.10"), ("utun3", "100.72.1.5")]),
-        LocalNetwork {
-            online: false,
-            lan_up: true,
-            tailscale_up: true,
-        }
-    );
+fn hotspot_and_virtual_interfaces_leave_lan_down_until_physical_cgnat_appears() {
+    for name in ["bridge100", "vmenet0", "ap1", "anpi0"] {
+        assert!(!summary(&[(name, "172.20.10.1")]).lan_up, "{name}");
+    }
+    assert!(summary(&[("bridge100", "172.20.10.1"), ("en0", "100.72.1.5")]).lan_up);
 }

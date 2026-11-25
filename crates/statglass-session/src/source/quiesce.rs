@@ -5,7 +5,7 @@ use super::{
 use crate::{BoxFuture, MirrorError, RemoteError, Result};
 use statglass_proto::Message;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
 impl RemoteSource {
@@ -30,12 +30,16 @@ impl RemoteSource {
         })
     }
 
-    /// Dials again at once with the backoff reset.
+    /// Wakes a quiesced source and dials at once with the backoff reset.
     pub fn resume(&self) {
-        self.control.send_modify(|state| {
+        self.control.send_if_modified(|state| {
+            if !state.backgrounded {
+                return false;
+            }
             state.backgrounded = false;
             state.resumed = state.resumed.wrapping_add(1);
             state.retry = state.retry.wrapping_add(1);
+            true
         });
     }
 }
@@ -43,6 +47,10 @@ impl RemoteSource {
 impl ControlState {
     pub(super) fn interrupts(&self, before: &Self) -> bool {
         self.stop || self.asleep || self.quiesce != before.quiesce
+    }
+
+    pub(super) fn retry_requested_since(&self, before: &Self) -> bool {
+        self.retry != before.retry || self.resumed != before.resumed
     }
 }
 
@@ -99,7 +107,10 @@ pub(super) struct MirrorWrite {
 #[derive(Clone, Copy)]
 pub(super) enum MirrorWork {
     Page { more: bool, requested: Instant },
+    Recent,
+    Truncated,
     Prune,
+    Read,
 }
 
 pub(super) type WriteResult = std::result::Result<(), MirrorError>;
@@ -127,6 +138,25 @@ impl MirrorWrite {
             write()
         });
         self.pending = Some((work, task));
+    }
+
+    /// Tracks cursor reads through quiesce because they can also change the mirror epoch.
+    pub(super) async fn read<T: Send + 'static>(
+        &mut self,
+        read: impl FnOnce() -> std::result::Result<T, MirrorError> + Send + 'static,
+    ) -> Result<std::result::Result<T, MirrorError>> {
+        let (send, received) = oneshot::channel();
+        self.start(MirrorWork::Read, move || {
+            let value = read()?;
+            let _ = send.send(value);
+            Ok(())
+        });
+        if let (_, Err(error)) = self.finish().await? {
+            return Ok(Err(error));
+        }
+        received.await.map(Ok).map_err(|error| {
+            RemoteError::Transport(format!("receiving remote mirror read: {error}"))
+        })
     }
 
     pub(super) async fn finish(&mut self) -> Result<(MirrorWork, WriteResult)> {
@@ -210,10 +240,10 @@ impl Session<'_> {
                     action = self.route_watch.next_action() => action,
                     result = self.mirror_write.finish() => {
                         let (work, result) = result?;
-                        self.mirror_write_finished(work, result);
+                        self.mirror_write_finished(work, result).await?;
                         SessionAction::Continue
                     },
-                    _ = timer.tick(), if !probing => self.tick().await?,
+                    _ = timer.tick() => self.tick().await?,
                     incoming = messages.recv() => self.incoming(incoming).await?,
                     Some(call) = calls.recv(), if !probing => self.call(call).await?,
                 }

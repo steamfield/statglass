@@ -11,8 +11,8 @@ pub struct LocalNetwork {
     /// An up, running Tailscale interface (`utun*`, `tailscale*`) has a Tailscale
     /// address (100.64.0.0/10 or fd7a:115c:a1e0::/48).
     pub tailscale_up: bool,
-    /// An up LAN interface has a private IPv4, unique-local IPv6 or global IPv6
-    /// address. Cellular and Tailscale tunnels do not count.
+    /// An up interface that counts toward online has a routable address and is
+    /// neither cellular nor a tunnel.
     pub lan_up: bool,
 }
 
@@ -64,7 +64,7 @@ pub fn classify_address(addr: IpAddr) -> AddressClass {
 }
 
 fn classify_v4(addr: Ipv4Addr) -> AddressClass {
-    if addr.is_loopback() || addr.is_unspecified() || addr.is_link_local() {
+    if addr.is_loopback() || addr.is_unspecified() || addr.is_link_local() || addr.is_multicast() {
         return AddressClass::Ignored;
     }
     // Tailscale hands out addresses from the CGNAT range 100.64.0.0/10.
@@ -78,7 +78,7 @@ fn classify_v4(addr: Ipv4Addr) -> AddressClass {
 fn classify_v6(addr: Ipv6Addr) -> AddressClass {
     let segments = addr.segments();
     let link_local = (segments[0] & 0xffc0) == 0xfe80;
-    if addr.is_loopback() || addr.is_unspecified() || link_local {
+    if addr.is_loopback() || addr.is_unspecified() || link_local || addr.is_multicast() {
         return AddressClass::Ignored;
     }
     if segments[..3] == TAILSCALE_V6_PREFIX {
@@ -123,23 +123,16 @@ fn summarize(addresses: &[interfaces::InterfaceAddress]) -> LocalNetwork {
         lan_up: false,
     };
     for entry in addresses {
-        net.lan_up |= !entry.name.starts_with("pdp_ip")
-            && !has_prefix(&entry.name, &TAILSCALE_INTERFACE_PREFIXES)
-            && is_lan_address(entry.addr);
         match class_on_interface(entry) {
             AddressClass::Tailscale => net.tailscale_up = true,
-            AddressClass::Routable if counts_toward_online(&entry.name) => net.online = true,
+            AddressClass::Routable if counts_toward_online(&entry.name) => {
+                net.online = true;
+                net.lan_up |= !entry.name.starts_with("pdp_ip");
+            }
             AddressClass::Routable | AddressClass::Ignored => {}
         }
     }
     net
-}
-
-fn is_lan_address(addr: IpAddr) -> bool {
-    match addr.to_canonical() {
-        IpAddr::V4(addr) => addr.is_private(),
-        IpAddr::V6(addr) => addr.is_unique_local() || addr.segments()[0] & 0xe000 == 0x2000,
-    }
 }
 
 /// How an address counts given the interface carrying it. ISPs, hotspots and corporate

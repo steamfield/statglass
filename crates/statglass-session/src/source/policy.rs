@@ -83,7 +83,7 @@ impl Session<'_> {
             && !self.recent_pending
             && self.in_flight.is_none()
             && self.next_tier < self.tiers.len()
-            && let Some(mirror) = &self.source.mirror
+            && let Some(mirror) = self.source.mirror.clone()
         {
             let tier = self.tiers[self.next_tier];
             let now = self
@@ -91,27 +91,35 @@ impl Session<'_> {
                 .clock
                 .now_ms()
                 .unwrap_or_else(statglass_engine::wall_ms);
-            let after = if self.restart_cursor.remove(&tier) {
-                None
-            } else {
-                match mirror.cursor(tier, self.epoch, self.kinds) {
-                    Ok(cursor) => {
-                        self.mirror_epoch_ready = true;
-                        cursor
-                    }
-                    Err(error) => {
-                        self.history_failed = true;
-                        self.watermark_failed = false;
-                        self.status.history_error = Some(error.to_string());
-                        self.status.catching_up = false;
-                        (self.source.on_status)(self.status.clone());
-                        return Ok(true);
-                    }
+            let restart = self.restart_cursor.contains(&tier);
+            let (epoch, kinds) = (self.epoch, self.kinds);
+            let request = self
+                .mirror_write
+                .read(move || {
+                    let after = if restart {
+                        None
+                    } else {
+                        mirror.cursor(tier, epoch, kinds)?
+                    };
+                    Ok((after, mirror.history_floor(tier, now)))
+                })
+                .await?;
+            let (after, floor) = match request {
+                Ok(request) => request,
+                Err(error) => {
+                    self.history_failed = true;
+                    self.watermark_failed = false;
+                    self.status.history_error = Some(error.to_string());
+                    self.status.catching_up = false;
+                    (self.source.on_status)(self.status.clone());
+                    return Ok(true);
                 }
             };
-            let floor = mirror
-                .history_floor(tier, now)
-                .max(self.floors.get(&tier).copied().unwrap_or(i64::MIN));
+            self.mirror_epoch_ready |= !restart;
+            if self.control.has_changed().unwrap_or(false) {
+                return Ok(true);
+            }
+            let floor = floor.max(self.floors.get(&tier).copied().unwrap_or(i64::MIN));
             self.write(&Message::SyncRequest(SyncRequest {
                 tier,
                 after,
@@ -120,6 +128,7 @@ impl Session<'_> {
                 max_bytes: Some(self.page_bytes),
             }))
             .await?;
+            self.restart_cursor.remove(&tier);
             self.in_flight = Some((tier, after, Instant::now()));
             self.status.catching_up = true;
             (self.source.on_status)(self.status.clone());
@@ -142,7 +151,11 @@ impl Session<'_> {
         }
     }
 
-    pub(super) fn mirror_write_finished(&mut self, work: MirrorWork, result: WriteResult) {
+    pub(super) async fn mirror_write_finished(
+        &mut self,
+        work: MirrorWork,
+        result: WriteResult,
+    ) -> Result<()> {
         match work {
             MirrorWork::Page { more, requested } => {
                 self.watermark_failed = false;
@@ -169,6 +182,26 @@ impl Session<'_> {
                 self.status.catching_up = false;
                 (self.source.on_status)(self.status.clone());
             }
+            MirrorWork::Recent => {
+                if let Err(error) = result {
+                    self.watermark_failed = false;
+                    self.status.history_error = Some(error.to_string());
+                } else if !self.ring_filled
+                    && self.control.borrow().interest.detail
+                    && let Some(mirror) = self.source.mirror.clone()
+                {
+                    self.refill_ring(mirror).await?;
+                }
+            }
+            MirrorWork::Truncated => {
+                if let Err(error) = result {
+                    self.history_failed = true;
+                    self.watermark_failed = false;
+                    self.status.history_error = Some(error.to_string());
+                }
+            }
+            MirrorWork::Read => {}
         }
+        Ok(())
     }
 }

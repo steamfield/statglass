@@ -96,17 +96,24 @@ async fn wait_for_write_interrupt(
     mut control: watch::Receiver<ControlState>,
     mut network: u64,
     mut deadline: Option<Instant>,
+    route: Route,
 ) {
     loop {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return;
+        }
         tokio::select! {
             biased;
             current = control.wait_for(|state| state.network != network) => {
                 let Ok(current) = current else { return; };
-                if current.local_network.is_some() {
-                    return;
+                if let Some(net) = current.local_network {
+                    if !route_available(route, net) {
+                        return;
+                    }
+                    let probe_deadline = Instant::now() + NETWORK_CHANGE_PROBE;
+                    deadline = Some(deadline.map_or(probe_deadline, |prior| prior.min(probe_deadline)));
                 }
                 network = current.network;
-                deadline = None;
             }
             () = async {
                 match deadline {
@@ -121,7 +128,8 @@ async fn wait_for_write_interrupt(
 impl Session<'_> {
     pub(super) async fn write(&mut self, message: &Message) -> Result<()> {
         let deadline = self.route_watch.probe.map(|(_, deadline)| deadline);
-        let interrupt = wait_for_write_interrupt(self.control.clone(), self.network, deadline);
+        let interrupt =
+            wait_for_write_interrupt(self.control.clone(), self.network, deadline, self.route);
         tokio::select! {
             biased;
             result = codec::write(self.writer, message) => result,
@@ -140,17 +148,25 @@ impl Session<'_> {
         }
         self.network = next.network;
         self.route_watch.promotion = None;
-        self.route_watch.probe = None;
         let Some(net) = next.local_network else {
-            self.promote();
+            if !self.route_watch.probing() {
+                self.promote();
+            }
             return Ok(true);
         };
         if !route_available(self.route, net) {
             return Ok(false);
         }
+        let now = Instant::now();
+        let deadline = self
+            .route_watch
+            .probe
+            .map_or(now + NETWORK_CHANGE_PROBE, |(_, deadline)| deadline);
+        if now >= deadline {
+            return Ok(false);
+        }
         let nonce = self.route_watch.nonce.wrapping_add(1) | PATH_NONCE;
         self.route_watch.nonce = nonce;
-        let deadline = Instant::now() + NETWORK_CHANGE_PROBE;
         self.route_watch.probe = Some((nonce, deadline));
         self.send_ping(nonce).await?;
         Ok(true)
