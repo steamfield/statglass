@@ -15,13 +15,20 @@ import {
   type Module,
   type SeriesHistoryStats,
 } from "../generated/types";
-import { floorTo } from "../time-grid";
+import { floorTo, MINUTE_MS } from "../time-grid";
 
 /** One sampler tick: the bucket still filling is not complete yet. */
 const SAMPLER_TICK_MS = 1_000;
+const SUMMARY_METRICS = new Set([
+  "cpu.total",
+  "mem.used",
+  "net.rx_total",
+  "net.tx_total",
+]);
 
 import type { PhoneQueries, Transport } from "../transport";
 import { MOCK_HOST_ID } from "./fixtures";
+import { demoHostOf, demoMetricScale } from "./history";
 import { fail, invalid, mockBuckets, ok, rangeError } from "./protocol";
 import type { MockRemotes } from "./remote";
 
@@ -176,7 +183,8 @@ function boundedChartPage(
 async function readLocalHistory(
   queries: Pick<Transport, "queryHistory" | "queryEvents">,
   request: HostHistoryRequest,
-  snapshot: number
+  snapshot: number,
+  demo: boolean
 ) {
   const planned = historyRead(request, snapshot);
   if (planned.status === "error") return planned;
@@ -201,13 +209,23 @@ async function readLocalHistory(
   if (matched.length > HISTORY_MAX_EVENTS) clamped.push({ kind: "events" });
   const page = { ...raw.data, series: raw.data.series.slice(0, limit) };
   const through = Math.min(to_ms, snapshot);
+  const compactHistory =
+    demo &&
+    request.events_for === null &&
+    to_ms - from_ms === 30 * MINUTE_MS &&
+    request.series.length === SUMMARY_METRICS.size &&
+    request.series.every(
+      ({ metric, labels }) => labels.length === 0 && SUMMARY_METRICS.has(metric)
+    );
   const answer = {
     ...page,
-    // Rust's rule: the last closed source bucket, leaving the open one (one
-    // sampler tick) for live data, never past the request or before its start.
+    // The compact fixture seeds through now so the first summary can follow
+    // directly. Other reads emulate Rust's last closed source bucket.
     complete_to_ms: Math.max(
       from_ms,
-      Math.min(to_ms, floorTo(snapshot - SAMPLER_TICK_MS, bucketMs))
+      compactHistory
+        ? through
+        : Math.min(to_ms, floorTo(snapshot - SAMPLER_TICK_MS, bucketMs))
     ),
     events: matched.slice(-HISTORY_MAX_EVENTS),
     stats: seriesStats(page, from_ms, through),
@@ -223,12 +241,54 @@ export function createMockHostHistory(
 ): PhoneQueries["hostHistory"] {
   return async (request) => {
     const remote = remotes?.get(request.host);
-    if (!remote) return readLocalHistory(queries, request, now());
+    if (!remote) {
+      const host = demoHostOf(remotes);
+      const result = await readLocalHistory(
+        queries,
+        request,
+        now(),
+        host !== null
+      );
+      return host === null ? result : demoHistory(result, host);
+    }
     if (remote.record.status.state !== "connected")
       return fail({
         kind: "remote_unreachable",
         message: "Host is disconnected",
       });
-    return remote.peer.hostHistory({ ...request, host: MOCK_HOST_ID });
+    return remote.peer.hostHistory({
+      ...request,
+      host: MOCK_HOST_ID,
+    });
   };
+}
+
+function demoHistory(
+  result: Awaited<ReturnType<PhoneQueries["hostHistory"]>>,
+  host: string
+) {
+  if (result.status === "error") return result;
+  const scale = (metric: string) => {
+    const factor = demoMetricScale(host, metric);
+    return (value: number | null) => (value === null ? null : value * factor);
+  };
+  return ok({
+    ...result.data,
+    series: result.data.series.map((series) => {
+      const sample = scale(series.key.metric);
+      return {
+        ...series,
+        points: series.points.map(({ t, avg, min, max }) => ({
+          t,
+          avg: sample(avg),
+          min: sample(min),
+          max: sample(max),
+        })),
+      };
+    }),
+    stats: result.data.stats.map(({ key, avg, peak }) => {
+      const sample = scale(key.metric);
+      return { key, avg: sample(avg), peak: sample(peak) };
+    }),
+  });
 }

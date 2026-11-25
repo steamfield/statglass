@@ -1,7 +1,8 @@
 import type { HostId, HostRecord } from "@core/generated/types";
 import { PHONE_OFFLINE_TITLE } from "@core/phone-connection";
 import { failureReason } from "@core/remote-errors";
-import { useState } from "react";
+import { useIsFocused } from "expo-router";
+import { useEffect, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -17,11 +18,24 @@ import {
   useHostsWaitingForNetwork,
   useRefreshHosts,
 } from "@/data/hosts";
-import { useHosts } from "@/data/hosts-list";
+import {
+  useHosts,
+  useHostsPairingState,
+  useNativeRosterEmptied,
+} from "@/data/hosts-list";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
+import {
+  usePhoneTransport,
+  useSetPhoneTransport,
+} from "@/data/transport-context";
 import { Text } from "@/ui/text";
 import { RestoreNotice } from "@/welcome/restore-notice";
+import { useReplaceWithWelcome } from "./first-launch-redirect";
 import { HostRow } from "./host-row";
+
+// Two 8 pt column gaps, inside the 16 pt list gutters and 13 pt card insets.
+const columnWidth = (screenWidth: number) =>
+  (screenWidth - 2 * (16 + 13 + 8)) / 3;
 
 /** Lists the visible local and remote hosts in the user's order. */
 export function HostsList({
@@ -34,7 +48,18 @@ export function HostsList({
   onPair: () => void;
 }) {
   useHostListUpdates();
+  const rosterEmptied = useNativeRosterEmptied();
+  const focused = useIsFocused();
+  const transport = usePhoneTransport();
+  const setTransport = useSetPhoneTransport();
+  const replaceWithWelcome = useReplaceWithWelcome();
+  useEffect(() => {
+    if (!rosterEmptied || !focused) return;
+    setTransport(null, false, transport);
+    replaceWithWelcome();
+  }, [focused, replaceWithWelcome, rosterEmptied, setTransport, transport]);
   const hosts = useHosts();
+  const pairing = useHostsPairingState();
   const waitingForNetwork = useHostsWaitingForNetwork(hosts.data ?? []);
   useStatusAnnouncement(waitingForNetwork ? PHONE_OFFLINE_TITLE : null);
   const refresh = useRefreshHosts();
@@ -76,14 +101,17 @@ export function HostsList({
       ItemSeparatorComponent={RowGap}
       renderItem={({ item }) => (
         <RowVisibility.Provider
-          // The list gutters are 16 pt each. The card has a border and 12 pt padding.
           value={{
             visible: visible.has(item.id),
-            width: width - 2 * (16 + 1 + 12),
+            width: columnWidth(width),
             refresh: refreshVersion,
           }}
         >
-          <HostRow host={item} onOpen={() => onOpen(item.id)} />
+          <HostRow
+            host={item}
+            needsPairing={pairing.data?.key_changed === true}
+            onOpen={() => onOpen(item.id)}
+          />
         </RowVisibility.Provider>
       )}
       refreshControl={
@@ -96,6 +124,16 @@ export function HostsList({
       ListHeaderComponent={
         <View className="gap-2">
           <RestoreNotice />
+          {pairing.isError && (
+            <Text
+              variant="body"
+              accessibilityRole="alert"
+              className="text-destructive!"
+            >
+              Couldn’t check pairing.{" "}
+              {failureReason(pairing.error, "Pull down to try again.")}
+            </Text>
+          )}
           {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
           {hosts.isError && (
             <Text
