@@ -6,7 +6,12 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering::SeqCst},
 };
-use tokio::{io::duplex, sync::mpsc, task::JoinHandle, time::sleep};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, duplex},
+    sync::mpsc,
+    task::JoinHandle,
+    time::sleep,
+};
 use uuid::Uuid;
 
 const LOCAL: HostId = HostId(Uuid::from_u128(1));

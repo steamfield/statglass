@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite},
     time::{Instant, sleep_until, timeout_at},
 };
 
@@ -245,39 +245,24 @@ fn negotiate(
     })
 }
 
-// The same framing and 1 MiB transport envelope as the desktop session codec.
-const MAX_WIRE_BYTES: usize = 1024 * 1024;
-
+/// Reads the peer's greeting through the session codec, so framing and the 1 MiB
+/// envelope have one definition.
 async fn read_hello(
     reader: &mut (impl AsyncRead + Unpin),
 ) -> std::result::Result<Box<Hello>, HandshakeFailure> {
-    fn read_failure(error: std::io::Error) -> HandshakeFailure {
-        match error.kind() {
-            std::io::ErrorKind::UnexpectedEof => HandshakeFailure::Closed,
-            kind => HandshakeFailure::Io(kind),
-        }
-    }
-    let len = reader.read_u32().await.map_err(read_failure)? as usize;
-    if len == 0 || len > MAX_WIRE_BYTES {
-        return Err(HandshakeFailure::Invalid);
-    }
-    let mut body = vec![0; len];
-    reader.read_exact(&mut body).await.map_err(read_failure)?;
-    match statglass_proto::decode_message(&body) {
+    match crate::codec::read(reader).await {
         Ok(Message::Hello(hello)) => Ok(hello),
         Ok(_) => Err(HandshakeFailure::NotHello),
+        Err(RemoteError::Io(error)) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            Err(HandshakeFailure::Closed)
+        }
+        Err(RemoteError::Io(error)) => Err(HandshakeFailure::Io(error.kind())),
         Err(_) => Err(HandshakeFailure::Invalid),
     }
 }
 
 async fn write_ack(writer: &mut (impl AsyncWrite + Unpin), negotiated: &Negotiated) -> Result<()> {
-    let frame = statglass_proto::encode_frame(&Message::HelloAck(negotiated.ack()))?;
-    if frame.len() > MAX_WIRE_BYTES + 4 {
-        return Err(RemoteError::Protocol("outbound frame too large".into()));
-    }
-    writer.write_all(&frame).await?;
-    writer.flush().await?;
-    Ok(())
+    crate::codec::write(writer, &Message::HelloAck(negotiated.ack())).await
 }
 
 #[cfg(test)]

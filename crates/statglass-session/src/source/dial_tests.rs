@@ -113,7 +113,6 @@ fn sink() -> SourceSink {
 }
 
 #[tokio::test]
-#[ignore = "needs phase 2 lane b connect"]
 async fn the_injected_dialer_receives_one_dial_per_attempt_and_sets_the_route() {
     let (status_tx, mut status_rx) = watch::channel(ConnectionStatus::default());
     let host = "studio.tailnet.ts.net";
@@ -162,7 +161,6 @@ const MIXED: &[(Route, &str)] = &[
 ];
 
 #[tokio::test]
-#[ignore = "needs phase 2 lane b connect"]
 async fn connection_status_reports_the_winning_route_when_the_first_target_fails() {
     let (status_tx, mut status_rx) = watch::channel(ConnectionStatus::default());
     let (source, mut attempts) = source(
@@ -258,7 +256,6 @@ async fn next_heartbeat(peer: &mut DuplexStream) {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "needs phase 2 lane b connect"]
 async fn a_network_change_debounces_then_races_all_better_targets_and_replaces_the_session() {
     let (source, mut attempts, mut peer, task) =
         connected_source(MIXED, TAILNET[0], Some("studio.lan"));
@@ -276,7 +273,6 @@ async fn a_network_change_debounces_then_races_all_better_targets_and_replaces_t
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "needs phase 2 lane b connect"]
 async fn a_failed_promotion_leaves_the_original_session_serving() {
     let (source, mut attempts, mut peer, task) = connected_source(MIXED, TAILNET[0], None);
     let changed = network_change(&source, &mut peer).await;
@@ -295,7 +291,6 @@ async fn a_failed_promotion_leaves_the_original_session_serving() {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "needs phase 2 lane b connect"]
 async fn a_network_change_never_promotes_a_lan_or_races_same_route_targets() {
     for (routes, current) in [(MIXED, MIXED[0]), (TAILNET, TAILNET[0])] {
         let (source, mut attempts, mut peer, task) = connected_source(routes, current, None);
