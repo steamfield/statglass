@@ -55,6 +55,8 @@ function demoLiveReceiver(
   };
 }
 
+const DEMO_RING_ROWS = 330;
+
 /** A fresh demo transport; each call starts its own mock hosts. */
 export function createDemoTransport(scenario?: string): DemoTransport {
   const requested = SCENARIOS.find((name) => name === scenario);
@@ -64,6 +66,10 @@ export function createDemoTransport(scenario?: string): DemoTransport {
         ? [requested]
         : ["hosts-dashboard", "host-incompatible"],
       autoTick: true,
+      // Each demo host backfills its own ring when the demo starts. The phone's
+      // live views reach back at most five minutes (longer ranges read history),
+      // so a 5.5-minute ring keeps the start fast without a gap at the edge.
+      historyRows: DEMO_RING_ROWS,
     })
   );
   let unavailable: Set<string> | null = null;

@@ -461,62 +461,83 @@ export class MockGenerator {
     return this.keys.findIndex((k) => seriesKeyString(k) === key);
   }
 
-  /** One tick. `land` forces each series onto its sample value. */
+  /**
+   * One tick. `land` forces each series onto its sample value. Each stage is
+   * one pass that allocates only the arrays the row keeps: the phone demo
+   * backfills several hosts' rings at once under Hermes, which has no JIT.
+   */
   next(land = false): GeneratedRow {
-    const cadences = this.specs.map((spec) =>
-      spec.periodMs !== undefined
-        ? Math.max(1, Math.round(spec.periodMs / this.intervalMs))
-        : this.trayOnly
-          ? spec.idleCadence
-          : spec.cadence
-    );
-    const sampled = this.specs.map(
-      (_, i) => land || this.tick % (cadences[i] as number) === 0
-    );
-    const ticksPerSecond = 1000 / this.intervalMs;
-    const values = this.specs.map((spec, i) => {
-      const st = this.state[i] as { v: number; r: () => number };
-      if (spec.noise > 0) st.v = walkStep(st.v, st.r, spec);
-      if (land) st.v = spec.base;
-      if (!sampled[i] || this.failing.has(i) || spec.sumOf || spec.silent)
-        return null;
-      const scaled =
-        spec.perTick === undefined
-          ? st.v
-          : st.v - spec.perTick * (1 - ticksPerSecond);
-      return round(clampWalk(scaled, spec));
-    });
-    if (this.flags.networkRateExtremes) {
-      this.specs.forEach((spec, i) => {
-        if (
-          sampled[i] &&
-          !this.failing.has(i) &&
-          ["net.rx", "net.tx"].includes(spec.key.metric)
-        )
-          values[i] = networkRateAt(this.tick);
-      });
+    const n = this.specs.length;
+    const cadences = new Array<number>(n);
+    const values = new Array<number | null>(n);
+    for (let i = 0; i < n; i++) {
+      const spec = this.specs[i] as SeriesSpec;
+      const cadence = this.cadenceOf(spec);
+      cadences[i] = cadence;
+      values[i] = this.step(i, spec, land || this.tick % cadence === 0, land);
     }
-    this.specs.forEach((spec, i) => {
-      if (!spec.sumOf || !sampled[i]) return;
-      const parts = spec.sumOf.map((p) => values[p] ?? null);
-      values[i] = parts.some((v) => v === null)
-        ? null
-        : round(parts.reduce<number>((s, v) => s + (v ?? 0), 0));
-    });
-    values.forEach((v, i) => {
-      if (v === null) return;
-      this.last[i] = v;
-      this.lastTick[i] = this.tick;
-      this.holdTicks[i] =
-        ((cadences[i] as number) * HOLD_FACTOR.num) / HOLD_FACTOR.den;
-    });
-    const held = this.last.map((v, i) =>
-      this.tick - (this.lastTick[i] as number) > (this.holdTicks[i] as number)
-        ? null
-        : v
-    );
+    for (let i = 0; i < n; i++) {
+      const parts = (this.specs[i] as SeriesSpec).sumOf;
+      if (parts && (land || this.tick % (cadences[i] as number) === 0))
+        values[i] = sumOrNull(values, parts);
+    }
+    const held = this.hold(values, cadences);
     this.tick++;
     return { values, held, cadences };
+  }
+
+  /** Walks one series a tick and returns its reading, or null when unread. */
+  private step(
+    i: number,
+    spec: SeriesSpec,
+    sampled: boolean,
+    land: boolean
+  ): number | null {
+    const st = this.state[i] as { v: number; r: () => number };
+    if (spec.noise > 0) st.v = walkStep(st.v, st.r, spec);
+    if (land) st.v = spec.base;
+    const readable = sampled && !this.failing.has(i);
+    const metric = spec.key.metric;
+    if (
+      readable &&
+      this.flags.networkRateExtremes &&
+      (metric === "net.rx" || metric === "net.tx")
+    )
+      return networkRateAt(this.tick);
+    if (!readable || spec.sumOf || spec.silent) return null;
+    const scaled =
+      spec.perTick === undefined
+        ? st.v
+        : st.v - spec.perTick * (1 - 1000 / this.intervalMs);
+    return round(clampWalk(scaled, spec));
+  }
+
+  /** Records this tick's readings and returns each series' held value. */
+  private hold(
+    values: readonly (number | null)[],
+    cadences: readonly number[]
+  ): (number | null)[] {
+    const held = new Array<number | null>(values.length);
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i] as number | null;
+      if (v !== null) {
+        this.last[i] = v;
+        this.lastTick[i] = this.tick;
+        this.holdTicks[i] =
+          ((cadences[i] as number) * HOLD_FACTOR.num) / HOLD_FACTOR.den;
+      }
+      held[i] =
+        this.tick - (this.lastTick[i] as number) > (this.holdTicks[i] as number)
+          ? null
+          : (this.last[i] as number | null);
+    }
+    return held;
+  }
+
+  private cadenceOf(spec: SeriesSpec): number {
+    if (spec.periodMs !== undefined)
+      return Math.max(1, Math.round(spec.periodMs / this.intervalMs));
+    return this.trayOnly ? spec.idleCadence : spec.cadence;
   }
 
   /**
@@ -550,6 +571,20 @@ export class MockGenerator {
           : round(Math.max(0, p.cpu_pct * (0.85 + r() * 0.3))),
     }));
   }
+}
+
+/** The parts' rounded sum, or null when any part has no value this tick. */
+function sumOrNull(
+  values: readonly (number | null)[],
+  parts: readonly number[]
+): number | null {
+  let sum = 0;
+  for (const p of parts) {
+    const v = values[p];
+    if (v === null || v === undefined) return null;
+    sum += v;
+  }
+  return round(sum);
 }
 
 function round(v: number): number {
