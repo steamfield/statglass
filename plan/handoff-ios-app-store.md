@@ -1,11 +1,12 @@
 # StatGlass for iPhone: App Store handoff
 
-Status on 2026-11-25, as of main at `5c82fc53` (the merge of the export and release-check
-fixes after `deliver/ios-app`). The code for StatGlass for iPhone 1.0.0 is done: RFC phases
+Status on 2026-11-25, with build 1135 cut from main at `90b16d7c` (after the export and release-check
+fixes merged). The code for StatGlass for iPhone 1.0.0 is done: RFC phases
 0 to 4, the polish RFC (`plan/rfc-ios-polish.md`) and App Store readiness (plan phase 13)
-all landed, and the final whole-branch review ran with its findings fixed. Signing works
-and a real App Store IPA passes `make mobile-release-check`. What is left is a rebuild,
-store screenshots, App Store Connect, the upload and a device pass. The release runbook is
+all landed, and the final whole-branch review ran with its findings fixed. Signing works,
+build 1.0.0 (1135) from main passes `make mobile-release-check`, and the store
+screenshots are taken. What is left is App Store Connect, the upload, a device pass and
+submitting. The release runbook is
 `.github/releasing-mobile.md`; this file says what has and hasn't been done against it.
 
 ## Done
@@ -34,37 +35,58 @@ archive. Two lines in the output are expected: the Hermes SDK signature line (Co
 copy is unsigned; Xcode signs the embedded one) and the advisory strings
 `IOHIDEventSystemClient IOReport`, which are text in the Rust library, not imports.
 
-Build 1131 was cut before these fixes merged, so rebuild from main before uploading
-(`make mobile-check`, `make mobile-archive`, `make mobile-release-check`; an agent can run
-these). The build number is the commit count and must exceed any build already uploaded;
-nothing has been uploaded yet.
+After the fixes merged, main at `90b16d7c` was rebuilt: `make mobile-check`,
+`make mobile-archive` and `make mobile-release-check` all passed, and
+`apps/mobile/dist/ios/StatGlass.ipa` is 1.0.0 (1135). Upload that one. If you rebuild, the
+build number is the commit count and must exceed any build already uploaded; nothing has
+been uploaded yet.
+
+### Store screenshots
+
+Taken from the Release simulator build of 1135 on an iPhone 17 simulator (1206 x 2622,
+the required "iPhone with Dynamic Island, medium display" size), demo hosts, status bar
+set to 9:41. Two sets, pick one: `apps/mobile/dist/store/dark/` and
+`apps/mobile/dist/store/light/`, each `1-hosts`, `2-host` (MacBook Pro), `3-cpu`,
+`4-memory`, `5-network`. They are JPEG with no alpha channel, as App Store Connect
+requires. `dist/` is git-ignored, so they exist only on this Mac. The hosts list shows the
+"Demo" pill and a disabled `studio` host, which is what a reviewer sees in demo mode.
+
+To retake them headless, the simulator needs the `statglass` scheme pre-approved or every
+`simctl openurl` stops on an "Open in StatGlass?" alert: write
+`com.apple.CoreSimulator.CoreSimulatorBridge-->statglass = com.tryopendata.statglass.mobile`
+into the device's `data/Library/Preferences/com.apple.launchservices.schemeapproval.plist`
+while it is shut down. Then `statglass://demo` starts demo mode, and
+`statglass:///<host id>/<module>` opens a page (the MacBook Pro demo host is
+`6f1c2a4e-8b7d-4c1e-9a3f-2d5e7b9c0a11`).
+
+### Release simulator checks
+
+On the same build, the iPad Pro 11-inch (M5) simulator runs the app in its iPhone
+compatibility window without black bars or broken layout, the demo path works, and
+`statglass://debug` lands on the app root. Not yet done: cold-launch timing, the AX1 and
+Home Screen icon appearance passes, and an iPhone Duo check (no Duo runtime here).
 
 ## Left to do, in order
 
-### 1. Rebuild and store screenshots
-
-Rebuild from main as above. Then five demo screens at 1206 x 2622 from the simulator (Hosts, host overview, CPU, Memory,
-Network), steps in the runbook. None are made yet. An agent can take them; they land in
-`apps/mobile/dist/store/`.
-
-### 2. App Store Connect (you)
+### 1. App Store Connect (you)
 
 Follow the checklist in `.github/releasing-mobile.md`. Decisions already made (D-156,
 D-158): name StatGlass, Utilities with Developer Tools secondary, Data Not Collected,
 `ITSAppUsesNonExemptEncryption` true with France excluded from availability, review
 access through "Try demo hosts" only (the review notes are in the runbook).
 
-Nothing is created there yet. Still to do: the app record, the metadata above, the age
-rating, the Accessibility Nutrition Labels and the iPad compatibility-mode check.
+Nothing is created there yet. Still to do: the app record, the metadata above, the
+screenshots (upload one set from `apps/mobile/dist/store/`), the age rating and the
+Accessibility Nutrition Labels.
 
-### 3. Upload (you)
+### 2. Upload (you)
 
 Validate and upload the rebuilt archive from Xcode Organizer, or open
 `apps/mobile/dist/ios/StatGlass.ipa` in Transporter; both use your Apple ID sign-in.
 `make mobile-archive` never uploads (D-158). Select the processed build in App Store
 Connect.
 
-### 4. Device pass on the iPhone 13 Pro
+### 3. Device pass on the iPhone 13 Pro
 
 The phone (UDID `00008110-001C30661ABA401E`) is registered; the install commands are in
 the `iphone-device-install` memory. Nothing has run on a physical device yet. Check:
@@ -84,7 +106,7 @@ the `iphone-device-install` memory. Nothing has run on a physical device yet. Ch
 TestFlight is the easiest way to run this on the uploaded build. This is the main risk
 left: a pairing or Secure Enclave bug found here means a code fix and a new build.
 
-### 5. Submit for review
+### 4. Submit for review
 
 After the device pass, submit the build. Then record the approved build's protocol range
 in `compat/mobile-protocol.json` and tag `mobile-v1.0.0` (runbook).
@@ -118,6 +140,11 @@ put your address anywhere public.
   1,598 B/s with it, 819 B/s without, against a Linux agent). Fine on Wi-Fi; worth
   batching if cellular use grows.
 - A swiped host row (Settings, remove) stays open when you tap elsewhere on the list.
+- A module page's two-line header clips its subtitle mid-word when the window is
+  narrower than an iPhone 17, as in the iPad compatibility window ("Apple M4 Pro · 10
+  performance + 4 efficiency core"). The title view in
+  `apps/mobile/src/module/module-frame.tsx` has no width bound, so `adjustsFontSizeToFit`
+  never shrinks it. Cosmetic; fine on the screenshot device.
 - The phone's loading state (D-133, D-159) waits at most 10 s for the host's recent
   rows (`REFILL_WAIT_MS`); on cellular with live detail withheld, a chart shows its
   scan line for those 10 s and then what the ring holds.
