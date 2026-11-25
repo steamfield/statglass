@@ -81,6 +81,10 @@ a prettier chart would hide. We accept that, per "Label what we don't know".
 
 ### Entry point and the Disk route
 
+Superseded by D-153 (`utilities.md`): Disk space is its own page at `/dashboard/disk-space`
+under the sidebar's Utilities group, Disk has no switcher, `?view=space` redirects there, and
+each Volumes row links to it as "See what's using space". The original reasoning follows.
+
 Disk gets a `SegmentedControl` directly below its `PageHeader`, **Activity** | **Space**,
 placed and styled as in Containers (`containers/route.tsx`). The reason for a separate view:
 the I/O page has one dominant region (the I/O chart), and a treemap is a second one. Stacking

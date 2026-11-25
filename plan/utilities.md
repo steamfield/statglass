@@ -59,7 +59,8 @@ and no live value.
   explains it, as `VolumeList` already does ("Update the agent", not available on this
   host), instead of the row appearing late or flickering on host switch.
 - **Running scan.** A scan keeps running after the user leaves the page, so while it runs
-  the row shows it (a dot or the progress, in the `attention` slot Hosts uses).
+  the row shows it (a still dot in the row's value slot; the `attention` count means "needs you", which a
+  running scan does not).
 
 ### Ownership between Disk and Disk space
 

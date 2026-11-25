@@ -60,14 +60,15 @@ Layout:
 
 ### Phase 1: Utilities group with Disk space (MVP)
 
+Scaffold: 17e671cb.
 Demo: `bun run dev:fast`, open `/?route=/dashboard/overview`, see Utilities › Disk space in the sidebar, open it, see the last scan's folders, scan, watch the row's mark; open Disk and follow a volume's link.
 Test cases: each lane writes its own tests from its brief (deviation from the scaffold-tests rule: the lanes are Codex runs that author tests with the code; the orchestrator reviews every test).
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | `src/app/components/sidebar.tsx`, `src/app/components/sidebar.test.tsx`, `src/app/routes/dashboard/_components/live-sidebar.tsx`, `src/app/routes/dashboard/_components/live-sidebar.test.tsx`, `src/app/routes/dev/gallery/_sections/app-components.tsx` | contracts, `plan/design-system.md` | `src/app/components/sidebar.test.tsx`, `src/app/routes/dashboard/_components/live-sidebar.test.tsx` | codex | pending | | sidebar tests pass |
-| b | M | `src/app/routes/dashboard/disk-space/`, `tests/e2e/disk-space.spec.ts` | contracts, `src/app/routes/dashboard/overview/_components/folders-card.tsx` | `src/app/routes/dashboard/disk-space/route.test.tsx` | codex | pending | | disk-space tests and e2e pass |
-| c | M | `src/app/routes/dashboard/disk/`, `src/app/routes/dashboard/overview/_components/folders-card.tsx`, `src/app/routes/dashboard/overview/_components/folders-card.test.tsx` | contracts, `src/app/components/volume-table.tsx` | `src/app/routes/dashboard/disk/route.test.tsx`, `src/app/routes/dashboard/overview/_components/folders-card.test.tsx` | codex | pending | | disk and overview tests pass |
+| a | M | `src/app/components/sidebar.tsx`, `src/app/components/sidebar.test.tsx`, `src/app/routes/dashboard/_components/live-sidebar.tsx`, `src/app/routes/dashboard/_components/live-sidebar.test.tsx`, `src/app/routes/dev/gallery/_sections/app-components.tsx`, `src/app/routes/dashboard/route.test.tsx`, `tests/e2e/sidebar-utilities.spec.ts` | contracts, `plan/design-system.md` | `src/app/components/sidebar.test.tsx`, `src/app/routes/dashboard/_components/live-sidebar.test.tsx` | codex | running | foreman/util-a | sidebar tests pass |
+| b | M | `src/app/routes/dashboard/disk-space/`, `tests/e2e/disk-space.spec.ts`, `src/app/components/largest-folders.tsx`, `src/app/hooks/use-disk-space.ts` | contracts, `src/app/routes/dashboard/overview/_components/folders-card.tsx` | `src/app/routes/dashboard/disk-space/route.test.tsx` | codex | running | foreman/util-b | disk-space tests and e2e pass |
+| c | M | `src/app/routes/dashboard/disk/`, `src/app/routes/dashboard/overview/_components/folders-card.tsx`, `src/app/routes/dashboard/overview/_components/folders-card.test.tsx`, `tests/e2e/disk-io.spec.ts` | contracts, `src/app/components/volume-table.tsx` | `src/app/routes/dashboard/disk/route.test.tsx`, `src/app/routes/dashboard/overview/_components/folders-card.test.tsx` | codex | running | foreman/util-c | disk and overview tests pass |
 
 #### Lane a brief
 
@@ -92,7 +93,7 @@ Test cases: each lane writes its own tests from its brief (deviation from the sc
 #### Lane b brief
 
 - Goal: the Disk space page's first screen leads with the kept summary, has one primary action, and calls its volume list a picker.
-- Interface: `SpaceView`/`HostSpace` in `space-view.tsx`; `SpaceVolumes` in `space-volumes.tsx`; `useSpaceHighlights`, `useRevealHighlight`, `useSpaceScan` from `~/hooks/use-disk-space`; `LargestFolderList` from `~/components/largest-folders`; `agoLabel` from `../_lib/space`; `useNow(MINUTE_MS)` from `~/hooks/use-now`.
+- Interface: `SpaceView`/`HostSpace` in `space-view.tsx`; `SpaceVolumes` in `space-volumes.tsx`; `useSpaceHighlights`, `useRevealHighlight`, `useSpaceScan` from `~/hooks/use-disk-space`; `LargestFolderList` from `~/components/largest-folders`; `agoLabel` from `~/lib/time-ago`; `useNow(MINUTE_MS)` from `~/hooks/use-now`.
 - Behavior (only when `screen.mode === "volumes"`):
   - The landing waits for both the volumes query and the highlights query to settle (success or error) before rendering the card or the picker, showing the existing "Loading volumes…" status meanwhile, so the primary button never flips and the card never pushes the picker down. A failed highlights query counts as no summary and shows nothing about it.
   - Which volume leads: the last-scan card shows only when `vol` is null or is the boot volume (`is_boot`). When `vol` names another volume the host lists, the card is hidden and that row's Scan is the primary. Otherwise, with no card, the boot volume's Scan is the primary.
@@ -130,3 +131,5 @@ Plan critique (devil's advocate, opus), all eight accepted:
 - Overview imported another route's `_lib`: `agoLabel` moved to `src/app/lib/time-ago.ts`.
 - Utilities entries rebuilt every tick: lane a memoizes them; mark uses the value slot.
 - Docs unowned, no `data-variant`, accessible name read "on /": docs stay with the orchestrator after phase 1; `Button` sets `data-variant`; lane c names the volume from `SpaceVolume.name`.
+
+Lanes (Codex gpt-6.2-sol via foreman), scope widened mid-run with approval: a took the no-battery assertion in dashboard/route.test.tsx and a new sidebar e2e spec; b fixed two scaffold bugs in largest-folders.tsx and useRevealHighlight; c retargeted disk-io.spec's first-viewport check to Volumes (the D-153 order). Brief deviations: Utilities heading uses text-muted-foreground (text-fg-faint measured 2.33:1 light); the low-space flag reads "Low space" (design system: icon plus state word) and covers boot volumes only (a flat 20 GB would flag /boot and USB sticks; Rust has no size-relative rule yet). Light-mode --color-link measures 3.68:1 on white, app-wide; follow-up.
