@@ -50,14 +50,13 @@ export function getRetryDelay(attemptIndex: number): number {
 /**
  * Families that never retry, whatever the error (v5's `retry` callback never
  * sees the query, so the policy goes by key prefix). Disk space reads and
- * Docker storage and cleanup are polled or re-read on their own; the public
- * address asks an outside service and shows "unavailable" until its next
- * read; the SSH config check and the window appearance answer once.
+ * Docker storage and cleanup and host addresses are polled or re-read on
+ * their own. The SSH config check and window appearance answer once.
  */
 const NO_RETRY: readonly (readonly unknown[])[] = [
   diskSpaceKeys.all,
   dockerKeys.all,
-  appKeys.publicIpAll,
+  hostKeys.addressesAll,
   appKeys.appearance,
   hostKeys.sshConfig(),
 ];

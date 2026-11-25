@@ -4,6 +4,8 @@ use statglass_proto::pairing::PairReply;
 use statglass_remote::{DeviceKeysError, PairingError};
 use statglass_schema::JsSafeInt;
 
+use super::bundle::MONITORING_OFF;
+
 /// One open pairing, as the sheet shows it.
 #[derive(Clone, Debug, Serialize, specta::Type)]
 pub struct PairingOffer {
@@ -37,6 +39,7 @@ pub enum PairingStatus {
     Denied,
     Expired,
     Failed {
+        reason: PairingFailure,
         message: String,
     },
 }
@@ -69,9 +72,17 @@ impl From<PairReply> for PairingStatus {
             PairReply::Denied => Self::Denied,
             PairReply::Expired => Self::Expired,
             PairReply::Error { error } => Self::Failed {
+                reason: error.into(),
                 message: error.to_string(),
             },
         }
+    }
+}
+
+pub(super) fn monitoring_off_status() -> PairingStatus {
+    PairingStatus::Failed {
+        reason: PairingFailure::Unavailable,
+        message: MONITORING_OFF.into(),
     }
 }
 

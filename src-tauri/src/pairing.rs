@@ -12,7 +12,6 @@ use std::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
 };
 
 use qrcode::{QrCode, render::svg};
@@ -27,7 +26,9 @@ use tauri::State;
 
 use crate::error::{CommandError, PairingFailure};
 pub use status::{PairedDeviceInfo, PairingOffer, PairingStatus};
-use status::{device_keys_error, pairing_error, pairing_message, unavailable};
+use status::{
+    device_keys_error, monitoring_off_status, pairing_error, pairing_message, unavailable,
+};
 
 /// The local pairing host and its settings, initialized before the control socket starts.
 #[derive(Default)]
@@ -151,9 +152,7 @@ impl LocalPairing {
         self.monitoring_off
             .lock_ok()
             .retain(|_, deadline| *deadline > now_ms);
-        let payload = host
-            .offer(bundle, Duration::ZERO, now_ms)
-            .map_err(pairing_error)?;
+        let payload = bundle::offer(host, bundle, now_ms).map_err(pairing_error)?;
         let text = encode_payload(&payload);
         let qr = match QrCode::new(&text) {
             Ok(qr) => qr,
@@ -209,12 +208,6 @@ impl LocalPairing {
         } else {
             reply.into()
         })
-    }
-}
-
-fn monitoring_off_status() -> PairingStatus {
-    PairingStatus::Failed {
-        message: bundle::MONITORING_OFF.into(),
     }
 }
 
@@ -596,12 +589,14 @@ pub(crate) mod tests {
                 pairing_status(withdrawn.nonce.clone(), app.state()).await
             };
             let guidance = bundle::check_monitoring(false).unwrap_err().to_string();
-            assert!(matches!(result, Ok(PairingStatus::Failed { message }) if message == guidance));
+            assert!(
+                matches!(result, Ok(PairingStatus::Failed { message, .. }) if message == guidance)
+            );
             assert_eq!(host.status(&withdrawn.nonce, now), PairReply::Denied);
             state.set_enabled(true);
             assert!(matches!(
                 pairing_status(withdrawn.nonce, app.state()).await.unwrap(),
-                PairingStatus::Failed { message } if message == guidance
+                PairingStatus::Failed { message, .. } if message == guidance
             ));
         }
         assert!(paired_devices(app.state()).await.unwrap().is_empty());

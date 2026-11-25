@@ -326,6 +326,7 @@ fn remote_host(
         os: record.info.os,
         targets: host.targets.clone(),
         open_error: None,
+        demand: None,
         connection: connection_status(status),
         last_seen_ms: status
             .last_seen_ms

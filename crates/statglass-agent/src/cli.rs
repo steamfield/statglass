@@ -2,6 +2,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, bail};
+use statglass_proto::pairing::BundleTarget;
 use statglass_remote::{AgentEnv, AgentLayout, AgentPaths};
 
 pub const USAGE: &str = "\
@@ -112,6 +113,8 @@ pub enum DeviceCommand {
     /// Interactive pairing on this terminal (RFC 2.4).
     Pair {
         ttl_s: u64,
+        targets: Vec<BundleTarget>,
+        port: Option<u16>,
     },
     /// The one-time pairing key's forced command.
     PairForced {
@@ -299,6 +302,8 @@ fn parse_pair(nonce: Option<String>, ttl: Option<&str>) -> anyhow::Result<Device
                     .filter(|&s| (1..=3600).contains(&s))
                     .with_context(|| format!("pair: --ttl {s:?} is not 1 to 3600 seconds"))
             })?,
+            targets: Vec::new(),
+            port: None,
         }),
     }
 }

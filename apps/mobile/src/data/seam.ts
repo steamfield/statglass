@@ -17,5 +17,6 @@ export type PhoneTransport = PhoneQueries &
     | "getCapabilities"
     | "hostVitals"
     | "retryRemoteHost"
+    | "setProcessInterest"
     | "subscribeLive"
   > & { listRemoteHosts(): Promise<PhoneRemoteHostRecord[]> };

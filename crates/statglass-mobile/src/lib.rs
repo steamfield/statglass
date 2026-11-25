@@ -20,9 +20,11 @@ mod envelope;
 #[cfg(test)]
 mod facade_tests;
 mod ffi;
+mod host_store;
 mod lifecycle;
 mod logging;
 mod mobile_core;
+mod pairing;
 mod policy;
 mod sessions;
 mod signer;

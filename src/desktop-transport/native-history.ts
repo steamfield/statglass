@@ -14,8 +14,7 @@ export function nativeHistory(): Pick<
   | "queryUsageSeries"
   | "querySeriesStats"
   | "lastWake"
-  | "getNetworkAddresses"
-  | "getPublicIp"
+  | "getHostAddresses"
   | "queryEvents"
   | "queryHeatmap"
   | "exportCsv"
@@ -36,8 +35,7 @@ export function nativeHistory(): Pick<
     querySeriesStats: (host, metrics, fromMs, toMs) =>
       commands.querySeriesStats(host, metrics, fromMs, toMs),
     lastWake: (host) => commands.lastWake(host),
-    getNetworkAddresses: (host) => commands.getNetworkAddresses(host),
-    getPublicIp: () => commands.getPublicIp(),
+    getHostAddresses: (host) => commands.getHostAddresses(host),
     queryEvents: (host, fromMs, toMs) =>
       commands.queryEvents(host, fromMs, toMs),
     queryHeatmap: (request) => commands.queryHeatmap(request),

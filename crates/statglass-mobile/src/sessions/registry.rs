@@ -11,9 +11,10 @@ use statglass_session::{Dialer, RemoteSource, SourceOptions};
 use tokio::runtime::Handle;
 
 use crate::ffi::{CoreEvents, NativeSigner};
+use crate::lifecycle::Lifecycle;
 
 use super::{
-    callback, endpoint,
+    callback, demand, endpoint,
     host::{HostEntry, OpenError},
     internal, invalid,
     live::Live,
@@ -27,6 +28,7 @@ mod tests;
 pub(super) struct Registry {
     pub(super) events: Arc<dyn CoreEvents>,
     pub(super) live: Arc<Live>,
+    pub(super) lifecycle: Arc<Lifecycle>,
     signer: Option<Arc<dyn NativeSigner>>,
     // Serializes roster edits while new sources open outside the state lock.
     updates: Mutex<()>,
@@ -92,7 +94,7 @@ struct Context {
 
 impl Registry {
     fn open(&self, context: &Context, host: MobileHost) -> Result<Arc<HostEntry>, OpenError> {
-        HostEntry::open(
+        let entry = HostEntry::open(
             host,
             context.phone,
             context.dialer.clone(),
@@ -102,13 +104,16 @@ impl Registry {
                 ..Default::default()
             },
             self.signer.as_deref(),
-        )
+        )?;
+        demand::admit(&entry.source, &self.lifecycle);
+        Ok(entry)
     }
 
     pub(super) fn new(events: Arc<dyn CoreEvents>, signer: Option<Arc<dyn NativeSigner>>) -> Self {
         Self {
             events,
             live: Arc::default(),
+            lifecycle: Arc::new(Lifecycle::new()),
             signer,
             updates: Mutex::default(),
             state: Mutex::default(),

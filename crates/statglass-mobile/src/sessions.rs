@@ -4,18 +4,20 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde_json::Value;
 use statglass_ipc::error::CommandError;
-use statglass_ipc::mobile::{MobileCall, MobileConfig, MobileHost};
+use statglass_ipc::mobile::{MobileConfig, MobileHost};
+use statglass_schema::HostId;
 use statglass_session::network::LocalNetwork;
 use statglass_session::{Dialer, RemoteSource};
 use tokio::runtime::Handle;
 
 use crate::control::SessionControl;
 use crate::ffi::{CoreEvents, NativeSigner};
+use crate::lifecycle::Lifecycle;
 
 mod addresses;
 mod commands;
+mod demand;
 mod endpoint;
 mod history;
 mod host;
@@ -28,6 +30,7 @@ pub(crate) mod tests;
 use registry::Registry;
 
 /// Every host the core runs a session for.
+#[derive(Clone)]
 pub(crate) struct Sessions {
     registry: Arc<Registry>,
 }
@@ -41,6 +44,10 @@ impl Sessions {
 
     pub(crate) fn is_started(&self) -> bool {
         self.registry.is_started()
+    }
+
+    pub(crate) fn lifecycle(&self) -> &Arc<Lifecycle> {
+        &self.registry.lifecycle
     }
 
     /// Loads or creates the phone id under `data_dir` and starts a source per host.
@@ -59,9 +66,8 @@ impl Sessions {
         self.registry.set_hosts(hosts)
     }
 
-    /// Answers the host, live and history calls delegated by the core.
-    pub(crate) async fn call(&self, call: MobileCall) -> Result<Value, CommandError> {
-        self.registry.call(call).await
+    pub(crate) fn remove_host(&self, host: HostId) -> Result<(), CommandError> {
+        Err(CommandError::UnknownHost { host })
     }
 }
 

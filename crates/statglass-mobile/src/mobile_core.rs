@@ -7,17 +7,19 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::{Map, Value};
+use statglass_engine::wall_ms;
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileCall, MobileConfig};
 use statglass_schema::lock::LockExt;
 use statglass_session::Dialer;
-use statglass_ssh::RusshDialer;
+use statglass_ssh::{RusshDialer, Signer, SignerError};
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::watch;
 
 use crate::envelope;
 use crate::ffi::{CoreEvents, NativeSigner, NetworkPath};
 use crate::lifecycle::Lifecycle;
+use crate::pairing;
 use crate::sessions::Sessions;
 use crate::signer::{NativeSignerAdapter, authorized_key_line};
 
@@ -101,6 +103,25 @@ impl MobileCore {
                     Ok(Value::Null)
                 })
             }
+            MobileCall::PreviewPairing { text } => {
+                runtime.spawn(async move { to_value(pairing::preview(&text, wall_ms())?) })
+            }
+            MobileCall::Pair {
+                text,
+                device_name,
+                model,
+            } => {
+                let signer = NativeSignerAdapter::new(self.signer.clone());
+                runtime.spawn(async move {
+                    let key = signer.public_key().await.map_err(pairing_key_error)?;
+                    to_value(
+                        pairing::pair(&sessions, key.to_vec(), text, device_name, model).await?,
+                    )
+                })
+            }
+            MobileCall::PairingState => {
+                runtime.spawn(async move { to_value(pairing::state(&sessions)) })
+            }
             other => runtime.spawn(async move { sessions.call(other).await }),
         };
         envelope::encode(joined(task.await))
@@ -152,13 +173,14 @@ impl MobileCore {
 
 impl MobileCore {
     fn initial(signer: Arc<dyn NativeSigner>, sessions: Sessions) -> Self {
+        let lifecycle = sessions.lifecycle().clone();
         Self {
             signer,
             #[cfg(test)]
             dialer: None,
             runtime: OnceLock::new(),
             sessions: Arc::new(sessions),
-            lifecycle: Arc::new(Lifecycle::new()),
+            lifecycle,
             quiesced: Mutex::new(None),
         }
     }
@@ -198,6 +220,15 @@ impl MobileCore {
                 message: format!("statglass-mobile could not start its runtime: {e}"),
             })?;
         Ok(self.runtime.get_or_init(|| runtime).handle().clone())
+    }
+}
+
+fn pairing_key_error(error: SignerError) -> CommandError {
+    match error {
+        SignerError::Unavailable(_) => CommandError::PhoneKeyUnavailable,
+        SignerError::Invalid(_) | SignerError::Internal(_) => CommandError::Internal {
+            message: format!("reading the phone's SSH public key: {error}"),
+        },
     }
 }
 

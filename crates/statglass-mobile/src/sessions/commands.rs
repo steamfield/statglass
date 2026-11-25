@@ -5,7 +5,21 @@ use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::MobileCall;
 use std::sync::Arc;
 
-use super::{internal, registry::Registry};
+use super::{Sessions, demand, internal, registry::Registry};
+
+impl Sessions {
+    /// Answers the host, live and history calls delegated by the core.
+    pub(crate) async fn call(&self, call: MobileCall) -> Result<Value, CommandError> {
+        match call {
+            MobileCall::RemoveHost { host } => {
+                let sessions = self.clone();
+                blocking(move || sessions.remove_host(host).map(|()| Value::Null)).await
+            }
+            MobileCall::SetDemand { demand } => demand::set_demand(self, demand),
+            other => self.registry.call(other).await,
+        }
+    }
+}
 
 impl Registry {
     pub(super) async fn call(self: &Arc<Self>, call: MobileCall) -> Result<Value, CommandError> {
@@ -48,7 +62,12 @@ impl Registry {
             MobileCall::BuildInfo
             | MobileCall::SetHosts { .. }
             | MobileCall::SetDataPolicy(_)
-            | MobileCall::AuthorizedKeyLine { .. } => {
+            | MobileCall::AuthorizedKeyLine { .. }
+            | MobileCall::PreviewPairing { .. }
+            | MobileCall::Pair { .. }
+            | MobileCall::PairingState
+            | MobileCall::RemoveHost { .. }
+            | MobileCall::SetDemand { .. } => {
                 Err(internal("core call reached the session registry"))
             }
         }

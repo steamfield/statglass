@@ -86,9 +86,12 @@ fn run_device_command(command: &DeviceCommand) -> anyhow::Result<ExitCode> {
         } => restricted_paths(*system, socket.as_deref())
             .and_then(|paths| restricted::run(device, &paths))
             .map(code),
-        DeviceCommand::Pair { ttl_s } => {
-            pair::interactive(std::time::Duration::from_secs(*ttl_s)).map(|()| ExitCode::SUCCESS)
-        }
+        DeviceCommand::Pair {
+            ttl_s,
+            targets,
+            port,
+        } => pair::interactive(std::time::Duration::from_secs(*ttl_s), targets, *port)
+            .map(|()| ExitCode::SUCCESS),
         DeviceCommand::PairForced { nonce } => pair::forced(nonce).map(code),
         DeviceCommand::Devices => devices::list().map(|()| ExitCode::SUCCESS),
         DeviceCommand::RevokeDevice { tag } => devices::revoke(tag).map(|found| {

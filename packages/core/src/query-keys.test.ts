@@ -311,10 +311,8 @@ describe("hold identity predicates", () => {
     ).toBe(false);
   });
 
-  it("the public address and Docker operations sit under their family prefixes", () => {
-    expect(appKeys.publicIp("en0", null, null).slice(0, 2)).toEqual(
-      appKeys.publicIpAll
-    );
+  it("host addresses and Docker operations sit under their family prefixes", () => {
+    expect(hostKeys.addresses(H)).toEqual([...hostKeys.addressesAll, H]);
     expect(dockerKeys.storage("e", 0)[0]).toBe(dockerKeys.all[0]);
     expect(dockerKeys.operation("e")[0]).toBe(dockerKeys.all[0]);
   });

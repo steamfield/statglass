@@ -23,6 +23,7 @@ const PAIRING_FAILURE_TEXT: Record<PairingFailure, string> = {
   used: "The pairing code has already been used.",
   unknown: "The host does not recognize this pairing code.",
   unavailable: "Pairing is unavailable on this host.",
+  monitoring_off: "Remote monitoring is off on this host.",
   invalid: "The pairing data is invalid.",
 };
 

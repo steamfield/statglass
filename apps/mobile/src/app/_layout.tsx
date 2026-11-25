@@ -9,6 +9,7 @@ import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { DemoLifetime } from "@/data/demo";
+import { PairingProvider } from "@/data/pairing-context";
 import { AppProviders } from "@/lib/providers";
 import { AppLockGate } from "@/lock/app-lock-gate";
 import { CoreProvider, NativeCoreBridge } from "@/transport";
@@ -62,7 +63,9 @@ export default function RootLayout() {
           <StatusBar style="auto" />
           <StartupFailureAnnouncement />
           <AppLockGate>
-            <RootStack />
+            <PairingProvider>
+              <RootStack />
+            </PairingProvider>
           </AppLockGate>
         </CoreProvider>
       </AppProviders>

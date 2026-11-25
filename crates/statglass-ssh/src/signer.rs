@@ -8,6 +8,9 @@ use russh::keys::{
 };
 use statglass_session::BoxFuture;
 
+mod ephemeral;
+pub use ephemeral::EphemeralSigner;
+
 #[cfg(any(test, feature = "software-signer"))]
 use p256::{
     Sec1Point,

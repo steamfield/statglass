@@ -165,15 +165,6 @@ impl HostEntry {
         self.live.usage_series(from_ms, to_ms, by, limit)
     }
 
-    /// The interface carrying the default route, as the engine last reported it.
-    pub fn primary_iface(&self) -> Option<String> {
-        self.live
-            .status()
-            .primary_iface
-            .as_deref()
-            .map(str::to_owned)
-    }
-
     /// History bucket rows of the last 15 minutes and the open buckets from this host's
     /// hub, for `History::history` (D-092).
     pub fn recent_rows(&self, host: HostId, from_ms: i64, to_ms: i64) -> Vec<BucketRow> {

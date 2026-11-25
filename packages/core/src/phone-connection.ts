@@ -2,6 +2,7 @@ import { formatClock } from "./format";
 import type {
   CommandError,
   IncompatibleSide,
+  MobileRemoteHost,
   RemoteFailureKind,
   RemoteHostRecord,
   RemoteHostStatus,
@@ -11,6 +12,7 @@ import { macMonitoringAdvice } from "./remote-errors";
 export type Tone = "live" | "muted" | "warning";
 
 export type PhoneRemoteHostStatus = RemoteHostStatus & {
+  demand?: MobileRemoteHost["demand"];
   incompatible_side?: IncompatibleSide | null;
   open_error?: CommandError | null;
 };
