@@ -8,7 +8,8 @@ use statglass_engine::{
     ContainerNames, EngineParts, LiveHub, LocalSource, NoScaleStore, Source, SourceHandle,
     SourceSink,
 };
-use statglass_proto::RemoteInterest;
+use statglass_proto::{HostAddresses, RemoteInterest};
+use statglass_remote::addresses::AddressResolver;
 use statglass_remote::{InterestSet, ServedHost};
 use statglass_schema::lock::LockExt;
 use statglass_schema::{Capabilities, HostRecord, Settings};
@@ -18,6 +19,7 @@ pub struct AgentHost {
     record: HostRecord,
     source: Arc<LocalSource>,
     hub: LiveHub,
+    addresses: AddressResolver,
     handle: Mutex<Option<SourceHandle>>,
     interests: Mutex<InterestSet>,
 }
@@ -48,6 +50,7 @@ impl AgentHost {
             record,
             source,
             hub,
+            addresses: AddressResolver::default(),
             handle: Mutex::new(Some(handle)),
             interests: Mutex::default(),
         }))
@@ -106,6 +109,14 @@ impl ServedHost for AgentHost {
 
     fn hub(&self) -> &LiveHub {
         &self.hub
+    }
+
+    fn serves_addresses(&self) -> bool {
+        true
+    }
+
+    fn network_addresses(&self) -> HostAddresses {
+        self.addresses.network_addresses(&self.hub)
     }
 
     fn set_remote_interest(&self, session: u64, interest: RemoteInterest) {
@@ -168,6 +179,7 @@ mod tests {
             record,
             source,
             hub,
+            addresses: AddressResolver::default(),
             handle: Mutex::new(Some(handle)),
             interests: Mutex::default(),
         };

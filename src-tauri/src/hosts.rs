@@ -7,11 +7,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use statglass_engine::{
-    Bus, LiveFrame, LiveHub, RecentNet, Source, SourceControl, SourceError, SourceHandle,
-    SourceSink,
+    Bus, LiveFrame, LiveHub, LocalSource, RecentNet, Source, SourceControl, SourceError,
+    SourceHandle, SourceSink,
 };
 use statglass_ipc::vitals::{HostVitals, VitalsRateLimit, host_vitals};
 use statglass_remote::InterestSet;
+use statglass_remote::addresses::AddressResolver;
 use statglass_schema::lock::{LockExt, RwLockExt};
 use statglass_schema::{Capabilities, HostId, HostRecord, SeriesKey, Settings};
 use statglass_store::{BucketRow, Writer};
@@ -28,6 +29,7 @@ pub struct HostEntry {
     handle: Mutex<Option<SourceHandle>>,
     live: LiveHub,
     vitals_warnings: VitalsRateLimit,
+    addresses: Option<AddressResolver>,
 }
 
 impl HostEntry {
@@ -253,6 +255,17 @@ impl statglass_remote::ServedHost for HostEntry {
         &self.live
     }
 
+    fn serves_addresses(&self) -> bool {
+        self.addresses.is_some()
+    }
+
+    fn network_addresses(&self) -> statglass_proto::HostAddresses {
+        self.addresses.as_ref().map_or_else(
+            || statglass_proto::HostAddresses::unavailable("addresses not served by this host"),
+            |resolver| resolver.network_addresses(&self.live),
+        )
+    }
+
     fn set_remote_interest(&self, session: u64, interest: statglass_proto::RemoteInterest) {
         self.change_interest(|all| all.set_remote(session, interest));
     }
@@ -270,6 +283,20 @@ impl HostRegistry {
 
     /// Adds a host with its source, not yet started.
     pub fn insert(&self, record: HostRecord, source: Arc<dyn Source>) -> Arc<HostEntry> {
+        self.insert_entry(record, source, None)
+    }
+
+    /// Registers this Mac's source, which can answer address queries for itself.
+    pub fn insert_local(&self, record: HostRecord, source: Arc<LocalSource>) -> Arc<HostEntry> {
+        self.insert_entry(record, source, Some(AddressResolver::default()))
+    }
+
+    fn insert_entry(
+        &self,
+        record: HostRecord,
+        source: Arc<dyn Source>,
+        addresses: Option<AddressResolver>,
+    ) -> Arc<HostEntry> {
         let id = record.id;
         let entry = Arc::new(HostEntry {
             interests: Mutex::default(),
@@ -278,6 +305,7 @@ impl HostRegistry {
             handle: Mutex::new(None),
             live: LiveHub::default(),
             vitals_warnings: VitalsRateLimit::default(),
+            addresses,
         });
         self.hosts.write_ok().insert(id, Arc::clone(&entry));
         entry
@@ -309,5 +337,57 @@ impl HostRegistry {
         for h in self.all() {
             h.stop();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use statglass_engine::{EngineParts, FakeTicker, HistoryStore, NoPowerSignals};
+    use statglass_proto::{ADDRESSES_QUERY_FEATURE, Answer, HostAddresses, Query};
+    use statglass_remote::{HostServer, ServerProvider};
+
+    fn unstarted_source() -> (HostRecord, Arc<LocalSource>) {
+        let record = serde_json::from_value::<HostRecord>(serde_json::json!({
+            "id": uuid::Uuid::new_v4(), "is_local": true, "display_name": "test",
+            "info": {"os": "mac_os", "os_version": "test", "model": null, "chip": null,
+            "chip_known": false, "cpu_topology": [], "mem_total_bytes": 1024, "boot_time_ms": 0}
+        }))
+        .unwrap();
+        let (ticker, _) = FakeTicker::new();
+        let source = LocalSource::new(
+            record.clone(),
+            EngineParts {
+                collectors: Vec::new(),
+                ticker: Box::new(ticker),
+                power: Box::new(NoPowerSignals),
+                hints: None,
+            },
+            Settings::default(),
+        );
+        (record, Arc::new(source))
+    }
+
+    #[test]
+    fn addresses_are_unavailable_from_an_entry_registered_as_remote() {
+        let (record, source) = unstarted_source();
+        // Even a record marked local cannot enable address serving through remote registration.
+        let entry = HostRegistry::new().insert(record, source);
+        let server = HostServer::new(entry, Arc::new(HistoryStore::unavailable()));
+        assert!(!server.hello().features.contains(ADDRESSES_QUERY_FEATURE));
+        assert_eq!(
+            server.answer(1, Query::NetworkAddresses),
+            Answer::NetworkAddresses(HostAddresses::unavailable(
+                "addresses not served by this host"
+            ))
+        );
+    }
+
+    #[test]
+    fn addresses_are_advertised_for_the_local_source() {
+        let (record, source) = unstarted_source();
+        let entry = HostRegistry::new().insert_local(record, source);
+        let server = HostServer::new(entry, Arc::new(HistoryStore::unavailable()));
+        assert!(server.hello().features.contains(ADDRESSES_QUERY_FEATURE));
     }
 }
