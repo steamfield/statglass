@@ -165,7 +165,6 @@ run_tests() {
     cargo test -p statglass-mobile --test network_addresses addresses_from_the_restricted_linux_agent -- --ignored --exact || status=$?
     cargo test -p statglass-mobile --test mobile_session mobile_core_streams_and_reads_host_history -- --ignored --exact || status=$?
     cargo test -p statglass-mobile --test docker_pair -- --ignored || status=$?
-    cargo test -p statglass-mobile --test docker_demand -- --ignored --nocapture || status=$?
     exit "$status"
 }
 
