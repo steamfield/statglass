@@ -31,7 +31,7 @@ export type StatglassNativeEvents = {
  * called from JS.
  */
 export interface StatglassNativeModule
-  extends NativeModule<StatglassNativeEvents> {
+  extends InstanceType<typeof NativeModule<StatglassNativeEvents>> {
   /** The core's `version()` envelope (`BuildInfo`); works before `start`. */
   version(): string;
   /**
