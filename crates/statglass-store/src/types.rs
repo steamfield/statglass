@@ -441,7 +441,8 @@ pub struct IngestReport {
     /// Gaps for a module this build does not know (D-040).
     pub gaps_skipped: u32,
     pub events_written: u32,
-    /// Alert events this page inserted for the first time, decoded. A replayed or
-    /// updated event is not here, so a consumer delivers each alert once.
+    /// Decoded alerts first inserted by this page. Use [`crate::Writer::ingest_page_durable`]
+    /// for once-only delivery across replays. [`crate::Writer::ingest_page`] can report
+    /// inserts before its batch commits.
     pub alerts_inserted: Vec<statglass_schema::Event>,
 }

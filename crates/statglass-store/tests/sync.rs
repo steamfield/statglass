@@ -12,7 +12,8 @@
 mod common;
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
+use std::time::Duration;
 
 use common::*;
 use statglass_proto::{
@@ -20,13 +21,16 @@ use statglass_proto::{
     decode_message, encode_message, local_features, negotiate,
 };
 use statglass_schema::{
-    Capabilities, Gap, GapReason, HostRecord, Labels, MetricId, Module, SeriesKey, SeriesSelector,
-    SyncKinds, SyncRowKind, Tier,
+    AlertCause, Capabilities, Cmp, Event, EventDetail, Gap, GapReason, HostRecord, Labels,
+    MetricId, Module, SeriesKey, SeriesSelector, SyncKinds, SyncRowKind, Tier,
 };
 use statglass_store::{
-    CursorPage, CursorRead, HistoryQuery, HistoryResult, PageEvent, PageGap, PageLayout, PageRow,
-    Reader, Retention, Store, TierChoice,
+    CursorPage, CursorRead, HistoryQuery, HistoryResult, IngestReport, PageEvent, PageGap,
+    PageLayout, PageRow, Reader, Retention, Store, StoreError, TierChoice,
+    docker::{DockerBatch, DockerEntity, DockerOutcome},
+    usage::{UsageBucket, UsageSourceCoverage},
 };
+use tracing::{Level, Metadata, Subscriber, field, span};
 use uuid::Uuid;
 
 /// Every message crosses the codec, as it would over SSH.
@@ -775,6 +779,407 @@ fn stable_source_rows_update_and_replay_durably() {
             .unwrap(),
         2
     );
+}
+
+#[test]
+fn sync_reports_new_alerts_in_page_order_and_skips_replays_and_updates() {
+    let dir = temp_dir("inserted-alerts");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+
+    let first = alert(T0 + MIN, "High CPU", 90.0);
+    let second = alert(T0, "Sustained CPU", 95.0);
+    let fan = Event {
+        ts_ms: T0 + 1,
+        start_ms: T0,
+        processes: vec![],
+        detail: EventDetail::FansRamped {
+            from_rpm: 1200.0,
+            to_rpm: 3000.0,
+        },
+    };
+    let mut page = event_page(vec![
+        page_event(&first, Some(1), 1),
+        page_event(&fan, Some(2), 2),
+        page_event(&second, Some(3), 3),
+    ]);
+    let first_report = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(
+        first_report,
+        IngestReport {
+            events_written: 3,
+            alerts_inserted: vec![first.clone(), second.clone()],
+            ..IngestReport::default()
+        }
+    );
+
+    let replay = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(replay, IngestReport::default());
+
+    let amended = alert(first.ts_ms, "High CPU", 99.0);
+    page.events = vec![page_event(&amended, Some(1), 4)];
+    page.last_seq = 4;
+    let update = w.ingest_page_durable(h.id, page).unwrap();
+    assert_eq!(
+        update,
+        IngestReport {
+            events_written: 1,
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(
+        mirror
+            .reader()
+            .unwrap()
+            .events(h.id, T0, T0 + HOUR)
+            .unwrap(),
+        [second, fan, amended],
+    );
+}
+
+#[test]
+fn sync_reports_a_legacy_alert_only_when_its_dedupe_key_is_new() {
+    let dir = temp_dir("legacy-alert");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+
+    let first = alert(T0, "High CPU", 90.0);
+    let mut page = event_page(vec![page_event(&first, None, 1)]);
+    let insert = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(
+        insert,
+        IngestReport {
+            events_written: 1,
+            alerts_inserted: vec![first],
+            ..IngestReport::default()
+        }
+    );
+
+    let replay = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(replay, IngestReport::default());
+
+    let amended = alert(T0, "High CPU", 99.0);
+    page.events = vec![page_event(&amended, None, 2)];
+    page.last_seq = 2;
+    let update = w.ingest_page_durable(h.id, page).unwrap();
+    assert_eq!(
+        update,
+        IngestReport {
+            events_written: 1,
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(
+        mirror
+            .reader()
+            .unwrap()
+            .events(h.id, T0, T0 + HOUR)
+            .unwrap(),
+        [amended],
+    );
+}
+
+#[test]
+fn sync_warns_for_unreadable_alerts_without_decoding_non_alerts() {
+    let (sender, logs) = mpsc::channel();
+    // The store spawns its own writer thread, which uses the global subscriber.
+    tracing::subscriber::set_global_default(SyncLogs(sender)).unwrap();
+    let dir = temp_dir("unreadable-alerts");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+
+    let event = alert(T0, "High CPU", 90.0);
+    let mut unreadable_alert = page_event(&event, Some(42), 1);
+    unreadable_alert.payload = vec![0xff];
+    let mut other = unreadable_alert.clone();
+    other.source_id = Some(43);
+    other.seq = 2;
+    other.ts_ms = T0 + 1;
+    other.kind = "fans_ramped".into();
+    let mut mismatched = page_event(&event, Some(44), 3);
+    mismatched.kind = other.kind.clone();
+    let page = event_page(vec![unreadable_alert, other, mismatched]);
+
+    assert_eq!(
+        w.ingest_page_durable(h.id, page.clone()).unwrap(),
+        IngestReport {
+            events_written: 3,
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(
+        w.ingest_page_durable(h.id, page).unwrap(),
+        IngestReport::default()
+    );
+    let persisted = mirror
+        .reader()
+        .unwrap()
+        .events_counted(h.id, T0, T0 + HOUR)
+        .unwrap();
+    assert_eq!(persisted.unreadable, 2);
+    assert_eq!(persisted.events, [event]);
+    assert_eq!(
+        logs.try_iter().collect::<Vec<_>>(),
+        [(
+            Level::WARN,
+            AlertLog {
+                source_id: Some("Some(42)".into()),
+                ts_ms: Some(T0),
+                message: Some("cannot decode a newly inserted remote alert".into()),
+            }
+        )]
+    );
+}
+
+struct SyncLogs(mpsc::Sender<(Level, AlertLog)>);
+
+impl Subscriber for SyncLogs {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.is_event() && metadata.target() == "statglass_store::writer::sync"
+    }
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        let mut log = AlertLog::default();
+        event.record(&mut log);
+        let _ = self.0.send((*event.metadata().level(), log));
+    }
+
+    fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+        span::Id::from_u64(1)
+    }
+    fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+    fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+    fn enter(&self, _: &span::Id) {}
+    fn exit(&self, _: &span::Id) {}
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct AlertLog {
+    source_id: Option<String>,
+    ts_ms: Option<i64>,
+    message: Option<String>,
+}
+
+impl field::Visit for AlertLog {
+    fn record_i64(&mut self, field: &field::Field, value: i64) {
+        if field.name() == "ts_ms" {
+            self.ts_ms = Some(value);
+        }
+    }
+
+    fn record_debug(&mut self, field: &field::Field, value: &dyn std::fmt::Debug) {
+        match field.name() {
+            "source_id" => self.source_id = Some(format!("{value:?}")),
+            "message" => self.message = Some(format!("{value:?}")),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn sync_rolls_back_alerts_and_cursor_when_usage_flush_fails() {
+    let dir = temp_dir("failed-usage-flush");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+    w.flush().unwrap();
+    let event = alert(T0, "High CPU", 90.0);
+    let page = event_page(vec![page_event(&event, Some(1), 1)]);
+
+    let conn = rusqlite::Connection::open(mirror.path()).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER reject_usage_coverage BEFORE INSERT ON usage_coverage BEGIN
+            SELECT RAISE(FAIL, 'usage coverage write failed');
+         END;",
+    )
+    .unwrap();
+    let ticket = w
+        .write_usage_bucket(
+            h.id,
+            UsageBucket {
+                from_ms: T0,
+                to_ms: T0 + 10_000,
+                source: [UsageSourceCoverage::default(); 5],
+                apps: vec![],
+                processes: vec![],
+                uncertain_network: vec![],
+            },
+        )
+        .unwrap();
+    let error = w.ingest_page_durable(h.id, page.clone()).unwrap_err();
+    assert!(matches!(
+        error,
+        StoreError::Sqlite(rusqlite::Error::SqliteFailure(..))
+    ));
+    assert_eq!(error.to_string(), "sqlite: usage coverage write failed");
+    let commits = w.usage_commits();
+    assert_eq!(commits.committed, 0);
+    assert_eq!(commits.failed_through, ticket);
+
+    conn.execute_batch("DROP TRIGGER reject_usage_coverage")
+        .unwrap();
+    w.flush().unwrap();
+    let mut reader = mirror.reader().unwrap();
+    assert!(reader.events(h.id, T0, T0 + HOUR).unwrap().is_empty());
+    assert!(reader.cursor(h.id, Tier::M1).unwrap().is_none());
+    assert_eq!(
+        w.ingest_page_durable(h.id, page).unwrap(),
+        IngestReport {
+            events_written: 1,
+            alerts_inserted: vec![event.clone()],
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(reader.events(h.id, T0, T0 + HOUR).unwrap(), [event]);
+}
+
+#[test]
+fn sync_rolls_back_alerts_and_cursor_when_commit_accounting_fails() {
+    let dir = temp_dir("failed-commit-accounting");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+    w.flush().unwrap();
+    let event = alert(T0, "High CPU", 90.0);
+    let page = event_page(vec![page_event(&event, Some(1), 1)]);
+
+    let conn = rusqlite::Connection::open(mirror.path()).unwrap();
+    let next_seq: i64 = conn
+        .query_row("SELECT value FROM meta WHERE key = 'next_seq'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    // The Docker batch stages normally. Inserting the event breaks the following
+    // accounting read by overflowing the sum of the entity and metadata entries.
+    conn.execute_batch(
+        "CREATE TRIGGER break_docker_accounting AFTER INSERT ON events BEGIN
+            UPDATE docker_accounting SET logical_bytes = 9223372036854775807;
+         END;",
+    )
+    .unwrap();
+    let receipt = w
+        .write_docker(DockerBatch {
+            host: h.id,
+            daemon_id: "daemon".into(),
+            generation: 1,
+            revision: 1,
+            start_ms: T0,
+            end_ms: T0 + 10_000,
+            runtime: "OrbStack".into(),
+            entities: vec![DockerEntity {
+                external_id: "c".into(),
+                name: "Container".into(),
+                effective_ms: T0,
+                last_seen_ms: T0,
+                revision: 1,
+                ..Default::default()
+            }],
+            buckets: vec![],
+            events: vec![],
+            coverage: vec![],
+            cursor: None,
+            populations: vec![],
+        })
+        .unwrap();
+    let error = w.ingest_page_durable(h.id, page.clone()).unwrap_err();
+    let StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, message)) = error else {
+        panic!("expected the accounting query to fail, got {error:?}");
+    };
+    assert_eq!(code.extended_code, rusqlite::ffi::SQLITE_ERROR);
+    assert_eq!(message.as_deref(), Some("integer overflow"));
+    let ack = receipt.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert_eq!(
+        (
+            ack.generation,
+            ack.revision,
+            ack.outcome,
+            ack.reason.as_deref()
+        ),
+        (
+            1,
+            1,
+            DockerOutcome::Failed,
+            Some("sqlite: integer overflow")
+        )
+    );
+    assert_eq!(count(&conn, "SELECT count(*) FROM docker_accounting"), 0);
+
+    let mut reader = mirror.reader().unwrap();
+    assert!(reader.events(h.id, T0, T0 + HOUR).unwrap().is_empty());
+    assert!(reader.cursor(h.id, Tier::M1).unwrap().is_none());
+
+    conn.execute_batch("DROP TRIGGER break_docker_accounting")
+        .unwrap();
+    let retry = w.ingest_page_durable(h.id, page).unwrap();
+    assert_eq!(
+        retry,
+        IngestReport {
+            events_written: 1,
+            alerts_inserted: vec![event.clone()],
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(reader.events(h.id, T0, T0 + HOUR).unwrap(), [event]);
+    let identity: (i64, i64) = conn
+        .query_row("SELECT seq, export_id FROM events", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(identity, (next_seq, next_seq));
+}
+
+fn alert(ts_ms: i64, rule_name: &str, value: f32) -> Event {
+    Event {
+        ts_ms,
+        start_ms: ts_ms - MIN,
+        processes: vec![],
+        detail: EventDetail::Alert {
+            rule_id: Uuid::from_u128(1),
+            rule_name: rule_name.into(),
+            cause: AlertCause::Threshold {
+                metric: key("cpu.total").metric,
+                labels: Labels::default(),
+                value,
+                op: Cmp::Gt,
+                threshold: 80.0,
+                for_secs: 60,
+            },
+        },
+    }
+}
+
+fn page_event(event: &Event, source_id: Option<i64>, seq: i64) -> PageEvent {
+    let mut payload = Vec::new();
+    ciborium::into_writer(event, &mut payload).unwrap();
+    PageEvent {
+        source_id,
+        seq,
+        ts_ms: event.ts_ms,
+        kind: event.detail.kind().into(),
+        payload,
+    }
+}
+
+fn event_page(events: Vec<PageEvent>) -> CursorPage {
+    CursorPage {
+        tier: Tier::M1,
+        epoch: Uuid::new_v4(),
+        kinds: SyncKinds::ALL,
+        layouts: vec![],
+        rows: vec![],
+        gaps: vec![],
+        last_seq: events.last().unwrap().seq,
+        events,
+        more: false,
+    }
 }
 
 #[test]

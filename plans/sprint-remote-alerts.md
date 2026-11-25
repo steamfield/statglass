@@ -88,6 +88,7 @@ Test cases:
 
 Demo: `cargo test -p statglass remote_alert` and `cargo test -p statglass-remote alert` (non-zero counts): commands read and replace a fake agent's rules with each refusal mapped; inserted alert events from a mirrored page are delivered once, back history is Timeline-only, late ones go out as one catch-up message.
 Depends on: phase 1
+Scaffold: ffc76868
 Phase scaffold (orchestrator, when phase 1 tags): `IngestReport.alerts_inserted: Vec<Event>` (always empty until lane a); `pub type AlertListener = Arc<dyn Fn(Uuid, Vec<Event>) + Send + Sync>` and `Mirror::set_alert_listener(&self, listener: AlertListener)`, with `Mirror::ingest` calling it after the durable commit when `alerts_inserted` is non-empty (epoch = the page's epoch); `RemoteError::Stale(String)`.
 Test cases:
 - Store: a page with two new alert events and one non-alert event reports exactly the two alerts in `alerts_inserted`, decoded; replaying the same page reports none; a same-source event updated with a higher `source_seq` is not reported as inserted.
@@ -99,9 +100,9 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | S | crates/statglass-store/src/writer/sync.rs, crates/statglass-store/tests/sync.rs, crates/statglass-remote/src/mirror.rs, crates/statglass-remote/tests/mirror_alerts.rs | contracts, crates/statglass-store/src/writer/mod.rs | | gpt-6.2-sol | pending | | store and mirror alert tests pass |
-| b | M | src-tauri/src/alerts/remote_delivery.rs, src-tauri/src/alerts/remote_delivery_tests.rs, src-tauri/src/alerts/mod.rs, src-tauri/src/alerts/fire.rs, src-tauri/src/notify.rs, crates/statglass-notify/src/text.rs, crates/statglass-notify/src/lib.rs, crates/statglass-notify/tests/text.rs, src-tauri/src/remote/registration.rs | contracts, src-tauri/src/alerts/host_offline.rs (a pure watch with its state) | | gpt-6.2-sol | pending | | delivery tests pass |
-| c | M | crates/statglass-remote/src/source/queries.rs, crates/statglass-remote/src/lib.rs, src-tauri/src/alerts/remote_rules.rs, src-tauri/src/alerts/remote_rules_tests.rs, src-tauri/src/alerts/commands.rs, src-tauri/src/remote.rs, src-tauri/src/error.rs, src-tauri/src/lib.rs, src/core/generated/, src/core/mock/commands.ts | contracts, crates/statglass-remote/src/source/queries.rs (usage_by_app pattern) | | gpt-6.2-sol | pending | | command tests pass, bindings fresh |
+| a | S | crates/statglass-store/src/writer/sync.rs, crates/statglass-store/tests/sync.rs, crates/statglass-remote/src/mirror.rs, crates/statglass-remote/tests/mirror_alerts.rs | contracts, crates/statglass-store/src/writer/mod.rs | | gpt-6.2-sol | merged | foreman/ra-2a | store and mirror alert tests pass |
+| b | M | src-tauri/src/alerts/remote_delivery.rs, src-tauri/src/alerts/remote_delivery_tests.rs, src-tauri/src/alerts/mod.rs, src-tauri/src/alerts/fire.rs, src-tauri/src/notify.rs, crates/statglass-notify/src/text.rs, crates/statglass-notify/src/lib.rs, crates/statglass-notify/tests/text.rs, src-tauri/src/remote/registration.rs | contracts, src-tauri/src/alerts/host_offline.rs (a pure watch with its state) | | gpt-6.2-sol | running | foreman/ra-2b | delivery tests pass |
+| c | M | crates/statglass-remote/src/source/queries.rs, crates/statglass-remote/src/lib.rs, src-tauri/src/alerts/remote_rules.rs, src-tauri/src/alerts/remote_rules_tests.rs, src-tauri/src/alerts/commands.rs, src-tauri/src/remote.rs, src-tauri/src/error.rs, src-tauri/src/lib.rs, src/core/generated/, src/core/mock/commands.ts | contracts, crates/statglass-remote/src/source/queries.rs (usage_by_app pattern) | | gpt-6.2-sol | running | foreman/ra-2c | command tests pass, bindings fresh |
 
 The phase scaffold also declares `mod remote_delivery;` and `mod remote_rules;` in `src-tauri/src/alerts/mod.rs` with doc-only files, so lane c never edits `mod.rs`.
 
@@ -114,8 +115,11 @@ Depends on: phase 2
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | a | M | src/core/mock/remote-alerts.ts | | | gpt-6.2-sol | pending | | |
 | b | M | src/app/routes/dashboard/alerts/ | | | gpt-6.2-sol | pending | | |
+| c | M | src-tauri/src/alerts/remote_alert_flow_tests.rs, src-tauri/src/alerts/mod.rs | phase 2 lanes | | gpt-6.2-sol | pending | | flow tests pass, each watched failing once |
 
 (Briefs written during phase 2.)
 
 ## Log
 - Plan critique (sonnet DA): demo filter could run zero tests (fixed: `--test alert_rules`, count checked). `recent_alerts` move unfinished: rejected, `src-tauri/src/history.rs` delegates to the engine since the scaffold. Lanes span two capabilities: accepted deviation, lanes already running. Lane b tests on new metrics: steered to existing metrics. Golden revision test: added to lane b by steer. A newer-build rule with an extra field decodes as Known and loses the field on re-save: accepted limitation (agents update from this Mac, so the agent is rarely newer).
+- 2026-11-24: User asked for test coverage per ce:writing-tests with the remote boundary mocked. Running phase 2 lanes get `tests-addendum.md` as a followup with their review fixes (fake peer over duplex, recording sender, fake clock, whole-result assertions, boundary cases, each test watched failing once). Added phase 3 lane c: cross-lane flow tests (a fake agent's synced page through the real Mirror, listener, delivery and floor to a recording sender; the rule commands against a fake peer). Phase 3 frontend lanes test through the mock transport plus one Playwright journey.
+- 2026-11-24: User asked whether "no feature flag" was a misunderstanding (they expected a PostHog rollout flag). The flag RFC revision 3 dropped was a Hello capability bit in the wire handshake, not a rollout flag; it was dropped because remote Macs would also advertise it, and an old agent's `Unsupported` answer already gives the same signal (D-117). The repo has no PostHog or any telemetry, so no decision rested on it; D-140 stands.
