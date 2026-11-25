@@ -337,7 +337,12 @@ async fn request(listener: &UnixListener) -> (UnixStream, ControlRequest) {
 }
 
 async fn respond(mut stream: UnixStream, pairing: PairReply) {
+    respond_with_expiry(&mut stream, pairing, statglass_engine::wall_ms() + 60_000).await;
+}
+
+async fn respond_with_expiry(stream: &mut UnixStream, pairing: PairReply, expires_ms: i64) {
     let reply = ControlResponse {
+        pairing_expires_ms: (pairing == PairReply::Waiting).then_some(expires_ms),
         pairing: Some(pairing),
         ok: true,
         message: String::new(),
@@ -347,7 +352,7 @@ async fn respond(mut stream: UnixStream, pairing: PairReply) {
         launch_at_login: None,
         updates: None,
     };
-    let body = serde_json::to_vec(&reply).expect("encode the control reply");
+    let body = serde_json::to_vec(&reply).expect("encode the control reply frame");
     stream
         .write_u32(body.len() as u32)
         .await
@@ -441,7 +446,7 @@ async fn pairing_forced_recovers_when_the_host_accepted_start_but_its_reply_time
 }
 
 #[tokio::test(start_paused = true)]
-async fn pairing_forced_accepts_a_half_closed_request_stream() {
+async fn pairing_forced_abandons_when_phone_disconnects_during_a_control_stall() {
     let dir = tempfile::tempdir_in("/tmp").unwrap();
     let socket = dir.path().join("pair.sock");
     let listener = bind_private(&socket).unwrap();
@@ -451,24 +456,197 @@ async fn pairing_forced_accepts_a_half_closed_request_stream() {
     write_pair_frame(&mut writer, &start(NONCE, 8))
         .await
         .unwrap();
-    writer.shutdown().await.unwrap();
+    let (poll_started, wedged) = tokio::sync::oneshot::channel();
+    let (finished, client_finished) = tokio::sync::oneshot::channel();
     let server = async {
-        let (stream, _) = request(&listener).await;
+        let (stream, ControlRequest::PairStart { attempt, .. }) = request(&listener).await else {
+            panic!("expected pairing start")
+        };
         respond(stream, PairReply::Waiting).await;
-        let (stream, _) = request(&listener).await;
-        respond(stream, PairReply::Denied).await;
+        let (_stalled, poll) = request(&listener).await;
+        assert!(matches!(poll, ControlRequest::PairStatus { nonce } if nonce == NONCE));
+        poll_started.send(()).unwrap();
+        let (_abandon, abandon) = request(&listener).await;
+        assert!(
+            matches!(abandon, ControlRequest::PairAbandon { nonce, attempt: abandoned } if nonce == NONCE && abandoned == attempt)
+        );
+        client_finished.await.unwrap();
     };
     let client = async {
         assert_eq!(
             read_pair_frame::<PairReply>(&mut reader).await.unwrap(),
             PairReply::Waiting
         );
+        wedged.await.unwrap();
+        writer.shutdown().await.unwrap();
+        assert!(read_pair_frame::<PairReply>(&mut reader).await.is_err());
+        finished.send(()).unwrap();
+    };
+    let (code, (), ()) = tokio::time::timeout(Duration::from_secs(4), async {
+        tokio::join!(run_forced(stdin, stdout, &socket), server, client)
+    })
+    .await
+    .unwrap();
+    assert_eq!(code, 2);
+}
+
+#[test]
+fn pairing_abandon_prevents_approval_for_the_disconnected_attempt() {
+    let (pairing, keys) = pairing();
+    let offer = pairing.offer(host(), Duration::from_secs(60), NOW).unwrap();
+    let nonce = &offer.nonce;
+    let attempt = [9; 16];
+    let started = pairing.control_reply(
+        ControlRequest::PairStart {
+            start: start(nonce, 7),
+            attempt,
+        },
+        NOW,
+    );
+    assert_eq!(started.pairing, Some(PairReply::Waiting));
+    assert_eq!(started.pairing_expires_ms, Some(offer.expires_ms));
+    assert_eq!(
+        pairing.abandon(nonce, [8; 16], NOW),
+        PairReply::Error {
+            error: PairError::Used
+        }
+    );
+    let reply = pairing.control_reply(
+        ControlRequest::PairAbandon {
+            nonce: nonce.clone(),
+            attempt,
+        },
+        NOW,
+    );
+    assert_eq!(reply.pairing, Some(PairReply::Expired));
+    assert_eq!(reply.pairing_expires_ms, None);
+    assert_eq!(pairing.approve(nonce, NOW).unwrap(), PairReply::Expired);
+    let edits = keys.edits.lock_ok();
+    assert_eq!(edits.len(), 2);
+    assert_eq!(edits.last(), Some(&Edit::Remove(nonce.clone())));
+}
+
+#[tokio::test(start_paused = true)]
+async fn pairing_forced_abandons_when_stdout_closes_before_waiting_is_delivered() {
+    let dir = tempfile::tempdir_in("/tmp").unwrap();
+    let socket = dir.path().join("pair.sock");
+    let listener = bind_private(&socket).unwrap();
+    let (mut writer, stdin) = duplex(2048);
+    let (reader, stdout) = duplex(2048);
+    drop(reader);
+    write_pair_frame(&mut writer, &start(NONCE, 5))
+        .await
+        .unwrap();
+    let server = async {
+        let (stream, ControlRequest::PairStart { attempt, .. }) = request(&listener).await else {
+            panic!("expected pairing start")
+        };
+        respond(stream, PairReply::Waiting).await;
+        let (stream, abandon) = request(&listener).await;
+        assert!(
+            matches!(abandon, ControlRequest::PairAbandon { nonce, attempt: abandoned } if nonce == NONCE && abandoned == attempt)
+        );
+        respond(stream, PairReply::Expired).await;
+    };
+    let (code, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+        tokio::join!(run_forced(stdin, stdout, &socket), server)
+    })
+    .await
+    .unwrap();
+    assert_eq!(code, 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn pairing_forced_retries_when_control_drops_the_first_status_connection() {
+    let dir = tempfile::tempdir_in("/tmp").unwrap();
+    let socket = dir.path().join("pair.sock");
+    let listener = bind_private(&socket).unwrap();
+    let (client, relay) = duplex(2048);
+    let (stdin, stdout) = tokio::io::split(relay);
+    let (mut reader, mut writer) = tokio::io::split(client);
+    let approved = PairReply::Approved {
+        device: "123ABC".into(),
+        hosts: vec![host()],
+    };
+    let server = async {
+        let (stream, _) = request(&listener).await;
+        respond(stream, PairReply::Waiting).await;
+        let (stream, poll) = request(&listener).await;
+        assert!(matches!(poll, ControlRequest::PairStatus { nonce } if nonce == NONCE));
+        drop(stream);
+        let (stream, poll) = request(&listener).await;
+        assert!(matches!(poll, ControlRequest::PairStatus { nonce } if nonce == NONCE));
+        respond(stream, approved.clone()).await;
+    };
+    let client = async {
+        write_pair_frame(&mut writer, &start(NONCE, 1))
+            .await
+            .unwrap();
         assert_eq!(
             read_pair_frame::<PairReply>(&mut reader).await.unwrap(),
-            PairReply::Denied
+            PairReply::Waiting
+        );
+        assert_eq!(
+            read_pair_frame::<PairReply>(&mut reader).await.unwrap(),
+            approved
         );
     };
-    let (code, (), ()) = tokio::time::timeout(Duration::from_secs(20), async {
+    let (code, (), ()) = tokio::time::timeout(Duration::from_secs(8), async {
+        tokio::join!(run_forced(stdin, stdout, &socket), server, client)
+    })
+    .await
+    .unwrap();
+    assert_eq!(code, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn pairing_forced_stops_retrying_at_the_hosts_actual_expiry() {
+    let dir = tempfile::tempdir_in("/tmp").unwrap();
+    let socket = dir.path().join("pair.sock");
+    let listener = bind_private(&socket).unwrap();
+    let (client, relay) = duplex(2048);
+    let (stdin, stdout) = tokio::io::split(relay);
+    let (mut reader, mut writer) = tokio::io::split(client);
+    let (finished, client_finished) = tokio::sync::oneshot::channel();
+    let server = async {
+        let (mut stream, ControlRequest::PairStart { attempt, .. }) = request(&listener).await
+        else {
+            panic!("expected pairing start")
+        };
+        respond_with_expiry(
+            &mut stream,
+            PairReply::Waiting,
+            statglass_engine::wall_ms() + 1_000,
+        )
+        .await;
+        let (_stalled, poll) = request(&listener).await;
+        assert!(matches!(poll, ControlRequest::PairStatus { nonce } if nonce == NONCE));
+        let (_stalled_again, abandon) = request(&listener).await;
+        assert!(
+            matches!(abandon, ControlRequest::PairAbandon { nonce, attempt: abandoned } if nonce == NONCE && abandoned == attempt)
+        );
+        // Neither control response ever arrives while the relay is trying to finish.
+        client_finished.await.unwrap();
+    };
+    let client = async {
+        write_pair_frame(&mut writer, &start(NONCE, 1))
+            .await
+            .unwrap();
+        assert_eq!(
+            read_pair_frame::<PairReply>(&mut reader).await.unwrap(),
+            PairReply::Waiting
+        );
+        let reply = tokio::time::timeout(
+            Duration::from_secs(13),
+            read_pair_frame::<PairReply>(&mut reader),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(reply, PairReply::Expired);
+        finished.send(()).unwrap();
+    };
+    let (code, (), ()) = tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(run_forced(stdin, stdout, &socket), server, client)
     })
     .await

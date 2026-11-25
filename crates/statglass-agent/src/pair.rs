@@ -4,7 +4,7 @@
 use anyhow::{Context, ensure};
 use qrcode::{EcLevel, QrCode, render::unicode::Dense1x2};
 use statglass_proto::pairing::{
-    BundleHost, BundleHostKey, BundleRoute, BundleTarget, PAIR_RECEIPT_GRACE, PairError, PairReply,
+    BundleHost, BundleHostKey, BundleRoute, BundleTarget, PAIR_RECEIPT_GRACE, PairReply,
     PairingPayload, encode_payload, valid_nonce,
 };
 use statglass_remote::{
@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::signal::unix::{Signal, SignalKind, signal};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
@@ -39,7 +39,7 @@ pub fn interactive(ttl: Duration) -> anyhow::Result<()> {
     check_ssh_version()?;
     let runtime = runtime()?;
     let result = runtime.block_on(async {
-        let mut interrupt = signal(SignalKind::interrupt()).context("listening for Ctrl-C")?;
+        let interrupt = pairing_interrupt().context("listening for terminal signals")?;
         let host = bundle(layout, &paths).await?;
         let pairing = Arc::new(PairingHost::new(
             Arc::new(AuthorizedKeys::for_current_user()?),
@@ -48,7 +48,7 @@ pub fn interactive(ttl: Duration) -> anyhow::Result<()> {
         let payload = pairing
             .offer(host, ttl, statglass_engine::wall_ms())
             .context("installing the one-time pairing key")?;
-        let result = serve_offer(&pairing, &payload, socket_dir, &mut interrupt).await;
+        let result = serve_offer(&pairing, &payload, socket_dir, interrupt).await;
         let cleanup = pairing
             .cancel(&payload.nonce)
             .context("removing the one-time pairing key");
@@ -62,7 +62,7 @@ pub fn interactive(ttl: Duration) -> anyhow::Result<()> {
         }
         result.and(cleanup)
     });
-    // The terminal reader may still be blocked in read(2) after timeout or Ctrl-C.
+    // The terminal reader may still be blocked in read(2) after timeout or a signal.
     runtime.shutdown_background();
     result
 }
@@ -328,7 +328,7 @@ async fn serve_offer(
     pairing: &Arc<PairingHost>,
     payload: &PairingPayload,
     socket_dir: PathBuf,
-    interrupt: &mut Signal,
+    interrupt: impl Future<Output = Option<()>>,
 ) -> anyhow::Result<()> {
     let pending = Arc::new(Notify::new());
     let handler = {
@@ -346,10 +346,24 @@ async fn serve_offer(
     drive_offer(
         server,
         shutdown,
-        interrupt.recv(),
+        interrupt,
         terminal_decision(pairing, payload, &pending, deadline),
+        || pairing.cancel(&payload.nonce),
     )
     .await
+}
+
+fn pairing_interrupt() -> io::Result<impl Future<Output = Option<()>>> {
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    let mut terminate = signal(SignalKind::terminate())?;
+    let mut hangup = signal(SignalKind::hangup())?;
+    Ok(async move {
+        tokio::select! {
+            received = interrupt.recv() => received,
+            received = terminate.recv() => received,
+            received = hangup.recv() => received,
+        }
+    })
 }
 
 async fn drive_offer(
@@ -357,28 +371,42 @@ async fn drive_offer(
     shutdown: watch::Sender<bool>,
     interrupt: impl Future<Output = Option<()>>,
     decision: impl Future<Output = anyhow::Result<bool>>,
+    cancel: impl FnOnce() -> Result<(), statglass_remote::PairingError>,
 ) -> anyhow::Result<()> {
     tokio::pin!(server, interrupt, decision);
-    let reply = tokio::select! {
+    let (reply, interrupted) = tokio::select! {
         // Poll the server first. Its bind is synchronous before its first await, so
         // there is a listening socket by the time the terminal shows the QR.
         biased;
         stopped = &mut server => return stopped.context("serving the private pairing socket"),
-        _ = &mut interrupt => return Ok(()),
-        answer = &mut decision => answer,
+        _ = &mut interrupt => (Ok(true), true),
+        answer = &mut decision => (answer, false),
     };
+    let cleanup = if interrupted || reply.is_err() {
+        cancel().context("cancelling the pairing offer")
+    } else {
+        Ok(())
+    };
+    if reply.is_err()
+        && let Err(error) = &cleanup
+    {
+        tracing::warn!(
+            error = &**error as &dyn std::error::Error,
+            "pairing cancellation failed"
+        );
+    }
     if !matches!(reply, Ok(false)) {
         // A client can have a short control request in flight when the decision is
         // made. Keep serving through that request's cap and the following poll.
         tokio::select! {
             stopped = &mut server => return stopped.context("serving the final pairing reply"),
-            _ = &mut interrupt => {},
+            _ = &mut interrupt, if !interrupted => {},
             () = tokio::time::sleep(PAIR_RECEIPT_GRACE) => {},
         }
     }
     let _ = shutdown.send(true);
     server.await.context("closing the private pairing socket")?;
-    reply.map(|_| ())
+    reply.map(|_| ()).and(cleanup)
 }
 
 fn control_reply(
@@ -386,30 +414,12 @@ fn control_reply(
     pending: &Notify,
     request: ControlRequest,
 ) -> ControlResponse {
-    let now = statglass_engine::wall_ms();
-    let reply = match request {
-        ControlRequest::PairStart { start, attempt } => {
-            let reply = pairing.start_attempt(&start, attempt, now);
-            if reply == PairReply::Waiting {
-                pending.notify_one();
-            }
-            reply
-        }
-        ControlRequest::PairStatus { nonce } => pairing.status(&nonce, now),
-        _ => PairReply::Error {
-            error: PairError::Unavailable,
-        },
-    };
-    ControlResponse {
-        ok: !matches!(reply, PairReply::Error { .. }),
-        message: String::new(),
-        host: None,
-        allow_remote_monitoring: None,
-        show_menu_bar_icon: None,
-        launch_at_login: None,
-        updates: None,
-        pairing: Some(reply),
+    let start = matches!(request, ControlRequest::PairStart { .. });
+    let response = pairing.control_reply(request, statglass_engine::wall_ms());
+    if start && response.pairing == Some(PairReply::Waiting) {
+        pending.notify_one();
     }
+    response
 }
 
 async fn terminal_decision(
@@ -497,6 +507,98 @@ fn terminal_qr(text: &str) -> anyhow::Result<String> {
 mod tests {
     use super::*;
     use crate::cli::{Command, DeviceCommand, parse};
+    use rustix::process::{Pid, Signal as ProcessSignal, kill_process};
+    use statglass_proto::pairing::{PairStart, decode_payload};
+    use statglass_remote::{
+        DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice, control_request,
+    };
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    struct TestKeys {
+        line: PathBuf,
+    }
+
+    impl DeviceKeys for TestKeys {
+        fn list_devices(&self) -> Result<Vec<PairedDevice>, DeviceKeysError> {
+            unreachable!()
+        }
+        fn add_device(
+            &self,
+            _key: &EcdsaP256Public,
+            _name: &str,
+            _command: &str,
+        ) -> Result<DeviceTag, DeviceKeysError> {
+            Err(io::Error::other("device key write failed").into())
+        }
+        fn revoke(&self, _tag: DeviceTag) -> Result<bool, DeviceKeysError> {
+            unreachable!()
+        }
+        fn add_pairing(
+            &self,
+            _key: &EcdsaP256Public,
+            nonce: &str,
+            _expires_ms: i64,
+            _command: &str,
+        ) -> Result<(), DeviceKeysError> {
+            Ok(std::fs::write(&self.line, nonce)?)
+        }
+        fn remove_pairing(&self, _nonce: &str) -> Result<bool, DeviceKeysError> {
+            Ok(match std::fs::remove_file(&self.line) {
+                Ok(()) => true,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+                Err(error) => return Err(error.into()),
+            })
+        }
+    }
+
+    fn test_offer(dir: &Path) -> (Arc<PairingHost>, PairingPayload) {
+        let pairing = Arc::new(PairingHost::new(
+            Arc::new(TestKeys {
+                line: dir.join("pairing-line"),
+            }),
+            PairCommands {
+                pair: "/agent pair".into(),
+                restricted: "/agent restricted".into(),
+            },
+        ));
+        let host = BundleHost {
+            host_id: statglass_schema::HostId(uuid::Uuid::nil()),
+            name: "test".into(),
+            os: "test".into(),
+            user: "test".into(),
+            port: None,
+            targets: vec![],
+            host_keys: vec![],
+        };
+        let payload = pairing
+            .offer(host, Duration::from_secs(60), statglass_engine::wall_ms())
+            .expect("offer pairing with fake device keys");
+        (pairing, payload)
+    }
+
+    fn test_start(nonce: &str) -> ControlRequest {
+        // SEC1 uncompressed NIST P-256 generator point.
+        let hex = concat!(
+            "04",
+            "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+            "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+        );
+        let device_key = (0..hex.len())
+            .step_by(2)
+            .map(|index| {
+                u8::from_str_radix(&hex[index..index + 2], 16).expect("test device key byte")
+            })
+            .collect();
+        ControlRequest::PairStart {
+            start: PairStart {
+                nonce: nonce.into(),
+                device_key,
+                device_name: "Test phone".into(),
+                model: "iPhone".into(),
+            },
+            attempt: [7; 16],
+        }
+    }
 
     fn parse_pair(args: &[&str]) -> anyhow::Result<Command> {
         parse(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
@@ -667,29 +769,154 @@ mod tests {
 
     #[tokio::test]
     async fn pair_keeps_serving_a_final_status_after_the_terminal_edit_reports_an_error() {
+        let dir = tempfile::tempdir_in("/tmp").unwrap();
+        let (pairing, payload) = test_offer(dir.path());
+        let nonce = &payload.nonce;
+        let pending = Notify::new();
+        assert_eq!(
+            control_reply(&pairing, &pending, test_start(nonce)).pairing,
+            Some(PairReply::Waiting)
+        );
         let (shutdown, mut closed) = watch::channel(false);
         let (decided, outcome) = tokio::sync::oneshot::channel();
         let (polled, final_status) = tokio::sync::oneshot::channel();
         let server = async {
             outcome.await.unwrap();
+            let response = control_reply(
+                &pairing,
+                &pending,
+                ControlRequest::PairStatus {
+                    nonce: nonce.clone(),
+                },
+            );
+            assert_eq!(response.pairing, Some(PairReply::Denied));
             polled.send(()).unwrap();
             closed.changed().await.unwrap();
             Ok(())
         };
         let decision = async {
             decided.send(()).unwrap();
-            Err(anyhow::anyhow!("temporary pairing line cleanup failure"))
+            pairing
+                .approve(nonce, statglass_engine::wall_ms())
+                .context("installing the approved device key")?;
+            Ok(true)
         };
         let interrupt = async { final_status.await.ok() };
-        let result = drive_offer(server, shutdown, interrupt, decision).await;
+        let result = drive_offer(server, shutdown, interrupt, decision, || {
+            pairing.cancel(nonce)
+        })
+        .await;
         assert!(
             result
                 .err()
                 .unwrap()
                 .to_string()
-                .contains("temporary pairing line cleanup failure")
+                .contains("installing the approved device key")
         );
         assert!(*closed.borrow());
+    }
+
+    const SIGNAL_FIXTURE: &str = "STATGLASS_TEST_PAIR_SIGNAL_FIXTURE";
+
+    async fn pair_signal_case(signal: ProcessSignal) -> (String, bool) {
+        let dir = tempfile::tempdir_in("/tmp").expect("short pairing socket directory");
+        let mut command =
+            tokio::process::Command::new(std::env::current_exe().expect("agent test executable"));
+        command
+            .args([
+                "--exact",
+                "pair::tests::pair_cleans_up_on_terminal_signals",
+                "--nocapture",
+            ])
+            .env(SIGNAL_FIXTURE, dir.path())
+            .kill_on_drop(true)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped());
+        let mut child = command.spawn().expect("start interactive pairing fixture");
+        let mut output = BufReader::new(child.stdout.take().expect("child stdout")).lines();
+        let payload = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let line = output
+                    .next_line()
+                    .await
+                    .expect("read pairing output")
+                    .expect("child should offer pairing");
+                if let Some(start) = line.find("SGP1:") {
+                    break decode_payload(&line[start..], statglass_engine::wall_ms())
+                        .expect("decode test pairing offer");
+                }
+            }
+        })
+        .await
+        .expect("child should print the offer");
+        let socket = dir.path().join(socket_name(&payload.nonce));
+        assert!(socket.exists());
+        assert!(dir.path().join("pairing-line").exists());
+        let waiting = control_request(&socket, &test_start(&payload.nonce))
+            .await
+            .expect("start pairing before signaling");
+        assert_eq!(waiting.pairing, Some(PairReply::Waiting));
+        let pid = Pid::from_raw(i32::try_from(child.id().expect("live child")).expect("valid PID"))
+            .expect("nonzero PID");
+        kill_process(pid, signal).expect("signal the pairing child");
+        let status = ControlRequest::PairStatus {
+            nonce: payload.nonce,
+        };
+        let denied = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                match control_request(&socket, &status).await {
+                    Ok(response) if response.pairing == Some(PairReply::Waiting) => {}
+                    Ok(response) => break response.pairing == Some(PairReply::Denied),
+                    Err(_) => break false,
+                }
+            }
+        })
+        .await
+        .unwrap_or(false);
+        // Keep the terminal stdin alive while the child processes the signal.
+        let mut stdin = child.stdin.take();
+        let exit = tokio::time::timeout(Duration::from_secs(15), child.wait())
+            .await
+            .expect("signal cleanup should finish")
+            .expect("wait for child");
+        drop(stdin.take());
+        (
+            format!("{signal:?}"),
+            denied
+                && exit.success()
+                && !socket.exists()
+                && !dir.path().join("pairing-line").exists(),
+        )
+    }
+
+    #[test]
+    fn pair_cleans_up_on_terminal_signals() {
+        let runtime = runtime().unwrap();
+        if let Some(dir) = std::env::var_os(SIGNAL_FIXTURE) {
+            runtime.block_on(async {
+                let dir = PathBuf::from(dir);
+                let interrupt = pairing_interrupt().unwrap();
+                let (pairing, payload) = test_offer(&dir);
+                serve_offer(&pairing, &payload, dir, interrupt)
+                    .await
+                    .unwrap();
+                pairing.cancel(&payload.nonce).unwrap();
+            });
+            runtime.shutdown_background();
+            return;
+        }
+        let (interrupt, terminate, hangup) = runtime.block_on(async {
+            tokio::join!(
+                pair_signal_case(ProcessSignal::INT),
+                pair_signal_case(ProcessSignal::TERM),
+                pair_signal_case(ProcessSignal::HUP)
+            )
+        });
+        let results = [interrupt, terminate, hangup];
+        assert!(
+            results.iter().all(|(_, cleaned)| *cleaned),
+            "signal denial and cleanup: {results:?}"
+        );
     }
 
     #[test]

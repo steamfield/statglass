@@ -2,22 +2,21 @@
 //! key, bind it to the first `PairStart`, and complete only when the host's approver
 //! says so. Also the forced `pair` command every host runs for the phone.
 use crate::device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public};
-use crate::{ControlRequest, RemoteError, control_request};
+use crate::{ControlRequest, ControlResponse};
 use p256::elliptic_curve::{Generate, sec1::ToSec1Point};
 use statglass_proto::pairing::{
-    BundleHost, CODE_ALPHABET, PAIR_RECEIPT_GRACE, PAYLOAD_VERSION, PairError, PairReply,
-    PairStart, PairingPayload,
+    BundleHost, CODE_ALPHABET, PAYLOAD_VERSION, PairError, PairReply, PairStart, PairingPayload,
 };
 use statglass_schema::lock::LockExt;
-use statglass_session::pairing::{read_pair_frame, write_pair_frame};
 pub use statglass_session::{
     MAX_TARGETS, command::shell_quote, network::usable_interface_addresses,
 };
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite};
+
+mod relay;
+pub use relay::{run_forced, run_forced_for_nonce};
 
 /// The `command=` prefixes for the lines pairing installs; the nonce or device tag is
 /// appended.
@@ -143,49 +142,82 @@ impl PairingHost {
 
     /// Binds the offer to the phone's first valid `PairStart`.
     pub fn start(&self, req: &PairStart, now_ms: i64) -> PairReply {
-        self.start_inner(req, None, now_ms)
+        self.start_inner(req, None, now_ms).0
     }
 
     /// Starts an exchange for the relay on the owner-only control socket. Retries
     /// of that local request can recover a lost reply without accepting new starts.
     pub fn start_attempt(&self, req: &PairStart, attempt: [u8; 16], now_ms: i64) -> PairReply {
-        self.start_inner(req, Some(attempt), now_ms)
+        self.start_inner(req, Some(attempt), now_ms).0
     }
 
-    fn start_inner(&self, req: &PairStart, attempt: Option<[u8; 16]>, now_ms: i64) -> PairReply {
+    fn start_inner(
+        &self,
+        req: &PairStart,
+        attempt: Option<[u8; 16]>,
+        now_ms: i64,
+    ) -> (PairReply, Option<i64>) {
         let mut offers = self.offers.lock_ok();
         let Some(offer) = offers.get_mut(&req.nonce) else {
-            return reject(PairError::Unknown);
+            return (reject(PairError::Unknown), None);
         };
         offer.refresh(self.keys.as_ref(), &req.nonce, now_ms);
-        if offer.used {
-            if attempt.is_some() && attempt == offer.attempt {
-                return offer.reply(false);
+        let reply = offer.start(req, attempt);
+        let expires = (reply == PairReply::Waiting).then_some(offer.expires_ms);
+        (reply, expires)
+    }
+
+    /// Answers pairing requests from the owner-only control socket. The accepted
+    /// start includes the host's expiry in JSON, alongside the phone's wire reply.
+    pub fn control_reply(&self, request: ControlRequest, now_ms: i64) -> ControlResponse {
+        let (reply, pairing_expires_ms) = match request {
+            ControlRequest::PairStart { start, attempt } => {
+                self.start_inner(&start, Some(attempt), now_ms)
             }
-            return reject(PairError::Used);
+            ControlRequest::PairStatus { nonce } => (self.status(&nonce, now_ms), None),
+            ControlRequest::PairAbandon { nonce, attempt } => {
+                (self.abandon(&nonce, attempt, now_ms), None)
+            }
+            _ => (reject(PairError::Unavailable), None),
+        };
+        ControlResponse {
+            ok: !matches!(reply, PairReply::Error { .. }),
+            message: String::new(),
+            host: None,
+            allow_remote_monitoring: None,
+            show_menu_bar_icon: None,
+            launch_at_login: None,
+            updates: None,
+            pairing: Some(reply),
+            pairing_expires_ms,
         }
-        let Phase::Offered { pairing_key } = &offer.phase else {
-            return offer.reply(false);
-        };
-        let Ok(key) = validate_start(req) else {
-            return reject(PairError::Invalid);
-        };
-        if key == *pairing_key {
-            return reject(PairError::Invalid);
-        }
-        offer.used = true;
-        offer.attempt = attempt;
-        offer.phase = Phase::Pending {
-            device_name: req.device_name.clone(),
-            model: req.model.clone(),
-            key,
-        };
-        PairReply::Waiting
     }
 
     /// The pairing client's view: `Waiting` until a final reply.
     pub fn status(&self, nonce: &str, now_ms: i64) -> PairReply {
         self.view(nonce, now_ms, false)
+    }
+
+    /// Withdraws the relay's start. A committed host decision remains available.
+    pub fn abandon(&self, nonce: &str, attempt: [u8; 16], now_ms: i64) -> PairReply {
+        let mut offers = self.offers.lock_ok();
+        let Some(offer) = offers.get_mut(nonce) else {
+            return reject(PairError::Unknown);
+        };
+        if matches!(offer.phase, Phase::Offered { .. }) {
+            // A timed-out start can still be queued on the control server. Reserve
+            // the attempt so a delayed start cannot reopen the abandoned offer.
+            offer.used = true;
+            offer.attempt = Some(attempt);
+        }
+        if offer.used && offer.attempt != Some(attempt) {
+            return reject(PairError::Used);
+        }
+        if matches!(offer.phase, Phase::Offered { .. } | Phase::Pending { .. }) {
+            offer.phase = Phase::RemovingPairingLine(PairReply::Expired);
+        }
+        offer.refresh(self.keys.as_ref(), nonce, now_ms);
+        offer.reply(false)
     }
 
     /// The approver's view: `Pending` with the device and code until a final reply.
@@ -257,6 +289,33 @@ impl PairingHost {
 }
 
 impl Offer {
+    fn start(&mut self, req: &PairStart, attempt: Option<[u8; 16]>) -> PairReply {
+        if self.used {
+            return if attempt.is_some() && attempt == self.attempt {
+                self.reply(false)
+            } else {
+                reject(PairError::Used)
+            };
+        }
+        let Phase::Offered { pairing_key } = &self.phase else {
+            return self.reply(false);
+        };
+        let Ok(key) = validate_start(req) else {
+            return reject(PairError::Invalid);
+        };
+        if key == *pairing_key {
+            return reject(PairError::Invalid);
+        }
+        self.used = true;
+        self.attempt = attempt;
+        self.phase = Phase::Pending {
+            device_name: req.device_name.clone(),
+            model: req.model.clone(),
+            key,
+        };
+        PairReply::Waiting
+    }
+
     fn mark_expired(&mut self, now_ms: i64) {
         if now_ms >= self.expires_ms
             && matches!(self.phase, Phase::Offered { .. } | Phase::Pending { .. })
@@ -340,124 +399,4 @@ fn validate_start(start: &PairStart) -> Result<EcdsaP256Public, PairError> {
 
 fn reject(error: PairError) -> PairReply {
     PairReply::Error { error }
-}
-
-/// The forced `pair` command on any host: relay PairStart, poll PairStatus every second
-/// (each request under the 10 s control cap) until a final reply. Returns the exit code.
-pub async fn run_forced<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
-    stdin: R,
-    stdout: W,
-    control: &Path,
-) -> i32 {
-    run_relay(stdin, stdout, control, None).await
-}
-
-/// A forced command may relay only the offer named on its authorized_keys line.
-pub async fn run_forced_for_nonce(
-    stdin: impl AsyncRead + Unpin,
-    stdout: impl AsyncWrite + Unpin,
-    control: &Path,
-    nonce: &str,
-) -> i32 {
-    run_relay(stdin, stdout, control, Some(nonce)).await
-}
-
-async fn run_relay(
-    mut stdin: impl AsyncRead + Unpin,
-    mut stdout: impl AsyncWrite + Unpin,
-    control: &Path,
-    nonce: Option<&str>,
-) -> i32 {
-    let start: PairStart =
-        match tokio::time::timeout(CONTROL_BUDGET, read_pair_frame(&mut stdin)).await {
-            Ok(Ok(start)) => start,
-            _ => return 2,
-        };
-    if nonce.is_some_and(|nonce| nonce != start.nonce) {
-        let _ = write_pair_frame(&mut stdout, &reject(PairError::Unknown)).await;
-        return 2;
-    }
-    // A client may close its writer after the one start frame. The host normally
-    // ends the exchange at its own deadline. Cap a perpetually unresponsive socket
-    // at the longest offer plus the window for delivering its final reply.
-    let result = match tokio::time::timeout(
-        MAX_TTL + PAIR_RECEIPT_GRACE,
-        relay_decision(&mut stdout, control, start),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => write_pair_frame(&mut stdout, &PairReply::Expired)
-            .await
-            .map(|()| PairReply::Expired),
-    };
-    match result {
-        Ok(PairReply::Approved { .. }) => 0,
-        Ok(_) => 2,
-        Err(error) => {
-            tracing::debug!(
-                error = &error as &dyn std::error::Error,
-                "writing pairing response"
-            );
-            2
-        }
-    }
-}
-
-const POLL_INTERVAL: Duration = Duration::from_secs(1);
-// Slightly below control_request's own cap so timeouts are distinguishable from transport errors.
-const CONTROL_BUDGET: Duration = Duration::from_secs(9);
-
-async fn relay_decision(
-    stdout: &mut (impl AsyncWrite + Unpin),
-    control: &Path,
-    start: PairStart,
-) -> Result<PairReply, RemoteError> {
-    let status = ControlRequest::PairStatus {
-        nonce: start.nonce.clone(),
-    };
-    let attempt = match <[u8; 16]>::try_generate() {
-        Ok(attempt) => attempt,
-        Err(error) => {
-            let reply = reject(entropy_error(error));
-            write_pair_frame(stdout, &reply).await?;
-            return Ok(reply);
-        }
-    };
-    let reply = request_pairing(control, &ControlRequest::PairStart { start, attempt }).await;
-    let final_reply = if reply == PairReply::Waiting {
-        write_pair_frame(stdout, &reply).await?;
-        loop {
-            tokio::time::sleep(POLL_INTERVAL).await;
-            let next = request_pairing(control, &status).await;
-            if next != PairReply::Waiting {
-                break next;
-            }
-        }
-    } else {
-        reply
-    };
-    write_pair_frame(stdout, &final_reply).await?;
-    Ok(final_reply)
-}
-
-async fn request_pairing(control: &Path, request: &ControlRequest) -> PairReply {
-    loop {
-        match tokio::time::timeout(CONTROL_BUDGET, control_request(control, request)).await {
-            Ok(Ok(response)) => {
-                return match response.pairing {
-                    Some(PairReply::Pending { .. }) | None => reject(PairError::Unavailable),
-                    Some(reply) => reply,
-                };
-            }
-            Ok(Err(error)) => {
-                tracing::debug!(
-                    error = &error as &dyn std::error::Error,
-                    "contacting the pairing host"
-                );
-                return reject(PairError::Unavailable);
-            }
-            Err(_) => tokio::time::sleep(POLL_INTERVAL).await,
-        }
-    }
 }
