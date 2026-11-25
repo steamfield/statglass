@@ -4,7 +4,7 @@ Status: running. Skill: sprint. Profile: sprint. On resume, re-read shared/lane-
 plan_graph: /Users/riley/.claude/plugins/cache/claude-essentials/ce/6.0.4/shared/scripts/plan_graph.py
 Started: 1795574260. Timebox: none. Landing branch: sprint/remote-alerts.
 Gate: `make check` (405 s). Filtered tests: `cargo test -p <crate> <name filter>` and `bun run test -- <path>`. Typecheck: `cargo check --workspace --all-targets` and `bun run typecheck`.
-Runner: plain commands. Lanes are Codex runs through foreman (model gpt-6.2-sol), one worktree each; the orchestrator reviews, gates and commits each lane on its lane branch before merging.
+Runner: plain commands. Lanes are Codex runs through foreman (model gpt-6.2-sol), one managed worktree each at `.claude/worktrees/<run>` on `foreman/<run>`, cut from the phase scaffold. Codex leaves its work uncommitted; the orchestrator reviews it, runs `check-lane`, commits on the lane branch and merges. Lane tests are written by the lane (the scaffold carries the test-case list, not test files).
 Worktree setup: `bun install --frozen-lockfile`.
 Suppressions: biome-ignore, #[allow(, #[expect(
 Manifests: Cargo.toml, package.json
@@ -42,8 +42,9 @@ Answer::AlertRules(HostAlertRules)   // both queries answer with the rules now i
 
 ### Phase 1: agents accept, store and evaluate rules (MVP)
 
-Demo: `cargo test -p statglass-agent alert_rules` and `cargo test -p statglass-proto alert_rules`: an agent answers `AlertRules`, takes `SetAlertRules`, persists to `settings.json`, refuses a stale revision, and its engine fires the new rule without a restart.
+Demo: `cargo test -p statglass-agent alert_rules` and `cargo test -p statglass-proto --test alert_rules` (check the test count is non-zero): an agent answers `AlertRules`, takes `SetAlertRules`, persists to `settings.json`, refuses a stale revision, and its engine fires the new rule without a restart.
 Checkpoint: none (no timebox).
+Scaffold: 1d3f4a53
 Test cases:
 - `RuleEntry` round-trips a known rule through CBOR; an entry with an unknown condition decodes as `Unknown` and re-encodes byte-identical; a list with one unknown entry still decodes the rest.
 - `Query::SetAlertRules` and `Answer::AlertRules` round-trip; an old-build fixture without these kinds decodes them as `Unknown` (skew both ways, following `tests/forward_compat.rs`).
@@ -61,8 +62,8 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-proto/src/alert_rules.rs, crates/statglass-proto/tests/alert_rules.rs, crates/statglass-proto/tests/fixtures/, crates/statglass-remote/src/host_queries.rs, crates/statglass-schema/src/alert_metrics.rs, src/core/generated/, src/core/alerts.ts, src/core/alerts.test.ts, src/app/routes/dashboard/alerts/_lib/rule-form.test.ts | contracts, crates/statglass-proto/tests/forward_compat.rs | | gpt-6.2-sol | pending | | wire and metric tests pass, bindings fresh |
-| b | M | crates/statglass-agent/src/alert_rules.rs, crates/statglass-agent/src/lib.rs, crates/statglass-agent/src/host.rs, crates/statglass-agent/src/settings.rs, crates/statglass-agent/src/daemon.rs, crates/statglass-agent/src/commands.rs, crates/statglass-agent/src/alert_rules_tests.rs, crates/statglass-engine/src/engine/control.rs, crates/statglass-engine/src/inbox.rs, crates/statglass-engine/src/engine.rs | contracts, src-tauri/src/state.rs (seeding pattern) | | gpt-6.2-sol | pending | | agent tests pass |
+| a | M | crates/statglass-proto/src/alert_rules.rs, crates/statglass-proto/tests/alert_rules.rs, crates/statglass-proto/tests/fixtures/, crates/statglass-remote/src/host_queries.rs, crates/statglass-schema/src/alert_metrics.rs, src/core/generated/, src/core/alerts.ts, src/core/alerts.test.ts, src/app/routes/dashboard/alerts/_lib/rule-form.test.ts, src/app/routes/dashboard/alerts/_components/rule-dialog.test.tsx, src/core/alert-values.ts, crates/statglass-schema/src/alert_limits.rs, crates/statglass-notify/src/text.rs, crates/statglass-notify/src/units.rs, crates/statglass-notify/tests/text.rs | contracts, crates/statglass-proto/tests/forward_compat.rs | | gpt-6.2-sol | merged | foreman/ra-1a | wire and metric tests pass, bindings fresh |
+| b | M | crates/statglass-agent/src/alert_rules.rs, crates/statglass-agent/src/lib.rs, crates/statglass-agent/src/host.rs, crates/statglass-agent/src/settings.rs, crates/statglass-agent/src/daemon.rs, crates/statglass-agent/src/commands.rs, crates/statglass-agent/src/alert_rules_tests.rs, crates/statglass-engine/src/engine/control.rs, crates/statglass-engine/src/inbox.rs, crates/statglass-engine/src/engine.rs, crates/statglass-engine/src/engine/alert_tests.rs | contracts, src-tauri/src/state.rs (seeding pattern) | | gpt-6.2-sol | merged | foreman/ra-1b | agent tests pass |
 
 #### Lane a brief
 
@@ -84,16 +85,24 @@ Test cases:
 
 ### Phase 2: this Mac sets rules and delivers remote alerts
 
-Demo: `cargo test -p statglass remote_alert` (command mapping, delivery, floor, grouping) and, with a Linux agent paired, setting a rule through the `set_remote_alert_rules` command from devtools.
+Demo: `cargo test -p statglass remote_alert` and `cargo test -p statglass-remote alert` (non-zero counts): commands read and replace a fake agent's rules with each refusal mapped; inserted alert events from a mirrored page are delivered once, back history is Timeline-only, late ones go out as one catch-up message.
 Depends on: phase 1
+Phase scaffold (orchestrator, when phase 1 tags): `IngestReport.alerts_inserted: Vec<Event>` (always empty until lane a); `pub type AlertListener = Arc<dyn Fn(Uuid, Vec<Event>) + Send + Sync>` and `Mirror::set_alert_listener(&self, listener: AlertListener)`, with `Mirror::ingest` calling it after the durable commit when `alerts_inserted` is non-empty (epoch = the page's epoch); `RemoteError::Stale(String)`.
+Test cases:
+- Store: a page with two new alert events and one non-alert event reports exactly the two alerts in `alerts_inserted`, decoded; replaying the same page reports none; a same-source event updated with a higher `source_seq` is not reported as inserted.
+- Mirror: the listener receives the page epoch and the inserted alerts once, only after the commit; a failed ingest calls nothing; no listener set is fine.
+- Typed queries: `RemoteSource::alert_rules` / `set_alert_rules` map `Stale` to `RemoteError::Stale`, `Unsupported` to `Unsupported`, `InvalidArgument` to `InvalidArgument`, `Internal` to `Refused`.
+- Commands: `remote_alert_rules(host)` returns `RemoteAlertRules { revision, rules, newer }` with undecodable entries listed in `newer` by id (an entry with no readable id is listed with `id: null`); `set_remote_alert_rules(host, base_revision, rules, keep)` sends known rules plus `keep`; refusals map to `CommandError`: not connected / timeout to the existing remote variants, `Stale` to a new `RemoteRulesChanged { message }`, `Unsupported` to `RemoteUnsupported`, `InvalidArgument` to `InvalidSettings`; a This Mac or remote-Mac host id is refused with `InvalidArgument` before any call.
+- Delivery: only Linux hosts are delivered for. The first batch seen for a (host, epoch) sets that pair's floor to now on this Mac's clock and is Timeline-only; later inserted alerts at or after the floor are delivered. Event time is converted to this Mac's clock with the source's `HostClock` offset (host now minus local now); with no clock observation yet the event's own time is used. Fresh (at most 10 minutes old on this Mac's clock) alerts are announced one by one; older ones in the same batch become one catch-up notification and one destination message per host. Every inserted alert is published as `event-recorded`, delivered or not. The floor file is unreadable: log, floor restarts at now, nothing delivered twice. A floor survives a restart.
+- Notification text: a remote host's alert notification names the host ("m1-linux: Free disk space below 20 GB" or the `statglass-notify` equivalent); This Mac's alerts read as today. Catch-up wording comes from `statglass-notify`: "While this Mac was away, m1-linux raised 3 alerts: <first rule>, <second rule>, and 1 more" (up to two names).
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | crates/statglass-store/src/types.rs, crates/statglass-store/src/writer/sync.rs, crates/statglass-remote/src/mirror.rs, crates/statglass-remote/src/mirror_sink.rs | | | gpt-6.2-sol | pending | | |
-| b | M | src-tauri/src/alerts/remote_delivery.rs, src-tauri/src/notify.rs, src-tauri/src/remote/registration.rs | | | gpt-6.2-sol | pending | | |
-| c | M | src-tauri/src/alerts/remote_rules.rs | | | gpt-6.2-sol | pending | | |
+| a | S | crates/statglass-store/src/writer/sync.rs, crates/statglass-store/tests/sync.rs, crates/statglass-remote/src/mirror.rs, crates/statglass-remote/tests/mirror_alerts.rs | contracts, crates/statglass-store/src/writer/mod.rs | | gpt-6.2-sol | pending | | store and mirror alert tests pass |
+| b | M | src-tauri/src/alerts/remote_delivery.rs, src-tauri/src/alerts/remote_delivery_tests.rs, src-tauri/src/alerts/mod.rs, src-tauri/src/alerts/fire.rs, src-tauri/src/notify.rs, crates/statglass-notify/src/text.rs, crates/statglass-notify/src/lib.rs, crates/statglass-notify/tests/text.rs, src-tauri/src/remote/registration.rs | contracts, src-tauri/src/alerts/host_offline.rs (a pure watch with its state) | | gpt-6.2-sol | pending | | delivery tests pass |
+| c | M | crates/statglass-remote/src/source/queries.rs, crates/statglass-remote/src/lib.rs, src-tauri/src/alerts/remote_rules.rs, src-tauri/src/alerts/remote_rules_tests.rs, src-tauri/src/alerts/commands.rs, src-tauri/src/remote.rs, src-tauri/src/error.rs, src-tauri/src/lib.rs, src/core/generated/, src/core/mock/commands.ts | contracts, crates/statglass-remote/src/source/queries.rs (usage_by_app pattern) | | gpt-6.2-sol | pending | | command tests pass, bindings fresh |
 
-(Briefs written during phase 1.)
+The phase scaffold also declares `mod remote_delivery;` and `mod remote_rules;` in `src-tauri/src/alerts/mod.rs` with doc-only files, so lane c never edits `mod.rs`.
 
 ### Phase 3: the host-scoped Alerts page
 
@@ -108,3 +117,4 @@ Depends on: phase 2
 (Briefs written during phase 2.)
 
 ## Log
+- Plan critique (sonnet DA): demo filter could run zero tests (fixed: `--test alert_rules`, count checked). `recent_alerts` move unfinished: rejected, `src-tauri/src/history.rs` delegates to the engine since the scaffold. Lanes span two capabilities: accepted deviation, lanes already running. Lane b tests on new metrics: steered to existing metrics. Golden revision test: added to lane b by steer. A newer-build rule with an extra field decodes as Known and loses the field on re-save: accepted limitation (agents update from this Mac, so the agent is rarely newer).
