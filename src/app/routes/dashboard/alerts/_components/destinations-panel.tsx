@@ -27,7 +27,11 @@ import { DestinationRow } from "./destination-row";
  * is gone (deleted), focus moves to "Add destination", since the row whose
  * Edit button opened it no longer exists.
  */
-export function DestinationsPanel(): ReactNode {
+export function DestinationsPanel({
+  remote = false,
+}: {
+  remote?: boolean;
+} = {}): ReactNode {
   const { view, error } = useAlertDestinations();
   const [draft, setDraft] = useState<DestinationDraft | null>(null);
   const { addButton, onCloseAutoFocus } = useFocusAfterClose(draft);
@@ -45,7 +49,14 @@ export function DestinationsPanel(): ReactNode {
       <SettingsPanel
         title="Send to"
         after={
-          <PanelFooter problem={problem} addButton={addButton} onAdd={add} />
+          <>
+            {remote && (
+              <p className="m-0 text-label text-muted-foreground">
+                Alerts from this host are sent from this Mac.
+              </p>
+            )}
+            <PanelFooter problem={problem} addButton={addButton} onAdd={add} />
+          </>
         }
       >
         <SettingsRow label="Notifications on this Mac" sub="Always on" />

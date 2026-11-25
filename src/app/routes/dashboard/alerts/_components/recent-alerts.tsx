@@ -1,5 +1,5 @@
 /**
- * The Alerts page's Recent panel: the alerts This Mac fired in the last
+ * The Alerts page's Recent panel: the alerts this host fired in the last
  * 7 days, newest first, each one a line that opens the Timeline at it.
  */
 import type { TimeRange } from "@core/brush";

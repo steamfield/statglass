@@ -21,6 +21,7 @@ import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { openExternalUrl } from "~/lib/github-links";
+import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import {
@@ -85,13 +86,6 @@ const LOCAL_TOOLS: readonly SidebarEntry[] = [
     icon: "settings" as const,
   },
 ];
-// Alert rules are This Mac's, so a remote host never lists Alerts.
-const REMOTE_CGROUP_TOOLS = LOCAL_TOOLS.filter(
-  (entry) => entry.id !== "alerts"
-);
-const REMOTE_TOOLS = REMOTE_CGROUP_TOOLS.filter(
-  (entry) => entry.id !== "containers"
-);
 const countBehind = (hosts: Parameters<typeof hostsNeedingUpdate>[0]) =>
   hostsNeedingUpdate(hosts).length;
 
@@ -175,14 +169,16 @@ export function LiveSidebar() {
         view.tone === "destructive" ? ("error" as const) : ("idle" as const),
     };
   }, [activeRemote]);
+  const selected = useHostSelection()?.hosts.find((host) => host.id === hostId);
+  const linux = (activeRemote?.os ?? selected?.info.os) === "linux";
   const tools = useMemo(() => {
-    const listed = local
-      ? LOCAL_TOOLS
-      : cgroups
-        ? REMOTE_CGROUP_TOOLS
-        : REMOTE_TOOLS;
+    const listed = LOCAL_TOOLS.filter(
+      ({ id }) =>
+        (id !== "alerts" || local || linux) &&
+        (id !== "containers" || local || cgroups)
+    );
     return withHostAttention(listed, behind);
-  }, [local, cgroups, behind]);
+  }, [local, linux, cgroups, behind]);
   const configuredMs = useSettings((s) => s.sampling.interval_ms);
   const sampling = useSampling();
   const cpu = useCpu();
