@@ -5,7 +5,7 @@ import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import type { CardChrome } from "@/cards/types";
 import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
-import { WidgetAccent } from "@/widgets/meter-track";
+import { WidgetAccent } from "@/widgets/accent";
 
 export const CARD_SURFACE =
   "overflow-hidden rounded-xl border border-border bg-card p-3";

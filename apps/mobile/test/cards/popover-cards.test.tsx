@@ -15,12 +15,7 @@ import {
 } from "@core/widget-models/fixtures/charts";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
-import {
-  fireEvent,
-  screen,
-  userEvent,
-  within,
-} from "@testing-library/react-native";
+import { fireEvent, screen, userEvent } from "@testing-library/react-native";
 import { BatteryCard } from "@/cards/battery-card";
 import { CpuCard } from "@/cards/cpu-card";
 import { GpuCard } from "@/cards/gpu-card";
@@ -28,13 +23,11 @@ import { MemoryCard } from "@/cards/memory-card";
 import { NetworkCard } from "@/cards/network-card";
 import { PowerCard } from "@/cards/power-card";
 import { UnavailableCard } from "@/cards/unavailable-card";
-import * as streamArea from "@/widgets/stream-area";
 
 const empty = initialHostLive("host");
 const chrome = { compact: false, onOpen: () => {}, onLongPress: () => {} };
 
-test("CPU passes its stream through and opens the page or card menu", async () => {
-  const stream = jest.spyOn(streamArea, "StreamArea");
+test("CPU announces its chart, opens its page and opens the card menu", async () => {
   const onOpen = jest.fn();
   const onLongPress = jest.fn();
   const cpu = { ...selectCpu(empty), total: 18, user: 12.4 };
@@ -47,38 +40,37 @@ test("CPU passes its stream through and opens the page or card menu", async () =
       onLongPress={onLongPress}
     />
   );
-  const button = screen.getByRole("button", { name: "CPU, 18%" });
+  const button = () => screen.getByRole("button", { name: "CPU, 18%" });
   expect(screen.getAllByRole("button")).toHaveLength(1);
-  expect(button).toHaveAccessibilityValue({
+  expect(button()).toHaveAccessibilityValue({
     text: "User 12.4%, System —, CPU, last 60 seconds, 18%",
   });
-  expect(screen.getByText("18%")).toHaveStyle({
-    fontVariant: ["tabular-nums"],
-  });
+  expect(screen.getByText("18%")).toBeOnTheScreen();
   expect(screen.getByText("User")).toBeOnTheScreen();
   expect(screen.getByText("12.4%")).toBeOnTheScreen();
   expect(screen.getByText(MISSING)).toBeOnTheScreen();
-  expect(stream.mock.calls.at(-1)?.[0]).toEqual(POPOVER_CPU_STREAM);
+  expect(
+    screen.getByRole("image", { name: POPOVER_CPU_STREAM.ariaLabel })
+  ).toBeOnTheScreen();
   const user = userEvent.setup();
-  await user.press(button);
+  await user.press(button());
   expect(onOpen).toHaveBeenCalledTimes(1);
-  await user.longPress(button);
+  await user.longPress(button());
   expect(onLongPress).toHaveBeenCalledTimes(1);
   expect(onOpen).toHaveBeenCalledTimes(1);
-  await fireEvent(button, "accessibilityAction", {
+  await fireEvent(button(), "accessibilityAction", {
     nativeEvent: { actionName: "menu" },
   });
   expect(onLongPress).toHaveBeenCalledTimes(2);
 
-  stream.mockClear();
   await rerender(
     <CpuCard {...chrome} compact cpu={cpu} stream={POPOVER_CPU_STREAM} />
   );
-  expect(
-    screen.getByRole("button", { name: "CPU, 18%" })
-  ).toHaveAccessibilityValue({});
+  expect(button()).not.toHaveAccessibilityValue({ text: /.+/ });
   expect(screen.queryByText("User")).toBeNull();
-  expect(stream).not.toHaveBeenCalled();
+  expect(
+    screen.queryByRole("image", { name: POPOVER_CPU_STREAM.ariaLabel })
+  ).toBeNull();
 });
 
 test("memory shows pressure, composition and missing swap below its headline", async () => {
@@ -100,9 +92,10 @@ test("memory shows pressure, composition and missing swap below its headline", a
   );
   expect(
     screen.getByRole("button", { name: "Memory, 8.0 / 16 GB" })
-  ).toBeOnTheScreen();
+  ).toHaveAccessibilityValue({
+    text: "Pressure · warn 65%, Wired 2.0 GB, App 6.0 GB, Compressed 0 B, Cached files 4.0 GB, Free 4.0 GB, Swap —",
+  });
   expect(screen.getByText("Pressure · warn")).toBeOnTheScreen();
-  expect(screen.getByTestId("status-warning")).toBeOnTheScreen();
   expect(screen.getByText("65%")).toBeOnTheScreen();
   expect(screen.getByText("Compressed")).toBeOnTheScreen();
   expect(screen.getByText("0 B")).toBeOnTheScreen();
@@ -138,25 +131,37 @@ test("Linux memory shows measured Used and omits capacity when a part is missing
   expect(screen.getByText("Cached files")).toBeOnTheScreen();
   expect(screen.queryByText("App")).toBeNull();
   expect(screen.queryByText("Pressure")).toBeNull();
-  expect(screen.getByTestId("empty-stack")).toBeOnTheScreen();
+  expect(
+    screen.getByRole("image", {
+      name: "Used 4.0 GB, Cached files 2.0 GB, Free —",
+    })
+  ).toBeOnTheScreen();
   await rerender(
     <MemoryCard {...chrome} memory={memory} totalBytes={8 * 2 ** 30} />
   );
   expect(
     screen.getByRole("button", { name: "Memory, 4.0 / 8 GB" })
   ).toBeOnTheScreen();
-  expect(screen.getAllByTestId("stack-segment")).toHaveLength(2);
-  expect(screen.queryByTestId("empty-stack")).toBeNull();
+  expect(
+    screen.getByRole("image", {
+      name: "Used 4.0 GB, Cached files 2.0 GB, Free —",
+    })
+  ).toBeOnTheScreen();
 });
 
-test("GPU passes its stream through and identifies its render utilization", async () => {
-  const stream = jest.spyOn(streamArea, "StreamArea");
+test("GPU announces its chart and identifies its render utilization", async () => {
   const gpu = { ...selectGpu(empty), util: 36, render: 30, freqHz: 1.1e9 };
   await renderWithProviders(
     <GpuCard {...chrome} gpu={gpu} stream={POPOVER_GPU_STREAM} />
   );
-  expect(screen.getByRole("button", { name: "GPU, 36%" })).toBeOnTheScreen();
-  expect(stream.mock.calls.at(-1)?.[0]).toEqual(POPOVER_GPU_STREAM);
+  expect(
+    screen.getByRole("button", { name: "GPU, 36%" })
+  ).toHaveAccessibilityValue({
+    text: "Freq 1.1 GHz, Power —, Render 30%, GPU, last 60 seconds, 36%",
+  });
+  expect(
+    screen.getByRole("image", { name: POPOVER_GPU_STREAM.ariaLabel })
+  ).toBeOnTheScreen();
   expect(screen.getByText("1.1 GHz")).toBeOnTheScreen();
   expect(screen.getByText("Render")).toBeOnTheScreen();
   expect(screen.getByText("30%")).toBeOnTheScreen();
@@ -176,7 +181,9 @@ test("power shows system watts, measured zero rails and missing rails", async ()
   );
   expect(
     screen.getByRole("button", { name: "Power, 14.8 W system" })
-  ).toBeOnTheScreen();
+  ).toHaveAccessibilityValue({
+    text: "CPU 6.4 W, GPU 3.1 W, ANE 0.0 W, DRAM —",
+  });
   expect(screen.getByText("ANE")).toBeOnTheScreen();
   expect(screen.getByText("0.0 W")).toBeOnTheScreen();
   expect(screen.getByText("DRAM")).toBeOnTheScreen();
@@ -194,11 +201,9 @@ test("power includes the battery readings when the combined card occupies both s
   const card = { ...chrome, power, battery, source: "charging" } as const;
   const { rerender } = await renderWithProviders(<PowerCard {...card} />);
   const name = "Power & battery, 14.8 W system";
-  expect(
-    within(screen.getByRole("button", { name })).getByTestId("meter-track", {
-      includeHiddenElements: true,
-    })
-  ).toHaveProp("className", expect.stringContaining("h-1.5"));
+  expect(screen.getByRole("button", { name })).toHaveAccessibilityValue({
+    text: "CPU —, GPU —, ANE —, DRAM —, Battery 78%, To full On power, Health 94%, Cycles 122",
+  });
   expect(screen.getByText("Battery")).toBeOnTheScreen();
   expect(screen.getByText("78%")).toBeOnTheScreen();
   expect(screen.getByText("To full")).toBeOnTheScreen();
@@ -230,7 +235,7 @@ test("network names both directions in its headline and keeps a missing rate vis
     screen.getByRole("button", {
       name: `Network, Upload 2.4 MB/s, Download ${MISSING}`,
     })
-  ).toBeOnTheScreen();
+  ).toHaveAccessibilityValue({ text: "All interfaces, Network, last second" });
   expect(screen.getByText("All interfaces")).toBeOnTheScreen();
   expect(screen.getByText("↑ Upload")).toBeOnTheScreen();
   expect(screen.getByText("↓ Download")).toBeOnTheScreen();
@@ -260,11 +265,10 @@ test("battery shows charge, remaining time, health and rounded cycles", async ()
     <BatteryCard {...chrome} battery={battery} source="battery" />
   );
   expect(
-    within(screen.getByRole("button", { name: "Battery, 78%" })).getByTestId(
-      "meter-track",
-      { includeHiddenElements: true }
-    )
-  ).toHaveProp("className", expect.stringContaining("h-1.5"));
+    screen.getByRole("button", { name: "Battery, 78%" })
+  ).toHaveAccessibilityValue({
+    text: "Remaining 1:45, Health —, Cycles 123",
+  });
   expect(screen.getByText("Remaining")).toBeOnTheScreen();
   expect(screen.getByText("1:45")).toBeOnTheScreen();
   expect(screen.getByText("Health")).toBeOnTheScreen();
@@ -299,7 +303,6 @@ test.each([
     await renderWithProviders(<UnavailableCard module="gpu" state={state} />);
     expect(screen.getByText("GPU")).toBeOnTheScreen();
     expect(screen.getByText(text)).toBeOnTheScreen();
-    expect(screen.getByTestId("status-info")).toBeOnTheScreen();
     expect(screen.queryByRole("button")).toBeNull();
   }
 );

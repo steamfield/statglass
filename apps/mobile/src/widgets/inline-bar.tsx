@@ -1,5 +1,6 @@
 import {
   type InlineBarData,
+  type InlineBarModel,
   inlineBarModel,
 } from "@core/widget-models/inline-bar";
 import { useColorScheme, useWindowDimensions, View } from "react-native";
@@ -10,8 +11,9 @@ import { MeterTrackView } from "./meter-track";
 const ROW_TEXT_ROLE = "label";
 
 /** A label, formatted value and optional meter. */
-export function InlineBar(data: InlineBarData) {
-  const { label, value, layout, track } = inlineBarModel(data);
+export function InlineBar(data: InlineBarData | { model: InlineBarModel }) {
+  const { label, value, layout, track } =
+    "model" in data ? data.model : inlineBarModel(data);
   const { fontScale } = useWindowDimensions();
   const row = layout === "row" && fontScale < 1.5;
   const muted = track?.fill === null || (layout !== "row" && !track);
