@@ -77,7 +77,8 @@ function addressAnswer(
   }
   return {
     interface: iface,
-    link_mbps: linux ? 1000 : 1200,
+    // The same speeds as the generator's primary net.link_rate series.
+    link_mbps: linux ? 1000 : 2400,
     ipv4: [local ? MOCK_LOCAL_IPV4 : "192.0.2.20"],
     ipv6: [linux ? "2001:db8::2" : "2001:db8::1"],
     public_ip: curlAvailable
