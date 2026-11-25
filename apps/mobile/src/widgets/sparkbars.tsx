@@ -1,8 +1,8 @@
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
-import { View } from "react-native";
-import { Text } from "@/ui/text";
+import { MirrorBarsPlot } from "./mirror-bars";
 
 export function Sparkbars({
+  data,
   height,
   accessibilityLabel,
 }: {
@@ -10,9 +10,14 @@ export function Sparkbars({
   height: number;
   accessibilityLabel: string;
 }) {
+  // The stationary axis occupies one point between the two halves.
+  const halfHeight = (height - 1) / 2;
   return (
-    <View style={{ height }}>
-      <Text variant="caption">{accessibilityLabel}</Text>
-    </View>
+    <MirrorBarsPlot
+      {...data}
+      ariaLabel={accessibilityLabel}
+      upHeight={halfHeight}
+      downHeight={halfHeight}
+    />
   );
 }

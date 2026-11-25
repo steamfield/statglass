@@ -31,6 +31,7 @@ import { resolveColor } from "./colors";
 import { GapBands } from "./gap-bands";
 
 type Scheme = keyof typeof themeColors;
+const CEILING_Y = 1;
 
 /** StreamArea for the phone; takes the same data as the desktop widget. */
 export function StreamArea(
@@ -43,8 +44,10 @@ export function StreamArea(
     intervalMs,
     loading,
     tEndMs,
+    variant = "chart",
     yMax,
   } = data;
+  const spark = variant === "spark";
   const scheme = useColorScheme() === "dark" ? "dark" : "light";
   const { fontScale } = useWindowDimensions();
   const [widthPx, setWidth] = useState(0);
@@ -73,66 +76,70 @@ export function StreamArea(
 
   return (
     <View>
-      {ceilingLabel && (
-        <Text variant="caption" className="text-fg-faint tabular-nums">
-          {ceilingLabel}
-        </Text>
-      )}
-      <View className="relative">
-        <View
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel={ariaLabel}
-          accessibilityState={{ busy: loading }}
-          className="overflow-hidden"
-          style={{ height }}
-          onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
-        >
-          <StreamGrid
-            height={height}
-            gridlines={gridlines}
-            yMax={yMax}
-            scheme={scheme}
-            loadingColor={scanning ? undefined : loadingColor}
-          />
-          <Animated.View style={scroll}>
-            <StreamSeries model={model} accent={accent} scheme={scheme} />
-          </Animated.View>
-          {scanning && (
-            <StreamScan
+      <View className="flex-row gap-1">
+        {ceilingLabel && (
+          <Text variant="axis" style={styles.ceilingLabel}>
+            {ceilingLabel}
+          </Text>
+        )}
+        <View className="relative min-w-0 flex-1">
+          <View
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel={ariaLabel}
+            accessibilityState={{ busy: loading }}
+            className="overflow-hidden"
+            style={{ height }}
+            onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
+          >
+            <StreamGrid
+              height={height}
+              gridlines={spark ? [] : gridlines}
+              yMax={yMax}
+              scheme={scheme}
+              showCeiling={Boolean(ceilingLabel)}
+              showBaseline={!spark}
+              loadingColor={scanning ? undefined : loadingColor}
+            />
+            <Animated.View style={scroll}>
+              <StreamSeries model={model} accent={accent} scheme={scheme} />
+            </Animated.View>
+            {scanning && (
+              <StreamScan
+                widthPx={widthPx}
+                color={loadingColor}
+                duration={scan}
+                delay={fast}
+              />
+            )}
+          </View>
+          {gaps.length > 0 && (
+            <GapBands
+              bands={gaps}
               widthPx={widthPx}
-              color={loadingColor}
-              duration={scan}
-              delay={fast}
+              height={height}
+              fontScale={fontScale}
+            />
+          )}
+          {widthPx > 0 && (
+            <StreamEdges
+              series={series}
+              height={height}
+              widthPx={widthPx}
+              accent={accent}
+              scheme={scheme}
+            />
+          )}
+          {annotations.length > 0 && (
+            <ChartAnnotations
+              annotations={annotations}
+              widthPx={widthPx}
+              fontScale={fontScale}
             />
           )}
         </View>
-        {gaps.length > 0 && (
-          <GapBands
-            bands={gaps}
-            widthPx={widthPx}
-            height={height}
-            fontScale={fontScale}
-          />
-        )}
-        {widthPx > 0 && (
-          <StreamEdges
-            series={series}
-            height={height}
-            widthPx={widthPx}
-            accent={accent}
-            scheme={scheme}
-          />
-        )}
-        {annotations.length > 0 && (
-          <ChartAnnotations
-            annotations={annotations}
-            widthPx={widthPx}
-            fontScale={fontScale}
-          />
-        )}
       </View>
-      {windowLabel && (
+      {!spark && windowLabel && (
         <Text variant="caption" className="self-end text-fg-faint tabular-nums">
           {windowLabel}
         </Text>
@@ -141,19 +148,31 @@ export function StreamArea(
   );
 }
 
+const styles = StyleSheet.create({
+  ceilingLabel: {
+    alignSelf: "flex-start",
+    marginTop: CEILING_Y,
+  },
+});
+
 function StreamGrid({
   height,
   gridlines,
   yMax,
   scheme,
+  showCeiling,
+  showBaseline,
   loadingColor,
 }: Pick<StreamAreaData, "height" | "yMax"> & {
   gridlines: readonly number[];
   scheme: Scheme;
+  showCeiling: boolean;
+  showBaseline: boolean;
   loadingColor: string | undefined;
 }) {
   const colors = themeColors[scheme];
   const baseline = height - 0.5;
+  const scaleMax = yMax > 0 ? yMax : 1;
   return (
     <Svg
       width="100%"
@@ -161,12 +180,18 @@ function StreamGrid({
       style={StyleSheet.absoluteFill}
       accessible={false}
     >
+      {showCeiling && !gridlines.some((value) => value >= scaleMax) && (
+        <Line
+          x2="100%"
+          y1={CEILING_Y}
+          y2={CEILING_Y}
+          stroke={colors.grid}
+          strokeWidth={1}
+        />
+      )}
       {gridlines.map((value) => {
-        const fraction = Math.max(
-          0,
-          Math.min(1, value / (yMax > 0 ? yMax : 1))
-        );
-        const y = height - 1 - fraction * (height - 2);
+        const fraction = Math.max(0, Math.min(1, value / scaleMax));
+        const y = height - 1 - fraction * (height - 1 - CEILING_Y);
         return (
           <Line
             key={value}
@@ -178,13 +203,15 @@ function StreamGrid({
           />
         );
       })}
-      <Line
-        x2="100%"
-        y1={baseline}
-        y2={baseline}
-        stroke={colors.axis}
-        strokeWidth={1}
-      />
+      {showBaseline && (
+        <Line
+          x2="100%"
+          y1={baseline}
+          y2={baseline}
+          stroke={colors.axis}
+          strokeWidth={1}
+        />
+      )}
       {loadingColor && (
         <Line
           x2="25%"

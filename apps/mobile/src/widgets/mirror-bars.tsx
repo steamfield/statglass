@@ -1,3 +1,4 @@
+import { networkCard } from "@core/popover/cards";
 import {
   type MirrorBarsData,
   mirrorBarsModel,
@@ -13,10 +14,16 @@ import {
 } from "react-native";
 import { motionEasings } from "@/theme.generated";
 import { useMotion } from "@/ui/motion";
+import { Text } from "@/ui/text";
 import { resolveColor } from "./colors";
 
 const LOADING_MARK_WIDTH = 32;
 const TICK_EASING = Easing.bezier(...motionEasings.easeTick);
+// The card supplies the direction names even before it has a reading.
+const NETWORK_DIRECTIONS = networkCard(
+  { rx: null, tx: null, linkRate: null },
+  {}
+).items;
 
 function useTickOffset({
   endMs,
@@ -116,35 +123,43 @@ function BarRow({
   heights,
   slots,
   height,
+  gap,
   color,
   above = false,
 }: {
   heights: readonly (number | null)[];
   slots: number;
   height: number;
+  gap: number;
   color: ColorRef;
   above?: boolean;
 }) {
-  const backgroundColor = resolveColor(color, useColorScheme() ?? "light");
+  const scheme = useColorScheme() ?? "light";
+  const fill = resolveColor(color, scheme);
+  const ink =
+    scheme === "light" && color.kind === "accent"
+      ? resolveColor({ ...color, ink: true }, scheme)
+      : fill;
   // Slot positions stay stable as the window advances.
   const positions = Array.from({ length: slots }, (_, index) => index);
   return (
     <View
-      className={
-        above ? "flex-row items-end gap-0.5" : "flex-row items-start gap-0.5"
-      }
-      style={{ height }}
+      className={above ? "flex-row items-end" : "flex-row items-start"}
+      style={{ height, columnGap: gap }}
     >
       {positions.map((slot) => {
         const barHeight = heights[slot];
         return barHeight == null ? (
-          <View key={slot} testID="mirror-gap" className="flex-1" />
+          <View key={slot} className="flex-1" />
         ) : (
           <View
             key={slot}
             testID="mirror-bar"
             className={above ? "flex-1 rounded-t-sm" : "flex-1 rounded-b-sm"}
-            style={{ height: barHeight, backgroundColor }}
+            style={{
+              height: barHeight,
+              backgroundColor: barHeight < 4 ? ink : fill,
+            }}
           />
         );
       })}
@@ -154,16 +169,41 @@ function BarRow({
 
 /** Up and down bars mirrored around a stationary baseline. */
 export function MirrorBars(data: MirrorBarsData) {
+  return (
+    <View>
+      <MirrorBarsPlot {...data} />
+      {data.accent === "net" && (
+        <View
+          className="flex-row flex-wrap justify-between gap-x-2"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {NETWORK_DIRECTIONS.map(({ label }) => (
+            <Text key={label} variant="axis">
+              {label}
+            </Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** The plot shared by the Network card and row sparkbars. */
+export function MirrorBarsPlot(data: MirrorBarsData) {
   const { loading, tEndMs, intervalMs, upHeight = 18, downHeight = 30 } = data;
   const { slots, up, down, upColor, downColor, ariaLabel } =
     mirrorBarsModel(data);
   const [width, setWidth] = useState(0);
   const { fast, scan, tick } = useMotion();
   const scheme = useColorScheme() ?? "light";
+  const slotWidth = width / slots;
+  // Leave room for marks even when the buckets are packed into a narrow row.
+  const gap = Math.min(2, slotWidth / 2);
   const offset = useTickOffset({
     endMs: tEndMs,
     intervalMs,
-    slotWidth: width / slots,
+    slotWidth,
     duration: loading ? 0 : tick,
   });
   return (
@@ -180,6 +220,7 @@ export function MirrorBars(data: MirrorBarsData) {
           heights={up}
           slots={slots}
           height={upHeight}
+          gap={gap}
           color={upColor}
           above
         />
@@ -188,6 +229,7 @@ export function MirrorBars(data: MirrorBarsData) {
           heights={down}
           slots={slots}
           height={downHeight}
+          gap={gap}
           color={downColor}
         />
       </Animated.View>
