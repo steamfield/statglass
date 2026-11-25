@@ -78,6 +78,7 @@ fn demand_for_a_host_added_in_background_reaches_ssh_only_after_foreground() {
                 algorithm: "ssh-ed25519".into(),
                 sha256: format!("SHA256:{}", "A".repeat(43)),
             }],
+            removed_by_controller: false,
             command: MobileCommand::Restricted,
         };
         data(core.quiesce());

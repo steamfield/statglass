@@ -4,6 +4,7 @@
  */
 import type {
   BuildInfo,
+  BundleReconcile,
   Capabilities,
   HostAddressesInfo,
   HostHistoryPage,
@@ -45,6 +46,8 @@ type MobileCallResult = {
   pair: PairedHost;
   remove_host: null;
   pairing_state: PairingState;
+  decode_bundle: BundleReconcile;
+  add_handover_hosts: null;
   set_demand: null;
 };
 

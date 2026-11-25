@@ -1,5 +1,6 @@
 //! Tauri adapters for local metrics/control servers and their lifecycle.
 use super::*;
+use crate::handover::HandoverState;
 use crate::pairing::{PairingState, device_seen};
 use statglass_engine::disk_space::SpaceService;
 use statglass_proto::pairing::{PairError, PairReply};
@@ -27,7 +28,11 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     *state.remotes.stop.lock_ok() = Some(stop);
     let dir = data_dir(app)?;
     if let Ok(local) = state.host(state.local) {
-        app.state::<PairingState>().initialize(&dir, local.record());
+        app.state::<PairingState>().initialize(
+            &dir,
+            local.record(),
+            app.state::<HandoverState>().source(),
+        );
     }
     let paths = SocketPaths::new(dir);
     let handle = app.clone();
@@ -390,7 +395,8 @@ mod tests {
                 receipt.pairing,
                 Some(PairReply::Approved {
                     device,
-                    hosts: vec![bundle]
+                    hosts: vec![bundle],
+                    unavailable: Vec::new(),
                 })
             );
             stop.send(true).unwrap();

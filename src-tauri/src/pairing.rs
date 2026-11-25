@@ -19,7 +19,7 @@ use statglass_engine::wall_ms;
 use statglass_proto::pairing::{BundleHost, encode_payload};
 use statglass_remote::{
     AuthorizedKeys, ControlRequest, ControlResponse, DeviceKeys, DeviceSeenLog, DeviceTag,
-    PairingHost,
+    HandoverSource, PairingHost,
 };
 use statglass_schema::{HostRecord, lock::LockExt};
 use tauri::State;
@@ -46,13 +46,21 @@ struct LocalPairing {
 }
 
 impl PairingState {
-    pub(crate) fn initialize(&self, data_dir: &Path, record: HostRecord) {
+    pub(crate) fn initialize(
+        &self,
+        data_dir: &Path,
+        record: HostRecord,
+        handover: Option<Arc<dyn HandoverSource>>,
+    ) {
         let commands = helper_link::install(data_dir).map_err(|error| format!("{error:#}"));
         let keys = AuthorizedKeys::for_current_user()
             .map(Arc::new)
             .map_err(|error| error.to_string());
         let host =
             commands.and_then(|commands| keys.clone().map(|keys| PairingHost::new(keys, commands)));
+        if let (Ok(host), Some(source)) = (&host, handover) {
+            host.set_handover(source);
+        }
         if let Err(message) = &host {
             tracing::info!(%message, "iPhone pairing unavailable");
         }

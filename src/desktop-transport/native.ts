@@ -5,6 +5,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { nativeDiskSpace } from "./native-disk-space";
 import { nativeDocker } from "./native-docker";
+import { nativeHandover } from "./native-handover";
 import { nativeHistory } from "./native-history";
 import { nativePairing } from "./native-pairing";
 import { nativeRemote } from "./native-remote";
@@ -47,6 +48,7 @@ export function createTauriTransport(label: string): Transport {
     ...nativeDocker(),
     ...nativeDiskSpace(),
     ...nativePairing(),
+    ...nativeHandover(),
     listHosts: () => commands.listHosts(),
     ...nativeRemote(),
     getHost: (host) => commands.getHost(host),

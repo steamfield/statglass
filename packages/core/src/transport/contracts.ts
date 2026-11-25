@@ -16,6 +16,7 @@ import type {
   CommandError,
   DeliveryOutcome,
   Destination,
+  DeviceIntentInfo,
   DiskIoDevices,
   DiskIoPage,
   DiskIoRequest,
@@ -44,6 +45,7 @@ import type {
   EventRecorded,
   ExportOutcome,
   ExportRequest,
+  HandoverOffer,
   HeatmapDay,
   HeatmapRequest,
   HistoricalUsageReply,
@@ -501,6 +503,9 @@ export interface Transport {
   pairedDevices(): Promise<CommandResult<PairedDeviceInfo[]>>;
   /** Removes the device `tag`'s key; false when no device has that tag. */
   revokeDevice(tag: string): Promise<CommandResult<boolean>>;
+  handoverBundleStart(): Promise<CommandResult<HandoverOffer>>;
+  deviceIntents(): Promise<CommandResult<DeviceIntentInfo[]>>;
+  retryDeviceIntents(): Promise<CommandResult<null>>;
   /** Open an http(s) URL in the default browser (sensor dump GitHub issue). */
   openUrl(url: string): Promise<void>;
   /** Close this window (onboarding Skip and Done). */

@@ -116,6 +116,7 @@ fn host(n: u8) -> MobileHost {
         }],
         // The registry records an open error before the production dialer can open a socket.
         host_keys: vec![],
+        removed_by_controller: false,
         command: MobileCommand::Restricted,
     }
 }

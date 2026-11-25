@@ -84,6 +84,7 @@ fn paired_host() -> MobileHost {
             algorithm: "ssh-ed25519".into(),
             sha256: "SHA256:fixture".into(),
         }],
+        removed_by_controller: false,
         command: MobileCommand::Restricted,
     }
 }

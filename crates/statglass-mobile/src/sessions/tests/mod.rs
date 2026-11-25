@@ -38,6 +38,7 @@ pub(super) fn host(n: u8) -> MobileHost {
             host: format!("mac{n}.local"),
         }],
         host_keys: Vec::new(),
+        removed_by_controller: false,
         command: MobileCommand::MacHelper {
             path: String::new(),
         },

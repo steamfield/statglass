@@ -13,11 +13,13 @@ pub mod history_query;
 mod host_queries;
 mod host_server;
 pub mod install;
+pub mod intents;
 pub mod pairing;
 pub mod rr;
 pub mod scope;
 mod server;
 mod socket;
+pub mod ssh_config;
 mod stdio;
 #[cfg(test)]
 mod test_support;
@@ -29,7 +31,7 @@ pub use authorized_keys::AuthorizedKeys;
 pub use device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice};
 pub use device_seen::DeviceSeenLog;
 pub use host_server::{HostServer, InterestSet, ServedHost};
-pub use pairing::{PairCommands, PairingError, PairingHost};
+pub use pairing::{Handover, HandoverSource, PairCommands, PairingError, PairingHost};
 pub use scope::{
     MAX_PREFACE_BYTES, PREFACE_MAGIC, ScopeError, SessionScope, encode_preface, read_preface,
 };

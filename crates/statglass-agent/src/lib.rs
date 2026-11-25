@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use anyhow::Context;
 use statglass_remote::AgentEnv;
 
+mod authorize;
 mod cli;
 mod commands;
 mod container_names;
@@ -35,7 +36,11 @@ pub fn main() -> ExitCode {
     init_logging();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let command = match cli::parse(&args) {
-        Err(error) if args.first().is_some_and(|arg| arg == "pair") => {
+        Err(error)
+            if args.first().is_some_and(|arg| {
+                matches!(arg.as_str(), "pair" | "authorize-key" | "revoke-key")
+            }) =>
+        {
             eprintln!("statglass-agent: {error:#}\n\n{}", cli::USAGE);
             return ExitCode::from(2);
         }
@@ -108,6 +113,18 @@ fn run_device_command(command: &DeviceCommand) -> anyhow::Result<ExitCode> {
                 ExitCode::FAILURE
             }
         }),
+        DeviceCommand::AuthorizeKey {
+            key,
+            name,
+            system,
+            socket,
+        } => Ok(code(authorize::authorize_key(
+            key,
+            name,
+            *system,
+            socket.as_deref(),
+        ))),
+        DeviceCommand::RevokeKey { tag } => Ok(code(authorize::revoke_key(tag))),
     }
 }
 

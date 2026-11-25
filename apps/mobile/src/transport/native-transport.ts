@@ -27,11 +27,13 @@ import {
   parseEvent,
   preparePhoneKey,
 } from "./envelope";
+import { createHandoverCommands } from "./handover";
 import { createLiveStreams } from "./live-streams";
 import { toRemoteHostRecord } from "./remote-hosts";
 
 /** The seam plus what only the native core does. */
 export interface NativeTransport extends PhoneTransport {
+  readonly handover: ReturnType<typeof createHandoverCommands>;
   /** Replaces the configured hosts and serializes writes on this transport. */
   setHosts(hosts: MobileHost[]): Promise<CommandResult<null>>;
   removeHost(host: HostId): Promise<CommandResult<null>>;
@@ -109,6 +111,7 @@ export function createNativeTransport(
 
   const policyError = createStore<CommandError | null>(() => null);
   const transport: NativeTransport = {
+    handover: createHandoverCommands(native),
     listHosts: () =>
       unwrap(callCore<HostRecord[]>(native, { method: "list_hosts" })),
     async listRemoteHosts() {

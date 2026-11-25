@@ -362,6 +362,7 @@ mod tests {
         let final_reply = PairReply::Approved {
             device: "7F3A2C".into(),
             hosts: vec![payload.host.clone()],
+            unavailable: Vec::new(),
         };
         let approve = async {
             let start = read_pair_frame::<PairStart>(&mut peer).await.unwrap();
@@ -483,6 +484,7 @@ mod tests {
         let approved = PairReply::Approved {
             device: "7F3A2C".into(),
             hosts: vec![payload.host.clone()],
+            unavailable: Vec::new(),
         };
         let remote = async {
             read_pair_frame::<PairStart>(&mut peer).await.unwrap();
@@ -597,6 +599,7 @@ mod tests {
                 &PairReply::Approved {
                     device: "7F3A2C".into(),
                     hosts: vec![other],
+                    unavailable: Vec::new(),
                 },
             )
             .await

@@ -391,6 +391,7 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .typ::<statglass_ipc::mobile::PairingPreview>()
         .typ::<statglass_ipc::mobile::PairedHost>()
         .typ::<statglass_ipc::mobile::PairingState>()
+        .typ::<statglass_ipc::mobile::BundleReconcile>()
 }
 
 #[cfg(test)]

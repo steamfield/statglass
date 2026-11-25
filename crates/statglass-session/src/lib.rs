@@ -11,6 +11,7 @@ mod connect;
 mod dialer;
 mod endpoint;
 mod error;
+pub mod handover;
 mod mirror;
 mod mirror_error;
 pub mod mirror_policy;

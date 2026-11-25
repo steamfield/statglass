@@ -27,6 +27,8 @@ commands:
                                                up to four targets (lan or tailscale), port 1 to 65535
   devices                                      list paired iPhones and when each was last seen
   devices revoke TAG                           remove a paired iPhone's key
+  authorize-key --key K --name N [--system] [--socket P]
+  revoke-key --device TAG
 
 forced commands (run by sshd from an authorized_keys line, not by hand):
   restricted --device TAG [--system] [--socket P]
@@ -126,6 +128,15 @@ pub enum DeviceCommand {
     RevokeDevice {
         tag: String,
     },
+    AuthorizeKey {
+        key: String,
+        name: String,
+        system: bool,
+        socket: Option<PathBuf>,
+    },
+    RevokeKey {
+        tag: String,
+    },
 }
 
 /// How long `pair` keeps its offer open without `--ttl`: 10 minutes (RFC 2.4).
@@ -158,6 +169,8 @@ struct Parsed {
     request: bool,
     restart: bool,
     device: Option<String>,
+    key: Option<String>,
+    name: Option<String>,
     nonce: Option<String>,
     ttl: Option<String>,
     targets: Vec<BundleTarget>,
@@ -178,8 +191,8 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
         "configure" | "uninstall" | "reset-identity" => accepts(true, true, false, false),
         "install-unit" | "unit-templates" => accepts(true, true, true, false),
         "sample" => accepts(false, false, false, true),
-        "restricted" => accepts(true, false, true, false),
-        "pair" | "devices" => accepts(false, false, false, false),
+        "restricted" | "authorize-key" => accepts(true, false, true, false),
+        "pair" | "devices" | "revoke-key" => accepts(false, false, false, false),
         "help" | "--help" | "-h" => return Ok(Command::Help),
         other => bail!("unknown command {other:?}\n\n{USAGE}"),
     };
@@ -257,7 +270,9 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
             Command::ResetIdentity(p.at)
         }
         "sample" => parse_sample(&p.positional)?,
-        "restricted" | "pair" | "devices" => Command::Device(parse_device(name, p)?),
+        "restricted" | "pair" | "devices" | "authorize-key" | "revoke-key" => {
+            Command::Device(parse_device(name, p)?)
+        }
         _ => {
             positional(0)?;
             Command::Version
@@ -288,6 +303,15 @@ fn parse_device(name: &str, p: Parsed) -> anyhow::Result<DeviceCommand> {
             device: p.device.context("restricted: --device TAG is required")?,
             system: p.at.system,
             socket: p.at.socket,
+        }),
+        "authorize-key" => Ok(DeviceCommand::AuthorizeKey {
+            key: p.key.context("authorize-key: --key K is required")?,
+            name: p.name.context("authorize-key: --name N is required")?,
+            system: p.at.system,
+            socket: p.at.socket,
+        }),
+        "revoke-key" => Ok(DeviceCommand::RevokeKey {
+            tag: p.device.context("revoke-key: --device TAG is required")?,
         }),
         _ => parse_pair(p),
     }
@@ -372,7 +396,11 @@ fn parse_flags(name: &str, rest: &[String], flags: Accepts) -> anyhow::Result<Pa
             "--scheduled" if name == "update" => p.scheduled = true,
             "--request" if name == "update" => p.request = true,
             "--restart" if name == "recover-update" => p.restart = true,
-            "--device" if name == "restricted" => p.device = Some(text(&mut args, "--device")?),
+            "--device" if matches!(name, "restricted" | "revoke-key") => {
+                p.device = Some(text(&mut args, "--device")?);
+            }
+            "--key" if name == "authorize-key" => p.key = Some(text(&mut args, "--key")?),
+            "--name" if name == "authorize-key" => p.name = Some(text(&mut args, "--name")?),
             "--nonce" if name == "pair" => p.nonce = Some(text(&mut args, "--nonce")?),
             "--ttl" if name == "pair" => p.ttl = Some(text(&mut args, "--ttl")?),
             "--target" if name == "pair" => {

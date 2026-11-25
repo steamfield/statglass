@@ -350,6 +350,14 @@ export type BuildInfo = {
 	protocol_max: number,
 };
 
+export type BundleReconcile = {
+	from: HostId,
+	new: OfferedHost[],
+	removed: HostId[],
+	changed: HostId[],
+	unavailable: UnavailableHostInfo[],
+};
+
 /**  A byte count as a plain JS `number`; exact below 2^53 (8 PiB). */
 export type ByteCount = number;
 
@@ -583,7 +591,9 @@ export type CommandError = { kind: "update"; message: string } |
 /**  The other Mac's StatGlass has remote monitoring turned off. */
 { kind: "remote_monitoring_off"; message: string } |
 /**  Pairing a phone, or editing the paired devices, failed (RFC 2.4, 2.5). */
-{ kind: "pairing"; reason: PairingFailure; message: string };
+{ kind: "pairing"; reason: PairingFailure; message: string } |
+/**  Resolving, applying or encoding a handover failed. */
+{ kind: "handover"; message: string };
 
 export type Condition =
 /**  Any series matching `series` compared with `value` in the metric's unit. */
@@ -713,6 +723,17 @@ export type DestinationView = {
 	destination: Destination,
 	/**  `None` until something has been sent to it since launch. */
 	last: DeliveryRecord | null,
+};
+
+export type DeviceIntentInfo = {
+	host: HostId,
+	host_name: string,
+	device: string,
+	device_name: string,
+	op: string,
+	state: string,
+	reason: string | null,
+	attempts: number,
 };
 
 /**  One block device a host's `disk.*` series cover. */
@@ -1411,6 +1432,22 @@ export type GeneralSettings = {
 	 *  settings file written before it existed: 15m.
 	 */
 	chart_window?: ChartWindow,
+};
+
+export type HandoverOffer = {
+	text: string,
+	qr_svg: string,
+	hosts: string[],
+	unavailable: HandoverUnavailableInfo[],
+	issued_ms: number,
+};
+
+export type HandoverReasonInfo = "proxy_jump" | "proxy_command" | "lan_literal" | "no_host_key" | "unresolvable";
+
+export type HandoverUnavailableInfo = {
+	id: HostId,
+	name: string,
+	reason: HandoverReasonInfo,
 };
 
 /**  One local day of the heatmap. */
@@ -2159,6 +2196,14 @@ export type MobileCall =
 } } |
 /**  `PairingState`. */
 { method: "pairing_state" } |
+/**  `BundleReconcile`. */
+{ method: "decode_bundle"; args: {
+	text: string,
+} } |
+/**  `null`. Persists the selected hosts. */
+{ method: "add_handover_hosts"; args: {
+	hosts: OfferedHost[],
+} } |
 /**  `null`. Replaces screen demand for all hosts. */
 { method: "set_demand"; args: {
 	demand: HostDemand[],
@@ -2241,6 +2286,7 @@ export type MobileHost = {
 	/**  The host keys pairing pinned; at least one. */
 	host_keys: MobileHostKey[],
 	command: MobileCommand,
+	removed_by_controller?: boolean,
 };
 
 /**  A pinned host key, as `ssh-keygen -l` prints it. */
@@ -2442,6 +2488,16 @@ export type NetworkSpan = {
 /**  MB/s or Mb/s. */
 export type NetworkUnit = "bytes_per_sec" | "bits_per_sec";
 
+export type OfferedHost = {
+	id: HostId,
+	name: string,
+	os: string,
+	user: string,
+	port: number | null,
+	targets: MobileTarget[],
+	host_keys: MobileHostKey[],
+};
+
 export type OnboardingPatch = {
 	completed?: boolean | null,
 };
@@ -2500,6 +2556,8 @@ export type PairedDeviceInfo = {
 export type PairedHost = {
 	id: HostId,
 	name: string,
+	offered: OfferedHost[],
+	unavailable: UnavailableHostInfo[],
 };
 
 /**  Why a pairing request failed. */
@@ -3393,6 +3451,12 @@ export type TierRequest =
  *  minutes cover it (7 days), else 15 min.
  */
 "auto" | "s10" | "m1" | "m15";
+
+export type UnavailableHostInfo = {
+	id: HostId,
+	name: string,
+	reason: HandoverReasonInfo,
+};
 
 export type UnitSettings = {
 	temperature: TemperatureUnit,

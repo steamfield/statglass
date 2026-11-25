@@ -1,7 +1,7 @@
 //! What a pairing QR carries and what the forced `pair` command says (RFC
 //! `plan/rfc-ios-app.md` 2.4, D-145, D-151). The payload is `"SGP1:"` + base45(CBOR);
 //! base45 is written here rather than taken from a crate.
-use crate::CodecError;
+use crate::{CodecError, handover::UnavailableHost};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use statglass_schema::HostId;
 use std::time::Duration;
@@ -91,6 +91,8 @@ pub enum PairReply {
     Approved {
         device: String,
         hosts: Vec<BundleHost>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unavailable: Vec<UnavailableHost>,
     },
     Denied,
     Expired,

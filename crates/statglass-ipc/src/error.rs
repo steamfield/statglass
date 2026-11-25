@@ -146,6 +146,9 @@ pub enum CommandError {
         reason: PairingFailure,
         message: String,
     },
+    /// Resolving, applying or encoding a handover failed.
+    #[error("handover: {message}")]
+    Handover { message: String },
 }
 
 impl CommandError {

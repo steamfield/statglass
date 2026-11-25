@@ -23,7 +23,12 @@ const CONNECTION_FAILURES = [
   "remote_auth",
 ] as const;
 
-const host: PairedHost = { id: MOCK_HOST_ID, name: "MacBook Pro" };
+const host: PairedHost = {
+  id: MOCK_HOST_ID,
+  name: "MacBook Pro",
+  offered: [],
+  unavailable: [],
+};
 
 function outcome(text: string): CommandResult<PairedHost> {
   const scenario = text.trim().startsWith("SGPDEMO:")

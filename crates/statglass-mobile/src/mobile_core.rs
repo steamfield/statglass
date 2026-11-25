@@ -18,6 +18,7 @@ use tokio::sync::watch;
 
 use crate::envelope;
 use crate::ffi::{CoreEvents, NativeSigner, NetworkPath};
+use crate::handover;
 use crate::lifecycle::Lifecycle;
 use crate::pairing;
 use crate::sessions::Sessions;
@@ -122,6 +123,11 @@ impl MobileCore {
             MobileCall::PairingState => {
                 runtime.spawn_blocking(move || to_value(pairing::state(&sessions)))
             }
+            MobileCall::DecodeBundle { text } => {
+                runtime.spawn_blocking(move || to_value(handover::decode_bundle(&sessions, &text)?))
+            }
+            MobileCall::AddHandoverHosts { hosts } => runtime
+                .spawn_blocking(move || to_value(handover::add_handover_hosts(&sessions, hosts)?)),
             other => runtime.spawn(async move { sessions.call(other).await }),
         };
         envelope::encode(joined(task.await))

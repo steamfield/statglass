@@ -20,6 +20,8 @@ it("previews without waiting and approves on the next tick", async () => {
     data: {
       id: offer.status === "ok" ? offer.data.host_id : undefined,
       name: "MacBook Pro",
+      offered: [],
+      unavailable: [],
     },
   });
 });

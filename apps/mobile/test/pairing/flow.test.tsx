@@ -144,7 +144,7 @@ test("shows the waiting code and leaves a late approval alone after Cancel", asy
   await act(() =>
     pending.resolve({
       status: "ok",
-      data: { id: "builder", name: "Build host" },
+      data: { id: "builder", name: "Build host", offered: [], unavailable: [] },
     })
   );
   expect(screen.getByRole("button", { name: "Scan QR" })).toBeOnTheScreen();
