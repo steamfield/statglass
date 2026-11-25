@@ -52,7 +52,8 @@ impl From<RemoteError> for CommandError {
                 reason: Some(HistoryUnavailableReason::Failed { message }),
             },
             RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
-            RemoteError::Refused(_) => Self::Internal { message },
+            RemoteError::Refused(_) => Self::RemoteRefused { message },
+            RemoteError::Internal(_) => Self::Internal { message },
             RemoteError::Pairing(refusal) => Self::Pairing {
                 reason: match refusal {
                     PairingRefusal::Denied => PairingFailure::Denied,
@@ -75,6 +76,43 @@ impl From<RemoteError> for CommandError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_query_refusal_keeps_its_kind_and_message_on_the_wire() {
+        let reason = "This session cannot start a disk scan";
+        let command = CommandError::from(RemoteError::Refused(reason.into()));
+        assert_eq!(
+            serde_json::to_value(command).unwrap(),
+            serde_json::json!({"kind": "remote_refused", "message": reason}),
+        );
+    }
+
+    #[test]
+    fn remote_worker_failure_reaches_ipc_as_internal() {
+        let reason = "query worker stopped";
+        let command = CommandError::from(RemoteError::Internal(reason.into()));
+        assert_eq!(
+            serde_json::to_value(command).unwrap(),
+            serde_json::json!({"kind": "internal", "message": reason}),
+        );
+    }
+
+    #[test]
+    fn store_command_error_retains_nested_io_cause_without_repeating_context() {
+        #[derive(Debug, thiserror::Error)]
+        #[error("opening history")]
+        struct OpenHistory(#[source] std::io::Error);
+
+        let error = statglass_store::StoreError::Io(std::io::Error::other(OpenHistory(
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+        )));
+        assert_eq!(
+            CommandError::from(error),
+            CommandError::Store {
+                message: "i/o: opening history: permission denied".into()
+            },
+        );
+    }
 
     #[test]
     fn pairing_refusals_keep_their_reason_and_message_in_command_errors() {

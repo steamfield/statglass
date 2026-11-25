@@ -179,15 +179,30 @@ impl From<StoreError> for CommandError {
             StoreError::TooNew { found, supported } => {
                 CommandError::StoreTooNew { found, supported }
             }
-            e if e.is_busy() => CommandError::StoreBusy {
-                message: e.to_string(),
-            },
-            e if e.is_corrupt() => CommandError::StoreCorrupt {
-                message: e.to_string(),
-            },
-            e => CommandError::Store {
-                message: e.to_string(),
-            },
+            e => {
+                let mut message = e.to_string();
+                let mut source = std::error::Error::source(&e);
+                while let Some(cause) = source {
+                    let detail = cause.to_string();
+                    // StoreError's Display already includes its immediate cause.
+                    if message != detail
+                        && !message
+                            .strip_suffix(&detail)
+                            .is_some_and(|prefix| prefix.ends_with(": "))
+                    {
+                        message.push_str(": ");
+                        message.push_str(&detail);
+                    }
+                    source = cause.source();
+                }
+                if e.is_busy() {
+                    CommandError::StoreBusy { message }
+                } else if e.is_corrupt() {
+                    CommandError::StoreCorrupt { message }
+                } else {
+                    CommandError::Store { message }
+                }
+            }
         }
     }
 }

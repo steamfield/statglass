@@ -15,6 +15,7 @@ pub fn run(device: &str, paths: &SocketPaths) -> anyhow::Result<i32> {
     };
     let original = std::env::var_os("SSH_ORIGINAL_COMMAND");
     let Some(command) = RestrictedCommand::parse(original.as_deref()) else {
+        // The client recognizes this stderr line as a restricted-command incompatibility.
         eprintln!("statglass-agent: command not allowed");
         return Ok(2);
     };

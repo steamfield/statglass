@@ -35,12 +35,12 @@ pub use endpoint::{Endpoint, MAX_TARGETS, PinnedHostKey, Route, Target};
 pub use error::{RemoteError, Result, RouteError, UnreachableKind};
 pub use mirror::{Mirror, SyncWatermark};
 pub use mirror_error::MirrorError;
-pub use mirror_policy::{MirrorPolicy, PHONE_MIRROR_HOST_MB, PHONE_MIRROR_TOTAL_MB};
+pub use mirror_policy::MirrorPolicy;
 pub use mirror_sink::MirrorSink;
 pub use pages::{page_from_wire, page_to_wire};
 pub use pairing::pair;
 pub use session::SshSession;
 pub use source::{
     ConnectionFailureKind, ConnectionStatus, IncompatibleSide, NETWORK_CHANGE_PROBE, RemoteSource,
-    RouteFailure, SourceOptions, StatusCallback, SyncPolicy,
+    RouteFailure, SourceOptions, StatusCallback,
 };

@@ -49,8 +49,10 @@ impl SourceControl for Control {
         self.source.control.send_modify(|s| s.stop = true);
         match &mut self.runner {
             Runner::Thread(thread) => {
-                if let Some(thread) = thread.take() {
-                    let _ = thread.join();
+                if let Some(thread) = thread.take()
+                    && let Err(payload) = thread.join()
+                {
+                    super::log_panic(self.source.record.id, payload.as_ref());
                 }
             }
             Runner::Task(task) => task.abort(),

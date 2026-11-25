@@ -105,7 +105,7 @@ pub(super) fn from_remote(e: &RemoteError, host: &str, last_seen: Option<String>
         RemoteError::Busy(_) => ErrorTag::Busy,
         RemoteError::HistoryUnavailable(_) => ErrorTag::HistoryUnavailable,
         RemoteError::InvalidArgument(_) => ErrorTag::Usage,
-        RemoteError::Pairing(_) => ErrorTag::Defect,
+        RemoteError::Pairing(_) | RemoteError::Internal(_) => ErrorTag::Defect,
         RemoteError::Transport(_)
         | RemoteError::Timeout(_)
         | RemoteError::Unreachable { .. }

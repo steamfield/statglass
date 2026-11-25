@@ -1,7 +1,31 @@
 //! The same held-frame projection for local and remote host cards (D-134).
 use serde::{Deserialize, Serialize};
 use statglass_engine::LiveFrame;
-use statglass_schema::{Catalog, HostId, HostInfo};
+use statglass_schema::{Catalog, HostId, HostInfo, lock::LockExt};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+    time::Duration,
+};
+use tokio::time::Instant;
+
+#[derive(Default)]
+struct RateLimit(Mutex<HashMap<HostId, Instant>>);
+
+impl RateLimit {
+    fn allows(&self, host: HostId, now: Instant) -> bool {
+        let recent = |last: &Instant| now.duration_since(*last) < Duration::from_secs(60);
+        let mut last = self.0.lock_ok();
+        if last.get(&host).is_some_and(recent) {
+            return false;
+        }
+        last.retain(|_, stamp| recent(stamp));
+        last.insert(host, now);
+        true
+    }
+}
+
+static INVALID_VITALS_LOG: LazyLock<RateLimit> = LazyLock::new(RateLimit::default);
 
 #[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -67,7 +91,9 @@ pub fn host_vitals(frame: Option<&LiveFrame>, host: HostId, info: &HostInfo) -> 
     let snapshot = match frame.snapshot(host, &Catalog::builtin()) {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            tracing::warn!(%error, "invalid host vitals frame");
+            if INVALID_VITALS_LOG.allows(host, Instant::now()) {
+                tracing::warn!(%host, error = &error as &dyn std::error::Error, "invalid host vitals frame");
+            }
             return out;
         }
     };
@@ -288,5 +314,63 @@ mod tests {
                 .unwrap(),
             MemoryPressure::Unknown
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn invalid_vitals_keep_host_facts_and_log_at_most_once_a_minute_per_host() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tracing::{Event, Level, Metadata, Subscriber, span};
+
+        struct WarningCount(Arc<AtomicUsize>);
+
+        impl Subscriber for WarningCount {
+            fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+                *metadata.level() == Level::WARN
+            }
+            fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+                span::Id::from_u64(1)
+            }
+            fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+            fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+            fn event(&self, _: &Event<'_>) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+            fn enter(&self, _: &span::Id) {}
+            fn exit(&self, _: &span::Id) {}
+        }
+
+        let warnings = Arc::new(AtomicUsize::new(0));
+        let _subscriber = tracing::subscriber::set_default(WarningCount(warnings.clone()));
+        let frame = LiveFrame {
+            ts_ms: 0,
+            interval_ms: 1000,
+            timeline: 0,
+            layout: Arc::new(FrameLayout {
+                layout_no: 1,
+                series: vec![SeriesKey::parse("cpu.total").unwrap()].into(),
+            }),
+            values: vec![12.5].into(),
+            held: Arc::new([]),
+            holds: vec![2500].into(),
+        };
+        let hosts = [
+            HostId(Default::default()),
+            serde_json::from_str(r#""7f3a2c00-0000-4000-8000-000000000001""#).unwrap(),
+        ];
+        let read = || hosts.map(|host| host_vitals(Some(&frame), host, &info()));
+        let expected = HostVitals {
+            cores: Some(2),
+            ..Default::default()
+        };
+        assert_eq!(read(), [expected.clone(), expected.clone()]);
+        assert_eq!(warnings.load(Ordering::Relaxed), 2);
+        for _ in 1..60 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            assert_eq!(read(), [expected.clone(), expected.clone()]);
+        }
+        assert_eq!(warnings.load(Ordering::Relaxed), 2);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(read(), [expected.clone(), expected]);
+        assert_eq!(warnings.load(Ordering::Relaxed), 4);
     }
 }

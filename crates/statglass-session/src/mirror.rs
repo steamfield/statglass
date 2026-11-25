@@ -49,10 +49,6 @@ impl MirrorSink for Mirror {
         self.policy.floor(tier, now_ms)
     }
 
-    fn recent_first(&self) -> bool {
-        self.policy.recent_first()
-    }
-
     fn recent_watermark(&self) -> Result<Option<i64>, MirrorError> {
         Ok(self.sync_watermark()?.s10_ms)
     }

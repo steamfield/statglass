@@ -177,7 +177,6 @@ mod tests {
                         lan_up: true,
                         tailscale_up: false,
                     })),
-                    ..Default::default()
                 },
             );
             let handle = source

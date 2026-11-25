@@ -81,11 +81,8 @@ pub(super) struct RunStatus<'a> {
 }
 
 impl<'a> RunStatus<'a> {
-    pub(super) fn new(notify: &'a StatusCallback) -> Self {
-        Self {
-            status: ConnectionStatus::default(),
-            notify,
-        }
+    pub(super) fn new(status: ConnectionStatus, notify: &'a StatusCallback) -> Self {
+        Self { status, notify }
     }
 }
 
@@ -225,10 +222,6 @@ impl Session<'_> {
                 if !probing {
                     if let Some(interest) = self.pending_interest.take() {
                         self.write(&Message::Interest(interest)).await?;
-                    }
-                    self.apply_sync_policy();
-                    if self.recent_first() {
-                        self.request_recent().await?;
                     }
                     if self.request_sync().await? {
                         continue;
