@@ -1,5 +1,9 @@
 //! Transient history refresh, independent of wire detail demand.
 use super::*;
+use statglass_proto::{WireBucket, WireLayout};
+
+/// How soon a session without a mirror asks again for the rows its ring is missing.
+const RING_RETRY: Duration = Duration::from_secs(5);
 
 impl Session<'_> {
     pub(super) async fn request_recent(&mut self) -> Result<()> {
@@ -8,9 +12,15 @@ impl Session<'_> {
             (control.interest.detail, control.recent_interest)
         };
         let period = if recent && !detail { 15 } else { 30 };
+        let due = if self.source.mirror.is_some() {
+            (detail || recent) && self.last_recent.elapsed() >= Duration::from_secs(period)
+        } else {
+            // Without a mirror the snapshot only refills the live ring, once per stretch
+            // of live detail; a failed request is tried again after a short pause.
+            detail && !self.ring_filled && self.last_recent.elapsed() >= RING_RETRY
+        };
         if self.history_available
-            && (detail || recent)
-            && self.last_recent.elapsed() >= Duration::from_secs(period)
+            && due
             && self.in_flight.is_none()
             && !self.mirror_write.running()
             && !self.recent_pending
@@ -70,5 +80,88 @@ impl Session<'_> {
         }
 
         Ok(())
+    }
+
+    /// A recent snapshot goes to the mirror, or without one straight into the live ring.
+    pub(super) fn recent_rows(
+        &mut self,
+        epoch: uuid::Uuid,
+        tier: Tier,
+        complete_to_ms: i64,
+        layouts: Vec<WireLayout>,
+        rows: Vec<WireBucket>,
+    ) -> Result<()> {
+        if self.recent_timed_out.take().is_some() {
+            tracing::debug!("dropping late recent snapshot");
+            return Ok(());
+        }
+        if !self.recent_pending {
+            return Err(RemoteError::Transport("unsolicited recent snapshot".into()));
+        }
+        self.recent_pending = false;
+        if epoch != self.epoch {
+            return Err(RemoteError::Transport(
+                "source history was reset; reconnecting".into(),
+            ));
+        }
+        if let Some(mirror) = self.source.mirror.clone() {
+            self.mirror_write.start(MirrorWork::Recent, move || {
+                mirror.recent(epoch, tier, complete_to_ms, layouts, rows)
+            });
+        } else {
+            self.refill_ring_from_recent(tier, complete_to_ms, layouts, rows);
+        }
+        Ok(())
+    }
+
+    /// A session without a mirror fills its live ring from the host's recent snapshot,
+    /// so a window opened on a fresh connection shows the minutes before it. Runs once
+    /// per stretch of live detail, like [`Self::refill_ring`]; a snapshot that fails
+    /// validation is logged, not asked for again, and the ring keeps its live frames.
+    fn refill_ring_from_recent(
+        &mut self,
+        tier: Tier,
+        complete_to_ms: i64,
+        layouts: Vec<WireLayout>,
+        rows: Vec<WireBucket>,
+    ) {
+        if self.ring_filled || !self.control.borrow().interest.detail {
+            return;
+        }
+        self.ring_filled = true;
+        let host = self.source.record.id;
+        let recent = match crate::recent_rows::recent_buckets(
+            &statglass_schema::Catalog::builtin(),
+            host,
+            tier,
+            complete_to_ms,
+            layouts,
+            rows,
+        ) {
+            Ok(recent) => recent,
+            Err(error) => {
+                tracing::warn!(%host, "refilling the live ring from recent rows: {error}");
+                return;
+            }
+        };
+        let now = self
+            .source
+            .clock
+            .now_ms()
+            .unwrap_or_else(statglass_engine::wall_ms);
+        let query = statglass_engine::ring_history_query(host, now);
+        let history = match statglass_store::history_recent(&query, &recent.rows) {
+            Ok(history) => history,
+            Err(error) => {
+                tracing::warn!(%host, "reading recent rows for the live ring: {error}");
+                return;
+            }
+        };
+        let timeline = self.source.next_timeline.fetch_add(1, Ordering::Relaxed);
+        let added = self.sink.live.refill(&history, timeline);
+        if added > 0 {
+            self.timeline = timeline;
+            tracing::info!(%host, added, "live ring refilled from recent rows");
+        }
     }
 }

@@ -125,8 +125,8 @@ impl MirrorSink for Mirror {
         epoch: Uuid,
         tier: Tier,
         complete_to_ms: i64,
-        mut layouts: Vec<WireLayout>,
-        mut rows: Vec<WireBucket>,
+        layouts: Vec<WireLayout>,
+        rows: Vec<WireBucket>,
     ) -> Result<(), MirrorError> {
         let mut current = self.epoch.lock_ok();
         if current.id != Some(epoch) {
@@ -134,48 +134,21 @@ impl MirrorSink for Mirror {
                 operation: "recent-history",
             });
         }
-        // Both policies accept the host's S10 snapshots for the live ring.
-        if tier != Tier::S10 {
-            return Err(MirrorError::InvalidInput(
-                "Unsupported or oversized recent-history snapshot",
-            ));
-        }
-        if rows.len() > 2000 || layouts.len() > 2000 {
-            return Err(MirrorError::ResourceLimit(
-                "Unsupported or oversized recent-history snapshot",
-            ));
-        }
-        let width = tier
-            .bucket_ms()
-            .ok_or(MirrorError::InvalidInput("Invalid recent tier"))?;
-        self.cap(&mut layouts, &mut rows);
-        let floor = complete_to_ms.saturating_sub(statglass_engine::RECENT_ROWS_MS);
-        let mut out = Vec::new();
-        for row in rows {
-            let layout = layouts
-                .iter()
-                .find(|l| l.layout_no == row.layout_no)
-                .ok_or(MirrorError::InvalidInput("Unknown recent layout"))?;
-            if row.stats.len() != layout.series.len().saturating_mul(3)
-                || row.bucket_ts < floor
-                || row.bucket_ts > complete_to_ms
-                || row.bucket_ts.rem_euclid(width) != 0
-            {
-                return Err(MirrorError::InvalidInput("Invalid recent row"));
-            }
-            if current.committed.iter().any(|(t, ts, series)| {
-                *t == tier && *ts == row.bucket_ts && *series == layout.series
-            }) {
-                continue;
-            }
-            out.push(statglass_store::BucketRow {
-                host: self.host,
-                tier,
-                bucket_ts: row.bucket_ts,
-                series: layout.series.clone().into(),
-                stats: row.stats,
-            });
-        }
+        let recent = crate::recent_rows::recent_buckets(
+            &self.catalog,
+            self.host,
+            tier,
+            complete_to_ms,
+            layouts,
+            rows,
+        )?;
+        self.warn_capped(recent.capped);
+        let mut out = recent.rows;
+        out.retain(|row| {
+            !current.committed.iter().any(|(t, ts, series)| {
+                *t == row.tier && *ts == row.bucket_ts && series.as_slice() == row.series.as_ref()
+            })
+        });
         // The snapshot may include the bucket beginning at complete_to_ms: it is the
         // open bucket. Exact committed keys win over that transient value.
         current.trim(complete_to_ms);
@@ -257,7 +230,9 @@ impl Mirror {
     /// Applies the cardinality caps to a remote page or snapshot before anything is
     /// stored (D-116).
     fn cap(&self, layouts: &mut [WireLayout], rows: &mut [WireBucket]) {
-        let dropped = crate::pages::cap_layouts(&self.catalog, layouts, rows);
+        self.warn_capped(crate::pages::cap_layouts(&self.catalog, layouts, rows));
+    }
+    fn warn_capped(&self, dropped: usize) {
         if dropped > 0 && !self.cap_warned.swap(true, Ordering::Relaxed) {
             tracing::warn!(host = ?self.host, dropped, "remote series over their cap; not mirrored");
         }

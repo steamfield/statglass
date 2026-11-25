@@ -110,7 +110,7 @@ test("paging updates the native title and switches the focused subscription and 
   expect(subscribe.mock.lastCall).toEqual([
     MOCK_HOST_ID,
     expect.any(Function),
-    { series: PHONE_LIVE_SERIES, backfillMs: 60_000 },
+    { series: PHONE_LIVE_SERIES, backfillMs: 300_000 },
   ]);
 
   await fireEvent(screen.getByLabelText("Hosts pager"), "momentumScrollEnd", {

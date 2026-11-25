@@ -19,6 +19,7 @@ mod mirror_sink;
 pub mod network;
 mod pages;
 pub mod pairing;
+mod recent_rows;
 mod session;
 mod source;
 #[cfg(test)]

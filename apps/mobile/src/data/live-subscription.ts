@@ -6,6 +6,10 @@ import type { LiveStore, PhoneLive } from "./live";
 import { PHONE_LIVE_SERIES } from "./live-series";
 import type { PhoneTransport } from "./seam";
 
+// The host's recent snapshot fills the phone's ring with the five minutes before a
+// connection, so a window opened on a fresh connection starts full.
+const PHONE_BACKFILL_MS = 5 * MINUTE_MS;
+
 function applyPhoneState(store: LiveStore, host: HostId, next: PhoneLive) {
   const previous = store.getState();
   if (
@@ -57,7 +61,7 @@ export function subscribeHostLive(
       applyPhoneState(store, host, { ...held, awaitingFrame: true });
     return createLiveSession(
       host,
-      { series: PHONE_LIVE_SERIES, backfillMs: MINUTE_MS },
+      { series: PHONE_LIVE_SERIES, backfillMs: PHONE_BACKFILL_MS },
       {
         initial: store.getState(),
         subscribe: async (id, onMessage, options) => {

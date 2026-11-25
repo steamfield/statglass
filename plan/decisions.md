@@ -4858,3 +4858,17 @@ Export compliance (the user's answer, 2026-11-25): the app's SSH uses standard a
 Review access (the user's answer): demo mode only. The review notes explain "Try demo hosts" on the first screen and the QR pairing with StatGlass on a Mac or `statglass-agent` on Linux; no live host is provided, because pairing codes expire in minutes.
 
 Builds are local only (D-118, D-131): `make mobile-archive` builds and exports, `make mobile-release-check` checks the archive, and the upload and submission are the user's steps (`.github/releasing-mobile.md`).
+
+## D-157: The phone's live ring starts with the host's recent five minutes
+
+Date: 2026-11-25. Follows D-152. The user's report: a host screen opened on a fresh connection drew only the frames received since the app connected, instead of a full chart window. No wire change.
+
+### Context
+
+D-152 removed the phone's mirror and said the live ring's backfill covers the newest minute. The ring had no source for that minute: a session refilled its ring only from a mirror (`refill_ring`), and without one it still counted the three sync tiers, never synced them and so never sent `RecentRequest`. Every phone chart drawn from the ring started empty on each connection, on hosts of every version.
+
+### Decision
+
+1. A `RemoteSource` without a mirror syncs no tiers. While live detail is on and its ring has not been refilled, it sends one `RecentRequest` for the last five minutes (retried after 5 s if no snapshot arrives) and refills the ring from the `RecentRows` reply through `statglass_store::history_recent`, on a new timeline, the way the desktop refills from its mirror. The snapshot is validated by the same function as the mirror's (`recent_rows::recent_buckets`) and held only in the ring. Detail stopping and starting again refills again.
+2. The phone subscribes with a five-minute backfill, the span the snapshot covers. Refilled rows are 10 s buckets, as on the desktop for a remote host; frames received after the connection are 1 s rows.
+3. Hosts of every version answer `RecentRequest`, so this needs no host update. Module pages still read bounded history queries (D-152), which need a host with `query.history.v1`.

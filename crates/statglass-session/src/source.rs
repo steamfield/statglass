@@ -440,7 +440,8 @@ async fn session_loop(
         tiers: source
             .mirror
             .as_deref()
-            .map_or(&[Tier::S10, Tier::M1, Tier::M15], MirrorSink::sync_tiers),
+            // Without a sink there is nowhere to sync into; recent rows refill the ring.
+            .map_or(&[], MirrorSink::sync_tiers),
         next_tier: 0,
         in_flight: None,
         timed_out: HashMap::new(),
@@ -872,31 +873,12 @@ impl Session<'_> {
                 self.restart_cursor.insert(tier);
             }
             Message::RecentRows {
-                epoch: remote_epoch,
+                epoch,
                 tier,
                 complete_to_ms,
                 layouts,
                 rows,
-            } => {
-                if self.recent_timed_out.take().is_some() {
-                    tracing::debug!("dropping late recent snapshot");
-                    return Ok(SessionAction::Continue);
-                }
-                if !self.recent_pending {
-                    return Err(RemoteError::Transport("unsolicited recent snapshot".into()));
-                }
-                self.recent_pending = false;
-                if remote_epoch != self.epoch {
-                    return Err(RemoteError::Transport(
-                        "source history was reset; reconnecting".into(),
-                    ));
-                }
-                if let Some(mirror) = self.source.mirror.clone() {
-                    self.mirror_write.start(MirrorWork::Recent, move || {
-                        mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows)
-                    });
-                }
-            }
+            } => self.recent_rows(epoch, tier, complete_to_ms, layouts, rows)?,
             Message::Error { message, .. } => {
                 if !self.timed_out.is_empty() || self.recent_timed_out.is_some() {
                     // Errors have no tier either, so reconnect rather than misattribute one.

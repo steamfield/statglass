@@ -455,6 +455,85 @@ async fn desktop_detail_still_syncs_all_tiers_before_requesting_recent_rows() {
     ));
 }
 
+/// The phone keeps no mirror (D-152), so live detail asks the host for its recent rows
+/// once and the ring shows the minutes before the connection, not only frames since.
+#[tokio::test(start_paused = true)]
+async fn phone_detail_refills_the_ring_from_recent_rows_once() {
+    use statglass_proto::{WireBucket, WireLayout};
+    use statglass_schema::{MetricId, SeriesKey};
+    let mut phone = Phone::new(Route::Lan, None);
+    let handle = phone.start();
+    let mut dial = phone.connect().await;
+    handle.control().set_detail_interest(true);
+    assert!(matches!(read(&mut dial.peer).await, Message::Interest(interest) if interest.detail));
+    history_available(&mut dial.peer).await;
+    let Message::RecentRequest { from_ms, to_ms } = read(&mut dial.peer).await else {
+        panic!("expected a recent-rows request, not a sync");
+    };
+    assert_eq!(to_ms - from_ms, 300_000, "five minutes of recent rows");
+    let complete_to_ms = to_ms - to_ms.rem_euclid(10_000);
+    let buckets: Vec<i64> = (1..=6).rev().map(|i| complete_to_ms - i * 10_000).collect();
+    send(
+        &mut dial.peer,
+        Message::RecentRows {
+            epoch: fixture_hello().db_instance_uuid,
+            tier: Tier::S10,
+            complete_to_ms,
+            layouts: vec![WireLayout {
+                layout_no: 1,
+                series: vec![SeriesKey::bare(MetricId::from_static("cpu.total"))],
+            }],
+            rows: buckets
+                .iter()
+                .zip(1_i16..)
+                .map(|(&bucket_ts, n)| WireBucket {
+                    seq: 0,
+                    bucket_ts,
+                    layout_no: 1,
+                    stats: vec![f32::from(n); 3],
+                })
+                .collect(),
+        },
+    )
+    .await;
+    let mut filled = Vec::new();
+    for _ in 0..30 {
+        filled = phone.live.backfill(i64::MIN);
+        if !filled.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let values: Vec<f32> = filled
+        .iter()
+        .flat_map(|s| s.rows.iter().map(|r| r[0]))
+        .collect();
+    assert_eq!(
+        values,
+        [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "one ring row per bucket"
+    );
+
+    // Detail stays on: the ring is filled, so the phone answers pings and asks for nothing.
+    for _ in 0..4 {
+        advance(Duration::from_secs(30)).await;
+        while let Ok(Ok(message)) =
+            timeout(Duration::from_secs(1), codec::read(&mut dial.peer)).await
+        {
+            assert!(
+                !matches!(
+                    message,
+                    Message::RecentRequest { .. } | Message::SyncRequest(_)
+                ),
+                "asked again: {message:?}"
+            );
+            if matches!(message, Message::Ping { .. }) {
+                pong(&mut dial.peer, message).await;
+            }
+        }
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn the_injected_current_thread_runtime_dials_on_paused_time_and_stop_closes() {
     let mut phone = Phone::new(Route::Lan, None);
