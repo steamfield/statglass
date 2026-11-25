@@ -2,7 +2,8 @@
 
 Status: v1 implemented on `main`, 2026-10-19 (D-114). Phase 0 ran first; its results,
 the deviations from this plan and the checks still owed on real hardware are in
-"Implementation record" below.
+"Implementation record" below. Placement is being revised in
+[utilities.md](utilities.md) (D-153).
 
 Add a **Space** view to Disk. The user starts a scan of a volume, and StatGlass shows which
 folders and files use the space as a drillable treemap with a ranked table beside it.

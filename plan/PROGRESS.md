@@ -1069,6 +1069,7 @@ Known follow-ups (small, not scheduled):
 | Containers monitoring UX revision | [UX RFC](docker-monitoring-ux-rfc.md) | Done (full gates, native recording and review; 2026-10-13) | October 13 product feedback: per-container CPU/Memory lines, two confirmed history bugs, bounded lists, monitoring settings and row Start/Stop |
 | Docker storage insights and cleanup | [Storage plan](docker-storage-cleanup.md) | Done | D-107; CE review approved, 863 Rust / 987 frontend tests and 294 browser checks passed; disposable OrbStack acceptance passed, Desktop/Colima follow-up remains |
 | Disk space report | [Space plan](disk-space-report.md) | Done (automated); real-hardware checks open | D-114; Space view in Disk with a progressive, drillable treemap. Privacy prompts on a fresh account, the dataless policy on File Provider folders, clone fixtures and tick lateness during a scan are unverified |
+| Utilities group | [Utilities plan](utilities.md) | Accepted, not started | D-153; the disk space report moves from Disk to a Utilities sidebar group; design review folded in, not started |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
 | v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Done (0.1.0 published) | Ad-hoc-signed GitHub release and signature-verified updates; paid Apple signing, notarization and Homebrew remain deferred |
 | v2.0 Widget manifest and popover composer | [v2](v2-customization-widgets.md) | Not started | |
