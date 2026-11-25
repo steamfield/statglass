@@ -30,14 +30,16 @@ apps/mobile/
   src/ui/           # Shared primitives such as the Dynamic Type Text roles
   src/components/   # Phase 1 placeholders (action button, "not built yet")
   src/lock/         # App lock gate and background blur
-  src/transport/    # MobileTransport: the only code that calls statglass-native
+  src/debug/        # Native core diagnostics shown on the debug screen
+  src/transport/    # NativeTransport and device calls into statglass-native
   src/lib/          # Providers, the QueryClient and small React Native utilities
   modules/statglass-native/  # Expo module: Swift, podspec, vendored XCFramework
   test/             # jest-expo + React Native Testing Library
 ```
 
-`@/*` maps to `apps/mobile/src/*` and `@core/*` to `packages/core/src/*`, in tsconfig, the
-Metro resolver (`metro-resolve.cjs`) and jest's `moduleNameMapper` alike.
+`@/*` maps to `apps/mobile/src/*`, `@core/*` to `packages/core/src/*`, and `@native/*` to
+`apps/mobile/modules/*` in tsconfig, the Metro resolver (`metro-resolve.cjs`) and jest's
+`moduleNameMapper`.
 
 ## Data
 
@@ -53,6 +55,8 @@ Metro resolver (`metro-resolve.cjs`) and jest's `moduleNameMapper` alike.
 ## Imports
 
 - Never import `react-dom`, `@tauri-apps/*`, `@desktop/*`, `~/` (the desktop's alias) or anything outside `apps/mobile` except through `@core/`; Biome and the write hook both reject it, because the desktop and phone render differently.
+- In app source, import `@native/*` only from `src/transport/`. Tests can use the native module's public test seam.
+- Widgets and cards receive data and navigation callbacks as props. Biome excludes `@/data`, `@/transport`, Expo Router and TanStack imports from those directories.
 - Install native-facing packages with `bunx expo install` so versions match the SDK; `expo install --check` in `make mobile-check` catches drift.
 - Resolve `react` and `react-native` only from `apps/mobile/node_modules`; the single-React check fails the export otherwise.
 

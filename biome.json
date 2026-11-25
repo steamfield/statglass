@@ -777,6 +777,106 @@
       }
     },
     {
+      "includes": ["apps/mobile/src/**", "!apps/mobile/src/transport/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react-dom": "apps/mobile renders with React Native; react-dom is desktop only.",
+                  "react-dom/client": "apps/mobile renders with React Native; react-dom is desktop only."
+                },
+                "patterns": [
+                  {
+                    "group": ["react-dom/**"],
+                    "message": "apps/mobile renders with React Native; react-dom is desktop only."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "apps/mobile never calls Tauri; it talks to Rust through statglass-native."
+                  },
+                  {
+                    "group": ["~/**", "@desktop/**"],
+                    "message": "apps/mobile must not import the desktop app; shared code comes from @core/."
+                  },
+                  {
+                    "group": ["../**"],
+                    "message": "Relative imports stay in the current directory; import other app code through @/ and shared code through @core/."
+                  },
+                  {
+                    "group": ["@native/**"],
+                    "message": "Only apps/mobile/src/transport may import the native module."
+                  },
+                  {
+                    "group": ["@/../**", "@/**/../**"],
+                    "message": "Use an app alias without parent segments. Native module imports go through transport."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/mobile/src/widgets/**", "apps/mobile/src/cards/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react-dom": "apps/mobile renders with React Native; react-dom is desktop only.",
+                  "react-dom/client": "apps/mobile renders with React Native; react-dom is desktop only."
+                },
+                "patterns": [
+                  {
+                    "group": ["react-dom/**"],
+                    "message": "apps/mobile renders with React Native; react-dom is desktop only."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "apps/mobile never calls Tauri; it talks to Rust through statglass-native."
+                  },
+                  {
+                    "group": ["~/**", "@desktop/**"],
+                    "message": "apps/mobile must not import the desktop app; shared code comes from @core/."
+                  },
+                  {
+                    "group": ["../**"],
+                    "message": "Relative imports stay in the current directory; import other app code through @/ and shared code through @core/."
+                  },
+                  {
+                    "group": ["@native/**"],
+                    "message": "Only apps/mobile/src/transport may import the native module."
+                  },
+                  {
+                    "group": ["@/../**", "@/**/../**"],
+                    "message": "Use an app alias without parent segments. Native module imports go through transport."
+                  },
+                  {
+                    "group": [
+                      "@/data",
+                      "@/data/**",
+                      "@/transport",
+                      "@/transport/**",
+                      "expo-router",
+                      "expo-router/**",
+                      "@tanstack/**"
+                    ],
+                    "message": "Mobile widgets and cards get data and callbacks through props."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["apps/mobile/test/**"],
       "linter": {
         "rules": {

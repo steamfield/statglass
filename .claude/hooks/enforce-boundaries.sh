@@ -8,7 +8,8 @@
 #    Expo, Tauri, @steamfield/ui, desktop adapters or the app layer (~/)
 # 2. src/app/widgets/ is render-only: no transport, stores, router, or Tauri APIs
 # 3. apps/mobile/ never imports react-dom, Tauri, the desktop app or desktop
-#    adapters, and its relative imports never leave apps/mobile/
+#    adapters, and its relative imports never leave apps/mobile/. Only the
+#    transport can import @native/* from app source.
 # 4. The desktop app (src/app/, src/desktop-transport/, src/main.tsx) never
 #    imports react-native or Expo
 
@@ -23,6 +24,20 @@ deny() {
       }
     }'
     exit 0
+}
+
+# Match literal imports in a write or edit fragment. Skip comments and strings
+# outside the declaration, and allow comments between its tokens.
+has_mobile_native_import() {
+    perl -0777 -ne '
+        my $comment = qr{//[^\n]*|/\*.*?\*/}s;
+        my $gap = qr{(?:\s|$comment)*};
+        exit(m{
+            (?: $comment | (["\x27`]) (?: \\. | (?!\1) [^\\] )* \1 ) (*SKIP)(*F)
+            | \b (?: from $gap | import $gap (?: \( $gap )? | require $gap \( $gap )
+              ["\x27`] (?: \@native/ | \@/ (?: [^/"\x27`\s]+ / )* \.\./ )
+        }xs ? 0 : 1);
+    '
 }
 
 tool_name=$(echo "$input" | jq -r '.tool_name // empty')
@@ -88,6 +103,9 @@ if [[ -n "$mobile_rel" && ! "$mobile_rel" =~ ^(ios|node_modules|\.expo)/ ]]; the
     mobile_reason=""
     if printf '%s' "$text" | grep -qE -e "from[[:space:]]+[\"'](react-dom|@tauri-apps|@desktop|~)([\"'/])"; then
         mobile_reason="It imports react-dom, @tauri-apps/*, a desktop adapter (@desktop/*) or the desktop app (~/)."
+    elif [[ "$mobile_rel" == src/* && "$mobile_rel" != src/transport/* ]] \
+        && printf '%s' "$text" | has_mobile_native_import; then
+        mobile_reason="Only apps/mobile/src/transport/ may import @native/*. Use an adapter in @/transport and keep parent segments out of app aliases."
     else
         # Directory depth below apps/mobile/; a relative import that climbs
         # further leaves the app (into src/app/, packages/ or anywhere else).
