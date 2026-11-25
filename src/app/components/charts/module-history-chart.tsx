@@ -15,8 +15,8 @@ import { StreamArea, type StreamAreaProps } from "~/widgets/stream-area";
 
 /** Y tick gutter, px (design-system.md: 32 for live area charts). */
 const GUTTER = 32;
-/** The wider gutter byte labels ("16.5 GB") need, as on container axes. */
-export const BYTES_GUTTER = 48;
+
+export { BYTES_GUTTER } from "@core/module-hero";
 
 /**
  * A module history chart's y axis. `percent` is the fixed 0 to 100% grid.
