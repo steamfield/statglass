@@ -6,7 +6,7 @@ import {
   usePhoneSettingsActions,
 } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
-import { moveCard } from "./card-stack";
+import { moveCard, toggleCardDensity } from "./card-stack";
 
 function MenuAction({
   label,
@@ -50,7 +50,7 @@ export function CardMenu({
   const cardOrder = usePhoneSettings((state) => state.cardOrder);
   const settings = usePhoneSettingsActions();
   const changeDensity = () => {
-    settings.set({ compact: { ...compact, [card]: !compact[card] } });
+    toggleCardDensity(settings.set, card);
     onClose();
   };
   const move = (neighbor: PopoverCard) => {

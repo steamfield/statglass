@@ -1,8 +1,9 @@
+import { MISSING } from "@core/format";
 import type { Accent } from "@core/widget-models/tokens";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
-import type { CardChrome } from "@/cards/types";
+import type { CardChrome, ModuleCardProps } from "@/cards/types";
 import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
 import { WidgetAccent } from "@/widgets/accent";
@@ -83,34 +84,34 @@ export function CardGlow({
 
 /** The module's headline and body open its page as one touch target. */
 export function ModuleCard({
-  title,
-  headline,
+  content,
+  headline = content.headline ?? MISSING,
   unit,
   spokenHeadline,
   headlineContent,
-  spokenDetails,
   accent,
   compact,
   onOpen,
   onLongPress,
   children,
-}: CardChrome & {
-  title: string;
-  headline: string;
-  unit?: string | undefined;
-  spokenHeadline?: string;
-  headlineContent?: ReactNode;
-  spokenDetails?: string;
-  accent: Accent;
-  children: ReactNode;
-}) {
+}: ModuleCardProps &
+  Pick<CardChrome, "onLongPress"> & {
+    headline?: string;
+    unit?: string | undefined;
+    spokenHeadline?: string;
+    headlineContent?: ReactNode;
+    accent: Accent;
+    children: ReactNode;
+  }) {
   const colors = themeColors[useColorScheme() ?? "light"];
+  const { title } = content;
+  const spokenDetails = compact ? "" : content.spoken;
   return (
     <Pressable
       className={`min-h-[44px] min-w-[44px] gap-2 ${CARD_SURFACE}`}
       accessibilityRole="button"
       accessibilityLabel={`${title}, ${spokenHeadline ?? (unit ? `${headline} ${unit}` : headline)}`}
-      {...(!compact && spokenDetails
+      {...(spokenDetails
         ? { accessibilityValue: { text: spokenDetails } }
         : {})}
       accessibilityActions={[{ name: "menu", label: "Card options" }]}

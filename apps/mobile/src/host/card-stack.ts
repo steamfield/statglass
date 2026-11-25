@@ -13,7 +13,10 @@ import type {
   PowerCardProps,
   UnavailableCardProps,
 } from "@/cards/types";
-import type { PhoneSettings } from "@/data/phone-settings";
+import type {
+  PhoneSettings,
+  PhoneSettingsActions,
+} from "@/data/phone-settings";
 
 /** Module cards in the default popover order, including the standalone battery card. */
 export const CARD_MODULES = [
@@ -36,17 +39,32 @@ type CardData = {
   battery: Pick<BatteryCardProps, "battery"> & { source: PowerSource | null };
 };
 
-type CardActions = Pick<CardChrome, "onOpen" | "onLongPress">;
+type CardActions = Pick<
+  CardChrome,
+  "onOpen" | "onLongPress" | "onToggleDensity"
+>;
 
-/** Bind open and menu callbacks to each card so they can stay stable across frames. */
+export function toggleCardDensity(
+  set: PhoneSettingsActions["set"],
+  card: PopoverCard
+) {
+  set(({ compact }) => ({ compact: { ...compact, [card]: !compact[card] } }));
+}
+
+/** Bind each card's callbacks so they can stay stable across frames. */
 export function cardActions(
   open: (card: PopoverCard) => void,
-  openMenu: (card: PopoverCard) => void
+  openMenu: (card: PopoverCard) => void,
+  toggleDensity: (card: PopoverCard) => void
 ): Record<PopoverCard, CardActions> {
   return Object.fromEntries(
     CARD_MODULES.map((card) => [
       card,
-      { onOpen: () => open(card), onLongPress: () => openMenu(card) },
+      {
+        onOpen: () => open(card),
+        onLongPress: () => openMenu(card),
+        onToggleDensity: () => toggleDensity(card),
+      },
     ])
   ) as Record<PopoverCard, CardActions>;
 }
@@ -84,7 +102,8 @@ export function buildCardStack(
   states: Record<UiModule, ModuleState>,
   { compact, cardOrder }: Settings,
   data: CardData,
-  actions: Record<PopoverCard, CardActions>
+  actions: Record<PopoverCard, CardActions>,
+  stale: boolean
 ): CardStackItem[] {
   const rank = new Map<UiModule, number>(
     cardOrder?.map((card, i) => [card, i])
@@ -107,6 +126,7 @@ export function buildCardStack(
     const card = slot.card;
     const chrome = {
       compact: compact[card],
+      stale,
       ...actions[card],
     };
     switch (card) {

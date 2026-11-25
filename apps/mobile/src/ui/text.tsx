@@ -44,28 +44,23 @@ const typography = StyleSheet.create({
   axis: { fontSize: 11, fontWeight: "400", fontVariant: ["tabular-nums"] },
 });
 
-// Remove the role-only branch and alias in the phase 11 scaffold.
-export type TextProps = Omit<NativeTextProps, "role"> &
-  (
-    | { variant: TextVariant; role?: TextVariant }
-    | { variant?: undefined; role: TextVariant }
-  );
+export type TextProps = Omit<NativeTextProps, "role"> & {
+  variant: TextVariant;
+};
 
 export function Text({
   variant,
-  role,
   className,
   style,
   maxFontSizeMultiplier,
   ...rest
 }: TextProps) {
-  const selected = variant ?? role;
   const heading =
-    selected === "largeTitle" ||
-    selected === "title" ||
-    selected === "onboardingTitle";
+    variant === "largeTitle" ||
+    variant === "title" ||
+    variant === "onboardingTitle";
   const muted =
-    selected === "label" || selected === "caption" || selected === "axis";
+    variant === "label" || variant === "caption" || variant === "axis";
   const color = muted ? "text-muted-foreground" : "text-foreground";
 
   return (
@@ -73,8 +68,8 @@ export function Text({
       accessibilityRole={heading ? "header" : undefined}
       {...rest}
       className={className ? `${color} ${className}` : color}
-      maxFontSizeMultiplier={selected === "axis" ? 1.5 : maxFontSizeMultiplier}
-      style={[typography[selected], style]}
+      maxFontSizeMultiplier={variant === "axis" ? 1.5 : maxFontSizeMultiplier}
+      style={[typography[variant], style]}
     />
   );
 }

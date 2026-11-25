@@ -26,7 +26,10 @@ import { ProblemBanner } from "@/connection/problem-banner";
 import { useHostConnection } from "@/data/hosts";
 import { connectionStatusError, useConnection, useHostLive } from "@/data/live";
 import { useCompactStream, useNetworkBars } from "@/data/live-stream";
-import { usePhoneSettings } from "@/data/phone-settings";
+import {
+  usePhoneSettings,
+  usePhoneSettingsActions,
+} from "@/data/phone-settings";
 import { motionEasings } from "@/theme.generated";
 import { useMotion } from "@/ui/motion";
 import { Text } from "@/ui/text";
@@ -36,6 +39,7 @@ import {
   type CardStackItem,
   cardActions,
   cardModuleStates,
+  toggleCardDensity,
 } from "./card-stack";
 import { ConnectionPill } from "./connection-pill";
 
@@ -98,6 +102,7 @@ const CardStack = memo(function CardStack({
   const router = useRouter();
   const [menu, setMenu] = useState<PopoverCard | null>(null);
   const compact = usePhoneSettings((state) => state.compact);
+  const { set } = usePhoneSettingsActions();
   const cardOrder = usePhoneSettings((state) => state.cardOrder);
   const opacity = useCardOpacity(dimmed);
   const caps = useHostLive(id, (state) => state.capabilities);
@@ -133,9 +138,10 @@ const CardStack = memo(function CardStack({
             pathname: "/(hosts)/[host]/[module]",
             params: { host: id, module },
           }),
-        setMenu
+        setMenu,
+        (card) => toggleCardDensity(set, card)
       ),
-    [id, router]
+    [id, router, set]
   );
   const cards = buildCardStack(
     states,
@@ -148,7 +154,8 @@ const CardStack = memo(function CardStack({
       network: { network, bars },
       battery: { battery, source },
     },
-    actions
+    actions,
+    dimmed
   );
 
   const order = cards.flatMap((item) =>

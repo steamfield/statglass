@@ -5,8 +5,15 @@
 import type { LiveMsg } from "@core/generated/types";
 import { SCENARIOS } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import { useRootNavigationState } from "expo-router";
-import { useEffect } from "react";
+import { useRootNavigationState, useRouter } from "expo-router";
+import {
+  createElement,
+  Fragment,
+  type JSX,
+  type ReactNode,
+  useCallback,
+  useEffect,
+} from "react";
 import type { PhoneTransport } from "./seam";
 import {
   useIsDemo,
@@ -80,7 +87,7 @@ export function createDemoTransport(scenario?: string): DemoTransport {
 }
 
 /** Disposes demo tickers when the session ends, the transport changes or the root unmounts. */
-export function useDemoLifetime(hasDemoRoute: boolean) {
+function useDemoLifetime(hasDemoRoute: boolean) {
   const transport = useOptionalPhoneTransport();
   const demo = useIsDemo();
   const setTransport = useSetPhoneTransport();
@@ -101,7 +108,11 @@ export function useDemoLifetime(hasDemoRoute: boolean) {
 }
 
 /** Keeps the demo alive while its routes remain in the navigation stack. */
-export function DemoLifetime(): null {
+export function DemoProvider({
+  children,
+}: {
+  children: ReactNode;
+}): JSX.Element {
   const root = useRootNavigationState();
   const stack = root?.routes[root.index]?.state;
   // A screen can cover the hosts stack while it remains in the back history.
@@ -109,5 +120,28 @@ export function DemoLifetime(): null {
     ({ name }) => name === "demo" || name === "(hosts)"
   );
   useDemoLifetime(hasDemoRoute ?? false);
-  return null;
+  return createElement(Fragment, null, children);
+}
+
+export function useDemo(): {
+  active: boolean;
+  start(scenario?: string): void;
+  exit(): void;
+} {
+  const active = useIsDemo();
+  const setTransport = useSetPhoneTransport();
+  const router = useRouter();
+  const start = useCallback(
+    (scenario?: string) => {
+      setTransport(createDemoTransport(scenario), true);
+      router.replace("/(hosts)");
+    },
+    [router, setTransport]
+  );
+  const exit = useCallback(() => {
+    if (!active) return;
+    setTransport(null, false);
+    router.replace("/");
+  }, [active, router, setTransport]);
+  return { active, start, exit };
 }

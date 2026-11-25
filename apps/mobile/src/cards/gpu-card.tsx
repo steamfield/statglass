@@ -7,13 +7,7 @@ import { StreamArea } from "@/widgets/stream-area";
 export function GpuCard({ gpu, stream, ...chrome }: GpuCardProps) {
   const card = gpuCard(gpu, { chartLabel: stream?.ariaLabel });
   return (
-    <ModuleCard
-      {...chrome}
-      title={card.title}
-      accent="gpu"
-      headline={card.headline}
-      spokenDetails={chrome.compact ? "" : card.spoken}
-    >
+    <ModuleCard {...chrome} card="gpu" content={card} accent="gpu">
       {stream && <StreamArea {...stream} />}
       <StatList layout="grid" items={card.items} />
     </ModuleCard>

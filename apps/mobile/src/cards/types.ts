@@ -13,15 +13,26 @@ import type {
   PowerSelection,
 } from "@core/live-selectors";
 import type { ModuleState, UiModule } from "@core/module-state";
+import type { PopoverCard } from "@core/popover/card-order";
+import type { CardContent } from "@core/popover/cards";
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
 
-/** What every card's chrome needs: its density and its two gestures. */
-export interface CardChrome {
-  /** Header and headline only. */
+export interface ModuleCardProps {
+  card: PopoverCard;
+  content: CardContent;
   compact: boolean;
-  /** Opens the module's page. */
+  onToggleDensity(): void;
   onOpen(): void;
+  stale: boolean;
+}
+
+/** Props shared by the current card renderers and their menu. */
+export interface CardChrome
+  extends Pick<
+    ModuleCardProps,
+    "compact" | "onToggleDensity" | "onOpen" | "stale"
+  > {
   /** Opens the card menu (density, move up or down). */
   onLongPress(): void;
 }

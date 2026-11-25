@@ -388,9 +388,9 @@ test("a frame that changes CPU readouts leaves the host heading and unchanged GP
     })
   );
   expect(cpu).toHaveBeenCalledTimes(1);
-  expect(text.mock.calls.some(([props]) => props.role === "largeTitle")).toBe(
-    false
-  );
+  expect(
+    text.mock.calls.some(([props]) => props.variant === "largeTitle")
+  ).toBe(false);
   expect(gpu).not.toHaveBeenCalled();
 });
 

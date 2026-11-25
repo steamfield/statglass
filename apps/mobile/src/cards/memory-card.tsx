@@ -11,10 +11,9 @@ export function MemoryCard({ memory, totalBytes, ...chrome }: MemoryCardProps) {
   return (
     <ModuleCard
       {...chrome}
-      title={card.title}
+      card="memory"
+      content={card}
       accent="mem"
-      headline={card.headline}
-      spokenDetails={chrome.compact ? "" : card.spoken}
       unit={card.capacity ?? card.usedUnit}
     >
       {pressure && (
