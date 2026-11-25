@@ -115,8 +115,11 @@ Depends on: phase 2
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | a | M | src/core/mock/remote-alerts.ts | | | gpt-6.2-sol | pending | | |
 | b | M | src/app/routes/dashboard/alerts/ | | | gpt-6.2-sol | pending | | |
+| c | M | src-tauri/src/alerts/remote_alert_flow_tests.rs, src-tauri/src/alerts/mod.rs | phase 2 lanes | | gpt-6.2-sol | pending | | flow tests pass, each watched failing once |
 
 (Briefs written during phase 2.)
 
 ## Log
 - Plan critique (sonnet DA): demo filter could run zero tests (fixed: `--test alert_rules`, count checked). `recent_alerts` move unfinished: rejected, `src-tauri/src/history.rs` delegates to the engine since the scaffold. Lanes span two capabilities: accepted deviation, lanes already running. Lane b tests on new metrics: steered to existing metrics. Golden revision test: added to lane b by steer. A newer-build rule with an extra field decodes as Known and loses the field on re-save: accepted limitation (agents update from this Mac, so the agent is rarely newer).
+- 2026-11-24: User asked for test coverage per ce:writing-tests with the remote boundary mocked. Running phase 2 lanes get `tests-addendum.md` as a followup with their review fixes (fake peer over duplex, recording sender, fake clock, whole-result assertions, boundary cases, each test watched failing once). Added phase 3 lane c: cross-lane flow tests (a fake agent's synced page through the real Mirror, listener, delivery and floor to a recording sender; the rule commands against a fake peer). Phase 3 frontend lanes test through the mock transport plus one Playwright journey.
+- 2026-11-24: User asked whether "no feature flag" was a misunderstanding (they expected a PostHog rollout flag). The flag RFC revision 3 dropped was a Hello capability bit in the wire handshake, not a rollout flag; it was dropped because remote Macs would also advertise it, and an old agent's `Unsupported` answer already gives the same signal (D-117). The repo has no PostHog or any telemetry, so no decision rested on it; D-140 stands.
