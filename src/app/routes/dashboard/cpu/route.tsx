@@ -1,3 +1,4 @@
+import { clusterViews, coreCounts } from "@core/cpu-clusters";
 import { formatPercent } from "@core/format";
 import { useNavigate } from "react-router";
 import { ModulePage } from "~/components/module-page";
@@ -8,7 +9,6 @@ import {
 import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
 import { CoreLoadCard } from "./_components/core-load-card";
 import { TotalCard } from "./_components/total-card";
-import { clusterViews, coreCounts } from "./_lib/clusters";
 
 /**
  * CPU page (plan 4.7). The total chart is the page's dominant

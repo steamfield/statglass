@@ -20,6 +20,7 @@ export function clusterViews(topology: readonly ClusterInfo[]): ClusterView[] {
 export function coreCounts(info: HostInfo): {
   performance: number;
   efficiency: number;
+  total: number;
 } {
   let performance = 0;
   let efficiency = 0;
@@ -27,5 +28,5 @@ export function coreCounts(info: HostInfo): {
     if (c.kind === "efficiency") efficiency += c.cores.length;
     else performance += c.cores.length;
   }
-  return { performance, efficiency };
+  return { performance, efficiency, total: performance + efficiency };
 }
