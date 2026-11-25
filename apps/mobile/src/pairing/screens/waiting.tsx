@@ -12,9 +12,11 @@ export function Waiting({
 }) {
   return (
     <>
-      <Text role="title">Waiting for approval on {host}</Text>
-      <Text role="body">Compare this code with the one shown on the host.</Text>
-      <Text role="cardFigure">{code}</Text>
+      <Text variant="title">Waiting for approval on {host}</Text>
+      <Text variant="body">
+        Compare this code with the one shown on the host.
+      </Text>
+      <Text variant="cardFigure">{code}</Text>
       <PairAction label="Cancel" secondary onPress={cancel} />
     </>
   );

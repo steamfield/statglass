@@ -94,10 +94,10 @@ export function HostsList({
       }
       ListHeaderComponent={
         <View className="gap-2">
-          {hosts.isPending && <Text role="body">Loading hosts…</Text>}
+          {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
           {hosts.isError && (
             <Text
-              role="body"
+              variant="body"
               accessibilityRole="alert"
               className="text-destructive!"
             >
@@ -107,14 +107,14 @@ export function HostsList({
           )}
           <RetryErrors failures={retryErrors} />
           {waitingForNetwork && (
-            <Text role="body" accessibilityLiveRegion="polite">
+            <Text variant="body" accessibilityLiveRegion="polite">
               {PHONE_OFFLINE_TITLE}
             </Text>
           )}
           {hosts.isSuccess && hosts.data.length === 0 && (
             <View className="gap-3 py-4">
-              <Text role="title">No hosts yet</Text>
-              <Text role="body">
+              <Text variant="title">No hosts yet</Text>
+              <Text variant="body">
                 Pair a Mac to view its live metrics and history, or explore the
                 demo hosts.
               </Text>
@@ -125,8 +125,8 @@ export function HostsList({
                 className="min-h-[44px] justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70"
               >
                 <Text
-                  role="body"
-                  className="font-semibold text-primary-foreground"
+                  variant="body"
+                  className="font-semibold! text-primary-foreground"
                 >
                   Add a host
                 </Text>
@@ -137,7 +137,7 @@ export function HostsList({
                 onPress={tryDemo}
                 className="min-h-[44px] justify-center px-4 py-2 active:opacity-70"
               >
-                <Text role="body" className="text-link">
+                <Text variant="body" className="text-link">
                   Try demo hosts
                 </Text>
               </Pressable>
@@ -160,14 +160,18 @@ function RetryErrors({ failures }: { failures: HostRetryFailure[] }) {
   const multiple = failures.length > 1;
   return (
     <View className="gap-1">
-      <Text role="body" accessibilityRole="alert" className="text-destructive!">
+      <Text
+        variant="body"
+        accessibilityRole="alert"
+        className="text-destructive!"
+      >
         {multiple
           ? `Couldn't reconnect ${failures.length} hosts`
           : `Couldn't reconnect ${first.displayName}: ${first.reason}`}
       </Text>
       {multiple &&
         failures.map(({ id, displayName, reason }) => (
-          <Text key={id} role="caption">{`${displayName}: ${reason}`}</Text>
+          <Text key={id} variant="caption">{`${displayName}: ${reason}`}</Text>
         ))}
     </View>
   );

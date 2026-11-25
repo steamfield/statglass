@@ -26,7 +26,7 @@ function CoreHistory() {
     { columns: 24 }
   );
   return (
-    <Text role="body">
+    <Text variant="body">
       {query.data ? "Core history loaded" : "Loading cores…"}
     </Text>
   );
@@ -40,10 +40,10 @@ function EventFilters() {
   return (
     <>
       {chart.data && (
-        <Text role="body">Chart events {chart.data.page.events.length}</Text>
+        <Text variant="body">Chart events {chart.data.page.events.length}</Text>
       )}
       {power.data && (
-        <Text role="body">Power events {power.data.page.events.length}</Text>
+        <Text variant="body">Power events {power.data.page.events.length}</Text>
       )}
     </>
   );

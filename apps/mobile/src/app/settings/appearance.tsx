@@ -36,11 +36,11 @@ export default function AppearanceSettings() {
               onPress={() => set({ appearance: value })}
               className={`min-h-[44px] flex-row items-center justify-between gap-3 px-4 py-2 active:bg-secondary ${index ? "border-border-subtle border-t" : ""}`}
             >
-              <Text role="body" className="shrink">
+              <Text variant="body" className="shrink">
                 {label}
               </Text>
               {appearance === value && (
-                <Text role="body" className="text-link" accessible={false}>
+                <Text variant="body" className="text-link" accessible={false}>
                   ✓
                 </Text>
               )}

@@ -38,9 +38,9 @@ export function BatteryDetails({
     <WidgetAccent value="battery">
       {showCharge && (
         <View className="flex-row flex-wrap justify-between gap-2">
-          <Text role={CHARGE_ROLE}>{card.title}</Text>
+          <Text variant={CHARGE_ROLE}>{card.title}</Text>
           <Text
-            role={CHARGE_ROLE}
+            variant={CHARGE_ROLE}
             // NativeWind drops the CSS font-variant-numeric property.
             style={{ color: foreground, fontVariant: ["tabular-nums"] }}
           >

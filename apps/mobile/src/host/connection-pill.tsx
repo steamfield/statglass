@@ -55,7 +55,7 @@ export function ConnectionPill({
         }
       />
       <Text
-        {...{ role: "caption" }}
+        variant="caption"
         accessibilityLiveRegion={active && state !== "live" ? "polite" : "none"}
         className="shrink tabular-nums"
       >

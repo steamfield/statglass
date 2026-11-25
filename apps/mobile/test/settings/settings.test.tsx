@@ -33,7 +33,7 @@ jest.mock("expo-constants", () => {
 
 const routes = getMockContext({
   _layout: () => <Stack />,
-  index: () => <Text role="title">First launch</Text>,
+  index: () => <Text variant="title">First launch</Text>,
   "settings/_layout": SettingsLayout,
   "settings/index": SettingsIndex,
   "settings/hosts": HostsSettingsRoute,

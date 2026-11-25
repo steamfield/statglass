@@ -74,10 +74,10 @@ export function HostSettings() {
         contentInsetAdjustmentBehavior="automatic"
       >
         <View className="gap-2 px-4 pt-2 pb-safe-or-4">
-          {hosts.isPending && <Text role="body">Loading hosts…</Text>}
+          {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
           {hosts.isError && (
             <Text
-              role="body"
+              variant="body"
               accessibilityRole="alert"
               className="text-destructive!"
             >
@@ -86,14 +86,14 @@ export function HostSettings() {
             </Text>
           )}
           {hosts.isSuccess && hosts.data.length === 0 && (
-            <Text role="body">No hosts on this iPhone.</Text>
+            <Text variant="body">No hosts on this iPhone.</Text>
           )}
           {hosts.data?.map((host, index, list) => (
             <View
               key={host.id}
               className="rounded-xl border border-border bg-card px-3 pt-3 pb-1"
             >
-              <Text role="cardTitle">{host.display_name}</Text>
+              <Text variant="cardTitle">{host.display_name}</Text>
               <View className="flex-row flex-wrap items-center">
                 <EditButton
                   label={`Rename ${host.display_name}`}
@@ -170,7 +170,7 @@ function EditButton({
       className={`min-h-[44px] min-w-[44px] items-center justify-center px-2 py-2 active:opacity-70 ${disabled ? "opacity-40" : ""}`}
     >
       <Text
-        role="body"
+        variant="body"
         className={destructive ? "text-destructive!" : "text-link"}
       >
         {children}
@@ -232,12 +232,12 @@ function HostEditSheet({
         className="max-h-full grow-0 rounded-t-2xl border border-border bg-card"
       >
         <View className="gap-3 px-5 pt-5 pb-safe-or-5">
-          <Text role="title">
+          <Text variant="title">
             {rename ? "Rename host" : `Remove ${edit.host.display_name}?`}
           </Text>
           {rename ? (
             <>
-              <Text role="label">Name on this iPhone</Text>
+              <Text variant="label">Name on this iPhone</Text>
               <TextInput
                 accessibilityLabel="Name on this iPhone"
                 value={name}
@@ -251,7 +251,7 @@ function HostEditSheet({
               />
               {invalid && (
                 <Text
-                  role="caption"
+                  variant="caption"
                   accessibilityRole="alert"
                   className="text-destructive!"
                 >
@@ -260,13 +260,13 @@ function HostEditSheet({
               )}
             </>
           ) : (
-            <Text role="body">
+            <Text variant="body">
               This removes the host from this iPhone’s list.
             </Text>
           )}
           {removeError && (
             <Text
-              role="caption"
+              variant="caption"
               accessibilityRole="alert"
               className="text-destructive!"
             >

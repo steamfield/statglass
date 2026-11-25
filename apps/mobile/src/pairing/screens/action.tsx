@@ -22,11 +22,11 @@ export function PairAction({
       className={`min-h-[44px] items-center justify-center rounded-xl px-4 py-2 active:opacity-70 ${surface} ${disabled ? "opacity-50" : ""}`}
     >
       <Text
-        role="body"
+        variant="body"
         className={
           secondary
             ? "text-center"
-            : "text-center font-semibold text-primary-foreground!"
+            : "text-center font-semibold! text-primary-foreground!"
         }
       >
         {label}

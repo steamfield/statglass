@@ -45,7 +45,7 @@ export function ChartAnnotations({
         </Svg>
       )}
       <Text
-        role="caption"
+        variant="caption"
         accessibilityLabel={a.label}
         className={
           a.variant === "pill"

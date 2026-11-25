@@ -30,7 +30,7 @@ export default function DataSettings() {
     >
       <View className="gap-2 px-4 pt-2 pb-safe-or-4">
         <View className="min-h-[44px] flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-2">
-          <Text role="body" className="flex-1">
+          <Text variant="body" className="flex-1">
             Live updates on cellular
           </Text>
           <Switch
@@ -42,12 +42,12 @@ export default function DataSettings() {
             trackColor={{ true: colors.primary }}
           />
         </View>
-        <Text role="caption" className="px-4">
+        <Text variant="caption" className="px-4">
           When this is off, the host screen updates every 5 seconds on cellular.
         </Text>
         {error && (
           <Text
-            role="caption"
+            variant="caption"
             accessibilityRole="alert"
             className="px-4 text-destructive!"
           >

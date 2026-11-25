@@ -78,7 +78,7 @@ export function HostScreen() {
         </PagerHost.Provider>
       ) : (
         <Text
-          {...{ role: "body" }}
+          variant="body"
           className="px-4 py-5"
           accessibilityLiveRegion="polite"
         >

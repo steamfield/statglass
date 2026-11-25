@@ -33,10 +33,10 @@ export default function AboutSettings() {
               accessibilityValue={{ text: value }}
               className={`min-h-[44px] flex-row flex-wrap items-center justify-between gap-2 px-4 py-3 ${index ? "border-border-subtle border-t" : ""}`}
             >
-              <Text role="body" className="shrink">
+              <Text variant="body" className="shrink">
                 {label}
               </Text>
-              <Text role="label" className="shrink">
+              <Text variant="label" className="shrink">
                 {value}
               </Text>
             </View>

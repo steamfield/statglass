@@ -64,6 +64,7 @@ export function expoConfigFor(
     plugins: [
       "expo-router",
       "expo-status-bar",
+      "expo-localization",
       [
         "expo-camera",
         {

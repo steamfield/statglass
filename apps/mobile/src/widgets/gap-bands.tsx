@@ -127,7 +127,7 @@ function GapCaption({
             </Svg>
           )}
           <Text
-            role="caption"
+            variant="caption"
             className="shrink text-fg-subtle"
             numberOfLines={position ? 1 : undefined}
           >

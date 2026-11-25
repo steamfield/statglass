@@ -214,7 +214,7 @@ export function HostPage({
       contentContainerClassName="gap-4 px-4 pb-5 pt-3"
     >
       <View className="gap-2">
-        <Text {...{ role: "largeTitle" }}>{host.display_name}</Text>
+        <Text variant="largeTitle">{host.display_name}</Text>
         <ConnectionPill
           host={host.id}
           connection={connection}

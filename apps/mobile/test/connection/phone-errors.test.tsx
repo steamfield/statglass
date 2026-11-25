@@ -20,7 +20,7 @@ const context = getMockContext({
   _layout: () => <Stack screenOptions={{ headerShown: false }} />,
   "(hosts)/index": () => <View />,
   "(hosts)/[host]/index": HostScreen,
-  pair: () => <Text role="title">Pairing screen</Text>,
+  pair: () => <Text variant="title">Pairing screen</Text>,
 });
 const localNetworkFixture = localNetworkProblem();
 

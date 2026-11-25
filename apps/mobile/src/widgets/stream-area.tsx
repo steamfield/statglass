@@ -33,7 +33,9 @@ import { GapBands } from "./gap-bands";
 type Scheme = keyof typeof themeColors;
 
 /** StreamArea for the phone; takes the same data as the desktop widget. */
-export function StreamArea(data: StreamAreaData) {
+export function StreamArea(
+  data: StreamAreaData & { variant?: "chart" | "spark" }
+) {
   const {
     accent,
     ariaLabel,
@@ -72,7 +74,7 @@ export function StreamArea(data: StreamAreaData) {
   return (
     <View>
       {ceilingLabel && (
-        <Text role="caption" className="text-fg-faint tabular-nums">
+        <Text variant="caption" className="text-fg-faint tabular-nums">
           {ceilingLabel}
         </Text>
       )}
@@ -131,7 +133,7 @@ export function StreamArea(data: StreamAreaData) {
         )}
       </View>
       {windowLabel && (
-        <Text role="caption" className="self-end text-fg-faint tabular-nums">
+        <Text variant="caption" className="self-end text-fg-faint tabular-nums">
           {windowLabel}
         </Text>
       )}

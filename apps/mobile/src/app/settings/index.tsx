@@ -59,7 +59,7 @@ export default function SettingsIndex() {
                 onPress={() => router.push(href)}
                 className={`min-h-[44px] flex-row items-center justify-between gap-2 px-4 py-2 active:bg-secondary ${index ? "border-border-subtle border-t" : ""}`}
               >
-                <Text role="body" className="shrink">
+                <Text variant="body" className="shrink">
                   {title}
                 </Text>
                 <Svg

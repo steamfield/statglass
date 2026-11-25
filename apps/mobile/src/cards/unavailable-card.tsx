@@ -28,10 +28,10 @@ export function UnavailableCard({ module, state }: UnavailableCardProps) {
   return (
     <View className={`gap-2 ${CARD_SURFACE}`}>
       <CardGlow accent={accent} />
-      <Text role={CARD_TITLE_ROLE}>{title}</Text>
+      <Text variant={CARD_TITLE_ROLE}>{title}</Text>
       <View className="flex-row items-center gap-1.5">
         <StatusIcon kind="info" />
-        <Text role={MESSAGE_ROLE} className="shrink">
+        <Text variant={MESSAGE_ROLE} className="shrink">
           {unavailableText(state, "host") ?? "Not available"}
         </Text>
       </View>

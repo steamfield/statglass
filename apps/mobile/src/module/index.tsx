@@ -41,7 +41,7 @@ function ModuleLiveValues({
     return series.length === 1 ? formatted : `${label} ${formatted}`;
   });
   return (
-    <Text {...{ role: "label" }} className="tabular-nums">
+    <Text variant="label" className="tabular-nums">
       {`Now ${readings.join(" · ")}`}
     </Text>
   );
@@ -95,7 +95,7 @@ function ModuleHistory({
       <EventsList events={events} showDate={showDate}>
         <RangeControl value={windowMs} onChange={setWindowMs} />
         {!connected && (
-          <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+          <Text variant="label" accessibilityLiveRegion="polite">
             {remoteStatusLine(remote)?.label ?? "Reconnecting"}
           </Text>
         )}
@@ -116,13 +116,13 @@ function ModuleHistory({
               />
             </View>
             {loading && (
-              <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+              <Text variant="label" accessibilityLiveRegion="polite">
                 Loading history…
               </Text>
             )}
             {history.isError && !loading && (
               <Text
-                {...{ role: "label" }}
+                variant="label"
                 accessibilityLiveRegion="polite"
                 accessibilityRole={
                   errorTone(history.error) === "error" ? "alert" : undefined
@@ -140,13 +140,13 @@ function ModuleHistory({
                 className="min-h-[44px] min-w-[44px] justify-center self-start px-2 active:opacity-70"
                 onPress={() => void history.refetch()}
               >
-                <Text {...{ role: "label" }} className="text-link">
+                <Text variant="label" className="text-link">
                   Retry
                 </Text>
               </Pressable>
             )}
             {history.isSuccess && !hasSamples && (
-              <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+              <Text variant="label" accessibilityLiveRegion="polite">
                 No samples in this range
               </Text>
             )}
@@ -165,7 +165,7 @@ function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
       <View className="flex-1 bg-background px-4 py-5">
         <Stack.Screen options={{ title: HISTORY_MODULES[module].title }} />
         <Text
-          {...{ role: "label" }}
+          variant="label"
           accessibilityLiveRegion="polite"
           accessibilityRole={status.isError ? "alert" : undefined}
         >
@@ -190,7 +190,7 @@ export function ModuleScreen() {
   if (!host || typeof module !== "string" || !isHistoryModule(module)) {
     return (
       <View className="flex-1 bg-background px-4 py-5">
-        <Text {...{ role: "body" }}>This module isn’t available.</Text>
+        <Text variant="body">This module isn’t available.</Text>
       </View>
     );
   }

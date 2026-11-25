@@ -30,8 +30,8 @@ export function RangeControl({
             onPress={() => onChange(ms)}
           >
             <Text
-              {...{ role: "label" }}
-              className={selected ? "font-semibold text-foreground" : ""}
+              variant="label"
+              className={selected ? "font-semibold! text-foreground" : ""}
             >
               {ms === DAY_MS
                 ? "24 h"

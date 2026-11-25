@@ -25,7 +25,7 @@ export function PowerCard({
       <StackBar segments={[...card.segments]} />
       <StatList layout="grid" items={card.items} />
       {card.battery && <BatteryDetails card={card.battery} showCharge />}
-      {card.note && <Text role="caption">{card.note}</Text>}
+      {card.note && <Text variant="caption">{card.note}</Text>}
     </ModuleCard>
   );
 }

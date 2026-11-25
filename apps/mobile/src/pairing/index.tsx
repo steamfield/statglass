@@ -64,7 +64,7 @@ export function PairScreen() {
         contentInsetAdjustmentBehavior="automatic"
       >
         {waiting ? (
-          <Text role="body">Starting StatGlass…</Text>
+          <Text variant="body">Starting StatGlass…</Text>
         ) : (
           <StartupFailurePanel />
         )}
@@ -122,7 +122,7 @@ export function PairingFlow({
         return (
           <>
             <ActivityIndicator accessibilityLabel="Reading pairing code" />
-            <Text role="body">Reading pairing code…</Text>
+            <Text variant="body">Reading pairing code…</Text>
             <PairAction label="Cancel" secondary onPress={cancel} />
           </>
         );

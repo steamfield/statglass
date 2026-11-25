@@ -86,13 +86,13 @@ export function StackBar(data: StackBarData) {
             >
               <BarSwatch step={swatch} accent={accent} />
               <Text
-                role="caption"
+                variant="caption"
                 className={columns === "inline" ? "shrink" : "shrink grow"}
               >
                 {label}
               </Text>
               <Text
-                role="caption"
+                variant="caption"
                 className="shrink"
                 // NativeWind drops the CSS font-variant-numeric property.
                 style={{ color: foreground, fontVariant: ["tabular-nums"] }}

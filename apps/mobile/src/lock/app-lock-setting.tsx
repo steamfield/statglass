@@ -76,7 +76,7 @@ export function AppLockSetting() {
   return (
     <View className="gap-1 rounded-xl border border-border bg-card px-4 py-2">
       <View className="min-h-[44px] flex-row items-center gap-3">
-        <Text role="body" className="flex-1">
+        <Text variant="body" className="flex-1">
           App Lock
         </Text>
         <Switch
@@ -91,13 +91,13 @@ export function AppLockSetting() {
         />
       </View>
       {unenrolled && (
-        <Text role="label" className="pb-2">
+        <Text variant="label" className="pb-2">
           Set up Face ID or a passcode on this iPhone to use App Lock.
         </Text>
       )}
       {enrollmentError && (
         <Text
-          role="label"
+          variant="label"
           accessibilityRole="alert"
           className="pb-2 text-destructive!"
         >
@@ -106,7 +106,7 @@ export function AppLockSetting() {
       )}
       {promptError && (
         <Text
-          role="label"
+          variant="label"
           accessibilityRole="alert"
           className="pb-2 text-destructive!"
         >

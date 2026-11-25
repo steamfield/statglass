@@ -29,8 +29,8 @@ export function Scanner({
     <>
       {!isDevice || camera === "unavailable" ? (
         <>
-          <Text role="title">Camera is unavailable</Text>
-          <Text role="body">
+          <Text variant="title">Camera is unavailable</Text>
+          <Text variant="body">
             Paste the pairing code from the host to continue.
           </Text>
         </>
@@ -131,13 +131,13 @@ function CameraScanner({
   if (camera === "denied") {
     return (
       <>
-        <Text role="title">Camera access is off</Text>
-        <Text role="body">
+        <Text variant="title">Camera access is off</Text>
+        <Text variant="body">
           Allow camera access for StatGlass in Settings to scan a pairing code.
         </Text>
         <PairAction label="Open Settings" onPress={openSettings} />
         {settingsError && (
-          <Text role="caption" accessibilityRole="alert">
+          <Text variant="caption" accessibilityRole="alert">
             Couldn’t open Settings. Open it from the Home Screen or paste the
             code.
           </Text>
@@ -148,8 +148,8 @@ function CameraScanner({
   if (camera === "priming") {
     return (
       <>
-        <Text role="title">Scan a pairing code</Text>
-        <Text role="body">
+        <Text variant="title">Scan a pairing code</Text>
+        <Text variant="body">
           Allow camera access to scan the QR code shown on the host.
         </Text>
         <PairAction label="Continue" disabled={requesting} onPress={request} />
@@ -159,7 +159,7 @@ function CameraScanner({
 
   return (
     <>
-      <Text role="title">Scan QR</Text>
+      <Text variant="title">Scan QR</Text>
       <View className="h-64 overflow-hidden rounded-xl bg-card">
         <CameraView
           ref={view}

@@ -21,8 +21,8 @@ export function Paste({
 
   return (
     <>
-      <Text role="title">Paste code</Text>
-      <Text role="body">Paste the full pairing text from the host.</Text>
+      <Text variant="title">Paste code</Text>
+      <Text variant="body">Paste the full pairing text from the host.</Text>
       <TextInput
         accessibilityLabel="Pairing code"
         value={text}
@@ -38,7 +38,7 @@ export function Paste({
       />
       {empty && (
         <Text
-          role="caption"
+          variant="caption"
           accessibilityRole="alert"
           className="text-destructive!"
         >

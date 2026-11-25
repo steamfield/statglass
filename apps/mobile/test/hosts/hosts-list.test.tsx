@@ -30,19 +30,19 @@ const MINUTE = 60_000;
 
 function HostDetails() {
   const { host } = useLocalSearchParams();
-  return <Text role="title">{`Details for ${host}`}</Text>;
+  return <Text variant="title">{`Details for ${host}`}</Text>;
 }
 
 const routes = getMockContext({
   _layout: () => <Stack />,
-  index: () => <Text role="title">First launch</Text>,
+  index: () => <Text variant="title">First launch</Text>,
   "(hosts)/_layout": HostsLayout,
   "(hosts)/index": HostsRoute,
   "(hosts)/[host]/index": HostDetails,
   "(hosts)/[host]/[module]": HostDetails,
-  "settings/index": () => <Text role="title">Settings screen</Text>,
-  pair: () => <Text role="title">Pairing screen</Text>,
-  demo: () => <Text role="title">Demo entry</Text>,
+  "settings/index": () => <Text variant="title">Settings screen</Text>,
+  pair: () => <Text variant="title">Pairing screen</Text>,
+  demo: () => <Text variant="title">Demo entry</Text>,
 });
 
 async function renderHosts(

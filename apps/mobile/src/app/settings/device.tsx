@@ -30,8 +30,8 @@ export default function DeviceSettings() {
       <View className="gap-3 px-4 pt-2 pb-safe-or-4">
         {key ? (
           <View className="gap-2 rounded-xl border border-border bg-card p-4">
-            <Text role="cardTitle">Public key</Text>
-            <Text role="caption" className="font-mono" selectable>
+            <Text variant="cardTitle">Public key</Text>
+            <Text variant="caption" className="font-mono" selectable>
               {key}
             </Text>
             <Pressable
@@ -39,12 +39,12 @@ export default function DeviceSettings() {
               onPress={copy}
               className="min-h-[44px] min-w-[44px] justify-center self-start px-2 active:opacity-70"
             >
-              <Text role="body" className="text-link">
+              <Text variant="body" className="text-link">
                 Copy
               </Text>
             </Pressable>
             {shareError && (
-              <Text role="caption" accessibilityRole="alert">
+              <Text variant="caption" accessibilityRole="alert">
                 {shareError}
               </Text>
             )}
@@ -56,7 +56,7 @@ export default function DeviceSettings() {
             retry={retry}
           />
         ) : (
-          <Text role="body">
+          <Text variant="body">
             {available ? "Loading public key…" : "Available after pairing"}
           </Text>
         )}
