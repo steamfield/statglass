@@ -33,6 +33,8 @@ export interface CpuCardProps extends CardChrome {
 
 export interface MemoryCardProps extends CardChrome {
   memory: MemorySelection;
+  /** Installed capacity from the host record. */
+  totalBytes: number | null;
 }
 
 export interface GpuCardProps extends CardChrome {
@@ -43,6 +45,8 @@ export interface GpuCardProps extends CardChrome {
 export interface PowerCardProps extends CardChrome {
   power: PowerSelection;
   source: PowerSource | null;
+  /** Battery readings when Power and Battery share the card. */
+  battery: BatterySelection | null;
 }
 
 export interface NetworkCardProps extends CardChrome {
@@ -52,6 +56,7 @@ export interface NetworkCardProps extends CardChrome {
 
 export interface BatteryCardProps extends CardChrome {
   battery: BatterySelection;
+  source: PowerSource | null;
 }
 
 /** A module the host cannot run, in place of its card. */

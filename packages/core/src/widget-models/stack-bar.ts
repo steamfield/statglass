@@ -3,6 +3,7 @@
  * frequency residency) and the segments, legend rows and accessible name
  * both apps draw from it.
  */
+import { clamp01 } from "@core/chart-math";
 import type { Accent, ColorRef, SwatchStep } from "@core/widget-models/tokens";
 
 /** One segment of a {@link StackBarData}. */
@@ -55,10 +56,59 @@ export interface StackBarModel {
   }[];
 }
 
-/**
- * The bar's segments and legend.
- * @throws {Error} until the bar lane implements it
- */
-export function stackBarModel(_data: StackBarData): StackBarModel {
-  throw new Error("not implemented");
+function segmentColor(
+  segment: StackBarSegment,
+  accent: Accent | undefined
+): ColorRef {
+  if (segment.color !== undefined) return { kind: "css", value: segment.color };
+  const { step } = segment;
+  if (step === "track" || step === "none") {
+    // A track token with track: false reserves an unpainted segment.
+    return { kind: "token", name: "track" };
+  }
+  const scope = accent === undefined ? {} : { accent };
+  return step === "hatch"
+    ? { kind: "hatch", ...scope }
+    : { kind: "accent", step, ink: false, ...scope };
 }
+
+/** The bar's segments and legend. */
+export function stackBarModel(data: StackBarData): StackBarModel {
+  const segments: StackBarModel["segments"][number][] = [];
+  const legend: StackBarModel["legend"][number][] | null = data.showLegend
+    ? []
+    : null;
+  const labels: string[] | null = data.ariaLabel === undefined ? [] : null;
+  let empty = true;
+
+  for (const segment of data.segments) {
+    const { key, label, value, step, fraction } = segment;
+    legend?.push({ key, label, value, swatch: step });
+    labels?.push(`${label} ${value}`);
+    if (fraction === null) continue;
+    empty = false;
+    const grow = clamp01(fraction);
+    if (grow > 0) {
+      segments.push({
+        key,
+        grow,
+        color: segmentColor(segment, data.accent),
+        track: step === "track",
+      });
+    }
+  }
+
+  if (legend) {
+    data.extraLegend?.forEach(({ label, value }, index) => {
+      legend.push({ key: `extra-${index}`, label, value, swatch: "none" });
+    });
+  }
+  return {
+    ariaLabel: data.ariaLabel ?? labels?.join(", ") ?? "",
+    empty,
+    segments,
+    legend: legend ?? NO_LEGEND,
+  };
+}
+
+const NO_LEGEND: StackBarModel["legend"] = [];

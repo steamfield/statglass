@@ -1,5 +1,7 @@
-import { clamp01 } from "@core/chart-math";
-import type { MeterTrackData } from "@core/widget-models/meter-track";
+import {
+  type MeterTrackData,
+  meterTrackModel,
+} from "@core/widget-models/meter-track";
 import { cn } from "~/lib/utils";
 
 /**
@@ -23,7 +25,14 @@ export interface MeterTrackProps extends MeterTrackData {
  * A rounded track with a fill scaled from the left: a bar meter. Decorative:
  * every caller prints the figure beside it, so it is hidden from assistive tech.
  */
-export function MeterTrack({
+export function MeterTrack({ fraction, ...props }: MeterTrackProps) {
+  return (
+    <MeterTrackView {...props} fraction={meterTrackModel({ fraction }).fill} />
+  );
+}
+
+/** Draws a fill already resolved by the meter or inline bar model. */
+export function MeterTrackView({
   fraction,
   fill = "var(--a)",
   height = "h-1",
@@ -49,7 +58,7 @@ export function MeterTrack({
           )}
           style={{
             background: fill,
-            transform: `scaleX(${clamp01(fraction)})`,
+            transform: `scaleX(${fraction})`,
           }}
         />
       )}

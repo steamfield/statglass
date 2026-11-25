@@ -3,7 +3,10 @@
  * including the empty track for a missing value and no track at all where
  * the bar has no meaning.
  */
-import type { MeterTrackModel } from "@core/widget-models/meter-track";
+import {
+  type MeterTrackModel,
+  meterTrackModel,
+} from "@core/widget-models/meter-track";
 import type { Accent, RampStep } from "@core/widget-models/tokens";
 
 /** Data contract for the label, value and bar row, shared by both apps. */
@@ -37,10 +40,29 @@ export interface InlineBarModel {
   track: MeterTrackModel | null;
 }
 
-/**
- * The row's strings and track.
- * @throws {Error} until the bar lane implements it
- */
-export function inlineBarModel(_data: InlineBarData): InlineBarModel {
-  throw new Error("not implemented");
+/** The row's strings and track. */
+export function inlineBarModel({
+  label,
+  value,
+  fraction,
+  accent,
+  rampStep = 1,
+  layout = "stacked",
+}: InlineBarData): InlineBarModel {
+  const scope = accent === undefined ? {} : { accent };
+  return {
+    label,
+    value,
+    layout,
+    track:
+      fraction === "none"
+        ? null
+        : {
+            fill: meterTrackModel({ fraction }).fill,
+            color:
+              rampStep === "hatch"
+                ? { kind: "hatch", ...scope }
+                : { kind: "accent", step: rampStep, ink: false, ...scope },
+          },
+  };
 }

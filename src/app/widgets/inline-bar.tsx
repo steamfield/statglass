@@ -1,26 +1,29 @@
-import type { InlineBarData } from "@core/widget-models/inline-bar";
-import type { RampStep } from "@core/widget-models/tokens";
+import {
+  type InlineBarData,
+  inlineBarModel,
+} from "@core/widget-models/inline-bar";
+import type { MeterTrackModel } from "@core/widget-models/meter-track";
 import { cn } from "~/lib/utils";
 import { accentVars, rampBackground } from "./lib/accent";
 import { FIELD_LABEL } from "./lib/classes";
-import { MeterTrack } from "./meter-track";
+import { MeterTrackView } from "./meter-track";
 
 /** Props of the label, value and bar row: the shared data contract. */
 export type InlineBarProps = InlineBarData;
 
 function Track({
-  fraction,
-  step,
+  track,
   height,
 }: {
-  fraction: number | null;
-  step: RampStep;
+  track: MeterTrackModel;
   height: "h-1" | "h-1.5";
 }) {
   return (
-    <MeterTrack
-      fraction={fraction}
-      fill={rampBackground(step)}
+    <MeterTrackView
+      fraction={track.fill}
+      fill={rampBackground(
+        track.color.kind === "accent" ? track.color.step : "hatch"
+      )}
       height={height}
       transition
     />
@@ -28,14 +31,9 @@ function Track({
 }
 
 /** Label, value and a horizontal bar. */
-export function InlineBar({
-  label,
-  value,
-  fraction,
-  accent,
-  rampStep = 1,
-  layout = "stacked",
-}: InlineBarProps) {
+export function InlineBar(data: InlineBarProps) {
+  const { accent } = data;
+  const { label, value, layout, track } = inlineBarModel(data);
   const style = accent ? accentVars(accent) : undefined;
 
   if (layout === "row") {
@@ -48,16 +46,12 @@ export function InlineBar({
         <span
           className={cn(
             "figures text-right",
-            fraction === null && "text-muted-foreground"
+            track?.fill === null && "text-muted-foreground"
           )}
         >
           {value}
         </span>
-        {fraction === "none" ? (
-          <span />
-        ) : (
-          <Track fraction={fraction} step={rampStep} height="h-1" />
-        )}
+        {track ? <Track track={track} height="h-1" /> : <span />}
       </div>
     );
   }
@@ -76,20 +70,16 @@ export function InlineBar({
         <span
           className={cn(
             "figures text-label",
-            typeof fraction !== "number" && "text-muted-foreground"
+            (!track || track.fill === null) && "text-muted-foreground"
           )}
         >
           {value}
         </span>
       </div>
-      {fraction === "none" ? (
-        <span aria-hidden className={wide ? "h-1.5" : "h-1"} />
+      {track ? (
+        <Track track={track} height={wide ? "h-1.5" : "h-1"} />
       ) : (
-        <Track
-          fraction={fraction}
-          step={rampStep}
-          height={wide ? "h-1.5" : "h-1"}
-        />
+        <span aria-hidden className={wide ? "h-1.5" : "h-1"} />
       )}
     </div>
   );
