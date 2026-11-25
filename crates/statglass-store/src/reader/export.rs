@@ -94,6 +94,12 @@ impl Reader {
         let tier = match q.tier {
             TierChoice::Fixed(t) => t,
             TierChoice::Auto => self.auto_tier(host_ref, q.from_ms, q.to_ms)?,
+            // Scaffold stub: phase 3 lane b resolves it.
+            TierChoice::Covered(_) => {
+                return Err(StoreError::Usage(
+                    "covered tier choice not implemented".into(),
+                ));
+            }
         };
         let width = tier_width(tier)?;
         let gaps = if q.to_ms > q.from_ms {

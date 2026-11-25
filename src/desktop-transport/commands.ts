@@ -2,7 +2,7 @@
 
 import { invoke as __TAURI_INVOKE, Channel } from "@tauri-apps/api/core";
 import * as __TAURI_EVENT from "@tauri-apps/api/event";
-import type { AlertDestinationsChanged, AlertDestinationsView, ByteCount, Capabilities, CapabilitiesChanged, CliLinkStatus, CommandError, DeliveryOutcome, Destination, DiskIoDevices, DiskIoPage, DiskIoRequest, DockerComparisonPage, DockerComparisonRequest, DockerContainer, DockerContainerAction, DockerEngine, DockerEventsPage, DockerEventsRequest, DockerHistoryPage, DockerHistoryRequest, DockerLogBatch, DockerLogsRequest, DockerRetainedPage, DockerRetainedRequest, DockerRuntimeKind, DockerSettings, DockerSnapshot, DockerStorageOperation, DockerStorageReview, DockerStorageSelection, DockerStorageView, Edition, Event, EventRecorded, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest, HistoricalUsageReply, HistoricalUsageRequest, HistoryHealth, HistoryHealthChanged, HistoryPage, HistoryRequest, HostId, HostRecord, HostVitals, HostsChanged, LiveMsg, Micros, Millis, NavigateRequested, NetworkAddresses, NetworkByApp, ProcessResolution, ProcessSignalError, ProcessSort, RemoteHostConfig, RemoteHostPreparation, RemoteHostRecord, RemoteHostsChanged, RemoteSshConfigStatus, RemoteSshHostTrust, RemoteUpdateStatus, SensorDump, SeriesSelector, SeriesStats, SettingsChanged, SettingsPatch, SettingsSnapshot, SignalKind, SpaceFile, SpaceHighlight, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume, StarPromptAction, StarPromptChanged, StarPromptStatus, StoredProcess, SubscriptionInfo, UpdateStatus, UpdateStatusChanged, UsageByApp, UsageHistoryGrowth, UsageKey, UsageProcessReply, UsageProcessRequest, UsageSeries, WindowAppearance, WindowAppearanceChanged, WindowVisibilityChanged } from "@core/generated/types";
+import type { AlertDestinationsChanged, AlertDestinationsView, ByteCount, Capabilities, CapabilitiesChanged, CliLinkStatus, CommandError, DeliveryOutcome, Destination, DiskIoDevices, DiskIoPage, DiskIoRequest, DockerComparisonPage, DockerComparisonRequest, DockerContainer, DockerContainerAction, DockerEngine, DockerEventsPage, DockerEventsRequest, DockerHistoryPage, DockerHistoryRequest, DockerLogBatch, DockerLogsRequest, DockerRetainedPage, DockerRetainedRequest, DockerRuntimeKind, DockerSettings, DockerSnapshot, DockerStorageOperation, DockerStorageReview, DockerStorageSelection, DockerStorageView, Edition, Event, EventRecorded, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest, HistoricalUsageReply, HistoricalUsageRequest, HistoryHealth, HistoryHealthChanged, HistoryPage, HistoryRequest, HostId, HostRecord, HostVitals, HostsChanged, LiveMsg, Micros, Millis, NavigateRequested, NetworkAddresses, NetworkByApp, PairedDeviceInfo, PairingOffer, PairingStatus, ProcessResolution, ProcessSignalError, ProcessSort, RemoteHostConfig, RemoteHostPreparation, RemoteHostRecord, RemoteHostsChanged, RemoteSshConfigStatus, RemoteSshHostTrust, RemoteUpdateStatus, SensorDump, SeriesSelector, SeriesStats, SettingsChanged, SettingsPatch, SettingsSnapshot, SignalKind, SpaceFile, SpaceHighlight, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume, StarPromptAction, StarPromptChanged, StarPromptStatus, StoredProcess, SubscriptionInfo, UpdateStatus, UpdateStatusChanged, UsageByApp, UsageHistoryGrowth, UsageKey, UsageProcessReply, UsageProcessRequest, UsageSeries, WindowAppearance, WindowAppearanceChanged, WindowVisibilityChanged } from "@core/generated/types";
 
 /** Commands */
 export const commands = {
@@ -419,6 +419,20 @@ export const commands = {
 	 *  `invalid_argument` with the reason when `destination` is invalid.
 	 */
 	alertDestinationTest: (destination: Destination) => typedError<DeliveryOutcome, CommandError>(__TAURI_INVOKE("alert_destination_test", { destination })),
+	/**  Opens a pairing offer and returns its QR. Scaffold stub (phase 5 lane c). */
+	pairingStart: () => typedError<PairingOffer, CommandError>(__TAURI_INVOKE("pairing_start")),
+	/**  Where the offer `nonce` stands. Scaffold stub (phase 5 lane c). */
+	pairingStatus: (nonce: string) => typedError<PairingStatus, CommandError>(__TAURI_INVOKE("pairing_status", { nonce })),
+	/**  Approves the phone waiting on `nonce`. Scaffold stub (phase 5 lane c). */
+	pairingApprove: (nonce: string) => typedError<PairingStatus, CommandError>(__TAURI_INVOKE("pairing_approve", { nonce })),
+	/**  Denies the phone waiting on `nonce`. Scaffold stub (phase 5 lane c). */
+	pairingDeny: (nonce: string) => typedError<null, CommandError>(__TAURI_INVOKE("pairing_deny", { nonce })),
+	/**  Withdraws the offer `nonce`. Scaffold stub (phase 5 lane c). */
+	pairingCancel: (nonce: string) => typedError<null, CommandError>(__TAURI_INVOKE("pairing_cancel", { nonce })),
+	/**  The phones paired with this Mac. Scaffold stub (phase 5 lane c). */
+	pairedDevices: () => typedError<PairedDeviceInfo[], CommandError>(__TAURI_INVOKE("paired_devices")),
+	/**  Removes the device `tag`; false when no device has it. Scaffold stub (phase 5 lane c). */
+	revokeDevice: (tag: string) => typedError<boolean, CommandError>(__TAURI_INVOKE("revoke_device", { tag })),
 };
 
 /** Events */

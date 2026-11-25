@@ -2,7 +2,14 @@
 //! Only bridges authenticated local sockets; it never starts a collector or opens SQLite.
 use statglass_remote::{ControlRequest, SocketPaths, control_request, stdio_bridge};
 
+mod markers;
+mod pair;
+mod restricted;
+
 fn main() {
+    if let Some(code) = forced_command(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        std::process::exit(code);
+    }
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -21,6 +28,17 @@ fn main() {
     if let Err(error) = result {
         eprintln!("statglass-remote-helper: {error}");
         std::process::exit(1);
+    }
+}
+/// The forced commands an `authorized_keys` line runs (`restricted --device <tag>` and
+/// `pair --nonce <n>`); each returns its own exit code. `None` for every other command.
+fn forced_command(args: &[String]) -> Option<i32> {
+    match args {
+        [mode, flag, device] if mode == "restricted" && flag == "--device" => {
+            Some(restricted::run(device))
+        }
+        [mode, flag, nonce] if mode == "pair" && flag == "--nonce" => Some(pair::run(nonce)),
+        _ => None,
     }
 }
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -73,7 +91,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "usage: statglass-remote-helper serve --stdio | version --json | status | update-status --json | configure '<json>'".into(),
+                "usage: statglass-remote-helper serve --stdio | version --json | status | update-status --json | configure '<json>' | restricted --device <tag> | pair --nonce <n>".into(),
             );
         }
     }

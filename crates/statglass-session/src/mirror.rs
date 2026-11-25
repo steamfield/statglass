@@ -234,6 +234,16 @@ impl Mirror {
         }
     }
 
+    /// A mirror that keeps and syncs what `policy` says. Scaffold stub: only the budget
+    /// is applied until phase 3 lane b stores the policy.
+    pub fn with_policy(
+        history: Arc<statglass_engine::HistoryStore>,
+        host: HostId,
+        policy: crate::MirrorPolicy,
+    ) -> Self {
+        Self::new(history, host, policy.budget_mb())
+    }
+
     /// Applies the cardinality caps to a remote page or snapshot before anything is
     /// stored (D-116).
     fn cap(&self, layouts: &mut [WireLayout], rows: &mut [WireBucket]) {

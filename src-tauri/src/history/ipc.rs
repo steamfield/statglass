@@ -36,6 +36,7 @@ fn tier_choice(tier: TierRequest) -> TierChoice {
         TierRequest::Auto => TierChoice::Auto,
         TierRequest::S10 => TierChoice::Fixed(Tier::S10),
         TierRequest::M1 => TierChoice::Fixed(Tier::M1),
+        TierRequest::M15 => TierChoice::Fixed(Tier::M15),
     }
 }
 

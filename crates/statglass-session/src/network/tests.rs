@@ -47,14 +47,17 @@ fn loopback_link_local_and_unspecified_do_not_count() {
 const ONLINE: LocalNetwork = LocalNetwork {
     online: true,
     tailscale_up: true,
+    lan_up: true,
 };
 const OFFLINE: LocalNetwork = LocalNetwork {
     online: false,
     tailscale_up: false,
+    lan_up: false,
 };
 const NO_TAILSCALE: LocalNetwork = LocalNetwork {
     online: true,
     tailscale_up: false,
+    lan_up: true,
 };
 
 #[test]
@@ -166,7 +169,8 @@ fn a_mac_with_only_bridge_addresses_reads_offline() {
         net,
         LocalNetwork {
             online: false,
-            tailscale_up: false
+            tailscale_up: false,
+            lan_up: false,
         }
     );
 }
@@ -201,7 +205,8 @@ fn a_carrier_nat_address_on_wifi_is_online_not_tailscale() {
         summary(&[("en0", "100.72.1.5")]),
         LocalNetwork {
             online: true,
-            tailscale_up: false
+            tailscale_up: false,
+            lan_up: true,
         }
     );
 }
@@ -212,7 +217,8 @@ fn tailscale_on_utun_beside_a_lan_address_is_online_with_tailscale() {
         summary(&[("utun4", "100.101.2.3"), ("en0", "192.168.1.5")]),
         LocalNetwork {
             online: true,
-            tailscale_up: true
+            tailscale_up: true,
+            lan_up: true,
         }
     );
 }
@@ -223,7 +229,8 @@ fn tailscale_alone_is_offline_with_tailscale_up() {
         summary(&[("utun4", "100.101.2.3")]),
         LocalNetwork {
             online: false,
-            tailscale_up: true
+            tailscale_up: true,
+            lan_up: false,
         }
     );
 }
@@ -234,7 +241,8 @@ fn linux_tailscale0_counts_as_tailscale_not_online() {
         summary(&[("tailscale0", "fd7a:115c:a1e0::5")]),
         LocalNetwork {
             online: false,
-            tailscale_up: true
+            tailscale_up: true,
+            lan_up: false,
         }
     );
 }

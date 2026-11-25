@@ -29,6 +29,7 @@ pub mod live;
 mod live_process;
 mod logging;
 mod notify;
+mod pairing;
 mod platform;
 pub mod popover;
 pub mod process_signal;
@@ -136,6 +137,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             star_prompt::get_star_prompt_status, star_prompt::act_on_star_prompt,
             alerts::commands::alert_destinations_get, alerts::commands::alert_destination_save,
             alerts::commands::alert_destination_delete, alerts::commands::alert_destination_test,
+            pairing::pairing_start, pairing::pairing_status, pairing::pairing_approve,
+            pairing::pairing_deny, pairing::pairing_cancel, pairing::paired_devices,
+            pairing::revoke_device,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,
@@ -213,6 +217,7 @@ pub fn run() {
             let background_restart = updates::take_background_restart(app.handle());
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
+            app.manage(pairing::PairingState::default());
             app_menu::install(app.handle())?;
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]

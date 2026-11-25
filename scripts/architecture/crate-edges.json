@@ -29,6 +29,15 @@
       "statglass-store"
     ]
   },
+  "statglass-ipc": {
+    "normal": [
+      "statglass-schema",
+      "statglass-store",
+      "statglass-engine",
+      "statglass-session"
+    ],
+    "dev": []
+  },
   "statglass-remote": {
     "normal": [
       "statglass-schema",
@@ -60,7 +69,8 @@
       "statglass-remote",
       "statglass-update",
       "statglass-query",
-      "statglass-notify"
+      "statglass-notify",
+      "statglass-ipc"
     ],
     "dev": []
   },

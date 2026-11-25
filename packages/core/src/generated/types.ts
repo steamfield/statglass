@@ -563,7 +563,13 @@ export type CommandError = { kind: "update"; message: string } |
  *  The public address lookup failed: offline, the service unreachable or timing
  *  out, or an answer that is not an address (a captive portal).
  */
-{ kind: "public_ip"; message: string };
+{ kind: "public_ip"; message: string } |
+/**  The other Mac is reachable but StatGlass is not running there. */
+{ kind: "remote_not_running"; message: string } |
+/**  The other Mac's StatGlass has remote monitoring turned off. */
+{ kind: "remote_monitoring_off"; message: string } |
+/**  Pairing a phone, or editing the paired devices, failed (RFC 2.4, 2.5). */
+{ kind: "pairing"; message: string };
 
 export type Condition =
 /**  Any series matching `series` compared with `value` in the metric's unit. */
@@ -2255,6 +2261,36 @@ export type OverviewSettings = {
 	hosts?: boolean,
 };
 
+/**  One phone with a key in this Mac's `authorized_keys`. */
+export type PairedDeviceInfo = {
+	tag: string,
+	name: string,
+	fingerprint: string,
+	/**  When the phone last connected; `None` when it never has. */
+	last_seen_ms: number | null,
+};
+
+/**  One open pairing, as the sheet shows it. */
+export type PairingOffer = {
+	nonce: string,
+	/**  The six-character code the phone shows back for the user to compare. */
+	code: string,
+	/**  The QR carrying the pairing payload, as an SVG document. */
+	qr_svg: string,
+	/**  The same payload as text, for pasting when the camera can't read the QR. */
+	text: string,
+	expires_ms: number,
+};
+
+/**  Where an open pairing stands. */
+export type PairingStatus =
+/**  No phone has used the QR yet. */
+{ kind: "waiting" } |
+/**  A phone used the QR and waits for the user's approval. */
+{ kind: "pending"; device_name: string; model: string; code: string } |
+/**  Approved: `device` is the new device's tag. */
+{ kind: "paired"; device: string } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; message: string };
+
 /**  Why Performance mode is in effect (D-088). */
 export type PerformanceReason = "off" |
 /**  The user turned it on in Settings. */
@@ -2517,7 +2553,11 @@ export type RemoteDockerAccess =
 /**  There is a socket this login cannot use; containers show by short id. */
 "unreadable" | "readable";
 
-export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "host_key" | "agent_not_running" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down";
+export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "host_key" | "agent_not_running" |
+/**  The other Mac answered SSH but its StatGlass app is not running. */
+"app_not_running" |
+/**  The other Mac's StatGlass has remote monitoring turned off. */
+"monitoring_off" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down";
 
 export type RemoteHostConfig = {
 	id: string,
@@ -3071,7 +3111,7 @@ export type TierRequest =
  *  10 s buckets while they cover the start of the range (24 h); otherwise 1 min while
  *  minutes cover it (7 days), else 15 min.
  */
-"auto" | "s10" | "m1";
+"auto" | "s10" | "m1" | "m15";
 
 export type UnitSettings = {
 	temperature: TemperatureUnit,

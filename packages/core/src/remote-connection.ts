@@ -145,6 +145,10 @@ function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
       return "local_offline";
     case "tailscale_down":
       return "tailscale_down";
+    // Generic until the app-not-running and monitoring-off states get their own
+    // wording (phase 5 lane c).
+    case "app_not_running":
+    case "monitoring_off":
     case "unreachable":
     case null:
       return "unreachable";

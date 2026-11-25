@@ -24,6 +24,7 @@ statglass-notify = { path = "crates/statglass-notify" }
 statglass-mobile = { path = "crates/statglass-mobile" }
 statglass-session = { path = "crates/statglass-session" }
 statglass-ssh = { path = "crates/statglass-ssh" }
+statglass-ipc = { path = "crates/statglass-ipc" }
 
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"
@@ -62,6 +63,10 @@ uniffi = { version = "=0.32.2", default-features = false }
 # needs CMake) and is already in the tree through rustls. No RSA, DSA or compression:
 # the phone's keys are P-256 only.
 russh = { version = "=0.65.4", default-features = false, features = ["ring"] }
+
+# The pairing QR (D-151): SVG on the Mac's sheet, Unicode blocks on the agent's terminal.
+# Exact pin and no default features, so no image codec enters the tree.
+qrcode = { version = "=0.15.0", default-features = false, features = ["svg"] }
 
 [workspace.lints.clippy]
 # Denied in non-test code; clippy.toml allows it in tests.

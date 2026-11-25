@@ -397,7 +397,7 @@ fn one_unreadable_saved_host_does_not_drop_the_others() {
 fn agent_install_errors_map_to_kinds_the_ui_explains() {
     use statglass_remote::AgentLayout;
     let kind = |e: AgentInstallError| {
-        serde_json::to_value(CommandError::from(e)).unwrap()["kind"]
+        serde_json::to_value(agent_install_error(e)).unwrap()["kind"]
             .as_str()
             .unwrap()
             .to_owned()
@@ -454,7 +454,7 @@ fn agent_install_errors_map_to_kinds_the_ui_explains() {
     ] {
         assert_eq!(kind(error), expected);
     }
-    let failed = CommandError::from(AgentInstallError::UpdateFailed {
+    let failed = agent_install_error(AgentInstallError::UpdateFailed {
         cause: Box::new(AgentInstallError::NoDigestTool),
         restored: true,
     });

@@ -13,6 +13,10 @@ pub enum ConnectionFailureKind {
     Authentication,
     HostKey,
     AgentNotRunning,
+    /// The other Mac answered SSH but its StatGlass app is not running.
+    AppNotRunning,
+    /// The other Mac's StatGlass has remote monitoring turned off.
+    MonitoringOff,
     Incompatible,
     IdentityChanged,
     Protocol,
@@ -37,23 +41,26 @@ pub struct RouteFailure {
 
 impl ConnectionFailureKind {
     /// How actionable this cause is from this Mac; lower wins when targets fail
-    /// differently (local_offline, tailscale_down, agent_not_running, refused, timeout,
-    /// no_route, name_not_resolved, unreachable, then the blocking kinds).
+    /// differently (local_offline, tailscale_down, monitoring_off, app_not_running,
+    /// agent_not_running, refused, timeout, no_route, name_not_resolved, unreachable, then
+    /// the blocking kinds).
     pub fn priority(self) -> u8 {
         match self {
             Self::LocalOffline => 0,
             Self::TailscaleDown => 1,
-            Self::AgentNotRunning => 2,
-            Self::Refused => 3,
-            Self::Timeout => 4,
-            Self::NoRoute => 5,
-            Self::NameNotResolved => 6,
-            Self::Unreachable => 7,
-            Self::Authentication => 8,
-            Self::HostKey => 9,
-            Self::Incompatible => 10,
-            Self::IdentityChanged => 11,
-            Self::Protocol => 12,
+            Self::MonitoringOff => 2,
+            Self::AppNotRunning => 3,
+            Self::AgentNotRunning => 4,
+            Self::Refused => 5,
+            Self::Timeout => 6,
+            Self::NoRoute => 7,
+            Self::NameNotResolved => 8,
+            Self::Unreachable => 9,
+            Self::Authentication => 10,
+            Self::HostKey => 11,
+            Self::Incompatible => 12,
+            Self::IdentityChanged => 13,
+            Self::Protocol => 14,
         }
     }
 
@@ -80,6 +87,8 @@ impl ConnectionFailureKind {
             RemoteError::Authentication(_) => Self::Authentication,
             RemoteError::HostKey(_) => Self::HostKey,
             RemoteError::AgentNotRunning(_) => Self::AgentNotRunning,
+            RemoteError::AppNotRunning(_) => Self::AppNotRunning,
+            RemoteError::MonitoringOff(_) => Self::MonitoringOff,
             RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. } => {
                 Self::Incompatible
             }
@@ -348,6 +357,7 @@ mod tests {
         status.apply_network(crate::network::LocalNetwork {
             online,
             tailscale_up: true,
+            lan_up: online,
         });
         let wait = if status.retrying {
             backoff.next_wait(status.offline_failure(), 1_000)

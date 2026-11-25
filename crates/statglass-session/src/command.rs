@@ -20,6 +20,30 @@ pub enum RemoteCommand {
         #[serde(default)]
         socket: Option<String>,
     },
+    /// A restricted key whose `authorized_keys` line forces the command on the host
+    /// (RFC 2.3). The session sends only the bare token, which the forced command reads
+    /// from `SSH_ORIGINAL_COMMAND`.
+    Restricted { forced: ForcedToken },
+}
+
+/// The bare `SSH_ORIGINAL_COMMAND` a forced-command key sends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForcedToken {
+    /// Start the restricted stdio session.
+    Serve,
+    /// Run the one-time pairing exchange (RFC 2.4).
+    Pair,
+}
+
+impl ForcedToken {
+    /// The token as the host's forced command compares it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Serve => "serve",
+            Self::Pair => "pair",
+        }
+    }
 }
 
 impl Default for RemoteCommand {
@@ -48,6 +72,7 @@ impl RemoteCommand {
                 }
                 sh_c(&inner)
             }
+            Self::Restricted { forced } => Ok(forced.as_str().to_owned()),
         }
     }
 }
@@ -164,5 +189,28 @@ mod tests {
             RemoteCommand::default().serve_command().unwrap(),
             helper_command("", "serve --stdio")
         );
+    }
+
+    #[test]
+    fn a_restricted_key_sends_only_its_bare_token_and_desktop_json_is_unchanged() {
+        let serve = RemoteCommand::Restricted {
+            forced: ForcedToken::Serve,
+        };
+        let pair = RemoteCommand::Restricted {
+            forced: ForcedToken::Pair,
+        };
+        assert_eq!(serve.serve_command().unwrap(), "serve");
+        assert_eq!(pair.serve_command().unwrap(), "pair");
+        assert_eq!(
+            serde_json::to_value(&pair).unwrap(),
+            serde_json::json!({ "forced": "pair" })
+        );
+        let mac: RemoteCommand = serde_json::from_str(r#""/Applications/x""#).unwrap();
+        assert_eq!(mac, RemoteCommand::MacHelper("/Applications/x".into()));
+        let agent: RemoteCommand =
+            serde_json::from_str(r#"{"bin":"/usr/bin/statglass-agent","system":true}"#).unwrap();
+        assert!(matches!(agent, RemoteCommand::Agent { system: true, .. }));
+        let back: RemoteCommand = serde_json::from_str(r#"{"forced":"serve"}"#).unwrap();
+        assert_eq!(back, serve);
     }
 }

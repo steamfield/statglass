@@ -4100,6 +4100,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "qrcode"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ace1a365f55004297f2cf24acfd96d02966246ca423385273b58a7dc873ee14d"
+
+[[package]]
 name = "quick-xml"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5316,6 +5322,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-web-kit",
  "png 0.17.16",
+ "qrcode",
  "rustix",
  "serde",
  "serde_json",
@@ -5324,6 +5331,7 @@ dependencies = [
  "specta",
  "specta-typescript",
  "statglass-engine",
+ "statglass-ipc",
  "statglass-notify",
  "statglass-proto",
  "statglass-query",
@@ -5358,6 +5366,7 @@ name = "statglass-agent"
 version = "0.14.0"
 dependencies = [
  "anyhow",
+ "qrcode",
  "rustix",
  "serde",
  "serde_json",
@@ -5435,6 +5444,23 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "statglass-ipc"
+version = "0.14.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "specta",
+ "statglass-engine",
+ "statglass-schema",
+ "statglass-session",
+ "statglass-store",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -4771,3 +4771,16 @@ Date: 2026-11-24. Answers RFC open question 4 (RFC 3.3).
 - A mobile release supports hosts running any of the last three desktop minor versions and any agent version released in the last 90 days.
 - `compat/mobile-protocol.json` records the protocol range and features of the current and previous App Store builds. It is empty until the first release. The desktop release script refuses to tag a build that drops anything listed there.
 - The proto skew tests add the oldest supported phone build as a pinned peer. `RemoteIncompatible` splits into "Update StatGlass on <host>" and "Update this app".
+
+## D-151: The pairing key and the device key are both P-256
+
+Date: 2026-11-24. Amends RFC `plan/rfc-ios-app.md` 2.4 and D-145.
+
+- The one-time pairing key the QR carries is P-256 (`ecdsa-sha2-nistp256`), not Ed25519. The phone's SSH client signs only through `statglass-ssh`'s `Signer`, which is P-256 only, and the device key is P-256 because the Secure Enclave holds P-256 keys only; one key type keeps one signer path for both.
+- The QR carries the pairing key's 32-byte private scalar. Its `authorized_keys` line is `restrict,expiry-time="YYYYMMDDHHMMZ",command="<helper> pair --nonce <n>" ecdsa-sha2-nistp256 <b64> statglass-pairing:<n>`, always in UTC.
+- A device line is `restrict,command="<helper> restricted --device <tag>" ecdsa-sha2-nistp256 <b64> statglass-mobile:<tag> <name>`. The tag is the first 3 bytes of the SHA-256 of the SEC1 public key, as 6 uppercase hex characters.
+- "Pair iPhone" refuses with guidance when the host's `ssh -V` reports OpenSSH below 7.7.
+
+### Revisit when
+
+- The phone gains a non-Secure-Enclave key type (the RFC 2.2 Ed25519 fallback for hosts that refuse ECDSA): the pairing key may then follow the device key type.

@@ -249,6 +249,7 @@ pub enum TierRequest {
     Auto,
     S10,
     M1,
+    M15,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, specta::Type)]

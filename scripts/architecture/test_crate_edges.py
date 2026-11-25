@@ -47,6 +47,15 @@ class CrateEdges(unittest.TestCase):
         self.assertIn("forbidden normal edge: statglass-session -> statglass-remote", result.stderr)
         self.assertNotIn("statglass-session -> statglass-engine", result.stderr)
 
+    def test_ipc_cannot_depend_on_remote(self):
+        result = self.check_graph([{"name": "statglass-ipc", "dependencies": [
+            {"name": "statglass-session", "kind": None, "path": "/session"},
+            {"name": "statglass-remote", "kind": None, "path": "/remote"},
+        ]}])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("forbidden normal edge: statglass-ipc -> statglass-remote", result.stderr)
+        self.assertNotIn("statglass-ipc -> statglass-session", result.stderr)
+
     def test_new_member_requires_review(self):
         self.assertNotEqual(self.check_graph([{"name": "statglass-new", "dependencies": []}]).returncode, 0)
 

@@ -11,6 +11,10 @@ pub struct LocalNetwork {
     /// An up, running Tailscale interface (`utun*`, `tailscale*`) has a Tailscale
     /// address (100.64.0.0/10 or fd7a:115c:a1e0::/48).
     pub tailscale_up: bool,
+    /// A route to the host's LAN may exist: an up interface other than cellular
+    /// (`pdp_ip*`) and tunnels (`utun*`) has a usable address. Cellular alone counts as
+    /// LAN-down. Until phase 3 lane c refines it, `summarize` sets it to `online`.
+    pub lan_up: bool,
 }
 
 /// How one interface address counts toward [`LocalNetwork`].
@@ -26,6 +30,7 @@ pub enum AddressClass {
 const UNKNOWN_NETWORK: LocalNetwork = LocalNetwork {
     online: true,
     tailscale_up: true,
+    lan_up: true,
 };
 
 /// Tailscale's IPv6 ULA prefix, fd7a:115c:a1e0::/48, as its first three segments.
@@ -113,6 +118,7 @@ fn summarize(addresses: &[interfaces::InterfaceAddress]) -> LocalNetwork {
     let mut net = LocalNetwork {
         online: false,
         tailscale_up: false,
+        lan_up: false,
     };
     for entry in addresses {
         match class_on_interface(entry) {
@@ -121,6 +127,7 @@ fn summarize(addresses: &[interfaces::InterfaceAddress]) -> LocalNetwork {
             AddressClass::Routable | AddressClass::Ignored => {}
         }
     }
+    net.lan_up = net.online;
     net
 }
 

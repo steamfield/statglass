@@ -38,6 +38,10 @@ statglass-update.workspace = true
 statglass-query.workspace = true
 # What alert notifications and destination messages say (plan/rfc-alerts.md).
 statglass-notify.workspace = true
+# CommandError and the platform-neutral command layer shared with the phone.
+statglass-ipc.workspace = true
+# The pairing sheet's QR, rendered to SVG (pairing.rs).
+qrcode.workspace = true
 # `specta` implements specta::Type for `tauri::ipc::Channel`, so `subscribe_live` exports.
 tauri = { version = "2.12.1", features = ["specta", "tray-icon"] }
 tauri-plugin-opener = "2.7.0"

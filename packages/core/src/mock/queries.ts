@@ -364,6 +364,7 @@ function exportTier(
   const [s10, m1, m15] = HISTORY_TIERS;
   if (tier === "s10") return s10.bucket_ms;
   if (tier === "m1") return m1.bucket_ms;
+  if (tier === "m15") return m15.bucket_ms;
   if (span <= s10.kept_ms) return s10.bucket_ms;
   if (span <= m1.kept_ms) return m1.bucket_ms;
   return m15.bucket_ms;

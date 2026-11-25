@@ -21,12 +21,13 @@ thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 libc = "0.2.190"
+# `DeviceTag::from_key`: the first bytes of the SHA-256 of a device key.
+sha2 = "0.10.9"
 
 [dev-dependencies]
 statglass-session = { workspace = true, features = ["conformance"] }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true
-sha2 = "0.10.9"
 
 [lints]
 workspace = true
