@@ -120,7 +120,7 @@ impl MobileCore {
                 })
             }
             MobileCall::PairingState => {
-                runtime.spawn(async move { to_value(pairing::state(&sessions)) })
+                runtime.spawn_blocking(move || to_value(pairing::state(&sessions)))
             }
             other => runtime.spawn(async move { sessions.call(other).await }),
         };

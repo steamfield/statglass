@@ -30,9 +30,11 @@ statglass-session.workspace = true
 statglass-ipc.workspace = true
 statglass-ssh.workspace = true
 ciborium.workspace = true
+base64 = "0.22.1"
 uniffi.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 # The core's own runtime: every source, stream and blocking query runs on it, so no
@@ -51,7 +53,6 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic", "ecdsa", "pkcs8", "std"] }
 statglass-ssh = { workspace = true, features = ["software-signer"] }
 tokio = { workspace = true, features = ["test-util"] }
-tempfile.workspace = true
 
 [lints]
 workspace = true
