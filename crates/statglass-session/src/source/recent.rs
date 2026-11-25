@@ -141,6 +141,7 @@ impl Session<'_> {
             Ok(recent) => recent,
             Err(error) => {
                 tracing::warn!(%host, "refilling the live ring from recent rows: {error}");
+                self.sync_refill_pending();
                 return;
             }
         };
@@ -154,6 +155,7 @@ impl Session<'_> {
             Ok(history) => history,
             Err(error) => {
                 tracing::warn!(%host, "reading recent rows for the live ring: {error}");
+                self.sync_refill_pending();
                 return;
             }
         };
@@ -163,5 +165,17 @@ impl Session<'_> {
             self.timeline = timeline;
             tracing::info!(%host, added, "live ring refilled from recent rows");
         }
+        self.sync_refill_pending();
+    }
+
+    /// Tells open windows whether the ring still waits on a refill from the host's
+    /// recent rows (D-159): a session without a mirror whose host keeps history, before
+    /// its refill for this stretch of detail has run or its request has timed out.
+    pub(super) fn sync_refill_pending(&self) {
+        let pending = self.source.mirror.is_none()
+            && self.history_available
+            && !self.ring_filled
+            && self.recent_timed_out.is_none();
+        self.sink.live.set_refill_pending(pending);
     }
 }

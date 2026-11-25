@@ -24,6 +24,7 @@ import Svg, {
 import { themeColors } from "@/theme.generated";
 import { useMotion } from "@/ui/motion";
 import { Text } from "@/ui/text";
+import { useReveal } from "@/widgets/lib/reveal";
 import { useTickScroll } from "@/widgets/lib/stream-motion";
 import { StreamScan } from "@/widgets/lib/stream-scan";
 import { ChartAnnotations } from "./chart-annotations";
@@ -81,6 +82,7 @@ export function StreamArea(
     loading === true,
     tick
   );
+  const reveal = useReveal(loading);
 
   return (
     <View>
@@ -118,7 +120,9 @@ export function StreamArea(
               loadingColor={scanning ? undefined : loadingColor}
             />
             <Animated.View style={scroll}>
-              <StreamSeries model={model} accent={accent} scheme={scheme} />
+              <Animated.View style={reveal}>
+                <StreamSeries model={model} accent={accent} scheme={scheme} />
+              </Animated.View>
             </Animated.View>
             {scanning && (
               <StreamScan

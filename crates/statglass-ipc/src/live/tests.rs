@@ -1611,3 +1611,81 @@ mod protocol;
 mod replacement;
 
 mod pending;
+
+/// A phone session waits on the host's recent rows to refill its ring (D-159). A window
+/// opened meanwhile is told to wait for its whole range rather than draw the ring's
+/// first seconds, and the refill, arriving on a new timeline, ends the wait.
+#[tokio::test(start_paused = true)]
+async fn a_window_waits_for_a_pending_refill_and_the_refill_ends_the_wait() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    for ts in [19_000, 20_000] {
+        feed.tick(&l, ts, 1.0);
+    }
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    let first = drain(&rx).await;
+    assert!(
+        first.contains(&"plan 2 Some(-280000)".to_string()),
+        "the plan asks the window to wait for 300 s before the latest frame: {first:?}"
+    );
+
+    let history = statglass_store::HistoryResult {
+        tier: statglass_schema::Tier::S10,
+        bucket_ms: 10_000,
+        series: vec![statglass_store::SeriesPoints {
+            key: SeriesKey::bare(MetricId::from_static("cpu.total")),
+            points: [(0, 20.0), (10_000, 25.0)]
+                .into_iter()
+                .map(|(t, avg)| statglass_store::Point {
+                    t,
+                    min: avg,
+                    max: avg,
+                    avg,
+                })
+                .collect(),
+        }],
+        gaps: Vec::new(),
+    };
+    feed.step();
+    assert!(feed.hub.refill(&history, 1) > 0);
+    feed.hub.set_refill_pending(false);
+    feed.tick(&l, 21_000, 7.0);
+    let after = drain(&rx).await;
+    assert_eq!(
+        after.first().map(String::as_str),
+        Some("plan 4 None"),
+        "the restart's plan, with nothing earlier to wait for: {after:?}"
+    );
+    assert!(after.iter().all(|m| !m.starts_with("plan 0")), "{after:?}");
+}
+
+/// A refill that adds nothing moves no timeline, so a plan ends the window's wait.
+#[tokio::test(start_paused = true)]
+async fn a_refill_that_adds_nothing_still_ends_the_wait() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    feed.tick(&l, 20_000, 1.0);
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    drain(&rx).await;
+
+    feed.tick(&l, 21_000, 2.0);
+    let waiting = drain(&rx).await;
+    assert!(
+        waiting.iter().all(|m| !m.starts_with("plan")),
+        "{waiting:?}"
+    );
+
+    feed.hub.set_refill_pending(false);
+    feed.tick(&l, 22_000, 3.0);
+    assert_eq!(drain(&rx).await, ["plan 0 None", "frame 1 @22000"]);
+    feed.tick(&l, 23_000, 4.0);
+    assert_eq!(drain(&rx).await, ["frame 1 @23000"], "the plan goes once");
+}

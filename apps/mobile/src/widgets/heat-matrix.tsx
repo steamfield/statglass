@@ -2,8 +2,10 @@ import type { PlacedGapBand } from "@core/widget-models/gap-band";
 import type { HeatMatrixModel } from "@core/widget-models/heat-matrix";
 import { useState } from "react";
 import { useColorScheme, useWindowDimensions, View } from "react-native";
+import Animated from "react-native-reanimated";
 import Svg, { Defs, Path, Pattern, Rect } from "react-native-svg";
 import { Text } from "@/ui/text";
+import { useReveal } from "@/widgets/lib/reveal";
 import { resolveColor } from "./colors";
 import { GapBands } from "./gap-bands";
 
@@ -32,6 +34,7 @@ export function HeatMatrix({
   const [rowsBox, setRowsBox] = useState({ y: 0, height: 0 });
   const scheme = useColorScheme() ?? "light";
   const { cells, rows, columns, legend, loading, notice } = model;
+  const reveal = useReveal(loading);
   const fill = resolveColor(
     { kind: "accent", step: 1, ink: false },
     scheme,
@@ -87,7 +90,7 @@ export function HeatMatrix({
               <Text variant="caption" className="w-1/5">
                 {row.label}
               </Text>
-              <View className="flex-1">
+              <Animated.View className="flex-1" style={reveal}>
                 <Svg accessible={false} height={CELL_HEIGHT} width="100%">
                   <Defs>
                     <Pattern
@@ -131,7 +134,7 @@ export function HeatMatrix({
                       );
                     })}
                 </Svg>
-              </View>
+              </Animated.View>
               <Text variant="value" className="w-1/5 text-right">
                 {row.current}
               </Text>

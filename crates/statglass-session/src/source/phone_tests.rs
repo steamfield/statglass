@@ -471,6 +471,10 @@ async fn phone_detail_refills_the_ring_from_recent_rows_once() {
         panic!("expected a recent-rows request, not a sync");
     };
     assert_eq!(to_ms - from_ms, 300_000, "five minutes of recent rows");
+    assert!(
+        phone.live.refill_pending(),
+        "open windows wait for the refill"
+    );
     let complete_to_ms = to_ms - to_ms.rem_euclid(10_000);
     let buckets: Vec<i64> = (1..=6).rev().map(|i| complete_to_ms - i * 10_000).collect();
     send(
@@ -513,6 +517,7 @@ async fn phone_detail_refills_the_ring_from_recent_rows_once() {
         [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         "one ring row per bucket"
     );
+    assert!(!phone.live.refill_pending(), "the refill ends the wait");
 
     // Detail stays on: the ring is filled, so the phone answers pings and asks for nothing.
     for _ in 0..4 {

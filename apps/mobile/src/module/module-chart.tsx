@@ -25,11 +25,13 @@ import {
   View,
 } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
+import Animated from "react-native-reanimated";
 import type { HistoryRange } from "@/data/history";
 import { Text } from "@/ui/text";
 import { ChartAnnotationBand } from "@/widgets/chart-annotations";
 import { resolveColor } from "@/widgets/colors";
 import { GapBands } from "@/widgets/gap-bands";
+import { useReveal } from "@/widgets/lib/reveal";
 import { StreamArea } from "@/widgets/stream-area";
 import { useChartScrub } from "./chart-scrub";
 
@@ -304,6 +306,7 @@ export function ModuleChart({
     ...yTicks.map(({ label }) => axisLabelWidth(label, axisScale))
   );
   const drawSeries = !loading && width > 0 && count > 0;
+  const reveal = useReveal(loading);
   const showHint = time === null && count > 0;
 
   return (
@@ -371,13 +374,17 @@ export function ModuleChart({
                       loading={loading}
                     />
                     {drawSeries && (
-                      <View
+                      <Animated.View
                         className="absolute top-0"
-                        style={{
-                          left: (width * (gridLeft - fromMs)) / span,
-                          width:
-                            (width * Math.max(1, count - 1) * interval) / span,
-                        }}
+                        style={[
+                          {
+                            left: (width * (gridLeft - fromMs)) / span,
+                            width:
+                              (width * Math.max(1, count - 1) * interval) /
+                              span,
+                          },
+                          reveal,
+                        ]}
                       >
                         <StreamArea
                           variant="spark"
@@ -388,7 +395,7 @@ export function ModuleChart({
                           accent={accent}
                           height={height}
                         />
-                      </View>
+                      </Animated.View>
                     )}
                   </View>
                   {scrub.slot >= 0 && (

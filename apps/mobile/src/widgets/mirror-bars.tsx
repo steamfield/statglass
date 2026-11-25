@@ -12,9 +12,11 @@ import {
   useColorScheme,
   View,
 } from "react-native";
+import Reanimated from "react-native-reanimated";
 import { motionEasings } from "@/theme.generated";
 import { useMotion } from "@/ui/motion";
 import { Text } from "@/ui/text";
+import { useReveal } from "@/widgets/lib/reveal";
 import { resolveColor } from "./colors";
 
 const LOADING_MARK_WIDTH = 32;
@@ -206,6 +208,9 @@ export function MirrorBarsPlot(data: MirrorBarsData) {
     slotWidth,
     duration: loading ? 0 : tick,
   });
+  // Each side settles from the axis between them.
+  const revealUp = useReveal(loading, "bottom");
+  const revealDown = useReveal(loading, "top");
   return (
     <View
       accessible
@@ -216,22 +221,26 @@ export function MirrorBarsPlot(data: MirrorBarsData) {
       onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
     >
       <Animated.View style={{ transform: [{ translateX: offset }] }}>
-        <BarRow
-          heights={up}
-          slots={slots}
-          height={upHeight}
-          gap={gap}
-          color={upColor}
-          above
-        />
+        <Reanimated.View style={revealUp}>
+          <BarRow
+            heights={up}
+            slots={slots}
+            height={upHeight}
+            gap={gap}
+            color={upColor}
+            above
+          />
+        </Reanimated.View>
         <View className="h-px" />
-        <BarRow
-          heights={down}
-          slots={slots}
-          height={downHeight}
-          gap={gap}
-          color={downColor}
-        />
+        <Reanimated.View style={revealDown}>
+          <BarRow
+            heights={down}
+            slots={slots}
+            height={downHeight}
+            gap={gap}
+            color={downColor}
+          />
+        </Reanimated.View>
       </Animated.View>
       <View
         className="absolute inset-x-0 h-px items-center overflow-hidden bg-axis"

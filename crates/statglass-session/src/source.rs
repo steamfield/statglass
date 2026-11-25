@@ -312,7 +312,7 @@ async fn run_loop(
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
                 (source.on_status)(status.clone());
-                session_loop(
+                let result = session_loop(
                     source,
                     sink,
                     session,
@@ -321,7 +321,10 @@ async fn run_loop(
                     &before,
                     Some(active),
                 )
-                .await
+                .await;
+                // Nothing refills the ring until the next session says otherwise.
+                sink.live.set_refill_pending(false);
+                result
             }
             Err(e) => Err(e),
         };
@@ -583,6 +586,7 @@ impl Session<'_> {
         self.detail = next.interest.detail;
         if !next.interest.detail {
             self.ring_filled = false;
+            self.sync_refill_pending();
         } else if detail_starts && self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
             self.next_tier = 0;
             self.history_failed = false;
@@ -717,6 +721,7 @@ impl Session<'_> {
             }
             Message::SourceStatus(wire) => {
                 self.history_available = wire.history_available;
+                self.sync_refill_pending();
                 if !self.history_available {
                     self.watermark_failed = false;
                     self.status.history_error =
@@ -932,6 +937,7 @@ impl Session<'_> {
         if self.recent_pending && self.last_recent.elapsed() > Duration::from_secs(30) {
             self.recent_pending = false;
             self.recent_timed_out = Some(Instant::now());
+            self.sync_refill_pending();
             self.watermark_failed = false;
             self.status.history_error = Some("recent history request timed out".into());
         }

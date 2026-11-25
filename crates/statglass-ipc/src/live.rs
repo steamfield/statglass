@@ -268,6 +268,9 @@ struct Stream {
     /// Older history may go: a frame went out since it was queued, or `earlier_at` passed.
     earlier_go: bool,
     earlier_at: Instant,
+    /// The plan told the window to wait for a refill the source had not made yet
+    /// ([`LiveHub::refill_pending`]); if the refill adds nothing, a plan says so.
+    awaiting_refill: bool,
 }
 
 impl Stream {
@@ -302,6 +305,7 @@ impl Stream {
             earlier: VecDeque::new(),
             earlier_go: false,
             earlier_at: Instant::now(),
+            awaiting_refill: false,
         }
     }
 
@@ -400,10 +404,21 @@ impl Stream {
             self.catch_up()?;
             self.sent_until = i64::MIN;
             self.last_frame_ts = None;
-        } else if f.ts_ms <= self.sent_until {
-            // Already sent as a backfill row (published between the subscribe and the
-            // ring read).
-            return Ok(());
+        } else {
+            if self.awaiting_refill && !self.feed.hub().refill_pending() {
+                // The refill the window waits for added nothing, so no new timeline
+                // follows to end the wait.
+                self.awaiting_refill = false;
+                self.send(LiveMsg::BackfillPlan {
+                    recent_rows: 0,
+                    earlier_start_ms: None,
+                })?;
+            }
+            if f.ts_ms <= self.sent_until {
+                // Already sent as a backfill row (published between the subscribe and
+                // the ring read).
+                return Ok(());
+            }
         }
         let tolerance = i64::from(f.interval_ms) / 2;
         let min_period_ms = effective_min_period_ms(self.min_period_ms, self.performance);
