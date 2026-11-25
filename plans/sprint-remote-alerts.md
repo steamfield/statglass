@@ -45,6 +45,7 @@ Answer::AlertRules(HostAlertRules)   // both queries answer with the rules now i
 Demo: `cargo test -p statglass-agent alert_rules` and `cargo test -p statglass-proto --test alert_rules` (check the test count is non-zero): an agent answers `AlertRules`, takes `SetAlertRules`, persists to `settings.json`, refuses a stale revision, and its engine fires the new rule without a restart.
 Checkpoint: none (no timebox).
 Scaffold: 1d3f4a53
+Tag: remote-alerts-phase-1
 Test cases:
 - `RuleEntry` round-trips a known rule through CBOR; an entry with an unknown condition decodes as `Unknown` and re-encodes byte-identical; a list with one unknown entry still decodes the rest.
 - `Query::SetAlertRules` and `Answer::AlertRules` round-trip; an old-build fixture without these kinds decodes them as `Unknown` (skew both ways, following `tests/forward_compat.rs`).
