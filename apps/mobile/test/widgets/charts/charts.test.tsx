@@ -80,6 +80,58 @@ describe("phone chart geometry", () => {
     }
   );
 
+  it.each(["chart", "spark"] as const)(
+    "puts the %s ceiling on the top gridline without changing the plot height or spoken value",
+    async (variant) => {
+      const plotHeight = variant === "spark" ? 36 : height;
+      await renderWithProviders(
+        <StreamArea {...fixture} variant={variant} height={plotHeight} />
+      );
+      const plot = chart();
+      const ceiling = screen.getByText(fixture.ceilingLabel);
+      const rules = plot.queryAll((el) => el.type === "RNSVGLine");
+      const top = Math.min(...rules.map((rule) => Number(rule.props.y1)));
+      expect(top).toBe(1);
+      expect(ceiling).toHaveStyle({
+        fontVariant: ["tabular-nums"],
+        fontSize: 11,
+      });
+      const background = StyleSheet.flatten(
+        ceiling.props.style
+      )?.backgroundColor;
+      expect(background ?? "transparent").toBe("transparent");
+      expect(ceiling).toHaveProp("maxFontSizeMultiplier", 1.5);
+      expect(plot).toHaveStyle({ height: plotHeight });
+      if (variant === "spark") {
+        expect(rules).toHaveLength(1);
+        expect(screen.queryByText(fixture.windowLabel)).toBeNull();
+        const [area, line] = plot.queryAll((el) => el.type === "RNSVGPath");
+        const [series] = streamAreaModel(
+          { ...fixture, height: plotHeight },
+          {
+            widthPx: 0,
+          }
+        ).series;
+        expect(area?.props.d).toBe(series?.areaPath);
+        expect(line?.props.d).toBe(series?.linePath);
+        expect(line?.props.stroke).toEqual(
+          expect.objectContaining({
+            payload: processColor(themeColors.light["cpu-ink"]),
+          })
+        );
+      }
+    }
+  );
+
+  it("draws a top reference for a zero ceiling even when zero is also a grid tick", async () => {
+    await renderWithProviders(
+      <StreamArea {...fixture} yMax={0} gridlines={[0]} ceilingLabel="0%" />
+    );
+    expect(screen.getByText("0%")).toBeOnTheScreen();
+    const rules = chart().queryAll((el) => el.type === "RNSVGLine");
+    expect(Math.min(...rules.map((rule) => Number(rule.props.y1)))).toBe(1);
+  });
+
   it("places a clipped and named gap and an in-window annotation after measuring", async () => {
     const { container } = await renderWithProviders(
       <StreamArea {...overlayFixture} />
@@ -238,7 +290,7 @@ describe("phone chart states and motion", () => {
     expect(screen.getByRole("img", { name, busy: true })).toBeOnTheScreen();
     expect(chart().queryAll((el) => el.type === "RNSVGPath")).toHaveLength(0);
     const rules = chart().queryAll((el) => el.type === "RNSVGLine");
-    expect(rules).toHaveLength(3);
+    expect(rules).toHaveLength(4);
     expect(rules.at(-1)?.props.stroke).toEqual(
       expect.objectContaining({
         payload: processColor(themeColors.light["cpu-ink"]),
@@ -302,7 +354,7 @@ describe("phone chart states and motion", () => {
     );
     await layout();
     expect(chart().queryAll((el) => el.type === "RNSVGPath")).toHaveLength(0);
-    expect(chart().queryAll((el) => el.type === "RNSVGLine")).toHaveLength(2);
+    expect(chart().queryAll((el) => el.type === "RNSVGLine")).toHaveLength(3);
     expect(screen.queryByRole("note")).toBeNull();
   });
 
