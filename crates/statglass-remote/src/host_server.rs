@@ -8,8 +8,8 @@ use crate::{DeviceSeenLog, ServerProvider};
 use statglass_engine::disk_space::SpaceService;
 use statglass_engine::{HistoryStore, LiveHub};
 use statglass_proto::{
-    Answer, Hello, HostAddresses, Message, Query, RemoteInterest, SourceStatus, SyncRequest,
-    WireBucket, WireLayout,
+    ADDRESSES_QUERY_FEATURE, Answer, Hello, HostAddresses, Message, Query, RemoteInterest,
+    SourceStatus, SyncRequest, WireBucket, WireLayout,
 };
 use statglass_schema::{Capabilities, HostRecord, SyncKinds, Tier, floor_to};
 use std::collections::HashMap;
@@ -22,7 +22,7 @@ pub trait ServedHost: Send + Sync + 'static {
     fn capabilities(&self) -> Capabilities;
     fn hub(&self) -> &LiveHub;
     fn network_addresses(&self) -> HostAddresses {
-        HostAddresses::unavailable("not implemented")
+        HostAddresses::unavailable("no local address")
     }
     /// Replace one session's interest; the default interest releases its demand.
     fn set_remote_interest(&self, session: u64, interest: RemoteInterest);
@@ -108,6 +108,8 @@ impl<H: ServedHost> ServerProvider for HostServer<H> {
     }
 
     fn hello(&self) -> Hello {
+        let mut features = statglass_proto::local_features();
+        features.insert(ADDRESSES_QUERY_FEATURE.into());
         Hello {
             proto_version: statglass_proto::PROTO_VERSION,
             min_compatible: statglass_proto::MIN_COMPATIBLE,
@@ -115,7 +117,7 @@ impl<H: ServedHost> ServerProvider for HostServer<H> {
             host: self.host.record().identity(),
             db_instance_uuid: self.history.read(|r| Ok(r.epoch())).unwrap_or(Uuid::nil()),
             capabilities: self.host.capabilities(),
-            features: statglass_proto::local_features(),
+            features,
         }
     }
     fn live(&self) -> LiveHub {
@@ -224,6 +226,7 @@ mod tests {
         record: HostRecord,
         hub: LiveHub,
         interests: Mutex<Vec<(u64, RemoteInterest)>>,
+        addresses: HostAddresses,
     }
     impl ServedHost for Host {
         fn record(&self) -> HostRecord {
@@ -235,6 +238,9 @@ mod tests {
         fn hub(&self) -> &LiveHub {
             &self.hub
         }
+        fn network_addresses(&self) -> HostAddresses {
+            self.addresses.clone()
+        }
         fn set_remote_interest(&self, session: u64, interest: RemoteInterest) {
             self.interests.lock_ok().push((session, interest));
         }
@@ -245,6 +251,16 @@ mod tests {
             record: crate::test_support::bare_host(7, "Server", OsKind::Linux),
             hub: LiveHub::default(),
             interests: Mutex::default(),
+            addresses: HostAddresses {
+                interface: Some("eth0".into()),
+                link_mbps: Some(1000),
+                ipv4: vec![[192, 0, 2, 10].into()],
+                ipv6: Vec::new(),
+                public_ip: statglass_proto::PublicIp::Known {
+                    ip: [203, 0, 113, 7].into(),
+                },
+                as_of_ms: 30_000,
+            },
         })
     }
 
@@ -305,6 +321,118 @@ mod tests {
                 ..
             }
         )
+    }
+
+    #[test]
+    fn addresses_are_advertised_and_answered_without_history() {
+        let host = host();
+        let server = HostServer::new(host.clone(), Arc::new(HistoryStore::unavailable()));
+        assert!(server.hello().features.contains(ADDRESSES_QUERY_FEATURE));
+        assert_eq!(
+            server.answer(1, Query::NetworkAddresses),
+            Answer::NetworkAddresses(host.addresses.clone())
+        );
+        assert!(unsupported(&server.answer(1, Query::Unknown)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn addresses_are_only_on_the_wire_in_the_query_reply() {
+        use statglass_engine::{BusMsg, FrameLayout, LiveFrame};
+        use statglass_session::codec;
+        use std::time::Duration;
+        use tokio::io::AsyncReadExt;
+
+        let host = host();
+        host.hub.publish(BusMsg::Frame(Arc::new(LiveFrame {
+            ts_ms: 30_000,
+            interval_ms: 1_000,
+            layout: Arc::new(FrameLayout {
+                layout_no: 1,
+                series: [statglass_schema::SeriesKey::parse("cpu.total").unwrap()].into(),
+            }),
+            timeline: 0,
+            values: [24.0].into(),
+            held: [24.0].into(),
+            holds: [2_500].into(),
+        })));
+        let provider = Arc::new(HostServer::new(
+            host.clone(),
+            Arc::new(HistoryStore::unavailable()),
+        ));
+        let (mut client, peer) = tokio::io::duplex(65_536);
+        let serving = tokio::spawn(crate::server::serve_connection(peer, provider));
+        let Message::Hello(hello) = codec::read(&mut client).await.unwrap() else {
+            panic!("expected the host hello");
+        };
+        codec::write(
+            &mut client,
+            &Message::HelloAck(statglass_proto::HelloAck {
+                proto_version: hello.proto_version,
+                features: hello.features,
+            }),
+        )
+        .await
+        .unwrap();
+        codec::write(
+            &mut client,
+            &Message::Request {
+                id: 7,
+                query: Query::NetworkAddresses,
+            },
+        )
+        .await
+        .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let mut replied = false;
+            let mut detailed = false;
+            loop {
+                let len = client.read_u32().await.unwrap() as usize;
+                let mut body = vec![0; len];
+                client.read_exact(&mut body).await.unwrap();
+                let has_public_ip = body
+                    .windows(b"public_ip".len())
+                    .any(|value| value == b"public_ip");
+                match statglass_proto::decode_message(&body).unwrap() {
+                    Message::Reply {
+                        id: 7,
+                        answer: Answer::NetworkAddresses(addresses),
+                    } => {
+                        assert!(has_public_ip);
+                        assert_eq!(addresses, host.addresses);
+                        replied = true;
+                    }
+                    Message::HostSummary(summary) => {
+                        assert!(!has_public_ip);
+                        assert_eq!(summary.headline[0].1, 24.0);
+                        if replied && !detailed {
+                            codec::write(
+                                &mut client,
+                                &Message::Interest(RemoteInterest {
+                                    detail: true,
+                                    ..Default::default()
+                                }),
+                            )
+                            .await
+                            .unwrap();
+                            detailed = true;
+                        }
+                    }
+                    Message::Live(frame) => {
+                        assert!(detailed);
+                        assert!(!has_public_ip);
+                        assert_eq!(frame.values, [24.0]);
+                        break;
+                    }
+                    Message::SourceStatus(_) | Message::LayoutDef(_) => assert!(!has_public_ip),
+                    other => panic!("unexpected message: {other:?}"),
+                }
+            }
+        })
+        .await
+        .expect("the peer receives an address reply, summary and live frame");
+        drop(client);
+        assert!(serving.await.unwrap().is_err());
     }
 
     /// Per-app use comes from the host's ring; space queries need a space service.

@@ -61,7 +61,7 @@
  * user than `MOCK_USER`, and a signalled process leaves later process rows.
  */
 
-import { networkAddresses } from "./mock/addresses";
+import { createMockNetworkAddresses } from "./mock/addresses";
 import type { MockTransport, MockTransportOptions } from "./mock/contracts";
 import { createMockDiskSpace } from "./mock/disk-space";
 import { createMockDocker } from "./mock/docker";
@@ -183,7 +183,7 @@ export function createMockTransport(
     flags,
     calls: commands.calls,
     hostHistory: createMockHostHistory(queries.methods),
-    networkAddresses,
+    networkAddresses: createMockNetworkAddresses(remote, now),
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,
     subscriberCount: () => channels.live.size,

@@ -11,6 +11,7 @@ use statglass_engine::{
     SourceSink,
 };
 use statglass_remote::InterestSet;
+use statglass_remote::addresses::AddressResolver;
 use statglass_schema::lock::{LockExt, RwLockExt};
 use statglass_schema::{Capabilities, HostId, HostRecord, SeriesKey, Settings};
 use statglass_store::{BucketRow, Writer};
@@ -26,6 +27,7 @@ pub struct HostEntry {
     source: Arc<dyn Source>,
     handle: Mutex<Option<SourceHandle>>,
     live: LiveHub,
+    addresses: AddressResolver,
 }
 
 impl HostEntry {
@@ -246,6 +248,10 @@ impl statglass_remote::ServedHost for HostEntry {
         &self.live
     }
 
+    fn network_addresses(&self) -> statglass_proto::HostAddresses {
+        self.addresses.network_addresses(&self.live)
+    }
+
     fn set_remote_interest(&self, session: u64, interest: statglass_proto::RemoteInterest) {
         self.change_interest(|all| all.set_remote(session, interest));
     }
@@ -270,6 +276,7 @@ impl HostRegistry {
             source,
             handle: Mutex::new(None),
             live: LiveHub::default(),
+            addresses: AddressResolver::default(),
         });
         self.hosts.write_ok().insert(id, Arc::clone(&entry));
         entry
