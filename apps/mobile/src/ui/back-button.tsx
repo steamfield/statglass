@@ -1,11 +1,22 @@
-import { Icon } from "./icons";
+import { router } from "expo-router";
+import { HeaderButton } from "./header-button";
 
-export function BackButton(_props: { onPress?: () => void }) {
-  return <Icon name="chevron.left" accessibilityLabel="Back" />;
+function goBack() {
+  router.back();
 }
 
-export function useAccessibilityEscape(_onEscape?: () => void): {
+export function BackButton({ onPress = goBack }: { onPress?: () => void }) {
+  return (
+    <HeaderButton
+      icon="chevron.left"
+      accessibilityLabel="Back"
+      onPress={onPress}
+    />
+  );
+}
+
+export function useAccessibilityEscape(onEscape = goBack): {
   onAccessibilityEscape(): void;
 } {
-  return { onAccessibilityEscape() {} };
+  return { onAccessibilityEscape: onEscape };
 }
