@@ -22,6 +22,7 @@ mkdir "$fixture/server"
 # Reuse rust-linux-test's intermediate build cache. Keep the final binary in this
 # fixture so a concurrent build in another checkout cannot overwrite it.
 docker run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e HOME=/tmp \
+    -e CARGO_PROFILE_DEV_DEBUG -e CARGO_PROFILE_TEST_DEBUG -e CARGO_INCREMENTAL \
     -v "$PWD":/w -w /w -v "$fixture":/fixture \
     -v statglass-linux-cargo:/usr/local/cargo \
     -v statglass-linux-rustup:/usr/local/rustup \
@@ -130,5 +131,5 @@ if [ -f crates/statglass-ssh/tests/docker_pair.rs ]; then
     cargo test -p statglass-ssh --features software-signer --test docker_pair -- --ignored || status=$?
 fi
 cargo test -p statglass-mobile --lib sessions::tests::docker::mobile_session -- --ignored --exact || status=$?
-cargo test -p statglass-mobile --test mobile_session mobile_core_streams_and_reads_its_mirror -- --ignored --exact || status=$?
+cargo test -p statglass-mobile --test mobile_session mobile_core_streams_and_reads_host_history -- --ignored --exact || status=$?
 exit "$status"

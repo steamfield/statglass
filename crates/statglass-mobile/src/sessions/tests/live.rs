@@ -4,6 +4,7 @@ use statglass_ipc::vitals::HostVitals;
 use statglass_proto::SourceStatus;
 
 use crate::control::SessionControl;
+use crate::lifecycle::Lifecycle;
 use statglass_ipc::error::CommandError;
 
 use super::*;
@@ -51,6 +52,7 @@ async fn live_cpu_arrives_in_order_and_prioritizes_the_open_source() {
             .collect::<Vec<_>>(),
         [second.id, first.id]
     );
+    let before = statglass_engine::wall_ms();
     remote.layout().await;
     remote.frame(NOW, 11.).await;
     remote.frame(NOW + 1_000, 23.).await;
@@ -71,13 +73,19 @@ async fn live_cpu_arrives_in_order_and_prioritizes_the_open_source() {
         };
         assert_eq!(message, serde_json::to_value(expected).unwrap());
     }
+    let vitals = fixture
+        .sessions
+        .call(MobileCall::HostVitals { host: second.id })
+        .await
+        .unwrap();
+    let as_of_ms = vitals["as_of_ms"].as_i64().unwrap();
+    let last_frame = NOW + 1_000;
+    let elapsed = statglass_engine::wall_ms() - before;
+    assert!((last_frame..=last_frame + elapsed).contains(&as_of_ms));
     assert_eq!(
-        fixture
-            .sessions
-            .call(MobileCall::HostVitals { host: second.id })
-            .await
-            .unwrap(),
+        vitals,
         json!(HostVitals {
+            as_of_ms: Some(as_of_ms),
             cpu_pct: Some(23.),
             ..Default::default()
         })
@@ -283,6 +291,88 @@ async fn frame_vitals_change_without_another_remote_hosts_event() {
         "frames should not invalidate the remote host list"
     );
     assert_eq!(read_events(&fixture.events), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn quiescing_closes_the_session_at_once_and_offline_vitals_keep_only_the_frame_time() {
+    let host = host(1);
+    let mut fixture = Fixture::start(vec![host.clone()]);
+    let mut peer = fixture.next_dial().await;
+    peer.handshake(&host).await;
+    let Message::Ping { nonce, t0_ms } = peer.read().await else {
+        panic!("expected the initial heartbeat");
+    };
+    fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
+    peer.layout().await;
+    let before = statglass_engine::wall_ms();
+    peer.frame(NOW, 23.0).await;
+    assert_eq!(fixture.message("frame").await.1["ts_ms"], NOW);
+    let request = MobileCall::HostVitals { host: host.id };
+    let live = fixture.sessions.call(request.clone()).await.unwrap();
+    assert_eq!(live["cpu_pct"], 23.);
+    let elapsed = statglass_engine::wall_ms() - before;
+    assert!((NOW..=NOW + elapsed).contains(&live["as_of_ms"].as_i64().unwrap()));
+
+    let next = NOW + 1_000;
+    codec::write(
+        &mut peer.peer,
+        &Message::Pong {
+            nonce,
+            t0_ms,
+            t_remote_ms: next,
+        },
+    )
+    .await
+    .unwrap();
+    peer.frame(next, 28.0).await;
+    assert_eq!(fixture.message("frame").await.1["ts_ms"], next);
+    let live = fixture.sessions.call(request.clone()).await.unwrap();
+    assert_eq!(live["cpu_pct"], 28.);
+    let elapsed = statglass_engine::wall_ms() - before;
+    assert!((next..=next + elapsed + 1).contains(&live["as_of_ms"].as_i64().unwrap()));
+
+    let lifecycle = Lifecycle::new();
+    let now = tokio::time::Instant::now();
+    let mut parked = lifecycle.quiesce(&fixture.sessions);
+    timeout(WAIT, &mut peer.closing).await.unwrap().unwrap();
+    assert!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(parked.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
+    peer.finish_close.send(()).unwrap();
+    timeout(WAIT, parked).await.unwrap();
+    assert_eq!(tokio::time::Instant::now(), now);
+    let last_seen = json!(HostVitals {
+        as_of_ms: Some(next),
+        ..Default::default()
+    });
+    assert_eq!(
+        fixture.sessions.call(request.clone()).await.unwrap(),
+        last_seen
+    );
+    let rows = fixture
+        .sessions
+        .call(MobileCall::ListRemoteHosts)
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["connection"]["state"], "offline");
+    assert_eq!(rows[0]["vitals"], last_seen);
+
+    lifecycle.resume(&fixture.sessions);
+    let mut reconnected = fixture.next_dial().await;
+    reconnected.handshake(&host).await;
+    assert_eq!(
+        fixture.sessions.call(request.clone()).await.unwrap(),
+        last_seen
+    );
+    reconnected.layout().await;
+    reconnected.frame(next + 1000, 12.0).await;
+    assert_eq!(fixture.message("frame").await.1["ts_ms"], next + 1000);
+    assert_eq!(
+        fixture.sessions.call(request).await.unwrap()["cpu_pct"],
+        12.
+    );
 }
 
 #[tokio::test(start_paused = true)]

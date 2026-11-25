@@ -5467,6 +5467,7 @@ dependencies = [
 name = "statglass-mobile"
 version = "0.14.0"
 dependencies = [
+ "ciborium",
  "p256",
  "serde",
  "serde_json",

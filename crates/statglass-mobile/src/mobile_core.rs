@@ -41,7 +41,8 @@ impl MobileCore {
     #[uniffi::constructor]
     pub fn new(signer: Arc<dyn NativeSigner>, events: Arc<dyn CoreEvents>) -> Arc<Self> {
         crate::logging::init();
-        Arc::new(Self::initial(signer, events))
+        let sessions = Sessions::new(events, Some(signer.clone()));
+        Arc::new(Self::initial(signer, sessions))
     }
 
     /// Starts the runtime and a session per host in `config_json` (a `MobileConfig`),
@@ -150,13 +151,13 @@ impl MobileCore {
 }
 
 impl MobileCore {
-    fn initial(signer: Arc<dyn NativeSigner>, events: Arc<dyn CoreEvents>) -> Self {
+    fn initial(signer: Arc<dyn NativeSigner>, sessions: Sessions) -> Self {
         Self {
             signer,
             #[cfg(test)]
             dialer: None,
             runtime: OnceLock::new(),
-            sessions: Arc::new(Sessions::new(events)),
+            sessions: Arc::new(sessions),
             lifecycle: Arc::new(Lifecycle::new()),
             quiesced: Mutex::new(None),
         }
@@ -170,7 +171,7 @@ impl MobileCore {
     ) -> Arc<Self> {
         Arc::new(Self {
             dialer: Some(dialer),
-            ..Self::initial(signer, events)
+            ..Self::initial(signer, Sessions::new(events, None))
         })
     }
 
@@ -205,7 +206,7 @@ fn joined(
     outcome: Result<Result<Value, CommandError>, tokio::task::JoinError>,
 ) -> Result<Value, CommandError> {
     outcome.unwrap_or_else(|error| match error.try_into_panic() {
-        Ok(payload) => Err(envelope::panicked(payload.as_ref())),
+        Ok(payload) => Err(envelope::panicked(payload.as_ref(), "call task")),
         Err(error) => Err(CommandError::Internal {
             message: format!("statglass-mobile call cancelled: {error}"),
         }),
