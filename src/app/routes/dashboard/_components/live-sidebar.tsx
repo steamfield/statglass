@@ -16,6 +16,8 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "~/components/ui/hover-card";
+import { useSpaceStatus } from "~/hooks/use-disk-space";
+import { useEdition } from "~/hooks/use-edition";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
@@ -86,6 +88,8 @@ const LOCAL_TOOLS: readonly SidebarEntry[] = [
     icon: "settings" as const,
   },
 ];
+const SCAN_BUSY = { label: "Scan running" };
+
 const countBehind = (hosts: Parameters<typeof hostsNeedingUpdate>[0]) =>
   hostsNeedingUpdate(hosts).length;
 
@@ -179,6 +183,24 @@ export function LiveSidebar() {
     );
     return withHostAttention(listed, behind);
   }, [local, linux, cgroups, behind]);
+  const diskSpace = useEdition()?.disk_space;
+  const { data: spaceStatus } = useSpaceStatus(diskSpace === true);
+  const busy = spaceStatus?.phase === "scanning" ? SCAN_BUSY : undefined;
+  const utilities = useMemo<readonly SidebarEntry[]>(
+    () =>
+      diskSpace === true
+        ? [
+            {
+              id: "disk-space",
+              href: "/dashboard/disk-space",
+              label: "Disk space",
+              icon: "disk-space",
+              busy,
+            },
+          ]
+        : [],
+    [diskSpace, busy]
+  );
   const configuredMs = useSettings((s) => s.sampling.interval_ms);
   const sampling = useSampling();
   const cpu = useCpu();
@@ -247,6 +269,9 @@ export function LiveSidebar() {
       id: "tools",
       entries: tools,
     },
+    ...(utilities.length
+      ? [{ id: "utilities", label: "Utilities", entries: utilities }]
+      : []),
   ];
 
   return (

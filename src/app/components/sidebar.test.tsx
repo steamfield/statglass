@@ -1,7 +1,87 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "@tests/test-utils";
 import { expect, it, vi } from "vitest";
-import { Sidebar, type SidebarEntry } from "./sidebar";
+import { Sidebar, type SidebarEntry, type SidebarProps } from "./sidebar";
+
+const utilitiesSidebar: SidebarProps = {
+  groups: [
+    {
+      id: "tools",
+      entries: [
+        {
+          id: "settings",
+          href: "/dashboard/settings",
+          label: "Settings",
+          icon: "settings",
+        },
+      ],
+    },
+    {
+      id: "utilities",
+      label: "Utilities",
+      entries: [
+        {
+          id: "disk-space",
+          href: "/dashboard/disk-space",
+          label: "Disk space",
+          icon: "disk-space",
+          value: "75%",
+          busy: { label: "Scan running" },
+        },
+      ],
+    },
+  ],
+  active: "settings",
+  status: { intervalMs: 1000, paused: false, onBattery: false },
+  version: "test",
+};
+
+it("gives labeled groups a heading and a named list", () => {
+  renderWithProviders(<Sidebar {...utilitiesSidebar} />);
+
+  expect(
+    screen.getByRole("heading", { level: 2, name: "Utilities" })
+  ).toBeVisible();
+  const utilities = screen.getByRole("list", { name: "Utilities" });
+  expect(
+    within(utilities).getByRole("link", { name: /^Disk space/ })
+  ).toBeVisible();
+});
+
+it("leaves unlabeled groups without headings", () => {
+  renderWithProviders(
+    <Sidebar
+      {...utilitiesSidebar}
+      groups={utilitiesSidebar.groups.slice(0, 1)}
+    />
+  );
+
+  expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+  expect(
+    within(screen.getByRole("list", { name: "" })).getByRole("link", {
+      name: "Settings",
+    })
+  ).toBeVisible();
+});
+
+it("announces a busy entry and hides its value", () => {
+  renderWithProviders(<Sidebar {...utilitiesSidebar} />);
+
+  const link = screen.getByRole("link", {
+    name: /^Disk space\s*, Scan running$/,
+  });
+  expect(link).toBeVisible();
+  expect(within(link).queryByText("75%")).not.toBeInTheDocument();
+});
+
+it("moves focus to the last row of the last group with End", async () => {
+  const { user } = renderWithProviders(<Sidebar {...utilitiesSidebar} />);
+
+  screen.getByRole("link", { name: "Settings" }).focus();
+  await user.keyboard("{End}");
+  expect(screen.getByRole("link", { name: /^Disk space/ })).toHaveFocus();
+});
 
 it("keeps values, route selection, navigation handlers and keyboard order current when groups change", async () => {
   const user = userEvent.setup();

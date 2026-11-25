@@ -215,6 +215,19 @@ const SIDEBAR: SidebarProps = {
         },
       ],
     },
+    {
+      id: "utilities",
+      label: "Utilities",
+      entries: [
+        {
+          id: "disk-space",
+          href: "/dashboard/disk-space",
+          label: "Disk space",
+          icon: "disk-space",
+          busy: { label: "Scan running" },
+        },
+      ],
+    },
   ],
   active: "overview",
   status: { intervalMs: 1000, paused: false, onBattery: false },
@@ -614,7 +627,7 @@ export function AppComponentsSection() {
       </GalleryItem>
       <div className="flex flex-wrap items-start gap-8">
         <GalleryItem name="Sidebar" usedIn="Dashboard sidebar" width={220}>
-          <div className="h-[560px]">
+          <div className="h-156">
             <Sidebar {...SIDEBAR} onNavigate={noop} />
           </div>
         </GalleryItem>
@@ -623,7 +636,7 @@ export function AppComponentsSection() {
           usedIn="Dashboard sidebar"
           width={220}
         >
-          <div className="h-[560px]">
+          <div className="h-156">
             <Sidebar {...SIDEBAR_DISABLED_DISK} onNavigate={noop} />
           </div>
         </GalleryItem>

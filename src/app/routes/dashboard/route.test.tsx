@@ -50,7 +50,10 @@ describe("Dashboard shell", () => {
     await waitFor(() =>
       expect(sidebarLinks().some((t) => t.startsWith("Battery"))).toBe(false)
     );
-    expect(sidebarLinks().some((t) => t.startsWith("Disk"))).toBe(true);
+    const links = within(screen.getByRole("navigation")).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toContain(
+      "/dashboard/disk"
+    );
   });
 
   it("leaves Power & Sensors out on an unknown chip", async () => {
