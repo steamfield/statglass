@@ -10,7 +10,7 @@ import { StreamArea } from "@/widgets/stream-area";
 const fixture = POPOVER_CPU_STREAM;
 
 /** Calls that settle the data layer: opacity and height to 1 over the enter token. */
-function reveals(timing: ReturnType<typeof jest.spyOn>) {
+function reveals(timing: { mock: { calls: unknown[][] } }) {
   return timing.mock.calls.filter(
     ([target, config]) =>
       target === 1 &&
