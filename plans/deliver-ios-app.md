@@ -3252,11 +3252,592 @@ TypeScript: `Transport` gains `handoverBundleStart`, `deviceIntents`, `retryDevi
 - **Out of scope:** the Mac (lanes a and b), restyling the pairing views (the polish phases).
 - **Done when:** the table's Done-when conditions are met.
 
-### Phase 10: design and UX parity with the macOS app (stub)
+### Phase 10: design primitives
 
-Lanes come from `plan/rfc-ios-polish.md` after its review. The RFC proposes three phases here (10 primitives, 11 surfaces, 12 module pages), built on phase 7's foundation; it collects the 2026-11-25 design audit (items 1 to 21 and 18b), the user's notes since (module pages at dashboard visualization parity with a live process table and no investigation features, three-chart hosts-list rows, the Settings > Hosts redesign with swipe and drag, the welcome screen as the front door, minimal back chevrons, Network addresses and mirrored bars, Power & Sensors parity, module-scoped events), and the audit items placed after phase 7. Lane tables are written here only after its devil's-advocate review. Phase 10 may run beside phase 9 with owned files disjoint from phase 9's. Phase 11 depends on phase 9 as well as phase 10, because its navigation lane gives phase 9's `update-from-mac.tsx` and `pair-hosts.tsx` the shared screen options and back chevron.
+Demo:
+- **Simulator, dev route `/dev/primitives` (debug builds only, removed in phase 11):** every primitive on one scrolling screen in light, dark and AX1: the eleven text variants with their sizes, the header button and back chevron with their 44 pt hit areas outlined, a grouped list with plain, value, checkmark, chevron and destructive rows, a swipe row that reveals Remove, a five-row `ReorderList` that lifts with a haptic and reorders, a segmented control whose thumb slides, a sheet, the CPU and memory sparklines with a corner ceiling, mirrored `Sparkbars`, a heat matrix and two ring gauges on the shared fixtures. Scrolling it puts content under the status bar with the system chrome material behind it.
+- **Desktop:** the dev gallery's ring gauge, heat matrix and module hero sections render as before (screenshots before and after, no difference), and `make e2e-perf` is reported before and after.
+- **Text:** no screen renders weight 700; headline figures are SF Pro Rounded with tabular digits.
 
 Depends on: phase 8
+
+Why the primitives are a phase of their own: every surface in phases 11 and 12 renders through them, so building them once keeps those lanes disjoint (`plan/rfc-ios-polish.md` section 5). Phase 10 runs beside phase 9, so it owns none of phase 9's files (`update-from-mac.tsx`, `pair-hosts.tsx`, `pairing/after-pair.ts`, `handover/`, `transport/handover.ts`, `test/handover/`, and phase 9's Rust and desktop files), and its scaffold adds no `MobileCall` variant.
+
+Code facts this phase relies on (checked 2026-11-25 against the tree, stated as the state after phases 7 and 8 land):
+- **Text.** `apps/mobile/src/ui/text.tsx` has seven roles. `largeTitle` and `title` are `font-bold` (700), `cardTitle` is 17 pt, `cardFigure` is 28 pt with `tabular-nums` and no rounded face. The prop is `role`, which shadows React Native's ARIA `role`; 96 call sites in 29 files set it, many through a `{...{ role: "body" }}` spread (architecture M1). Phases 7, 8 and 9 add more call sites, including phase 9's `update-from-mac.tsx` and `pair-hosts.tsx`.
+- **Chrome is hand-drawn per screen.** The hosts route draws an inline SVG gear and a plain-text "Demo" label in `unstable_headerLeftItems` (`(hosts)/index.tsx`). Settings has its own chevron (`settings/index.tsx`), host rows another (`hosts/host-row.tsx`), cards a third (`cards/module-card.tsx`). After phase 7 lane a, header colors come from the navigator theme (`navigationTheme(scheme)`, `useThemeColors()` in `apps/mobile/src/ui/`) and no screen sets `headerTintColor`.
+- **The grouped-list markup is repeated** about 14 times (`rounded-xl border border-border bg-card` with separators) across the settings routes, `host-row`, `host-settings`, the lock screens and the debug screen (architecture M3).
+- **No reorder, sheet or segmented primitive exists.** `module/range-control.tsx` is a bordered row of `Pressable`s. `host/card-menu.tsx` is a React Native `Modal` with "Move up"/"Move down".
+- **Dependencies.** Installed: `expo-haptics`, `expo-blur`, `react-native-gesture-handler` ~3.3, `react-native-reanimated` 4.7.1, `react-native-svg`. Not installed: `expo-symbols` (the RFC's icon source), `expo-localization` (phase 12's temperature unit), `react-native-reorderable-list`. `ActionSheetIOS` ships with React Native.
+- **Axis ticks.** Core has `niceCeiling` (`chart-math/nice-ceiling.ts`) and the desktop has `ceilingAxis`, `windowTicks` and `historyTicks` in `src/app/widgets/lib/chart-labels.ts`. No core module produces labelled value and time ticks.
+- **Module specs.** `CPU_HERO`, `GPU_HERO`, `MEMORY_PRESSURE_HERO`, `BATTERY_HERO`, `POWER_HERO`, `NETWORK_HERO`, `memoryUsedHero` and `memoryHero` live in `src/app/components/module-hero.ts` (181 lines, with a test), imported by ten desktop files.
+- **Heat and ring.** The desktop renders `src/app/widgets/heat-matrix.tsx` (310 lines, `HeatMatrixProps`, `HeatScaleLegend`) and `ring-gauge.tsx` (123 lines, `RingGaugeProps`, sizes 88 and 112). Their math is partly in core already (`chart-math/heatmap.ts` `heatmapAlpha`, `chart-math/ring.ts` `ringArcs`); labels, legend, spoken text and cell layout are in the components. `core-heatmap.tsx` and `ring-stat-card.tsx` compose them. The phone has neither.
+- **Sparklines.** The phone's `widgets/stream-area.tsx` (over core `streamAreaModel`) places its ceiling label above the plot, about 40 pt from the top gridline on the CPU card (audit item 8). `widgets/mirror-bars.tsx` draws both directions in the full-saturation accent with no labels (item 12). `test/widgets/bars/bars.test.tsx` asserts `className` and `testID` order (tests audit L3).
+- **Shared-package rules.** `packages/core/README.md`: pull never push, fork instead of flag, tested once and rendered twice; forks are listed under "Forks".
+
+Test cases:
+
+**Scaffold: text variants**
+- `apps/mobile/test/ui/text.test.tsx`: each variant renders the size, weight and style of the RFC 1.4 table (`plan/rfc-ios-polish.md` section 3): no variant has weight 700; `cardFigure` and `heroFigure` set `fontFamily: "ui-rounded"` and `fontVariant: ["tabular-nums"]`; `value` and `axis` are tabular; `axis` sets `maxFontSizeMultiplier` 1.5; `largeTitle`, `title` and `onboardingTitle` announce as headers.
+- A grep test fails on a `{...{ role:` spread anywhere in `apps/mobile/src`.
+
+**Chrome (lane a)**
+- `HeaderButton`: a 28 pt icon inside a 44 by 44 pt pressable, tinted `foreground` from `useThemeColors()`, with no fill; its accessibility label is required by type.
+- `BackButton`: chevron only, no text, `accessibilityLabel="Back"`, 44 pt; pressing calls `router.back()`. `useAccessibilityEscape(onEscape)` sets `onAccessibilityEscape` on the screen root and calls back.
+- `screenOptions(colors)`: `headerTransparent: true`, `headerBlurEffect: "systemChromeMaterial"`, `headerLargeTitleShadowVisible: false`, `headerBackVisible: false` with `headerLeft` rendering `BackButton` on pushed screens, title style weight `"600"`, and the same values in light and dark except colors.
+- `ScreenScroll`: a `ScrollView` with `contentInsetAdjustmentBehavior="automatic"`; a `headerShown: false` variant clips at the top safe-area inset instead.
+- `Icon`: every `IconName` maps to an SF Symbol through `expo-symbols`; a test renders each name. No `Svg` chevron or gear remains in `ui/`.
+- `GroupedList`, `ListSection` (header in `cardTitle`, optional footer in `caption`), `ListRow` (glyph, title, subtitle, value right-aligned in `value`, accessory chevron or checkmark, destructive variant in `--color-destructive`, never cyan; at least 44 pt tall at AX1); a checkmark row announces as selected.
+- `SwipeRow`: a trailing destructive action through Gesture Handler's `ReanimatedSwipeable`; VoiceOver gets the same action as a custom action.
+- `DemoBadge`: a "Demo" chip button; pressing opens `ActionSheetIOS` with "Exit demo" (destructive) and Cancel; Exit calls `onExit`.
+
+**Interaction (lane b)**
+- `ReorderList` over `react-native-reorderable-list` (or the fallback named in the scaffold's report):
+  - a long press lifts the item with a medium haptic, moving reorders, and the drop fires a light haptic and `onReorder(ids)` once with the new order;
+  - a long press released without movement calls `onReleaseWithoutMove(id)` and not `onReorder`;
+  - VoiceOver custom actions "Move up" and "Move down" call `onReorder` with the item moved one place; the first item has no "Move up", the last no "Move down";
+  - `nested` renders `NestedReorderableList` for use inside a `ScreenScroll`.
+- `SegmentedControl`: `accessibilityRole="tablist"`, each segment a 44 pt `tab` with `selected` state; the thumb slides over the motion token's 150 ms and moves at once under Reduce Motion or Low Power Mode (`ui/motion.tsx`).
+- `Sheet`: a native page sheet (`Modal` with `presentationStyle="pageSheet"`) with a title and a Done button; Done and the swipe-down both call `onClose`.
+
+**Axis ticks and module specs (lane c)**
+- `valueTicks(ceiling, format, opts)`: 0, the midpoint and the ceiling for percent, bytes, rate and watts, with labels from `@core/format`; a ceiling of 0 or a non-finite one returns one tick at 0.
+- `timeTicks(fromMs, toMs, widthPx, opts)`: labels at clock-aligned steps for 5 m, 1 h, 24 h, 7 d and 30 d, in host time through `clockOffsetMs`; fewer ticks at larger `captionScale` so labels never overlap at a given width; the right edge is labelled "now" only when `toMs` is now.
+- `packages/core/src/module-hero.test.ts` is the moved `src/app/components/module-hero.test.ts`, unchanged in assertions. Desktop importers keep `~/components/module-hero`, now a re-export; `bun run test -- src/app` passes unchanged.
+
+**Heat and ring models (lane d)**
+- `heatMatrixModel` and `ringGaugeModel` produce, from `widget-models/fixtures/heat-ring.ts`, the cells, alphas, legend labels, current values and spoken text the desktop components render today; one test file asserts the models.
+- The desktop `heat-matrix.tsx` and `ring-gauge.tsx` render the models; `src/app/widgets/heat-matrix.test.tsx`, `ring-gauge.test.tsx`, `core-heatmap.test.tsx` and `ring-stat-card.test.tsx` pass unchanged; the gallery renders unchanged.
+- Phone twins `widgets/heat-matrix.tsx` and `widgets/ring-gauge.tsx` render the same fixtures; tests assert accessible names and values from the model (not class names), and that a `null` cell is drawn as a gap, not a zero.
+- `formatTemperature` units pass through: a model given `units: "F"` labels the legend and current values in °F.
+
+**Sparklines (lane e)**
+- `StreamArea` with `variant="spark"`: no axes, the ceiling label in `axis` at the top-left corner on the top gridline; with `variant="chart"` the ceiling label sits on the top gridline, not above it (item 8). Accessible values unchanged from phase 7's card models.
+- `Sparkbars`: mirrored bars on the sparkline scale, download at ramp step 1 below the axis and upload at ramp step 2 above, each direction autoscaled; a `null` bucket draws nothing.
+- `MirrorBars` (the card's): ramp steps 1 and 2 instead of the full accent, with "↓ Download" and "↑ Upload" labels from the card model (item 12).
+- `bars.test.tsx` drops its `className` assertions and keeps the heights from the model (tests audit L3).
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | apps/mobile/src/ui/header-button.tsx, apps/mobile/src/ui/back-button.tsx, apps/mobile/src/ui/screen-options.ts, apps/mobile/src/ui/screen-scroll.tsx, apps/mobile/src/ui/icons.tsx, apps/mobile/src/ui/grouped-list.tsx, apps/mobile/src/ui/list-row.tsx, apps/mobile/src/ui/swipe-row.tsx, apps/mobile/src/ui/demo-badge.tsx, apps/mobile/test/ui/chrome/ | contracts, `plan/rfc-ios-polish.md` 3, 4.1, 4.7; `plan/design-system.md`; audit-architecture M3 | 44 pt and labelled buttons, blur material, automatic insets, every icon, list rows, swipe action, demo sheet | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/ui`, `make mobile-check`; simulator screenshots of `/dev/primitives` chrome rows in light, dark and AX1, and of a scrolled screen with content under the status bar, compared with the popover header |
+| b | M | apps/mobile/src/ui/reorder-list.tsx, apps/mobile/src/ui/segmented-control.tsx, apps/mobile/src/ui/sheet.tsx, apps/mobile/test/ui/interaction/ | contracts, RFC 4.5, 4.7, 5; the scaffold's drag-list and zeego report; `apps/mobile/src/ui/motion.tsx` | reorder, release-without-move, VoiceOver moves, segment thumb, sheet close | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/ui`, `make mobile-check`; simulator recording of a drag reorder and a release-without-move, screenshots in light, dark and AX1 |
+| c | M | packages/core/src/chart-math/axis-ticks.ts, packages/core/src/chart-math/axis-ticks.test.ts, packages/core/src/module-hero.ts, packages/core/src/module-hero.test.ts, src/app/components/module-hero.ts, src/app/components/module-hero.test.ts | contracts, `src/app/widgets/lib/chart-labels.ts`, `packages/core/src/chart-math/nice-ceiling.ts`, `packages/core/README.md` | ticks on four units and five ranges, host-clock labels, moved hero test unchanged | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/chart-math packages/core/src/module-hero.test.ts src/app`, `bun run typecheck`, `make mobile-check` |
+| d | L | packages/core/src/widget-models/heat-matrix.ts, packages/core/src/widget-models/ring-gauge.ts, packages/core/src/widget-models/heat-ring.test.ts, packages/core/src/widget-models/fixtures/heat-ring.ts, src/app/widgets/heat-matrix.tsx, src/app/widgets/ring-gauge.tsx, apps/mobile/src/widgets/heat-matrix.tsx, apps/mobile/src/widgets/ring-gauge.tsx, apps/mobile/test/widgets/heat-ring/ | contracts, `.claude/skills/widget-model/`, `packages/core/README.md`, `src/app/widgets/core-heatmap.tsx`, `ring-stat-card.tsx` | models tested once, desktop tests unchanged, phone twins on the same fixtures | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/widget-models src/app/widgets`, gallery and render-count e2e, `make e2e-perf` (before and after), `bun run --cwd apps/mobile test -- test/widgets`, `make mobile-check`; desktop gallery screenshots unchanged; phone twins in light, dark and AX1 next to the gallery |
+| e | M | apps/mobile/src/widgets/stream-area.tsx, apps/mobile/src/widgets/mirror-bars.tsx, apps/mobile/src/widgets/sparkbars.tsx, apps/mobile/test/widgets/bars/, apps/mobile/test/widgets/charts/, packages/core/README.md | contracts, `packages/core/src/widget-models/stream-area.ts`, `mirror-bars.ts`, `plan/design-system.md` (mirrored bars, ramp steps) | spark variant, ceiling on the gridline, ramp-step bars with labels, L3 cleanup | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/widgets`, `make mobile-check`; simulator screenshots of the CPU and Network cards and the sparklines in light, dark and AX1 next to the popover |
+
+Ownership:
+- **The scaffold owns `text.tsx`, every `Text` call site and the manifests.** The rename touches 29 files across every lane's area, so it happens once before dispatch. `apps/mobile/package.json`, `bun.lock`, `apps/mobile/jest.config.cjs` and `apps/mobile/app.config.ts` change only in the scaffold.
+- **`role` stays as an alias until phase 11.** Phase 9 runs beside this phase and its files use `role`. The scaffold keeps `role?: TextVariant` on `TextProps` as an alias for `variant` (typed, not a spread), renames every call site outside phase 9's files, and phase 11's scaffold, after phase 9 has merged, renames phase 9's call sites and deletes the alias. This is the one transitional shim in the run; it exists only so phase 9's lane doesn't conflict with this scaffold.
+- **Lane e owns `packages/core/README.md`.** It lists a fork there if the spark variant needs a model option only the phone uses. Lane d's models are shared, not forks; if lane d needs a README line it reports the text and the orchestrator adds it at landing.
+- **No lane edits `chart-math/index.ts`.** Callers import `@core/chart-math/axis-ticks` by path.
+- **The dev route `/dev/primitives`** (`apps/mobile/src/app/dev/primitives.tsx`, `__DEV__` only) is scaffold-owned and renders each lane's stub, so each lane's screenshot shows its own primitive without touching a shared file. Phase 11's lane a deletes it.
+
+#### Scaffold contracts (phase 10)
+
+Inline before dispatch, in this order, each step checked before the next:
+
+1. **Dependencies.** `bunx expo install expo-localization expo-symbols react-native-reorderable-list` in `apps/mobile`, then `bun install`. Confirm `react-native-reorderable-list`'s peer ranges cover Reanimated 4.7 and Gesture Handler 3.3, add it to jest's `transformIgnorePatterns` if needed, render a two-item list under jest and in a simulator build. If it doesn't fit, stop and report: the fallback is a `ReorderList` written on Reanimated and Gesture Handler directly, which replaces lane b with an L lane of its own. Add a plugin entry to `app.config.ts` only if `expo install` asks for one (`expo-localization` doesn't need one to read the locale).
+2. **zeego check.** Read zeego's current documentation once for a lift-then-drag handoff from a native context menu to a Gesture Handler or Reanimated drag. If it documents one, switch the card menu plan to zeego, install it here, and say so in the Log; otherwise record "ActionSheetIOS on release, per RFC 4.5" in the Log.
+3. **Text.** Write the full `ui/text.tsx` (below) and `test/ui/text.test.tsx`, rename `role` to `variant` at every call site outside phase 9's files, and remove every `{...{ role: ... }}` spread.
+4. **Move `host-settings.tsx`.** `apps/mobile/src/hosts/host-settings.tsx` moves to `apps/mobile/src/settings/host-settings.tsx`; `app/settings/hosts.tsx` and its test imports follow. Phase 11 lane a owns `src/settings/`, lane d owns `src/hosts/`.
+5. **Stubs** for every signature below, the `/dev/primitives` route, then `bun run typecheck`, `make mobile-check` and `bun run test -- packages/core`.
+
+```ts
+// apps/mobile/src/ui/text.tsx (scaffold, complete; RFC 3)
+export type TextVariant =
+  | "largeTitle" | "title" | "onboardingTitle" | "cardTitle" | "cardFigure" | "heroFigure"
+  | "body" | "label" | "value" | "caption" | "axis";
+// 34/600, 22/600, 28/600, 13/600, 15/600 rounded tabular, 28/600 rounded tabular,
+// 17/400, 13/400 muted, 13/400 tabular, 12/400 muted, 11/400 muted tabular (maxFontSizeMultiplier 1.5)
+export type TextProps = Omit<NativeTextProps, "role"> & { variant: TextVariant; /** removed in the phase 11 scaffold */ role?: TextVariant };
+export function Text(props: TextProps): JSX.Element;
+
+// apps/mobile/src/ui/icons.tsx (lane a)
+export type IconName = "chevron.left" | "chevron.right" | "chevron.down" | "chevron.up" | "gearshape" | "xmark"
+  | "ellipsis" | "checkmark" | "line.3.horizontal" | "apple.logo" | "server.rack" | "doc.on.doc";
+export function Icon(props: { name: IconName; size?: number; color?: string; accessibilityLabel?: string }): JSX.Element;
+// apps/mobile/src/ui/header-button.tsx, back-button.tsx, screen-options.ts, screen-scroll.tsx (lane a)
+export function HeaderButton(props: { icon: IconName; accessibilityLabel: string; onPress(): void }): JSX.Element;
+export function BackButton(props: { onPress?: () => void }): JSX.Element; // default: router.back()
+export function useAccessibilityEscape(onEscape?: () => void): { onAccessibilityEscape(): void };
+export function screenOptions(colors: ThemeColors, opts?: { largeTitle?: boolean; root?: boolean }): NativeStackNavigationOptions;
+export function ScreenScroll(props: ScrollViewProps & { headerShown?: boolean }): JSX.Element;
+// apps/mobile/src/ui/grouped-list.tsx, list-row.tsx, swipe-row.tsx, demo-badge.tsx (lane a)
+export function GroupedList(props: { children: ReactNode }): JSX.Element;
+export function ListSection(props: { title?: string; footer?: string; children: ReactNode }): JSX.Element;
+export interface ListRowProps {
+  title: string; subtitle?: string; glyph?: IconName; value?: string;
+  accessory?: "chevron" | "checkmark" | "none"; selected?: boolean; destructive?: boolean;
+  onPress?: () => void; accessibilityHint?: string; trailing?: ReactNode;
+}
+export function ListRow(props: ListRowProps): JSX.Element;
+export function SwipeRow(props: { children: ReactNode; actionLabel: string; onAction(): void }): JSX.Element;
+export function DemoBadge(props: { onExit(): void }): JSX.Element;
+
+// apps/mobile/src/ui/reorder-list.tsx, segmented-control.tsx, sheet.tsx (lane b)
+export interface ReorderListProps<T> {
+  data: readonly T[]; keyOf(item: T): string; itemLabel(item: T): string; nested?: boolean;
+  renderItem(info: { item: T; index: number; isActive: boolean }): ReactElement;
+  onReorder(ids: string[]): void; onReleaseWithoutMove?(id: string): void;
+}
+export function ReorderList<T>(props: ReorderListProps<T>): JSX.Element;
+export function SegmentedControl<V extends string | number>(props: {
+  segments: readonly { value: V; label: string }[]; value: V; onChange(value: V): void; accessibilityLabel: string;
+}): JSX.Element;
+export function Sheet(props: { visible: boolean; title: string; onClose(): void; children: ReactNode }): JSX.Element;
+
+// packages/core/src/chart-math/axis-ticks.ts (lane c)
+export interface AxisTick { value: number; frac: number; label: string }
+export function valueTicks(ceiling: number, format: (value: number) => string, opts?: { count?: number }): AxisTick[];
+export function timeTicks(fromMs: number, toMs: number, widthPx: number,
+  opts: { clockOffsetMs: number; nowMs: number; captionScale?: number }): AxisTick[];
+// packages/core/src/module-hero.ts (lane c): moved unchanged; src/app/components/module-hero.ts re-exports it
+
+// packages/core/src/widget-models/heat-matrix.ts, ring-gauge.ts (lane d); shapes follow today's desktop props
+export interface HeatMatrixInput {
+  rows: readonly { key: string; label: string; values: readonly (number | null)[] }[];
+  domain: readonly [number, number]; format(value: number): string;
+}
+export interface HeatMatrixModel {
+  cells: readonly { row: number; col: number; alpha: number | null }[];
+  rows: readonly { key: string; label: string; current: string }[];
+  legend: { min: string; max: string }; spoken: string;
+}
+export function heatMatrixModel(input: HeatMatrixInput): HeatMatrixModel;
+export interface RingGaugeInput { value: number | null; max: number; label: string; format(value: number): string; secondary?: string }
+export interface RingGaugeModel { arcs: readonly RingArc[]; figure: string; label: string; secondary: string | null; spoken: string }
+export function ringGaugeModel(input: RingGaugeInput, geometry: RingGeometry): RingGaugeModel;
+// apps/mobile/src/widgets/heat-matrix.tsx, ring-gauge.tsx (lane d): HeatMatrix({ model, height }), RingGauge({ model, size })
+
+// apps/mobile/src/widgets/stream-area.tsx (lane e): StreamArea gains `variant?: "chart" | "spark"` (default "chart")
+// apps/mobile/src/widgets/sparkbars.tsx (lane e)
+export function Sparkbars(props: { data: MirrorBarsData; height: number; accessibilityLabel: string }): JSX.Element;
+```
+
+#### Lane a brief
+- **Goal:** one set of navigation chrome and list primitives, so every screen in phase 11 reads as one app and no content draws under the status bar without a material behind it.
+- **Interface:** `Icon`, `HeaderButton`, `BackButton`, `useAccessibilityEscape`, `screenOptions`, `ScreenScroll`, `GroupedList`, `ListSection`, `ListRow`, `SwipeRow`, `DemoBadge`, as in the scaffold contracts.
+- **Behavior:**
+  - Colors only through `useThemeColors()` (phase 7 lane a); no literal colors, no `themeColors[...]` lookups.
+  - `screenOptions` returns the shared header config: `headerTransparent`, `headerBlurEffect: "systemChromeMaterial"`, `headerLargeTitleShadowVisible: false`, title weight `"600"` (RFC 3: weight 590 renders as `"600"`), `headerBackVisible: false` plus `headerLeft: () => <BackButton />` unless `root`. Native edge swipe-back stays on (`gestureEnabled: true`).
+  - `ScreenScroll` sets `contentInsetAdjustmentBehavior="automatic"` and the screen background; with `headerShown={false}` it pads by the top safe-area inset and clips instead.
+  - `Icon` renders `SymbolView` from `expo-symbols` with the theme tint; jest renders it through the module's own jest mock if it ships one, else a test helper in `test/ui/chrome/`.
+  - `ListRow` is the grouped-list row for every settings page: min height 44 pt, title in `body`, subtitle in `caption`, value in `value` right-aligned, chevron or checkmark accessory, destructive rows in `--color-destructive` and never cyan.
+  - `SwipeRow` uses Gesture Handler's `ReanimatedSwipeable`, a destructive trailing action, and the same action as an `accessibilityActions` entry.
+  - `DemoBadge` is a chip-styled `Pressable` ("Demo", `label` variant in a bordered pill), opening `ActionSheetIOS.showActionSheetWithOptions` with "Exit demo" (`destructiveButtonIndex`) and "Cancel".
+- **Decisions already made:** chevron-only back with no label and no glass fill, tinted `foreground`, in a 44 pt hit area, with `accessibilityLabel="Back"` and the escape gesture; native edge swipe-back stays; the host pager stays, so the chevron stays visible (the user, 2026-11-25). Header buttons are 28 pt stroke icons with no glass fill. Scroll-edge material through the native blur, not a custom view (RFC 4.1, item 22). Icons come from SF Symbols through `expo-symbols`, replacing three chevron paths and the inline gear (architecture M3).
+- **Out of scope:** adopting the primitives in screens (phase 11), the reorder list (lane b), text (scaffold).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** the drag-reorder, segmented control and sheet primitives the card stack, Settings > Hosts and the range control use.
+- **Interface:** `ReorderList`, `SegmentedControl`, `Sheet`.
+- **Behavior:**
+  - `ReorderList` wraps `react-native-reorderable-list` (`ReorderableList`, or `NestedReorderableList` when `nested`), with `onDragStart` firing `Haptics.impactAsync(Medium)` and `onDragEnd` `Haptics.impactAsync(Light)`. Release-without-move is detected from the drag events (start and end at the same index with no `onReorder`) and calls `onReleaseWithoutMove`. Each item carries `accessibilityActions` "Move up"/"Move down" (omitted at the ends) built from `itemLabel`.
+  - `SegmentedControl`: a compact track (no heavy border box, audit item 19) with a Reanimated thumb; duration from the motion tokens (`ui/motion.tsx`), 0 under Reduce Motion or Low Power Mode.
+  - `Sheet`: React Native `Modal` with `presentationStyle="pageSheet"`, a `title` header and Done.
+  - If the scaffold reported the library doesn't fit, this lane is replaced by the L fallback lane named in the scaffold report.
+- **Decisions already made:** `react-native-reorderable-list` over a hand-written list (maintained, on Reanimated and Gesture Handler, has a nested variant); haptics from `expo-haptics`; one primitive for the card stack and Settings > Hosts (RFC 4.5, 4.7, 5).
+- **Out of scope:** the card action menu (phase 11 lane c1 uses `ActionSheetIOS` on `onReleaseWithoutMove`), persistence of orders (the callers).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+- **Goal:** labelled value and time ticks, and the module hero specs, available to both apps from core.
+- **Interface:** `valueTicks`, `timeTicks`, the moved `module-hero.ts`.
+- **Behavior:**
+  - `valueTicks` follows the design-system Y-scale rule: a fixed domain's ceiling or a `niceCeiling` passed in; labels through the caller's formatter.
+  - `timeTicks` uses `@core/host-clock` for host time and `@core/time-grid` steps; label width is estimated with `CHART_CAPTION_CHAR_WIDTH_PX` times `captionScale`, as the annotation model does, so the same rule works at AX sizes.
+  - `module-hero.ts` moves to core with its test, unchanged; `src/app/components/module-hero.ts` becomes `export * from "@core/module-hero"`. It has no React or desktop import today; if one appears, the lane stops and reports.
+- **Decisions already made:** the ticks are a shared model the desktop adopts later (RFC 5); the move happens now because the phone is the second consumer (README guard 1).
+- **Out of scope:** desktop adoption of the ticks, any chart renderer.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane d brief
+- **Goal:** the Power & Sensors rings and the thermal and per-core heat matrices are decided once in core and rendered by both apps.
+- **Interface:** `heatMatrixModel`, `ringGaugeModel`, the phone `HeatMatrix` and `RingGauge`.
+- **Behavior:**
+  - Follow the `widget-model` skill, one widget per commit: extract the label, legend, current-value, spoken-text and cell logic from the desktop components into the models, over the existing `heatmapAlpha` and `ringArcs`. The desktop components render the models and keep their layout, motion and DOM.
+  - The models take measurable inputs (values, domain, formatter, geometry), never a platform flag. Temperature unit is a formatter input (`formatTemperature(v, { units })`), so the phone's locale unit in phase 12 needs no model change.
+  - The phone twins draw with `react-native-svg`, colors from the ramp tokens, gaps as gaps.
+- **Decisions already made:** shared widget models, tested once and rendered twice (`packages/core/README.md`); rings and the SoC heatmap port to the phone (the user's Power & Sensors decision).
+- **Out of scope:** the Power & Sensors and CPU pages (phase 12), the desktop's `core-heatmap.tsx` and `ring-stat-card.tsx` (unchanged; they compose the changed components).
+- **Done when:** the table's Done-when conditions are met, with `make e2e-perf` before and after reported.
+
+#### Lane e brief
+- **Goal:** the sparklines the hosts-list rows need, and the CPU and Network card charts drawn the popover's way.
+- **Interface:** `StreamArea` `variant`, `Sparkbars`, `MirrorBars` (existing props).
+- **Behavior:**
+  - `variant="spark"`: no time axis, line plus area at the module accent, the ceiling label in the `axis` variant at the top-left corner on the top gridline, sized for a 36 pt plot.
+  - `variant="chart"` (default): the ceiling label moves onto the top gridline (audit item 8). Height stays the caller's.
+  - `Sparkbars` and `MirrorBars` draw download at ramp step 1 below the axis and upload at ramp step 2 above, from `mirrorBarsModel`; `MirrorBars` shows "↓ Download" and "↑ Upload" labels from its data (item 12).
+  - A model option only the phone needs is a fork listed under "Forks" in `packages/core/README.md` (RFC 5).
+- **Decisions already made:** sparklines are phone twins of the existing `streamAreaModel`/`mirrorBarsModel` (RFC 5); ramp steps 1 and 2 per `plan/design-system.md`.
+- **Out of scope:** the row layout and its data (phase 11 lane d), card layout (phase 11 lane c2).
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 11: surfaces
+
+Demo:
+- **Simulator, demo hosts, light, dark and AX1:** the welcome screen shows a live labelled "Example host" preview of the CPU, Memory and Network cards ticking at 1 Hz, one sentence, "Add a host" and "Try demo hosts". "Try demo hosts" lands on Hosts, where each row shows the name, OS glyph, status and three accent charts (CPU, memory, network) with distinct values per host; the offline host shows dashes and "Offline since HH:MM". The "Demo" chip opens "Exit demo", which returns to welcome.
+- **Host screen:** the host name is the large title and collapses on scroll, with the chevron-only back; scrolled cards pass under the status bar with the chrome material behind them. CPU, Memory, GPU and Network fit one iPhone 18 Pro screen; the chevron toggles density, a body tap opens the module, long-press-and-move reorders with haptics, long-press-and-release opens the action sheet.
+- **Module page (generic per module):** a 5m/1h/More segmented control, a stat strip with avg and peak from the history answer, a ticked chart with hatched gaps and pill annotations, scrubbing with a pinned readout, the live process table (on a host that sends processes) and the module's own events. The Network page shows no power event.
+- **Settings:** Hosts is one grouped list; a row opens the host detail page; swipe-to-delete asks before removing; press-hold-and-drag reorders. Appearance has checkmarks. The settings back control matches the host screen's.
+- **Pairing:** each step (priming, denied, unavailable, paste, preview with and without `can_hand_over`, waiting, success, failure) in the shared layout with actions above the home indicator; the setup guidance sits before scanning. `update-from-mac` and `pair-hosts` use the shared header.
+
+Depends on: phase 9, phase 10
+
+Code facts this phase relies on (checked 2026-11-25; the state after phases 7 to 10 land, naming the contract each relies on):
+- **Headers.** `(hosts)/_layout.tsx` sets `headerLargeTitle: true` for every screen and `title: ""` on `[host]/index` (audit item 1); `HostScreen` then draws its own title in content. After phase 7 lane a the colors come from the navigator theme; after phase 10 lane a `screenOptions(colors)` and `BackButton` exist but no layout uses them.
+- **Settings is a nested stack with a hand-drawn back.** `app/_layout.tsx` mounts `settings` with `headerShown: false`, so `settings/index.tsx` draws its own chevron (architecture I6). `settings/_layout.tsx` declares six screens. Phase 10's scaffold moved `host-settings.tsx` to `apps/mobile/src/settings/`; it renders every host as a card with a cyan Rename, arrows and a cyan Remove, and the "Update from Mac" row phase 8 lane c added.
+- **Phase 9's screens set their own headers.** `update-from-mac.tsx` and `pair-hosts.tsx` (phase 9 lane c) set their own `Stack.Screen` options and still use `role` on `Text` (phase 10's alias).
+- **The demo lives by route names.** `DemoLifetime` in `data/demo.ts` keeps the demo transport while a route named `"demo"` or `"(hosts)"` is on the stack (architecture M8). `test/first-launch.test.tsx` spies on `setInterval`/`clearInterval` (tests M4).
+- **Welcome and pairing.** After phase 8 lane c, `app/index.tsx` is a placeholder welcome with "Add a host" and "Try demo hosts", and it imports `ActionButton` from `src/components/` (architecture I9; the only other importer, `pair-linux.tsx`, was deleted in phase 8). The pairing views are in `pairing/screens/` (`choose-method`, `scanner`, `paste`, `preview`, `waiting`, `result`), the logic in `pairing/flow.ts` (phase 8 lane c) and `after-pair.ts` (phase 9 lane c). `PairingState { hosts, key_changed }` is a `PhoneTransport` call (phase 8 scaffold).
+- **The card stack rebuilds every tick.** `host/host-page.tsx` subscribes to six selections and two streams in one component and runs `buildCardStack` each render (architecture I5); card dimming uses React Native `Animated` (M14). `host/card-menu.tsx` is a `Modal` with "Move up"/"Move down". `test/host/host-screen.test.tsx` spies on component exports for render counts (tests M2) and on `Animated.timing` (L2), and its first test covers seven behaviors (L4). Card content comes from `packages/core/src/popover/cards/` (phase 7 lane g, `CardContent`).
+- **Chart wording is written twice.** `data/live-stream.ts` builds "CPU, last 60 seconds, now 18%" itself and holds figures on `performance.now()`; the desktop's `src/app/hooks/use-chart-label.ts` adds a trailing period and holds per 10 s bucket of the stream edge (architecture I4).
+- **Connection wording** is `phoneProblem` and `hostStatusSummary` in `packages/core/src/phone-connection.ts` (phase 7 lane f); the banner is in `apps/mobile/src/connection/`. The pill reads `status.demand` (phase 8 lane d: `compact` when `live_allowed` is false) but has no wording for it yet.
+- **Hosts list.** Rows (`hosts/host-row.tsx`) show one CPU sparkline pinned to the floor and values that aren't accent-tied (items 15, 16). The row data is one `useHostHistory` query for `cpu.total`, `mem.used`, `net.rx_total`, `net.tx_total` over 30 minutes (phase 7 lane k) with each `HostSummary` appended (phase 8 lane d, `useFocusDemand(host, "compact")`). `test/hosts/hosts-list.test.tsx` spies on `StreamArea` (tests M1).
+- **Demo data.** Every demo host reports the same vitals from `packages/core/src/mock/remote.ts`; `mock/history.ts`'s `mockGaps` always cuts past nights and, with `sleep-gap`, an hour gap; `mock/host-history.ts` (phase 7 lane k) answers `hostHistory` from the same generator for every host. Desktop tests read the default mock.
+- **Module page.** `module/index.tsx` is one 153-line screen with one 0-100 % chart, a custom bordered `RangeControl` over `PHONE_RANGES` (`data/history.ts`), `ScrubbableChart`, and `EventsList`. Phase 7 lane k's hooks (`useModuleHistory`, `useEvents`, `useHostHistory`) read one `hostHistory` answer that carries `stats` and the module's events, filtered on the host by `EventDetail::module()` (phase 7 lane j1). A failed status read shows only the error line (errors L3). `test/module/module-screen.test.tsx` sets an unused `latencyMs` (tests L6).
+- **Annotations already have a shared layout model.** `packages/core/src/widget-models/chart-annotation.ts` `annotationsModel` places markers in rows through `layoutMarkers` and merges collisions into "+N"; the desktop's `src/app/widgets/chart-annotation.tsx` uses it. The phone's `widgets/chart-annotations.tsx` draws the `marker` variant at `top: 12` inside the plot, so labels sit over the series (audit item 23).
+- **Process interest.** `useProcessDemand(host, view)` in `data/processes.ts` sets and clears `MobileCall::SetProcessInterest` on focus and blur (phase 8 lane d). `ProcessInterest`, `FULL_TABLE`, `unionViews` (`@core/process-interest`) and `groupLiveProcesses` (`@core/process-groups`) are the desktop's.
+- **Titles.** `HISTORY_MODULES` (`data/history.ts`) names the power module "Power".
+
+Test cases:
+
+**Navigation and settings (lane a)**
+- Headers (`test/navigation/`):
+  - The hosts list keeps the large title "Hosts"; the host screen's large title is the host name (set by the host screen), with no in-content title; module pages use a standard title.
+  - Every pushed screen (host, module, settings pages, host detail, pairing, `update-from-mac`, `pair-hosts`, debug) renders `BackButton` and sets `headerBlurEffect: "systemChromeMaterial"` through `screenOptions`; a grep test finds no `headerTintColor`, `headerBackTitle` or hand-drawn chevron outside `ui/`.
+  - The hosts list's header has the settings `HeaderButton` and, in demo mode, the `DemoBadge`; "Exit demo" calls `useDemo().exit()`.
+  - The `/dev/primitives` route is gone.
+- Settings presentation: `settings/_layout.tsx` is deleted and the settings screens join the root stack, so every settings page gets the native back gesture and `BackButton`; `settings/index.tsx` draws no chevron (architecture I6).
+- Settings > Hosts:
+  - One grouped list; each row shows the OS glyph, name and the `hostStatusSummary` subtitle and opens `/settings/host/<id>`.
+  - Swipe-to-delete opens an action sheet whose "Remove <host>" is destructive and says this iPhone stops monitoring the host, whose history stays on the host; confirming calls `removeHost` and drops the row; Cancel leaves the host and makes no call.
+  - Drag reorder persists `hostOrder` across a relaunch (the phase 8 persistence adapter); VoiceOver "Move up"/"Move down" reorder.
+- Host detail (`settings/host/[host]`): Rename is an inline field that saves on submit; Routes are read-only rows; Re-pair pushes `/pair`; "Update from Mac" pushes `/update-from-mac`; Remove is a destructive full-width row at the bottom with the same confirmation.
+- This iPhone: the key line in a monospace caption with Copy; App Lock as a switch row. Data: one switch, "Live updates on cellular", with the footer "When this is off, the host screen updates every 5 s on cellular." Appearance: three checkmark rows (System, Light, Dark), no link-colored text. About: label/value rows with values right-aligned in `value`, and the licenses link.
+- Tests audit L1 and L4: `about.test.tsx` keeps the no-build-info case and `transport.test.ts`'s duplicate is not this lane's (left); `settings.test.tsx` is split per page; the Appearance round trip in `test/data/seam.test.tsx` is deleted here as the duplicate of the settings test (the lane owns that file for the deletion only).
+
+**Front door (lane b)**
+- Welcome:
+  - Renders the live preview (`CpuCard`, `MemoryCard`, `NetworkCard` on a mock transport's live fixture) labelled "Example host" with one VoiceOver label, one sentence, "Add a host" (primary, pushes `/pair`) and "Try demo hosts" (secondary, starts the demo).
+  - The preview ticks only while the welcome screen is focused: after blur, advancing fake time 5 s delivers no frame (the transport has no subscriber), and focus resumes it. Under Reduce Motion or Low Power Mode it shows one still frame.
+  - The title uses `onboardingTitle`; there is no weight 700 and no raw `react-native` `Text` (architecture I9).
+- States: first launch shows welcome; "Exit demo" returns to welcome and clears the demo transport; `pairingState` with `key_changed: true` shows the restore notice ("This iPhone needs to pair again…") with "Pair again", which pushes `/pair`.
+- Demo lifetime (architecture M8): `DemoProvider` starts and ends the demo through `useDemo().start(scenario?)` and `exit()`; renaming a route doesn't end it (a test navigates through a renamed test route and the demo stays). `test/first-launch.test.tsx` asserts outcomes, not timer ids (tests M4).
+- Pairing presentation: each step renders the shared step layout (title, explanation, content, actions pinned above the home indicator); the choose-method step shows the four setup steps, "Host doesn't have StatGlass yet?" with the copyable releases URL and the Linux line, and "What the phone can see"; failures render the `PhoneProblem` tone and wording; the preview shows "Can also add the hosts it monitors" only with `can_hand_over`. `pairing/flow.ts` tests stay green unchanged.
+- `src/components/` is deleted.
+
+**Host screen (lane c1)**
+- The host name is set as the native large title; no in-content title; content is in `ScreenScroll`.
+- Gestures, one test each:
+  - tapping the card header chevron toggles compact or expanded with a light haptic, and the density persists across a remount (`compact[card]`);
+  - tapping the card body pushes the module page;
+  - long-press then move reorders the stack and persists `cardOrder` for every host;
+  - long-press released without moving opens `ActionSheetIOS` with "Compact"/"Expand", "Open <module title>" and "Move to top", and each acts;
+  - VoiceOver custom actions "Toggle compact", "Move up", "Move down" and "Open" act.
+- `card-menu.tsx` and its Modal are gone.
+- Rendering cost: a `Profiler` per card counts commits; a frame that changes only CPU re-renders only the CPU card (revert-verified by widening a selector). The export spies go (tests M2).
+- Dimming: a stale host dims cards to 50 % through Reanimated; under Reduce Motion the opacity is 0.5 at once. The `Animated.timing` spy test is deleted (tests L2).
+- `host-screen.test.tsx`'s first test is split into paging and URL, blur and back, and unmount (tests L4); the expected `[live]` error and warning and the router warning are asserted with spies (tests L10).
+- The pill says "Every 5 s on cellular" when the status carries `demand: compact`, from `hostStatusSummary`; a core test covers it.
+- The connection banner (phase 7 lane f) uses the grouped-list surface and `HeaderButton`-style action; its wording is unchanged (`test/connection/` passes with no copy edits).
+
+**Cards (lane c2)**
+- Card header: an 8 pt accent swatch, the `cardTitle`, the `cardFigure` value, and the density chevron as the only header control (44 pt hit area).
+- CPU: a 52 pt chart with the ceiling label on the top gridline. Memory: "Pressure · normal|warn|critical" and a one-column legend with a swatch for every segment (Swap hatched). Power: unreported components omitted; with none, a compact unavailable row; "Power & battery" shows the battery inline. Unavailable modules: one compact line with title and reason, in `popoverSlots` order. Network: the `MirrorBars` with ramp steps and "↓ Download"/"↑ Upload" labels.
+- Chart accessible names come from core `chartLabel` (architecture I4): the phone and the desktop produce the same string for the same input, with the desktop's trailing period and its per-bucket hold rule; `src/app/hooks/use-chart-label.test.tsx` passes unchanged.
+- Desktop: `bun run test -- packages/core/src/popover src/app/routes/popover src/app/hooks`, the gallery and the render-count e2e pass unchanged.
+
+**Hosts list and demo data (lane d)**
+- Row: name, OS glyph, `hostStatusSummary` status on the top line; three equal columns, each a `cardFigure` in the accent's ink over a 36 pt chart: CPU spark (cyan), memory spark (violet, % of `mem_total_bytes`), network `Sparkbars` (green).
+- Scale: CPU and memory ceilings are `niceCeiling` of the 30-minute maximum with floors 10 % and 25 %, labelled; a 5-25 % CPU series draws under a 30 % ceiling.
+- A null bucket is a gap. A stale row dims to 50 %. An offline row shows dashes, no chart and "Offline since HH:MM" in host time (exact string). With `key_changed`, every row's status reads "Needs pairing".
+- Assertions read accessible names and values ("CPU history over the last 30 minutes, peak 24%"), not `StreamArea` props (tests M1).
+- No `subscribeLive` call from the list (the mock records it).
+- Demo data: each demo host's vitals and history are seeded from its id, so two hosts' values differ; with no scenario, a live demo host's chart has no gap where the live window joins history; only `sleep-gap` shows one. Desktop tests that read the default mock pass unchanged.
+- Empty: when the native host list becomes empty (last host removed), the list replaces to `/`.
+
+**Module frame (lane e)**
+- Frame: native title with the hardware subtitle (`headerTitle` with a caption line); `SegmentedControl` with 5m, 1h and More; More opens a `Sheet` of `RANGE_PRESETS` the host keeps, and choosing one closes it and asks the host again (one new `hostHistory` call).
+- Stat strip: a `heroFigure` lead, labelled items from the module's hero spec (`@core/module-hero`), and Avg and Peak from the answer's `stats`; a missing value shows `MISSING`, never 0.
+- `ModuleChart`: value ticks (`valueTicks`) and time ticks (`timeTicks`) labelled, ramp series, hatched gaps; scrubbing shows a crosshair and a host-time readout of every series; a long press pins the readout with a haptic; VoiceOver gets an adjustable element stepping through buckets.
+- Annotations: pills in a band above the plot area from `annotationsModel(..., variant "pill")`; two colliding events form a second row or a "+N" pill; no label is drawn inside the plot.
+- Events: the list and the annotations use the same module-filtered list; the Network page on a fixture holding an ANE `power_spike` shows no event.
+- `LiveProcessTable`: at most 10 rows from `groupLiveProcesses`, sorted by the page's sort; interest set on focus and cleared on blur (the mock records `setProcessInterest(true)` then `false`); a host that sends no processes shows "Processes are not available from this host".
+- Errors: a failed status read shows the module's error state with Retry, not a blank page (errors L3); `RemoteUnsupported` and `RemoteBusy` render phase 7 lane k's states in the chart area.
+- `HISTORY_MODULES.power.title` is "Power & Sensors".
+- `module-screen.test.tsx` drops the unused `latencyMs` (tests L6).
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | apps/mobile/src/app/_layout.tsx, apps/mobile/src/app/(hosts)/_layout.tsx, apps/mobile/src/app/(hosts)/index.tsx, apps/mobile/src/app/settings/, apps/mobile/src/app/update-from-mac.tsx, apps/mobile/src/app/pair-hosts.tsx, apps/mobile/src/app/debug.tsx, apps/mobile/src/app/dev/, apps/mobile/src/settings/, apps/mobile/src/lock/app-lock-setting.tsx, apps/mobile/test/settings/, apps/mobile/test/navigation/, apps/mobile/test/data/seam.test.tsx | contracts, RFC 4.1, 4.7; audit-architecture I6, M4; audit-tests L1, L4; design audit items 1-3, 17, 21, 22 and the settings sub-page notes | headers on every pushed screen, settings in the root stack, Hosts list, swipe-delete confirm and cancel, reorder persistence, host detail actions, Appearance checkmarks | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/settings test/navigation test/data`, `make mobile-check`; simulator screenshots of each settings page, host detail, `update-from-mac` and `pair-hosts` in light, dark and AX1, compared with the dashboard settings page |
+| b | L | apps/mobile/src/app/index.tsx, apps/mobile/src/app/demo.tsx, apps/mobile/src/app/pair.tsx, apps/mobile/src/welcome/, apps/mobile/src/pairing/screens/, apps/mobile/src/pairing/help/, apps/mobile/src/data/demo.ts, apps/mobile/src/components/, apps/mobile/test/welcome/, apps/mobile/test/pairing/, apps/mobile/test/first-launch.test.tsx | contracts, RFC 4.2, 4.3; audit-architecture I9, M8; audit-tests M4; design audit item 20; `apps/mobile/src/pairing/flow.ts` | welcome states, preview ticks only while focused, demo lifetime, restore notice, every pairing step | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/welcome test/pairing test/first-launch.test.tsx`, `make mobile-check`; simulator screenshots of welcome (iPhone SE and 18 Pro at the default size, AX1 scrolled) and every pairing step in light and dark, compared with the desktop onboarding and "Pair iPhone" sheet |
+| c1 | L | apps/mobile/src/host/, apps/mobile/src/connection/, packages/core/src/phone-connection.ts, packages/core/src/phone-connection.test.ts, apps/mobile/test/host/, apps/mobile/test/connection/ | contracts, RFC 4.0, 4.5; audit-architecture I5, M14; audit-tests M2, L2, L4, L10 | card gestures one test each, Profiler counts, Reanimated dimming, cellular pill wording, banner restyle | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/phone-connection.test.ts`, `bun run --cwd apps/mobile test -- test/host test/connection`, `make mobile-check`; simulator recording of reorder and the release menu; screenshots of the host screen at rest and scrolled under the status bar in light, dark and AX1 next to the popover |
+| c2 | L | apps/mobile/src/cards/, apps/mobile/src/widgets/stat-list.tsx, apps/mobile/src/widgets/meter-track.tsx, apps/mobile/src/data/live-stream.ts, packages/core/src/popover/cards/, packages/core/src/chart-label.ts, packages/core/src/chart-label.test.ts, src/app/hooks/use-chart-label.ts, apps/mobile/test/cards/ | contracts, RFC 4.5; audit-architecture I4; design audit items 5-12; `src/app/routes/popover/_components/popover-cards.tsx` | card anatomy, CPU, memory, power, unavailable and network cards, one chart wording for both apps | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/popover packages/core/src/chart-label.test.ts src/app/routes/popover src/app/hooks`, gallery and render-count e2e, `make e2e-perf` (before and after), `bun run --cwd apps/mobile test -- test/cards`, `make mobile-check`; card screenshots in light, dark and AX1 next to the popover, desktop popover screenshots unchanged |
+| d | M | apps/mobile/src/hosts/, apps/mobile/src/data/hosts.ts, apps/mobile/src/data/hosts-list.ts, packages/core/src/mock/remote.ts, packages/core/src/mock/history.ts, packages/core/src/mock/host-history.ts, packages/core/src/mock/host-history.test.ts, packages/core/src/mock/demo-hosts.test.ts, apps/mobile/test/hosts/ | contracts, RFC 4.4, 4.8; audit-tests M1; design audit items 13-16 | three columns and accents, autoscaled ceilings, gaps, stale and offline, Needs pairing, per-host demo values, no live gap, empty to welcome | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/mock`, `bun run test` (desktop, unchanged), `bun run --cwd apps/mobile test -- test/hosts`, `make mobile-check`; hosts-list screenshots with live, stale and offline demo hosts in light, dark and AX1 next to the popover cards |
+| e | L | apps/mobile/src/module/, apps/mobile/src/data/history.ts, apps/mobile/src/data/processes.ts, apps/mobile/src/widgets/chart-annotations.tsx, apps/mobile/test/module/, apps/mobile/test/data/host-history.test.tsx | contracts, RFC 4.6, 4.8; audit-errors L3; audit-tests L6; design audit items 18, 19, 23; `src/app/components/module-page.tsx` | range control and More sheet, stat strip from `stats`, ticks, scrub and pin, pill annotations, process table and interest, module error state | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/module test/data`, `make mobile-check`; simulator screenshots of each module's generic page at 1 h and 7 d in light, dark and AX1 next to `/dashboard/<module>` |
+
+Ownership:
+- **The RFC's lane c is split in two (c1, c2).** As one lane it owned the host screen, its gestures and tests, every card, the shared card models and the chart wording, an XL job. c1 owns the host screen and the connection surfaces; c2 owns the card visuals and their content. They meet at `ModuleCardProps` (scaffold): c2's cards stay render-only (`src/cards/**` may not import `@/data` or the router, phase 7 lane b's rule) and take `compact`, `onToggleDensity` and `onOpen`; c1 wraps them in `ReorderList` and owns the gestures around them.
+- **Lane a owns route headers; content lanes own titles.** The host screen sets its own title (c1) and the module page its title and subtitle (e) through `<Stack.Screen options>`; lane a owns the layouts, `(hosts)/index.tsx` and the root stack's options for `pair`, `demo`, `debug`, `update-from-mac` and `pair-hosts`. Lane a edits phase 9's two route files for header options only.
+- **The demo provider is lane b's, mounted by the scaffold.** The scaffold replaces `<DemoLifetime />` in `_layout.tsx` with `<DemoProvider>` (stub in `data/demo.ts`), so lane a's root layout and lane b's provider don't wait on each other. Lane a's `DemoBadge` calls `useDemo().exit()`.
+- **The restore notice is lane b's, mounted by the scaffold** in the hosts list's header slot (`hosts/hosts-list.tsx` renders `<RestoreNotice />` from `@/welcome/restore-notice`, a stub); lane d renders "Needs pairing" on the rows.
+- **Lane d owns the demo mocks.** Lane e's tests use `mock/host-history.ts` as it is at phase start and assert relative to the mock's own output, so lane d's per-host seeding doesn't break them; lane e rebases on d before its final run if a value assertion moves.
+- **The data hooks keep phase 8 lane d's demand calls.** `data/hosts.ts` (d), `history.ts` and `processes.ts` (e) keep `useFocusDemand` and `useProcessDemand`.
+- **Lane c2 is the only lane touching desktop code** (`use-chart-label.ts`, the popover card models). The desktop's tests, gallery and render counts pass unchanged and `make e2e-perf` is reported before and after.
+- **Lane a takes `test/data/seam.test.tsx`** only to delete the duplicate Appearance round trip (tests L1).
+
+#### Scaffold contracts (phase 11)
+
+Inline before dispatch, after phase 9 and phase 10 have merged:
+- **Finish the `variant` rename.** Rename `role` in phase 9's files (`update-from-mac.tsx`, `pair-hosts.tsx`, `apps/mobile/src/handover/`), delete the `role` alias from `TextProps`, and extend the text grep test to fail on `role=` for `Text`.
+- **Demo provider.** Replace `<DemoLifetime />` with `<DemoProvider>` around the root stack in `app/_layout.tsx`; stub `DemoProvider` and `useDemo` in `data/demo.ts` over today's behavior.
+- **Restore notice.** Stub `apps/mobile/src/welcome/restore-notice.tsx` and render it from `hosts/hosts-list.tsx`'s header.
+- **Card props.** Write `ModuleCardProps` into `apps/mobile/src/cards/types.ts` and pass the new props from `host/card-stack.ts` with today's behavior.
+- **Module pages.** Create `apps/mobile/src/module/pages/index.ts` mapping each `PopoverCard` to the generic page, and `module/pages/generic.tsx` wrapping today's `ModuleHistory`.
+- **Chart label.** Stub `packages/core/src/chart-label.ts`.
+- Then `bun run typecheck`, `make mobile-check`, `bun run test`.
+
+```ts
+// apps/mobile/src/data/demo.ts (lane b)
+export function DemoProvider(props: { children: ReactNode }): JSX.Element;
+export function useDemo(): { active: boolean; start(scenario?: string): void; exit(): void };
+// apps/mobile/src/welcome/restore-notice.tsx (lane b): renders nothing unless pairingState().key_changed
+export function RestoreNotice(): JSX.Element | null;
+// apps/mobile/src/welcome/welcome-screen.tsx (lane b)
+export function WelcomeScreen(): JSX.Element;
+export function ExamplePreview(props: { focused: boolean }): JSX.Element; // its own mock transport, live fixture
+
+// apps/mobile/src/cards/types.ts (lane c2 renders, lane c1 passes)
+export interface ModuleCardProps {
+  card: PopoverCard; content: CardContent; compact: boolean;
+  onToggleDensity(): void; onOpen(): void; stale: boolean;
+}
+// packages/core/src/chart-label.ts (lane c2), the desktop's wording and hold rule
+export function chartLabel(input: { subject: string; spanMs: number; now: string | null; brushable?: boolean }): string;
+export function shouldRefreshFigures(prev: { bucketMs: number; edgeMs: number } | null, next: { bucketMs: number; edgeMs: number }): boolean;
+// packages/core/src/phone-connection.ts (lane c1): hostStatusSummary's label covers demand "compact" ("Every 5 s on cellular")
+
+// apps/mobile/src/module/pages/index.ts (scaffold; phase 12's scaffold rewires it)
+export interface ModulePageProps { host: HostId; module: PopoverCard; range: HistoryRangeChoice; remote: RemoteHostStatus }
+export const MODULE_PAGES: Record<PopoverCard, ComponentType<ModulePageProps>>;
+// apps/mobile/src/module/ (lane e), the frame phase 12's pages compose
+export function ModuleFrame(props: { title: string; subtitle: string | null; range: HistoryRangeChoice;
+  onRange(r: HistoryRangeChoice): void; children: ReactNode }): JSX.Element;
+export function StatStrip(props: { lead: StatItem; items: readonly StatItem[]; stats: readonly SeriesStatsInfo[] }): JSX.Element;
+export function ModuleChart(props: { series: readonly ChartSeries[]; gaps: readonly Gap[]; ceiling: Ceiling;
+  format(v: number): string; range: HistoryRange; events: readonly Event[]; clockOffsetMs: number; height: number }): JSX.Element;
+export function LiveProcessTable(props: { host: HostId; sort: ProcessSort; view: ProcessView }): JSX.Element;
+export function EventsList(props: { events: readonly Event[]; showDate: boolean }): JSX.Element;
+// apps/mobile/src/data/processes.ts (lane e): useLiveProcesses(host, sort): { rows: LiveGroup[] | null; available: boolean }
+```
+
+#### Lane a brief
+- **Goal:** every header and every settings page follows one iOS convention, and nothing draws under the status bar without a material.
+- **Interface:** `screenOptions`, `BackButton`, `HeaderButton`, `DemoBadge`, `GroupedList`, `ListRow`, `SwipeRow`, `ReorderList` (phase 10), `useDemo().exit()` (scaffold).
+- **Behavior:**
+  - Root and hosts layouts use `screenOptions(colors)`; the hosts list sets `headerLargeTitle`, the host screen keeps `headerLargeTitle` with the title the screen sets, module pages set `headerLargeTitle: false`.
+  - Settings joins the root stack: delete `settings/_layout.tsx`, declare the settings screens' titles in the root layout, push `/settings` normally. Chosen over a modal sheet because the host screen and settings sub-pages must share the same back chevron and edge swipe (the user's back decision), and a sheet's first page has a Done button instead.
+  - Settings pages are thin routes that render screens from `apps/mobile/src/settings/` ("route reads params, renders the screen", the part of architecture M4 RFC section 9 assigns here).
+  - Settings > Hosts: `ReorderList` of `SwipeRow`-wrapped `ListRow`s; swipe opens `ActionSheetIOS` with "Remove <host>" (destructive) and the message "This iPhone stops monitoring <host>. Its history stays on the host."; confirm calls `removeHost` then updates settings, as phase 8 lane c's code does today.
+  - Host detail at `app/settings/host/[host].tsx`: Rename (inline `TextInput` saving to `hostNames`), Routes, Re-pair, "Update from Mac", Remove.
+  - Delete `apps/mobile/src/app/dev/` (phase 10's primitives route).
+- **Decisions already made:** chevron-only back, edge swipe kept (the user, 2026-11-25); Remove is destructive, never cyan, with swipe-delete, a confirmation, and drag reorder with haptics and VoiceOver moves (the user's Settings > Hosts decision); "Sync history on cellular" is gone (D-152).
+- **Out of scope:** the hosts list content (lane d), the welcome and pairing views (lane b), titles set by screens (c1, e), phase 9's screen bodies.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** the welcome screen is the front door, and pairing reads as one designed flow.
+- **Interface:** `WelcomeScreen`, `ExamplePreview`, `RestoreNotice`, `DemoProvider`, `useDemo`.
+- **Behavior:**
+  - Layout top to bottom: the live preview, one sentence ("StatGlass shows your Macs' and servers' CPU, memory, power and network, live, from this iPhone."), "Add a host" (primary), "Try demo hosts" (secondary). It fits an iPhone SE at the default size and scrolls at AX1 inside `ScreenScroll`.
+  - The preview renders c2's real `CpuCard`, `MemoryCard` and `NetworkCard` on its own `createMockTransport()` live fixture, subscribed only while the screen is focused (`useIsFocused`), one VoiceOver label ("Example host: CPU 18%, memory 42%, network 1.4 MB/s down"), a still frame under the motion tokens' reduced state.
+  - `DemoProvider` owns the demo transport: `start` swaps in the mock transport and replaces to `/(hosts)`; `exit` disposes it, restores the native transport (or none) and replaces to `/`. No route-name checks.
+  - `app/index.tsx` renders `WelcomeScreen` once phase 8's launch logic finds no hosts.
+  - `RestoreNotice`: the RFC 4.2 restore sentence and "Pair again".
+  - Pairing views: one `PairingStep` layout in `pairing/screens/` (title, explanation, content, actions pinned above the home indicator); the setup guidance lives in `pairing/help/` and renders on the choose-method step and is reachable from Re-pair. "Host doesn't have StatGlass yet?" uses the Mac answer and, for Linux, "The Linux agent is installed from the Mac app (see the README's "Monitor a Linux host")" (RFC open question 1 is unanswered, so no Mac-less install is offered).
+  - Delete `src/components/` and its last import.
+- **Decisions already made:** the welcome screen is the front door with a live labelled preview, "Add a host" primary and "Try demo hosts" secondary, and first-run, demo-exit, restore and no-hosts states (the user, 2026-11-25); setup guidance on the pairing screen, before scanning (RFC 4.2); `flow.ts` logic stays phase 8's.
+- **Out of scope:** pairing logic, `after-pair.ts` and the handover screens (phases 8 and 9), the hosts list's empty redirect (lane d).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c1 brief
+- **Goal:** the host screen reads like the popover at phone scale and its cards respond to the four gestures the user chose.
+- **Interface:** `ModuleCardProps` (scaffold), `ReorderList` with `onReleaseWithoutMove` (phase 10 lane b), `ScreenScroll`.
+- **Behavior:**
+  - `HostScreen` sets `<Stack.Screen options={{ title: name }}>` and drops its in-content title. The pager stays.
+  - `CardStack` renders one container per card in `popoverSlots` order; each container selects its own slice with module-scope selectors and builds its `CardContent` (architecture I5). The parent keeps only order and density.
+  - Gestures: chevron tap toggles `compact[card]` with `Haptics.impactAsync(Light)`; body tap pushes the module; `ReorderList` (`nested`) reorders and writes `cardOrder`; `onReleaseWithoutMove` opens `ActionSheetIOS` with Compact/Expand, "Open <HISTORY_MODULES[card].title>", "Move to top". VoiceOver custom actions on each card.
+  - Dimming moves to Reanimated `useAnimatedStyle` over the motion tokens (M14).
+  - Delete `host/card-menu.tsx`.
+  - `hostStatusSummary` gains the compact-demand wording in core.
+  - The `connection/` banner uses `GroupedList`'s surface and `Text` variants; copy unchanged.
+- **Decisions already made:** the chevron toggles density, a body tap opens the module, long-press-move drags, long-press-release opens the menu, no pressure-based press (the user's card gestures decision); `ActionSheetIOS`, not a native context menu, unless phase 10's scaffold switched to zeego (RFC 4.5); one card order for all hosts.
+- **Out of scope:** card visuals and content (c2), the module page (e).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c2 brief
+- **Goal:** each card matches the popover's anatomy and density, and the chart wording is the desktop's.
+- **Interface:** `ModuleCardProps`, `CardContent` (phase 7 lane g), `chartLabel`, `StreamArea`, `MirrorBars` (phase 10 lane e).
+- **Behavior:**
+  - `module-card.tsx` header: 8 pt swatch, `cardTitle`, `cardFigure` value right, density chevron (`Icon chevron.down`/`chevron.up`) in a 44 pt area; no module chevron.
+  - Sizes per RFC 1.4's mapping (phase 10's variants); tighter gaps (12 pt padding, 8 pt gaps) so CPU, Memory, GPU and Network fit an iPhone 18 Pro at the default size.
+  - Card content changes go in the shared models in `packages/core/src/popover/cards/` only when the popover already behaves that way (Power's omitted components, Memory's pressure line); a change the popover doesn't want is a phone fork listed in `packages/core/README.md` through the orchestrator.
+  - `chartLabel` and `shouldRefreshFigures` are the desktop's current wording and hold rule moved to core; `use-chart-label.ts` and `data/live-stream.ts` call them; callers pass the ceiling format, replacing `live-stream.ts`'s hardcoded `%`.
+- **Decisions already made:** card text from the shared models, so phone and popover say the same words (RFC 4.5); unavailable modules as one compact line in unchanged slot order; Network as mirrored bars on the card (the user's Network decision).
+- **Out of scope:** gestures and the stack (c1), the welcome preview's layout (b renders these cards).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane d brief
+- **Goal:** hosts-list rows read as compact popover cards, honest about gaps, staleness and offline hosts, with demo hosts that differ.
+- **Interface:** `useHostHistory` and the summary appends (phases 7 k, 8 d), `StreamArea variant="spark"`, `Sparkbars`, `hostStatusSummary`.
+- **Behavior:**
+  - Row layout per the Test cases; values in the accent's ink (`--color-cpu-ink` and so on), figures in `cardFigure`.
+  - Ceilings: `niceCeiling(max(30-minute max, floor))` with floors 10 % (CPU) and 25 % (memory); network autoscales each direction.
+  - Memory % comes from `mem.used / mem_total_bytes` per bucket in `data/hosts.ts`, a view transform (`data-boundary.md`).
+  - The row reads `pairingState` and shows "Needs pairing" when `key_changed`.
+  - When the native host list goes from non-empty to empty, `router.replace("/")`.
+  - Demo: seed each host's vitals and history from a hash of its id (`mock/rng.ts`); find and remove the hole where the live window joins seeded history on a live demo host. Desktop-visible defaults stay as they are: if a desktop test reads a value that would change, give the phone's demo hosts their own seed path instead and say so.
+  - Keep phase 8 lane d's `useFocusDemand(host, "compact")` and `useVisibleHosts` calls.
+- **Decisions already made:** three accent charts tall enough to show normal variation, gaps as gaps, offline rows with dashes and "Offline since" rather than dimmed last values (no history behind them, D-152), demo data varying per host (the user's hosts-list decision); rows update every 5 s while the pill says Live.
+- **Out of scope:** Settings > Hosts (lane a), the restore notice's view (lane b).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane e brief
+- **Goal:** one module-page frame every module uses, so phase 12 only fills in each module's sections.
+- **Interface:** `ModuleFrame`, `StatStrip`, `ModuleChart`, `LiveProcessTable`, `EventsList`, `useLiveProcesses`, `MODULE_PAGES`' generic page (scaffold).
+- **Behavior:**
+  - Frame order: title with subtitle, range control, stat strip, charts, live process table, events (RFC 4.6).
+  - Range: `SegmentedControl` with 5m, 1h and More; More opens a `Sheet` of `RANGE_PRESETS` within the host's retention. `PHONE_RANGES` follows.
+  - Stat strip items from `@core/module-hero` specs and `@core/format`; Avg and Peak from the history answer's `stats` for the series key; no aggregation on the phone.
+  - `ModuleChart` replaces `scrubbable-chart.tsx` and `history-chart.ts`: `valueTicks` and `timeTicks` (phase 10 lane c), ramp series, hatched gaps, scrub crosshair and readout in host time, long-press pin with `Haptics.impactAsync(Medium)`, an `adjustable` VoiceOver element.
+  - Annotations: `annotationsModel` with `variant: "pill"`, drawn in a reserved band above the plot (`widgets/chart-annotations.tsx`), never over a series. The existing core model already stacks rows and merges "+N", so no core change; if the phone needs a different rule, fork it per the README.
+  - `LiveProcessTable` calls `useProcessDemand(host, view)` while mounted and focused and renders at most 10 `groupLiveProcesses` rows, read-only.
+  - The generic page shows the module's hero chart, stat strip, process table and events; phase 12 replaces it per module.
+  - `HISTORY_MODULES.power.title` becomes "Power & Sensors".
+- **Decisions already made:** visualization parity with no brush, attribution, selection, per-app range tables or drill-down; a live process table on every page sorted by the page's metric (the user's basic-monitor and process-table decisions); events filtered to the module at the source, annotations that never overlap (item 23); history from the host only (D-152).
+- **Out of scope:** each module's sections (phase 12), the per-core heatmap query (phase 12 lane a).
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 12: module pages
+
+Demo:
+- **Simulator, demo hosts (a Mac and a Linux host), light, dark and AX1, each page next to `/dashboard/<module>`:**
+  - CPU: "chip · N performance + M efficiency cores", the stat strip (Total, User, System, I/O wait and Steal where present, Idle, Load avg, Pressure stall, Avg, Peak), the user/system ramp chart, the per-core heatmap with P and E rows, processes by CPU.
+  - GPU: utilization chart and strip, frequency ring, residency stack bar, power chart, processes by GPU.
+  - Memory: the composition stack bar and strip, the pressure chart on the Mac and Used/Cached on Linux, the swap card, processes by memory.
+  - Network: "en0 · 143 Mb/s link · 192.168.86.242 · Public 76.143.14.53", the strip, mirrored history bars with labelled ceilings both ways, the interfaces list, processes by rate. A host whose public IP lookup is cold shows "Public …" then the IP.
+  - Power & Sensors: four rings, the strip, the ticked power chart with its legend and notes, the SoC thermal zones heatmap in °C with an en-GB locale and °F with en-US, the battery day card, processes by energy.
+  - Battery: rings for Charge, Health and Cycles, and Power, the battery day chart, processes by energy.
+- **Docker host:** the Network page header shows the container's interface and addresses from `NetworkAddresses` (phase 7 lane h).
+
+Depends on: phase 11
+
+Code facts this phase relies on (checked 2026-11-25; the state after phases 7 to 11 land):
+- **Pages.** After phase 11, `apps/mobile/src/module/pages/index.ts` maps every module to the generic page, over phase 11 lane e's `ModuleFrame`, `StatStrip`, `ModuleChart`, `LiveProcessTable` and `EventsList`.
+- **Data.** `useHostHistory(host, selection, range, width)` (phase 7 lane k) issues one `hostHistory` query per chart key with the width budget; a heatmap passes its column count, and a request of only `cpu.load{core=*}` selectors gets the host's 256-series clamp (phase 7 lanes j1 and k). The answer carries per-key `stats` and module-filtered events.
+- **Addresses.** `PhoneTransport.networkAddresses(host)` returns `HostAddressesInfo` with `public_ip.state` `known | pending | unavailable | unknown`; a host without `query.addresses.v1` returns `RemoteUnsupported`; the mock serves fixed addresses for demo hosts and `unavailable` for the Linux demo host (phase 7 lane h).
+- **Desktop sources the pages port.** CPU: `src/app/routes/dashboard/cpu/` (`total-card.tsx`, `core-load-card.tsx`) and `_lib/clusters.ts` (`clusterViews`, `coreCounts`, with a test). GPU: `gpu/_components/{usage,frequency,power}-card.tsx`. Memory: `memory/_components/{composition,pressure,swap,used}-card.tsx`. Network: `network/route.tsx` over `LiveMirrorChart`, `RangeTotalsStrip`, `InterfaceTable` and `_lib/network.ts` (`interfaceRows`, `ofLink`, `networkSubtitle`), plus `AddressLine`. Power: `power/_components/{ring-cards,power-draw-card,zones-card}.tsx` and `BatteryDayCard`. Hero specs are in `@core/module-hero` (phase 10 lane c).
+- **Heat and ring models** are `@core/widget-models/heat-matrix` and `ring-gauge`, with phone twins (phase 10 lane d).
+- **Temperature.** Core formats °C or °F from `TemperatureUnits` (`format/temperature.ts`); the desktop reads its unit from its settings (`units.temperature`). The phone has no setting. `expo-localization` is installed (phase 10 scaffold); `getLocales()[0].temperatureUnit` is `"celsius"` or `"fahrenheit"`.
+- **Power notes.** `@core/cpu-power-source` explains what "CPU power" measures ("CPU power: P cores").
+
+Test cases:
+
+**CPU and GPU (lane a)**
+- CPU page, Mac and Linux fixtures: the header subtitle from `coreCounts`; each stat strip item equals `@core/format` of the selector or the answer's `stats`; Steal and I/O wait only where the host reports them; the total chart has user and system ramp series; the per-core heatmap renders P and E rows on the Mac and one row group on Linux, from its own `hostHistory` query with the heatmap's column count as the budget (the mock records two calls: the page's and the heatmap's); a 64-core fixture draws 64 rows.
+- GPU page: utilization chart and strip items (Utilization, Renderer, Tiler, Frequency, Power, Avg, Peak); frequency ring from `ringGaugeModel`; residency stack bar; power chart; a host with no GPU shows the module's unavailable state.
+- Processes: CPU sorts by CPU %, GPU by GPU with `gpu: true` in the view.
+- No `UsageAppsCard` text or "Every process" link on either page.
+- `packages/core/src/cpu-clusters.test.ts` is the moved desktop test, unchanged in assertions; desktop CPU tests pass unchanged.
+
+**Memory and Network (lane b)**
+- Memory: header "N GB unified" on the Mac and MemTotal on Linux; composition stack bar and strip (Used, Pressure or Pressure stall, Swap, Compressed, Peak used, Peak swap); pressure chart on the Mac, Used/Cached on Linux; swap card with Used, In, Out and a chart; processes by memory.
+- Network header, one test per state: `known` shows "en0 · 143 Mb/s link · 192.168.86.242 · Public 76.143.14.53"; IPv6 adds a second caption line; `pending` shows "Public …" and polls every 2 s at most 5 times only while the page is focused (fake timers: blur stops polling); `unavailable` shows "Public unavailable" with the reason as the accessibility hint; `unknown` shows "Public unavailable"; an old host (`RemoteUnsupported`) shows the interface and link speed from the live frame and no address line. Addresses are fetched on focus only.
+- Network strip: Download lead, Upload, Of link, and range totals; the mirrored history chart has upload above and download below with a labelled ceiling per direction and time ticks, replacing the two area lines; the interfaces list; processes by rate (`network: true`).
+- No `AppsCard`, `AppsNowCard` or selection text; no power event on the page.
+- `packages/core/src/network-lines.test.ts` covers `interfaceRows`, `ofLink` and `networkSubtitle` moved from the desktop; the desktop Network page tests pass unchanged.
+
+**Power & Sensors and Battery (lane c)**
+- Power & Sensors, Mac fixture: subtitle (power source, system draw); four rings (CPU temperature with P-cluster, GPU temperature with frequency, Fans RPM with left/right and mode, System W with source and package) from `ringGaugeModel`; strip (System W, CPU, GPU, ANE, DRAM, Avg, Peak); the ticked power chart with its legend and the note from `@core/cpu-power-source`; the thermal zones heatmap with legend and current value per zone; the battery day card when present; processes by energy.
+- Linux fixture: rings and zones the host doesn't report are omitted, by the same rule as the cards.
+- Temperature unit: with a Fahrenheit locale every temperature on the page (rings, zones legend, current values) is °F; with a Celsius locale °C; a test sets each through `expo-localization`'s jest mock.
+- The title is "Power & Sensors"; no "Drag across the chart" text and no app power lines.
+- Battery: header charge state; rings for Charge, Health and Cycles, and Power; the battery day chart with Charge, Health, Cycles, Remaining, Full charge and Temperature; processes by energy.
+- Annotations on the power chart are the page's `power_spike`, `fans_ramped` and `thermal_state` events as pills; two at the same minute form a second row or "+N".
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | apps/mobile/src/module/pages/cpu/, apps/mobile/src/module/pages/gpu/, packages/core/src/cpu-clusters.ts, packages/core/src/cpu-clusters.test.ts, src/app/routes/dashboard/cpu/_lib/clusters.ts, src/app/routes/dashboard/cpu/_lib/clusters.test.ts, apps/mobile/test/module/cpu/, apps/mobile/test/module/gpu/ | contracts, RFC 4.6 (CPU, GPU rows); `src/app/routes/dashboard/cpu/`, `gpu/`; `.claude/skills/widget-model/` | sections ported on Mac and Linux fixtures, separate per-core query, process sort, omitted sections absent | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/cpu-clusters.test.ts src/app/routes/dashboard/cpu`, `bun run typecheck`, `bun run --cwd apps/mobile test -- test/module`, `make mobile-check`; CPU and GPU page screenshots in light, dark and AX1 next to `/dashboard/cpu` and `/dashboard/gpu` |
+| b | L | apps/mobile/src/module/pages/memory/, apps/mobile/src/module/pages/network/, apps/mobile/src/data/addresses.ts, packages/core/src/network-lines.ts, packages/core/src/network-lines.test.ts, src/app/routes/dashboard/network/_lib/network.ts, apps/mobile/test/module/memory/, apps/mobile/test/module/network/ | contracts, RFC 4.6 (Memory, Network rows, Network header), D-153; `src/app/routes/dashboard/memory/`, `network/`, `src/app/components/live-mirror-chart.tsx` | memory sections both OSes, every address state with the bounded poll, mirrored history bars, no attribution | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/network-lines.test.ts src/app/routes/dashboard/network`, `bun run typecheck`, `bun run --cwd apps/mobile test -- test/module`, `make mobile-check`; Memory and Network screenshots in light, dark and AX1 next to the dashboard pages; the Network header against the Docker host |
+| c | L | apps/mobile/src/module/pages/power/, apps/mobile/src/module/pages/battery/, apps/mobile/src/data/temperature-unit.ts, apps/mobile/test/module/power/, apps/mobile/test/module/battery/ | contracts, RFC 4.6 (Power & Sensors, Battery rows); `src/app/routes/dashboard/power/`, `src/app/components/battery-day-card.tsx`, `@core/cpu-power-source` | rings, strip, ticked chart with notes, zones heatmap, °C and °F from the locale, Linux omission, battery page | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/module`, `make mobile-check`; Power & Sensors and Battery screenshots in light, dark and AX1 with a Celsius and a Fahrenheit simulator region, next to `/dashboard/power` and `/dashboard/battery` |
+
+Ownership:
+- **The scaffold owns `module/pages/index.ts` and the mocks.** Each lane fills its own page directories; the registry already points at them.
+- **The mock answers are checked once in the scaffold.** No lane edits `packages/core/src/mock/`; the scaffold confirms the mock answers every selector the three lanes request and adds what's missing in the same change (`data-boundary.md`).
+- **Code moves to core only with its second consumer.** Lane a moves `clusters.ts`, lane b moves `network/_lib/network.ts`; each desktop file becomes a re-export and its desktop tests pass unchanged. Battery-day and power-chart logic stays per app unless a lane finds the phone needs the same function; then that lane moves it and lists it in its report.
+
+#### Scaffold contracts (phase 12)
+
+Inline before dispatch:
+- Create `apps/mobile/src/module/pages/{cpu,gpu,memory,network,power,battery}/index.tsx`, each a stub rendering the generic page, and point `MODULE_PAGES` at them.
+- Stub `packages/core/src/cpu-clusters.ts` and `packages/core/src/network-lines.ts` as re-exports of the desktop files (lanes move the bodies).
+- Run each module's page against the mock with a recording transport, list every `hostHistory` selector and `networkAddresses` call the RFC 4.6 sections need, and add any series the mock doesn't answer (per-core `cpu.load{core}`, `thermal.zone{sensor}`, GPU residency, swap in and out, per-interface `net.rx`/`net.tx`), with a mock test for each addition.
+- Then `bun run typecheck`, `make mobile-check`, `bun run test -- packages/core/src/mock`.
+
+```ts
+// apps/mobile/src/module/pages/<module>/index.tsx (one lane each)
+export default function CpuPage(props: ModulePageProps): JSX.Element; // GpuPage, MemoryPage, NetworkPage, PowerPage, BatteryPage
+// packages/core/src/cpu-clusters.ts (lane a): moved from src/app/routes/dashboard/cpu/_lib/clusters.ts
+export function clusterViews(topology: readonly ClusterInfo[]): ClusterView[];
+export function coreCounts(info: HostInfo): { performance: number; efficiency: number; total: number };
+// packages/core/src/network-lines.ts (lane b): moved from src/app/routes/dashboard/network/_lib/network.ts
+export function interfaceRows(/* as today */): InterfaceRow[];
+export function ofLink(/* as today */): string;
+export function networkSubtitle(/* as today */): string;
+// apps/mobile/src/data/addresses.ts (lane b)
+export function useHostAddresses(host: HostId): { line: string | null; ipv6: string | null; hint: string | null; supported: boolean };
+// apps/mobile/src/data/temperature-unit.ts (lane c)
+export function useTemperatureUnits(): TemperatureUnits; // "C" | "F" from getLocales()[0].temperatureUnit, "C" when unknown
+```
+
+#### Lane a brief
+- **Goal:** the CPU and GPU pages show what the dashboard's pages show, minus investigation.
+- **Interface:** `ModulePageProps`, `ModuleFrame`, `StatStrip`, `ModuleChart`, `LiveProcessTable`, `HeatMatrix`, `RingGauge`, `useHostHistory`, `clusterViews`, `coreCounts`.
+- **Behavior:**
+  - Port the sections in RFC 4.6's CPU and GPU rows, one column, in the desktop's order. Each figure comes from a selector or the answer's `stats` through `@core/format`.
+  - The per-core heatmap issues its own `useHostHistory` with only `cpu.load{core=*}` selectors and its column count as the budget, separate from the page's other charts, so the 256-series clamp applies and a host with more than 32 cores draws every core.
+  - Move `clusters.ts` and its test to core; the desktop file re-exports.
+  - Processes: CPU sorts by CPU %; GPU passes `gpu: true`.
+- **Decisions already made:** `UsageAppsCard` and the "Every process" link are omitted (per-app over a range is the user's non-goal and the session refuses it); live processes stay (the user's process-table decision).
+- **Out of scope:** the frame (phase 11 lane e), other modules.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** the Memory and Network pages match the dashboard, and Network shows the host's addresses.
+- **Interface:** `ModulePageProps`, the frame components, `useHostAddresses`, `networkAddresses` (phase 7 lane h), `mirrorBarsModel`, `valueTicks`, `timeTicks`.
+- **Behavior:**
+  - Memory: RFC 4.6's Memory row; the chart choice (pressure or Used/Cached) follows what the host reports, not an OS check.
+  - Network header: fetch `networkAddresses` on focus only; while `pending`, poll every 2 s at most 5 times while focused; `PublicIp.state` selects the text as in the Test cases; `RemoteUnsupported` falls back to the live frame's interface and link speed with no address line.
+  - The mirrored history chart is a phone renderer over `mirrorBarsModel` with a labelled ceiling per direction and `timeTicks`, replacing today's two overlapping area lines.
+  - Move `network/_lib/network.ts` to core as `network-lines.ts`; the desktop file re-exports.
+- **Decisions already made:** the header shows interface, link speed, local IPv4/IPv6 and the public IP served by the host; the strip has Download, Upload, Of link and range totals; mirrored bars on the page (the user's Network decision, D-153); `AppsCard`, `AppsNowCard` and `SelectionSummary` are omitted (attribution and selection, the user's non-goal).
+- **Out of scope:** the resolver and the wire (phase 7 lane h), the desktop surfaces (phase 8 lane e).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+- **Goal:** the Power & Sensors and Battery pages match the dashboard, with temperatures in the phone's locale unit.
+- **Interface:** `ModulePageProps`, the frame components, `RingGauge`, `HeatMatrix`, `useTemperatureUnits`.
+- **Behavior:**
+  - Port RFC 4.6's Power & Sensors and Battery rows, one column. Rings sit two per row at the default size and one per row at AX1.
+  - Temperature unit: `useTemperatureUnits()` reads `getLocales()[0].temperatureUnit` and passes `units` to every `formatTemperature` and to the heat and ring models; no phone setting.
+  - The power chart's legend and notes come from `@core/cpu-power-source`; annotations are the page's own events as pills.
+  - Linux hosts omit rings and zones they don't report.
+- **Decisions already made:** all servable Power & Sensors sections port; out are "Drag across the chart to see what used it" and the app power lines (the user's Power & Sensors decision); the module is "Power & Sensors" everywhere; the unit follows the iOS locale's measurement system (RFC 4.6).
+- **Out of scope:** the heat and ring models (phase 10 lane d), the frame.
+- **Done when:** the table's Done-when conditions are met.
 
 ## Log
 
@@ -3317,3 +3898,4 @@ Depends on: phase 8
 - 2026-11-25: User question on data pull: phase 8 lane d now specifies that compact (hosts-list) demand runs without `Live1s` (a `HostSummary` every 5 s plus one 30-minute `RecentRequest`, which cannot be scoped to three series), full demand subscribes `Live1s`, process interest only while a live process table is on screen, and no session after `PARK_GRACE`. Bytes per second at each level are measured against the Docker agent in that lane and recorded here.
 - 2026-11-25: The user decided the phone keeps no persistent history (D-152), reversing `plan/rfc-ios-app.md`'s mirror design (4.4, D-146) at the user's request; a note at the top of that RFC points to the change and its body is unchanged. The host answers a new bounded `Query::History` (series, range, point budget, module events, stats in one answer; limits `HISTORY_MAX_POINTS` 500, `HISTORY_MAX_SERIES` 32, `HISTORY_MAX_ANSWER_BYTES` 512 KiB; coarsest tier that covers the budget, persisted rows only; one query per session, two host-wide, `Busy` beyond, a 10 s cache). Phase 7 gains lanes i (phone core without a mirror), j (host history query), k (phone history data, the one cellular switch) and l (logging and the facade test, split from lane d); lane d keeps the session and IPC error work and removes the phone-only `SyncPolicy`/`MirrorPolicy::phone`. The shared wire files moved from lane h to the scaffold. D-152 and D-153 (network addresses) written before any codec change. Offline hosts show dashes and "Offline since", never last readings. The user confirmed a 5 s hosts-list update is fine, so `HostSummary` stays at 5 s with no wire change; the RFC's open question on it is dropped. Phase 8 lane d now also measures history bytes and agent CPU per query (1 h, 24 h, 7 d, 30 d) and during 30 s of range flipping; results go here when run.
 - 2026-11-25: devil's-advocate review of phases 7 to 12, the polish RFC and D-152/D-153, applied. History answers now reach now through the hub's bounded recent rows (`history_through_now`, never the raw ring); events travel as `WireEvent` and `PublicIp`/`HistoryClamp` gain `Unknown` through `Tagged`/`lenient`; the per-session queue replaces only a same-chart query and 3 `Busy` answers end in the chart's load error; the reader gains a layout filter and the row bounds count the M15 read's `tier_1m` union; stats are per series key; hosts-list rows use `net.rx_total`/`net.tx_total`; the CPU heatmap is its own query with a 256-series per-core clamp; an unknown selector is `InvalidArgument`, a known one without data returns gaps. Lane j splits into j1 (read path) and j2 (concurrency, with the limits on `HostServer`); the scaffold cuts the phone's mirror calls so lanes d and i have no merge order, adds `SubscriptionInfo.recent_ms`, `MobileCall::SetProcessInterest` (implemented by 8d) and the facade test seam, removes the phone's dead `SetHostsRecentInterest`, and switches every TS caller to `hostHistory`; lane l's facade test runs over a scripted dialer, and the real end-to-end check is lane i's Docker test; seeds go by retention, with `serve.sh --seed` for the container (8b). The user then decided every host looks up its own public IP (24 h cache, early on a network change, 10 min after a failure, on demand only, no switch) and that the Mac shows addresses for remote hosts (new phase 8 lane e). Phase 11 depends on phase 9.
+- 2026-11-25: Phases 10 to 12 written from the accepted `plan/rfc-ios-polish.md`: phase 10 primitives (lanes a-e; the scaffold does the text variants, the `variant` rename with a `role` alias kept until phase 11 because phase 9 runs beside it, and installs `expo-localization`, `expo-symbols` (the RFC names it as the icon source but its scaffold list omitted it) and `react-native-reorderable-list`), phase 11 surfaces (lanes a, b, c1, c2, d, e; the RFC's lane c split in two because the host screen and the cards together were larger than L), phase 12 module pages (lanes a-c). Settings joins the root stack (architecture I6). The annotation layout model already exists in core (`widget-models/chart-annotation.ts`, with rows and "+N"), so lane 11e only renders pills in a band above the plot.
