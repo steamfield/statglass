@@ -310,6 +310,8 @@ impl Offer {
         if let Some(accepted) = self.attempt {
             return if attempt == accepted {
                 self.reply(false)
+            } else if matches!(self.phase, Phase::Pending { .. }) {
+                reject(PairError::Busy)
             } else {
                 reject(PairError::Used)
             };

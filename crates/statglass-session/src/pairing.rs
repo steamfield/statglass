@@ -49,13 +49,10 @@ pub async fn pair(
         model: model.into(),
     };
     let deadline = Instant::now() + Duration::from_millis(remaining as u64);
-    let mut stream = timeout_at(deadline, async {
-        let mut stream = dial_pairing(dialer, &endpoint, deadline).await?;
-        write_pair_frame(&mut stream.writer, &request).await?;
-        Ok::<_, RemoteError>(stream)
-    })
-    .await
-    .map_err(|_| PairingRefusal::Expired)??;
+    let mut stream = dial_pairing(dialer, &endpoint, deadline).await?;
+    timeout_at(deadline, write_pair_frame(&mut stream.writer, &request))
+        .await
+        .map_err(|_| PairingRefusal::Expired)??;
     // The host owns the approval deadline. A decision made on time can still be
     // in flight on the control socket when that deadline passes.
     let reply = timeout_at(
@@ -150,8 +147,9 @@ async fn dial_pairing(
         .map(|target| Some(Box::pin(dial_pairing_target(dialer, endpoint, target))))
         .collect();
     let mut chosen: Option<(usize, DialedStream)> = None;
-    let mut failure: Option<RemoteError> = None;
+    let mut failures = Vec::new();
     let mut grace = None;
+    let mut deadline_timer = std::pin::pin!(tokio::time::sleep_until(deadline));
     poll_fn(|cx| {
         let preferred = chosen.as_ref().map_or(attempts.len(), |(index, _)| *index);
         for (index, slot) in attempts.iter_mut().take(preferred).enumerate() {
@@ -165,14 +163,7 @@ async fn dial_pairing(
                     chosen = Some((index, stream));
                     break;
                 }
-                Err(error)
-                    if failure
-                        .as_ref()
-                        .is_none_or(|prior| prior.retryable() && !error.retryable()) =>
-                {
-                    failure = Some(error);
-                }
-                Err(_) => {}
+                Err(error) => failures.push(error),
             }
         }
         if let Some((index, stream)) = chosen.take() {
@@ -191,9 +182,19 @@ async fn dial_pairing(
             }
             chosen = Some((index, stream));
         } else if attempts.iter().all(Option::is_none) {
-            return Poll::Ready(Err(failure.take().unwrap_or_else(|| {
-                RemoteError::Protocol("pairing host offered no dial targets".into())
-            })));
+            return Poll::Ready(Err(failures
+                .drain(..)
+                .min_by_key(RemoteError::retryable)
+                .unwrap_or_else(|| {
+                    RemoteError::Protocol("pairing host offered no dial targets".into())
+                })));
+        }
+        if deadline_timer.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(chosen.take().map(|(_, stream)| stream).ok_or_else(|| {
+                failures.pop().unwrap_or_else(|| {
+                    RemoteError::Timeout("opening the pairing connection timed out".into())
+                })
+            }));
         }
         Poll::Pending
     })
@@ -270,7 +271,7 @@ mod tests {
         stream: Mutex<Option<DuplexStream>>,
         attempts: Mutex<Vec<(Endpoint, Target)>>,
         reject_lan: bool,
-        stall_lan: bool,
+        stalled_route: Option<Route>,
     }
 
     impl Dialer for FakeDialer {
@@ -284,13 +285,13 @@ mod tests {
                     .lock()
                     .unwrap()
                     .push((endpoint.clone(), target.clone()));
-                if self.stall_lan && target.route == Route::Lan {
+                if self.stalled_route == Some(target.route) {
                     return std::future::pending().await;
                 }
                 if self.reject_lan && target.route == Route::Lan {
                     return Err(RemoteError::Unreachable {
                         kind: crate::UnreachableKind::NoRoute,
-                        detail: "LAN unavailable".into(),
+                        detail: format!("{} unavailable", target.host),
                     });
                 }
                 let stream = self
@@ -320,7 +321,7 @@ mod tests {
             stream: Mutex::new(Some(client)),
             attempts: Mutex::default(),
             reject_lan,
-            stall_lan: false,
+            stalled_route: None,
         };
         let payload = PairingPayload {
             version: PAYLOAD_VERSION,
@@ -502,7 +503,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn pairing_client_tries_a_live_tailscale_route_before_a_stalled_lan_dial_times_out() {
         let (mut dialer, mut payload, mut peer) = fixture(false);
-        dialer.stall_lan = true;
+        dialer.stalled_route = Some(Route::Lan);
         payload.expires_ms = statglass_engine::wall_ms() + 250;
         let remote = async {
             if let Ok(Ok(_)) = tokio::time::timeout(
@@ -524,6 +525,38 @@ mod tests {
             result,
             Err(RemoteError::Pairing(PairingRefusal::Denied))
         ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pairing_deadline_keeps_the_last_dial_failure_while_another_route_stalls() {
+        let (mut dialer, mut payload, _peer) = fixture(true);
+        dialer.stalled_route = Some(Route::Tailscale);
+        payload.host.targets.insert(
+            1,
+            BundleTarget {
+                route: BundleRoute::Lan,
+                host: "other.local".into(),
+            },
+        );
+        payload.expires_ms = statglass_engine::wall_ms() + 250;
+        let result = pair(&dialer, &payload, &[], "iPhone", "iPhone 17", LOCAL).await;
+        assert!(matches!(
+            result,
+            Err(RemoteError::Unreachable {
+                kind: crate::UnreachableKind::NoRoute,
+                detail
+            }) if detail == "other.local unavailable"
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pairing_deadline_during_a_stalled_dial_reports_a_connection_timeout() {
+        let (mut dialer, mut payload, _peer) = fixture(false);
+        dialer.stalled_route = Some(Route::Lan);
+        payload.host.targets.truncate(1);
+        payload.expires_ms = statglass_engine::wall_ms() + 250;
+        let result = pair(&dialer, &payload, &[], "iPhone", "iPhone 17", LOCAL).await;
+        assert!(matches!(result, Err(RemoteError::Timeout(_))));
     }
 
     #[tokio::test(start_paused = true)]

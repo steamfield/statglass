@@ -68,7 +68,7 @@ function currentStatus(
   if (!enabled) {
     entry.status = {
       kind: "failed",
-      reason: "unavailable",
+      reason: "monitoring_off",
       message: MONITORING_OFF,
     };
     return entry.status;
@@ -133,7 +133,7 @@ export function createMockPairing(
     async pairingStart() {
       commands.record("pairing_start");
       if (!monitoringEnabled())
-        return pairingFailure("unavailable", MONITORING_OFF);
+        return pairingFailure("monitoring_off", MONITORING_OFF);
       const nonce = (++nextNonce).toString(16).padStart(32, "0");
       const offer = {
         nonce,

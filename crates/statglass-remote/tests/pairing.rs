@@ -4,6 +4,7 @@ use statglass_remote::{
     AuthorizedKeys, ControlRequest, ControlResponse, DeviceKeys, DeviceKeysError, DeviceTag,
     EcdsaP256Public, PairCommands, PairedDevice, PairingError, PairingHost, bind_private,
     pairing::{run_forced, run_forced_for_nonce},
+    serve_control,
 };
 use statglass_schema::HostId;
 use statglass_schema::lock::LockExt;
@@ -15,6 +16,7 @@ use std::sync::{
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::watch;
 
 const NOW: i64 = 1_800_000_000_000;
 const NONCE: &str = "1cdd0c2c3aa881dad8a557c28b983f0a";
@@ -330,7 +332,7 @@ fn pairing_rejects_a_second_start_before_and_after_approval_and_unknown_or_inval
         assert_eq!(
             submit_start(&pairing, later, NOW),
             PairReply::Error {
-                error: PairError::Used
+                error: PairError::Busy
             }
         );
     }
@@ -440,6 +442,63 @@ async fn write_control(stream: &mut UnixStream, reply: &ControlResponse) {
         .write_all(&body)
         .await
         .expect("write the control reply body");
+}
+
+#[tokio::test(start_paused = true)]
+async fn pairing_relay_reports_busy_without_disturbing_the_waiting_phone() {
+    let dir = tempfile::tempdir_in("/tmp").unwrap();
+    let socket = dir.path().join("pair.sock");
+    let (pairing, _) = pairing();
+    let pairing = Arc::new(pairing);
+    let now = statglass_engine::wall_ms();
+    let offer = pairing.offer(host(), Duration::from_secs(60), now).unwrap();
+    let (stop, stopped) = watch::channel(false);
+    let handler = {
+        let pairing = pairing.clone();
+        Arc::new(move |request| pairing.control_reply(request, now))
+    };
+    let (mut first, first_relay) = duplex(2048);
+    let (mut second, second_relay) = duplex(2048);
+    let (first_in, first_out) = tokio::io::split(first_relay);
+    let (second_in, second_out) = tokio::io::split(second_relay);
+    let exchange = async {
+        write_pair_frame(&mut first, &start(&offer.nonce, 4))
+            .await
+            .unwrap();
+        assert_eq!(
+            read_pair_frame::<PairReply>(&mut first).await.unwrap(),
+            PairReply::Waiting
+        );
+        write_pair_frame(&mut second, &start(&offer.nonce, 5))
+            .await
+            .unwrap();
+        assert_eq!(
+            read_pair_frame::<PairReply>(&mut second).await.unwrap(),
+            PairReply::Error {
+                error: PairError::Busy
+            }
+        );
+        let approved = pairing.approve(&offer.nonce, now).unwrap();
+        assert!(matches!(approved, PairReply::Approved { .. }));
+        assert_eq!(
+            read_pair_frame::<PairReply>(&mut first).await.unwrap(),
+            approved
+        );
+        stop.send(true).unwrap();
+    };
+    let (served, first_exit, second_exit, ()) =
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(
+                serve_control(socket.clone(), handler, stopped),
+                run_forced_for_nonce(first_in, first_out, &socket, &offer.nonce),
+                run_forced_for_nonce(second_in, second_out, &socket, &offer.nonce),
+                exchange,
+            )
+        })
+        .await
+        .expect("pairing relay exchange finished");
+    served.unwrap();
+    assert_eq!((first_exit, second_exit), (0, 2));
 }
 
 #[tokio::test(start_paused = true)]
@@ -566,7 +625,7 @@ async fn pairing_forced_recovers_when_the_host_accepted_start_but_its_reply_time
         assert_eq!(
             relay_start(&pairing, &retry, different_attempt, NOW),
             PairReply::Error {
-                error: PairError::Used
+                error: PairError::Busy
             }
         );
         let reply = relay_start(&pairing, &retry, retried_attempt, NOW);
@@ -909,7 +968,7 @@ async fn pairing_forced_approves_and_refuses_cross_nonce_requests_or_a_missing_c
         (
             &dir.path().join("missing.sock"),
             NONCE,
-            PairError::Unavailable,
+            PairError::NotRunning,
         ),
     ] {
         let (client, relay) = duplex(2048);

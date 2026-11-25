@@ -1,5 +1,6 @@
-import { commandErrorText } from "@core/command-error";
+import { commandError, commandErrorText } from "@core/command-error";
 import type { PairingOffer, PairingStatus } from "@core/generated/types";
+import { remoteErrorText } from "@core/remote-errors";
 import { unwrap } from "@core/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -62,6 +63,33 @@ function Countdown({ seconds }: { seconds: number }) {
   );
 }
 
+export function PairingErrorMessage({
+  cause,
+  fallback,
+}: {
+  cause: unknown;
+  fallback: string;
+}) {
+  const error = commandError(cause);
+  if (error?.kind !== "pairing") {
+    return (
+      <InlineMessage tone="error">
+        {commandErrorText(cause, fallback)}
+      </InlineMessage>
+    );
+  }
+
+  const title = remoteErrorText({ ...error, message: "" });
+  return (
+    <InlineMessage tone="error">
+      {title}
+      {error.message && error.message !== title && (
+        <span className="block">{error.message}</span>
+      )}
+    </InlineMessage>
+  );
+}
+
 function PairingResult({ status }: { status: PairingStatus }) {
   switch (status.kind) {
     case "paired":
@@ -75,7 +103,12 @@ function PairingResult({ status }: { status: PairingStatus }) {
         </InlineMessage>
       );
     case "failed":
-      return <InlineMessage tone="error">{status.message}</InlineMessage>;
+      return (
+        <PairingErrorMessage
+          cause={{ ...status, kind: "pairing" }}
+          fallback="Couldn’t check pairing."
+        />
+      );
     default:
       return null;
   }
@@ -175,12 +208,10 @@ export function PairingOfferView({
         </div>
       </dl>
       {(decide.isError || status.isError) && (
-        <InlineMessage tone="error">
-          {commandErrorText(
-            decide.error ?? status.error,
-            "Couldn’t check pairing."
-          )}
-        </InlineMessage>
+        <PairingErrorMessage
+          cause={status.error ?? decide.error}
+          fallback="Couldn’t check pairing."
+        />
       )}
       {pending && seconds > 0 && (
         <DialogFooter>
