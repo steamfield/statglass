@@ -13,7 +13,10 @@ use statglass_schema::durable_usage::{
 };
 use statglass_schema::usage::{UsageByApp, UsageKey};
 
+use uuid::Uuid;
+
 use crate::ErrorCode;
+use crate::alert_rules::{HostAlertRules, RuleEntry};
 
 /// Adjacently tagged like [`crate::Message`]: `{"q": "UsageByApp", "a": {...}}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -51,6 +54,16 @@ pub enum Query {
         report: u32,
         target: SpaceTarget,
     },
+    /// The host's custom alert rules (plan/rfc-remote-alerts.md 5.1).
+    AlertRules,
+    /// Replaces the host's custom alert rules when `base_revision` is still current.
+    /// Existing rules whose ids are in `keep` stay, after `rules`: the controller lists
+    /// there the rules it could not decode.
+    SetAlertRules {
+        base_revision: i64,
+        rules: Vec<RuleEntry>,
+        keep: Vec<Uuid>,
+    },
     #[serde(other)]
     Unknown,
 }
@@ -67,6 +80,8 @@ pub enum Answer {
     SpaceSubtree(SpaceSubtree),
     SpaceFiles(Vec<SpaceFile>),
     SpacePath(String),
+    /// The custom alert rules in force, answering both `AlertRules` and `SetAlertRules`.
+    AlertRules(HostAlertRules),
     /// Done, with nothing to return (`SpaceCancel`, `SpaceClear`).
     Done,
     /// The query failed on the host; `message` is for the user.

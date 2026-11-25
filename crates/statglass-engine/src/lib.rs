@@ -53,6 +53,7 @@
 //! each). Open gaps are closed on shutdown.
 
 mod accum;
+mod alert_history;
 mod bus;
 mod clock;
 pub mod detect;

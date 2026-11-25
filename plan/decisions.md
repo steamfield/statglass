@@ -4645,3 +4645,23 @@ Date: 2026-11-24. Refines D-086's page choreography.
 ### Revisit when
 
 - A page's cards routinely mount more than 800 ms after it opens (a slow first settings read on a remote host): widen the window or key it on the page's own ready signal.
+
+## D-140: Alert rules on Linux agent hosts, evaluated there and delivered from this Mac
+
+Date: 2026-11-24. Extends D-138 and D-116. Design and review: [rfc-remote-alerts.md](rfc-remote-alerts.md).
+
+- **Evaluated on the host**: the agent's engine runs the rules at full resolution from its own `settings.json`. Evaluating on this Mac over the summary stream is rejected: summary frames carry held values only (`values` are NaN), which the evaluator ignores, and the stream stops whenever a window shows detail.
+- **Edited over two host queries**: `Query::AlertRules` and `Query::SetAlertRules { base_revision, rules }` on the D-117 query channel. Rules encode one at a time, so a rule from a newer build is shown and kept, never the cause of an unreadable list. The agent checks the revision, validates and writes under one mutex and applies the rules live.
+- **No feature flag**: a Linux host is an agent host (`HostInfo.os`). An agent too old for the queries answers `Unsupported`, which the page shows as "Update the agent". A headless agent for macOS would need a real host-kind field.
+- **Delivered from this Mac as events sync in**: only alert events the mirror actually inserted, past a per-host floor set on first sync, through `fire::announce` with the host named. Staleness is measured on this Mac's clock; alerts older than 10 minutes are grouped into one catch-up message per host. Latency is the sync period (60 s, 300 s on battery).
+- **Linux metrics**: `mem.psi` and `cpu.loadavg` (5-minute window) join `ALERT_METRICS`.
+
+### Not decided here
+
+Rules on remote Macs (they would deliver twice), built-in rules on agents, multi-host rules, live event forwarding, and the agent delivering by itself.
+
+### Revisit when
+
+- Users need alerts while every Mac is asleep: the agent delivers by itself, with a dedupe rule against this Mac.
+- Two Macs paired to one agent send duplicate alerts in practice.
+- Sync latency on battery proves too slow: forward `BusMsg::Event` live.

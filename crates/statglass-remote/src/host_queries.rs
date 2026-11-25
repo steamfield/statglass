@@ -88,7 +88,7 @@ impl SpaceAccess {
     }
 }
 
-fn unsupported() -> Answer {
+pub(crate) fn unsupported() -> Answer {
     Answer::Error {
         code: ErrorCode::Unsupported,
         message: "This host does not answer that query".into(),
@@ -145,6 +145,12 @@ impl<H: ServedHost> HostServer<H> {
                     .map(Answer::UsageProcesses)
                     .unwrap_or_else(usage_error)
             }
+            Query::AlertRules => self.host().alert_rules(),
+            Query::SetAlertRules {
+                base_revision,
+                rules,
+                keep,
+            } => self.host().set_alert_rules(base_revision, rules, keep),
             Query::Unknown => unsupported(),
             space => match self.space() {
                 Some(access) => access.answer(session, space),

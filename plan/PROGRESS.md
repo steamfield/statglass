@@ -4,6 +4,12 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Remote alert rules RFC drafted (2026-11-24)
+
+[rfc-remote-alerts.md](rfc-remote-alerts.md) plans threshold rules on Linux agent hosts. The agent already evaluates `Settings.alerts.rules` from its `settings.json` and syncs the alert events to this Mac's mirror, so the plan adds two host queries to read and set rules live, cooldown seeding on the agent, and delivery from this Mac of the alert events the mirror inserts. Controller-side evaluation over `HostSummary` frames was rejected: they carry held display values only (`values` are NaN). A ce:devils-advocate review against the code found ten issues, all folded into revision 2 (section 9).
+
+- **Decided**: alerts older than 10 minutes are grouped into one catch-up message per host, and `cpu.loadavg` is alertable (RFC section 8). Recorded as D-140. Next: implementation.
+
 ## Dashboard pages enter card by card (D-139) (2026-11-24)
 
 Opening a dashboard page (navigation, first open, Disk's I/O and Space views, another host on a metric page) now fades and rises its header and then each card into place one after another, instead of lifting whole rows 3 px over 280 ms, which read as a flash. `usePageEntrance` in `src/app/lib/motion/page-entrance.ts` replaces the CSS `pageEnter`/`data-stagger` choreography; Settings panels enter one by one too. Cards that mount a beat late (the chart window, settings) still enter; ticks, range changes and later data never replay it.
