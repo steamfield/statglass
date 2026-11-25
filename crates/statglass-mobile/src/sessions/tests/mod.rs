@@ -9,8 +9,8 @@ use statglass_ipc::status::RemoteRoute;
 use statglass_proto::{Hello, Message, WireLayout};
 use statglass_schema::{Capabilities, HostId, SeriesKey, lock::LockExt};
 use statglass_session::{
-    BoxFuture, Close, DialFailure, DialedStream, Dialer, Endpoint, RemoteError, StderrTail,
-    SyncPolicy, Target, codec,
+    BoxFuture, Close, DialFailure, DialedStream, Dialer, Endpoint, RemoteError, StderrTail, Target,
+    codec,
 };
 use tokio::io::DuplexStream;
 use tokio::runtime::Handle;
@@ -18,10 +18,8 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::timeout;
 
 use super::{CoreEvents, Sessions, endpoint};
-use crate::control::SessionControl;
 
 mod docker;
-mod history;
 mod live;
 mod registry;
 
@@ -149,11 +147,11 @@ pub(super) struct Fixture {
 }
 
 impl Fixture {
-    pub(super) fn start(hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
-        Self::start_in(tempfile::tempdir().unwrap(), hosts, sync)
+    pub(super) fn start(hosts: Vec<MobileHost>) -> Self {
+        Self::start_in(tempfile::tempdir().unwrap(), hosts)
     }
 
-    fn start_in(dir: tempfile::TempDir, hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
+    fn start_in(dir: tempfile::TempDir, hosts: Vec<MobileHost>) -> Self {
         let (live, messages) = mpsc::unbounded_channel();
         let events = Arc::new(Recorder {
             live,
@@ -167,9 +165,6 @@ impl Fixture {
             event_ready: Notify::new(),
         });
         let sessions = Sessions::new(events.clone());
-        if sync != SyncPolicy::Full {
-            sessions.set_sync_policy(sync);
-        }
         let (dials, connections) = mpsc::unbounded_channel();
         sessions
             .registry
@@ -208,34 +203,15 @@ impl Fixture {
         .await
         .expect("expected a live message")
     }
-
-    async fn next_roster(&self) -> Vec<HostId> {
-        timeout(WAIT, async {
-            loop {
-                if let Some(event) = self
-                    .events
-                    .events
-                    .lock_ok()
-                    .iter()
-                    .find(|event| event["kind"] == "hosts_changed")
-                {
-                    return ids(event["hosts"].clone());
-                }
-                self.events.event_ready.notified().await;
-            }
-        })
-        .await
-        .expect("host roster event")
-    }
 }
 
-struct PeerDialer(mpsc::UnboundedSender<Dial>);
+pub(crate) struct PeerDialer(pub(crate) mpsc::UnboundedSender<Dial>);
 
-pub(super) struct Dial {
-    peer: DuplexStream,
-    pub(super) target: String,
-    pub(super) closing: oneshot::Receiver<()>,
-    pub(super) finish_close: oneshot::Sender<()>,
+pub(crate) struct Dial {
+    pub(crate) peer: DuplexStream,
+    pub(crate) target: String,
+    pub(crate) closing: oneshot::Receiver<()>,
+    pub(crate) finish_close: oneshot::Sender<()>,
 }
 
 struct CloseGate(oneshot::Sender<()>, oneshot::Receiver<()>);
@@ -283,7 +259,7 @@ impl Dialer for PeerDialer {
 }
 
 impl Dial {
-    pub(super) async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
+    pub(crate) async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
         codec::write(
             &mut self.peer,
             &Message::Hello(Box::new(Hello {
@@ -308,14 +284,14 @@ impl Dial {
         interest
     }
 
-    async fn read(&mut self) -> Message {
+    pub(crate) async fn read(&mut self) -> Message {
         timeout(WAIT, codec::read(&mut self.peer))
             .await
             .unwrap()
             .unwrap()
     }
 
-    async fn layout(&mut self) {
+    pub(crate) async fn layout(&mut self) {
         codec::write(
             &mut self.peer,
             &Message::LayoutDef(WireLayout {
@@ -327,7 +303,7 @@ impl Dial {
         .unwrap();
     }
 
-    async fn frame(&mut self, ts_ms: i64, value: f32) {
+    pub(crate) async fn frame(&mut self, ts_ms: i64, value: f32) {
         codec::write(
             &mut self.peer,
             &Message::Live(statglass_proto::LiveFrame {

@@ -35,6 +35,8 @@ impl<'de> Deserialize<'de> for MemoryPressure {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct HostVitals {
+    #[specta(type = Option<statglass_schema::JsSafeInt>)]
+    pub as_of_ms: Option<i64>,
     pub cpu_pct: Option<f32>,
     pub memory_pct: Option<f32>,
     pub load_1m: Option<f32>,
@@ -174,6 +176,7 @@ mod tests {
         assert_eq!(
             got,
             HostVitals {
+                as_of_ms: None,
                 cpu_pct: None,
                 memory_pct: None,
                 load_1m: Some(1.5),

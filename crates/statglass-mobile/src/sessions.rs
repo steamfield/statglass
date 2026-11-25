@@ -1,4 +1,4 @@
-//! The phone's remote hosts, mirrors and live streams.
+//! The phone's remote hosts and live streams.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
@@ -8,21 +8,22 @@ use serde_json::Value;
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileCall, MobileConfig, MobileHost};
 use statglass_session::network::LocalNetwork;
-use statglass_session::{RemoteSource, SyncPolicy};
-use statglass_ssh::{RusshDialer, Signer};
+use statglass_session::{Dialer, RemoteSource};
 use tokio::runtime::Handle;
 
 use crate::control::SessionControl;
 use crate::ffi::CoreEvents;
 
+mod addresses;
 mod commands;
 mod endpoint;
+mod history;
 mod host;
 mod live;
 mod phone_id;
 mod registry;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use registry::Registry;
 
@@ -42,24 +43,18 @@ impl Sessions {
         self.registry.is_started()
     }
 
-    /// Opens mirrors under `data_dir`, loads or creates the phone id and starts
-    /// a source per host on the core runtime.
+    /// Loads or creates the phone id under `data_dir` and starts a source per host.
     pub(crate) fn start(
         &self,
         runtime: Handle,
         data_dir: PathBuf,
         config: MobileConfig,
-        signer: Arc<dyn Signer>,
+        dialer: Arc<dyn Dialer>,
     ) -> Result<(), CommandError> {
-        self.registry.start(
-            runtime,
-            data_dir,
-            config.hosts,
-            Arc::new(RusshDialer::new(signer)),
-        )
+        self.registry.start(runtime, data_dir, config.hosts, dialer)
     }
 
-    /// Replaces the configured hosts and recomputes their mirror budgets.
+    /// Replaces the configured hosts.
     pub(crate) fn set_hosts(&self, hosts: Vec<MobileHost>) -> Result<(), CommandError> {
         self.registry.set_hosts(hosts)
     }
@@ -73,10 +68,6 @@ impl Sessions {
 impl SessionControl for Sessions {
     fn sources(&self) -> Vec<Arc<RemoteSource>> {
         self.registry.sources()
-    }
-
-    fn set_sync_policy(&self, policy: SyncPolicy) {
-        self.registry.set_sync_policy(policy);
     }
 
     fn network_changed(&self, net: LocalNetwork) {

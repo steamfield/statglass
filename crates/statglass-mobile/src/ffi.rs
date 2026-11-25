@@ -30,7 +30,11 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for NativeSignerError {
 #[uniffi::export(with_foreign)]
 pub trait NativeSigner: Send + Sync {
     /// The SEC1 uncompressed P-256 public key, 65 bytes.
-    fn public_key(&self) -> Vec<u8>;
+    ///
+    /// # Errors
+    ///
+    /// The native signer could not supply the key.
+    fn public_key(&self) -> Result<Vec<u8>, NativeSignerError>;
     /// ECDSA P-256 over SHA-256 of `data`, ASN.1 DER, unchanged from
     /// `SecKeyCreateSignature(.ecdsaSignatureMessageX962SHA256)`.
     ///

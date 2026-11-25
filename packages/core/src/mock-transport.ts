@@ -61,11 +61,15 @@
  * user than `MOCK_USER`, and a signalled process leaves later process rows.
  */
 
+import { networkAddresses } from "./mock/addresses";
 import type { MockTransport, MockTransportOptions } from "./mock/contracts";
 import { createMockDiskSpace } from "./mock/disk-space";
 import { createMockDocker } from "./mock/docker";
 import { createMockEmitters, mockEventSubscriptions } from "./mock/emitters";
+import { withFailures } from "./mock/failures";
 import { scenarioFlags } from "./mock/fixtures";
+import { createMockHostHistory } from "./mock/host-history";
+import { seedPhoneErrors } from "./mock/phone-errors";
 
 export type {
   MockCall,
@@ -173,10 +177,13 @@ export function createMockTransport(
     if (retimed) stream.retime();
   };
   remote.seedScenario();
-  return {
+  if (scenarios.includes("phone-errors")) seedPhoneErrors(remote);
+  return withFailures({
     kind: "mock",
     flags,
     calls: commands.calls,
+    hostHistory: createMockHostHistory(queries.methods),
+    networkAddresses,
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,
     subscriberCount: () => channels.live.size,
@@ -199,5 +206,5 @@ export function createMockTransport(
       for (const source of [docker, stream, remote]) source.dispose();
       for (const e of Object.values(emitters)) e.clear();
     },
-  };
+  });
 }

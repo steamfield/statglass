@@ -268,6 +268,7 @@ impl LiveRegistry {
         let id = sink.id();
         let mut info = SubscriptionInfo {
             host,
+            recent_ms: super::RECENT_MS,
             stream: id,
             backfill_start_ms: None,
             backfill_rows: 0,

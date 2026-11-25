@@ -1,21 +1,19 @@
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fs};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use statglass_ipc::mobile::{MobileCommand, MobileHost, MobileHostKey, MobileTarget};
 use statglass_ipc::status::RemoteRoute;
-use statglass_schema::{HostId, MetricId, SeriesKey, SeriesSelector};
+use statglass_schema::{HostId, SeriesKey};
 use statglass_ssh::SoftwareSigner;
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 use super::CoreEvents;
 
 pub struct Events {
     live: mpsc::UnboundedSender<(u32, Value)>,
-    status: Notify,
 }
 
 impl CoreEvents for Events {
@@ -25,12 +23,7 @@ impl CoreEvents for Events {
             .is_ok()
     }
 
-    fn event(&self, message: String) {
-        let event: Value = serde_json::from_str(&message).expect("event JSON");
-        if event["kind"] == "remote_hosts_changed" {
-            self.status.notify_one();
-        }
-    }
+    fn event(&self, _: String) {}
 }
 
 pub struct DockerFixture {
@@ -77,10 +70,7 @@ impl DockerFixture {
         Self {
             host,
             key: Arc::new(key),
-            events: Arc::new(Events {
-                live: send,
-                status: Notify::new(),
-            }),
+            events: Arc::new(Events { live: send }),
             dir: tempfile::tempdir().expect("phone data directory"),
             live,
         }
@@ -112,50 +102,5 @@ impl DockerFixture {
         })
         .await
         .expect("the Linux agent sends measured cpu.total through CoreEvents");
-    }
-
-    pub async fn expect_minute_history<F, Fut>(&self, mut call: F)
-    where
-        F: FnMut(&'static str, Value) -> Fut,
-        Fut: Future<Output = Value>,
-    {
-        timeout(Duration::from_secs(60), async {
-            loop {
-                let hosts = call("list_remote_hosts", Value::Null).await;
-                assert_eq!(hosts[0]["id"], json!(self.host.id));
-                if let Some(through) = hosts[0]["synced_through_ms"].as_i64() {
-                    let cpu = SeriesSelector {
-                        metric: MetricId::parse("cpu.total").expect("CPU metric"),
-                        labels: Default::default(),
-                    };
-                    let page = call(
-                        "query_history",
-                        json!({
-                            "host": self.host.id, "tier": "m1", "max_points": 120,
-                            "selectors": [cpu],
-                            "from_ms": through - 3_600_000, "to_ms": through,
-                        }),
-                    )
-                    .await;
-                    assert_eq!(page["tier"], "m1");
-                    if page["series"]
-                        .as_array()
-                        .expect("history series")
-                        .iter()
-                        .any(|series| {
-                            series["key"]["metric"] == "cpu.total"
-                                && series["points"]
-                                    .as_array()
-                                    .is_some_and(|points| !points.is_empty())
-                        })
-                    {
-                        return;
-                    }
-                }
-                self.events.status.notified().await;
-            }
-        })
-        .await
-        .expect("the core reads M1 CPU after the mirror records its watermark");
     }
 }

@@ -27,7 +27,7 @@ import { toRemoteHostRecord } from "./remote-hosts";
 export interface NativeTransport extends PhoneTransport {
   /** Replaces the configured hosts and serializes writes on this transport. */
   setHosts(hosts: MobileHost[]): Promise<CommandResult<null>>;
-  /** Updates whether the core syncs history over cellular. */
+  /** Updates the live data policy. */
   setDataPolicy(policy: DataPolicy): Promise<CommandResult<null>>;
   /** The `authorized_keys` line for this phone's key. */
   authorizedKeyLine(comment: string): Promise<CommandResult<string>>;
@@ -106,16 +106,14 @@ export function createNativeTransport(
       callCore(native, { method: "get_capabilities", args: { host } }),
     hostVitals: (host) =>
       callCore(native, { method: "host_vitals", args: { host } }),
-    setHostsRecentInterest: (on) =>
-      callCore(native, { method: "set_hosts_recent_interest", args: { on } }),
     retryRemoteHost: (host) =>
       callCore(native, { method: "retry_remote_host", args: { host } }),
     subscribeLive: live.open,
-    queryHistory: (args) => callCore(native, { method: "query_history", args }),
-    queryEvents: (host, from_ms, to_ms) =>
+    hostHistory: (args) => callCore(native, { method: "host_history", args }),
+    networkAddresses: (host) =>
       callCore(native, {
-        method: "query_events",
-        args: { host, from_ms, to_ms },
+        method: "network_addresses",
+        args: { host },
       }),
     setHosts(hosts) {
       // A debug screen can unmount during Connect or reopen during cleanup.
@@ -146,7 +144,7 @@ const debugCores = new WeakMap<
 
 /** Starts the empty core so the debug screen can read the key before connecting. */
 export function openDebugCore(
-  syncOnCellular: boolean
+  liveOnCellular: boolean
 ): Promise<NativeTransport> | null {
   const native = getStatglassNative();
   if (native === null) return null;
@@ -155,7 +153,7 @@ export function openDebugCore(
   const starting = unwrap(
     startNativeTransport(native, {
       hosts: [],
-      data: { sync_on_cellular: syncOnCellular },
+      data: { live_on_cellular: liveOnCellular },
     })
   ).catch((error: unknown) => {
     debugCores.delete(native);

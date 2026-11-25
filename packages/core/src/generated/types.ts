@@ -491,6 +491,8 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "remote_busy"; message: string } |
 /**  A connected, current host does not offer what was asked (its edition or setup). */
 { kind: "remote_unsupported"; message: string } |
+/**  The host refused the query. */
+{ kind: "remote_refused"; message: string } |
 /**
  *  The Linux host has too little free space for the agent's history budget plus the
  *  low-disk reserve.
@@ -597,11 +599,7 @@ export type CoreKind = "performance" | "efficiency" |
 
 /**  The phone's choices about mobile data, from its settings. */
 export type DataPolicy = {
-	/**
-	 *  Sync history while the phone's path is cellular (expensive). Off: history waits
-	 *  for Wi-Fi; live frames still flow.
-	 */
-	sync_on_cellular: boolean,
+	live_on_cellular: boolean,
 };
 
 /**  Why a delivery failed, as far as the caller needs to tell failures apart. */
@@ -1503,6 +1501,8 @@ export type HistoricalUsageRequest = {
 	app_names: string[],
 };
 
+export type HistoryClamp = { kind: "points" } | { kind: "series" } | { kind: "events" } | { kind: "bytes" } | { kind: "unknown" };
+
 /**
  *  What history costs on this machine, measured from the database (`history_growth`):
  *  the whole file, every host together, like `history_size`. The Settings projection
@@ -1643,6 +1643,36 @@ export type HistoryUnavailableReason =
 /**  Anything else: an I/O error opening it, or the local host could not be registered. */
 { kind: "failed"; message: string };
 
+export type HostAddressesInfo = {
+	interface: string | null,
+	link_mbps: number | null,
+	ipv4: string[],
+	ipv6: string[],
+	public_ip: PublicIpInfo,
+	as_of_ms: number,
+};
+
+export type HostHistoryPage = {
+	tier: Tier,
+	bucket_ms: number,
+	complete_to_ms: number,
+	series: HistorySeries[],
+	gaps: Gap[],
+	events: Event[],
+	stats: SeriesHistoryStats[],
+	clamped: HistoryClamp[],
+};
+
+export type HostHistoryRequest = {
+	host: HostId,
+	series: SeriesSelector[],
+	from_ms: number,
+	/**  `None` means ending now on the host. */
+	to_ms: number | null,
+	max_points: number,
+	events_for: Module | null,
+};
+
 /**  A host's persistent identity. Serialized as the hyphenated UUID string. */
 export type HostId = string;
 
@@ -1699,6 +1729,7 @@ export type HostRecord = {
 };
 
 export type HostVitals = {
+	as_of_ms: number | null,
 	cpu_pct: number | null,
 	memory_pct: number | null,
 	load_1m: number | null,
@@ -1719,6 +1750,8 @@ export type HostVitals = {
 export type HostsChanged = {
 	hosts: HostRecord[],
 };
+
+export type IncompatibleSide = "host" | "app";
 
 /**
  *  A module's status item of its own (D-080). Not every mode is offered for every
@@ -2103,10 +2136,6 @@ export type MobileCall =
 { method: "host_vitals"; args: {
 	host: HostId,
 } } |
-/**  `null`. Summary history demand from the hosts list. */
-{ method: "set_hosts_recent_interest"; args: {
-	on: boolean,
-} } |
 /**  `null`. Dials a host now. */
 { method: "retry_remote_host"; args: {
 	host: HostId,
@@ -2117,13 +2146,18 @@ export type MobileCall =
 { method: "unsubscribe_live"; args: {
 	stream: number,
 } } |
-/**  `HistoryPage`. */
-{ method: "query_history"; args: HistoryRequest } |
-/**  `Event[]`, oldest first. */
-{ method: "query_events"; args: {
+/**  `HostHistoryPage`. */
+{ method: "host_history"; args: HostHistoryRequest } |
+/**  `HostAddressesInfo`. */
+{ method: "network_addresses"; args: {
 	host: HostId,
-	from_ms: number,
-	to_ms: number,
+} } |
+/**  `null`. Replaces a stream's process interest. */
+{ method: "set_process_interest"; args: {
+	host: HostId,
+	interested: boolean,
+	view: ProcessView | null,
+	stream: number | null,
 } };
 
 /**  What the session asks the host to run. */
@@ -2137,7 +2171,7 @@ export type MobileCommand =
 
 /**
  *  What the core starts with. The app's data directory comes from Swift, which owns the
- *  file protection and backup exclusion of the mirrors (RFC 3.4, 3.8).
+ *  file protection.
  */
 export type MobileConfig = {
 	hosts: MobileHost[],
@@ -2198,9 +2232,8 @@ export type MobileRemoteHost = {
 	name: string,
 	os: OsKind,
 	targets: MobileTarget[],
-	/**  This host's share of the phone's mirror storage. */
-	mirror_budget_mb: number,
 	connection: RemoteConnection,
+	open_error: CommandError | null,
 	/**  Host clock, ms. */
 	last_seen_ms: number | null,
 	/**  End of the newest mirrored bucket on disk (host clock). */
@@ -2656,6 +2689,12 @@ export type ProcessesAt = {
 	rows: StoredProcess[],
 };
 
+export type PublicIpInfo = { state: "known"; detail: {
+	ip: string,
+} } | { state: "pending" } | { state: "unavailable"; detail: {
+	reason: string,
+} } | { state: "unknown" };
+
 /**  A value the combined item prints after the bars, with its marker (D-102). */
 export type Readout =
 /**  `cpu.total`. */
@@ -2719,6 +2758,7 @@ export type RemoteConnection = {
 	route: RemoteRoute | null,
 	sync: RemoteSync,
 	failure: RemoteFailureKind | null,
+	incompatible_side: IncompatibleSide | null,
 	message: string | null,
 	/**
 	 *  Per-route causes of the last failure; empty while connected or when the failure
@@ -2738,7 +2778,7 @@ export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "
 /**  The other Mac answered SSH but its StatGlass app is not running. */
 "app_not_running" |
 /**  The other Mac's StatGlass has remote monitoring turned off. */
-"monitoring_off" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down";
+"monitoring_off" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down" | "phone_key_unavailable" | "internal";
 
 export type RemoteHostConfig = {
 	id: string,
@@ -2920,6 +2960,12 @@ export type SensorDump = {
 export type SensorReading = {
 	key: SeriesKey,
 	value: number | null,
+};
+
+export type SeriesHistoryStats = {
+	key: SeriesKey,
+	avg: number | null,
+	peak: number | null,
 };
 
 /**
@@ -3239,6 +3285,8 @@ export type StoredProcess = {
 /**  What `subscribe_live` did before returning. */
 export type SubscriptionInfo = {
 	host: HostId,
+	/**  The recent window available for catch-up. */
+	recent_ms: number,
 	/**
 	 *  This subscription's id (the channel's): pass it to `set_process_interest` so the
 	 *  interest belongs to this page load and ends with it.

@@ -20,27 +20,10 @@ async fn mobile_session() {
                 hosts: vec![fixture.host.clone()],
                 ..Default::default()
             },
-            fixture.key.clone(),
+            Arc::new(statglass_ssh::RusshDialer::new(fixture.key.clone())),
         )
         .unwrap();
     sessions.call(subscribe(host, 17)).await.unwrap();
     fixture.expect_cpu(17).await;
-    fixture
-        .expect_minute_history(|method, args| {
-            let sessions = &sessions;
-            async move {
-                let call = if args.is_null() {
-                    json!({"method": method})
-                } else {
-                    json!({"method": method, "args": args})
-                };
-                sessions
-                    .call(serde_json::from_value(call).unwrap())
-                    .await
-                    .unwrap()
-            }
-        })
-        .await;
-    let rows = sessions.call(MobileCall::ListRemoteHosts).await.unwrap();
-    assert!(rows[0]["synced_through_ms"].is_i64());
+    assert!(!fixture.dir.path().join("mirrors").exists());
 }

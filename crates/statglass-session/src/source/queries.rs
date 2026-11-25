@@ -3,7 +3,7 @@
 //! `ask`.
 use super::RemoteSource;
 use crate::{RemoteError, Result};
-use statglass_proto::{Answer, ErrorCode, Query};
+use statglass_proto::{Answer, ErrorCode, HistoryAnswer, HistoryQuery, HostAddresses, Query};
 use statglass_schema::disk_space::{
     SpaceFile, SpaceReport, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume,
 };
@@ -48,6 +48,22 @@ impl RemoteSource {
         };
         self.ask(query, |a| match a {
             Answer::UsageByApp(usage) => Some(usage),
+            _ => None,
+        })
+        .await
+    }
+
+    pub async fn history(&self, query: HistoryQuery) -> Result<HistoryAnswer> {
+        self.ask(Query::History(query), |answer| match answer {
+            Answer::History(history) => Some(history),
+            _ => None,
+        })
+        .await
+    }
+
+    pub async fn network_addresses(&self) -> Result<HostAddresses> {
+        self.ask(Query::NetworkAddresses, |answer| match answer {
+            Answer::NetworkAddresses(addresses) => Some(addresses),
             _ => None,
         })
         .await

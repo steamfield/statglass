@@ -313,6 +313,7 @@ mod tests {
             sync: RemoteSync::Unavailable,
             clock_offset_ms: -25.0,
             vitals: HostVitals {
+                as_of_ms: None,
                 cpu_pct: Some(12.5),
                 memory_pct: Some(50.0),
                 load_1m: Some(1.5),
@@ -357,7 +358,7 @@ mod tests {
         let expected = concat!(
             r#"{"state":"error","route":"lan","last_seen_ms":1000.0,"synced_through_ms":900.0,"error":"timed out","failure_kind":"timeout","#,
             r#""route_failures":[{"route":"tailscale","kind":"refused"}],"next_attempt_ms":2000.0,"attempt":3,"dialing":true,"waiting_for_network":true,"sync":"unavailable","clock_offset_ms":-25.0,"#,
-            r#""vitals":{"cpu_pct":12.5,"memory_pct":50.0,"load_1m":1.5,"cores":4,"memory_pressure":{"kind":"stall","some_pct":2.5},"disk_used_bytes":60,"disk_free_bytes":40,"disk_total_bytes":100,"disk_low":true,"net_rx_bps":20.0,"net_tx_bps":10.0},"#,
+            r#""vitals":{"as_of_ms":null,"cpu_pct":12.5,"memory_pct":50.0,"load_1m":1.5,"cores":4,"memory_pressure":{"kind":"stall","some_pct":2.5},"disk_used_bytes":60,"disk_free_bytes":40,"disk_total_bytes":100,"disk_low":true,"net_rx_bps":20.0,"net_tx_bps":10.0},"#,
             r#""rr":{"command":"build","user":"alice","client_hostname":"client","started_ms":800,"peers":["00000000-0000-0000-0000-000000000000"]},"#,
             r#""update":{"target":"2.0","phase":{"kind":"uploading","sent_bytes":10,"total_bytes":20}},"last_update_failure":{"via":"push","target":"2.0","message":"upload failed"},"#,
             r#""agent_version":"1.0","agent_update":{"kind":"available","installed":"1.0","target":"2.0","via":"push"},"identity_changed":"other-host"}"#,

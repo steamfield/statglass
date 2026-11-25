@@ -258,13 +258,15 @@ fn negotiate(
             actual: hello.host.id,
         });
     }
-    statglass_proto::negotiate(
-        &Offer::local(statglass_proto::local_features()),
-        &Offer::from(hello),
-    )
-    .map_err(|error| RemoteError::IncompatiblePeer {
-        version: hello.app_version.clone(),
-        reason: error.to_string(),
+    let mut features = statglass_proto::local_features();
+    // Clients can read addresses as soon as a host implements and advertises its resolver.
+    features.insert(statglass_proto::ADDRESSES_QUERY_FEATURE.into());
+    statglass_proto::negotiate(&Offer::local(features), &Offer::from(hello)).map_err(|error| {
+        RemoteError::IncompatiblePeer {
+            version: hello.app_version.clone(),
+            reason: error.to_string(),
+            side: None,
+        }
     })
 }
 

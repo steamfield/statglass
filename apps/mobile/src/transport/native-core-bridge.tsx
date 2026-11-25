@@ -11,8 +11,8 @@ import { getDebugCore, isNativeTransport } from "./native-transport";
 /** Pushes phone settings the core needs to the native transport. */
 export function NativeCoreBridge(): null {
   const transport = useOptionalPhoneTransport();
-  const syncOnCellular = usePhoneSettings(
-    (settings) => settings.syncOnCellular
+  const liveOnCellular = usePhoneSettings(
+    (settings) => settings.liveOnCellular
   );
   const pending = useRef(Promise.resolve());
 
@@ -28,13 +28,13 @@ export function NativeCoreBridge(): null {
         const core = await target;
         if (core === null) return;
         const result = await core.setDataPolicy({
-          sync_on_cellular: syncOnCellular,
+          live_on_cellular: liveOnCellular,
         });
         if (result.status === "error") throw result.error;
       })
       .catch((error: unknown) => {
         console.warn("[native core] could not set data policy", error);
       });
-  }, [transport, syncOnCellular]);
+  }, [transport, liveOnCellular]);
   return null;
 }

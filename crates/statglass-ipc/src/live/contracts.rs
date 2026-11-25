@@ -140,6 +140,9 @@ pub struct LiveStatus {
 #[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
 pub struct SubscriptionInfo {
     pub host: HostId,
+    /// The recent window available for catch-up.
+    #[specta(type = JsSafeInt)]
+    pub recent_ms: i64,
     /// This subscription's id (the channel's): pass it to `set_process_interest` so the
     /// interest belongs to this page load and ends with it.
     pub stream: u32,

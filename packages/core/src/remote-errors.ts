@@ -1,6 +1,17 @@
 import type { CommandError, PairingFailure } from "@core/generated/types";
 import { commandError, commandErrorText } from "./command-error";
 
+export {
+  hostStatusSummary,
+  type PhoneAction,
+  type PhoneProblem,
+  type PhoneProblemKind,
+  type PhoneRemoteHostRecord,
+  type PhoneRemoteHostStatus,
+  phoneProblem,
+  type Tone,
+} from "./phone-connection";
+
 const PAIRING_FAILURE_TEXT: Record<PairingFailure, string> = {
   denied: "The host declined the pairing request.",
   expired: "The pairing code expired.",

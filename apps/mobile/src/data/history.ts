@@ -142,13 +142,13 @@ export function useModuleHistory(
     queryFn: async () => ({
       range,
       page: await unwrap(
-        transport.queryHistory({
+        transport.hostHistory({
           host,
-          selectors: keys.map((metric) => ({ metric, labels: [] })),
+          series: keys.map((metric) => ({ metric, labels: [] })),
           from_ms: fromMs,
           to_ms: toMs,
-          tier: "auto",
           max_points: HISTORY_POINTS,
+          events_for: null,
         })
       ),
     }),
@@ -176,7 +176,20 @@ export function useEvents(host: HostId, fromMs: number, toMs: number) {
   const windowKey = queryKey.slice(0, -1);
   return useQuery({
     queryKey,
-    queryFn: () => unwrap(transport.queryEvents(host, fromMs, toMs)),
+    queryFn: async () => {
+      // This stub has no module input. The shared module reply will supply the events.
+      const page = await unwrap(
+        transport.hostHistory({
+          host,
+          series: [{ metric: "cpu.total", labels: [] }],
+          from_ms: fromMs,
+          to_ms: toMs,
+          max_points: 1,
+          events_for: "cpu",
+        })
+      );
+      return page.events;
+    },
     placeholderData: (previous, previousQuery) =>
       previousQuery &&
       sameHost(previousQuery.queryKey, queryKey) &&

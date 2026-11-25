@@ -10,6 +10,8 @@ use serde_json::{Map, Value};
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileCall, MobileConfig};
 use statglass_schema::lock::LockExt;
+use statglass_session::Dialer;
+use statglass_ssh::RusshDialer;
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::watch;
 
@@ -23,6 +25,8 @@ use crate::signer::{NativeSignerAdapter, authorized_key_line};
 #[derive(uniffi::Object)]
 pub struct MobileCore {
     signer: Arc<dyn NativeSigner>,
+    #[cfg(test)]
+    dialer: Option<Arc<dyn Dialer>>,
     runtime: OnceLock<Runtime>,
     sessions: Arc<Sessions>,
     lifecycle: Arc<Lifecycle>,
@@ -36,17 +40,12 @@ impl MobileCore {
     /// [`start`](Self::start).
     #[uniffi::constructor]
     pub fn new(signer: Arc<dyn NativeSigner>, events: Arc<dyn CoreEvents>) -> Arc<Self> {
-        Arc::new(Self {
-            signer,
-            runtime: OnceLock::new(),
-            sessions: Arc::new(Sessions::new(events)),
-            lifecycle: Arc::new(Lifecycle::new()),
-            quiesced: Mutex::new(None),
-        })
+        crate::logging::init();
+        Arc::new(Self::initial(signer, events))
     }
 
     /// Starts the runtime and a session per host in `config_json` (a `MobileConfig`),
-    /// keeping mirrors and the phone's id under `data_dir`. Envelope data: `null`.
+    /// keeping the phone's id under `data_dir`. Envelope data: `null`.
     ///
     /// # Errors
     ///
@@ -56,12 +55,10 @@ impl MobileCore {
         envelope::run_result(|| {
             let config: MobileConfig = parse("MobileConfig", &config_json)?;
             let runtime = self.runtime()?;
-            let signer = Arc::new(NativeSignerAdapter::new(self.signer.clone()));
             let data = config.data;
             self.sessions
-                .start(runtime, PathBuf::from(data_dir), config, signer)?;
-            // The cellular setting decides the policy once the first path arrives.
-            self.lifecycle.set_data_policy(&*self.sessions, data);
+                .start(runtime, PathBuf::from(data_dir), config, self.dialer())?;
+            self.lifecycle.set_data_policy(data);
             Ok(())
         })
     }
@@ -99,7 +96,7 @@ impl MobileCore {
             MobileCall::SetDataPolicy(data) => {
                 let lifecycle = self.lifecycle.clone();
                 runtime.spawn(async move {
-                    lifecycle.set_data_policy(&*sessions, data);
+                    lifecycle.set_data_policy(data);
                     Ok(Value::Null)
                 })
             }
@@ -110,7 +107,7 @@ impl MobileCore {
 
     /// Quiesces every session for backgrounding. The requests are issued before this
     /// returns, so a `resume` called after it is never overtaken; [`quiesced`]
-    /// (Self::quiesced) waits for the mirror writes. Envelope data: `null`.
+    /// (Self::quiesced) waits for the sessions to close. Envelope data: `null`.
     pub fn quiesce(&self) -> String {
         envelope::run(|| {
             let Some(runtime) = self.runtime.get().map(|r| r.handle().clone()) else {
@@ -128,8 +125,8 @@ impl MobileCore {
         })
     }
 
-    /// Resolves once the most recent [`quiesce`](Self::quiesce) has committed its
-    /// in-flight mirror writes, at once when there is none. Envelope data: `null`.
+    /// Resolves once the most recent [`quiesce`](Self::quiesce) completes, at once when
+    /// there is none. Envelope data: `null`.
     pub async fn quiesced(&self) -> String {
         let Some(mut wait) = self.quiesced.lock_ok().clone() else {
             return envelope::encode(Ok(Value::Null));
@@ -153,6 +150,39 @@ impl MobileCore {
 }
 
 impl MobileCore {
+    fn initial(signer: Arc<dyn NativeSigner>, events: Arc<dyn CoreEvents>) -> Self {
+        Self {
+            signer,
+            #[cfg(test)]
+            dialer: None,
+            runtime: OnceLock::new(),
+            sessions: Arc::new(Sessions::new(events)),
+            lifecycle: Arc::new(Lifecycle::new()),
+            quiesced: Mutex::new(None),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_dialer(
+        signer: Arc<dyn NativeSigner>,
+        events: Arc<dyn CoreEvents>,
+        dialer: Arc<dyn Dialer>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            dialer: Some(dialer),
+            ..Self::initial(signer, events)
+        })
+    }
+
+    fn dialer(&self) -> Arc<dyn Dialer> {
+        #[cfg(test)]
+        if let Some(dialer) = &self.dialer {
+            return dialer.clone();
+        }
+        let signer = Arc::new(NativeSignerAdapter::new(self.signer.clone()));
+        Arc::new(RusshDialer::new(signer))
+    }
+
     /// The core's runtime, built on first use: multi-threaded, so sources, streams and
     /// blocking queries share it.
     fn runtime(&self) -> Result<Handle, CommandError> {
@@ -236,8 +266,8 @@ mod tests {
     struct NoKey;
 
     impl NativeSigner for NoKey {
-        fn public_key(&self) -> Vec<u8> {
-            Vec::new()
+        fn public_key(&self) -> Result<Vec<u8>, crate::ffi::NativeSignerError> {
+            Ok(Vec::new())
         }
 
         fn sign(&self, _data: Vec<u8>) -> Result<Vec<u8>, crate::ffi::NativeSignerError> {
@@ -258,7 +288,13 @@ mod tests {
     }
 
     fn core() -> Arc<MobileCore> {
-        MobileCore::new(Arc::new(NoKey), Arc::new(NoEvents))
+        MobileCore::with_dialer(
+            Arc::new(NoKey),
+            Arc::new(NoEvents),
+            Arc::new(crate::sessions::tests::PeerDialer(
+                tokio::sync::mpsc::unbounded_channel().0,
+            )),
+        )
     }
 
     fn ok_null(envelope: &str) -> bool {
@@ -270,7 +306,7 @@ mod tests {
     fn quiesce_returns_at_once_and_quiesced_resolves_without_sources() {
         let core = core();
         let dir = tempfile::tempdir().expect("temp dir");
-        let config = json!({ "hosts": [], "data": { "sync_on_cellular": false } }).to_string();
+        let config = json!({ "hosts": [], "data": { "live_on_cellular": false } }).to_string();
         assert!(ok_null(
             &core.start(dir.path().display().to_string(), config)
         ));
@@ -314,7 +350,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let phone_id = dir.path().join("phone-id");
         let path = dir.path().display().to_string();
-        let config = json!({ "hosts": [], "data": { "sync_on_cellular": false } }).to_string();
+        let config = json!({ "hosts": [], "data": { "live_on_cellular": false } }).to_string();
         let build_info = || {
             let result = futures_lite_block_on(core.call("build_info".into(), "".into()));
             serde_json::from_str::<Value>(&result).unwrap()

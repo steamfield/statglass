@@ -1,13 +1,12 @@
 //! The app's lifecycle as the sessions see it: backgrounding quiesces every source,
-//! foregrounding resumes them (the open host first), and a path or data-policy change
-//! picks the sync policy and tells the sources (phase 4 lane d).
+//! foregrounding resumes them (the open host first), and path changes reach the sources.
 
 use std::sync::Mutex;
 
 use statglass_ipc::mobile::DataPolicy;
 use statglass_schema::lock::LockExt;
+use statglass_session::BoxFuture;
 use statglass_session::network::{self, LocalNetwork};
-use statglass_session::{BoxFuture, SyncPolicy};
 
 use crate::control::SessionControl;
 use crate::ffi::NetworkPath;
@@ -21,19 +20,7 @@ pub(crate) struct Lifecycle {
 struct State {
     path: Option<NetworkPath>,
     data: DataPolicy,
-    sync: SyncPolicy,
     backgrounded: bool,
-}
-
-impl State {
-    fn apply_sync_policy(&mut self, sessions: &dyn SessionControl) {
-        if let Some(next) = crate::policy::sync_policy(self.path, self.data)
-            && next != self.sync
-        {
-            sessions.set_sync_policy(next);
-            self.sync = next;
-        }
-    }
 }
 
 impl Lifecycle {
@@ -55,8 +42,7 @@ impl Lifecycle {
         self.state.lock_ok().backgrounded
     }
 
-    /// Quiesces every source and resolves once each has committed its in-flight mirror
-    /// write and closed its session.
+    /// Quiesces every source and resolves once each has closed its session.
     pub(crate) fn quiesce(&self, sessions: &dyn SessionControl) -> BoxFuture<'static, ()> {
         let mut state = self.state.lock_ok();
         state.backgrounded = true;
@@ -82,8 +68,7 @@ impl Lifecycle {
         }
     }
 
-    /// Records the path, re-derives the sync policy and tells the sources the network
-    /// changed.
+    /// Records the path and tells the sources the network changed.
     pub(crate) fn path_changed(&self, sessions: &dyn SessionControl, path: NetworkPath) {
         self.path_changed_with_probe(sessions, path, network::probe);
     }
@@ -100,15 +85,12 @@ impl Lifecycle {
         };
         let mut state = self.state.lock_ok();
         state.path = Some(path);
-        state.apply_sync_policy(sessions);
         sessions.network_changed(network);
     }
 
-    /// Records the data policy and applies the sync policy it gives.
-    pub(crate) fn set_data_policy(&self, sessions: &dyn SessionControl, data: DataPolicy) {
-        let mut state = self.state.lock_ok();
-        state.data = data;
-        state.apply_sync_policy(sessions);
+    /// Records the data policy.
+    pub(crate) fn set_data_policy(&self, data: DataPolicy) {
+        self.state.lock_ok().data = data;
     }
 }
 
@@ -137,20 +119,12 @@ mod tests {
     #[derive(Default)]
     struct TestSessions {
         sources: Vec<Arc<RemoteSource>>,
-        policies: Mutex<Vec<SyncPolicy>>,
         networks: Mutex<Vec<LocalNetwork>>,
     }
 
     impl SessionControl for TestSessions {
         fn sources(&self) -> Vec<Arc<RemoteSource>> {
             self.sources.clone()
-        }
-
-        fn set_sync_policy(&self, policy: SyncPolicy) {
-            self.policies.lock_ok().push(policy);
-            for source in &self.sources {
-                source.set_sync_policy(policy);
-            }
         }
 
         fn network_changed(&self, network: LocalNetwork) {
@@ -395,51 +369,6 @@ mod tests {
 
         lifecycle.resume(&sessions);
         assert!(!lifecycle.backgrounded());
-    }
-
-    #[test]
-    fn sync_policy_updates_once_per_change_and_stays_put_while_offline() {
-        let lifecycle = Lifecycle::new();
-        let sessions = TestSessions::default();
-        let cellular = NetworkPath {
-            satisfied: true,
-            expensive: true,
-            constrained: false,
-        };
-        let wifi = NetworkPath {
-            expensive: false,
-            ..cellular
-        };
-
-        lifecycle.path_changed(&sessions, cellular);
-        lifecycle.path_changed(&sessions, cellular);
-        lifecycle.path_changed(
-            &sessions,
-            NetworkPath {
-                satisfied: false,
-                ..wifi
-            },
-        );
-        let allowed = DataPolicy {
-            sync_on_cellular: true,
-        };
-        lifecycle.set_data_policy(&sessions, allowed);
-        assert_eq!(*sessions.policies.lock_ok(), [SyncPolicy::Off]);
-
-        lifecycle.path_changed(&sessions, cellular);
-        lifecycle.set_data_policy(&sessions, DataPolicy::default());
-        lifecycle.set_data_policy(&sessions, allowed);
-        lifecycle.path_changed(&sessions, wifi);
-        assert_eq!(
-            *sessions.policies.lock_ok(),
-            [
-                SyncPolicy::Off,
-                SyncPolicy::SummaryOnly,
-                SyncPolicy::Off,
-                SyncPolicy::SummaryOnly,
-                SyncPolicy::Full
-            ]
-        );
     }
 
     #[test]

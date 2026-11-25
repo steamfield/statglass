@@ -32,8 +32,9 @@ impl Signer for NativeSignerAdapter {
         if let Some(cached) = self.public_key.get() {
             return cached;
         }
-        let key = self.native.public_key();
-        if matches!(key.as_slice(), [4, coordinates @ ..] if coordinates.len() == 64) {
+        if let Ok(key) = self.native.public_key()
+            && matches!(key.as_slice(), [4, coordinates @ ..] if coordinates.len() == 64)
+        {
             return self.public_key.get_or_init(|| key);
         }
         self.public_key.get().map_or(&[], Vec::as_slice)
@@ -72,10 +73,13 @@ pub(crate) fn authorized_key_line(
             message: "The SSH public key comment must fit on one line.".into(),
         });
     }
-    statglass_ssh::authorized_key_line(&native.public_key(), comment).map_err(|error| {
-        CommandError::Internal {
-            message: format!("formatting the phone's SSH public key: {error}"),
-        }
+    let key = native
+        .public_key()
+        .map_err(|error| CommandError::Internal {
+            message: format!("reading the phone's SSH public key: {error}"),
+        })?;
+    statglass_ssh::authorized_key_line(&key, comment).map_err(|error| CommandError::Internal {
+        message: format!("formatting the phone's SSH public key: {error}"),
     })
 }
 
@@ -110,9 +114,9 @@ mod tests {
     }
 
     impl NativeSigner for SoftwareNative {
-        fn public_key(&self) -> Vec<u8> {
+        fn public_key(&self) -> Result<Vec<u8>, NativeSignerError> {
             self.key_reads.fetch_add(1, Ordering::Relaxed);
-            self.public_key.lock_ok().clone()
+            Ok(self.public_key.lock_ok().clone())
         }
 
         fn sign(&self, data: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {
@@ -131,8 +135,8 @@ mod tests {
     }
 
     impl NativeSigner for FailingNative {
-        fn public_key(&self) -> Vec<u8> {
-            self.key.clone()
+        fn public_key(&self) -> Result<Vec<u8>, NativeSignerError> {
+            Ok(self.key.clone())
         }
 
         fn sign(&self, _: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {

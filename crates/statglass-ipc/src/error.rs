@@ -39,6 +39,9 @@ pub enum CommandError {
     /// A connected, current host does not offer what was asked (its edition or setup).
     #[error("{message}")]
     RemoteUnsupported { message: String },
+    /// The host refused the query.
+    #[error("{message}")]
+    RemoteRefused { message: String },
     /// The Linux host has too little free space for the agent's history budget plus the
     /// low-disk reserve.
     #[error("{message}")]

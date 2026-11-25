@@ -36,6 +36,7 @@ mod perms;
 mod reader;
 mod rolldown;
 mod slots;
+pub mod tier_budget;
 mod types;
 pub mod usage;
 mod writer;

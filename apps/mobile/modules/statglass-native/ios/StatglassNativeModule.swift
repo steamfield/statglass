@@ -158,7 +158,7 @@ private final class PhoneKeySigner: NativeSigner, @unchecked Sendable {
     }
   }
 
-  func publicKey() -> Data {
+  func publicKey() throws -> Data {
     // Startup loads the key before the core can use this callback.
     cachedPoint.withLock { $0 ?? Data() }
   }

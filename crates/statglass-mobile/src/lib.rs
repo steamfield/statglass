@@ -17,8 +17,11 @@
 mod build_info;
 mod control;
 mod envelope;
+#[cfg(test)]
+mod facade_tests;
 mod ffi;
 mod lifecycle;
+mod logging;
 mod mobile_core;
 mod policy;
 mod sessions;

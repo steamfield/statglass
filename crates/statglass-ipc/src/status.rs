@@ -3,7 +3,16 @@
 //! runs, agent updates) on top of [`RemoteConnection`].
 
 use serde::{Deserialize, Serialize};
-use statglass_session::{ConnectionFailureKind, ConnectionStatus, Route};
+use statglass_session::{
+    ConnectionFailureKind, ConnectionStatus, IncompatibleSide as SessionSide, Route,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum IncompatibleSide {
+    Host,
+    App,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +57,8 @@ pub enum RemoteFailureKind {
     NoRoute,
     LocalOffline,
     TailscaleDown,
+    PhoneKeyUnavailable,
+    Internal,
 }
 /// One configured route's cause from the last failed connection attempt.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -63,6 +74,7 @@ pub struct RemoteConnection {
     pub route: Option<RemoteRoute>,
     pub sync: RemoteSync,
     pub failure: Option<RemoteFailureKind>,
+    pub incompatible_side: Option<IncompatibleSide>,
     pub message: Option<String>,
     /// Per-route causes of the last failure; empty while connected or when the failure
     /// was not specific to a route.
@@ -92,6 +104,10 @@ pub fn connection_status(status: &ConnectionStatus) -> RemoteConnection {
             RemoteSync::Idle
         },
         failure: status.failure_kind.map(map_failure_kind),
+        incompatible_side: status.incompatible_side.map(|side| match side {
+            SessionSide::Host => IncompatibleSide::Host,
+            SessionSide::App => IncompatibleSide::App,
+        }),
         message: status.error.clone().or_else(|| {
             status
                 .connected
@@ -134,5 +150,7 @@ fn map_failure_kind(kind: ConnectionFailureKind) -> RemoteFailureKind {
         K::NoRoute => RemoteFailureKind::NoRoute,
         K::LocalOffline => RemoteFailureKind::LocalOffline,
         K::TailscaleDown => RemoteFailureKind::TailscaleDown,
+        K::PhoneKeyUnavailable => RemoteFailureKind::PhoneKeyUnavailable,
+        K::Internal => RemoteFailureKind::Internal,
     }
 }

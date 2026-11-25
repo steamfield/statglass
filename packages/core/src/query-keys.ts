@@ -9,6 +9,7 @@ import type {
   HistoricalUsageMetric,
   HostId,
   Module,
+  SeriesSelector,
   Settings,
   Tier,
   UsageKey,
@@ -31,6 +32,21 @@ export type TierKey = Tier | "auto";
 
 export const historyKeys = {
   all: ["history"] as const,
+  hostHistory: (
+    host: HostId,
+    series: readonly SeriesSelector[],
+    fromMs: number,
+    toMs: number | "now",
+    budget: number
+  ) =>
+    [
+      ...historyKeys.host(host),
+      "host-history",
+      series,
+      fromMs,
+      toMs,
+      budget,
+    ] as const,
   recent: (hostId: HostId, windowMs: number) =>
     [...historyKeys.host(hostId), "recent", windowMs] as const,
   moduleSeries: (

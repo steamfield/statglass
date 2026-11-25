@@ -137,6 +137,8 @@ function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
       return "update_required";
     case "identity_changed":
       return "identity_changed";
+    case "phone_key_unavailable":
+    case "internal":
     case "protocol":
       return "protocol";
     case "name_not_resolved":

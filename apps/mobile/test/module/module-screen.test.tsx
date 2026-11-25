@@ -1,10 +1,14 @@
 import "react-native-gesture-handler/jestSetup";
 
 import { formatClockSeconds, formatHistoryTime } from "@core/format";
-import type { Event, HistoryPage, HistoryRequest } from "@core/generated/types";
+import type {
+  Event,
+  HostHistoryPage,
+  HostHistoryRequest,
+} from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
-import { createMockTransport } from "@core/mock-transport";
+import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { historyKeys } from "@core/query-keys";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
@@ -51,10 +55,56 @@ function openModule(host = MOCK_HOST_ID, module = "cpu") {
   );
 }
 
-function cpuPage({ selectors, from_ms }: HistoryRequest): HistoryPage {
+function emptyPage(
+  request: HostHistoryRequest,
+  events: Event[] = []
+): HostHistoryPage {
   return {
     tier: "m1",
     bucket_ms: MINUTE_MS,
+    complete_to_ms: request.to_ms ?? request.from_ms,
+    series: [],
+    gaps: [],
+    events,
+    stats: [],
+    clamped: [],
+  };
+}
+
+type Read = MockTransport["hostHistory"];
+
+function observeHistory(
+  transport: MockTransport,
+  charts?: Read,
+  events?: Read
+) {
+  const fallback = transport.hostHistory;
+  const read = jest
+    .spyOn(transport, "hostHistory")
+    .mockImplementation(
+      (request) =>
+        (request.events_for === null ? charts : events)?.(request) ??
+        fallback(request)
+    );
+  const requests = () => read.mock.calls.map(([request]) => request);
+  return {
+    read,
+    charts: () => requests().filter(({ events_for }) => events_for === null),
+    events: () => requests().filter(({ events_for }) => events_for !== null),
+  };
+}
+
+const eventsReply =
+  (events: Event[]): Read =>
+  async (request) => ({
+    status: "ok",
+    data: emptyPage(request, events),
+  });
+
+function cpuPage(request: HostHistoryRequest): HostHistoryPage {
+  const { series, from_ms } = request;
+  return {
+    ...emptyPage(request),
     gaps: [
       {
         start_ms: from_ms + MINUTE_MS,
@@ -65,7 +115,7 @@ function cpuPage({ selectors, from_ms }: HistoryRequest): HistoryPage {
     ],
     series: [
       {
-        key: selectors[0] ?? { metric: "cpu.total", labels: [] },
+        key: series[0] ?? { metric: "cpu.total", labels: [] },
         hold_ms: 0,
         points: [
           { t: from_ms, min: 21, avg: 30, max: 39 },
@@ -82,10 +132,10 @@ test("history chart passes the missing bucket, gap band, and trailing event to t
   const key = { metric: "cpu.total", labels: [] };
   const data = cpuPage({
     host: MOCK_HOST_ID,
-    selectors: [key],
+    series: [key],
     from_ms: fromMs,
     to_ms: toMs,
-    tier: "auto",
+    events_for: null,
     max_points: 10,
   });
   const grid = historyGrid(data, [key.metric], fromMs, toMs);
@@ -115,9 +165,7 @@ test("history chart passes the missing bucket, gap band, and trailing event to t
 
 test("range tabs select new history and event keys with the same bounds and show dated events", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  transport.recordEvent(record);
-  const readHistory = jest.spyOn(transport, "queryHistory");
-  const readEvents = jest.spyOn(transport, "queryEvents");
+  const history = observeHistory(transport, undefined, eventsReply([record]));
   const { client } = await renderWithProviders(openModule(), { transport });
 
   expect(await screen.findAllByRole("tab")).toHaveLength(4);
@@ -136,19 +184,20 @@ test("range tabs select new history and event keys with the same bounds and show
     await fireEvent.press(screen.getByRole("tab", { name: label }));
     expect(screen.getByRole("tab", { name: label })).toBeSelected();
     await waitFor(() =>
-      expect(readHistory.mock.lastCall?.[0]).toMatchObject({
+      expect(history.charts().at(-1)).toMatchObject({
         host: MOCK_HOST_ID,
-        selectors: [{ metric: "cpu.total", labels: [] }],
+        series: [{ metric: "cpu.total", labels: [] }],
       })
     );
-    const request = readHistory.mock.lastCall?.[0];
-    if (!request) throw new Error("History request did not run");
+    const request = history.charts().at(-1);
+    if (!request || request.to_ms === null)
+      throw new Error("History request did not include an end");
     expect(request.to_ms - request.from_ms).toBe(duration);
-    expect(readEvents.mock.lastCall).toEqual([
-      MOCK_HOST_ID,
-      request.from_ms,
-      request.to_ms,
-    ]);
+    expect(history.events().at(-1)).toMatchObject({
+      host: MOCK_HOST_ID,
+      from_ms: request.from_ms,
+      to_ms: request.to_ms,
+    });
     expect(
       client.getQueryState(
         historyKeys.moduleSeries(
@@ -173,12 +222,10 @@ test("range tabs select new history and event keys with the same bounds and show
 
 test("scrubbing reads the selected bucket, a long press pins a gap and plays a haptic", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const readHistory = jest
-    .spyOn(transport, "queryHistory")
-    .mockImplementation(async (request) => ({
-      status: "ok",
-      data: cpuPage(request),
-    }));
+  const history = observeHistory(transport, async (request) => ({
+    status: "ok",
+    data: cpuPage(request),
+  }));
   const selection = jest
     .spyOn(Haptics, "selectionAsync")
     .mockResolvedValue(undefined);
@@ -187,7 +234,7 @@ test("scrubbing reads the selected bucket, a long press pins a gap and plays a h
     expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen()
   );
   const chart = screen.getByRole("adjustable", { name: "CPU history" });
-  const from = readHistory.mock.lastCall?.[0].from_ms ?? now - HOUR_MS;
+  const from = history.charts().at(-1)?.from_ms ?? now - HOUR_MS;
   await fireEvent(chart, "layout", { nativeEvent: { layout: { width: 300 } } });
   const pan = createGestureController("history-pan");
   await act(() => {
@@ -223,16 +270,10 @@ test("loading resolves to explicit empty history and events", async () => {
     historyRows: 0,
     latencyMs: 500,
   });
-  jest.spyOn(transport, "queryHistory").mockImplementation(async () => {
+  observeHistory(transport, async (request) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return {
-      status: "ok",
-      data: { tier: "m1", bucket_ms: MINUTE_MS, series: [], gaps: [] },
-    };
+    return { status: "ok", data: emptyPage(request) };
   });
-  jest
-    .spyOn(transport, "queryEvents")
-    .mockResolvedValue({ status: "ok", data: [] });
   await renderWithProviders(openModule(), { transport });
   expect(screen.getByText("Loading history…")).toBeOnTheScreen();
   expect(await screen.findByText("No samples in this range")).toBeOnTheScreen();
@@ -241,7 +282,7 @@ test("loading resolves to explicit empty history and events", async () => {
 
 test("the ceiling sits outside the plot and VoiceOver double-tap pins and clears", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  jest.spyOn(transport, "queryHistory").mockImplementation(async (request) => ({
+  observeHistory(transport, async (request) => ({
     status: "ok",
     data: cpuPage(request),
   }));
@@ -265,20 +306,19 @@ test("the ceiling sits outside the plot and VoiceOver double-tap pins and clears
 
 test("the right edge pins the last returned bucket time within the requested window", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const query = jest
-    .spyOn(transport, "queryHistory")
-    .mockImplementation(async (request) => ({
-      status: "ok",
-      data: cpuPage(request),
-    }));
+  const history = observeHistory(transport, async (request) => ({
+    status: "ok",
+    data: cpuPage(request),
+  }));
   jest.spyOn(Haptics, "selectionAsync").mockResolvedValue(undefined);
   await renderWithProviders(openModule(), { transport });
   const plot = await screen.findByRole("adjustable", { name: "CPU history" });
   await waitFor(() =>
     expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen()
   );
-  const request = query.mock.lastCall?.[0];
-  if (!request) throw new Error("History request did not run");
+  const request = history.charts().at(-1);
+  if (!request || request.to_ms === null)
+    throw new Error("History request did not include an end");
   await fireEvent(plot, "accessibilityAction", {
     nativeEvent: { actionName: "activate" },
   });
@@ -295,11 +335,10 @@ test("a foreground module refreshes both history and events as time advances", a
     .mockReturnValue({ remove: () => {} });
   try {
     const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-    const query = jest.spyOn(transport, "queryHistory");
-    const events = jest.spyOn(transport, "queryEvents");
+    const history = observeHistory(transport);
     const view = await renderWithProviders(openModule(), { transport });
-    await waitFor(() => expect(query).toHaveBeenCalledTimes(1));
-    const end = query.mock.lastCall?.[0].to_ms ?? 0;
+    await waitFor(() => expect(history.charts()).toHaveLength(1));
+    const end = history.charts().at(-1)?.to_ms ?? 0;
     const emitAppState = (state: "background" | "active") => {
       AppState.currentState = state;
       for (const [event, onChange] of listener.mock.calls) {
@@ -308,15 +347,15 @@ test("a foreground module refreshes both history and events as time advances", a
     };
     await act(() => emitAppState("background"));
     await act(() => jest.advanceTimersByTimeAsync(2 * MINUTE_MS));
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(history.charts()).toHaveLength(1);
     await act(() => emitAppState("active"));
-    await waitFor(() => expect(query).toHaveBeenCalledTimes(2));
-    expect(query.mock.lastCall?.[0].to_ms).toBeGreaterThanOrEqual(
+    await waitFor(() => expect(history.charts()).toHaveLength(2));
+    expect(history.charts().at(-1)?.to_ms).toBeGreaterThanOrEqual(
       end + 2 * MINUTE_MS
     );
-    expect(events.mock.lastCall?.[2]).toBe(query.mock.lastCall?.[0].to_ms);
+    expect(history.events().at(-1)?.to_ms).toBe(history.charts().at(-1)?.to_ms);
     await act(() => jest.advanceTimersByTimeAsync(MINUTE_MS));
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(history.charts()).toHaveLength(3);
     await view.unmount();
   } finally {
     AppState.currentState = initialAppState;
@@ -328,9 +367,9 @@ test("a minute refresh keeps the plotted samples, event rows, and pinned reading
   AppState.currentState = "active";
   try {
     const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-    const history = jest
-      .spyOn(transport, "queryHistory")
-      .mockImplementation(async (request) => ({
+    const history = observeHistory(
+      transport,
+      async (request) => ({
         status: "ok",
         data: {
           ...cpuPage(request),
@@ -349,10 +388,9 @@ test("a minute refresh keeps the plotted samples, event rows, and pinned reading
             },
           ],
         },
-      }));
-    const events = jest
-      .spyOn(transport, "queryEvents")
-      .mockResolvedValue({ status: "ok", data: [record] });
+      }),
+      eventsReply([record])
+    );
     jest.spyOn(Haptics, "selectionAsync").mockResolvedValue(undefined);
     const view = await renderWithProviders(openModule(), { transport });
     try {
@@ -364,7 +402,7 @@ test("a minute refresh keeps the plotted samples, event rows, and pinned reading
       );
       const plot = () =>
         screen.getByRole("adjustable", { name: "CPU history" });
-      const request = history.mock.lastCall?.[0];
+      const request = history.charts().at(-1);
       if (!request) throw new Error("History request did not run");
       const value = { text: `${formatClockSeconds(request.from_ms)}, 30%` };
       await fireEvent(plot(), "layout", {
@@ -378,11 +416,10 @@ test("a minute refresh keeps the plotted samples, event rows, and pinned reading
       });
       expect(plot()).toHaveAccessibilityValue(value);
 
-      history.mockImplementation(() => new Promise<never>(() => {}));
-      events.mockImplementation(() => new Promise<never>(() => {}));
+      history.read.mockImplementation(() => new Promise<never>(() => {}));
       await act(() => jest.advanceTimersByTimeAsync(MINUTE_MS));
-      expect(history).toHaveBeenCalledTimes(2);
-      expect(events).toHaveBeenCalledTimes(2);
+      expect(history.charts()).toHaveLength(2);
+      expect(history.events()).toHaveLength(2);
       expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen();
       expect(
         screen.getByText("Fans ramped up · kernel_task")
@@ -417,7 +454,7 @@ test("a failed remote status read explains why the module cannot load", async ()
     kind: "remote_unreachable",
     message: "Network unavailable",
   });
-  const history = jest.spyOn(transport, "queryHistory");
+  const history = jest.spyOn(transport, "hostHistory");
   await renderWithProviders(openModule(remote.config.id), { transport });
   expect(
     await screen.findByRole(
@@ -448,11 +485,11 @@ test("offline history ends at the mirror watermark and shows the offline and syn
     last_seen_ms: from,
     synced_through_ms: end,
   });
-  const query = jest.spyOn(transport, "queryHistory");
+  const history = observeHistory(transport);
   await renderWithProviders(openModule(remote.config.id), { transport });
   expect(await screen.findByText(/Offline since/)).toBeOnTheScreen();
   expect(screen.getByText(/Last synced through/)).toBeOnTheScreen();
-  expect(query.mock.lastCall?.[0].to_ms).toBe(end);
+  expect(history.charts().at(-1)?.to_ms).toBe(end);
 });
 
 test("network identifies both series before scrubbing and history mounts only visible event rows", async () => {
@@ -462,9 +499,7 @@ test("network identifies both series before scrubbing and history mounts only vi
     ts_ms: record.ts_ms + index * 1000,
     processes: [`process-${index}`],
   }));
-  jest
-    .spyOn(transport, "queryEvents")
-    .mockResolvedValue({ status: "ok", data: events });
+  observeHistory(transport, undefined, eventsReply(events));
   await renderWithProviders(openModule(MOCK_HOST_ID, "network"), { transport });
   expect(
     await screen.findByText("Fans ramped up · process-59")
@@ -487,34 +522,36 @@ test("the first query for a skewed remote uses its host clock for history and ev
       status.state === "connected" && (status.clock_offset_ms ?? 0) > 0
   );
   if (!remote) throw new Error("The demo needs a host with clock skew");
-  const history = jest.spyOn(transport, "queryHistory");
-  const events = jest.spyOn(transport, "queryEvents");
+  const history = observeHistory(transport);
   await renderWithProviders(openModule(remote.config.id), { transport });
-  await waitFor(() => expect(history).toHaveBeenCalled());
-  expect(history).toHaveBeenCalledTimes(1);
-  const request = history.mock.lastCall?.[0];
-  if (!request) throw new Error("History request did not run");
+  await waitFor(() => expect(history.charts()).toHaveLength(1));
+  const request = history.charts().at(-1);
+  if (!request || request.to_ms === null)
+    throw new Error("History request did not include an end");
   expect(request.to_ms - now).toBeGreaterThanOrEqual(
     remote.status.clock_offset_ms ?? 0
   );
   expect(request.to_ms - now).toBeLessThan(
     (remote.status.clock_offset_ms ?? 0) + 1000
   );
-  expect(events.mock.calls).toEqual([
-    [remote.config.id, request.from_ms, request.to_ms],
+  expect(history.events()).toMatchObject([
+    { host: remote.config.id, from_ms: request.from_ms, to_ms: request.to_ms },
   ]);
 });
 
 test("reports a locked history store and an unreachable events source", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  jest.spyOn(transport, "queryHistory").mockResolvedValue({
-    status: "error",
-    error: { kind: "history_unavailable", reason: { kind: "locked" } },
-  });
-  jest.spyOn(transport, "queryEvents").mockResolvedValue({
-    status: "error",
-    error: { kind: "remote_unreachable", message: "Host offline" },
-  });
+  observeHistory(
+    transport,
+    async () => ({
+      status: "error",
+      error: { kind: "history_unavailable", reason: { kind: "locked" } },
+    }),
+    async () => ({
+      status: "error",
+      error: { kind: "remote_unreachable", message: "Host offline" },
+    })
+  );
   await renderWithProviders(openModule(), { transport });
   expect(
     await screen.findByText(
@@ -529,7 +566,7 @@ test("reports a locked history store and an unreachable events source", async ()
 
 test("an unsupported module link gives an unavailable state without reading history", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const read = jest.spyOn(transport, "queryHistory");
+  const read = jest.spyOn(transport, "hostHistory");
   await renderWithProviders(openModule(MOCK_HOST_ID, "disk"), { transport });
   expect(screen.getByText("This module isn’t available.")).toBeOnTheScreen();
   expect(read).not.toHaveBeenCalled();

@@ -1,18 +1,20 @@
-import type { RemoteHostStatus } from "@core/generated/types";
 import { CLOCK_STEP_THRESHOLD_MS } from "@core/host-clock";
+import type { PhoneRemoteHostStatus } from "@core/phone-connection";
 import type { MockRemotes } from "./remote";
 import { syncRrJobs } from "./rr";
 
 /** Same rendered fields as the Rust registration gate; live facts use the poll. */
 function renderedStatusChanged(
-  previous: RemoteHostStatus,
-  next: RemoteHostStatus
+  previous: PhoneRemoteHostStatus,
+  next: PhoneRemoteHostStatus
 ): boolean {
-  const rendered = (status: RemoteHostStatus) => [
+  const rendered = (status: PhoneRemoteHostStatus) => [
     status.state,
     status.route,
     status.error,
     status.failure_kind,
+    status.incompatible_side,
+    status.open_error,
     status.synced_through_ms,
     status.sync,
     status.agent_version,
@@ -22,7 +24,7 @@ function renderedStatusChanged(
     status.last_update_failure,
     status.rr,
   ];
-  const serialize = (status: RemoteHostStatus) =>
+  const serialize = (status: PhoneRemoteHostStatus) =>
     JSON.stringify(rendered(status), (_key, value: unknown) => {
       if (!value || typeof value !== "object" || Array.isArray(value))
         return value;
@@ -44,7 +46,7 @@ export class MockRemoteStatus {
   push(
     remotes: MockRemotes,
     id: string,
-    status: Partial<RemoteHostStatus>,
+    status: Partial<PhoneRemoteHostStatus>,
     emit: () => void
   ) {
     const remote = remotes.remotes.get(id);

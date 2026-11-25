@@ -2,13 +2,12 @@ import { formatClock } from "@core/format";
 import type {
   HostId,
   HostRecord,
-  RemoteHostRecord,
   RemoteHostStatus,
 } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { hostClock } from "@core/host-clock";
 import { historyKeys, hostKeys } from "@core/query-keys";
-import { failureReason } from "@core/remote-errors";
+import { failureReason, type PhoneRemoteHostRecord } from "@core/remote-errors";
 import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
@@ -54,7 +53,7 @@ export function useHostListUpdates() {
   );
 }
 
-function useRemoteStatuses<T>(select: (records: RemoteHostRecord[]) => T) {
+function useRemoteStatuses<T>(select: (records: PhoneRemoteHostRecord[]) => T) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
   return useQuery({
@@ -86,7 +85,7 @@ export function useHostVitals(id: HostId) {
 
 const sparklineKey = (id: HostId) => historyKeys.recent(id, SPARKLINE_MS);
 
-/** The last thirty minutes of CPU history at the mirror's minute resolution. */
+/** The last thirty minutes of CPU history. */
 export function useHostSparkline(id: HostId) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
@@ -107,13 +106,13 @@ export function useHostSparkline(id: HostId) {
       const toMs = Math.round(now());
       const fromMs = toMs - SPARKLINE_MS;
       const page = await unwrap(
-        transport.queryHistory({
+        transport.hostHistory({
           host: id,
-          selectors: [{ metric: CPU, labels: [] }],
+          series: [{ metric: CPU, labels: [] }],
           from_ms: fromMs,
           to_ms: toMs,
-          tier: "m1",
           max_points: 31,
+          events_for: null,
         })
       );
       const grid = historyGrid(page, [CPU], fromMs, toMs);

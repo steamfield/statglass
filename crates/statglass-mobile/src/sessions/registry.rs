@@ -6,7 +6,7 @@ use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileEvent, MobileHost};
 use statglass_schema::{HostId, HostRecord, lock::LockExt};
 use statglass_session::network::LocalNetwork;
-use statglass_session::{Dialer, RemoteSource, SourceOptions, SyncPolicy};
+use statglass_session::{Dialer, RemoteSource, SourceOptions};
 use tokio::runtime::Handle;
 
 use crate::ffi::CoreEvents;
@@ -20,7 +20,7 @@ mod tests;
 pub(super) struct Registry {
     pub(super) events: Arc<dyn CoreEvents>,
     pub(super) live: Arc<Live>,
-    // Serializes roster edits while new mirrors open outside the state lock.
+    // Serializes roster edits while new sources open outside the state lock.
     updates: Mutex<()>,
     state: Mutex<State>,
 }
@@ -28,7 +28,6 @@ pub(super) struct Registry {
 #[derive(Default)]
 struct State {
     run: Option<Run>,
-    policy: SyncPolicy,
     network: Option<LocalNetwork>,
     recent: bool,
     roster_events: VecDeque<Vec<HostRecord>>,
@@ -40,8 +39,7 @@ struct Run {
     desired: Vec<MobileHost>,
     entries: HashMap<HostId, Arc<HostEntry>>,
     open_errors: HashMap<HostId, CommandError>,
-    // A removal or rebuild owns the path until it has closed the old mirror.
-    // Keep the source visible to lifecycle drains while it can still be writing.
+    // A removal or replacement owns the slot until its session closes.
     retiring: HashMap<HostId, Option<Arc<RemoteSource>>>,
 }
 
@@ -50,7 +48,6 @@ type OpenedHost = (HostId, Result<Arc<HostEntry>, CommandError>);
 #[derive(Clone)]
 struct Context {
     runtime: Handle,
-    data_dir: PathBuf,
     phone: HostId,
     dialer: Arc<dyn Dialer>,
 }
@@ -59,13 +56,10 @@ impl Context {
     fn open(
         &self,
         host: MobileHost,
-        budget: u32,
         events: Arc<dyn CoreEvents>,
     ) -> Result<Arc<HostEntry>, CommandError> {
         HostEntry::open(
             host,
-            budget,
-            &self.data_dir,
             self.phone,
             self.dialer.clone(),
             events,
@@ -108,7 +102,6 @@ impl Registry {
                 context: Context {
                     phone: phone_id::load(&data_dir)?,
                     runtime,
-                    data_dir,
                     dialer,
                 },
                 desired: Vec::new(),
@@ -116,7 +109,7 @@ impl Registry {
                 open_errors: HashMap::new(),
                 retiring: HashMap::new(),
             };
-            let new = self.open_hosts(&run.context, &hosts, hosts.len());
+            let new = self.open_hosts(&run.context, &hosts);
             let mut state = self.state.lock_ok();
             self.apply_hosts(&mut run, hosts, new, state.controls());
             state.run = Some(run);
@@ -142,7 +135,7 @@ impl Registry {
                     .collect();
                 (run.context.clone(), missing)
             };
-            let new = self.open_hosts(&context, &missing, hosts.len());
+            let new = self.open_hosts(&context, &missing);
             let mut state = self.state.lock_ok();
             let controls = state.controls();
             let run = state.run.as_mut().ok_or_else(not_started)?;
@@ -153,16 +146,10 @@ impl Registry {
         Ok(())
     }
 
-    fn open_hosts(&self, context: &Context, hosts: &[MobileHost], count: usize) -> Vec<OpenedHost> {
-        let budget = crate::policy::host_budget_mb(count);
+    fn open_hosts(&self, context: &Context, hosts: &[MobileHost]) -> Vec<OpenedHost> {
         hosts
             .iter()
-            .map(|host| {
-                (
-                    host.id,
-                    context.open(host.clone(), budget, self.events.clone()),
-                )
-            })
+            .map(|host| (host.id, context.open(host.clone(), self.events.clone())))
             .collect()
     }
 
@@ -186,13 +173,12 @@ impl Registry {
             let _ = self.install(run, opened, controls);
         }
 
-        let budget = run.budget();
         let retiring: Vec<_> = run
             .entries
             .values()
             .filter(|entry| {
                 run.host(entry.config.id)
-                    .is_none_or(|host| host != &entry.config || budget != entry.policy.budget_mb())
+                    .is_none_or(|host| host != &entry.config)
             })
             .cloned()
             .collect();
@@ -244,8 +230,8 @@ impl Registry {
             {
                 run.detach(id);
             }
-            // Dropping the handle stops the runner. Wait for any write that
-            // a concurrent resume began before releasing the writer lock.
+            // A concurrent resume may have started another dial. Stop the runner
+            // and wait for it to park before opening its replacement.
             drop(entry.handle.lock_ok().take());
             entry.source.quiesce().await;
             if let Some(registry) = registry.upgrade()
@@ -254,12 +240,11 @@ impl Registry {
                 run.retiring.insert(id, None);
             }
             let finished = tokio::task::spawn_blocking(move || {
-                entry.close_history();
                 Self::replace_retired(registry, id);
             })
             .await;
             if let Err(error) = finished {
-                tracing::error!(%id, %error, "closing a mobile mirror");
+                tracing::error!(%id, %error, "replacing a mobile session");
             }
         });
     }
@@ -269,7 +254,7 @@ impl Registry {
             return;
         };
         loop {
-            let (context, host, budget) = {
+            let (context, host) = {
                 let _update = registry.updates.lock_ok();
                 let mut state = registry.state.lock_ok();
                 let Some(run) = state.run.as_mut() else {
@@ -279,16 +264,16 @@ impl Registry {
                     run.retiring.remove(&id);
                     return;
                 };
-                (run.context.clone(), host, run.budget())
+                (run.context.clone(), host)
             };
-            let opened = context.open(host.clone(), budget, registry.events.clone());
+            let opened = context.open(host.clone(), registry.events.clone());
             let update = registry.updates.lock_ok();
             let mut state = registry.state.lock_ok();
             let controls = state.controls();
             let Some(run) = state.run.as_mut() else {
                 return;
             };
-            if run.host(id) != Some(&host) || run.budget() != budget {
+            if run.host(id) != Some(&host) {
                 continue;
             }
             run.retiring.remove(&id);
@@ -324,16 +309,6 @@ impl Registry {
             .collect()
     }
 
-    pub(super) fn set_sync_policy(&self, policy: SyncPolicy) {
-        let mut state = self.state.lock_ok();
-        state.policy = policy;
-        if let Some(run) = &state.run {
-            for (_, source) in run.sources() {
-                source.set_sync_policy(policy);
-            }
-        }
-    }
-
     pub(super) fn network_changed(&self, net: LocalNetwork) {
         let mut state = self.state.lock_ok();
         state.network = Some(net);
@@ -344,6 +319,10 @@ impl Registry {
         }
     }
 
+    #[expect(
+        dead_code,
+        reason = "lane i removes the registry hook after the call is cut"
+    )]
     pub(super) fn set_recent_interest(&self, on: bool) -> Result<(), CommandError> {
         let mut state = self.state.lock_ok();
         let run = state.run.as_ref().ok_or_else(not_started)?;
@@ -357,7 +336,7 @@ impl Registry {
     pub(super) fn retry(&self, id: HostId) -> Result<(), CommandError> {
         let result = {
             let _update = self.updates.lock_ok();
-            let (context, host, budget) = {
+            let (context, host) = {
                 let state = self.state.lock_ok();
                 let run = state.run.as_ref().ok_or_else(not_started)?;
                 if let Some(entry) = run.entries.get(&id) {
@@ -368,9 +347,9 @@ impl Registry {
                     .host(id)
                     .filter(|_| !run.retiring.contains_key(&id))
                     .ok_or(CommandError::UnknownHost { host: id })?;
-                (run.context.clone(), host.clone(), run.budget())
+                (run.context.clone(), host.clone())
             };
-            let opened = context.open(host, budget, self.events.clone());
+            let opened = context.open(host, self.events.clone());
             let mut state = self.state.lock_ok();
             let controls = state.controls();
             let run = state.run.as_mut().ok_or_else(not_started)?;
@@ -425,15 +404,10 @@ impl Run {
     fn host(&self, id: HostId) -> Option<&MobileHost> {
         self.desired.iter().find(|host| host.id == id)
     }
-
-    fn budget(&self) -> u32 {
-        crate::policy::host_budget_mb(self.desired.len())
-    }
 }
 
 #[derive(Clone, Copy)]
 struct Controls {
-    sync: SyncPolicy,
     network: Option<LocalNetwork>,
     recent: bool,
 }
@@ -447,7 +421,6 @@ impl State {
 
     fn controls(&self) -> Controls {
         Controls {
-            sync: self.policy,
             network: self.network,
             recent: self.recent,
         }
@@ -456,7 +429,6 @@ impl State {
 
 impl Controls {
     fn apply(self, source: &RemoteSource) {
-        source.set_sync_policy(self.sync);
         if let Some(network) = self.network {
             source.network_changed_with(network);
         }

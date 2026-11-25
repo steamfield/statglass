@@ -1,5 +1,5 @@
-import type { HistoryRequest, RemoteHostRecord } from "@core/generated/types";
-import { createMockTransport } from "@core/mock-transport";
+import type { RemoteHostRecord } from "@core/generated/types";
+import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { ExpoRoot, router, Stack, useLocalSearchParams } from "expo-router";
@@ -115,40 +115,48 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
   ).toBeOnTheScreen();
 });
 
+const sparklinePage: MockTransport["hostHistory"] = async (request) => {
+  return {
+    status: "ok",
+    data: {
+      tier: "m1",
+      bucket_ms: MINUTE,
+      complete_to_ms: request.to_ms ?? request.from_ms,
+      gaps: [],
+      events: [],
+      stats: [],
+      clamped: [],
+      series: [
+        {
+          key: { metric: "cpu.total", labels: [] },
+          hold_ms: MINUTE,
+          points: [
+            { t: request.from_ms, min: 11, max: 13, avg: 12 },
+            { t: request.from_ms + 2 * MINUTE, min: 15, max: 17, avg: 16 },
+          ],
+        },
+      ],
+    },
+  };
+};
+
 test("uses minute CPU buckets, preserves a missing slot, and polls only while focused", async () => {
   const transport = createMockTransport();
   const chart = jest.spyOn(Chart, "StreamArea");
   const vitals = jest.spyOn(transport, "hostVitals");
   const history = jest
-    .spyOn(transport, "queryHistory")
-    .mockImplementation(async (request: HistoryRequest) => ({
-      status: "ok",
-      data: {
-        tier: "m1",
-        bucket_ms: MINUTE,
-        gaps: [],
-        series: [
-          {
-            key: { metric: "cpu.total", labels: [] },
-            hold_ms: MINUTE,
-            points: [
-              { t: request.from_ms, min: 11, max: 13, avg: 12 },
-              { t: request.from_ms + 2 * MINUTE, min: 15, max: 17, avg: 16 },
-            ],
-          },
-        ],
-      },
-    }));
+    .spyOn(transport, "hostHistory")
+    .mockImplementation(sparklinePage);
   const [local] = await transport.listHosts();
   await renderHosts(transport);
   await waitFor(() => expect(chart).toHaveBeenCalled());
   const request = history.mock.calls[0]?.[0];
-  if (!request || !local)
+  if (!request || request.to_ms === null || !local)
     throw new Error("Expected the local host and its history request");
   expect(request).toMatchObject({
     host: local.id,
-    tier: "m1",
-    selectors: [{ metric: "cpu.total", labels: [] }],
+    series: [{ metric: "cpu.total", labels: [] }],
+    events_for: null,
     max_points: 31,
   });
   expect(request.to_ms - request.from_ms).toBe(30 * MINUTE);
@@ -185,7 +193,7 @@ test("updates status from transport events and pull to refresh retries only visi
   const retry = jest.spyOn(transport, "retryRemoteHost");
   const list = jest.spyOn(transport, "listHosts");
   const vitals = jest.spyOn(transport, "hostVitals");
-  const history = jest.spyOn(transport, "queryHistory");
+  const history = jest.spyOn(transport, "hostHistory");
   await renderHosts(transport, { removed: ["remote-nas"] });
   expect(
     await screen.findByRole("button", { name: /build, Linux, Live/ })
@@ -269,13 +277,13 @@ test("a sparkline requested by id waits for status and ends at the remote host's
   const readStatus = jest
     .spyOn(transport, "listRemoteHosts")
     .mockReturnValue(status.promise);
-  const queryHistory = transport.queryHistory;
+  const hostHistory = transport.hostHistory;
   const requestedAt: number[] = [];
   const history = jest
-    .spyOn(transport, "queryHistory")
+    .spyOn(transport, "hostHistory")
     .mockImplementation((request) => {
       requestedAt.push(Date.now());
-      return queryHistory(request);
+      return hostHistory(request);
     });
   function SparklineScreen() {
     useHostSparkline(id);
@@ -305,7 +313,7 @@ test("a sparkline requested by id waits for status and ends at the remote host's
 
 test("uses integer epoch milliseconds even with a fractional monotonic clock", async () => {
   const transport = createMockTransport();
-  const history = jest.spyOn(transport, "queryHistory");
+  const history = jest.spyOn(transport, "hostHistory");
   let elapsed = 0;
   jest.spyOn(performance, "now").mockImplementation(() => {
     elapsed += 0.161;
@@ -319,7 +327,9 @@ test("uses integer epoch milliseconds even with a fractional monotonic clock", a
 });
 
 test("describes the CPU sparkline in the host row's accessible name", async () => {
-  await renderHosts(createMockTransport());
+  const transport = createMockTransport();
+  jest.spyOn(transport, "hostHistory").mockImplementation(sparklinePage);
+  await renderHosts(transport);
   expect(
     await screen.findByRole("button", {
       name: /MacBook Pro.*CPU history over the last 30 minutes/,
