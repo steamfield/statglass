@@ -1,53 +1,50 @@
 import { commandErrorText } from "@core/command-error";
 import { unwrap } from "@core/transport";
-import { useEffect, useEffectEvent, useState } from "react";
-import { usePhoneSettings } from "@/data/phone-settings";
+import { useEffect, useState } from "react";
 import {
   type NativeTransport,
-  openDebugCore,
-} from "@/transport/native-transport";
+  useNativeCore,
+  useNativeCoreStarting,
+} from "@/transport";
 
 type DebugCore =
-  | { status: "loading" | "missing" }
+  | { status: "loading" | "missing" | "startup-error" }
   | { status: "error"; message: string }
   | { status: "ready"; transport: NativeTransport; keyLine: string };
 
-async function loadDebugCore(liveOnCellular: boolean): Promise<DebugCore> {
-  const transport = await openDebugCore(liveOnCellular);
-  if (transport === null) return { status: "missing" };
-  const keyLine = await unwrap(transport.authorizedKeyLine("statglass-iphone"));
-  return { status: "ready", transport, keyLine };
-}
-
 export function useDebugCore(): DebugCore {
-  const [state, setState] = useState<DebugCore>({ status: "loading" });
-  const liveOnCellular = usePhoneSettings(
-    (settings) => settings.liveOnCellular
-  );
-  const load = useEffectEvent(() => loadDebugCore(liveOnCellular));
+  const { core, error } = useNativeCore();
+  const starting = useNativeCoreStarting();
+  const [key, setKey] = useState<Extract<
+    DebugCore,
+    { status: "ready" | "error" }
+  > | null>(null);
 
   useEffect(() => {
+    if (core === null) return;
     let active = true;
-    void load().then(
-      (core) => {
-        if (active) setState(core);
+    void unwrap(core.authorizedKeyLine("statglass-iphone")).then(
+      (keyLine) => {
+        if (active) setKey({ status: "ready", transport: core, keyLine });
       },
       (error: unknown) => {
-        if (active) {
-          setState({
+        if (active)
+          setKey({
             status: "error",
             message: commandErrorText(
               error,
-              "Couldn’t prepare the native core."
+              "Couldn’t read the iPhone’s SSH key."
             ),
           });
-        }
       }
     );
     return () => {
       active = false;
     };
-  }, []);
+  }, [core]);
 
-  return state;
+  if (error) return { status: "startup-error" };
+  if (starting) return { status: "loading" };
+  if (core === null) return { status: "missing" };
+  return key ?? { status: "loading" };
 }

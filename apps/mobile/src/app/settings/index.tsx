@@ -1,8 +1,8 @@
 import { Stack, useCanGoBack, useRouter } from "expo-router";
-import { Pressable, ScrollView, useColorScheme, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
+import { useThemeColors } from "@/ui/theme-colors";
 
 const SECTIONS = [
   { title: "Hosts", href: "/settings/hosts" },
@@ -16,7 +16,7 @@ const SECTIONS = [
 export default function SettingsIndex() {
   const router = useRouter();
   const canGoBack = useCanGoBack();
-  const colors = themeColors[useColorScheme() === "dark" ? "dark" : "light"];
+  const colors = useThemeColors();
   return (
     <>
       <Stack.Screen

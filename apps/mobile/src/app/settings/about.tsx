@@ -1,10 +1,7 @@
 import Constants from "expo-constants";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import {
-  currentNativeBuildInfo,
-  protocolRangeText,
-} from "@/transport/build-info";
+import { currentNativeBuildInfo, protocolRangeText } from "@/transport";
 import { Text } from "@/ui/text";
 
 /** Shows the app version and the installed core's build info. */

@@ -3,14 +3,28 @@
  * factory for a client that uses them. The root layout makes the app's one
  * client through `Providers`; tests make one per render.
  */
+import { commandError } from "@core/command-error";
+import { isNativeError } from "@core/native-errors";
 import { QueryClient } from "@tanstack/react-query";
 
 /**
- * One retry for a failed read, none for a write, and no refetch when the app
- * comes back to the foreground.
+ * One retry for internal, busy and untyped read failures, none for writes, and
+ * no refetch when the app comes back to the foreground.
  */
 export const QUERY_DEFAULTS = {
-  queries: { retry: 1, refetchOnWindowFocus: false },
+  queries: {
+    retry(failures: number, error: unknown) {
+      if (failures >= 1 || isNativeError(error)) return false;
+      const kind = commandError(error)?.kind;
+      return (
+        kind === undefined ||
+        kind === "internal" ||
+        kind === "remote_busy" ||
+        kind === "store_busy"
+      );
+    },
+    refetchOnWindowFocus: false,
+  },
   mutations: { retry: false },
 } as const;
 

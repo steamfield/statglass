@@ -3,19 +3,23 @@
  * installed by hand and shows its live CPU. Reached at `statglass://debug`.
  */
 import { formatPercent } from "@core/format";
-import type { RemoteRoute } from "@core/generated/types";
-import { Stack } from "expo-router";
+import type {
+  HostId,
+  RemoteHostStatus,
+  RemoteRoute,
+} from "@core/generated/types";
 import { useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  TextInput,
-  useColorScheme,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { hostStatusLabel } from "@/data/hosts";
-import { themeColors } from "@/theme.generated";
-import type { NativeTransport } from "@/transport/native-transport";
+import {
+  connectionStatusError,
+  useHostLive,
+  useHostLiveSubscription,
+  useLastFrame,
+  useLiveFailure,
+  useRemoteStatus,
+} from "@/data/live";
+import type { NativeTransport } from "@/transport";
 import { Text } from "@/ui/text";
 import { type DebugHostFields, debugHost } from "./debug-host";
 import { useDebugConnection } from "./use-debug-connection";
@@ -39,30 +43,21 @@ const DEVELOPMENT_BUILD = "The debug screen needs a development build.";
 
 /** Host form, the phone's `authorized_keys` line, connection state and live CPU. */
 export function DebugScreen() {
-  const scheme = useColorScheme() === "dark" ? "dark" : "light";
   return (
-    <>
-      <Stack.Screen
-        options={{
-          headerTintColor: themeColors[scheme].foreground,
-          headerUserInterfaceStyle: scheme,
-        }}
-      />
-      <ScrollView
-        className="flex-1 bg-background"
-        contentInsetAdjustmentBehavior="automatic"
-        automaticallyAdjustKeyboardInsets
-        keyboardShouldPersistTaps="handled"
-      >
-        <View className="gap-4 px-4 pt-2 pb-safe-or-4">
-          {__DEV__ ? (
-            <DebugCoreContent />
-          ) : (
-            <Text role="body">{DEVELOPMENT_BUILD}</Text>
-          )}
-        </View>
-      </ScrollView>
-    </>
+    <ScrollView
+      className="flex-1 bg-background"
+      contentInsetAdjustmentBehavior="automatic"
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
+    >
+      <View className="gap-4 px-4 pt-2 pb-safe-or-4">
+        {__DEV__ ? (
+          <DebugCoreContent />
+        ) : (
+          <Text role="body">{DEVELOPMENT_BUILD}</Text>
+        )}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -79,7 +74,7 @@ function DebugCoreContent() {
       return (
         <DebugHostForm transport={core.transport} keyLine={core.keyLine} />
       );
-    default:
+    case "startup-error":
       return null;
   }
 }
@@ -102,13 +97,13 @@ function DebugHostForm({
   }));
   const [formError, setFormError] = useState<string | null>(null);
   const connection = useDebugConnection(transport);
-  const { remote, hasAttempt, busy } = connection;
+  const { attempt, busy, error } = connection;
 
   function connect() {
     if (busy) return;
     setFormError(null);
     try {
-      connection.connect(debugHost(fields));
+      void connection.connect(debugHost(fields));
     } catch (error) {
       if (error instanceof Error) setFormError(error.message);
       else throw error;
@@ -193,27 +188,96 @@ function DebugHostForm({
         </Pressable>
         {formError && <ErrorText>{formError}</ErrorText>}
       </View>
-      <View className="gap-1 rounded-xl border border-border bg-card p-3">
-        <View className="flex-row items-center gap-2">
-          {remote?.state === "connected" && (
-            <View className="size-1.5 rounded-full bg-live" />
-          )}
-          <Text role="label" className="shrink">
-            {remote
-              ? hostStatusLabel(false, remote).text
-              : connectionStatus(hasAttempt, connection.error)}
-          </Text>
-        </View>
-        {(connection.error ?? remote?.error) && (
-          <ErrorText>{connection.error ?? remote?.error}</ErrorText>
-        )}
-        <Text role="label">CPU</Text>
-        {/** The NativeWind converter drops CSS font-variant-numeric. */}
-        <Text role="cardFigure" style={{ fontVariant: ["tabular-nums"] }}>
-          {formatPercent(remote?.state === "connected" ? connection.cpu : null)}
+      {attempt ? (
+        <DebugReading key={attempt.number} host={attempt.host} error={error} />
+      ) : (
+        <ConnectionReading
+          label={busy ? "Connecting" : connectionStatus(false, error)}
+          error={error}
+          cpu={null}
+        />
+      )}
+    </>
+  );
+}
+
+function useDebugCpu(
+  host: HostId,
+  state: RemoteHostStatus["state"] | undefined,
+  statusFailed: boolean
+) {
+  const lastFrame = useLastFrame(host);
+  const cpu = useHostLive(host, (state) => state.held["cpu.total"] ?? null);
+  const connected = state === "connected";
+  const [display, setDisplay] = useState({ state, hiddenFrame: lastFrame });
+  const unavailable =
+    statusFailed ||
+    (state !== undefined && state !== "connecting" && !connected);
+  if (
+    display.state !== state ||
+    (unavailable && display.hiddenFrame !== lastFrame)
+  ) {
+    // Keep startup frames received while connecting. Hide readings from a
+    // session that has since disconnected until a new frame arrives.
+    const hide = (display.state === "connected" && !connected) || unavailable;
+    setDisplay({ state, hiddenFrame: hide ? lastFrame : display.hiddenFrame });
+  }
+  return display.hiddenFrame === lastFrame ? null : cpu;
+}
+
+function DebugReading({ host, error }: { host: HostId; error: string | null }) {
+  useHostLiveSubscription(host);
+  const status = useRemoteStatus(host);
+  const failure = useLiveFailure(host);
+  const recovering = useHostLive(
+    host,
+    (state) => state.stale || state.connection === "reconnecting"
+  );
+  const remote = status.isError ? undefined : status.data;
+  const connected = remote?.state === "connected";
+  const cpu = useDebugCpu(host, remote?.state, status.isError);
+  const readError = status.isError ? connectionStatusError(status.error) : null;
+  const problem = error ?? readError ?? remote?.error ?? failure;
+  const live = connected && !recovering;
+  const label = remote
+    ? hostStatusLabel(false, remote).text
+    : connectionStatus(true, problem);
+  return (
+    <ConnectionReading
+      label={connected && recovering ? "Reconnecting" : label}
+      error={problem}
+      cpu={live ? cpu : null}
+      connected={live}
+    />
+  );
+}
+
+function ConnectionReading({
+  label,
+  error,
+  cpu,
+  connected = false,
+}: {
+  label: string;
+  error: string | null;
+  cpu: number | null;
+  connected?: boolean;
+}) {
+  return (
+    <View className="gap-1 rounded-xl border border-border bg-card p-3">
+      <View className="flex-row items-center gap-2">
+        {connected && <View className="size-1.5 rounded-full bg-live" />}
+        <Text role="label" className="shrink">
+          {label}
         </Text>
       </View>
-    </>
+      {error && <ErrorText>{error}</ErrorText>}
+      <Text role="label">CPU</Text>
+      {/** The NativeWind converter drops CSS font-variant-numeric. */}
+      <Text role="cardFigure" style={{ fontVariant: ["tabular-nums"] }}>
+        {formatPercent(cpu)}
+      </Text>
+    </View>
   );
 }
 

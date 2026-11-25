@@ -1,26 +1,20 @@
 import { Stack, useRouter } from "expo-router";
-import { Pressable, useColorScheme } from "react-native";
+import { Pressable } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
-import { useIsDemo, useOptionalPhoneTransport } from "@/data/transport-context";
-import { FirstLaunchRedirect } from "@/hosts/first-launch-redirect";
+import { useIsDemo } from "@/data/transport-context";
 import { HostsList } from "@/hosts/hosts-list";
-import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
+import { useThemeColors } from "@/ui/theme-colors";
 
 /** Wires the hosts list and its navigation bar. */
 export default function HostsRoute() {
-  const transport = useOptionalPhoneTransport();
   const demo = useIsDemo();
   const router = useRouter();
-  const scheme = useColorScheme() === "dark" ? "dark" : "light";
-  const colors = themeColors[scheme];
-  if (!transport) return <FirstLaunchRedirect />;
+  const colors = useThemeColors();
   return (
     <>
       <Stack.Screen
         options={{
-          headerTintColor: colors.foreground,
-          headerUserInterfaceStyle: scheme,
           headerShadowVisible: false,
           unstable_headerLeftItems: () =>
             demo

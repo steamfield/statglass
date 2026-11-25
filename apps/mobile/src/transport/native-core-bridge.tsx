@@ -1,33 +1,29 @@
 /**
- * Keeps the chosen native transport or the running debug core in step with
- * the phone's data policy.
+ * Keeps the running native core in step with the phone's data policy.
  * Mounted once in the root layout; renders nothing.
  */
 import { useEffect, useRef } from "react";
 import { usePhoneSettings } from "@/data/phone-settings";
 import { useOptionalPhoneTransport } from "@/data/transport-context";
-import { getDebugCore, isNativeTransport } from "./native-transport";
+import { useNativeCore } from "./core-provider";
+import { isNativeTransport } from "./native-transport";
 
 /** Pushes phone settings the core needs to the native transport. */
 export function NativeCoreBridge(): null {
   const transport = useOptionalPhoneTransport();
+  const { core } = useNativeCore();
+  const target = core ?? (isNativeTransport(transport) ? transport : null);
   const liveOnCellular = usePhoneSettings(
     (settings) => settings.liveOnCellular
   );
   const pending = useRef(Promise.resolve());
 
   useEffect(() => {
-    // The debug screen supplies the initial policy and reports startup failures.
-    const target = isNativeTransport(transport)
-      ? transport
-      : getDebugCore()?.catch(() => null);
-    if (target === undefined) return;
+    if (target === null) return;
     // The core runs each call in its own task. Wait for each write to finish.
     pending.current = pending.current
       .then(async () => {
-        const core = await target;
-        if (core === null) return;
-        const result = await core.setDataPolicy({
+        const result = await target.setDataPolicy({
           live_on_cellular: liveOnCellular,
         });
         if (result.status === "error") throw result.error;
@@ -35,6 +31,6 @@ export function NativeCoreBridge(): null {
       .catch((error: unknown) => {
         console.warn("[native core] could not set data policy", error);
       });
-  }, [transport, liveOnCellular]);
+  }, [target, liveOnCellular]);
   return null;
 }

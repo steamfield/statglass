@@ -14,7 +14,6 @@ import type {
 import type { CommandResult } from "@core/transport";
 import { unwrap } from "@core/transport/query";
 import {
-  getStatglassNative,
   type StatglassNativeModule,
   toNativeModuleError,
 } from "@native/statglass-native";
@@ -46,15 +45,23 @@ export async function startNativeTransport(
   native: StatglassNativeModule,
   config: MobileConfig
 ): Promise<CommandResult<NativeTransport>> {
-  const json = await native
-    .start(JSON.stringify(config))
-    .catch((error: unknown) => {
+  const result = await startNativeCore(native, config).catch(
+    (error: unknown) => {
       throw toNativeModuleError(error) ?? error;
-    });
-  const result = parseEnvelope<null>(json);
+    }
+  );
   return result.status === "error"
     ? result
     : { status: "ok", data: createNativeTransport(native) };
+}
+
+/** Starts the Rust core independently of the JS transport's lifetime. */
+export async function startNativeCore(
+  native: StatglassNativeModule,
+  config: MobileConfig
+): Promise<CommandResult<null>> {
+  const json = await native.start(JSON.stringify(config));
+  return parseEnvelope<null>(json);
 }
 
 /** The transport over a core that has already started. */
@@ -134,39 +141,6 @@ export function createNativeTransport(
       live.dispose();
     },
   };
-}
-
-// The debug screen owns its subscriptions. The core itself starts once per app run.
-const debugCores = new WeakMap<
-  StatglassNativeModule,
-  Promise<NativeTransport>
->();
-
-/** Starts the empty core so the debug screen can read the key before connecting. */
-export function openDebugCore(
-  liveOnCellular: boolean
-): Promise<NativeTransport> | null {
-  const native = getStatglassNative();
-  if (native === null) return null;
-  const existing = debugCores.get(native);
-  if (existing) return existing;
-  const starting = unwrap(
-    startNativeTransport(native, {
-      hosts: [],
-      data: { live_on_cellular: liveOnCellular },
-    })
-  ).catch((error: unknown) => {
-    debugCores.delete(native);
-    throw error;
-  });
-  debugCores.set(native, starting);
-  return starting;
-}
-
-/** The debug core if startup has begun. It stays available after the screen closes. */
-export function getDebugCore(): Promise<NativeTransport> | null {
-  const native = getStatglassNative();
-  return native === null ? null : (debugCores.get(native) ?? null);
 }
 
 /** Whether `transport` is the native one (it carries the native-only calls). */

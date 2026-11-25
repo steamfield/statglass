@@ -1,15 +1,26 @@
 /**
  * Which `PhoneTransport` the app reads through, and whether it is the demo.
- * Nothing is chosen at launch; the demo entry or (later) pairing sets one,
- * and every data hook reads it from here so the swap happens in one place.
+ * A swap clears host data before the new transport's queries can read it.
  */
+import { historyKeys, hostKeys } from "@core/query-keys";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { ThemeProvider } from "expo-router";
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
+  useRef,
   useState,
 } from "react";
+import { useColorScheme } from "react-native";
+import { Providers } from "@/lib/providers";
+import { MotionProvider } from "@/ui/motion";
+import { navigationTheme } from "@/ui/navigation-theme";
+import {
+  PhoneSettingsProvider,
+  type PhoneSettingsProviderProps,
+} from "./phone-settings";
 import type { PhoneTransport } from "./seam";
 
 /** The chosen transport, null until one is set. */
@@ -40,9 +51,29 @@ export function PhoneTransportProvider({
   const [choice, setChoice] = useState<TransportChoice>(
     initial ?? NOTHING_CHOSEN
   );
+  const client = useQueryClient();
+  const current = useRef(choice);
   const set = useCallback<SetTransport>(
-    (transport, demo) => setChoice({ transport, demo }),
-    []
+    (transport, demo) => {
+      const previous = current.current;
+      if (previous.transport === transport && previous.demo === demo) return;
+      if (previous.transport !== transport) {
+        const cache = client.getQueryCache();
+        const queries = [
+          ...cache.findAll({ queryKey: hostKeys.all }),
+          ...cache.findAll({ queryKey: historyKeys.all }),
+        ];
+        for (const query of queries) {
+          // A mounted observer can use the removed query as placeholder data.
+          query.reset();
+          cache.remove(query);
+        }
+      }
+      const next = { transport, demo };
+      current.current = next;
+      setChoice(next);
+    },
+    [client]
   );
   return (
     <SetContext.Provider value={set}>
@@ -100,4 +131,34 @@ export function useSetPhoneTransport(): SetTransport {
 /** Whether the chosen transport is the demo hosts. */
 export function useIsDemo(): boolean {
   return useChoice("useIsDemo").demo;
+}
+
+/** Shared screen providers for the app and component tests. */
+export function AppProviders({
+  children,
+  client,
+  initialTransport,
+  initialSettings,
+}: {
+  children: ReactNode;
+  client?: QueryClient;
+  initialTransport?: PhoneTransportProviderProps["initial"];
+  initialSettings?: PhoneSettingsProviderProps["initial"];
+}) {
+  const theme = navigationTheme(useColorScheme());
+  return (
+    <Providers {...(client ? { client } : {})}>
+      <PhoneTransportProvider
+        {...(initialTransport ? { initial: initialTransport } : {})}
+      >
+        <PhoneSettingsProvider
+          {...(initialSettings ? { initial: initialSettings } : {})}
+        >
+          <ThemeProvider value={theme}>
+            <MotionProvider>{children}</MotionProvider>
+          </ThemeProvider>
+        </PhoneSettingsProvider>
+      </PhoneTransportProvider>
+    </Providers>
+  );
 }

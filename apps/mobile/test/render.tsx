@@ -2,17 +2,19 @@
  * Renders a component under the app's real providers with a fresh query
  * client per test, and optionally a chosen transport and starting settings.
  */
+import { jest } from "@jest/globals";
 import { render } from "@testing-library/react-native";
 import type { ReactElement, ReactNode } from "react";
-import {
-  type PhoneSettings,
-  PhoneSettingsProvider,
-} from "@/data/phone-settings";
+import type { GestureHandlerRootView as GestureRoot } from "react-native-gesture-handler";
+import type { PhoneSettings } from "@/data/phone-settings";
 import type { PhoneTransport } from "@/data/seam";
-import { PhoneTransportProvider } from "@/data/transport-context";
-import { Providers } from "@/lib/providers";
+import { AppProviders } from "@/data/transport-context";
 import { createQueryClient } from "@/lib/query-client";
-import { MotionProvider } from "@/ui/motion";
+
+// The package barrel loads gesture detectors that require Reanimated even in chart-only tests.
+const { default: GestureHandlerRootView } = jest.requireActual<{
+  default: typeof GestureRoot;
+}>("react-native-gesture-handler/lib/module/components/GestureHandlerRootView");
 
 /**
  * A client with the app's defaults and cache garbage collection off, so no
@@ -50,15 +52,15 @@ export async function renderWithProviders(
   const client = testQueryClient();
   function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <PhoneTransportProvider
-        {...(transport ? { initial: { transport, demo } } : {})}
-      >
-        <PhoneSettingsProvider {...(settings ? { initial: settings } : {})}>
-          <Providers client={client}>
-            <MotionProvider>{children}</MotionProvider>
-          </Providers>
-        </PhoneSettingsProvider>
-      </PhoneTransportProvider>
+      <GestureHandlerRootView>
+        <AppProviders
+          client={client}
+          initialTransport={transport ? { transport, demo } : undefined}
+          initialSettings={settings}
+        >
+          {children}
+        </AppProviders>
+      </GestureHandlerRootView>
     );
   }
   const view = await render(ui, { wrapper: Wrapper });

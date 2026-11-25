@@ -3,19 +3,13 @@
  * large titles. Wiring only.
  */
 import { Stack } from "expo-router";
-import { useColorScheme } from "react-native";
-import { themeColors } from "@/theme.generated";
 
 /** Stack for the settings sections. */
 export default function SettingsLayout() {
-  const scheme = useColorScheme() === "dark" ? "dark" : "light";
-  const colors = themeColors[scheme];
   return (
     <Stack
       screenOptions={{
         headerLargeTitle: true,
-        headerTintColor: colors.foreground,
-        headerUserInterfaceStyle: scheme,
         headerShadowVisible: false,
       }}
     >
