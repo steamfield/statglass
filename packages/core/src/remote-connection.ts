@@ -5,6 +5,7 @@ import type {
 } from "@core/generated/types";
 import {
   buildRouteLines,
+  macMonitoringCopy,
   networkCauseCopy,
   networkHint,
   routePhrase,
@@ -19,6 +20,8 @@ export type RemoteConnectionKind =
   | "auth"
   | "host_key"
   | "agent_not_running"
+  | "app_not_running"
+  | "monitoring_off"
   | "update_required"
   | "identity_changed"
   | "disabled"
@@ -145,10 +148,9 @@ function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
       return "local_offline";
     case "tailscale_down":
       return "tailscale_down";
-    // Generic until the app-not-running and monitoring-off states get their own
-    // wording (phase 5 lane c).
     case "app_not_running":
     case "monitoring_off":
+      return kind;
     case "unreachable":
     case null:
       return "unreachable";
@@ -409,6 +411,9 @@ function copyForKind(
         sidebarLabel: "Agent stopped",
         pillLabel: "Agent stopped",
       };
+    case "app_not_running":
+    case "monitoring_off":
+      return macMonitoringCopy(remote, kind, fact);
     case "timeout":
       return timeoutCopy(remote, routes, fact);
     case "unreachable":

@@ -37,6 +37,10 @@ export function remoteQueryText(error: unknown, what: string): string | null {
       return `This host's StatGlass is too old to share ${what}. Update StatGlass on it, then try again.`;
     case "remote_unreachable":
       return `This host isn't connected, so its ${what} can't be read now.`;
+    case "remote_not_running":
+      return macMonitoringAdvice("app_not_running", "this Mac host").recovery;
+    case "remote_monitoring_off":
+      return macMonitoringAdvice("monitoring_off", "this Mac host").recovery;
     case "remote_busy":
       return `This host is busy or slow to answer, so its ${what} can't be read now. Try again in a moment.`;
     case "remote_unsupported":
@@ -48,6 +52,21 @@ export function remoteQueryText(error: unknown, what: string): string | null {
 
 export function isHostKeyError(error: CommandError): boolean {
   return error.kind === "host_key_unknown";
+}
+
+export function macMonitoringAdvice(
+  kind: "app_not_running" | "monitoring_off",
+  host: string
+): { title: string; recovery: string } {
+  return kind === "app_not_running"
+    ? {
+        title: `StatGlass isn't running on ${host}`,
+        recovery: `Open StatGlass on ${host}, then retry.`,
+      }
+    : {
+        title: `Remote monitoring is off on ${host}`,
+        recovery: `Turn on Allow remote monitoring in StatGlass Settings on ${host}, then retry.`,
+      };
 }
 
 /** Recovery copy follows typed command errors; SSH's diagnostic is kept separately. */
@@ -103,6 +122,10 @@ export function remoteErrorAdvice(
         recovery:
           "Check it on the server with systemctl status statglass-agent (add --user for a user service), then retry. The service restarts on its own after most failures.",
       };
+    case "remote_not_running":
+      return macMonitoringAdvice("app_not_running", "the other Mac");
+    case "remote_monitoring_off":
+      return macMonitoringAdvice("monitoring_off", "the other Mac");
     case "remote_agent_update_failed":
       return error.restored
         ? {

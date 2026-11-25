@@ -40,6 +40,34 @@ fn localtime() -> jiff::tz::TimeZone {
 }
 
 #[test]
+fn adding_an_offer_prunes_only_expired_pairing_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("authorized_keys");
+    let keys = AuthorizedKeys::at(path.clone());
+    let expired = "0000000000000000000000000000000b";
+    let fresh = "0000000000000000000000000000000c";
+    let past = jiff::Timestamp::from_second(1_300_000_000).unwrap();
+    let future = jiff::Timestamp::from_second(2_000_000_000).unwrap();
+    keys.add_pairing(
+        &EcdsaP256Public(POINT),
+        expired,
+        past.as_millisecond(),
+        PAIR_COMMAND,
+    )
+    .unwrap();
+    let untagged =
+        format!("restrict,expiry-time=\"20110101000000\" ecdsa-sha2-nistp256 {BLOB} owner\r\n");
+    let before = fs::read_to_string(&path).unwrap();
+    fs::write(&path, format!("{before}{untagged}")).unwrap();
+    keys.add_pairing(&other_key(), fresh, future.as_millisecond(), PAIR_COMMAND)
+        .unwrap();
+    let before = fs::read_to_string(&path).unwrap();
+    let live = before.lines().find(|line| line.ends_with(fresh)).unwrap();
+    assert!(!before.contains(expired));
+    assert_eq!(before, format!("{untagged}{live}\n"));
+}
+
+#[test]
 fn preserves_untagged_bytes_and_lists_only_devices() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("authorized_keys");

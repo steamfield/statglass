@@ -9,6 +9,7 @@ import type {
   RemoteRouteFailure,
 } from "@core/generated/types";
 import type { ConfiguredRoute, ConnectionCopy } from "./remote-connection";
+import { macMonitoringAdvice } from "./remote-errors";
 
 /** The configured routes as one phrase for copy: both routes joined by "or", the only route, or "the saved SSH route" when none is set. */
 export function routePhrase(routes: readonly ConfiguredRoute[]): string {
@@ -49,9 +50,32 @@ const ROUTE_FAILURE_REASONS: Partial<Record<RemoteFailureKind, string>> = {
   local_offline: "this Mac is offline",
   unreachable: "couldn’t connect",
   agent_not_running: "StatGlass isn’t running there",
+  app_not_running: "StatGlass isn't running there",
+  monitoring_off: "Remote monitoring is off there",
 };
 
 const UNKNOWN_ROUTE_FAILURE_REASON = "connection failed";
+
+export function macMonitoringCopy(
+  remote: RemoteHostRecord,
+  kind: "app_not_running" | "monitoring_off",
+  fact: string
+): ConnectionCopy {
+  const { title, recovery } = macMonitoringAdvice(kind, remote.config.name);
+  const label = kind === "app_not_running" ? "App closed" : "Monitoring off";
+  return {
+    tone: "warning",
+    title,
+    summary: recovery,
+    shortReason: title,
+    meta: fact,
+    gifTheme: null,
+    primaryAction: "retry",
+    showRetry: remote.config.enabled,
+    sidebarLabel: label,
+    pillLabel: label,
+  };
+}
 
 /** One "<Label> (<alias>): <reason>" line per failed route; empty while connected. */
 export function buildRouteLines(
