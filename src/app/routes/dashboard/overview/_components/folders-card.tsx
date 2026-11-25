@@ -52,27 +52,33 @@ export function OverviewFoldersCard({ origin }: { origin: Corner }) {
       </header>
       <FoldersBody report={report} onReveal={reveal.reveal} />
       {summary && report.progress === null && (
-        <footer className="mt-auto flex items-center justify-between gap-3">
+        <footer className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <span className="text-label text-muted-foreground">
             Scanned {agoLabel(now, summary.finished_ms)}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={report.starting || report.busy}
-            onClick={report.run}
-          >
-            Re-run
-          </Button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={report.starting || report.busy}
+              onClick={report.run}
+            >
+              Re-run
+            </Button>
+            {!report.busy && <OpenDiskSpaceLink />}
+          </div>
         </footer>
       )}
       {report.busy && (
         <p role="status" className="text-label text-muted-foreground">
           Another volume is being scanned in{" "}
-          <Link to={SPACE} className="text-link hover:underline">
-            Space
+          <Link
+            to={SPACE}
+            className="rounded-control text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          >
+            Disk space
           </Link>
-          . The report can run when it finishes.
+          .
         </p>
       )}
       {error && (
@@ -117,13 +123,16 @@ function FoldersBody({
           Find the folders taking the most space on this Mac. The report reads
           the whole disk, so it runs only when you ask.
         </p>
-        <Button
-          size="sm"
-          disabled={report.starting || report.busy}
-          onClick={report.run}
-        >
-          Run report
-        </Button>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Button
+            size="sm"
+            disabled={report.starting || report.busy}
+            onClick={report.run}
+          >
+            Run report
+          </Button>
+          {!report.busy && <OpenDiskSpaceLink />}
+        </div>
       </div>
     );
   if (summary.folders.length === 0)
@@ -138,5 +147,16 @@ function FoldersBody({
       home={summary.home}
       onReveal={onReveal}
     />
+  );
+}
+
+function OpenDiskSpaceLink() {
+  return (
+    <Link
+      to={SPACE}
+      className="rounded-control text-label text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+    >
+      Open Disk space
+    </Link>
   );
 }

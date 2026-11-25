@@ -1,7 +1,9 @@
 import { relativeWindow } from "@core/chart-range";
 import { formatRate } from "@core/format";
+import { LOW_DISK_FREE_BYTES, type SpaceVolume } from "@core/generated/types";
 import { readRange, writeRange } from "@core/range-params";
 import { keyByLabel, labelValues } from "@core/series-key";
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { brushScopeProps, useDismissOutside } from "~/components/brush-overlay";
@@ -16,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { VolumeTable } from "~/components/volume-table";
+import { type VolumeRow, VolumeTable } from "~/components/volume-table";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow, useSetChartWindow } from "~/hooks/use-chart-window";
 import { useDiskIo, useDiskIoScope } from "~/hooks/use-disk-io";
@@ -28,6 +30,7 @@ import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useSearchParamPatch } from "~/hooks/use-search-param-patch";
 import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
+import { cn } from "~/lib/utils";
 import { useBrushRange, useBrushStore } from "~/stores/brush-store";
 import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useMemory } from "~/stores/live-selectors";
@@ -133,7 +136,20 @@ function DiskActivity({
     [layout]
   );
   const held = useHeld(volKeys);
+  const scanVolumes = useSpaceVolumes(onAnalyze !== undefined);
   const mounts = hostRecord?.info.boot_mounts ?? [];
+  const rows = volumeRows(vols, held, mounts);
+  const isLowSpace = (row: VolumeRow) =>
+    mounts.includes(row.id) &&
+    row.freeBytes !== null &&
+    row.freeBytes < LOW_DISK_FREE_BYTES;
+  const findScanVolume = (mount: string) =>
+    onAnalyze && scanVolumes.isSuccess
+      ? scanVolumes.data.find((volume) => volume.mount === mount)
+      : undefined;
+  const showActions = rows.some(
+    (row) => isLowSpace(row) || findScanVolume(row.id) !== undefined
+  );
   const selected = devices.find((d) => d.dev === device);
   const missing =
     device !== null && inventory.data !== undefined && selected === undefined;
@@ -276,11 +292,9 @@ function DiskActivity({
             )}
           </SectionCard>
         </div>
-        {windowMs !== null && diskIo && <DiskProcesses windowMs={windowMs} />}
-        <MemoryContext />
         <SectionCard
           accent="disk"
-          origin="tr"
+          origin="bl"
           title="Volumes"
           variant="default"
           className="overflow-hidden"
@@ -292,16 +306,24 @@ function DiskActivity({
             className="relative min-w-0 max-w-full overflow-x-auto rounded-chip outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <VolumeTable
-              rows={volumeRows(vols, held, mounts)}
+              rows={rows}
               units="GB"
               action={
-                onAnalyze
-                  ? (row) => <AnalyzeLink vol={row.id} onAnalyze={onAnalyze} />
+                showActions
+                  ? (row) => (
+                      <VolumeActions
+                        low={isLowSpace(row)}
+                        scanVolume={findScanVolume(row.id)}
+                        onAnalyze={onAnalyze}
+                      />
+                    )
                   : undefined
               }
             />
           </section>
         </SectionCard>
+        {windowMs !== null && diskIo && <DiskProcesses windowMs={windowMs} />}
+        <MemoryContext />
       </DashboardBody>
     </div>
   );
@@ -322,23 +344,58 @@ function CurrentRates({ device }: { device: string | null }) {
     />
   );
 }
-/** Analyze, for the volumes a space report can scan. */
-function AnalyzeLink({
-  vol,
+function VolumeActions({
+  low,
+  scanVolume,
   onAnalyze,
 }: {
-  vol: string;
-  onAnalyze: (vol: string) => void;
+  low: boolean;
+  scanVolume: SpaceVolume | undefined;
+  onAnalyze: ((vol: string) => void) | undefined;
 }) {
-  const volumes = useSpaceVolumes(true);
-  if (!volumes.data?.some((v) => v.mount === vol)) return null;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {low && (
+        <span className="inline-flex w-20 shrink-0 items-center justify-end gap-1 text-warning-ink">
+          <TriangleAlert aria-hidden className="icon-regular size-3.5" />
+          Low space
+        </span>
+      )}
+      {onAnalyze && scanVolume && (
+        <>
+          {low && <span aria-hidden> · </span>}
+          <AnalyzeLink
+            name={scanVolume.name}
+            low={low}
+            onClick={() => onAnalyze(scanVolume.mount)}
+          />
+        </>
+      )}
+    </span>
+  );
+}
+
+function AnalyzeLink({
+  name,
+  low,
+  onClick,
+}: {
+  name: string;
+  low: boolean;
+  onClick: () => void;
+}) {
+  const label = "See what's using space";
   return (
     <button
       type="button"
-      onClick={() => onAnalyze(vol)}
-      className="rounded-chip text-fg-subtle text-small underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={onClick}
+      aria-label={`${label} on ${name}`}
+      className={cn(
+        "rounded-chip text-small underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+        low ? "text-foreground" : "text-fg-subtle"
+      )}
     >
-      Analyze space
+      {label}
     </button>
   );
 }
