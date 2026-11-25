@@ -66,6 +66,8 @@ fn covered_history_reads_the_finest_tier_that_fits_the_whole_range() {
     let l = layout(&["cpu.total"]);
     w.write_bucket(bucket(h.id, Tier::S10, T0 - 10_000, &l, 10.))
         .unwrap();
+    w.write_bucket(bucket(h.id, Tier::M1, T0 - DAY, &l, 61.))
+        .unwrap();
     w.write_bucket(bucket(h.id, Tier::M1, T0 - MIN, &l, 60.))
         .unwrap();
     w.write_bucket(bucket(h.id, Tier::M15, T0 - DAY, &l, 900.))
@@ -154,14 +156,11 @@ fn covered_s10_respects_pruning_and_low_disk_holes() {
     let w = store.writer();
     let h = host(1);
     w.upsert_host(h.clone()).unwrap();
-    w.write_bucket(bucket(
-        h.id,
-        Tier::S10,
-        T0 - HOUR,
-        &layout(&["cpu.total"]),
-        10.,
-    ))
-    .unwrap();
+    let l = layout(&["cpu.total"]);
+    w.write_bucket(bucket(h.id, Tier::S10, T0 - HOUR, &l, 10.))
+        .unwrap();
+    w.write_bucket(bucket(h.id, Tier::M1, T0 - HOUR, &l, 60.))
+        .unwrap();
     w.flush().unwrap();
     let mut r = store.reader().unwrap();
     let q = query(h.id, HOUR, ALL);
@@ -180,6 +179,46 @@ fn covered_s10_respects_pruning_and_low_disk_holes() {
             .tier,
         Tier::M1
     );
+}
+
+#[test]
+fn covered_history_and_csv_use_quarters_before_the_first_synced_minute() {
+    let dir = temp_dir("covered-m1-sync-floor");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    let h = host(1);
+    w.upsert_host(h.clone()).unwrap();
+    let l = layout(&["cpu.total"]);
+    let old = T0 - 2 * DAY;
+    for slot in 0..4 {
+        w.write_bucket(bucket(h.id, Tier::M15, old + slot * 15 * MIN, &l, 900.))
+            .unwrap();
+    }
+    w.flush().unwrap();
+    let mut r = store.reader().unwrap();
+    let q = HistoryQuery {
+        from_ms: old,
+        to_ms: old + HOUR,
+        ..query(h.id, HOUR, PHONE)
+    };
+    let before_minute_sync = r.history(&q).unwrap();
+    w.write_bucket(bucket(h.id, Tier::M1, T0 - DAY, &l, 60.))
+        .unwrap();
+    w.flush().unwrap();
+
+    let page = r.history(&q).unwrap();
+    let mut csv = Vec::new();
+    let summary = r.export_csv(&csv_query(&q), &mut csv).unwrap();
+    assert_eq!((page.tier, summary.tier), (Tier::M15, Tier::M15));
+    assert_eq!(page, before_minute_sync);
+    assert_eq!(page.series[0].points.len(), 4);
+    assert!(page.series[0].points.iter().all(|p| p.avg == 900.));
+    assert_eq!(summary.rows, 4);
+    let mut fixed = csv_query(&q);
+    fixed.tier = TierChoice::Fixed(Tier::M15);
+    let mut expected = Vec::new();
+    assert_eq!(summary, r.export_csv(&fixed, &mut expected).unwrap());
+    assert_eq!(csv, expected);
 }
 
 #[test]

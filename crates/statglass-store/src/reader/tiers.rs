@@ -1,5 +1,6 @@
 //! Tier selection shared by history reads and CSV export.
 
+use rusqlite::params;
 use statglass_schema::{HostId, Tier};
 
 use super::Reader;
@@ -28,7 +29,7 @@ impl Reader {
             TierChoice::Covered(coverage) => {
                 covered_tier(coverage, from_ms, to_ms, |tier| match tier {
                     Tier::S10 => self.s10_covers(host_ref, from_ms),
-                    _ => self.retains_start(host_ref, tier, from_ms),
+                    _ => self.m1_covers(host_ref, from_ms),
                 })
             }
         }
@@ -57,15 +58,20 @@ impl Reader {
         if db::read_s10_hole_until(&self.conn)?.is_some_and(|until| until > from_ms) {
             return Ok(false);
         }
-        self.retains_start(host_ref, Tier::S10, from_ms)
-    }
-
-    /// A short range can still start before a tier's prune cutoff.
-    fn retains_start(&self, host_ref: i64, tier: Tier, from_ms: i64) -> Result<bool> {
         Ok(!matches!(
-            self.pruned(host_ref, tier)?,
+            self.pruned(host_ref, Tier::S10)?,
             Some((_, cutoff)) if cutoff > from_ms
         ))
+    }
+
+    /// A fresh mirror can have a later sync floor before its first prune mark.
+    fn m1_covers(&self, host_ref: i64, from_ms: i64) -> Result<bool> {
+        let start = Tier::M1.bucket_start(from_ms).unwrap_or(from_ms);
+        let earliest: Option<i64> = self
+            .conn
+            .prepare_cached("SELECT min(bucket_ts) FROM tier_1m WHERE host_id = ?1")?
+            .query_row(params![host_ref], |row| row.get(0))?;
+        Ok(earliest.is_some_and(|ts| ts <= start))
     }
 }
 
