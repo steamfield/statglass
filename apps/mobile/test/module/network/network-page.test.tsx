@@ -32,7 +32,17 @@ const addresses: HostAddressesInfo = {
   public_ip: { state: "known", detail: { ip: "76.143.14.53" } },
   as_of_ms: now,
 };
-const header = "en0 · 143 Mb/s link · 192.168.86.242";
+const header = "en0 · 143 Mb/s link";
+
+/** React Native's jest mock reports font scale 2; address rows read at the default size. */
+const textAt = (fontScale: number) =>
+  jest
+    .spyOn(ReactNative.Dimensions, "get")
+    .mockReturnValue({ width: 390, height: 844, scale: 3, fontScale });
+
+beforeEach(() => {
+  textAt(1);
+});
 
 beforeEach(() => {
   jest.useFakeTimers({ now });
@@ -54,17 +64,30 @@ function openNetwork(transport: MockTransport, host = MOCK_HOST_ID) {
 
 const advance = (ms: number) => act(() => jest.advanceTimersByTimeAsync(ms));
 
-test("the Network header shows the host's known IPv4 and public IP, with IPv6 on a second line", async () => {
+const publicIp = (value: string) =>
+  waitFor(() =>
+    expect(screen.getByLabelText("Public IP")).toHaveAccessibilityValue({
+      text: value,
+    })
+  );
+
+test("the Network header names the interface and link, and Addresses lists each address on its own row", async () => {
   const transport = createMockTransport({ autoTick: false });
   const read = jest.spyOn(transport, "networkAddresses").mockResolvedValue({
     status: "ok",
     data: addresses,
   });
   await openNetwork(transport);
-  expect(
-    await screen.findByText(`${header} · Public 76.143.14.53`)
-  ).toBeOnTheScreen();
-  expect(screen.getByText("2001:db8::1")).toBeOnTheScreen();
+  expect(await screen.findByText(header)).toBeOnTheScreen();
+  expect(screen.getByText("Addresses")).toBeOnTheScreen();
+  expect(screen.getByLabelText("IPv4")).toHaveAccessibilityValue({
+    text: "192.168.86.242",
+  });
+  expect(screen.getByLabelText("IPv6")).toHaveAccessibilityValue({
+    text: "2001:db8::1",
+  });
+  await publicIp("76.143.14.53");
+  expect(screen.queryByText(/Public 76/)).not.toBeOnTheScreen();
   expect(read).toHaveBeenCalledWith(MOCK_HOST_ID);
   await advance(3000);
   expect(read).toHaveBeenCalledTimes(1);
@@ -72,7 +95,7 @@ test("the Network header shows the host's known IPv4 and public IP, with IPv6 on
   expect(read).toHaveBeenCalledTimes(1);
 });
 
-test("the Network header keeps every reported IPv4 and IPv6 address", async () => {
+test("Addresses keeps every reported IPv4 and IPv6 address, IPv4 first and the public IP last", async () => {
   const transport = createMockTransport({ autoTick: false });
   jest.spyOn(transport, "networkAddresses").mockResolvedValue({
     status: "ok",
@@ -83,35 +106,45 @@ test("the Network header keeps every reported IPv4 and IPv6 address", async () =
     },
   });
   await openNetwork(transport);
-  expect(
-    await screen.findByText(`${header} · 198.51.100.7 · Public 76.143.14.53`)
-  ).toBeOnTheScreen();
-  expect(screen.getByText("2001:db8::1 · 2001:db8::2")).toBeOnTheScreen();
+  await publicIp("76.143.14.53");
+  const values = screen
+    .getAllByLabelText(/^(IPv4|IPv6|Public IP)$/)
+    .map((row) => row.props.accessibilityValue?.text);
+  expect(values).toEqual([
+    "192.168.86.242",
+    "198.51.100.7",
+    "2001:db8::1",
+    "2001:db8::2",
+    "76.143.14.53",
+  ]);
 });
 
-test("at accessibility text sizes both address captions appear before the range control", async () => {
-  jest.spyOn(ReactNative, "useWindowDimensions").mockReturnValue({
-    width: 402,
-    height: 874,
-    scale: 3,
-    fontScale: 2.35,
+test("a full IPv6 address sits under its label instead of breaking in the value column", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const full = "2001:db8:85a3::8a2e:370:7334";
+  jest.spyOn(transport, "networkAddresses").mockResolvedValue({
+    status: "ok",
+    data: { ...addresses, ipv6: [full] },
   });
+  await openNetwork(transport);
+  await publicIp("76.143.14.53");
+  expect(screen.getByLabelText(`IPv6, ${full}`)).toBeOnTheScreen();
+  expect(screen.queryByLabelText("IPv6")).not.toBeOnTheScreen();
+});
+
+test("at accessibility text sizes every address sits under its label", async () => {
+  textAt(2.35);
   const transport = createMockTransport({ autoTick: false });
   jest.spyOn(transport, "networkAddresses").mockResolvedValue({
     status: "ok",
     data: addresses,
   });
   await openNetwork(transport);
-  const publicAddress = await screen.findByText(
-    `${header} · Public 76.143.14.53`
-  );
-  const readingOrder = screen.getAllByText(
-    /^(en0.*Public 76\.143\.14\.53|2001:db8::1|1h)$/
-  );
-  expect(readingOrder.indexOf(publicAddress)).toBe(0);
-  expect(readingOrder.indexOf(screen.getByText("2001:db8::1"))).toBe(1);
-  expect(readingOrder.indexOf(screen.getByText("1h"))).toBe(2);
-  expect(screen.getByRole("header", { name: "Network" })).toBeOnTheScreen();
+  expect(
+    await screen.findByLabelText("Public IP, 76.143.14.53")
+  ).toBeOnTheScreen();
+  expect(screen.getByLabelText("IPv4, 192.168.86.242")).toBeOnTheScreen();
+  expect(screen.getByLabelText("IPv6, 2001:db8::1")).toBeOnTheScreen();
 });
 
 test("a pending public IP gets at most five polls, two seconds apart", async () => {
@@ -121,7 +154,7 @@ test("a pending public IP gets at most five polls, two seconds apart", async () 
     data: { ...addresses, public_ip: { state: "pending" } },
   });
   await openNetwork(transport);
-  expect(await screen.findByText(`${header} · Public …`)).toBeOnTheScreen();
+  await publicIp("Looking up…");
   await advance(1999);
   expect(read).toHaveBeenCalledTimes(1);
   await advance(1);
@@ -130,7 +163,7 @@ test("a pending public IP gets at most five polls, two seconds apart", async () 
   expect(read).toHaveBeenCalledTimes(6);
   await advance(10_000);
   expect(read).toHaveBeenCalledTimes(6);
-  expect(screen.getByText(`${header} · Public …`)).toBeOnTheScreen();
+  await publicIp("Looking up…");
 });
 
 test("blur stops address polling, and refocus immediately refreshes the address", async () => {
@@ -143,15 +176,13 @@ test("blur stops address polling, and refocus immediately refreshes the address"
     })
     .mockResolvedValue({ status: "ok", data: addresses });
   await openNetwork(transport);
-  await screen.findByText(`${header} · Public …`);
+  await publicIp("Looking up…");
   await act(() => router.push("/elsewhere"));
   expect(await screen.findByText("Another screen")).toBeOnTheScreen();
   await advance(10_000);
   expect(read).toHaveBeenCalledTimes(1);
   await act(() => router.back());
-  expect(
-    await screen.findByText(`${header} · Public 76.143.14.53`)
-  ).toBeOnTheScreen();
+  await publicIp("76.143.14.53");
   expect(read).toHaveBeenCalledTimes(2);
 });
 
@@ -165,11 +196,9 @@ test("polling stops when a previously pending public IP resolves", async () => {
     })
     .mockResolvedValue({ status: "ok", data: addresses });
   await openNetwork(transport);
-  await screen.findByText(`${header} · Public …`);
+  await publicIp("Looking up…");
   await advance(2000);
-  expect(
-    await screen.findByText(`${header} · Public 76.143.14.53`)
-  ).toBeOnTheScreen();
+  await publicIp("76.143.14.53");
   await advance(10_000);
   expect(read).toHaveBeenCalledTimes(2);
 });
@@ -180,8 +209,10 @@ test("an unavailable public IP includes the host's reason as a VoiceOver hint", 
     scenarios: ["linux-host"],
   });
   await openNetwork(transport, "remote-linux");
-  const subtitle = await screen.findByText(/end0.*Public unavailable/);
-  expect(screen.getByHintText("curl not installed")).toBe(subtitle);
+  await publicIp("Unavailable");
+  expect(screen.getByHintText("curl not installed")).toBe(
+    screen.getByLabelText("Public IP")
+  );
 });
 
 test("an unknown public IP state shows the unavailable wording", async () => {
@@ -191,9 +222,7 @@ test("an unknown public IP state shows the unavailable wording", async () => {
     data: { ...addresses, public_ip: { state: "unknown" } },
   });
   await openNetwork(transport);
-  expect(
-    await screen.findByText(`${header} · Public unavailable`)
-  ).toBeOnTheScreen();
+  await publicIp("Unavailable");
   expect(screen.queryByHintText("curl not installed")).not.toBeOnTheScreen();
 });
 
@@ -207,7 +236,7 @@ test("a host without the address query falls back to the live interface and link
   await act(() => transport.tick());
   expect(await screen.findByText("end0 · 1.0 Gb/s link")).toBeOnTheScreen();
   expect(read).toHaveBeenCalledWith("remote-nas");
-  expect(screen.queryByText(/Public|2001:db8/)).not.toBeOnTheScreen();
+  expect(screen.queryByText("Addresses")).not.toBeOnTheScreen();
 });
 
 test("an address query failure shows the typed recovery wording", async () => {
@@ -222,6 +251,7 @@ test("an address query failure shows the typed recovery wording", async () => {
       name: "This host is busy or slow to answer, so its addresses can't be read now. Try again in a moment.",
     })
   ).toBeOnTheScreen();
+  expect(screen.queryByText("Addresses")).not.toBeOnTheScreen();
 });
 
 test("a focused Network page reads addresses when its connecting host becomes ready", async () => {
@@ -237,9 +267,11 @@ test("a focused Network page reads addresses when its connecting host becomes re
   await act(() =>
     transport.pushRemoteStatus("remote-linux", { state: "connected" })
   );
-  expect(
-    await screen.findByText(/end0.*192\.0\.2\.20.*Public unavailable/)
-  ).toBeOnTheScreen();
+  await waitFor(() =>
+    expect(screen.getByLabelText("IPv4")).toHaveAccessibilityValue({
+      text: "192.0.2.20",
+    })
+  );
   expect(read).toHaveBeenCalledTimes(1);
 });
 
@@ -533,4 +565,21 @@ test("a lower Network peak holds the previous scale for a minute", async () => {
   expect(
     await screen.findByText(`↓ Download · ${formatRate(peak)}`)
   ).toBeOnTheScreen();
+});
+
+test("Network asks for one bar per six points of plot, like the desktop's narrow mirror charts", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const history = jest.spyOn(transport, "hostHistory");
+  await openNetwork(transport);
+  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
+    nativeEvent: { layout: { width: 300 } },
+  });
+  await waitFor(() =>
+    expect(history).toHaveBeenCalledWith(
+      expect.objectContaining({ max_points: 50 })
+    )
+  );
+  expect(history).not.toHaveBeenCalledWith(
+    expect.objectContaining({ max_points: 120 })
+  );
 });

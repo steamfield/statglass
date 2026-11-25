@@ -12,7 +12,9 @@ import { interfaceRows, ofLink } from "@core/network-lines";
 import { measuredShort } from "@core/range-totals";
 import { keyByLabel, labelValues } from "@core/series-key";
 import { useMemo } from "react";
+import { useWindowDimensions } from "react-native";
 import { shallow } from "zustand/shallow";
+import type { AddressRow } from "@/data/addresses";
 import { useHostLive } from "@/data/live";
 import { StatStrip } from "@/module/stat-strip";
 import { GroupedList, ListSection } from "@/ui/grouped-list";
@@ -112,6 +114,36 @@ export function InterfaceList({ host, live }: { host: HostId; live: boolean }) {
           ))}
         </GroupedList>
       )}
+    </ListSection>
+  );
+}
+
+/** The host's addresses, one labelled row each, under Interfaces. */
+/** Longest value that fits the row's trailing column at the default text size. */
+const INLINE_ADDRESS_CHARS = 17;
+
+export function AddressList({ rows }: { rows: readonly AddressRow[] }) {
+  const { fontScale } = useWindowDimensions();
+  if (rows.length === 0) return null;
+  return (
+    <ListSection title="Addresses">
+      <GroupedList>
+        {rows.map(({ label, value, hint }) => {
+          // A long IPv6 address, or any address at accessibility sizes, moves
+          // under its label (as the Interfaces rows read) so it never breaks
+          // mid-address in the narrow trailing column.
+          const stacked =
+            fontScale >= 1.35 || value.length > INLINE_ADDRESS_CHARS;
+          return (
+            <ListRow
+              key={`${label} ${value}`}
+              title={label}
+              {...(stacked ? { subtitle: value } : { value })}
+              {...(hint !== undefined && { accessibilityHint: hint })}
+            />
+          );
+        })}
+      </GroupedList>
     </ListSection>
   );
 }

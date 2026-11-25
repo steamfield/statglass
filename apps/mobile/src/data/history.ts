@@ -152,7 +152,7 @@ export function useHistoryRange(
 
 const HISTORY_CACHE_MS = 30_000;
 const BUSY_ATTEMPTS = 3;
-type PlotWidth = number | { columns: number } | null;
+export type PlotWidth = number | { columns: number } | null;
 
 export function historyPointBudget(width: number) {
   return Math.min(200, Math.max(30, Math.floor(width / 2.5)));
@@ -257,7 +257,7 @@ export function useModuleHistory(
   host: HostId,
   module: PopoverCard,
   range: HistoryRange,
-  width: number | null,
+  width: PlotWidth,
   connected: boolean
 ) {
   useFocusDemand(host, "full");

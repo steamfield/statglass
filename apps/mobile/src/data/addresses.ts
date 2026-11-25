@@ -10,35 +10,57 @@ import { usePhoneTransport } from "./transport-context";
 const POLL_MS = 2000;
 const MAX_POLLS = 5;
 
+export interface AddressRow {
+  label: string;
+  value: string;
+  /** Why the value is missing, for VoiceOver. */
+  hint?: string;
+}
+
 interface AddressLines {
-  line: string | null;
-  ipv6: string | null;
-  hint: string | null;
+  /** Interface and link speed from the address answer, for the header. */
+  subtitle: string | null;
+  rows: readonly AddressRow[];
+  /** Why the addresses couldn't be read at all. */
+  error: string | null;
   supported: boolean;
 }
 
 const NO_ADDRESSES: AddressLines = {
-  line: null,
-  ipv6: null,
-  hint: null,
+  subtitle: null,
+  rows: [],
+  error: null,
   supported: true,
 };
+
+function publicRow(publicIp: HostAddressesInfo["public_ip"]): AddressRow {
+  switch (publicIp.state) {
+    case "known":
+      return { label: "Public IP", value: publicIp.detail.ip };
+    case "pending":
+      return { label: "Public IP", value: "Looking up…" };
+    case "unavailable":
+      return {
+        label: "Public IP",
+        value: "Unavailable",
+        hint: publicIp.detail.reason,
+      };
+    default:
+      return { label: "Public IP", value: "Unavailable" };
+  }
+}
 
 function addressLines(answer: HostAddressesInfo): AddressLines {
   const { interface: iface, link_mbps, ipv4, ipv6, public_ip } = answer;
   const speed = link_mbps === null ? null : link_mbps * 1_000_000;
-  const value =
-    public_ip.state === "known"
-      ? public_ip.detail.ip
-      : public_ip.state === "pending"
-        ? "…"
-        : "unavailable";
   return {
-    line: [networkSubtitle(iface, speed), ...ipv4, `Public ${value}`].join(
-      " · "
-    ),
-    ipv6: ipv6.length > 0 ? ipv6.join(" · ") : null,
-    hint: public_ip.state === "unavailable" ? public_ip.detail.reason : null,
+    subtitle: networkSubtitle(iface, speed),
+    rows: [
+      ...ipv4.map((value) => ({ label: "IPv4", value })),
+      ...ipv6.map((value) => ({ label: "IPv6", value })),
+      publicRow(public_ip),
+    ],
+    error: null,
     supported: true,
   };
 }
@@ -48,7 +70,7 @@ function addressFailure(error: unknown): AddressLines {
     return { ...NO_ADDRESSES, supported: false };
   return {
     ...NO_ADDRESSES,
-    hint:
+    error:
       remoteQueryText(error, "addresses") ??
       commandErrorText(error, "Please try again."),
   };

@@ -26,7 +26,7 @@ import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
 import { NetworkHistoryChart } from "./history-chart";
-import { InterfaceList, NetworkStats } from "./live-stats";
+import { AddressList, InterfaceList, NetworkStats } from "./live-stats";
 
 const PROCESS_VIEW = { ...FULL_TABLE, network: true };
 const NO_EVENTS: readonly Event[] = [];
@@ -64,6 +64,14 @@ function NetworkHistoryNotice({
   );
 }
 
+/**
+ * Bars across the mirrored chart: one per six points, the desktop's narrow-card
+ * density (40 bars in a ~220 px plot), so the host averages each bar's bucket.
+ */
+function mirrorBars(width: number) {
+  return Math.min(120, Math.max(20, Math.floor(width / 6)));
+}
+
 export function NetworkPage({
   host,
   range: defaultRange,
@@ -91,12 +99,14 @@ export function NetworkPage({
     shallow
   );
   const addresses = useHostAddresses(host, connected);
-  const addressError = addresses.line === null ? addresses.hint : null;
-  const subtitle =
-    addresses.supported && addresses.line !== null
-      ? addresses.line
-      : networkSubtitle(primary, link);
-  const history = useModuleHistory(host, "network", range, width, connected);
+  const subtitle = addresses.subtitle ?? networkSubtitle(primary, link);
+  const history = useModuleHistory(
+    host,
+    "network",
+    range,
+    width === null ? null : { columns: mirrorBars(width) },
+    connected
+  );
   const { data, grid, displayedRange } = history;
   const hasSamples = useMemo(
     () =>
@@ -117,8 +127,6 @@ export function NetworkPage({
     <ModuleFrame
       title="Network"
       subtitle={subtitle}
-      subtitleHint={addressError === null ? addresses.hint : null}
-      subtitleDetail={addresses.ipv6}
       range={windowMs}
       onRange={setWindowMs}
       events={events}
@@ -126,7 +134,7 @@ export function NetworkPage({
     >
       {connected ? (
         <>
-          {addressError && <ModuleNotice message={addressError} error />}
+          {addresses.error && <ModuleNotice message={addresses.error} error />}
           {connection.state === "reconnecting" && (
             <ModuleNotice message={connection.label} />
           )}
@@ -159,6 +167,7 @@ export function NetworkPage({
             />
           </View>
           <InterfaceList host={host} live={live} />
+          <AddressList rows={addresses.rows} />
         </>
       ) : (
         <ModuleNotice
