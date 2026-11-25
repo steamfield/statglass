@@ -1,6 +1,6 @@
+import { networkSubtitle } from "@core/network-lines";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
-import { networkSubtitle } from "../_lib/network";
 
 /**
  * The header's addresses (D-093, D-153): the host's IPv4 (its IPv6
