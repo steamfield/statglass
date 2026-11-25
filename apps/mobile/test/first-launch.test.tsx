@@ -213,7 +213,7 @@ test("returns to the demo hosts from the Settings navigation bar", async () => {
     await screen.findByRole("button", { name: "Settings" })
   );
   expect(router.getPathname()).toBe("/settings");
-  await fireEvent.press(screen.getByRole("button", { name: "Back to Hosts" }));
+  await fireEvent.press(screen.getByRole("button", { name: "Back" }));
   expect(router.getSegments()).toEqual(["(hosts)"]);
   expect(await screen.findByText("Demo")).toBeOnTheScreen();
 });
