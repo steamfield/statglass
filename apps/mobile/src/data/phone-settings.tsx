@@ -45,7 +45,7 @@ export const DEFAULT_PHONE_SETTINGS: PhoneSettings = {
     cpu: false,
     memory: false,
     gpu: false,
-    power: false,
+    power: true,
     network: false,
     battery: false,
   },

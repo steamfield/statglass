@@ -1,4 +1,8 @@
 import type { HostId } from "@core/generated/types";
+import {
+  hostStatusSummary,
+  type PhoneRemoteHostStatus,
+} from "@core/phone-connection";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useStatusAnnouncement } from "@/connection/use-status-announcement";
@@ -28,20 +32,45 @@ function useFrameAge(lastFrame: number | null) {
   return `${Math.max(1, Math.floor((now - (lastFrame ?? now)) / 1000))}s`;
 }
 
+function pillLabel(
+  connection: ReturnType<typeof useConnection>,
+  status: PhoneRemoteHostStatus | undefined,
+  hasFrame: boolean,
+  active: boolean,
+  age: string
+) {
+  if (connection.state !== "live") return connection.label;
+  if (status?.state === "connected" && status.demand === "compact") {
+    return hostStatusSummary(status, {
+      nowMs: Date.now(),
+      requestedDemand: "full",
+    }).label;
+  }
+  if (!hasFrame) return "Connecting";
+  if (!active) return connection.label;
+  return connection.route
+    ? `${connection.label} · ${connection.route} ${age}`
+    : `${connection.label} · ${age}`;
+}
+
 /** Show the connection and announce outages. Frame updates stop at this component. */
 export function ConnectionPill({
   host,
   connection,
+  status,
   active,
 }: {
   host: HostId;
   connection: ReturnType<typeof useConnection>;
+  status: PhoneRemoteHostStatus | undefined;
   active: boolean;
 }) {
-  const { label, state } = connection;
+  const { state } = connection;
   const lastFrame = useLastFrame(host);
   const live = state === "live" && lastFrame !== null;
-  const age = useFrameAge(live && active ? lastFrame : null);
+  const age = useFrameAge(
+    live && active && status?.demand !== "compact" ? lastFrame : null
+  );
   useConnectionAnnouncement(connection, active);
 
   return (
@@ -59,13 +88,7 @@ export function ConnectionPill({
         accessibilityLiveRegion={active && state !== "live" ? "polite" : "none"}
         className="shrink tabular-nums"
       >
-        {state === "live" && !live
-          ? "Connecting"
-          : state === "live" && active
-            ? connection.route
-              ? `${label} · ${connection.route} ${age}`
-              : `${label} · ${age}`
-            : label}
+        {pillLabel(connection, status, live, active, age)}
       </Text>
     </View>
   );

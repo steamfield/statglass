@@ -247,6 +247,22 @@ it("falls back to internal for an unexpected startup error without claiming the 
   });
 });
 
+it("shows the cellular update cadence for a connected host in compact demand", async () => {
+  const { status } = await fixture("open-error");
+  const compact = { ...status, state: "connected", demand: "compact" } as const;
+  expect(
+    hostStatusSummary(compact, {
+      nowMs: PHONE_LAST_SEEN_MS,
+      requestedDemand: "full",
+    })
+  ).toEqual({ label: "Every 5 s on cellular", tone: "live", kind: null });
+  expect(hostStatusSummary(compact, { nowMs: PHONE_LAST_SEEN_MS })).toEqual({
+    label: "Live",
+    tone: "live",
+    kind: null,
+  });
+});
+
 it("shows last seen and the next retry together in host time", async () => {
   const { status } = await fixture("offline");
   const opts = { nowMs: PHONE_LAST_SEEN_MS };
