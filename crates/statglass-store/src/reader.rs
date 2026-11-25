@@ -2,14 +2,13 @@
 //! sync exporter serves. Any number of readers can run beside the writer (WAL).
 
 use std::borrow::Cow;
-use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use statglass_schema::{
-    Cursor, Event, Gap, GapReason, HostId, HostInfo, HostRecord, Labels, MetricId, Module,
-    SeriesKey, SyncKinds, SyncRowKind, Tier,
+    Cursor, Event, EventDetail, Gap, GapReason, HostId, HostInfo, HostRecord, Labels, MetricId,
+    Module, SeriesKey, SyncKinds, SyncRowKind, Tier,
 };
 use uuid::Uuid;
 
@@ -30,6 +29,7 @@ mod net;
 mod stats;
 mod summary;
 mod tiers;
+use tiers::in_recent_range;
 mod usage;
 mod usage_growth;
 pub use usage_growth::UsageHistoryGrowth;
@@ -54,6 +54,8 @@ pub struct Reader {
     hosts: HashMap<HostId, i64>,
     /// Layouts are immutable once minted, so this never goes stale.
     layouts: HashMap<u32, Arc<[SeriesKey]>>,
+    #[cfg(test)]
+    history_rows_read: usize,
 }
 
 impl Reader {
@@ -92,6 +94,8 @@ impl Reader {
             epoch,
             hosts: HashMap::new(),
             layouts: HashMap::new(),
+            #[cfg(test)]
+            history_rows_read: 0,
         }
     }
 
@@ -200,62 +204,47 @@ impl Reader {
         q: &HistoryQuery,
         recent: impl FnOnce() -> R,
     ) -> Result<HistoryResult> {
-        let host_ref = self.host_ref(q.host)?;
-        let tier = self.resolve_tier(host_ref, q.from_ms, q.to_ms, q.tier)?;
-        let width = tier_width(tier)?;
-        let gaps = self.gaps_in(host_ref, q.from_ms, q.to_ms)?;
-        if q.to_ms <= q.from_ms || q.selectors.is_empty() {
-            return Ok(HistoryResult {
-                tier,
-                bucket_ms: width,
-                series: Vec::new(),
-                gaps,
-            });
-        }
-        let mut merge = Merge::new(q, width);
+        self.history_snapshot(q, None, recent)?
+            .merge(q.max_points, i64::MAX)
+            .map(|(result, _)| result)
+    }
 
-        // An M15 read also takes the minutes still in `tier_1m`, weighed by width (D-076).
-        let sql = format!("{} ORDER BY bucket_ts", db::bucket_rows_sql(tier)?);
-        let rows: Vec<(i64, u32, Vec<u8>, u32)> = self
+    fn history_bucket_rows(
+        &self,
+        host_ref: i64,
+        tier: Tier,
+        from: i64,
+        to: i64,
+        layouts: &[u32],
+    ) -> Result<Vec<HistoryBucketRow>> {
+        if layouts.is_empty() {
+            return Ok(Vec::new());
+        }
+        // IDs come from the database. Inline them so many relayouts do not exceed the
+        // SQLite parameter limit. Apply the filter to both legs of the M15 union.
+        let ids = layouts
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = db::bucket_sources(tier)?
+            .iter()
+            .map(|(table, weight)| {
+                format!(
+                "SELECT bucket_ts, layout_id, blob, {weight} FROM {table}
+                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 AND layout_id IN ({ids})"
+            )
+            })
+            .collect::<Vec<_>>()
+            .join(" UNION ALL ");
+        let rows = self
             .conn
-            .prepare_cached(&sql)?
-            .query_map(params![host_ref, merge.slots.base, q.to_ms], |r| {
+            .prepare_cached(&format!("{sql} ORDER BY bucket_ts"))?
+            .query_map(params![host_ref, from, to], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })?
             .collect::<rusqlite::Result<_>>()?;
-
-        let recent = recent();
-        let recent = merge.recent(recent.as_ref(), tier);
-        let recent_ts: HashSet<i64> = recent.iter().map(|r| r.bucket_ts).collect();
-        // Per layout: (result index, position in layout) of each matching series.
-        let mut matches: HashMap<u32, Positions> = HashMap::new();
-        for (ts, layout_id, stats, weight) in rows {
-            // Weight 1: a row of the tier the recent rows are read for.
-            if weight == 1 && recent_ts.contains(&ts) {
-                let layout = self.layout(layout_id)?;
-                if recent
-                    .iter()
-                    .any(|r| r.bucket_ts == ts && *r.series == *layout)
-                {
-                    continue;
-                }
-            }
-            let positions = match matches.entry(layout_id) {
-                Entry::Occupied(e) => e.into_mut(),
-                Entry::Vacant(e) => {
-                    let layout = self.layout(layout_id)?;
-                    e.insert(merge.positions(&layout))
-                }
-            };
-            merge.add(ts, positions, |i| f32_at(&stats, i), weight)?;
-        }
-        merge.add_recent(&recent)?;
-        Ok(HistoryResult {
-            tier,
-            bucket_ms: merge.slots.slot_w,
-            series: merge.finish(),
-            gaps,
-        })
+        Ok(rows)
     }
 
     /// Gaps of `host` overlapping `[from, to)`, by start.
@@ -284,6 +273,46 @@ impl Reader {
     /// [`Reader::events_counted`] reports how many were skipped.
     pub fn events(&mut self, host: HostId, from_ms: i64, to_ms: i64) -> Result<Vec<Event>> {
         Ok(self.events_counted(host, from_ms, to_ms)?.events)
+    }
+
+    /// The newest matching events in the range, returned oldest first as stored rows.
+    /// As with `events`, a row with an unreadable payload cannot be classified.
+    pub fn event_rows(
+        &mut self,
+        host: HostId,
+        from_ms: i64,
+        to_ms: i64,
+        limit: usize,
+        matches: impl Fn(&EventDetail) -> bool,
+    ) -> Result<Vec<PageEvent>> {
+        let host_ref = self.host_ref(host)?;
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT export_id, seq, ts, kind, payload FROM events
+             WHERE host_id = ?1 AND ts >= ?2 AND ts < ?3 ORDER BY ts DESC, kind DESC",
+        )?;
+        let mut rows = stmt.query(params![host_ref, from_ms, to_ms])?;
+        let mut events = Vec::new();
+        while events.len() < limit
+            && let Some(row) = rows.next()?
+        {
+            let payload: Vec<u8> = row.get(4)?;
+            match ciborium::from_reader::<Event, _>(payload.as_slice()) {
+                Ok(event) if matches(&event.detail) => events.push(PageEvent {
+                    source_id: row.get(0)?,
+                    seq: row.get(1)?,
+                    ts_ms: row.get(2)?,
+                    kind: row.get(3)?,
+                    payload,
+                }),
+                Ok(_) => {}
+                Err(error) => tracing::debug!(
+                    error = &error as &dyn std::error::Error,
+                    "skipping an event this build cannot decode"
+                ),
+            }
+        }
+        events.reverse();
+        Ok(events)
     }
 
     // --- processes ------------------------------------------------------------------------
@@ -599,7 +628,7 @@ pub fn history_recent(q: &HistoryQuery, recent: &[BucketRow]) -> Result<HistoryR
             gaps: Vec::new(),
         });
     }
-    let mut merge = Merge::new(q, width);
+    let mut merge = Merge::new(q, width, q.max_points);
     let recent = merge.recent(recent, tier);
     merge.add_recent(&recent)?;
     Ok(HistoryResult {
@@ -614,6 +643,9 @@ pub fn history_recent(q: &HistoryQuery, recent: &[BucketRow]) -> Result<HistoryR
 struct Merge<'q> {
     q: &'q HistoryQuery,
     slots: Slots,
+    keys: Option<&'q BTreeSet<SeriesKey>>,
+    closed_before: i64,
+    complete_to_ms: i64,
     /// Result series in key order.
     index: BTreeMap<SeriesKey, usize>,
     /// Per series, accumulators by slot index.
@@ -621,10 +653,13 @@ struct Merge<'q> {
 }
 
 impl<'q> Merge<'q> {
-    fn new(q: &'q HistoryQuery, width: i64) -> Self {
+    fn new(q: &'q HistoryQuery, width: i64, budget: u32) -> Self {
         Self {
             q,
-            slots: Slots::new(q.from_ms, q.to_ms, width, q.max_points),
+            slots: Slots::new(q.from_ms, q.to_ms, width, budget),
+            keys: None,
+            closed_before: i64::MAX,
+            complete_to_ms: q.from_ms,
             index: BTreeMap::new(),
             accs: Vec::new(),
         }
@@ -633,11 +668,8 @@ impl<'q> Merge<'q> {
     /// The recent rows a read of `tier` takes: that tier's (minutes for an M15 read),
     /// inside the range.
     fn recent<'r>(&self, rows: &'r [BucketRow], tier: Tier) -> Vec<&'r BucketRow> {
-        let want = if tier == Tier::M15 { Tier::M1 } else { tier };
         rows.iter()
-            .filter(|r| {
-                r.tier == want && r.bucket_ts >= self.slots.base && r.bucket_ts < self.q.to_ms
-            })
+            .filter(|r| in_recent_range(r, tier, self.slots.base, self.q.to_ms))
             .collect()
     }
 
@@ -645,7 +677,11 @@ impl<'q> Merge<'q> {
     fn positions(&mut self, layout: &[SeriesKey]) -> Positions {
         let mut m = Vec::new();
         for (pos, key) in layout.iter().enumerate() {
-            if self.q.selectors.iter().any(|s| s.matches(key)) {
+            let selected = self.keys.map_or_else(
+                || self.q.selectors.iter().any(|s| s.matches(key)),
+                |keys| keys.contains(key),
+            );
+            if selected {
                 let next = self.index.len();
                 let i = *self.index.entry(key.clone()).or_insert(next);
                 if i == self.accs.len() {
@@ -666,6 +702,7 @@ impl<'q> Merge<'q> {
         weight: u32,
     ) -> Result<()> {
         let slot = self.slots.index(ts);
+        let mut measured = false;
         for &(i, pos) in positions {
             let (Some(min), Some(max), Some(avg)) =
                 (stat(pos * 3), stat(pos * 3 + 1), stat(pos * 3 + 2))
@@ -680,7 +717,12 @@ impl<'q> Merge<'q> {
             }
             if let Some(a) = self.accs.get_mut(i) {
                 a.entry(slot).or_default().add(min, max, avg, weight);
+                measured = true;
             }
+        }
+        let end = ts.saturating_add(self.slots.unit_w * i64::from(weight));
+        if measured && end <= self.closed_before {
+            self.complete_to_ms = self.complete_to_ms.max(end);
         }
         Ok(())
     }
@@ -724,6 +766,7 @@ impl<'q> Merge<'q> {
 
 /// (result index, position in layout) of each series of a layout a read selects.
 type Positions = Vec<(usize, usize)>;
+type HistoryBucketRow = (i64, u32, Vec<u8>, u32);
 
 /// The series of layout `id`, through `cache`. A free function so a caller can hold a
 /// statement on `conn` while it resolves layouts (the borrows are disjoint).
@@ -776,4 +819,100 @@ fn gap_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Gap> {
         module: module.map(|m| Module::parse(&m).unwrap_or(Module::Unknown)),
         reason: GapReason::from_stored(&reason),
     })
+}
+
+#[cfg(test)]
+mod history_layout_tests {
+    use super::*;
+    use crate::types::TierChoice;
+    use statglass_schema::SeriesSelector;
+
+    #[test]
+    fn history_only_fetches_selected_layout_rows_in_both_m15_sources() {
+        const DAY: i64 = 86_400_000;
+        const M1_ROWS: i64 = 7 * DAY / 60_000;
+        const M15_ROWS: i64 = 23 * DAY / 900_000;
+        let dir = crate::test_dir("history-layout");
+        let path = dir.path().join("history.sqlite");
+        let (conn, _) = db::open_writer(&path, 0).unwrap();
+        let host = HostId(Uuid::nil());
+        conn.execute(
+            "INSERT INTO hosts (id, uuid, is_local, name, info, created_ms)
+             VALUES (1, ?1, 1, 'fixture', x'', 0)",
+            [host.to_string()],
+        )
+        .unwrap();
+        for (id, labels) in [(1_u32, "iface=en0"), (2, "iface=en1")] {
+            conn.execute(
+                "INSERT INTO series (id, host_id, metric_id, labels) VALUES (?1, 1, 'net.rx', ?2)",
+                params![id, labels],
+            )
+            .unwrap();
+            let packed = blob::pack_u32s(&[id]);
+            conn.execute(
+                "INSERT INTO layouts (id, host_id, series_ids, hash, created_ms)
+                 VALUES (?1, 1, ?2, ?2, 0)",
+                params![id, packed],
+            )
+            .unwrap();
+            for (table, start, step, count, avg) in [
+                ("tier_15m", 0, 900_000, M15_ROWS, 3.0),
+                ("tier_1m", 23 * DAY, 60_000, M1_ROWS, 7.0),
+            ] {
+                // A short blob would fail if this series were selected.
+                let payload = if id == 1 {
+                    blob::pack_f32s(&[avg - 1.0, avg + 1.0, avg])
+                } else {
+                    Vec::new()
+                };
+                conn.execute(
+                    &format!(
+                        "WITH RECURSIVE offsets(n) AS (
+                       SELECT 0 UNION ALL SELECT n + 1 FROM offsets WHERE n + 1 < ?5
+                     )
+                     INSERT INTO {table} (host_id, bucket_ts, layout_id, seq, blob)
+                     SELECT 1, ?3 + n * ?4, ?1, n + 1, ?2 FROM offsets"
+                    ),
+                    params![id, payload, start, step, count],
+                )
+                .unwrap();
+            }
+        }
+        conn.execute_batch(
+            "INSERT INTO layouts (id, host_id, series_ids, hash, created_ms)
+               VALUES (3, 1, x'01', x'03', 0);
+             INSERT INTO tier_15m (host_id, bucket_ts, layout_id, seq, blob)
+               VALUES (1, -900000, 3, 1, x'');",
+        )
+        .unwrap();
+        let mut reader = Reader::open(&path).unwrap();
+        let key = SeriesKey::parse("net.rx{iface=en0}").unwrap();
+        let selectors = vec![SeriesSelector {
+            metric: key.metric.clone(),
+            labels: key.labels.clone(),
+        }];
+        let mut query = HistoryQuery {
+            host,
+            selectors,
+            from_ms: 0,
+            to_ms: 30 * DAY,
+            tier: TierChoice::Fixed(Tier::M15),
+            max_points: 200,
+        };
+        let read = reader.history(&query).unwrap();
+        let expected_rows = usize::try_from(M1_ROWS + M15_ROWS).unwrap();
+        assert_eq!(reader.history_rows_read, expected_rows);
+        assert_eq!(read.series.len(), 1);
+        assert_eq!(read.series[0].key, key);
+        assert!(read.series[0].points.len() > 100);
+        assert_eq!(read.series[0].points.first().unwrap().avg, 3.0);
+        assert_eq!(read.series[0].points.last().unwrap().avg, 7.0);
+
+        query.selectors[0].labels = Labels::new();
+        let snapshot = reader.history_snapshot(&query, Some(1), Vec::new).unwrap();
+        let (limited, _) = snapshot.merge(query.max_points, 30 * DAY).unwrap();
+        assert_eq!(reader.history_rows_read, expected_rows);
+        assert!(snapshot.series_clamped());
+        assert_eq!(limited, read);
+    }
 }

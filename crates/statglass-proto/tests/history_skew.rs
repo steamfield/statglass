@@ -1,9 +1,11 @@
 use ciborium::Value;
+use serde::Deserialize;
 use statglass_proto::{
-    Answer, HistoryAnswer, HistoryClamp, HistoryQuery, Message, Query, WireEvent,
-    WireHistorySeries, WireSeriesStats, decode_message, encode_message,
+    Answer, ErrorCode, HISTORY_QUERY_FEATURE, HistoryAnswer, HistoryClamp, HistoryQuery, Message,
+    Offer, Query, WireEvent, WireHistorySeries, WireSeriesStats, decode_message, encode_message,
+    local_features, negotiate,
 };
-use statglass_schema::{Module, SeriesKey, SeriesSelector, Tier};
+use statglass_schema::{Module, SeriesKey, SeriesSelector, Tier, usage::UsageKey};
 
 fn history_answer(key: SeriesKey) -> HistoryAnswer {
     HistoryAnswer {
@@ -32,23 +34,27 @@ fn history_answer(key: SeriesKey) -> HistoryAnswer {
     }
 }
 
+fn history_request(id: u32, key: &SeriesKey) -> Message {
+    Message::Request {
+        id,
+        query: Query::History(HistoryQuery {
+            series: vec![SeriesSelector {
+                metric: key.metric.clone(),
+                labels: key.labels.clone(),
+            }],
+            from_ms: 10_000,
+            to_ms: None,
+            max_points: 50,
+            events_for: Some(Module::Cpu),
+        }),
+    }
+}
+
 #[test]
-fn history_request_and_reply_round_trip() {
+fn history_request_and_reply_with_a_future_event_round_trip() {
     let key = SeriesKey::parse("cpu.total").unwrap();
     for message in [
-        Message::Request {
-            id: 1,
-            query: Query::History(HistoryQuery {
-                series: vec![SeriesSelector {
-                    metric: key.metric.clone(),
-                    labels: key.labels.clone(),
-                }],
-                from_ms: 10_000,
-                to_ms: None,
-                max_points: 50,
-                events_for: Some(Module::Cpu),
-            }),
-        },
+        history_request(1, &key),
         Message::Reply {
             id: 1,
             answer: Answer::History(history_answer(key)),
@@ -59,6 +65,89 @@ fn history_request_and_reply_round_trip() {
             message
         );
     }
+}
+
+#[test]
+fn history_is_opt_in_and_an_older_decoder_treats_its_request_as_unknown() {
+    #[derive(Deserialize)]
+    #[serde(tag = "t", content = "c")]
+    enum LegacyMessage {
+        Request { id: u32, query: Value },
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(tag = "q", content = "a")]
+    enum LegacyQuery {
+        UsageByApp {
+            from_ms: i64,
+            to_ms: i64,
+            by: UsageKey,
+            limit: u32,
+        },
+        #[serde(other)]
+        Unknown,
+    }
+
+    let current = Offer::local(local_features());
+    assert!(current.features.contains("query.history.v1"));
+    let mut older = current.clone();
+    older.features.remove(HISTORY_QUERY_FEATURE);
+    for (a, b) in [(&current, &older), (&older, &current)] {
+        assert!(
+            !negotiate(a, b)
+                .unwrap()
+                .features
+                .contains(HISTORY_QUERY_FEATURE)
+        );
+    }
+
+    let bytes = encode_message(&history_request(
+        27,
+        &SeriesKey::parse("cpu.total").unwrap(),
+    ))
+    .unwrap();
+    let LegacyMessage::Request { id, query } = ciborium::from_reader(bytes.as_slice()).unwrap();
+    assert_eq!(id, 27);
+    assert_eq!(
+        query.deserialized().unwrap_or(LegacyQuery::Unknown),
+        LegacyQuery::Unknown
+    );
+
+    // A frozen D-117 query and reply still decode the same way at the newer end.
+    let fixture = include_bytes!("fixtures/v1/request_usage.cbor");
+    let LegacyMessage::Request { id, query } = ciborium::from_reader(fixture.as_slice()).unwrap();
+    let LegacyQuery::UsageByApp {
+        from_ms,
+        to_ms,
+        by,
+        limit,
+    } = query.deserialized().unwrap()
+    else {
+        panic!("the pinned legacy query must decode");
+    };
+    assert_eq!(
+        decode_message(fixture).unwrap(),
+        Message::Request {
+            id,
+            query: Query::UsageByApp {
+                from_ms,
+                to_ms,
+                by,
+                limit
+            },
+        }
+    );
+    let fixture = include_bytes!("fixtures/v1/reply_error.cbor");
+    assert!(matches!(
+        decode_message(fixture).unwrap(),
+        Message::Reply {
+            answer: Answer::Error {
+                code: ErrorCode::Unsupported,
+                ..
+            },
+            ..
+        }
+    ));
 }
 
 #[test]
