@@ -1,6 +1,8 @@
 //! Rule sentences and notification text for alerts: what a custom rule reads as, what a
 //! fired alert's notification says, and the confirmation posted when rules switch on.
 
+use std::collections::BTreeMap;
+
 use crate::units::format_value;
 use statglass_schema::settings::UnitSettings;
 use statglass_schema::{
@@ -24,10 +26,10 @@ const TIMELINE_HINT: &str = "Open StatGlass's Timeline to see what else was runn
 pub struct AlertText {
     pub title: String,
     pub body: String,
-    /// The name of the rule that fired, `None` for the "Alerts are on" confirmation.
+    /// The name of the rule that fired, if this text is for an individual alert.
     pub rule: Option<String>,
     /// The `AlertCause` serde tag ("threshold", "process_cpu", "thermal_state",
-    /// "host_offline", "host_back"), or "alerts_on" for the confirmation.
+    /// "host_offline", "host_back"), "alerts_on" for the confirmation, or "catch_up".
     pub kind: &'static str,
 }
 
@@ -102,6 +104,65 @@ pub fn alert_text(event: &Event, units: &UnitSettings) -> Option<AlertText> {
         body,
         rule: Some(rule_name.clone()),
         kind: cause_kind(cause),
+    })
+}
+
+/// The text for an individual alert raised by a remote host.
+pub fn remote_alert_text(
+    host_name: &str,
+    event: &Event,
+    units: &UnitSettings,
+) -> Option<AlertText> {
+    let mut text = alert_text(event, units)?;
+    text.title = format!("{host_name}: {}", text.title);
+    Some(text)
+}
+
+/// One message for alert events that arrived late together from a remote host.
+pub fn catch_up_text<'a>(
+    host_name: &str,
+    events: impl IntoIterator<Item = &'a Event>,
+    units: &UnitSettings,
+) -> Option<AlertText> {
+    let mut counts = BTreeMap::new();
+    let mut rules = Vec::new();
+    let mut total = 0;
+    for event in events {
+        let EventDetail::Alert { rule_id, .. } = &event.detail else {
+            continue;
+        };
+        let count = counts.entry(*rule_id).or_insert(0);
+        if *count == 0 {
+            rules.push((*rule_id, event));
+        }
+        *count += 1;
+        total += 1;
+    }
+    let remaining = rules.len().saturating_sub(2);
+    let mut names = rules.into_iter().take(2).filter_map(|(id, event)| {
+        let title = alert_text(event, units)?.title;
+        Some(match counts.get(&id).copied().unwrap_or_default() {
+            1 => title,
+            2 => format!("{title} (twice)"),
+            count => format!("{title} ({count} times)"),
+        })
+    });
+    let first = names.next()?;
+    let body = if total == 1 {
+        format!("While this Mac was away, {host_name} raised an alert: {first}")
+    } else {
+        let summary = match names.next() {
+            None => first,
+            Some(second) if remaining == 0 => format!("{first} and {second}"),
+            Some(second) => format!("{first}, {second}, and {remaining} more"),
+        };
+        format!("While this Mac was away, {host_name} raised {total} alerts: {summary}")
+    };
+    Some(AlertText {
+        title: format!("Alerts from {host_name}"),
+        body,
+        rule: None,
+        kind: "catch_up",
     })
 }
 

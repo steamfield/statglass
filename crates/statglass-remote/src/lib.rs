@@ -16,7 +16,7 @@ pub mod network;
 pub mod rr;
 pub use mirror_error::MirrorError;
 mod pages;
-pub use mirror::{AlertListener, Mirror, SyncWatermark};
+pub use mirror::{AlertListener, Mirror, MirrorAlertBatch, SyncWatermark};
 mod server;
 mod socket;
 mod source;

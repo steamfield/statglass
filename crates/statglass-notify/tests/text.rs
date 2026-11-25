@@ -2,7 +2,10 @@
 //! values in the user's units. The process and thermal wording is unchanged from the
 //! app shell's notifications before custom rules.
 
-use statglass_notify::{AlertText, alert_text, alerts_on_text, format_value, rule_summary};
+use statglass_notify::{
+    AlertText, alert_text, alerts_on_text, catch_up_text, format_value, remote_alert_text,
+    rule_summary,
+};
 use statglass_schema::settings::{MemoryUnit, NetworkUnit, TemperatureUnit, UnitSettings};
 use statglass_schema::{
     AlertCause, AlertRule, Cmp, Condition, Event, EventDetail, HostId, Labels, MetricId,
@@ -435,6 +438,114 @@ fn non_alert_events_have_no_text() {
         ..hot(&["ffmpeg"], AlertRule::hot_process().id)
     };
     assert_eq!(alert_text(&e, &CELSIUS_DECIMAL), None);
+    assert_eq!(remote_alert_text("m1-linux", &e, &CELSIUS_DECIMAL), None);
+    assert_eq!(catch_up_text("m1-linux", &[e], &CELSIUS_DECIMAL), None);
+}
+
+#[test]
+fn remote_alert_names_the_host_and_this_macs_text_stays_the_same() {
+    let event = threshold("mem.pressure", Labels::new(), 84.0, Cmp::Gt, 80.0, 120);
+    let body = "Memory pressure 84% · above 80% for 2 min";
+    assert_eq!(
+        remote_alert_text("m1-linux", &event, &CELSIUS_DECIMAL),
+        fired("threshold", "m1-linux: Memory is tight", body)
+    );
+    assert_eq!(
+        alert_text(&event, &CELSIUS_DECIMAL),
+        fired("threshold", "Memory is tight", body)
+    );
+}
+
+#[test]
+fn catch_up_counts_repeated_rule_ids_and_keeps_first_seen_names() {
+    let disk = alert(
+        Uuid::from_u128(9),
+        &[],
+        AlertCause::ThermalState {
+            state: ThermalState::Fair,
+        },
+    );
+    let mut first = threshold("cpu.total", Labels::new(), 95.0, Cmp::Gt, 90.0, 0);
+    let EventDetail::Alert { rule_name, .. } = &mut first.detail else {
+        unreachable!()
+    };
+    *rule_name = "High CPU".into();
+    let mut renamed = first.clone();
+    let EventDetail::Alert { rule_name, .. } = &mut renamed.detail else {
+        unreachable!()
+    };
+    *rule_name = "CPU has a new name".into();
+    assert_eq!(
+        catch_up_text("m1-linux", &[first, disk, renamed], &CELSIUS_DECIMAL),
+        Some(AlertText {
+            title: "Alerts from m1-linux".into(),
+            body: "While this Mac was away, m1-linux raised 3 alerts: High CPU (twice) and Thermal state: Fair".into(),
+            rule: None,
+            kind: "catch_up",
+        })
+    );
+}
+
+#[test]
+fn catch_up_names_up_to_two_alerts_and_counts_the_rest() {
+    let named = |id: u128, name: &str, mut event: Event| {
+        if let EventDetail::Alert {
+            rule_id, rule_name, ..
+        } = &mut event.detail
+        {
+            *rule_id = Uuid::from_u128(id);
+            *rule_name = name.to_owned();
+        }
+        event
+    };
+    let disk = named(
+        10,
+        "Free disk space below 20 GB",
+        threshold("disk.free", Labels::new(), 12e9, Cmp::Lt, 20e9, 0),
+    );
+    let stall = named(
+        11,
+        "Memory stall above 10% for 2 min",
+        threshold(
+            "mem.psi",
+            Labels::single("stall", "some"),
+            12.0,
+            Cmp::Gt,
+            10.0,
+            120,
+        ),
+    );
+    let cpu = threshold("cpu.total", Labels::new(), 95.0, Cmp::Gt, 90.0, 0);
+    let non_alert = Event {
+        detail: EventDetail::ThermalState {
+            from: None,
+            to: ThermalState::Serious,
+        },
+        ..cpu.clone()
+    };
+    let events = [non_alert, disk, stall, cpu];
+    for (len, expected) in [
+        (2, "an alert: Free disk space below 20 GB"),
+        (
+            3,
+            "2 alerts: Free disk space below 20 GB and Memory stall above 10% for 2 min",
+        ),
+        (
+            4,
+            "3 alerts: Free disk space below 20 GB, Memory stall above 10% for 2 min, and 1 more",
+        ),
+    ] {
+        assert_eq!(
+            catch_up_text("m1-linux", &events[..len], &CELSIUS_DECIMAL),
+            Some(AlertText {
+                title: "Alerts from m1-linux".into(),
+                body: format!("While this Mac was away, m1-linux raised {expected}"),
+                rule: None,
+                kind: "catch_up",
+            })
+        );
+    }
+    assert_eq!(catch_up_text("m1-linux", &[], &CELSIUS_DECIMAL), None);
 }
 
 // ---- host offline ------------------------------------------------------------------

@@ -9,9 +9,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-/// Told about alert events a durable page inserted for the first time, with the page's
-/// epoch, after the page committed. Runs on the ingesting thread with no mirror lock held.
-pub type AlertListener = Arc<dyn Fn(Uuid, Vec<statglass_schema::Event>) + Send + Sync>;
+/// Alerts inserted by a durable page and whether the minute tier caught up.
+#[derive(Debug, PartialEq)]
+pub struct MirrorAlertBatch {
+    pub epoch: Uuid,
+    pub alerts: Vec<statglass_schema::Event>,
+    pub caught_up: bool,
+}
+
+/// Runs after commit on the ingesting thread with no mirror lock held.
+pub type AlertListener = Arc<dyn Fn(MirrorAlertBatch) + Send + Sync>;
 
 pub struct Mirror {
     history: Arc<statglass_engine::HistoryStore>,
@@ -77,6 +84,7 @@ impl MirrorSink for Mirror {
             });
         }
         self.cap(&mut page.layouts, &mut page.rows);
+        let caught_up = page.tier == Tier::M1 && !page.more;
         let page = crate::page_from_wire(page, kinds)?;
         let written: Vec<_> = page
             .rows
@@ -112,10 +120,14 @@ impl MirrorSink for Mirror {
             })
         });
         drop(current);
-        if !report.alerts_inserted.is_empty() {
+        if caught_up || !report.alerts_inserted.is_empty() {
             let listener = self.alert_listener.lock_ok().clone();
             if let Some(listener) = listener {
-                listener(epoch, report.alerts_inserted);
+                listener(MirrorAlertBatch {
+                    epoch,
+                    alerts: report.alerts_inserted,
+                    caught_up,
+                });
             }
         }
         Ok(())
@@ -249,7 +261,7 @@ impl Mirror {
         }
     }
 
-    /// Replaces the listener told about newly inserted alert events.
+    /// Replaces the listener for newly inserted alerts and minute-tier completion.
     pub fn set_alert_listener(&self, listener: AlertListener) {
         *self.alert_listener.lock_ok() = Some(listener);
     }
