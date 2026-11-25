@@ -190,8 +190,11 @@ export function LiveSidebar({
     return withHostAttention(listed, behind);
   }, [local, linux, cgroups, behind]);
   const diskSpace = useEdition()?.disk_space;
-  const { data: spaceStatus } = useSpaceStatus(diskSpace === true);
-  const busy = spaceStatus?.phase === "scanning" ? SCAN_BUSY : undefined;
+  const spaceStatus = useSpaceStatus(diskSpace === true);
+  const busy =
+    !spaceStatus.isError && spaceStatus.data?.phase === "scanning"
+      ? SCAN_BUSY
+      : undefined;
   const utilities = useMemo<readonly SidebarEntry[]>(
     () =>
       diskSpace === true

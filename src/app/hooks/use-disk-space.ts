@@ -32,7 +32,10 @@ export function useSpaceVolumes(enabled: boolean) {
 }
 
 /**
- * The running scan, or how the last one ended. Polled only while one runs.
+ * The running scan, or how the last one ended. Polled only while one runs,
+ * and not after a read fails: a scan last seen running on a host that stopped
+ * answering is not reported as running. The sidebar keeps this observed on
+ * every page, so it is never fresh from the cache: each new observer reads it.
  * When a scan ends, the kept largest-folders summary (D-132) is read again,
  * whichever view started it: a finished boot scan replaces it.
  */
@@ -44,17 +47,23 @@ export function useSpaceStatus(enabled: boolean) {
     queryKey: diskSpaceKeys.status(host),
     queryFn: () => unwrap(transport.diskSpaceStatus(host)),
     enabled,
+    staleTime: 0,
     refetchInterval: (q) =>
-      q.state.data?.phase === "scanning" ? SPACE_POLL_MS : false,
+      q.state.status !== "error" && q.state.data?.phase === "scanning"
+        ? SPACE_POLL_MS
+        : false,
     refetchOnWindowFocus: false,
   });
-  const scanning = query.data?.phase === "scanning";
+  const scanning = !query.isError && query.data?.phase === "scanning";
   const wasScanning = useRef(scanning);
   useEffect(() => {
+    // Every mounted observer sees the scan end; the first read is shared, not
+    // restarted by the next one.
     if (wasScanning.current && !scanning)
-      void client.invalidateQueries({
-        queryKey: diskSpaceKeys.highlights(host),
-      });
+      void client.invalidateQueries(
+        { queryKey: diskSpaceKeys.highlights(host) },
+        { cancelRefetch: false }
+      );
     wasScanning.current = scanning;
   }, [client, host, scanning]);
   return query;
