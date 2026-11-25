@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileConfig, MobileHost, PairedHost, PairingState};
+use statglass_proto::handover::HostBundle;
 use statglass_schema::HostId;
 use statglass_session::network::LocalNetwork;
 use statglass_session::{Dialer, RemoteSource};
@@ -14,6 +15,7 @@ use tokio::runtime::Handle;
 
 use crate::control::SessionControl;
 use crate::ffi::{CoreEvents, NativeSigner, NativeSignerError};
+use crate::handover::{self, PendingHandover};
 use crate::lifecycle::Lifecycle;
 
 mod addresses;
@@ -65,14 +67,14 @@ impl Sessions {
 
     /// Replaces the configured hosts.
     pub(crate) fn set_hosts(&self, hosts: Vec<MobileHost>) -> Result<(), CommandError> {
-        self.registry.update_hosts(None, |desired| {
+        self.registry.update_hosts(None, |_, desired, _, _| {
             *desired = hosts;
             Ok(())
         })
     }
 
     pub(crate) fn remove_host(&self, host: HostId) -> Result<(), CommandError> {
-        self.registry.update_hosts(None, |hosts| {
+        self.registry.update_hosts(None, |_, hosts, _, _| {
             let index = hosts
                 .iter()
                 .position(|entry| entry.id == host)
@@ -90,9 +92,12 @@ impl Sessions {
         &self,
         mut host: MobileHost,
         device_key: &[u8],
+        mut offered: Vec<statglass_ipc::mobile::OfferedHost>,
+        unavailable: Vec<statglass_ipc::mobile::UnavailableHostInfo>,
     ) -> Result<PairedHost, CommandError> {
         self.registry
-            .update_hosts(Some((host.id, device_key)), |hosts| {
+            .update_hosts(Some((host.id, device_key)), |_, hosts, store, handover| {
+                offered.retain(|offer| hosts.iter().all(|current| current.id != offer.id));
                 let existing = hosts.iter_mut().find(|entry| entry.id == host.id);
                 if let Some(existing) = existing.as_ref() {
                     host.name.clone_from(&existing.name);
@@ -100,14 +105,42 @@ impl Sessions {
                 let paired = PairedHost {
                     id: host.id,
                     name: host.name.clone(),
-                    offered: Vec::new(),
-                    unavailable: Vec::new(),
+                    offered,
+                    unavailable,
                 };
+                store.controllers.remove(&host.id);
+                *handover = (!paired.offered.is_empty()).then(|| PendingHandover::Pairing {
+                    from: host.id,
+                    offered: paired.offered.clone(),
+                });
                 match existing {
                     Some(existing) => *existing = host,
                     None => hosts.push(host),
                 }
                 Ok(paired)
+            })
+    }
+
+    pub(crate) fn stage_bundle(
+        &self,
+        bundle: HostBundle,
+    ) -> Result<statglass_ipc::mobile::BundleReconcile, CommandError> {
+        self.registry
+            .stage_handover(move |id, phone, hosts, store| {
+                handover::validate_bundle(phone, store, &bundle)?;
+                let preview = handover::preview(id, hosts, &store.controllers, &bundle);
+                Ok((PendingHandover::Bundle { id, bundle }, preview))
+            })
+    }
+
+    pub(crate) fn add_handover_hosts(
+        &self,
+        selected: Vec<statglass_ipc::mobile::OfferedHost>,
+        preview_id: Option<u32>,
+    ) -> Result<(), CommandError> {
+        self.registry
+            .update_hosts(None, |phone, hosts, store, handover| {
+                handover::apply(phone, hosts, store, handover.take(), selected, preview_id)
             })
     }
 

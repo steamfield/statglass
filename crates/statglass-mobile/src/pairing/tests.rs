@@ -1,12 +1,17 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use p256::ecdsa::SigningKey;
 use serde_json::{Value, json};
-use statglass_ipc::mobile::{DemandLevel, HostDemand, MobileCall, MobileConfig};
+use statglass_ipc::mobile::{
+    DemandLevel, HandoverReasonInfo, HostDemand, MobileCall, MobileConfig, OfferedHost,
+    UnavailableHostInfo,
+};
+use statglass_proto::handover::{HandoverReason, HostBundle, UnavailableHost, encode_bundle};
 use statglass_proto::pairing::{
     BundleHost, BundleHostKey, BundleTarget, PAYLOAD_VERSION, PairReply, PairStart, encode_payload,
 };
@@ -15,7 +20,7 @@ use statglass_session::pairing::{read_pair_frame, write_pair_frame};
 use statglass_session::{BoxFuture, DialFailure, DialedStream, ForcedToken, RemoteCommand, Target};
 use statglass_ssh::SoftwareSigner;
 use tokio::runtime::Handle;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use tokio::time::timeout;
 
 use super::*;
@@ -41,6 +46,7 @@ impl NativeSigner for NativeKey {
 struct RosterEvents {
     file: PathBuf,
     rosters: Mutex<Vec<(Value, Option<Vec<u8>>)>>,
+    status_changed: Notify,
 }
 
 impl CoreEvents for RosterEvents {
@@ -54,6 +60,8 @@ impl CoreEvents for RosterEvents {
             self.rosters
                 .lock_ok()
                 .push((event["hosts"].clone(), fs::read(&self.file).ok()));
+        } else if event["kind"] == "remote_hosts_changed" {
+            self.status_changed.notify_one();
         }
     }
 }
@@ -69,6 +77,7 @@ struct PairDialer {
 struct ServeDialer {
     pipe: PeerDialer,
     endpoints: mpsc::UnboundedSender<(Endpoint, Target)>,
+    pending_key: Arc<AtomicBool>,
 }
 
 impl Dialer for ServeDialer {
@@ -80,6 +89,9 @@ impl Dialer for ServeDialer {
         self.endpoints
             .send((endpoint.clone(), target.clone()))
             .expect("test observes serving endpoint");
+        if self.pending_key.load(Ordering::Relaxed) {
+            return Box::pin(async { Err(RemoteError::Authentication("key refused".into())) });
+        }
         self.pipe.dial(endpoint, target)
     }
 
@@ -132,6 +144,7 @@ struct Fixture {
     signer: Arc<NativeKey>,
     serving: mpsc::UnboundedReceiver<Dial>,
     endpoints: mpsc::UnboundedReceiver<(Endpoint, Target)>,
+    pending_key: Arc<AtomicBool>,
     dir: tempfile::TempDir,
 }
 
@@ -141,6 +154,7 @@ impl Fixture {
         let events = Arc::new(RosterEvents {
             file: dir.path().join("hosts.json"),
             rosters: Mutex::default(),
+            status_changed: Notify::new(),
         });
         let signer = Arc::new(NativeKey(Mutex::new(
             SoftwareSigner::generate().public_key().to_vec(),
@@ -148,6 +162,7 @@ impl Fixture {
         let sessions = Sessions::new(events.clone(), Some(signer.clone()));
         let (send, serving) = mpsc::unbounded_channel();
         let (record, endpoints) = mpsc::unbounded_channel();
+        let pending_key = Arc::new(AtomicBool::new(false));
         sessions
             .start(
                 Handle::current(),
@@ -156,6 +171,7 @@ impl Fixture {
                 Arc::new(ServeDialer {
                     pipe: PeerDialer(send),
                     endpoints: record,
+                    pending_key: pending_key.clone(),
                 }),
             )
             .unwrap();
@@ -166,6 +182,7 @@ impl Fixture {
             signer,
             serving,
             endpoints,
+            pending_key,
             dir,
         }
     }
@@ -251,6 +268,420 @@ impl Fixture {
         assert_eq!(dial.target, target);
         dial
     }
+
+    fn reopen(&self, dialer: impl Dialer + 'static) -> Sessions {
+        let reopened = Sessions::new(self.events.clone(), Some(self.signer.clone()));
+        reopened
+            .start(
+                Handle::current(),
+                self.dir.path().into(),
+                MobileConfig::default(),
+                Arc::new(dialer),
+            )
+            .unwrap();
+        reopened
+    }
+}
+
+async fn wait_for_connection(
+    sessions: &Sessions,
+    changed: &Notify,
+    host: HostId,
+    key: &str,
+    value: &str,
+) -> Value {
+    timeout(WAIT, async {
+        loop {
+            let rows = sessions.call(MobileCall::ListRemoteHosts).await.unwrap();
+            if let Some(row) = rows
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == json!(host) && row["connection"][key] == value)
+            {
+                return row.clone();
+            }
+            changed.notified().await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+async fn demand(sessions: &Sessions, host: HostId, level: DemandLevel) {
+    sessions
+        .call(MobileCall::SetDemand {
+            demand: vec![HostDemand { host, level }],
+        })
+        .await
+        .unwrap();
+}
+
+fn handed_host(n: u128, address: &str) -> BundleHost {
+    let mut host = offer().host;
+    host.host_id = HostId(format!("{n:032x}").parse().unwrap());
+    host.name = address.into();
+    host.targets[0].host = address.into();
+    host.host_keys[0].sha256 = fingerprint(1);
+    host
+}
+
+fn fingerprint(byte: u8) -> String {
+    use base64::engine::general_purpose::STANDARD_NO_PAD;
+    format!("SHA256:{}", STANDARD_NO_PAD.encode([byte; 32]))
+}
+
+fn update(from: HostId, hosts: Vec<BundleHost>) -> String {
+    update_at(from, hosts, 1_800_000_000_000)
+}
+
+fn update_at(from: HostId, hosts: Vec<BundleHost>, issued_ms: i64) -> String {
+    encode_bundle(&HostBundle {
+        version: 1,
+        from,
+        hosts,
+        unavailable: vec![],
+        issued_ms,
+    })
+}
+
+#[tokio::test]
+async fn handover_approval_lists_other_hosts_only_with_the_offer_capability() {
+    for can_hand_over in [false, true] {
+        let fixture = Fixture::new();
+        let mut payload = offer();
+        // The capability is independent of the label the controller gives its OS.
+        payload.host.os = "linux".into();
+        payload.can_hand_over = can_hand_over;
+        let target = handed_host(2, "build.local");
+        let unavailable = UnavailableHost {
+            host_id: handed_host(3, "jump.local").host_id,
+            name: "Jump host".into(),
+            reason: HandoverReason::ProxyJump,
+        };
+        let (mut reply, main) = approved(&payload, "approved.tailnet");
+        if let PairReply::Approved {
+            hosts,
+            unavailable: failures,
+            ..
+        } = &mut reply
+        {
+            hosts.push(target.clone());
+            failures.push(unavailable.clone());
+        }
+        let paired = fixture
+            .pair(&payload, "SHA256:offer", Some(reply))
+            .await
+            .unwrap();
+        assert_eq!(
+            paired.offered,
+            if can_hand_over {
+                vec![OfferedHost {
+                    id: target.host_id,
+                    name: "build.local".into(),
+                    os: "macos".into(),
+                    user: "pairing".into(),
+                    port: Some(2200),
+                    targets: vec![MobileTarget {
+                        route: RemoteRoute::Lan,
+                        host: "build.local".into(),
+                    }],
+                    host_keys: vec![MobileHostKey {
+                        algorithm: "ssh-ed25519".into(),
+                        sha256: fingerprint(1),
+                    }],
+                }]
+            } else {
+                vec![]
+            }
+        );
+        assert_eq!(
+            paired.unavailable,
+            if can_hand_over {
+                vec![UnavailableHostInfo {
+                    id: unavailable.host_id,
+                    name: "Jump host".into(),
+                    reason: HandoverReasonInfo::ProxyJump,
+                }]
+            } else {
+                vec![]
+            }
+        );
+        // Pairing always persists only the host the user approved.
+        fixture.expect_roster(&[main]).await;
+    }
+}
+
+#[tokio::test]
+async fn handover_apply_persists_selected_restricted_hosts_and_same_controller_changes() {
+    let fixture = Fixture::new();
+    let from = offer().host.host_id;
+    let other_mac = handed_host(3, "other-controller.local").host_id;
+    let removed = handed_host(4, "removed.local");
+    let changed = handed_host(5, "changed.local");
+    let untouched = handed_host(6, "untouched.local");
+    let excluded = handed_host(7, "excluded.local");
+    let another = handed_host(8, "other-mac-host.local");
+    let latest = handed_host(9, "new.local");
+    let (reply, _) = approved(&offer(), "direct.local");
+    fixture
+        .pair(&offer(), "SHA256:offer", Some(reply))
+        .await
+        .unwrap();
+
+    for (controller, hosts, count) in [
+        (
+            from,
+            vec![
+                removed.clone(),
+                changed.clone(),
+                untouched.clone(),
+                excluded.clone(),
+            ],
+            3,
+        ),
+        (other_mac, vec![another.clone()], 1),
+    ] {
+        let plan = handover::decode_bundle(&fixture.sessions, &update(controller, hosts)).unwrap();
+        handover::add_handover_hosts(
+            &fixture.sessions,
+            plan.new.into_iter().take(count).collect(),
+            Some(plan.preview_id),
+        )
+        .unwrap();
+    }
+
+    // Reopen the core and test through its command surface, using the persisted roster
+    // and controller associations from the first run.
+    let (dials, _serving) = mpsc::unbounded_channel();
+    let (endpoints, mut observed) = mpsc::unbounded_channel();
+    let reopened = fixture.reopen(ServeDialer {
+        pipe: PeerDialer(dials),
+        endpoints,
+        pending_key: Arc::default(),
+    });
+    let mut new_endpoint = changed.clone();
+    new_endpoint.name = "Renamed on Mac".into();
+    new_endpoint.targets[0].host = "new-target.local".into();
+    new_endpoint.host_keys[0].sha256 = fingerprint(2);
+    let text = update(
+        from,
+        vec![new_endpoint.clone(), untouched.clone(), latest.clone()],
+    );
+    let before = fs::read(&fixture.events.file).unwrap();
+    let plan = handover::decode_bundle(&reopened, &text).unwrap();
+    assert_eq!(plan.from, from);
+    assert_eq!(plan.new.len(), 1);
+    assert_eq!(plan.new[0].id, latest.host_id);
+    assert_eq!(plan.new[0].targets[0].host, "new.local");
+    assert_eq!(plan.removed, [removed.host_id]);
+    assert_eq!(plan.changed, [changed.host_id]);
+    assert!(plan.unavailable.is_empty());
+    assert_eq!(fs::read(&fixture.events.file).unwrap(), before);
+
+    // A substituted or stale target cannot write a roster.
+    let mut unapproved = plan.new[0].clone();
+    unapproved.targets[0].host = "not-in-the-bundle.local".into();
+    assert!(matches!(
+        handover::add_handover_hosts(&reopened, vec![unapproved], Some(plan.preview_id)),
+        Err(CommandError::Pairing {
+            reason: statglass_ipc::error::PairingFailure::Invalid,
+            ..
+        })
+    ));
+    assert_eq!(fs::read(&fixture.events.file).unwrap(), before);
+    handover::add_handover_hosts(&reopened, plan.new, Some(plan.preview_id)).unwrap();
+
+    expect_handover_roster(
+        &reopened,
+        [
+            (from, None, false),
+            (removed.host_id, Some(from), true),
+            (changed.host_id, Some(from), false),
+            (untouched.host_id, Some(from), false),
+            (another.host_id, Some(other_mac), false),
+            (latest.host_id, Some(from), false),
+        ],
+    )
+    .await;
+    assert_eq!(
+        handover::decode_bundle(&reopened, &text).unwrap().changed,
+        []
+    );
+    demand(&reopened, changed.host_id, DemandLevel::Compact).await;
+    let (endpoint, target) = timeout(WAIT, observed.recv()).await.unwrap().unwrap();
+    assert_eq!(target.host, "new-target.local");
+    assert_eq!(endpoint.host_keys[0].sha256, fingerprint(2));
+    assert_eq!(
+        endpoint.command,
+        RemoteCommand::Restricted {
+            forced: ForcedToken::Serve
+        }
+    );
+}
+
+async fn expect_handover_roster<const N: usize>(
+    sessions: &Sessions,
+    expected: [(HostId, Option<HostId>, bool); N],
+) {
+    let rows = sessions.call(MobileCall::ListRemoteHosts).await.unwrap();
+    let actual: Vec<_> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["id"].clone(),
+                row["source_mac"].clone(),
+                row["removed_by_controller"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        actual,
+        expected.map(|(id, mac, removed)| (json!(id), json!(mac), json!(removed)))
+    );
+}
+
+#[tokio::test]
+async fn handover_never_applies_a_replaced_preview_and_rejects_an_older_bundle_after_restart() {
+    let fixture = Fixture::new();
+    let from = offer().host.host_id;
+    let host = handed_host(2, "build.local");
+    let old = update_at(from, vec![host.clone()], 100);
+    let older = handover::decode_bundle(&fixture.sessions, &old).unwrap();
+    let latest =
+        handover::decode_bundle(&fixture.sessions, &update_at(from, vec![host], 200)).unwrap();
+    for id in [None, Some(older.preview_id)] {
+        let error = handover::add_handover_hosts(&fixture.sessions, vec![], id).unwrap_err();
+        assert!(matches!(
+            error,
+            CommandError::Pairing {
+                reason: statglass_ipc::error::PairingFailure::Invalid,
+                ..
+            }
+        ));
+    }
+    assert!(!fixture.events.file.exists());
+    handover::add_handover_hosts(&fixture.sessions, latest.new, Some(latest.preview_id)).unwrap();
+    let (dials, _serving) = mpsc::unbounded_channel();
+    let reopened = fixture.reopen(PeerDialer(dials));
+    let error = handover::decode_bundle(&reopened, &old).unwrap_err();
+    let CommandError::Pairing {
+        reason: statglass_ipc::error::PairingFailure::Invalid,
+        message,
+    } = error
+    else {
+        panic!("expected a typed invalid update");
+    };
+    assert!(message.contains("older than the last one from this Mac"));
+}
+
+#[tokio::test]
+async fn handover_wrong_code_types_and_missing_pins_are_typed_invalid() {
+    let fixture = Fixture::new();
+    let payload = offer();
+    let mut host = handed_host(2, "build.local");
+    let valid_update = update(payload.host.host_id, vec![host.clone()]);
+    host.host_keys[0].sha256 = "SHA256:bad".into();
+    let malformed_pin = update(payload.host.host_id, vec![host.clone()]);
+    host.host_keys.clear();
+    let invalid_update = update(payload.host.host_id, vec![host]);
+    for bad in [encode_payload(&payload), invalid_update, malformed_pin] {
+        assert!(matches!(
+            handover::decode_bundle(&fixture.sessions, &bad),
+            Err(CommandError::Pairing {
+                reason: statglass_ipc::error::PairingFailure::Invalid,
+                ..
+            })
+        ));
+    }
+    assert!(matches!(
+        preview(&valid_update, wall_ms()),
+        Err(CommandError::Pairing {
+            reason: statglass_ipc::error::PairingFailure::Invalid,
+            ..
+        })
+    ));
+    assert!(!fixture.events.file.exists());
+}
+
+#[tokio::test]
+async fn handover_pending_key_is_refused_until_retry_after_install() {
+    let mut fixture = Fixture::new();
+    let target = handed_host(2, "build.local");
+    let payload = PairingPayload {
+        can_hand_over: true,
+        ..offer()
+    };
+    let (mut reply, _) = approved(&payload, "direct.local");
+    if let PairReply::Approved { hosts, .. } = &mut reply {
+        hosts.push(target.clone());
+    }
+    let approval = fixture
+        .pair(&payload, "SHA256:offer", Some(reply))
+        .await
+        .unwrap();
+    fixture.pending_key.store(true, Ordering::Relaxed);
+    handover::add_handover_hosts(&fixture.sessions, approval.offered, None).unwrap();
+    demand(&fixture.sessions, target.host_id, DemandLevel::Compact).await;
+    let sessions = &fixture.sessions;
+    let changed = &fixture.events.status_changed;
+    let failure = wait_for_connection(
+        sessions,
+        changed,
+        target.host_id,
+        "failure",
+        "authentication",
+    )
+    .await;
+    assert!(failure["last_seen_ms"].is_null());
+    assert_eq!(failure["source_mac"], json!(payload.host.host_id));
+    let (endpoint, route) = fixture.endpoints.try_recv().unwrap();
+    assert_eq!(
+        endpoint.command,
+        RemoteCommand::Restricted {
+            forced: ForcedToken::Serve
+        }
+    );
+    assert_eq!(endpoint.host_keys[0].sha256, target.host_keys[0].sha256);
+    assert_eq!(route.host, target.targets[0].host);
+    fixture.pending_key.store(false, Ordering::Relaxed);
+    fixture
+        .sessions
+        .call(MobileCall::RetryRemoteHost {
+            host: target.host_id,
+        })
+        .await
+        .unwrap();
+    let mut dial = timeout(WAIT, fixture.serving.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let saved: Value = serde_json::from_slice(&fs::read(&fixture.events.file).unwrap()).unwrap();
+    dial.handshake(&serde_json::from_value(saved["hosts"][1].clone()).unwrap())
+        .await;
+    assert_eq!(
+        wait_for_connection(sessions, changed, target.host_id, "state", "connected").await["connection"]
+            ["route"],
+        "lan"
+    );
+    let removed =
+        handover::decode_bundle(&fixture.sessions, &update(payload.host.host_id, vec![])).unwrap();
+    assert_eq!(removed.removed, [target.host_id]);
+    handover::add_handover_hosts(&fixture.sessions, vec![], Some(removed.preview_id)).unwrap();
+    demand(&fixture.sessions, target.host_id, DemandLevel::Full).await;
+    timeout(WAIT, async {
+        loop {
+            if let statglass_proto::Message::Interest(interest) = dial.read().await
+                && interest.detail
+            {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 fn offer() -> PairingPayload {

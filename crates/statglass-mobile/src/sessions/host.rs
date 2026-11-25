@@ -417,6 +417,8 @@ fn remote_host(
     MobileRemoteHost {
         id: record.id,
         name: record.display_name,
+        source_mac: None,
+        removed_by_controller: host.removed_by_controller,
         os: record.info.os,
         targets: host.targets.clone(),
         open_error: None,

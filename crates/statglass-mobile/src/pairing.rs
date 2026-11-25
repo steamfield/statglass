@@ -7,13 +7,13 @@ use statglass_ipc::mobile::{
     PairingState,
 };
 use statglass_ipc::status::RemoteRoute;
-use statglass_proto::pairing::{BundleRoute, PairError, PairingPayload, parse_payload};
+use statglass_proto::pairing::{BundleRoute, PairError, PairReply, PairingPayload, parse_payload};
 use statglass_schema::HostId;
 use statglass_session::pairing::{self as session_pairing, PairingRefusal};
 use statglass_session::{Dialer, Endpoint, RemoteError, Route};
 use statglass_ssh::{EphemeralSigner, RusshDialer, Signer};
 
-use crate::sessions::Sessions;
+use crate::{handover, sessions::Sessions};
 
 #[cfg(test)]
 mod tests;
@@ -70,7 +70,7 @@ async fn pair_with_dialer<D: Dialer>(
     dialer: impl FnOnce(Arc<dyn Signer>) -> D,
 ) -> Result<PairedHost, CommandError> {
     let phone = sessions.phone_id()?;
-    let host = {
+    let (host, offered, unavailable) = {
         let payload = decode(text, wall_ms())?;
         if payload.host.host_id == phone {
             return Err(RemoteError::Identity("cannot pair this device to itself".into()).into());
@@ -78,18 +78,37 @@ async fn pair_with_dialer<D: Dialer>(
         let signer = EphemeralSigner::from_scalar(&payload.pairing_key)
             .map_err(|_| RemoteError::from(PairingRefusal::Rejected(PairError::Invalid)))?;
         let dialer = dialer(Arc::new(signer));
-        let (endpoint, _) =
+        let (endpoint, reply) =
             session_pairing::pair(&dialer, &payload, &device_key, device_name, model, phone)
                 .await?;
-        restricted_host(payload.host.host_id, payload.host.name, endpoint)?
+        let host = restricted_host(payload.host.host_id, payload.host.name, endpoint)?;
+        let (offered, unavailable) = match reply {
+            PairReply::Approved {
+                hosts, unavailable, ..
+            } if payload.can_hand_over => (
+                hosts
+                    .into_iter()
+                    .filter(|candidate| candidate.host_id != host.id && candidate.host_id != phone)
+                    .map(handover::offered_host)
+                    .collect(),
+                unavailable
+                    .into_iter()
+                    .map(handover::unavailable_host)
+                    .collect(),
+            ),
+            _ => (Vec::new(), Vec::new()),
+        };
+        (host, offered, unavailable)
     };
 
     let sessions = sessions.clone();
-    tokio::task::spawn_blocking(move || sessions.add_paired_host(host, &device_key))
-        .await
-        .map_err(|error| CommandError::Internal {
-            message: format!("saving the approved pairing: {error}"),
-        })?
+    tokio::task::spawn_blocking(move || {
+        sessions.add_paired_host(host, &device_key, offered, unavailable)
+    })
+    .await
+    .map_err(|error| CommandError::Internal {
+        message: format!("saving the approved pairing: {error}"),
+    })?
 }
 
 pub(crate) fn state(sessions: &Sessions) -> PairingState {

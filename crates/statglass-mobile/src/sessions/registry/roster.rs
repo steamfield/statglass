@@ -23,20 +23,32 @@ impl Registry {
             let run = state.run.as_ref().ok_or_else(not_started)?;
             run.desired
                 .iter()
-                .map(|host| match run.entries.get(&host.id) {
-                    Some(entry) => RemoteHostRow::Running(entry.clone()),
-                    None => RemoteHostRow::Unopened(Box::new(unopened_host(
-                        host,
-                        run.open_errors.get(&host.id),
-                    ))),
+                .map(|host| {
+                    let row = match run.entries.get(&host.id) {
+                        Some(entry) => RemoteHostRow::Running(entry.clone()),
+                        None => RemoteHostRow::Unopened(Box::new(unopened_host(
+                            host,
+                            run.open_errors.get(&host.id),
+                        ))),
+                    };
+                    (
+                        row,
+                        run.store.controllers.get(&host.id).copied(),
+                        host.removed_by_controller,
+                    )
                 })
                 .collect::<Vec<_>>()
         };
         Ok(rows
             .into_iter()
-            .map(|row| match row {
-                RemoteHostRow::Running(entry) => entry.remote_host(),
-                RemoteHostRow::Unopened(host) => *host,
+            .map(|(row, source_mac, removed)| {
+                let mut host = match row {
+                    RemoteHostRow::Running(entry) => entry.remote_host(),
+                    RemoteHostRow::Unopened(host) => *host,
+                };
+                host.source_mac = source_mac;
+                host.removed_by_controller = removed;
+                host
             })
             .collect())
     }

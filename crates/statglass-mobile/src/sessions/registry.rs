@@ -11,17 +11,19 @@ use statglass_session::{Dialer, RemoteSource, SourceOptions};
 use tokio::runtime::Handle;
 
 use crate::ffi::{CoreEvents, NativeSigner};
+use crate::handover::PendingHandover;
 use crate::host_store::HostStore;
 use crate::lifecycle::Lifecycle;
 
 use super::{
-    callback, current_device_key, endpoint,
+    callback, endpoint,
     host::{HostEntry, OpenError},
     internal,
     live::Live,
     observed_device_key, phone_id, validate_hosts,
 };
 
+mod handover;
 mod roster;
 #[cfg(test)]
 mod tests;
@@ -42,6 +44,8 @@ struct State {
     network: Option<LocalNetwork>,
     roster_events: VecDeque<Vec<HostRecord>>,
     sending_roster: bool,
+    handover: Option<PendingHandover>,
+    handover_id: u32,
 }
 
 struct Run {
@@ -170,61 +174,6 @@ impl Registry {
         Ok(())
     }
 
-    pub(super) fn update_hosts<T>(
-        self: &Arc<Self>,
-        pairing: Option<(HostId, &[u8])>,
-        change: impl FnOnce(&mut Vec<MobileHost>) -> Result<T, CommandError>,
-    ) -> Result<T, CommandError> {
-        let result = {
-            let _update = self.updates.lock_ok();
-            let (context, mut store, hosts, missing, result) = {
-                let state = self.state.lock_ok();
-                let run = state.run.as_ref().ok_or_else(not_started)?;
-                let mut hosts = run.desired.clone();
-                let result = change(&mut hosts)?;
-                validate_hosts(&hosts)?;
-                let missing: Vec<_> = hosts
-                    .iter()
-                    .filter(|host| {
-                        !run.entries.contains_key(&host.id) && !run.retiring.contains_key(&host.id)
-                    })
-                    .cloned()
-                    .collect();
-                (
-                    run.context.clone(),
-                    run.store.clone(),
-                    hosts,
-                    missing,
-                    result,
-                )
-            };
-            if let Some((_, key)) = pairing {
-                store = store.with_device_key(key);
-            } else if !hosts.is_empty()
-                && !store.has_device_key()
-                && let Some(key) = current_device_key(self.signer.as_deref())?
-            {
-                store = store.with_device_key(&key);
-            }
-            let new = self.open_hosts(&context, &missing);
-            // Commit the staged roster before publishing it or starting new sources.
-            // A failed save leaves the previous sessions, including a re-paired host, intact.
-            store.save(&hosts)?;
-            let mut state = self.state.lock_ok();
-            let network = state.network;
-            let run = state.run.as_mut().ok_or_else(not_started)?;
-            let re_paired = pairing
-                .map(|(id, _)| id)
-                .filter(|id| run.entries.contains_key(id));
-            run.store = store;
-            self.apply_hosts(run, hosts, new, network, re_paired);
-            state.queue_roster();
-            result
-        };
-        self.emit_rosters();
-        Ok(result)
-    }
-
     pub(super) fn phone_id(&self) -> Result<HostId, CommandError> {
         let state = self.state.lock_ok();
         Ok(state.run.as_ref().ok_or_else(not_started)?.context.phone)
@@ -284,9 +233,13 @@ impl Registry {
             .values()
             .filter(|entry| {
                 Some(entry.config.id) == re_paired
-                    || run
-                        .host(entry.config.id)
-                        .is_none_or(|host| host != &entry.config)
+                    || run.host(entry.config.id).is_none_or(|host| {
+                        // A controller mark is roster metadata. Keep the active session.
+                        host != &MobileHost {
+                            removed_by_controller: host.removed_by_controller,
+                            ..entry.config.clone()
+                        }
+                    })
             })
             .cloned()
             .collect();

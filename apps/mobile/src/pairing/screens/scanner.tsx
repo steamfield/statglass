@@ -12,33 +12,44 @@ const PERMISSION_STEPS = {
   undetermined: "priming",
 } as const;
 
+const PAIRING_CODE = {
+  prefix: "SGP1:",
+  title: "Scan a pairing code",
+  instructions: "Allow camera access to scan the QR code shown on the host.",
+  unavailable: "Paste the pairing code from the host to continue.",
+  denied:
+    "Allow camera access for StatGlass in Settings to scan a pairing code.",
+  label: "Pairing QR scanner",
+};
+
 export function Scanner({
   camera,
   setCamera,
   inspect,
   paste,
   cancel,
+  code = PAIRING_CODE,
 }: {
   camera: CameraStep;
   setCamera(step: CameraStep): void;
   inspect(code: string): void;
   paste(): void;
   cancel(): void;
+  code?: typeof PAIRING_CODE;
 }) {
   return (
     <>
       {!isDevice || camera === "unavailable" ? (
         <>
           <Text variant="title">Camera is unavailable</Text>
-          <Text variant="body">
-            Paste the pairing code from the host to continue.
-          </Text>
+          <Text variant="body">{code.unavailable}</Text>
         </>
       ) : (
         <CameraScanner
           camera={camera}
           setCamera={setCamera}
           inspect={inspect}
+          code={code}
         />
       )}
       <PairAction label="Paste code" secondary onPress={paste} />
@@ -51,10 +62,12 @@ function CameraScanner({
   camera,
   setCamera,
   inspect,
+  code,
 }: {
   camera: Exclude<CameraStep, "unavailable">;
   setCamera(step: CameraStep): void;
   inspect(code: string): void;
+  code: typeof PAIRING_CODE;
 }) {
   const [requesting, setRequesting] = useState(false);
   const [settingsError, setSettingsError] = useState(false);
@@ -132,9 +145,7 @@ function CameraScanner({
     return (
       <>
         <Text variant="title">Camera access is off</Text>
-        <Text variant="body">
-          Allow camera access for StatGlass in Settings to scan a pairing code.
-        </Text>
+        <Text variant="body">{code.denied}</Text>
         <PairAction label="Open Settings" onPress={openSettings} />
         {settingsError && (
           <Text variant="caption" accessibilityRole="alert">
@@ -148,10 +159,8 @@ function CameraScanner({
   if (camera === "priming") {
     return (
       <>
-        <Text variant="title">Scan a pairing code</Text>
-        <Text variant="body">
-          Allow camera access to scan the QR code shown on the host.
-        </Text>
+        <Text variant="title">{code.title}</Text>
+        <Text variant="body">{code.instructions}</Text>
         <PairAction label="Continue" disabled={requesting} onPress={request} />
       </>
     );
@@ -165,7 +174,7 @@ function CameraScanner({
           ref={view}
           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
           onBarcodeScanned={({ data }) => {
-            if (captured.current || !data.startsWith("SGP1:")) return;
+            if (captured.current || !data.startsWith(code.prefix)) return;
             captured.current = true;
             inspect(data);
           }}
@@ -175,7 +184,7 @@ function CameraScanner({
           }}
           // CameraView does not consume NativeWind classes.
           style={{ flex: 1 }}
-          accessibilityLabel="Pairing QR scanner"
+          accessibilityLabel={code.label}
         />
       </View>
     </>

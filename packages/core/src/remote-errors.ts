@@ -1,4 +1,8 @@
-import type { CommandError, PairingFailure } from "@core/generated/types";
+import type {
+  CommandError,
+  HandoverReasonInfo,
+  PairingFailure,
+} from "@core/generated/types";
 import { commandError, commandErrorText } from "./command-error";
 
 /** Recovery copy shared by the Mac and iPhone when a host stops monitoring. */
@@ -26,6 +30,18 @@ const PAIRING_FAILURE_TEXT: Record<PairingFailure, string> = {
   monitoring_off: "Remote monitoring is off on this host.",
   invalid: "The pairing data is invalid.",
 };
+
+const HANDOVER_REASON_TEXT: Record<HandoverReasonInfo, string> = {
+  proxy_jump: "SSH uses a jump host.",
+  proxy_command: "SSH uses a proxy command.",
+  lan_literal: "SSH uses a local IP address with no Tailscale route.",
+  no_host_key: "The Mac has no saved SSH host key.",
+  unresolvable: "The Mac couldn’t resolve its SSH alias.",
+};
+
+export function handoverReasonText(reason: HandoverReasonInfo): string {
+  return HANDOVER_REASON_TEXT[reason];
+}
 
 export function pairingAdvice(
   error: CommandError,
