@@ -560,6 +560,9 @@ test("an unsupported module link gives an unavailable state without reading hist
   expect(read).not.toHaveBeenCalled();
 });
 
+// A host that predates range totals sends none.
+const NO_TOTALS = { measured_ms: null, integral: null };
+
 test("the stat strip keys Avg and Peak to the unlabelled lead series in the host reply", async () => {
   const transport = createMockTransport({ autoTick: false });
   observeHistory(transport, async (request) => ({
@@ -571,12 +574,19 @@ test("the stat strip keys Avg and Peak to the unlabelled lead series in the host
           key: { metric: "cpu.total", labels: [["scope", "other"]] },
           avg: 88,
           peak: 99,
+          ...NO_TOTALS,
         },
-        { key: { metric: "cpu.system", labels: [] }, avg: 77, peak: 98 },
+        {
+          key: { metric: "cpu.system", labels: [] },
+          avg: 77,
+          peak: 98,
+          ...NO_TOTALS,
+        },
         {
           key: { metric: "cpu.total", labels: [] },
           avg: (request.to_ms ?? 0) - request.from_ms === HOUR_MS ? 12.5 : null,
           peak: (request.to_ms ?? 0) - request.from_ms === HOUR_MS ? 91 : null,
+          ...NO_TOTALS,
         },
       ],
     },

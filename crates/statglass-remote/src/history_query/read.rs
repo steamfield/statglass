@@ -243,6 +243,8 @@ fn per_key_stats(
                     key,
                     avg: stat.avg.map(|n| n as f32),
                     peak: stat.max.map(|n| n as f32),
+                    measured_ms: Some(stat.measured_ms),
+                    integral: (stat.measured_ms > 0).then_some(stat.integral),
                 });
             }
         }

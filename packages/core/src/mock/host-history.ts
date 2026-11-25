@@ -65,7 +65,10 @@ function eventModule({ detail }: Event): Module | undefined {
   }
 }
 
-/** Each unmerged series retains its own duration-weighted average and peak. */
+/**
+ * Each unmerged series retains its own duration-weighted average and peak, plus
+ * the measured time and the average times the measured seconds (range totals).
+ */
 function seriesStats(
   { series, bucket_ms: width }: HistoryPage,
   from: number,
@@ -82,7 +85,14 @@ function seriesStats(
       sum += avg * covered;
       if (max !== null) peak = Math.max(max, peak ?? max);
     }
-    return { key, avg: duration === 0 ? null : sum / duration, peak };
+    const measured = duration > 0;
+    return {
+      key,
+      avg: measured ? sum / duration : null,
+      peak,
+      measured_ms: duration,
+      integral: measured ? sum / 1000 : null,
+    };
   });
 }
 
@@ -286,9 +296,14 @@ function demoHistory(
         })),
       };
     }),
-    stats: result.data.stats.map(({ key, avg, peak }) => {
-      const sample = scale(key.metric);
-      return { key, avg: sample(avg), peak: sample(peak) };
+    stats: result.data.stats.map((stat) => {
+      const sample = scale(stat.key.metric);
+      return {
+        ...stat,
+        avg: sample(stat.avg),
+        peak: sample(stat.peak),
+        integral: sample(stat.integral),
+      };
     }),
   });
 }

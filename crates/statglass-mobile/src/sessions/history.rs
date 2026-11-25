@@ -55,6 +55,8 @@ fn page(answer: HistoryAnswer) -> HostHistoryPage {
                 key: stats.key,
                 avg: stats.avg,
                 peak: stats.peak,
+                measured_ms: stats.measured_ms,
+                integral: stats.integral,
             })
             .collect(),
         clamped: answer

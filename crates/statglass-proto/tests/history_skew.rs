@@ -29,6 +29,8 @@ fn history_answer(key: SeriesKey) -> HistoryAnswer {
             key,
             avg: Some(24.0),
             peak: Some(30.0),
+            measured_ms: Some(20_000),
+            integral: Some(480.0),
         }],
         clamped: vec![HistoryClamp::Points],
     }
@@ -194,4 +196,47 @@ fn a_future_clamp_with_detail_survives_with_the_rest_of_the_history_answer() {
             answer: Answer::History(answer)
         }
     );
+}
+
+#[test]
+fn range_totals_are_optional_in_both_directions() {
+    // What a host before range totals sent, and what a phone before them reads.
+    #[derive(Debug, PartialEq, serde::Serialize, Deserialize)]
+    struct LegacyStats {
+        key: SeriesKey,
+        avg: Option<f32>,
+        peak: Option<f32>,
+    }
+
+    let key = SeriesKey::parse("net.rx_total").unwrap();
+    let legacy = LegacyStats {
+        key: key.clone(),
+        avg: Some(24.0),
+        peak: Some(30.0),
+    };
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&legacy, &mut bytes).unwrap();
+    let decoded: WireSeriesStats = ciborium::from_reader(bytes.as_slice()).unwrap();
+    assert_eq!(
+        decoded,
+        WireSeriesStats {
+            key: key.clone(),
+            avg: Some(24.0),
+            peak: Some(30.0),
+            measured_ms: None,
+            integral: None,
+        }
+    );
+
+    let current = WireSeriesStats {
+        key,
+        avg: Some(24.0),
+        peak: Some(30.0),
+        measured_ms: Some(20_000),
+        integral: Some(480.0),
+    };
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&current, &mut bytes).unwrap();
+    let older: LegacyStats = ciborium::from_reader(bytes.as_slice()).unwrap();
+    assert_eq!(older, legacy);
 }

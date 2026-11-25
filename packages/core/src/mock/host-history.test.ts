@@ -73,6 +73,19 @@ describe("mock host history", () => {
     }
   });
 
+  it("reports range totals as the average times the measured seconds", async () => {
+    const series = [{ metric: "net.rx_total", labels: [] }];
+    const page = await unwrap(
+      demo().hostHistory({ ...request, series, from_ms: now - HOUR_MS })
+    );
+    const [stat] = page.stats;
+    expect(stat?.measured_ms).toBeGreaterThan(0);
+    expect(stat?.integral).toBeCloseTo(
+      (stat?.avg ?? 0) * ((stat?.measured_ms ?? 0) / 1000),
+      0
+    );
+  });
+
   it("moves a short range to the tier that still retains it", async () => {
     const to = now - 2 * DAY_MS;
     const page = await unwrap(

@@ -105,6 +105,8 @@ async fn the_host_page_keeps_points_gaps_stats_and_known_events_without_retainin
             key: cpu(),
             avg: Some(22.0),
             peak: Some(35.0),
+            measured_ms: Some(60_000),
+            integral: Some(1_320.0),
         }],
         clamped: vec![HistoryClamp::Bytes, HistoryClamp::Unknown],
     };
@@ -124,7 +126,7 @@ async fn the_host_page_keeps_points_gaps_stats_and_known_events_without_retainin
             }],
             "gaps": [gap],
             "events": [event, later],
-            "stats": [{"key": cpu(), "avg": 22.0, "peak": 35.0}],
+            "stats": [{"key": cpu(), "avg": 22.0, "peak": 35.0, "measured_ms": 60_000, "integral": 1_320.0}],
             "clamped": [{"kind": "bytes"}, {"kind": "unknown"}],
         })
     );

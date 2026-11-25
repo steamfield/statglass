@@ -4834,3 +4834,11 @@ Date: 2026-11-25. The user's decision. Updates RFC `plan/rfc-ios-app.md` section
 ### Decision
 
 Use one Add a host flow for offers from Pair iPhone on a Mac and from `sudo statglass-agent pair` on a host. Both offers support Scan QR and Paste code. The payload's `can_hand_over` field tells the phone whether the host can hand over other monitored hosts. The phone uses the OS field for display.
+
+## D-155: History answers carry range totals
+
+Date: 2026-11-25. Follows D-152. One-way door: additive and optional. Plan: `plans/deliver-ios-app.md` phase 12 (the Network page strip).
+
+### Decision
+
+`WireSeriesStats` in the D-152 history answer gains `measured_ms` and `integral`, both optional and omitted when absent, and `SeriesHistoryStats` carries them to the phone. The host fills them from `statglass-store`'s `range_stats`, the function behind the desktop's `query_series_stats`: `measured_ms` is the time in the range with a reading outside the gaps that apply to the metric, and `integral` is the average times the measured seconds, `None` when nothing was measured. The phone's Network page shows Downloaded and Uploaded from them, with the measured time when it is shorter than the range, as the desktop strip does. The phone never integrates bucket averages itself (`data-boundary.md`): a host that predates this sends neither field, and the phone shows no totals for it. An older decoder ignores the new fields and a newer one reads their absence as `None`; `statglass-proto/tests/history_skew.rs` covers both directions.

@@ -257,6 +257,12 @@ pub struct SeriesHistoryStats {
     pub key: SeriesKey,
     pub avg: Option<f32>,
     pub peak: Option<f32>,
+    /// Time in the range with a reading; `None` from a host that predates range totals.
+    #[specta(type = Option<JsSafeInt>)]
+    pub measured_ms: Option<i64>,
+    /// `avg` times the measured seconds: bytes for a bytes-per-second series. `None` when
+    /// nothing was measured or the host predates range totals.
+    pub integral: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]

@@ -3080,6 +3080,13 @@ export type SeriesHistoryStats = {
 	key: SeriesKey,
 	avg: number | null,
 	peak: number | null,
+	/**  Time in the range with a reading; `None` from a host that predates range totals. */
+	measured_ms: number | null,
+	/**
+	 *  `avg` times the measured seconds: bytes for a bytes-per-second series. `None` when
+	 *  nothing was measured or the host predates range totals.
+	 */
+	integral: number | null,
 };
 
 /**
