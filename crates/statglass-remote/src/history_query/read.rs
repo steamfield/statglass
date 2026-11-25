@@ -11,7 +11,7 @@ use statglass_store::{
 
 use super::{
     HISTORY_MAX_ANSWER_BYTES, HISTORY_MAX_CORE_SERIES, HISTORY_MAX_EVENTS, HISTORY_MAX_POINTS,
-    HISTORY_MAX_SERIES,
+    HISTORY_MAX_SERIES, HistoryGrid,
 };
 use crate::{HostServer, ServedHost};
 
@@ -52,7 +52,10 @@ impl HistoryQueryError {
 
 type Result<T> = std::result::Result<T, HistoryQueryError>;
 
-pub(super) fn answer<H: ServedHost>(server: &HostServer<H>, query: &HistoryQuery) -> Answer {
+pub(super) fn answer<H: ServedHost>(
+    server: &HostServer<H>,
+    query: &HistoryQuery,
+) -> (Answer, Option<HistoryGrid>) {
     let host = server.host().record().id;
     let hub = server.host().hub();
     let now = statglass_engine::wall_ms();
@@ -72,9 +75,9 @@ pub(super) fn answer<H: ServedHost>(server: &HostServer<H>, query: &HistoryQuery
             let rows = hub.recent_rows(host, from, to);
             (running || !rows.is_empty()).then_some(rows)
         },
-        |key, width| hub.history_hold_ms(key, width, query.from_ms),
+        |key, width, from| hub.history_hold_ms(key, width, from),
     )
-    .unwrap_or_else(HistoryQueryError::into_answer)
+    .unwrap_or_else(|error| (error.into_answer(), None))
 }
 
 fn read_history(
@@ -84,14 +87,20 @@ fn read_history(
     now: i64,
     closed_before: i64,
     recent: impl Fn(i64, i64) -> Option<Vec<BucketRow>>,
-    hold: impl Fn(&SeriesKey, i64) -> i64,
-) -> Result<Answer> {
+    hold: impl Fn(&SeriesKey, i64, i64) -> i64,
+) -> Result<(Answer, Option<HistoryGrid>)> {
     let catalog = Catalog::builtin();
     let (mut q, mut clamped, series_limit) = bounded_query(query, &catalog, host, now)?;
-    let (snapshot, mut events, complete_to_ms) = store.with_history_snapshot(|reader| {
+    let (snapshot, mut events, complete_to_ms, grid) = store.with_history_snapshot(|reader| {
         let coverage = reader.history_tier_coverage(host, q.to_ms)?;
         let tier = tier_for_budget(q.from_ms, q.to_ms, q.max_points, coverage);
         q.tier = TierChoice::Fixed(tier);
+        let grid = HistoryGrid::for_tier(tier, q.from_ms, q.to_ms);
+        if let Some(grid) = &grid {
+            let snapped = grid.query(query);
+            q.from_ms = snapped.from_ms;
+            q.to_ms = snapped.to_ms.unwrap_or(q.to_ms);
+        }
         let events = match query.events_for {
             Some(module) => reader.event_rows(
                 host,
@@ -116,7 +125,7 @@ fn read_history(
             }
             rows.unwrap_or_default()
         })?;
-        Ok((snapshot, events, complete_to_ms))
+        Ok((snapshot, events, complete_to_ms, grid))
     })?;
     if events.len() > HISTORY_MAX_EVENTS {
         events.remove(0);
@@ -128,6 +137,7 @@ fn read_history(
     let (mut read, durable_to_ms) = snapshot
         .merge_chart(q.max_points, closed_before)
         .map_err(HistoryStoreError::from)?;
+    let hold = |key: &SeriesKey, width| hold(key, width, q.from_ms);
     let reply = HistoryAnswer {
         tier: read.tier,
         bucket_ms: read.bucket_ms,
@@ -147,14 +157,15 @@ fn read_history(
             .collect(),
         clamped,
     };
-    bounded_reply(reply, q.max_points, |budget, reply| {
+    let answer = bounded_reply(reply, q.max_points, |budget, reply| {
         let (read, _) = snapshot
             .merge_chart(budget, closed_before)
             .map_err(HistoryStoreError::from)?;
         reply.bucket_ms = read.bucket_ms;
         reply.series = wire_series(&read, &hold);
         Ok(())
-    })
+    })?;
+    Ok((answer, grid))
 }
 
 fn bounded_query(
@@ -394,14 +405,14 @@ mod tests {
             events_for: None,
         };
         let run = |q: &HistoryQuery, now: i64, rows: Option<Vec<BucketRow>>| {
-            let answer = read_history(
+            let (answer, _) = read_history(
                 &store,
                 host.id,
                 q,
                 now,
                 now - 1_000,
                 |_, _| rows.clone(),
-                |_, width| width,
+                |_, width, _| width,
             )
             .unwrap();
             let Answer::History(answer) = answer else {
@@ -443,7 +454,7 @@ mod tests {
                 (Tier::S10, minute - 10_000),
                 (Tier::S10, open_from),
                 (Tier::S10, minute - 70_000),
-                (Tier::M15, minute),
+                (Tier::M15, floor_to(minute, 900_000)),
             ],
         );
     }
@@ -502,7 +513,7 @@ mod tests {
                 events_for: None,
             };
             let calls = Cell::new(0);
-            let answer = read_history(
+            let (answer, _) = read_history(
                 &store,
                 host.id,
                 &request,
@@ -510,7 +521,7 @@ mod tests {
                 now - 1_000,
                 |from, to| {
                     calls.set(calls.get() + 1);
-                    assert_eq!((from, to), (recent_start, now));
+                    assert_eq!((from, to), (recent_start, current_bucket));
                     Some(
                         [newest_closed, current_bucket]
                             .into_iter()
@@ -519,7 +530,7 @@ mod tests {
                             .collect(),
                     )
                 },
-                |_, width| width,
+                |_, width, _| width,
             )
             .unwrap();
             let Answer::History(answer) = answer else {
@@ -532,7 +543,7 @@ mod tests {
                     .points
                     .contains(&(newest_closed, 42.0, 20.0, 80.0))
             );
-            assert_eq!(answer.series[0].points.last().unwrap().0, current_bucket);
+            assert_eq!(answer.series[0].points.last().unwrap().0, newest_closed);
         }
     }
 }

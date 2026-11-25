@@ -373,16 +373,16 @@ fn history_leaves_a_hole_for_a_midrange_gap() {
     let cpu = [key("cpu.total")];
     let store = seed_by_retention(dir.path(), &cpu, NOW);
     let writer = store.writer().unwrap();
-    let server = server(store);
     let q = request(NOW - HOUR, NOW, &cpu, 500);
-    let before = ask(&server, q.clone());
+    // Sample each store state through a fresh server so this exercises the reader.
+    let before = ask(&server(store.clone()), q.clone());
     let start = NOW - HOUR / 2;
     let end = start + 10 * 10_000;
     let gap = statglass_schema::Gap::module_disabled(start, Some(end), Module::Cpu);
     writer.write_gap(host_record().id, gap).unwrap();
     writer.flush().unwrap();
 
-    let after = ask(&server, q);
+    let after = ask(&server(store), q);
     let points = &after.series[0].points;
     assert_eq!(after.gaps, [gap]);
     assert_eq!(before.series[0].points.len() - points.len(), 10);

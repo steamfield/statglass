@@ -98,9 +98,9 @@ fn unsupported() -> Answer {
 impl<H: ServedHost> HostServer<H> {
     pub(crate) fn answer_query(&self, session: u64, query: Query) -> Answer {
         match query {
-            Query::History(query) => self
-                .history_limits
-                .answer(&query, |query| crate::history_query::answer(self, query)),
+            Query::History(query) => self.history_limits.answer(self.history(), &query, |query| {
+                crate::history_query::answer(self, query)
+            }),
             Query::NetworkAddresses => Answer::NetworkAddresses(self.host().network_addresses()),
             Query::UsageByApp {
                 from_ms,

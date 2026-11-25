@@ -185,6 +185,9 @@ impl<H: ServedHost> ServerProvider for HostServer<H> {
     fn answer(&self, session: u64, query: Query) -> Answer {
         self.answer_query(session, query)
     }
+    fn history_limits(&self) -> Option<&HistoryLimits> {
+        Some(&self.history_limits)
+    }
     fn end_session(&self, session: u64) {
         self.release_queries(session);
     }
