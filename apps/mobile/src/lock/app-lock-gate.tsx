@@ -10,6 +10,7 @@ import {
   nextLockState,
   type UnlockResult,
 } from "./lock-state";
+import { useSnapshotCover } from "./snapshot-cover";
 
 async function authenticateToUnlock(): Promise<UnlockResult> {
   try {
@@ -65,6 +66,7 @@ function useAppLock(enabled: boolean) {
 /** Blocks touch and VoiceOver access to the stack while it is covered. */
 export function AppLockGate({ children }: { children: ReactNode }) {
   const enabled = usePhoneSettings((s) => s.appLock);
+  useSnapshotCover(enabled);
   const { covered, active, prompting, error, unlock } = useAppLock(enabled);
   const tint = useColorScheme() === "dark" ? "dark" : "light";
 

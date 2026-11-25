@@ -1,24 +1,150 @@
 import Foundation
+import Network
+import os
 import UIKit
 
-/// Maps the app's state and network path onto the core (phase 4 lane b):
-/// `didEnterBackground` begins a background task, awaits `MobileCore.quiesce()` and ends
-/// the task when it resolves or expires; `willEnterForeground` calls `resume()`;
-/// `NWPathMonitor` updates call `pathChanged(NetworkPath)`. Nothing here blocks the main
-/// thread.
-final class AppLifecycle {
-  func start() {}
+/// Issues app and network transitions off the main thread in notification order.
+final class AppLifecycle: @unchecked Sendable {
+  // Startup and teardown use this queue too, so a reload releases the old core
+  // before the next module starts opening mirrors.
+  static let coreQueue = DispatchQueue(label: "app.statglass.core", qos: .userInitiated)
 
-  func stop() {}
+  private let calls: DispatchGroup
+  private let monitor = NWPathMonitor()
+  private var observers: [NSObjectProtocol] = []
+  // Accessed on coreQueue after initialization.
+  private var core: MobileCore?
+
+  init(core: MobileCore, calls: DispatchGroup) {
+    self.core = core
+    self.calls = calls
+  }
+
+  func start() {
+    let center = NotificationCenter.default
+    observers = [
+      center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.quiesce() }
+      },
+      center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+        Self.coreQueue.async { [weak self] in
+          _ = self?.core?.resume()
+        }
+      },
+    ]
+    monitor.pathUpdateHandler = { [weak self] path in
+      _ = self?.core?.pathChanged(path: NetworkPath(
+        satisfied: path.status == .satisfied,
+        expensive: path.isExpensive,
+        constrained: path.isConstrained
+      ))
+    }
+    monitor.start(queue: Self.coreQueue)
+  }
+
+  func stop() {
+    dispatchPrecondition(condition: .onQueue(Self.coreQueue))
+    monitor.cancel()
+    monitor.pathUpdateHandler = nil
+    observers.forEach(NotificationCenter.default.removeObserver)
+    observers.removeAll()
+    core = nil
+  }
+
+  @MainActor
+  private func quiesce() {
+    let app = UIApplication.shared
+    var task = UIBackgroundTaskIdentifier.invalid
+    let end: @MainActor @Sendable () -> Void = {
+      guard task != .invalid else { return }
+      app.endBackgroundTask(task)
+      task = .invalid
+    }
+
+    task = app.beginBackgroundTask(withName: "StatGlass quiesce", expirationHandler: end)
+    Self.coreQueue.async { [weak self] in
+      guard let self, let core else {
+        DispatchQueue.main.async(execute: end)
+        return
+      }
+      _ = core.quiesce()
+      // Teardown drains this call off-main before starting a replacement core.
+      calls.enter()
+      Task.detached { [weak core, calls] in
+        var waitingCore = core
+        _ = await waitingCore?.quiesced()
+        waitingCore = nil
+        calls.leave()
+        await end()
+      }
+    }
+  }
 }
 
-/// A blur over the key window while the app is inactive, so the app switcher snapshot
-/// shows no data. Shown only while enabled (the app lock is on), per RFC 3.8
-/// (phase 4 lane b).
+/// Covers foreground windows before UIKit captures the app switcher snapshot.
 final class SnapshotCover {
-  var enabled = false
+  private let enabledFlag = OSAllocatedUnfairLock(initialState: false)
+  private var observers: [NSObjectProtocol] = []
+  @MainActor private var covers: [UIVisualEffectView] = []
 
-  func start() {}
+  var enabled: Bool {
+    get { enabledFlag.withLock { $0 } }
+    set {
+      let previous = enabledFlag.withLock {
+        let previous = $0
+        $0 = newValue
+        return previous
+      }
+      guard previous != newValue else { return }
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        if !enabled {
+          removeCovers()
+        } else if UIApplication.shared.applicationState == .inactive {
+          showCovers()
+        }
+      }
+    }
+  }
 
-  func stop() {}
+  func start() {
+    let center = NotificationCenter.default
+    observers = [
+      center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.showCovers() }
+      },
+      center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.removeCovers() }
+      },
+    ]
+  }
+
+  func stop() {
+    observers.forEach(NotificationCenter.default.removeObserver)
+    observers.removeAll()
+    enabledFlag.withLock { $0 = false }
+    DispatchQueue.main.async { self.removeCovers() }
+  }
+
+  @MainActor
+  private func showCovers() {
+    guard enabled, covers.isEmpty else { return }
+    for case let scene as UIWindowScene in UIApplication.shared.connectedScenes
+    where scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive {
+      for window in scene.windows where !window.isHidden {
+        let cover = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        cover.frame = window.bounds
+        cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        cover.isUserInteractionEnabled = false
+        window.addSubview(cover)
+        covers.append(cover)
+      }
+    }
+  }
+
+  @MainActor
+  private func removeCovers() {
+    covers.forEach { $0.removeFromSuperview() }
+    covers.removeAll()
+  }
 }
