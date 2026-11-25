@@ -1,5 +1,5 @@
 import type { HostId, RemoteHostStatus } from "@core/generated/types";
-import { createLiveSession } from "@core/live-session";
+import { createLiveSession, onLiveHostChanged } from "@core/live-session";
 import { POPOVER_CARD_SERIES } from "@core/popover/series";
 import { MINUTE_MS } from "@core/time-grid";
 import { AppState } from "react-native";
@@ -47,7 +47,7 @@ export function subscribeHostLive(
 ) {
   let visible = AppState.currentState === "active";
   let release: (() => void) | undefined;
-  let parked = false;
+  let parked: "background" | "host-changed" | undefined;
   let notifyVisible: ((visible: boolean) => void) | undefined;
   const start = () => {
     const held = store.getState();
@@ -111,23 +111,22 @@ export function subscribeHostLive(
       return;
     }
     if (!active && release) {
-      parked = true;
+      parked = "background";
       release();
     }
     if (active && parked) {
-      parked = false;
-      session?.retry();
+      const shouldRetry =
+        parked === "host-changed" ||
+        !store.getState().subscribeFailure?.terminal;
+      parked = undefined;
+      if (shouldRetry) session?.retry();
     }
     notifyVisible?.(active);
   });
-  const stopHostsChanged = transport.onHostsChanged(({ hosts }) => {
-    if (
-      !session ||
-      !hosts.some((record) => record.id === host && !record.is_local)
-    )
-      return;
+  const stopHostsChanged = onLiveHostChanged(transport, host, () => {
+    if (!session) return;
     if (visible) session.retry();
-    else parked = true;
+    else parked = "host-changed";
   });
   return () => {
     appState.remove();

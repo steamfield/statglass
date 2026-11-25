@@ -1,4 +1,4 @@
-import type { RemoteHostStatus } from "./generated/types";
+import type { CommandError, RemoteHostStatus } from "./generated/types";
 import { createLiveSession, initialLiveSessionState } from "./live-session";
 import { ringLoading, seriesWindow } from "./live-state";
 import { MOCK_HOST_ID } from "./mock/fixtures";
@@ -226,15 +226,15 @@ it("backs off after a typed command failure and waits for terminal host status t
   if (!remote) throw new Error("Missing remote host fixture");
   const host = remote.config.id;
   let status = { ...remote.status };
-  const missing: LiveSubscription = {
-    info: { status: "error", error: { kind: "unknown_host", host } },
+  const busy: LiveSubscription = {
+    info: { status: "error", error: { kind: "remote_busy", message: "Busy" } },
     unsubscribe() {},
   };
   const subscribe = vi
     .spyOn(transport, "subscribeLive")
-    .mockResolvedValueOnce(missing)
-    .mockResolvedValueOnce(missing)
-    .mockResolvedValueOnce(missing);
+    .mockResolvedValueOnce(busy)
+    .mockResolvedValueOnce(busy)
+    .mockResolvedValueOnce(busy);
   const session = startSession(transport, host, () => status);
   try {
     await advance(499);
@@ -261,3 +261,36 @@ it("backs off after a typed command failure and waits for terminal host status t
     transport.dispose();
   }
 });
+
+it.each([
+  { kind: "unknown_host", host: MOCK_HOST_ID },
+  { kind: "remote_auth", message: "Sign-in failed" },
+  { kind: "remote_identity", message: "Different host" },
+  { kind: "host_key_unknown", message: "Host key unknown" },
+  { kind: "remote_incompatible", message: "Incompatible host" },
+  { kind: "remote_unsupported", message: "Live streaming unavailable" },
+] satisfies CommandError[])(
+  "stops after $kind until the source is rebound",
+  async (error) => {
+    const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+    const subscribe = vi
+      .spyOn(transport, "subscribeLive")
+      .mockResolvedValueOnce({
+        info: { status: "error", error },
+        unsubscribe() {},
+      });
+    const session = startSession(transport);
+    try {
+      await advance(20_000);
+      expect(session.state().subscribeFailure?.error).toEqual(error);
+      expect(subscribe).toHaveBeenCalledTimes(1);
+      session.retry();
+      await advance(0);
+      expect(subscribe).toHaveBeenCalledTimes(2);
+      expect(session.state().subscribeFailure).toBeNull();
+    } finally {
+      session.stop();
+      transport.dispose();
+    }
+  }
+);

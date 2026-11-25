@@ -1,5 +1,6 @@
 import { commandError } from "./command-error";
 import type {
+  CommandError,
   HostId,
   LiveMsg,
   RemoteHostStatus,
@@ -15,11 +16,9 @@ import {
 } from "./live-state";
 import { failureReason } from "./remote-errors";
 import { MINUTE_MS } from "./time-grid";
-import type {
-  LiveOptions as LiveRequest,
-  LiveSubscription,
-  Transport,
-} from "./transport";
+import type { LiveOptions, LiveSubscription, Transport } from "./transport";
+
+type LiveRequest = LiveOptions & { backfillMs: number };
 
 /** Delays after a failed subscribe, capped at the last step. */
 const RETRY_MS = [500, 1000, 2000, 5000];
@@ -31,6 +30,16 @@ const STALE_INTERVALS = 3;
  */
 const RECONNECT_INTERVALS = 3;
 
+// These replies require a change to the registered host before another attempt.
+const TERMINAL_SUBSCRIBE_ERRORS = new Set<CommandError["kind"]>([
+  "unknown_host",
+  "remote_auth",
+  "remote_identity",
+  "host_key_unknown",
+  "remote_incompatible",
+  "remote_unsupported",
+]);
+
 export interface LiveSessionState extends HostLive {
   /** The most recent subscription's inline catch-up window. */
   recentMs: number | null;
@@ -41,7 +50,12 @@ export interface LiveSessionState extends HostLive {
   awaitingFrame: boolean;
   /** Number of watchdog replacements since the last frame. */
   watchdogAttempt: number;
-  subscribeFailure: { error: unknown; reason: string; first: boolean } | null;
+  subscribeFailure: {
+    error: unknown;
+    reason: string;
+    first: boolean;
+    terminal: boolean;
+  } | null;
   terminal: RemoteHostStatus | null;
 }
 
@@ -234,17 +248,21 @@ class LiveSession<S extends LiveSessionState> {
   private failed(attempt: number, error: unknown) {
     this.disconnect();
     const reason = failureReason(error, "Couldn’t start live updates.");
-    const key = `${commandError(error)?.kind ?? ""}:${reason}`;
+    const kind = commandError(error)?.kind;
+    const terminal = kind !== undefined && TERMINAL_SUBSCRIBE_ERRORS.has(kind);
+    const key = `${kind ?? ""}:${reason}`;
     const first = !this.loggedFailures.has(key);
     this.loggedFailures.add(key);
     this.publish({
       ...settleSubscribe(this.state),
       connection: "reconnecting",
       awaitingFrame: true,
-      subscribeFailure: { error, reason, first },
+      subscribeFailure: { error, reason, first, terminal },
     });
-    this.hostIsTerminal();
-    this.scheduleRetry(attempt);
+    if (!terminal) {
+      this.hostIsTerminal();
+      this.scheduleRetry(attempt);
+    }
   }
 
   private accept(sub: LiveSubscription, attempt: number, current: number) {
@@ -281,7 +299,7 @@ class LiveSession<S extends LiveSessionState> {
         prepareCatchUp(
           this.state,
           this.deps.clock.now(),
-          this.request.backfillMs ?? MINUTE_MS
+          this.request.backfillMs
         )
       )
     );
@@ -308,6 +326,7 @@ class LiveSession<S extends LiveSessionState> {
       ...this.state,
       connection: "reconnecting",
       awaitingFrame: true,
+      subscribeFailure: null,
       watchdogAttempt:
         this.state.watchdogAttempt + Number(watchdogExpired && !blocked),
     });
@@ -328,4 +347,41 @@ export function createLiveSession<S extends LiveSessionState>(
 ): { stop(): void; retry(): void } {
   const session = new LiveSession(host, request, deps);
   return { stop: () => session.stop(), retry: () => session.retry() };
+}
+
+/** Filter roster snapshots to changes to the subscribed host while it is registered. */
+export function onLiveHostChanged(
+  transport: Pick<Transport, "getHost" | "onHostsChanged">,
+  host: HostId,
+  onChange: () => void
+): () => void {
+  let previous: string | null | undefined;
+  let stopped = false;
+  const unlisten = transport.onHostsChanged(({ hosts }) => {
+    if (stopped) return;
+    const record = hosts.find(({ id }) => id === host);
+    const next = record ? JSON.stringify(record) : null;
+    const changed =
+      previous !== undefined && next !== null && next !== previous;
+    previous = next;
+    if (changed) onChange();
+  });
+  const logReadError = (error: unknown) => {
+    if (!stopped)
+      console.error("[live] could not read host record", {
+        hostId: host,
+        error,
+      });
+  };
+  void transport.getHost(host).then((result) => {
+    // An event establishes the baseline if it arrives before the lookup reply.
+    if (stopped || previous !== undefined) return;
+    if (result.status === "ok") previous = JSON.stringify(result.data);
+    else if (result.error.kind === "unknown_host") previous = null;
+    else logReadError(result.error);
+  }, logReadError);
+  return () => {
+    stopped = true;
+    unlisten();
+  };
 }

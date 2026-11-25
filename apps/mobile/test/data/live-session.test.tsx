@@ -175,10 +175,10 @@ test("registration leaves a backgrounded phone unsubscribed until it is active",
     scenarios: ["hosts-dashboard"],
   });
   try {
-    const remote = (await transport.listRemoteHosts()).find(
-      ({ status }) => status.state === "connected"
-    );
-    if (!remote) throw new Error("Missing connected remote fixture");
+    const remotes = await transport.listRemoteHosts();
+    const remote = remotes.find(({ status }) => status.state === "connected");
+    const other = remotes.find(({ config }) => config.id !== remote?.config.id);
+    if (!remote || !other) throw new Error("Missing remote fixtures");
     const subscribe = jest.spyOn(transport, "subscribeLive");
     const view = await renderWithProviders(
       <ExpoRoot
@@ -189,8 +189,20 @@ test("registration leaves a backgrounded phone unsubscribed until it is active",
     );
     try {
       await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+      await act(() =>
+        transport.updateRemoteHost({
+          ...other.config,
+          name: "Renamed other host",
+        })
+      );
+      expect(subscribe).toHaveBeenCalledTimes(1);
       await appState("background");
-      await act(() => transport.emitHostsChanged());
+      await act(() =>
+        transport.updateRemoteHost({
+          ...remote.config,
+          name: "Renamed selected host",
+        })
+      );
       await advance(1000);
       expect(subscribe).toHaveBeenCalledTimes(1);
 
@@ -267,8 +279,12 @@ test("a recovered host shows Reconnecting while its stream is still in backoff",
       failure_kind: "authentication",
       last_seen_ms: null,
     });
+    const listenForStatus = jest.spyOn(transport, "onRemoteHostsChanged");
     const subscribe = jest.spyOn(transport, "subscribeLive").mockResolvedValue({
-      info: { status: "error", error: { kind: "unknown_host", host } },
+      info: {
+        status: "error",
+        error: { kind: "remote_busy", message: "Busy" },
+      },
       unsubscribe() {},
     });
     const view = await renderWithProviders(
@@ -277,6 +293,7 @@ test("a recovered host shows Reconnecting while its stream is still in backoff",
     );
     try {
       expect(await screen.findByText("Offline")).toBeOnTheScreen();
+      expect(listenForStatus).toHaveBeenCalledTimes(1);
       await advance(500);
       expect(subscribe).toHaveBeenCalledTimes(1);
 
@@ -292,6 +309,7 @@ test("a recovered host shows Reconnecting while its stream is still in backoff",
       expect(subscribe).toHaveBeenCalledTimes(1);
       await advance(1000);
       expect(subscribe).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Reconnecting")).toBeOnTheScreen();
     } finally {
       await view.unmount();
     }

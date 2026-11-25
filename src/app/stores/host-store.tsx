@@ -19,6 +19,7 @@ import {
   createLiveSession,
   initialLiveSessionState,
   type LiveSessionState,
+  onLiveHostChanged,
 } from "@core/live-session";
 import { ProcessInterest } from "@core/process-interest";
 import { hostKeys } from "@core/query-keys";
@@ -152,9 +153,11 @@ function useLiveSubscription(
     );
 
     // Registration can replace the source while the window is hidden, paused, or idle.
-    const stopHostsChanged = transport.onHostsChanged(({ hosts }) => {
-      if (hosts.some((h) => h.id === hostId && !h.is_local)) session.retry();
-    });
+    const stopHostsChanged = onLiveHostChanged(
+      transport,
+      hostId,
+      session.retry
+    );
     return () => {
       stopHostsChanged();
       // Child cleanups still withdraw their interest using the last stream id.

@@ -176,13 +176,13 @@ describe("a live channel that ends silently (#14)", () => {
     expect(subscribes(paused)).toHaveLength(1);
   });
 
-  it("rebinds a re-registered remote before the hidden window shows", async () => {
+  it("rebinds only the changed remote before the hidden window shows", async () => {
     const t = createMockTransport({
       autoTick: false,
-      scenarios: ["multi-host"],
+      scenarios: ["hosts-dashboard"],
     });
-    const remote = (await t.listRemoteHosts())[0];
-    if (!remote) throw new Error("Missing remote fixture");
+    const [remote, other] = await t.listRemoteHosts();
+    if (!remote || !other) throw new Error("Missing remote fixtures");
     setVisibility("hidden");
     t.setWindowVisible(false);
     const view = render(
@@ -195,7 +195,13 @@ describe("a live channel that ends silently (#14)", () => {
     try {
       await wait(0);
       expect(subscribes(t)).toHaveLength(1);
-      await act(() => t.emitHostsChanged());
+      await act(() =>
+        t.updateRemoteHost({ ...other.config, name: "Renamed other host" })
+      );
+      expect(subscribes(t)).toHaveLength(1);
+      await act(() =>
+        t.updateRemoteHost({ ...remote.config, name: "Renamed selected host" })
+      );
       expect(subscribes(t)).toHaveLength(2);
       act(() => {
         t.setWindowVisible(true);
@@ -249,6 +255,45 @@ describe("a live channel that ends silently (#14)", () => {
       client.setQueryData(hostKeys.remote(), [remote]);
       await wait(5000);
       expect(subscribes(t)).toHaveLength(2);
+    } finally {
+      view.unmount();
+      t.dispose();
+    }
+  });
+
+  it("opens a stream when its missing host is registered", async () => {
+    const t = createMockTransport({ autoTick: false, historyRows: 2 });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const id = "remote-added-later";
+    const view = render(
+      <TransportProvider transport={t}>
+        <HostStoreProvider hostId={id}>
+          <Probe />
+        </HostStoreProvider>
+      </TransportProvider>
+    );
+    try {
+      await wait(20_000);
+      expect(subscribes(t)).toHaveLength(1);
+      expect(view.getByTestId("state")).toHaveTextContent("reconnecting false");
+      await act(async () => {
+        const result = await t.addRemoteHost(
+          {
+            id,
+            name: "Added host",
+            lan: "later.local",
+            tailscale: null,
+            enabled: true,
+            mirror_budget_mb: 100,
+          },
+          false,
+          false,
+          "late-registration"
+        );
+        expect(result.status).toBe("ok");
+      });
+      expect(subscribes(t)).toHaveLength(2);
+      expect(view.getByTestId("state")).toHaveTextContent("live false");
     } finally {
       view.unmount();
       t.dispose();

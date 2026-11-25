@@ -91,6 +91,10 @@ describe("subscription setup races", () => {
       });
       const host = (await mock.listHosts()).find((h) => !h.is_local);
       if (!host) throw new Error("Missing remote fixture");
+      const remote = (await mock.listRemoteHosts()).find(
+        ({ config }) => config.id === host.id
+      );
+      if (!remote) throw new Error("Missing remote config");
       let subscriptions = 0;
       const subscribeLive: Transport["subscribeLive"] = (
         id,
@@ -126,6 +130,10 @@ describe("subscription setup races", () => {
       expect(paused).toBe(true);
       expect(subscriptions).toBe(1);
       await act(() => mock.emitHostsChanged());
+      expect(subscriptions).toBe(1);
+      await act(() =>
+        mock.updateRemoteHost({ ...remote.config, name: "Renamed remote" })
+      );
       expect(subscriptions).toBe(2);
       expect(paused).toBe(false);
       view.unmount();

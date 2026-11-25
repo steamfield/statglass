@@ -256,6 +256,10 @@ test("a remote source replacement resubscribes even before the old source sends 
   );
   await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
   await act(() => transport.emitHostsChanged());
+  expect(subscribe).toHaveBeenCalledTimes(1);
+  await act(() =>
+    transport.updateRemoteHost({ ...remote.config, name: "Renamed remote" })
+  );
   expect(subscribe).toHaveBeenCalledTimes(2);
   expect(subscribe.mock.lastCall?.[0]).toBe(remote.config.id);
 });

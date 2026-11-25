@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { HostId } from "@core/generated/types";
+import type { HostId, RemoteHostStatus } from "@core/generated/types";
 import {
   initialLiveSessionState,
   type LiveSessionState,
@@ -131,11 +131,17 @@ export function useLastFrame(host: HostId) {
   return useLiveSelection(host, (state) => state.lastFrame);
 }
 
-/** Show a terminal failure from the current remote host status. */
-export function useLiveFailure(host: HostId) {
-  const { data: status } = useRemoteStatus(host);
-  if (status?.state !== "error" || status.failure_kind === null) return null;
-  return hostStatusSummary(status, { nowMs: Date.now() }).label || null;
+/** Show a terminal subscribe reply or a failure from the caller's remote status. */
+export function useLiveFailure(
+  host: HostId,
+  remote: RemoteHostStatus | undefined
+) {
+  const failure = useLiveSelection(host, ({ subscribeFailure }) =>
+    subscribeFailure?.terminal ? subscribeFailure.reason : null
+  );
+  if (failure !== null) return failure;
+  if (remote?.state !== "error" || remote.failure_kind === null) return null;
+  return hostStatusSummary(remote, { nowMs: Date.now() }).label || null;
 }
 
 /** Read one host's remote status and refresh the shared list when it changes. */

@@ -31,7 +31,7 @@ export function useConnection(
     }),
     shallow
   );
-  const failure = useLiveFailure(host);
+  const failure = useLiveFailure(host, remote);
   const offline = statusError ?? failure ?? offlineLabel(remote);
 
   if (offline) return { state: "offline", label: offline } as const;
