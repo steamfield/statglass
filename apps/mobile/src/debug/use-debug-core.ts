@@ -1,6 +1,7 @@
 import { commandErrorText } from "@core/command-error";
 import { unwrap } from "@core/transport";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
+import { usePhoneSettings } from "@/data/phone-settings";
 import {
   type NativeTransport,
   openDebugCore,
@@ -11,8 +12,8 @@ type DebugCore =
   | { status: "error"; message: string }
   | { status: "ready"; transport: NativeTransport; keyLine: string };
 
-async function loadDebugCore(): Promise<DebugCore> {
-  const transport = await openDebugCore();
+async function loadDebugCore(syncOnCellular: boolean): Promise<DebugCore> {
+  const transport = await openDebugCore(syncOnCellular);
   if (transport === null) return { status: "missing" };
   const keyLine = await unwrap(transport.authorizedKeyLine("statglass-iphone"));
   return { status: "ready", transport, keyLine };
@@ -20,10 +21,14 @@ async function loadDebugCore(): Promise<DebugCore> {
 
 export function useDebugCore(): DebugCore {
   const [state, setState] = useState<DebugCore>({ status: "loading" });
+  const syncOnCellular = usePhoneSettings(
+    (settings) => settings.syncOnCellular
+  );
+  const load = useEffectEvent(() => loadDebugCore(syncOnCellular));
 
   useEffect(() => {
     let active = true;
-    void loadDebugCore().then(
+    void load().then(
       (core) => {
         if (active) setState(core);
       },

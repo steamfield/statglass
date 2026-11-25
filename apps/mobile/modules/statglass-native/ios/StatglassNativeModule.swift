@@ -16,6 +16,7 @@ public class StatglassNativeModule: Module {
   }
 
   private let snapshotCover = SnapshotCover()
+  private let signer = PhoneKeySigner(currentPhoneKey())
   private let state = OSAllocatedUnfairLock(initialState: State())
   private let calls = DispatchGroup()
   private let logger = Logger(subsystem: "app.statglass", category: "native-module")
@@ -27,7 +28,7 @@ public class StatglassNativeModule: Module {
     Events("onLive", "onCoreEvent")
 
     OnCreate {
-      let core = MobileCore(signer: PhoneKeySigner(currentPhoneKey()), events: EventsBridge(self))
+      let core = MobileCore(signer: signer, events: EventsBridge(self))
       state.withLock { $0.core = core }
       let lifecycle = AppLifecycle(core: core, calls: calls)
       self.lifecycle = lifecycle
@@ -64,7 +65,10 @@ public class StatglassNativeModule: Module {
       }
       do {
         let dataDir = try Self.prepareDataDirectory()
+        try signer.prepare()
         promise.resolve(core.start(dataDir: dataDir.path, configJson: configJson))
+      } catch let failure as NativeFailure {
+        promise.reject(failure.exception)
       } catch {
         promise.reject(error)
       }
@@ -93,7 +97,12 @@ public class StatglassNativeModule: Module {
   }
 
   public override func didStartListening(event: String) {
-    if event == "onLive" { state.withLock { $0.hasLiveListeners = true } }
+    if event == "onLive" {
+      state.withLock {
+        $0.hasLiveListeners = true
+        $0.loggedMissingLiveListener = false
+      }
+    }
   }
 
   public override func didStopListening(event: String) {
@@ -137,20 +146,21 @@ public class StatglassNativeModule: Module {
 /// Both PhoneKey implementations share the same synchronized Keychain storage.
 private final class PhoneKeySigner: NativeSigner, @unchecked Sendable {
   private let key: PhoneKey
-  private let logger = Logger(subsystem: "app.statglass", category: "phone-key")
+  private let cachedPoint = OSAllocatedUnfairLock<Data?>(initialState: nil)
 
   init(_ key: PhoneKey) {
     self.key = key
   }
 
-  func publicKey() -> Data {
-    do {
-      return try key.publicKey()
-    } catch {
-      // The FFI public-key callback cannot throw. Rust rejects an empty point.
-      logger.error("Could not read the phone public key: \(String(describing: error), privacy: .public)")
-      return Data()
+  func prepare() throws {
+    try cachedPoint.withLock { point in
+      if point == nil { point = try key.publicKey() }
     }
+  }
+
+  func publicKey() -> Data {
+    // Startup loads the key before the core can use this callback.
+    cachedPoint.withLock { $0 ?? Data() }
   }
 
   func sign(data: Data) throws -> Data {

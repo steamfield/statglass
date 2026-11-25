@@ -35,10 +35,10 @@ export interface StatglassNativeModule
   /** The core's `version()` envelope (`BuildInfo`); works before `start`. */
   version(): string;
   /**
-   * Starts the core with a `MobileConfig` as JSON. Swift supplies the data
-   * directory. Resolves to an envelope (`null`).
-   * @throws a {@link NativeModuleErrorKind}-coded error when the data
-   *   directory or the key cannot be prepared
+   * Starts the core with a `MobileConfig` as JSON. Swift prepares the data
+   * directory and phone key first. Resolves to an envelope (`null`).
+   * @throws an `ERR_STATGLASS_*` Expo error if the phone key cannot be prepared
+   * @throws a standard Expo error if data-directory setup fails
    */
   start(configJson: string): Promise<string>;
   /**

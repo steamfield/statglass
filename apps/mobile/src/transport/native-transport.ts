@@ -25,10 +25,13 @@ import { toRemoteHostRecord } from "./remote-hosts";
 
 /** The seam plus what only the native core does. */
 export interface NativeTransport extends PhoneTransport {
+  /** Replaces the configured hosts and serializes writes on this transport. */
   setHosts(hosts: MobileHost[]): Promise<CommandResult<null>>;
+  /** Updates whether the core syncs history over cellular. */
   setDataPolicy(policy: DataPolicy): Promise<CommandResult<null>>;
   /** The `authorized_keys` line for this phone's key. */
   authorizedKeyLine(comment: string): Promise<CommandResult<string>>;
+  /** Reads the running core's version and supported protocol range. */
   buildInfo(): Promise<CommandResult<BuildInfo>>;
   /** Ends every stream and listener; the core keeps running. */
   dispose(): void;
@@ -36,8 +39,8 @@ export interface NativeTransport extends PhoneTransport {
 
 /**
  * Starts the core with `config` and returns the transport over it.
- * @throws the module's typed error when Swift cannot prepare the data
- *   directory or the key
+ * @throws {NativeModuleError} if Swift rejects with an `ERR_STATGLASS_*` phone-key error
+ * @throws the original Expo error if data-directory setup fails
  */
 export async function startNativeTransport(
   native: StatglassNativeModule,
@@ -142,7 +145,9 @@ const debugCores = new WeakMap<
 >();
 
 /** Starts the empty core so the debug screen can read the key before connecting. */
-export function openDebugCore(): Promise<NativeTransport> | null {
+export function openDebugCore(
+  syncOnCellular: boolean
+): Promise<NativeTransport> | null {
   const native = getStatglassNative();
   if (native === null) return null;
   const existing = debugCores.get(native);
@@ -150,7 +155,7 @@ export function openDebugCore(): Promise<NativeTransport> | null {
   const starting = unwrap(
     startNativeTransport(native, {
       hosts: [],
-      data: { sync_on_cellular: false },
+      data: { sync_on_cellular: syncOnCellular },
     })
   ).catch((error: unknown) => {
     debugCores.delete(native);
@@ -158,6 +163,12 @@ export function openDebugCore(): Promise<NativeTransport> | null {
   });
   debugCores.set(native, starting);
   return starting;
+}
+
+/** The debug core if startup has begun. It stays available after the screen closes. */
+export function getDebugCore(): Promise<NativeTransport> | null {
+  const native = getStatglassNative();
+  return native === null ? null : (debugCores.get(native) ?? null);
 }
 
 /** Whether `transport` is the native one (it carries the native-only calls). */
