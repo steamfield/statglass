@@ -4,8 +4,8 @@
 //!
 //! Rules travel as individually decoded entries. `lenient` turns a whole query or answer
 //! into `Unknown` when any part fails to decode, so one rule from a newer build (a new
-//! condition) would otherwise make the whole list unreadable. An entry this build cannot
-//! decode is carried as raw CBOR and re-encodes unchanged.
+//! condition) would otherwise make the whole list unreadable. Entries this build cannot
+//! decode without losing information are carried as raw CBOR and re-encode unchanged.
 
 use serde::{Deserialize, Deserializer, Serialize};
 use statglass_schema::AlertRule;
@@ -33,9 +33,15 @@ impl<'de> Deserialize<'de> for RuleEntry {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Serde's untagged buffer rejects CBOR tags before trying either variant.
         let value = ciborium::Value::deserialize(deserializer)?;
+        // Serde can ignore fields added by a newer build. Keep the original when an
+        // edit from this build would otherwise lose any part of the rule.
         Ok(match value.deserialized::<AlertRule>() {
-            Ok(rule) => Self::Known(rule),
-            Err(_) => Self::Unknown(value),
+            Ok(rule)
+                if ciborium::Value::serialized(&rule).is_ok_and(|encoded| encoded == value) =>
+            {
+                Self::Known(rule)
+            }
+            _ => Self::Unknown(value),
         })
     }
 }

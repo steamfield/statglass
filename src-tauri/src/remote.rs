@@ -147,16 +147,24 @@ impl RemoteManager {
         local: HostId,
         host: HostId,
     ) -> Result<Arc<RemoteSource>, CommandError> {
-        if host != local {
+        if host == local {
+            return Err(CommandError::InvalidArgument {
+                message: "This Mac's alert rules are set in its Alerts page".into(),
+            });
+        }
+        {
             let saved = self.saved.lock_ok();
             let saved_host = saved.get(&host).ok_or(CommandError::UnknownHost { host })?;
-            if saved_host.is_linux() {
-                return self.source(host);
+            if !saved_host.is_linux() {
+                return Err(CommandError::InvalidArgument {
+                    message: format!(
+                        "Alert rules on {} are set on that Mac",
+                        saved_host.config.name
+                    ),
+                });
             }
         }
-        Err(CommandError::InvalidArgument {
-            message: "Alert rules on this host are set on that Mac".into(),
-        })
+        self.source(host)
     }
 
     pub fn sources(&self) -> Vec<Arc<RemoteSource>> {
@@ -400,11 +408,10 @@ use setup::{most_actionable, setup_step};
 pub use update_controls::*;
 pub use vitals::{HostVitals, MemoryPressure};
 #[cfg(test)]
-#[path = "alerts/remote_rules_tests.rs"]
-mod remote_rules_tests;
-#[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::alert_rules_test_source;
 
 #[cfg(test)]
 mod command_regressions {

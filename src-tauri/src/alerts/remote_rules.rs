@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::error::CommandError;
+use crate::remote::RemoteManager;
 use crate::state::AppState;
 
 /// The agent's opaque rule revision crosses IPC as a JavaScript number.
@@ -63,7 +64,15 @@ pub async fn remote_alert_rules(
     host: HostId,
 ) -> Result<RemoteAlertRules, CommandError> {
     let state = app.state::<AppState>();
-    let source = state.remotes.alert_rules_source(state.local, host)?;
+    read_alert_rules(&state.remotes, state.local, host).await
+}
+
+async fn read_alert_rules(
+    remotes: &RemoteManager,
+    local: HostId,
+    host: HostId,
+) -> Result<RemoteAlertRules, CommandError> {
+    let source = remotes.alert_rules_source(local, host)?;
     let rules = source
         .alert_rules()
         .await
@@ -81,22 +90,34 @@ pub async fn set_remote_alert_rules(
     keep: Vec<Uuid>,
 ) -> Result<RemoteAlertRules, CommandError> {
     let state = app.state::<AppState>();
-    let source = state.remotes.alert_rules_source(state.local, host)?;
-    replace_alert_rules(base_revision, rules, keep, async |revision, rules, keep| {
-        source.set_alert_rules(revision, rules, keep).await
-    })
+    write_alert_rules(
+        &state.remotes,
+        state.local,
+        host,
+        base_revision,
+        rules,
+        keep,
+    )
     .await
 }
 
-pub(crate) async fn replace_alert_rules(
+async fn write_alert_rules(
+    remotes: &RemoteManager,
+    local: HostId,
+    host: HostId,
     base_revision: RulesRevision,
     rules: Vec<AlertRule>,
     keep: Vec<Uuid>,
-    send: impl AsyncFnOnce(i64, Vec<RuleEntry>, Vec<Uuid>) -> statglass_remote::Result<HostAlertRules>,
 ) -> Result<RemoteAlertRules, CommandError> {
+    let source = remotes.alert_rules_source(local, host)?;
     let rules = rules.into_iter().map(RuleEntry::Known).collect();
-    let applied = send(base_revision.0, rules, keep)
+    let applied = source
+        .set_alert_rules(base_revision.0, rules, keep)
         .await
         .map_err(CommandError::from_alert_rules)?;
     Ok(applied.into())
 }
+
+#[cfg(test)]
+#[path = "remote_rules_tests.rs"]
+mod tests;

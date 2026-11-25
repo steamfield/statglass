@@ -42,7 +42,7 @@
       "statglass-query",
       "statglass-notify"
     ],
-    "dev": []
+    "dev": ["statglass-remote"]
   },
   "statglass-update": { "normal": [], "dev": [] },
   "statglass-query": { "normal": ["statglass-schema"], "dev": [] },
