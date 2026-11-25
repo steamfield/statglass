@@ -4,12 +4,14 @@
 //! error too.
 
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::{Map, Value};
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileCall, MobileConfig};
+use statglass_schema::lock::LockExt;
 use tokio::runtime::{Handle, Runtime};
+use tokio::sync::watch;
 
 use crate::envelope;
 use crate::ffi::{CoreEvents, NativeSigner, NetworkPath};
@@ -24,6 +26,8 @@ pub struct MobileCore {
     runtime: OnceLock<Runtime>,
     sessions: Arc<Sessions>,
     lifecycle: Arc<Lifecycle>,
+    /// Completion of the most recent quiesce, for [`quiesced`](Self::quiesced).
+    quiesced: Mutex<Option<watch::Receiver<bool>>>,
 }
 
 #[uniffi::export]
@@ -37,6 +41,7 @@ impl MobileCore {
             runtime: OnceLock::new(),
             sessions: Arc::new(Sessions::new(events)),
             lifecycle: Arc::new(Lifecycle::new()),
+            quiesced: Mutex::new(None),
         })
     }
 
@@ -47,13 +52,17 @@ impl MobileCore {
             let config: MobileConfig = parse("MobileConfig", &config_json)?;
             let runtime = self.runtime()?;
             let signer = Arc::new(NativeSignerAdapter::new(self.signer.clone()));
+            let data = config.data;
             self.sessions.start(
                 runtime,
                 PathBuf::from(data_dir),
                 config,
                 signer,
                 self.lifecycle.sync_policy(),
-            )
+            )?;
+            // The cellular setting decides the policy once the first path arrives.
+            self.lifecycle.set_data_policy(&*self.sessions, data);
+            Ok(())
         })
     }
 
@@ -91,19 +100,36 @@ impl MobileCore {
         envelope::encode(joined(task.await))
     }
 
-    /// Quiesces every session for backgrounding; resolves once in-flight mirror writes
-    /// have committed. Envelope data: `null`.
-    pub async fn quiesce(&self) -> String {
-        let Some(runtime) = self.runtime.get().map(|r| r.handle().clone()) else {
-            // Nothing started, so nothing to wait for.
+    /// Quiesces every session for backgrounding. The requests are issued before this
+    /// returns, so a `resume` called after it is never overtaken; [`quiesced`]
+    /// (Self::quiesced) waits for the mirror writes. Envelope data: `null`.
+    pub fn quiesce(&self) -> String {
+        envelope::run(|| {
+            let Some(runtime) = self.runtime.get().map(|r| r.handle().clone()) else {
+                // Nothing started, so nothing to wait for.
+                return;
+            };
+            let parked = self.lifecycle.quiesce(&*self.sessions);
+            let (done, wait) = watch::channel(false);
+            *self.quiesced.lock_ok() = Some(wait);
+            runtime.spawn(async move {
+                parked.await;
+                // No receiver left only means nobody is waiting any more.
+                let _ = done.send(true);
+            });
+        })
+    }
+
+    /// Resolves once the most recent [`quiesce`](Self::quiesce) has committed its
+    /// in-flight mirror writes, at once when there is none. Envelope data: `null`.
+    pub async fn quiesced(&self) -> String {
+        let Some(mut wait) = self.quiesced.lock_ok().clone() else {
             return envelope::encode(Ok(Value::Null));
         };
-        let quiesced = self.lifecycle.quiesce(&*self.sessions);
-        let task = runtime.spawn(async move {
-            quiesced.await;
-            Ok(Value::Null)
-        });
-        envelope::encode(joined(task.await))
+        // A closed channel means the waiting task ended, panicked or not; either way
+        // there is nothing left to wait for.
+        let _ = wait.wait_for(|done| *done).await;
+        envelope::encode(Ok(Value::Null))
     }
 
     /// Resumes every session after foregrounding, the open host first. Returns at once.
@@ -197,6 +223,72 @@ mod tests {
             parse_call("unsubscribe_live", &json!({ "stream": 7 }).to_string()),
             Ok(MobileCall::UnsubscribeLive { stream: 7 })
         );
+    }
+
+    struct NoKey;
+
+    impl NativeSigner for NoKey {
+        fn public_key(&self) -> Vec<u8> {
+            Vec::new()
+        }
+
+        fn sign(&self, _data: Vec<u8>) -> Result<Vec<u8>, crate::ffi::NativeSignerError> {
+            Err(crate::ffi::NativeSignerError::Unavailable {
+                message: "no key in this test".into(),
+            })
+        }
+    }
+
+    struct NoEvents;
+
+    impl CoreEvents for NoEvents {
+        fn live(&self, _stream: u32, _message_json: String) -> bool {
+            false
+        }
+
+        fn event(&self, _event_json: String) {}
+    }
+
+    fn core() -> Arc<MobileCore> {
+        MobileCore::new(Arc::new(NoKey), Arc::new(NoEvents))
+    }
+
+    fn ok_null(envelope: &str) -> bool {
+        serde_json::from_str::<Value>(envelope).ok()
+            == Some(json!({ "status": "ok", "data": null }))
+    }
+
+    #[test]
+    fn quiesce_returns_at_once_and_quiesced_resolves_without_sources() {
+        let core = core();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = json!({ "hosts": [], "data": { "sync_on_cellular": false } }).to_string();
+        assert!(ok_null(
+            &core.start(dir.path().display().to_string(), config)
+        ));
+
+        assert!(ok_null(&core.quiesce()));
+        let waited = futures_lite_block_on(core.quiesced());
+        assert!(ok_null(&waited), "{waited}");
+        assert!(ok_null(&core.resume()));
+    }
+
+    #[test]
+    fn quiesced_before_any_quiesce_resolves_at_once() {
+        let core = core();
+        assert!(
+            ok_null(&core.quiesce()),
+            "quiesce before start has nothing to park"
+        );
+        assert!(ok_null(&futures_lite_block_on(core.quiesced())));
+    }
+
+    /// Drives a future on a current-thread runtime, as Swift's await would.
+    fn futures_lite_block_on<F: std::future::Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("test runtime")
+            .block_on(future)
     }
 
     #[test]
