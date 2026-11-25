@@ -673,15 +673,15 @@ test("full process interest ranks grouped apps, shows the top ten, and stops on 
   await act(() => transport.tick());
   const expected = [
     "Xcode",
-    "Safari",
     "com.docker.backend",
-    "usernoted",
-    "CategoriesService",
-    "secd",
-    "AMPDeviceDiscoveryAgent",
-    "trustd",
-    "lsd",
+    "Safari",
     "Figma",
+    "kernel_task",
+    "node",
+    "WindowServer",
+    "Google Chrome",
+    "Code",
+    "mdworker_shared",
   ];
   await waitFor(() =>
     expect(

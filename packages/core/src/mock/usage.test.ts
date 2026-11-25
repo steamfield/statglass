@@ -61,10 +61,10 @@ describe("mockUsageByApp", () => {
       by: "cpu",
       limit: 2,
     });
-    expect(r.apps.map((a) => a.name)).toEqual(["clang", "Google Chrome"]);
-    expect(r.apps[1]?.cpu_avg_pct).toBe(40);
+    expect(r.apps.map((a) => a.name)).toEqual(["Google Chrome", "node"]);
+    expect(r.apps[0]?.cpu_avg_pct).toBe(40);
     // Root's processes are not readable: they are in nobody's row.
-    expect(r.total.cpu_avg_pct).toBeCloseTo(10 + 30 + 25 + 60 + 35 / 3);
+    expect(r.total.cpu_avg_pct).toBeCloseTo(10 + 30 + 25 + 70 / 3 + 35 / 3);
     expect(r.covered_ms).toBe(60_000);
   });
 
@@ -95,7 +95,7 @@ describe("mockUsageByApp", () => {
         ["disk.write_total", 100],
       ]),
     });
-    expect(r.other.cpu_avg_pct).toBeCloseTo(200 - 50 - 60 - 35 / 3);
+    expect(r.other.cpu_avg_pct).toBeCloseTo(200 - 50 - 70 / 3 - 35 / 3);
     expect(r.other.write_bytes).toBe(0);
     expect(r.other.clamped).toEqual(["disk"]);
     expect(r.other.gpu_avg_pct).toBeNull();

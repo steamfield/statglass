@@ -84,7 +84,7 @@ test("shows one accessible example and stops delivering frames while blurred", a
   });
   expect(screen.getAllByLabelText(/^Example host:/)).toHaveLength(1);
   const initialLabel =
-    "Example host: CPU 18%, memory 17.6 GB of 24 GB, network 38.4 MB/s down";
+    "Example host: CPU 18%, memory 17.6 GB of 24 GB, network 4.2 MB/s down";
   expect(screen.getByLabelText(initialLabel)).toBeOnTheScreen();
   expect(
     screen.queryByRole("button", { name: /CPU|Memory|Network/ })
