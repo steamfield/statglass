@@ -3,15 +3,41 @@
  * geometry both apps draw from it (paths in a 1000-wide viewBox, gap-edge
  * dots, the dash offset that keeps dashes on the data while it scrolls).
  */
-import type {
-  AnnotationModel,
-  ChartAnnotationData,
+import { splitGaps } from "@core/chart-math";
+import {
+  annotationsModel,
+  type ChartAnnotationData,
+  type PlacedAnnotation,
 } from "@core/widget-models/chart-annotation";
-import type { GapBandModel, GapSpan } from "@core/widget-models/gap-band";
+import {
+  type GapSpan,
+  gapBandsModel,
+  type PlacedGapBand,
+} from "@core/widget-models/gap-band";
 import type { Accent, ColorRef } from "@core/widget-models/tokens";
+import { scaleLinear } from "d3-scale";
+import { area, line } from "d3-shape";
 
 /** Width of the drawing in viewBox units; each renderer stretches it to its box. */
 export const STREAM_VIEWBOX_W = 1000;
+/** Line width in px when a series sets no `weight`. */
+export const DEFAULT_LINE_WEIGHT = 1.5;
+const DASH = [3, 2] as const;
+const DASH_PERIOD = DASH[0] + DASH[1];
+
+function seriesColors(step: StreamAreaSeries["step"]) {
+  return {
+    stroke: Object.freeze({ kind: "accent", step, ink: true } as const),
+    fill: Object.freeze({ kind: "accent", step, ink: false } as const),
+  };
+}
+
+const COLORS = {
+  1: seriesColors(1),
+  2: seriesColors(2),
+  3: seriesColors(3),
+  4: seriesColors(4),
+};
 
 /** One series of a {@link StreamAreaData}, drawn back to front. */
 export interface StreamAreaSeries {
@@ -102,19 +128,114 @@ export interface StreamAreaModel {
   windowMs: number;
   dashOffset: number;
   series: readonly StreamAreaSeriesModel[];
-  gaps: readonly GapBandModel[];
-  annotations: readonly AnnotationModel[];
+  gaps: readonly PlacedGapBand[];
+  annotations: readonly PlacedAnnotation[];
   ceilingLabel: string | null;
   windowLabel: string | null;
 }
 
-/**
- * The chart's geometry for a plot `widthPx` wide (0 until measured).
- * @throws {Error} until the chart lane implements it
- */
+interface Point {
+  x: number;
+  y: number;
+}
+
+/** The chart's geometry for a plot `widthPx` wide (0 until measured). */
 export function streamAreaModel(
-  _data: StreamAreaData,
-  _size: { widthPx: number }
-): StreamAreaModel {
-  throw new Error("not implemented");
+  data: StreamAreaData,
+  {
+    widthPx,
+    annotationScale = 1,
+  }: { widthPx: number; annotationScale?: number }
+) {
+  const { height, intervalMs, loading, series, tEndMs, yMax } = data;
+  let slots = 2;
+  for (const s of series) slots = Math.max(slots, s.values.length);
+  const windowMs = (slots - 1) * intervalMs;
+  // Move the dash pattern with the data while the path starts at the left edge.
+  const dashOffset =
+    widthPx > 0 && intervalMs > 0
+      ? (Math.round(tEndMs / intervalMs) * (widthPx / (slots - 1))) %
+        DASH_PERIOD
+      : 0;
+
+  return {
+    height,
+    slots,
+    windowMs,
+    dashOffset,
+    series: loading ? [] : drawSeries(series, slots, yMax, height),
+    gaps:
+      !loading && data.gaps?.length && tEndMs > 0
+        ? gapBandsModel(data.gaps, tEndMs - windowMs, tEndMs)
+        : [],
+    annotations: loading
+      ? []
+      : annotationsModel(
+          data.annotations,
+          tEndMs,
+          windowMs,
+          widthPx,
+          annotationScale
+        ),
+    ceilingLabel: data.ceilingLabel ?? null,
+    windowLabel: data.windowLabel ?? null,
+  } satisfies StreamAreaModel;
+}
+
+function drawSeries(
+  series: readonly StreamAreaSeries[],
+  slots: number,
+  yMax: number,
+  height: number
+) {
+  const x = scaleLinear()
+    .domain([0, slots - 1])
+    .range([0, STREAM_VIEWBOX_W]);
+  const y = scaleLinear()
+    .domain([0, yMax > 0 ? yMax : 1])
+    .range([height - 1, 1])
+    .clamp(true);
+  const lineGen = line<Point>()
+    .x((p) => p.x)
+    .y((p) => p.y);
+  const areaGen = area<Point>()
+    .x((p) => p.x)
+    .y0(height)
+    .y1((p) => p.y);
+
+  return series.map((s) => {
+    // Right-align shorter series so their last value still ends at "now".
+    const offset = slots - s.values.length;
+    const runs = splitGaps(s.values).map((run) =>
+      run.values.map((v, j) => ({ x: x(offset + run.start + j), y: y(v) }))
+    );
+    const filled = s.fill !== false;
+    const lines = runs.filter((pts) => pts.length > 1);
+    const linePath = lines.map((pts) => lineGen(pts) ?? "").join("");
+    const areaPath = filled
+      ? lines.map((pts) => areaGen(pts) ?? "").join("")
+      : "";
+    const edges: { xFrac: number; y: number }[] = [];
+    (s.edges !== false ? runs : []).forEach((pts, k) => {
+      const first = pts[0];
+      const last = pts[pts.length - 1];
+      if (first && (pts.length === 1 || k > 0)) {
+        edges.push({ xFrac: first.x / STREAM_VIEWBOX_W, y: first.y });
+      }
+      if (last && pts.length > 1 && k < runs.length - 1) {
+        edges.push({ xFrac: last.x / STREAM_VIEWBOX_W, y: last.y });
+      }
+    });
+    return {
+      key: s.key,
+      opacity: s.opacity ?? 1,
+      filled,
+      linePath,
+      areaPath,
+      edges,
+      ...COLORS[s.step],
+      dash: s.dash ? DASH : null,
+      weight: s.weight ?? DEFAULT_LINE_WEIGHT,
+    } satisfies StreamAreaSeriesModel;
+  });
 }

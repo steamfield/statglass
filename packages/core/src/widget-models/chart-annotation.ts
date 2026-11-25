@@ -2,6 +2,7 @@
  * The chart-annotation model: which labelled markers fall inside a chart's
  * window, and the row and position the shared marker layout gives each.
  */
+import { layoutMarkers } from "@core/chart-math";
 
 /** A labelled marker on a chart (power spikes, D-083); JSON-serializable. */
 export interface ChartAnnotationData {
@@ -30,16 +31,77 @@ export interface AnnotationModel {
   tone: string;
 }
 
+/** The fitted label box, including the side anchored at the marker. */
+export interface PlacedAnnotation extends AnnotationModel {
+  tsMs: number;
+  variant: NonNullable<ChartAnnotationData["variant"]>;
+  tone: "fg-subtle";
+  side: NonNullable<ChartAnnotationData["align"]>;
+  leftPx: number;
+  fitPx: number;
+  more: number;
+}
+
+const shown = (label: string, more: number) =>
+  more > 0 ? `${label} +${more}` : label;
+
 /**
  * The annotations inside the window ending at `tEndMs`, laid out through
- * `layoutMarkers` for a plot `widthPx` wide; markers outside it are dropped.
- * @throws {Error} until the chart lane implements it
+ * `layoutMarkers` for a plot `widthPx` wide. Scale the width estimate for
+ * larger captions. Markers outside the window are dropped.
  */
 export function annotationsModel(
-  _annotations: readonly ChartAnnotationData[] | undefined,
-  _tEndMs: number,
-  _windowMs: number,
-  _widthPx: number
-): AnnotationModel[] {
-  throw new Error("not implemented");
+  annotations: readonly ChartAnnotationData[] | undefined,
+  tEndMs: number,
+  windowMs: number,
+  widthPx: number,
+  captionScale = 1
+): PlacedAnnotation[] {
+  if (!annotations?.length || widthPx <= 0 || windowMs <= 0) return [];
+  const fromMs = tEndMs - windowMs;
+  const span = Math.max(1, tEndMs - fromMs);
+  const inWindow = annotations
+    .filter((a) => annotationFraction(a.tsMs, tEndMs, windowMs) !== null)
+    .map(({ tsMs, label, variant = "marker" }) => ({
+      key: `${tsMs}-${label}`,
+      tMs: tsMs,
+      tsMs,
+      label,
+      variant,
+      xFrac: (tsMs - fromMs) / span,
+      tone: "fg-subtle" as const,
+    }))
+    .sort((p, q) => p.tMs - q.tMs);
+  const layout = (merged: ReadonlyMap<string, number>) =>
+    layoutMarkers(inWindow, {
+      fromMs,
+      toMs: tEndMs,
+      widthPx,
+      measure: (a) =>
+        shown(a.label, merged.get(a.key) ?? 0).length * 6 * captionScale + 16,
+      side: (a) =>
+        (annotationFraction(a.tsMs, tEndMs, windowMs) ?? 0) > 0.5
+          ? "end"
+          : "start",
+      hangPx: 0,
+    });
+  // Reserve room for the "+N" suffix of merged labels.
+  const first = layout(new Map());
+  const merged = new Map(
+    first.filter((p) => p.more > 0).map((p) => [p.key, p.more])
+  );
+  const placed = merged.size > 0 ? layout(merged) : first;
+  for (const a of placed) a.label = shown(a.label, a.more);
+  return placed;
+}
+
+/** Horizontal position inside a window ending at `tEndMs`, or null outside it. */
+export function annotationFraction(
+  tsMs: number,
+  tEndMs: number,
+  windowMs: number
+): number | null {
+  if (windowMs <= 0) return null;
+  const f = 1 - (tEndMs - tsMs) / windowMs;
+  return f < 0 || f > 1 ? null : f;
 }
