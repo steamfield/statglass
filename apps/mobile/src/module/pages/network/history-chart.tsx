@@ -106,17 +106,7 @@ function DirectionCeiling({
   ceiling: number;
 }) {
   const value = valueTicks(ceiling, formatRate, { count: 2 }).at(-1)?.label;
-  return (
-    <View
-      accessible
-      accessibilityLabel={`${arrow} ${direction} · ${value}`}
-      className="flex-row flex-wrap items-baseline gap-x-1"
-    >
-      <Text variant="axis">{arrow}</Text>
-      <Text variant="axis">{direction}</Text>
-      <Text variant="axis">· {value}</Text>
-    </View>
-  );
+  return <Text variant="axis">{`${arrow} ${direction} · ${value}`}</Text>;
 }
 
 export function NetworkHistoryChart({

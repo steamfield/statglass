@@ -283,10 +283,10 @@ test("Network draws the two rates, direction ceilings and time ticks, and reads 
     nativeEvent: { layout: { width: 270 } },
   });
   expect(
-    await screen.findByLabelText(`↑ Upload · ${formatRate(500_000)}`)
+    await screen.findByText(`↑ Upload · ${formatRate(500_000)}`)
   ).toBeOnTheScreen();
   expect(
-    screen.getByLabelText(`↓ Download · ${formatRate(20_000_000)}`)
+    screen.getByText(`↓ Download · ${formatRate(20_000_000)}`)
   ).toBeOnTheScreen();
   expect(screen.getByText("now")).toBeOnTheScreen();
   expect(screen.getByRole("note", { name: /paused/i })).toBeOnTheScreen();
@@ -509,7 +509,7 @@ test("a lower Network peak holds the previous scale for a minute", async () => {
     nativeEvent: { layout: { width: 300 } },
   });
   const firstCeiling = `↓ Download · ${formatRate(peak)}`;
-  expect(await screen.findByLabelText(firstCeiling)).toBeOnTheScreen();
+  expect(await screen.findByText(firstCeiling)).toBeOnTheScreen();
   const chart = screen.getByRole("adjustable", {
     name: "Network history, upload above the line, download below",
   });
@@ -528,9 +528,9 @@ test("a lower Network peak holds the previous scale for a minute", async () => {
   expect(read).toHaveBeenCalledTimes(2);
   await inspect();
   expect(screen.getByText(`Download · ${formatRate(peak)}`)).toBeOnTheScreen();
-  expect(screen.getByLabelText(firstCeiling)).toBeOnTheScreen();
+  expect(screen.getByText(firstCeiling)).toBeOnTheScreen();
   await advance(MINUTE_MS);
   expect(
-    await screen.findByLabelText(`↓ Download · ${formatRate(peak)}`)
+    await screen.findByText(`↓ Download · ${formatRate(peak)}`)
   ).toBeOnTheScreen();
 });
