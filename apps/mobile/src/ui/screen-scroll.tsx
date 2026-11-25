@@ -1,8 +1,36 @@
-import { ScrollView, type ScrollViewProps } from "react-native";
+import { ScrollView, type ScrollViewProps, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useThemeColors } from "./theme-colors";
 
 export function ScreenScroll({
-  headerShown: _headerShown,
+  headerShown = true,
+  style,
   ...props
 }: ScrollViewProps & { headerShown?: boolean }) {
-  return <ScrollView {...props} />;
+  const { top, bottom } = useSafeAreaInsets();
+  const { background } = useThemeColors();
+  const scroll = (
+    <ScrollView
+      {...props}
+      contentInsetAdjustmentBehavior={headerShown ? "automatic" : "never"}
+      style={[style, { backgroundColor: background }]}
+    />
+  );
+
+  if (headerShown) return scroll;
+
+  return (
+    <View
+      className="flex-1"
+      // Clip the padded viewport when automatic UIKit insets are off.
+      style={{
+        backgroundColor: background,
+        paddingTop: top,
+        paddingBottom: bottom,
+        overflow: "hidden",
+      }}
+    >
+      {scroll}
+    </View>
+  );
 }
