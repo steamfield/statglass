@@ -1,3 +1,4 @@
+import type { PowerSource } from "@core/generated/types";
 import type { HostLive } from "@core/live-state";
 import type { ModuleState, UiModule } from "@core/module-state";
 import { moduleState } from "@core/module-state";
@@ -14,6 +15,7 @@ import type {
 } from "@/cards/types";
 import type { PhoneSettings } from "@/data/phone-settings";
 
+/** Module cards in the default popover order, including the standalone battery card. */
 export const CARD_MODULES = [
   "cpu",
   "memory",
@@ -31,11 +33,12 @@ type CardData = {
   gpu: Pick<GpuCardProps, "gpu" | "stream">;
   power: Pick<PowerCardProps, "power" | "source">;
   network: Pick<NetworkCardProps, "network" | "bars">;
-  battery: Pick<BatteryCardProps, "battery">;
+  battery: Pick<BatteryCardProps, "battery"> & { source: PowerSource | null };
 };
 
 type CardActions = Pick<CardChrome, "onOpen" | "onLongPress">;
 
+/** Bind open and menu callbacks to each card so they can stay stable across frames. */
 export function cardActions(
   open: (card: PopoverCard) => void,
   openMenu: (card: PopoverCard) => void
@@ -61,6 +64,7 @@ export type CardStackItem =
       };
     }[PopoverCard];
 
+/** Classify the host's modules from capabilities using the shared popover rules. */
 export function cardModuleStates(
   caps: HostLive["capabilities"]
 ): Record<UiModule, ModuleState> {

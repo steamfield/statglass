@@ -1,44 +1,27 @@
-import { commandError } from "@core/command-error";
-import type { HostId, LiveMsg } from "@core/generated/types";
-import {
-  awaitHistory,
-  clearRows,
-  type HostLive,
-  initialHostLive,
-  reduceLive,
-  settleSubscribe,
-} from "@core/live-state";
-import { POPOVER_CARD_SERIES } from "@core/popover/series";
+import type { HostId } from "@core/generated/types";
+import { type HostLive, initialHostLive } from "@core/live-state";
 import { hostKeys } from "@core/query-keys";
-import { failureReason } from "@core/remote-errors";
-import { MINUTE_MS } from "@core/time-grid";
+import { failureReason, remoteQueryText } from "@core/remote-errors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState } from "react-native";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
+import { subscribeHostLive } from "./live-subscription";
 import type { PhoneTransport } from "./seam";
 import { usePhoneTransport } from "./transport-context";
 
-interface PhoneLive extends HostLive {
+/** Held host data and the phone's connection state. */
+export interface PhoneLive extends HostLive {
   /** Monotonic receipt time. Backfill alone does not make a frame fresh. */
   lastFrame: number | null;
   failure: string | null;
 }
 
-type LiveStore = StoreApi<PhoneLive>;
+/** The store for one host on one transport. */
+export type LiveStore = StoreApi<PhoneLive>;
 const stores = new WeakMap<PhoneTransport, Map<HostId, LiveStore>>();
-const RETRY_MS = [500, 1000, 2000, 5000];
-const TERMINAL_FAILURES = new Set([
-  "unknown_host",
-  "remote_auth",
-  "remote_identity",
-  "host_key_unknown",
-  "remote_incompatible",
-  "remote_unsupported",
-]);
-
 function hostStore(transport: PhoneTransport, host: HostId): LiveStore {
   let hosts = stores.get(transport);
   if (!hosts) {
@@ -55,151 +38,6 @@ function hostStore(transport: PhoneTransport, host: HostId): LiveStore {
     hosts.set(host, store);
   }
   return store;
-}
-
-function startCatchUp(state: PhoneLive, startedAt: number, first: boolean) {
-  // Only one minute can be refilled. Drop older holes, retaining the readouts.
-  const missed =
-    state.lastFrame !== null && startedAt - state.lastFrame >= MINUTE_MS;
-  const next = missed ? clearRows(state) : state;
-  return awaitHistory<PhoneLive>({
-    ...next,
-    failure: null,
-    connection:
-      next.lastFrame === null && first ? next.connection : "reconnecting",
-  });
-}
-
-function terminalFailure(error: unknown) {
-  const typed = commandError(error);
-  return typed && TERMINAL_FAILURES.has(typed.kind)
-    ? failureReason(error, "Couldn’t connect to this host.")
-    : null;
-}
-
-function subscribe(store: LiveStore, transport: PhoneTransport, host: HostId) {
-  let stopped = false;
-  let generation = 0;
-  let unsubscribe: (() => void) | undefined;
-  let watchdog: ReturnType<typeof setTimeout> | undefined;
-  let retry: ReturnType<typeof setTimeout> | undefined;
-  let reconnects = 0;
-  let startedAt = performance.now();
-
-  function disconnect() {
-    generation++;
-    clearTimeout(watchdog);
-    clearTimeout(retry);
-    unsubscribe?.();
-    unsubscribe = undefined;
-  }
-
-  function reconnect() {
-    disconnect();
-    reconnects++;
-    void connect(0);
-  }
-
-  function watchFrames(attempt: number) {
-    clearTimeout(watchdog);
-    const { status, lastFrame } = store.getState();
-    if (!status || status.paused || status.display_idle) return;
-    const period = Math.max(status.interval_ms, status.frame_period_ms);
-    if (!Number.isFinite(period) || period <= 0) return;
-    const sinceFrame = performance.now() - Math.max(startedAt, lastFrame ?? 0);
-    watchdog = setTimeout(
-      () => {
-        if (stopped || generation !== attempt) return;
-        store.setState({ stale: true });
-        watchdog = setTimeout(
-          () => {
-            if (stopped || generation !== attempt) return;
-            reconnect();
-          },
-          Math.min(MINUTE_MS, 3 * period * 2 ** reconnects)
-        );
-      },
-      Math.max(0, 3 * period - sinceFrame)
-    );
-  }
-
-  function apply(msg: LiveMsg, attempt: number) {
-    const previous = store.getState();
-    const next = reduceLive(previous, msg);
-    if (msg.kind === "frame" && next !== previous) {
-      reconnects = 0;
-      store.setState({ ...next, lastFrame: performance.now() });
-      watchFrames(attempt);
-    } else {
-      // A backfill may carry many readings, but only a fresh frame proves
-      // this subscription is live again.
-      store.setState(
-        previous.connection === "reconnecting" && next.connection === "live"
-          ? { ...next, connection: "reconnecting" }
-          : next
-      );
-      if (msg.kind === "status") watchFrames(attempt);
-    }
-  }
-
-  function subscribeFailed(attempt: number, error: unknown) {
-    disconnect();
-    const failure = terminalFailure(error);
-    store.setState((state) => ({
-      ...settleSubscribe(state),
-      connection: "reconnecting",
-      failure,
-    }));
-    if (failure !== null) return;
-    retry = setTimeout(
-      () => void connect(attempt + 1),
-      RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)]
-    );
-  }
-
-  async function connect(attempt: number) {
-    const current = ++generation;
-    startedAt = performance.now();
-    store.setState((state) => startCatchUp(state, startedAt, current === 1));
-    try {
-      const sub = await transport.subscribeLive(
-        host,
-        (msg) => {
-          if (!stopped && generation === current) apply(msg, current);
-        },
-        { series: POPOVER_CARD_SERIES, backfillMs: MINUTE_MS }
-      );
-      if (stopped || generation !== current) {
-        sub.unsubscribe();
-        return;
-      }
-      if (sub.info.status === "error") {
-        subscribeFailed(attempt, sub.info.error);
-        sub.unsubscribe();
-        return;
-      }
-      const { backfill_rows, earlier_start_ms } = sub.info.data;
-      if (backfill_rows === 0 && earlier_start_ms === null) {
-        store.setState(settleSubscribe);
-      }
-      unsubscribe = sub.unsubscribe;
-      watchFrames(current);
-    } catch (error) {
-      if (!stopped && generation === current) subscribeFailed(attempt, error);
-    }
-  }
-
-  const stopHostsChanged = transport.onHostsChanged(({ hosts }) => {
-    if (hosts.some((record) => record.id === host && !record.is_local))
-      reconnect();
-  });
-  void connect(0);
-  return () => {
-    stopped = true;
-    stopHostsChanged();
-    disconnect();
-    store.setState(settleSubscribe);
-  };
 }
 
 /** Run a screen's live work only while it is focused and foregrounded. */
@@ -230,7 +68,7 @@ export function useHostLiveSubscription(host: HostId) {
   const transport = usePhoneTransport();
   useFocusedAppEffect(
     useCallback(
-      () => subscribe(hostStore(transport, host), transport, host),
+      () => subscribeHostLive(hostStore(transport, host), transport, host),
       [host, transport]
     )
   );
@@ -266,14 +104,17 @@ export function useHostLive<T>(
   return useLiveSelection(host, select, equal);
 }
 
+/** The phone's monotonic receipt time for the last frame, or null before one arrives. */
 export function useLastFrame(host: HostId) {
   return useLiveSelection(host, (state) => state.lastFrame);
 }
 
+/** The terminal failure message for the host's live subscription, if one failed. */
 export function useLiveFailure(host: HostId) {
   return useLiveSelection(host, (state) => state.failure);
 }
 
+/** Read one host's remote status and refresh the shared list when it changes. */
 export function useRemoteStatus(host: HostId, enabled = true) {
   const transport = usePhoneTransport();
   const client = useQueryClient();
@@ -289,4 +130,12 @@ export function useRemoteStatus(host: HostId, enabled = true) {
     select: (hosts) => hosts.find((entry) => entry.config.id === host)?.status,
     enabled,
   });
+}
+
+/** Explain a failed connection-status read using the shared remote error wording. */
+export function connectionStatusError(error: unknown) {
+  return (
+    remoteQueryText(error, "connection status") ??
+    `Couldn’t read connection status. ${failureReason(error, "Please try again.")}`
+  );
 }

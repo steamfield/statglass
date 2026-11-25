@@ -15,7 +15,7 @@ type PlotHistory = Pick<
   "data" | "grid" | "isPending"
 >;
 
-/** Keep bucket timestamps intact and include events in the last partial slot. */
+/** Return the StreamArea data and the count of real slots the cursor can select. */
 export function historyChart(
   module: PopoverCard,
   range: HistoryRange,

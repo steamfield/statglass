@@ -15,7 +15,7 @@ import {
   useHistoryRange,
   useModuleHistory,
 } from "@/data/history";
-import { useRemoteStatus } from "@/data/live";
+import { connectionStatusError, useRemoteStatus } from "@/data/live";
 import { offlineLabel } from "@/host/connection-pill";
 import { Text } from "@/ui/text";
 import { EventsList } from "./events-list";
@@ -43,10 +43,16 @@ function ModuleHistory({
   const history = useModuleHistory(host, module, range);
   const events = useEvents(host, range.fromMs, range.toMs);
   const { title, series: definitions, format } = HISTORY_MODULES[module];
-  const { data, grid, isPending } = history;
+  const { data, displayedRange, grid, isPending } = history;
   const { chart, sampleCount } = useMemo(
-    () => historyChart(module, range, { data, grid, isPending }, events.data),
-    [data, events.data, grid, isPending, module, range]
+    () =>
+      historyChart(
+        module,
+        displayedRange,
+        { data, grid, isPending },
+        events.data
+      ),
+    [data, displayedRange, events.data, grid, isPending, module]
   );
   const hasSamples = chart.series.some(({ values }) =>
     values.some((value) => value !== null)
@@ -111,12 +117,18 @@ function ModuleHistory({
 
 function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
   const status = useRemoteStatus(host);
-  if (status.isPending) {
+  if (status.isPending || status.isError) {
     return (
       <View className="flex-1 bg-background px-4 py-5">
         <Stack.Screen options={{ title: HISTORY_MODULES[module].title }} />
-        <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
-          Loading history…
+        <Text
+          {...{ role: "label" }}
+          accessibilityLiveRegion="polite"
+          accessibilityRole={status.isError ? "alert" : undefined}
+        >
+          {status.isError
+            ? connectionStatusError(status.error)
+            : "Loading history…"}
         </Text>
       </View>
     );

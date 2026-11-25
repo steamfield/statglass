@@ -63,7 +63,10 @@ async function demoSelections(host = MOCK_HOST_ID) {
       gpu: { gpu: selectGpu(state), stream: POPOVER_GPU_STREAM },
       power: { power: selectPower(state), source: selectPowerSource(state) },
       network: { network: selectNetwork(state), bars },
-      battery: { battery: selectBattery(state) },
+      battery: {
+        battery: selectBattery(state),
+        source: selectPowerSource(state),
+      },
     },
   };
 }
@@ -130,6 +133,7 @@ test("assembles each card's own selection, chart, actions and saved density in p
     kind: "battery",
     props: {
       ...data.battery,
+      source: data.power.source,
       compact: false,
       onOpen: expect.any(Function),
       onLongPress: expect.any(Function),

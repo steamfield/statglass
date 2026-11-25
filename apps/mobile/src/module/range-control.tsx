@@ -4,6 +4,7 @@ import { Pressable, View } from "react-native";
 import { PHONE_RANGES } from "@/data/history";
 import { Text } from "@/ui/text";
 
+/** Choose the duration shared by the module chart and its events. */
 export function RangeControl({
   value,
   onChange,

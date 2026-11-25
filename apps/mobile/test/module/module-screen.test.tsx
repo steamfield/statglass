@@ -159,8 +159,7 @@ test("range tabs select new history and event keys with the same bounds and show
           ["cpu.total"],
           duration,
           request.to_ms,
-          request.max_points,
-          true
+          request.max_points
         )
       )
     ).toBeDefined();
@@ -325,6 +324,114 @@ test("a foreground module refreshes both history and events as time advances", a
   } finally {
     AppState.currentState = initialAppState;
   }
+});
+
+test("a minute refresh keeps the plotted samples, event rows, and pinned reading while both reads are pending", async () => {
+  const initialAppState = AppState.currentState;
+  AppState.currentState = "active";
+  try {
+    const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+    const history = jest
+      .spyOn(transport, "queryHistory")
+      .mockImplementation(async (request) => ({
+        status: "ok",
+        data: {
+          ...cpuPage(request),
+          series: [
+            {
+              key: { metric: "cpu.total", labels: [] },
+              hold_ms: 0,
+              points: [
+                {
+                  t: request.from_ms,
+                  min: 29,
+                  avg: 30,
+                  max: 31,
+                },
+              ],
+            },
+          ],
+        },
+      }));
+    const events = jest
+      .spyOn(transport, "queryEvents")
+      .mockResolvedValue({ status: "ok", data: [record] });
+    jest.spyOn(Haptics, "selectionAsync").mockResolvedValue(undefined);
+    const view = await renderWithProviders(openModule(), { transport });
+    try {
+      expect(
+        await screen.findByText("Fans ramped up · kernel_task")
+      ).toBeOnTheScreen();
+      await waitFor(() =>
+        expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen()
+      );
+      const plot = () =>
+        screen.getByRole("adjustable", { name: "CPU history" });
+      const request = history.mock.lastCall?.[0];
+      if (!request) throw new Error("History request did not run");
+      const value = { text: `${formatClockSeconds(request.from_ms)}, 30%` };
+      await fireEvent(plot(), "layout", {
+        nativeEvent: { layout: { width: 300 } },
+      });
+      const pin = createGestureController("history-pin");
+      await act(() => {
+        pin.begin({ x: 0 });
+        pin.activate({ x: 0 });
+        pin.end();
+      });
+      expect(plot()).toHaveAccessibilityValue(value);
+
+      history.mockImplementation(() => new Promise<never>(() => {}));
+      events.mockImplementation(() => new Promise<never>(() => {}));
+      await act(() => jest.advanceTimersByTimeAsync(MINUTE_MS));
+      expect(history).toHaveBeenCalledTimes(2);
+      expect(events).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen();
+      expect(
+        screen.getByText("Fans ramped up · kernel_task")
+      ).toBeOnTheScreen();
+      expect(
+        screen.getByRole("button", { name: "Clear pin" })
+      ).toBeOnTheScreen();
+      expect(plot()).toHaveAccessibilityValue(value);
+
+      await fireEvent.press(screen.getByRole("tab", { name: "Last 7 days" }));
+      expect(screen.getByText("Loading history…")).toBeOnTheScreen();
+      expect(
+        screen.queryByText("Fans ramped up · kernel_task")
+      ).not.toBeOnTheScreen();
+    } finally {
+      await view.unmount();
+    }
+  } finally {
+    AppState.currentState = initialAppState;
+  }
+});
+
+test("a failed remote status read explains why the module cannot load", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-dashboard"],
+    autoTick: false,
+    historyRows: 2,
+  });
+  const [remote] = await transport.listRemoteHosts();
+  if (!remote) throw new Error("The demo needs a remote host");
+  jest.spyOn(transport, "listRemoteHosts").mockRejectedValue({
+    kind: "remote_unreachable",
+    message: "Network unavailable",
+  });
+  const history = jest.spyOn(transport, "queryHistory");
+  await renderWithProviders(openModule(remote.config.id), { transport });
+  expect(
+    await screen.findByRole(
+      "alert",
+      {
+        name: "This host isn't connected, so its connection status can't be read now.",
+      },
+      { timeout: 2000 }
+    )
+  ).toBeOnTheScreen();
+  expect(history).not.toHaveBeenCalled();
 });
 
 test("offline history ends at the mirror watermark and shows the offline and sync times", async () => {

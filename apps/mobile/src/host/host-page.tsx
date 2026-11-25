@@ -27,7 +27,11 @@ import { MemoryCard } from "@/cards/memory-card";
 import { NetworkCard } from "@/cards/network-card";
 import { PowerCard } from "@/cards/power-card";
 import { UnavailableCard } from "@/cards/unavailable-card";
-import { useHostLive, useRemoteStatus } from "@/data/live";
+import {
+  connectionStatusError,
+  useHostLive,
+  useRemoteStatus,
+} from "@/data/live";
 import { useCompactStream, useNetworkBars } from "@/data/live-stream";
 import { usePhoneSettings } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
@@ -163,7 +167,7 @@ const CardStack = memo(function CardStack({
       gpu: { gpu, stream: gpuStream },
       power: { power, source },
       network: { network, bars },
-      battery: { battery },
+      battery: { battery, source },
     },
     actions
   );
@@ -195,6 +199,7 @@ const CardStack = memo(function CardStack({
   );
 });
 
+/** One pager page with a host heading, connection status and its popover cards. */
 export function HostPage({
   host,
   width,
@@ -204,8 +209,14 @@ export function HostPage({
   width: number;
   active: boolean;
 }) {
-  const { data: status } = useRemoteStatus(host.id, active && !host.is_local);
-  const connection = useConnection(host.id, status);
+  const status = useRemoteStatus(host.id, active && !host.is_local);
+  const connection = useConnection(
+    host.id,
+    status.data,
+    !host.is_local && status.isError
+      ? connectionStatusError(status.error)
+      : null
+  );
   const dimmed =
     connection.state === "offline" || connection.state === "reconnecting";
   return (
@@ -218,7 +229,11 @@ export function HostPage({
     >
       <View className="gap-2">
         <Text {...{ role: "largeTitle" }}>{host.display_name}</Text>
-        <ConnectionPill connection={connection} active={active} />
+        <ConnectionPill
+          host={host.id}
+          connection={connection}
+          active={active}
+        />
       </View>
       <CardStack host={host} dimmed={dimmed} />
     </ScrollView>

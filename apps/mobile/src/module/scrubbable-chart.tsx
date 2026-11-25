@@ -51,20 +51,12 @@ function ChartLegend({
   );
 }
 
-export function ScrubbableChart({
-  chart,
-  sampleCount,
-  labels,
-  format,
-  showDate,
-}: ScrubbableChartProps) {
+function useScrubSelection(chart: StreamAreaData, sampleCount: number) {
   const [width, setWidth] = useState(0);
   const [cursor, setCursor] = useState<number | null>(null);
   const [pinned, setPinned] = useState(false);
   const slots = chart.series[0]?.values.length ?? 0;
-  // The twin puts captions outside its plot. Keep them out of the gesture target.
-  const { ceilingLabel, ...plot } = chart;
-  const { intervalMs, tEndMs } = plot;
+  const { intervalMs, tEndMs } = chart;
   const times = useMemo(
     () =>
       Array.from(
@@ -104,37 +96,14 @@ export function ScrubbableChart({
       setCursor(timeAt(x));
     }
   };
-  const pan = usePanGesture({
-    testID: "history-pan",
-    activeOffsetX: [-5, 5],
-    failOffsetY: [-10, 10],
-    disableReanimated: true,
-    onActivate: ({ x }) => scrub(x),
-    onUpdate: ({ x }) => scrub(x),
-    onDeactivate: () => {
-      if (!isPinned) setCursor(null);
-    },
-  });
-  const longPress = useLongPressGesture({
-    testID: "history-pin",
-    disableReanimated: true,
-    onActivate: ({ x }) => {
-      const time = timeAt(x);
-      if (time !== null) pin(time);
-    },
-  });
-  const gesture = useCompetingGestures(pan, longPress);
+  const endScrub = () => {
+    if (!isPinned) setCursor(null);
+  };
+  const pinAt = (x: number) => {
+    const time = timeAt(x);
+    if (time !== null) pin(time);
+  };
   const slot = selection === null ? -1 : (selection - first) / intervalMs;
-  const time =
-    selection === null ? null : formatHistoryTime(selection, showDate);
-  const values =
-    time === null
-      ? []
-      : chart.series.map(({ values: samples }, i) => {
-          const sample = samples[slot] ?? null;
-          const figure = sample === null ? "No samples" : format(sample);
-          return chart.series.length > 1 ? `${labels[i]}: ${figure}` : figure;
-        });
   const togglePin = () => {
     if (isPinned) clear();
     else if (sampleCount > 0) pin(selection ?? last);
@@ -146,6 +115,69 @@ export function ScrubbableChart({
     const next = slot < 0 ? sampleCount - 1 : slot + dir;
     setCursor(times[Math.max(0, Math.min(sampleCount - 1, next))] ?? null);
   };
+  return {
+    setWidth,
+    selection,
+    slot,
+    isPinned,
+    clear,
+    scrub,
+    endScrub,
+    pinAt,
+    togglePin,
+    handleAction,
+    cursorX: (width * slot) / Math.max(1, slots - 1),
+  };
+}
+
+/** Draw history with pan scrubbing, long-press pinning and VoiceOver adjustment. */
+export function ScrubbableChart({
+  chart,
+  sampleCount,
+  labels,
+  format,
+  showDate,
+}: ScrubbableChartProps) {
+  // The twin puts captions outside its plot. Keep them out of the gesture target.
+  const { ceilingLabel, ...plot } = chart;
+  const {
+    setWidth,
+    selection,
+    slot,
+    isPinned,
+    clear,
+    scrub,
+    endScrub,
+    pinAt,
+    togglePin,
+    handleAction,
+    cursorX,
+  } = useScrubSelection(chart, sampleCount);
+  const pan = usePanGesture({
+    testID: "history-pan",
+    activeOffsetX: [-5, 5],
+    failOffsetY: [-10, 10],
+    disableReanimated: true,
+    onActivate: ({ x }) => scrub(x),
+    onUpdate: ({ x }) => scrub(x),
+    onDeactivate: endScrub,
+  });
+  const longPress = useLongPressGesture({
+    testID: "history-pin",
+    disableReanimated: true,
+    onActivate: ({ x }) => pinAt(x),
+  });
+  const gesture = useCompetingGestures(pan, longPress);
+  const time =
+    selection === null ? null : formatHistoryTime(selection, showDate);
+  const values =
+    time === null
+      ? []
+      : chart.series.map(({ values: samples }, i) => {
+          const sample = samples[slot] ?? null;
+          const figure = sample === null ? "No samples" : format(sample);
+          return chart.series.length > 1 ? `${labels[i]}: ${figure}` : figure;
+        });
 
   return (
     <View className="gap-2">
@@ -179,7 +211,7 @@ export function ScrubbableChart({
               accessible={false}
               pointerEvents="none"
               className="absolute inset-y-0 w-px bg-foreground"
-              style={{ left: (width * slot) / Math.max(1, slots - 1) }}
+              style={{ left: cursorX }}
             />
           )}
         </View>

@@ -50,6 +50,7 @@ function EventRow({ event, showDate }: { event: Event; showDate: boolean }) {
   );
 }
 
+/** Show the module content above a virtualized, newest-first list of events. */
 export function EventsList({
   events,
   showDate,

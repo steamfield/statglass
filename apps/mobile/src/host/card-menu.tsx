@@ -34,6 +34,7 @@ function MenuAction({
   );
 }
 
+/** The card options sheet for setting density and moving through the visible card order. */
 export function CardMenu({
   card,
   previous,

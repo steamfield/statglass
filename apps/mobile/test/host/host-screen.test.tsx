@@ -1,4 +1,5 @@
 import { formatClock } from "@core/format";
+import type { LiveMsg } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { POPOVER_CARD_SERIES } from "@core/popover/series";
@@ -17,9 +18,12 @@ import {
   Text,
   View,
 } from "react-native";
+import * as CpuCard from "@/cards/cpu-card";
+import * as GpuCard from "@/cards/gpu-card";
 import { useHostLiveSubscription } from "@/data/live";
 import { useCompactStream } from "@/data/live-stream";
 import { HostScreen } from "@/host";
+import * as PhoneText from "@/ui/text";
 
 const context = getMockContext({
   _layout: function Layout() {
@@ -275,6 +279,164 @@ test("a terminal subscribe error names the failure and stops retrying", async ()
   ).toBeOnTheScreen();
   await act(() => jest.advanceTimersByTimeAsync(15_000));
   expect(subscribe).toHaveBeenCalledTimes(1);
+});
+
+test("a failed remote status read dims the remote while the local host can still read Live", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-dashboard"],
+    autoTick: true,
+    historyRows: 2,
+  });
+  const remote = (await transport.listRemoteHosts()).find(
+    ({ status }) => status.state === "connected"
+  );
+  if (!remote) throw new Error("The demo needs a connected host");
+  jest.spyOn(transport, "listRemoteHosts").mockRejectedValue({
+    kind: "remote_unreachable",
+    message: "Network unavailable",
+  });
+  const view = await renderWithProviders(
+    <ExpoRoot
+      context={context}
+      location={new URL(`statglass:///${remote.config.id}`)}
+    />,
+    { transport, settings: { hostOrder: [remote.config.id, MOCK_HOST_ID] } }
+  );
+  try {
+    expect(
+      await screen.findByText(
+        "This host isn't connected, so its connection status can't be read now.",
+        {},
+        { timeout: 2000 }
+      )
+    ).toBeOnTheScreen();
+    await act(() => jest.advanceTimersByTimeAsync(1000));
+    expect(screen.queryByText(/^Live/)).not.toBeOnTheScreen();
+    expect(screen.getByLabelText("Module cards")).toHaveStyle({ opacity: 0.5 });
+    await fireEvent(screen.getByLabelText("Hosts pager"), "momentumScrollEnd", {
+      nativeEvent: {
+        contentOffset: { x: Dimensions.get("window").width, y: 0 },
+      },
+    });
+    await act(() => transport.tick());
+    expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
+});
+
+test("a frame that changes CPU readouts leaves the host heading and unchanged GPU card alone", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const subscribe = transport.subscribeLive;
+  const messages: LiveMsg[] = [];
+  jest
+    .spyOn(transport, "subscribeLive")
+    .mockImplementation((host, receive, options) =>
+      subscribe(
+        host,
+        (message) => {
+          messages.push(message);
+          receive(message);
+        },
+        options
+      )
+    );
+  const text = jest.spyOn(PhoneText, "Text");
+  const cpu = jest.spyOn(CpuCard, "CpuCard");
+  const gpu = jest.spyOn(GpuCard, "GpuCard");
+  await renderWithProviders(
+    <ExpoRoot
+      context={context}
+      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+    />,
+    { transport }
+  );
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await act(() => transport.tick());
+  expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
+  const frame = messages.find((message) => message.kind === "frame");
+  const layout = messages.find(
+    (message) =>
+      message.kind === "layout" && message.layout_no === frame?.layout_no
+  );
+  if (!frame || layout?.kind !== "layout")
+    throw new Error("The demo needs a frame and its layout");
+  const total = layout.series.findIndex(({ metric }) => metric === "cpu.total");
+  if (total < 0) throw new Error("The frame needs a CPU total");
+  expect(gpu).toHaveBeenCalled();
+  text.mockClear();
+  cpu.mockClear();
+  gpu.mockClear();
+  await act(() => jest.advanceTimersByTimeAsync(1));
+  await act(() =>
+    transport.push({
+      ...frame,
+      held: frame.held.map((value, index) =>
+        index === total ? (value ?? 0) + 1 : value
+      ),
+    })
+  );
+  expect(cpu).toHaveBeenCalledTimes(1);
+  expect(text.mock.calls.some(([props]) => props.role === "largeTitle")).toBe(
+    false
+  );
+  expect(gpu).not.toHaveBeenCalled();
+});
+
+test("repeated transient subscription failures log once per reason before recovery", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const originalSubscribe = transport.subscribeLive;
+  const subscribe = jest.spyOn(transport, "subscribeLive");
+  const log = jest.spyOn(console, "error").mockImplementation(() => {});
+  for (const reason of [
+    "Network unavailable",
+    "Network unavailable",
+    "Network changed",
+    "Network unavailable",
+  ]) {
+    subscribe.mockRejectedValueOnce(new Error(reason));
+  }
+  subscribe.mockImplementation(originalSubscribe);
+  await renderWithProviders(
+    <ExpoRoot
+      context={context}
+      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+    />,
+    { transport }
+  );
+  await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+  await act(() => jest.advanceTimersByTimeAsync(8500));
+  expect(transport.subscriberCount()).toBe(1);
+  expect(log.mock.calls.map(([, details]) => details)).toEqual([
+    { hostId: MOCK_HOST_ID, reason: "Network unavailable" },
+    { hostId: MOCK_HOST_ID, reason: "Network changed" },
+  ]);
+});
+
+test("the watchdog logs why it replaces a silent subscription", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const log = jest.spyOn(console, "warn").mockImplementation(() => {});
+  const subscribe = jest.spyOn(transport, "subscribeLive");
+  await renderWithProviders(
+    <ExpoRoot
+      context={context}
+      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+    />,
+    { transport }
+  );
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await act(() => transport.tick());
+  await act(() => jest.advanceTimersByTimeAsync(6000));
+  expect(subscribe).toHaveBeenCalledTimes(2);
+  expect(log).toHaveBeenCalledTimes(1);
+  expect(log).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      hostId: MOCK_HOST_ID,
+      reason: "No live frames",
+    })
+  );
 });
 
 function ChartLabelScene() {
