@@ -5,6 +5,7 @@ import {
   type MouseEvent,
   memo,
   type ReactNode,
+  useId,
   useLayoutEffect,
   useRef,
 } from "react";
@@ -23,6 +24,7 @@ const ICONS = {
   power: "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
   network: "M7 3v18M3 7l4-4 4 4M17 21V3M13 17l4 4 4-4",
   disk: "M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11zM6 16h.01M10 16h.01",
+  "disk-space": "M3 3h18v18H3zM13 3v18M3 13h10M13 9h8",
   battery:
     "M3 7h15a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM22 11v2M6 10v4M10 10v4",
   processes: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
@@ -50,6 +52,8 @@ export interface SidebarEntry {
   disabled?: boolean;
   /** Something here needs the user ("2 hosts need updates"); shown as a count. */
   attention?: { count: number; label: string } | undefined;
+  /** Work in progress ("Scan running"); shown as a dot in the value slot. */
+  busy?: { label: string } | undefined;
 }
 
 export interface SidebarStatus {
@@ -68,8 +72,12 @@ export interface SidebarStatus {
 }
 
 export interface SidebarProps {
-  /** Entry groups, separated by a hairline: nav, modules, tools. */
-  groups: readonly { id: string; entries: readonly SidebarEntry[] }[];
+  /** Entry groups separated by hairlines, with optional headings. */
+  groups: readonly {
+    id: string;
+    label?: string | undefined;
+    entries: readonly SidebarEntry[];
+  }[];
   /** Id of the current entry. */
   active: string;
   status: SidebarStatus;
@@ -143,17 +151,24 @@ function SidebarItem({
           </span>
         </>
       )}
-      {!entry.disabled && entry.value && (
+      {entry.busy ? (
+        <>
+          <span className="sr-only">, {entry.busy.label}</span>
+          <span className="flex min-w-9 justify-end max-sm:absolute max-sm:top-1 max-sm:right-1 max-sm:min-w-0">
+            <StatusDot state="live" />
+          </span>
+        </>
+      ) : !entry.disabled && entry.value ? (
         <span className="figures min-w-9 text-right font-normal text-label text-muted-foreground max-sm:hidden">
           {entry.value}
         </span>
-      )}
+      ) : null}
     </a>
   );
 }
 
 /**
- * Dashboard navigation: three groups, live values per module, the
+ * Dashboard navigation: entry groups, live values per module, the
  * active row, and a footer with the sampling state and version. Up/Down move
  * focus between entries, Home/End jump to the ends, Enter opens.
  */
@@ -167,49 +182,61 @@ export function Sidebar({
   footerNote,
   hostSwitcher,
 }: SidebarProps) {
-  const navRef = useRef<HTMLElement>(null);
+  const entriesRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
   const placed = useRef(false);
   const prevActive = useRef(active);
-  const layout = groups.map((g) => g.entries.length).join(",");
+  const layout = groups
+    .map((g) => `${g.entries.length}:${g.label ?? ""}`)
+    .join(",");
 
   // The selection is one pill that slides to the current row (framer's
   // `layoutId` move) instead of a fill on each row. Measured only when the
-  // route or the row count changes, never on the 1 Hz value updates. It slides
-  // only when the route changes under a visible pill; the first placement and
-  // a row-count change snap.
+  // route or group layout changes, or when the sidebar crosses the breakpoint.
+  // Only route changes under a visible pill slide.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `active` and `layout` stand in for the rows' positions
   useLayoutEffect(() => {
     const pill = pillRef.current;
     if (!pill) return;
-    const moved = prevActive.current !== active;
+
+    const place = (slide: boolean) => {
+      const row = entriesRef.current?.querySelector<HTMLElement>(
+        "[data-sidebar-item][aria-current]"
+      );
+      if (!row) {
+        pill.style.opacity = "0";
+        placed.current = false;
+        return;
+      }
+      if (!slide) pill.style.transition = "none";
+      pill.style.opacity = "1";
+      pill.style.transform = `translateY(${row.offsetTop}px)`;
+      if (!slide) {
+        // Commit the position before the transition comes back.
+        pill.getBoundingClientRect();
+        pill.style.transition = "";
+      }
+      placed.current = true;
+    };
+
+    place(placed.current && prevActive.current !== active);
     prevActive.current = active;
-    const row = navRef.current?.querySelector<HTMLElement>(
-      "[data-sidebar-item][aria-current]"
-    );
-    if (!row) {
-      pill.style.opacity = "0";
-      placed.current = false;
-      return;
-    }
-    const snap = !(placed.current && moved);
-    if (snap) pill.style.transition = "none";
-    pill.style.opacity = "1";
-    pill.style.transform = `translateY(${row.offsetTop}px)`;
-    if (snap) {
-      // Commit the position before the transition comes back.
-      pill.getBoundingClientRect();
-      pill.style.transition = "";
-    }
-    placed.current = true;
+
+    // Matches Tailwind's max-sm variant, which hides the group headings.
+    const compact = window.matchMedia("(width < 40rem)");
+    const onBreakpointChange = () => place(false);
+    compact.addEventListener("change", onBreakpointChange);
+    return () => compact.removeEventListener("change", onBreakpointChange);
   }, [active, layout]);
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
-    if (!keys.includes(e.key) || !navRef.current) return;
+    if (!keys.includes(e.key) || !entriesRef.current) return;
     const items = Array.from(
-      navRef.current.querySelectorAll<HTMLAnchorElement>("[data-sidebar-item]")
+      entriesRef.current.querySelectorAll<HTMLAnchorElement>(
+        "[data-sidebar-item]"
+      )
     );
     if (items.length === 0) return;
     const i = items.indexOf(document.activeElement as HTMLAnchorElement);
@@ -226,31 +253,37 @@ export function Sidebar({
   return (
     // biome-ignore lint/a11y/noNoninteractiveElementInteractions: arrow keys move focus between the links inside; the handler delegates to them
     <nav
-      ref={navRef}
       aria-label="Dashboard sections"
       onKeyDown={onKeyDown}
-      className="relative flex h-full w-[220px] shrink-0 flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-2.5 pb-3 text-foreground max-sm:w-13 max-sm:px-2"
+      className="flex h-full w-[220px] shrink-0 flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-2.5 pb-3 text-foreground max-sm:w-13 max-sm:px-2"
     >
-      <div
-        ref={pillRef}
-        aria-hidden
-        data-sidebar-pill
-        className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out max-sm:inset-x-2"
-      />
       <SidebarBrand />
-      {hostSwitcher}
-      {groups.map((g, gi) => (
-        <SidebarGroup
-          key={g.id}
-          entries={g.entries}
-          first={gi === 0}
-          active={active}
-          onNavigate={onNavigate}
+      {hostSwitcher && <div className="shrink-0">{hostSwitcher}</div>}
+      <div
+        ref={entriesRef}
+        className="relative -mx-2.5 min-h-0 flex-1 scroll-py-0.5 overflow-y-auto px-2.5 py-0.5 max-sm:-mx-2 max-sm:px-2"
+      >
+        <div
+          ref={pillRef}
+          aria-hidden
+          data-sidebar-pill
+          className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out max-sm:inset-x-2"
         />
-      ))}
-      <div className="flex-1" />
-      {footerAction && <div className="pb-1.5">{footerAction}</div>}
-      <div className="flex flex-col gap-1 border-border-subtle border-t px-2 pt-2.5 max-sm:sr-only">
+        <div className="flex flex-col gap-0.5">
+          {groups.map((g, gi) => (
+            <SidebarGroup
+              key={g.id}
+              label={g.label}
+              entries={g.entries}
+              first={gi === 0}
+              active={active}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+      </div>
+      {footerAction && <div className="shrink-0 pb-1.5">{footerAction}</div>}
+      <div className="flex shrink-0 flex-col gap-1 border-border-subtle border-t px-2 pt-2.5 max-sm:sr-only">
         <div className="flex items-center gap-2">
           <SidebarStatusReadout status={status} />
           <span className="flex-1" />
@@ -349,21 +382,26 @@ const SidebarBrand = memo(function SidebarBrand() {
 });
 
 const SidebarGroup = memo(function SidebarGroup({
+  label,
   entries,
   first,
   active,
   onNavigate,
 }: {
+  label?: string | undefined;
   entries: readonly SidebarEntry[];
   first: boolean;
   active: string;
   onNavigate?: ((href: string) => void) | undefined;
 }) {
-  return (
+  const headingId = useId();
+  const spacing = first ? "pb-2" : "border-border-subtle border-t py-2";
+  const list = (
     <ul
+      aria-labelledby={label ? headingId : undefined}
       className={cn(
         "m-0 flex list-none flex-col gap-0.5 p-0",
-        first ? "pb-2" : "border-border-subtle border-t py-2"
+        !label && spacing
       )}
     >
       {entries.map((entry) => (
@@ -376,5 +414,18 @@ const SidebarGroup = memo(function SidebarGroup({
         </li>
       ))}
     </ul>
+  );
+
+  if (!label) return list;
+  return (
+    <div className={spacing}>
+      <h2
+        id={headingId}
+        className="px-2 pb-1 font-normal text-label text-muted-foreground max-sm:sr-only"
+      >
+        {label}
+      </h2>
+      {list}
+    </div>
   );
 });

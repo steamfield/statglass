@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Utilities sidebar group and the Disk space page (D-153) (2026-11-25)
+
+`plans/deliver-utilities.md` (tag `utilities-phase-1`) moved the disk space report out of Disk's Activity | Space switcher. The sidebar has a Utilities group with a Disk space row that shows a live dot while a scan runs on any screen; `/dashboard/disk-space` opens on the last scan's largest folders (Scan again is the one primary) or the volume picker, and a `?vol=` link leads with that volume. Disk moves Volumes up under Disk I/O, flags a boot volume under the low-space threshold ("Low space", icon and word) and links each scannable volume to Disk space; the Overview folders card links there too. Old `?view=space` links redirect.
+
+- Verified: `make check` except one engine perf gate (`gpu_process_ticks_stay_within_allocation_and_call_budgets`, IOKit 352.2 calls/tick against 350), which fails identically on main on this machine and touches no code here; the affected Playwright specs (sidebar-utilities, disk-space, disk-io, gallery, shell-screens, motion) in Chromium and WebKit; the browser dev server in dark and light at 1000 and 600 px, including the `disk-low-space` scenario and the sidebar mark during a scan. Every lane, the phase boundary and the final diff were reviewed; findings and rejections are in the plan's Log.
+- Open: light-mode `--color-link` is 3.68:1 on white app-wide; the low-space rule is a flat threshold on boot volumes until Rust publishes a size-relative one; `historical-usage-card.test.tsx` and a WebKit treemap hover in `disk-space.spec.ts` flake under full-suite load (both pass alone; the first predates this run).
+
 ## StatGlass for iPhone, RFC phases 0 to 4 built (2026-11-25)
 
 `plans/deliver-ios-app.md` landed phases 1 to 6 (tags `ios-app-phase-1` to `ios-app-phase-6`): the `apps/mobile` Expo workspace, the shared `statglass-session` and IPC crates, the UniFFI mobile core with a Swift native module and TypeScript transport, restricted phone sessions with QR pairing on hosts (the Mac's Pair iPhone flow and paired-devices settings), and the phone UI on demo data.
@@ -1069,6 +1076,7 @@ Known follow-ups (small, not scheduled):
 | Containers monitoring UX revision | [UX RFC](docker-monitoring-ux-rfc.md) | Done (full gates, native recording and review; 2026-10-13) | October 13 product feedback: per-container CPU/Memory lines, two confirmed history bugs, bounded lists, monitoring settings and row Start/Stop |
 | Docker storage insights and cleanup | [Storage plan](docker-storage-cleanup.md) | Done | D-107; CE review approved, 863 Rust / 987 frontend tests and 294 browser checks passed; disposable OrbStack acceptance passed, Desktop/Colima follow-up remains |
 | Disk space report | [Space plan](disk-space-report.md) | Done (automated); real-hardware checks open | D-114; Space view in Disk with a progressive, drillable treemap. Privacy prompts on a fresh account, the dataless policy on File Provider folders, clone fixtures and tick lateness during a scan are unverified |
+| Utilities group | [Utilities plan](utilities.md) | Done | D-153; Disk space is its own page under a Utilities sidebar group, with a scan-running mark on the row; Disk leads with Volumes and flags low boot volumes. Light-mode link contrast and a size-relative low-space rule are follow-ups |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
 | v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Done (0.1.0 published) | Ad-hoc-signed GitHub release and signature-verified updates; paid Apple signing, notarization and Homebrew remain deferred |
 | v2.0 Widget manifest and popover composer | [v2](v2-customization-widgets.md) | Not started | |

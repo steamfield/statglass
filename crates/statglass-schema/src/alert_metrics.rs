@@ -7,6 +7,7 @@
 use serde::Serialize;
 
 use crate::alert::Cmp;
+use crate::disk_space::LOW_DISK_FREE_BYTES;
 
 /// One alertable metric.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, specta::Type)]
@@ -149,7 +150,15 @@ pub const ALERT_METRICS: &[AlertMetric] = &[
     ),
     AlertMetric {
         default_label: Some(("vol", "/")),
-        ..entry("disk.free", "Free disk space", Cmp::Lt, 20e9, 0, 1e8, 1e14)
+        ..entry(
+            "disk.free",
+            "Free disk space",
+            Cmp::Lt,
+            LOW_DISK_FREE_BYTES,
+            0,
+            1e8,
+            1e14,
+        )
     },
 ];
 

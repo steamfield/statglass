@@ -122,6 +122,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-131 | Developer ID releases from a tag-triggered macOS job | Accepted |
 | D-133 | Charts hold back until their history has arrived, then reveal once | Accepted |
 | D-138 | Custom alert rules, phone delivery through ntfy and webhooks, and a host-offline rule | Accepted |
+| D-153 | A Utilities sidebar group, starting with the disk space report | Accepted |
 
 ---
 
@@ -4804,3 +4805,27 @@ Rules on remote Macs (they would deliver twice), built-in rules on agents, multi
 - Users need alerts while every Mac is asleep: the agent delivers by itself, with a dedupe rule against this Mac.
 - Two Macs paired to one agent send duplicate alerts in practice.
 - Sync latency on battery proves too slow: forward `BusMsg::Event` live.
+
+## D-153: A Utilities sidebar group, starting with the disk space report
+
+Status: Accepted. Date: 2026-11-25. Amends D-114's placement (Space as a second view of
+Disk). Plan and design review: [utilities.md](utilities.md).
+
+Features live where they belong: monitoring on its module page, actions on the page that
+shows their object. An on-demand tool that no existing page owns goes in a Utilities group
+in the dashboard sidebar, after the tools group, under a "Utilities" heading, one row per
+tool. The group is omitted when it has no rows.
+
+The disk space report is its first row, "Disk space" at `/dashboard/disk-space`, shown
+whenever the build has the report (`edition.disk_space`) on any host; the page explains a
+host that can't answer, since D-117 has no capability bit to gate the row on. Disk owns
+capacity and Disk space owns contents: Disk drops its Activity | Space switcher, moves the
+Volumes card up under Disk I/O, links each row to Disk space and flags a volume below a
+Rust-published low-space threshold. The landing state leads with the remembered
+boot-volume summary (D-132). `?view=space` redirects.
+
+Docker storage and cleanup stays in Containers, process actions in Processes, setup in
+Settings. Not decided: a Docker disk image cross-link (needs a category on `SpaceNode`, a
+wire change), a built-in low-disk alert and clickable Timeline events. Scanning,
+accounting, retention and the no-delete rule (D-114, D-132) are unchanged; nothing here
+touches the wire, series or host identity.

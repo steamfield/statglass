@@ -35,6 +35,8 @@ export const HOLD_FACTOR = {"den":2,"num":5} as const;
 
 export const ITEM_MODES = {"battery":["off","value"],"cpu":["off","value","graph","cores"],"disk":["off","value"],"gpu":["off","value","graph"],"memory":["off","value","graph"],"network":["off","value","graph"],"power":["off","value"]} as const;
 
+export const LOW_DISK_FREE_BYTES = 20000000000.0 as const;
+
 export const MAX_NET_SPAN_MS = 7776000000 as const;
 
 export const METRIC_CODES = {"mem.pressure_level":{"critical":2,"normal":0,"warn":1},"power.cpu_source":{"calibrated":2,"seeded":3,"uncalibrated":1},"thermal.state":{"critical":3,"fair":1,"nominal":0,"serious":2}} as const;

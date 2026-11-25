@@ -11,6 +11,7 @@ import ContainerDetailRoute from "~/routes/dashboard/containers/detail-route";
 import ContainersRoute from "~/routes/dashboard/containers/route";
 import CpuRoute from "~/routes/dashboard/cpu/route";
 import DiskRoute from "~/routes/dashboard/disk/route";
+import DiskSpaceRoute from "~/routes/dashboard/disk-space/route";
 import GpuRoute from "~/routes/dashboard/gpu/route";
 import HostsRoute from "~/routes/dashboard/hosts/route";
 import MemoryRoute from "~/routes/dashboard/memory/route";
@@ -82,6 +83,7 @@ export function appRoutes({
                   element: <ContainerDetailRoute />,
                 },
                 { path: "alerts", element: <AlertsRoute /> },
+                { path: "disk-space", element: <DiskSpaceRoute /> },
                 { path: "settings", element: <SettingsRoute /> },
                 { path: "hosts", element: <HostsRoute /> },
                 ...PENDING_PAGES.map((page) => ({

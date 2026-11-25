@@ -5,7 +5,6 @@ import type {
   SpaceScanStatus,
 } from "@core/generated/types";
 import type { SpaceTileKind } from "@core/space-treemap";
-import { MINUTE_MS } from "@core/time-grid";
 
 /** "12.4%", "<0.1%" for a sliver that would otherwise read as nothing. */
 export function shareLabel(share: number): string {
@@ -32,17 +31,6 @@ export function countLabel(n: number | null): string {
   if (v >= 1e6) return `${fixed(v / 1e6, 1)} M`;
   if (v >= 1e5) return `${fixed(v / 1e3, 0)} K`;
   return formatInteger(v);
-}
-
-/** "just now", "4 min ago", "2 h ago", "3 days ago". */
-export function agoLabel(nowMs: number, thenMs: number | null): string {
-  if (thenMs === null) return "";
-  const min = Math.floor((nowMs - thenMs) / MINUTE_MS);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
-  const days = Math.floor(min / (24 * 60));
-  if (days >= 1) return days === 1 ? "1 day ago" : `${days} days ago`;
-  return `${Math.floor(min / 60)} h ago`;
 }
 
 /** Elapsed scan time on a clock: "0:14", "2:03". */

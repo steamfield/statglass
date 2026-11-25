@@ -1,34 +1,20 @@
-import { commandErrorText } from "@core/command-error";
 import { formatBytes } from "@core/format";
-import type { SpaceCategory, SpaceHighlight } from "@core/generated/types";
+import type { SpaceHighlight } from "@core/generated/types";
 import { MINUTE_MS } from "@core/time-grid";
-import { useId, useState } from "react";
+import { useId } from "react";
 import { Link } from "react-router";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
+import { LargestFolderList } from "~/components/largest-folders";
 import { Button } from "~/components/ui/button";
+import { useRevealHighlight } from "~/hooks/use-disk-space";
 import { useNow } from "~/hooks/use-now";
-import { useTransport } from "~/lib/transport-context";
-import { agoLabel } from "~/routes/dashboard/disk/_lib/space";
+import { agoLabel } from "~/lib/time-ago";
 import { Card } from "~/widgets/card";
 import type { Corner } from "~/widgets/lib/accent";
 import { useFolderReport } from "../_hooks/use-folder-report";
 
 const ROWS = 5;
-const SPACE = "/dashboard/disk?view=space&vol=/";
-
-/** What each known location is, in the words people search for. */
-const CATEGORY: Record<SpaceCategory, string> = {
-  xcode_builds: "Xcode build data",
-  xcode_archives: "Xcode archives",
-  device_support: "Xcode device support",
-  simulators: "iOS simulators",
-  node_modules: "npm packages",
-  caches: "App caches",
-  trash: "Trash",
-  container_data: "Container disk data",
-  models: "Downloaded models",
-  downloads: "Downloads",
-};
+const SPACE = "/dashboard/disk-space?vol=/";
 
 /**
  * The largest actionable folders of this Mac's last boot-volume scan (D-132):
@@ -39,21 +25,12 @@ const CATEGORY: Record<SpaceCategory, string> = {
  */
 export function OverviewFoldersCard({ origin }: { origin: Corner }) {
   const titleId = useId();
-  const transport = useTransport();
   // "Scanned 4 min ago" moves on while the dashboard stays open.
   const now = useNow(MINUTE_MS);
   const report = useFolderReport();
-  const [revealError, setRevealError] = useState<string | null>(null);
+  const reveal = useRevealHighlight();
   const summary = report.summary.data;
-  const reveal = async (folder: SpaceHighlight) => {
-    setRevealError(null);
-    const result = await transport.diskSpaceRevealHighlight(folder.path);
-    if (result.status === "error")
-      setRevealError(
-        commandErrorText(result.error, "Couldn't show this folder in Finder.")
-      );
-  };
-  const error = report.error ?? revealError;
+  const error = report.error ?? reveal.error;
 
   return (
     <Card
@@ -73,29 +50,35 @@ export function OverviewFoldersCard({ origin }: { origin: Corner }) {
           </Link>
         </h3>
       </header>
-      <FoldersBody report={report} onReveal={(f) => void reveal(f)} />
+      <FoldersBody report={report} onReveal={reveal.reveal} />
       {summary && report.progress === null && (
-        <footer className="mt-auto flex items-center justify-between gap-3">
+        <footer className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <span className="text-label text-muted-foreground">
             Scanned {agoLabel(now, summary.finished_ms)}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={report.starting || report.busy}
-            onClick={report.run}
-          >
-            Re-run
-          </Button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={report.starting || report.busy}
+              onClick={report.run}
+            >
+              Re-run
+            </Button>
+            {!report.busy && <OpenDiskSpaceLink />}
+          </div>
         </footer>
       )}
       {report.busy && (
         <p role="status" className="text-label text-muted-foreground">
           Another volume is being scanned in{" "}
-          <Link to={SPACE} className="text-link hover:underline">
-            Space
+          <Link
+            to={SPACE}
+            className="rounded-control text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          >
+            Disk space
           </Link>
-          . The report can run when it finishes.
+          .
         </p>
       )}
       {error && (
@@ -140,13 +123,16 @@ function FoldersBody({
           Find the folders taking the most space on this Mac. The report reads
           the whole disk, so it runs only when you ask.
         </p>
-        <Button
-          size="sm"
-          disabled={report.starting || report.busy}
-          onClick={report.run}
-        >
-          Run report
-        </Button>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Button
+            size="sm"
+            disabled={report.starting || report.busy}
+            onClick={report.run}
+          >
+            Run report
+          </Button>
+          {!report.busy && <OpenDiskSpaceLink />}
+        </div>
       </div>
     );
   if (summary.folders.length === 0)
@@ -156,69 +142,21 @@ function FoldersBody({
       </p>
     );
   return (
-    <ul aria-label="Largest folders" className="flex flex-col gap-1">
-      {summary.folders.slice(0, ROWS).map((folder) => (
-        <li key={folder.path}>
-          <FolderRow
-            folder={folder}
-            home={summary.home}
-            onReveal={() => onReveal(folder)}
-          />
-        </li>
-      ))}
-    </ul>
+    <LargestFolderList
+      folders={summary.folders.slice(0, ROWS)}
+      home={summary.home}
+      onReveal={onReveal}
+    />
   );
 }
 
-function FolderRow({
-  folder,
-  home,
-  onReveal,
-}: {
-  folder: SpaceHighlight;
-  home: string | null;
-  onReveal: () => void;
-}) {
-  const { name, parent } = splitPath(folder.path, home);
+function OpenDiskSpaceLink() {
   return (
-    <button
-      type="button"
-      aria-description="Show in Finder"
-      title={folder.path}
-      className="flex w-full items-baseline justify-between gap-3 rounded-control py-1 text-left text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={onReveal}
+    <Link
+      to={SPACE}
+      className="rounded-control text-label text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
     >
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span className="shrink-0 text-fg-subtle">{name}</span>
-        <span className="min-w-0 truncate text-label text-muted-foreground">
-          {detail(folder, name, parent)}
-        </span>
-      </span>
-      <span className="figures shrink-0 text-fg-subtle text-label">
-        {formatBytes(folder.bytes)}
-      </span>
-    </button>
+      Open Disk space
+    </Link>
   );
-}
-
-/** The category, unless it only repeats the name ("Downloads"); else the parent. */
-function detail(folder: SpaceHighlight, name: string, parent: string) {
-  const category = folder.category && CATEGORY[folder.category];
-  return category && category !== name ? category : parent;
-}
-
-/**
- * "DerivedData" and "~/Library/Developer/Xcode" from an absolute path: only
- * this user's home reads as "~"; another account's folders keep their path.
- */
-export function splitPath(
-  path: string,
-  home: string | null
-): { name: string; parent: string } {
-  const parts = path.split("/");
-  const name = parts.pop() ?? path;
-  const parent = parts.join("/") || "/";
-  if (home && (parent === home || parent.startsWith(`${home}/`)))
-    return { name, parent: `~${parent.slice(home.length)}` };
-  return { name, parent };
 }

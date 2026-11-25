@@ -1,12 +1,9 @@
-import { diskSpaceKeys } from "@core/query-keys";
-import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
-import { useTransport } from "~/lib/transport-context";
 import {
+  currentSpaceStatus,
+  useSpaceHighlights,
   useSpaceScan,
   useSpaceStatus,
-} from "~/routes/dashboard/disk/_hooks/use-disk-space";
-import { useHostId } from "~/stores/host-store";
+} from "~/hooks/use-disk-space";
 
 /** The boot volume's mount, the only volume whose scan keeps a summary. */
 const BOOT = "/";
@@ -19,13 +16,8 @@ const BOOT = "/";
  * again when either one's scan ends.
  */
 export function useFolderReport() {
-  const transport = useTransport();
-  const host = useHostId();
-  const summary = useQuery({
-    queryKey: diskSpaceKeys.highlights(host),
-    queryFn: () => unwrap(transport.diskSpaceHighlights(host)),
-  });
-  const status = useSpaceStatus(true).data;
+  const summary = useSpaceHighlights();
+  const status = currentSpaceStatus(useSpaceStatus(true));
   const scan = useSpaceScan();
   const scanning = status?.phase === "scanning" && status.volume === BOOT;
   // How the last boot scan failed, from here or from the Space view.
