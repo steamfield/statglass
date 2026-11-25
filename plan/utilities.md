@@ -1,6 +1,6 @@
 # Utilities and the disk space report
 
-Status: Accepted, 2026-11-25 (D-153), not started; revised after a devil's-advocate design review and
+Status: Done, 2026-11-25 (D-153), built by `plans/deliver-utilities.md`; revised after a devil's-advocate design review and
 the owner's direction on a Utilities group (record at the end). Amends where the D-114
 space report lives; the scanner, its accounting and its retention are unchanged. Plan for
 the report: [disk-space-report.md](disk-space-report.md).
