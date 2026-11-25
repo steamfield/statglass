@@ -2,7 +2,7 @@ import type { HostId, HostRecord } from "@core/generated/types";
 import { failureReason } from "@core/remote-errors";
 import { useNavigation, useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, TextInput } from "react-native";
+import { TextInput } from "react-native";
 import { useHostListUpdates, useHostStatus } from "@/data/hosts";
 import { useHosts } from "@/data/hosts-list";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
@@ -70,15 +70,11 @@ function HostDetails({ host }: { host: HostRecord }) {
         />
       </GroupedList>
       <GroupedList>
-        <Pressable
-          accessibilityRole="button"
-          className="min-h-[44px] justify-center bg-destructive px-4 py-2 active:opacity-90"
+        <ListRow
+          title="Remove"
+          destructive
           onPress={() => confirm(host, closeRemovedHost)}
-        >
-          <Text variant="body" className="text-destructive-foreground!">
-            Remove
-          </Text>
-        </Pressable>
+        />
       </GroupedList>
     </>
   );

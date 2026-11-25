@@ -6,6 +6,7 @@ import {
   type PhoneAction,
   type PhoneProblemKind,
   type PhoneRemoteHostRecord,
+  type PhoneRemoteHostStatus,
   phoneProblem,
 } from "./phone-connection";
 
@@ -270,6 +271,32 @@ it("shows last seen and the next retry together in host time", async () => {
   status.next_attempt_ms = new Date(2026, 10, 24, 14, 5).getTime();
   expect(hostStatusSummary(status, opts).label).toBe(
     "Offline since 14:02 · Retrying at 14:07"
+  );
+});
+
+it("shows last seen, not offline, for a host no screen is streaming", async () => {
+  // A parked session: the core closed it after PARK_GRACE, with no failure.
+  const { status } = await fixture("offline");
+  const parked: PhoneRemoteHostStatus = {
+    ...status,
+    state: "offline",
+    failure_kind: null,
+    route_failures: [],
+    next_attempt_ms: null,
+    demand: null,
+  };
+  const opts = { nowMs: PHONE_LAST_SEEN_MS };
+  expect(hostStatusSummary(parked, opts)).toEqual({
+    label: "Last seen 14:02",
+    tone: "muted",
+    kind: null,
+  });
+  expect(hostStatusSummary({ ...parked, last_seen_ms: null }, opts).label).toBe(
+    "Not connected"
+  );
+  // A demanded host in the same state is a real outage.
+  expect(hostStatusSummary({ ...parked, demand: "full" }, opts).label).toBe(
+    "Offline since 14:02"
   );
 });
 

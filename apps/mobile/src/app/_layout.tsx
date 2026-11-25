@@ -4,7 +4,6 @@
  */
 import "@/global.css";
 import { type ErrorBoundaryProps, Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
 import { useWindowDimensions, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -94,7 +93,6 @@ export default function RootLayout() {
         <CoreProvider>
           <DemoProvider>
             <NativeCoreBridge />
-            <StatusBar style="auto" />
             <StartupFailureAnnouncement />
             <AppLockGate>
               <PairingProvider>

@@ -414,6 +414,30 @@ function problemLabel(
   return tone === "warning" ? `Needs attention · ${short}` : short;
 }
 
+/**
+ * No screen demands the host (Rust reports `demand: null`) and the session
+ * closed without a failure: the core parked it after `PARK_GRACE`, so the host
+ * may be fine and "offline" would be a claim the phone hasn't tested.
+ */
+function parkedSummary(
+  status: PhoneRemoteHostStatus
+): { label: string; tone: Tone; kind: null } | null {
+  const parked =
+    status.demand === null &&
+    status.state === "offline" &&
+    !status.dialing &&
+    !status.waiting_for_network &&
+    !status.open_error &&
+    status.failure_kind === null &&
+    status.route_failures.length === 0;
+  if (!parked) return null;
+  const label =
+    status.last_seen_ms === null
+      ? "Not connected"
+      : `Last seen ${formatClock(status.last_seen_ms)}`;
+  return { label, tone: "muted", kind: null };
+}
+
 export function hostStatusSummary(
   status: PhoneRemoteHostStatus | null,
   { nowMs, requestedDemand }: { nowMs: number; requestedDemand?: DemandLevel }
@@ -431,6 +455,8 @@ export function hostStatusSummary(
     };
   if (status.state === "disabled")
     return { label: "Disabled", tone: "muted", kind: null };
+  const parked = parkedSummary(status);
+  if (parked) return parked;
 
   const variant = problemVariant(status);
   const kind = variant ? publicKind(variant) : null;

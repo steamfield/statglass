@@ -1,6 +1,7 @@
 import type { NativeStackNavigationOptions } from "expo-router";
 import { createElement } from "react";
 import { PixelRatio } from "react-native";
+import { themeColors } from "@/theme.generated";
 import { BackButton } from "./back-button";
 import type { ThemeColors } from "./theme-colors";
 
@@ -39,6 +40,9 @@ export function screenOptions(
           : [];
       },
     }),
+    // The plist makes status bar appearance view-controller based, so each
+    // screen sets it; expo-status-bar's <StatusBar> has no effect.
+    statusBarStyle: colors === themeColors.dark ? "light" : "dark",
     gestureEnabled: true,
     fullScreenGestureEnabled: false,
     // The stack already provides the top blur through headerBlurEffect.
