@@ -233,10 +233,11 @@ fn mobile_core_streams_and_reads_host_history() {
         fixture.expect_cpu(stream).await;
         let width = Tier::S10.bucket_ms().unwrap();
         let next_bucket = (*frames.borrow() / width + 1) * width;
-        // Wait for the agent to close a bucket containing a sampled frame.
+        // Wait for the agent to close a bucket containing a sampled frame. The host calls a
+        // bucket complete one sampler tick (1 s while streaming) after it ends.
         tokio::time::timeout(
             Duration::from_secs(20),
-            frames.wait_for(|ts| *ts > next_bucket),
+            frames.wait_for(|ts| *ts > next_bucket + 1_000),
         )
         .await
         .unwrap()
