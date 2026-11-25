@@ -130,7 +130,13 @@ export function NetworkPage({
           {connection.state === "reconnecting" && (
             <ModuleNotice message={connection.label} />
           )}
-          <NetworkStats host={host} live={live} link={link} />
+          <NetworkStats
+            host={host}
+            live={live}
+            link={link}
+            stats={data?.stats}
+            spanMs={displayedRange.toMs - displayedRange.fromMs}
+          />
           <View
             className="gap-2 rounded-xl border border-border bg-card p-3"
             testID="history-plot-layout"

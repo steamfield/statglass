@@ -161,6 +161,8 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
               key: { metric: "power.system", labels: [] },
               avg: 12.3,
               peak: request.to_ms === request.from_ms + HOUR_MS ? 25.4 : 200,
+              measured_ms: null,
+              integral: null,
             },
           ],
           series: [

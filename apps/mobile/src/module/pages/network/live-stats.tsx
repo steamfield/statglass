@@ -1,7 +1,15 @@
-import { formatPercent, formatRate } from "@core/format";
-import type { HostId } from "@core/generated/types";
+import {
+  formatBytes,
+  formatPercent,
+  formatRate,
+  formatSpan,
+  MISSING,
+} from "@core/format";
+import type { HostId, SeriesHistoryStats } from "@core/generated/types";
 import { currentLayout, selectNetwork } from "@core/live-selectors";
+import { NETWORK_HERO } from "@core/module-hero";
 import { interfaceRows, ofLink } from "@core/network-lines";
+import { measuredShort } from "@core/range-totals";
 import { keyByLabel, labelValues } from "@core/series-key";
 import { useMemo } from "react";
 import { shallow } from "zustand/shallow";
@@ -12,6 +20,29 @@ import { ListRow } from "@/ui/list-row";
 import { Text } from "@/ui/text";
 
 const NO_STATS = [] as const;
+
+/** "↓ Downloaded · 1 h": bytes from the host's range totals (D-155), never summed here. */
+function rangeTotals(stats: readonly SeriesHistoryStats[], spanMs: number) {
+  const scope = formatSpan(spanMs);
+  return NETWORK_HERO.totals.map(({ metric, label }) => {
+    const stat = stats.find(
+      ({ key }) => key.metric === metric && key.labels.length === 0
+    );
+    const integral = stat?.integral ?? null;
+    const measured = stat?.measured_ms ?? null;
+    const short =
+      measured === null
+        ? null
+        : measuredShort({ measured_ms: measured }, spanMs);
+    return {
+      label: `${label} · ${scope}`,
+      value:
+        integral === null
+          ? MISSING
+          : `${formatBytes(integral)}${short === null ? "" : ` in ${short}`}`,
+    };
+  });
+}
 const rxKey = keyByLabel("net.rx", "iface");
 const txKey = keyByLabel("net.tx", "iface");
 
@@ -19,10 +50,15 @@ export function NetworkStats({
   host,
   live,
   link,
+  stats,
+  spanMs,
 }: {
   host: HostId;
   live: boolean;
   link: number | null;
+  /** The history answer's per-series stats, for the range totals. */
+  stats: readonly SeriesHistoryStats[] | undefined;
+  spanMs: number;
 }) {
   const { rx, tx } = useHostLive(host, selectNetwork, shallow);
   const download = live ? rx : null;
@@ -35,6 +71,7 @@ export function NetworkStats({
           label: "Of link",
           value: formatPercent(ofLink(download, link), { decimals: 1 }),
         },
+        ...rangeTotals(stats ?? NO_STATS, spanMs),
       ]}
       stats={NO_STATS}
     />

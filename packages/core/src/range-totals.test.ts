@@ -1,4 +1,4 @@
-import { measuredShort } from "./range-totals-strip";
+import { measuredShort } from "./range-totals";
 
 const stat = (measured_ms: number) => ({
   metric: "cpu.total",

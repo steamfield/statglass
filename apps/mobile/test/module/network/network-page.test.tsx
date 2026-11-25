@@ -348,6 +348,45 @@ test("empty Network history explains that there are no samples to inspect", asyn
   ).toBeDisabled();
 });
 
+test("Network shows the host's range totals and how long a short range was measured", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const total = (metric: string, integral: number, measured_ms: number) => ({
+    key: { metric, labels: [] },
+    avg: 1,
+    peak: 2,
+    measured_ms,
+    integral,
+  });
+  jest.spyOn(transport, "hostHistory").mockResolvedValue({
+    status: "ok",
+    data: {
+      tier: "m1",
+      bucket_ms: MINUTE_MS,
+      complete_to_ms: now,
+      series: [],
+      gaps: [],
+      stats: [
+        total("net.rx_total", 1.5e9, 11 * MINUTE_MS),
+        total("net.tx_total", 2e8, 400 * 24 * 60 * MINUTE_MS),
+      ],
+      events: [],
+      clamped: [],
+    },
+  });
+  await openNetwork(transport);
+  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
+    nativeEvent: { layout: { width: 300 } },
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText(/^↓ Downloaded · /)).toHaveAccessibilityValue({
+      text: /GB in 11 min$/,
+    })
+  );
+  expect(screen.getByLabelText(/^↑ Uploaded · /)).toHaveAccessibilityValue({
+    text: /^[\d.]+ MB$/,
+  });
+});
+
 test("Network shows live throughput and interfaces and ranks processes by rate", async () => {
   const transport = createMockTransport({ autoTick: false });
   const interest = jest.spyOn(transport, "setProcessInterest");
