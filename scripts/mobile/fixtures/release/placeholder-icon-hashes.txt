@@ -1,0 +1,2 @@
+# Expo's default 1024 px white icon from the phase 13 prebuild audit.
+35a635a6c61497e3e5c08c0d66a2816f

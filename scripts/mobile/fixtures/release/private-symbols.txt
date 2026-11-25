@@ -1,0 +1,8 @@
+# Anchored extended regular expression, followed by a tab and the reason.
+^_IOReport	Private IOReport metrics API
+^_IOHIDEventSystemClient	Private HID event-system client API
+^_IOHIDServiceClient	Private HID service-client API
+^_NStat	Private network statistics API
+^_SMC	Mac system management controller API
+^_IOService	IOKit services used by the Mac collectors
+^_task_for_pid(\$.*)?$	Task-port access is outside the iPhone viewer
