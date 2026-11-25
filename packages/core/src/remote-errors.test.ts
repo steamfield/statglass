@@ -1,5 +1,7 @@
+import type { PairingFailure } from "./generated/types";
 import {
   failureReason,
+  pairingAdvice,
   remoteErrorAdvice,
   remoteErrorText,
   remoteQueryText,
@@ -59,28 +61,71 @@ it("words why a connected host did not answer a query apart from a dropped one",
   expect(remoteQueryText(new Error("other"), "space reports")).toBeNull();
 });
 
-it.each([
-  ["denied", "The host declined the pairing request."],
-  ["expired", "The pairing code expired."],
-  ["used", "The pairing code has already been used."],
-  ["unknown", "The host does not recognize this pairing code."],
-  ["unavailable", "Pairing is unavailable on this host."],
-  ["invalid", "The pairing data is invalid."],
-] as const)(
-  "words a %s pairing failure when the host gives no details",
-  (reason, copy) => {
-    expect(remoteErrorText({ kind: "pairing", reason, message: "" })).toBe(
-      copy
-    );
+const pairingCopy = {
+  denied: [
+    "The host declined the pairing request.",
+    "Start pairing again on Build host. Compare the codes before approving.",
+  ],
+  expired: ["The pairing code expired.", "Ask for a new code on Build host."],
+  used: [
+    "The pairing code has already been used.",
+    "Ask for a new code on Build host.",
+  ],
+  unknown: [
+    "The host does not recognize this pairing code.",
+    "Start pairing again on Build host.",
+  ],
+  unavailable: [
+    "Pairing is unavailable on this host.",
+    "Check StatGlass is running on Build host, then start pairing again.",
+  ],
+  monitoring_off: [
+    "Remote monitoring is off on this host.",
+    "Turn on remote monitoring on Build host, then start pairing again.",
+  ],
+  invalid: [
+    "The pairing data is invalid.",
+    "Scan the QR again or paste the entire pairing code.",
+  ],
+} as const satisfies Record<PairingFailure, readonly [string, string]>;
+
+it.each(Object.entries(pairingCopy))(
+  "uses the %s title and offers phone recovery despite a host detail",
+  (reason, [title, recovery]) => {
+    const error = {
+      kind: "pairing",
+      reason: reason as PairingFailure,
+      message: "Diagnostic from the host.",
+    } as const;
+    expect(remoteErrorText(error)).toBe(title);
+    expect(pairingAdvice(error, "Build host")).toEqual({ title, recovery });
   }
 );
 
-it("keeps the host's pairing setup guidance", () => {
-  const message = "Turn on Allow remote monitoring in StatGlass Settings.";
-  expect(
-    remoteErrorText({ kind: "pairing", reason: "unavailable", message })
-  ).toBe(message);
-});
+it.each([
+  [
+    "host_key_unknown",
+    "The host key doesn’t match the pairing code.",
+    "Start pairing again on Build host. Use a code from the host you want to add.",
+  ],
+  [
+    "remote_unreachable",
+    "StatGlass couldn’t reach the host.",
+    "Check Build host is reachable on this network, then try again.",
+  ],
+  [
+    "remote_auth",
+    "The host refused the pairing key.",
+    "Start pairing again on Build host.",
+  ],
+] as const)(
+  "gives pairing-specific wording for %s",
+  (kind, title, recovery) => {
+    expect(
+      pairingAdvice({ kind, message: "SSH detail" }, "Build host")
+    ).toEqual({ title, recovery });
+  }
+);
 
 it.each([
   [

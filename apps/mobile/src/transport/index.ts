@@ -17,6 +17,8 @@ export {
   createNativeTransport,
   isNativeTransport,
   type NativeTransport,
+  nativePairing,
   startNativeTransport,
+  useDataPolicyError,
 } from "./native-transport";
 export { toRemoteHostRecord } from "./remote-hosts";

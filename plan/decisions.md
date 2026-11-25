@@ -4826,3 +4826,11 @@ Date: 2026-11-25. The user's decision, reversing the iPhone polish RFC's proposa
 3. The restricted session allows it. The Mac app and the agent share one resolver in `statglass-remote::addresses`.
 4. **This widens D-093, and the user accepted it.** D-093 weighed the third-party request for the user's own Mac, where the user opened the Network page. Now a headless Linux server makes the same request occasionally, when a phone or a controlling Mac shows its addresses and the cache is cold or the host's network changed. On this Mac the public IP now follows the same 24-hour rule instead of the desktop's 10-minute refresh. There is no switch for it. The user accepted that tradeoff (2026-11-25).
 5. **The Mac shows these addresses for its remote hosts too** (the user's decision, 2026-11-25). One desktop command, `get_host_addresses`, answers this Mac from the shared resolver and a remote host through its session's `NetworkAddresses` query, replacing `get_network_addresses` and `get_public_ip`. The Network page address line, the Overview machine header and the popover Network card show addresses for every host. A host without `query.addresses.v1` shows no address row and no error. Plan: phase 8 lane e.
+
+## D-154: One Add a host flow on the iPhone
+
+Date: 2026-11-25. The user's decision. Updates RFC `plan/rfc-ios-app.md` sections 1.3, 1.4 and 2.4.
+
+### Decision
+
+Use one Add a host flow for offers from Pair iPhone on a Mac and from `sudo statglass-agent pair` on a host. Both offers support Scan QR and Paste code. The payload's `can_hand_over` field tells the phone whether the host can hand over other monitored hosts. The phone uses the OS field for display.

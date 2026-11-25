@@ -1,6 +1,8 @@
 import type { HostRecord } from "@core/generated/types";
-import { failureReason } from "@core/remote-errors";
-import { useState } from "react";
+import { hostKeys } from "@core/query-keys";
+import { failureReason, remoteErrorText } from "@core/remote-errors";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -8,23 +10,27 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { ActionButton } from "@/components/action-button";
 import { useHostListUpdates } from "@/data/hosts";
 import { useHosts } from "@/data/hosts-list";
 import {
   usePhoneSettings,
   usePhoneSettingsActions,
 } from "@/data/phone-settings";
+import { usePhoneTransport } from "@/data/transport-context";
+import { isNativeTransport } from "@/transport";
 import { Text } from "@/ui/text";
 
 type HostEdit = { host: HostRecord; kind: "rename" | "remove" };
 
-/** Renames, reorders and hides hosts on this phone. */
+/** Renames, reorders and removes hosts on this phone. */
 export function HostSettings() {
   useHostListUpdates();
   const hosts = useHosts();
   const names = usePhoneSettings((s) => s.hostNames);
-  const removed = usePhoneSettings((s) => s.removed);
   const { set } = usePhoneSettingsActions();
+  const transport = usePhoneTransport();
+  const cache = useQueryClient();
   const [edit, setEdit] = useState<HostEdit | null>(null);
 
   function move(from: number, change: -1 | 1) {
@@ -36,6 +42,28 @@ export function HostSettings() {
     order[from] = adjacent;
     order[to] = id;
     set({ hostOrder: order });
+  }
+
+  async function remove(host: HostRecord) {
+    if (!isNativeTransport(transport)) {
+      set(({ removed }) => ({ removed: [...removed, host.id] }));
+      return null;
+    }
+    const result = await transport.removeHost(host.id);
+    if (result.status === "error") return remoteErrorText(result.error);
+    set((current) => {
+      const hostNames = { ...current.hostNames };
+      delete hostNames[host.id];
+      return {
+        hostNames,
+        hostOrder: current.hostOrder.filter((id) => id !== host.id),
+      };
+    });
+    cache.setQueryData<HostRecord[]>(hostKeys.list(), (current) =>
+      current?.filter(({ id }) => id !== host.id)
+    );
+    void cache.invalidateQueries({ queryKey: hostKeys.all });
+    return null;
   }
 
   return (
@@ -96,6 +124,12 @@ export function HostSettings() {
               </View>
             </View>
           ))}
+          <ActionButton label="Add a host" href="/pair" weight="primary" />
+          <ActionButton
+            label="Update from Mac"
+            href="/update-from-mac"
+            weight="secondary"
+          />
         </View>
       </ScrollView>
       {edit && (
@@ -106,7 +140,7 @@ export function HostSettings() {
           onRename={(name) =>
             set({ hostNames: { ...names, [edit.host.id]: name } })
           }
-          onRemove={() => set({ removed: [...removed, edit.host.id] })}
+          onRemove={() => remove(edit.host)}
         />
       )}
     </>
@@ -154,10 +188,13 @@ function HostEditSheet({
   edit: HostEdit;
   onClose: () => void;
   onRename: (name: string) => void;
-  onRemove: () => void;
+  onRemove: () => Promise<string | null>;
 }) {
   const [name, setName] = useState(edit.host.display_name);
   const [invalid, setInvalid] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const inFlight = useRef(false);
   const rename = edit.kind === "rename";
 
   function save() {
@@ -170,12 +207,24 @@ function HostEditSheet({
     onClose();
   }
 
+  async function remove() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setRemoving(true);
+    setRemoveError(null);
+    const error = await onRemove();
+    inFlight.current = false;
+    setRemoving(false);
+    if (error) setRemoveError(error);
+    else onClose();
+  }
+
   return (
     <KeyboardAvoidingView
       behavior="padding"
       className="absolute inset-0 justify-end bg-overlay"
       accessibilityViewIsModal
-      onAccessibilityEscape={onClose}
+      onAccessibilityEscape={removing ? undefined : onClose}
     >
       <ScrollView
         bounces={false}
@@ -215,8 +264,17 @@ function HostEditSheet({
               This removes the host from this iPhone’s list.
             </Text>
           )}
+          {removeError && (
+            <Text
+              role="caption"
+              accessibilityRole="alert"
+              className="text-destructive!"
+            >
+              {removeError}
+            </Text>
+          )}
           <View className="flex-row flex-wrap gap-2">
-            <EditButton label="Cancel" onPress={onClose}>
+            <EditButton label="Cancel" disabled={removing} onPress={onClose}>
               Cancel
             </EditButton>
             {rename ? (
@@ -227,12 +285,10 @@ function HostEditSheet({
               <EditButton
                 label="Remove host"
                 destructive
-                onPress={() => {
-                  onRemove();
-                  onClose();
-                }}
+                disabled={removing}
+                onPress={() => void remove()}
               >
-                Remove host
+                {removing ? "Removing…" : "Remove host"}
               </EditButton>
             )}
           </View>

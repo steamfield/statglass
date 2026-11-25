@@ -4,6 +4,7 @@
  */
 import type {
   BuildInfo,
+  CommandError,
   DataPolicy,
   HostId,
   HostRecord,
@@ -15,9 +16,17 @@ import type {
 import type { CommandResult } from "@core/transport";
 import { unwrap } from "@core/transport/query";
 import type { StatglassNativeModule } from "@native/statglass-native";
+import { useStore } from "zustand";
+import { createStore, type StoreApi } from "zustand/vanilla";
 import type { PhonePairing } from "@/data/pairing-seam";
 import type { PhoneTransport } from "@/data/seam";
-import { callCore, parseEnvelope, parseEvent } from "./envelope";
+import {
+  callCore,
+  callCoreByMethod,
+  parseEnvelope,
+  parseEvent,
+  preparePhoneKey,
+} from "./envelope";
 import { createLiveStreams } from "./live-streams";
 import { toRemoteHostRecord } from "./remote-hosts";
 
@@ -35,6 +44,18 @@ export interface NativeTransport extends PhoneTransport {
   /** Ends every stream and listener; the core keeps running. */
   dispose(): void;
 }
+
+type Pair = PhonePairing["pair"];
+type NativePairing = PhonePairing & {
+  pair(...args: [...Parameters<Pair>, signal?: AbortSignal]): ReturnType<Pair>;
+};
+
+// Keep phone-only pairing and policy feedback off the shared transport seam.
+const services = new WeakMap<
+  NativeTransport,
+  { pairing: NativePairing; policyError: StoreApi<CommandError | null> }
+>();
+const noPolicyError = createStore<CommandError | null>(() => null);
 
 /**
  * Starts the core with `config` and returns the transport over it.
@@ -86,7 +107,8 @@ export function createNativeTransport(
     return unsubscribe;
   }
 
-  return {
+  const policyError = createStore<CommandError | null>(() => null);
+  const transport: NativeTransport = {
     listHosts: () =>
       unwrap(callCore<HostRecord[]>(native, { method: "list_hosts" })),
     async listRemoteHosts() {
@@ -135,8 +157,17 @@ export function createNativeTransport(
       hostsPending = write.then(() => undefined);
       return write;
     },
-    setDataPolicy: (args) =>
-      callCore(native, { method: "set_data_policy", args }),
+    async setDataPolicy(args) {
+      const result = await callCoreByMethod(native, {
+        method: "set_data_policy",
+        args,
+      });
+      policyError.setState(
+        result.status === "error" ? result.error : null,
+        true
+      );
+      return result;
+    },
     authorizedKeyLine: (comment) =>
       callCore(native, { method: "authorized_key_line", args: { comment } }),
     buildInfo: () => callCore(native, { method: "build_info" }),
@@ -146,15 +177,37 @@ export function createNativeTransport(
       live.dispose();
     },
   };
+  services.set(transport, {
+    policyError,
+    pairing: {
+      previewPairing: (text) =>
+        callCoreByMethod(native, { method: "preview_pairing", args: { text } }),
+      async pair(text, deviceName, model, signal?: AbortSignal) {
+        await preparePhoneKey(native);
+        if (signal?.aborted) {
+          return {
+            status: "error",
+            error: { kind: "internal", message: "Pairing cancelled" },
+          };
+        }
+        return callCoreByMethod(native, {
+          method: "pair",
+          args: { text, device_name: deviceName, model },
+        });
+      },
+    },
+  });
+  return transport;
 }
 
-export function nativePairing(_core: NativeTransport): PhonePairing {
-  const unavailable = async () =>
-    ({
-      status: "error",
-      error: { kind: "internal", message: "Pairing is not implemented" },
-    }) as const;
-  return { previewPairing: unavailable, pair: unavailable };
+export function nativePairing(core: NativeTransport): NativePairing {
+  const pairing = services.get(core)?.pairing;
+  if (!pairing) throw new Error("Pairing requires a native core transport");
+  return pairing;
+}
+
+export function useDataPolicyError(core: NativeTransport | null) {
+  return useStore((core && services.get(core)?.policyError) || noPolicyError);
 }
 
 /** Whether `transport` is the native one (it carries the native-only calls). */

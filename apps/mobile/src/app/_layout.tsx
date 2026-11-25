@@ -40,10 +40,6 @@ function RootStack() {
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="pair" options={{ title: "Pair with your Mac" }} />
-      <Stack.Screen
-        name="pair-linux"
-        options={{ title: "Add a Linux server" }}
-      />
       <Stack.Screen name="demo" options={{ title: "Demo hosts" }} />
       <Stack.Screen name="(hosts)" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />

@@ -1,9 +1,16 @@
+import { remoteErrorText } from "@core/remote-errors";
 import { ScrollView, Switch, useColorScheme, View } from "react-native";
 import {
   usePhoneSettings,
   usePhoneSettingsActions,
 } from "@/data/phone-settings";
+import { useOptionalPhoneTransport } from "@/data/transport-context";
 import { themeColors } from "@/theme.generated";
+import {
+  isNativeTransport,
+  useDataPolicyError,
+  useNativeCore,
+} from "@/transport";
 import { Text } from "@/ui/text";
 
 /** Controls cellular use for live updates. */
@@ -11,6 +18,11 @@ export default function DataSettings() {
   const value = usePhoneSettings((settings) => settings.liveOnCellular);
   const { set } = usePhoneSettingsActions();
   const colors = themeColors[useColorScheme() === "dark" ? "dark" : "light"];
+  const transport = useOptionalPhoneTransport();
+  const { core } = useNativeCore();
+  const error = useDataPolicyError(
+    core ?? (isNativeTransport(transport) ? transport : null)
+  );
   return (
     <ScrollView
       className="flex-1 bg-background"
@@ -33,6 +45,15 @@ export default function DataSettings() {
         <Text role="caption" className="px-4">
           When this is off, the host screen updates every 5 seconds on cellular.
         </Text>
+        {error && (
+          <Text
+            role="caption"
+            accessibilityRole="alert"
+            className="px-4 text-destructive!"
+          >
+            Couldn’t apply the data setting. {remoteErrorText(error)}
+          </Text>
+        )}
       </View>
     </ScrollView>
   );
