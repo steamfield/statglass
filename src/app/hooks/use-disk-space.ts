@@ -276,11 +276,13 @@ export function useRevealHighlight() {
   const reveal = useCallback(
     async (folder: SpaceHighlight) => {
       setError(null);
-      const result = await transport.diskSpaceRevealHighlight(folder.path);
-      if (result.status === "error")
+      try {
+        await unwrap(transport.diskSpaceRevealHighlight(folder.path));
+      } catch (error) {
         setError(
-          commandErrorText(result.error, "Couldn't show this folder in Finder.")
+          commandErrorText(error, "Couldn't show this folder in Finder.")
         );
+      }
     },
     [transport]
   );

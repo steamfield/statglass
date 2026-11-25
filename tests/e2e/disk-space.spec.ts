@@ -112,3 +112,24 @@ test("fits a narrow window without horizontal page scroll", async ({
     .boundingBox();
   expect(box?.height).toBeGreaterThanOrEqual(220);
 });
+
+test("a long folder name keeps its size visible in the narrow landing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 760, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(space);
+  const list = page.getByRole("list", { name: "Largest folders" });
+  const size = list.getByText("38.2 GB", { exact: true });
+  const longName = "a".repeat(250);
+  // Give a real folder row a name near the filesystem limit to stress its layout.
+  await list.getByText("Containers", { exact: true }).evaluate((name, text) => {
+    name.textContent = text;
+  }, longName);
+  const nameBox = await list.getByText(longName, { exact: true }).boundingBox();
+  const sizeBox = await size.boundingBox();
+  expect(nameBox).not.toBeNull();
+  expect(sizeBox).not.toBeNull();
+  if (nameBox && sizeBox)
+    expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(sizeBox.x);
+});
