@@ -27,6 +27,47 @@ const PAIRING_FAILURE_TEXT: Record<PairingFailure, string> = {
   invalid: "The pairing data is invalid.",
 };
 
+export function pairingAdvice(
+  error: CommandError,
+  host = "the host"
+): { title: string; recovery: string } {
+  const startAgain = `Start pairing again on ${host}.`;
+  switch (error.kind) {
+    case "pairing": {
+      const recovery: Record<PairingFailure, string> = {
+        denied: `${startAgain} Compare the codes before approving.`,
+        expired: `Ask for a new code on ${host}.`,
+        used: `Ask for a new code on ${host}.`,
+        unknown: startAgain,
+        unavailable: `Check StatGlass is running on ${host}, then start pairing again.`,
+        monitoring_off: `Turn on remote monitoring on ${host}, then start pairing again.`,
+        invalid: "Scan the QR again or paste the entire pairing code.",
+      };
+      return {
+        title: PAIRING_FAILURE_TEXT[error.reason],
+        recovery: recovery[error.reason],
+      };
+    }
+    case "host_key_unknown":
+      return {
+        title: "The host key doesn’t match the pairing code.",
+        recovery: `${startAgain} Use a code from the host you want to add.`,
+      };
+    case "remote_unreachable":
+      return {
+        title: "StatGlass couldn’t reach the host.",
+        recovery: `Check ${host} is reachable on this network, then try again.`,
+      };
+    case "remote_auth":
+      return {
+        title: "The host refused the pairing key.",
+        recovery: startAgain,
+      };
+    default:
+      return { title: remoteErrorText(error), recovery: startAgain };
+  }
+}
+
 export function remoteErrorText(error: CommandError): string {
   switch (error.kind) {
     case "unknown_host":
@@ -38,9 +79,9 @@ export function remoteErrorText(error: CommandError): string {
     case "store_too_new":
       return "This history was saved by a newer StatGlass version.";
     case "pairing":
-      return commandErrorText(
-        error,
-        PAIRING_FAILURE_TEXT[error.reason] ?? "Please try again."
+      return (
+        PAIRING_FAILURE_TEXT[error.reason] ??
+        commandErrorText(error, "Please try again.")
       );
     default:
       return commandErrorText(error, "Please try again.");

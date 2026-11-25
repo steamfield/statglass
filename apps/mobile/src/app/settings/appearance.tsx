@@ -1,4 +1,4 @@
-import { Appearance, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import {
   usePhoneSettings,
   usePhoneSettingsActions,
@@ -33,10 +33,7 @@ export default function AppearanceSettings() {
               accessibilityRole="radio"
               accessibilityLabel={label}
               accessibilityState={{ checked: appearance === value }}
-              onPress={() => {
-                Appearance.setColorScheme(value === "system" ? "auto" : value);
-                set({ appearance: value });
-              }}
+              onPress={() => set({ appearance: value })}
               className={`min-h-[44px] flex-row items-center justify-between gap-3 px-4 py-2 active:bg-secondary ${index ? "border-border-subtle border-t" : ""}`}
             >
               <Text role="body" className="shrink">
