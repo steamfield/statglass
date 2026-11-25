@@ -376,7 +376,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn alert_rules_queries_preserve_host_refusals() {
-        use RemoteError::{InvalidArgument, Refused, Stale, Unsupported};
+        use RemoteError::{Internal, InvalidArgument, Stale, Unsupported};
 
         let source = source();
         let cases = [
@@ -391,7 +391,7 @@ mod tests {
             ),
             (
                 ErrorCode::Internal,
-                Refused("saving the rules failed".into()),
+                Internal("saving the rules failed".into()),
             ),
         ];
         for (code, expected) in cases {
@@ -495,7 +495,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn alert_rules_queries_ask_for_a_controller_update_for_an_unknown_answer() {
         assert_refusal(read_with_answer(Answer::Unknown).await, RemoteError::Unsupported(
-            "This host answered in a form this StatGlass can't read; update StatGlass on this Mac".into(),
+            "This host sent an answer this version can't read. Update StatGlass on this device."
+                .into(),
         ), false);
     }
 
