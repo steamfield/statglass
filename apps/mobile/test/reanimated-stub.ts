@@ -8,19 +8,16 @@
  */
 import { jest } from "@jest/globals";
 
-const { useState } = jest.requireActual<typeof import("react")>("react");
-const { View } =
+const { useCallback, useState } =
+  jest.requireActual<typeof import("react")>("react");
+const { Easing, ScrollView, View } =
   jest.requireActual<typeof import("react-native")>("react-native");
 
 /** Gesture Handler wraps its detector with this; a still component passes through. */
 const createAnimatedComponent = <T>(component: T) => component;
 
-export default { View, createAnimatedComponent };
-export { createAnimatedComponent };
-export const Easing = {
-  bezier: () => (t: number) => t,
-  linear: (t: number) => t,
-};
+export default { ScrollView, View, createAnimatedComponent };
+export { createAnimatedComponent, Easing };
 export const ReduceMotion = {
   Never: "never",
   System: "system",
@@ -35,17 +32,21 @@ export const isSharedValue = () => false;
 export const useHandler = () => undefined;
 export const useEvent = () => undefined;
 export const useComposedEventHandler = () => undefined;
+export const useAnimatedReaction = () => {};
+export const useAnimatedRef = () => useCallback(() => {}, []);
+export const useAnimatedScrollHandler = () => undefined;
+export const useDerivedValue = (read: () => unknown) => ({ value: read() });
 export const useAnimatedStyle = (build: () => unknown) => build();
-export const useSharedValue = (initial: number) =>
-  useState(() => {
-    let value = initial;
-    return {
-      get: () => value,
-      set: (next: number) => {
-        value = next;
-      },
-    };
-  })[0];
+export const useSharedValue = <T>(initial: T) =>
+  useState(() => ({
+    value: initial,
+    get() {
+      return this.value;
+    },
+    set(next: T) {
+      this.value = next;
+    },
+  }))[0];
 export const withDelay = (_delay: number, target: number) => target;
 export const withRepeat = (target: number) => target;
 export const withTiming = (target: number) => target;

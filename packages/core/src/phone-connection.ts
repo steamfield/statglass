@@ -1,6 +1,7 @@
 import { formatClock } from "./format";
 import type {
   CommandError,
+  DemandLevel,
   IncompatibleSide,
   MobileRemoteHost,
   RemoteFailureKind,
@@ -415,12 +416,19 @@ function problemLabel(
 
 export function hostStatusSummary(
   status: PhoneRemoteHostStatus | null,
-  { nowMs }: { nowMs: number }
+  { nowMs, requestedDemand }: { nowMs: number; requestedDemand?: DemandLevel }
 ): { label: string; tone: Tone; kind: PhoneProblemKind | null } {
   if (!status)
     return { label: "Status unavailable", tone: "muted", kind: null };
   if (status.state === "connected")
-    return { label: "Live", tone: "live", kind: null };
+    return {
+      label:
+        status.demand === "compact" && requestedDemand === "full"
+          ? "Every 5 s on cellular"
+          : "Live",
+      tone: "live",
+      kind: null,
+    };
   if (status.state === "disabled")
     return { label: "Disabled", tone: "muted", kind: null };
 

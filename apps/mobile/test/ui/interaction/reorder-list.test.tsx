@@ -11,7 +11,12 @@ import {
   Pressable,
   Text,
 } from "react-native";
-import { Gesture, State } from "react-native-gesture-handler";
+import {
+  Gesture,
+  type GestureTouchEvent,
+  PointerType,
+  State,
+} from "react-native-gesture-handler";
 import { fireGestureHandler } from "react-native-gesture-handler/jest-utils";
 import ReorderableList, {
   NestedReorderableList,
@@ -48,11 +53,12 @@ jest.mock("react-native-reorderable-list", () => {
 });
 
 const names: Readonly<Record<string, string>> = {
+  unavailable: "Unavailable GPU",
   cpu: "CPU",
   memory: "Memory",
   gpu: "GPU",
 };
-const initial = Object.keys(names);
+const initial = ["cpu", "memory", "gpu"];
 
 beforeEach(() => {
   jest.useFakeTimers();
@@ -62,7 +68,17 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-async function renderList({ nested = false, ids = initial } = {}) {
+async function renderList({
+  nested = false,
+  ids = initial,
+  pinned,
+  accessibilityOnItem,
+}: {
+  nested?: boolean;
+  ids?: string[];
+  pinned?: string;
+  accessibilityOnItem?: boolean;
+} = {}) {
   const reorder = jest.fn<(ids: string[]) => void>();
   const release = jest.fn<(id: string) => void>();
   const open = jest.fn<(id: string) => void>();
@@ -80,13 +96,19 @@ async function renderList({ nested = false, ids = initial } = {}) {
         keyOf={(id) => id}
         itemLabel={(id) => names[id] ?? id}
         nested={nested}
+        {...(pinned && { isItemMovable: (id: string) => id !== pinned })}
+        {...(accessibilityOnItem && { accessibilityOnItem })}
         onReorder={(next) => {
           reorder(next);
           setOrder(next);
         }}
         onReleaseWithoutMove={release}
-        renderItem={({ item }) => (
-          <Pressable accessibilityRole="button" onPress={() => open(item)}>
+        renderItem={({ item, reorderAccessibility }) => (
+          <Pressable
+            {...reorderAccessibility}
+            accessibilityRole="button"
+            onPress={() => open(item)}
+          >
             <Text>Open {names[item]}</Text>
           </Pressable>
         )}
@@ -140,6 +162,90 @@ it("releases the lifted item without reordering when the indices match", async (
   expect(impact.mock.calls).toEqual([
     [Haptics.ImpactFeedbackStyle.Medium],
     [Haptics.ImpactFeedbackStyle.Light],
+  ]);
+});
+
+it("keeps a slight hold drift stationary but suppresses the menu after a drag returns to its start", async () => {
+  const pan = jest.spyOn(Gesture, "Pan");
+  const { callbacks, release, reorder } = await renderList();
+  const gesture = pan.mock.results[0];
+  if (gesture?.type !== "return") throw new Error("Expected a pan");
+  const { handlers, handlerTag } = gesture.value;
+  const manager = {
+    handlerTag,
+    begin() {},
+    activate() {},
+    end() {},
+    fail() {},
+  };
+  const touch = (
+    y: number,
+    eventType: GestureTouchEvent["eventType"]
+  ): GestureTouchEvent => {
+    const point = { id: 0, x: 0, y, absoluteX: 0, absoluteY: y };
+    return {
+      handlerTag,
+      state: State.ACTIVE,
+      numberOfTouches: 1,
+      pointerType: PointerType.TOUCH,
+      eventType,
+      allTouches: [point],
+      changedTouches: [point],
+    };
+  };
+  await act(() => {
+    handlers.onTouchesDown?.(touch(10, 1), manager);
+    callbacks?.onDragStart?.({ index: 0 });
+    handlers.onTouchesMove?.(touch(12, 2), manager);
+    callbacks?.onDragEnd?.({ from: 0, to: 0, cancelled: false });
+  });
+  expect(release.mock.calls).toEqual([["cpu"]]);
+  await act(() => {
+    handlers.onTouchesDown?.(touch(10, 1), manager);
+    callbacks?.onDragStart?.({ index: 0 });
+    handlers.onTouchesMove?.(touch(30, 2), manager);
+    handlers.onTouchesMove?.(touch(10, 2), manager);
+    callbacks?.onDragEnd?.({ from: 0, to: 0, cancelled: false });
+  });
+  expect(release.mock.calls).toEqual([["cpu"]]);
+  expect(reorder).not.toHaveBeenCalled();
+});
+
+it("removes pickup and move actions from pinned rows and gives the card button the move actions", async () => {
+  const { callbacks, getByRole, queryByLabelText, impact, release, reorder } =
+    await renderList({
+      ids: ["cpu", "unavailable", "memory", "gpu"],
+      pinned: "unavailable",
+      accessibilityOnItem: true,
+    });
+  const cpu = getByRole("button", { name: "Open CPU" });
+  expect(queryByLabelText("CPU")).toBeNull();
+  expect(cpu.props.accessibilityActions).toEqual([
+    { name: "moveDown", label: "Move down" },
+  ]);
+  expect(
+    getByRole("button", { name: "Open Unavailable GPU" }).props
+      .accessibilityActions
+  ).toBeUndefined();
+  await act(() => {
+    callbacks?.onDragStart?.({ index: 1 });
+    callbacks?.onDragEnd?.({ from: 1, to: 1, cancelled: false });
+  });
+  expect(impact).not.toHaveBeenCalled();
+  expect(release).not.toHaveBeenCalled();
+  await fireEvent(cpu, "accessibilityAction", {
+    nativeEvent: { actionName: "moveDown" },
+  });
+  expect(reorder.mock.calls).toEqual([
+    [["memory", "unavailable", "cpu", "gpu"]],
+  ]);
+  await act(() => {
+    callbacks?.onDragStart?.({ index: 0 });
+    callbacks?.onDragEnd?.({ from: 0, to: 3, cancelled: false });
+    callbacks?.onReorder({ from: 0, to: 3 });
+  });
+  expect(reorder.mock.calls[1]).toEqual([
+    ["cpu", "unavailable", "gpu", "memory"],
   ]);
 });
 

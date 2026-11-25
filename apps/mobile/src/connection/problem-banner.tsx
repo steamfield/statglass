@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { usePhoneTransport } from "@/data/transport-context";
+import { GroupedList } from "@/ui/grouped-list";
 import { Text } from "@/ui/text";
 import { StatusWarning } from "./status-warning";
 import { useStatusAnnouncement } from "./use-status-announcement";
@@ -78,31 +79,30 @@ export function ProblemBanner({
   }
 
   return (
-    <View className="gap-1.5 rounded-xl border border-border bg-card p-3">
-      <View className="flex-row items-center gap-1.5">
-        {problem.tone === "warning" && <StatusWarning />}
-        <Text
-          variant="cardTitle"
-          className={
-            problem.tone === "warning" ? "shrink text-warning-ink" : "shrink"
-          }
-        >
-          {problem.title}
-        </Text>
+    <GroupedList>
+      <View className="gap-1.5 px-4 py-3">
+        <View className="flex-row items-center gap-1.5">
+          {problem.tone === "warning" && <StatusWarning />}
+          <Text
+            variant="cardTitle"
+            className={
+              problem.tone === "warning" ? "shrink text-warning-ink" : "shrink"
+            }
+          >
+            {problem.title}
+          </Text>
+        </View>
+        <Text variant="body">{problem.recovery}</Text>
       </View>
-      <Text variant="body">{problem.recovery}</Text>
       {actions.map((action) => (
         <Pressable
           key={action}
           accessibilityRole="button"
-          className="min-h-[44px] justify-center self-start rounded-lg bg-primary px-3 active:opacity-70 disabled:opacity-50"
+          className="min-h-[44px] justify-center self-start px-4 py-2 active:opacity-70 disabled:opacity-50"
           disabled={running}
           onPress={() => void actOnProblem(action)}
         >
-          <Text
-            variant="body"
-            className="font-semibold! text-primary-foreground"
-          >
+          <Text variant="body" className="font-semibold!">
             {actionLabel[action]}
           </Text>
         </Pressable>
@@ -112,11 +112,11 @@ export function ProblemBanner({
           variant="caption"
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
-          className="text-destructive!"
+          className="px-4 py-3 text-destructive!"
         >
           {actionFailure}
         </Text>
       )}
-    </View>
+    </GroupedList>
   );
 }

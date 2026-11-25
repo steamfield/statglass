@@ -1,6 +1,7 @@
 /**
  * Jest setup: stubs the native bindings that only exist inside an iOS binary.
  */
+import "react-native-gesture-handler/jestSetup";
 import { afterEach, jest } from "@jest/globals";
 
 afterEach(() => {

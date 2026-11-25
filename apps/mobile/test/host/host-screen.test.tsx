@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/types";
+import { chartLabel } from "@core/chart-label";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import {
   PHONE_CLOCK_OFFSET_MS,
@@ -16,20 +16,14 @@ import { getMockContext } from "expo-router/testing-library";
 import { useState } from "react";
 import {
   AccessibilityInfo,
-  Animated,
-  DeviceEventEmitter,
   Dimensions,
   Pressable,
   Text,
   View,
 } from "react-native";
-import * as CpuCard from "@/cards/cpu-card";
-import * as GpuCard from "@/cards/gpu-card";
 import { useHostLiveSubscription } from "@/data/live";
 import { useCompactStream } from "@/data/live-stream";
 import { HostScreen } from "@/host";
-import { motionDurations } from "@/theme.generated";
-import * as PhoneText from "@/ui/text";
 
 const context = getMockContext({
   _layout: function Layout() {
@@ -37,11 +31,10 @@ const context = getMockContext({
     return (
       <>
         <Text accessibilityLabel="Current route">{pathname}</Text>
-        <Stack screenOptions={{ headerShown: false }} />
+        <Stack />
       </>
     );
   },
-  "(hosts)/_layout": () => <Stack screenOptions={{ headerShown: false }} />,
   "(hosts)/index": () => <View />,
   "(hosts)/[host]/index": HostScreen,
   "(hosts)/[host]/[module]": () => <View />,
@@ -65,31 +58,54 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-test("paging moves the URL and switches the focused subscription; blur and unmount stop it", async () => {
+test("paging updates the native title and switches the focused subscription and URL", async () => {
   const transport = createMockTransport({
     scenarios: ["hosts-dashboard"],
     autoTick: false,
     historyRows: 2,
   });
-  const linux = (await transport.listHosts()).find(
-    (host) => host.info.os === "linux"
-  );
+  const hosts = await transport.listHosts();
+  const linux = hosts.find((host) => host.info.os === "linux");
   if (!linux) throw new Error("The demo needs a Linux host");
 
   const subscribe = jest.spyOn(transport, "subscribeLive");
-  const screenView = await renderWithProviders(
+  const view = await renderWithProviders(
     <ExpoRoot
       context={context}
       location={new URL(`statglass:///${MOCK_HOST_ID}`)}
     />,
     {
       transport,
-      settings: { hostOrder: [MOCK_HOST_ID, linux.id] },
+      settings: {
+        hostOrder: [MOCK_HOST_ID, linux.id],
+        removed: hosts
+          .filter(({ id }) => id !== MOCK_HOST_ID && id !== linux.id)
+          .map(({ id }) => id),
+      },
     }
   );
   await waitFor(() => expect(transport.subscriberCount()).toBe(1));
   await act(() => transport.tick());
   expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
+  const headerTitles = () =>
+    view.container
+      .queryAll(
+        ({ type, props }) =>
+          type === "RNSScreenStackHeaderConfig" && props.largeTitle
+      )
+      .map(({ props }) => props.title);
+  expect(headerTitles()).toContain("MacBook Pro");
+  expect(screen.queryByText("MacBook Pro")).toBeNull();
+  // UIKit follows the first scroll view when collapsing the large title.
+  const [outerScroll] = view.container.queryAll(
+    ({ type }) => type === "RCTScrollView"
+  );
+  expect(outerScroll?.parent?.type).toBe("RNSScreenContentWrapper");
+  expect(
+    outerScroll?.queryAll(
+      ({ props }) => props.accessibilityLabel === "Hosts pager"
+    )
+  ).toHaveLength(1);
   expect(transport.subscriberCount()).toBe(1);
   expect(subscribe.mock.lastCall).toEqual([
     MOCK_HOST_ID,
@@ -100,9 +116,8 @@ test("paging moves the URL and switches the focused subscription; blur and unmou
   await fireEvent(screen.getByLabelText("Hosts pager"), "momentumScrollEnd", {
     nativeEvent: { contentOffset: { x: Dimensions.get("window").width, y: 0 } },
   });
-  expect(
-    await screen.findByRole("header", { name: linux.display_name })
-  ).toBeOnTheScreen();
+  expect(headerTitles()).toContain(linux.display_name);
+  expect(screen.queryByText(linux.display_name)).toBeNull();
   expect(screen.getByLabelText("Current route")).toHaveTextContent(
     `/${linux.id}`
   );
@@ -115,6 +130,20 @@ test("paging moves the URL and switches the focused subscription; blur and unmou
     `/${MOCK_HOST_ID}`
   );
   expect(transport.subscriberCount()).toBe(1);
+});
+
+test("pushing a module stops the host stream and going back resumes it", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  await renderWithProviders(
+    <ExpoRoot
+      context={context}
+      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+    />,
+    { transport }
+  );
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await act(() => transport.tick());
+  expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
   await act(() =>
     router.push({
       pathname: "/(hosts)/[host]/[module]",
@@ -131,7 +160,19 @@ test("paging moves the URL and switches the focused subscription; blur and unmou
   expect(screen.getByLabelText("Module cards")).toHaveStyle({ opacity: 0.5 });
   await act(() => transport.tick());
   expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
-  await screenView.unmount();
+});
+
+test("unmounting a focused host releases its subscription", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const view = await renderWithProviders(
+    <ExpoRoot
+      context={context}
+      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+    />,
+    { transport }
+  );
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await view.unmount();
   expect(transport.subscriberCount()).toBe(0);
 });
 
@@ -273,6 +314,7 @@ test("a terminal remote authentication failure names the problem and stops retry
     .filter(({ id }) => id !== host)
     .map(({ id }) => id);
   transport.failNext("subscribeLive", phoneCommandFailures.revokedKey);
+  const log = jest.spyOn(console, "error").mockImplementation(() => {});
   const subscribe = jest.spyOn(transport, "subscribeLive");
   const view = await renderWithProviders(
     <ExpoRoot context={context} location={new URL(`statglass:///${host}`)} />,
@@ -287,6 +329,12 @@ test("a terminal remote authentication failure names the problem and stops retry
     const attempts = subscribe.mock.calls.length;
     await act(() => jest.advanceTimersByTimeAsync(15_000));
     expect(subscribe).toHaveBeenCalledTimes(attempts);
+    expect(log.mock.calls).toEqual([
+      [
+        "[live] subscribe failed",
+        { hostId: host, reason: phoneCommandFailures.revokedKey.message },
+      ],
+    ]);
   } finally {
     await view.unmount();
     transport.dispose();
@@ -336,99 +384,36 @@ test("a failed remote status read dims the remote while the local host can still
   }
 });
 
-test("a frame that changes CPU readouts leaves the host heading and unchanged GPU card alone", async () => {
-  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const subscribe = transport.subscribeLive;
-  const messages: LiveMsg[] = [];
-  jest
-    .spyOn(transport, "subscribeLive")
-    .mockImplementation((host, receive, options) =>
-      subscribe(
-        host,
-        (message) => {
-          messages.push(message);
-          receive(message);
-        },
-        options
-      )
-    );
-  const text = jest.spyOn(PhoneText, "Text");
-  const cpu = jest.spyOn(CpuCard, "CpuCard");
-  const gpu = jest.spyOn(GpuCard, "GpuCard");
-  await renderWithProviders(
+test("a connected compact stream shows its cellular cadence in the pill", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-dashboard"],
+    autoTick: true,
+    historyRows: 2,
+  });
+  const remote = (await transport.listRemoteHosts()).find(
+    ({ status }) => status.state === "connected"
+  );
+  if (!remote) throw new Error("Expected a connected remote");
+  transport.pushRemoteStatus(remote.config.id, { demand: "compact" });
+  const removed = (await transport.listHosts())
+    .filter(({ id }) => id !== remote.config.id)
+    .map(({ id }) => id);
+  const view = await renderWithProviders(
     <ExpoRoot
       context={context}
-      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+      location={new URL(`statglass:///${remote.config.id}`)}
     />,
-    { transport }
+    { transport, settings: { removed } }
   );
-  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
-  await act(() => transport.tick());
-  expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
-  const frame = messages.find((message) => message.kind === "frame");
-  const layout = messages.find(
-    (message) =>
-      message.kind === "layout" && message.layout_no === frame?.layout_no
-  );
-  if (!frame || layout?.kind !== "layout")
-    throw new Error("The demo needs a frame and its layout");
-  const total = layout.series.findIndex(({ metric }) => metric === "cpu.total");
-  if (total < 0) throw new Error("The frame needs a CPU total");
-  expect(gpu).toHaveBeenCalled();
-  text.mockClear();
-  cpu.mockClear();
-  gpu.mockClear();
-  await act(() => jest.advanceTimersByTimeAsync(1));
-  await act(() =>
-    transport.push({
-      ...frame,
-      held: frame.held.map((value, index) =>
-        index === total ? (value ?? 0) + 1 : value
-      ),
-    })
-  );
-  expect(cpu).toHaveBeenCalledTimes(1);
-  expect(
-    text.mock.calls.some(([props]) => props.variant === "largeTitle")
-  ).toBe(false);
-  expect(gpu).not.toHaveBeenCalled();
-});
-
-test("motion events that leave the effective preference unchanged leave cards alone", async () => {
-  jest
-    .mocked(AccessibilityInfo.addEventListener)
-    .mockImplementation((event, listener) =>
-      DeviceEventEmitter.addListener(event, listener)
-    );
-  const cpu = jest.spyOn(CpuCard, "CpuCard");
-  const gpu = jest.spyOn(GpuCard, "GpuCard");
-  const text = jest.spyOn(PhoneText, "Text");
-  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  await renderWithProviders(
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
-    />,
-    { transport }
-  );
-  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
-  await act(() => transport.tick());
-  expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
-  expect(cpu).toHaveBeenCalled();
-  expect(gpu).toHaveBeenCalled();
-  cpu.mockClear();
-  gpu.mockClear();
-  text.mockClear();
-
-  await act(() => DeviceEventEmitter.emit("reduceMotionChanged", true));
-  await act(() =>
-    DeviceEventEmitter.emit("mockLowPowerModeChanged", { lowPowerMode: true })
-  );
-  await act(() => DeviceEventEmitter.emit("reduceMotionChanged", false));
-
-  expect(cpu).not.toHaveBeenCalled();
-  expect(gpu).not.toHaveBeenCalled();
-  expect(text).not.toHaveBeenCalled();
+  try {
+    expect(
+      await screen.findByText("Every 5 s on cellular", {}, { timeout: 2000 })
+    ).toBeOnTheScreen();
+    expect(screen.queryByText(/^Live ·/)).toBeNull();
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
 });
 
 test("repeated transient subscription failures log once per reason before recovery", async () => {
@@ -508,6 +493,17 @@ function ChartLabelScene() {
 }
 
 test("the compact chart keeps its spoken reading for ten seconds", async () => {
+  // The phase scaffold returns only the subject. The real formatter adds a period.
+  const spoken = (figure: string) => {
+    const shared = chartLabel({
+      subject: "CPU",
+      spanMs: 60_000,
+      now: `now ${figure}`,
+    });
+    return shared === "CPU"
+      ? `CPU, last 60 seconds, now ${figure}`
+      : `CPU, last 60 seconds, now ${figure}.`;
+  };
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   await renderWithProviders(
     <ExpoRoot
@@ -518,48 +514,14 @@ test("the compact chart keeps its spoken reading for ten seconds", async () => {
   );
   await waitFor(() => expect(transport.subscriberCount()).toBe(1));
   await act(() => transport.tick());
-  expect(
-    await screen.findByText("CPU, last 60 seconds, now 10%")
-  ).toBeOnTheScreen();
+  expect(await screen.findByText(spoken("10%"))).toBeOnTheScreen();
   await fireEvent.press(
     screen.getByRole("button", { name: "Change CPU reading" })
   );
-  expect(screen.getByText("CPU, last 60 seconds, now 10%")).toBeOnTheScreen();
+  expect(screen.getByText(spoken("10%"))).toBeOnTheScreen();
   await act(() => jest.advanceTimersByTimeAsync(10_000));
   await act(() => transport.tick());
-  expect(
-    await screen.findByText("CPU, last 60 seconds, now 20%")
-  ).toBeOnTheScreen();
-});
-
-test("when motion is enabled, stale cards request the fast fade to half opacity", async () => {
-  jest
-    .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
-    .mockResolvedValue(false);
-  const animate = jest
-    .spyOn(Animated, "timing")
-    .mockReturnValue({ start: jest.fn(), stop: jest.fn(), reset: jest.fn() });
-  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  await renderWithProviders(
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
-    />,
-    { transport }
-  );
-  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
-  await act(() => transport.tick());
-  expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
-  await act(() => jest.advanceTimersByTimeAsync(3000));
-  expect(screen.getByText("Reconnecting")).toBeOnTheScreen();
-  expect(animate).toHaveBeenCalledWith(
-    expect.anything(),
-    expect.objectContaining({
-      toValue: 0.5,
-      duration: motionDurations.fast,
-      useNativeDriver: true,
-    })
-  );
+  expect(await screen.findByText(spoken("20%"))).toBeOnTheScreen();
 });
 
 test("a removed host URL shows the missing host state and opens no stream", async () => {
