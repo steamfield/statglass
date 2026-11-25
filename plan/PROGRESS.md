@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Remote alert rules built (2026-11-24)
+
+Linux agent hosts now take threshold alert rules from this Mac: select the host, open Alerts, and add, edit, toggle or delete its rules. The agent stores and evaluates them live (revision-checked saves, cooldowns seeded at start and on history reattach), and this Mac sends the notification and destination messages as the alert events sync in, with alerts older than 10 minutes grouped into one catch-up message per host (persisted until delivered). The page handles a not-connected host, an agent too old to answer, a stale revision and rules saved by a newer build. Built on branch `sprint/remote-alerts` in three phases (tags `remote-alerts-phase-1` to `-3`, final `remote-alerts-final`); every review finding is in `plans/sprint-remote-alerts.md`.
+
+- **Verified**: `make check` green on the final commit (2,838 Vitest, all Rust suites); Playwright journey for add and stale save; browser QA of every page state against This Mac's page.
+- **Open**: not yet run against a real Linux agent over SSH. Not merged to main.
+
 ## Remote alert rules RFC drafted (2026-11-24)
 
 [rfc-remote-alerts.md](rfc-remote-alerts.md) plans threshold rules on Linux agent hosts. The agent already evaluates `Settings.alerts.rules` from its `settings.json` and syncs the alert events to this Mac's mirror, so the plan adds two host queries to read and set rules live, cooldown seeding on the agent, and delivery from this Mac of the alert events the mirror inserts. Controller-side evaluation over `HostSummary` frames was rejected: they carry held display values only (`values` are NaN). A ce:devils-advocate review against the code found ten issues, all folded into revision 2 (section 9).
