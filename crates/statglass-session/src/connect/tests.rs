@@ -405,47 +405,66 @@ async fn stopped_agent_wins_when_all_failures_are_retryable() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn monitoring_off_then_stopped_app_win_over_a_stopped_agent_in_the_route_race() {
-    use crate::{AGENT_NOT_RUNNING, APP_NOT_RUNNING, ConnectionFailureKind, MONITORING_OFF};
-    for (last_marker, expected) in [
-        ("login banner", ConnectionFailureKind::AppNotRunning),
-        (MONITORING_OFF, ConnectionFailureKind::MonitoringOff),
+async fn preferred_error_keeps_the_most_actionable_route_error() {
+    use crate::{AGENT_NOT_RUNNING, APP_NOT_RUNNING, MONITORING_OFF};
+    use ConnectionFailureKind as K;
+
+    let marker = |stderr_on_close| Step {
+        stderr_on_close,
+        ..Step::default()
+    };
+    let missing_key = || {
+        RemoteError::PhoneKeyUnavailable("Could not load the phone key (OSStatus -25300)".into())
+    };
+    for (steps, expected, message) in [
+        (
+            vec![
+                marker(AGENT_NOT_RUNNING),
+                marker(APP_NOT_RUNNING),
+                marker("login banner"),
+            ],
+            K::AppNotRunning,
+            "StatGlass isn't running on studio.tailnet.ts.net",
+        ),
+        (
+            vec![
+                marker(AGENT_NOT_RUNNING),
+                marker(APP_NOT_RUNNING),
+                marker(MONITORING_OFF),
+            ],
+            K::MonitoringOff,
+            "Remote monitoring is off on 100.64.0.2",
+        ),
+        (
+            vec![Step::fails(50, missing_key), Step::fails(0, missing_key)],
+            K::PhoneKeyUnavailable,
+            "Could not load the phone key (OSStatus -25300)",
+        ),
+        (
+            vec![
+                Step::fails(0, || RemoteError::Timeout("LAN timed out".into())),
+                Step::fails(50, || {
+                    RemoteError::SignerInternal("Native signer failed".into())
+                }),
+            ],
+            K::Internal,
+            "Native signer failed",
+        ),
     ] {
-        let (dialer, endpoint, _) = fixture(vec![
-            Step {
-                stderr_on_close: AGENT_NOT_RUNNING,
-                ..Step::default()
-            },
-            Step {
-                stderr_on_close: APP_NOT_RUNNING,
-                ..Step::default()
-            },
-            Step {
-                stderr_on_close: last_marker,
-                ..Step::default()
-            },
-        ]);
+        let (dialer, endpoint, _) = fixture(steps);
         let error = failed(connect(&dialer, &endpoint, LOCAL, None).await);
-        match expected {
-            ConnectionFailureKind::AppNotRunning => {
-                assert!(matches!(error, RemoteError::AppNotRunning(_)))
-            }
-            ConnectionFailureKind::MonitoringOff => {
-                assert!(matches!(error, RemoteError::MonitoringOff(_)))
-            }
-            _ => unreachable!(),
-        }
+        assert!(
+            matches!(
+                (expected, &error),
+                (K::AppNotRunning, RemoteError::AppNotRunning(_))
+                    | (K::MonitoringOff, RemoteError::MonitoringOff(_))
+                    | (K::PhoneKeyUnavailable, RemoteError::PhoneKeyUnavailable(_))
+                    | (K::Internal, RemoteError::SignerInternal(_))
+            ),
+            "{error:?}"
+        );
         assert_eq!(ConnectionFailureKind::from_error(&error), expected);
         assert!(error.retryable());
-        let message = match expected {
-            ConnectionFailureKind::AppNotRunning => {
-                format!("StatGlass isn't running on {}", endpoint.targets[1].host)
-            }
-            ConnectionFailureKind::MonitoringOff => {
-                format!("Remote monitoring is off on {}", endpoint.targets[2].host)
-            }
-            _ => unreachable!(),
-        };
         assert_eq!(error.to_string(), message);
     }
 }

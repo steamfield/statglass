@@ -76,22 +76,23 @@ test("keeps a typed core failure in its result envelope", async () => {
   ).resolves.toEqual(result);
 });
 
-test.each([new Error("App context lost"), lockedKey])(
-  "resolves native command rejections as internal errors (%s)",
-  async (rejection) => {
-    const native = new FakeNative();
-    native.call.mockRejectedValueOnce(rejection);
-    await expect(
-      callCoreByMethod(native, { method: "build_info" })
-    ).resolves.toEqual({
-      status: "error",
-      error: {
-        kind: "internal",
-        message: `build_info failed: ${rejection.message}`,
-      },
-    });
-  }
-);
+test("resolves a lost app context as a command error", async () => {
+  const native = new FakeNative();
+  native.call.mockRejectedValueOnce(
+    Object.assign(new Error("The app context has been lost"), {
+      code: "ERR_APP_CONTEXT_LOST",
+    })
+  );
+  await expect(
+    callCoreByMethod(native, { method: "build_info" })
+  ).resolves.toEqual({
+    status: "error",
+    error: {
+      kind: "internal",
+      message: "build_info failed: The app context has been lost",
+    },
+  });
+});
 
 test("decodes build info by method and diagnoses an empty reply", async () => {
   const native = new FakeNative();

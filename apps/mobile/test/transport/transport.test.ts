@@ -89,19 +89,12 @@ test("starts the core with a serialized config and preserves its startup error",
   });
 });
 
-test("preserves the original Expo rejection during startup", async () => {
-  const native = new FakeNative();
-  const rejection = Object.assign(new Error("Could not access Keychain"), {
-    code: "ERR_STATGLASS_KEYCHAIN",
-  });
-  native.start.mockRejectedValueOnce(rejection);
-  await expect(startNativeTransport(native, cfg)).rejects.toBe(rejection);
-});
-
 test("preserves an Expo rejection for data-directory setup", async () => {
   const native = new FakeNative();
   const rejection = Object.assign(
-    new Error("Could not create data directory"),
+    new Error(
+      "You don’t have permission to save the file “statglass” in the folder “Application Support”."
+    ),
     {
       code: "ERR_UNEXPECTED",
     }

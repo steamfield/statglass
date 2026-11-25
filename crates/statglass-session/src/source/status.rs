@@ -37,7 +37,10 @@ pub enum ConnectionFailureKind {
     LocalOffline,
     /// The failing route is Tailscale and Tailscale is not up on this Mac.
     TailscaleDown,
+    /// The phone's local SSH key is missing or locked.
     PhoneKeyUnavailable,
+    /// A local signer defect. It blocks every route and outranks network failures.
+    /// Reserve this kind for signer defects when classifying remote errors.
     Internal,
 }
 
