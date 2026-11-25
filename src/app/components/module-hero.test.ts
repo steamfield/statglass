@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import type { MetricStat } from "@core/generated/bindings";
+import type { MetricStat } from "@core/generated/types";
 import {
   BATTERY_HERO,
   CPU_HERO,

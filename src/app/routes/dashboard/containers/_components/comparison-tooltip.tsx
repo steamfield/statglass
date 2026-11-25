@@ -7,7 +7,7 @@ import { resolutionLabel } from "@core/format";
 import type {
   DockerContainer,
   DockerHistoryPoint,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
   ChartTooltipHead,

@@ -2,7 +2,7 @@
  * How a module page configures its per-app usage card: the key Rust ranks
  * by, the title noun, the accent, the figure columns and the footnote.
  */
-import type { UsageKey } from "@core/generated/bindings";
+import type { UsageKey } from "@core/generated/types";
 import type { UsageFigures } from "@core/usage-rows";
 import type { ReactNode } from "react";
 import type { Accent } from "~/widgets/lib/accent";

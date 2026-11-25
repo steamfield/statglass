@@ -9,7 +9,10 @@ const host = process.env.TAURI_DEV_HOST;
 // Path aliases. Keep in sync with tsconfig.json "paths" and vitest.config.ts.
 export const alias = {
   "~": fileURLToPath(new URL("./src/app", import.meta.url)),
-  "@core": fileURLToPath(new URL("./src/core", import.meta.url)),
+  "@core": fileURLToPath(new URL("./packages/core/src", import.meta.url)),
+  "@desktop": fileURLToPath(
+    new URL("./src/desktop-transport", import.meta.url)
+  ),
   "@tests": fileURLToPath(new URL("./tests", import.meta.url)),
 };
 

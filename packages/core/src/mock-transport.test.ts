@@ -1,0 +1,461 @@
+import type { ChartWindow, LiveMsg } from "@core/generated/types";
+import { MOCK_HOST_ID } from "./mock/fixtures";
+import { createMockTransport, type MockTransport } from "./mock-transport";
+
+import { unwrap } from "./transport";
+
+const NOW = 1_800_000_000_000;
+
+async function subscribe(
+  scenarios?: Parameters<typeof createMockTransport>[0]
+) {
+  const t = createMockTransport({ now: () => NOW, ...scenarios });
+  const msgs: LiveMsg[] = [];
+  const sub = await t.subscribeLive(MOCK_HOST_ID, (m) => msgs.push(m));
+  return { t, msgs, sub };
+}
+
+describe("mock transport", () => {
+  it("uses the transport clock for pairing offers, scans and expiry", async () => {
+    let now = NOW;
+    const transport = createMockTransport({ autoTick: false, now: () => now });
+    try {
+      await unwrap(
+        transport.updateSettings({ remote_access: { enabled: true } })
+      );
+      const offer = await unwrap(transport.pairingStart());
+      expect(offer.expires_ms).toBe(NOW + 600_000);
+      const status = () => unwrap(transport.pairingStatus(offer.nonce));
+      expect(await status()).toEqual({ kind: "waiting" });
+      now = offer.expires_ms - 1;
+      expect(await status()).toEqual({
+        kind: "pending",
+        device_name: "Travel iPhone",
+        model: "iPhone 16",
+        code: offer.code,
+      });
+      now = offer.expires_ms;
+      expect(await status()).toEqual({ kind: "expired" });
+    } finally {
+      transport.dispose();
+    }
+  });
+
+  it("in Performance mode GPU per process is measured only while a view asks", async () => {
+    const t = createMockTransport({ now: () => NOW });
+    const gpuMs = async () => {
+      const r = await t.queryUsageByApp(
+        MOCK_HOST_ID,
+        NOW - 60_000,
+        NOW,
+        "gpu",
+        200
+      );
+      return r.status === "ok" ? r.data.gpu_covered_ms : null;
+    };
+    expect(await gpuMs()).toBeGreaterThan(0);
+    await t.updateSettings({ sampling: { performance_mode: true } });
+    expect(await gpuMs()).toBe(0);
+    await t.setProcessInterest(
+      MOCK_HOST_ID,
+      true,
+      { limit: 0, sort: ["gpu"], period_ms: 10_000, gpu: true },
+      null
+    );
+    expect(await gpuMs()).toBeGreaterThan(0);
+  });
+
+  it("series stats refuse labelled and unknown metrics, as Rust does", async () => {
+    const t = createMockTransport({ now: () => NOW });
+    const ask = (m: string) =>
+      t.querySeriesStats(MOCK_HOST_ID, [m], NOW - 60_000, NOW);
+    expect((await ask("cpu.total")).status).toBe("ok");
+    expect(await ask("cpu.load")).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_argument" },
+    });
+    expect(await ask("cpu.typo")).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_argument" },
+    });
+  });
+
+  it("sends caps, status, plan, layout, then backfill (D-049)", async () => {
+    const { msgs, sub } = await subscribe();
+    expect(msgs.map((m) => m.kind)).toEqual([
+      "caps",
+      "status",
+      "backfill_plan",
+      "layout",
+      "backfill",
+    ]);
+    expect(sub.info.status).toBe("ok");
+    const backfill = msgs[4];
+    expect(backfill?.kind === "backfill" && backfill.rows.length).toBe(61);
+  });
+
+  it("splits the backfill around the sleep-gap hole", async () => {
+    const { msgs } = await subscribe({ scenarios: ["sleep-gap"] });
+    const segments = msgs.filter((m) => m.kind === "backfill");
+    expect(segments).toHaveLength(2);
+  });
+
+  it("ticks frames with values and held in layout order", async () => {
+    const { t, msgs } = await subscribe();
+    const layout = msgs.find((m) => m.kind === "layout");
+    t.tick();
+    const frame = msgs[msgs.length - 1];
+    expect(frame?.kind).toBe("frame");
+    if (frame?.kind !== "frame" || layout?.kind !== "layout") return;
+    expect(frame.values).toHaveLength(layout.series.length);
+    expect(frame.held).toHaveLength(layout.series.length);
+  });
+
+  it("sends no frames while paused or stale", async () => {
+    for (const scenario of ["paused", "stale"] as const) {
+      const { t, msgs } = await subscribe({ scenarios: [scenario] });
+      const before = msgs.length;
+      t.tick();
+      expect(msgs.length).toBe(before);
+    }
+  });
+
+  it("reports scenario capabilities", async () => {
+    const t = createMockTransport({
+      scenarios: ["no-battery", "unknown-chip"],
+    });
+    const caps = await t.getCapabilities(MOCK_HOST_ID);
+    expect(caps.status).toBe("ok");
+    if (caps.status !== "ok") return;
+    expect(caps.data.modules.battery).toBe("not_present");
+    expect(caps.data.modules.sensors).toEqual({ unsupported: "unknown_chip" });
+  });
+
+  it("bumps the settings revision and emits settings-changed", async () => {
+    const t = createMockTransport();
+    const seen: number[] = [];
+    t.onSettingsChanged((e) => seen.push(e.revision));
+    const before = await t.getSettings();
+    const res = await t.updateSettings({ sampling: { interval_ms: 2000 } });
+    expect(res.status).toBe("ok");
+    expect(seen).toEqual([before.revision + 1]);
+  });
+
+  it("rejects an interval outside the allowed set", async () => {
+    const t = createMockTransport();
+    const res = await t.updateSettings({ sampling: { interval_ms: 1234 } });
+    expect(res).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_settings" },
+    });
+  });
+
+  it("accepts the 30 s interval and re-times the auto-tick to it", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = createMockTransport({ autoTick: true });
+      const msgs: LiveMsg[] = [];
+      await t.subscribeLive(MOCK_HOST_ID, (m) => msgs.push(m));
+      const frames = () => msgs.filter((m) => m.kind === "frame").length;
+      vi.advanceTimersByTime(3000);
+      expect(frames()).toBe(3);
+
+      const res = await t.updateSettings({ sampling: { interval_ms: 30_000 } });
+      expect(res.status).toBe("ok");
+      expect(msgs.at(-1)).toMatchObject({
+        kind: "status",
+        interval_ms: 30_000,
+      });
+      vi.advanceTimersByTime(29_000);
+      expect(frames()).toBe(3);
+      vi.advanceTimersByTime(1000);
+      expect(frames()).toBe(4);
+      t.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts at a given interval with backfill rows that far apart", async () => {
+    const { msgs } = await subscribe({ intervalMs: 30_000, historyRows: 120 });
+    expect(msgs[1]).toMatchObject({ kind: "status", interval_ms: 30_000 });
+    const backfill = msgs.find((m) => m.kind === "backfill");
+    expect(backfill?.kind === "backfill" && backfill.interval_ms).toBe(30_000);
+    // The 60 s backfill includes both endpoints: three 30 s rows.
+    expect(backfill?.kind === "backfill" && backfill.rows.length).toBe(3);
+  });
+
+  it("validates the history size limit", async () => {
+    const t = createMockTransport();
+    const ok = await t.updateSettings({ history: { size_limit_mb: 500 } });
+    expect(ok.status === "ok" && ok.data.settings.history.size_limit_mb).toBe(
+      500
+    );
+    const bad = await t.updateSettings({ history: { size_limit_mb: 200 } });
+    expect(bad).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_settings" },
+    });
+  });
+
+  it("starts at the 15m chart window, or the one given", async () => {
+    const plain = await createMockTransport().getSettings();
+    expect(plain.settings.general.chart_window).toBe("15m");
+    const t = createMockTransport({ chartWindow: "1h" });
+    expect((await t.getSettings()).settings.general.chart_window).toBe("1h");
+  });
+
+  it("saves a chart window and rejects one outside the set", async () => {
+    const t = createMockTransport();
+    const ok = await t.updateSettings({ general: { chart_window: "30m" } });
+    expect(ok.status === "ok" && ok.data.settings.general.chart_window).toBe(
+      "30m"
+    );
+    const bad = await t.updateSettings({
+      general: { chart_window: "2h" as ChartWindow },
+    });
+    expect(bad).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_settings" },
+    });
+    expect((await t.getSettings()).settings.general.chart_window).toBe("30m");
+  });
+
+  it("fails every settings write with settingsNotSaved", async () => {
+    const t = createMockTransport({ settingsNotSaved: true });
+    const before = await t.getSettings();
+    const res = await t.updateSettings({ general: { chart_window: "30m" } });
+    expect(res).toMatchObject({
+      status: "error",
+      error: { kind: "settings_not_saved" },
+    });
+    expect(await t.getSettings()).toEqual(before);
+  });
+
+  it("reports history health and emits its changes", async () => {
+    const t = createMockTransport({
+      now: () => NOW,
+      scenarios: ["history-trimmed"],
+    });
+    const health = await t.historyHealth(MOCK_HOST_ID);
+    expect(health).toMatchObject({
+      status: "ok",
+      data: { low_disk_paused: false, trimmed_limit_bytes: 150_000_000 },
+    });
+    const seen: boolean[] = [];
+    t.onHistoryHealthChanged((e) =>
+      seen.push(e.health.trimmed_before_ms === null)
+    );
+    await t.clearHistory(MOCK_HOST_ID);
+    expect(seen).toEqual([true]);
+
+    const down = createMockTransport({ scenarios: ["history-unavailable"] });
+    expect(await down.historyHealth(MOCK_HOST_ID)).toMatchObject({
+      status: "error",
+      error: { kind: "history_unavailable" },
+    });
+  });
+
+  it("errors on an unknown host", async () => {
+    const t = createMockTransport();
+    const res = await t.getHost("nope");
+    expect(res).toMatchObject({
+      status: "error",
+      error: { kind: "unknown_host" },
+    });
+  });
+
+  it("stops delivering after unsubscribe", async () => {
+    const { t, msgs, sub } = await subscribe();
+    sub.unsubscribe();
+    const before = msgs.length;
+    t.tick();
+    expect(msgs.length).toBe(before);
+    expect(t.subscriberCount()).toBe(0);
+  });
+});
+
+/**
+ * The checks every host command runs before answering, in Rust's order:
+ * unknown host, then the store being unavailable, then the range.
+ */
+describe("host command preamble", () => {
+  const H = 3_600_000;
+  const calls = (t: MockTransport, host: string, from: number, to: number) => {
+    const sel = [{ metric: "cpu.total", labels: [] }];
+    const req = { host, selectors: sel, from_ms: from, to_ms: to };
+    return {
+      getHost: () => t.getHost(host),
+      getCapabilities: () => t.getCapabilities(host),
+      setProcessInterest: () => t.setProcessInterest(host, false, null, null),
+      queryHistory: () =>
+        t.queryHistory({ ...req, tier: "auto", max_points: 10 }),
+      queryProcessesAt: () => t.queryProcessesAt(host, to),
+      queryNetworkByApp: () => t.queryNetworkByApp(host, from, to),
+      queryUsageByApp: () => t.queryUsageByApp(host, from, to, "cpu", 5),
+      queryUsageSeries: () => t.queryUsageSeries(host, from, to, "energy", 5),
+      querySeriesStats: () => t.querySeriesStats(host, ["cpu.total"], from, to),
+      getNetworkAddresses: () => t.getNetworkAddresses(host),
+      queryEvents: () => t.queryEvents(host, from, to),
+      queryHeatmap: () => t.queryHeatmap({ host, metric: "cpu", days: [] }),
+      exportCsv: () => t.exportCsv({ ...req, tier: "auto" }),
+      historySize: () => t.historySize(host),
+      historyGrowth: () => t.historyGrowth(host),
+      historyHealth: () => t.historyHealth(host),
+      sensorDump: () => t.sensorDump(host),
+    };
+  };
+  /** Each command's outcome: "ok", the error kind, or `kind: message`. */
+  async function outcomes(
+    t: MockTransport,
+    host: string,
+    from: number,
+    to: number
+  ) {
+    const out: Record<string, string> = {};
+    for (const [name, call] of Object.entries(calls(t, host, from, to))) {
+      const res = await call();
+      out[name] =
+        res.status === "ok"
+          ? "ok"
+          : "message" in res.error
+            ? `${res.error.kind}: ${res.error.message}`
+            : res.error.kind;
+    }
+    return out;
+  }
+  const names = Object.keys(calls(createMockTransport(), "", 0, 0));
+  const all = (v: string) => Object.fromEntries(names.map((n) => [n, v]));
+
+  it("records each call, then answers unknown_host before anything else", async () => {
+    const t = createMockTransport({
+      now: () => NOW,
+      scenarios: ["history-unavailable"],
+    });
+    expect(await outcomes(t, "nope", NOW, NOW - H)).toEqual(
+      all("unknown_host")
+    );
+    expect(t.calls).toHaveLength(names.length);
+  });
+
+  it("fails only the store's commands while history is unavailable", async () => {
+    const t = createMockTransport({
+      now: () => NOW,
+      scenarios: ["history-unavailable"],
+    });
+    expect(await outcomes(t, MOCK_HOST_ID, NOW - H, NOW)).toEqual({
+      ...all("ok"),
+      queryEvents: "history_unavailable",
+      queryHeatmap: "history_unavailable",
+      exportCsv: "history_unavailable",
+      historySize: "history_unavailable",
+      historyGrowth: "history_unavailable",
+      historyHealth: "history_unavailable",
+    });
+  });
+
+  it.each([
+    ["ends before it starts", NOW, NOW - H],
+    ["is empty", NOW, NOW],
+  ])(
+    "rejects a range that %s, as Rust's TimeRange does",
+    async (_, from, to) => {
+      const t = createMockTransport({ now: () => NOW });
+      const empty = `invalid_argument: the range is empty: its start (${from}) is not before its end (${to})`;
+      expect(await outcomes(t, MOCK_HOST_ID, from, to)).toMatchObject({
+        queryHistory: empty,
+        queryNetworkByApp: empty,
+        queryUsageByApp: empty,
+        queryUsageSeries: empty,
+        querySeriesStats: empty,
+        exportCsv: empty,
+        // The store's read: an empty range comes back empty.
+        queryEvents: "ok",
+      });
+    }
+  );
+
+  it("rejects a range longer than the command's limit, in Rust's words", async () => {
+    const t = createMockTransport({ now: () => NOW });
+    const tooLong = "invalid_argument: the range is longer than 90 days";
+    expect(await outcomes(t, MOCK_HOST_ID, 0, NOW)).toMatchObject({
+      queryNetworkByApp: tooLong,
+      querySeriesStats: tooLong,
+      queryUsageSeries: "invalid_argument: the range is longer than 3610000 ms",
+      queryUsageByApp: "ok",
+    });
+  });
+});
+
+describe("mock loading latency", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const request = {
+    host: MOCK_HOST_ID,
+    selectors: [{ metric: "cpu.total", labels: [] }],
+    from_ms: 0,
+    to_ms: 1000,
+    tier: "auto",
+    max_points: 10,
+  } as const;
+
+  it.each([undefined, 0])(
+    "subscribeLive and queryHistory add no timers when latency is %s",
+    async (latencyMs) => {
+      const t = createMockTransport({
+        historyRows: 60,
+        ...(latencyMs === undefined ? {} : { latencyMs }),
+      });
+      const before = vi.getTimerCount();
+      let messages = 0;
+      const sub = t.subscribeLive(MOCK_HOST_ID, () => {
+        messages++;
+      });
+      expect(vi.getTimerCount()).toBe(before);
+      expect(messages).toBeGreaterThan(0);
+      const query = t.queryHistory({
+        ...request,
+        selectors: [...request.selectors].map((s) => ({ ...s, labels: [] })),
+      });
+      expect(vi.getTimerCount()).toBe(before);
+      expect(messages).toBeGreaterThan(0);
+      expect((await query).status).toBe("ok");
+      expect(vi.getTimerCount()).toBe(before);
+      (await sub).unsubscribe();
+      t.dispose();
+    }
+  );
+
+  it("delays remote subscribes and history only once", async () => {
+    const t = createMockTransport({
+      scenarios: ["multi-host"],
+      latencyMs: 800,
+      historyRows: 60,
+    });
+    const host = (await t.listHosts()).find((h) => !h.is_local);
+    if (!host) throw new Error("missing remote");
+    let messages = 0;
+    const sub = t.subscribeLive(host.id, () => {
+      messages++;
+    });
+    let done = false;
+    const query = t
+      .queryHistory({
+        ...request,
+        host: host.id,
+        selectors: [{ metric: "cpu.total", labels: [] }],
+      })
+      .then(() => {
+        done = true;
+      });
+    await vi.advanceTimersByTimeAsync(799);
+    expect(messages).toBe(0);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(messages).toBeGreaterThan(0);
+    expect(done).toBe(true);
+    (await sub).unsubscribe();
+    await query;
+    t.dispose();
+  });
+});

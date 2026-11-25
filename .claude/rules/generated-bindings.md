@@ -1,6 +1,7 @@
 ---
 paths:
-  - "src/core/generated/**"
+  - "packages/core/src/generated/**"
+  - "src/desktop-transport/commands.ts"
   - "crates/statglass-schema/**"
   - "src-tauri/src/**/*.rs"
 ---
@@ -9,11 +10,16 @@ paths:
 
 ## Auto-generated files: do NOT hand-edit
 
-`src/core/generated/` holds the TypeScript bindings tauri-specta generates from the Rust
-commands, events and `statglass-schema` types. Rust is the single source of truth.
+tauri-specta generates two TypeScript files from the Rust commands, events, types and
+registered constants. Rust is the single source of truth.
+
+- `packages/core/src/generated/types.ts`: every type and constant, with no `@tauri-apps`
+  import, so the desktop and the iPhone app share it.
+- `src/desktop-transport/commands.ts`: the `commands` and `events` objects that call Tauri,
+  desktop only.
 
 **Do not:**
-- Hand-edit anything under `src/core/generated/`
+- Hand-edit anything under `packages/core/src/generated/` or `src/desktop-transport/commands.ts`
 - Hand-write a TS type that mirrors a Rust type "until the bindings catch up"
 - Write the generated files with a shell command (`cp`, `>`, `sed -i`, `tee`)
 

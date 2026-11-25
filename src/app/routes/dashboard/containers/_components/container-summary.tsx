@@ -1,5 +1,5 @@
 import { formatBytes, formatPercent, MISSING } from "@core/format";
-import type { DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSnapshot } from "@core/generated/types";
 import { useUnits } from "~/hooks/use-units";
 import { ProjectScope } from "./project-scope";
 export function ContainerSummary({

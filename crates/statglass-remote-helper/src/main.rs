@@ -1,8 +1,19 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Only bridges authenticated local sockets; it never starts a collector or opens SQLite.
-use statglass_remote::{ControlRequest, SocketPaths, control_request, stdio_bridge};
+use statglass_remote::{ControlRequest, SessionScope, SocketPaths, control_request};
+
+mod markers;
+mod pair;
+mod restricted;
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [mode, flag, nonce] = args.as_slice()
+        && mode == "pair"
+        && flag == "--nonce"
+    {
+        std::process::exit(pair::run(nonce));
+    }
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -13,33 +24,39 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let result = runtime.block_on(run());
+    let result = runtime.block_on(run(&args));
     // Without waiting on blocking tasks: `serve`'s stdin reader stays blocked in read(2)
     // after the app closes the session, and dropping the runtime would wait for it and
     // keep the bridge (and the SSH session) alive.
     runtime.shutdown_background();
-    if let Err(error) = result {
-        eprintln!("statglass-remote-helper: {error}");
-        std::process::exit(1);
+    match result {
+        Ok(code) => std::process::exit(code),
+        Err(error) => {
+            eprintln!("statglass-remote-helper: {error}");
+            std::process::exit(1);
+        }
     }
 }
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+type CommandResult = Result<i32, Box<dyn std::error::Error>>;
+
+async fn run(args: &[String]) -> CommandResult {
+    if let [mode, flag, device] = args
+        && mode == "restricted"
+        && flag == "--device"
+    {
+        return restricted::run(device).await;
+    }
     if args.first().map(String::as_str) == Some("--version") {
         println!("{}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
+        return Ok(0);
     }
     if args.first().map(String::as_str) == Some("version") {
-        println!(
-            "{}",
-            serde_json::to_string(&statglass_remote::control::HelperVersion::current())?
-        );
-        return Ok(());
+        return print_version();
     }
     let paths = SocketPaths::for_current_user()?;
     match args.first().map(String::as_str) {
         Some("serve") if args.get(1).map(String::as_str) == Some("--stdio") => {
-            stdio_bridge(&paths.metrics).await?;
+            return Ok(markers::serve_or_marker(&paths, SessionScope::Full).await?);
         }
         Some("status") => {
             println!(
@@ -73,9 +90,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "usage: statglass-remote-helper serve --stdio | version --json | status | update-status --json | configure '<json>'".into(),
+                "usage: statglass-remote-helper serve --stdio | version --json | status | update-status --json | configure '<json>' | restricted --device <tag> | pair --nonce <n>".into(),
             );
         }
     }
-    Ok(())
+    Ok(0)
+}
+
+fn print_version() -> CommandResult {
+    println!(
+        "{}",
+        serde_json::to_string(&statglass_remote::control::HelperVersion::current())?
+    );
+    Ok(0)
 }

@@ -1,4 +1,4 @@
-import type { CommandError, HistoryHealth } from "@core/generated/bindings";
+import type { CommandError, HistoryHealth } from "@core/generated/types";
 import {
   type HistoryNotice,
   historyHealthNotices,

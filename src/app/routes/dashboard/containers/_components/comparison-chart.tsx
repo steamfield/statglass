@@ -14,8 +14,8 @@ import type {
   DockerContainer,
   DockerCoverage,
   DockerHistoryPoint,
-} from "@core/generated/bindings";
-import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { DOCKER_BUCKET_MS } from "@core/generated/types";
 import { MINUTE_MS } from "@core/time-grid";
 import {
   type ComponentProps,

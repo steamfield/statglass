@@ -1,4 +1,4 @@
-import { METRIC_PERIODS_MS } from "@core/generated/bindings";
+import { METRIC_PERIODS_MS } from "@core/generated/types";
 import { useMemo, useState } from "react";
 import { PageHeader } from "~/components/page-header";
 import { SectionCard } from "~/components/section-card";

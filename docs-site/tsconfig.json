@@ -10,7 +10,7 @@
       "@/*": ["src/*"],
       "@statglass/widgets": ["../src/app/widgets/index.ts"],
       "~/*": ["../src/app/*"],
-      "@core/*": ["../src/core/*"],
+      "@core/*": ["../packages/core/src/*"],
       "react": ["./node_modules/@types/react"],
       "react/*": ["./node_modules/@types/react/*"]
     },

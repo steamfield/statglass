@@ -1,0 +1,28 @@
+[package]
+name = "statglass-ipc"
+description = "Platform-neutral command layer shared by the desktop and the phone: CommandError, live producer, history queries"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+statglass-schema.workspace = true
+statglass-store.workspace = true
+statglass-engine.workspace = true
+statglass-session.workspace = true
+serde.workspace = true
+specta = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tracing.workspace = true
+# No `process`: the phone links this crate, and it never spawns a program.
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+# The phase gate's temporary history store.
+tempfile.workspace = true
+
+[lints]
+workspace = true

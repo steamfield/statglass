@@ -11,7 +11,7 @@ import {
 import type {
   DockerContainer,
   DockerRankedContainer,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { Column } from "@tanstack/react-table";
 import { type MouseEvent, memo, type ReactNode } from "react";
 import { Link } from "react-router";

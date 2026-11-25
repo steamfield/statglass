@@ -1,7 +1,7 @@
 /**
  * The live demo: the real app, built on its mock transport into public/demo
  * (scripts/build-demo.mjs), shown in an iframe. Message shapes mirror the
- * app's embed bridge (../src/core/mock/embed-bridge.ts); the site keeps its
+ * app's embed bridge (../packages/core/src/mock/embed-bridge.ts); the site keeps its
  * own copy because it may import the app only through @statglass/*.
  */
 

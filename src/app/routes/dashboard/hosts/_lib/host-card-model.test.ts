@@ -3,7 +3,7 @@ import type {
   RemoteHostRecord,
   RemoteState,
   UpdatePhase,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { hostRecord, scenarioFlags } from "@core/mock/fixtures";
 import { mockHostVitals } from "@core/mock/remote-updates";
 import { localHostCardModel, remoteHostCardModel } from "./host-card-model";

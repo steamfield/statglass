@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { CliLinkStatus } from "@core/generated/bindings";
+import type { CliLinkStatus } from "@core/generated/types";
 import { appKeys } from "@core/query-keys";
 import { failureReason } from "@core/remote-errors";
 import { unwrap } from "@core/transport";

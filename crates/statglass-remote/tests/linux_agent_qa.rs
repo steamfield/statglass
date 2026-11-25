@@ -17,7 +17,7 @@ use sha2::{Digest as _, Sha256};
 use statglass_proto::{Message, RemoteInterest};
 use statglass_remote::agent_install::{self, HostProbe};
 use statglass_remote::install::run_remote;
-use statglass_remote::{EndpointConfig, RemoteError, SshSession};
+use statglass_remote::{EndpointConfig, OpenSshDialer, RemoteError, SshSession};
 use statglass_schema::HostId;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -199,8 +199,14 @@ async fn live_ring_refills_from_history_on_a_real_host() {
     let history = Arc::new(statglass_engine::HistoryStore::open(dir.path()));
     assert!(history.register_host(&record).is_some());
     let mirror = Arc::new(statglass_remote::Mirror::new(history, record.id, BUDGET_MB));
-    let source =
-        statglass_remote::RemoteSource::new(record, local, config, Arc::new(|_| {}), Some(mirror));
+    let source = statglass_remote::RemoteSource::new(
+        record,
+        local,
+        Arc::<OpenSshDialer>::default(),
+        config.endpoint(),
+        Arc::new(|_| {}),
+        Some(mirror),
+    );
     let hub = LiveHub::default();
     let mut handle = source
         .start(SourceSink {
@@ -335,7 +341,14 @@ async fn queries_answer_on_a_real_host() {
         .unwrap();
     let record = statglass_schema::HostRecord::from_identity(session.hello.host.clone(), false);
     session.close().await;
-    let source = statglass_remote::RemoteSource::new(record, local, config, Arc::new(|_| {}), None);
+    let source = statglass_remote::RemoteSource::new(
+        record,
+        local,
+        Arc::<OpenSshDialer>::default(),
+        config.endpoint(),
+        Arc::new(|_| {}),
+        None,
+    );
     let hub = LiveHub::default();
     let mut handle = source
         .clone()

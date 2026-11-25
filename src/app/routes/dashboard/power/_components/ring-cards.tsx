@@ -7,7 +7,7 @@ import {
   temperatureParts,
   wattsParts,
 } from "@core/format";
-import type { ClusterInfo } from "@core/generated/bindings";
+import type { ClusterInfo } from "@core/generated/types";
 import { keyByLabel, parseLabels } from "@core/series-key";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld, useLayout } from "~/hooks/use-ring";

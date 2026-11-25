@@ -2,7 +2,7 @@ import { formatBytes } from "@core/format";
 import type {
   LinuxPreparation,
   RemoteHostPreparation,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { linuxSystemLine } from "@core/remote-hosts";
 import { InlineMessage } from "~/components/inline-message";
 import { Command } from "./ssh-setup-help";

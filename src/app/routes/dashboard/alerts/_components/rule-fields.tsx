@@ -12,7 +12,7 @@ import {
   seriesName,
   thresholdToDisplay,
 } from "@core/alerts";
-import type { UnitSettings } from "@core/generated/bindings";
+import type { UnitSettings } from "@core/generated/types";
 import { sk } from "@core/series-key";
 import { type ReactNode, useId } from "react";
 import { SegmentedControl } from "~/components/segmented-control";

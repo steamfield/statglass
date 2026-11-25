@@ -1,0 +1,112 @@
+import { relativeWindow } from "@core/chart-range";
+import type { ChartWindow, CliLinkState } from "@core/generated/types";
+import { CHART_WINDOWS } from "@core/live-window";
+import type { ScenarioName } from "@core/mock/fixtures";
+import { SCENARIOS } from "@core/mock/fixtures";
+import { DAY_MS } from "@core/time-grid";
+import type { Transport } from "@core/transport";
+
+const CLI_LINK_STATES: readonly CliLinkState[] = [
+  "missing",
+  "current",
+  "stale",
+  "foreign",
+  "blocked",
+];
+
+/** Timeline spans a preview can open on; they are relative windows, not presets. */
+const LONG_CHART_WINDOWS_MS: Record<string, number> = {
+  "24h": DAY_MS,
+  "7d": 7 * DAY_MS,
+  "30d": 30 * DAY_MS,
+};
+
+function parseLatency(value: string | null): number {
+  const ms = Number(value);
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
+function parseChartWindow(value: string | null): ChartWindow | undefined {
+  const long = value === null ? undefined : LONG_CHART_WINDOWS_MS[value];
+  return (
+    CHART_WINDOWS.find((w) => w === value) ??
+    (long ? relativeWindow(long) : undefined)
+  );
+}
+
+/**
+ * The transport for this window. Inside Tauri: the app transport, labelled by
+ * the Tauri window. In a browser (dev server, Playwright, `VITE_TRANSPORT=
+ * mock`): the mock, configured from the query string:
+ *
+ *   ?window=popover|dashboard|onboarding   window label (default dashboard)
+ *   ?scenario=no-fans,paused               mock scenarios, comma separated
+ *   ?ticks=0                               no auto-tick (stable screenshots)
+ *   ?latency=800                           subscribe and history-query delay, ms
+ *   ?interval=30000                        starting sample interval, ms
+ *   ?chart_window=30m                      starting chart window (5m|15m|30m|1h|24h|7d|30d)
+ *   ?space_scan=/                          start with a finished volume report
+ *   ?update=available                      preview an available app update
+ *   ?setup_delay=60000                     hold Add host's setup step, ms
+ *   ?cli_link=foreign                      Settings' command-line link state
+ *
+ * Inside an iframe (docs-site's live demo) the mock also talks to the parent
+ * page through `mock/embed-bridge.ts`.
+ */
+export async function createAppTransport(search: string): Promise<Transport> {
+  if (
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    import.meta.env.VITE_TRANSPORT !== "mock"
+  ) {
+    const { createTauriTransport } = await import("./native");
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    return createTauriTransport(getCurrentWindow().label);
+  }
+  const params = new URLSearchParams(search);
+  const scenarios = (params.get("scenario") ?? "default")
+    .split(",")
+    .filter((s): s is ScenarioName =>
+      (SCENARIOS as readonly string[]).includes(s)
+    );
+  const { createMockTransport, cliLinkFixture } = await import(
+    "@core/mock-transport"
+  );
+  const cliLink = CLI_LINK_STATES.find((s) => s === params.get("cli_link"));
+  const bridge =
+    typeof window !== "undefined" && window.parent !== window
+      ? (await import("@core/mock/embed-bridge")).createEmbedBridge(window)
+      : null;
+  const windowLabel = params.get("window") ?? "dashboard";
+  const chartWindow = parseChartWindow(params.get("chart_window"));
+  const spaceScan = params.get("space_scan");
+  const latencyMs = parseLatency(params.get("latency"));
+  const intervalMs = Number(params.get("interval"));
+  const remoteSetupDelayMs = Number(params.get("setup_delay"));
+  const transport = createMockTransport({
+    windowLabel,
+    ...(bridge ? { embed: bridge.embed } : {}),
+    ...(params.get("update") === "available"
+      ? {
+          updateStatus: {
+            kind: "available" as const,
+            version: "0.2.0",
+            notes:
+              "Improved monitoring and reliability.\nYour history and settings are preserved.",
+          },
+        }
+      : {}),
+    // The dashboard backfills an hour of ring (app.tsx); give the mock one.
+    ...(windowLabel === "dashboard" ? { historyRows: 3600 } : {}),
+    scenarios,
+    autoTick: params.get("ticks") !== "0",
+    ...(intervalMs ? { intervalMs } : {}),
+    latencyMs,
+    ...(remoteSetupDelayMs ? { remoteSetupDelayMs } : {}),
+    ...(chartWindow ? { chartWindow } : {}),
+    ...(spaceScan ? { spaceScan } : {}),
+    ...(cliLink ? { cliLink: cliLinkFixture(cliLink) } : {}),
+  });
+  bridge?.attach(transport);
+  return transport;
+}

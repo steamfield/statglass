@@ -12,7 +12,7 @@
  */
 import { lastAtOrBefore } from "@core/chart-math";
 import { sumOrNull } from "@core/chart-math/numeric";
-import type { HistoryPoint } from "@core/generated/bindings";
+import type { HistoryPoint } from "@core/generated/types";
 
 export type Bucket = HistoryPoint;
 

@@ -5,7 +5,7 @@ import type {
   Event,
   HistoricalUsageMetric,
   SeriesStats,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { useEffect, useMemo, useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { useElementSize } from "~/hooks/use-element-size";

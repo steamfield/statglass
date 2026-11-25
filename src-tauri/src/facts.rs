@@ -371,6 +371,13 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .typ::<statglass_schema::AlertLimits>()
         .typ::<statglass_schema::DestinationLimits>()
         .typ::<statglass_schema::Readout>()
+        // What the iPhone facade's `version()` returns; no desktop command uses it.
+        .typ::<statglass_schema::BuildInfo>()
+        // The iPhone core's calls, hosts and events (statglass-ipc `mobile`).
+        .typ::<statglass_ipc::mobile::MobileConfig>()
+        .typ::<statglass_ipc::mobile::MobileCall>()
+        .typ::<statglass_ipc::mobile::MobileRemoteHost>()
+        .typ::<statglass_ipc::mobile::MobileEvent>()
 }
 
 #[cfg(test)]

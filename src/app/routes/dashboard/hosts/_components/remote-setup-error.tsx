@@ -1,4 +1,4 @@
-import type { CommandError } from "@core/generated/bindings";
+import type { CommandError } from "@core/generated/types";
 import { remoteErrorAdvice, remoteErrorText } from "@core/remote-errors";
 
 export function RemoteSetupError({ error }: { error: CommandError | string }) {

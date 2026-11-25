@@ -3,7 +3,7 @@
  * table and the table, or what stands in for it when nothing was measured.
  */
 import { formatClockSeconds, formatSpan } from "@core/format";
-import type { UsageByApp } from "@core/generated/bindings";
+import type { UsageByApp } from "@core/generated/types";
 import { gpuShortfall, usageCoverage } from "@core/usage-rows";
 import { AppsNote, UnrecordedRange } from "~/components/app-table";
 import {

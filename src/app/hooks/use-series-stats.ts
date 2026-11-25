@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import type { SeriesStats } from "@core/generated/bindings";
+import type { SeriesStats } from "@core/generated/types";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useRangeQuery } from "~/lib/queries/range";

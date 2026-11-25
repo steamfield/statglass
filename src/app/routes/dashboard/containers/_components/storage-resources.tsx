@@ -1,7 +1,7 @@
 import type {
   DockerStorageResource,
   DockerStorageSnapshot,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import type { Table } from "@tanstack/react-table";
 import type { Dispatch, SetStateAction } from "react";
 import { DataTableHead, type TableFeatures } from "~/components/data-table";

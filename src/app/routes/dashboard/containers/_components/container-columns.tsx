@@ -1,4 +1,4 @@
-import type { DockerContainer } from "@core/generated/bindings";
+import type { DockerContainer } from "@core/generated/types";
 import { useMemo } from "react";
 import { columnHelper, gap } from "~/components/data-table";
 import { cn } from "~/lib/utils";

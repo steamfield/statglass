@@ -1,5 +1,5 @@
 import { countNoun, pad2 } from "@core/format";
-import type { CommandError, ExportOutcome } from "@core/generated/bindings";
+import type { CommandError, ExportOutcome } from "@core/generated/types";
 import { localDateIso } from "@core/heatmap-days";
 import { historyUnavailable } from "@core/history-state";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";

@@ -1,7 +1,11 @@
-import { splitGaps } from "@core/chart-math";
 import { cssPercent } from "@core/format";
-import { scaleLinear } from "d3-scale";
-import { area, line } from "d3-shape";
+import {
+  STREAM_VIEWBOX_W,
+  type StreamAreaData,
+  type StreamAreaModel,
+  type StreamAreaSeriesModel,
+  streamAreaModel,
+} from "@core/widget-models/stream-area";
 import {
   type ReactNode,
   useId,
@@ -11,96 +15,25 @@ import {
 } from "react";
 import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
-import {
-  type ChartAnnotationProps,
-  ChartAnnotations,
-} from "./chart-annotation";
+import { PlacedChartAnnotations } from "./chart-annotation";
 import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
 import { ChartLoading } from "./chart-loading";
-import { GapBands, type GapSpan } from "./gap-band";
+import { PlacedGapBands } from "./gap-band";
 import { GapEdgeDot } from "./gap-edge-dot";
-import { type Accent, accentVars, rampColor } from "./lib/accent";
+import { accentVars, rampColor } from "./lib/accent";
 import styles from "./lib/scroll-layer.module.css";
 import { useTickScroll } from "./lib/use-tick-scroll";
 
-/** Width of the drawing in viewBox units; the SVG stretches to its box. */
-const VB_W = 1000;
-/** The dash pattern's length in screen px ("3 2"). */
-const DASH = [3, 2] as const;
-/** Line width in px when a series sets no `weight`. */
-export const DEFAULT_LINE_WEIGHT = 1.5;
-const DASH_PERIOD = DASH[0] + DASH[1];
+export { DEFAULT_LINE_WEIGHT } from "@core/widget-models/stream-area";
 
 /**
- * Contract for the live area/line chart (design-system.md inventory). The
- * charts worker replaces the component body; keep the props shape.
+ * Contract for the live area/line chart (design-system.md inventory): the
+ * shared data contract plus the desktop's own overlay and labelling.
  */
-export interface StreamAreaProps {
-  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
-  loading?: boolean;
-  /** Series drawn back to front. `null` is a gap: the line breaks there. */
-  series: {
-    key: string;
-    values: (number | null)[];
-    /** Ramp step of the accent; step 1 gets the area fill. */
-    step: 1 | 2 | 3 | 4;
-    /**
-     * Draw the area under the line (default). `false` is a bare line, as
-     * for per-app lines over a total.
-     */
-    fill?: boolean;
-    /** Hollow dots on the edges that border a gap (default true). */
-    edges?: boolean;
-    /** A dashed line, to tell apart two lines on the same ramp step. */
-    dash?: boolean;
-    /** Line width in px (default 1.5). */
-    weight?: number;
-    /** Opacity of the line and its area (default 1), for focus emphasis. */
-    opacity?: number;
-  }[];
-  /** Timestamp of the last value (ms epoch). Values are `intervalMs` apart. */
-  tEndMs: number;
-  intervalMs: number;
-  /** Y ceiling, already snapped (fixed 100, or a nice ceiling from the hook). */
-  yMax: number;
-  accent: Accent;
-  height: number;
-  ariaLabel?: string;
+export interface StreamAreaProps extends StreamAreaData {
   ariaLabelledBy?: string;
-  /** Corner label for the ceiling ("40%"), top left. */
-  ceilingLabel?: string;
-  /** Corner label for the window ("60s"), bottom right. */
-  windowLabel?: string;
-  /** Horizontal gridlines at these y values (the baseline is always drawn). */
-  gridlines?: readonly number[];
-  /** Y tick labels in a 32 px gutter on the left (100, 75, 50, 25). */
-  yTicks?: readonly { value: number; label: string }[];
-  /** Width of the y tick gutter, px (default 32; 48 for byte labels). */
-  gutter?: number | undefined;
-  /** X tick labels spread under the plot, oldest first ("−60s" … "now"). */
-  xTicks?: readonly string[];
-  /**
-   * Labelled gaps (sleep, paused) drawn as hatched bands over the plot;
-   * the parts outside the window are clipped.
-   */
-  gaps?: readonly GapSpan[];
-  /**
-   * A selected span as fractions of the plot width; the plot outside it is
-   * veiled. Null or absent: nothing is selected.
-   */
-  highlight?: { left: number; width: number } | null;
   /** Drawn over the plot area, sized to it (a brush layer). */
   overlay?: ReactNode;
-  /**
-   * Labelled markers at the top of the plot (power spikes, D-083); ones
-   * outside the window are dropped.
-   */
-  annotations?: readonly ChartAnnotationProps[];
-}
-
-interface Pt {
-  x: number;
-  y: number;
 }
 
 /**
@@ -110,92 +43,40 @@ interface Pt {
  * dot); its edge dot still marks it. New samples slide in with a
  * `translateX` on the plot group.
  */
-export function StreamArea({
-  series,
-  tEndMs,
-  intervalMs,
-  yMax,
-  accent,
-  height,
-  ariaLabel,
-  ariaLabelledBy,
-  ceilingLabel,
-  windowLabel,
-  gridlines = [],
-  yTicks,
-  gutter,
-  xTicks,
-  gaps,
-  highlight,
-  overlay,
-  annotations,
-  loading,
-}: StreamAreaProps) {
+export function StreamArea(data: StreamAreaProps) {
+  const {
+    tEndMs,
+    intervalMs,
+    yMax,
+    accent,
+    ariaLabel,
+    ariaLabelledBy,
+    gridlines = [],
+    yTicks,
+    gutter,
+    xTicks,
+    highlight,
+    overlay,
+    loading,
+  } = data;
   const reveal = useReveal<HTMLDivElement>(loading);
   const uid = useId();
-  const n = Math.max(2, ...series.map((s) => s.values.length));
-  const x = scaleLinear()
-    .domain([0, n - 1])
-    .range([0, VB_W]);
-  const y = scaleLinear()
-    .domain([0, yMax > 0 ? yMax : 1])
-    .range([height - 1, 1])
-    .clamp(true);
-  const lineGen = line<Pt>()
-    .x((p) => p.x)
-    .y((p) => p.y);
-  const areaGen = area<Pt>()
-    .x((p) => p.x)
-    .y0(height)
-    .y1((p) => p.y);
+  const [svgRef, widthPx] = useWidth<SVGSVGElement>();
+  const {
+    height,
+    slots,
+    series,
+    gaps,
+    annotations,
+    ceilingLabel,
+    windowLabel,
+    dashOffset,
+  } = streamAreaModel(data, { widthPx });
   const scrollRef = useTickScroll<HTMLDivElement>(
     tEndMs,
     intervalMs,
-    cssPercent(1 / (n - 1))
+    cssPercent(1 / (slots - 1))
   );
-  const [svgRef, widthPx] = useWidth<SVGSVGElement>();
-  // Dashes are in screen px from the path's start, which stays at the left
-  // edge while the data moves a slot left each tick. Offsetting the pattern
-  // by the slots scrolled so far keeps the dashes on the data.
-  const dashOffset =
-    widthPx > 0 && intervalMs > 0
-      ? (Math.round(tEndMs / intervalMs) * (widthPx / (n - 1))) % DASH_PERIOD
-      : 0;
-
-  const drawn = (loading ? [] : series).map((s) => {
-    // Right-align: the last value sits at "now" even when the series is short.
-    const offset = n - s.values.length;
-    const runs = splitGaps(s.values).map((run) =>
-      run.values.map((v, j) => ({
-        x: x(offset + run.start + j),
-        y: y(v),
-      }))
-    );
-    const filled = s.fill !== false;
-    const lines = runs.filter((pts) => pts.length > 1);
-    const linePath = lines.map((pts) => lineGen(pts) ?? "").join("");
-    const areaPath = filled
-      ? lines.map((pts) => areaGen(pts) ?? "").join("")
-      : "";
-    const edges: Pt[] = [];
-    (s.edges !== false ? runs : []).forEach((pts, k) => {
-      const first = pts[0];
-      const last = pts[pts.length - 1];
-      // A one-point run draws its dot alone, even as the series' only run;
-      // one dot, not two with the same key (React then leaves stale dots).
-      if (pts.length === 1 && first) {
-        edges.push(first);
-        return;
-      }
-      if (k > 0 && first) edges.push(first);
-      if (k < runs.length - 1 && last) edges.push(last);
-    });
-    const stroke =
-      s.step === 1 ? "var(--a-ink)" : rampColor(s.step, "var(--a-ink)");
-    const fill = s.step === 1 ? "var(--a)" : rampColor(s.step);
-    return { s, filled, linePath, areaPath, edges, stroke, fill };
-  });
-  const windowMs = (n - 1) * intervalMs;
 
   return (
     <ChartFrame
@@ -209,7 +90,7 @@ export function StreamArea({
       <div ref={reveal} className="relative overflow-hidden">
         <svg
           aria-hidden
-          viewBox={`0 0 ${VB_W} ${height}`}
+          viewBox={`0 0 ${STREAM_VIEWBOX_W} ${height}`}
           preserveAspectRatio="none"
           width="100%"
           height={height}
@@ -220,7 +101,7 @@ export function StreamArea({
         <div ref={scrollRef} className={cn("relative", styles.layer)}>
           <svg
             ref={svgRef}
-            viewBox={`0 0 ${VB_W} ${height}`}
+            viewBox={`0 0 ${STREAM_VIEWBOX_W} ${height}`}
             preserveAspectRatio="none"
             width="100%"
             height={height}
@@ -231,84 +112,26 @@ export function StreamArea({
             data-reveal
             className="block origin-bottom overflow-hidden"
           >
-            <defs>
-              {drawn
-                .filter((d) => d.filled)
-                .map(({ s, fill }) => (
-                  <linearGradient
-                    key={s.key}
-                    id={`${uid}-${s.key}`}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="0"
-                      style={{ stopColor: fill, stopOpacity: 0.4 }}
-                    />
-                    <stop
-                      offset="1"
-                      style={{ stopColor: fill, stopOpacity: 0 }}
-                    />
-                  </linearGradient>
-                ))}
-            </defs>
-            <g>
-              {drawn.map(({ s, filled, linePath, areaPath, stroke }) => (
-                <g key={s.key} data-series={s.key} opacity={s.opacity ?? 1}>
-                  {filled && (
-                    <path
-                      data-area
-                      d={areaPath}
-                      fill={`url(#${uid}-${s.key})`}
-                    />
-                  )}
-                  <path
-                    data-line
-                    d={linePath}
-                    fill="none"
-                    style={{ stroke }}
-                    strokeWidth={s.weight ?? DEFAULT_LINE_WEIGHT}
-                    strokeDasharray={s.dash ? DASH.join(" ") : undefined}
-                    strokeDashoffset={
-                      s.dash ? dashOffset.toFixed(2) : undefined
-                    }
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </g>
-              ))}
-            </g>
+            <StreamSeries uid={uid} series={series} dashOffset={dashOffset} />
           </svg>
         </div>
         {loading && <ChartLoading className="inset-x-0 bottom-0" />}
       </div>
-      {!loading && gaps && gaps.length > 0 && tEndMs > 0 && (
-        <GapBands
-          gaps={gaps}
-          rangeFromMs={tEndMs - windowMs}
-          rangeToMs={tEndMs}
-        />
-      )}
+      <PlacedGapBands bands={gaps} />
       <ChartSelectionVeil highlight={highlight} />
-      {drawn.flatMap(({ s, edges, stroke }) =>
-        edges.map((p) => (
+      {series.flatMap(({ key, edges, stroke }) => {
+        if (edges.length === 0) return [];
+        const color = streamColor(stroke);
+        return edges.map(({ xFrac, y }) => (
           <GapEdgeDot
-            key={`${s.key}-${p.x}`}
-            left={`${(p.x / VB_W) * 100}%`}
-            top={p.y}
-            color={stroke}
+            key={`${key}-${xFrac}`}
+            left={`${xFrac * 100}%`}
+            top={y}
+            color={color}
           />
-        ))
-      )}
-      <ChartAnnotations
-        annotations={loading ? undefined : annotations}
-        tEndMs={tEndMs}
-        windowMs={windowMs}
-        widthPx={widthPx}
-      />
+        ));
+      })}
+      <PlacedChartAnnotations annotations={annotations} widthPx={widthPx} />
       {ceilingLabel && (
         <span
           aria-hidden
@@ -327,6 +150,88 @@ export function StreamArea({
       )}
       {overlay}
     </ChartFrame>
+  );
+}
+
+const STROKES = {
+  1: rampColor(1, "var(--a-ink)"),
+  2: rampColor(2, "var(--a-ink)"),
+  3: rampColor(3, "var(--a-ink)"),
+  4: rampColor(4, "var(--a-ink)"),
+};
+const FILLS = {
+  1: rampColor(1),
+  2: rampColor(2),
+  3: rampColor(3),
+  4: rampColor(4),
+};
+
+function streamColor(color: StreamAreaSeriesModel["stroke"]) {
+  return (color.ink ? STROKES : FILLS)[color.step];
+}
+
+function StreamSeries({
+  uid,
+  series,
+  dashOffset,
+}: Pick<StreamAreaModel, "series" | "dashOffset"> & {
+  uid: string;
+}) {
+  return (
+    <>
+      <defs>
+        {series
+          .filter((s) => s.filled)
+          .map(({ key, fill }) => {
+            const stopColor = streamColor(fill);
+            return (
+              <linearGradient
+                key={key}
+                id={`${uid}-${key}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop offset="0" style={{ stopColor, stopOpacity: 0.4 }} />
+                <stop offset="1" style={{ stopColor, stopOpacity: 0 }} />
+              </linearGradient>
+            );
+          })}
+      </defs>
+      <g>
+        {series.map(
+          ({
+            key,
+            opacity,
+            filled,
+            linePath,
+            areaPath,
+            stroke,
+            weight,
+            dash,
+          }) => (
+            <g key={key} data-series={key} opacity={opacity}>
+              {filled && (
+                <path data-area d={areaPath} fill={`url(#${uid}-${key})`} />
+              )}
+              <path
+                data-line
+                d={linePath}
+                fill="none"
+                style={{ stroke: streamColor(stroke) }}
+                strokeWidth={weight}
+                strokeDasharray={dash?.join(" ")}
+                strokeDashoffset={dash ? dashOffset.toFixed(2) : undefined}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          )
+        )}
+      </g>
+    </>
   );
 }
 

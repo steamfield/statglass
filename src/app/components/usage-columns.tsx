@@ -4,7 +4,7 @@
  * the table's (Rust-chosen) order.
  */
 import { percentOf } from "@core/chart-math";
-import type { ProcessUsage } from "@core/generated/bindings";
+import type { ProcessUsage } from "@core/generated/types";
 import { type RemainderRow, type UsageRow, usageValue } from "@core/usage-rows";
 import type { ReactNode } from "react";
 import { ShareMeter } from "~/components/app-table";

@@ -1,52 +1,24 @@
-import { clamp01 } from "@core/chart-math";
-import { Legend, type SwatchStep } from "./legend";
-import { type Accent, accentVars, rampBackground } from "./lib/accent";
+import {
+  type StackBarData,
+  type StackBarSegment,
+  stackBarModel,
+} from "@core/widget-models/stack-bar";
+import { Legend } from "./legend";
+import { accentVars, rampBackground } from "./lib/accent";
 
-export interface StackBarSegment {
-  key: string;
-  label: string;
-  /** Formatted value for the legend and the accessible name ("3.9 GB"). */
-  value: string;
-  /**
-   * Share of the whole bar. Segments are laid out in order. `null` is a
-   * missing measurement: the segment is left out of the bar (its legend row
-   * shows the missing value), and a bar with nothing measured is an empty
-   * track.
-   */
-  fraction: number | null;
-  /** `track` draws the remainder (free memory, rest of system power). */
-  step: SwatchStep;
-  /** A color in place of the ramp step (frequency residency states). */
-  color?: string;
-}
+export type { StackBarSegment };
 
-export interface StackBarProps {
-  segments: StackBarSegment[];
-  /** Defaults to the accent in scope (the card's `--a`). */
-  accent?: Accent;
-  showLegend?: boolean;
-  legendColumns?: "inline" | 1 | 2;
-  /** Extra legend rows with no segment (popover memory "Swap"). */
-  extraLegend?: { label: string; value: string }[];
-  /** Overrides the generated accessible name. */
-  ariaLabel?: string;
-}
+/** Props of the composition bar: the shared data contract. */
+export type StackBarProps = StackBarData;
 
 /**
  * Composition bar, 10 px with 1 px gaps (memory, power, frequency residency). A
  * zero-width segment keeps its legend row so a hatched series that is often
  * zero (ANE, compressed) still has its key.
  */
-export function StackBar({
-  segments,
-  accent,
-  showLegend = false,
-  legendColumns = 2,
-  extraLegend = [],
-  ariaLabel,
-}: StackBarProps) {
-  const label =
-    ariaLabel ?? segments.map((s) => `${s.label} ${s.value}`).join(", ");
+export function StackBar(data: StackBarProps) {
+  const { accent, showLegend, legendColumns = 2 } = data;
+  const { ariaLabel, empty, segments, legend } = stackBarModel(data);
   return (
     <div
       className="flex flex-col gap-2"
@@ -54,28 +26,22 @@ export function StackBar({
     >
       <div
         role="img"
-        aria-label={label}
+        aria-label={ariaLabel}
         className="flex h-2.5 gap-px overflow-hidden rounded-mark"
       >
-        {segments.every((s) => s.fraction === null) && (
-          <span data-missing className="flex-1 bg-track" />
-        )}
-        {segments.map((s) => {
-          if (s.fraction === null) return null;
-          const f = clamp01(s.fraction);
-          if (f === 0) return null;
+        {empty && <span data-missing className="flex-1 bg-track" />}
+        {segments.map(({ key, grow, color, track }) => {
+          const background =
+            color.kind === "css"
+              ? color.value
+              : color.kind === "accent" || color.kind === "hatch"
+                ? rampBackground(color.kind === "hatch" ? "hatch" : color.step)
+                : undefined;
           return (
             <span
-              key={s.key}
-              className={s.step === "track" ? "basis-0 bg-track" : "basis-0"}
-              style={{
-                flexGrow: f,
-                background:
-                  s.color ??
-                  (s.step === "track" || s.step === "none"
-                    ? undefined
-                    : rampBackground(s.step)),
-              }}
+              key={key}
+              className={track ? "basis-0 bg-track" : "basis-0"}
+              style={{ flexGrow: grow, background }}
             />
           );
         })}
@@ -83,15 +49,12 @@ export function StackBar({
       {showLegend && (
         <Legend
           columns={legendColumns}
-          items={[
-            ...segments.map((s) => ({
-              label: s.label,
-              value: s.value,
-              step: s.step,
-              color: s.color,
-            })),
-            ...extraLegend.map((e) => ({ ...e, step: "none" as const })),
-          ]}
+          items={legend.map(({ label, value, swatch }, index) => ({
+            label,
+            value,
+            step: swatch,
+            color: data.segments[index]?.color,
+          }))}
         />
       )}
     </div>

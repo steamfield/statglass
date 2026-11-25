@@ -1,4 +1,4 @@
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { groupEvents } from "./events";
 
 const event = (

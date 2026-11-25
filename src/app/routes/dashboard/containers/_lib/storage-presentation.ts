@@ -2,7 +2,7 @@ import { matchText } from "@core/app-search";
 import type {
   DockerStorageKind,
   DockerStorageResource,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { DAY_MS } from "@core/time-grid";
 import type { ColumnSort } from "~/components/data-table";
 

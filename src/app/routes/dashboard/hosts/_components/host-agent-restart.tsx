@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { CommandError } from "@core/generated/bindings";
+import type { CommandError } from "@core/generated/types";
 import { useState } from "react";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";

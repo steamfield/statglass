@@ -1,5 +1,5 @@
 import { newDestination } from "@core/alert-destinations";
-import type { Destination } from "@core/generated/bindings";
+import type { Destination } from "@core/generated/types";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, screen } from "@testing-library/react";

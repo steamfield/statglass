@@ -7,7 +7,7 @@ import type {
   DockerContainer,
   DockerCoverage,
   DockerHistoryPoint,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { useMemo } from "react";
 import {
   ChartTable,

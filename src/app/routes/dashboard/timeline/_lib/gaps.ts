@@ -6,7 +6,7 @@
  */
 
 import { formatClock } from "@core/format";
-import type { Gap } from "@core/generated/bindings";
+import type { Gap } from "@core/generated/types";
 import { dedupeGaps, type GapBandSpec, gapBands } from "@core/history-state";
 import type { Span } from "./time";
 

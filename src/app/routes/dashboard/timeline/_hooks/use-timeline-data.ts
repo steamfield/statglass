@@ -5,7 +5,7 @@ import type {
   ProcessesAt,
   Tier,
   TierRequest,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys, type RangeSpec } from "@core/query-keys";
 import { DAY_MS, floorTo } from "@core/time-grid";

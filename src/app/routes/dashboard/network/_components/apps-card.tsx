@@ -11,7 +11,7 @@ import {
   MISSING,
   type RateUnits,
 } from "@core/format";
-import type { NetworkByApp } from "@core/generated/bindings";
+import type { NetworkByApp } from "@core/generated/types";
 import { networkByAppFailure } from "@core/history-state";
 import { CommandFailure } from "@core/transport";
 import { memo, type ReactNode, useMemo, useState } from "react";

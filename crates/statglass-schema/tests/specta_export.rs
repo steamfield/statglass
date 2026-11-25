@@ -9,8 +9,8 @@ use statglass_schema::durable_usage::{
     HistoricalUsageReply, HistoricalUsageRequest, UsageProcessReply, UsageProcessRequest,
 };
 use statglass_schema::{
-    AlertMetric, AlertRule, Capabilities, Cursor, Event, Gap, HostId, HostRecord, Module,
-    SeriesKey, SeriesSelector, Settings, Snapshot, Tier,
+    AlertMetric, AlertRule, BuildInfo, Capabilities, Cursor, Event, Gap, HostId, HostRecord,
+    Module, SeriesKey, SeriesSelector, Settings, Snapshot, Tier,
 };
 
 #[test]
@@ -33,7 +33,8 @@ fn ipc_types_export_to_typescript() {
         .register::<HistoricalUsageRequest>()
         .register::<HistoricalUsageReply>()
         .register::<UsageProcessRequest>()
-        .register::<UsageProcessReply>();
+        .register::<UsageProcessReply>()
+        .register::<BuildInfo>();
     let ts = Typescript::default()
         .export(&types, specta_serde::PhasesFormat)
         .unwrap_or_else(|e| panic!("export failed: {e}"));

@@ -1,4 +1,4 @@
-import type { DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSnapshot } from "@core/generated/types";
 import type { useContainerComparison } from "../_hooks/use-container-comparison";
 import { ChartChooser } from "./chart-chooser";
 export function ContainerChartChooser({

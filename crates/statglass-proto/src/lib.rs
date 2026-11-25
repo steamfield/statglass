@@ -20,6 +20,7 @@
 mod codec;
 mod handshake;
 mod message;
+pub mod pairing;
 mod query;
 
 pub use codec::{

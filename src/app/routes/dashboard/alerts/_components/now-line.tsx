@@ -4,7 +4,7 @@
  */
 import { formatAlertValue } from "@core/alert-values";
 import { displayUnits } from "@core/format";
-import type { UnitSettings } from "@core/generated/bindings";
+import type { UnitSettings } from "@core/generated/types";
 import { sk } from "@core/series-key";
 import type { ReactNode } from "react";
 import { type HostLiveState, useHost } from "~/stores/host-store";

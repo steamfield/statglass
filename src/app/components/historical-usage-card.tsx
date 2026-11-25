@@ -11,8 +11,8 @@ import type {
   HistoricalUsageMetric,
   HistoricalUsageProcess,
   HistoricalUsageReply,
-} from "@core/generated/bindings";
-import { USAGE_HISTORY_MAX_RANGE_MS } from "@core/generated/bindings";
+} from "@core/generated/types";
+import { USAGE_HISTORY_MAX_RANGE_MS } from "@core/generated/types";
 import {
   HISTORICAL_COLUMNS,
   HISTORICAL_LABELS,

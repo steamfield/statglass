@@ -1,5 +1,5 @@
 import { rangeScopeWords } from "@core/brush";
-import { USAGE_HISTORY_MAX_RANGE_MS } from "@core/generated/bindings";
+import { USAGE_HISTORY_MAX_RANGE_MS } from "@core/generated/types";
 import { DAY_MS } from "@core/time-grid";
 import { useId, useState } from "react";
 import { ChartHistoryStatus } from "~/components/chart-history-status";

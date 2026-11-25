@@ -22,7 +22,7 @@ import {
   type AlertMetric,
   type AlertRule,
   type UnitSettings,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 
 /** The rule dialog's fields for one rule. */

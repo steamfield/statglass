@@ -1,4 +1,4 @@
-import type { HostInfo } from "@core/generated/bindings";
+import type { HostInfo } from "@core/generated/types";
 import { modulePresence, unavailableText } from "@core/module-state";
 import {
   type OnboardingChoices,

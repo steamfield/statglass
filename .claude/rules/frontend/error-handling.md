@@ -3,7 +3,8 @@ paths:
   - "src/app/routes/**/*.tsx"
   - "src/app/components/**/*.tsx"
   - "src/app/lib/**/*.ts"
-  - "src/core/**/*.ts"
+  - "packages/core/src/**/*.ts"
+  - "src/desktop-transport/**/*.ts"
 ---
 
 # Frontend Error Handling
@@ -12,7 +13,7 @@ paths:
 
 tauri-specta commands return `Result`-shaped values (`{ status: "ok", data } | { status: "error", error }`).
 Branch on `status` for expected domain failures and map known variants to UI states in
-`src/core/`. The command promise can also reject when IPC/transport fails; handle that
+`packages/core/src/`. The command promise can also reject when IPC/transport fails; handle that
 rejection at the workflow boundary, retain context, and settle loading/subscription
 state on every path. Do not convert a transport rejection into a successful empty result.
 

@@ -3,7 +3,7 @@
 // opens `@layer components` would otherwise rank components below base, and
 // preflight's `border: 0 solid` would erase every card border.
 import "~/app.css";
-import { createAppTransport } from "@core/app-transport";
+import { createAppTransport } from "@desktop/app-transport";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "~/app";

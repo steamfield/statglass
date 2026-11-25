@@ -1,7 +1,7 @@
 import type {
   DockerContainer,
   DockerStorageResource,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { mockContainer, mockDockerSnapshot } from "@core/mock/docker";
 import { mockStorageSnapshot } from "@core/mock/docker-storage";
 import { createMockTransport } from "@core/mock-transport";

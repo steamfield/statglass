@@ -1,4 +1,4 @@
-import type { ChartWindow } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";

@@ -1,4 +1,4 @@
-import type { DiskIoPage } from "@core/generated/bindings";
+import type { DiskIoPage } from "@core/generated/types";
 import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler, useState } from "react";

@@ -1,4 +1,4 @@
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 import type { LiveGroup } from "@core/process-groups";
 import { targetKey } from "@core/process-selection";
 import type { GroupRows } from "./types";

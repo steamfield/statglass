@@ -206,7 +206,7 @@ it("resolves internal links, heading anchors and related docs", () => {
 
 it("uses only supported outer demo parameters and app scenarios", () => {
   const fixtures = readFileSync(
-    new URL("../../src/core/mock/fixtures.ts", import.meta.url),
+    new URL("../../packages/core/src/mock/fixtures.ts", import.meta.url),
     "utf8"
   );
   const scenarios = /export const SCENARIOS = \[([\s\S]*?)\] as const/.exec(

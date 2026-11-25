@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import type { SpaceScanStatus } from "@core/generated/bindings";
+import type { SpaceScanStatus } from "@core/generated/types";
 import { MOCK_SCAN_MS } from "@core/mock/disk-space";
 import { MOCK_HIGHLIGHTS } from "@core/mock/disk-space-fixture";
 import type { ScenarioName } from "@core/mock/fixtures";

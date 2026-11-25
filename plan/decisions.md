@@ -4645,3 +4645,142 @@ Date: 2026-11-24. Refines D-086's page choreography.
 ### Revisit when
 
 - A page's cards routinely mount more than 800 ms after it opens (a slow first settings read on a remote host): widen the window or key it on the page's own ready signal.
+
+## D-140: StatGlass for iPhone is an Expo app that only views other hosts
+
+Date: 2026-11-24. Accepts `plan/rfc-ios-app.md` (revision 2) section 10, decision 1. Execution: `plans/deliver-ios-app.md`.
+
+- The iPhone app is an Expo app (Expo Router, NativeWind, TanStack Query, a local Swift module) that shows the Macs and Linux servers a person already monitors with StatGlass. It never collects metrics about the phone.
+- D-015 covers the Mac app only. The iPhone app collects nothing locally, so the App Store sandbox costs it nothing, and it ships only through TestFlight and the App Store.
+- Tauri 2 mobile and SwiftUI were rejected (RFC 5.1, 5.2): the phone rebuilds navigation, touch scrubbing and Dynamic Type either way, Expo has first-party or well-trodden paths for the iOS integrations the app needs, and SwiftUI would duplicate every formatter, chart model and fixture.
+- No alerts reach the app while it is closed in 1.0 (open question 6). StatGlass has no backend and an APNs key cannot ship in an open-source repository. Phone delivery today is D-138's ntfy destination on the Mac.
+- No Home Screen widgets, iPad layout or Android in 1.0.
+
+### Revisit when
+
+- Users ask for alerts on the phone that ntfy does not cover: a user-configured relay first, never a StatGlass-run push service without a new decision on "no backend".
+- The CPU card's frame time or feel on the oldest supported iPhone is poor enough that an Expo DOM component or Tauri mobile would share more for less work (RFC 4.6).
+
+## D-141: The phone reuses the Rust session, mirror and live-stream code
+
+Date: 2026-11-24. Accepts RFC section 10, decision 2, and answers open question 2.
+
+- Session, sync, mirror and the live-channel producer are extracted from `statglass-remote` and `src-tauri` into `statglass-session` (client session, `RemoteSource`, `Mirror`, codec, `HostClock`; spawns no processes) and `statglass-ipc` (IPC types both apps use, the live producer, mirror history routing, the remote status mapping, and `CommandError`, which moves out of `src-tauri/src/error.rs`).
+- `statglass-mobile` is the phone's UniFFI facade. It depends on schema, proto, store, engine, session and ipc, never on `statglass-remote`; `crate-edges.json` forbids the edge and an architecture fixture proves it.
+- The facade returns `{ status: "ok", data } | { status: "error", error: CommandError }` JSON, the desktop's shape. Every exported function runs inside `catch_unwind`, and the iOS build uses a `mobile-release` profile with `panic = "unwind"`, because the workspace release profile aborts.
+- The wire format does not change for 1.0.
+- The phone links `statglass-engine` for 1.0, with `disk_space` and `docker` (and collect's Docker code) compiled out on `target_os = "ios"` (open question 2). The engine clock uses `CLOCK_MONOTONIC_RAW` on Apple targets other than macOS.
+- Types reach TypeScript through one specta export: `packages/core/src/generated/types.ts` holds every type and constant with no `@tauri-apps` import; `src/desktop-transport/commands.ts` holds the desktop's `commands` and `events`.
+
+### Revisit when
+
+- The stripped binary grows past 25 MB, or engine on iOS pulls in more than it should: extract bus, live hub, ring, `Source`, clock and `HistoryStore`, and move `ProcessSample` to schema, for a collector-free phone (RFC 4.2 step 4).
+
+## D-142: A per-host dialer seam with OpenSSH and russh implementations
+
+Date: 2026-11-24. Accepts RFC section 10, decision 3.
+
+- `RemoteSource` takes a per-host dialer with its own endpoint type (targets, port, user, pinned host keys) that returns a `DialedStream { reader, writer, stderr, close }`. Route racing becomes generic over N targets.
+- The desktop keeps the OpenSSH dialer in `statglass-remote`. The phone uses a russh dialer in a new `statglass-ssh` crate, with russh pinned to an exact version because its `Signer` trait changes shape between releases.
+- Each dialer classifies its own errors into the existing `RemoteError` kinds plus the new `RemoteNotRunning` and `RemoteMonitoringOff` markers: OpenSSH by parsing stderr, russh from typed errors. The shared handshake keeps only the marker checks.
+- The russh dialer has cancellation tests that check the TCP connection actually closes, because dropping a russh future alone does not close it.
+- A network change drops a session whose route disappeared, on both apps.
+
+## D-143: Phone keys are per-device, forced-command keys with a server-enforced restricted scope
+
+Date: 2026-11-24. Accepts RFC section 10, decision 4, and answers open questions 1, 7 and 8.
+
+- Each phone has its own P-256 key in the Secure Enclave, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, never exported or restored onto another device. Biometrics gate the optional app lock, not each signature. The simulator has no Secure Enclave, so the signer is one Swift protocol with a Keychain `ThisDeviceOnly` software key behind it in simulator builds, chosen at build time.
+- Hosts install the key with `restrict,command="<helper> restricted --device <tag>"` and the tag `statglass-mobile:<tag>`. The helper or agent in restricted mode accepts only bare tokens (`serve`, `version`, `status`) and opens the metrics socket with a local preface `{ scope: restricted, device }`. The SSH-side wire format does not change.
+- The server enforces the scope, not only the helper. A restricted session gets live metrics, summaries, history sync, recent rows, events and the live process table (process interest). `UsageByApp`, `HistoricalUsage`, `UsageProcesses` and every `Space*` query are refused with the existing `Error { code: Unsupported }`. The refusal tests live at the server.
+- Restricted keys only in 1.0; no Tailscale SSH mode (open question 7), because it bypasses `authorized_keys` and the scope with it.
+- Hosts show no "Viewing now" indicator (open question 8). The device tag is logged with each restricted session and gives per-phone "last seen" in Paired devices.
+
+### Revisit when
+
+- Users ask for per-app usage or remote actions on the phone: each widens what a stolen, unlocked phone can see or do, and needs its own decision.
+
+## D-144: StatGlass edits only the `authorized_keys` lines it tagged
+
+Date: 2026-11-24. Accepts RFC section 10, decision 5 (rules in RFC 2.5 and 2.6).
+
+- One implementation, in `statglass-remote`, used by the helper's and agent's `pair` and `authorize-key` paths and by revocation. It adds and removes only lines tagged `statglass-mobile:` or `statglass-pairing:` and never rewrites another line.
+- A symlinked `authorized_keys` is followed and its target edited. Writes are atomic in the target's directory, keep 0600 on the file and 0700 on `~/.ssh`, and re-read and merge just before the rename, since editors and `ssh-copy-id` take no lock. A failed edit leaves the file as it was and returns a typed error naming the path and cause.
+- Each host's tagged lines are the source of truth for which phones it allows. Every Mac shows Paired devices from its own file; `statglass-agent devices` lists and revokes on Linux, so a phone can always be revoked on the host directly.
+- A Mac controller keeps a durable per-host intent log of installs and revokes with a sequence number per device; a revoke always supersedes an earlier install, so a queued install never resurrects a revoked phone.
+- A key that sshd does not accept after install (non-default `AuthorizedKeysFile`, `AuthorizedKeysCommand`) marks the host "Key not accepted by sshd" instead of retrying. Tests run against real `sshd` in the Docker fixtures.
+
+## D-145: Pairing is a QR with pinned host keys and a short-lived, single-use pairing key
+
+Date: 2026-11-24. Accepts RFC section 10, decision 6 (flow in RFC 2.4).
+
+- The QR (CBOR, then base45) carries the host's `HostId`, name and OS, resolved dial targets, port and user, host-key fingerprints for every key type sshd offers, an ephemeral Ed25519 pairing key, an expiry and a six-character code.
+- The pairing key is installed as `restrict,expiry-time="<UTC>Z",command="<helper> pair --nonce <n>"`, so OpenSSH expires it even if StatGlass crashes, and it is removed on first use. Nothing completes without approval on the host showing the device name and code.
+- Approval is a start/poll protocol (`PairStart`, then `PairStatus`) because control requests are capped at 10 s and handled synchronously. On Linux, the interactive `statglass-agent pair` binds a one-time owner-only socket named by the nonce.
+- The phone connects only to hosts whose fingerprints it holds; a changed host key blocks the connection and offers re-pairing.
+- Hosts the Mac cannot hand over (`ProxyJump` or `ProxyCommand`, a literal LAN `HostName`, no stored host key) are listed on the phone with the reason. Manual host entry, ProxyJump and SSH certificates are not in 1.0.
+
+## D-146: The phone mirror keeps M1 for 24 hours and M15 for 30 days, without S10
+
+Date: 2026-11-24. Accepts RFC section 10, decision 7 (RFC 4.4).
+
+- `RemoteSource` and `Mirror` take a `MirrorPolicy`: tiers to sync, per-tier floor and retention. `MirrorPolicy::phone()` syncs M1 for 24 hours and M15 for 30 days and stores no S10; recent rows cover the live chart while connected. Default caps are 25 MB per host and 250 MB in total.
+- Tier selection for mirrors uses the policy's coverage instead of S10 prune and roll-down markers, so a mirror without S10 still draws 1h, 24h and 7d charts from the right tier. `TierRequest` gains an explicit `M15`.
+- First pairing syncs 24 hours of M1 and 30 days of M15 on Wi-Fi, or 7 days of M15 on cellular with a one-time full M15 resync later on Wi-Fi; the resync cost is accepted instead of adding backward paging.
+- Spans the phone has not synced are reported by Rust with the existing `not_synced` meaning; the phone stores only the host's own gaps and invents no phone-specific state in TypeScript.
+- Shared session changes for short phone sessions (sync policy, recent rows before durable sync, an injectable runtime, an async `quiesce()`) land in shared code, so the desktop runs them too.
+
+## D-147: What the desktop and phone share follows one test
+
+Date: 2026-11-24. Accepts RFC section 10, decision 8 (RFC 4.6).
+
+- The test: "If the desktop changes this, should the phone change too, without anyone deciding?" Yes means shared; "it depends" means per platform.
+- Shared: data meaning in Rust, `@statglass/core` (formatters, chart math, live and history state, host clock, series and query keys, remote errors, the mock transport and fixtures), generated types, widget models, popover composition and tokens. Per platform: rendered elements, chrome, layout, spacing, interaction, motion implementation, navigation and platform hooks.
+- Code moves into a shared package only in the change that adds its second consumer. A shared model that needs an option only one platform uses is forked and listed in `packages/core/README.md`, never given a platform flag.
+- Each widget the phone renders becomes a pure model in core (props plus measurable inputs to a view model of token names, final strings and final geometry) and a thin renderer per app. The desktop widget keeps its name and props.
+- The phone draws native renderers from those models. The Expo DOM component comparison from RFC phase 0 is not run, because decision 1 already chose Expo and this decision chose native renderers.
+- `packages/core` imports no React, React Native, Expo, `@tauri-apps/*` or `@steamfield/ui` and uses no DOM globals; Biome and the write hook enforce it. Every change under `packages/` runs both apps' checks.
+
+## D-148: The repository is a Bun workspace with the desktop at the root
+
+Date: 2026-11-24. Accepts RFC section 10, decision 9, and answers open question 3.
+
+- Root `package.json` declares `"workspaces": ["apps/*", "packages/*"]`. The desktop stays at the root; moving it to `apps/desktop` touches every path-matching config and buys little (open question 3).
+- `src/core` moved to `packages/core/src` (`@statglass/core`), consumed through the `@core/*` alias on both apps rather than a package export map. The Tauri adapters moved to `src/desktop-transport/` (`@desktop/*`).
+- The Expo app lives in `apps/mobile`. Each app pins its own React; Metro resolves `react` and `react-native` only from `apps/mobile/node_modules`, and a check fails the mobile export if it contains two copies of React. `vite` is pinned so the restructure cannot bump a major.
+- `docs-site` keeps its own lockfile and stays outside the workspace for now; only its `@core` alias path changed.
+- Mobile JS tests run with jest-expo on Node, never `bun test`. Mobile checks are separate Make targets (`mobile-check`, `mobile-rust-check`) so `bun run check` and `make check` keep their meaning for the desktop.
+
+### Revisit when
+
+- The mobile MVP has shipped and the root layout causes real confusion: reconsider `apps/desktop`.
+
+## D-149: iOS builds and submissions run locally
+
+Date: 2026-11-24. Accepts RFC section 10, decision 10, and answers open question 5. Keeps D-118 and D-131.
+
+- No GitHub-hosted macOS job is added for the iPhone app. Linux CI runs mobile lint, typecheck, jest-expo, `expo export` for iOS, `expo install --check` and the single-React check. The iOS Rust target check runs locally through `make mobile-rust-check`. The simulator build and native module tests run locally through `make mobile-native-check` (prebuild, then `xcodebuild` build and test for the simulator), which phase 4 adds; until then through `bun run --cwd apps/mobile expo run:ios`. `make mobile-check` is the Linux-capable JS check and says nothing about Swift.
+- Release builds are local only, with no EAS (open question 5): prebuild, the XCFramework, an `xcodebuild` archive and upload with an App Store Connect API key from the local keychain, as desktop releases are cut.
+- Bundle id `com.tryopendata.statglass.mobile` on the existing individual developer account. `app.config.ts` reads bundle id, team and name from environment variables with those defaults, so forks sign their own copies. No credentials in the repository.
+- The mobile app versions independently (`mobile-vX.Y.Z`, monotonic build numbers).
+
+## D-150: The phone supports hosts from the last three desktop minors and 90 days of agents
+
+Date: 2026-11-24. Answers RFC open question 4 (RFC 3.3).
+
+- A mobile release supports hosts running any of the last three desktop minor versions and any agent version released in the last 90 days.
+- `compat/mobile-protocol.json` records the protocol range and features of the current and previous App Store builds. It is empty until the first release. The desktop release script refuses to tag a build that drops anything listed there.
+- The proto skew tests add the oldest supported phone build as a pinned peer. `RemoteIncompatible` splits into "Update StatGlass on <host>" and "Update this app".
+
+## D-151: The pairing key and the device key are both P-256
+
+Date: 2026-11-24. Amends RFC `plan/rfc-ios-app.md` 2.4 and D-145.
+
+- The one-time pairing key the QR carries is P-256 (`ecdsa-sha2-nistp256`), not Ed25519. The phone's SSH client signs only through `statglass-ssh`'s `Signer`, which is P-256 only, and the device key is P-256 because the Secure Enclave holds P-256 keys only; one key type keeps one signer path for both.
+- The QR carries the pairing key's 32-byte private scalar. Its `authorized_keys` line is `restrict,expiry-time="YYYYMMDDHHMMZ",command="<helper> pair --nonce <n>" ecdsa-sha2-nistp256 <b64> statglass-pairing:<n>`, always in UTC.
+- A device line is `restrict,command="<helper> restricted --device <tag>" ecdsa-sha2-nistp256 <b64> statglass-mobile:<tag> <name>`. The tag is the first 3 bytes of the SHA-256 of the SEC1 public key, as 6 uppercase hex characters.
+- "Pair iPhone" refuses with guidance when the host's `ssh -V` reports OpenSSH below 7.7.
+
+### Revisit when
+
+- The phone gains a non-Secure-Enclave key type (the RFC 2.2 Ed25519 fallback for hosts that refuse ECDSA): the pairing key may then follow the device key type.

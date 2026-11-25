@@ -2,7 +2,7 @@ import type {
   DockerStorageOperation,
   DockerStorageReview,
   DockerStorageSelection,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { dockerKeys } from "@core/query-keys";
 import { HOUR_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";

@@ -3,7 +3,7 @@
  * while the host isn't live: what is happening, why, when the next attempt
  * runs (or how long the one in flight may take), and the last reading.
  */
-import { REMOTE_DIAL_TIMEOUT_MS } from "@core/generated/bindings";
+import { REMOTE_DIAL_TIMEOUT_MS } from "@core/generated/types";
 import { useRef } from "react";
 import { TruncatedText } from "~/components/truncated-text";
 import { useSecondsUntil } from "~/hooks/use-seconds-until";

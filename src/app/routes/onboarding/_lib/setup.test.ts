@@ -1,4 +1,4 @@
-import type { HostInfo } from "@core/generated/bindings";
+import type { HostInfo } from "@core/generated/types";
 import { chipStatus, defaultEnabled } from "./setup";
 
 const info = (over: Partial<HostInfo>): HostInfo => ({

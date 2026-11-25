@@ -1,4 +1,4 @@
-import { DOCKER_BUCKET_MS } from "@core/generated/bindings";
+import { DOCKER_BUCKET_MS } from "@core/generated/types";
 import { floorTo } from "@core/time-grid";
 import { DOCKER_RANGES, dockerRange, historyEnd } from "./history-params";
 import {

@@ -1,4 +1,4 @@
-import { METRIC_CODES } from "@core/generated/bindings";
+import { METRIC_CODES } from "@core/generated/types";
 
 /**
  * `mem.pressure_level` (from `kern.memorystatus_vm_pressure_level`, D-045;

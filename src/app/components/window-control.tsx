@@ -3,7 +3,7 @@ import {
   RANGE_PRESETS,
   relativeWindow,
 } from "@core/chart-range";
-import type { ChartWindow } from "@core/generated/bindings";
+import type { ChartWindow } from "@core/generated/types";
 import { windowAllowed } from "@core/live-window";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { Check, ChevronDown } from "lucide-react";

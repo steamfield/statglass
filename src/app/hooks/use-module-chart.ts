@@ -1,5 +1,5 @@
 import { seriesRange } from "@core/chart-math";
-import type { Module } from "@core/generated/bindings";
+import type { Module } from "@core/generated/types";
 import type { GapBandSpec } from "@core/history-state";
 import { spanWords } from "@core/live-window";
 import { useGapBands } from "~/hooks/use-gap-bands";

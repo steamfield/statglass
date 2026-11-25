@@ -3,10 +3,7 @@
  * the engine is in, whether the reader chose saved history instead, and the
  * command that opens a runtime app.
  */
-import type {
-  DockerRuntimeKind,
-  DockerSnapshot,
-} from "@core/generated/bindings";
+import type { DockerRuntimeKind, DockerSnapshot } from "@core/generated/types";
 import { useCallback, useEffect, useState } from "react";
 import { useTransport } from "~/lib/transport-context";
 import { engineStateView } from "../_lib/engine-state";

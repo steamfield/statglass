@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
 import { act, screen, waitFor } from "@testing-library/react";
 import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";

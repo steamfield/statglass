@@ -1,5 +1,5 @@
 import { errorTone } from "@core/command-error";
-import type { DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSnapshot } from "@core/generated/types";
 import { windowWords } from "@core/live-window";
 import { useCallback, useMemo, useState } from "react";
 import { InlineMessage } from "~/components/inline-message";

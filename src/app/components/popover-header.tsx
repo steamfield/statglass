@@ -1,5 +1,5 @@
 import { formatDuration } from "@core/format";
-import type { PerformanceReason } from "@core/generated/bindings";
+import type { PerformanceReason } from "@core/generated/types";
 import { Pause, Play, SlidersHorizontal } from "lucide-react";
 import { PerformanceExplainer } from "~/components/performance-explainer";
 import { StatGlassMark } from "~/components/statglass-mark";

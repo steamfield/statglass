@@ -1,6 +1,7 @@
 //! The Linux setup path: saved-host compatibility, preparation, error mapping, and a
 //! by-hand run against a real server.
 use super::*;
+use statglass_remote::OpenSshDialer;
 use statglass_remote::agent_install::AgentInstallError;
 
 /// The linux-tailscale probe as `LinuxProbe` serializes it (root, Fedora Asahi).
@@ -396,7 +397,7 @@ fn one_unreadable_saved_host_does_not_drop_the_others() {
 fn agent_install_errors_map_to_kinds_the_ui_explains() {
     use statglass_remote::AgentLayout;
     let kind = |e: AgentInstallError| {
-        serde_json::to_value(CommandError::from(e)).unwrap()["kind"]
+        serde_json::to_value(agent_install_error(e)).unwrap()["kind"]
             .as_str()
             .unwrap()
             .to_owned()
@@ -453,7 +454,7 @@ fn agent_install_errors_map_to_kinds_the_ui_explains() {
     ] {
         assert_eq!(kind(error), expected);
     }
-    let failed = CommandError::from(AgentInstallError::UpdateFailed {
+    let failed = agent_install_error(AgentInstallError::UpdateFailed {
         cause: Box::new(AgentInstallError::NoDigestTool),
         restored: true,
     });
@@ -604,11 +605,13 @@ async fn live_frames(
     let source = RemoteSource::new(
         record.clone(),
         local,
+        Arc::<OpenSshDialer>::default(),
         EndpointConfig {
             lan: config.lan.clone(),
             tailscale: config.tailscale.clone(),
             command: command.clone(),
-        },
+        }
+        .endpoint(),
         Arc::new(|s| {
             if let Some(e) = &s.error {
                 println!("  source: {e}");

@@ -4,11 +4,14 @@
 
 [graph]
 # The app ships on Apple Silicon and Intel macOS; the portable crates also build on Linux
-# (the v4 agent). Windows-only crates in Tauri's tree are left out.
+# (the v4 agent), and statglass-mobile builds for the iPhone app on iOS device and
+# simulator. Windows-only crates in Tauri's tree are left out.
 targets = [
   "aarch64-apple-darwin",
   "x86_64-apple-darwin",
   "x86_64-unknown-linux-gnu",
+  "aarch64-apple-ios",
+  "aarch64-apple-ios-sim",
 ]
 # The appstore, bench, call-counters and write-stats features pull in nothing extra
 # today; checking with all of them on keeps it that way.

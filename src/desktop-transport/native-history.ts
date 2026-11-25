@@ -1,0 +1,46 @@
+import type { Transport } from "@core/transport/contracts";
+import { commands } from "@desktop/commands";
+
+export function nativeHistory(): Pick<
+  Transport,
+  | "queryDiskIo"
+  | "listDiskIoDevices"
+  | "queryHistory"
+  | "queryProcessesAt"
+  | "queryNetworkByApp"
+  | "queryHistoricalUsage"
+  | "queryUsageProcesses"
+  | "queryUsageByApp"
+  | "queryUsageSeries"
+  | "querySeriesStats"
+  | "lastWake"
+  | "getNetworkAddresses"
+  | "getPublicIp"
+  | "queryEvents"
+  | "queryHeatmap"
+  | "exportCsv"
+> {
+  return {
+    queryDiskIo: (request) => commands.queryDiskIo(request),
+    listDiskIoDevices: (host) => commands.listDiskIoDevices(host),
+    queryHistory: (request) => commands.queryHistory(request),
+    queryProcessesAt: (host, tMs) => commands.queryProcessesAt(host, tMs),
+    queryNetworkByApp: (host, fromMs, toMs) =>
+      commands.queryNetworkByApp(host, fromMs, toMs),
+    queryHistoricalUsage: (request) => commands.queryHistoricalUsage(request),
+    queryUsageProcesses: (request) => commands.queryUsageProcesses(request),
+    queryUsageByApp: (host, fromMs, toMs, by, limit) =>
+      commands.queryUsageByApp(host, fromMs, toMs, by, limit),
+    queryUsageSeries: (host, fromMs, toMs, by, limit) =>
+      commands.queryUsageSeries(host, fromMs, toMs, by, limit),
+    querySeriesStats: (host, metrics, fromMs, toMs) =>
+      commands.querySeriesStats(host, metrics, fromMs, toMs),
+    lastWake: (host) => commands.lastWake(host),
+    getNetworkAddresses: (host) => commands.getNetworkAddresses(host),
+    getPublicIp: () => commands.getPublicIp(),
+    queryEvents: (host, fromMs, toMs) =>
+      commands.queryEvents(host, fromMs, toMs),
+    queryHeatmap: (request) => commands.queryHeatmap(request),
+    exportCsv: (request) => commands.exportCsv(request),
+  };
+}

@@ -31,14 +31,62 @@ pub struct WindowVisibilityChanged {
 }
 
 pub fn install_visibility_events(app: &AppHandle) {
+    wire_visibility_events(app, &app.state::<AppState>().live);
+}
+
+fn wire_visibility_events<R: tauri::Runtime>(app: &AppHandle<R>, live: &crate::live::LiveRegistry) {
     let handle = app.clone();
-    app.state::<AppState>()
-        .live
-        .set_visibility_emitter(move |label, event| {
-            if let Err(error) = event.emit_to(&handle, label) {
-                tracing::warn!(label, %error, "sending window visibility");
-            }
-        });
+    live.set_visibility_emitter(move |label, visible| {
+        if let Err(error) = (WindowVisibilityChanged { visible }).emit_to(&handle, label) {
+            tracing::warn!(label, %error, "sending window visibility");
+        }
+    });
+}
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::*;
+    use crate::live::LiveRegistry;
+    use serde_json::{Value, json};
+    use tauri::Listener;
+
+    #[test]
+    fn only_the_changed_window_receives_a_visibility_event() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        tauri_specta::Builder::new()
+            .events(tauri_specta::collect_events![WindowVisibilityChanged])
+            .mount_events(&app);
+        let (tx, rx) = std::sync::mpsc::channel();
+        for label in ["dashboard", "popover"] {
+            let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::default())
+                .build()
+                .unwrap();
+            let tx = tx.clone();
+            window
+                .as_ref()
+                .window()
+                .listen(WindowVisibilityChanged::NAME, move |event| {
+                    let payload = serde_json::from_str::<Value>(event.payload()).unwrap();
+                    tx.send((label, payload)).unwrap();
+                });
+        }
+        let live = LiveRegistry::new();
+        wire_visibility_events(app.handle(), &live);
+        live.window_visible("dashboard", true);
+        live.window_visible("dashboard", true);
+        live.window_visible("popover", true);
+        live.window_visible("dashboard", false);
+        assert_eq!(
+            rx.try_iter().collect::<Vec<_>>(),
+            [
+                ("dashboard", json!({"visible": true})),
+                ("popover", json!({"visible": true})),
+                ("dashboard", json!({"visible": false})),
+            ],
+        );
+    }
 }
 
 #[tauri::command]

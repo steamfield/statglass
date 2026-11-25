@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { UpdateStatus } from "@core/generated/bindings";
+import type { UpdateStatus } from "@core/generated/types";
 import { useEffect, useState } from "react";
 import { useTransport } from "~/lib/transport-context";
 

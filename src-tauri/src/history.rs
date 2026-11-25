@@ -3,8 +3,7 @@
 use crate::error::{CommandError, HistoryUnavailableReason};
 use crate::ipc::{
     ExportRequest, HeatmapDay, HeatmapMetric, HeatmapRequest, HistoryHealth, HistoryPage,
-    HistoryPoint, HistoryRequest, HistorySeries, NetworkByApp, NetworkSpan, ProcessResolution,
-    ProcessesAt, StoredProcess, TierRequest,
+    HistoryRequest, NetworkByApp, NetworkSpan, ProcessResolution, ProcessesAt, StoredProcess,
 };
 use statglass_engine::{HistoryStore, HousekeepingHandle};
 use statglass_schema::lock::LockExt;
@@ -22,8 +21,9 @@ mod ipc;
 mod queries;
 pub mod retry;
 #[cfg(test)]
+use crate::ipc::TierRequest;
+#[cfg(test)]
 use ipc::MAX_HEATMAP_DAYS;
-use ipc::history_page;
 #[cfg(test)]
 mod tests;
 pub use statglass_engine::HISTORY_DB_FILE as DB_FILE;

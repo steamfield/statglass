@@ -1,4 +1,4 @@
-import type { ClusterInfo } from "@core/generated/bindings";
+import type { ClusterInfo } from "@core/generated/types";
 import { clusterViews } from "./clusters";
 
 const e0: ClusterInfo = {

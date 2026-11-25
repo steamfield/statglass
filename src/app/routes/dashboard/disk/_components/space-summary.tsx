@@ -1,5 +1,5 @@
 import { bytesParts, formatBytes, formatSpan, MISSING } from "@core/format";
-import type { SpaceReport, SpaceScanStatus } from "@core/generated/bindings";
+import type { SpaceReport, SpaceScanStatus } from "@core/generated/types";
 import { ChevronRight } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useHostNoun } from "~/hooks/use-host-record";

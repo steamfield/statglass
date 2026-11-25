@@ -105,12 +105,15 @@ pub(super) fn from_remote(e: &RemoteError, host: &str, last_seen: Option<String>
         RemoteError::Busy(_) => ErrorTag::Busy,
         RemoteError::HistoryUnavailable(_) => ErrorTag::HistoryUnavailable,
         RemoteError::InvalidArgument(_) => ErrorTag::Usage,
+        RemoteError::Pairing(_) => ErrorTag::Defect,
         RemoteError::Transport(_)
         | RemoteError::Timeout(_)
         | RemoteError::Unreachable { .. }
-        | RemoteError::BothRoutes { .. }
+        | RemoteError::Routes(_)
         | RemoteError::Io(_)
         | RemoteError::AgentNotRunning(_)
+        | RemoteError::AppNotRunning(_)
+        | RemoteError::MonitoringOff(_)
         | RemoteError::Authentication(_)
         | RemoteError::HostKey(_)
         | RemoteError::Identity(_)

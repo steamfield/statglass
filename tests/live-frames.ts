@@ -2,7 +2,7 @@
  * Live-message builders for tests that drive the host store through the mock
  * transport (`transport.push`) or the reducer (`reduceLive`).
  */
-import type { LiveMsg, MetricKind, SeriesKey } from "@core/generated/bindings";
+import type { LiveMsg, MetricKind, SeriesKey } from "@core/generated/types";
 import type { HostLive } from "@core/live-state";
 import { act } from "@testing-library/react";
 

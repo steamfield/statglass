@@ -1,4 +1,4 @@
-import type { LiveMsg } from "@core/generated/bindings";
+import type { LiveMsg } from "@core/generated/types";
 import { MOCK_LOCAL_IPV4, MOCK_PUBLIC_IP } from "@core/mock-transport";
 import { act, screen, waitFor } from "@testing-library/react";
 import { nextFrame } from "@tests/live-frames";

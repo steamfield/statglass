@@ -1,5 +1,5 @@
 import { commandErrorText } from "@core/command-error";
-import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
+import type { CommandError, RemoteHostRecord } from "@core/generated/types";
 import { hostKeys } from "@core/query-keys";
 import { sshEndpointError } from "@core/remote-errors";
 import { MINUTE_MS } from "@core/time-grid";

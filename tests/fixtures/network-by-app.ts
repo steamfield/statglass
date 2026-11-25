@@ -1,4 +1,4 @@
-import type { NetworkByApp } from "@core/generated/bindings";
+import type { NetworkByApp } from "@core/generated/types";
 
 /** Where `networkByApp()`'s window starts, ms. */
 export const NETWORK_BY_APP_FROM_MS = 1_700_000_000_000;

@@ -1,4 +1,4 @@
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { mockHostVitals } from "@core/mock/remote-updates";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, cleanup, render, screen, within } from "@testing-library/react";

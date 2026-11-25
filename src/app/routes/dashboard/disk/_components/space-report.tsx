@@ -4,7 +4,7 @@ import type {
   SpaceNode,
   SpaceReport,
   SpaceScanStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { useSearchParams } from "react-router";

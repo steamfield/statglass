@@ -10,7 +10,7 @@ import {
   USAGE_HISTORY_MAX_RANGE_MS,
   type UsageByApp,
   type UsageKey,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import {
   HISTORICAL_LABELS,
   historicalCoverage,

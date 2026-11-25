@@ -19,7 +19,7 @@ This folder is the plan for StatGlass, from the first installable build through 
 | [docker-storage-cleanup.md](docker-storage-cleanup.md) | In progress: on-demand Docker storage inventory, cleanup review, confirmed local actions and resource review |
 | [rfc-agent-cli.md](rfc-agent-cli.md) | Draft: read-only `statglass` CLI for agents over an owner-only query socket, local and mirrored hosts; MCP deferred |
 | [rfc-alerts.md](rfc-alerts.md) | Implemented (D-138): custom threshold rules on an Alerts page, delivery to ntfy and webhooks, a host-offline rule; remote-metric rules and agent-side evaluation remain future work |
-| [rfc-ios-app.md](rfc-ios-app.md) | Draft: read-only iPhone viewer for remote hosts (Expo + reused Rust session/mirror core), Secure Enclave keys, QR pairing, Tailscale routes, monorepo and App Store release |
+| [rfc-ios-app.md](rfc-ios-app.md) | Accepted (D-140 to D-151), in progress: read-only iPhone viewer for remote hosts (Expo + reused Rust session/mirror core), Secure Enclave keys, QR pairing, Tailscale routes, monorepo and App Store release |
 | [io-performance-ux.md](io-performance-ux.md) | Draft: storage response-time history and process attribution in Disk; counter validation is the next step |
 | [disk-space-report.md](disk-space-report.md) | v1 implemented (D-114): on-demand Space view in Disk with a progressive, drillable treemap of what uses a volume; real-hardware privacy and lateness checks remain |
 | [rfc-shared-layers.md](rfc-shared-layers.md) | Accepted: consolidate charts, queries, UI states and Rust collectors onto shared owners, phased like the 0.6.2 table layer |
@@ -180,7 +180,8 @@ A first reading through the implementation:
    owns store lifecycle and merges persisted/recent queries; remote `Mirror` owns each
    host's separate synchronized history and cursor acknowledgements.
 3. `src-tauri` adapts these services to commands, channels, settings, windows and the tray.
-   Generated bindings carry those typed contracts to `src/core/transport`.
+   Generated bindings carry those typed contracts to `packages/core/src/transport`, with the
+   Tauri adapters in `src/desktop-transport/`.
 4. The transport feeds scoped React stores and query hooks. Routes own subscriptions and
    workflows; widgets receive props. The browser mock composes its own state owners and
    domain handlers behind the same transport surface.
@@ -215,7 +216,7 @@ The repo is a Cargo workspace plus a Bun app. Rust crates under `crates/` hold e
 | Engine | Rust, sysinfo, vendored macmon IOReport and SMC/HID code, GCD timer |
 | Storage | SQLite (WAL, incremental vacuum), tiered |
 | Wire protocol | CBOR via `ciborium`, length-prefixed frames, handshake |
-| Typed IPC | tauri-specta, generated into `src/core/generated/` |
+| Typed IPC | tauri-specta, generated into `packages/core/src/generated/types.ts` and `src/desktop-transport/commands.ts` |
 | Frontend | React 19, Vite, TypeScript, Bun, Tailwind v4, shadcn new-york on Radix, lucide |
 | State | zustand (one store per host), TanStack Query for history, React Router in memory mode |
 | Charts | Custom SVG on d3-scale and d3-shape for live, uPlot for history, canvas heatmap |

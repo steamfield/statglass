@@ -1,6 +1,6 @@
 import type { TimeRange } from "@core/brush";
 import { formatRate } from "@core/format";
-import type { DiskIoPage } from "@core/generated/bindings";
+import type { DiskIoPage } from "@core/generated/types";
 import { gapBands } from "@core/history-state";
 import { spanWords } from "@core/live-window";
 import { DAY_MS, floorTo } from "@core/time-grid";

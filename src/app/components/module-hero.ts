@@ -1,6 +1,6 @@
 import { stackSum } from "@core/chart-math";
 import { formatBytes, formatPercent, formatWatts } from "@core/format";
-import type { HostInfo, Module } from "@core/generated/bindings";
+import type { HostInfo, Module } from "@core/generated/types";
 import type { LiveMirrorChartProps } from "~/components/live-mirror-chart";
 import type { RangeTotal } from "~/components/range-totals-strip";
 import type { StreamAreaProps } from "~/widgets/stream-area";

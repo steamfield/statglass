@@ -3,7 +3,7 @@ import type {
   DockerRuntimeApp,
   DockerSnapshot,
   DockerStatus,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { mockDockerSnapshot } from "@core/mock/docker-fixtures";
 import { engineStateView } from "./engine-state";
 

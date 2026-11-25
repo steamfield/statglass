@@ -1,4 +1,4 @@
-import type { CommandError } from "@core/generated/bindings";
+import type { CommandError } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import {

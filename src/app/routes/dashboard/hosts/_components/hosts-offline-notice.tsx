@@ -2,7 +2,7 @@
  * The Hosts page's single notice while this Mac is offline, in place of a
  * per-card explanation on every host that waits for the network.
  */
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { InlineMessage } from "~/components/inline-message";
 
 /** Shows one note when any remote host is waiting for this Mac's network; nothing otherwise. */

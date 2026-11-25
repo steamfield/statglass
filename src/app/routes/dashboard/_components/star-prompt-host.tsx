@@ -1,10 +1,7 @@
 /**
  * Dashboard-only host managing star prompt eligibility, calm-moment timing, and persistence.
  */
-import type {
-  StarPromptAction,
-  StarPromptStatus,
-} from "@core/generated/bindings";
+import type { StarPromptAction, StarPromptStatus } from "@core/generated/types";
 import {
   GITHUB_REPO_URL,
   STAR_PROMPT_DELAY_MS,

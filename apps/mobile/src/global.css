@@ -1,0 +1,10 @@
+/*
+ * NativeWind entry stylesheet. Tailwind's layers stay split so utilities are
+ * not layered under React Native Web defaults. Colors come from the desktop's
+ * theme through the generated file (apps/mobile/scripts/gen-theme.mjs).
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+@import "nativewind/theme";
+@import "./theme.generated.css";

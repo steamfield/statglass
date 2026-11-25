@@ -1,5 +1,5 @@
 //! Metric values in the user's units, for rule sentences and alert text. The rules
-//! agree with the client's formatters (`src/core/format`) on every alertable metric.
+//! agree with the client's formatters (`packages/core/src/format`) on every alertable metric.
 
 use statglass_schema::settings::{MemoryUnit, TemperatureUnit, UnitSettings};
 use statglass_schema::{CATALOG, Unit};

@@ -35,8 +35,8 @@ pub struct ExportQuery {
     pub from_ms: i64,
     /// Exclusive end, ms epoch.
     pub to_ms: i64,
-    /// `Auto` picks the tier as a history read does. An `M15` export folds the minutes
-    /// still in `tier_1m` into their 15-minute rows, weighed by width (D-076).
+    /// `Auto` and `Covered` pick the tier as a history read does. An `M15` export folds
+    /// the minutes still in `tier_1m` into their 15-minute rows, weighed by width (D-076).
     pub tier: TierChoice,
 }
 
@@ -91,10 +91,7 @@ impl Reader {
         out: &mut impl Write,
     ) -> Result<ExportSummary> {
         let host_ref = self.host_ref(q.host)?;
-        let tier = match q.tier {
-            TierChoice::Fixed(t) => t,
-            TierChoice::Auto => self.auto_tier(host_ref, q.from_ms, q.to_ms)?,
-        };
+        let tier = self.resolve_tier(host_ref, q.from_ms, q.to_ms, q.tier)?;
         let width = tier_width(tier)?;
         let gaps = if q.to_ms > q.from_ms {
             self.gaps_in(host_ref, q.from_ms, q.to_ms)?

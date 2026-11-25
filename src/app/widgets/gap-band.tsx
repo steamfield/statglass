@@ -1,8 +1,16 @@
 import { cssPercent } from "@core/format";
 import { PAUSE_EXPLANATION } from "@core/history-state";
 import { DAY_MS } from "@core/time-grid";
+import {
+  type GapSpan,
+  gapBandPosition,
+  gapBandsModel,
+  type PlacedGapBand,
+} from "@core/widget-models/gap-band";
 import { Pause } from "lucide-react";
 import { cn } from "~/lib/utils";
+
+export type { GapSpan };
 
 export interface GapBandProps {
   fromMs: number;
@@ -36,59 +44,78 @@ export function GapBand({
   label,
   rangeFromMs,
   rangeToMs,
-  labelPosition = "bottom",
+  labelPosition,
   reason,
   showCaption = true,
 }: GapBandProps) {
-  let left: string | undefined;
-  let width: string | undefined;
-  if (rangeFromMs !== undefined && rangeToMs !== undefined) {
-    const span = Math.max(1, rangeToMs - rangeFromMs);
-    const a = Math.max(0, (fromMs - rangeFromMs) / span);
-    const b = Math.min(1, (toMs - rangeFromMs) / span);
-    left = cssPercent(a, 2);
-    width = cssPercent(Math.max(0, b - a), 2);
-  }
-  const positioned = left !== undefined;
+  const position =
+    rangeFromMs !== undefined && rangeToMs !== undefined
+      ? gapBandPosition({ fromMs, toMs }, rangeFromMs, rangeToMs)
+      : undefined;
+  return (
+    <GapBandMark
+      fromMs={fromMs}
+      toMs={toMs}
+      label={label}
+      paused={reason === "paused"}
+      showCaption={showCaption}
+      labelPosition={labelPosition}
+      position={position}
+    />
+  );
+}
+
+function GapBandMark({
+  fromMs,
+  toMs,
+  label,
+  paused,
+  showCaption,
+  labelPosition = "bottom",
+  position,
+}: Pick<
+  PlacedGapBand,
+  "fromMs" | "toMs" | "label" | "paused" | "showCaption"
+> & {
+  labelPosition?: GapBandProps["labelPosition"];
+  position: Pick<PlacedGapBand, "leftFrac" | "widthFrac"> | undefined;
+}) {
+  const accessibleLabel = paused ? PAUSE_EXPLANATION : label;
   return (
     <div
       role="note"
-      aria-label={reason === "paused" ? PAUSE_EXPLANATION : label}
+      aria-label={accessibleLabel}
       data-gap-from={fromMs}
       data-gap-to={toMs}
       className={cn(
         "pointer-events-none flex justify-center border-border-strong border-x border-dashed bg-gap-hatch",
         labelPosition === "center" ? "items-center" : "items-end",
-        positioned ? "absolute inset-y-0" : "relative h-full min-h-12 w-full"
+        position ? "absolute inset-y-0" : "relative h-full min-h-12 w-full"
       )}
-      style={positioned ? { left, width } : undefined}
+      style={
+        position
+          ? {
+              left: cssPercent(position.leftFrac, 2),
+              width: cssPercent(position.widthFrac, 2),
+            }
+          : undefined
+      }
     >
       {labelPosition !== "none" && showCaption && (
         <span
-          title={reason === "paused" ? PAUSE_EXPLANATION : label}
+          title={accessibleLabel}
           className={cn(
             "inline-flex items-center gap-1 whitespace-nowrap text-fg-subtle text-label",
             labelPosition === "bottom" && "translate-y-1/2",
-            reason !== "paused" &&
-              "rounded-control border border-border bg-card px-2 py-1"
+            !paused && "rounded-control border border-border bg-card px-2 py-1"
           )}
         >
-          {reason === "paused" && <Pause aria-hidden className="size-3" />}
+          {paused && <Pause aria-hidden className="size-3" />}
           {label}
         </span>
       )}
     </div>
   );
-}
-
-/** A labelled span with no data, in ms epoch; JSON-serializable. */
-export interface GapSpan {
-  fromMs: number;
-  toMs: number;
-  label: string;
-  reason?: string | undefined;
-  closedDurationMs?: number | null;
-  showCaption?: boolean | undefined;
 }
 
 /**
@@ -109,22 +136,28 @@ export function GapBands({
   rangeToMs: number;
   labelPosition?: "bottom" | "center";
 }) {
-  if (rangeToMs <= rangeFromMs) return null;
-  return gaps
-    .filter((g) => g.toMs > rangeFromMs && g.fromMs < rangeToMs)
-    .map((g) => (
-      <GapBand
-        key={`${g.fromMs}:${g.toMs}:${g.label}`}
-        fromMs={g.fromMs}
-        toMs={g.toMs}
-        label={g.label}
-        reason={g.reason}
-        showCaption={g.showCaption}
-        labelPosition={
-          rangeToMs - rangeFromMs > DAY_MS ? "none" : labelPosition
-        }
-        rangeFromMs={rangeFromMs}
-        rangeToMs={rangeToMs}
-      />
-    ));
+  return (
+    <PlacedGapBands
+      bands={gapBandsModel(gaps, rangeFromMs, rangeToMs)}
+      labelPosition={rangeToMs - rangeFromMs > DAY_MS ? "none" : labelPosition}
+    />
+  );
+}
+
+/** Draws bands already placed by a chart model. */
+export function PlacedGapBands({
+  bands,
+  labelPosition,
+}: {
+  bands: readonly PlacedGapBand[];
+  labelPosition?: GapBandProps["labelPosition"];
+}) {
+  return bands.map(({ key, ...band }) => (
+    <GapBandMark
+      key={key}
+      {...band}
+      labelPosition={labelPosition}
+      position={band}
+    />
+  ));
 }

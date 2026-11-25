@@ -3,7 +3,7 @@ import type {
   DockerContainer,
   DockerCoverage,
   DockerCoverageKind,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import {
   Dialog,
   DialogContent,

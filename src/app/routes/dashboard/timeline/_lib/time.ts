@@ -4,7 +4,7 @@
  */
 import { clamp01 } from "@core/chart-math";
 import { formatClock, monthName, weekdayName } from "@core/format";
-import { HISTORY_TIERS } from "@core/generated/bindings";
+import { HISTORY_TIERS } from "@core/generated/types";
 import { DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 
 /**

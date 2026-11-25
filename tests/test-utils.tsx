@@ -5,7 +5,7 @@
  * own.
  */
 
-import type { SeriesSelector } from "@core/generated/bindings";
+import type { SeriesSelector } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import {
   createMockTransport,

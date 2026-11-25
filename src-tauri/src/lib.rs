@@ -9,8 +9,8 @@ pub mod alerts;
 #[cfg(test)]
 mod alerts_tests;
 pub mod app_menu;
-mod app_quit;
 mod bench;
+mod bindings;
 mod calibration;
 mod cli_link;
 mod commands;
@@ -25,9 +25,9 @@ mod history;
 mod hosts;
 pub mod ipc;
 pub mod live;
-mod live_process;
 mod logging;
 mod notify;
+mod pairing;
 mod platform;
 pub mod popover;
 pub mod process_signal;
@@ -45,27 +45,13 @@ mod updates;
 mod usage;
 mod windows;
 
-use specta_typescript::Typescript;
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_specta::{Builder, collect_commands, collect_events};
 
+pub use bindings::{COMMANDS_PATH, TRAY_RATES_PATH, TYPES_PATH, export_bindings};
 pub use error::CommandError;
 pub use hosts::{HostEntry, HostRegistry};
 pub use state::AppState;
-
-/// Where the TypeScript bindings land. Generated, never hand-edited; see
-/// `.claude/rules/generated-bindings.md`.
-pub const BINDINGS_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../src/core/generated/bindings.ts"
-);
-
-/// The tray's rate strings for sample inputs, written with the bindings so
-/// `bindings-check` fails when the preview's test would check a stale table.
-pub const TRAY_RATES_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../src/core/generated/tray-rates.json"
-);
 
 /// The bundle identifier of debug builds; release builds use `tauri.conf.json`'s.
 #[cfg(debug_assertions)]
@@ -149,6 +135,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             star_prompt::get_star_prompt_status, star_prompt::act_on_star_prompt,
             alerts::commands::alert_destinations_get, alerts::commands::alert_destination_save,
             alerts::commands::alert_destination_delete, alerts::commands::alert_destination_test,
+            pairing::pairing_start, pairing::pairing_status, pairing::pairing_approve,
+            pairing::pairing_deny, pairing::pairing_cancel, pairing::paired_devices,
+            pairing::revoke_device,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,
@@ -165,30 +154,6 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             alerts::commands::AlertDestinationsChanged,
         ]);
     facts::register(builder)
-}
-
-/// Writes the TypeScript bindings for `builder` to [`BINDINGS_PATH`], and the tray rate
-/// table to [`TRAY_RATES_PATH`].
-pub fn export_bindings(builder: &Builder<tauri::Wry>) -> anyhow::Result<()> {
-    use anyhow::Context;
-    let bindings = || format!("exporting bindings to {BINDINGS_PATH}");
-    builder
-        .export(Typescript::default(), BINDINGS_PATH)
-        .with_context(bindings)?;
-    // Specta emits spaces after union separators. Normalize generation itself so
-    // freshly added variants pass the repository whitespace gate reproducibly.
-    let exported = std::fs::read_to_string(BINDINGS_PATH).with_context(bindings)?;
-    let clean = exported
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
-    std::fs::write(BINDINGS_PATH, clean).with_context(bindings)?;
-    let rates = || format!("writing the tray rate table to {TRAY_RATES_PATH}");
-    let golden = serde_json::to_string_pretty(&tray::model::rate_golden()).with_context(rates)?;
-    std::fs::write(TRAY_RATES_PATH, golden + "\n").with_context(rates)?;
-    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -250,6 +215,7 @@ pub fn run() {
             let background_restart = updates::take_background_restart(app.handle());
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
+            app.manage(pairing::PairingState::default());
             app_menu::install(app.handle())?;
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]

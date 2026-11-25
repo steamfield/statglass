@@ -44,7 +44,7 @@ pub(super) async fn probe_routes(
     while let Some(result) = attempts.join_next().await {
         match result {
             Ok(Ok(found)) => return Ok(found),
-            Ok(Err(e)) => errors.push(CommandError::from(e)),
+            Ok(Err(e)) => errors.push(agent_install_error(e)),
             Err(e) => errors.push(failure(e)),
         }
     }
@@ -134,7 +134,9 @@ pub async fn reset_remote_host_identity(
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
     let (alias, probe) = linux_probe(lan.clone(), tailscale.clone(), ProbeFor::Install).await?;
-    statglass_remote::agent_install::reset_identity(&alias, &probe).await?;
+    statglass_remote::agent_install::reset_identity(&alias, &probe)
+        .await
+        .map_err(agent_install_error)?;
     let (alias, probe) = linux_probe(lan, tailscale, ProbeFor::Install).await?;
     let saved = state.remotes.saved.lock_ok().clone();
     linux::preparation(&alias, &probe, &saved)
@@ -178,7 +180,9 @@ pub async fn restart_remote_agent(app: AppHandle, id: String) -> Result<(), Comm
     )
     .await?;
     let target = linux::check_restart(&probe, &saved.command, id)?;
-    statglass_remote::agent_install::restart(&alias, &target).await?;
+    statglass_remote::agent_install::restart(&alias, &target)
+        .await
+        .map_err(agent_install_error)?;
     if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
         source.retry();
     }

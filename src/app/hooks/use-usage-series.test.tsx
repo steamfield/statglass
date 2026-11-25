@@ -1,4 +1,4 @@
-import { USAGE_BUCKET_MS } from "@core/generated/bindings";
+import { USAGE_BUCKET_MS } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

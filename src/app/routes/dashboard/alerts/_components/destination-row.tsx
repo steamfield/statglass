@@ -9,7 +9,7 @@ import {
 } from "@core/alert-destinations";
 import { commandErrorText } from "@core/command-error";
 import { formatClock } from "@core/format";
-import type { Destination, DestinationView } from "@core/generated/bindings";
+import type { Destination, DestinationView } from "@core/generated/types";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { SettingsRow } from "~/components/settings-row";

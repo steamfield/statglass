@@ -2,7 +2,7 @@ import {
   type RemoteHostRecord,
   RING_SPAN_MS,
   type SeriesSelector,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { CLOCK_STEP_THRESHOLD_MS, hostClock } from "@core/host-clock";
 import { scaledWindowMs, slowestIntervalMs } from "@core/live-window";
 import { historyKeys, hostKeys } from "@core/query-keys";

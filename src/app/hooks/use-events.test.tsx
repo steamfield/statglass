@@ -1,4 +1,4 @@
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

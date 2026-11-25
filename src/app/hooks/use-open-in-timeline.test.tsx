@@ -1,6 +1,6 @@
 import { BRUSH_STEP_MS } from "@core/brush";
 import { eventRange } from "@core/events";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";

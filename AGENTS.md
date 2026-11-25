@@ -4,7 +4,9 @@
 
 Open-source macOS system monitor. A menu-bar tray plus popover, a dashboard window, and
 (v2) desktop widget boards, showing CPU, GPU, memory, power and sensors, network, disk and
-battery at 1 Hz with local history. Tauri 2 + Rust engine, React UI.
+battery at 1 Hz with local history. Tauri 2 + Rust engine, React UI. StatGlass for iPhone
+(`apps/mobile`, in progress) is a read-only Expo viewer of the same hosts over SSH, reusing
+the Rust session code and `@statglass/core` (`plan/rfc-ios-app.md`).
 
 ## Development Phase
 
@@ -33,24 +35,38 @@ crates/                    Rust workspace
   statglass-collect/          Collector trait; macos/ (sysinfo, IOReport, SMC/HID, IOKit); linux/ (/proc, sysfs, cgroups)
   statglass-store/            SQLite: series interning, tiered rollups, gaps, cursors, pruning
   statglass-engine/           sampler loop, rollups, detectors, bus, history lifecycle and queries
-  statglass-remote/           SSH sessions, protocol server/client, isolated history mirrors
+  statglass-session/          client session: Endpoint, Dialer seam, handshake and route race, RemoteError (no process spawning)
+  statglass-ssh/              russh dialer with the Signer seam (Secure Enclave on the phone)
+  statglass-remote/           OpenSSH dialer, controller management, protocol server, isolated history mirrors
   statglass-remote-helper/    bundled stdio-to-local-socket bridge
+  statglass-mobile/           iPhone app's UniFFI facade (staticlib -> XCFramework); never depends on statglass-remote
+  statglass-ipc/              platform-neutral command layer both apps use: CommandError, live producer, history; never depends on statglass-remote, tauri or tauri-specta
 src-tauri/                 app shell: HostRegistry, LocalSource, settings owner, tray, windows, commands
 src/
-  core/                    plain TS, no React (~ @core/): transport, generated bindings, formatters, chart math
-    generated/             tauri-specta bindings. Generated, never hand-edit
-  app/                     React (~ ~/): routes/<route>/{_components,_hooks,_lib}, components/{ui,charts}, widgets/, hooks/
+  app/                     desktop React (~ ~/): routes/<route>/{_components,_hooks,_lib}, components/{ui,charts}, widgets/, hooks/
+  desktop-transport/       Tauri adapters (~ @desktop/): native*.ts, app-transport.ts, commands.ts (generated)
+packages/
+  core/src/                @statglass/core (~ @core/), shared by both apps: transport contract, mock, formatters, chart math
+    generated/types.ts     tauri-specta types and constants. Generated, never hand-edit
+apps/
+  mobile/                  Expo app: src/app routes, src/hooks, src/widgets, src/transport, modules/statglass-native (Swift)
+scripts/mobile/            mobile checks, iOS Rust check, XCFramework build
 plan/                      planning docs (owned by the planning process; read, don't restructure)
 ```
 
 **Critical rules:**
 
 - Crate dependencies follow `scripts/architecture/crate-edges.json`, checked against Cargo metadata by `make architecture-check`. See `.claude/rules/rust/crates.md` for ownership.
-- `src/core/` has no React imports. `src/app/widgets/**` is render-only: props in, no
-  transport, stores, router or `@tauri-apps/*`. Biome (`noRestrictedImports` overrides) and a write hook both enforce this.
-- Rust types are the single source of truth for IPC. Regenerate `src/core/generated/`, never edit it.
-- The frontend never calls Tauri directly; everything goes through `@core/transport`, which
-  has a Tauri Channel implementation and a mock used by the browser dev server, Vitest and Playwright.
+- `packages/core/src/` has no React, React Native, Expo, `@tauri-apps/*` or DOM globals; it is shared with the iPhone app.
+  `src/app/widgets/**` is render-only: props in, no transport, stores, router or `@tauri-apps/*`.
+  `apps/mobile/` never imports `react-dom`, `@tauri-apps/*`, `@desktop/*` or the desktop app.
+  Biome (`noRestrictedImports` overrides) and a write hook enforce all three.
+- Code moves into `packages/` only with its second consumer, and a shared model that needs a platform option is forked, not flagged (`rules/shared-packages.md`).
+- Rust types are the single source of truth for IPC. Regenerate `packages/core/src/generated/types.ts` and
+  `src/desktop-transport/commands.ts` with `make bindings`, never edit them.
+- Neither frontend calls its platform directly; everything goes through the `@core/transport` contract. The desktop
+  implements it with Tauri Channels in `src/desktop-transport/`, the phone with `MobileTransport` over the
+  `statglass-native` module, and a mock serves the browser dev server, Vitest, Playwright, jest-expo and demo mode.
 - Storage and sync work on series (`metric_id` + labels). Gaps are explicit; never interpolate.
 - The idle-CPU budget (under 0.5% across app + WebKit helpers) covers the backgrounded app: menu bar only, no popover or dashboard. Visible UI has no product budget but is regression-gated (D-088). Every 1 Hz render path still matters.
 
@@ -66,16 +82,25 @@ Rules in `.claude/rules/` attach automatically by path. Read one directly when y
 | `rules/frontend/motion.md` | Motion tokens, streaming-chart motion, reduced motion, idle-CPU cost |
 | `rules/frontend/error-handling.md` | Typed command results, gaps vs errors, channel failures |
 | `rules/frontend/testing.md` | Mock transport, Playwright against the dev server, render-count tests |
+| `rules/shared-packages.md` | What both apps share, the seven guards (pull never push, fork not flag), pure widget models |
+| `rules/mobile/expo.md` | Expo app structure, thin routes over core hooks, one QueryClient, NativeWind tokens, safe areas, 44 pt, Dynamic Type, VoiceOver |
+| `rules/mobile/native-module.md` | Swift module is a pipe, non-blocking lifecycle, Secure Enclave and simulator signers, generated UniFFI code |
+| `rules/mobile/testing.md` | jest-expo on Node, real providers, shared mock fixtures, simulator screenshots |
 | `rules/rust/crates.md` | Crate boundaries and ownership, zero runtime deps, series data model |
 | `rules/rust/error-handling.md` | thiserror/anyhow split, `CommandError` mapping, no unwrap, poison-safe locks, ticks never panic |
 | `rules/rust/platform.md` | Private-API isolation, unsafe FFI, cfg gating, Linux portability |
 | `rules/rust/lints.md` | fmt, clippy, function and file size limits (D-112) |
 | `rules/rust/testing.md` | Test placement, codec skew tests, hardware-only tests |
+| `rules/rust/mobile.md` | `statglass-mobile` facade: JSON result shape, `catch_unwind`, no `statglass-remote`, iOS cfg gating, russh pin |
 | `rules/generated-bindings.md` | tauri-specta output is generated; how to regenerate |
 | `rules/testing.md` | Scoped-run ladder, mocking boundaries, timing fakes, flake triage |
 | `rules/verification.md` | What "done" means: suites, screenshot comparison, measured perf claims |
 
-Skill: `frontend-design-slop` before adding headers, card grids, badges or stat tiles.
+Skills: `frontend-design-slop` before adding headers, card grids, badges or stat tiles;
+`ios-simulator` to check a mobile screen in the simulator against the desktop popover;
+`mobile-bridge` to change what the phone asks Rust for, facade to `MobileTransport`;
+`widget-model` to extract a widget's model into `packages/core` and build its native twin.
+Delegated runs (foreman, Codex) get the contract items in `.claude/delegate.md`.
 
 ### Shared personal plugin skills
 
@@ -110,7 +135,8 @@ add macOS to push/PR CI, preview OS checks or any other workflow, never use a la
 (billed) runner size, and never rerun a historical workflow revision that has other
 macOS jobs. Everything else uses Linux runners.
 
-Run native macOS checks locally through the existing Git hooks (`make check
+iOS builds, simulator checks and App Store submissions run locally too; no hosted macOS
+job is added for the iPhone app. Run native macOS checks locally through the existing Git hooks (`make check
 bindings-check e2e-perf` in pre-push). Cut releases with `scripts/release.sh` as
 described in `.github/releasing.md`. Do not bypass those hooks. Before dispatching or
 rerunning a workflow, inspect the workflow at its target revision. If a running job is
@@ -157,12 +183,16 @@ bun run format             # Biome format + import/class sorting + safe fixes
 bun run test               # Vitest (scope with: bun run test -- <path>)
 bun run test:e2e           # Playwright against the dev server + mock transport
 bun run check              # biome check + typecheck + test
+bun run --cwd apps/mobile dev    # iPhone app: Metro for the simulator build (first build: ios-simulator skill)
+bun run --cwd apps/mobile test   # jest-expo (never bun test)
+make mobile-check          # mobile lint, tsc, jest, expo export, expo install --check, single-React check
+make mobile-rust-check     # statglass-mobile, -session, -ipc, -ssh cargo check + clippy for aarch64-apple-ios-sim
 make check                 # Frontend + Rust: what the pre-push hook runs, with bindings-check and e2e-perf
 make architecture-check    # Cargo dependency graph + Rust production file ceilings
 make architecture-test     # Positive/negative architecture-rule fixtures
 make agent-hooks-test      # Approval, formatting and task-owned cleanup fixtures
 make rust-check            # cargo fmt --check + clippy -D warnings
-make bindings              # Regenerate src/core/generated/ from Rust
+make bindings              # Regenerate packages/core/src/generated/types.ts and src/desktop-transport/commands.ts from Rust
 ```
 
 ## Other agent harnesses
@@ -188,20 +218,25 @@ Codex auto-loading mechanism.
 
 | Matching files | Canonical rule |
 | --- | --- |
-| `crates/**/*.rs`, `src-tauri/**/*.rs`, `src/core/**/*.ts`, `src/app/**/*.ts`, `src/app/**/*.tsx` | [data-boundary.md](.claude/rules/data-boundary.md) |
-| `src/app/routes/**/*.tsx`, `src/app/components/**/*.tsx`, `src/app/lib/**/*.ts`, `src/core/**/*.ts` | [frontend/error-handling.md](.claude/rules/frontend/error-handling.md) |
+| `crates/**/*.rs`, `src-tauri/**/*.rs`, `packages/core/src/**/*.ts`, `apps/mobile/src/**/*.ts`, `apps/mobile/src/**/*.tsx`, `src/app/**/*.ts`, `src/app/**/*.tsx` | [data-boundary.md](.claude/rules/data-boundary.md) |
+| `src/app/routes/**/*.tsx`, `src/app/components/**/*.tsx`, `src/app/lib/**/*.ts`, `packages/core/src/**/*.ts`, `src/desktop-transport/**/*.ts` | [frontend/error-handling.md](.claude/rules/frontend/error-handling.md) |
 | `src/**/*.css`, `src/app/components/charts/**`, `src/app/lib/motion/**`, `src/app/widgets/**`, `src/app/hooks/use-*motion*`, `src/app/hooks/use-prefers-reduced-motion*` | [frontend/motion.md](.claude/rules/frontend/motion.md) |
-| `src/app/**/*.ts`, `src/app/**/*.tsx`, `src/core/**/*.ts`, `src/main.tsx` | [frontend/react.md](.claude/rules/frontend/react.md) |
+| `src/app/**/*.ts`, `src/app/**/*.tsx`, `packages/core/src/**/*.ts`, `src/desktop-transport/**/*.ts`, `src/main.tsx` | [frontend/react.md](.claude/rules/frontend/react.md) |
 | `src/**/*.css`, `src/app/components/**/*.tsx`, `src/app/routes/**/*.tsx`, `src/app/widgets/**/*.tsx` | [frontend/styling.md](.claude/rules/frontend/styling.md) |
-| `src/**/*.test.ts`, `src/**/*.test.tsx`, `tests/**` | [frontend/testing.md](.claude/rules/frontend/testing.md) |
-| `src/core/generated/**`, `crates/statglass-schema/**`, `src-tauri/src/**/*.rs` | [generated-bindings.md](.claude/rules/generated-bindings.md) |
+| `src/**/*.test.ts`, `packages/**/*.test.ts`, `src/**/*.test.tsx`, `tests/**` | [frontend/testing.md](.claude/rules/frontend/testing.md) |
+| `packages/core/src/generated/**`, `src/desktop-transport/commands.ts`, `crates/statglass-schema/**`, `src-tauri/src/**/*.rs` | [generated-bindings.md](.claude/rules/generated-bindings.md) |
+| `apps/mobile/src/**/*.ts`, `apps/mobile/src/**/*.tsx`, `apps/mobile/src/**/*.css`, `apps/mobile/app.config.ts`, `apps/mobile/metro.config.cjs` | [mobile/expo.md](.claude/rules/mobile/expo.md) |
+| `apps/mobile/modules/**`, `apps/mobile/src/transport/**`, `crates/statglass-mobile/**`, `scripts/mobile/build-rust-ios.sh` | [mobile/native-module.md](.claude/rules/mobile/native-module.md) |
+| `apps/mobile/test/**`, `apps/mobile/src/**/*.test.ts`, `apps/mobile/src/**/*.test.tsx`, `apps/mobile/jest.config.cjs` | [mobile/testing.md](.claude/rules/mobile/testing.md) |
 | `crates/**/*.rs`, `crates/**/Cargo.toml`, `src-tauri/**/*.rs`, `src-tauri/Cargo.toml`, `Cargo.toml` | [rust/crates.md](.claude/rules/rust/crates.md) |
 | `crates/**/*.rs`, `src-tauri/**/*.rs` | [rust/error-handling.md](.claude/rules/rust/error-handling.md) |
 | `crates/**/*.rs`, `src-tauri/**/*.rs` | [rust/lints.md](.claude/rules/rust/lints.md) |
+| `crates/statglass-mobile/**`, `crates/statglass-session/**`, `crates/statglass-ipc/**`, `crates/statglass-ssh/**`, `scripts/mobile/*.sh` | [rust/mobile.md](.claude/rules/rust/mobile.md) |
 | `crates/**/*.rs`, `crates/**/Cargo.toml`, `src-tauri/**/*.rs`, `src-tauri/Cargo.toml`, `Cargo.toml` | [rust/platform.md](.claude/rules/rust/platform.md) |
 | `crates/**/*.rs`, `src-tauri/**/*.rs` | [rust/testing.md](.claude/rules/rust/testing.md) |
-| `src/**`, `tests/**`, `src-tauri/**/*.rs`, `crates/**/*.rs` | [testing.md](.claude/rules/testing.md) |
-| `src/**/*.ts`, `src/**/*.tsx`, `src-tauri/**/*.rs`, `crates/**/*.rs` | [verification.md](.claude/rules/verification.md) |
+| `packages/**`, `apps/mobile/src/widgets/**`, `src/app/widgets/**` | [shared-packages.md](.claude/rules/shared-packages.md) |
+| `src/**`, `packages/**`, `apps/mobile/**`, `tests/**`, `src-tauri/**/*.rs`, `crates/**/*.rs` | [testing.md](.claude/rules/testing.md) |
+| `src/**/*.ts`, `src/**/*.tsx`, `packages/**/*.ts`, `apps/mobile/**/*.ts`, `apps/mobile/**/*.tsx`, `src-tauri/**/*.rs`, `crates/**/*.rs` | [verification.md](.claude/rules/verification.md) |
 
 ### Skills and commands
 

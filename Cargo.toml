@@ -21,6 +21,10 @@ statglass-remote = { path = "crates/statglass-remote" }
 statglass-update = { path = "crates/statglass-update" }
 statglass-query = { path = "crates/statglass-query" }
 statglass-notify = { path = "crates/statglass-notify" }
+statglass-mobile = { path = "crates/statglass-mobile" }
+statglass-session = { path = "crates/statglass-session" }
+statglass-ssh = { path = "crates/statglass-ssh" }
+statglass-ipc = { path = "crates/statglass-ipc" }
 
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"
@@ -48,6 +52,22 @@ specta-typescript = "=0.0.12"
 specta-serde = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
 
+# The iPhone app's Swift bindings (statglass-mobile). Exact pin: the generated Swift
+# and the scaffolding the proc macros emit must come from the same release. No default
+# features, so the iOS library carries no cargo-metadata reader.
+uniffi = { version = "=0.32.2", default-features = false }
+
+# The phone's SSH client (statglass-ssh). Exact pin: the client `Signer` trait the
+# Secure Enclave adapter implements changes shape between releases (RFC 4.2). ring is
+# the crypto backend: it builds for iOS and Linux with only a C compiler (aws-lc-rs
+# needs CMake) and is already in the tree through rustls. No RSA, DSA or compression:
+# the phone's keys are P-256 only.
+russh = { version = "=0.65.4", default-features = false, features = ["ring"] }
+
+# The pairing QR (D-151): SVG on the Mac's sheet, Unicode blocks on the agent's terminal.
+# Exact pin and no default features, so no image codec enters the tree.
+qrcode = { version = "=0.15.0", default-features = false, features = ["svg"] }
+
 [workspace.lints.clippy]
 # Denied in non-test code; clippy.toml allows it in tests.
 unwrap_used = "deny"
@@ -66,3 +86,10 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# The iPhone app's static library (scripts/mobile/build-rust-ios.sh). Release, except
+# that a panic unwinds: statglass-mobile catches it at the FFI boundary and returns an
+# internal error, which `panic = "abort"` would turn into a crash.
+[profile.mobile-release]
+inherits = "release"
+panic = "unwind"

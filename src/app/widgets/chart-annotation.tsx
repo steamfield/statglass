@@ -1,22 +1,14 @@
-import { layoutMarkers } from "@core/chart-math";
+import {
+  annotationsModel,
+  type ChartAnnotationData,
+  type PlacedAnnotation,
+} from "@core/widget-models/chart-annotation";
 import { cn } from "~/lib/utils";
 
-export interface ChartAnnotationProps {
-  /** When the annotated moment happened (ms epoch); the chart positions it. */
-  tsMs: number;
-  /** "ANE 1.4 W · Photos face analysis". */
-  label: string;
-  /**
-   * `marker`: a 20 px vertical rule then the label (power chart).
-   * `pill`: a bordered label on the card surface (battery chart).
-   */
-  variant?: "marker" | "pill";
-  /**
-   * `end` puts the marker after the label, for a box anchored by its right
-   * edge so a label near the plot's right edge doesn't run past it.
-   */
-  align?: "start" | "end";
-}
+export { annotationFraction } from "@core/widget-models/chart-annotation";
+
+/** A labelled marker inside a chart; the shared annotation data. */
+export type ChartAnnotationProps = ChartAnnotationData;
 
 /**
  * Labelled marker inside a chart. Render-only: the chart wraps it
@@ -50,9 +42,6 @@ export function ChartAnnotation({
 /** Row pitch when annotations stack, px: the 20 px marker plus a gap. */
 const ROW_PX = 22;
 
-/** A label's width in px, estimated from its length like the Timeline's pills. */
-const labelWidth = (label: string) => label.length * 6 + 16;
-
 /**
  * The annotations inside a window ending at `tEndMs`, placed by the shared
  * marker layout (`layoutMarkers`): a label hangs right of its marker in the
@@ -71,62 +60,44 @@ export function ChartAnnotations({
   windowMs: number;
   widthPx: number;
 }) {
-  if (!annotations || widthPx <= 0) return null;
-  const inWindow = annotations
-    .filter((a) => annotationFraction(a.tsMs, tEndMs, windowMs) !== null)
-    .map((a) => ({ ...a, tMs: a.tsMs }))
-    .sort((p, q) => p.tMs - q.tMs);
-  const layout = (merged: ReadonlyMap<string, number>) =>
-    layoutMarkers(inWindow, {
-      fromMs: tEndMs - windowMs,
-      toMs: tEndMs,
-      widthPx,
-      measure: (a) => labelWidth(shown(a.label, merged.get(keyOf(a)) ?? 0)),
-      side: (a) =>
-        (annotationFraction(a.tsMs, tEndMs, windowMs) ?? 0) > 0.5
-          ? "end"
-          : "start",
-      hangPx: 0,
-    });
-  // A merged label grows by its "+N": lay out again with that width reserved.
-  const first = layout(new Map());
-  const merged = new Map(
-    first.filter((p) => p.more > 0).map((p) => [keyOf(p), p.more])
+  return (
+    <PlacedChartAnnotations
+      annotations={annotationsModel(annotations, tEndMs, windowMs, widthPx)}
+      widthPx={widthPx}
+    />
   );
-  const placed = merged.size > 0 ? layout(merged) : first;
-  return placed.map(({ tMs: _, leftPx, row, more, side, fitPx, ...a }) => (
-    <div
-      key={keyOf(a)}
-      className="absolute"
-      style={{
-        top: 12 + row * ROW_PX,
-        maxWidth: fitPx,
-        // An end-side label is anchored by its right edge, so the marker
-        // lands on its time whatever the label's real width.
-        ...(side === "end"
-          ? { right: widthPx - leftPx - fitPx }
-          : { left: leftPx }),
-      }}
-    >
-      <ChartAnnotation {...a} label={shown(a.label, more)} align={side} />
-    </div>
-  ));
 }
 
-const keyOf = (a: ChartAnnotationProps) => `${a.tsMs}-${a.label}`;
-const shown = (label: string, more: number) =>
-  more > 0 ? `${label} +${more}` : label;
-
-/**
- * Horizontal position of `tsMs` as a fraction of a window ending at `tEndMs`,
- * or null when it falls outside.
- */
-export function annotationFraction(
-  tsMs: number,
-  tEndMs: number,
-  windowMs: number
-): number | null {
-  if (windowMs <= 0) return null;
-  const f = 1 - (tEndMs - tsMs) / windowMs;
-  return f < 0 || f > 1 ? null : f;
+/** Draws annotations already placed by a chart model. */
+export function PlacedChartAnnotations({
+  annotations,
+  widthPx,
+}: {
+  annotations: readonly PlacedAnnotation[];
+  widthPx: number;
+}) {
+  return annotations.map(
+    ({ key, leftPx, row, side, fitPx, tsMs, label, variant }) => (
+      <div
+        key={key}
+        className="absolute"
+        style={{
+          top: 12 + row * ROW_PX,
+          maxWidth: fitPx,
+          // An end-side label is anchored by its right edge, so the marker
+          // lands on its time whatever the label's real width.
+          ...(side === "end"
+            ? { right: widthPx - leftPx - fitPx }
+            : { left: leftPx }),
+        }}
+      >
+        <ChartAnnotation
+          tsMs={tsMs}
+          label={label}
+          variant={variant}
+          align={side}
+        />
+      </div>
+    )
+  );
 }

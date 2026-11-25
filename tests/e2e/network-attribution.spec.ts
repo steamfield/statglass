@@ -1,5 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
-import { burstWindows, NET_BURSTS } from "../../src/core/mock/net-apps";
+import {
+  burstWindows,
+  NET_BURSTS,
+} from "../../packages/core/src/mock/net-apps";
 
 /**
  * Network attribution (D-089) on the mock transport: drag across

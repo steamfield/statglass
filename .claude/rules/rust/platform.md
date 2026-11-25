@@ -33,4 +33,7 @@ macOS API are isolated:
   members except the macOS shell and separately compile-checked remote helper, so new
   library members enter the portable gate automatically. Helper Linux runtime support
   is not promised (D-111).
+- iOS is `unix` but not macOS: gate macOS private APIs on `target_os = "macos"`, iOS-only
+  exclusions on `target_os = "ios"`, and Apple-wide code on `target_vendor = "apple"`. The
+  iOS rules are in `rust/mobile.md`.
 - Never gate on `target_arch` when you mean the OS, or on the OS when you mean Apple Silicon.

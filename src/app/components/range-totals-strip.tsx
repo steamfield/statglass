@@ -1,5 +1,5 @@
 import { formatSpan, MISSING } from "@core/format";
-import type { MetricStat } from "@core/generated/bindings";
+import type { MetricStat } from "@core/generated/types";
 import { useMemo } from "react";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useSeriesStats } from "~/hooks/use-series-stats";

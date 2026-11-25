@@ -3,7 +3,7 @@
  * it isn't, the engine's focal state card stands in for the content until the
  * reader asks for saved history.
  */
-import type { DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSnapshot } from "@core/generated/types";
 import type { ReactNode } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";

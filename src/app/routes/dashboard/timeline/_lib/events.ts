@@ -1,5 +1,5 @@
 import { eventId, eventPriority } from "@core/events";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 
 export interface EventGroup {
   id: string;

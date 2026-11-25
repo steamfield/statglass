@@ -1,4 +1,4 @@
-import type { DockerHistoryPage } from "@core/generated/bindings";
+import type { DockerHistoryPage } from "@core/generated/types";
 import { mockContainer } from "@core/mock/docker";
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";

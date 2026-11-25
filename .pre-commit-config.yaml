@@ -14,11 +14,11 @@ repos:
       - id: trailing-whitespace
         # Binary protocol fixtures, captured /proc and /sys trees and upstream font
         # licenses and vendored sources are byte-preserved.
-        exclude: '(^src/core/generated/|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/)'
+        exclude: '(^packages/core/src/generated/|^src/desktop-transport/commands\.ts$|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/)'
       - id: end-of-file-fixer
         # Binary protocol fixtures, captured /proc and /sys trees and upstream font
         # licenses and vendored sources are byte-preserved.
-        exclude: '(^src/core/generated/|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/)'
+        exclude: '(^packages/core/src/generated/|^src/desktop-transport/commands\.ts$|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/)'
       - id: check-yaml
       - id: check-toml
       - id: check-json
@@ -57,7 +57,8 @@ repos:
 
   # Frontend hooks (Biome, TypeScript). Biome formats, sorts imports and
   # Tailwind classes, and lints (including the boundary rules) in one pass;
-  # biome.json's files.includes already skips src/core/generated/.
+  # biome.json's files.includes already skips packages/core/src/generated/ and
+  # src/desktop-transport/commands.ts.
   - repo: local
     hooks:
       - id: frontend-biome

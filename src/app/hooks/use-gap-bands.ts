@@ -1,4 +1,4 @@
-import { type Gap, type Module, RING_SPAN_MS } from "@core/generated/bindings";
+import { type Gap, type Module, RING_SPAN_MS } from "@core/generated/types";
 import { probeHistory } from "@core/history-probe";
 import { type GapBandSpec, gapBands } from "@core/history-state";
 import { historyKeys, sameRingGaps } from "@core/query-keys";

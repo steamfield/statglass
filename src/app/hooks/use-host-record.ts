@@ -1,4 +1,4 @@
-import type { HostRecord } from "@core/generated/bindings";
+import type { HostRecord } from "@core/generated/types";
 import { hostNoun } from "@core/host-os";
 import { hostKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";

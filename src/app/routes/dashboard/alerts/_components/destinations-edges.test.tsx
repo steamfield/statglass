@@ -2,7 +2,7 @@ import type {
   AlertDestinationsView,
   DeliveryOutcome,
   Destination,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { appKeys } from "@core/query-keys";
 import type { CommandResult } from "@core/transport";

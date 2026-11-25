@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import type { DockerStorageResource } from "@core/generated/bindings";
+import type { DockerStorageResource } from "@core/generated/types";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
   storageAgeLabel,

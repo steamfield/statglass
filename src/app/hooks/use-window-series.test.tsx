@@ -1,4 +1,4 @@
-import { RING_MAX_ROWS } from "@core/generated/bindings";
+import { RING_MAX_ROWS } from "@core/generated/types";
 import { seriesWindow } from "@core/live-state";
 import { seriesKey } from "@core/series-key";
 import { bucketAverages, bucketIndex } from "@core/series-stats";

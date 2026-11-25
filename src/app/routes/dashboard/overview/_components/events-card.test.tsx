@@ -1,7 +1,7 @@
 import { BRUSH_STEP_MS } from "@core/brush";
 import { eventLabel, eventRange } from "@core/events";
 import { formatClock, monthName } from "@core/format";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { DAY_MS } from "@core/time-grid";

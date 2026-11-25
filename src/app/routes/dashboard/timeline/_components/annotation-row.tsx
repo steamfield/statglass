@@ -1,7 +1,7 @@
 import { layoutMarkers } from "@core/chart-math";
 import { eventId, eventLabel, eventPriority } from "@core/events";
 import { formatClock } from "@core/format";
-import type { Event } from "@core/generated/bindings";
+import type { Event } from "@core/generated/types";
 import {
   Popover,
   PopoverClose,

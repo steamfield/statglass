@@ -1,6 +1,8 @@
 ---
 paths:
   - "src/**"
+  - "packages/**"
+  - "apps/mobile/**"
   - "tests/**"
   - "src-tauri/**/*.rs"
   - "crates/**/*.rs"
@@ -17,6 +19,7 @@ Load the `ce:writing-tests` skill before writing or reviewing tests.
 | Area     | Rule File             | What's only there                                         |
 | -------- | --------------------- | --------------------------------------------------------- |
 | Frontend | `frontend/testing.md` | Mock transport, Playwright, async waiting, render counts  |
+| Mobile   | `mobile/testing.md`   | jest-expo on Node, real providers, simulator screenshots   |
 | Rust     | `rust/testing.md`     | Test placement, codec skew tests, hardware-only tests     |
 
 ## Test Commands
@@ -24,6 +27,7 @@ Load the `ce:writing-tests` skill before writing or reviewing tests.
 ```bash
 bun run test           # Vitest
 bun run test:e2e       # Playwright (browser + mock transport)
+bun run --cwd apps/mobile test # jest-expo (mobile, never `bun test`)
 cargo test --workspace # Rust
 make test              # Both
 make check             # Format, lint, typecheck, tests and repository-policy fixtures
@@ -41,7 +45,7 @@ they do not exempt production code from the native lint profiles (D-112).
 
 Escalate only as far as you need to:
 
-1. Single test while red/green cycling: `bun run test -- src/core/format.test.ts -t "bytes"`,
+1. Single test while red/green cycling: `bun run test -- packages/core/src/format.test.ts -t "bytes"`,
    `cargo test -p statglass-store rollup::closes_bucket`
 2. The test file, once that test passes.
 3. The directory or crate, to catch neighbours you broke.
@@ -57,6 +61,7 @@ name the blast radius.
 | Area     | Boundary            | Notes                                                   |
 | -------- | ------------------- | ------------------------------------------------------- |
 | Frontend | `@core/transport`   | Mock transport; never mock internal modules             |
+| Mobile   | `MobileTransport` / mock transport | Same mock and fixtures as desktop; never mock the native module per test |
 | Rust     | `Collector`, `Ticker`, `PowerSignals` traits | Fake implementations; real SQLite (in-memory or temp file) for the store |
 
 Never mock internal modules. Use real SQLite for store tests.

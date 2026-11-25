@@ -214,57 +214,28 @@ pub struct SavedHostStatus {
     pub name: String,
     pub status: RemoteHostStatus,
 }
-impl From<statglass_remote::RemoteError> for CommandError {
-    fn from(error: statglass_remote::RemoteError) -> Self {
-        use statglass_remote::RemoteError;
-        let message = error.to_string();
-        match error {
-            RemoteError::Authentication(_) => Self::RemoteAuth { message },
-            RemoteError::HostKey(_) => Self::HostKeyUnknown { message },
-            RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. } => {
-                Self::RemoteIncompatible { message }
-            }
-            RemoteError::Identity(_) | RemoteError::IdentityMismatch { .. } => {
-                Self::RemoteIdentity { message }
-            }
-            RemoteError::AgentNotRunning(_) => Self::RemoteAgentNotRunning { message },
-            RemoteError::Busy(_) => Self::RemoteBusy { message },
-            RemoteError::Unsupported(_) => Self::RemoteUnsupported { message },
-            // The host's own text says why (its database is damaged, or it has no store).
-            RemoteError::HistoryUnavailable(message) => Self::HistoryUnavailable {
-                reason: Some(crate::error::HistoryUnavailableReason::Failed { message }),
-            },
-            RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
-            RemoteError::Refused(_) => Self::Internal { message },
-            RemoteError::Transport(_)
-            | RemoteError::Timeout(_)
-            | RemoteError::Unreachable { .. }
-            | RemoteError::BothRoutes { .. }
-            | RemoteError::Io(_)
-            | RemoteError::Codec(_)
-            | RemoteError::Protocol(_) => Self::RemoteUnreachable { message },
+/// The command error for a Linux agent install, update or restart failure. A function,
+/// not a `From` impl: `CommandError` lives in `statglass-ipc`, which never depends on
+/// `statglass-remote`, so the orphan rule keeps this mapping in the shell.
+pub(crate) fn agent_install_error(
+    error: statglass_remote::agent_install::AgentInstallError,
+) -> CommandError {
+    use statglass_remote::agent_install::AgentInstallError as E;
+    let message = error.to_string();
+    match error {
+        E::Remote(e) => e.into(),
+        E::UnsupportedArch(_) | E::NoSystemd { .. } | E::NoUserManager { .. } | E::NoDigestTool => {
+            CommandError::RemoteIncompatible { message }
         }
-    }
-}
-
-impl From<statglass_remote::agent_install::AgentInstallError> for CommandError {
-    fn from(error: statglass_remote::agent_install::AgentInstallError) -> Self {
-        use statglass_remote::agent_install::AgentInstallError as E;
-        let message = error.to_string();
-        match error {
-            E::Remote(e) => e.into(),
-            E::UnsupportedArch(_)
-            | E::NoSystemd { .. }
-            | E::NoUserManager { .. }
-            | E::NoDigestTool => Self::RemoteIncompatible { message },
-            E::LowDisk { .. } => Self::RemoteLowDisk { message },
-            E::OtherLayout { .. } | E::AlreadyInstalled { .. } | E::NotInstalled { .. } => {
-                Self::RemoteAgentConflict { message }
-            }
-            E::NotRunning { .. } => Self::RemoteAgentNotRunning { message },
-            // Nothing was replaced; the transfer can be retried.
-            E::DigestMismatch { .. } => Self::RemoteUnreachable { message },
-            E::UpdateFailed { restored, .. } => Self::RemoteAgentUpdateFailed { message, restored },
+        E::LowDisk { .. } => CommandError::RemoteLowDisk { message },
+        E::OtherLayout { .. } | E::AlreadyInstalled { .. } | E::NotInstalled { .. } => {
+            CommandError::RemoteAgentConflict { message }
+        }
+        E::NotRunning { .. } => CommandError::RemoteAgentNotRunning { message },
+        // Nothing was replaced; the transfer can be retried.
+        E::DigestMismatch { .. } => CommandError::RemoteUnreachable { message },
+        E::UpdateFailed { restored, .. } => {
+            CommandError::RemoteAgentUpdateFailed { message, restored }
         }
     }
 }
@@ -497,6 +468,8 @@ mod command_regressions {
                         show_menu_bar_icon: None,
                         launch_at_login: Some(login),
                         updates: None,
+                        pairing: None,
+                        pairing_expires_ms: None,
                     })
                 }),
                 async {

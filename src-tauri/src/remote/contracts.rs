@@ -1,5 +1,8 @@
 //! Remote command contracts; wire names and field shapes stay stable.
 use super::*;
+pub use statglass_ipc::status::{
+    RemoteFailureKind, RemoteRoute, RemoteRouteFailure, RemoteState, RemoteSync,
+};
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
 pub struct RemoteHostConfig {
     pub id: String,
@@ -10,52 +13,6 @@ pub struct RemoteHostConfig {
     pub mirror_budget_mb: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum RemoteState {
-    Connecting,
-    Connected,
-    Offline,
-    Disabled,
-    Error,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum RemoteRoute {
-    Lan,
-    Tailscale,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum RemoteSync {
-    Idle,
-    CatchingUp,
-    Current,
-    Unavailable,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum RemoteFailureKind {
-    Unreachable,
-    Timeout,
-    Authentication,
-    HostKey,
-    AgentNotRunning,
-    Incompatible,
-    IdentityChanged,
-    Protocol,
-    NameNotResolved,
-    Refused,
-    NoRoute,
-    LocalOffline,
-    TailscaleDown,
-}
-/// One configured route's cause from the last failed connection attempt.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-pub struct RemoteRouteFailure {
-    pub route: RemoteRoute,
-    pub kind: RemoteFailureKind,
-}
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
 pub struct RemoteHostStatus {
     pub state: RemoteState,
@@ -329,4 +286,84 @@ pub struct RemoteSshHostTrust {
 pub enum RemoteSshConfigStatus {
     Missing,
     Present,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_host_status_json_stays_flat() {
+        let host = HostId(uuid::Uuid::nil());
+        let status = RemoteHostStatus {
+            state: RemoteState::Error,
+            route: Some(RemoteRoute::Lan),
+            last_seen_ms: Some(1000.0),
+            synced_through_ms: Some(900.0),
+            error: Some("timed out".into()),
+            failure_kind: Some(RemoteFailureKind::Timeout),
+            route_failures: vec![RemoteRouteFailure {
+                route: RemoteRoute::Tailscale,
+                kind: RemoteFailureKind::Refused,
+            }],
+            next_attempt_ms: Some(2000.0),
+            attempt: 3,
+            dialing: true,
+            waiting_for_network: true,
+            sync: RemoteSync::Unavailable,
+            clock_offset_ms: -25.0,
+            vitals: HostVitals {
+                cpu_pct: Some(12.5),
+                memory_pct: Some(50.0),
+                load_1m: Some(1.5),
+                cores: Some(4),
+                memory_pressure: Some(super::super::vitals::MemoryPressure::Stall {
+                    some_pct: 2.5,
+                }),
+                disk_used_bytes: Some(60),
+                disk_free_bytes: Some(40),
+                disk_total_bytes: Some(100),
+                disk_low: true,
+                net_rx_bps: Some(20.0),
+                net_tx_bps: Some(10.0),
+            },
+            rr: Some(statglass_remote::rr::RrJob {
+                command: Some("build".into()),
+                user: "alice".into(),
+                client_hostname: "client".into(),
+                started_ms: 800,
+                peers: vec![host],
+            }),
+            update: Some(AgentUpdateProgress {
+                target: "2.0".into(),
+                phase: UpdatePhase::Uploading {
+                    sent_bytes: 10,
+                    total_bytes: 20,
+                },
+            }),
+            last_update_failure: Some(AgentUpdateFailure {
+                via: AgentUpdateVia::Push,
+                target: "2.0".into(),
+                message: "upload failed".into(),
+            }),
+            agent_version: Some("1.0".into()),
+            agent_update: AgentUpdate::Available {
+                installed: "1.0".into(),
+                target: "2.0".into(),
+                via: AgentUpdateVia::Push,
+            },
+            identity_changed: Some("other-host".into()),
+        };
+        let expected = concat!(
+            r#"{"state":"error","route":"lan","last_seen_ms":1000.0,"synced_through_ms":900.0,"error":"timed out","failure_kind":"timeout","#,
+            r#""route_failures":[{"route":"tailscale","kind":"refused"}],"next_attempt_ms":2000.0,"attempt":3,"dialing":true,"waiting_for_network":true,"sync":"unavailable","clock_offset_ms":-25.0,"#,
+            r#""vitals":{"cpu_pct":12.5,"memory_pct":50.0,"load_1m":1.5,"cores":4,"memory_pressure":{"kind":"stall","some_pct":2.5},"disk_used_bytes":60,"disk_free_bytes":40,"disk_total_bytes":100,"disk_low":true,"net_rx_bps":20.0,"net_tx_bps":10.0},"#,
+            r#""rr":{"command":"build","user":"alice","client_hostname":"client","started_ms":800,"peers":["00000000-0000-0000-0000-000000000000"]},"#,
+            r#""update":{"target":"2.0","phase":{"kind":"uploading","sent_bytes":10,"total_bytes":20}},"last_update_failure":{"via":"push","target":"2.0","message":"upload failed"},"#,
+            r#""agent_version":"1.0","agent_update":{"kind":"available","installed":"1.0","target":"2.0","via":"push"},"identity_changed":"other-host"}"#,
+        );
+        assert_eq!(serde_json::to_string(&status).unwrap(), expected);
+        let decoded: RemoteHostStatus = serde_json::from_str(expected).unwrap();
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), expected);
+    }
 }

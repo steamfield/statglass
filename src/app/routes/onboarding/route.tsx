@@ -1,5 +1,5 @@
-import type { SettingsPatch } from "@core/generated/bindings";
-import { DEFAULT_SIZE_LIMIT_MB } from "@core/generated/bindings";
+import type { SettingsPatch } from "@core/generated/types";
+import { DEFAULT_SIZE_LIMIT_MB } from "@core/generated/types";
 import {
   type OnboardingChoices,
   onboardingChoicesPatch,

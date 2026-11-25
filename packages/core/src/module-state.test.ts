@@ -1,0 +1,114 @@
+import type { Capabilities, Settings } from "@core/generated/types";
+import {
+  isListed,
+  isUnknownChip,
+  modulePresence,
+  moduleState,
+  unavailableText,
+} from "./module-state";
+
+describe("modulePresence", () => {
+  it("keeps rows usable until capabilities are known", () => {
+    expect(modulePresence(undefined, false)).toBe("present");
+  });
+
+  it("tells absent hardware from a collector that cannot run", () => {
+    expect(modulePresence("not_present", true)).toBe("absent");
+    expect(modulePresence(undefined, true)).toBe("absent");
+    expect(modulePresence("unknown", true)).toBe("unavailable");
+    expect(modulePresence({ unsupported: "missing_entitlement" }, true)).toBe(
+      "edition"
+    );
+    expect(modulePresence({ unsupported: "no_hardware" }, true)).toBe(
+      "unavailable"
+    );
+    expect(modulePresence({ unsupported: "unknown_chip" }, true)).toBe(
+      "unavailable"
+    );
+    expect(modulePresence({ available: { series: 4 } }, true)).toBe("present");
+  });
+});
+
+const on = { available: { series: 1 } } as const;
+
+function caps(modules: Capabilities["modules"]): Capabilities {
+  return {
+    revision: 1,
+    modules: {
+      cpu: on,
+      gpu: on,
+      memory: on,
+      power: on,
+      sensors: on,
+      network: on,
+      disk: on,
+      battery: on,
+      ...modules,
+    },
+  };
+}
+
+function settings(
+  off: (keyof Settings["modules"])[] = []
+): Settings["modules"] {
+  const module = (name: keyof Settings["modules"]) => ({
+    enabled: !off.includes(name),
+    menu_bar: "hidden" as const,
+  });
+  return {
+    cpu: module("cpu"),
+    gpu: module("gpu"),
+    memory: module("memory"),
+    power: module("power"),
+    network: module("network"),
+    disk: module("disk"),
+    battery: module("battery"),
+  };
+}
+
+describe("moduleState", () => {
+  it("reads every module as on before capabilities arrive", () => {
+    expect(moduleState(null, null, "battery")).toBe("on");
+  });
+
+  it("leaves out a module the host does not have", () => {
+    const c = caps({ battery: "not_present" });
+    expect(moduleState(c, settings(), "battery")).toBe("absent");
+    expect(isListed("absent")).toBe(false);
+  });
+
+  it("hides Power & Sensors on an unknown chip, even with power available", () => {
+    const c = caps({ sensors: { unsupported: "unknown_chip" } });
+    expect(moduleState(c, settings(), "power")).toBe("unknown_chip");
+    expect(moduleState(c, settings(), "cpu")).toBe("on");
+    expect(isListed("unknown_chip")).toBe(false);
+    expect(isUnknownChip(c)).toBe(true);
+    expect(isUnknownChip(caps({}))).toBe(false);
+  });
+
+  it("marks a module switched off in settings as disabled, still listed", () => {
+    expect(moduleState(caps({}), settings(["gpu"]), "gpu")).toBe("disabled");
+    expect(isListed("disabled")).toBe(true);
+  });
+
+  it("separates a missing entitlement from other unsupported reasons", () => {
+    const c = caps({
+      power: { unsupported: "missing_entitlement" },
+      disk: "unknown",
+    });
+    expect(moduleState(c, settings(), "power")).toBe("edition");
+    expect(moduleState(c, settings(), "disk")).toBe("unavailable");
+    expect(unavailableText("edition", "host")).toBe(
+      "Not available in this edition"
+    );
+    expect(unavailableText("unavailable", "Mac")).toBe(
+      "Not available on this Mac"
+    );
+    expect(unavailableText("unavailable", "host")).toBe(
+      "Not available on this host"
+    );
+    expect(unavailableText("absent", "host")).toBe("Not present on this host");
+    expect(unavailableText("on", "Mac")).toBeNull();
+    expect(unavailableText("present", "Mac")).toBeNull();
+  });
+});

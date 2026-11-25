@@ -1,5 +1,5 @@
 import { formatBytes, formatDateTime, formatPercent } from "@core/format";
-import type { DockerContainer } from "@core/generated/bindings";
+import type { DockerContainer } from "@core/generated/types";
 import { MINUTE_MS } from "@core/time-grid";
 import { InlineMessage } from "~/components/inline-message";
 export function ContainerObservation({

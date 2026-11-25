@@ -1,0 +1,48 @@
+[package]
+name = "statglass-mobile"
+description = "UniFFI facade the iPhone app links: the Rust core behind a Swift-callable API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# staticlib for the iOS XCFramework; lib so tests and the bindgen binary can link it.
+crate-type = ["staticlib", "lib"]
+
+[features]
+# Builds the `uniffi-bindgen` binary that writes the Swift bindings on the host. Off by
+# default so the iOS static library carries no bindings generator.
+bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
+
+[[bin]]
+name = "uniffi-bindgen"
+required-features = ["bindgen"]
+
+[dependencies]
+statglass-schema.workspace = true
+statglass-proto.workspace = true
+statglass-store.workspace = true
+statglass-engine.workspace = true
+# Phase 4: the shared session and command layer, and the russh dialer the phone dials
+# with (plan phase 4, crate-edges.json).
+statglass-session.workspace = true
+statglass-ipc.workspace = true
+statglass-ssh.workspace = true
+uniffi.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# The core's own runtime: every source, stream and blocking query runs on it, so no
+# exported call blocks Swift. No `process`: the phone never spawns a program.
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+
+[dev-dependencies]
+p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic", "ecdsa", "pkcs8", "std"] }
+statglass-ssh = { workspace = true, features = ["software-signer"] }
+tokio = { workspace = true, features = ["test-util"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

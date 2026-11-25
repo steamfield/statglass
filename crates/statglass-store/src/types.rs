@@ -133,6 +133,18 @@ pub enum TierChoice {
     /// minutes still cover it, else `M15`.
     Auto,
     Fixed(Tier),
+    /// Like `Auto`, for a store that keeps less than the desktop (a phone mirror): the
+    /// finest tier whose coverage includes the whole range, else `M15`.
+    Covered(TierCoverage),
+}
+
+/// How far back each fine tier is kept, for a store that keeps less than the desktop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TierCoverage {
+    /// How long 10 s buckets are kept, ms; `None` when the tier is never kept.
+    pub s10_ms: Option<i64>,
+    /// How long 1 min buckets are kept, ms; `None` when the tier is never kept.
+    pub m1_ms: Option<i64>,
 }
 
 /// `query_history` (v1-local-monitor.md 6.3).

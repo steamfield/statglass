@@ -1,7 +1,8 @@
-use crate::{RemoteError, Result, codec, socket};
-use statglass_engine::{BusMsg, EngineStatus, LiveHub, ProcessSample};
+use crate::{RemoteError, Result, SessionScope, codec, read_preface, socket};
+use statglass_engine::{BusMsg, LiveHub, ProcessSample};
 use statglass_proto::{Hello, Message, RemoteInterest, SourceStatus, SyncRequest, WireProcess};
 use statglass_schema::{OsKind, SyncKinds};
+use statglass_session::wire::status_to_wire;
 use std::{
     path::PathBuf,
     sync::{
@@ -11,7 +12,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite},
     sync::watch,
 };
 
@@ -32,6 +33,11 @@ pub trait ServerProvider: Send + Sync + 'static {
     fn answer(&self, session: u64, query: statglass_proto::Query) -> statglass_proto::Answer;
     /// The session ended: release what its queries hold.
     fn end_session(&self, session: u64);
+    /// Where restricted connections record their device's last-seen time; `None` keeps
+    /// no log (the default). Full sessions never record to it.
+    fn device_seen(&self) -> Option<&crate::DeviceSeenLog> {
+        None
+    }
 }
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 struct Release {
@@ -98,7 +104,7 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     let (mut reader, mut writer) = tokio::io::split(stream);
     let hello = provider.hello();
     codec::write(&mut writer, &Message::Hello(Box::new(hello.clone()))).await?;
-    let ack = tokio::time::timeout(Duration::from_secs(5), codec::read(&mut reader))
+    let (scope, ack) = tokio::time::timeout(Duration::from_secs(5), read_ack(&mut reader))
         .await
         .map_err(|_| RemoteError::Transport("handshake deadline".into()))??;
     let Message::HelloAck(ack) = ack else {
@@ -112,6 +118,21 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
         return Err(RemoteError::Incompatible(
             "unsupported acknowledgement/features".into(),
         ));
+    }
+    if let SessionScope::Restricted { device } = scope
+        && provider.device_seen().is_some()
+    {
+        let provider = provider.clone();
+        let now_ms = statglass_engine::wall_ms();
+        if let Err(error) = tokio::task::spawn_blocking(move || {
+            if let Some(log) = provider.device_seen() {
+                log.record(device, now_ms);
+            }
+        })
+        .await
+        {
+            tracing::warn!(%device, error = &error as &dyn std::error::Error, "recording device connection");
+        }
     }
     let kinds = SyncKinds::from_features(ack.features.iter().map(String::as_str));
     let session = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
@@ -131,7 +152,8 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     let last_process = tokio::time::Instant::now() - Duration::from_secs(3600);
     codec::write(&mut writer, &Message::SourceStatus(provider.status())).await?;
     let headline = headline_metrics(hello.host.info.os);
-    let (answering, mut replies) = crate::calls::Answering::new(provider.clone(), session, release);
+    let (answering, mut replies) =
+        crate::answering::Answering::new(provider.clone(), session, release);
     let mut connection = Connection {
         answering,
         provider,
@@ -140,6 +162,7 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
         writer,
         session,
         kinds,
+        scope,
         interest,
         last_layout,
         last_process,
@@ -157,14 +180,25 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     }
 }
 
+async fn read_ack(reader: &mut (impl AsyncRead + Unpin)) -> Result<(SessionScope, Message)> {
+    let (scope, prefix) = read_preface(reader).await.map_err(|error| match error {
+        crate::ScopeError::Io(error) => error.into(),
+        crate::ScopeError::Preface(..) => RemoteError::Protocol(error.to_string()),
+    })?;
+    let prefix = prefix.as_ref().map_or(&[][..], |bytes| bytes.as_slice());
+    let ack = codec::read(&mut prefix.chain(reader)).await?;
+    Ok((scope, ack))
+}
+
 struct Connection<W> {
-    answering: crate::calls::Answering,
+    answering: crate::answering::Answering,
     provider: Arc<dyn ServerProvider>,
     hub: LiveHub,
     headline: &'static [&'static str],
     writer: W,
     session: u64,
     kinds: SyncKinds,
+    scope: SessionScope,
     interest: RemoteInterest,
     last_layout: Option<u32>,
     last_process: tokio::time::Instant,
@@ -267,6 +301,19 @@ impl<W: AsyncWrite + Unpin> Connection<W> {
     }
     /// Answers off the session loop, so a slow query never holds back live frames.
     async fn request(&mut self, id: u32, query: statglass_proto::Query) -> Result<()> {
+        if !self.scope.allows(&query) {
+            return codec::write(
+                &mut self.writer,
+                &Message::Reply {
+                    id,
+                    answer: statglass_proto::Answer::Error {
+                        code: statglass_proto::ErrorCode::Unsupported,
+                        message: "query unavailable in a restricted session".into(),
+                    },
+                },
+            )
+            .await;
+        }
         match self.answering.start(id, query) {
             Some(busy) => codec::write(&mut self.writer, &busy).await,
             None => Ok(()),
@@ -413,39 +460,6 @@ async fn send_frame<W: AsyncWrite + Unpin>(
     )
     .await
 }
-pub fn status_to_wire(s: &EngineStatus, history_available: bool) -> SourceStatus {
-    SourceStatus {
-        interval_ms: s.interval_ms,
-        paused: s.paused,
-        asleep: s.asleep,
-        on_battery: s.on_battery,
-        low_power_mode: s.low_power_mode,
-        backed_off: s.backed_off,
-        backgrounded: s.backgrounded,
-        display_idle: s.display_idle,
-        history_held_until: s.history_held_until,
-        performance: s.performance,
-        power_source: s.power_source,
-        primary_iface: s.primary_iface.as_ref().map(ToString::to_string),
-        history_available,
-    }
-}
-pub(crate) fn status_from_wire(s: SourceStatus) -> EngineStatus {
-    EngineStatus {
-        interval_ms: s.interval_ms,
-        paused: s.paused,
-        asleep: s.asleep,
-        on_battery: s.on_battery,
-        low_power_mode: s.low_power_mode,
-        backed_off: s.backed_off,
-        backgrounded: s.backgrounded,
-        display_idle: s.display_idle,
-        history_held_until: s.history_held_until,
-        performance: s.performance,
-        power_source: s.power_source,
-        primary_iface: s.primary_iface.map(Into::into),
-    }
-}
 fn process_to_wire(p: &ProcessSample) -> WireProcess {
     WireProcess {
         pid: p.pid,
@@ -467,30 +481,6 @@ fn process_to_wire(p: &ProcessSample) -> WireProcess {
         interval_s: p.interval_s,
         energy_j: p.energy_j,
         app: p.app.as_ref().map(ToString::to_string),
-        app_main: p.app_main,
-    }
-}
-pub(crate) fn process_from_wire(p: WireProcess) -> ProcessSample {
-    ProcessSample {
-        pid: p.pid,
-        start_time_us: p.start_time_us,
-        name: p.name.into(),
-        cpu_pct: p.cpu_pct,
-        mem_bytes: p.mem_bytes,
-        compressed_bytes: p.compressed_bytes,
-        threads: p.threads,
-        idle_wakeups_per_s: p.idle_wakeups_per_s,
-        energy: p.energy,
-        disk_read_bps: p.disk_read_bps,
-        disk_write_bps: p.disk_write_bps,
-        user: p.user.into(),
-        net_rx_bps: p.net_rx_bps,
-        net_tx_bps: p.net_tx_bps,
-        gpu_pct: p.gpu_pct,
-        ports: p.ports.map(Into::into),
-        interval_s: p.interval_s,
-        energy_j: p.energy_j,
-        app: p.app.map(Into::into),
         app_main: p.app_main,
     }
 }
@@ -657,7 +647,7 @@ pub(crate) mod tests {
         let (mut client, server) = tokio::io::duplex(1024 * 1024);
         let task = tokio::spawn(serve_connection(server, provider()));
         ack(&mut client).await;
-        for id in 0..=crate::calls::MAX_IN_FLIGHT as u32 {
+        for id in 0..=crate::answering::MAX_IN_FLIGHT as u32 {
             let query = statglass_proto::Query::SpaceSubtree {
                 report: id,
                 node: None,
@@ -669,7 +659,7 @@ pub(crate) mod tests {
         codec::write(&mut client, &Message::Ping { nonce: 9, t0_ms: 0 })
             .await
             .unwrap();
-        let busy = crate::calls::MAX_IN_FLIGHT as u32;
+        let busy = crate::answering::MAX_IN_FLIGHT as u32;
         assert!(matches!(
             codec::read(&mut client).await.unwrap(),
             Message::Reply { id, answer: statglass_proto::Answer::Error { .. } } if id == busy
@@ -679,7 +669,7 @@ pub(crate) mod tests {
             Message::Pong { nonce: 9, .. }
         ));
         let mut answered = Vec::new();
-        for _ in 0..crate::calls::MAX_IN_FLIGHT {
+        for _ in 0..crate::answering::MAX_IN_FLIGHT {
             let Message::Reply {
                 id,
                 answer: statglass_proto::Answer::SpacePath(text),
@@ -693,7 +683,7 @@ pub(crate) mod tests {
         answered.sort_unstable();
         assert_eq!(
             answered,
-            (0..crate::calls::MAX_IN_FLIGHT as u32).collect::<Vec<_>>()
+            (0..crate::answering::MAX_IN_FLIGHT as u32).collect::<Vec<_>>()
         );
         task.abort();
     }

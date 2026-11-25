@@ -1,4 +1,4 @@
-import type { WindowAppearance } from "@core/generated/bindings";
+import type { WindowAppearance } from "@core/generated/types";
 import { appKeys } from "@core/query-keys";
 import type { Transport } from "@core/transport";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";

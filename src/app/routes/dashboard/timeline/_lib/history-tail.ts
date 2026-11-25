@@ -1,4 +1,4 @@
-import type { HistoryPage, TierRequest } from "@core/generated/bindings";
+import type { HistoryPage, TierRequest } from "@core/generated/types";
 import { seriesKeyString } from "@core/series-key";
 import { floorTo } from "@core/time-grid";
 

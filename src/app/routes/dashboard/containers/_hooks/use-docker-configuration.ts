@@ -1,4 +1,4 @@
-import type { DockerSettings, DockerSnapshot } from "@core/generated/bindings";
+import type { DockerSettings, DockerSnapshot } from "@core/generated/types";
 import { useCallback, useState } from "react";
 import { useTransport } from "~/lib/transport-context";
 import { dockerErrorMessage } from "../_lib/presentation";

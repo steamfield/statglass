@@ -15,17 +15,22 @@ export default defineConfig({
     // when touched. Tests use happy-dom's storage, so turn Node's off.
     execArgv: ["--no-experimental-webstorage"],
     setupFiles: ["./vitest.setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}", "tests/**/*.test.{ts,tsx}"],
+    include: [
+      "src/**/*.test.{ts,tsx}",
+      "packages/*/src/**/*.test.{ts,tsx}",
+      "tests/**/*.test.{ts,tsx}",
+    ],
     exclude: ["**/node_modules/**", "**/dist/**", "tests/e2e/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
       reportsDirectory: "./coverage",
-      include: ["src/**/*.{ts,tsx}"],
+      include: ["src/**/*.{ts,tsx}", "packages/*/src/**/*.{ts,tsx}"],
       exclude: [
         "**/*.test.{ts,tsx}",
         "**/*.d.ts",
-        "src/core/generated/**",
+        "packages/core/src/generated/**",
+        "src/desktop-transport/commands.ts",
         "src/main.tsx",
       ],
     },

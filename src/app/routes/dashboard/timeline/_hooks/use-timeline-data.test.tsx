@@ -2,7 +2,7 @@ import type {
   HistoryPage,
   HistoryPoint,
   ProcessesAt,
-} from "@core/generated/bindings";
+} from "@core/generated/types";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

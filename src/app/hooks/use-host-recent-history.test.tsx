@@ -76,7 +76,7 @@ it("queries the requested host's last ten minutes and keeps explicit gaps", asyn
       '"toMs":1790999940000'
     );
     const cached = view.queryClient.getQueryData<{
-      page: import("@core/generated/bindings").HistoryPage;
+      page: import("@core/generated/types").HistoryPage;
       fromMs: number;
       toMs: number;
     }>(historyKeys.recent("remote-studio", 600000));

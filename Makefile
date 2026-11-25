@@ -1,6 +1,6 @@
-.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
+.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test ssh-docker-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
-.PHONY: verification-test updater-patch-test
+.PHONY: verification-test updater-patch-test mobile-check mobile-rust-check mobile-native-check
 
 # All library crates are portable by default. New workspace crates enter this gate
 # automatically; only the macOS shell and separately checked helper are excluded.
@@ -21,7 +21,7 @@ help:
 	@echo "  make dev-web       Browser only, mock transport"
 	@echo "  make build         Production app bundle"
 	@echo "  make agent-linux   Static Linux agent binaries (aarch64, x86_64 musl) for the app bundle; needs zig and cargo-zigbuild"
-	@echo "  make bindings      Regenerate src/core/generated/ from Rust (tauri-specta)"
+	@echo "  make bindings      Regenerate packages/core/src/generated/ from Rust (tauri-specta)"
 	@echo ""
 	@echo "Quality:"
 	@echo "  make test          Frontend + Rust tests"
@@ -41,6 +41,7 @@ help:
 	@echo "  make rust-linux-check  cargo check the portable crates for x86_64-unknown-linux-gnu"
 	@echo "  make rust-linux-test   cargo test the portable crates on Linux, in Docker (rust:1.99-bookworm; run ensure-docker first)"
 	@echo "  make remote-scripts-test  Linux agent install/update/uninstall scripts under dash and busybox, in Docker"
+	@echo "  make ssh-docker-test  Session conformance over the russh and OpenSSH dialers against the Linux agent, in Docker"
 	@echo "  make appstore-check    cargo check + clippy the sandboxed App Store edition (--features appstore)"
 	@echo "  make check-deps    Fail if the built app links a library macOS does not ship (D-058)"
 	@echo "  make deny          cargo-deny: advisories, licenses, bans, sources (deny.toml); skips if not installed"
@@ -118,6 +119,19 @@ typecheck: stub-dist
 check: agent-config-check agent-config-test agent-hooks-test verification-test architecture-check architecture-test rust-check appstore-check rust-test updater-patch-test
 	bun run check
 
+# iPhone app checks that need no Xcode (lint, typecheck, jest, JS export,
+# Expo dependency drift, single React). Runs on Linux CI too.
+mobile-check:
+	scripts/mobile/check.sh
+
+# statglass-mobile and its dependency closure for the iOS simulator target.
+mobile-rust-check:
+	scripts/mobile/check-rust-ios.sh
+
+# The XCFramework, its Swift bindings and the native module, built for the simulator.
+mobile-native-check:
+	scripts/mobile/native-check.sh
+
 # The patched dependency is outside the workspace; keep its native permission
 # regression in the local quality gate as well as release acceptance.
 updater-patch-test:
@@ -162,6 +176,13 @@ rust-linux-test:
 # `cargo test` runs the same lifecycle under this machine's /bin/sh.
 remote-scripts-test:
 	cargo test -p statglass-remote --lib agent_install::tests -- --ignored
+
+# statglass_session::conformance over both dialers (RusshDialer, OpenSshDialer) against
+# the Linux agent behind sshd in a container. Ignored by `cargo test`; needs Docker.
+ssh-docker-test:
+	@test -x scripts/ssh-docker/run.sh || { echo "ssh-docker-test: scripts/ssh-docker/run.sh is missing or not executable" >&2; exit 1; }
+	python3 -B -m unittest discover -s scripts/ssh-docker -p 'test_*.py'
+	scripts/ssh-docker/run.sh
 
 # The Linux agent (D-116), bundled as app resources and uploaded to hosts by Add host.
 # cargo-zigbuild links the static musl targets from the macOS host with zig, so both
@@ -232,8 +253,9 @@ bench-vs-stats:
 stub-dist:
 	@mkdir -p dist
 
-# Writes src/core/generated/bindings.ts from the tauri-specta builder in a debug
-# build of the app shell, without launching the app. The pre-push hook diffs the result.
+# Writes packages/core/src/generated/types.ts and src/desktop-transport/commands.ts from the
+# tauri-specta builder in a debug build of the app shell, without launching the app. The
+# pre-push hook diffs the result.
 bindings: stub-dist
 	cargo run --quiet -p statglass --example export_bindings
 
@@ -242,12 +264,15 @@ bindings: stub-dist
 e2e-perf:
 	PLAYWRIGHT_PERFORMANCE=1 bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium --workers=1
 
-# Fails if src/core/generated differs from the commit after regenerating, including
-# new untracked files.
+# Everything `make bindings` writes.
+GENERATED_BINDINGS := packages/core/src/generated src/desktop-transport/commands.ts
+
+# Fails if a generated output differs from the commit after regenerating, including new
+# untracked files.
 bindings-check: bindings
-	@if [ -n "$$(git status --porcelain -- src/core/generated)" ]; then \
-		git status --porcelain -- src/core/generated; \
-		echo "bindings-check: src/core/generated is stale. Run 'make bindings' and commit the result."; \
+	@if [ -n "$$(git status --porcelain -- $(GENERATED_BINDINGS))" ]; then \
+		git status --porcelain -- $(GENERATED_BINDINGS); \
+		echo "bindings-check: generated bindings are stale. Run 'make bindings' and commit the result."; \
 		exit 1; \
 	fi
 

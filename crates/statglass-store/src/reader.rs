@@ -19,7 +19,7 @@ use crate::error::{Result, StoreError};
 use crate::slots::{Acc, Slots};
 use crate::types::{
     BucketRow, CursorPage, CursorRead, HistoryQuery, HistoryResult, PageEvent, PageGap, PageLayout,
-    PageRow, Point, ProcResolution, ProcRow, ProcessesAt, Retention, SeriesPoints, TierChoice,
+    PageRow, Point, ProcResolution, ProcRow, ProcessesAt, SeriesPoints,
 };
 
 mod export;
@@ -29,6 +29,7 @@ mod inventory;
 mod net;
 mod stats;
 mod summary;
+mod tiers;
 mod usage;
 mod usage_growth;
 pub use usage_growth::UsageHistoryGrowth;
@@ -200,10 +201,7 @@ impl Reader {
         recent: impl FnOnce() -> R,
     ) -> Result<HistoryResult> {
         let host_ref = self.host_ref(q.host)?;
-        let tier = match q.tier {
-            TierChoice::Fixed(t) => t,
-            TierChoice::Auto => self.auto_tier(host_ref, q.from_ms, q.to_ms)?,
-        };
+        let tier = self.resolve_tier(host_ref, q.from_ms, q.to_ms, q.tier)?;
         let width = tier_width(tier)?;
         let gaps = self.gaps_in(host_ref, q.from_ms, q.to_ms)?;
         if q.to_ms <= q.from_ms || q.selectors.is_empty() {
@@ -258,45 +256,6 @@ impl Reader {
             series: merge.finish(),
             gaps,
         })
-    }
-
-    /// The tier a [`TierChoice::Auto`] read of `host` over `[from_ms, to_ms)` uses, without
-    /// reading it.
-    pub fn auto_tier_for(&mut self, host: HostId, from_ms: i64, to_ms: i64) -> Result<Tier> {
-        let host_ref = self.host_ref(host)?;
-        self.auto_tier(host_ref, from_ms, to_ms)
-    }
-
-    /// `S10` when the range fits in the 10 s tier's window, pruning has not removed
-    /// anything after its start, and low-disk mode left no holes in it (D-057).
-    /// Otherwise `M15` when the range starts more than one 15-minute bucket before the
-    /// minutes the roll-down has kept (D-076), and `M1` when it does not. The slack keeps
-    /// a 7-day range ending now on minutes whether or not the last prune has rolled its
-    /// first few minutes down.
-    fn auto_tier(&self, host_ref: i64, from_ms: i64, to_ms: i64) -> Result<Tier> {
-        if self.s10_covers(host_ref, from_ms, to_ms)? {
-            return Ok(Tier::S10);
-        }
-        let quarter = Tier::M15.bucket_ms().unwrap_or(900_000);
-        match self.pruned_key(host_ref, db::M1_ROLLED)? {
-            Some((_, rolled_until)) if rolled_until.saturating_sub(from_ms) > quarter => {
-                Ok(Tier::M15)
-            }
-            _ => Ok(Tier::M1),
-        }
-    }
-
-    fn s10_covers(&self, host_ref: i64, from_ms: i64, to_ms: i64) -> Result<bool> {
-        if to_ms - from_ms > Retention::default().s10_ms {
-            return Ok(false);
-        }
-        if db::read_s10_hole_until(&self.conn)?.is_some_and(|until| until > from_ms) {
-            return Ok(false);
-        }
-        Ok(!matches!(
-            self.pruned(host_ref, Tier::S10)?,
-            Some((_, cutoff)) if cutoff > from_ms
-        ))
     }
 
     /// Gaps of `host` overlapping `[from, to)`, by start.
@@ -628,14 +587,9 @@ impl Reader {
 
 /// `query_history` from the engine's recent bucket rows alone (D-092): what a history
 /// query can still answer while the store is unavailable and the app runs live-only.
-/// `Auto` reads the 10 s tier when the range fits in its window, else minutes. No gaps
-/// are on record.
+/// Tier selection uses the coverage windows without store markers. No gaps are on record.
 pub fn history_recent(q: &HistoryQuery, recent: &[BucketRow]) -> Result<HistoryResult> {
-    let tier = match q.tier {
-        TierChoice::Fixed(t) => t,
-        TierChoice::Auto if q.to_ms - q.from_ms <= Retention::default().s10_ms => Tier::S10,
-        TierChoice::Auto => Tier::M1,
-    };
+    let tier = tiers::recent_tier(q)?;
     let width = tier_width(tier)?;
     if q.to_ms <= q.from_ms || q.selectors.is_empty() {
         return Ok(HistoryResult {

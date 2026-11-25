@@ -15,10 +15,11 @@ IMPORT_RULE = "style/noRestrictedImports"
 FUNCTION_RULE = "complexity/noExcessiveLinesPerFunction"
 FILE_RULE = "style/noExcessiveLinesPerFile"
 COMPLEXITY_RULE = "complexity/noExcessiveCognitiveComplexity"
+GLOBALS_RULE = "style/noRestrictedGlobals"
 
 
 class BiomeRules(unittest.TestCase):
-    def lint(self, source, *, directory="src/core", name="probe.ts", rule=IMPORT_RULE):
+    def lint(self, source, *, directory="packages/core/src", name="probe.ts", rule=IMPORT_RULE):
         self.assertTrue(BIOME.is_file(), "Run bun install before architecture fixtures")
         with tempfile.TemporaryDirectory(prefix="architecture-fixture-", dir=ROOT / directory) as temp:
             path = Path(temp) / name
@@ -49,31 +50,52 @@ class BiomeRules(unittest.TestCase):
                 self.assert_rejected(f'import {{ value }} from "{module}";\n')
         self.assert_allowed('import { createStore } from "zustand/vanilla";\n')
 
+    def test_core_rejects_platform_imports(self):
+        # Core runs on the desktop and the phone: no React, React Native, Expo, Tauri,
+        # desktop UI kit or desktop adapter imports, in source or tests.
+        for module in ("react", "react-dom", "react-native", "react-native/Libraries/Image",
+                       "expo", "expo-router", "expo-secure-store/build", "@tauri-apps/api/core",
+                       "@steamfield/ui", "@steamfield/ui/gif", "@desktop/commands"):
+            for name in ("probe.ts", "probe.test.ts"):
+                with self.subTest(module=module, name=name):
+                    self.assert_rejected(f'import {{ value }} from "{module}";\n', name=name)
+        self.assert_allowed('import type { Snapshot } from "@core/generated/types";\n')
+
+    def test_core_rejects_dom_globals_outside_tests(self):
+        for source in ('export const width = window.innerWidth;\n',
+                       'export const title = document.title;\n',
+                       'export const online = navigator.onLine;\n'):
+            with self.subTest(source=source):
+                self.assert_rejected(source, rule=GLOBALS_RULE)
+                self.assert_allowed(source, name="probe.test.ts", rule=GLOBALS_RULE)
+        self.assert_allowed('export function width(window: { innerWidth: number }) {\n'
+                            '  return window.innerWidth;\n}\n', rule=GLOBALS_RULE)
+
     def test_widgets_reject_transport_generated_commands_and_app_hooks(self):
-        for module, symbol in (("@core/transport", "Transport"), ("@core/generated/bindings", "commands"),
-                               ("@core/generated/bindings", "events"), ("~/hooks/use-transport", "useTransport"),
+        for module, symbol in (("@core/transport", "Transport"), ("@desktop/commands", "commands"),
+                               ("@desktop/commands", "events"), ("~/hooks/use-transport", "useTransport"),
                                ("../hooks/use-remote-hosts", "useRemoteHosts"),
                                ("../routes/dashboard/containers/_hooks/use-docker", "useDocker"),
-                               ("../../core/transport", "Transport"), ("../../core/generated/bindings", "commands"),
-                               ("../router", "router"), ("@core/app-transport", "appTransport"),
+                               ("../../core/transport", "Transport"), ("../../desktop-transport/commands", "commands"),
+                               ("../router", "router"), ("@desktop/app-transport", "createAppTransport"),
                                ("@core/mock-transport", "createMockTransport"), ("@core/mock/fixtures", "MOCK_HOST_ID")):
             with self.subTest(module=module, symbol=symbol):
                 self.assert_rejected(f'import {{ {symbol} }} from "{module}";\n', directory="src/app/widgets")
 
     def test_app_reaches_tauri_only_through_transport(self):
-        for module, symbol in (("@core/transport/native", "createNativeTransport"),
-                               ("@core/transport/native-docker", "dockerCommands"),
-                               ("@core/generated/bindings", "commands"), ("@core/generated/bindings", "events")):
+        for module, symbol in (("@desktop/native", "createTauriTransport"),
+                               ("@desktop/native-docker", "nativeDocker"),
+                               ("@desktop/commands", "commands"), ("@desktop/commands", "events")):
             with self.subTest(module=module, symbol=symbol):
                 self.assert_rejected(f'import {{ {symbol} }} from "{module}";\n', directory="src/app")
-        for source in ('import type { Snapshot } from "@core/generated/bindings";\n',
+        for source in ('import type { Snapshot } from "@core/generated/types";\n',
                        'import { useTransport } from "@core/transport";\n'):
             with self.subTest(source=source):
                 self.assert_allowed(source, directory="src/app")
 
     def test_widgets_allow_generated_types_constants_and_presentation_helpers(self):
-        for source in ('import type { Snapshot } from "@core/generated/bindings";\n',
-                       'import { HISTORY_PAGE_LIMIT } from "@core/generated/bindings";\n',
+        for source in ('import type { Snapshot } from "@core/generated/types";\n',
+                       'import { HISTORY_PAGE_LIMIT } from "@core/generated/types";\n',
                        'import { cn } from "~/lib/utils";\n',
                        'import { enter } from "~/lib/motion/variants";\n',
                        'import type { LegendProps } from "../legend";\n'):
@@ -85,20 +107,64 @@ class BiomeRules(unittest.TestCase):
         # sibling widgets pass, re-exports that would leak the app do not.
         self.assert_allowed('export { Legend, type LegendProps } from "../legend";\n',
                             directory="src/app/widgets", name="index.ts")
-        for module, symbol in (("@core/transport", "useTransport"), ("@core/generated/bindings", "commands"),
+        for module, symbol in (("@core/transport", "useTransport"), ("@desktop/commands", "commands"),
                                ("~/hooks/use-transport", "useTransport"), ("@core/mock/fixtures", "MOCK_HOST_ID")):
             with self.subTest(module=module, symbol=symbol):
                 self.assert_rejected(f'export {{ {symbol} }} from "{module}";\n',
                                      directory="src/app/widgets", name="index.ts")
 
     def test_browser_rejects_node_builtins_in_prefixed_and_bare_forms(self):
-        for directory in ("src/core", "src/app", "src/app/widgets"):
+        for directory in ("packages/core/src", "src/desktop-transport", "src/app", "src/app/widgets"):
             for module in ("node:fs", "fs", "fs/promises"):
                 with self.subTest(directory=directory, module=module):
                     self.assert_rejected(f'import {{ readFile }} from "{module}";\n', directory=directory)
 
+    def test_desktop_transport_rejects_react_and_the_app_but_allows_tauri(self):
+        for module in ("~/stores/foo", "react", "zustand", "../../app/router"):
+            with self.subTest(module=module):
+                self.assert_rejected(f'import {{ x }} from "{module}";\n', directory="src/desktop-transport")
+        for source in ('import { invoke } from "@tauri-apps/api/core";\n',
+                       'import type { Transport } from "@core/transport";\n'):
+            with self.subTest(source=source):
+                self.assert_allowed(source, directory="src/desktop-transport")
+
+    def test_mobile_rejects_desktop_imports_and_relative_escapes(self):
+        # The fixture sits one directory below src/, so "../x" already leaves
+        # the fixture's directory: every cross-directory import goes through
+        # @/ or @core/. modules/ shares the override but has no directory yet.
+        for module in ("react-dom", "@tauri-apps/api", "~/x", "@desktop/native", "../x",
+                       "../../../src/desktop-transport/x", "../../../packages/core/src/x"):
+            with self.subTest(module=module):
+                self.assert_rejected(f'import {{ x }} from "{module}";\n', directory="apps/mobile/src", name="probe.tsx")
+        for module in ("@core/format", "@/x", "./x"):
+            with self.subTest(module=module):
+                self.assert_allowed(f'import {{ x }} from "{module}";\n', directory="apps/mobile/src", name="probe.tsx")
+
+    def test_mobile_tests_reach_only_root_configs_and_scripts_relatively(self):
+        for module in ("../src/lib/providers", "../../../packages/core/src/x", "~/x", "react-dom"):
+            with self.subTest(module=module):
+                self.assert_rejected(f'import {{ x }} from "{module}";\n', directory="apps/mobile/test")
+        for module in ("../app.config", "../metro-resolve.cjs", "../scripts/theme-render.mjs",
+                       "@/lib/providers", "@core/format", "./render"):
+            with self.subTest(module=module):
+                self.assert_allowed(f'import {{ x }} from "{module}";\n', directory="apps/mobile/test")
+
+    def test_desktop_rejects_react_native_and_expo(self):
+        for directory in ("src/app", "src/app/widgets", "src/desktop-transport"):
+            for module in ("react-native", "react-native/Libraries/Image", "react-native-svg",
+                           "expo", "expo-router", "@expo/vector-icons"):
+                with self.subTest(directory=directory, module=module):
+                    self.assert_rejected(f'import {{ x }} from "{module}";\n', directory=directory)
+
+    def test_desktop_entry_point_shares_the_app_override(self):
+        # src/main.tsx is one fixed file, so a fixture can't sit beside it, and
+        # Biome's stdin mode skips path overrides. Check the override lists it.
+        overrides = json.loads((ROOT / "biome.json").read_text())["overrides"]
+        app = [o["includes"] for o in overrides if o["includes"][0] == "src/app/**"]
+        self.assertEqual(app, [["src/app/**", "src/main.tsx", "!src/app/widgets/**"]])
+
     def test_tests_keep_node_runtime_access(self):
-        for directory in ("src/core", "src/app"):
+        for directory in ("packages/core/src", "src/app"):
             self.assert_allowed('import { readFile } from "node:fs";\n', directory=directory, name="probe.test.ts")
 
     @staticmethod

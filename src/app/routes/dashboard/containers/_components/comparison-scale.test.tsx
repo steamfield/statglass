@@ -1,7 +1,4 @@
-import type {
-  DockerCoverage,
-  DockerHistoryPoint,
-} from "@core/generated/bindings";
+import type { DockerCoverage, DockerHistoryPoint } from "@core/generated/types";
 import { mockContainer, mockHistoryPoints } from "@core/mock/docker";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";

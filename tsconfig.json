@@ -4,6 +4,15 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["vite/client"]
   },
-  "include": ["src/**/*", "tests/types/browser-environment.ts"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+  "include": [
+    "src/**/*",
+    "packages/core/src/**/*",
+    "tests/types/browser-environment.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "packages/core/src/**/*.test.ts",
+    "packages/core/src/**/*.test.tsx"
+  ]
 }

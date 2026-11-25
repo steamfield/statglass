@@ -1,4 +1,4 @@
-import type { SpaceVolume } from "@core/generated/bindings";
+import type { SpaceVolume } from "@core/generated/types";
 import { ChevronRight } from "lucide-react";
 import { SectionCard } from "~/components/section-card";
 import { Button } from "~/components/ui/button";

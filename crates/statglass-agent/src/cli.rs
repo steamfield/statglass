@@ -21,6 +21,13 @@ commands:
   uninstall [--purge] [--system] [--data-dir P]
   reset-identity [--system] [--data-dir P]     give this host a new id
   sample [--json] [SECONDS]                    sample (2.5 s by default) and print every series
+  pair [--ttl SECONDS]                         pair an iPhone: show a QR and code, approve here
+  devices                                      list paired iPhones and when each was last seen
+  devices revoke TAG                           remove a paired iPhone's key
+
+forced commands (run by sshd from an authorized_keys line, not by hand):
+  restricted --device TAG [--system] [--socket P]
+  pair --nonce N
 
 --system selects the root layout (/var/lib/statglass-agent, /run/statglass-agent); without it
 the per-user layout under $HOME is used.";
@@ -62,20 +69,62 @@ impl Location {
 pub enum Command {
     Run(Location),
     RunTrial(Location),
-    Update { at: Location, scheduled: bool },
+    Update {
+        at: Location,
+        scheduled: bool,
+    },
     UpdateStatus(Location),
-    Recover { at: Location, restart: bool },
+    Recover {
+        at: Location,
+        restart: bool,
+    },
     Serve(Location),
     Status(Location),
     Version,
-    Configure { at: Location, json: String },
+    Configure {
+        at: Location,
+        json: String,
+    },
     InstallUnit(Location),
     UnitTemplates(Location),
-    Uninstall { at: Location, purge: bool },
+    Uninstall {
+        at: Location,
+        purge: bool,
+    },
     ResetIdentity(Location),
-    Sample { seconds: Option<u64> },
+    Sample {
+        seconds: Option<u64>,
+    },
+    /// Pairing and paired-device commands, run before the async runtime starts.
+    Device(DeviceCommand),
     Help,
 }
+
+/// The commands that pair phones or serve them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeviceCommand {
+    /// A paired phone's forced command (RFC 2.3).
+    Restricted {
+        device: String,
+        system: bool,
+        socket: Option<PathBuf>,
+    },
+    /// Interactive pairing on this terminal (RFC 2.4).
+    Pair {
+        ttl_s: u64,
+    },
+    /// The one-time pairing key's forced command.
+    PairForced {
+        nonce: String,
+    },
+    Devices,
+    RevokeDevice {
+        tag: String,
+    },
+}
+
+/// How long `pair` keeps its offer open without `--ttl`: 10 minutes (RFC 2.4).
+pub const DEFAULT_PAIR_TTL_S: u64 = 600;
 
 /// The flags one command accepts.
 #[derive(Clone, Copy)]
@@ -103,6 +152,10 @@ struct Parsed {
     scheduled: bool,
     request: bool,
     restart: bool,
+    /// `restricted --device`, `pair --nonce` and `pair --ttl`.
+    device: Option<String>,
+    nonce: Option<String>,
+    ttl: Option<String>,
     positional: Vec<String>,
 }
 
@@ -119,6 +172,8 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
         "configure" | "uninstall" | "reset-identity" => accepts(true, true, false, false),
         "install-unit" | "unit-templates" => accepts(true, true, true, false),
         "sample" => accepts(false, false, false, true),
+        "restricted" => accepts(true, false, true, false),
+        "pair" | "devices" => accepts(false, false, false, false),
         "help" | "--help" | "-h" => return Ok(Command::Help),
         other => bail!("unknown command {other:?}\n\n{USAGE}"),
     };
@@ -196,6 +251,7 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
             Command::ResetIdentity(p.at)
         }
         "sample" => parse_sample(&p.positional)?,
+        "restricted" | "pair" | "devices" => Command::Device(parse_device(name, p)?),
         _ => {
             positional(0)?;
             Command::Version
@@ -218,6 +274,43 @@ fn parse_sample(positional: &[String]) -> anyhow::Result<Command> {
     })
 }
 
+fn parse_device(name: &str, p: Parsed) -> anyhow::Result<DeviceCommand> {
+    match name {
+        "devices" => parse_devices(&p.positional),
+        _ if !p.positional.is_empty() => bail!("{name}: unexpected arguments {:?}", p.positional),
+        "restricted" => Ok(DeviceCommand::Restricted {
+            device: p.device.context("restricted: --device TAG is required")?,
+            system: p.at.system,
+            socket: p.at.socket,
+        }),
+        _ => parse_pair(p.nonce, p.ttl.as_deref()),
+    }
+}
+
+/// `pair --nonce N` is the forced form; anything else is the interactive one.
+fn parse_pair(nonce: Option<String>, ttl: Option<&str>) -> anyhow::Result<DeviceCommand> {
+    match (nonce, ttl) {
+        (Some(_), Some(_)) => bail!("pair: --nonce and --ttl are separate forms"),
+        (Some(nonce), None) => Ok(DeviceCommand::PairForced { nonce }),
+        (None, ttl) => Ok(DeviceCommand::Pair {
+            ttl_s: ttl.map_or(Ok(DEFAULT_PAIR_TTL_S), |s| {
+                s.parse()
+                    .ok()
+                    .filter(|&s| (1..=3600).contains(&s))
+                    .with_context(|| format!("pair: --ttl {s:?} is not 1 to 3600 seconds"))
+            })?,
+        }),
+    }
+}
+
+fn parse_devices(positional: &[String]) -> anyhow::Result<DeviceCommand> {
+    match positional {
+        [] => Ok(DeviceCommand::Devices),
+        [verb, tag] if verb == "revoke" => Ok(DeviceCommand::RevokeDevice { tag: tag.clone() }),
+        _ => bail!("devices: unexpected arguments {positional:?}"),
+    }
+}
+
 fn parse_flags(name: &str, rest: &[String], flags: Accepts) -> anyhow::Result<Parsed> {
     let mut p = Parsed::default();
     let mut args = rest.iter();
@@ -238,11 +331,22 @@ fn parse_flags(name: &str, rest: &[String], flags: Accepts) -> anyhow::Result<Pa
             "--scheduled" if name == "update" => p.scheduled = true,
             "--request" if name == "update" => p.request = true,
             "--restart" if name == "recover-update" => p.restart = true,
+            "--device" if name == "restricted" => p.device = Some(text(&mut args, "--device")?),
+            "--nonce" if name == "pair" => p.nonce = Some(text(&mut args, "--nonce")?),
+            "--ttl" if name == "pair" => p.ttl = Some(text(&mut args, "--ttl")?),
             flag if flag.starts_with("--") => bail!("{name}: unknown option {flag}"),
             _ => p.positional.push(arg.clone()),
         }
     }
     Ok(p)
+}
+
+/// The value after `flag`; an empty or missing one is an error.
+fn text<'a>(args: &mut impl Iterator<Item = &'a String>, flag: &str) -> anyhow::Result<String> {
+    match args.next() {
+        Some(v) if !v.is_empty() => Ok(v.clone()),
+        _ => bail!("{flag} needs a value"),
+    }
 }
 
 #[cfg(test)]

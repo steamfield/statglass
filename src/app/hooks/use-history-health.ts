@@ -1,4 +1,4 @@
-import type { CommandError, HistoryHealth } from "@core/generated/bindings";
+import type { CommandError, HistoryHealth } from "@core/generated/types";
 import { historyKeys, hostKeys } from "@core/query-keys";
 import { CommandFailure, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

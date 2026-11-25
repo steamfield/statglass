@@ -10,7 +10,7 @@
     "normal": ["statglass-schema", "statglass-collect", "statglass-store"],
     "dev": ["statglass-collect", "statglass-store"]
   },
-  "statglass-remote": {
+  "statglass-session": {
     "normal": [
       "statglass-schema",
       "statglass-proto",
@@ -18,6 +18,35 @@
       "statglass-engine"
     ],
     "dev": []
+  },
+  "statglass-ssh": {
+    "normal": ["statglass-session"],
+    "dev": [
+      "statglass-session",
+      "statglass-schema",
+      "statglass-proto",
+      "statglass-engine",
+      "statglass-store"
+    ]
+  },
+  "statglass-ipc": {
+    "normal": [
+      "statglass-schema",
+      "statglass-store",
+      "statglass-engine",
+      "statglass-session"
+    ],
+    "dev": []
+  },
+  "statglass-remote": {
+    "normal": [
+      "statglass-schema",
+      "statglass-proto",
+      "statglass-store",
+      "statglass-engine",
+      "statglass-session"
+    ],
+    "dev": ["statglass-session"]
   },
   "statglass-remote-helper": { "normal": ["statglass-remote"], "dev": [] },
   "statglass-agent": {
@@ -40,13 +69,26 @@
       "statglass-remote",
       "statglass-update",
       "statglass-query",
-      "statglass-notify"
+      "statglass-notify",
+      "statglass-ipc"
     ],
     "dev": []
   },
   "statglass-update": { "normal": [], "dev": [] },
   "statglass-query": { "normal": ["statglass-schema"], "dev": [] },
   "statglass-notify": { "normal": ["statglass-schema"], "dev": [] },
+  "statglass-mobile": {
+    "normal": [
+      "statglass-schema",
+      "statglass-proto",
+      "statglass-store",
+      "statglass-engine",
+      "statglass-session",
+      "statglass-ipc",
+      "statglass-ssh"
+    ],
+    "dev": ["statglass-ssh"]
+  },
   "statglass-cli": {
     "normal": ["statglass-query", "statglass-schema"],
     "dev": []

@@ -1,4 +1,4 @@
-import type { LiveProcess } from "@core/generated/bindings";
+import type { LiveProcess } from "@core/generated/types";
 
 /**
  * A `LiveProcess` row with nothing measured beyond 0% CPU and 0 bytes:

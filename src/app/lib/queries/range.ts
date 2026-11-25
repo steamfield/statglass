@@ -1,5 +1,5 @@
 import { BRUSH_STEP_MS, type TimeRange } from "@core/brush";
-import type { HostId } from "@core/generated/bindings";
+import type { HostId } from "@core/generated/types";
 import { sameHost } from "@core/query-keys";
 import type { Transport } from "@core/transport";
 import { type QueryKey, useQuery } from "@tanstack/react-query";

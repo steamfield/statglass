@@ -28,13 +28,17 @@ statglass-proto         -> schema
 statglass-collect       -> schema
 statglass-store         -> schema
 statglass-engine        -> schema, collect, store
-statglass-remote        -> schema, proto, store, engine
+statglass-session       -> schema, proto, store, engine
+statglass-ssh           -> session
+statglass-ipc           -> schema, store, engine, session (never remote)
+statglass-remote        -> schema, proto, store, engine, session
 statglass-remote-helper -> remote
 statglass-notify        -> schema
 statglass-query         -> schema
 statglass-cli           -> query, schema
 statglass-agent         -> schema, proto, store, engine, remote
-statglass (src-tauri)   -> schema, proto, store, engine, remote, query, notify
+statglass (src-tauri)   -> schema, proto, store, engine, remote, query, notify, ipc
+statglass-mobile        -> schema, proto, store, engine (never remote)
 ```
 
 The policy records dev edges separately (including store's protocol fixtures). Do not
@@ -54,8 +58,25 @@ can proceed autonomously within their agreed scope.
 - `statglass-engine` wires collectors to the store and bus through the `Ticker` and
   `PowerSignals` traits. It also owns `HistoryStore` lifecycle, generation-safe reader
   checkout/reset and persisted/recent history query merging.
-- `statglass-remote` owns SSH/session orchestration and `Mirror` storage synchronization;
-  `statglass-remote-helper` is the bundled stdio-to-local-socket bridge, not a collector agent.
+- `statglass-session` is the client side of a remote session, shared by the desktop and
+  the phone: `Endpoint`/`Target`, the `Dialer` seam, the handshake and N-target route
+  race (`connect`), `SshSession`, `RemoteError` and `RemoteCommand` (phase 2 moves the
+  codec, client calls, `HostClock`, `Mirror` and `RemoteSource` here too). It spawns no
+  processes (its tokio has no `process` feature) and never depends on `statglass-remote`.
+  Its `conformance` feature is the suite every dialer runs against a live host.
+- `statglass-ssh` is the phone's russh dialer and its `Signer` seam (the Secure Enclave
+  on a device). It depends on `statglass-session` only.
+- `statglass-ipc` is the platform-neutral command layer and live producer shared by the
+  desktop and the phone: `CommandError` and every `From<crate error>` it needs, the live
+  registry, history and events queries, host vitals, connection status and process rows.
+  It never depends on `statglass-remote`, `tauri` or `tauri-specta`: an error of a crate
+  it cannot see (`AgentInstallError`) maps through a function in its caller. Every type it
+  exposes derives `specta::Type` and reaches the bindings through the desktop's exporter.
+- `statglass-remote` owns the OpenSSH dialer (`OpenSshDialer`), controller-side
+  management (install, trust, control), host serving and `Mirror` storage
+  synchronization; it re-exports the moved session names so its callers' imports do
+  not change. `statglass-remote-helper` is the bundled stdio-to-local-socket bridge,
+  not a collector agent.
 - `statglass-agent` is the headless collector for hosts without the app (D-116): the engine,
   its own history and the metrics socket, plus the one-shot commands the controller runs
   over SSH. Install paths and unit text live in `statglass_remote::agent_layout`, shared
@@ -63,6 +84,10 @@ can proceed autonomously within their agreed scope.
 - `statglass-notify` says what an alert rule and a fired alert say, and delivers a message
   to a destination through `/usr/bin/curl` (D-138). It depends on the schema only, so the
   headless agent can link it later. It is synchronous; callers run it off their thread.
+- `statglass-mobile` is the iPhone app's UniFFI facade (`.claude/rules/rust/mobile.md`).
+  It never depends on `statglass-remote`, which spawns processes and serves hosts;
+  `statglass-session`, `statglass-ssh` and `statglass-ipc` (IPC types, live producer,
+  `CommandError`) give it what it needs (RFC `plan/rfc-ios-app.md` 4.2).
 - `src-tauri` is a thin shell: commands, windows, tray, settings ownership. Business logic
   that isn't Tauri-specific belongs in a crate, where it is testable without a webview.
 

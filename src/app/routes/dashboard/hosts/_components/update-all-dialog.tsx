@@ -1,4 +1,4 @@
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { RemoteHostRecord } from "@core/generated/types";
 import { reachable } from "@core/remote-hosts";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "~/components/confirm-dialog";

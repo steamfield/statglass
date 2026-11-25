@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import type { UsageByApp, UsageKey } from "@core/generated/bindings";
+import type { UsageByApp, UsageKey } from "@core/generated/types";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { usageFinal } from "@core/usage-rows";
