@@ -95,7 +95,7 @@ fn mobile_core_reports_empty_and_missing_hosts_through_json() {
 }
 
 #[test]
-#[ignore = "requires the lane d signer and the Linux agent and sshd fixture from make ssh-docker-test"]
+#[ignore = "requires the Linux agent and sshd fixture from make ssh-docker-test"]
 fn mobile_core_streams_and_reads_its_mirror() {
     let mut fixture = DockerFixture::new();
     let core = MobileCore::new(

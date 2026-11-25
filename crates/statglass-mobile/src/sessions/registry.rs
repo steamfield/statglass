@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
-use statglass_engine::Source;
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileEvent, MobileHost};
 use statglass_schema::{HostId, HostRecord, lock::LockExt};
@@ -13,6 +12,8 @@ use tokio::runtime::Handle;
 use crate::ffi::CoreEvents;
 
 use super::{callback, host::HostEntry, internal, invalid, live::Live, phone_id};
+
+mod roster;
 
 pub(super) struct Registry {
     pub(super) events: Arc<dyn CoreEvents>,
@@ -36,10 +37,13 @@ struct Run {
     context: Context,
     desired: Vec<MobileHost>,
     entries: HashMap<HostId, Arc<HostEntry>>,
+    open_errors: HashMap<HostId, CommandError>,
     // A removal or rebuild owns the path until it has closed the old mirror.
     // Keep the source visible to lifecycle drains while it can still be writing.
     retiring: HashMap<HostId, Option<Arc<RemoteSource>>>,
 }
+
+type OpenedHost = (HostId, Result<Arc<HostEntry>, CommandError>);
 
 #[derive(Clone)]
 struct Context {
@@ -107,11 +111,12 @@ impl Registry {
                 },
                 desired: Vec::new(),
                 entries: HashMap::new(),
+                open_errors: HashMap::new(),
                 retiring: HashMap::new(),
             };
-            let new = self.open_hosts(&run.context, &hosts, hosts.len())?;
+            let new = self.open_hosts(&run.context, &hosts, hosts.len());
             let mut state = self.state.lock_ok();
-            self.apply_hosts(&mut run, hosts, new, state.controls(sync))?;
+            self.apply_hosts(&mut run, hosts, new, state.controls(sync));
             state.run = Some(run);
             state.queue_roster();
         }
@@ -139,27 +144,27 @@ impl Registry {
                     .collect();
                 (run.context.clone(), missing)
             };
-            let new = self.open_hosts(&context, &missing, hosts.len())?;
+            let new = self.open_hosts(&context, &missing, hosts.len());
             let mut state = self.state.lock_ok();
             let controls = state.controls(sync);
             let run = state.run.as_mut().ok_or_else(not_started)?;
-            self.apply_hosts(run, hosts, new, controls)?;
+            self.apply_hosts(run, hosts, new, controls);
             state.queue_roster();
         }
         self.emit_rosters();
         Ok(())
     }
 
-    fn open_hosts(
-        &self,
-        context: &Context,
-        hosts: &[MobileHost],
-        count: usize,
-    ) -> Result<Vec<Arc<HostEntry>>, CommandError> {
+    fn open_hosts(&self, context: &Context, hosts: &[MobileHost], count: usize) -> Vec<OpenedHost> {
         let budget = crate::policy::host_budget_mb(count);
         hosts
             .iter()
-            .map(|host| context.open(host.clone(), budget, self.events.clone()))
+            .map(|host| {
+                (
+                    host.id,
+                    context.open(host.clone(), budget, self.events.clone()),
+                )
+            })
             .collect()
     }
 
@@ -167,18 +172,21 @@ impl Registry {
         self: &Arc<Self>,
         run: &mut Run,
         hosts: Vec<MobileHost>,
-        new: Vec<Arc<HostEntry>>,
+        new: Vec<OpenedHost>,
         controls: Controls,
-    ) -> Result<(), CommandError> {
-        for entry in &new {
-            controls.apply(&entry.source);
-            entry.start()?;
+    ) {
+        let desired: HashSet<_> = hosts.iter().map(|host| host.id).collect();
+        for host in &run.desired {
+            if !desired.contains(&host.id) {
+                self.live.remove_host(host.id);
+            }
         }
 
+        run.open_errors.retain(|id, _| desired.contains(id));
         run.context.sync = controls.sync;
         run.desired = hosts;
-        for entry in new {
-            self.install(run, entry);
+        for opened in new {
+            let _ = self.install(run, opened, controls);
         }
 
         let budget = run.budget();
@@ -194,19 +202,38 @@ impl Registry {
         for entry in retiring {
             let id = entry.config.id;
             if run.host(id).is_none() {
-                self.detach(run, id);
+                run.detach(id);
             }
             if let std::collections::hash_map::Entry::Vacant(slot) = run.retiring.entry(id) {
                 slot.insert(Some(entry.source.clone()));
                 self.retire(&run.context.runtime, entry);
             }
         }
-        Ok(())
     }
 
-    fn install(&self, run: &mut Run, entry: Arc<HostEntry>) {
-        self.live.register(entry.clone());
-        run.entries.insert(entry.config.id, entry);
+    fn install(
+        &self,
+        run: &mut Run,
+        (id, opened): OpenedHost,
+        controls: Controls,
+    ) -> Result<(), CommandError> {
+        let result = opened.and_then(|entry| {
+            controls.apply(&entry.source);
+            entry.start()?;
+            self.live.register(entry.clone(), &run.context.runtime);
+            run.entries.insert(id, entry);
+            Ok(())
+        });
+        match &result {
+            Ok(()) => {
+                run.open_errors.remove(&id);
+            }
+            Err(error) => {
+                tracing::error!(%id, %error, "opening mobile session");
+                run.open_errors.insert(id, error.clone());
+            }
+        }
+        result
     }
 
     fn retire(self: &Arc<Self>, runtime: &Handle, entry: Arc<HostEntry>) {
@@ -218,7 +245,7 @@ impl Registry {
             if let Some(registry) = registry.upgrade()
                 && let Some(run) = registry.state.lock_ok().run.as_mut()
             {
-                registry.detach(run, id);
+                run.detach(id);
             }
             // Dropping the handle stops the runner. Wait for any write that
             // a concurrent resume began before releasing the writer lock.
@@ -238,13 +265,6 @@ impl Registry {
                 tracing::error!(%id, %error, "closing a mobile mirror");
             }
         });
-    }
-
-    fn detach(&self, run: &mut Run, id: HostId) {
-        if let Some(entry) = run.entries.remove(&id) {
-            entry.deactivate();
-            self.live.remove_host(id);
-        }
     }
 
     fn replace_retired(registry: Weak<Self>, id: HostId) {
@@ -275,27 +295,13 @@ impl Registry {
                 continue;
             }
             run.retiring.remove(&id);
-            let result = opened.and_then(|entry| {
-                controls.apply(&entry.source);
-                entry.start()?;
-                registry.install(run, entry);
-                Ok(())
-            });
-            if let Err(error) = result {
-                tracing::error!(%id, %error, "rebuilding mobile mirror");
-            }
+            let _ = registry.install(run, (id, opened), controls);
             state.queue_roster();
             drop(state);
             drop(update);
             registry.emit_rosters();
             return;
         }
-    }
-
-    pub(super) fn entries(&self) -> Result<Vec<Arc<HostEntry>>, CommandError> {
-        let state = self.state.lock_ok();
-        let run = state.run.as_ref().ok_or_else(not_started)?;
-        Ok(run.entries().cloned().collect())
     }
 
     pub(super) fn entry(&self, host: HostId) -> Result<Arc<HostEntry>, CommandError> {
@@ -352,16 +358,8 @@ impl Registry {
         Ok(())
     }
 
-    pub(super) fn records(&self) -> Result<Vec<HostRecord>, CommandError> {
-        Ok(self
-            .entries()?
-            .iter()
-            .map(|entry| entry.source.host())
-            .collect())
-    }
-
     pub(super) fn retry(&self, id: HostId) -> Result<(), CommandError> {
-        {
+        let result = {
             let _update = self.updates.lock_ok();
             let (context, host, budget) = {
                 let state = self.state.lock_ok();
@@ -376,16 +374,16 @@ impl Registry {
                     .ok_or(CommandError::UnknownHost { host: id })?;
                 (run.context.clone(), host.clone(), run.budget())
             };
-            let entry = context.open(host, budget, self.events.clone())?;
+            let opened = context.open(host, budget, self.events.clone());
             let mut state = self.state.lock_ok();
-            state.controls(context.sync).apply(&entry.source);
-            entry.start()?;
+            let controls = state.controls(context.sync);
             let run = state.run.as_mut().ok_or_else(not_started)?;
-            self.install(run, entry);
+            let result = self.install(run, (id, opened), controls);
             state.queue_roster();
-        }
+            result
+        };
         self.emit_rosters();
-        Ok(())
+        result
     }
 
     fn emit_rosters(&self) {
@@ -405,6 +403,12 @@ impl Registry {
 }
 
 impl Run {
+    fn detach(&mut self, id: HostId) {
+        if let Some(entry) = self.entries.remove(&id) {
+            entry.deactivate();
+        }
+    }
+
     fn entries(&self) -> impl Iterator<Item = &Arc<HostEntry>> {
         self.desired
             .iter()
@@ -441,8 +445,7 @@ struct Controls {
 impl State {
     fn queue_roster(&mut self) {
         if let Some(run) = &self.run {
-            self.roster_events
-                .push_back(run.entries().map(|entry| entry.source.host()).collect());
+            self.roster_events.push_back(run.records());
         }
     }
 

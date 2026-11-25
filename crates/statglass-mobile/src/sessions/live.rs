@@ -8,6 +8,7 @@ use statglass_ipc::live::{
 };
 use statglass_ipc::mobile::MobileLiveRequest;
 use statglass_schema::{Capabilities, HostId, lock::LockExt};
+use tokio::{runtime::Handle, sync::watch};
 
 use crate::ffi::CoreEvents;
 
@@ -75,16 +76,43 @@ struct Streams {
 
 struct Stream {
     host: HostId,
-    // A fresh label prevents cleanup from an ended stream closing a reused id.
-    label: String,
     order: u64,
+    generation: u64,
+    request: LiveRequest,
+    sink: Arc<EventSink>,
     open: bool,
-    sending: bool,
+    established: bool,
+    sending: watch::Sender<bool>,
 }
 
 impl Live {
-    pub(super) fn register(&self, entry: Arc<HostEntry>) {
-        self.registry.replace_host(entry);
+    pub(super) fn register(self: &Arc<Self>, entry: Arc<HostEntry>, runtime: &Handle) {
+        let mut streams = self.streams.lock_ok();
+        self.registry.replace_host(entry.clone());
+        for slot in streams
+            .active
+            .values_mut()
+            .filter(|slot| slot.host == entry.config.id && slot.open && slot.established)
+        {
+            self.registry.window_closed(&slot.sink.label);
+            slot.generation += 1;
+            slot.sink = Arc::new(EventSink {
+                label: format!("mobile-{}-{}", slot.order, slot.generation),
+                ..(*slot.sink).clone()
+            });
+            self.registry.window_visible(&slot.sink.label, true);
+            let (entry, sink, request) = (entry.clone(), slot.sink.clone(), slot.request.clone());
+            let mut sending = slot.sending.subscribe();
+            let live = Arc::downgrade(self);
+            runtime.spawn(async move {
+                // An old callback can still be returning after its feed was
+                // replaced. Keep that delivery ahead of the new feed's setup.
+                let ready = sending.wait_for(|sending| !*sending).await.is_ok();
+                if ready && let Some(live) = live.upgrade() {
+                    live.attach(entry, sink, request);
+                }
+            });
+        }
     }
 
     pub(super) fn remove_host(&self, host: HostId) {
@@ -93,9 +121,9 @@ impl Live {
         streams.active.retain(|_, stream| {
             if stream.host == host && stream.open {
                 stream.open = false;
-                self.registry.window_closed(&stream.label);
+                self.registry.window_closed(&stream.sink.label);
             }
-            stream.open || stream.sending
+            stream.open || *stream.sending.borrow()
         });
     }
 
@@ -116,33 +144,6 @@ impl Live {
         events: Arc<dyn CoreEvents>,
     ) -> Result<SubscriptionInfo, CommandError> {
         let stream = request.stream;
-        let label = {
-            let mut streams = self.streams.lock_ok();
-            if streams.active.contains_key(&stream) {
-                return Err(invalid(format!("live stream {stream} is still in use")));
-            }
-            let order = streams.next;
-            streams.next += 1;
-            let label = format!("mobile-{order}");
-            streams.active.insert(
-                stream,
-                Stream {
-                    host: request.host,
-                    label: label.clone(),
-                    order,
-                    open: true,
-                    sending: false,
-                },
-            );
-            self.registry.window_visible(&label, true);
-            label
-        };
-        let sink = Arc::new(EventSink {
-            stream,
-            label: label.clone(),
-            live: Arc::downgrade(self),
-            events,
-        });
         let options = LiveRequest {
             backfill_ms: request
                 .backfill_ms
@@ -150,24 +151,37 @@ impl Live {
             series: request.series,
             min_period_ms: request.min_period_ms.unwrap_or_default(),
         };
-        let result = self
-            .registry
-            .subscribe(&label, entry.clone(), sink, options);
-        let mut streams = self.streams.lock_ok();
-        let still_open = streams
-            .active
-            .get(&stream)
-            .is_some_and(|s| s.label == label && s.open);
-        if let Some(info) = result
-            && still_open
-        {
+        let sink = {
+            let mut streams = self.streams.lock_ok();
+            if streams.active.contains_key(&stream) {
+                return Err(invalid(format!("live stream {stream} is still in use")));
+            }
+            let order = streams.next;
+            streams.next += 1;
+            let sink = Arc::new(EventSink {
+                stream,
+                label: format!("mobile-{order}-0"),
+                live: Arc::downgrade(self),
+                events,
+            });
+            streams.active.insert(
+                stream,
+                Stream {
+                    host: request.host,
+                    order,
+                    generation: 0,
+                    request: options.clone(),
+                    sink: sink.clone(),
+                    open: true,
+                    established: false,
+                    sending: watch::Sender::new(false),
+                },
+            );
+            self.registry.window_visible(&sink.label, true);
+            sink
+        };
+        if let Some(info) = self.attach(entry.clone(), sink, options) {
             return Ok(info);
-        }
-        // Unsubscribe can win before the registry begins setup. Close even if
-        // the original slot is gone, because setup can have recreated its label.
-        self.registry.window_closed(&label);
-        if still_open {
-            self.close(&mut streams, stream);
         }
         if !entry.is_active() {
             return Err(CommandError::UnknownHost { host: request.host });
@@ -175,6 +189,39 @@ impl Live {
         Err(internal(format!(
             "live stream {stream} closed during subscription"
         )))
+    }
+
+    fn attach(
+        &self,
+        entry: Arc<HostEntry>,
+        sink: Arc<EventSink>,
+        request: LiveRequest,
+    ) -> Option<SubscriptionInfo> {
+        let result = entry
+            .is_active()
+            .then(|| {
+                self.registry
+                    .subscribe(&sink.label, entry.clone(), sink.clone(), request)
+            })
+            .flatten();
+        let mut streams = self.streams.lock_ok();
+        if let Some(slot) = streams
+            .active
+            .get_mut(&sink.stream)
+            .filter(|s| s.sink.label == sink.label && s.open)
+        {
+            if result.is_some() && entry.is_active() {
+                slot.established = true;
+                return result;
+            }
+            if entry.is_active() || !slot.established {
+                self.close(&mut streams, sink.stream);
+            }
+        } else {
+            // Setup may have recreated a window closed by an unsubscribe.
+            self.registry.window_closed(&sink.label);
+        }
+        None
     }
 
     pub(super) fn unsubscribe(&self, stream: u32) {
@@ -185,10 +232,10 @@ impl Live {
     fn close(&self, streams: &mut Streams, stream: u32) {
         if let Some(slot) = streams.active.get_mut(&stream) {
             if slot.open {
-                self.registry.window_closed(&slot.label);
+                self.registry.window_closed(&slot.sink.label);
                 slot.open = false;
             }
-            if !slot.sending {
+            if !*slot.sending.borrow() {
                 streams.active.remove(&stream);
             }
         }
@@ -199,24 +246,24 @@ impl Live {
         let Some(slot) = streams
             .active
             .get_mut(&stream)
-            .filter(|s| s.label == label && s.open)
+            .filter(|s| s.sink.label == label && s.open)
         else {
             return false;
         };
         // Keep the ID reserved until the foreign callback returns, including
         // when unsubscribe or host removal closes its window in the meantime.
-        slot.sending = true;
+        slot.sending.send_replace(true);
         true
     }
 
-    fn finish_send(&self, stream: u32, delivered: bool) -> bool {
+    fn finish_send(&self, stream: u32, label: &str, delivered: bool) -> bool {
         let mut streams = self.streams.lock_ok();
         let Some(slot) = streams.active.get_mut(&stream) else {
             return false;
         };
-        slot.sending = false;
+        slot.sending.send_replace(false);
         if delivered && slot.open {
-            return true;
+            return slot.sink.label == label;
         }
         self.close(&mut streams, stream);
         false
@@ -226,11 +273,12 @@ impl Live {
 impl Drop for Live {
     fn drop(&mut self) {
         for stream in self.streams.lock_ok().active.values() {
-            self.registry.window_closed(&stream.label);
+            self.registry.window_closed(&stream.sink.label);
         }
     }
 }
 
+#[derive(Clone)]
 struct EventSink {
     stream: u32,
     label: String,
@@ -257,6 +305,6 @@ impl LiveSink for EventSink {
                 false
             }
         };
-        live.finish_send(self.stream, delivered)
+        live.finish_send(self.stream, &self.label, delivered)
     }
 }

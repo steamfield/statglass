@@ -14,9 +14,8 @@ impl Registry {
         match call {
             MobileCall::ListHosts => value(self.records()?),
             MobileCall::ListRemoteHosts => {
-                let entries = self.entries()?;
-                blocking(move || value(entries.iter().map(|e| e.remote_host()).collect::<Vec<_>>()))
-                    .await
+                let registry = self.clone();
+                blocking(move || value(registry.remote_hosts()?)).await
             }
             MobileCall::GetHost { host } => value(self.entry(host)?.source.host()),
             MobileCall::GetCapabilities { host } => value(self.entry(host)?.source.capabilities()),

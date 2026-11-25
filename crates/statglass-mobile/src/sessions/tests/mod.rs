@@ -149,6 +149,10 @@ struct Fixture {
 
 impl Fixture {
     fn start(hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
+        Self::start_in(tempfile::tempdir().unwrap(), hosts, sync)
+    }
+
+    fn start_in(dir: tempfile::TempDir, hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
         let (live, messages) = mpsc::unbounded_channel();
         let events = Arc::new(Recorder {
             live,
@@ -162,7 +166,6 @@ impl Fixture {
             event_ready: Notify::new(),
         });
         let sessions = Sessions::new(events.clone());
-        let dir = tempfile::tempdir().unwrap();
         let (dials, connections) = mpsc::unbounded_channel();
         sessions
             .registry
@@ -277,7 +280,7 @@ impl Dialer for PeerDialer {
 }
 
 impl Dial {
-    async fn handshake(&mut self, host: &MobileHost) {
+    async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
         codec::write(
             &mut self.peer,
             &Message::Hello(Box::new(Hello {
@@ -296,7 +299,10 @@ impl Dial {
         .await
         .unwrap();
         assert!(matches!(self.read().await, Message::HelloAck(_)));
-        assert!(matches!(self.read().await, Message::Interest(_)));
+        let Message::Interest(interest) = self.read().await else {
+            panic!("expected the initial source interest");
+        };
+        interest
     }
 
     async fn read(&mut self) -> Message {

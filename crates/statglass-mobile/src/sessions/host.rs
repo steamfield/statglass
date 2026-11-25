@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use statglass_engine::{HistoryStore, LiveHub, Source, SourceHandle, SourceSink};
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileEvent, MobileHost, MobileRemoteHost};
-use statglass_ipc::status::connection_status;
+use statglass_ipc::status::{RemoteConnection, connection_status};
 use statglass_ipc::vitals::{HostVitals, host_vitals};
 use statglass_schema::lock::{LockExt, RwLockExt};
+use statglass_schema::{HostId, HostRecord};
 use statglass_session::{
     ConnectionStatus, Dialer, Mirror, MirrorPolicy, RemoteSource, SourceOptions,
 };
@@ -32,10 +33,36 @@ pub(super) struct HostEntry {
 #[derive(Default)]
 struct Status {
     connection: ConnectionStatus,
-    published: Option<MobileRemoteHost>,
+    notice: Option<StatusNotice>,
+    published: Option<(StatusNotice, Option<i64>)>,
     active: bool,
     dirty: bool,
     checking: bool,
+}
+
+#[derive(Clone, PartialEq)]
+struct StatusNotice {
+    connection: RemoteConnection,
+    next_attempt_ms: Option<i64>,
+    attempt: u32,
+    dialing: bool,
+    waiting_for_network: bool,
+    agent_version: Option<String>,
+    identity_changed: Option<HostId>,
+}
+
+impl From<&ConnectionStatus> for StatusNotice {
+    fn from(status: &ConnectionStatus) -> Self {
+        Self {
+            connection: connection_status(status),
+            next_attempt_ms: status.next_attempt_ms,
+            attempt: status.attempt,
+            dialing: status.dialing,
+            waiting_for_network: status.waiting_for_network,
+            agent_version: status.remote_version.clone(),
+            identity_changed: status.identity_changed,
+        }
+    }
 }
 
 impl HostEntry {
@@ -151,7 +178,14 @@ impl HostEntry {
 
     pub(super) fn remote_host(&self) -> MobileRemoteHost {
         let status = self.status.lock_ok().connection.clone();
-        self.project(&status)
+        remote_host(
+            &self.config,
+            self.source.host(),
+            self.policy.budget_mb(),
+            &status,
+            self.watermark(),
+            self.vitals(),
+        )
     }
 
     pub(super) fn observe_status(
@@ -164,7 +198,14 @@ impl HostEntry {
         if !status.active {
             return None;
         }
+        let notice = StatusNotice::from(&connection);
         status.connection = connection;
+        if status.notice.as_ref() == Some(&notice) {
+            return None;
+        }
+        // Frames update observations for ListRemoteHosts. Read SQLite for
+        // notifications only on status transitions, including sync completion.
+        status.notice = Some(notice);
         status.dirty = true;
         if status.checking {
             return None;
@@ -176,52 +217,81 @@ impl HostEntry {
 
     fn publish_pending_status(&self, events: &dyn CoreEvents) {
         loop {
-            let connection = {
+            let notice = {
                 let mut status = self.status.lock_ok();
                 if !status.active || !status.dirty {
                     status.checking = false;
                     return;
                 }
                 status.dirty = false;
-                status.connection.clone()
+                status.notice.clone()
             };
-            let next = self.project(&connection);
+            let next = notice.map(|notice| (notice, self.watermark()));
             let mut status = self.status.lock_ok();
-            if !status.active || status.dirty || status.published.as_ref() == Some(&next) {
+            if !status.active || status.dirty || status.published == next {
                 continue;
             }
-            status.published = Some(next);
+            status.published = next;
             drop(status);
             super::registry::emit(events, MobileEvent::RemoteHostsChanged);
         }
     }
 
-    fn project(&self, status: &ConnectionStatus) -> MobileRemoteHost {
-        let record = self.source.host();
-        MobileRemoteHost {
-            id: record.id,
-            name: record.display_name,
-            os: record.info.os,
-            targets: self.config.targets.clone(),
-            mirror_budget_mb: self.policy.budget_mb(),
-            connection: connection_status(status),
-            last_seen_ms: status
-                .last_seen_ms
-                .map(|seen| seen.saturating_add(status.clock_offset_ms)),
-            synced_through_ms: self
-                .mirror
-                .sync_watermark()
-                .ok()
-                .and_then(|w| w.synced_through()),
-            next_attempt_ms: status.next_attempt_ms,
-            attempt: status.attempt,
-            dialing: status.dialing,
-            waiting_for_network: status.waiting_for_network,
-            clock_offset_ms: (status.connected || status.last_seen_ms.is_some())
-                .then_some(status.clock_offset_ms),
-            vitals: host_vitals(self.hub.latest_frame().as_deref(), record.id, &record.info),
-            agent_version: status.remote_version.clone(),
-            identity_changed: status.identity_changed,
-        }
+    fn watermark(&self) -> Option<i64> {
+        self.mirror
+            .sync_watermark()
+            .ok()
+            .and_then(|w| w.synced_through())
+    }
+}
+
+pub(super) fn unopened_host(
+    host: &MobileHost,
+    budget: u32,
+    error: Option<&CommandError>,
+) -> MobileRemoteHost {
+    let status = ConnectionStatus {
+        retrying: error.is_none(),
+        error: error.map(ToString::to_string),
+        ..Default::default()
+    };
+    remote_host(
+        host,
+        endpoint::record(host),
+        budget,
+        &status,
+        None,
+        HostVitals::default(),
+    )
+}
+
+fn remote_host(
+    host: &MobileHost,
+    record: HostRecord,
+    budget: u32,
+    status: &ConnectionStatus,
+    synced_through_ms: Option<i64>,
+    vitals: HostVitals,
+) -> MobileRemoteHost {
+    MobileRemoteHost {
+        id: record.id,
+        name: record.display_name,
+        os: record.info.os,
+        targets: host.targets.clone(),
+        mirror_budget_mb: budget,
+        connection: connection_status(status),
+        last_seen_ms: status
+            .last_seen_ms
+            .map(|seen| seen.saturating_add(status.clock_offset_ms)),
+        synced_through_ms,
+        next_attempt_ms: status.next_attempt_ms,
+        attempt: status.attempt,
+        dialing: status.dialing,
+        waiting_for_network: status.waiting_for_network,
+        clock_offset_ms: (status.connected || status.last_seen_ms.is_some())
+            .then_some(status.clock_offset_ms),
+        vitals,
+        agent_version: status.remote_version.clone(),
+        identity_changed: status.identity_changed,
     }
 }

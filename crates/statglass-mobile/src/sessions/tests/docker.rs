@@ -42,15 +42,6 @@ async fn mobile_session() {
             }
         })
         .await;
-    assert!(
-        sessions
-            .registry
-            .entry(host)
-            .unwrap()
-            .mirror
-            .sync_watermark()
-            .unwrap()
-            .m1_ms
-            .is_some()
-    );
+    let rows = sessions.call(MobileCall::ListRemoteHosts).await.unwrap();
+    assert!(rows[0]["synced_through_ms"].is_i64());
 }

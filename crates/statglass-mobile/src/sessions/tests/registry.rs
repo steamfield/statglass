@@ -419,7 +419,24 @@ async fn retry_recovers_a_configured_host_after_its_mirror_directory_recovers() 
     fs::rename(&path, &saved).unwrap();
     fs::write(&path, "temporarily unavailable").unwrap();
     dial.finish_close.send(()).unwrap();
-    assert!(fixture.next_roster().await.is_empty());
+    assert_eq!(fixture.next_roster().await, [original.id]);
+    assert_eq!(
+        fixture.sessions.call(MobileCall::ListHosts).await.unwrap(),
+        json!([endpoint::record(&updated)])
+    );
+    let failed = fixture
+        .sessions
+        .call(MobileCall::ListRemoteHosts)
+        .await
+        .unwrap();
+    assert_eq!(failed[0]["id"], json!(original.id));
+    assert_eq!(failed[0]["connection"]["state"], "error");
+    assert!(
+        failed[0]["connection"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("creating mirror directory")
+    );
     fs::remove_file(&path).unwrap();
     fs::rename(saved, path).unwrap();
     assert_eq!(
@@ -435,5 +452,112 @@ async fn retry_recovers_a_configured_host_after_its_mirror_directory_recovers() 
     assert_eq!(
         ids(fixture.sessions.call(MobileCall::ListHosts).await.unwrap()),
         [original.id]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn startup_lists_a_failed_host_with_its_error_alongside_healthy_hosts() {
+    let dir = tempfile::tempdir().unwrap();
+    let failed = host(1);
+    let healthy = host(2);
+    let mirrors = dir.path().join("mirrors");
+    fs::create_dir(&mirrors).unwrap();
+    fs::write(
+        mirrors.join(failed.id.to_string()),
+        "cannot open a directory here",
+    )
+    .unwrap();
+    let mut fixture =
+        Fixture::start_in(dir, vec![failed.clone(), healthy.clone()], SyncPolicy::Off);
+    let mut peer = fixture.next_dial().await;
+    assert_eq!(peer.target, healthy.targets[0].host);
+    peer.handshake(&healthy).await;
+    assert_eq!(
+        ids(fixture.sessions.call(MobileCall::ListHosts).await.unwrap()),
+        [failed.id, healthy.id]
+    );
+    let rows = fixture
+        .sessions
+        .call(MobileCall::ListRemoteHosts)
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["id"], json!(failed.id));
+    assert_eq!(rows[0]["connection"]["state"], "error");
+    assert!(
+        rows[0]["connection"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("creating mirror directory")
+    );
+    assert_eq!(rows[1]["connection"]["state"], "connected");
+}
+
+#[tokio::test(start_paused = true)]
+async fn growing_from_two_to_eleven_hosts_rebuilds_the_old_mirrors_at_the_new_budget() {
+    let hosts: Vec<_> = (1..=11).map(host).collect();
+    let mut fixture = Fixture::start(hosts[..2].to_vec(), SyncPolicy::Off);
+    let mut old = Vec::new();
+    for _ in 0..2 {
+        let mut dial = fixture.next_dial().await;
+        let host = hosts
+            .iter()
+            .find(|host| host.targets[0].host == dial.target)
+            .unwrap();
+        dial.handshake(host).await;
+        old.push(dial);
+    }
+    let budgets = |rows: Value| {
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["mirror_budget_mb"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        budgets(
+            fixture
+                .sessions
+                .call(MobileCall::ListRemoteHosts)
+                .await
+                .unwrap()
+        ),
+        vec![u64::from(crate::policy::host_budget_mb(2)); 2]
+    );
+
+    fixture
+        .sessions
+        .set_hosts(hosts.clone(), SyncPolicy::Off)
+        .unwrap();
+    for dial in &mut old {
+        timeout(WAIT, &mut dial.closing)
+            .await
+            .unwrap()
+            .expect("old dial closes orderly");
+    }
+    let mut new = Vec::new();
+    for _ in 0..9 {
+        let dial = fixture.next_dial().await;
+        assert!(old.iter().all(|old| old.target != dial.target));
+        new.push(dial);
+    }
+    assert!(
+        fixture.dials.try_recv().is_err(),
+        "neither old host can dial before closing"
+    );
+    for dial in old {
+        dial.finish_close.send(()).unwrap();
+        let replacement = fixture.next_dial().await;
+        assert_eq!(replacement.target, dial.target);
+        new.push(replacement);
+    }
+    assert_eq!(
+        budgets(
+            fixture
+                .sessions
+                .call(MobileCall::ListRemoteHosts)
+                .await
+                .unwrap()
+        ),
+        vec![u64::from(crate::policy::host_budget_mb(11)); 11]
     );
 }

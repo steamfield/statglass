@@ -256,11 +256,17 @@ async fn a_blocked_status_callback_does_not_block_live_frames() {
     fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
     let (gate, entered, release) = CallbackGate::new();
     *fixture.events.status_gate.lock_ok() = Some(gate);
+    codec::write(
+        &mut remote.peer,
+        &Message::SourceStatus(SourceStatus::default()),
+    )
+    .await
+    .unwrap();
     remote.layout().await;
     remote.frame(NOW, 11.).await;
     timeout(WAIT, entered).await.unwrap().unwrap();
     remote.frame(NOW + 1_000, 23.).await;
-    let observed = timeout(Duration::from_millis(500), async {
+    let observed = timeout(WAIT, async {
         loop {
             let (_, frame) = fixture.message("frame").await;
             if frame["ts_ms"] == NOW + 1_000 {
@@ -271,4 +277,101 @@ async fn a_blocked_status_callback_does_not_block_live_frames() {
     .await;
     release.send(()).unwrap();
     observed.expect("a later frame arrives while the status callback is blocked");
+}
+
+#[tokio::test(start_paused = true)]
+async fn frame_vitals_change_without_another_remote_hosts_event() {
+    let host = host(1);
+    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut remote = fixture.next_dial().await;
+    let read_events = |events: &Recorder| {
+        events
+            .events
+            .lock_ok()
+            .iter()
+            .filter(|e| **e == remote_changed())
+            .count()
+    };
+    timeout(WAIT, async {
+        while read_events(&fixture.events) < 2 {
+            fixture.events.event_ready.notified().await;
+        }
+    })
+    .await
+    .unwrap();
+    fixture.events.events.lock_ok().clear();
+    remote.handshake(&host).await;
+    timeout(WAIT, async {
+        while read_events(&fixture.events) == 0 {
+            fixture.events.event_ready.notified().await;
+        }
+    })
+    .await
+    .unwrap();
+    fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
+    remote.layout().await;
+    for (ts, cpu) in [(NOW, 11.), (NOW + 1_000, 23.)] {
+        remote.frame(ts, cpu).await;
+        assert_eq!(fixture.message("frame").await.1["ts_ms"], ts);
+        let rows = fixture
+            .sessions
+            .call(MobileCall::ListRemoteHosts)
+            .await
+            .unwrap();
+        assert_eq!(rows[0]["vitals"]["cpu_pct"], cpu);
+        assert!(rows[0]["last_seen_ms"].is_i64());
+    }
+    assert!(
+        timeout(Duration::from_secs(1), async {
+            while read_events(&fixture.events) < 2 {
+                fixture.events.event_ready.notified().await;
+            }
+        })
+        .await
+        .is_err(),
+        "frames should not invalidate the remote host list"
+    );
+    assert_eq!(read_events(&fixture.events), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_open_stream_keeps_its_id_when_a_configured_host_is_rebuilt() {
+    let other = host(2);
+    let mut viewed = host(1);
+    let mut fixture = Fixture::start(vec![other.clone(), viewed.clone()], SyncPolicy::Off);
+    let first = fixture.next_dial().await;
+    let second = fixture.next_dial().await;
+    let (mut old, _other) = if first.target == viewed.targets[0].host {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    old.handshake(&viewed).await;
+    fixture
+        .sessions
+        .call(subscribe(viewed.id, 7))
+        .await
+        .unwrap();
+    old.layout().await;
+    old.frame(NOW, 11.).await;
+    assert_eq!(fixture.message("frame").await.0, 7);
+
+    viewed.name = "Renamed".into();
+    fixture
+        .sessions
+        .set_hosts(vec![other, viewed.clone()], SyncPolicy::Off)
+        .unwrap();
+    timeout(WAIT, &mut old.closing).await.unwrap().unwrap();
+    old.finish_close.send(()).unwrap();
+    let mut new = fixture.next_dial().await;
+    let initial = new.handshake(&viewed).await;
+    assert_eq!(fixture.sessions.sources()[0].host().id, viewed.id);
+    if !initial.detail {
+        while !matches!(new.read().await, Message::Interest(interest) if interest.detail) {}
+    }
+    new.layout().await;
+    new.frame(NOW + 1_000, 23.).await;
+    let (id, frame) = fixture.message("frame").await;
+    assert_eq!(id, 7);
+    assert_eq!(frame["held"], json!([23.]));
 }
