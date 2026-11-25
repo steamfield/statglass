@@ -7,10 +7,10 @@ import {
 import { mirrorBarsModel } from "@core/widget-models/mirror-bars";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
-import { fireEvent, screen } from "@testing-library/react-native";
+import { act, fireEvent, screen } from "@testing-library/react-native";
 import { useState } from "react";
 import * as ReactNative from "react-native";
-import { themeColors } from "@/theme.generated";
+import { motionDurations, themeColors } from "@/theme.generated";
 import { InlineBar } from "@/widgets/inline-bar";
 import { BarFill, MeterTrack, WidgetAccent } from "@/widgets/meter-track";
 import { MirrorBars } from "@/widgets/mirror-bars";
@@ -223,11 +223,55 @@ test.each([false, true])(
       return;
     }
     expect(timing).toHaveBeenCalledTimes(1);
+    expect(timing).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ duration: motionDurations.tick })
+    );
     expect(start).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByRole("button", { name: "Jump ahead" }));
     expect(start).toHaveBeenCalledTimes(1);
   }
 );
+
+test("sweeps the loading mark with theme tokens and stops it in Low Power Mode", async () => {
+  jest
+    .spyOn(ReactNative.AccessibilityInfo, "isReduceMotionEnabled")
+    .mockResolvedValue(false);
+  const stop = jest.fn();
+  const timing = jest.spyOn(ReactNative.Animated, "timing").mockReturnValue({
+    start: jest.fn(),
+    stop: jest.fn(),
+    reset: jest.fn(),
+  });
+  jest.spyOn(ReactNative.Animated, "loop").mockReturnValue({
+    start: jest.fn(),
+    stop,
+    reset: jest.fn(),
+  });
+  await renderWithProviders(<MirrorBars {...net} loading />);
+  await fireEvent(
+    screen.getByRole("image", { name: net.ariaLabel }),
+    "layout",
+    {
+      nativeEvent: { layout: { width: 120 } },
+    }
+  );
+  expect(timing).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      duration: motionDurations.scan,
+      delay: motionDurations.fast,
+    })
+  );
+  await act(() =>
+    ReactNative.DeviceEventEmitter.emit("mockLowPowerModeChanged", {
+      lowPowerMode: true,
+    })
+  );
+  expect(stop).toHaveBeenCalledTimes(1);
+  expect(timing).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId("mirror-loading")).toBeOnTheScreen();
+});
 
 test("prints the power stat grid including a measured zero", async () => {
   jest.spyOn(ReactNative, "useColorScheme").mockReturnValue("light");

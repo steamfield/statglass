@@ -6,7 +6,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderThemeCss } from "../scripts/theme-render.mjs";
-import { readSchemeColors } from "../scripts/theme-tokens.mjs";
+import {
+  readMotionTokens,
+  readSchemeColors,
+} from "../scripts/theme-tokens.mjs";
+import { MOTION } from "./motion-css-fixture.mjs";
 
 const THEME = `
 @custom-variant dark (&:where(.dark, .dark *));
@@ -126,5 +130,109 @@ for (const failure of FAILURES) {
       name: "ThemeSourceError",
       message: failure.message,
     });
+  });
+}
+
+test("reads enabled motion durations in ms and easing curves as control points", () => {
+  assert.deepEqual(readMotionTokens(MOTION), {
+    durations: {
+      tick: 175,
+      count: 450,
+      fast: 150,
+      entry: 300,
+      enter: 280,
+      page: 400,
+      stagger: 40,
+      crossfade: 150,
+      scan: 800,
+      extraDelay: 9.5,
+    },
+    easings: {
+      easeOut: [0.16, 1, 0.3, 1],
+      easeTick: [0.33, 1, 0.68, 1],
+      easeEnter: [0.25, 1, 0.5, 1],
+    },
+  });
+});
+
+test("reports a duration missing from the no-preference rule", () => {
+  assert.throws(
+    () => readMotionTokens(MOTION.replace("--motion-tick: 175ms;", "")),
+    {
+      name: "ThemeSourceError",
+      message:
+        "motion.css: --motion-tick is missing in prefers-reduced-motion: no-preference",
+    }
+  );
+});
+
+test("reports a duration declared only for Performance mode", () => {
+  const css = MOTION.replace("--motion-tick: 0ms;", "").replace(
+    "--motion-tick: 175ms;",
+    ""
+  );
+  assert.throws(() => readMotionTokens(css), {
+    name: "ThemeSourceError",
+    message:
+      "motion.css: --motion-tick is missing in prefers-reduced-motion: no-preference",
+  });
+});
+
+test("reports a required duration removed from the entire source", () => {
+  assert.throws(
+    () => readMotionTokens(MOTION.replaceAll(/--motion-count: [^;]+;/g, "")),
+    {
+      name: "ThemeSourceError",
+      message:
+        "motion.css: --motion-count is missing in prefers-reduced-motion: no-preference",
+    }
+  );
+});
+
+test("uses later overrides both within and across no-preference blocks", () => {
+  const css = `${MOTION}
+@media (prefers-reduced-motion: no-preference) {
+  :root { --motion-tick: 140ms; }
+  :root { --motion-tick: 130ms; }
+}`;
+  assert.equal(readMotionTokens(css).durations.tick, 130);
+});
+
+test("reports a missing easing curve", () => {
+  assert.throws(
+    () =>
+      readMotionTokens(
+        MOTION.replace("--ease-tick: cubic-bezier(0.33, 1, 0.68, 1);", "")
+      ),
+    {
+      name: "ThemeSourceError",
+      message: "motion.css: --ease-tick is missing in @theme static",
+    }
+  );
+});
+
+test("rejects a duration with the wrong unit", () => {
+  assert.throws(() => readMotionTokens(MOTION.replace("175ms", "175px")), {
+    name: "ThemeSourceError",
+    message: 'motion.css: --motion-tick "175px" is not a duration',
+  });
+});
+
+for (const curve of [
+  "cubic-bezier(.33, 1, .68)",
+  "cubic-bezier(1.1, 1, .68, 1)",
+  "cubic-bezier(.33, , .68, 1)",
+]) {
+  test(`rejects ${curve} as an easing curve`, () => {
+    assert.throws(
+      () =>
+        readMotionTokens(
+          MOTION.replace("cubic-bezier(0.33, 1, 0.68, 1)", curve)
+        ),
+      {
+        name: "ThemeSourceError",
+        message: `motion.css: --ease-tick "${curve}" is not a cubic-bezier curve`,
+      }
+    );
   });
 }

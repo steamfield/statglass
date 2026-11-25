@@ -3,7 +3,7 @@
  * client per test, and optionally a chosen transport and starting settings.
  */
 import { render } from "@testing-library/react-native";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import {
   type PhoneSettings,
   PhoneSettingsProvider,
@@ -12,6 +12,7 @@ import type { PhoneTransport } from "@/data/seam";
 import { PhoneTransportProvider } from "@/data/transport-context";
 import { Providers } from "@/lib/providers";
 import { createQueryClient } from "@/lib/query-client";
+import { MotionProvider } from "@/ui/motion";
 
 /**
  * A client with the app's defaults and cache garbage collection off, so no
@@ -47,14 +48,19 @@ export async function renderWithProviders(
   { transport, demo = false, settings }: RenderOptions = {}
 ) {
   const client = testQueryClient();
-  const view = await render(
-    <PhoneTransportProvider
-      {...(transport ? { initial: { transport, demo } } : {})}
-    >
-      <PhoneSettingsProvider {...(settings ? { initial: settings } : {})}>
-        <Providers client={client}>{ui}</Providers>
-      </PhoneSettingsProvider>
-    </PhoneTransportProvider>
-  );
+  function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <PhoneTransportProvider
+        {...(transport ? { initial: { transport, demo } } : {})}
+      >
+        <PhoneSettingsProvider {...(settings ? { initial: settings } : {})}>
+          <Providers client={client}>
+            <MotionProvider>{children}</MotionProvider>
+          </Providers>
+        </PhoneSettingsProvider>
+      </PhoneTransportProvider>
+    );
+  }
+  const view = await render(ui, { wrapper: Wrapper });
   return { ...view, client };
 }

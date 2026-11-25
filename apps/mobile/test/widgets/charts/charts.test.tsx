@@ -15,7 +15,7 @@ import {
   useColorScheme,
 } from "react-native";
 import * as Reanimated from "react-native-reanimated";
-import { themeColors } from "@/theme.generated";
+import { motionDurations, themeColors } from "@/theme.generated";
 import { StreamArea } from "@/widgets/stream-area";
 
 // Only the native animation boundary is replaced. The bundled Reanimated
@@ -293,7 +293,7 @@ describe("phone chart states and motion", () => {
     await layout();
     expect(timing).toHaveBeenCalledWith(
       width,
-      expect.objectContaining({ duration: 900 })
+      expect.objectContaining({ duration: motionDurations.scan })
     );
     expect(repeat).toHaveBeenCalledWith(
       width,
@@ -303,7 +303,7 @@ describe("phone chart states and motion", () => {
       Reanimated.ReduceMotion.Never
     );
     expect(delay).toHaveBeenCalledWith(
-      150,
+      motionDurations.fast,
       width,
       Reanimated.ReduceMotion.Never
     );
@@ -356,7 +356,7 @@ describe("phone chart states and motion", () => {
     expect(timing).toHaveBeenCalledTimes(1);
     expect(timing).toHaveBeenCalledWith(
       0,
-      expect.objectContaining({ duration: 150 })
+      expect.objectContaining({ duration: motionDurations.tick })
     );
     expect(mockSetTranslation.mock.calls).toEqual([[5], [0]]);
     timing.mockClear();

@@ -12,13 +12,7 @@ import {
 import type { PopoverCard } from "@core/popover/card-order";
 import { useRouter } from "expo-router";
 import { memo, useEffect, useMemo, useState } from "react";
-import {
-  AccessibilityInfo,
-  Animated,
-  Easing,
-  ScrollView,
-  View,
-} from "react-native";
+import { Animated, Easing, ScrollView, View } from "react-native";
 import { shallow } from "zustand/shallow";
 import { BatteryCard } from "@/cards/battery-card";
 import { CpuCard } from "@/cards/cpu-card";
@@ -34,6 +28,8 @@ import {
 } from "@/data/live";
 import { useCompactStream, useNetworkBars } from "@/data/live-stream";
 import { usePhoneSettings } from "@/data/phone-settings";
+import { motionEasings } from "@/theme.generated";
+import { useMotion } from "@/ui/motion";
 import { Text } from "@/ui/text";
 import { CardMenu } from "./card-menu";
 import {
@@ -68,44 +64,28 @@ const CardSlot = memo(
     shallow(previous.item.props, next.item.props)
 );
 
+const FADE_EASING = Easing.bezier(...motionEasings.easeOut);
+
 function useCardOpacity(dimmed: boolean) {
   const target = dimmed ? 0.5 : 1;
   const [opacity] = useState(() => new Animated.Value(target));
-  const [reduceMotion, setReduceMotion] = useState(true);
+  const { fast } = useMotion();
   useEffect(() => {
-    let mounted = true;
-    void AccessibilityInfo.isReduceMotionEnabled()
-      .then((enabled) => {
-        if (mounted) setReduceMotion(enabled);
-      })
-      .catch((error: unknown) => {
-        console.warn("Couldn’t read the Reduce Motion preference", error);
-      });
-    const listener = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      setReduceMotion
-    );
-    return () => {
-      mounted = false;
-      listener.remove();
-    };
-  }, []);
-  useEffect(() => {
-    if (reduceMotion) {
+    if (fast === 0) {
       opacity.setValue(target);
       return;
     }
     // The design system's fast transition, driven on the native thread.
     const animation = Animated.timing(opacity, {
       toValue: target,
-      duration: 150,
-      easing: Easing.bezier(0.16, 1, 0.3, 1),
+      duration: fast,
+      easing: FADE_EASING,
       useNativeDriver: true,
     });
     animation.start();
     return () => animation.stop();
-  }, [opacity, reduceMotion, target]);
-  return reduceMotion ? target : opacity;
+  }, [fast, opacity, target]);
+  return fast === 0 ? target : opacity;
 }
 
 const CardStack = memo(function CardStack({

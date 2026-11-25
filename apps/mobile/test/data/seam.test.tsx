@@ -3,6 +3,7 @@
  * the hosts list read through them, on the demo transport.
  */
 import type { HostRecord } from "@core/generated/types";
+import { unwrap } from "@core/transport";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { fireEvent, screen } from "@testing-library/react-native";
@@ -70,6 +71,54 @@ function DemoEntry() {
     </Pressable>
   );
 }
+
+test("demo remotes stream only when connected and resume after a retry", async () => {
+  jest.useFakeTimers();
+  const transport = createDemoTransport();
+  try {
+    const remotes = await transport.listRemoteHosts();
+    const frames = new Map<string, number>();
+    const cadence = new Map<string, number>();
+    for (const {
+      config: { id },
+    } of remotes) {
+      frames.set(id, 0);
+      await transport.subscribeLive(
+        id,
+        (message) => {
+          if (message.kind === "frame")
+            frames.set(id, (frames.get(id) ?? 0) + 1);
+          if (message.kind === "status")
+            cadence.set(
+              id,
+              Math.max(message.interval_ms, message.frame_period_ms)
+            );
+        },
+        { backfillMs: 0 }
+      );
+    }
+    expect(remotes.map(({ status }) => status.state)).toEqual(
+      expect.arrayContaining(["connected", "offline", "disabled", "error"])
+    );
+    await jest.advanceTimersByTimeAsync(1000);
+    for (const { config, status } of remotes) {
+      expect(frames.get(config.id)).toBe(status.state === "connected" ? 1 : 0);
+      expect(cadence.get(config.id)).toBe(
+        status.state === "connected" ? 1000 : 0
+      );
+    }
+
+    const offline = remotes.find(({ status }) => status.state === "offline");
+    if (!offline) throw new Error("Missing offline demo host");
+    await unwrap(transport.retryRemoteHost(offline.config.id));
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(frames.get(offline.config.id)).toBe(1);
+    expect(cadence.get(offline.config.id)).toBe(1000);
+  } finally {
+    transport.dispose();
+    jest.useRealTimers();
+  }
+});
 
 test("choosing the demo transport marks the app as demo", async () => {
   await renderWithProviders(<DemoEntry />);

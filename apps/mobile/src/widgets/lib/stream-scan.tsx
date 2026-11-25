@@ -17,9 +17,13 @@ import Animated, {
 export function StreamScan({
   widthPx,
   color,
+  duration,
+  delay,
 }: {
   widthPx: number;
   color: string;
+  duration: number;
+  delay: number;
 }) {
   const segment = widthPx / 5;
   const translateX = useSharedValue(-segment);
@@ -27,10 +31,10 @@ export function StreamScan({
     translateX.set(-segment);
     translateX.set(
       withDelay(
-        150,
+        delay,
         withRepeat(
           withTiming(widthPx, {
-            duration: 900,
+            duration,
             easing: Easing.linear,
             reduceMotion: ReduceMotion.Never,
           }),
@@ -43,7 +47,7 @@ export function StreamScan({
       )
     );
     return () => cancelAnimation(translateX);
-  }, [segment, translateX, widthPx]);
+  }, [delay, duration, segment, translateX, widthPx]);
   const motion = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.get() }],
   }));

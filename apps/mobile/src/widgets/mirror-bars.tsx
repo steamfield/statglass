@@ -5,52 +5,29 @@ import {
 import type { ColorRef } from "@core/widget-models/tokens";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  AccessibilityInfo,
   Animated,
   Easing,
   useAnimatedValue,
   useColorScheme,
   View,
 } from "react-native";
+import { motionEasings } from "@/theme.generated";
+import { useMotion } from "@/ui/motion";
 import { resolveColor } from "./colors";
 
-// Match the desktop tick and scan until the phone has shared motion tokens.
-const BAR_TICK_MS = 150;
-const BAR_LOADING_SWEEP_MS = 900;
 const LOADING_MARK_WIDTH = 32;
-
-function useReduceMotion() {
-  const [reduced, setReduced] = useState(true);
-  useEffect(() => {
-    let awaitingInitial = true;
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      (enabled) => {
-        awaitingInitial = false;
-        setReduced(enabled);
-      }
-    );
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (awaitingInitial) setReduced(enabled);
-    });
-    return () => {
-      awaitingInitial = false;
-      subscription.remove();
-    };
-  }, []);
-  return reduced;
-}
+const TICK_EASING = Easing.bezier(...motionEasings.easeTick);
 
 function useTickOffset({
   endMs,
   intervalMs,
   slotWidth,
-  animate,
+  duration,
 }: {
   endMs: number | undefined;
   intervalMs: number;
   slotWidth: number;
-  animate: boolean;
+  duration: number;
 }) {
   const offset = useAnimatedValue(0);
   const previous = useRef<{ endMs: number | undefined; intervalMs: number }>(
@@ -60,7 +37,7 @@ function useTickOffset({
     const last = previous.current;
     previous.current = { endMs, intervalMs };
     if (
-      !animate ||
+      duration === 0 ||
       slotWidth <= 0 ||
       endMs === undefined ||
       last?.endMs === undefined ||
@@ -76,8 +53,8 @@ function useTickOffset({
     offset.setValue(slotWidth);
     const animation = Animated.timing(offset, {
       toValue: 0,
-      duration: BAR_TICK_MS,
-      easing: Easing.out(Easing.cubic),
+      duration,
+      easing: TICK_EASING,
       isInteraction: false,
       useNativeDriver: true,
     });
@@ -86,29 +63,31 @@ function useTickOffset({
       animation.stop();
       offset.setValue(0);
     };
-  }, [animate, endMs, intervalMs, offset, slotWidth]);
+  }, [duration, endMs, intervalMs, offset, slotWidth]);
   return offset;
 }
 
 function LoadingMark({
   width,
-  animate,
+  duration,
+  delay,
   color,
 }: {
   width: number;
-  animate: boolean;
+  duration: number;
+  delay: number;
   color: string;
 }) {
   const offset = useAnimatedValue(0);
   useEffect(() => {
-    if (!animate || width <= 0) return;
+    if (duration === 0 || width <= 0) return;
     const edge = (width + LOADING_MARK_WIDTH) / 2;
     offset.setValue(-edge);
     const animation = Animated.loop(
       Animated.timing(offset, {
         toValue: edge,
-        duration: BAR_LOADING_SWEEP_MS,
-        delay: BAR_TICK_MS,
+        duration,
+        delay,
         easing: Easing.linear,
         isInteraction: false,
         useNativeDriver: true,
@@ -119,7 +98,7 @@ function LoadingMark({
       animation.stop();
       offset.setValue(0);
     };
-  }, [animate, offset, width]);
+  }, [delay, duration, offset, width]);
   return (
     <Animated.View
       testID="mirror-loading"
@@ -179,13 +158,13 @@ export function MirrorBars(data: MirrorBarsData) {
   const { slots, up, down, upColor, downColor, ariaLabel } =
     mirrorBarsModel(data);
   const [width, setWidth] = useState(0);
-  const reduced = useReduceMotion();
+  const { fast, scan, tick } = useMotion();
   const scheme = useColorScheme() ?? "light";
   const offset = useTickOffset({
     endMs: tEndMs,
     intervalMs,
     slotWidth: width / slots,
-    animate: !reduced && !loading,
+    duration: loading ? 0 : tick,
   });
   return (
     <View
@@ -219,7 +198,8 @@ export function MirrorBars(data: MirrorBarsData) {
         {loading && (
           <LoadingMark
             width={width}
-            animate={!reduced}
+            duration={scan}
+            delay={fast}
             color={resolveColor(downColor, scheme)}
           />
         )}
