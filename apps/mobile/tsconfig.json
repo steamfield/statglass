@@ -6,7 +6,8 @@
     "types": [],
     "paths": {
       "@core/*": ["../../packages/core/src/*"],
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@native/*": ["./modules/*"]
     }
   },
   "include": [

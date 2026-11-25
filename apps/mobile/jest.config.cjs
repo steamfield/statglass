@@ -1,6 +1,7 @@
 /**
  * Jest config: jest-expo on Node, with the `@core/*` alias mapped to the shared
- * package, `@/*` to the app's src/ and `@test/*` to test/, React and React Native pinned to the copies the app resolves (the
+ * package, `@/*` to the app's src/, `@native/*` to its local Expo modules and
+ * `@test/*` to test/, React and React Native pinned to the copies the app resolves (the
  * same rule as metro-resolve.cjs), and the untranspiled packages added to the
  * preset's transform allowlist.
  */
@@ -81,6 +82,7 @@ module.exports = {
     // Before the app alias, so `@/global.css` still loads the stub.
     "\\.css$": "<rootDir>/test/css-stub.ts",
     "^@/(.*)$": "<rootDir>/src/$1",
+    "^@native/(.*)$": "<rootDir>/modules/$1",
     // Test helpers, so tests in subdirectories reach them without `../`.
     "^@test/(.*)$": "<rootDir>/test/$1",
     // The bundled Reanimated mock loads the native runtime and throws under

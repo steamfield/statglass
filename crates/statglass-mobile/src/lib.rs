@@ -1,16 +1,31 @@
 //! The iPhone app's Rust core, exported to Swift through UniFFI proc macros.
 //!
 //! Every exported function returns the desktop command envelope as JSON
-//! (`{"status":"ok","data":...}` or `{"status":"error","error":...}`) and runs its body
-//! under [`std::panic::catch_unwind`], so a panic becomes an `internal` error instead of
-//! unwinding into Swift. That needs the `mobile-release` Cargo profile
-//! (`panic = "unwind"`); under the workspace release profile a panic aborts.
+//! (`{"status":"ok","data":...}` or `{"status":"error","error":CommandError}`) and runs
+//! its body under [`std::panic::catch_unwind`] (or on the core's runtime, which catches
+//! a task's panic), so a panic becomes an `internal` error instead of unwinding into
+//! Swift. That needs the `mobile-release` Cargo profile (`panic = "unwind"`); under the
+//! workspace release profile a panic aborts.
+//!
+//! Swift holds one [`MobileCore`]: commands go through [`MobileCore::call`] as a
+//! `statglass_ipc::mobile::MobileCall`, live messages and events come back through
+//! [`CoreEvents`], signing goes out through [`NativeSigner`], and the app's lifecycle
+//! arrives as `quiesce`, `resume` and `path_changed`.
 //!
 //! This crate never depends on `statglass-remote` (`scripts/architecture/crate-edges.json`).
 
 mod build_info;
+mod control;
 mod envelope;
+mod ffi;
+mod lifecycle;
+mod mobile_core;
+mod policy;
+mod sessions;
+mod signer;
 
+pub use crate::ffi::{CoreEvents, NativeSigner, NativeSignerError, NetworkPath};
+pub use crate::mobile_core::MobileCore;
 // The result type lives in schema so the app shell's specta export reaches it.
 pub use statglass_schema::BuildInfo;
 

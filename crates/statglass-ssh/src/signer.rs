@@ -44,6 +44,23 @@ pub fn der_to_ssh_signature(der: &[u8]) -> Result<Vec<u8>> {
     ssh_signature_blob(&parse_der(der)?)
 }
 
+/// The `authorized_keys` line for a SEC1 uncompressed P-256 point (65 bytes), ending in
+/// `comment`: `ecdsa-sha2-nistp256 <base64> <comment>`.
+pub fn authorized_key_line(public_sec1: &[u8], comment: &str) -> Result<String> {
+    if !matches!(public_sec1, [4, coordinates @ ..] if coordinates.len() == 64) {
+        return Err(SignerError::Invalid(format!(
+            "expected a 65-byte uncompressed P-256 point, got {} bytes",
+            public_sec1.len()
+        )));
+    }
+    let key = VerifyingKey::from_sec1_bytes(public_sec1)
+        .map_err(|err| SignerError::Invalid(format!("P-256 point: {err}")))?;
+    let encoded = PublicKey::from(EcdsaPublicKey::from(&key))
+        .to_openssh()
+        .map_err(|err| SignerError::Invalid(format!("OpenSSH public key: {err}")))?;
+    Ok(format!("{encoded} {comment}"))
+}
+
 fn parse_der(der: &[u8]) -> Result<ecdsa::Signature> {
     ecdsa::Signature::from_der(der).map_err(|err| SignerError::Invalid(format!("P-256 DER: {err}")))
 }

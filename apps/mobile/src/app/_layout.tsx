@@ -10,6 +10,7 @@ import { PhoneSettingsProvider } from "@/data/phone-settings";
 import { PhoneTransportProvider } from "@/data/transport-context";
 import { Providers } from "@/lib/providers";
 import { AppLockGate } from "@/lock/app-lock-gate";
+import { NativeCoreBridge } from "@/transport";
 import { MotionProvider } from "@/ui/motion";
 
 function DemoLifetime() {
@@ -31,6 +32,7 @@ export default function RootLayout() {
         <Providers>
           <MotionProvider>
             <DemoLifetime />
+            <NativeCoreBridge />
             <StatusBar style="auto" />
             <AppLockGate>
               <Stack>
@@ -49,6 +51,7 @@ export default function RootLayout() {
                   name="settings"
                   options={{ headerShown: false }}
                 />
+                <Stack.Screen name="debug" options={{ title: "Debug" }} />
               </Stack>
             </AppLockGate>
           </MotionProvider>

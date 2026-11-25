@@ -82,9 +82,12 @@
       "statglass-schema",
       "statglass-proto",
       "statglass-store",
-      "statglass-engine"
+      "statglass-engine",
+      "statglass-session",
+      "statglass-ipc",
+      "statglass-ssh"
     ],
-    "dev": []
+    "dev": ["statglass-ssh"]
   },
   "statglass-cli": {
     "normal": ["statglass-query", "statglass-schema"],

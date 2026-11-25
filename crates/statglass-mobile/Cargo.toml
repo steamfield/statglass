@@ -24,9 +24,24 @@ statglass-schema.workspace = true
 statglass-proto.workspace = true
 statglass-store.workspace = true
 statglass-engine.workspace = true
+# Phase 4: the shared session and command layer, and the russh dialer the phone dials
+# with (plan phase 4, crate-edges.json).
+statglass-session.workspace = true
+statglass-ipc.workspace = true
+statglass-ssh.workspace = true
 uniffi.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# The core's own runtime: every source, stream and blocking query runs on it, so no
+# exported call blocks Swift. No `process`: the phone never spawns a program.
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+
+[dev-dependencies]
+statglass-ssh = { workspace = true, features = ["software-signer"] }
+tokio = { workspace = true, features = ["test-util"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

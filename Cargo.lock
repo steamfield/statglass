@@ -5470,9 +5470,16 @@ dependencies = [
  "serde",
  "serde_json",
  "statglass-engine",
+ "statglass-ipc",
  "statglass-proto",
  "statglass-schema",
+ "statglass-session",
+ "statglass-ssh",
  "statglass-store",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "uniffi",
 ]
 
