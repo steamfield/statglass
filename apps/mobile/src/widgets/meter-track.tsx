@@ -4,7 +4,7 @@ import {
   meterTrackModel,
 } from "@core/widget-models/meter-track";
 import type { Accent, ColorRef } from "@core/widget-models/tokens";
-import { createContext, use } from "react";
+import { use } from "react";
 import {
   type StyleProp,
   StyleSheet,
@@ -13,10 +13,8 @@ import {
   type ViewStyle,
 } from "react-native";
 import Svg, { Defs, Path, Pattern, Rect } from "react-native-svg";
+import { WidgetAccent } from "./accent";
 import { resolveColor } from "./colors";
-
-/** The module accent inherited by bars and swatches without an explicit accent. */
-export const WidgetAccent = createContext<Accent | undefined>(undefined);
 
 /** A color or hatched fill, sized by the meter, stack segment or swatch using it. */
 export function BarFill({

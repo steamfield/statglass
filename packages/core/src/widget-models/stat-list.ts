@@ -20,7 +20,7 @@ export interface StatListItem {
 
 /** What every layout shares. */
 export interface StatListBase {
-  items: StatListItem[];
+  items: readonly StatListItem[];
   /** Defaults to the accent in scope; only used by swatches. */
   accent?: Accent;
 }
@@ -39,3 +39,13 @@ export type StatListData = StatListBase &
       }
     | { layout: "grid"; hero?: never }
   );
+
+/** Speaks labelled values when a containing control groups its descendants. */
+export function describeStats(
+  items: readonly Pick<StatListItem, "label" | "value">[],
+  suffix?: string
+): string {
+  const details = items.map(({ label, value }) => `${label} ${value}`);
+  if (suffix) details.push(suffix);
+  return details.join(", ");
+}

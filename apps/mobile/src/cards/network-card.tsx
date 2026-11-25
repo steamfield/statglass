@@ -1,4 +1,4 @@
-import { formatRate } from "@core/format";
+import { networkCard } from "@core/popover/cards";
 import { ModuleCard } from "@/cards/module-card";
 import type { NetworkCardProps } from "@/cards/types";
 import { Text } from "@/ui/text";
@@ -6,33 +6,32 @@ import { MirrorBars } from "@/widgets/mirror-bars";
 import { StatList } from "@/widgets/stat-list";
 
 export function NetworkCard({ network, bars, ...chrome }: NetworkCardProps) {
-  const upload = formatRate(network.tx);
-  const download = formatRate(network.rx);
+  const card = networkCard(network, { chartLabel: bars?.ariaLabel });
   // Keep each rate together when Dynamic Type wraps the headline.
-  const headline = `↑\u00a0${upload.replace(" ", "\u00a0")} · ↓\u00a0${download.replace(" ", "\u00a0")}`;
+  const headline = card.headline
+    .replaceAll(" ", "\u00a0")
+    .replace("\u00a0·\u00a0", " · ");
   return (
     <ModuleCard
       {...chrome}
-      title="Network"
+      title={card.title}
       accent="net"
       headline={headline}
-      spokenHeadline={`Upload ${upload}, Download ${download}`}
-      spokenDetails={
-        bars ? `All interfaces, ${bars.ariaLabel}` : "All interfaces"
-      }
+      spokenHeadline={card.spokenHeadline}
+      spokenDetails={chrome.compact ? "" : card.spoken}
       headlineContent={
         chrome.compact ? null : (
           <StatList
             layout="grid"
-            items={[
-              { label: "↑ Upload", value: upload.replace(" ", "\u00a0") },
-              { label: "↓ Download", value: download.replace(" ", "\u00a0") },
-            ]}
+            items={card.items.map(({ label, joinedValue }) => ({
+              label,
+              value: joinedValue.replace(" ", "\u00a0"),
+            }))}
           />
         )
       }
     >
-      <Text role="caption">All interfaces</Text>
+      <Text role="caption">{card.subtitle}</Text>
       {bars && <MirrorBars {...bars} />}
     </ModuleCard>
   );

@@ -1,4 +1,4 @@
-import type { StatListData, StatListItem } from "@core/widget-models/stat-list";
+import type { StatListData } from "@core/widget-models/stat-list";
 import {
   StyleSheet,
   useColorScheme,
@@ -14,13 +14,6 @@ const DETAIL_ROLE = "label";
 
 // NativeWind drops the CSS font-variant-numeric property.
 const styles = StyleSheet.create({ figure: { fontVariant: ["tabular-nums"] } });
-
-/** Speaks labelled values when a containing control groups its descendants. */
-export function describeStats(
-  items: readonly Pick<StatListItem, "label" | "value">[]
-): string {
-  return items.map(({ label, value }) => `${label} ${value}`).join(", ");
-}
 
 /** Labelled figures as a wrapping strip or a grid of equal cells. */
 export function StatList({
