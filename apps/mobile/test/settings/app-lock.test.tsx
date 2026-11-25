@@ -94,6 +94,38 @@ test("enables only after authentication and keeps the stack covered until a succ
   expect(prompt).toHaveBeenCalledTimes(4);
 });
 
+test("enabling while the iOS prompt is still inactive does not lock or prompt again on return", async () => {
+  const changeState = mockAppState();
+  jest
+    .spyOn(LocalAuthentication, "getEnrolledLevelAsync")
+    .mockResolvedValue(LocalAuthentication.SecurityLevel.SECRET);
+  const prompt = jest
+    .spyOn(LocalAuthentication, "authenticateAsync")
+    .mockImplementationOnce(async () => {
+      await changeState("inactive");
+      return { success: true };
+    })
+    .mockResolvedValue({ success: false, error: "user_cancel" });
+  await renderWithProviders(
+    <AppLockGate>
+      <DeviceSettings />
+    </AppLockGate>
+  );
+  await waitFor(() => expect(lockSwitch()).toBeEnabled());
+
+  await fireEvent(lockSwitch(), "valueChange", true);
+  const settingStayedVisible =
+    screen.queryByRole("switch", { name: "App Lock" }) !== null;
+  await changeState("active");
+
+  expect(prompt).toHaveBeenCalledTimes(1);
+  expect(settingStayedVisible).toBe(true);
+  expect(
+    screen.queryByRole("header", { name: "StatGlass is locked" })
+  ).toBeNull();
+  expect(lockSwitch()).toBeChecked();
+});
+
 test("suppresses a repeat prompt when iOS returns from its cancelled authentication UI", async () => {
   const changeState = mockAppState();
   const pending =

@@ -33,8 +33,7 @@ export function HostRow({
   const status = useHostStatus(host.id);
   const vitals = useHostVitals(host.id);
   const pendingRemote = !host.is_local && status.isPending;
-  const offsetMs = host.is_local ? 0 : (status.data?.clock_offset_ms ?? 0);
-  const sparkline = useHostSparkline(host.id, pendingRemote ? null : offsetMs);
+  const sparkline = useHostSparkline(host.id);
   const connection = hostStatusLabel(
     host.is_local,
     status.isError ? null : (status.data ?? null)

@@ -2,7 +2,11 @@ import type { HostId } from "@core/generated/types";
 import { failureReason } from "@core/remote-errors";
 import { useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
-import { useHostListUpdates, useRefreshHosts } from "@/data/hosts";
+import {
+  type HostRetryFailure,
+  useHostListUpdates,
+  useRefreshHosts,
+} from "@/data/hosts";
 import { useHosts } from "@/data/hosts-list";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
@@ -23,14 +27,14 @@ export function HostsList({
   const refresh = useRefreshHosts();
   const { set } = usePhoneSettingsActions();
   const [refreshing, setRefreshing] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryErrors, setRetryErrors] = useState<HostRetryFailure[]>([]);
 
   async function onRefresh() {
     if (refreshing) return;
     setRefreshing(true);
-    setRetryError(null);
+    setRetryErrors([]);
     try {
-      setRetryError(await refresh(hosts.data ?? []));
+      setRetryErrors(await refresh(hosts.data ?? []));
     } finally {
       setRefreshing(false);
     }
@@ -65,15 +69,7 @@ export function HostsList({
             {failureReason(hosts.error, "Pull down to try again.")}
           </Text>
         )}
-        {retryError && (
-          <Text
-            role="body"
-            accessibilityRole="alert"
-            className="text-destructive!"
-          >
-            {retryError}
-          </Text>
-        )}
+        <RetryErrors failures={retryErrors} />
         {hosts.isSuccess && hosts.data.length === 0 && (
           <View className="gap-3 py-4">
             <Text role="title">No hosts yet</Text>
@@ -111,5 +107,24 @@ export function HostsList({
         ))}
       </View>
     </ScrollView>
+  );
+}
+
+function RetryErrors({ failures }: { failures: HostRetryFailure[] }) {
+  const [first] = failures;
+  if (!first) return null;
+  const multiple = failures.length > 1;
+  return (
+    <View className="gap-1">
+      <Text role="body" accessibilityRole="alert" className="text-destructive!">
+        {multiple
+          ? `Couldn't reconnect ${failures.length} hosts`
+          : `Couldn't reconnect ${first.displayName}: ${first.reason}`}
+      </Text>
+      {multiple &&
+        failures.map(({ id, displayName, reason }) => (
+          <Text key={id} role="caption">{`${displayName}: ${reason}`}</Text>
+        ))}
+    </View>
   );
 }

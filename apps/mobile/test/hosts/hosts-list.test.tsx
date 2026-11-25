@@ -1,4 +1,4 @@
-import type { HistoryRequest } from "@core/generated/types";
+import type { HistoryRequest, RemoteHostRecord } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
@@ -12,6 +12,7 @@ import {
 } from "expo-router/testing-library";
 import HostsLayout from "@/app/(hosts)/_layout";
 import HostsRoute from "@/app/(hosts)/index";
+import { useHostSparkline } from "@/data/hosts";
 import type { PhoneSettings } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
 import * as Chart from "@/widgets/stream-area";
@@ -211,6 +212,95 @@ test("updates status from transport events and pull to refresh retries only visi
   expect(history).toHaveBeenCalledWith(
     expect.objectContaining({ host: "remote-offline" })
   );
+});
+
+test.each([false, true])(
+  "reports and logs every failed host retry (multiple failures: %s)",
+  async (multiple) => {
+    const transport = demo();
+    if (multiple)
+      transport.pushRemoteStatus("remote-build", { state: "offline" });
+    const offlineError = new Error("The host timed out.");
+    const buildError = new Error("The network is unreachable.");
+    jest.spyOn(transport, "retryRemoteHost").mockImplementation(async (id) => {
+      throw id === "remote-offline" ? offlineError : buildError;
+    });
+    const warn = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    await renderHosts(transport, {
+      hostNames: {
+        "remote-build": "Build server",
+        "remote-offline": "Lab server",
+      },
+    });
+    await screen.findByRole("button", { name: /Lab server, Linux, Offline/ });
+    await pullToRefresh();
+
+    const summary = multiple
+      ? "Couldn't reconnect 2 hosts"
+      : "Couldn't reconnect Lab server: The host timed out.";
+    expect(
+      await screen.findByRole("alert", { name: summary })
+    ).toBeOnTheScreen();
+    const logged = [["remote-offline", offlineError]];
+    if (multiple) {
+      expect(
+        screen.getByText("Build server: The network is unreachable.")
+      ).toBeOnTheScreen();
+      expect(
+        screen.getByText("Lab server: The host timed out.")
+      ).toBeOnTheScreen();
+      logged.push(["remote-build", buildError]);
+    }
+    expect(warn.mock.calls).toHaveLength(logged.length);
+    for (const [id, error] of logged) {
+      expect(warn).toHaveBeenCalledWith(expect.any(String), id, error);
+    }
+  }
+);
+
+test("a sparkline requested by id waits for status and ends at the remote host's now", async () => {
+  const transport = demo();
+  const id = "remote-build";
+  transport.pushRemoteStatus(id, { clock_offset_ms: -10 * MINUTE });
+  const records = await transport.listRemoteHosts();
+  const status = Promise.withResolvers<RemoteHostRecord[]>();
+  const readStatus = jest
+    .spyOn(transport, "listRemoteHosts")
+    .mockReturnValue(status.promise);
+  const queryHistory = transport.queryHistory;
+  const requestedAt: number[] = [];
+  const history = jest
+    .spyOn(transport, "queryHistory")
+    .mockImplementation((request) => {
+      requestedAt.push(Date.now());
+      return queryHistory(request);
+    });
+  function SparklineScreen() {
+    useHostSparkline(id);
+    return null;
+  }
+  const context = getMockContext({ index: SparklineScreen });
+  await renderWithProviders(<ExpoRoot context={context} location="/" />, {
+    transport,
+  });
+  expect(history).not.toHaveBeenCalled();
+  await waitFor(() => expect(readStatus).toHaveBeenCalled());
+  await act(() => status.resolve(records));
+  await waitFor(() => expect(history).toHaveBeenCalled());
+  const [phoneNow] = requestedAt;
+  if (phoneNow === undefined)
+    throw new Error("Expected the history request time");
+  expect(history.mock.calls).toEqual([
+    [
+      expect.objectContaining({
+        host: id,
+        from_ms: phoneNow - 40 * MINUTE,
+        to_ms: phoneNow - 10 * MINUTE,
+      }),
+    ],
+  ]);
 });
 
 test("uses integer epoch milliseconds even with a fractional monotonic clock", async () => {

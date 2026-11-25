@@ -1,11 +1,17 @@
 import { BlurView } from "expo-blur";
 import { authenticateAsync } from "expo-local-authentication";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useReducer, useRef } from "react";
 import { AppState, Pressable, useColorScheme, View } from "react-native";
 import { usePhoneSettings } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
+import {
+  initialLockState,
+  isLockCovered,
+  nextLockState,
+  type UnlockResult,
+} from "./lock-state";
 
-async function authenticateToUnlock() {
+async function authenticateToUnlock(): Promise<UnlockResult> {
   try {
     const result = await authenticateAsync({
       promptMessage: "Unlock StatGlass",
@@ -19,88 +25,40 @@ async function authenticateToUnlock() {
 }
 
 function useAppLock(enabled: boolean) {
-  const lockedOnLaunch = useRef(enabled);
-  const requestUnlock = useRef<(() => void) | null>(null);
-  const [view, setView] = useState({
-    covered: enabled,
-    active: false,
-    prompting: false,
-  });
-  const [error, setError] = useState(false);
+  const [state, dispatch] = useReducer(nextLockState, enabled, (value) =>
+    initialLockState(value, AppState.currentState ?? "active")
+  );
+  const authenticating = useRef(false);
 
   useEffect(() => {
-    if (!enabled) {
-      lockedOnLaunch.current = false;
-      setError(false);
-      return;
-    }
+    const listener = AppState.addEventListener("change", (phase) =>
+      dispatch({ type: "app-state", phase })
+    );
+    dispatch({ type: "app-state", phase: AppState.currentState ?? "active" });
+    return () => listener.remove();
+  }, []);
 
-    let phase = AppState.currentState ?? "active";
-    let locked = lockedOnLaunch.current || phase !== "active";
-    let prompting = false;
-    let promptInactive = false;
-    let backgroundedDuringPrompt = false;
-    let disposed = false;
-
-    function updateView() {
-      setView({
-        covered: locked || phase !== "active",
-        active: phase === "active",
-        prompting,
-      });
-    }
-
-    async function unlock() {
-      if (!locked || prompting || phase !== "active") return;
-      prompting = true;
-      backgroundedDuringPrompt = false;
-      setError(false);
-      updateView();
-      const result = await authenticateToUnlock();
-      if (disposed) return;
-      prompting = false;
-      if (result === "unlocked" && !backgroundedDuringPrompt) locked = false;
-      setError(result === "failed");
-      updateView();
-      if (backgroundedDuringPrompt) void unlock();
-    }
-
-    const listener = AppState.addEventListener("change", (next) => {
-      if (phase === next) return;
-      phase = next;
-      switch (next) {
-        case "active":
-          // The iOS prompt can make the app briefly inactive on its own.
-          if (!promptInactive) void unlock();
-          promptInactive = false;
-          break;
-        case "background":
-          locked = true;
-          promptInactive = false;
-          backgroundedDuringPrompt = prompting;
-          break;
-        default:
-          promptInactive = prompting;
-          locked ||= !prompting;
-      }
-      updateView();
-    });
-    requestUnlock.current = () => void unlock();
-    updateView();
-    void unlock();
-
-    return () => {
-      disposed = true;
-      listener.remove();
-      requestUnlock.current = null;
-    };
+  useEffect(() => {
+    dispatch({ type: "enabled", enabled });
   }, [enabled]);
 
+  useEffect(() => {
+    const { prompt } = state;
+    if (!enabled || prompt !== "queued" || authenticating.current) return;
+    authenticating.current = true;
+    dispatch({ type: "prompt-started" });
+    void authenticateToUnlock().then((result) => {
+      authenticating.current = false;
+      dispatch({ type: "prompt-resolved", result });
+    });
+  }, [enabled, state]);
+
   return {
-    ...view,
-    covered: enabled && view.covered,
-    error,
-    unlock: () => requestUnlock.current?.(),
+    covered: enabled && isLockCovered(state),
+    active: state.phase === "active",
+    prompting: state.prompt !== "idle",
+    error: state.error,
+    unlock: () => dispatch({ type: "request-unlock" }),
   };
 }
 

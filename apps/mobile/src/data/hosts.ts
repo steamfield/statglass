@@ -87,9 +87,19 @@ export function useHostVitals(id: HostId) {
 const sparklineKey = (id: HostId) => historyKeys.recent(id, SPARKLINE_MS);
 
 /** The last thirty minutes of CPU history at the mirror's minute resolution. */
-export function useHostSparkline(id: HostId, offsetMs: number | null = 0) {
+export function useHostSparkline(id: HostId) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
+  const status = useHostStatus(id);
+  const local = useQuery({
+    queryKey: hostKeys.list(),
+    queryFn: () => transport.listHosts(),
+    select: (hosts) => hosts.some((host) => host.id === id && host.is_local),
+    enabled: focused && status.isSuccess && status.data === null,
+    // The visible hosts query and registry events already keep this cache fresh.
+    staleTime: Infinity,
+  });
+  const offsetMs = local.data ? 0 : (status.data?.clock_offset_ms ?? null);
   const now = useMemo(() => hostClock(offsetMs ?? 0), [offsetMs]);
   return useQuery({
     queryKey: sparklineKey(id),
@@ -119,7 +129,7 @@ export function useHostSparkline(id: HostId, offsetMs: number | null = 0) {
         ariaLabel: "CPU history over the last 30 minutes",
       };
     },
-    enabled: focused && offsetMs !== null,
+    enabled: focused && status.isSuccess && offsetMs !== null,
     refetchInterval: MINUTE_MS,
   });
 }
@@ -159,22 +169,42 @@ export function hostStatusLabel(
   return { text: "Offline", tone: "muted" } as const;
 }
 
+export interface HostRetryFailure {
+  id: HostId;
+  displayName: string;
+  reason: string;
+}
+
 /** Retry the offline rows that can reconnect, then refresh the visible list. */
 export function useRefreshHosts() {
   const transport = usePhoneTransport();
   const cache = useQueryClient();
   const statuses = useRemoteStatuses((records) => records);
   return async (hosts: readonly HostRecord[]) => {
-    const ids = new Set(hosts.map((host) => host.id));
-    const offline =
-      statuses.data?.filter(
-        ({ config, status }) =>
-          ids.has(config.id) &&
-          config.enabled &&
-          connectionKind(status) === "offline"
-      ) ?? [];
-    const retries = await Promise.allSettled(
-      offline.map(({ config }) => unwrap(transport.retryRemoteHost(config.id)))
+    const offline = new Set(
+      statuses.data
+        ?.filter(
+          ({ config, status }) =>
+            config.enabled && connectionKind(status) === "offline"
+        )
+        .map(({ config }) => config.id)
+    );
+    const failures = await Promise.all(
+      hosts
+        .filter(({ id }) => offline.has(id))
+        .map(async ({ id, display_name }): Promise<HostRetryFailure | null> => {
+          try {
+            await unwrap(transport.retryRemoteHost(id));
+            return null;
+          } catch (error) {
+            console.warn("Could not reconnect host", id, error);
+            return {
+              id,
+              displayName: display_name,
+              reason: failureReason(error, "Pull down to try again."),
+            };
+          }
+        })
     );
     await Promise.all([
       cache.invalidateQueries({ queryKey: hostKeys.list() }),
@@ -184,9 +214,6 @@ export function useRefreshHosts() {
         cache.invalidateQueries({ queryKey: sparklineKey(id) }),
       ]),
     ]);
-    const failed = retries.find((retry) => retry.status === "rejected");
-    return failed
-      ? `Couldn’t reconnect. ${failureReason(failed.reason, "Pull down to try again.")}`
-      : null;
+    return failures.filter((failure) => failure !== null);
   };
 }
