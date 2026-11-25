@@ -52,14 +52,18 @@ export function PairScreen() {
     else router.replace("/");
   }
 
-  if (starting || error) {
+  // A started core keeps the flow mounted: a successful pair announces the
+  // new roster before the flow reaches its paired step, and the brief
+  // hosts-but-no-transport window must not unmount and reset it.
+  const waiting = starting && core === null;
+  if (waiting || error) {
     return (
       <ScrollView
         className="flex-1 bg-background"
         contentContainerClassName="px-6 pt-4 pb-safe-or-6"
         contentInsetAdjustmentBehavior="automatic"
       >
-        {starting ? (
+        {waiting ? (
           <Text role="body">Starting StatGlass…</Text>
         ) : (
           <StartupFailurePanel />

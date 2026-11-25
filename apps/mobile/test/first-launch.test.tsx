@@ -139,6 +139,10 @@ test("approval takes a fresh install to the paired host on the native transport"
         } satisfies PairingPreview);
       case "pair":
         paired = true;
+        // Rust announces the new roster before the pair call returns.
+        native.emit("onCoreEvent", {
+          event: JSON.stringify({ kind: "hosts_changed", hosts: [host] }),
+        });
         return ok({ id: host.id, name: host.display_name });
       case "list_remote_hosts":
         return ok([]);
