@@ -14,7 +14,7 @@ repos:
       - id: trailing-whitespace
         # Binary protocol fixtures, captured /proc and /sys trees and upstream font
         # licenses and vendored sources are byte-preserved.
-        exclude: '(^packages/core/src/generated/|^src/desktop-transport/commands\.ts$|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/)'
+        exclude: '(^packages/core/src/generated/|^src/desktop-transport/commands\.ts$|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/|^patches/)'
       - id: end-of-file-fixer
         # Binary protocol fixtures, captured /proc and /sys trees and upstream font
         # licenses and vendored sources are byte-preserved.
