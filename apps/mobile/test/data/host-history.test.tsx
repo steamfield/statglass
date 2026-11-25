@@ -376,6 +376,32 @@ test("keeps the selected range through reconnect and makes no history reads whil
   expect((request?.to_ms ?? 0) - (request?.from_ms ?? 0)).toBe(7 * DAY_MS);
 });
 
+test("a failed status refetch keeps the page and its selected range", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-dashboard"],
+    autoTick: false,
+  });
+  const remote = (await transport.listRemoteHosts()).find(
+    ({ status }) => status.state === "connected"
+  );
+  if (!remote) throw new Error("The demo needs a reachable host");
+  const host = remote.config.id;
+  await renderWithProviders(modulePage(host), { transport });
+  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await layout(300);
+  await fireEvent.press(screen.getByRole("tab", { name: "Last 7 days" }));
+  await screen.findByText(/com\.docker\.backend at/);
+
+  const list = jest
+    .spyOn(transport, "listRemoteHosts")
+    .mockRejectedValue(new Error("status read failed"));
+  await act(() => transport.pushRemoteStatus(host, { state: "connecting" }));
+  await waitFor(() => expect(list).toHaveBeenCalled());
+  await act(() => jest.advanceTimersByTimeAsync(5000));
+  expect(screen.getByRole("tab", { name: "Last 7 days" })).toBeSelected();
+  expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen();
+});
+
 test.each(["unknown", "extension"] as const)(
   "waits for an active app when it starts in %s",
   async (initialState) => {

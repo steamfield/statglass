@@ -4,8 +4,6 @@ import { AccessibilityInfo, Platform, View } from "react-native";
 import { type useConnection, useLastFrame } from "@/data/live";
 import { Text } from "@/ui/text";
 
-export { useConnection } from "@/data/live";
-
 function useFrameAge(lastFrame: number | null) {
   const [now, setNow] = useState(() => performance.now());
   const live = lastFrame !== null;

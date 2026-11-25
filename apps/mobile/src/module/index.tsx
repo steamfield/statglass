@@ -162,7 +162,8 @@ function ModuleHistory({
 
 function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
   const status = useRemoteStatus(host);
-  if (status.isPending || status.isError) {
+  // A failed refetch keeps the cached status, so the page (and its range) stays mounted.
+  if (status.isPending || status.isLoadingError) {
     return (
       <View className="flex-1 bg-background px-4 py-5">
         <Stack.Screen options={{ title: HISTORY_MODULES[module].title }} />

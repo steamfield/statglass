@@ -23,6 +23,7 @@ import { PowerCard } from "@/cards/power-card";
 import { UnavailableCard } from "@/cards/unavailable-card";
 import {
   connectionStatusError,
+  useConnection,
   useHostLive,
   useRemoteStatus,
 } from "@/data/live";
@@ -38,7 +39,7 @@ import {
   cardActions,
   cardModuleStates,
 } from "./card-stack";
-import { ConnectionPill, useConnection } from "./connection-pill";
+import { ConnectionPill } from "./connection-pill";
 
 const CardSlot = memo(
   function CardSlot({ item }: { item: CardStackItem }) {
