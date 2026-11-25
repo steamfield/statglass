@@ -6,20 +6,32 @@ import {
   formatRate,
   formatWatts,
 } from "@core/format";
-import type { HostId, Module, SeriesSelector } from "@core/generated/types";
+import {
+  type HostId,
+  type Module,
+  RETENTION_DAYS,
+  type SeriesSelector,
+} from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { historyUnavailable } from "@core/history-state";
 import { hostClock } from "@core/host-clock";
+import {
+  BATTERY_HERO,
+  CPU_HERO,
+  GPU_HERO,
+  NETWORK_HERO,
+  POWER_HERO,
+} from "@core/module-hero";
 import type { PhoneRemoteHostStatus } from "@core/phone-connection";
 import type { PopoverCard } from "@core/popover/card-order";
 import { historyKeys } from "@core/query-keys";
 import { failureReason, remoteQueryText } from "@core/remote-errors";
-import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
+import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import type { Accent } from "@core/widget-models/tokens";
 import { CancelledError, useQuery } from "@tanstack/react-query";
 import { useIsFocused } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shallow } from "zustand/shallow";
 import { useFocusDemand } from "./demand";
 import {
@@ -44,42 +56,48 @@ export const HISTORY_MODULES: Record<PopoverCard, HistoryModule> = {
   cpu: {
     title: "CPU",
     accent: "cpu",
-    series: [{ key: "cpu.total", label: "CPU usage" }],
+    series: CPU_HERO.keys.map((key) => ({
+      key,
+      label: key === "cpu.total" ? "Total" : "System",
+    })),
     format: formatPercent,
     ceiling: 100,
   },
   memory: {
     title: "Memory",
     accent: "mem",
-    series: [{ key: "mem.used", label: "Memory used" }],
+    series: [
+      { key: "mem.used", label: "Memory used" },
+      { key: "mem.cached", label: "Cached files" },
+    ],
     format: formatBytes,
   },
   gpu: {
     title: "GPU",
     accent: "gpu",
-    series: [{ key: "gpu.util", label: "GPU usage" }],
+    series: GPU_HERO.keys.map((key) => ({ key, label: "Utilization" })),
     format: formatPercent,
     ceiling: 100,
   },
   power: {
-    title: "Power",
+    title: "Power & Sensors",
     accent: "power",
-    series: [{ key: "power.system", label: "System power" }],
+    series: POWER_HERO.keys.map((key) => ({ key, label: "System power" })),
     format: formatWatts,
   },
   network: {
     title: "Network",
     accent: "net",
     series: [
-      { key: "net.rx_total", label: "Download" },
-      { key: "net.tx_total", label: "Upload" },
+      { key: NETWORK_HERO.chart.downKey, label: NETWORK_HERO.chart.downLabel },
+      { key: NETWORK_HERO.chart.upKey, label: NETWORK_HERO.chart.upLabel },
     ],
     format: formatRate,
   },
   battery: {
     title: "Battery",
     accent: "battery",
-    series: [{ key: "battery.charge", label: "Battery charge" }],
+    series: [{ key: BATTERY_HERO.keys[0], label: "Battery charge" }],
     format: formatPercent,
     ceiling: 100,
   },
@@ -90,9 +108,10 @@ export function isHistoryModule(value: string): value is PopoverCard {
   return Object.hasOwn(HISTORY_MODULES, value);
 }
 
-/** The desktop range presets offered in the phone's range control. */
-export const PHONE_RANGES = RANGE_PRESETS.filter(({ ms }) =>
-  [HOUR_MS, DAY_MS, 7 * DAY_MS, 30 * DAY_MS].includes(ms)
+// The phone does not receive per-host retention. Use the shortest setting.
+const PHONE_RETENTION_MS = Math.min(...RETENTION_DAYS) * DAY_MS;
+export const PHONE_RANGES = RANGE_PRESETS.filter(
+  ({ ms }) => ms <= PHONE_RETENTION_MS
 );
 
 export type HistoryRange = {
@@ -258,6 +277,18 @@ export function useModuleHistory(
     module,
     connected
   );
+  const windowMs = range.toMs - range.fromMs;
+  const previousWindow = useRef(windowMs);
+  const { isEnabled, isFetching, isSuccess, refetch } = query;
+  useEffect(() => {
+    const changed = previousWindow.current !== windowMs;
+    previousWindow.current = windowMs;
+    // A new cache entry fetches by itself. Refresh a freshly cached range
+    // when the user returns to it, while still reusing it on a remount.
+    if (changed && isEnabled && isSuccess && !isFetching) {
+      void refetch({ cancelRefetch: false });
+    }
+  }, [isEnabled, isFetching, isSuccess, refetch, windowMs]);
   const displayedRange = query.data?.range ?? range;
   const data = connected ? query.data?.page : undefined;
   const grid = useMemo(
@@ -268,11 +299,6 @@ export function useModuleHistory(
     [data, keys, displayedRange]
   );
   return { ...query, data, grid, displayedRange };
-}
-
-/** Project event rows from the shared reply. The chart presents its read state. */
-export function useEvents(history: ReturnType<typeof useModuleHistory>) {
-  return { data: history.data?.events, isSuccess: history.isSuccess };
 }
 
 /** Current readings have their own subscription and do not depend on history. */

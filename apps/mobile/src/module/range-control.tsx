@@ -1,10 +1,17 @@
 import { windowLabel } from "@core/live-window";
-import { DAY_MS } from "@core/time-grid";
-import { Pressable, View } from "react-native";
+import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
+import { useState } from "react";
+import { ScrollView } from "react-native";
 import { PHONE_RANGES } from "@/data/history";
-import { Text } from "@/ui/text";
+import { GroupedList } from "@/ui/grouped-list";
+import { ListRow } from "@/ui/list-row";
+import { SegmentedControl } from "@/ui/segmented-control";
+import { Sheet } from "@/ui/sheet";
 
-/** Choose the duration shared by the module chart and its events. */
+const FIVE_MINUTES = 5 * MINUTE_MS;
+const MORE = "more";
+
+/** Choose the duration shared by history, statistics and events. */
 export function RangeControl({
   value,
   onChange,
@@ -12,34 +19,38 @@ export function RangeControl({
   value: number;
   onChange: (ms: number) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
+  const quickRange = value === FIVE_MINUTES || value === HOUR_MS;
   return (
-    <View
-      accessibilityRole="tablist"
-      accessibilityLabel="History range"
-      className="flex-row flex-wrap gap-1 rounded-xl border border-border bg-card p-1"
-    >
-      {PHONE_RANGES.map(({ label, ms }) => {
-        const selected = ms === value;
-        return (
-          <Pressable
-            key={ms}
-            accessibilityRole="tab"
-            accessibilityLabel={label}
-            accessibilityState={{ selected }}
-            className={`min-h-[44px] min-w-[44px] grow items-center justify-center rounded-lg px-2 py-1 ${selected ? "bg-raised" : "active:opacity-70"}`}
-            onPress={() => onChange(ms)}
-          >
-            <Text
-              variant="label"
-              className={selected ? "font-semibold! text-foreground" : ""}
-            >
-              {ms === DAY_MS
-                ? "24 h"
-                : windowLabel(ms).replace(/(\d)([hd])/, "$1 $2")}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+    <>
+      <SegmentedControl<number | typeof MORE>
+        segments={[
+          { value: FIVE_MINUTES, label: "5m" },
+          { value: HOUR_MS, label: "1h" },
+          { value: MORE, label: quickRange ? "More" : windowLabel(value) },
+        ]}
+        value={quickRange ? value : MORE}
+        onChange={(next) => (next === MORE ? setOpen(true) : onChange(next))}
+        accessibilityLabel="History range"
+      />
+      <Sheet visible={open} title="History range" onClose={close}>
+        <ScrollView contentContainerClassName="pb-4">
+          <GroupedList>
+            {PHONE_RANGES.map(({ label, ms }) => (
+              <ListRow
+                key={ms}
+                title={label}
+                accessory={ms === value ? "checkmark" : "none"}
+                onPress={() => {
+                  close();
+                  onChange(ms);
+                }}
+              />
+            ))}
+          </GroupedList>
+        </ScrollView>
+      </Sheet>
+    </>
   );
 }

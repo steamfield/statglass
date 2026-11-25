@@ -1,158 +1,248 @@
 import { commandError, errorTone } from "@core/command-error";
-import type { HostId } from "@core/generated/types";
-import type { PhoneRemoteHostStatus } from "@core/phone-connection";
+import { formatPercent } from "@core/format";
+import type {
+  ProcessSort,
+  ProcessView,
+  SeriesHistoryStats,
+} from "@core/generated/types";
+import {
+  BATTERY_HERO,
+  CPU_HERO,
+  GPU_HERO,
+  memoryUsedHero,
+  NETWORK_HERO,
+  POWER_HERO,
+} from "@core/module-hero";
 import type { PopoverCard } from "@core/popover/card-order";
+import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
-import { Stack } from "expo-router";
-import { type JSX, useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { useMemo, useState } from "react";
+import { View } from "react-native";
 import {
   HISTORY_MODULES,
   historyReadError,
-  useEvents,
   useHistoryRange,
   useModuleHistory,
   useModuleLiveValues,
 } from "@/data/history";
 import { useHosts } from "@/data/hosts-list";
 import { remoteStatusLine } from "@/data/live";
-import { EventsList } from "@/module/events-list";
-import { historyChart } from "@/module/history-chart";
-import { RangeControl } from "@/module/range-control";
-import { ScrubbableChart } from "@/module/scrubbable-chart";
-import { Text } from "@/ui/text";
+import { LiveProcessTable } from "@/module/live-process-table";
+import { type Ceiling, ModuleChart } from "@/module/module-chart";
+import { ModuleFrame } from "@/module/module-frame";
+import { ModuleNotice } from "@/module/module-notice";
+import { StatStrip } from "@/module/stat-strip";
 import type { ModulePageProps } from "./index";
 
-function ModuleLiveValues({
+const PROCESS_SORTS = {
+  cpu: "cpu",
+  memory: "memory",
+  gpu: "gpu",
+  power: "energy",
+  network: "net_total",
+  battery: "energy",
+} satisfies Record<PopoverCard, ProcessSort>;
+const NO_STATS: readonly SeriesHistoryStats[] = [];
+
+function LiveStats({
   host,
   module,
   remote,
-}: {
-  host: HostId;
-  module: PopoverCard;
-  remote: PhoneRemoteHostStatus | undefined;
+  stats,
+}: Pick<ModulePageProps, "host" | "module" | "remote"> & {
+  stats: readonly SeriesHistoryStats[];
 }) {
   const values = useModuleLiveValues(host, module, remote);
-  const { series, format } = HISTORY_MODULES[module];
-  if (values.every((value) => value === null)) return null;
-  const readings = series.map(({ label }, index) => {
-    const formatted = format(values[index] ?? null);
-    return series.length === 1 ? formatted : `${label} ${formatted}`;
-  });
+  const { series, format, ceiling, title } = HISTORY_MODULES[module];
+  const [lead, ...items] = series.map(({ key, label }, i) => ({
+    label,
+    value: format(values[i] ?? null),
+    seriesKey: key,
+  }));
+  const formatAvg =
+    ceiling === 100
+      ? (value: number) => formatPercent(value, { decimals: 1 })
+      : format;
   return (
-    <Text variant="label" className="tabular-nums">
-      {`Now ${readings.join(" · ")}`}
-    </Text>
+    <StatStrip
+      lead={{
+        ...lead,
+        label: lead?.label ?? title,
+        value: lead?.value ?? format(null),
+        format,
+        formatAvg,
+      }}
+      items={items}
+      stats={stats}
+    />
   );
 }
 
-function ModuleHistory({
+function historyNotice(
+  history: ReturnType<typeof useModuleHistory>,
+  hostName: string | undefined,
+  hasSamples: boolean
+) {
+  const error = commandError(history.error)?.kind;
+  const retryable =
+    error === "remote_busy" ||
+    error === "remote_unreachable" ||
+    error === "internal";
+  const retryingBusy =
+    commandError(history.failureReason)?.kind === "remote_busy";
+  if (
+    history.isPending ||
+    (history.isFetching && (retryable || retryingBusy))
+  ) {
+    return <ModuleNotice message="Loading history…" />;
+  }
+  if (history.isError) {
+    return (
+      <ModuleNotice
+        message={historyReadError(history.error, hostName)}
+        error={errorTone(history.error) === "error"}
+        onRetry={retryable ? () => void history.refetch() : undefined}
+      />
+    );
+  }
+  if (history.isSuccess && !hasSamples)
+    return <ModuleNotice message="No samples in this range" />;
+  return null;
+}
+
+function heroPlot(
+  module: PopoverCard,
+  values: Record<string, (number | null)[]>,
+  memoryBytes: number | undefined
+) {
+  const { series: definitions, ceiling, format } = HISTORY_MODULES[module];
+  if (module === "network") {
+    return {
+      lines: definitions.map(({ key }, index) => ({
+        key,
+        values: values[key] ?? [],
+        step: index === 0 ? (1 as const) : (2 as const),
+      })),
+      scale: { min: NETWORK_HERO.chart.minCeiling },
+    };
+  }
+  const spec = {
+    cpu: CPU_HERO,
+    gpu: GPU_HERO,
+    memory: memoryUsedHero(memoryBytes ?? 0, format),
+    power: POWER_HERO,
+    battery: BATTERY_HERO,
+  }[module];
+  const scale: Ceiling =
+    ceiling ??
+    (module === "memory"
+      ? memoryBytes || { min: 1, ladder: "binary" }
+      : { min: POWER_HERO.yAxis.min });
+  return { lines: spec.lines(values), scale };
+}
+
+export function GenericModulePage({
   host,
   module,
+  range: defaultRange,
   remote,
-  range: initialWindowMs,
 }: ModulePageProps) {
-  const [windowMs, setWindowMs] = useState(initialWindowMs);
+  const [windowMs, setWindowMs] = useState(defaultRange);
   const [width, setWidth] = useState<number | null>(null);
-  const connected = !remote || remote.state === "connected";
-  const hosts = useHosts();
-  const hostName = hosts.data?.find(({ id }) => id === host)?.display_name;
-  const range = useHistoryRange(windowMs, remote?.clock_offset_ms ?? 0);
+  const hostRecord = useHosts().data?.find(({ id }) => id === host);
+  const info = hostRecord?.info;
+  const connected = remote === undefined || remote.state === "connected";
+  const clockOffset = remote?.clock_offset_ms ?? 0;
+  const range = useHistoryRange(windowMs, clockOffset);
   const history = useModuleHistory(host, module, range, width, connected);
-  const events = useEvents(history);
-  const { title, series: definitions, format } = HISTORY_MODULES[module];
-  const { data, displayedRange, grid, isPending } = history;
-  const { chart, sampleCount } = useMemo(
-    () =>
-      historyChart(
-        module,
-        displayedRange,
-        { data, grid, isPending },
-        events.data
-      ),
-    [data, displayedRange, events.data, grid, isPending, module]
+  const { data, displayedRange, grid } = history;
+  const {
+    title,
+    accent,
+    series: definitions,
+    format,
+  } = HISTORY_MODULES[module];
+  const view = useMemo<ProcessView>(
+    () => ({
+      ...FULL_TABLE,
+      ...(module === "gpu" && { gpu: true }),
+      ...(module === "network" && { network: true }),
+    }),
+    [module]
   );
-  const hasSamples = chart.series.some(({ values }) =>
+  const plot = useMemo(
+    () => heroPlot(module, grid?.values ?? {}, info?.mem_total_bytes),
+    [module, grid, info?.mem_total_bytes]
+  );
+  const series = useMemo(
+    () =>
+      plot.lines.map((line) => ({
+        ...line,
+        readings: grid?.values[line.key],
+        label:
+          definitions.find(({ key }) => key === line.key)?.label ?? line.key,
+      })),
+    [definitions, grid, plot.lines]
+  );
+  const hasSamples = series.some(({ values }) =>
     values.some((value) => value !== null)
   );
-  const showDate = windowMs >= DAY_MS;
-  const failure = commandError(history.error)?.kind;
-  const retryable =
-    failure === "remote_busy" ||
-    failure === "remote_unreachable" ||
-    failure === "internal";
-  const busyRetry = commandError(history.failureReason)?.kind === "remote_busy";
-  const loading =
-    history.isPending || (history.isFetching && (retryable || busyRetry));
-
-  return (
-    <>
-      <Stack.Screen options={{ title }} />
-      <EventsList events={events} showDate={showDate}>
-        <RangeControl value={windowMs} onChange={setWindowMs} />
-        {!connected && (
-          <Text variant="label" accessibilityLiveRegion="polite">
-            {remoteStatusLine(remote)?.label ?? "Reconnecting"}
-          </Text>
-        )}
-        {connected && (
-          <View className="gap-2 rounded-xl border border-border bg-card p-3">
-            <ModuleLiveValues host={host} module={module} remote={remote} />
-            <View
-              testID="history-plot-layout"
-              onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
-            >
-              <ScrubbableChart
-                key={windowMs}
-                chart={chart}
-                sampleCount={sampleCount}
-                labels={definitions.map(({ label }) => label)}
-                format={format}
-                showDate={showDate}
-              />
-            </View>
-            {loading && (
-              <Text variant="label" accessibilityLiveRegion="polite">
-                Loading history…
-              </Text>
-            )}
-            {history.isError && !loading && (
-              <Text
-                variant="label"
-                accessibilityLiveRegion="polite"
-                accessibilityRole={
-                  errorTone(history.error) === "error" ? "alert" : undefined
-                }
-                className={
-                  errorTone(history.error) === "error" ? "text-destructive" : ""
-                }
-              >
-                {historyReadError(history.error, hostName)}
-              </Text>
-            )}
-            {retryable && history.isError && !loading && (
-              <Pressable
-                accessibilityRole="button"
-                className="min-h-[44px] min-w-[44px] justify-center self-start px-2 active:opacity-70"
-                onPress={() => void history.refetch()}
-              >
-                <Text variant="label" className="text-link">
-                  Retry
-                </Text>
-              </Pressable>
-            )}
-            {history.isSuccess && !hasSamples && (
-              <Text variant="label" accessibilityLiveRegion="polite">
-                No samples in this range
-              </Text>
-            )}
-          </View>
-        )}
-      </EventsList>
-    </>
+  const events = useMemo(
+    () =>
+      data?.events.filter(
+        ({ ts_ms }) =>
+          ts_ms >= displayedRange.fromMs && ts_ms <= displayedRange.toMs
+      ),
+    [data?.events, displayedRange]
   );
-}
-
-export function GenericModulePage(props: ModulePageProps): JSX.Element {
-  return <ModuleHistory {...props} />;
+  return (
+    <ModuleFrame
+      title={title}
+      subtitle={info?.chip ?? info?.model ?? null}
+      range={windowMs}
+      onRange={setWindowMs}
+      events={events}
+      showDate={windowMs >= DAY_MS}
+    >
+      {connected ? (
+        <>
+          <LiveStats
+            host={host}
+            module={module}
+            remote={remote}
+            stats={data?.stats ?? NO_STATS}
+          />
+          <View
+            className="gap-2 rounded-xl border border-border bg-card p-3"
+            testID="history-plot-layout"
+            onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
+          >
+            <ModuleChart
+              key={windowMs}
+              series={series}
+              gaps={data?.gaps ?? []}
+              ceiling={plot.scale}
+              format={format}
+              range={displayedRange}
+              nowMs={Math.max(displayedRange.toMs, range.toMs)}
+              events={events ?? []}
+              clockOffsetMs={clockOffset}
+              height={160}
+              accent={accent}
+              module={module}
+              label={`${title} history`}
+              grid={grid}
+              loading={history.isPending}
+            />
+            {historyNotice(history, hostRecord?.display_name, hasSamples)}
+          </View>
+        </>
+      ) : (
+        <ModuleNotice
+          message={remoteStatusLine(remote)?.label ?? "Reconnecting"}
+        />
+      )}
+      <LiveProcessTable host={host} sort={PROCESS_SORTS[module]} view={view} />
+    </ModuleFrame>
+  );
 }
