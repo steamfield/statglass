@@ -23,7 +23,7 @@ it("shows a fresh QR, included hosts, and the unavailable reason on open", async
   ).toBeVisible();
   expect(screen.getByText("build-server")).toBeVisible();
   expect(screen.getByText("Office server")).toBeVisible();
-  expect(screen.getByText("This host uses an SSH jump host.")).toBeVisible();
+  expect(screen.getByText("SSH uses a jump host.")).toBeVisible();
   await user.keyboard("{Escape}");
   host = "Backup Mac";
   await user.click(screen.getByRole("button", { name: "Update iPhone" }));

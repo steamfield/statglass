@@ -471,8 +471,27 @@ export const commands = {
 	 *  or the authorized keys file cannot be edited.
 	 */
 	revokeDevice: (tag: string) => typedError<boolean, CommandError>(__TAURI_INVOKE("revoke_device", { tag })),
+	/**
+	 *  Builds a phone update and queues keys for any newly offered host.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns a command error if the QR or the new installs cannot be prepared.
+	 */
 	handoverBundleStart: () => typedError<HandoverOffer, CommandError>(__TAURI_INVOKE("handover_bundle_start")),
+	/**
+	 *  # Errors
+	 *
+	 *  Returns a handover error if the intent log cannot be read.
+	 */
 	deviceIntents: () => typedError<DeviceIntentInfo[], CommandError>(__TAURI_INVOKE("device_intents")),
+	/**
+	 *  Retries the current pending intents and waits for their outcomes to be recorded.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns a handover error if the worker or intent log is unavailable.
+	 */
 	retryDeviceIntents: () => typedError<null, CommandError>(__TAURI_INVOKE("retry_device_intents")),
 };
 

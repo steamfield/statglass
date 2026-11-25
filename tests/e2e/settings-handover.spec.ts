@@ -54,9 +54,7 @@ test("shows pending device updates and a fresh iPhone update sheet", async ({
   ).toBeVisible();
   await expect(sheet.getByText("Lab Mini")).toBeVisible();
   await expect(sheet.getByText("Office server")).toBeVisible();
-  await expect(
-    sheet.getByText("This host uses an SSH jump host.")
-  ).toBeVisible();
+  await expect(sheet.getByText("SSH uses a jump host.")).toBeVisible();
   await screenshotThemes(page, sheet, info, "update-iphone");
   await page.keyboard.press("Escape");
   await expect(sheet).toBeHidden();

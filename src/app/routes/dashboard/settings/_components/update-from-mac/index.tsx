@@ -1,5 +1,6 @@
 import { commandErrorText } from "@core/command-error";
-import type { HandoverOffer, HandoverReasonInfo } from "@core/generated/types";
+import type { HandoverOffer } from "@core/generated/types";
+import { handoverReasonText } from "@core/remote-errors";
 import { unwrap } from "@core/transport";
 import { useMutation } from "@tanstack/react-query";
 import { InlineMessage } from "~/components/inline-message";
@@ -16,14 +17,6 @@ import {
 import { useTransport } from "~/lib/transport-context";
 
 import { PairingQr } from "../paired-devices/pairing-offer-view";
-
-const reasonText: Record<HandoverReasonInfo, string> = {
-  proxy_jump: "This host uses an SSH jump host.",
-  proxy_command: "This host uses an SSH proxy command.",
-  lan_literal: "This host uses a local IP address without a Tailscale route.",
-  no_host_key: "This Mac has no saved SSH host key for this host.",
-  unresolvable: "This Mac couldn’t prepare this host for your iPhone.",
-};
 
 function OfferError({
   message,
@@ -77,7 +70,7 @@ function HostLists({
               >
                 <p>{host.name}</p>
                 <InlineMessage tone="note">
-                  {reasonText[host.reason]}
+                  {handoverReasonText(host.reason)}
                 </InlineMessage>
               </li>
             ))}

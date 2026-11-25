@@ -103,13 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unavailable: Vec::new(),
         issued_ms,
     };
-    let text = encode_bundle(&bundle);
-    if text == "SGB1:" {
-        // The phase 9 scaffold codec emits only the prefix.
-        println!("{}", serde_json::to_string(&bundle)?);
-    } else {
-        println!("{text}");
-    }
+    println!("{}", encode_bundle(&bundle));
     Ok(())
 }
 
