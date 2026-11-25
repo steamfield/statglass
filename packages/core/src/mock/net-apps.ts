@@ -5,7 +5,7 @@
  * chart draws is what the Apps table attributes.
  *
  * Two recurring bursts are added on top of the walk (`NET_BURSTS`), each
- * charged to one app: a Docker Desktop download every 5 minutes, one of
+ * charged to one app: a Docker Desktop download every 7 minutes, one of
  * which ends 60 s before the mock starts (so a fresh Network page shows it),
  * and a short-lived `curl`. The rest of each row is shared out with slowly
  * varying weights (Google Chrome, Safari, Claude Code, Dropbox, other apps);
@@ -70,9 +70,9 @@ export const NET_BURSTS: readonly NetBurst[] = [
   {
     app: "Docker Desktop",
     offsetMs: -90_000,
-    periodMs: 300_000,
+    periodMs: 420_000,
     durationMs: 30_000,
-    rxBps: 80e6,
+    rxBps: 30e6,
     txBps: 0.3e6,
   },
   {

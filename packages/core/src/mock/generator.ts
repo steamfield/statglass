@@ -294,9 +294,9 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   }
 
   // Network: a few MB/s of browsing and sync on a 2.4 Gb/s Wi-Fi 6E link, under
-  // the app bursts in net-apps.ts (an 80 MB/s Docker pull every 5 minutes).
-  add("network", "net.rx", { iface: "en0" }, 4.2e6, { noise: 2.6e6 });
-  add("network", "net.tx", { iface: "en0" }, 0.6e6, { noise: 0.4e6 });
+  // the app bursts in net-apps.ts (a 30 MB/s Docker pull every 7 minutes).
+  add("network", "net.rx", { iface: "en0" }, 1.6e6, { noise: 1.2e6 });
+  add("network", "net.tx", { iface: "en0" }, 0.3e6, { noise: 0.2e6 });
   add("network", "net.link_rate", { iface: "en0" }, 2.4e9, { cadence: 60 });
   if (flags.vpn) {
     add("network", "net.rx", { iface: "en7" }, 2.5e6, { noise: 1e6 });
