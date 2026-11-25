@@ -1,4 +1,4 @@
-import type { StatListData } from "@core/widget-models/stat-list";
+import type { StatListBase, StatListData } from "@core/widget-models/stat-list";
 import {
   StyleSheet,
   useColorScheme,
@@ -15,27 +15,37 @@ const DETAIL_ROLE = "label";
 // NativeWind drops the CSS font-variant-numeric property.
 const styles = StyleSheet.create({ figure: { fontVariant: ["tabular-nums"] } });
 
-/** Labelled figures as a wrapping strip or a grid of equal cells. */
+const ROW = "flex-row flex-wrap items-center justify-between gap-x-2";
+const LAYOUT = {
+  strip: {
+    container: "flex-row flex-wrap items-end gap-x-5 gap-y-3",
+    row: "shrink gap-0.5",
+    value: FIGURE_ROLE,
+  },
+  grid: {
+    container: "flex-row gap-2",
+    row: "min-w-0 flex-1 gap-0.5",
+    value: "value",
+  },
+  rows: { container: "gap-2", row: ROW, value: "value" },
+  legend: { container: "gap-1", row: ROW, value: "caption" },
+} as const;
+
+/** Labelled figures in a wrapping strip, equal cells or stacked legend rows. */
 export function StatList({
   items,
   layout = "strip",
   hero,
   accent,
-}: StatListData) {
-  const grid = layout === "grid";
+}: StatListData | (StatListBase & { layout: "legend"; hero?: never })) {
   const { fontScale } = useWindowDimensions();
-  const gridRows = grid && fontScale >= 1.5;
+  const { container, row, value } =
+    LAYOUT[layout === "grid" && fontScale >= 1.5 ? "rows" : layout];
   const colors = themeColors[useColorScheme() ?? "light"];
+  const valueClassName =
+    layout === "legend" ? "ml-auto shrink text-right" : "shrink";
   return (
-    <View
-      className={
-        gridRows
-          ? "gap-2"
-          : grid
-            ? "flex-row gap-2"
-            : "flex-row flex-wrap items-end gap-x-5 gap-y-3"
-      }
-    >
+    <View className={container}>
       {hero && (
         <View className="shrink">
           <Text variant="caption">{hero.label}</Text>
@@ -46,25 +56,16 @@ export function StatList({
         </View>
       )}
       {items.map((item) => (
-        <View
-          key={item.label}
-          className={
-            gridRows
-              ? "flex-row flex-wrap items-baseline justify-between gap-x-2"
-              : grid
-                ? "min-w-0 flex-1 gap-0.5"
-                : "shrink gap-0.5"
-          }
-        >
-          <View className="flex-row items-center gap-1.5">
+        <View key={item.label} className={row}>
+          <View className="shrink flex-row items-center gap-1.5">
             {item.swatch && <BarSwatch step={item.swatch} accent={accent} />}
             <Text variant="caption" className="shrink">
               {item.label}
             </Text>
           </View>
           <Text
-            variant={grid ? DETAIL_ROLE : FIGURE_ROLE}
-            className="shrink"
+            variant={value}
+            className={valueClassName}
             style={[
               styles.figure,
               { color: colors[item.muted ? "muted-foreground" : "foreground"] },

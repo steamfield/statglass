@@ -17,8 +17,10 @@ import type { PopoverCard } from "@core/popover/card-order";
 import type { CardContent } from "@core/popover/cards";
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
+import type { ViewProps } from "react-native";
 
-export interface ModuleCardProps {
+export interface ModuleCardProps
+  extends Pick<ViewProps, "accessibilityActions" | "onAccessibilityAction"> {
   card: PopoverCard;
   content: CardContent;
   compact: boolean;
@@ -27,14 +29,19 @@ export interface ModuleCardProps {
   stale: boolean;
 }
 
-/** Props shared by the current card renderers and their menu. */
+/** Props shared by the current card renderers. */
 export interface CardChrome
   extends Pick<
     ModuleCardProps,
-    "compact" | "onToggleDensity" | "onOpen" | "stale"
+    | "compact"
+    | "onToggleDensity"
+    | "onOpen"
+    | "stale"
+    | "accessibilityActions"
+    | "onAccessibilityAction"
   > {
-  /** Opens the card menu (density, move up or down). */
-  onLongPress(): void;
+  /** Accepted from the host stack scaffold until it owns the whole gesture. */
+  onLongPress?(): void;
 }
 
 export interface CpuCardProps extends CardChrome {

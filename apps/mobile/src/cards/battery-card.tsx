@@ -13,8 +13,18 @@ const CHARGE_ROLE = "label";
 export function BatteryCard({ battery, source, ...chrome }: BatteryCardProps) {
   const card = batteryCard(battery, { powerSource: source });
   return (
-    <ModuleCard {...chrome} card="battery" content={card} accent="battery">
-      <BatteryDetails card={card} />
+    <ModuleCard
+      {...chrome}
+      card="battery"
+      content={card}
+      accent="battery"
+      compactDetails={card.status}
+    >
+      {chrome.compact ? (
+        <MeterTrack fraction={card.chargeFraction} wide />
+      ) : (
+        <BatteryDetails card={card} />
+      )}
     </ModuleCard>
   );
 }

@@ -1,9 +1,9 @@
 import { networkCard } from "@core/popover/cards";
+import { View } from "react-native";
 import { ModuleCard } from "@/cards/module-card";
 import type { NetworkCardProps } from "@/cards/types";
 import { Text } from "@/ui/text";
-import { MirrorBars } from "@/widgets/mirror-bars";
-import { StatList } from "@/widgets/stat-list";
+import { MirrorBars, MirrorBarsPlot } from "@/widgets/mirror-bars";
 
 export function NetworkCard({ network, bars, ...chrome }: NetworkCardProps) {
   const card = networkCard(network, { chartLabel: bars?.ariaLabel });
@@ -19,20 +19,26 @@ export function NetworkCard({ network, bars, ...chrome }: NetworkCardProps) {
       accent="net"
       headline={headline}
       spokenHeadline={card.spokenHeadline}
-      headlineContent={
-        chrome.compact ? null : (
-          <StatList
-            layout="grid"
-            items={card.items.map(({ label, joinedValue }) => ({
-              label,
-              value: joinedValue.replace(" ", "\u00a0"),
-            }))}
-          />
-        )
-      }
+      compactDetails={bars?.ariaLabel}
     >
-      <Text variant="caption">{card.subtitle}</Text>
-      {bars && <MirrorBars {...bars} />}
+      {chrome.compact ? (
+        bars && <MirrorBarsPlot {...bars} upHeight={6} downHeight={8} />
+      ) : (
+        <>
+          <Text variant="caption">{card.subtitle}</Text>
+          {bars ? (
+            <MirrorBars {...bars} />
+          ) : (
+            <View className="flex-row flex-wrap justify-between gap-x-2">
+              {card.items.map(({ label }) => (
+                <Text key={label} variant="axis">
+                  {label}
+                </Text>
+              ))}
+            </View>
+          )}
+        </>
+      )}
     </ModuleCard>
   );
 }

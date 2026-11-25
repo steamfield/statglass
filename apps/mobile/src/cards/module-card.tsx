@@ -3,16 +3,16 @@ import type { Accent } from "@core/widget-models/tokens";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
-import type { CardChrome, ModuleCardProps } from "@/cards/types";
+import type { ModuleCardProps } from "@/cards/types";
 import { themeColors } from "@/theme.generated";
+import { Icon } from "@/ui/icons";
 import { Text } from "@/ui/text";
 import { WidgetAccent } from "@/widgets/accent";
+import { BarSwatch } from "@/widgets/stack-bar";
 
 export const CARD_SURFACE =
-  "overflow-hidden rounded-xl border border-border bg-card p-3";
+  "overflow-hidden rounded-xl border border-border bg-card";
 export const CARD_TITLE_ROLE = "cardTitle";
-const HEADLINE_ROLE = "cardFigure";
-const UNIT_ROLE = "label";
 
 const STATUS_PATHS = {
   info: "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13ZM8 7v4M8 5v.1",
@@ -82,82 +82,109 @@ export function CardGlow({
   );
 }
 
-/** The module's headline and body open its page as one touch target. */
+/** The body opens the module, and the header button controls density. */
 export function ModuleCard({
   content,
   headline = content.headline ?? MISSING,
   unit,
   spokenHeadline,
-  headlineContent,
+  compactDetails = "",
   accent,
   compact,
+  accessibilityActions,
+  onAccessibilityAction,
   onOpen,
-  onLongPress,
+  onToggleDensity,
   children,
-}: ModuleCardProps &
-  Pick<CardChrome, "onLongPress"> & {
-    headline?: string;
-    unit?: string | undefined;
-    spokenHeadline?: string;
-    headlineContent?: ReactNode;
-    accent: Accent;
-    children: ReactNode;
-  }) {
+}: ModuleCardProps & {
+  headline?: string;
+  unit?: string | undefined;
+  spokenHeadline?: string;
+  compactDetails?: string | undefined;
+  accent: Accent;
+  children: ReactNode;
+}) {
   const colors = themeColors[useColorScheme() ?? "light"];
   const { title } = content;
-  const spokenDetails = compact ? "" : content.spoken;
+  const spokenDetails = compact ? compactDetails : content.spoken;
+  const label = `${title}, ${spokenHeadline ?? (unit ? `${headline} ${unit}` : headline)}`;
+  const value = spokenDetails ? { text: spokenDetails } : undefined;
+  const customActions =
+    accessibilityActions !== undefined && onAccessibilityAction !== undefined;
+  const pressableAccessibility = {
+    accessible: !customActions,
+    accessibilityElementsHidden: customActions,
+    importantForAccessibility: customActions
+      ? ("no-hide-descendants" as const)
+      : ("auto" as const),
+  };
   return (
-    <Pressable
-      className={`min-h-[44px] min-w-[44px] gap-2 ${CARD_SURFACE}`}
-      accessibilityRole="button"
-      accessibilityLabel={`${title}, ${spokenHeadline ?? (unit ? `${headline} ${unit}` : headline)}`}
-      {...(spokenDetails
-        ? { accessibilityValue: { text: spokenDetails } }
-        : {})}
-      accessibilityActions={[{ name: "menu", label: "Card options" }]}
-      onAccessibilityAction={({ nativeEvent }) => {
-        if (nativeEvent.actionName === "menu") onLongPress();
-      }}
-      onPress={onOpen}
-      onLongPress={onLongPress}
+    <View
+      className={CARD_SURFACE}
+      {...(customActions && {
+        accessible: true,
+        accessibilityRole: "button" as const,
+        accessibilityLabel: label,
+        accessibilityValue: value,
+        accessibilityActions,
+        onAccessibilityAction,
+        onAccessibilityTap: onOpen,
+      })}
     >
-      {({ pressed }) => (
-        <>
-          <CardGlow accent={accent} pressed={pressed} />
-          <View className="flex-row items-center gap-2">
-            <View className="flex-1 gap-2">
-              <View className="flex-row flex-wrap items-baseline justify-between gap-x-2">
-                <Text variant={CARD_TITLE_ROLE} className="max-w-full">
+      <Pressable
+        {...pressableAccessibility}
+        className="min-h-[44px] gap-2 p-3"
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityValue={value}
+        onPress={onOpen}
+      >
+        {({ pressed }) => (
+          <>
+            <CardGlow accent={accent} pressed={pressed} />
+            <View className="min-h-5 flex-row flex-wrap items-center justify-between gap-x-2 pr-9">
+              <View className="flex-row items-center gap-2">
+                <BarSwatch step={1} accent={accent} />
+                <Text variant={CARD_TITLE_ROLE} className="shrink">
                   {title}
                 </Text>
-                {!headlineContent && (
-                  <Text
-                    variant={HEADLINE_ROLE}
-                    className="ml-auto max-w-full text-right"
-                    // NativeWind drops the CSS font-variant-numeric property.
-                    style={{ fontVariant: ["tabular-nums"] }}
-                  >
-                    {headline}
-                    {unit && <Text variant={UNIT_ROLE}> {unit}</Text>}
-                  </Text>
-                )}
               </View>
-              {headlineContent}
+              <Text variant="cardFigure" className="ml-auto shrink text-right">
+                {headline}
+                {unit && <Text variant="label"> {unit}</Text>}
+              </Text>
             </View>
-            <Svg width={12} height={16} viewBox="0 0 12 16" accessible={false}>
-              <Path
-                d="m4 3 5 5-5 5"
-                fill="none"
-                stroke={colors["muted-foreground"]}
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-          </View>
-          {!compact && <WidgetAccent value={accent}>{children}</WidgetAccent>}
-        </>
-      )}
-    </Pressable>
+            <WidgetAccent value={accent}>{children}</WidgetAccent>
+          </>
+        )}
+      </Pressable>
+      <Pressable
+        {...pressableAccessibility}
+        accessibilityRole="button"
+        accessibilityLabel={`${compact ? "Expand" : "Compact"} ${title} card`}
+        accessibilityState={{ expanded: !compact }}
+        onPress={onToggleDensity}
+        style={styles.densityButton}
+      >
+        <Icon
+          name={compact ? "chevron.down" : "chevron.up"}
+          color={colors["muted-foreground"]}
+          size={14}
+        />
+      </Pressable>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  // The hit area uses the card padding without adding height to the header.
+  densityButton: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});
