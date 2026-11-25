@@ -24,7 +24,7 @@ use tokio::io::AsyncWriteExt;
 
 #[path = "support/history_seed.rs"]
 mod history_seed;
-use history_seed::{host_record, seed_by_retention};
+use history_seed::{host_record, seed_by_retention, seed_by_retention_with_layout};
 
 const HOUR: i64 = 3_600_000;
 const DAY: i64 = 24 * HOUR;
@@ -117,6 +117,49 @@ fn wire_len(answer: &HistoryAnswer) -> usize {
     })
     .expect("the fixture reply encodes")
     .len()
+}
+
+// Run the seeding process separately so its allocation peak is absent from query RSS.
+#[test]
+#[ignore = "release measurement against a separately seeded database"]
+fn history_release_profile() {
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::var_os("STATGLASS_HISTORY_BENCH_DIR").unwrap());
+    let chart = series_for_chart();
+    let run = std::env::var("STATGLASS_HISTORY_BENCH_RUN").unwrap();
+    if run == "seed-narrow" || run == "seed-wide" {
+        let wide = run == "seed-wide";
+        let mut seeded: Vec<_> = chart.iter().cloned().chain(cores(64)).collect();
+        if wide {
+            seeded.extend((0..96).map(|i| key(&format!("disk.used{{vol=volume-{i}}}"))));
+            assert_eq!(seeded.len(), 200);
+        }
+        drop(seed_by_retention_with_layout(&dir, &seeded, NOW, wide));
+        return;
+    }
+    let range = match run.as_str() {
+        "1h" => HOUR,
+        "24h" => DAY,
+        "7d" => 7 * DAY,
+        "30d" => 30 * DAY,
+        _ => panic!("unknown measurement range {run}"),
+    };
+    let server = server(Arc::new(HistoryStore::open(&dir)));
+    let query = request(NOW - range, NOW, &chart[..20], 200);
+    let start = Instant::now();
+    let cpu = thread_cpu();
+    let answer = ask(&server, query);
+    let cpu = thread_cpu() - cpu;
+    let wall = start.elapsed();
+    let bytes = wire_len(&answer);
+    assert_eq!(answer.series.len(), 20);
+    assert!(bytes < 160_000);
+    eprintln!(
+        "{run} wall_ms={:.3} cpu_ms={:.3} bytes={bytes}",
+        wall.as_secs_f64() * 1_000.0,
+        cpu.as_secs_f64() * 1_000.0
+    );
 }
 
 #[tokio::test]
@@ -253,6 +296,16 @@ fn history_heatmap_clamps_requested_and_matched_keys_and_reduces_oversized_repli
     assert_eq!(answer.clamped, [HistoryClamp::Series]);
 
     let from = NOW - 2 * HOUR + 10_500;
+    // The gap cuts through the first coarse slot and changes how its samples are
+    // weighted. A stat recomputed from the coarse grid would count different time.
+    let writer = store.writer().unwrap();
+    writer
+        .write_gap(
+            host_record().id,
+            statglass_schema::Gap::module_disabled(from + 1, Some(from + 40_001), Module::Cpu),
+        )
+        .unwrap();
+    writer.flush().unwrap();
     let answer = ask(&server, request(from, NOW, &cores[..256], 500));
     assert_eq!(answer.series.len(), 256);
     let bytes = wire_len(&answer);
@@ -287,6 +340,55 @@ fn history_heatmap_clamps_requested_and_matched_keys_and_reduces_oversized_repli
         .map(|p| (p.t, p.avg, p.min, p.max))
         .collect();
     assert_eq!(answer.series[0].points, expected_points);
+    let full = store
+        .read(|reader| {
+            reader.history(&StoreQuery {
+                host: host_record().id,
+                from_ms: from,
+                to_ms: NOW,
+                max_points: 500,
+                tier: TierChoice::Fixed(answer.tier),
+                selectors: request(from, NOW, std::slice::from_ref(key), 500).series,
+            })
+        })
+        .unwrap();
+    let def = statglass_schema::Catalog::builtin()
+        .get("cpu.load")
+        .unwrap();
+    let full_stats = range_stats(&full, &[def], from, NOW, NOW);
+    assert_ne!(full.bucket_ms, answer.bucket_ms);
+    assert_eq!(answer.stats[0].key, *key);
+    assert_eq!(
+        answer.stats[0].avg,
+        full_stats.metrics[0].avg.map(|n| n as f32)
+    );
+    assert_eq!(
+        answer.stats[0].peak,
+        full_stats.metrics[0].max.map(|n| n as f32)
+    );
+}
+
+#[test]
+fn history_leaves_a_hole_for_a_midrange_gap() {
+    let dir = tempfile::tempdir().unwrap();
+    let cpu = [key("cpu.total")];
+    let store = seed_by_retention(dir.path(), &cpu, NOW);
+    let writer = store.writer().unwrap();
+    let server = server(store);
+    let q = request(NOW - HOUR, NOW, &cpu, 500);
+    let before = ask(&server, q.clone());
+    let start = NOW - HOUR / 2;
+    let end = start + 10 * 10_000;
+    let gap = statglass_schema::Gap::module_disabled(start, Some(end), Module::Cpu);
+    writer.write_gap(host_record().id, gap).unwrap();
+    writer.flush().unwrap();
+
+    let after = ask(&server, q);
+    let points = &after.series[0].points;
+    assert_eq!(after.gaps, [gap]);
+    assert_eq!(before.series[0].points.len() - points.len(), 10);
+    assert!(points.iter().all(|p| !(start..end).contains(&p.0)));
+    assert!(points.iter().any(|p| p.0 == end));
 }
 
 #[test]
@@ -326,19 +428,41 @@ fn history_invalid_ranges_and_selectors_and_known_empty_range() {
 #[test]
 fn history_unknown_metric_error_stays_bounded() {
     let server = server(Arc::new(HistoryStore::unavailable()));
-    let metric = key(&"a".repeat(HISTORY_MAX_ANSWER_BYTES));
+    let prefix = "a".repeat(64);
+    let metric = key(&format!("{prefix}{}", "b".repeat(HISTORY_MAX_ANSWER_BYTES)));
     let answer = server.answer(1, Query::History(request(NOW - HOUR, NOW, &[metric], 200)));
-    assert!(matches!(
+    assert_eq!(
         answer,
         Answer::Error {
             code: ErrorCode::InvalidArgument,
-            ..
+            message: format!("Unknown history metric {prefix}"),
         }
-    ));
+    );
     let bytes = encode_frame(&Message::Reply { id: 1, answer })
         .unwrap()
         .len();
     assert!(bytes <= HISTORY_MAX_ANSWER_BYTES, "{bytes} bytes");
+}
+
+#[test]
+fn history_timestamp_error_names_the_bound_value_and_limit() {
+    let server = server(Arc::new(HistoryStore::unavailable()));
+    let cpu = [key("cpu.total")];
+    for (bound, value, q) in [
+        ("from_ms", i64::MIN, request(i64::MIN, NOW, &cpu, 200)),
+        ("to_ms", i64::MAX, request(NOW - HOUR, i64::MAX, &cpu, 200)),
+    ] {
+        let Answer::Error {
+            code: ErrorCode::InvalidArgument,
+            message,
+        } = server.answer(1, Query::History(q))
+        else {
+            panic!("expected invalid {bound}")
+        };
+        assert!(message.contains(bound), "{message}");
+        assert!(message.contains(&value.to_string()), "{message}");
+        assert!(message.contains("±2^53"), "{message}");
+    }
 }
 
 #[test]
@@ -588,5 +712,57 @@ fn history_event_clamp_keeps_latest_matching_rows_in_order() {
             .events
             .windows(2)
             .all(|pair| pair[0].ts_ms < pair[1].ts_ms)
+    );
+}
+
+#[test]
+fn history_filters_fixed_event_kinds_without_decoding_their_payloads() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(HistoryStore::open(dir.path()));
+    let host = host_record();
+    store.register_host(&host).unwrap();
+    let conn = statglass_store::rusqlite::Connection::open(
+        dir.path().join(statglass_engine::HISTORY_DB_FILE),
+    )
+    .unwrap();
+    conn.execute_batch(
+        "INSERT INTO events (host_id, ts, kind, payload, seq)
+        VALUES (1, 1000, 'power_spike', x'ff', 1),
+               (1, 1001, 'sustained_process', 42, 2);",
+    )
+    .unwrap();
+    let mut q = request(0, 10_000, &[key("cpu.total")], 50);
+    q.events_for = Some(Module::Power);
+    let answer = ask(&server(store), q);
+    assert_eq!(answer.events.len(), 1);
+    assert_eq!(answer.events[0].kind, "power_spike");
+    assert_eq!(answer.events[0].payload, [0xff]);
+}
+
+#[test]
+fn history_breaks_equal_event_times_and_kinds_by_row_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(HistoryStore::open(dir.path()));
+    let host = host_record();
+    store.register_host(&host).unwrap();
+    let conn = statglass_store::rusqlite::Connection::open(
+        dir.path().join(statglass_engine::HISTORY_DB_FILE),
+    )
+    .unwrap();
+    conn.execute_batch(
+        "DROP INDEX events_range;
+        CREATE INDEX events_range ON events (host_id, ts DESC, kind DESC, id);
+        INSERT INTO events (id, host_id, ts, kind, payload, seq)
+        VALUES (30, 1, 1000, 'power_spike', x'ff', 3),
+               (10, 1, 1000, 'power_spike', x'ff', 2),
+               (20, 1, 1000, 'power_spike', x'ff', 1);",
+    )
+    .unwrap();
+    let mut q = request(0, 10_000, &[key("cpu.total")], 50);
+    q.events_for = Some(Module::Power);
+    let answer = ask(&server(store), q);
+    assert_eq!(
+        answer.events.iter().map(|e| e.seq).collect::<Vec<_>>(),
+        [2, 1, 3]
     );
 }

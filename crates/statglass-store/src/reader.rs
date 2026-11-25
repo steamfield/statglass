@@ -5,10 +5,10 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, ToSql, params, params_from_iter};
 use statglass_schema::{
-    Cursor, Event, EventDetail, Gap, GapReason, HostId, HostInfo, HostRecord, Labels, MetricId,
-    Module, SeriesKey, SyncKinds, SyncRowKind, Tier,
+    Catalog, Cursor, Event, EventDetail, Gap, GapReason, HostId, HostInfo, HostRecord, Labels,
+    MetricId, Module, SeriesKey, SyncKinds, SyncRowKind, Tier,
 };
 use uuid::Uuid;
 
@@ -209,44 +209,6 @@ impl Reader {
             .map(|(result, _)| result)
     }
 
-    fn history_bucket_rows(
-        &self,
-        host_ref: i64,
-        tier: Tier,
-        from: i64,
-        to: i64,
-        layouts: &[u32],
-    ) -> Result<Vec<HistoryBucketRow>> {
-        if layouts.is_empty() {
-            return Ok(Vec::new());
-        }
-        // IDs come from the database. Inline them so many relayouts do not exceed the
-        // SQLite parameter limit. Apply the filter to both legs of the M15 union.
-        let ids = layouts
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = db::bucket_sources(tier)?
-            .iter()
-            .map(|(table, weight)| {
-                format!(
-                "SELECT bucket_ts, layout_id, blob, {weight} FROM {table}
-                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 AND layout_id IN ({ids})"
-            )
-            })
-            .collect::<Vec<_>>()
-            .join(" UNION ALL ");
-        let rows = self
-            .conn
-            .prepare_cached(&format!("{sql} ORDER BY bucket_ts"))?
-            .query_map(params![host_ref, from, to], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        Ok(rows)
-    }
-
     /// Gaps of `host` overlapping `[from, to)`, by start.
     pub fn gaps(&mut self, host: HostId, from_ms: i64, to_ms: i64) -> Result<Vec<Gap>> {
         let host_ref = self.host_ref(host)?;
@@ -276,40 +238,58 @@ impl Reader {
     }
 
     /// The newest matching events in the range, returned oldest first as stored rows.
-    /// As with `events`, a row with an unreadable payload cannot be classified.
+    /// Fixed kinds are selected in SQL. Only alert payloads are decoded for classification.
     pub fn event_rows(
         &mut self,
         host: HostId,
         from_ms: i64,
         to_ms: i64,
         limit: usize,
-        matches: impl Fn(&EventDetail) -> bool,
+        module: Module,
+        catalog: &Catalog,
     ) -> Result<Vec<PageEvent>> {
         let host_ref = self.host_ref(host)?;
-        let mut stmt = self.conn.prepare_cached(
+        let module = module.event_module();
+        let kinds: Vec<_> = EventDetail::KINDS
+            .iter()
+            .filter(|&&kind| kind == "alert" || EventDetail::fixed_module(kind) == Some(module))
+            .collect();
+        let placeholders = vec!["?"; kinds.len()].join(",");
+        let sql = format!(
             "SELECT export_id, seq, ts, kind, payload FROM events
-             WHERE host_id = ?1 AND ts >= ?2 AND ts < ?3 ORDER BY ts DESC, kind DESC",
-        )?;
-        let mut rows = stmt.query(params![host_ref, from_ms, to_ms])?;
+             WHERE host_id = ? AND ts >= ? AND ts < ? AND kind IN ({placeholders})
+             ORDER BY ts DESC, kind DESC, id DESC"
+        );
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let bounds: [&dyn ToSql; 3] = [&host_ref, &from_ms, &to_ms];
+        let kinds = kinds.iter().map(|kind| kind as &dyn ToSql);
+        let mut rows = stmt.query(params_from_iter(bounds.into_iter().chain(kinds)))?;
         let mut events = Vec::new();
         while events.len() < limit
             && let Some(row) = rows.next()?
         {
+            let kind: String = row.get(3)?;
             let payload: Vec<u8> = row.get(4)?;
-            match ciborium::from_reader::<Event, _>(payload.as_slice()) {
-                Ok(event) if matches(&event.detail) => events.push(PageEvent {
-                    source_id: row.get(0)?,
-                    seq: row.get(1)?,
-                    ts_ms: row.get(2)?,
-                    kind: row.get(3)?,
-                    payload,
-                }),
-                Ok(_) => {}
-                Err(error) => tracing::debug!(
-                    error = &error as &dyn std::error::Error,
-                    "skipping an event this build cannot decode"
-                ),
+            if kind == "alert" {
+                match ciborium::from_reader::<Event, _>(payload.as_slice()) {
+                    Ok(event) if event.detail.module(catalog) == Some(module) => {}
+                    Ok(_) => continue,
+                    Err(error) => {
+                        tracing::debug!(
+                            error = &error as &dyn std::error::Error,
+                            "skipping an alert this build cannot decode"
+                        );
+                        continue;
+                    }
+                }
             }
+            events.push(PageEvent {
+                source_id: row.get(0)?,
+                seq: row.get(1)?,
+                ts_ms: row.get(2)?,
+                kind,
+                payload,
+            });
         }
         events.reverse();
         Ok(events)
@@ -766,7 +746,7 @@ impl<'q> Merge<'q> {
 
 /// (result index, position in layout) of each series of a layout a read selects.
 type Positions = Vec<(usize, usize)>;
-type HistoryBucketRow = (i64, u32, Vec<u8>, u32);
+type HistoryBucketRow = (i64, u32, Vec<[f32; 3]>, u32);
 
 /// The series of layout `id`, through `cache`. A free function so a caller can hold a
 /// statement on `conn` while it resolves layouts (the borrows are disjoint).

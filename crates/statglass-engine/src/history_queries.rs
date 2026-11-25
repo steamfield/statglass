@@ -7,7 +7,7 @@ use statglass_store::{BucketRow, HistoryQuery, HistoryResult, StoreError};
 impl HistoryStore {
     /// Captures a history response's metadata and source rows on one pooled reader
     /// and one SQLite snapshot. The caller can build its reply after the checkout.
-    pub fn history_snapshot<T>(
+    pub fn with_history_snapshot<T>(
         &self,
         read: impl FnOnce(&mut statglass_store::Reader) -> statglass_store::Result<T>,
     ) -> Result<T, HistoryStoreError> {
@@ -86,7 +86,7 @@ mod tests {
         let host = crate::test_support::mac_host(7);
         let writer = store.register_host(&host).unwrap();
         store
-            .history_snapshot(|reader| {
+            .with_history_snapshot(|reader| {
                 assert_eq!(reader.hosts()?.as_slice(), std::slice::from_ref(&host));
                 let mut renamed = host.clone();
                 renamed.display_name = "Renamed while reading".into();

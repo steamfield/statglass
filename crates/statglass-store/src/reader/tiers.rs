@@ -65,8 +65,25 @@ impl Reader {
                     .layouts
                     .retain(|_, layout| layout.iter().any(|key| selection.keys.contains(key)));
             }
-            let ids = snapshot.layouts.keys().copied().collect::<Vec<_>>();
-            snapshot.rows = reader.history_bucket_rows(host, tier, base, q.to_ms, &ids)?;
+            let positions = snapshot
+                .layouts
+                .iter()
+                .map(|(&id, layout)| {
+                    let indexes = layout
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, key)| {
+                            snapshot.selection.as_ref().map_or_else(
+                                || q.selectors.iter().any(|s| s.matches(key)),
+                                |selection| selection.keys.contains(key),
+                            )
+                        })
+                        .map(|(index, _)| index)
+                        .collect();
+                    (id, indexes)
+                })
+                .collect();
+            snapshot.rows = reader.history_bucket_rows(host, tier, base, q.to_ms, &positions)?;
             #[cfg(test)]
             {
                 reader.history_rows_read = snapshot.rows.len();
@@ -117,6 +134,67 @@ impl Reader {
             }
         }
         Ok(layouts)
+    }
+
+    fn history_bucket_rows(
+        &self,
+        host_ref: i64,
+        tier: Tier,
+        from: i64,
+        to: i64,
+        layouts: &BTreeMap<u32, Vec<usize>>,
+    ) -> Result<Vec<HistoryBucketRow>> {
+        if layouts.is_empty() {
+            return Ok(Vec::new());
+        }
+        // IDs come from the database. Inline them so many relayouts do not exceed the
+        // SQLite parameter limit. Apply the filter to both legs of the M15 union.
+        let ids = layouts
+            .keys()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = db::bucket_sources(tier)?
+            .iter()
+            .map(|(table, weight)| {
+                format!(
+                "SELECT bucket_ts, layout_id, blob, {weight} FROM {table}
+                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 AND layout_id IN ({ids})"
+            )
+            })
+            .collect::<Vec<_>>()
+            .join(" UNION ALL ");
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!("{sql} ORDER BY bucket_ts"))?;
+        let mut rows = stmt.query(params![host_ref, from, to])?;
+        let mut captured = Vec::new();
+        while let Some(row) = rows.next()? {
+            let ts = row.get(0)?;
+            let layout_id = row.get(1)?;
+            let positions = layouts.get(&layout_id).ok_or_else(|| {
+                StoreError::Corrupt(format!("row refers to missing layout {layout_id}"))
+            })?;
+            let blob = row.get_ref(2)?.as_blob().map_err(|error| {
+                StoreError::Corrupt(format!("bucket at {ts} has invalid stats: {error}"))
+            })?;
+            let mut values = Vec::with_capacity(positions.len());
+            for &position in positions {
+                let start = position * 3;
+                let (Some(min), Some(max), Some(avg)) = (
+                    f32_at(blob, start),
+                    f32_at(blob, start + 1),
+                    f32_at(blob, start + 2),
+                ) else {
+                    return Err(StoreError::Corrupt(format!(
+                        "bucket at {ts} is shorter than its layout"
+                    )));
+                };
+                values.push([min, max, avg]);
+            }
+            captured.push((ts, layout_id, values, row.get(3)?));
+        }
+        Ok(captured)
     }
 
     /// Fine-tier coverage measured back from the requested end. A missing prune mark
@@ -282,10 +360,20 @@ impl<R: AsRef<[BucketRow]>> HistorySnapshot<R> {
             {
                 continue;
             }
-            let positions = matches
-                .entry(*layout_id)
-                .or_insert_with(|| merge.positions(layout));
-            merge.add(*ts, positions, |i| f32_at(stats, i), *weight)?;
+            let positions = matches.entry(*layout_id).or_insert_with(|| {
+                merge
+                    .positions(layout)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(packed, (result, _))| (result, packed))
+                    .collect()
+            });
+            merge.add(
+                *ts,
+                positions,
+                |i| stats.as_flattened().get(i).copied(),
+                *weight,
+            )?;
         }
         merge.add_recent(&recent)?;
         let complete_to_ms = merge.complete_to_ms.min(q.to_ms);
@@ -341,4 +429,61 @@ impl HistorySelection {
 pub(super) fn in_recent_range(row: &BucketRow, tier: Tier, from: i64, to: i64) -> bool {
     let want = if tier == Tier::M15 { Tier::M1 } else { tier };
     row.tier == want && row.bucket_ts >= from && row.bucket_ts < to
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blob::{pack_f32s, pack_u32s};
+    use uuid::Uuid;
+
+    #[test]
+    fn history_snapshot_retains_only_selected_triples() {
+        let dir = crate::test_dir("history-projection");
+        let path = dir.path().join("history.sqlite");
+        let (conn, _) = db::open_writer(&path, 0).unwrap();
+        let host = HostId(Uuid::nil());
+        conn.execute(
+            "INSERT INTO hosts (id, uuid, is_local, name, info, created_ms)
+             VALUES (1, ?1, 1, 'fixture', x'', 0)",
+            [host.to_string()],
+        )
+        .unwrap();
+        conn.execute_batch("INSERT INTO series (id, host_id, metric_id, labels)
+            VALUES (1, 1, 'net.rx', 'iface=en0'), (2, 1, 'cpu.total', ''), (3, 1, 'net.rx', 'iface=en1');").unwrap();
+        conn.execute(
+            "INSERT INTO layouts (id, host_id, series_ids, hash, created_ms)
+             VALUES (1, 1, ?1, x'01', 0)",
+            [pack_u32s(&[1, 2, 3])],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tier_10s (host_id, bucket_ts, layout_id, seq, blob)
+             VALUES (1, 0, 1, 1, ?1)",
+            [pack_f32s(&[1., 3., 2., 4., 6., 5., 7., 9., 8.])],
+        )
+        .unwrap();
+        let q = HistoryQuery {
+            host,
+            from_ms: 0,
+            to_ms: 10_000,
+            tier: TierChoice::Fixed(Tier::S10),
+            max_points: 1,
+            selectors: vec![SeriesSelector {
+                metric: statglass_schema::MetricId::from_static("net.rx"),
+                labels: Default::default(),
+            }],
+        };
+        let mut reader = Reader::open(&path).unwrap();
+        let snapshot = reader.history_snapshot(&q, Some(2), Vec::new).unwrap();
+        assert_eq!(snapshot.rows[0].2.as_slice(), &[[1., 3., 2.], [7., 9., 8.]]);
+        let (read, _) = snapshot.merge(1, 10_000).unwrap();
+        assert_eq!(
+            read.series
+                .iter()
+                .map(|s| s.points[0].avg)
+                .collect::<Vec<_>>(),
+            [2., 8.]
+        );
+    }
 }

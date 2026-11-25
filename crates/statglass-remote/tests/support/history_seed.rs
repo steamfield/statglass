@@ -5,20 +5,33 @@ use statglass_schema::{HostId, HostInfo, HostRecord, OsKind, SeriesKey, Tier};
 use statglass_store::{BucketRow, Retention, Writer};
 
 pub fn seed_by_retention(dir: &Path, series: &[SeriesKey], now_ms: i64) -> Arc<HistoryStore> {
+    seed_by_retention_with_layout(dir, series, now_ms, false)
+}
+
+pub fn seed_by_retention_with_layout(
+    dir: &Path,
+    series: &[SeriesKey],
+    now_ms: i64,
+    wide: bool,
+) -> Arc<HistoryStore> {
     let store = Arc::new(HistoryStore::open(dir));
     let host = host_record();
     let writer = store.register_host(&host).expect("register fixture host");
     let retention = Retention::with_days(30);
-    let (cores, other): (Vec<_>, Vec<_>) = series
-        .iter()
-        .cloned()
-        .partition(|key| key.metric.as_str() == "cpu.load");
-    for layout in other
-        .chunks(10)
-        .chain([cores.as_slice()])
-        .filter(|l| !l.is_empty())
-    {
-        write_layout(&writer, host.id, layout.into(), now_ms, retention);
+    if wide {
+        write_layout(&writer, host.id, series.into(), now_ms, retention);
+    } else {
+        let (cores, other): (Vec<_>, Vec<_>) = series
+            .iter()
+            .cloned()
+            .partition(|key| key.metric.as_str() == "cpu.load");
+        for layout in other
+            .chunks(10)
+            .chain([cores.as_slice()])
+            .filter(|l| !l.is_empty())
+        {
+            write_layout(&writer, host.id, layout.into(), now_ms, retention);
+        }
     }
     writer
         .prune(now_ms, retention)

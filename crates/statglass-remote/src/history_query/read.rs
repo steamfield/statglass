@@ -1,9 +1,9 @@
-use statglass_engine::{HistoryStore, HistoryStoreError, RECENT_ROWS_MS};
+use statglass_engine::{BACKGROUND_TICK_MS, HistoryStore, HistoryStoreError, RECENT_ROWS_MS};
 use statglass_proto::{
     Answer, CodecError, ErrorCode, HistoryAnswer, HistoryClamp, HistoryQuery, Message, WireEvent,
     WireHistorySeries, WireSeriesStats, encode_message,
 };
-use statglass_schema::{Catalog, HostId, Module, SeriesKey, TimeRange, is_js_safe};
+use statglass_schema::{Catalog, HostId, SeriesKey, Tier, TimeRange, floor_to, is_js_safe};
 use statglass_store::{
     BucketRow, HistoryQuery as StoreQuery, HistoryResult, StoreError, TierChoice, range_stats,
     tier_budget::tier_for_budget,
@@ -54,12 +54,22 @@ pub(super) fn answer<H: ServedHost>(server: &HostServer<H>, query: &HistoryQuery
     let host = server.host().record().id;
     let hub = server.host().hub();
     let now = statglass_engine::wall_ms();
+    let interval_ms = hub.status().interval_ms;
+    let running = interval_ms > 0 || hub.latest_frame().is_some();
     read_history(
         server.history(),
         host,
         query,
         now,
-        |from, to| hub.recent_rows(host, from, to),
+        now.saturating_sub(i64::from(if interval_ms == 0 {
+            BACKGROUND_TICK_MS
+        } else {
+            interval_ms
+        })),
+        |from, to| {
+            let rows = hub.recent_rows(host, from, to);
+            (running || !rows.is_empty()).then_some(rows)
+        },
         |key, width| hub.history_hold_ms(key, width, query.from_ms),
     )
     .unwrap_or_else(HistoryQueryError::into_answer)
@@ -70,28 +80,39 @@ fn read_history(
     host: HostId,
     query: &HistoryQuery,
     now: i64,
-    recent: impl Fn(i64, i64) -> Vec<BucketRow>,
+    closed_before: i64,
+    recent: impl Fn(i64, i64) -> Option<Vec<BucketRow>>,
     hold: impl Fn(&SeriesKey, i64) -> i64,
 ) -> Result<Answer> {
     let catalog = Catalog::builtin();
     let (mut q, mut clamped, series_limit) = bounded_query(query, &catalog, host, now)?;
-    let (snapshot, mut events) = store.history_snapshot(|reader| {
+    let (snapshot, mut events, complete_to_ms) = store.with_history_snapshot(|reader| {
         let coverage = reader.history_tier_coverage(host, q.to_ms)?;
-        q.tier = TierChoice::Fixed(tier_for_budget(q.from_ms, q.to_ms, q.max_points, coverage));
+        let tier = tier_for_budget(q.from_ms, q.to_ms, q.max_points, coverage);
+        q.tier = TierChoice::Fixed(tier);
+        let source = if tier == Tier::M15 { Tier::M1 } else { tier };
+        let width = source.bucket_ms().unwrap_or(1);
         let events = match query.events_for {
-            Some(module) => {
-                reader.event_rows(host, q.from_ms, q.to_ms, HISTORY_MAX_EVENTS + 1, |event| {
-                    event.module(&catalog).is_some_and(|actual| {
-                        actual == module || (module == Module::Power && actual == Module::Sensors)
-                    })
-                })?
-            }
+            Some(module) => reader.event_rows(
+                host,
+                q.from_ms,
+                q.to_ms,
+                HISTORY_MAX_EVENTS + 1,
+                module,
+                &catalog,
+            )?,
             None => Vec::new(),
         };
+        let mut complete_to_ms = None;
         let snapshot = reader.history_snapshot(&q, Some(series_limit), || {
-            recent(q.from_ms.max(now - RECENT_ROWS_MS), q.to_ms.min(now))
+            let from = floor_to(q.from_ms, width).max(now - RECENT_ROWS_MS);
+            let rows = recent(from, q.to_ms.min(now));
+            if rows.is_some() {
+                complete_to_ms = Some(q.to_ms.min(floor_to(closed_before, width)));
+            }
+            rows.unwrap_or_default()
         })?;
-        Ok((snapshot, events))
+        Ok((snapshot, events, complete_to_ms))
     })?;
     if events.len() > HISTORY_MAX_EVENTS {
         events.remove(0);
@@ -100,15 +121,15 @@ fn read_history(
     if snapshot.series_clamped() && !clamped.contains(&HistoryClamp::Series) {
         clamped.push(HistoryClamp::Series);
     }
-    let (mut read, complete_to_ms) = snapshot
-        .merge(q.max_points, now)
+    let (mut read, durable_to_ms) = snapshot
+        .merge(q.max_points, closed_before)
         .map_err(HistoryStoreError::from)?;
     let reply = HistoryAnswer {
         tier: read.tier,
         bucket_ms: read.bucket_ms,
-        complete_to_ms,
+        complete_to_ms: complete_to_ms.unwrap_or(durable_to_ms),
         stats: per_key_stats(&mut read, &q, &catalog, now),
-        series: wire_series(&read, &hold),
+        series: wire_series(&read, &catalog, &hold),
         gaps: read.gaps,
         events: events
             .into_iter()
@@ -123,12 +144,11 @@ fn read_history(
         clamped,
     };
     bounded_reply(reply, q.max_points, |budget, reply| {
-        let (mut read, _) = snapshot
-            .merge(budget, now)
+        let (read, _) = snapshot
+            .merge(budget, closed_before)
             .map_err(HistoryStoreError::from)?;
         reply.bucket_ms = read.bucket_ms;
-        reply.stats = per_key_stats(&mut read, &q, &catalog, now);
-        reply.series = wire_series(&read, &hold);
+        reply.series = wire_series(&read, &catalog, &hold);
         Ok(())
     })
 }
@@ -140,10 +160,12 @@ fn bounded_query(
     now: i64,
 ) -> Result<(StoreQuery, Vec<HistoryClamp>, usize)> {
     let requested_to = query.to_ms.unwrap_or(now);
-    if !is_js_safe(query.from_ms) || !is_js_safe(requested_to) {
-        return Err(HistoryQueryError::Invalid(
-            "History timestamps are out of range".into(),
-        ));
+    for (bound, value) in [("from_ms", query.from_ms), ("to_ms", requested_to)] {
+        if !is_js_safe(value) {
+            return Err(HistoryQueryError::Invalid(format!(
+                "History {bound} timestamp {value} is outside the ±2^53 limit (exclusive)"
+            )));
+        }
     }
     let range = TimeRange::new(query.from_ms, requested_to.min(now), i64::MAX)
         .map_err(|error| HistoryQueryError::Invalid(error.to_string()))?;
@@ -154,7 +176,10 @@ fn bounded_query(
     }
     for selector in &query.series {
         if catalog.get(selector.metric.as_str()).is_none() {
-            return Err(HistoryQueryError::Invalid("Unknown history metric".into()));
+            let metric: String = selector.metric.as_str().escape_debug().take(64).collect();
+            return Err(HistoryQueryError::Invalid(format!(
+                "Unknown history metric {metric}"
+            )));
         }
     }
     let series_limit = if query.series.iter().all(|s| s.metric.as_str() == "cpu.load") {
@@ -214,18 +239,38 @@ fn per_key_stats(
 
 fn wire_series(
     read: &HistoryResult,
+    catalog: &Catalog,
     hold: &impl Fn(&SeriesKey, i64) -> i64,
 ) -> Vec<WireHistorySeries> {
     read.series
         .iter()
-        .map(|s| WireHistorySeries {
-            key: s.key.clone(),
-            hold_ms: hold(&s.key, read.bucket_ms),
-            points: s
+        .map(|s| {
+            let module = catalog.get(s.key.metric.as_str()).map(|d| d.module);
+            // Gaps and points are in start order. Walk the relevant gaps once per series.
+            let mut gaps = read
+                .gaps
+                .iter()
+                .filter(|g| g.module.is_none() || g.module == module)
+                .peekable();
+            let points = s
                 .points
                 .iter()
+                .filter(|p| {
+                    while gaps
+                        .peek()
+                        .is_some_and(|g| g.end_ms.is_some_and(|end| end <= p.t))
+                    {
+                        gaps.next();
+                    }
+                    !gaps.peek().is_some_and(|g| g.start_ms <= p.t)
+                })
                 .map(|p| (p.t, p.avg, p.min, p.max))
-                .collect(),
+                .collect();
+            WireHistorySeries {
+                key: s.key.clone(),
+                hold_ms: hold(&s.key, read.bucket_ms),
+                points,
+            }
         })
         .collect()
 }
@@ -276,7 +321,7 @@ fn bounded_reply(
 mod tests {
     use super::*;
     use crate::history_query::history_seed::{host_record, seed_by_retention};
-    use statglass_schema::{SeriesSelector, Tier};
+    use statglass_schema::{Gap, GapReason, Module, SeriesSelector};
     use std::cell::Cell;
     use std::sync::Arc;
 
@@ -323,38 +368,54 @@ mod tests {
     }
 
     #[test]
-    fn history_watermark_counts_closed_matching_source_buckets_only() {
-        let now = 1_791_158_400_000 + 500;
-        let start = now - 50_500;
+    fn history_watermark_uses_time_even_without_matching_samples() {
+        let minute = 1_791_158_460_000;
+        let now = minute + 1_500;
         let host = host_record();
         let dir = tempfile::tempdir().unwrap();
         let store = HistoryStore::open(dir.path());
         let writer = store.register_host(&host).unwrap();
         let cpu = SeriesKey::parse("cpu.total").unwrap();
-        let net = SeriesKey::parse("net.rx_total").unwrap();
-        let row = |key, bucket_ts| BucketRow {
+        let row = |tier, bucket_ts| BucketRow {
             host: host.id,
-            tier: Tier::S10,
+            tier,
             bucket_ts,
-            series: Arc::from([key]),
+            series: Arc::from([cpu.clone()]),
             stats: vec![10.0, 30.0, 20.0],
         };
-        let q = HistoryQuery {
+        writer
+            .write_gap(
+                host.id,
+                Gap::host(minute - 100_000, Some(minute - 20_000), GapReason::Sleep).unwrap(),
+            )
+            .unwrap();
+        writer
+            .write_gap(
+                host.id,
+                Gap::module_disabled(minute - 200_000, None, Module::Memory),
+            )
+            .unwrap();
+        writer
+            .write_bucket(row(Tier::S10, minute - 150_000))
+            .unwrap();
+        writer.flush().unwrap();
+        let mut q = HistoryQuery {
             series: vec![SeriesSelector {
                 metric: cpu.metric.clone(),
                 labels: cpu.labels.clone(),
             }],
-            from_ms: start,
+            from_ms: minute - 200_000,
             to_ms: None,
-            max_points: 1,
+            max_points: 200,
             events_for: None,
         };
-        let run = |rows: Vec<BucketRow>| {
+        let run = |q: &HistoryQuery, now: i64, rows: Option<Vec<BucketRow>>| {
             let answer = read_history(
                 &store,
                 host.id,
-                &q,
+                q,
                 now,
+                now - 1_000,
                 |_, _| rows.clone(),
                 |_, width| width,
             )
@@ -362,27 +423,38 @@ mod tests {
             let Answer::History(answer) = answer else {
                 panic!("expected history")
             };
-            answer
+            (answer.tier, answer.complete_to_ms)
         };
-        let current = now - 500;
-        let open = row(cpu.clone(), current);
-        let unrelated = row(net, current - 10_000);
+        // Available but empty recent history, unavailable recent history, and a bucket
+        // at the sampler boundary all have different completeness implications.
+        let mut disabled_query = q.clone();
+        disabled_query.series[0].metric = statglass_schema::MetricId::from_static("mem.used");
+        let disabled = run(&disabled_query, now, Some(vec![]));
+        let fallback = run(&q, now, None);
+        let boundary = run(&q, minute + 500, Some(vec![row(Tier::S10, minute)]));
+        q.to_ms = Some(minute - 70_000);
+        let ending_in_gap = run(&q, now, Some(vec![]));
+        q.from_ms = minute - 7_200_000;
+        q.to_ms = None;
+        q.max_points = 1;
+        let slow = run(&q, now, Some(vec![row(Tier::M1, minute - 180_000)]));
         assert_eq!(
-            run(vec![open.clone(), unrelated.clone()]).complete_to_ms,
-            start
+            [disabled, fallback, boundary, ending_in_gap, slow],
+            [
+                (Tier::S10, minute),
+                (Tier::S10, minute - 140_000),
+                (Tier::S10, minute - 10_000),
+                (Tier::S10, minute - 70_000),
+                (Tier::M15, minute),
+            ],
         );
-
-        writer.write_bucket(row(cpu, start + 10_000)).unwrap();
-        writer.flush().unwrap();
-        assert_eq!(run(Vec::new()).complete_to_ms, start + 20_000);
-        assert_eq!(run(vec![open, unrelated]).complete_to_ms, start + 20_000);
     }
 
     #[test]
     fn history_uses_one_bounded_recent_snapshot_to_close_the_commit_hole() {
         const BUCKET: i64 = 10_000;
         let current_bucket = 1_791_158_400_000;
-        let now = current_bucket + 500;
+        let now = current_bucket + 1_500;
         let host = host_record();
         let key = SeriesKey::parse("cpu.total").unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -420,38 +492,49 @@ mod tests {
             "the newest row was queued without a commit"
         );
 
-        let from_ms = current_bucket - 3_600_000;
-        let request = HistoryQuery {
-            series: selectors,
-            from_ms,
-            to_ms: None,
-            max_points: 500,
-            events_for: None,
-        };
-        let calls = Cell::new(0);
-        let answer = read_history(
-            &store,
-            host.id,
-            &request,
-            now,
-            |from, to| {
-                calls.set(calls.get() + 1);
-                assert_eq!((from, to), (now - RECENT_ROWS_MS, now));
-                vec![row(newest_closed), row(current_bucket)]
-            },
-            |_, width| width,
-        )
-        .unwrap();
-        let Answer::History(answer) = answer else {
-            panic!("expected a history answer")
-        };
-        assert_eq!(calls.get(), 1);
-        assert_eq!(answer.complete_to_ms, current_bucket);
-        assert!(
-            answer.series[0]
-                .points
-                .contains(&(newest_closed, 42.0, 20.0, 80.0))
-        );
-        assert_eq!(answer.series[0].points.last().unwrap().0, current_bucket);
+        for (from_ms, recent_start) in [
+            (current_bucket - 3_600_000, now - RECENT_ROWS_MS),
+            (newest_closed + 2_000, newest_closed),
+        ] {
+            let request = HistoryQuery {
+                series: selectors.clone(),
+                from_ms,
+                to_ms: None,
+                max_points: 500,
+                events_for: None,
+            };
+            let calls = Cell::new(0);
+            let answer = read_history(
+                &store,
+                host.id,
+                &request,
+                now,
+                now - 1_000,
+                |from, to| {
+                    calls.set(calls.get() + 1);
+                    assert_eq!((from, to), (recent_start, now));
+                    Some(
+                        [newest_closed, current_bucket]
+                            .into_iter()
+                            .filter(|ts| (from..to).contains(ts))
+                            .map(row)
+                            .collect(),
+                    )
+                },
+                |_, width| width,
+            )
+            .unwrap();
+            let Answer::History(answer) = answer else {
+                panic!("expected a history answer")
+            };
+            assert_eq!(calls.get(), 1);
+            assert_eq!(answer.complete_to_ms, current_bucket);
+            assert!(
+                answer.series[0]
+                    .points
+                    .contains(&(newest_closed, 42.0, 20.0, 80.0))
+            );
+            assert_eq!(answer.series[0].points.last().unwrap().0, current_bucket);
+        }
     }
 }
