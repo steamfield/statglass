@@ -1,8 +1,8 @@
 //! The shared handshake and the race across an endpoint's targets, on top of any
 //! [`Dialer`].
 use crate::{
-    DialFailure, DialedStream, Dialer, Endpoint, HandshakeFailure, RemoteError, Result, RouteError,
-    SshSession, Target, marker_error,
+    ConnectionFailureKind, DialFailure, DialedStream, Dialer, Endpoint, HandshakeFailure,
+    RemoteError, Result, RouteError, SshSession, Target, marker_error,
 };
 use statglass_proto::{Hello, Message, Negotiated, Offer};
 use statglass_schema::HostId;
@@ -30,6 +30,18 @@ pub const PROMOTION_DEBOUNCE: Duration = Duration::from_secs(2);
 /// returns the preferred session. `local` is this device's host id (a host answering
 /// with it is this device); `expected` is the paired host's id, when known.
 pub async fn connect(
+    dialer: &dyn Dialer,
+    endpoint: &Endpoint,
+    local: HostId,
+    expected: Option<HostId>,
+) -> Result<SshSession> {
+    connect_routes(dialer, endpoint, local, expected)
+        .await
+        .map_err(preferred_error)
+}
+
+/// Runs the race while keeping all route failures available for connection status.
+pub(crate) async fn connect_routes(
     dialer: &dyn Dialer,
     endpoint: &Endpoint,
     local: HostId,
@@ -115,9 +127,10 @@ pub async fn connect(
             }
         }
     }
-    preferred
-        .map(|(_, session)| session)
-        .ok_or_else(|| route_error(failures))
+    preferred.map(|(_, session)| session).ok_or_else(|| {
+        failures.sort_unstable_by_key(|(index, _)| *index);
+        RemoteError::Routes(failures.into_iter().map(|(_, failure)| failure).collect())
+    })
 }
 
 async fn wait_for_grace(deadline: Option<Instant>) {
@@ -139,18 +152,28 @@ fn conflicting_identity(first: &Target, second: &Target) -> RemoteError {
     RemoteError::Identity(detail)
 }
 
-fn route_error(mut failures: Vec<(usize, RouteError)>) -> RemoteError {
-    failures.sort_unstable_by_key(|(index, _)| *index);
-    let routes: Vec<_> = failures.into_iter().map(|(_, failure)| failure).collect();
-    let agent_not_running = routes
-        .iter()
-        .any(|failure| matches!(failure.error, RemoteError::AgentNotRunning(_)));
-    let error = RemoteError::Routes(routes);
-    if agent_not_running {
-        RemoteError::AgentNotRunning(error.to_string())
-    } else {
-        error
+fn preferred_error(error: RemoteError) -> RemoteError {
+    let RemoteError::Routes(_) = &error else {
+        return error;
+    };
+    let kind = ConnectionFailureKind::from_error(&error);
+    if kind == ConnectionFailureKind::AgentNotRunning {
+        return RemoteError::AgentNotRunning(error.to_string());
     }
+    if matches!(
+        kind,
+        ConnectionFailureKind::MonitoringOff | ConnectionFailureKind::AppNotRunning
+    ) && let RemoteError::Routes(mut routes) = error
+    {
+        if let Some(index) = routes
+            .iter()
+            .position(|failure| ConnectionFailureKind::from_error(&failure.error) == kind)
+        {
+            return routes.swap_remove(index).error;
+        }
+        return RemoteError::Routes(routes);
+    }
+    error
 }
 
 async fn connect_target(

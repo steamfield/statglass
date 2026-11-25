@@ -1,15 +1,12 @@
-//! How a caller tunes a source for its platform: the runtime it runs on, how much
-//! history it syncs, how it reads the local network, and backgrounding (quiesce and
-//! resume). The desktop passes [`SourceOptions::default`], which is today's behavior.
-//!
-//! Scaffold: the options are accepted and ignored, and the lifecycle calls are no-ops,
-//! until phase 3 lane c implements them.
-use super::{RemoteSource, StatusCallback};
+//! How a caller tunes the source's runtime, history sync and local network probe.
+use super::{MirrorWork, RemoteSource, Session, adapt_page_bytes, quiesce::WriteResult};
 use crate::network::LocalNetwork;
-use crate::{BoxFuture, Dialer, Endpoint, MirrorSink};
-use statglass_schema::{HostId, HostRecord};
+use crate::{MirrorSink, Result, network};
+use statglass_proto::{Message, SyncRequest};
+use statglass_schema::Tier;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::Instant;
 
 /// How long a session on a changed network waits for a Pong to its immediate Ping
 /// before it is dropped as a dead route.
@@ -39,34 +36,139 @@ pub struct SourceOptions {
 }
 
 impl RemoteSource {
-    /// [`RemoteSource::new`] with platform options. Scaffold stub: `options` is ignored
-    /// until phase 3 lane c.
-    pub fn with_options(
-        record: HostRecord,
-        local: HostId,
-        dialer: Arc<dyn Dialer>,
-        endpoint: Endpoint,
-        on_status: StatusCallback,
-        mirror: Option<Arc<dyn MirrorSink>>,
-        options: SourceOptions,
-    ) -> Arc<Self> {
-        let _ = options;
-        Self::new(record, local, dialer, endpoint, on_status, mirror)
-    }
-
-    /// Changes how much history the source syncs, without reconnecting. Scaffold stub:
-    /// a no-op until phase 3 lane c.
+    /// Changes how much history the source syncs without reconnecting.
     pub fn set_sync_policy(&self, policy: SyncPolicy) {
-        let _ = policy;
+        self.control.send_if_modified(|state| {
+            let changed = state.sync != policy;
+            state.sync = policy;
+            changed
+        });
     }
 
-    /// Lets an ingest already running commit, then closes the session and parks until
-    /// [`resume`](Self::resume). Scaffold stub: resolves at once until phase 3 lane c.
-    pub fn quiesce(&self) -> BoxFuture<'static, ()> {
-        Box::pin(async {})
+    pub(super) fn probe_network(&self) -> Option<LocalNetwork> {
+        self.options
+            .probe
+            .as_ref()
+            .map_or_else(network::probe_snapshot, |probe| Some(probe()))
+    }
+}
+
+impl SyncPolicy {
+    pub(super) fn tiers(self, mirror: Option<&dyn MirrorSink>) -> &[Tier] {
+        let tiers: &[Tier] =
+            mirror.map_or(&[Tier::S10, Tier::M1, Tier::M15], MirrorSink::sync_tiers);
+        match self {
+            Self::Full => tiers,
+            Self::SummaryOnly => tiers.last().map_or(&[], std::slice::from_ref),
+            Self::Off => &[],
+        }
+    }
+}
+
+impl Session<'_> {
+    pub(super) async fn request_sync(&mut self) -> Result<bool> {
+        if self.mirror_write.running() {
+            return Ok(false);
+        }
+        // No wire request IDs: never overlap requests for a tier awaiting a late reply.
+        while self.next_tier < self.tiers.len()
+            && self.timed_out.contains_key(&self.tiers[self.next_tier])
+        {
+            self.next_tier += 1;
+        }
+        if self.clock_ready
+            && self.source.clock.now_ms().is_some()
+            && self.history_available
+            && !self.history_failed
+            && !self.recent_pending
+            && self.in_flight.is_none()
+            && self.next_tier < self.tiers.len()
+            && let Some(mirror) = &self.source.mirror
+        {
+            let tier = self.tiers[self.next_tier];
+            let now = self
+                .source
+                .clock
+                .now_ms()
+                .unwrap_or_else(statglass_engine::wall_ms);
+            let after = if self.restart_cursor.remove(&tier) {
+                None
+            } else {
+                match mirror.cursor(tier, self.epoch, self.kinds) {
+                    Ok(cursor) => {
+                        self.mirror_epoch_ready = true;
+                        cursor
+                    }
+                    Err(error) => {
+                        self.history_failed = true;
+                        self.watermark_failed = false;
+                        self.status.history_error = Some(error.to_string());
+                        self.status.catching_up = false;
+                        (self.source.on_status)(self.status.clone());
+                        return Ok(true);
+                    }
+                }
+            };
+            let floor = mirror
+                .history_floor(tier, now)
+                .max(self.floors.get(&tier).copied().unwrap_or(i64::MIN));
+            self.write(&Message::SyncRequest(SyncRequest {
+                tier,
+                after,
+                max_rows: 2000,
+                from_ms: Some(floor),
+                max_bytes: Some(self.page_bytes),
+            }))
+            .await?;
+            self.in_flight = Some((tier, after, Instant::now()));
+            self.status.catching_up = true;
+            (self.source.on_status)(self.status.clone());
+            if self.next_tier == 0 {
+                self.last_sync = Instant::now();
+            }
+        }
+
+        Ok(false)
     }
 
-    /// Dials again at once with the backoff reset. Scaffold stub: a no-op until phase 3
-    /// lane c.
-    pub fn resume(&self) {}
+    pub(super) fn apply_sync_policy(&mut self) {
+        let policy = self.control.borrow().sync;
+        // A reply already on the wire still belongs to the previous tier list.
+        if self.sync_policy != policy && self.in_flight.is_none() && !self.mirror_write.running() {
+            self.sync_policy = policy;
+            self.tiers = policy.tiers(self.source.mirror.as_deref());
+            self.next_tier = 0;
+            self.history_failed = false;
+        }
+    }
+
+    pub(super) fn mirror_write_finished(&mut self, work: MirrorWork, result: WriteResult) {
+        match work {
+            MirrorWork::Page { more, requested } => {
+                self.watermark_failed = false;
+                if let Err(error) = result {
+                    self.history_failed = true;
+                    self.next_tier = self.tiers.len();
+                    self.last_sync = Instant::now();
+                    self.status.history_error = Some(error.to_string());
+                    self.status.catching_up = false;
+                    (self.source.on_status)(self.status.clone());
+                } else {
+                    self.status.history_error = None;
+                    if !more {
+                        self.next_tier += 1;
+                    }
+                }
+                self.page_bytes = adapt_page_bytes(self.page_bytes, requested.elapsed());
+            }
+            MirrorWork::Prune => {
+                if let Err(error) = result {
+                    self.watermark_failed = false;
+                    self.status.history_error = Some(error.to_string());
+                }
+                self.status.catching_up = false;
+                (self.source.on_status)(self.status.clone());
+            }
+        }
+    }
 }

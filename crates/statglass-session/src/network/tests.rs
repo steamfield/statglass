@@ -170,7 +170,7 @@ fn a_mac_with_only_bridge_addresses_reads_offline() {
         LocalNetwork {
             online: false,
             tailscale_up: false,
-            lan_up: false,
+            lan_up: true,
         }
     );
 }
@@ -200,13 +200,13 @@ fn summary(entries: &[(&str, &str)]) -> LocalNetwork {
 }
 
 #[test]
-fn a_carrier_nat_address_on_wifi_is_online_not_tailscale() {
+fn a_carrier_nat_address_on_wifi_is_online_without_a_lan_or_tailscale_address() {
     assert_eq!(
         summary(&[("en0", "100.72.1.5")]),
         LocalNetwork {
             online: true,
             tailscale_up: false,
-            lan_up: true,
+            lan_up: false,
         }
     );
 }
@@ -243,6 +243,52 @@ fn linux_tailscale0_counts_as_tailscale_not_online() {
             online: false,
             tailscale_up: true,
             lan_up: false,
+        }
+    );
+}
+
+#[test]
+fn cellular_and_tunnels_leave_lan_down_until_a_usable_lan_address_appears() {
+    let cellular = ("pdp_ip0", "10.34.12.9");
+    let tailnet = ("utun3", "100.72.1.5");
+    let cellular_v6 = ("pdp_ip1", "2600:1700::2");
+    let vpn = ("utun4", "fd00::1");
+    let cellular_only = summary(&[cellular, tailnet, cellular_v6, vpn]);
+    assert_eq!(
+        cellular_only,
+        LocalNetwork {
+            online: true,
+            tailscale_up: true,
+            lan_up: false
+        }
+    );
+    for addr in ["192.168.1.5", "::ffff:10.0.0.3", "fd00::2", "2600:1700::3"] {
+        assert_eq!(
+            summary(&[cellular, tailnet, ("en0", addr)]),
+            LocalNetwork {
+                lan_up: true,
+                ..cellular_only
+            }
+        );
+    }
+    assert!(
+        !summary(&[
+            ("en0", "fe80::2"),
+            ("en0", "ff02::1"),
+            ("en0", "203.0.113.1")
+        ])
+        .lan_up
+    );
+}
+
+#[test]
+fn bridge_lan_addresses_count_for_lan_without_changing_the_online_heuristic() {
+    assert_eq!(
+        summary(&[("bridge0", "192.168.1.10"), ("utun3", "100.72.1.5")]),
+        LocalNetwork {
+            online: false,
+            lan_up: true,
+            tailscale_up: true,
         }
     );
 }

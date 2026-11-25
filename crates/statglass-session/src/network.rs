@@ -11,9 +11,8 @@ pub struct LocalNetwork {
     /// An up, running Tailscale interface (`utun*`, `tailscale*`) has a Tailscale
     /// address (100.64.0.0/10 or fd7a:115c:a1e0::/48).
     pub tailscale_up: bool,
-    /// A route to the host's LAN may exist: an up interface other than cellular
-    /// (`pdp_ip*`) and tunnels (`utun*`) has a usable address. Cellular alone counts as
-    /// LAN-down. Until phase 3 lane c refines it, `summarize` sets it to `online`.
+    /// An up LAN interface has a private IPv4, unique-local IPv6 or global IPv6
+    /// address. Cellular and Tailscale tunnels do not count.
     pub lan_up: bool,
 }
 
@@ -26,12 +25,8 @@ pub enum AddressClass {
     Ignored,
 }
 
-/// What a failed interface read reports: it never invents a local cause.
-const UNKNOWN_NETWORK: LocalNetwork = LocalNetwork {
-    online: true,
-    tailscale_up: true,
-    lan_up: true,
-};
+/// No interface snapshot was available. Route checks leave the session in place.
+pub(crate) const UNKNOWN_NETWORK: Option<LocalNetwork> = None;
 
 /// Tailscale's IPv6 ULA prefix, fd7a:115c:a1e0::/48, as its first three segments.
 const TAILSCALE_V6_PREFIX: [u16; 3] = [0xfd7a, 0x115c, 0xa1e0];
@@ -101,11 +96,18 @@ fn has_prefix(name: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| name.starts_with(prefix))
 }
 
-/// Reads this Mac's interfaces with `getifaddrs`. A failed read is logged and reports
-/// online with Tailscale up, so a probe failure never invents a local cause.
+/// Reads local interfaces with `getifaddrs`. A failed read leaves all routes possible.
 pub fn probe() -> LocalNetwork {
+    probe_snapshot().unwrap_or(LocalNetwork {
+        online: true,
+        tailscale_up: true,
+        lan_up: true,
+    })
+}
+
+pub(crate) fn probe_snapshot() -> Option<LocalNetwork> {
     match interfaces::usable_addresses() {
-        Ok(addresses) => summarize(&addresses),
+        Ok(addresses) => Some(summarize(&addresses)),
         Err(error) => {
             tracing::warn!(%error, "could not read this Mac's network interfaces");
             UNKNOWN_NETWORK
@@ -121,14 +123,23 @@ fn summarize(addresses: &[interfaces::InterfaceAddress]) -> LocalNetwork {
         lan_up: false,
     };
     for entry in addresses {
+        net.lan_up |= !entry.name.starts_with("pdp_ip")
+            && !has_prefix(&entry.name, &TAILSCALE_INTERFACE_PREFIXES)
+            && is_lan_address(entry.addr);
         match class_on_interface(entry) {
             AddressClass::Tailscale => net.tailscale_up = true,
             AddressClass::Routable if counts_toward_online(&entry.name) => net.online = true,
             AddressClass::Routable | AddressClass::Ignored => {}
         }
     }
-    net.lan_up = net.online;
     net
+}
+
+fn is_lan_address(addr: IpAddr) -> bool {
+    match addr.to_canonical() {
+        IpAddr::V4(addr) => addr.is_private(),
+        IpAddr::V6(addr) => addr.is_unique_local() || addr.segments()[0] & 0xe000 == 0x2000,
+    }
 }
 
 /// How an address counts given the interface carrying it. ISPs, hotspots and corporate
