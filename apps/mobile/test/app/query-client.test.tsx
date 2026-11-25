@@ -111,6 +111,31 @@ const terminal: readonly CommandError[] = [
   { kind: "invalid_argument", message: "Invalid host" },
 ];
 
+test.each([
+  { name: "plain Error", error: new Error("Read failed"), attempts: 2 },
+  {
+    name: "native-source",
+    error: Object.assign(new Error("Phone key unavailable"), {
+      source: "native",
+    }),
+    attempts: 1,
+  },
+])(
+  "a $name rejection gets $attempts read attempts",
+  async ({ error, attempts }) => {
+    const client = createQueryClient();
+    const queryFn = jest.fn(() => Promise.reject(error));
+    try {
+      await expect(
+        client.fetchQuery({ queryKey: hostKeys.list(), queryFn, retryDelay: 0 })
+      ).rejects.toBe(error);
+      expect(queryFn).toHaveBeenCalledTimes(attempts);
+    } finally {
+      client.clear();
+    }
+  }
+);
+
 test.each(terminal)("a $kind read fails without retrying", async (error) => {
   const client = createQueryClient();
   const queryFn = jest.fn(() =>

@@ -100,6 +100,15 @@ export function CoreProvider({
 
   useEffect(() => {
     let active = true;
+    let rosterEvent: boolean | undefined;
+
+    function disposeCore() {
+      const core = coreRef.current;
+      if (!core) return;
+      coreRef.current = null;
+      selectTransport(null, false, core);
+      core.dispose();
+    }
 
     async function start() {
       const native = getStatglassNative();
@@ -111,16 +120,31 @@ export function CoreProvider({
       if (!active) return;
       const core = createNativeTransport(native);
       coreRef.current = core;
+      core.onHostsChanged(({ hosts }) => {
+        if (!active) return;
+        const hasHosts = hosts.length > 0;
+        rosterEvent = hasHosts;
+        setState((current) =>
+          current.status === "ready" &&
+          current.core === core &&
+          current.hasHosts !== hasHosts
+            ? { ...current, hasHosts }
+            : current
+        );
+      });
       const hosts = await core.listHosts();
       if (active) {
-        setState({ status: "ready", core, hasHosts: hosts.length > 0 });
+        setState({
+          status: "ready",
+          core,
+          hasHosts: rosterEvent ?? hosts.length > 0,
+        });
       }
     }
 
     void start().catch((error: unknown) => {
       if (!active) return;
-      coreRef.current?.dispose();
-      coreRef.current = null;
+      disposeCore();
       const failure = startupError(error);
       console.error("[native core] startup failed", {
         attempt: attempt + 1,
@@ -130,15 +154,16 @@ export function CoreProvider({
     });
     return () => {
       active = false;
-      coreRef.current?.dispose();
-      coreRef.current = null;
+      disposeCore();
     };
-  }, [attempt]);
+  }, [attempt, selectTransport]);
 
   const selectableCore = state.status === "ready" ? state.core : null;
   const hasHosts = state.status === "ready" && state.hasHosts;
   useEffect(() => {
-    if (hasHosts && choice === null) selectTransport(selectableCore, false);
+    if (selectableCore === coreRef.current && hasHosts && choice === null) {
+      selectTransport(selectableCore, false);
+    }
   }, [choice, hasHosts, selectableCore, selectTransport]);
 
   const retry = useCallback(() => {

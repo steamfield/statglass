@@ -2,19 +2,13 @@
  * Renders a component under the app's real providers with a fresh query
  * client per test, and optionally a chosen transport and starting settings.
  */
-import { jest } from "@jest/globals";
 import { render } from "@testing-library/react-native";
 import type { ReactElement, ReactNode } from "react";
-import type { GestureHandlerRootView as GestureRoot } from "react-native-gesture-handler";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import type { PhoneSettings } from "@/data/phone-settings";
 import type { PhoneTransport } from "@/data/seam";
-import { AppProviders } from "@/data/transport-context";
+import { AppProviders } from "@/lib/providers";
 import { createQueryClient } from "@/lib/query-client";
-
-// The package barrel loads gesture detectors that require Reanimated even in chart-only tests.
-const { default: GestureHandlerRootView } = jest.requireActual<{
-  default: typeof GestureRoot;
-}>("react-native-gesture-handler/lib/module/components/GestureHandlerRootView");
 
 /**
  * A client with the app's defaults and cache garbage collection off, so no

@@ -1,11 +1,10 @@
 /**
- * A still stand-in for react-native-reanimated, for suites that render a chart
- * without testing its motion. The bundled `react-native-reanimated/mock` loads
+ * A still stand-in for react-native-reanimated. The bundled mock loads
  * the native runtime under jest-expo's iOS resolver and throws, so jest.config
  * maps that path here, and test/setup.ts mocks the package with this module.
  * expo-router's testing library mocks Reanimated with `react-native-reanimated/mock`
  * too, which the mapping also sends here. Animations land on their target at
- * once. Suites that assert motion (test/widgets/charts) mock the module themselves.
+ * once. Motion tests observe calls into the same stand-in.
  */
 import { jest } from "@jest/globals";
 

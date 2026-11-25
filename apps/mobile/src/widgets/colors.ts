@@ -3,10 +3,10 @@
  * appearance, from the theme values generated off the desktop's theme.
  */
 import type { Accent, ColorRef } from "@core/widget-models/tokens";
-import { colorsForScheme } from "@/ui/theme-colors";
+import { themeColors } from "@/theme.generated";
 
 type Scheme = "light" | "dark";
-type ThemeToken = keyof ReturnType<typeof colorsForScheme>;
+type ThemeToken = keyof (typeof themeColors)["light"];
 
 /** The ramp's opacity per step (the desktop's `--ramp-*`). */
 const RAMP_ALPHA: Record<1 | 2 | 3 | 4, number> = {
@@ -75,7 +75,7 @@ export function resolveColor(
   scheme: Scheme,
   accentInScope?: Accent
 ): string {
-  const colors = colorsForScheme(scheme);
+  const colors = themeColors[scheme];
   switch (ref.kind) {
     case "accent": {
       const accent = accentOf(ref, accentInScope);

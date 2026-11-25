@@ -20,6 +20,7 @@ import {
   useRemoteStatus,
 } from "@/data/live";
 import type { NativeTransport } from "@/transport";
+import { StartupFailurePanel } from "@/ui/startup-failure";
 import { Text } from "@/ui/text";
 import { type DebugHostFields, debugHost } from "./debug-host";
 import { useDebugConnection } from "./use-debug-connection";
@@ -75,7 +76,7 @@ function DebugCoreContent() {
         <DebugHostForm transport={core.transport} keyLine={core.keyLine} />
       );
     case "startup-error":
-      return null;
+      return <StartupFailurePanel />;
   }
 }
 

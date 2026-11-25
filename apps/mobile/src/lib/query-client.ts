@@ -4,7 +4,6 @@
  * client through `Providers`; tests make one per render.
  */
 import { commandError } from "@core/command-error";
-import { isNativeError } from "@core/native-errors";
 import { QueryClient } from "@tanstack/react-query";
 
 /**
@@ -14,7 +13,14 @@ import { QueryClient } from "@tanstack/react-query";
 export const QUERY_DEFAULTS = {
   queries: {
     retry(failures: number, error: unknown) {
-      if (failures >= 1 || isNativeError(error)) return false;
+      if (failures >= 1) return false;
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "source" in error &&
+        error.source === "native"
+      )
+        return false;
       const kind = commandError(error)?.kind;
       return (
         kind === undefined ||

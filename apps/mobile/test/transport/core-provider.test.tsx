@@ -4,23 +4,25 @@ import type { NativeError } from "@core/native-errors";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { FakeNative, installNative, ok } from "@test/transport/fake-native";
-import { act, screen, waitFor } from "@testing-library/react-native";
-import { fireEvent, renderRouter } from "expo-router/testing-library";
-import { StrictMode, useEffect } from "react";
-import { Text } from "react-native";
+import { act, screen, waitFor, within } from "@testing-library/react-native";
+import {
+  fireEvent,
+  renderRouter,
+  testRouter,
+} from "expo-router/testing-library";
+import { Activity, StrictMode } from "react";
+import { AccessibilityInfo, Pressable, Text } from "react-native";
+import FirstLaunch from "@/app/index";
 import {
   useOptionalPhoneTransport,
   usePhoneTransport,
+  useSetPhoneTransport,
 } from "@/data/transport-context";
 import { CoreProvider, useNativeCore } from "@/transport";
 
 function CoreConsumer() {
   const { core } = useNativeCore();
   const transport = useOptionalPhoneTransport();
-  useEffect(() => {
-    // Leave a subscription pending so unmount exercises the owner's disposal.
-    core?.onHostsChanged(() => undefined);
-  }, [core]);
   return (
     <Text>
       {core === null
@@ -78,6 +80,105 @@ test("starts a core with an empty roster without selecting a transport", async (
   expect(await screen.findByText("No native hosts")).toBeOnTheScreen();
 });
 
+test("a roster event selects native transport after an empty start", async () => {
+  const native = new FakeNative();
+  native.call.mockImplementation(async () => ok([]));
+  installNative(native);
+  const hosts = await createMockTransport().listHosts();
+  await renderWithProviders(
+    <CoreProvider>
+      <CoreConsumer />
+    </CoreProvider>
+  );
+  expect(await screen.findByText("No native hosts")).toBeOnTheScreen();
+  await act(() =>
+    native.emit("onCoreEvent", {
+      event: JSON.stringify({ kind: "hosts_changed", hosts }),
+    })
+  );
+  expect(await screen.findByText("Native hosts")).toBeOnTheScreen();
+});
+
+test("a roster event during startup takes precedence over the initial read", async () => {
+  const native = new FakeNative();
+  const roster = Promise.withResolvers<string>();
+  native.call.mockReturnValueOnce(roster.promise);
+  installNative(native);
+  const hosts = await createMockTransport().listHosts();
+  await renderWithProviders(
+    <CoreProvider>
+      <CoreConsumer />
+    </CoreProvider>
+  );
+  await waitFor(() =>
+    expect(native.call).toHaveBeenCalledWith("list_hosts", "null")
+  );
+  await act(() =>
+    native.emit("onCoreEvent", {
+      event: JSON.stringify({ kind: "hosts_changed", hosts }),
+    })
+  );
+  await act(() => roster.resolve(ok([])));
+  expect(await screen.findByText("Native hosts")).toBeOnTheScreen();
+});
+
+test("restarting the core effect clears the disposed selection and selects the replacement", async () => {
+  const native = new FakeNative();
+  const hosts = await createMockTransport().listHosts();
+  const demo = createMockTransport();
+  const next = Promise.withResolvers<string>();
+  native.call
+    .mockResolvedValueOnce(ok(hosts))
+    .mockReturnValueOnce(next.promise);
+  installNative(native);
+  function Choice() {
+    const choice = useOptionalPhoneTransport();
+    const select = useSetPhoneTransport();
+    return (
+      <>
+        <Text>
+          {choice === demo
+            ? "Demo selected"
+            : choice
+              ? "Transport selected"
+              : "Transport cleared"}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => select(demo, true)}
+        >
+          <Text>Choose demo</Text>
+        </Pressable>
+      </>
+    );
+  }
+  function Tree({ visible }: { visible: boolean }) {
+    return (
+      <>
+        <Choice />
+        <Activity mode={visible ? "visible" : "hidden"}>
+          <CoreProvider>
+            <CoreConsumer />
+          </CoreProvider>
+        </Activity>
+      </>
+    );
+  }
+  const view = await renderWithProviders(<Tree visible />);
+  expect(await screen.findByText("Native hosts")).toBeOnTheScreen();
+  await view.rerender(<Tree visible={false} />);
+  expect(screen.getByText("Transport cleared")).toBeOnTheScreen();
+  expect(native.listenerCount("onCoreEvent")).toBe(0);
+  await view.rerender(<Tree visible />);
+  expect(screen.getByText("Transport cleared")).toBeOnTheScreen();
+  await act(() => next.resolve(ok(hosts)));
+  expect(await screen.findByText("Native hosts")).toBeOnTheScreen();
+  expect(native.start).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByRole("button", { name: "Choose demo" }));
+  await view.rerender(<Tree visible={false} />);
+  expect(screen.getByText("Demo selected")).toBeOnTheScreen();
+});
+
 test("a cold host link waits for the startup roster", async () => {
   const native = new FakeNative();
   const records = await createMockTransport().listHosts();
@@ -119,14 +220,30 @@ test("shows the command startup error and starts successfully on Retry", async (
   native.call.mockImplementation(async () => ok([]));
   installNative(native);
   const log = jest.spyOn(console, "error").mockImplementation(() => undefined);
-  await renderRouter(
-    { appDir: "./src/app", overrides: { index: CoreConsumer } },
+  const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+  function Welcome() {
+    return (
+      <>
+        <FirstLaunch />
+        <CoreConsumer />
+      </>
+    );
+  }
+  const view = await renderRouter(
+    { appDir: "./src/app", overrides: { index: Welcome } },
     { initialUrl: "/" }
   );
   expect(
-    await screen.findByRole("alert", { name: "StatGlass couldn’t start" })
+    await screen.findByRole("header", { name: "StatGlass couldn’t start" })
   ).toBeOnTheScreen();
-  expect(screen.getByText(error.message)).toBeOnTheScreen();
+  const [viewport] =
+    view.root?.queryAll((element) => element.type === "RCTScrollView") ?? [];
+  if (!viewport) throw new Error("The welcome content cannot scroll");
+  const welcome = within(viewport);
+  expect(welcome.getByText(error.message)).toBeOnTheScreen();
+  expect(
+    welcome.getByRole("button", { name: "Try demo hosts" })
+  ).toBeOnTheScreen();
   expect(log).toHaveBeenCalledWith("[native core] startup failed", {
     attempt: 1,
     error,
@@ -136,6 +253,7 @@ test("shows the command startup error and starts successfully on Retry", async (
   await act(() => response.resolve(ok(null)));
   expect(await screen.findByText("No native hosts")).toBeOnTheScreen();
   expect(native.start).toHaveBeenCalledTimes(2);
+  expect(announce.mock.calls).toEqual([["StatGlass couldn’t start"]]);
 });
 
 test("a late native start failure leaves the active demo available", async () => {
@@ -192,4 +310,34 @@ test("keeps a Swift rejection typed and shows its message", async () => {
   expect(
     screen.queryByText("The debug screen needs a development build.")
   ).toBeNull();
+});
+
+test("Debug shows the startup failure and can retry while the demo is active", async () => {
+  const native = new FakeNative();
+  native.start.mockRejectedValueOnce({
+    code: "ERR_STATGLASS_KEYCHAIN",
+    message: "The phone is locked. (OSStatus -25308)",
+  });
+  native.call.mockImplementation(async (method) =>
+    ok(method === "list_hosts" ? [] : "Recovered SSH key")
+  );
+  installNative(native);
+  jest.spyOn(console, "error").mockImplementation(() => undefined);
+  await renderRouter("./src/app", {
+    initialUrl: "/demo?scenario=host-unreachable",
+  });
+  expect(
+    await screen.findByRole("button", { name: /^unreachable,/ })
+  ).toBeOnTheScreen();
+  await testRouter.push("/debug");
+  expect(
+    screen.queryByText("Unlock this iPhone to connect") ??
+      screen.getByText("The phone is locked.")
+  ).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByText("Recovered SSH key")).toBeOnTheScreen();
+  await testRouter.back("/");
+  expect(
+    await screen.findByRole("button", { name: /^unreachable,/ })
+  ).toBeOnTheScreen();
 });

@@ -1,10 +1,9 @@
 /**
- * Which `PhoneTransport` the app reads through, and whether it is the demo.
- * A swap clears host data before the new transport's queries can read it.
+ * The app's selected transport and demo flag. A swap clears host and history
+ * queries before screens read from the new transport.
  */
 import { historyKeys, hostKeys } from "@core/query-keys";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { ThemeProvider } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -13,14 +12,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useColorScheme } from "react-native";
-import { Providers } from "@/lib/providers";
-import { MotionProvider } from "@/ui/motion";
-import { navigationTheme } from "@/ui/navigation-theme";
-import {
-  PhoneSettingsProvider,
-  type PhoneSettingsProviderProps,
-} from "./phone-settings";
 import type { PhoneTransport } from "./seam";
 
 /** The chosen transport, null until one is set. */
@@ -29,7 +20,11 @@ interface TransportChoice {
   demo: boolean;
 }
 
-type SetTransport = (transport: PhoneTransport | null, demo: boolean) => void;
+type SetTransport = (
+  transport: PhoneTransport | null,
+  demo: boolean,
+  expected?: PhoneTransport
+) => void;
 
 const NOTHING_CHOSEN: TransportChoice = { transport: null, demo: false };
 
@@ -54,8 +49,9 @@ export function PhoneTransportProvider({
   const client = useQueryClient();
   const current = useRef(choice);
   const set = useCallback<SetTransport>(
-    (transport, demo) => {
+    (transport, demo, expected) => {
       const previous = current.current;
+      if (expected && previous.transport !== expected) return;
       if (previous.transport === transport && previous.demo === demo) return;
       if (previous.transport !== transport) {
         const cache = client.getQueryCache();
@@ -116,6 +112,7 @@ export function useOptionalPhoneTransport(): PhoneTransport | null {
 
 /**
  * Chooses the transport (null clears it) and says whether it is the demo.
+ * With `expected`, the change only applies if that transport is still selected.
  * @throws {Error} outside the provider
  */
 export function useSetPhoneTransport(): SetTransport {
@@ -131,34 +128,4 @@ export function useSetPhoneTransport(): SetTransport {
 /** Whether the chosen transport is the demo hosts. */
 export function useIsDemo(): boolean {
   return useChoice("useIsDemo").demo;
-}
-
-/** Shared screen providers for the app and component tests. */
-export function AppProviders({
-  children,
-  client,
-  initialTransport,
-  initialSettings,
-}: {
-  children: ReactNode;
-  client?: QueryClient;
-  initialTransport?: PhoneTransportProviderProps["initial"];
-  initialSettings?: PhoneSettingsProviderProps["initial"];
-}) {
-  const theme = navigationTheme(useColorScheme());
-  return (
-    <Providers {...(client ? { client } : {})}>
-      <PhoneTransportProvider
-        {...(initialTransport ? { initial: initialTransport } : {})}
-      >
-        <PhoneSettingsProvider
-          {...(initialSettings ? { initial: initialSettings } : {})}
-        >
-          <ThemeProvider value={theme}>
-            <MotionProvider>{children}</MotionProvider>
-          </ThemeProvider>
-        </PhoneSettingsProvider>
-      </PhoneTransportProvider>
-    </Providers>
-  );
 }

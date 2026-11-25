@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { expect, jest, test } from "@jest/globals";
 import { installNative } from "@test/transport/fake-native";
-import { useTheme } from "expo-router";
+import { router, useTheme } from "expo-router";
 import {
   act,
   fireEvent,
@@ -11,6 +11,7 @@ import {
 import { useSyncExternalStore } from "react";
 import * as ReactNative from "react-native";
 import RootLayout, { ErrorBoundary } from "@/app/_layout";
+import { useIsDemo, usePhoneTransport } from "@/data/transport-context";
 import { themeColors } from "@/theme.generated";
 
 const APP_DIR = "./src/app";
@@ -37,6 +38,7 @@ test("screens inherit navigator colors and use shared theme lookups", () => {
   const overrides: string[] = [];
   const rawLookups: string[] = [];
   const transportImports: string[] = [];
+  const widgetThemeHooks: string[] = [];
   for (const path of sources) {
     const source = readFileSync(`${root}/${path}`, "utf8");
     if (/\bheader(?:TintColor|UserInterfaceStyle)\s*:/.test(source))
@@ -44,16 +46,24 @@ test("screens inherit navigator colors and use shared theme lookups", () => {
     const directLookups = [...source.matchAll(/\bthemeColors\[/g)].length;
     if (
       path !== "ui/theme-colors.ts" &&
+      path !== "widgets/colors.ts" &&
       directLookups > (PENDING_COLOR_MIGRATIONS[path] ?? 0)
     )
       rawLookups.push(path);
     if (!path.startsWith("transport/") && /["']@\/transport\//.test(source)) {
       transportImports.push(path);
     }
+    if (
+      path.startsWith("widgets/") &&
+      /["']@\/ui\/theme-colors["']/.test(source)
+    ) {
+      widgetThemeHooks.push(path);
+    }
   }
   expect(overrides).toEqual([]);
   expect(rawLookups).toEqual([]);
   expect(transportImports).toEqual([]);
+  expect(widgetThemeHooks).toEqual([]);
 });
 
 function ThemeReadout() {
@@ -140,12 +150,17 @@ test("the root error boundary logs route params once and retries the failed scre
   await renderRouter(
     {
       appDir: APP_DIR,
-      overrides: { _layout: { default: FailingLayout, ErrorBoundary } },
+      overrides: {
+        _layout: {
+          default: FailingLayout,
+          ErrorBoundary,
+        },
+      },
     },
     { initialUrl: "/some-host/cpu?scenario=phone-errors" }
   );
   expect(
-    await screen.findByRole("alert", { name: "This screen couldn’t load" })
+    await screen.findByRole("header", { name: "This screen couldn’t load" })
   ).toBeOnTheScreen();
   expect(
     log.mock.calls.filter(
@@ -167,5 +182,78 @@ test("the root error boundary logs route params once and retries the failed scre
   await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
   expect(
     await screen.findByRole("header", { name: "StatGlass" })
+  ).toBeOnTheScreen();
+});
+
+test("retrying a failed host screen preserves the active demo and its route", async () => {
+  installNative(null);
+  let fails = true;
+  function HostScreen() {
+    const demo = useIsDemo();
+    usePhoneTransport();
+    if (fails) throw new Error("Host screen failed");
+    return (
+      <ReactNative.Text>
+        {demo ? "Host in demo" : "Host outside demo"}
+      </ReactNative.Text>
+    );
+  }
+  jest.spyOn(console, "error").mockImplementation(() => undefined);
+  const view = await renderRouter(
+    {
+      appDir: APP_DIR,
+      overrides: { "(hosts)/[host]/index": HostScreen },
+    },
+    { initialUrl: "/demo?scenario=host-unreachable" }
+  );
+  await fireEvent.press(
+    await screen.findByRole("button", { name: /^unreachable,/ })
+  );
+  expect(
+    await screen.findByText("This screen couldn’t load")
+  ).toBeOnTheScreen();
+  expect(view.getSegments()).toEqual(["(hosts)", "[host]"]);
+  fails = false;
+  await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByText("Host in demo")).toBeOnTheScreen();
+  expect(view.getSegments()).toEqual(["(hosts)", "[host]"]);
+  await act(() => router.back());
+  expect(
+    await screen.findByRole("button", { name: /^unreachable,/ })
+  ).toBeOnTheScreen();
+});
+
+test("retrying a failed settings screen preserves its place in the settings stack", async () => {
+  installNative(null);
+  let fails = true;
+  function About() {
+    if (fails) throw new Error("Settings screen failed");
+    return <ReactNative.Text>About preferences</ReactNative.Text>;
+  }
+  const log = jest.spyOn(console, "error").mockImplementation(() => undefined);
+  const view = await renderRouter(
+    {
+      appDir: APP_DIR,
+      overrides: { "settings/about": About },
+    },
+    { initialUrl: "/settings" }
+  );
+  await fireEvent.press(await screen.findByRole("button", { name: "About" }));
+  expect(
+    await screen.findByText("This screen couldn’t load")
+  ).toBeOnTheScreen();
+  await act(() => router.setParams({ scenario: "changed" }));
+  expect(view.getSearchParams().scenario).toBe("changed");
+  expect(
+    log.mock.calls.filter(
+      ([message]) => message === "[navigation] screen failed"
+    )
+  ).toHaveLength(1);
+  fails = false;
+  await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByText("About preferences")).toBeOnTheScreen();
+  await act(() => router.back());
+  expect(
+    await screen.findByRole("button", { name: "About" })
   ).toBeOnTheScreen();
 });

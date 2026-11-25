@@ -2,16 +2,22 @@
  * First-launch screen: what the app is for and the three ways in (pair a Mac,
  * add a Linux server, try the demo hosts).
  */
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { ActionButton } from "@/components/action-button";
+import { StartupFailurePanel } from "@/ui/startup-failure";
 
 /** The app's opening screen before any host is paired. */
 export default function FirstLaunch() {
   return (
-    // Safe-area padding comes from the insets SafeAreaProvider exposes to
-    // NativeWind; className does not reach SafeAreaView itself.
-    <View className="flex-1 bg-background pt-safe pb-safe">
-      <View className="flex-1 justify-center gap-3 px-6">
+    <ScrollView
+      className="flex-1 bg-background"
+      contentContainerClassName="grow pt-safe pb-safe"
+      contentInsetAdjustmentBehavior="never"
+    >
+      <View className="px-6">
+        <StartupFailurePanel />
+      </View>
+      <View className="grow justify-center gap-3 px-6 py-4">
         <Text
           accessibilityRole="header"
           className="font-bold text-4xl text-foreground"
@@ -36,6 +42,6 @@ export default function FirstLaunch() {
         />
         <ActionButton label="Try demo hosts" href="/demo" weight="plain" />
       </View>
-    </View>
+    </ScrollView>
   );
 }
