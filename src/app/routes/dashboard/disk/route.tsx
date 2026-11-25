@@ -2,13 +2,12 @@ import { relativeWindow } from "@core/chart-range";
 import { formatRate } from "@core/format";
 import { readRange, writeRange } from "@core/range-params";
 import { keyByLabel, labelValues } from "@core/series-key";
-import { type ReactNode, useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useEffect, useMemo } from "react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { brushScopeProps, useDismissOutside } from "~/components/brush-overlay";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import { SectionCard } from "~/components/section-card";
-import { SegmentedControl } from "~/components/segmented-control";
 import { SelectionSummary } from "~/components/selection-summary";
 import {
   Select,
@@ -21,6 +20,7 @@ import { VolumeTable } from "~/components/volume-table";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow, useSetChartWindow } from "~/hooks/use-chart-window";
 import { useDiskIo, useDiskIoScope } from "~/hooks/use-disk-io";
+import { useSpaceVolumes } from "~/hooks/use-disk-space";
 import { useEdition } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
 import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
@@ -35,41 +35,32 @@ import { StatList } from "~/widgets/stat-list";
 import { DiskIoCharts } from "./_components/disk-io-charts";
 import { DiskProcesses } from "./_components/disk-processes";
 import { DiskRangeTotals } from "./_components/disk-range-totals";
-import { SpaceView } from "./_components/space-view";
-import { useSpaceVolumes } from "./_hooks/use-disk-space";
 import { volumeRows } from "./_lib/disk";
+
+/** Where the disk space report lives (D-153); `vol` opens that volume. */
+const DISK_SPACE = "/dashboard/disk-space";
 
 export default function DiskRoute() {
   const [params] = useSearchParams();
-  const set = useSearchParamPatch();
+  const navigate = useNavigate();
   const edition = useEdition();
-  const space = params.get("view") === "space";
-  // Activity keeps its own params while in Space, so switching back restores it.
-  const switcher = edition?.disk_space ? (
-    <SegmentedControl
-      options={[
-        { value: "activity", label: "Activity" },
-        { value: "space", label: "Space" },
-      ]}
-      value={space ? "space" : "activity"}
-      onChange={(value) => set({ view: value === "space" ? value : null })}
-      ariaLabel="Disk view"
-    />
-  ) : null;
-  if (space && edition?.disk_space)
+  // The report was a second view of Disk before D-153; old links still open it.
+  if (params.get("view") === "space") {
+    const vol = params.get("vol");
     return (
-      <SpaceView
-        vol={params.get("vol")}
-        onVol={(vol) => set({ vol })}
-        switcher={switcher}
+      <Navigate
+        replace
+        to={vol ? `${DISK_SPACE}?${new URLSearchParams({ vol })}` : DISK_SPACE}
       />
     );
+  }
   return (
     <ChartRangeProvider initial={readRange(params)}>
       <DiskActivity
-        switcher={switcher}
         onAnalyze={
-          edition?.disk_space ? (vol) => set({ view: "space", vol }) : undefined
+          edition?.disk_space
+            ? (vol) => navigate(`${DISK_SPACE}?${new URLSearchParams({ vol })}`)
+            : undefined
         }
       />
     </ChartRangeProvider>
@@ -78,11 +69,9 @@ export default function DiskRoute() {
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 function DiskActivity({
-  switcher,
   onAnalyze,
 }: {
-  switcher: ReactNode;
-  /** Opens Space for a volume; absent when this build has no Space view. */
+  /** Opens Disk space for a volume; absent when this build has no report. */
   onAnalyze: ((vol: string) => void) | undefined;
 }) {
   const chartWindow = useChartWindow();
@@ -181,7 +170,6 @@ function DiskActivity({
           <div className="flex flex-wrap items-center gap-2">
             <WindowControl />
             <ChartRangeNotice />
-            {switcher}
           </div>
         }
       />

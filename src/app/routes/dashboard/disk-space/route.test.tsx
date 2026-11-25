@@ -8,19 +8,19 @@ import { Profiler, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { HostSelectionContext } from "~/lib/host-selection";
 import { HostStoreProvider } from "~/stores/host-store";
-import DiskRoute from "./route";
+import DiskSpaceRoute from "./route";
 
 // A scan polls once a second; give a poll room to land.
 const POLL = { timeout: 3000 };
 
-function setup(route = "/?view=space", scenarios: ScenarioName[] = []) {
+function setup(route = "/", scenarios: ScenarioName[] = []) {
   let t = 1_700_000_000_000;
   const transport = createMockTransport({
     now: () => t,
     autoTick: false,
     scenarios,
   });
-  const result = renderWithProviders(<DiskRoute />, { transport, route });
+  const result = renderWithProviders(<DiskSpaceRoute />, { transport, route });
   return {
     ...result,
     /** Moves the mock scan's clock; the next poll sees it. */
@@ -48,39 +48,7 @@ async function finish(r: ReturnType<typeof setup>) {
   await screen.findByRole("button", { name: "Scan again" }, POLL);
 }
 
-describe("Disk › Space", () => {
-  it("switches from Activity to Space and back, keeping Activity's params", async () => {
-    const r = setup("/?device=disk0&response=ops");
-    await r.user.click(await screen.findByRole("radio", { name: "Space" }));
-    expect(
-      await screen.findByRole("region", { name: "Volumes to scan" })
-    ).toBeVisible();
-    expect(search(r).get("view")).toBe("space");
-    await r.user.click(screen.getByRole("radio", { name: "Activity" }));
-    await screen.findByRole("region", { name: "Volume capacity" });
-    expect(search(r).get("view")).toBeNull();
-    expect(search(r).get("device")).toBe("disk0");
-    expect(search(r).get("response")).toBe("ops");
-  });
-
-  it("opens Space for a volume from Activity's Analyze link", async () => {
-    const r = setup("/");
-    const volumes = await screen.findByRole("region", {
-      name: "Volume capacity",
-    });
-    // Only scannable volumes get the link: "/" yes, the Data mount no.
-    const links = await within(volumes).findAllByRole("button", {
-      name: "Analyze space",
-    });
-    expect(links).toHaveLength(1);
-    await r.user.click(links[0] as HTMLElement);
-    expect(search(r).get("view")).toBe("space");
-    expect(search(r).get("vol")).toBe("/");
-    expect(
-      await screen.findByText("Macintosh HD · 436 GB of 995 GB used")
-    ).toBeVisible();
-  });
-
+describe("Disk space", () => {
   it("fills the report in while scanning, then shows the finished breakdown", async () => {
     const r = setup();
     await scanBoot(r);
@@ -230,7 +198,7 @@ describe("Disk › Space", () => {
   });
 
   it("says why a scan failed when its volume disconnects", async () => {
-    const r = setup("/?view=space", ["disk-space-eject"]);
+    const r = setup("/", ["disk-space-eject"]);
     await r.user.click(
       await screen.findByRole("button", { name: "Scan SanDisk Extreme" })
     );
@@ -249,25 +217,16 @@ describe("Disk › Space", () => {
   });
 });
 
-describe("Disk › Space outside a local scan", () => {
-  it("has no Space view in the App Store edition", async () => {
-    setup("/?view=space", ["appstore"]);
-    expect(
-      await screen.findByRole("region", { name: "Volume capacity" })
-    ).toBeVisible();
-    expect(screen.queryByRole("radio", { name: "Space" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Analyze space" })).toBeNull();
-  });
-
+describe("Disk space outside a local scan", () => {
   it("does not re-render a finished report on the 1 Hz tick", async () => {
     let commits = 0;
     let t = 1_700_000_000_000;
     const transport = createMockTransport({ now: () => t, autoTick: false });
     const r = renderWithProviders(
       <Profiler id="space" onRender={() => commits++}>
-        <DiskRoute />
+        <DiskSpaceRoute />
       </Profiler>,
-      { transport, route: "/?view=space" }
+      { transport, route: "/" }
     );
     await r.user.click(
       await screen.findByRole("button", { name: "Scan Macintosh HD" })
@@ -295,9 +254,9 @@ function remoteSetup() {
   });
   const result = renderWithProviders(
     <HostStoreProvider hostId="remote-linux">
-      <DiskRoute />
+      <DiskSpaceRoute />
     </HostStoreProvider>,
-    { transport, route: "/?view=space" }
+    { transport, route: "/" }
   );
   return {
     ...result,
@@ -364,9 +323,9 @@ describe("Disk › Space on a remote Linux host (D-117)", () => {
     transport.diskSpaceStatus = async () => old;
     renderWithProviders(
       <HostStoreProvider hostId="remote-linux">
-        <DiskRoute />
+        <DiskSpaceRoute />
       </HostStoreProvider>,
-      { transport, route: "/?view=space" }
+      { transport, route: "/" }
     );
     expect(
       await screen.findByText(
@@ -388,9 +347,9 @@ describe("Disk › Space on a remote Linux host (D-117)", () => {
     await transport.updateRemoteHost({ ...linux.config, enabled: false });
     renderWithProviders(
       <HostStoreProvider hostId="remote-linux">
-        <DiskRoute />
+        <DiskSpaceRoute />
       </HostStoreProvider>,
-      { transport, route: "/?view=space" }
+      { transport, route: "/" }
     );
     expect(
       await screen.findByText(
@@ -462,7 +421,7 @@ describe("Disk › Space on a remote Linux host (D-117)", () => {
       return (
         <HostSelectionContext value={{ hosts, selected, select }}>
           <HostStoreProvider hostId={selected}>
-            <DiskRoute />
+            <DiskSpaceRoute />
           </HostStoreProvider>
           <button type="button" onClick={() => select(MOCK_HOST_ID)}>
             This Mac
@@ -472,7 +431,7 @@ describe("Disk › Space on a remote Linux host (D-117)", () => {
     }
     const r = renderWithProviders(<Harness />, {
       transport,
-      route: "/?view=space",
+      route: "/",
     });
     expect(
       await screen.findByRole("button", { name: "Scan /boot" })

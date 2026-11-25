@@ -3,7 +3,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 // The mock scan finishes 8 s after it starts (MOCK_SCAN_MS); the page's clock
 // runs past it with the 1 Hz stream still ticking, so the page never goes stale.
-const space = "/?route=/dashboard/disk%3Fview%3Dspace";
+const space = "/?route=/dashboard/disk-space";
 
 async function scanBoot(page: Page, theme = "dark") {
   await page.clock.install();

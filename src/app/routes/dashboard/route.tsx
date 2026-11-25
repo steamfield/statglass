@@ -121,7 +121,7 @@ export default function DashboardLayout() {
   const remote = useRemoteHosts(selectConnection).data?.find(
     (host) => host.config.id === hostId
   );
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const metricPage = ![
     "/dashboard/hosts",
     "/dashboard/settings",
@@ -131,22 +131,19 @@ export default function DashboardLayout() {
     metricPage || isLinuxAlertsPage(pathname, remote?.os, selection, hostId);
   const hasRemote = remote !== undefined;
   const remoteDisconnected = hasRemote && remote.status.state !== "connected";
-  const view = new URLSearchParams(search).get("view");
-  const isDiskSpace = pathname === "/dashboard/disk" && view === "space";
-
   const liveOnlyPage =
     pathname === "/dashboard/processes" ||
     pathname === "/dashboard/containers" ||
-    isDiskSpace;
+    pathname === "/dashboard/disk-space";
   const useFocal =
     metricPage &&
     remoteDisconnected &&
     (remote.status.synced_through_ms === null || liveOnlyPage);
-  // A page opens on a new route, Disk's I/O and Space views, or another host
-  // on a host-scoped page. Range, filter and Containers' view params keep the same
-  // header and controls in place, so they never replay it.
+  // A page opens on a new route, or another host on a host-scoped page.
+  // Range, filter and Containers' view params keep the same header and
+  // controls in place, so they never replay it.
   const pageRef = usePageEntrance<HTMLDivElement>(
-    `${useSelectedHost ? hostId : ""}|${pathname}|${isDiskSpace ? "space" : ""}`
+    `${useSelectedHost ? hostId : ""}|${pathname}`
   );
   const stale =
     metricPage && ((sampling.stale && !sampling.paused) || remoteDisconnected);

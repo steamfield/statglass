@@ -1,6 +1,8 @@
+import { commandErrorText } from "@core/command-error";
 import type {
   CommandError,
   RemoteHostRecord,
+  SpaceHighlight,
   SpaceScanStatus,
   SpaceTarget,
 } from "@core/generated/types";
@@ -56,6 +58,19 @@ export function useSpaceStatus(enabled: boolean) {
     wasScanning.current = scanning;
   }, [client, host, scanning]);
   return query;
+}
+
+/**
+ * The kept summary of this host's last boot-volume scan (D-132), or `null`
+ * when it has none. `useSpaceStatus` reads it again when a scan ends.
+ */
+export function useSpaceHighlights() {
+  const transport = useTransport();
+  const host = useHostId();
+  return useQuery({
+    queryKey: diskSpaceKeys.highlights(host),
+    queryFn: () => unwrap(transport.diskSpaceHighlights(host)),
+  });
 }
 
 /** The finished report; refetched when a scan ends. */
@@ -247,5 +262,30 @@ export function useSpaceItemActions(report: number | null, local: boolean) {
     copyPath,
     error,
     copied,
+  };
+}
+
+/**
+ * Shows a folder from the kept largest-folders summary (D-132) in Finder, and
+ * why it couldn't when the reveal fails (the folder was moved or deleted since
+ * the scan). The error clears when the next reveal starts.
+ */
+export function useRevealHighlight() {
+  const transport = useTransport();
+  const [error, setError] = useState<string | null>(null);
+  const reveal = useCallback(
+    async (folder: SpaceHighlight) => {
+      setError(null);
+      const result = await transport.diskSpaceRevealHighlight(folder.path);
+      if (result.status === "error")
+        setError(
+          commandErrorText(result.error, "Couldn't show this folder in Finder.")
+        );
+    },
+    [transport]
+  );
+  return {
+    error,
+    reveal: (folder: SpaceHighlight) => void reveal(folder),
   };
 }

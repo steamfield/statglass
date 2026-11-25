@@ -6,7 +6,8 @@ import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
-import { OverviewFoldersCard, splitPath } from "./folders-card";
+import { splitPath } from "~/components/largest-folders";
+import { OverviewFoldersCard } from "./folders-card";
 
 function setup(scenarios: ScenarioName[] = [], now = () => Date.now()) {
   const transport = createMockTransport({ autoTick: false, scenarios, now });

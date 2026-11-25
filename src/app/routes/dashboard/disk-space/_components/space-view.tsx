@@ -5,46 +5,43 @@ import type { ComponentProps, ReactNode } from "react";
 import { useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
-import { useHostNoun } from "~/hooks/use-host-record";
-import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
-import { useHostId } from "~/stores/host-store";
 import {
   useSpaceDropped,
   useSpaceReport,
   useSpaceScan,
   useSpaceStatus,
   useSpaceVolumes,
-} from "../_hooks/use-disk-space";
+} from "~/hooks/use-disk-space";
+import { useHostNoun } from "~/hooks/use-host-record";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
+import { useHostId } from "~/stores/host-store";
 import { spaceScreen } from "../_lib/space";
 import { SpaceReportView } from "./space-report";
 import { SpaceVolumes } from "./space-volumes";
 
 /**
- * Disk › Space (plan/disk-space-report.md): pick a volume, scan it, and read
- * what uses it. `vol` is the volume in the URL; without one, the volume list.
+ * Utilities › Disk space (plan/utilities.md, D-153): pick a volume, scan it,
+ * and read what uses it. `vol` is the volume in the URL; without one, the volume list.
  * A remote host scans its own volumes over its session (D-117); each host
  * keeps its own scan, so switching hosts starts this view over.
  */
 export function SpaceView(props: {
   vol: string | null;
   onVol: (mount: string | null) => void;
-  switcher: ReactNode;
 }) {
   return <HostSpace key={useHostId()} {...props} />;
 }
 
 function SpaceShell({
   subtitle,
-  switcher,
   children,
 }: {
   subtitle: string;
-  switcher: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <PageHeader title="Disk" subtitle={subtitle} actions={switcher} />
+      <PageHeader title="Disk space" subtitle={subtitle} />
       <DashboardBanners />
       <DashboardBody>{children}</DashboardBody>
     </div>
@@ -54,11 +51,9 @@ function SpaceShell({
 function HostSpace({
   vol,
   onVol,
-  switcher,
 }: {
   vol: string | null;
   onVol: (mount: string | null) => void;
-  switcher: ReactNode;
 }) {
   const volumes = useSpaceVolumes(true);
   const status = useSpaceStatus(true);
@@ -79,7 +74,7 @@ function HostSpace({
   };
   const volume = volumes.data?.find((v) => v.mount === vol);
   return (
-    <SpaceShell subtitle={volumeSubtitle(volume)} switcher={switcher}>
+    <SpaceShell subtitle={volumeSubtitle(volume)}>
       <SpaceMessage
         error={scan.error}
         // A host that stops answering mid-scan keeps its last status on
