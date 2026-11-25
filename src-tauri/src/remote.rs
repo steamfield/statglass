@@ -469,6 +469,7 @@ mod command_regressions {
                         launch_at_login: Some(login),
                         updates: None,
                         pairing: None,
+                        pairing_expires_ms: None,
                     })
                 }),
                 async {

@@ -115,6 +115,14 @@ pub(crate) fn probe_snapshot() -> Option<LocalNetwork> {
     }
 }
 
+/// Interface names and IP addresses for interfaces that are up, running and not loopback.
+pub fn usable_interface_addresses() -> std::io::Result<Vec<(String, IpAddr)>> {
+    Ok(interfaces::usable_addresses()?
+        .into_iter()
+        .map(|entry| (entry.name, entry.addr))
+        .collect())
+}
+
 /// Folds the addresses of up, running, non-loopback interfaces into a [`LocalNetwork`].
 fn summarize(addresses: &[interfaces::InterfaceAddress]) -> LocalNetwork {
     let mut net = LocalNetwork {

@@ -56,10 +56,20 @@ pub enum ControlRequest {
         launch_at_login: Option<bool>,
     },
     /// The forced `pair` command relays the phone's first frame (RFC 2.4).
-    PairStart(statglass_proto::pairing::PairStart),
+    PairStart {
+        #[serde(flatten)]
+        start: statglass_proto::pairing::PairStart,
+        /// Identifies one relay's retries over the owner-only control socket.
+        attempt: [u8; 16],
+    },
     /// The forced `pair` command polls the decision, once a second.
     PairStatus {
         nonce: String,
+    },
+    /// The relay ended before it could deliver a decision to the phone.
+    PairAbandon {
+        nonce: String,
+        attempt: [u8; 16],
     },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -75,9 +85,12 @@ pub struct ControlResponse {
     pub launch_at_login: Option<bool>,
     #[serde(default)]
     pub updates: Option<crate::control::RemoteUpdateStatus>,
-    /// The answer to `PairStart` or `PairStatus`; absent for every other request.
+    /// The answer to a pairing request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pairing: Option<statglass_proto::pairing::PairReply>,
+    /// Host-clock deadline included with a Waiting reply to PairStart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pairing_expires_ms: Option<i64>,
 }
 
 /// Binds an owner-only socket at `path`: its directory created or tightened to 0700, the
@@ -465,6 +478,7 @@ mod tests {
                 launch_at_login: None,
                 updates: None,
                 pairing: None,
+                pairing_expires_ms: None,
             }),
             rx,
         ));

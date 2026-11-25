@@ -85,6 +85,7 @@ impl ConnectionFailureKind {
                 .unwrap_or(Self::Unreachable),
             RemoteError::Timeout(_) => Self::Timeout,
             RemoteError::Authentication(_) => Self::Authentication,
+            RemoteError::Pairing(_) => Self::Refused,
             RemoteError::HostKey(_) => Self::HostKey,
             RemoteError::AgentNotRunning(_) => Self::AgentNotRunning,
             RemoteError::AppNotRunning(_) => Self::AppNotRunning,

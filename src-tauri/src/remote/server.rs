@@ -88,6 +88,7 @@ fn control_response(app: &AppHandle, ok: bool, message: String) -> ControlRespon
         launch_at_login: Some(settings.general.launch_at_login),
         updates: Some(super::update_controls::local_status(app)),
         pairing: None,
+        pairing_expires_ms: None,
     }
 }
 fn control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
@@ -154,7 +155,9 @@ fn control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
             }
         }
         // Scaffold stubs: phase 5 lane c answers these from the app's `PairingState`.
-        ControlRequest::PairStart(_) | ControlRequest::PairStatus { .. } => ControlResponse {
+        ControlRequest::PairStart { .. }
+        | ControlRequest::PairStatus { .. }
+        | ControlRequest::PairAbandon { .. } => ControlResponse {
             pairing: Some(PairReply::Error {
                 error: PairError::Unavailable,
             }),
