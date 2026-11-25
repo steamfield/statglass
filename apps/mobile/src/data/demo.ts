@@ -3,6 +3,7 @@
  * dashboard and incompatible-host scenarios the desktop tests use.
  */
 import type { LiveMsg } from "@core/generated/types";
+import { SCENARIOS } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { useRootNavigationState } from "expo-router";
 import { useEffect } from "react";
@@ -43,9 +44,12 @@ function demoLiveReceiver(
 }
 
 /** A fresh demo transport; each call starts its own mock hosts. */
-export function createDemoTransport(): DemoTransport {
+export function createDemoTransport(scenario?: string): DemoTransport {
+  const requested = SCENARIOS.find((name) => name === scenario);
   const transport = createMockTransport({
-    scenarios: ["hosts-dashboard", "host-incompatible"],
+    scenarios: requested
+      ? [requested]
+      : ["hosts-dashboard", "host-incompatible"],
     autoTick: true,
   });
   let unavailable: Set<string> | null = null;

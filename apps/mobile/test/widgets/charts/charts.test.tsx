@@ -18,40 +18,8 @@ import * as Reanimated from "react-native-reanimated";
 import { motionDurations, themeColors } from "@/theme.generated";
 import { StreamArea } from "@/widgets/stream-area";
 
-// Only the native animation boundary is replaced. The bundled Reanimated
-// mock loads native Worklets under jest-expo's iOS resolver.
-jest.mock("react-native-reanimated", () => {
-  const { useState } = jest.requireActual<typeof import("react")>("react");
-  const { View } =
-    jest.requireActual<typeof import("react-native")>("react-native");
-  return {
-    __esModule: true,
-    default: { View },
-    Easing: { bezier: () => (t: number) => t, linear: (t: number) => t },
-    ReduceMotion: { Never: "never" },
-    cancelAnimation: () => {},
-    useAnimatedStyle: (build: () => unknown) => build(),
-    useSharedValue: (initial: number) =>
-      useState(() => {
-        let value = initial;
-        return {
-          get: () => value,
-          set: (next: number) => {
-            mockSetTranslation(next);
-            value = next;
-          },
-        };
-      })[0],
-    withDelay: (_delay: number, target: number) => target,
-    withRepeat: (target: number) => target,
-    withTiming: (target: number) => target,
-  };
-});
-
-const mockSetTranslation = jest.fn<(next: number) => void>();
 afterEach(() => {
   jest.mocked(useColorScheme).mockReturnValue("light");
-  mockSetTranslation.mockClear();
 });
 
 const fixture = POPOVER_CPU_STREAM;
@@ -73,6 +41,8 @@ const layout = () =>
   });
 
 function TickChart() {
+  // Another consumer can create a shared value before the chart mounts.
+  Reanimated.useSharedValue(1);
   const [index, setIndex] = useState(0);
   const tick = [0, 1, 3, 4, 5][index] ?? 0;
   return (
@@ -346,19 +316,25 @@ describe("phone chart states and motion", () => {
         DeviceEventEmitter.addListener(event, handler)
       );
     const timing = jest.spyOn(Reanimated, "withTiming");
+    const sharedValues = jest.spyOn(Reanimated, "useSharedValue");
     await renderWithProviders(<TickChart />);
     const advance = () =>
       fireEvent.press(screen.getByRole("button", { name: "Advance chart" }));
     await layout();
     expect(timing).not.toHaveBeenCalled();
-    mockSetTranslation.mockClear();
+    const translationIndex = sharedValues.mock.calls.findIndex(
+      ([initial]) => initial === 0
+    );
+    const translation = sharedValues.mock.results[translationIndex];
+    if (translation?.type !== "return") throw new Error("No chart translation");
+    const setTranslation = jest.spyOn(translation.value, "set");
     await advance();
     expect(timing).toHaveBeenCalledTimes(1);
     expect(timing).toHaveBeenCalledWith(
       0,
       expect.objectContaining({ duration: motionDurations.tick })
     );
-    expect(mockSetTranslation.mock.calls).toEqual([[5], [0]]);
+    expect(setTranslation.mock.calls).toEqual([[5], [0]]);
     timing.mockClear();
     await advance();
     expect(timing).not.toHaveBeenCalled();

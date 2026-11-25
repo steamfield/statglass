@@ -1,9 +1,8 @@
-import { useColorScheme } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { themeColors } from "@/theme.generated";
+import { useThemeColors } from "@/ui/theme-colors";
 
 export function StatusWarning() {
-  const colors = themeColors[useColorScheme() === "dark" ? "dark" : "light"];
+  const colors = useThemeColors();
   return (
     <Svg width={12} height={12} viewBox="0 0 14 14" accessible={false}>
       <Path

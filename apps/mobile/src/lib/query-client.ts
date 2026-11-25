@@ -4,16 +4,27 @@
  * client through `Providers`; tests make one per render.
  */
 import { commandError } from "@core/command-error";
+import { isNativeError } from "@core/native-errors";
 import { QueryClient } from "@tanstack/react-query";
 
 /**
- * One retry for a failed read unless the phone key is unavailable. Writes get
- * no retries. Returning to the foreground does not refetch.
+ * One retry for internal, busy, unreachable and untyped read failures, none for writes or
+ * native-module failures (a locked or missing phone key is not retried), and no
+ * refetch when the app comes back to the foreground.
  */
 export const QUERY_DEFAULTS = {
   queries: {
-    retry: (failureCount: number, error: unknown) =>
-      failureCount < 1 && commandError(error)?.kind !== "phone_key_unavailable",
+    retry(failures: number, error: unknown) {
+      if (failures >= 1 || isNativeError(error)) return false;
+      const kind = commandError(error)?.kind;
+      return (
+        kind === undefined ||
+        kind === "internal" ||
+        kind === "remote_unreachable" ||
+        kind === "remote_busy" ||
+        kind === "store_busy"
+      );
+    },
     refetchOnWindowFocus: false,
   },
   mutations: { retry: false },

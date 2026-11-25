@@ -6,7 +6,6 @@ import { DAY_MS, HOUR_MS } from "@core/time-grid";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
   HISTORY_MODULES,
   historyReadError,
@@ -91,7 +90,7 @@ function ModuleHistory({
     history.isPending || (history.isFetching && (retryable || busyRetry));
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <>
       <Stack.Screen options={{ title }} />
       <EventsList events={events} showDate={showDate}>
         <RangeControl value={windowMs} onChange={setWindowMs} />
@@ -154,7 +153,7 @@ function ModuleHistory({
           </View>
         )}
       </EventsList>
-    </GestureHandlerRootView>
+    </>
   );
 }
 
