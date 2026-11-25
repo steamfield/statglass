@@ -1,6 +1,8 @@
-import { clamp01 } from "@core/chart-math";
 import { cssPercent } from "@core/format";
-import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
+import {
+  type MirrorBarsData,
+  mirrorBarsModel,
+} from "@core/widget-models/mirror-bars";
 import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
 import { ChartLoading } from "./chart-loading";
@@ -11,35 +13,23 @@ import { useTickScroll } from "./lib/use-tick-scroll";
 /** Props of the mirrored bars: the shared data contract. */
 export type MirrorBarsProps = MirrorBarsData;
 
-function heights(values: readonly (number | null)[], max: number, h: number) {
-  return values.map((v) =>
-    v == null || !Number.isFinite(v) || max <= 0 ? null : clamp01(v / max) * h
-  );
-}
-
 /**
  * Mirrored bars: up above a 1 px axis in the accent at ramp
  * step 2, down below in step 1. A missing sample leaves an empty slot, never a
  * zero-height bar that reads as "idle". Direction is in the aria-label and in
  * the surrounding stat labels (↑ UPLOAD, ↓ DOWNLOAD), never color alone.
  */
-export function MirrorBars({
-  up,
-  down,
-  intervalMs,
-  tEndMs,
-  accent,
-  ariaLabel,
-  upMax,
-  downMax,
-  upHeight = 18,
-  downHeight = 30,
-  loading,
-}: MirrorBarsProps) {
+export function MirrorBars(data: MirrorBarsProps) {
+  const {
+    intervalMs,
+    tEndMs,
+    accent,
+    upHeight = 18,
+    downHeight = 30,
+    loading,
+  } = data;
+  const { slots: n, up, down, ariaLabel } = mirrorBarsModel(data);
   const reveal = useReveal<HTMLDivElement>(loading);
-  const n = Math.max(up.length, down.length, 1);
-  const upH = heights(loading ? [] : up, upMax, upHeight);
-  const downH = heights(loading ? [] : down, downMax, downHeight);
   const shift = cssPercent(1 / n);
   const upRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
   const downRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
@@ -76,10 +66,10 @@ export function MirrorBars({
           {slots.map((i) => (
             <span
               key={i}
-              data-gap={(!loading && upH[i] == null) || undefined}
+              data-gap={(!loading && up[i] == null) || undefined}
               className="flex-1 rounded-t-hair"
               style={{
-                height: upH[i] ?? 0,
+                height: up[i] ?? 0,
                 background: rampColor(2),
               }}
             />
@@ -93,9 +83,9 @@ export function MirrorBars({
           {slots.map((i) => (
             <span
               key={i}
-              data-gap={(!loading && downH[i] == null) || undefined}
+              data-gap={(!loading && down[i] == null) || undefined}
               className="flex-1 rounded-b-hair bg-(--a)"
-              style={{ height: downH[i] ?? 0 }}
+              style={{ height: down[i] ?? 0 }}
             />
           ))}
         </div>

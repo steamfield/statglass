@@ -1,5 +1,7 @@
-import { clamp01 } from "@core/chart-math";
-import type { MeterTrackData } from "@core/widget-models/meter-track";
+import {
+  type MeterTrackData,
+  meterTrackModel,
+} from "@core/widget-models/meter-track";
 import { cn } from "~/lib/utils";
 
 /**
@@ -30,17 +32,18 @@ export function MeterTrack({
   className,
   transition = false,
 }: MeterTrackProps) {
+  const scaledFill = meterTrackModel({ fraction }).fill;
   return (
     <span
       aria-hidden
-      data-missing={fraction === null || undefined}
+      data-missing={scaledFill === null || undefined}
       className={cn(
         "block overflow-hidden rounded-full bg-track",
         height,
         className
       )}
     >
-      {fraction !== null && (
+      {scaledFill !== null && (
         <span
           className={cn(
             "block h-full origin-left rounded-full",
@@ -49,7 +52,7 @@ export function MeterTrack({
           )}
           style={{
             background: fill,
-            transform: `scaleX(${clamp01(fraction)})`,
+            transform: `scaleX(${scaledFill})`,
           }}
         />
       )}

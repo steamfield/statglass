@@ -2,6 +2,7 @@
  * The mirror-bars model: up above a baseline and down below it, one slot per
  * interval, with a missing sample as an empty slot rather than a zero bar.
  */
+import { clamp01 } from "@core/chart-math";
 import type { Accent, ColorRef } from "@core/widget-models/tokens";
 
 /** Data contract for the mirrored bars (network, disk I/O), shared by both apps. */
@@ -38,10 +39,30 @@ export interface MirrorBarsModel {
   ariaLabel: string;
 }
 
-/**
- * The bars' heights and colors.
- * @throws {Error} until the bar lane implements it
- */
-export function mirrorBarsModel(_data: MirrorBarsData): MirrorBarsModel {
-  throw new Error("not implemented");
+function heights(values: readonly (number | null)[], max: number, h: number) {
+  return values.map((v) =>
+    v == null || !Number.isFinite(v) || max <= 0 ? null : clamp01(v / max) * h
+  );
+}
+
+/** The bars' heights and colors. */
+export function mirrorBarsModel({
+  up,
+  down,
+  upMax,
+  downMax,
+  upHeight = 18,
+  downHeight = 30,
+  accent,
+  ariaLabel,
+  loading,
+}: MirrorBarsData): MirrorBarsModel {
+  return {
+    slots: Math.max(up.length, down.length, 1),
+    up: loading ? [] : heights(up, upMax, upHeight),
+    down: loading ? [] : heights(down, downMax, downHeight),
+    upColor: { kind: "accent", accent, step: 2, ink: false },
+    downColor: { kind: "accent", accent, step: 1, ink: false },
+    ariaLabel,
+  };
 }

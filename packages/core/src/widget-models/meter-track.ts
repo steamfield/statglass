@@ -2,6 +2,7 @@
  * The meter-track model: a rounded track with a fill scaled from the left,
  * and the empty track that stands for a missing measurement.
  */
+import { clamp01 } from "@core/chart-math";
 import type { ColorRef } from "@core/widget-models/tokens";
 
 /**
@@ -23,10 +24,12 @@ export interface MeterTrackModel {
   color: ColorRef;
 }
 
-/**
- * The meter's fill.
- * @throws {Error} until the bar lane implements it
- */
-export function meterTrackModel(_data: MeterTrackData): MeterTrackModel {
-  throw new Error("not implemented");
+const FILL_COLOR: ColorRef = { kind: "accent", step: 1, ink: false };
+
+/** The meter's fill. */
+export function meterTrackModel({ fraction }: MeterTrackData): MeterTrackModel {
+  return {
+    fill: fraction === null ? null : clamp01(fraction),
+    color: FILL_COLOR,
+  };
 }
