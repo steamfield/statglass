@@ -19,6 +19,7 @@ pub trait MirrorSink: Send + Sync + 'static {
         Ok(None)
     }
     fn ingest(&self, page: SyncPage, kinds: SyncKinds) -> std::result::Result<(), MirrorError>;
+    /// Accepts a transient snapshot after [`Self::cursor`] establishes its remote epoch.
     fn recent(
         &self,
         _epoch: uuid::Uuid,

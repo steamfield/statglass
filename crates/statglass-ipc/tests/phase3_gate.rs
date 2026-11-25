@@ -32,7 +32,6 @@ fn remote_host(id: HostId) -> HostRecord {
 }
 
 #[test]
-#[ignore = "phase 3 lane b implements MirrorPolicy::phone and TierChoice::Covered"]
 fn a_phone_mirror_syncs_minutes_and_quarter_hours_and_reads_a_week_from_m15() {
     let dir = tempfile::tempdir().unwrap();
     let history = Arc::new(HistoryStore::open(dir.path()));
