@@ -23,6 +23,15 @@ async fn mobile_session() {
             Arc::new(statglass_ssh::RusshDialer::new(fixture.key.clone())),
         )
         .unwrap();
+    sessions
+        .call(MobileCall::SetDemand {
+            demand: vec![HostDemand {
+                host,
+                level: DemandLevel::Full,
+            }],
+        })
+        .await
+        .unwrap();
     sessions.call(subscribe(host, 17)).await.unwrap();
     fixture.expect_cpu(17).await;
     assert!(!fixture.dir.path().join("mirrors").exists());

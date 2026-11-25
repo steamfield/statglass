@@ -14,7 +14,7 @@ use crate::ffi::{CoreEvents, NativeSigner};
 use crate::lifecycle::Lifecycle;
 
 use super::{
-    callback, demand, endpoint,
+    callback, endpoint,
     host::{HostEntry, OpenError},
     internal, invalid,
     live::Live,
@@ -105,7 +105,6 @@ impl Registry {
             },
             self.signer.as_deref(),
         )?;
-        demand::admit(&entry.source, &self.lifecycle);
         Ok(entry)
     }
 
@@ -243,7 +242,7 @@ impl Registry {
             if let Some(network) = network {
                 entry.source.network_changed_with(network);
             }
-            entry.start()?;
+            self.lifecycle.install(&entry)?;
             self.live.register(entry.clone(), &run.context.runtime);
             run.entries.insert(id, entry);
             Ok(())

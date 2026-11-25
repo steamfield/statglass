@@ -63,7 +63,7 @@ pub struct RemoteSource {
     mirror: Option<Arc<dyn MirrorSink>>,
     options: SourceOptions,
     clock: HostClock,
-    caps: Mutex<Capabilities>,
+    peer: Mutex<status::PeerFacts>,
     status: Mutex<EngineStatus>,
     control: watch::Sender<ControlState>,
     parked: watch::Sender<Option<u64>>,
@@ -114,7 +114,7 @@ impl RemoteSource {
             mirror,
             options,
             clock: HostClock::default(),
-            caps: Mutex::new(Capabilities::default()),
+            peer: Mutex::default(),
             status: Mutex::new(EngineStatus::default()),
             control,
             parked,
@@ -167,7 +167,7 @@ impl Source for RemoteSource {
         self.record.clone()
     }
     fn capabilities(&self) -> Capabilities {
-        self.caps.lock_ok().clone()
+        self.peer.lock_ok().capabilities.clone()
     }
     fn start(self: Arc<Self>, sink: SourceSink) -> std::result::Result<SourceHandle, SourceError> {
         if self.started.swap(true, Ordering::SeqCst) {
@@ -308,7 +308,7 @@ async fn run_loop(
             Ok(session) => {
                 status.record_connected(session.route, session.hello.app_version.clone());
                 backoff.connected();
-                *source.caps.lock_ok() = session.hello.capabilities.clone();
+                *source.peer.lock_ok() = status::PeerFacts::from_hello(&session.hello);
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
                 (source.on_status)(status.clone());
@@ -732,7 +732,7 @@ impl Session<'_> {
                 (self.source.on_status)(self.status.clone());
             }
             Message::CapabilitiesChanged(c) => {
-                *self.source.caps.lock_ok() = c.clone();
+                self.source.peer.lock_ok().capabilities = c.clone();
                 self.sink.live.publish(BusMsg::Caps(Arc::new(c)));
             }
             Message::LiveProcesses(p) => {

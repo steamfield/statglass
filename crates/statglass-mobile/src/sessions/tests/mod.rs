@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use statglass_ipc::mobile::{
-    MobileCall, MobileCommand, MobileHost, MobileLiveRequest, MobileTarget,
+    DemandLevel, HostDemand, MobileCall, MobileCommand, MobileHost, MobileLiveRequest, MobileTarget,
 };
 use statglass_ipc::status::RemoteRoute;
 use statglass_proto::{Hello, Message, WireLayout};
-use statglass_schema::{Capabilities, HostId, SeriesKey, lock::LockExt};
+use statglass_schema::{Capabilities, HostId, HostIdentity, SeriesKey, lock::LockExt};
 use statglass_session::{
     BoxFuture, Close, DialFailure, DialedStream, Dialer, Endpoint, RemoteError, StderrTail, Target,
     codec,
@@ -48,7 +48,7 @@ fn cpu() -> SeriesKey {
     SeriesKey::parse("cpu.total").unwrap()
 }
 
-fn subscribe(host: HostId, stream: u32) -> MobileCall {
+pub(super) fn subscribe(host: HostId, stream: u32) -> MobileCall {
     MobileCall::SubscribeLive(MobileLiveRequest {
         host,
         stream,
@@ -156,6 +156,22 @@ impl Fixture {
         hosts: Vec<MobileHost>,
         signer: Option<Arc<dyn crate::ffi::NativeSigner>>,
     ) -> Self {
+        let demand = hosts
+            .iter()
+            .map(|host| HostDemand {
+                host: host.id,
+                level: DemandLevel::Full,
+            })
+            .collect();
+        let fixture = Self::start_parked(hosts, signer);
+        super::demand::set_demand(&fixture.sessions, demand).unwrap();
+        fixture
+    }
+
+    pub(super) fn start_parked(
+        hosts: Vec<MobileHost>,
+        signer: Option<Arc<dyn crate::ffi::NativeSigner>>,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let (live, messages) = mpsc::unbounded_channel();
         let events = Arc::new(Recorder {
@@ -196,7 +212,7 @@ impl Fixture {
             .unwrap()
     }
 
-    async fn message(&mut self, kind: &str) -> (u32, Value) {
+    pub(super) async fn message(&mut self, kind: &str) -> (u32, Value) {
         timeout(WAIT, async {
             loop {
                 let (stream, msg) = self.messages.recv().await.unwrap();
@@ -274,14 +290,24 @@ impl Dial {
         host: &MobileHost,
         features: std::collections::BTreeSet<String>,
     ) -> statglass_proto::RemoteInterest {
+        self.handshake_as(endpoint::record(host).identity(), features)
+            .await
+    }
+
+    pub(super) async fn handshake_as(
+        &mut self,
+        identity: HostIdentity,
+        features: std::collections::BTreeSet<String>,
+    ) -> statglass_proto::RemoteInterest {
+        let host = identity.id;
         codec::write(
             &mut self.peer,
             &Message::Hello(Box::new(Hello {
                 proto_version: statglass_proto::PROTO_VERSION,
                 min_compatible: statglass_proto::MIN_COMPATIBLE,
                 app_version: "fixture".into(),
-                host: endpoint::record(host).identity(),
-                db_instance_uuid: host.id.0,
+                host: identity,
+                db_instance_uuid: host.0,
                 capabilities: Capabilities {
                     revision: 5,
                     ..Default::default()

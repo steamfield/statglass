@@ -129,6 +129,7 @@ fn live_subscription_resumes_and_history_comes_from_the_peer() {
     start(&core, &dir, &config);
 
     run(async {
+        demand(&core).await;
         let mut peer = next(&mut peers).await;
         peer.handshake(host).await;
         let args = json!({"host": HOST, "stream": STREAM, "backfill_ms": 0});
@@ -259,6 +260,7 @@ fn a_refused_key_reaches_the_facade_as_authentication() {
     start(&core, &dir, &config);
 
     run(async {
+        demand(&core).await;
         // Start acknowledges registration. The subsequent dial result is in host status.
         let row = timeout(WAIT, async {
             loop {
@@ -306,6 +308,14 @@ fn a_refused_key_reaches_the_facade_as_authentication() {
                 .contains("key refused")
         );
     });
+}
+
+async fn demand(core: &MobileCore) {
+    let args = json!({"demand": [{"host": HOST, "level": "full"}]});
+    assert_eq!(
+        decode(&core.call("set_demand".into(), args.to_string()).await),
+        success(Value::Null)
+    );
 }
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]

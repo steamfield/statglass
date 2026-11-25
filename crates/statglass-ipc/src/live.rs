@@ -72,6 +72,10 @@ pub trait LiveFeed: Send + Sync + 'static {
     fn status(&self) -> EngineStatus {
         self.hub().status()
     }
+    /// A feed may deliver less often than its engine samples.
+    fn min_frame_period_ms(&self) -> u32 {
+        0
+    }
     /// The shortest period any visible window wants process rows at (`None`: none does).
     fn set_process_interest(&self, period_ms: Option<u32>);
     /// Whether any visible window with process interest shows network rates (D-081).
@@ -359,6 +363,7 @@ impl Stream {
     fn send_status(&mut self, s: &EngineStatus) -> Result<(), Closed> {
         self.performance = s.performance;
         let mut status = status_msg(s, self.min_period_ms);
+        status.frame_period_ms = status.frame_period_ms.max(self.feed.min_frame_period_ms());
         status.display_idle &= self.feed.is_local();
         self.display_idle = status.display_idle;
         if self.status.as_ref() != Some(&status) {

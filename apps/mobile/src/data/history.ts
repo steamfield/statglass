@@ -21,6 +21,7 @@ import { CancelledError, useQuery } from "@tanstack/react-query";
 import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { shallow } from "zustand/shallow";
+import { useFocusDemand } from "./demand";
 import {
   useAppActive,
   useConnection,
@@ -134,6 +135,10 @@ const HISTORY_CACHE_MS = 30_000;
 const BUSY_ATTEMPTS = 3;
 type PlotWidth = number | { columns: number } | null;
 
+export function historyPointBudget(width: number) {
+  return Math.min(200, Math.max(30, Math.floor(width / 2.5)));
+}
+
 /** One reply for a chart's points, range statistics and optional module events. */
 export function useHostHistory(
   host: HostId,
@@ -141,7 +146,8 @@ export function useHostHistory(
   range: HistoryRange,
   width: PlotWidth,
   eventsFor: Module | null = null,
-  connected = true
+  connected = true,
+  refresh = true
 ) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
@@ -152,7 +158,7 @@ export function useHostHistory(
   const ready = Number.isFinite(measured) && measured >= 1;
   const budget =
     typeof width === "number"
-      ? Math.min(200, Math.max(30, Math.floor(width / 2.5)))
+      ? historyPointBudget(width)
       : Math.floor(measured);
   const enabled = connected && focused && foreground && ready;
   const query = useQuery({
@@ -166,12 +172,15 @@ export function useHostHistory(
     enabled,
     subscribed: enabled,
     staleTime: HISTORY_CACHE_MS,
+    refetchOnMount: refresh,
     gcTime: HISTORY_CACHE_MS,
     retry: (failures, error) => {
       const kind = commandError(error)?.kind;
       return kind === "remote_busy"
         ? failures < BUSY_ATTEMPTS - 1
-        : kind === "internal" && failures === 0;
+        : failures === 0 &&
+            (kind === "internal" ||
+              (!refresh && kind === "remote_unreachable"));
     },
     retryDelay: 1000,
     queryFn: async ({ signal }) => {
@@ -201,6 +210,7 @@ export function useHostHistory(
   useEffect(() => {
     if (
       enabled &&
+      refresh &&
       rolling &&
       isSuccess &&
       isStale &&
@@ -209,7 +219,17 @@ export function useHostHistory(
     ) {
       void refetch({ cancelRefetch: false });
     }
-  }, [data, enabled, isFetching, isStale, isSuccess, refetch, rolling, toMs]);
+  }, [
+    data,
+    enabled,
+    isFetching,
+    isStale,
+    isSuccess,
+    refetch,
+    refresh,
+    rolling,
+    toMs,
+  ]);
   return query;
 }
 
@@ -221,6 +241,7 @@ export function useModuleHistory(
   width: number | null,
   connected: boolean
 ) {
+  useFocusDemand(host, "full");
   const keys = useMemo(
     () => HISTORY_MODULES[module].series.map(({ key }) => key),
     [module]

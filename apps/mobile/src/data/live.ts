@@ -13,11 +13,19 @@ import {
 import { hostKeys } from "@core/query-keys";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AppState } from "react-native";
 import { useStore } from "zustand";
 import { shallow } from "zustand/shallow";
 import { createStore, type StoreApi } from "zustand/vanilla";
+import { PagerHost, useFocusDemand } from "./demand";
 import { subscribeHostLive } from "./live-subscription";
 import type { PhoneTransport } from "./seam";
 import { usePhoneTransport } from "./transport-context";
@@ -26,6 +34,7 @@ import { usePhoneTransport } from "./transport-context";
 export interface PhoneLive extends LiveSessionState {
   /** Monotonic receipt time. Backfill alone does not make a frame fresh. */
   lastFrame: number | null;
+  stream: number | null;
 }
 
 /** The store for one host on one transport. */
@@ -42,6 +51,7 @@ function hostStore(transport: PhoneTransport, host: HostId): LiveStore {
     store = createStore<PhoneLive>(() => ({
       ...initialLiveSessionState(host),
       lastFrame: null,
+      stream: null,
     }));
     hosts.set(host, store);
   }
@@ -83,15 +93,30 @@ function cachedRemoteStatus(client: QueryClient, host: HostId) {
 export function useHostLiveSubscription(host: HostId) {
   const transport = usePhoneTransport();
   const client = useQueryClient();
+  const current = useContext(PagerHost);
+  const enabled = current === null || current === host;
+  useFocusDemand(current === host ? host : null, "full");
   useFocusEffect(
-    useCallback(
-      () =>
-        subscribeHostLive(hostStore(transport, host), transport, host, () =>
-          cachedRemoteStatus(client, host)
-        ),
-      [client, host, transport]
-    )
+    useCallback(() => {
+      if (!enabled) return;
+      const store = hostStore(transport, host);
+      return subscribeHostLive(
+        store,
+        transport,
+        host,
+        () => cachedRemoteStatus(client, host),
+        (stream, open) => {
+          if (open || store.getState().stream === stream) {
+            store.setState({ stream: open ? stream : null });
+          }
+        }
+      );
+    }, [client, enabled, host, transport])
   );
+}
+
+export function useHostLiveStream(host: HostId) {
+  return useLiveSelection(host, (state) => state.stream);
 }
 
 function useLiveSelection<T>(

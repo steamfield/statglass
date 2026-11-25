@@ -223,6 +223,17 @@ fn mobile_core_streams_and_reads_host_history() {
     );
     Runtime::new().unwrap().block_on(async {
         let stream = 17;
+        assert_eq!(
+            data(
+                &core
+                    .call(
+                        "set_demand".into(),
+                        json!({"demand": [{"host": fixture.host.id, "level": "full"}]}).to_string()
+                    )
+                    .await
+            ),
+            Value::Null
+        );
         let info = core
             .call(
                 "subscribe_live".into(),

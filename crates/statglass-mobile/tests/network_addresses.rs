@@ -103,6 +103,17 @@ fn addresses_from_the_restricted_linux_agent() {
     let host = fixture.host.id;
     let expected_ip = container_ip().to_string();
     Runtime::new().unwrap().block_on(async {
+        assert_eq!(
+            data(
+                &core
+                    .call(
+                        "set_demand".into(),
+                        json!({"demand": [{"host": host, "level": "full"}]}).to_string()
+                    )
+                    .await
+            ),
+            Value::Null
+        );
         let stream = core
             .call(
                 "subscribe_live".into(),
