@@ -20,6 +20,7 @@ export interface ListRowProps {
   selected?: boolean;
   destructive?: boolean;
   onPress?: () => void;
+  accessibilityRole?: "button" | "link";
   accessibilityHint?: string;
   trailing?: ReactNode;
 }
@@ -39,6 +40,7 @@ export function ListRow({
   selected = accessory === "checkmark",
   destructive,
   onPress,
+  accessibilityRole = "button",
   accessibilityHint,
   trailing,
 }: ListRowProps) {
@@ -98,11 +100,8 @@ export function ListRow({
       {onPress ? (
         <Pressable
           {...rowProps}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.row,
-            pressed && { backgroundColor: colors.secondary },
-          ]}
+          accessibilityRole={accessibilityRole}
+          className={`${rowProps.className} active:bg-secondary`}
           onPress={onPress}
         >
           {content}
