@@ -6,7 +6,10 @@ import { View } from "react-native";
 import { HISTORY_MODULES, isHistoryModule } from "@/data/history";
 import { useHostConnection } from "@/data/hosts";
 import { connectionStatusError } from "@/data/live";
+import { ScreenScroll } from "@/ui/screen-scroll";
 import { Text } from "@/ui/text";
+import { ModuleStatusNotice } from "./module-frame";
+import { ModuleNotice } from "./module-notice";
 import { MODULE_PAGES } from "./pages";
 
 function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
@@ -14,28 +17,45 @@ function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
   // A failed refetch keeps the cached status, so the page (and its range) stays mounted.
   if (status.isPending || status.isLoadingError) {
     return (
-      <View className="flex-1 bg-background px-4 py-5">
-        <Stack.Screen options={{ title: HISTORY_MODULES[module].title }} />
-        <Text
-          variant="label"
-          accessibilityLiveRegion="polite"
-          accessibilityRole={status.isError ? "alert" : undefined}
-        >
-          {status.isError
-            ? connectionStatusError(status.error)
-            : "Loading history…"}
-        </Text>
-      </View>
+      <ScreenScroll contentContainerClassName="px-4 py-5">
+        <Stack.Screen
+          options={{
+            title: HISTORY_MODULES[module].title,
+            headerLargeTitle: false,
+          }}
+        />
+        <ModuleNotice
+          message={
+            status.isError
+              ? connectionStatusError(status.error)
+              : "Loading history…"
+          }
+          error={status.isError}
+          onRetry={status.isError ? () => void status.refetch() : undefined}
+        />
+      </ScreenScroll>
     );
   }
   const Page = MODULE_PAGES[module];
   return (
-    <Page
-      host={host}
-      module={module}
-      range={HOUR_MS}
-      remote={status.data?.status}
-    />
+    <ModuleStatusNotice.Provider
+      value={
+        status.isRefetchError ? (
+          <ModuleNotice
+            error
+            message={connectionStatusError(status.error)}
+            onRetry={() => void status.refetch()}
+          />
+        ) : null
+      }
+    >
+      <Page
+        host={host}
+        module={module}
+        range={HOUR_MS}
+        remote={status.data?.status}
+      />
+    </ModuleStatusNotice.Provider>
   );
 }
 

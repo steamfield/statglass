@@ -1,13 +1,18 @@
 import "react-native-gesture-handler/jestSetup";
 
+import { commandError } from "@core/command-error";
 import { eventLabel } from "@core/events";
-import { formatClockSeconds, formatHistoryTime } from "@core/format";
+import {
+  formatClockSeconds,
+  formatHistoryTime,
+  formatPercent,
+} from "@core/format";
 import type {
   Event,
   HostHistoryPage,
   HostHistoryRequest,
 } from "@core/generated/types";
-import { historyGrid } from "@core/history-grid";
+import { PAUSE_EXPLANATION } from "@core/history-state";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { phoneCommandFailures } from "@core/mock/phone-errors";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
@@ -17,12 +22,12 @@ import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import * as Haptics from "expo-haptics";
-import { ExpoRoot, Stack } from "expo-router";
+import { ExpoRoot, Link, router, Stack } from "expo-router";
 import { getMockContext } from "expo-router/build/testing-library/mock-config";
 import { AppState } from "react-native";
 import { createGestureController } from "react-native-gesture-handler/jest-utils";
 import { ModuleScreen } from "@/module";
-import { historyChart } from "@/module/history-chart";
+import { ModuleChart } from "@/module/module-chart";
 
 jest.mock("react-native-worklets", () =>
   jest.requireActual("react-native-worklets/src/mock")
@@ -31,6 +36,7 @@ jest.mock("react-native-worklets", () =>
 const context = getMockContext({
   _layout: () => <Stack screenOptions={{ headerShown: false }} />,
   "[host]/[module]": ModuleScreen,
+  settings: () => <Link href="/">Elsewhere</Link>,
 });
 const now = Date.UTC(2026, 10, 24, 15, 2);
 const record: Event = {
@@ -93,6 +99,12 @@ async function layoutPlot() {
   });
 }
 
+async function layoutAxis() {
+  await fireEvent(screen.getByTestId("history-chart-plot"), "layout", {
+    nativeEvent: { layout: { width: 300 } },
+  });
+}
+
 const eventsReply =
   (events: Event[]): Read =>
   async (request) => ({
@@ -125,74 +137,59 @@ function cpuPage(request: HostHistoryRequest): HostHistoryPage {
   };
 }
 
-test("history chart passes the missing bucket, gap band, and trailing event to the twin", () => {
-  const fromMs = now - 3 * MINUTE_MS;
-  const toMs = now - 1000;
-  const key = { metric: "cpu.total", labels: [] };
-  const data = cpuPage({
-    host: MOCK_HOST_ID,
-    series: [key],
-    from_ms: fromMs,
-    to_ms: toMs,
-    events_for: null,
-    max_points: 10,
-  });
-  const grid = historyGrid(data, [key.metric], fromMs, toMs);
-  const lateEvent = { ...record, ts_ms: toMs - 500 };
-  const { chart, sampleCount } = historyChart(
-    "cpu",
-    { fromMs, toMs },
-    { data, grid, isPending: false },
-    [lateEvent]
-  );
-  expect(sampleCount).toBe(3);
-  expect(chart.series).toEqual([
-    { key: key.metric, step: 1, values: [30, null, null, null] },
-  ]);
-  expect(chart.gaps).toMatchObject([
-    {
-      fromMs: fromMs + MINUTE_MS,
-      toMs: fromMs + 2 * MINUTE_MS,
-      label: "Recording paused here",
-    },
-  ]);
-  expect(chart.annotations).toEqual([
-    { tsMs: lateEvent.ts_ms, label: eventLabel(record) },
-  ]);
-  expect(chart.height).toBe(160);
-});
-
-test("range tabs ask once per range for chart history and show its dated events", async () => {
+test("quick ranges and More each ask once, and More stops at seven days", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const history = observeHistory(transport, eventsReply([record]));
+  const early = {
+    ...record,
+    ts_ms: now - HOUR_MS - 1000,
+    detail: {
+      ...record.detail,
+      kind: "sustained_process" as const,
+      process: "Early worker",
+      cpu_pct: 80,
+      secs: 30,
+    },
+  };
+  const history = observeHistory(transport, eventsReply([early, record]));
   await renderWithProviders(openModule(), { transport });
   await layoutPlot();
 
-  expect(await screen.findAllByRole("tab")).toHaveLength(4);
-  expect(screen.getByText("24 h")).toBeOnTheScreen();
-  expect(screen.getByRole("tab", { name: "Last 1 hour" })).toBeSelected();
-  expect(await screen.findByText(eventLabel(record))).toBeOnTheScreen();
-  expect(screen.getByText(formatClockSeconds(record.ts_ms))).toBeOnTheScreen();
+  expect(await screen.findAllByRole("tab")).toHaveLength(3);
+  expect(screen.getByRole("tab", { name: "1h, History range" })).toBeSelected();
+  expect(
+    await screen.findByText(formatClockSeconds(record.ts_ms))
+  ).toBeOnTheScreen();
 
-  const ranges = [
-    ["Last 1 day", DAY_MS],
-    ["Last 7 days", 7 * DAY_MS],
-    ["Last 30 days", 30 * DAY_MS],
-  ] as const;
-  for (const [index, [label, duration]] of ranges.entries()) {
-    await fireEvent.press(screen.getByRole("tab", { name: label }));
-    expect(screen.getByRole("tab", { name: label })).toBeSelected();
-    expect(history.charts()).toHaveLength(index + 2);
-    const request = history.charts().at(-1);
-    if (!request || request.to_ms === null)
-      throw new Error("History request did not include an end");
-    expect(request.to_ms - request.from_ms).toBe(duration);
-    expect(request).toMatchObject({
-      host: MOCK_HOST_ID,
-      series: [{ metric: "cpu.total", labels: [] }],
-      events_for: "cpu",
-    });
-  }
+  expect(screen.queryByText(eventLabel(early))).not.toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
+  expect(history.charts()).toHaveLength(2);
+  const fiveMinutes = history.charts().at(-1);
+  expect((fiveMinutes?.to_ms ?? 0) - (fiveMinutes?.from_ms ?? 0)).toBe(
+    5 * MINUTE_MS
+  );
+  await fireEvent.press(screen.getByRole("tab", { name: "1h, History range" }));
+  expect(history.charts()).toHaveLength(3);
+  await fireEvent.press(
+    screen.getByRole("tab", { name: "More, History range" })
+  );
+  expect(
+    screen.queryByRole("button", { name: "Last 30 days" })
+  ).not.toBeOnTheScreen();
+  expect(screen.getByRole("button", { name: "Last 1 day" })).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole("button", { name: "Last 7 days" }));
+  expect(screen.queryByRole("button", { name: "Done" })).not.toBeOnTheScreen();
+  expect(screen.getByRole("tab", { name: "7d, History range" })).toBeSelected();
+  expect(history.charts()).toHaveLength(4);
+  const week = history.charts().at(-1);
+  expect((week?.to_ms ?? 0) - (week?.from_ms ?? 0)).toBe(7 * DAY_MS);
+  expect(week).toMatchObject({
+    host: MOCK_HOST_ID,
+    series: [
+      { metric: "cpu.total", labels: [] },
+      { metric: "cpu.system", labels: [] },
+    ],
+    events_for: "cpu",
+  });
   expect(
     await screen.findByText(formatHistoryTime(record.ts_ms, true))
   ).toBeOnTheScreen();
@@ -205,7 +202,7 @@ test("scrubbing reads the selected bucket, a long press pins a gap and plays a h
     data: cpuPage(request),
   }));
   const selection = jest
-    .spyOn(Haptics, "selectionAsync")
+    .spyOn(Haptics, "impactAsync")
     .mockResolvedValue(undefined);
   await renderWithProviders(openModule(), { transport });
   await layoutPlot();
@@ -214,16 +211,19 @@ test("scrubbing reads the selected bucket, a long press pins a gap and plays a h
   );
   const chart = screen.getByRole("adjustable", { name: "CPU history" });
   const from = history.charts().at(-1)?.from_ms ?? now - HOUR_MS;
-  await fireEvent(chart, "layout", { nativeEvent: { layout: { width: 300 } } });
+  await layoutAxis();
+  expect(
+    screen.getByRole("note", { name: PAUSE_EXPLANATION })
+  ).toBeOnTheScreen();
   const pan = createGestureController("history-pan");
   await act(() => {
     pan.begin({ x: 0 });
     pan.activate({ x: 0 });
   });
-  expect(screen.getByText("30%")).toBeOnTheScreen();
+  expect(screen.getByText("Total · 30%")).toBeOnTheScreen();
   expect(screen.getByText(formatClockSeconds(from))).toBeOnTheScreen();
   await act(() => pan.end());
-  expect(screen.queryByText("30%")).not.toBeOnTheScreen();
+  expect(screen.queryByText("Total · 30%")).not.toBeOnTheScreen();
 
   const longPress = createGestureController("history-pin");
   await act(() => {
@@ -232,22 +232,22 @@ test("scrubbing reads the selected bucket, a long press pins a gap and plays a h
     longPress.end();
   });
   expect(selection).toHaveBeenCalledTimes(1);
-  expect(screen.getByText("No samples")).toBeOnTheScreen();
+  expect(selection).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Medium);
+  expect(screen.getByText("Total · —")).toBeOnTheScreen();
   expect(
     screen.getByText(formatClockSeconds(from + MINUTE_MS))
   ).toBeOnTheScreen();
   expect(chart).toHaveAccessibilityValue({
-    text: `${formatClockSeconds(from + MINUTE_MS)}, No samples`,
+    text: `${formatClockSeconds(from + MINUTE_MS)}, Total: No samples, System: No samples`,
   });
   await fireEvent.press(screen.getByRole("button", { name: "Clear pin" }));
-  expect(screen.queryByText("No samples")).not.toBeOnTheScreen();
+  expect(screen.queryByText("Total · —")).not.toBeOnTheScreen();
 });
 
 test("loading resolves to explicit empty history and events", async () => {
   const transport = createMockTransport({
     autoTick: false,
     historyRows: 0,
-    latencyMs: 500,
   });
   observeHistory(transport, async (request) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -267,18 +267,33 @@ test("the ceiling sits outside the plot and VoiceOver double-tap pins and clears
     data: cpuPage(request),
   }));
   const selection = jest
-    .spyOn(Haptics, "selectionAsync")
+    .spyOn(Haptics, "impactAsync")
     .mockResolvedValue(undefined);
   await renderWithProviders(openModule(), { transport });
   await layoutPlot();
   const plot = await screen.findByRole("adjustable", { name: "CPU history" });
-  expect(screen.getByText("100%")).toBeOnTheScreen();
+  await layoutAxis();
+  for (const tick of ["100%", "50%", "0%", "now"])
+    expect(screen.getByText(tick)).toBeOnTheScreen();
   await waitFor(() =>
     expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen()
   );
+  await fireEvent(plot, "accessibilityAction", {
+    nativeEvent: { actionName: "increment" },
+  });
+  expect(plot).toHaveAccessibilityValue({
+    text: /Total: 30%, System: No samples/,
+  });
+  await fireEvent(plot, "accessibilityAction", {
+    nativeEvent: { actionName: "increment" },
+  });
+  expect(plot).toHaveAccessibilityValue({
+    text: /Total: No samples, System: No samples/,
+  });
   await fireEvent(plot, "accessibilityTap");
   expect(screen.getByRole("button", { name: "Clear pin" })).toBeOnTheScreen();
   expect(selection).toHaveBeenCalledTimes(1);
+  expect(selection).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Medium);
   await fireEvent(plot, "accessibilityTap");
   expect(
     screen.queryByRole("button", { name: "Clear pin" })
@@ -291,7 +306,7 @@ test("the right edge pins the last returned bucket time within the requested win
     status: "ok",
     data: cpuPage(request),
   }));
-  jest.spyOn(Haptics, "selectionAsync").mockResolvedValue(undefined);
+  jest.spyOn(Haptics, "impactAsync").mockResolvedValue(undefined);
   await renderWithProviders(openModule(), { transport });
   await layoutPlot();
   const plot = await screen.findByRole("adjustable", { name: "CPU history" });
@@ -301,11 +316,15 @@ test("the right edge pins the last returned bucket time within the requested win
   const request = history.charts().at(-1);
   if (!request || request.to_ms === null)
     throw new Error("History request did not include an end");
-  await fireEvent(plot, "accessibilityAction", {
-    nativeEvent: { actionName: "activate" },
+  await layoutAxis();
+  const pin = createGestureController("history-pin");
+  await act(() => {
+    pin.begin({ x: 300 });
+    pin.activate({ x: 300 });
+    pin.end();
   });
   expect(plot).toHaveAccessibilityValue({
-    text: `${formatClockSeconds(request.to_ms - MINUTE_MS)}, No samples`,
+    text: `${formatClockSeconds(request.to_ms - MINUTE_MS)}, Total: No samples, System: No samples`,
   });
 });
 
@@ -357,7 +376,7 @@ test("a minute refresh keeps plotted samples, event rows, and the pinned reading
         ],
       },
     }));
-    jest.spyOn(Haptics, "selectionAsync").mockResolvedValue(undefined);
+    jest.spyOn(Haptics, "impactAsync").mockResolvedValue(undefined);
     const view = await renderWithProviders(openModule(), { transport });
     await layoutPlot();
     try {
@@ -369,10 +388,11 @@ test("a minute refresh keeps plotted samples, event rows, and the pinned reading
         screen.getByRole("adjustable", { name: "CPU history" });
       const request = history.charts().at(-1);
       if (!request) throw new Error("History request did not run");
-      const value = { text: `${formatClockSeconds(request.from_ms)}, 30%` };
-      await fireEvent(plot(), "layout", {
-        nativeEvent: { layout: { width: 300 } },
-      });
+      const value = {
+        text: `${formatClockSeconds(request.from_ms)}, Total: 30%, System: No samples`,
+      };
+      await layoutAxis();
+      expect(screen.getByText("now")).toBeOnTheScreen();
       const pin = createGestureController("history-pin");
       await act(() => {
         pin.begin({ x: 0 });
@@ -384,14 +404,20 @@ test("a minute refresh keeps plotted samples, event rows, and the pinned reading
       history.read.mockImplementation(() => new Promise<never>(() => {}));
       await act(() => jest.advanceTimersByTimeAsync(MINUTE_MS));
       expect(history.charts()).toHaveLength(2);
+      expect(screen.queryByText("now")).not.toBeOnTheScreen();
       expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen();
-      expect(screen.getByText(eventLabel(record))).toBeOnTheScreen();
+      expect(screen.getAllByText(eventLabel(record))).toHaveLength(2);
       expect(
         screen.getByRole("button", { name: "Clear pin" })
       ).toBeOnTheScreen();
       expect(plot()).toHaveAccessibilityValue(value);
 
-      await fireEvent.press(screen.getByRole("tab", { name: "Last 7 days" }));
+      await fireEvent.press(
+        screen.getByRole("tab", { name: "More, History range" })
+      );
+      await fireEvent.press(
+        screen.getByRole("button", { name: "Last 7 days" })
+      );
       expect(screen.getByText("Loading history…")).toBeOnTheScreen();
       expect(screen.queryByText(eventLabel(record))).not.toBeOnTheScreen();
     } finally {
@@ -424,6 +450,11 @@ test("a failed remote status read explains why the module cannot load", async ()
     )
   ).toBeOnTheScreen();
   expect(history).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+  expect(
+    await screen.findByRole("tab", { name: "1h, History range" })
+  ).toBeOnTheScreen();
+  expect(screen.queryByRole("alert")).not.toBeOnTheScreen();
 });
 
 test("an offline host uses its last-seen host time on the module page", async () => {
@@ -469,8 +500,8 @@ test("network identifies both series before scrubbing and history mounts only vi
   if (!first || !last) throw new Error("The event list needs two endpoints");
   expect(await screen.findByText(eventLabel(last))).toBeOnTheScreen();
   expect(screen.queryByText(eventLabel(first))).not.toBeOnTheScreen();
-  expect(screen.getByText("Download")).toBeOnTheScreen();
-  expect(screen.getByText("Upload")).toBeOnTheScreen();
+  expect(screen.getAllByText("Download")).toHaveLength(2);
+  expect(screen.getAllByText("Upload")).toHaveLength(2);
 });
 
 test("the first query for a skewed remote uses its host clock for history and events", async () => {
@@ -527,4 +558,223 @@ test("an unsupported module link gives an unavailable state without reading hist
   await renderWithProviders(openModule(MOCK_HOST_ID, "disk"), { transport });
   expect(screen.getByText("This module isn’t available.")).toBeOnTheScreen();
   expect(read).not.toHaveBeenCalled();
+});
+
+test("the stat strip keys Avg and Peak to the unlabelled lead series in the host reply", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  observeHistory(transport, async (request) => ({
+    status: "ok",
+    data: {
+      ...cpuPage(request),
+      stats: [
+        {
+          key: { metric: "cpu.total", labels: [["scope", "other"]] },
+          avg: 88,
+          peak: 99,
+        },
+        { key: { metric: "cpu.system", labels: [] }, avg: 77, peak: 98 },
+        {
+          key: { metric: "cpu.total", labels: [] },
+          avg: (request.to_ms ?? 0) - request.from_ms === HOUR_MS ? 12.5 : null,
+          peak: (request.to_ms ?? 0) - request.from_ms === HOUR_MS ? 91 : null,
+        },
+      ],
+    },
+  }));
+  await renderWithProviders(openModule(), { transport });
+  await layoutPlot();
+  await waitFor(() =>
+    expect(screen.getByLabelText("Avg")).toHaveAccessibilityValue({
+      text: "12.5%",
+    })
+  );
+  expect(screen.getByLabelText("Peak")).toHaveAccessibilityValue({
+    text: "91%",
+  });
+  expect(screen.getByLabelText("Total")).toHaveAccessibilityValue({
+    text: "18%",
+  });
+  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Peak")).toHaveAccessibilityValue({
+      text: "—",
+    })
+  );
+  expect(screen.getByLabelText("Avg")).toHaveAccessibilityValue({ text: "—" });
+});
+
+test("colliding events appear in pill rows or a merged pill as well as in the event list", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const clustered = Array.from(
+    { length: 5 },
+    (_, i): Event => ({
+      ...record,
+      ts_ms: now - 10 * MINUTE_MS + 1000 * i,
+      detail: {
+        kind: "sustained_process",
+        process: `Build worker ${i}`,
+        cpu_pct: 90,
+        secs: 30,
+      },
+    })
+  );
+  observeHistory(transport, eventsReply(clustered));
+  await renderWithProviders(openModule(), { transport });
+  await layoutPlot();
+  await layoutAxis();
+  const pills = await screen.findAllByLabelText(/^Build worker /);
+  if (pills.length < clustered.length) {
+    expect(screen.getByLabelText(/Build worker .*\+\d/)).toBeOnTheScreen();
+  }
+  expect(
+    screen.getByText(formatClockSeconds(now - 10 * MINUTE_MS))
+  ).toBeOnTheScreen();
+});
+
+test("the mock host filters a power spike out of Network history and events", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  const read = jest.spyOn(transport, "hostHistory");
+  await renderWithProviders(openModule(MOCK_HOST_ID, "network"), { transport });
+  await layoutPlot();
+  await layoutAxis();
+  expect(await screen.findByText("No events in this range")).toBeOnTheScreen();
+  expect(screen.queryByText(/ANE.*Photos/)).not.toBeOnTheScreen();
+  expect(read).toHaveBeenCalledWith(
+    expect.objectContaining({ events_for: "network" })
+  );
+});
+
+test("full process interest ranks grouped apps, shows the top ten, and stops on blur", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const interest = jest.spyOn(transport, "setProcessInterest");
+  await renderWithProviders(openModule(MOCK_HOST_ID, "memory"), { transport });
+  await waitFor(() =>
+    expect(interest).toHaveBeenCalledWith(
+      MOCK_HOST_ID,
+      true,
+      { sort: [], limit: null, period_ms: null },
+      expect.any(Number)
+    )
+  );
+  expect(screen.getByText("Waiting for live processes…")).toBeOnTheScreen();
+  await act(() => jest.advanceTimersByTimeAsync(1000));
+  await act(() => transport.tick());
+  const expected = [
+    "Xcode",
+    "Safari",
+    "com.docker.backend",
+    "usernoted",
+    "CategoriesService",
+    "secd",
+    "AMPDeviceDiscoveryAgent",
+    "trustd",
+    "lsd",
+    "Figma",
+  ];
+  await waitFor(() =>
+    expect(
+      screen.getAllByLabelText(new RegExp(`^(${expected.join("|")})$`))
+    ).toHaveLength(10)
+  );
+  const rows = screen.getAllByLabelText(
+    new RegExp(`^(${expected.join("|")})$`)
+  );
+  expect(rows).toEqual(expected.map((app) => screen.getByLabelText(app)));
+  expect(screen.queryByLabelText("zsh")).not.toBeOnTheScreen();
+  await act(() => router.push("/settings"));
+  expect(await screen.findByText("Elsewhere")).toBeOnTheScreen();
+  await waitFor(() =>
+    expect(interest).toHaveBeenLastCalledWith(
+      MOCK_HOST_ID,
+      false,
+      null,
+      expect.any(Number)
+    )
+  );
+});
+
+test("VoiceOver steps past a leading partial bucket and reads a right-aligned shorter series", async () => {
+  await renderWithProviders(
+    <ModuleChart
+      series={[
+        { key: "total", label: "Total", values: [30, 40], step: 1 },
+        { key: "system", label: "System", values: [7], step: 2 },
+      ]}
+      gaps={[]}
+      ceiling={100}
+      format={formatPercent}
+      range={{ fromMs: now - MINUTE_MS, toMs: now, rolling: false }}
+      events={[]}
+      clockOffsetMs={0}
+      height={160}
+      grid={{ endMs: now - MINUTE_MS / 2, bucketMs: MINUTE_MS }}
+      label="CPU history"
+    />
+  );
+  const plot = screen.getByRole("adjustable", { name: "CPU history" });
+  await fireEvent(plot, "accessibilityAction", {
+    nativeEvent: { actionName: "increment" },
+  });
+  expect(plot).toHaveAccessibilityValue({
+    text: `${formatClockSeconds(now - 1.5 * MINUTE_MS)}, Total: 30%, System: No samples`,
+  });
+  await fireEvent(plot, "accessibilityAction", {
+    nativeEvent: { actionName: "increment" },
+  });
+  expect(plot).toHaveAccessibilityValue({
+    text: `${formatClockSeconds(now - 0.5 * MINUTE_MS)}, Total: 40%, System: 7%`,
+  });
+});
+
+test("Linux power reports that its host does not measure process energy", async () => {
+  const transport = createMockTransport({
+    scenarios: ["linux"],
+    autoTick: false,
+    historyRows: 2,
+  });
+  await renderWithProviders(openModule(MOCK_HOST_ID, "power"), { transport });
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await act(() => jest.advanceTimersByTimeAsync(1000));
+  await act(() => transport.tick());
+  expect(
+    await screen.findByText(
+      "Energy measurements are not available from this host."
+    )
+  ).toBeOnTheScreen();
+  expect(screen.queryByText("0.0")).not.toBeOnTheScreen();
+});
+
+test("a failed process interest request reports the transport failure", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+  const error = {
+    kind: "internal",
+    message: "Process stream unavailable.",
+  } as const;
+  jest
+    .spyOn(transport, "setProcessInterest")
+    .mockResolvedValueOnce({ status: "error", error });
+  await renderWithProviders(openModule(), { transport });
+  expect(
+    await screen.findByRole("alert", {
+      name: "Couldn’t load live processes. Process stream unavailable.",
+    })
+  ).toBeOnTheScreen();
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(commandError(warn.mock.calls[0]?.[2])).toEqual(error);
+});
+
+test("a host that provides frames without processes shows their unavailable state", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const interest = jest
+    .spyOn(transport, "setProcessInterest")
+    .mockResolvedValue({ status: "ok", data: null });
+  await renderWithProviders(openModule(), { transport });
+  await waitFor(() => expect(interest).toHaveBeenCalled());
+  expect(screen.getByText("Waiting for live processes…")).toBeOnTheScreen();
+  await act(() => jest.advanceTimersByTimeAsync(1000));
+  await act(() => transport.tick());
+  expect(
+    await screen.findByText("Processes are not available from this host")
+  ).toBeOnTheScreen();
 });

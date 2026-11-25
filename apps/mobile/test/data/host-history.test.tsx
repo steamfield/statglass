@@ -72,6 +72,13 @@ async function layout(width: number) {
   });
 }
 
+async function selectWeek() {
+  await fireEvent.press(
+    screen.getByRole("tab", { name: "More, History range" })
+  );
+  await fireEvent.press(screen.getByRole("button", { name: "Last 7 days" }));
+}
+
 async function advanceWithFrames(transport: MockTransport, ms: number) {
   await act(async () => {
     for (let elapsed = 0; elapsed < ms; elapsed += 1000) {
@@ -97,9 +104,23 @@ afterEach(() => {
 
 test("waits for chart layout, clamps the budget, and asks once per range or budget", async () => {
   const transport = createMockTransport({ autoTick: false });
-  const read = jest.spyOn(transport, "hostHistory");
+  const read = jest
+    .spyOn(transport, "hostHistory")
+    .mockImplementation(async (request) => ({
+      status: "ok",
+      data: {
+        tier: "m1",
+        bucket_ms: MINUTE_MS,
+        complete_to_ms: request.to_ms ?? request.from_ms,
+        series: [],
+        gaps: [],
+        events: [],
+        stats: [],
+        clamped: [],
+      },
+    }));
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   expect(read).not.toHaveBeenCalled();
   for (const [width, budget] of [
     [50, 30],
@@ -113,14 +134,17 @@ test("waits for chart layout, clamps the budget, and asks once per range or budg
   }
   await layout(651);
   expect(read).toHaveBeenCalledTimes(3);
-  await fireEvent.press(screen.getByRole("tab", { name: "Last 7 days" }));
+  await selectWeek();
   expect(read).toHaveBeenCalledTimes(4);
   const request = read.mock.calls.at(-1)?.[0];
   expect(request).toMatchObject({
     host: MOCK_HOST_ID,
     max_points: 200,
     events_for: "cpu",
-    series: [{ metric: "cpu.total", labels: [] }],
+    series: [
+      { metric: "cpu.total", labels: [] },
+      { metric: "cpu.system", labels: [] },
+    ],
   });
   expect((request?.to_ms ?? 0) - (request?.from_ms ?? 0)).toBe(7 * DAY_MS);
 });
@@ -162,7 +186,7 @@ test("a module remount reuses its reply for 30 seconds after it arrives and rele
   const transport = createMockTransport({ autoTick: false, latencyMs: 6_000 });
   const read = jest.spyOn(transport, "hostHistory");
   const view = await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
   await advanceWithFrames(transport, 12_500);
   await screen.findByText("No events in this range");
@@ -171,7 +195,7 @@ test("a module remount reuses its reply for 30 seconds after it arrives and rele
   await view.rerender(<View />);
   await act(() => jest.advanceTimersByTimeAsync(20_000));
   await view.rerender(modulePage());
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
   expect(screen.getByText("No events in this range")).toBeOnTheScreen();
   expect(read).toHaveBeenCalledTimes(1);
@@ -187,7 +211,7 @@ test("an in-flight reply cannot extend cache lifetime after the module leaves", 
   const transport = createMockTransport({ autoTick: false, latencyMs: 10_000 });
   const read = jest.spyOn(transport, "hostHistory");
   const view = await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
   expect(read).toHaveBeenCalledTimes(1);
   await view.rerender(<View />);
@@ -208,7 +232,7 @@ test("three busy replies keep loading until Retry can start a fresh round", asyn
   }
   const [host] = await transport.listHosts();
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
   expect(read).toHaveBeenCalledTimes(1);
   expect(screen.getByText("Loading history…")).toBeOnTheScreen();
@@ -245,7 +269,7 @@ test("a Busy reply schedules no history reads while the app is backgrounded", as
     error: { kind: "remote_busy", message: "busy" },
   });
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
   expect(read).toHaveBeenCalledTimes(1);
   await setAppState("background");
@@ -263,7 +287,7 @@ test("Retry recovers an open chart after a transient history failure", async () 
     error: { kind: "remote_unreachable", message: "Connection dropped" },
   });
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
   expect(
     await screen.findByText(
@@ -284,7 +308,7 @@ test("an unsupported host offers an update while its live CPU value changes", as
   });
   const [host] = await transport.listHosts();
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
   expect(
     await screen.findByText(
@@ -312,12 +336,18 @@ test("an unsupported host offers an update while its live CPU value changes", as
     })
   );
   await showCpu(37);
-  expect(screen.getByText("Now 37%")).toBeOnTheScreen();
+  expect(screen.getByLabelText("Total")).toHaveAccessibilityValue({
+    text: "37%",
+  });
   await act(() => jest.advanceTimersByTimeAsync(1000));
   await showCpu(59);
-  expect(screen.getByText("Now 59%")).toBeOnTheScreen();
+  expect(screen.getByLabelText("Total")).toHaveAccessibilityValue({
+    text: "59%",
+  });
   await act(() => transport.setPaused(true));
-  expect(screen.queryByText(/^Now .*%$/)).not.toBeOnTheScreen();
+  expect(screen.getByLabelText("Total")).toHaveAccessibilityValue({
+    text: "—",
+  });
   expect(read).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "Retry" })).not.toBeOnTheScreen();
 });
@@ -356,10 +386,10 @@ test("keeps the selected range through reconnect and makes no history reads whil
   const host = remote.config.id;
   const read = jest.spyOn(transport, "hostHistory");
   await renderWithProviders(modulePage(host), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
-  const week = () => screen.getByRole("tab", { name: "Last 7 days" });
-  await fireEvent.press(week());
+  const week = () => screen.getByRole("tab", { name: "7d, History range" });
+  await selectWeek();
   await screen.findByText(/com\.docker\.backend at/);
   expect(read).toHaveBeenCalledTimes(2);
 
@@ -382,6 +412,7 @@ test("a failed status refetch keeps the page and its selected range", async () =
   const transport = createMockTransport({
     scenarios: ["hosts-dashboard"],
     autoTick: false,
+    historyRows: 2,
   });
   const remote = (await transport.listRemoteHosts()).find(
     ({ status }) => status.state === "connected"
@@ -389,9 +420,9 @@ test("a failed status refetch keeps the page and its selected range", async () =
   if (!remote) throw new Error("The demo needs a reachable host");
   const host = remote.config.id;
   await renderWithProviders(modulePage(host), { transport });
-  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
-  await fireEvent.press(screen.getByRole("tab", { name: "Last 7 days" }));
+  await selectWeek();
   await screen.findByText(/com\.docker\.backend at/);
 
   const list = jest
@@ -399,9 +430,15 @@ test("a failed status refetch keeps the page and its selected range", async () =
     .mockRejectedValue(new Error("status read failed"));
   await act(() => transport.pushRemoteStatus(host, { state: "connecting" }));
   await waitFor(() => expect(list).toHaveBeenCalled());
-  await act(() => jest.advanceTimersByTimeAsync(5000));
-  expect(screen.getByRole("tab", { name: "Last 7 days" })).toBeSelected();
+  await act(() => jest.advanceTimersByTimeAsync(1100));
+  expect(
+    await screen.findByRole("alert", {
+      name: /Couldn’t read connection status/,
+    })
+  ).toBeOnTheScreen();
+  expect(screen.getByRole("tab", { name: "7d, History range" })).toBeSelected();
   expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeOnTheScreen();
 });
 
 test.each(["unknown", "extension"] as const)(
@@ -413,7 +450,7 @@ test.each(["unknown", "extension"] as const)(
     const read = jest.spyOn(transport, "hostHistory");
     const subscribe = jest.spyOn(transport, "subscribeLive");
     await renderWithProviders(modulePage(), { transport });
-    await screen.findByRole("tab", { name: "Last 1 hour" });
+    await screen.findByRole("tab", { name: "1h, History range" });
     await layout(300);
     expect(read).not.toHaveBeenCalled();
     expect(subscribe).not.toHaveBeenCalled();
