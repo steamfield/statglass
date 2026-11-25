@@ -1,0 +1,8 @@
+# https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype
+# Category suffix, extended regex for Mach-O imports, allowed reasons (tab-separated).
+# getattrlist also accesses disk space, depending on the attributes requested.
+FileTimestamp	^_((f|l)?stat|fstatat|f?getattrlist|getattrlist(at|bulk))(\$.*)?$|^_objc_msgSend\$(creationDate|modificationDate|fileModificationDate)$|^_NS(File(Creation|Modification)Date|URL(ContentModification|Creation)DateKey)$|^_\$s10Foundation(14URLResourceKey|17URLResourceValues|16FileAttributeKey)V[0-9]+(creationDate|modificationDate|contentModificationDate)	DDA9.1 C617.1 3B52.1 0A2A.1
+SystemBootTime	^(_mach_absolute_time(\$.*)?|_objc_msgSend\$systemUptime)$	35F9.1 8FFB.1 3D61.1
+DiskSpace	^_(f?stat(fs|vfs)|f?getattrlist|getattrlistat)(\$.*)?$|^_NS(FileSystem(Free)?Size|URLVolume(AvailableCapacity(For(Important|Opportunistic)Usage)?|TotalCapacity)Key)$|^_\$s10Foundation(14URLResourceKey|17URLResourceValues)V[0-9]+volume(AvailableCapacity(For(Important|Opportunistic)Usage)?|TotalCapacity)|^_\$s10Foundation16FileAttributeKeyV[0-9]+system(Free)?Size	85F4.1 E174.1 7D9E.1 B728.1
+ActiveKeyboards	^_objc_msgSend\$activeInputModes$	3EC4.1 54BD.1
+UserDefaults	^_OBJC_CLASS_\$_NSUserDefaults$|^_\$s10Foundation12UserDefaultsC	CA92.1 1C8F.1 C56D.1 AC6B.1
