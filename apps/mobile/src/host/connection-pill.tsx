@@ -1,78 +1,9 @@
 import type { HostId } from "@core/generated/types";
-import {
-  hostStatusSummary,
-  type PhoneRemoteHostStatus,
-} from "@core/phone-connection";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
-import { shallow } from "zustand/shallow";
 import { useStatusAnnouncement } from "@/connection/use-status-announcement";
-import { useHostLive, useLastFrame, useLiveFailure } from "@/data/live";
+import { type useConnection, useLastFrame } from "@/data/live";
 import { Text } from "@/ui/text";
-
-const routeNames = { lan: "LAN", tailscale: "Tailscale" };
-
-/** The remote status line used by both the host and module pages. */
-export function remoteStatusLine(remote: PhoneRemoteHostStatus | undefined) {
-  return remote && remote.state !== "connected"
-    ? hostStatusSummary(remote, { nowMs: Date.now() })
-    : null;
-}
-
-/** Compatibility for the module page until it uses remoteStatusLine directly. */
-export function offlineLabel(remote: PhoneRemoteHostStatus | undefined) {
-  return remoteStatusLine(remote)?.label ?? null;
-}
-
-/** Select connection changes that affect the page, leaving frame age to the pill. */
-export function useConnection(
-  host: HostId,
-  remote: PhoneRemoteHostStatus | undefined,
-  statusError: string | null
-) {
-  const { connection, stale, paused, idle } = useHostLive(
-    host,
-    (s) => ({
-      connection: s.connection,
-      stale: s.stale,
-      paused: s.status?.paused,
-      idle: s.status?.display_idle,
-    }),
-    shallow
-  );
-  const failure = useLiveFailure(host);
-  const remoteLine = remoteStatusLine(remote);
-  const statusLine = statusError ?? remoteLine?.label ?? failure;
-
-  if (statusLine) {
-    return {
-      state:
-        !statusError && remote?.state === "connecting"
-          ? "reconnecting"
-          : "offline",
-      label: statusLine,
-      remoteState: statusError ? "status-read-failed" : remote?.state,
-      problemKind: remoteLine?.kind,
-    } as const;
-  }
-  if (paused || idle) {
-    return {
-      state: "waiting",
-      label: paused ? "Paused" : "Display asleep",
-    } as const;
-  }
-  if (stale || connection === "reconnecting") {
-    return { state: "reconnecting", label: "Reconnecting" } as const;
-  }
-  if (connection !== "live")
-    return { state: "waiting", label: "Connecting" } as const;
-  const route = remote?.route ? routeNames[remote.route] : null;
-  return {
-    state: "live",
-    label: "Live",
-    route,
-  } as const;
-}
 
 function useConnectionAnnouncement(
   connection: ReturnType<typeof useConnection>,

@@ -184,7 +184,7 @@ export function createMockTransport(
     calls: commands.calls,
     hostHistory: scenarios.includes("phone-sparkline-gap")
       ? phoneSparklineFixture
-      : createMockHostHistory(queries.methods),
+      : createMockHostHistory(queries.methods, now, remote.remotes),
     networkAddresses: createMockNetworkAddresses(remote, now),
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,

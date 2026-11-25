@@ -18,7 +18,7 @@ type PlotHistory = Pick<
 /** Return the StreamArea data and the count of real slots the cursor can select. */
 export function historyChart(
   module: PopoverCard,
-  range: HistoryRange,
+  range: Pick<HistoryRange, "fromMs" | "toMs">,
   { data, grid, isPending }: PlotHistory,
   events: readonly Event[] | undefined
 ): { chart: StreamAreaData; sampleCount: number } {

@@ -47,12 +47,7 @@ test("sends only the current live policy on mount and change for a native transp
   expect(native.call.mock.calls).toEqual([
     ["set_data_policy", '{"live_on_cellular":true}'],
   ]);
-  await fireEvent(
-    screen.getByRole("switch", { name: "Sync history on cellular" }),
-    "valueChange",
-    true
-  );
-  expect(native.call).toHaveBeenCalledTimes(1);
+  expect(screen.getAllByRole("switch")).toHaveLength(1);
   await fireEvent(
     screen.getByRole("switch", { name: "Live updates on cellular" }),
     "valueChange",

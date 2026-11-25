@@ -22,6 +22,17 @@ const H = "h1";
 const base = defaultSettings(scenarioFlags(["default"]));
 const RANGE = { windowMs: 3600000, endMs: null, bucketMs: 10_000 } as const;
 
+it("tags rolling host history windows separately from absolute bounds", () => {
+  const series = [{ metric: "cpu.total", labels: [] }];
+  const prefix = [...historyKeys.host(H), "host-history", series];
+  expect(
+    historyKeys.hostHistory(H, series, { windowMs: RANGE.windowMs }, 120, "cpu")
+  ).toEqual([...prefix, ["window", RANGE.windowMs], 120, "cpu"]);
+  expect(
+    historyKeys.hostHistory(H, series, { fromMs: 0, toMs: RANGE.windowMs }, 120)
+  ).toEqual([...prefix, ["bounds", 0, RANGE.windowMs], 120, null]);
+});
+
 const KEYS = {
   historyRange: historyKeys.range(H, "cpu", RANGE, "auto"),
   historySize: hostKeys.historySize(H),

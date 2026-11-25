@@ -1,12 +1,15 @@
 import type { HostId } from "@core/generated/types";
 import { type HostLive, initialHostLive } from "@core/live-state";
-import { hostKeys } from "@core/query-keys";
+import {
+  hostStatusSummary,
+  type PhoneRemoteHostStatus,
+} from "@core/phone-connection";
 import { failureReason, remoteQueryText } from "@core/remote-errors";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useStore } from "zustand";
+import { shallow } from "zustand/shallow";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { subscribeHostLive } from "./live-subscription";
 import type { PhoneTransport } from "./seam";
@@ -40,26 +43,26 @@ function hostStore(transport: PhoneTransport, host: HostId): LiveStore {
   return store;
 }
 
+const appIsActive = () => AppState.currentState === "active";
+
+/** Check foreground activity from the first render and when AppState changes. */
+export function useAppActive() {
+  const [active, setActive] = useState(appIsActive);
+  useEffect(() => {
+    const listener = AppState.addEventListener("change", (state) => {
+      setActive(state === "active");
+    });
+    setActive(appIsActive());
+    return () => listener.remove();
+  }, []);
+  return active;
+}
+
 /** Run a screen's live work only while it is focused and foregrounded. */
 export function useFocusedAppEffect(start: () => (() => void) | undefined) {
+  const active = useAppActive();
   useFocusEffect(
-    useCallback(() => {
-      let stop: (() => void) | undefined;
-      const onState = (state: string) => {
-        if (state === "active") {
-          stop ??= start();
-        } else {
-          stop?.();
-          stop = undefined;
-        }
-      };
-      const listener = AppState.addEventListener("change", onState);
-      if (AppState.currentState) onState(AppState.currentState);
-      return () => {
-        listener.remove();
-        stop?.();
-      };
-    }, [start])
+    useCallback(() => (active ? start() : undefined), [active, start])
   );
 }
 
@@ -114,22 +117,63 @@ export function useLiveFailure(host: HostId) {
   return useLiveSelection(host, (state) => state.failure);
 }
 
-/** Read one host's remote status and refresh the shared list when it changes. */
-export function useRemoteStatus(host: HostId, enabled = true) {
-  const transport = usePhoneTransport();
-  const client = useQueryClient();
-  useEffect(() => {
-    if (!enabled) return;
-    return transport.onRemoteHostsChanged(() => {
-      void client.invalidateQueries({ queryKey: hostKeys.remote() });
-    });
-  }, [client, enabled, transport]);
-  return useQuery({
-    queryKey: hostKeys.remote(),
-    queryFn: () => transport.listRemoteHosts(),
-    select: (hosts) => hosts.find((entry) => entry.config.id === host)?.status,
-    enabled,
-  });
+const routeNames = { lan: "LAN", tailscale: "Tailscale" };
+
+/** The remote status line used by both the host and module pages. */
+export function remoteStatusLine(remote: PhoneRemoteHostStatus | undefined) {
+  return remote && remote.state !== "connected"
+    ? hostStatusSummary(remote, { nowMs: Date.now() })
+    : null;
+}
+
+/** Connection state shared by the pill and the module's current readings. */
+export function useConnection(
+  host: HostId,
+  remote: PhoneRemoteHostStatus | undefined,
+  statusError: string | null
+) {
+  const { connection, stale, paused, idle } = useHostLive(
+    host,
+    (s) => ({
+      connection: s.connection,
+      stale: s.stale,
+      paused: s.status?.paused,
+      idle: s.status?.display_idle,
+    }),
+    shallow
+  );
+  const failure = useLiveFailure(host);
+  const remoteLine = remoteStatusLine(remote);
+  const statusLine = statusError ?? remoteLine?.label ?? failure;
+
+  if (statusLine) {
+    return {
+      state:
+        !statusError && remote?.state === "connecting"
+          ? "reconnecting"
+          : "offline",
+      label: statusLine,
+      remoteState: statusError ? "status-read-failed" : remote?.state,
+      problemKind: remoteLine?.kind,
+    } as const;
+  }
+  if (paused || idle) {
+    return {
+      state: "waiting",
+      label: paused ? "Paused" : "Display asleep",
+    } as const;
+  }
+  if (stale || connection === "reconnecting") {
+    return { state: "reconnecting", label: "Reconnecting" } as const;
+  }
+  if (connection !== "live")
+    return { state: "waiting", label: "Connecting" } as const;
+  const route = remote?.route ? routeNames[remote.route] : null;
+  return {
+    state: "live",
+    label: "Live",
+    route,
+  } as const;
 }
 
 /** Explain a failed connection-status read using the shared remote error wording. */

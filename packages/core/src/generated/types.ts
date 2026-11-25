@@ -25,6 +25,16 @@ export const HEADER_BYTES_PER_PACKET = 66 as const;
 
 export const HISTORY_COMMIT_MS = 300000 as const;
 
+export const HISTORY_MAX_ANSWER_BYTES = 524288 as const;
+
+export const HISTORY_MAX_CORE_SERIES = 256 as const;
+
+export const HISTORY_MAX_EVENTS = 200 as const;
+
+export const HISTORY_MAX_POINTS = 500 as const;
+
+export const HISTORY_MAX_SERIES = 32 as const;
+
 export const HISTORY_PROJECTION = {"fill_minutes":[{"days":30,"mb":139.7,"series":150},{"days":30,"mb":203.4,"series":250}],"fill_rolled":[{"days":30,"mb":69.9,"series":150},{"days":30,"mb":95.7,"series":250}],"minute_days":7,"quarter_factor":15,"trim_low_water":0.9,"usage_fill":{"finest_day_bytes":35000000,"fixed_identity_bytes":200000,"identity_day_bytes":11550000,"measured_ms":2592000000,"minute_day_bytes":6750000,"quarter_day_bytes":1360000}} as const;
 
 export const HISTORY_RECENT_MS = 900000 as const;

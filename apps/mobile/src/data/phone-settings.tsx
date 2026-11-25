@@ -30,7 +30,6 @@ export interface PhoneSettings {
   cardOrder: PopoverCard[] | null;
   appearance: "system" | "light" | "dark";
   liveOnCellular: boolean;
-  syncOnCellular: boolean;
   appLock: boolean;
 }
 
@@ -50,7 +49,6 @@ export const DEFAULT_PHONE_SETTINGS: PhoneSettings = {
   cardOrder: null,
   appearance: "system",
   liveOnCellular: true,
-  syncOnCellular: false,
   appLock: false,
 };
 

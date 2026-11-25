@@ -24,7 +24,7 @@ import { PowerCard } from "@/cards/power-card";
 import { UnavailableCard } from "@/cards/unavailable-card";
 import { ProblemBanner } from "@/connection/problem-banner";
 import { useHostConnection } from "@/data/hosts";
-import { connectionStatusError, useHostLive } from "@/data/live";
+import { connectionStatusError, useConnection, useHostLive } from "@/data/live";
 import { useCompactStream, useNetworkBars } from "@/data/live-stream";
 import { usePhoneSettings } from "@/data/phone-settings";
 import { motionEasings } from "@/theme.generated";
@@ -37,7 +37,7 @@ import {
   cardActions,
   cardModuleStates,
 } from "./card-stack";
-import { ConnectionPill, useConnection } from "./connection-pill";
+import { ConnectionPill } from "./connection-pill";
 
 const CardSlot = memo(
   function CardSlot({ item }: { item: CardStackItem }) {
