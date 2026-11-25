@@ -10,12 +10,18 @@ import { memo, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { HostSwitcher } from "~/components/host-switcher";
 import { PerformanceExplainer } from "~/components/performance-explainer";
-import { Sidebar, type SidebarEntry } from "~/components/sidebar";
+import {
+  Sidebar,
+  type SidebarEntry,
+  type SidebarProps,
+} from "~/components/sidebar";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "~/components/ui/hover-card";
+import { useSpaceStatus } from "~/hooks/use-disk-space";
+import { useEdition } from "~/hooks/use-edition";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
@@ -86,6 +92,8 @@ const LOCAL_TOOLS: readonly SidebarEntry[] = [
     icon: "settings" as const,
   },
 ];
+const SCAN_BUSY = { label: "Scan running" };
+
 const countBehind = (hosts: Parameters<typeof hostsNeedingUpdate>[0]) =>
   hostsNeedingUpdate(hosts).length;
 
@@ -145,7 +153,9 @@ const SidebarFeedbackAction = memo(function SidebarFeedbackAction() {
  * Modules switched off, or that this build cannot run, are dimmed without a
  * value. Network and Disk show the sum of both directions.
  */
-export function LiveSidebar() {
+export function LiveSidebar({
+  onGroupRender,
+}: Pick<SidebarProps, "onGroupRender">) {
   const local = useIsLocalHost();
   const hostId = useHostId();
   // A remote host lists Containers when it reports cgroup groups (D-116).
@@ -179,6 +189,24 @@ export function LiveSidebar() {
     );
     return withHostAttention(listed, behind);
   }, [local, linux, cgroups, behind]);
+  const diskSpace = useEdition()?.disk_space;
+  const { data: spaceStatus } = useSpaceStatus(diskSpace === true);
+  const busy = spaceStatus?.phase === "scanning" ? SCAN_BUSY : undefined;
+  const utilities = useMemo<readonly SidebarEntry[]>(
+    () =>
+      diskSpace === true
+        ? [
+            {
+              id: "disk-space",
+              href: "/dashboard/disk-space",
+              label: "Disk space",
+              icon: "disk-space",
+              busy,
+            },
+          ]
+        : [],
+    [diskSpace, busy]
+  );
   const configuredMs = useSettings((s) => s.sampling.interval_ms);
   const sampling = useSampling();
   const cpu = useCpu();
@@ -247,10 +275,14 @@ export function LiveSidebar() {
       id: "tools",
       entries: tools,
     },
+    ...(utilities.length
+      ? [{ id: "utilities", label: "Utilities", entries: utilities }]
+      : []),
   ];
 
   return (
     <Sidebar
+      onGroupRender={onGroupRender}
       hostSwitcher={<HostSwitcher />}
       groups={groups}
       active={pathname.split("/")[2] ?? "overview"}
