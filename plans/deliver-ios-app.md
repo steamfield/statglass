@@ -502,6 +502,7 @@ Demo:
 - `cargo check --target aarch64-apple-ios-sim -p statglass-ipc` passes.
 
 Depends on: phase 2
+Scaffold: 9b312222
 
 Code facts this phase relies on (checked 2026-11-24; the RFC's line numbers have drifted, and the actual positions are given here):
 
@@ -951,6 +952,7 @@ Demo:
   - After approval, Paired devices lists the device with a revoke button.
 
 Depends on: phase 2
+Scaffold: 8a2ce900
 The phase 5 scaffold is committed after phase 3's, so phase 5 lanes run concurrently with phase 3 lanes.
 
 Code facts this phase relies on (checked 2026-11-24):
@@ -1852,3 +1854,4 @@ None of these files is owned by a lane in phase 3, 5, 6 or 7:
 - 2026-11-24: lane 6b q1: mobile has no shared motion tokens or Low Power Mode signal yet (`.claude/rules/mobile/expo.md:61,72` require both). Phase 6 integration adds them (theme-sourced durations plus `expo-battery` low power) and swaps lane b's named tick-duration constant for the token.
 - 2026-11-24: lane 6c q3: `BatteryCardProps` gains `source: PowerSource | null` (lane d passes `selectPowerSource`); MirrorBars gets a Reduce Motion-aware tween with named timing constants for the integration swap to motion tokens.
 - 2026-11-24: phase 6 lane reviews. 6a (5 findings, all accepted): enabling App Lock double-prompts (gate starts locked while AppState is still `inactive`), `useHostSparkline` signature/offset default, refresh errors unattributed, lock reducer extraction, a missing `@throws`. 6d (5, all accepted): module page blanks every minute (no `placeholderData` hold), battery card `source`, swallowed subscribe/status errors, whole host page re-renders at 1 Hz, `live.ts`/`ScrubbableChart` splits and doc blocks. 6b (4, all accepted; no extra per-tick work found, perf deltas read as noise): Dynamic Type caption scale kept as a measurable model input (documented in `packages/core/README.md`), declared `StreamAreaModel` return type with narrowed color refs, phone gap-caption collision listed as a fork, `stream-area.tsx` twin split into `widgets/lib/`. Integration: lane b's and lane c's Reduce Motion hooks are consolidated into the shared mobile motion module.
+- 2026-11-24: phase 3/5 scaffolds landed (9b312222, 8a2ce900; merge 7d8d8f5a). Corrections to the plan found against the code: `AgentInstallError` also needed `agent_install_error` at `setup/linux.rs` (4 sites) and `update_controls.rs` (3); `classifyFailure` in `remote-connection.ts` has no default, so both new failure kinds got explicit cases; `PairReply::Error(PairError)` fails to decode under `tag = "kind"`, so it is `Error { error: PairError }`; session `pair` takes no `pairing_key` (it would make session depend on statglass-ssh), the dialer carries the signer. Stubs to fill: `MirrorPolicy::phone` returns desktop values (phase 3 lane sets the 25 MB / 250 MB caps), `history_recent` has a `Covered` stub arm, the ipc phase-3 gate test is ignored until lane b. Placement: run options in `statglass-session/src/source/policy.rs`; ipc services gated `cfg(all(unix, not(target_os = "ios")))`; agent pairing commands grouped as `Command::Device(DeviceCommand)` with no CLI tests yet (phase 5 lane owning the agent adds them); mock event subscriptions moved to `packages/core/src/mock/emitters.ts`. `make ssh-docker-test` was not run on the scaffold; run.sh's restricted and pair entries run only once their test files exist. Lane a should diff ipc with `git diff -B -M` to see the moves.
