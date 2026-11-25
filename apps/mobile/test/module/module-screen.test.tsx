@@ -12,6 +12,7 @@ import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import * as Haptics from "expo-haptics";
@@ -45,6 +46,7 @@ const record: Event = {
 
 beforeEach(() => {
   jest.useFakeTimers({ now });
+  mockAppState();
 });
 
 afterEach(() => {

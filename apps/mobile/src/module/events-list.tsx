@@ -1,36 +1,16 @@
-import { errorTone } from "@core/command-error";
 import { eventId, eventLabel } from "@core/events";
 import { formatHistoryTime } from "@core/format";
 import type { Event } from "@core/generated/types";
 import { type ReactNode, useMemo } from "react";
 import { FlatList, View } from "react-native";
-import { historyReadError, type useEvents } from "@/data/history";
+import type { useEvents } from "@/data/history";
 import { Text } from "@/ui/text";
 
 function EventsHeading({ events }: { events: ReturnType<typeof useEvents> }) {
   return (
     <View className="gap-2">
       <Text {...{ role: "title" }}>Events</Text>
-      {events.isPending && (
-        <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
-          Loading events…
-        </Text>
-      )}
-      {events.isError && (
-        <Text
-          {...{ role: "label" }}
-          accessibilityLiveRegion="polite"
-          accessibilityRole={
-            errorTone(events.error) === "error" ? "alert" : undefined
-          }
-          className={
-            errorTone(events.error) === "error" ? "text-destructive" : ""
-          }
-        >
-          {historyReadError(events.error, "events")}
-        </Text>
-      )}
-      {events.isSuccess && events.data.length === 0 && (
+      {events.isSuccess && events.data?.length === 0 && (
         <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
           No events in this range
         </Text>

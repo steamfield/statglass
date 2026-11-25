@@ -63,14 +63,9 @@ type PhoneSettingsStore = StoreApi<PhoneSettings>;
 export function createPhoneSettingsStore(
   initial: Partial<PhoneSettings> = {}
 ): PhoneSettingsStore {
-  const recognised = Object.fromEntries(
-    Object.entries(initial).filter(([key]) =>
-      Object.hasOwn(DEFAULT_PHONE_SETTINGS, key)
-    )
-  );
   return createStore<PhoneSettings>()(() => ({
     ...DEFAULT_PHONE_SETTINGS,
-    ...recognised,
+    ...initial,
   }));
 }
 

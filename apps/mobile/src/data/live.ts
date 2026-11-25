@@ -1,12 +1,14 @@
-import type { HostId } from "@core/generated/types";
+import { formatClock } from "@core/format";
+import type { HostId, RemoteHostStatus } from "@core/generated/types";
 import { type HostLive, initialHostLive } from "@core/live-state";
 import { hostKeys } from "@core/query-keys";
 import { failureReason, remoteQueryText } from "@core/remote-errors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useStore } from "zustand";
+import { shallow } from "zustand/shallow";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { subscribeHostLive } from "./live-subscription";
 import type { PhoneTransport } from "./seam";
@@ -40,26 +42,26 @@ function hostStore(transport: PhoneTransport, host: HostId): LiveStore {
   return store;
 }
 
+const appIsActive = () => AppState.currentState === "active";
+
+/** Check foreground activity from the first render and when AppState changes. */
+export function useAppActive() {
+  const [active, setActive] = useState(appIsActive);
+  useEffect(() => {
+    const listener = AppState.addEventListener("change", (state) => {
+      setActive(state === "active");
+    });
+    setActive(appIsActive());
+    return () => listener.remove();
+  }, []);
+  return active;
+}
+
 /** Run a screen's live work only while it is focused and foregrounded. */
 export function useFocusedAppEffect(start: () => (() => void) | undefined) {
+  const active = useAppActive();
   useFocusEffect(
-    useCallback(() => {
-      let stop: (() => void) | undefined;
-      const onState = (state: string) => {
-        if (state === "active") {
-          stop ??= start();
-        } else {
-          stop?.();
-          stop = undefined;
-        }
-      };
-      const listener = AppState.addEventListener("change", onState);
-      if (AppState.currentState) onState(AppState.currentState);
-      return () => {
-        listener.remove();
-        stop?.();
-      };
-    }, [start])
+    useCallback(() => (active ? start() : undefined), [active, start])
   );
 }
 
@@ -112,6 +114,58 @@ export function useLastFrame(host: HostId) {
 /** The terminal failure message for the host's live subscription, if one failed. */
 export function useLiveFailure(host: HostId) {
   return useLiveSelection(host, (state) => state.failure);
+}
+
+/** Label an offline remote with its last-seen time when the status supplies one. */
+export function offlineLabel(remote: RemoteHostStatus | undefined) {
+  if (!remote || !["offline", "error", "disabled"].includes(remote.state))
+    return null;
+  return remote.last_seen_ms === null
+    ? "Offline"
+    : `Offline since ${formatClock(remote.last_seen_ms)}`;
+}
+
+/** Connection state shared by the pill and the module's current readings. */
+export function useConnection(
+  host: HostId,
+  remote: RemoteHostStatus | undefined,
+  statusError: string | null
+) {
+  const { connection, stale, paused, idle } = useHostLive(
+    host,
+    (s) => ({
+      connection: s.connection,
+      stale: s.stale,
+      paused: s.status?.paused,
+      idle: s.status?.display_idle,
+    }),
+    shallow
+  );
+  const failure = useLiveFailure(host);
+  const offline = statusError ?? failure ?? offlineLabel(remote);
+
+  if (offline) return { state: "offline", label: offline } as const;
+  if (remote?.state === "connecting") {
+    return { state: "reconnecting", label: "Reconnecting" } as const;
+  }
+  if (paused || idle) {
+    return {
+      state: "waiting",
+      label: paused ? "Paused" : "Display asleep",
+    } as const;
+  }
+  if (stale || connection === "reconnecting") {
+    return { state: "reconnecting", label: "Reconnecting" } as const;
+  }
+  if (connection !== "live")
+    return { state: "waiting", label: "Connecting" } as const;
+  const route =
+    remote?.route === "lan"
+      ? "LAN"
+      : remote?.route === "tailscale"
+        ? "Tailscale"
+        : null;
+  return { state: "live", label: "Live", route } as const;
 }
 
 /** Read one host's remote status and refresh the shared list when it changes. */

@@ -35,8 +35,7 @@ export const historyKeys = {
   hostHistory: (
     host: HostId,
     series: readonly SeriesSelector[],
-    fromMs: number,
-    toMs: number | "now",
+    range: { windowMs: number } | { fromMs: number; toMs: number },
     budget: number,
     eventsFor: Module | null = null
   ) =>
@@ -44,8 +43,9 @@ export const historyKeys = {
       ...historyKeys.host(host),
       "host-history",
       series,
-      fromMs,
-      toMs,
+      "windowMs" in range
+        ? (["window", range.windowMs] as const)
+        : (["bounds", range.fromMs, range.toMs] as const),
       budget,
       eventsFor,
     ] as const,

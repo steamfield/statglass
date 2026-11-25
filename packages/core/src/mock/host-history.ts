@@ -1,5 +1,10 @@
 import {
   type Event,
+  HISTORY_MAX_ANSWER_BYTES,
+  HISTORY_MAX_CORE_SERIES,
+  HISTORY_MAX_EVENTS,
+  HISTORY_MAX_POINTS,
+  HISTORY_MAX_SERIES,
   HISTORY_TIERS,
   type HistoryPage,
   type HistoryPoint,
@@ -15,12 +20,6 @@ import type { PhoneQueries, Transport } from "../transport";
 import { MOCK_HOST_ID } from "./fixtures";
 import { fail, invalid, mockBuckets, ok, rangeError } from "./protocol";
 import type { MockRemotes } from "./remote";
-
-const MAX_POINTS = 500;
-const MAX_SERIES = 32;
-const MAX_CORE_SERIES = 256;
-const MAX_EVENTS = 200;
-const MAX_ANSWER_BYTES = 512 * 1024;
 
 function historyTier(from: number, to: number, now: number, points: number) {
   const target = (to - from) / points;
@@ -90,7 +89,7 @@ function exceedsAnswerBudget(page: HostHistoryPage) {
   );
   return (
     pointBytes + 3 * JSON.stringify({ ...rest, series: metadata }).length >
-    MAX_ANSWER_BYTES
+    HISTORY_MAX_ANSWER_BYTES
   );
 }
 
@@ -105,10 +104,10 @@ function historyRead(request: HostHistoryRequest, now: number) {
   );
   if (unknown) return invalid(`${unknown.metric} is not in the catalog`);
 
-  const budget = Math.min(MAX_POINTS, Math.max(1, max_points));
+  const budget = Math.min(HISTORY_MAX_POINTS, Math.max(1, max_points));
   const limit = series.every(({ metric }) => metric === "cpu.load")
-    ? MAX_CORE_SERIES
-    : MAX_SERIES;
+    ? HISTORY_MAX_CORE_SERIES
+    : HISTORY_MAX_SERIES;
   const tier = historyTier(from_ms, to, now, budget);
   const read: HistoryRequest = {
     host,
@@ -189,19 +188,19 @@ async function readLocalHistory(
   if (recorded.status === "error") return recorded;
 
   const clamped: HostHistoryPage["clamped"] = [];
-  if (request.max_points > MAX_POINTS) clamped.push({ kind: "points" });
+  if (request.max_points > HISTORY_MAX_POINTS) clamped.push({ kind: "points" });
   if (request.series.length > limit || raw.data.series.length > limit)
     clamped.push({ kind: "series" });
   const matched = recorded.data.filter(
     (event) => eventModule(event) === request.events_for
   );
-  if (matched.length > MAX_EVENTS) clamped.push({ kind: "events" });
+  if (matched.length > HISTORY_MAX_EVENTS) clamped.push({ kind: "events" });
   const page = { ...raw.data, series: raw.data.series.slice(0, limit) };
   const through = Math.min(to_ms, snapshot);
   const answer = {
     ...page,
     complete_to_ms: Math.max(from_ms, floorTo(through, bucketMs)),
-    events: matched.slice(-MAX_EVENTS),
+    events: matched.slice(-HISTORY_MAX_EVENTS),
     stats: seriesStats(page, from_ms, through),
     clamped,
   };

@@ -16,8 +16,11 @@ import {
   useModuleLiveValues,
 } from "@/data/history";
 import { useHosts } from "@/data/hosts-list";
-import { connectionStatusError, useRemoteStatus } from "@/data/live";
-import { offlineLabel } from "@/host/connection-pill";
+import {
+  connectionStatusError,
+  offlineLabel,
+  useRemoteStatus,
+} from "@/data/live";
 import { Text } from "@/ui/text";
 import { EventsList } from "./events-list";
 import { historyChart } from "./history-chart";
@@ -27,11 +30,13 @@ import { ScrubbableChart } from "./scrubbable-chart";
 function ModuleLiveValues({
   host,
   module,
+  remote,
 }: {
   host: HostId;
   module: PopoverCard;
+  remote: RemoteHostStatus | undefined;
 }) {
-  const values = useModuleLiveValues(host, module);
+  const values = useModuleLiveValues(host, module, remote);
   const { series, format } = HISTORY_MODULES[module];
   if (values.every((value) => value === null)) return null;
   const readings = series.map(({ label }, index) => {
@@ -56,10 +61,11 @@ function ModuleHistory({
 }) {
   const [windowMs, setWindowMs] = useState(HOUR_MS);
   const [width, setWidth] = useState<number | null>(null);
+  const connected = !remote || remote.state === "connected";
   const hosts = useHosts();
   const hostName = hosts.data?.find(({ id }) => id === host)?.display_name;
   const range = useHistoryRange(windowMs, remote?.clock_offset_ms ?? 0);
-  const history = useModuleHistory(host, module, range, width);
+  const history = useModuleHistory(host, module, range, width, connected);
   const events = useEvents(history);
   const { title, series: definitions, format } = HISTORY_MODULES[module];
   const { data, displayedRange, grid, isPending } = history;
@@ -91,57 +97,64 @@ function ModuleHistory({
       <Stack.Screen options={{ title }} />
       <EventsList events={events} showDate={showDate}>
         <RangeControl value={windowMs} onChange={setWindowMs} />
-        <View className="gap-2 rounded-xl border border-border bg-card p-3">
-          <ModuleLiveValues host={host} module={module} />
-          <View
-            testID="history-plot-layout"
-            onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
-          >
-            <ScrubbableChart
-              key={windowMs}
-              chart={chart}
-              sampleCount={sampleCount}
-              labels={definitions.map(({ label }) => label)}
-              format={format}
-              showDate={showDate}
-            />
-          </View>
-          {loading && (
-            <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
-              Loading history…
-            </Text>
-          )}
-          {history.isError && !loading && (
-            <Text
-              {...{ role: "label" }}
-              accessibilityLiveRegion="polite"
-              accessibilityRole={
-                errorTone(history.error) === "error" ? "alert" : undefined
-              }
-              className={
-                errorTone(history.error) === "error" ? "text-destructive" : ""
-              }
+        {!connected && (
+          <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+            {offlineLabel(remote) ?? "Reconnecting"}
+          </Text>
+        )}
+        {connected && (
+          <View className="gap-2 rounded-xl border border-border bg-card p-3">
+            <ModuleLiveValues host={host} module={module} remote={remote} />
+            <View
+              testID="history-plot-layout"
+              onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
             >
-              {historyReadError(history.error, "history", hostName)}
-            </Text>
-          )}
-          {retryable && history.isError && !loading && (
-            <Pressable
-              accessibilityRole="button"
-              className="min-h-[44px] min-w-[44px] justify-center self-start px-2 active:opacity-70"
-              onPress={() => void history.refetch()}
-            >
-              <Text {...{ role: "label" }} className="text-link">
-                Retry
+              <ScrubbableChart
+                key={windowMs}
+                chart={chart}
+                sampleCount={sampleCount}
+                labels={definitions.map(({ label }) => label)}
+                format={format}
+                showDate={showDate}
+              />
+            </View>
+            {loading && (
+              <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+                Loading history…
               </Text>
-            </Pressable>
-          )}
-          {history.isSuccess && !hasSamples && (
-            <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
-              No samples in this range
-            </Text>
-          )}
-        </View>
+            )}
+            {history.isError && !loading && (
+              <Text
+                {...{ role: "label" }}
+                accessibilityLiveRegion="polite"
+                accessibilityRole={
+                  errorTone(history.error) === "error" ? "alert" : undefined
+                }
+                className={
+                  errorTone(history.error) === "error" ? "text-destructive" : ""
+                }
+              >
+                {historyReadError(history.error, hostName)}
+              </Text>
+            )}
+            {retryable && history.isError && !loading && (
+              <Pressable
+                accessibilityRole="button"
+                className="min-h-[44px] min-w-[44px] justify-center self-start px-2 active:opacity-70"
+                onPress={() => void history.refetch()}
+              >
+                <Text {...{ role: "label" }} className="text-link">
+                  Retry
+                </Text>
+              </Pressable>
+            )}
+            {history.isSuccess && !hasSamples && (
+              <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+                No samples in this range
+              </Text>
+            )}
+          </View>
+        )}
       </EventsList>
     </GestureHandlerRootView>
   );
@@ -165,18 +178,7 @@ function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
       </View>
     );
   }
-  const remote = status.data;
-  if (remote && remote.state !== "connected") {
-    return (
-      <View className="flex-1 bg-background px-4 py-5">
-        <Stack.Screen options={{ title: HISTORY_MODULES[module].title }} />
-        <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
-          {offlineLabel(remote) ?? "Connecting…"}
-        </Text>
-      </View>
-    );
-  }
-  return <ModuleHistory host={host} module={module} remote={remote} />;
+  return <ModuleHistory host={host} module={module} remote={status.data} />;
 }
 
 /** The module page for the route's `host` and `module` params. */

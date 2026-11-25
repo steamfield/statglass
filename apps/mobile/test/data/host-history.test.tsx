@@ -1,9 +1,9 @@
 import "react-native-gesture-handler/jestSetup";
 
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
-import { createMockTransport } from "@core/mock-transport";
+import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { historyKeys } from "@core/query-keys";
-import { DAY_MS, HOUR_MS } from "@core/time-grid";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
@@ -22,7 +22,7 @@ function CoreHistory() {
       { metric: "cpu.load", labels: [["core", "0"]] },
       { metric: "cpu.load", labels: [["core", "1"]] },
     ],
-    { fromMs: now - HOUR_MS, toMs: now },
+    { fromMs: now - HOUR_MS, toMs: now, rolling: false },
     { columns: 24 }
   );
   return (
@@ -34,7 +34,7 @@ function CoreHistory() {
 
 function EventFilters() {
   const series = [{ metric: "cpu.total", labels: [] }];
-  const range = { fromMs: now - HOUR_MS, toMs: now };
+  const range = { fromMs: now - HOUR_MS, toMs: now, rolling: false } as const;
   const chart = useHostHistory(MOCK_HOST_ID, series, range, 300);
   const power = useHostHistory(MOCK_HOST_ID, series, range, 300, "power");
   return (
@@ -72,12 +72,27 @@ async function layout(width: number) {
   });
 }
 
+async function advanceWithFrames(transport: MockTransport, ms: number) {
+  await act(async () => {
+    for (let elapsed = 0; elapsed < ms; elapsed += 1000) {
+      await jest.advanceTimersByTimeAsync(Math.min(1000, ms - elapsed));
+      transport.tick();
+    }
+  });
+}
+
+const warnings: unknown[][] = [];
 beforeEach(() => {
   jest.useFakeTimers({ now });
   mockAppState();
+  warnings.length = 0;
+  jest.spyOn(console, "warn").mockImplementation((...args) => {
+    warnings.push(args);
+  });
 });
 afterEach(() => {
   jest.useRealTimers();
+  expect(warnings).toEqual([]);
 });
 
 test("waits for chart layout, clamps the budget, and asks once per range or budget", async () => {
@@ -149,7 +164,7 @@ test("a module remount reuses its reply for 30 seconds after it arrives and rele
   const view = await renderWithProviders(modulePage(), { transport });
   await screen.findByRole("tab", { name: "Last 1 hour" });
   await layout(300);
-  await act(() => jest.advanceTimersByTimeAsync(12_500));
+  await advanceWithFrames(transport, 12_500);
   await screen.findByText("No events in this range");
   expect(read).toHaveBeenCalledTimes(1);
 
@@ -185,7 +200,7 @@ test("an in-flight reply cannot extend cache lifetime after the module leaves", 
 test("three busy replies keep loading until Retry can start a fresh round", async () => {
   const transport = createMockTransport({ autoTick: false });
   const read = jest.spyOn(transport, "hostHistory");
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     read.mockResolvedValueOnce({
       status: "error",
       error: { kind: "remote_busy", message: "busy" },
@@ -215,8 +230,11 @@ test("three busy replies keep loading until Retry can start a fresh round", asyn
   expect(read).toHaveBeenCalledTimes(5);
   expect(screen.getByText("Loading history…")).toBeOnTheScreen();
   await act(() => jest.advanceTimersByTimeAsync(1000));
-  expect(await screen.findByText("No events in this range")).toBeOnTheScreen();
+  expect(
+    await screen.findByText(`StatGlass on ${host?.display_name} is busy`)
+  ).toBeOnTheScreen();
   expect(read).toHaveBeenCalledTimes(6);
+  expect(screen.getByRole("button", { name: "Retry" })).toBeOnTheScreen();
 });
 
 test("a Busy reply schedules no history reads while the app is backgrounded", async () => {
@@ -325,3 +343,57 @@ test("an offline host has no chart and makes no history request", async () => {
   ).not.toBeOnTheScreen();
   expect(read).not.toHaveBeenCalled();
 });
+
+test("keeps the selected range through reconnect and makes no history reads while connecting", async () => {
+  const transport = createMockTransport({
+    scenarios: ["hosts-dashboard"],
+    autoTick: false,
+  });
+  const remote = (await transport.listRemoteHosts()).find(
+    ({ status }) => status.state === "connected"
+  );
+  if (!remote) throw new Error("The demo needs a reachable host");
+  const host = remote.config.id;
+  const read = jest.spyOn(transport, "hostHistory");
+  await renderWithProviders(modulePage(host), { transport });
+  await screen.findByRole("tab", { name: "Last 1 hour" });
+  await layout(300);
+  const week = () => screen.getByRole("tab", { name: "Last 7 days" });
+  await fireEvent.press(week());
+  await screen.findByText(/com\.docker\.backend at/);
+  expect(read).toHaveBeenCalledTimes(2);
+
+  await act(() => transport.pushRemoteStatus(host, { state: "connecting" }));
+  expect(await screen.findByText(/^Reconnect/)).toBeOnTheScreen();
+  expect(week()).toBeSelected();
+  await act(() => jest.advanceTimersByTimeAsync(MINUTE_MS));
+  expect(read).toHaveBeenCalledTimes(2);
+
+  await act(() => transport.pushRemoteStatus(host, { state: "connected" }));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+  expect(week()).toBeSelected();
+  const request = read.mock.calls.at(-1)?.[0];
+  expect((request?.to_ms ?? 0) - (request?.from_ms ?? 0)).toBe(7 * DAY_MS);
+});
+
+test.each(["unknown", "extension"] as const)(
+  "waits for an active app when it starts in %s",
+  async (initialState) => {
+    const setAppState = mockAppState();
+    await setAppState(initialState);
+    const transport = createMockTransport({ autoTick: false });
+    const read = jest.spyOn(transport, "hostHistory");
+    const subscribe = jest.spyOn(transport, "subscribeLive");
+    await renderWithProviders(modulePage(), { transport });
+    await screen.findByRole("tab", { name: "Last 1 hour" });
+    await layout(300);
+    expect(read).not.toHaveBeenCalled();
+    expect(subscribe).not.toHaveBeenCalled();
+    await setAppState("active");
+    expect(
+      await screen.findByText("No events in this range")
+    ).toBeOnTheScreen();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+  }
+);

@@ -1,62 +1,10 @@
-import { formatClock } from "@core/format";
-import type { HostId, RemoteHostStatus } from "@core/generated/types";
+import type { HostId } from "@core/generated/types";
 import { useEffect, useState } from "react";
 import { AccessibilityInfo, Platform, View } from "react-native";
-import { shallow } from "zustand/shallow";
-import { useHostLive, useLastFrame, useLiveFailure } from "@/data/live";
+import { type useConnection, useLastFrame } from "@/data/live";
 import { Text } from "@/ui/text";
 
-/** Label an offline remote with its last-seen time when the status supplies one. */
-export function offlineLabel(remote: RemoteHostStatus | undefined) {
-  if (!remote || !["offline", "error", "disabled"].includes(remote.state))
-    return null;
-  return remote.last_seen_ms === null
-    ? "Offline"
-    : `Offline since ${formatClock(remote.last_seen_ms)}`;
-}
-
-/** Select connection changes that affect the page, leaving frame age to the pill. */
-export function useConnection(
-  host: HostId,
-  remote: RemoteHostStatus | undefined,
-  statusError: string | null
-) {
-  const { connection, stale, paused, idle } = useHostLive(
-    host,
-    (s) => ({
-      connection: s.connection,
-      stale: s.stale,
-      paused: s.status?.paused,
-      idle: s.status?.display_idle,
-    }),
-    shallow
-  );
-  const failure = useLiveFailure(host);
-  const offline = statusError ?? failure ?? offlineLabel(remote);
-
-  if (offline) return { state: "offline", label: offline } as const;
-  if (remote?.state === "connecting") {
-    return { state: "reconnecting", label: "Reconnecting" } as const;
-  }
-  if (paused || idle) {
-    return {
-      state: "waiting",
-      label: paused ? "Paused" : "Display asleep",
-    } as const;
-  }
-  if (stale || connection === "reconnecting") {
-    return { state: "reconnecting", label: "Reconnecting" } as const;
-  }
-  if (connection !== "live")
-    return { state: "waiting", label: "Connecting" } as const;
-  const route =
-    remote?.route === "lan"
-      ? "LAN"
-      : remote?.route === "tailscale"
-        ? "Tailscale"
-        : null;
-  return { state: "live", label: "Live", route } as const;
-}
+export { useConnection } from "@/data/live";
 
 function useFrameAge(lastFrame: number | null) {
   const [now, setNow] = useState(() => performance.now());
