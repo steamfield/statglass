@@ -259,6 +259,7 @@ fn pairing_waits_for_approval_and_installs_device_before_removing_the_pairing_ke
     let approved = PairReply::Approved {
         device: tag.to_string(),
         hosts: vec![host()],
+        unavailable: Vec::new(),
     };
     assert_eq!(
         pairing.approve(&offer.nonce, NOW + 59_999).unwrap(),
@@ -786,6 +787,7 @@ async fn pairing_forced_retries_when_control_drops_the_first_status_connection()
     let approved = PairReply::Approved {
         device: "123ABC".into(),
         hosts: vec![host()],
+        unavailable: Vec::new(),
     };
     let server = async {
         let (stream, _) = request(&listener).await;
@@ -932,6 +934,7 @@ async fn pairing_forced_approves_and_refuses_cross_nonce_requests_or_a_missing_c
     let approve = PairReply::Approved {
         device: "123ABC".into(),
         hosts: vec![host()],
+        unavailable: Vec::new(),
     };
     let exchange = async {
         write_pair_frame(&mut writer, &start).await.unwrap();

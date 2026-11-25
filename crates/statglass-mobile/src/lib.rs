@@ -20,6 +20,7 @@ mod envelope;
 #[cfg(test)]
 mod facade_tests;
 mod ffi;
+mod handover;
 mod host_store;
 mod lifecycle;
 mod logging;

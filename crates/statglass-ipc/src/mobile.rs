@@ -43,6 +43,8 @@ pub struct MobileHost {
     /// The host keys pairing pinned; at least one.
     pub host_keys: Vec<MobileHostKey>,
     pub command: MobileCommand,
+    #[serde(default)]
+    pub removed_by_controller: bool,
 }
 
 /// One way to reach a host.
@@ -103,6 +105,10 @@ pub enum MobileCall {
     RemoveHost { host: HostId },
     /// `PairingState`.
     PairingState,
+    /// `BundleReconcile`.
+    DecodeBundle { text: String },
+    /// `null`. Persists the selected hosts.
+    AddHandoverHosts { hosts: Vec<OfferedHost> },
     /// `null`. Replaces screen demand for all hosts.
     SetDemand { demand: Vec<HostDemand> },
     /// `HostRecord[]`, in the order the hosts were set.
@@ -151,6 +157,45 @@ pub struct PairingPreview {
 pub struct PairedHost {
     pub id: HostId,
     pub name: String,
+    pub offered: Vec<OfferedHost>,
+    pub unavailable: Vec<UnavailableHostInfo>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct OfferedHost {
+    pub id: HostId,
+    pub name: String,
+    pub os: String,
+    pub user: String,
+    pub port: Option<u16>,
+    pub targets: Vec<MobileTarget>,
+    pub host_keys: Vec<MobileHostKey>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct UnavailableHostInfo {
+    pub id: HostId,
+    pub name: String,
+    pub reason: HandoverReasonInfo,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoverReasonInfo {
+    ProxyJump,
+    ProxyCommand,
+    LanLiteral,
+    NoHostKey,
+    Unresolvable,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct BundleReconcile {
+    pub from: HostId,
+    pub new: Vec<OfferedHost>,
+    pub removed: Vec<HostId>,
+    pub changed: Vec<HostId>,
+    pub unavailable: Vec<UnavailableHostInfo>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]

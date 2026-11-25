@@ -60,6 +60,7 @@ impl DockerFixture {
                 algorithm: algorithm.into(),
                 sha256: sha256.into(),
             }],
+            removed_by_controller: false,
             command: MobileCommand::Agent {
                 bin: env("AGENT_BIN"),
                 system: false,

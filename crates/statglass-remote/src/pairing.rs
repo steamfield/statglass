@@ -4,6 +4,7 @@
 use crate::device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public};
 use crate::{ControlRequest, ControlResponse};
 use p256::elliptic_curve::{Generate, sec1::ToSec1Point};
+use statglass_proto::handover::UnavailableHost;
 use statglass_proto::pairing::{
     BundleHost, CODE_ALPHABET, PAYLOAD_VERSION, PairError, PairReply, PairStart, PairingPayload,
 };
@@ -24,6 +25,15 @@ pub struct PairCommands {
     pub restricted: String,
 }
 
+pub struct Handover {
+    pub hosts: Vec<BundleHost>,
+    pub unavailable: Vec<UnavailableHost>,
+}
+
+pub trait HandoverSource: Send + Sync {
+    fn handover(&self, device: DeviceTag, key: &EcdsaP256Public, name: &str) -> Handover;
+}
+
 /// Why the host could not offer or decide a pairing.
 #[derive(Debug, thiserror::Error)]
 pub enum PairingError {
@@ -40,6 +50,7 @@ pub struct PairingHost {
     keys: Arc<dyn DeviceKeys>,
     commands: PairCommands,
     state: Mutex<HostState>,
+    handover: Mutex<Option<Arc<dyn HandoverSource>>>,
 }
 
 #[derive(Default)]
@@ -80,7 +91,12 @@ impl PairingHost {
             keys,
             commands,
             state: Mutex::default(),
+            handover: Mutex::default(),
         }
+    }
+
+    pub fn set_handover(&self, source: Arc<dyn HandoverSource>) {
+        *self.handover.lock_ok() = Some(source);
     }
 
     /// Installs a pairing line for `host` valid for `ttl` and returns the QR payload.
@@ -247,6 +263,7 @@ impl PairingHost {
             offer.phase = Phase::RemovingPairingLine(PairReply::Approved {
                 device,
                 hosts: vec![offer.host.clone()],
+                unavailable: Vec::new(),
             });
         }
         offer.finish(self.keys.as_ref(), nonce)?;

@@ -9,6 +9,8 @@ import { InlineMessage } from "~/components/inline-message";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
+import { DeviceIntents } from "../device-intents";
+import { UpdateFromMac } from "../update-from-mac";
 import { PairingDialog } from "./pairing-dialog";
 
 const devicesKey = ["paired-devices"] as const;
@@ -109,6 +111,8 @@ export function PairedDevicesPanel() {
           </SettingsRow>
         );
       })}
+      <DeviceIntents />
+      <UpdateFromMac />
       {selected && (
         <ConfirmDialog
           open

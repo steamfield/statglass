@@ -71,6 +71,8 @@ impl Registry {
             | MobileCall::PreviewPairing { .. }
             | MobileCall::Pair { .. }
             | MobileCall::PairingState
+            | MobileCall::DecodeBundle { .. }
+            | MobileCall::AddHandoverHosts { .. }
             | MobileCall::RemoveHost { .. }
             | MobileCall::SetDemand { .. } => {
                 Err(internal("core call reached the session registry"))

@@ -18,6 +18,7 @@
 //!   receiver's cursor would move past rows it never stored (D-064).
 
 mod codec;
+pub mod handover;
 mod handshake;
 mod message;
 pub mod pairing;

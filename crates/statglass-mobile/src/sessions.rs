@@ -100,6 +100,8 @@ impl Sessions {
                 let paired = PairedHost {
                     id: host.id,
                     name: host.name.clone(),
+                    offered: Vec::new(),
+                    unavailable: Vec::new(),
                 };
                 match existing {
                     Some(existing) => *existing = host,

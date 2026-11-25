@@ -20,6 +20,7 @@ pub mod edition;
 mod error;
 mod export;
 pub mod facts;
+mod handover;
 mod history;
 mod host_addresses;
 mod hosts;
@@ -137,6 +138,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             pairing::pairing_start, pairing::pairing_status, pairing::pairing_approve,
             pairing::pairing_deny, pairing::pairing_cancel, pairing::paired_devices,
             pairing::revoke_device,
+            handover::handover_bundle_start, handover::device_intents, handover::retry_device_intents,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,
@@ -215,6 +217,7 @@ pub fn run() {
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
             app.manage(pairing::PairingState::default());
+            app.manage(handover::HandoverState);
             app_menu::install(app.handle())?;
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]

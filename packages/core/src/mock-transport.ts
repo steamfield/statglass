@@ -69,6 +69,7 @@ import { createMockDocker } from "./mock/docker";
 import { createMockEmitters, mockEventSubscriptions } from "./mock/emitters";
 import { withFailures } from "./mock/failures";
 import { scenarioFlags } from "./mock/fixtures";
+import { createMockHandover } from "./mock/handover";
 import { createMockHostHistory } from "./mock/host-history";
 import { phoneSparklineFixture, seedPhoneErrors } from "./mock/phone-errors";
 
@@ -162,14 +163,6 @@ export function createMockTransport(
     queries,
     commands
   );
-  const shell = new MockShell(
-    ring,
-    power,
-    settings,
-    commands,
-    emitters,
-    options
-  );
   settings.onChanged = (before, after) => {
     store.recordNetworkSetting(before, after);
     power.updatePower();
@@ -196,9 +189,11 @@ export function createMockTransport(
     ...stream.methods,
     ...queries.methods,
     ...remote.routeUsage(usage.methods),
-    ...shell.methods,
+    ...new MockShell(ring, power, settings, commands, emitters, options)
+      .methods,
     ...new MockAlertDestinations(commands, emitters, flags).methods,
     ...createMockPairing(commands, settings, now),
+    ...createMockHandover(commands),
     ...settings.methods,
     ...store.methods,
     ...ring.methods,

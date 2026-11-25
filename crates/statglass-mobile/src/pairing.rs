@@ -136,6 +136,7 @@ fn restricted_host(
                 sha256: key.sha256,
             })
             .collect(),
+        removed_by_controller: false,
         command: MobileCommand::Restricted,
     })
 }

@@ -299,12 +299,14 @@ fn approved(payload: &PairingPayload, address: &str) -> (PairReply, MobileHost) 
             algorithm: "ssh-ed25519".into(),
             sha256: "SHA256:approved".into(),
         }],
+        removed_by_controller: false,
         command: MobileCommand::Restricted,
     };
     (
         PairReply::Approved {
             device: "7F3A2C".into(),
             hosts: vec![approved],
+            unavailable: Vec::new(),
         },
         saved,
     )
@@ -322,7 +324,9 @@ async fn approval_uses_the_ephemeral_key_then_starts_and_persists_the_restricted
             .unwrap(),
         PairedHost {
             id: host.id,
-            name: host.name.clone()
+            name: host.name.clone(),
+            offered: Vec::new(),
+            unavailable: Vec::new(),
         }
     );
     let mut session = fixture.next_session("approved.tailnet").await;
@@ -487,7 +491,9 @@ async fn repairing_replaces_the_endpoint_and_key_without_renaming_the_host() {
         paired,
         PairedHost {
             id: expected.id,
-            name: first.name
+            name: first.name,
+            offered: Vec::new(),
+            unavailable: Vec::new(),
         }
     );
     timeout(WAIT, first_dial.closing).await.unwrap().unwrap();
