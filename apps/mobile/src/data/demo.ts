@@ -4,6 +4,7 @@
  */
 import type { LiveMsg } from "@core/generated/types";
 import { SCENARIOS } from "@core/mock/fixtures";
+import { phoneDemoOptions } from "@core/mock/history";
 import { createMockTransport } from "@core/mock-transport";
 import { useNavigationContainerRef, useRouter } from "expo-router";
 import {
@@ -57,12 +58,14 @@ function demoLiveReceiver(
 /** A fresh demo transport; each call starts its own mock hosts. */
 export function createDemoTransport(scenario?: string): DemoTransport {
   const requested = SCENARIOS.find((name) => name === scenario);
-  const transport = createMockTransport({
-    scenarios: requested
-      ? [requested]
-      : ["hosts-dashboard", "host-incompatible"],
-    autoTick: true,
-  });
+  const transport = createMockTransport(
+    phoneDemoOptions({
+      scenarios: requested
+        ? [requested]
+        : ["hosts-dashboard", "host-incompatible"],
+      autoTick: true,
+    })
+  );
   let unavailable: Set<string> | null = null;
   const refreshAvailability = () => {
     void transport.listRemoteHosts().then((remotes) => {

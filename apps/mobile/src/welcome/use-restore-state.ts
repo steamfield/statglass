@@ -6,16 +6,18 @@ import { useIsFocused } from "expo-router";
 import { useEffect } from "react";
 import { useIsDemo, useOptionalPhoneTransport } from "@/data/transport-context";
 
-// The transport swap and a successful pair both invalidate the host namespace.
-const restoreStateKey = [...hostKeys.all, "pairing-state"] as const;
-
 export function useRestoreState() {
   const focused = useIsFocused();
   const transport = useOptionalPhoneTransport();
   const demo = useIsDemo();
   const { data, error } = useQuery({
-    queryKey: restoreStateKey,
-    queryFn: () => (transport ? unwrap(transport.pairingState()) : null),
+    // Shared with the hosts list's "Needs pairing" read: one fact, one cache
+    // entry. A transport swap and a successful pair invalidate the host namespace.
+    queryKey: hostKeys.pairing(),
+    queryFn: () => {
+      if (!transport) throw new Error("pairing state read without a transport");
+      return unwrap(transport.pairingState());
+    },
     enabled: focused && transport !== null && !demo,
   });
 

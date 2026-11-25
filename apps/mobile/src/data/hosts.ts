@@ -38,7 +38,6 @@ import {
   historyPointBudget,
   useHostHistory,
 } from "./history";
-import { pairingKey } from "./hosts-list";
 import { useAppActive, useFocusedAppEffect } from "./live";
 import { useIsDemo, usePhoneTransport } from "./transport-context";
 
@@ -58,7 +57,7 @@ export function useHostListUpdates() {
           .cancelQueries({ queryKey: hostKeys.list(), exact: true })
           .then(() => {
             cache.setQueryData(hostKeys.list(), hosts);
-            void cache.invalidateQueries({ queryKey: pairingKey });
+            void cache.invalidateQueries({ queryKey: hostKeys.pairing() });
           });
       });
       const stopRemote = transport.onRemoteHostsChanged(() => {
@@ -497,7 +496,7 @@ export function useRefreshHosts() {
     await Promise.all([
       cache.invalidateQueries({ queryKey: hostKeys.list() }),
       cache.invalidateQueries({ queryKey: hostKeys.remote() }),
-      cache.invalidateQueries({ queryKey: pairingKey }),
+      cache.invalidateQueries({ queryKey: hostKeys.pairing() }),
       ...hosts.flatMap(({ id }) => [
         cache.invalidateQueries({ queryKey: hostKeys.vitals(id) }),
         cache.invalidateQueries({ queryKey: historyKeys.host(id) }),

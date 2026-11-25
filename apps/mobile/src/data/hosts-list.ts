@@ -11,14 +11,12 @@ import { useCallback, useEffect, useState } from "react";
 import { type PhoneSettings, usePhoneSettings } from "./phone-settings";
 import { useIsDemo, usePhoneTransport } from "./transport-context";
 
-export const pairingKey = [...hostKeys.all, "pairing"] as const;
-
 export function useHostsPairingState() {
   const transport = usePhoneTransport();
   const demo = useIsDemo();
   const focused = useIsFocused();
   return useQuery({
-    queryKey: pairingKey,
+    queryKey: hostKeys.pairing(),
     queryFn: () => unwrap(transport.pairingState()),
     enabled: !demo && focused,
   });
