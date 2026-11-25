@@ -65,7 +65,10 @@ step "generate the iOS project" bun run --cwd "$mobile" expo prebuild --platform
 status=$(git status --porcelain --untracked-files=all --ignore-submodules=none) ||
   fail "cannot inspect the working tree after Expo prebuild"
 [[ -z "$status" ]] || fail "Expo prebuild changed the working tree; inspect git status before retrying"
-step "install CocoaPods" pod install --project-directory="$mobile/ios"
+# Expo's autolinking resolves from the working directory, so --project-directory
+# from the repo root breaks the Podfile; CocoaPods also needs a UTF-8 locale.
+install_pods() { (cd "$mobile/ios" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install); }
+step "install CocoaPods" install_pods
 
 # Keep the Release archive free of development-only entitlements injected by Xcode.
 step "archive build $STATGLASS_MOBILE_BUILD_NUMBER" xcodebuild \
