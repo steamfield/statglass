@@ -26,7 +26,7 @@ test("shows the app name, what it does and the three ways in", async () => {
   });
 });
 
-test.each(ACTIONS)(
+test.each(ACTIONS.slice(0, 2))(
   '"$label" opens $pathname, which is not built yet',
   async ({ label, pathname }) => {
     const router = await renderRouter(APP_DIR, { initialUrl: "/" });
@@ -37,3 +37,26 @@ test.each(ACTIONS)(
     expect(await screen.findByText("Not built yet")).toBeOnTheScreen();
   }
 );
+
+test("Try demo hosts replaces the entry route with the demo hosts list", async () => {
+  const router = await renderRouter(APP_DIR, { initialUrl: "/" });
+  await fireEvent.press(screen.getByRole("button", { name: "Try demo hosts" }));
+
+  expect(await screen.findByText("Demo")).toBeOnTheScreen();
+  expect(router.getSegments()).toEqual(["(hosts)"]);
+  expect(
+    await screen.findByRole("button", { name: /macOS, Live/ })
+  ).toBeOnTheScreen();
+});
+
+test("returns to the demo hosts from the Settings navigation bar", async () => {
+  const router = await renderRouter(APP_DIR, { initialUrl: "/" });
+  await fireEvent.press(screen.getByRole("button", { name: "Try demo hosts" }));
+  await fireEvent.press(
+    await screen.findByRole("button", { name: "Settings" })
+  );
+  expect(router.getPathname()).toBe("/settings");
+  await fireEvent.press(screen.getByRole("button", { name: "Back to Hosts" }));
+  expect(router.getSegments()).toEqual(["(hosts)"]);
+  expect(await screen.findByText("Demo")).toBeOnTheScreen();
+});

@@ -75,6 +75,11 @@ export function usePhoneTransport(): PhoneTransport {
   return transport;
 }
 
+/** Lets a route redirect before mounting data hooks if no transport is chosen. */
+export function useOptionalPhoneTransport(): PhoneTransport | null {
+  return useChoice("useOptionalPhoneTransport").transport;
+}
+
 /**
  * Chooses the transport (null clears it) and says whether it is the demo.
  * @throws {Error} outside the provider
