@@ -6,7 +6,7 @@ use std::time::Duration;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use p256::ecdsa::SigningKey;
 use serde_json::{Value, json};
-use statglass_ipc::mobile::{MobileCall, MobileConfig};
+use statglass_ipc::mobile::{DemandLevel, HostDemand, MobileCall, MobileConfig};
 use statglass_proto::pairing::{
     BundleHost, BundleHostKey, BundleTarget, PAYLOAD_VERSION, PairReply, PairStart, encode_payload,
 };
@@ -232,6 +232,21 @@ impl Fixture {
     }
 
     async fn next_session(&mut self, target: &str) -> Dial {
+        // A host dials only once a screen demands it; the hosts list demands its rows.
+        let rows = self.sessions.call(MobileCall::ListHosts).await.unwrap();
+        let demand = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| HostDemand {
+                host: serde_json::from_value(row["id"].clone()).unwrap(),
+                level: DemandLevel::Full,
+            })
+            .collect();
+        self.sessions
+            .call(MobileCall::SetDemand { demand })
+            .await
+            .unwrap();
         let dial = timeout(WAIT, self.serving.recv()).await.unwrap().unwrap();
         assert_eq!(dial.target, target);
         dial
@@ -361,6 +376,15 @@ async fn approval_uses_the_ephemeral_key_then_starts_and_persists_the_restricted
             MobileConfig::default(),
             Arc::new(PeerDialer(send)),
         )
+        .unwrap();
+    reopened
+        .call(MobileCall::SetDemand {
+            demand: vec![HostDemand {
+                host: host.id,
+                level: DemandLevel::Compact,
+            }],
+        })
+        .await
         .unwrap();
     let mut dial = timeout(WAIT, dials.recv()).await.unwrap().unwrap();
     assert_eq!(dial.target, "approved.tailnet");

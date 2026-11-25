@@ -5,7 +5,7 @@ use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::MobileCall;
 use std::sync::Arc;
 
-use super::{Sessions, demand, internal, registry::Registry};
+use super::{Sessions, demand, internal, processes, registry::Registry};
 
 impl Sessions {
     /// Answers the host, live and history calls delegated by the core.
@@ -58,7 +58,12 @@ impl Registry {
             }
             MobileCall::HostHistory(request) => value(self.host_history(request).await?),
             MobileCall::NetworkAddresses { host } => value(self.network_addresses(host).await?),
-            MobileCall::SetProcessInterest { .. } => Ok(Value::Null),
+            MobileCall::SetProcessInterest {
+                host,
+                interested,
+                view,
+                stream,
+            } => processes::set_interest(self, host, interested, view, stream),
             MobileCall::BuildInfo
             | MobileCall::SetHosts { .. }
             | MobileCall::SetDataPolicy(_)

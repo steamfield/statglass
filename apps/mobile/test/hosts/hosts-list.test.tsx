@@ -1,3 +1,4 @@
+import type { HostRecord } from "@core/generated/types";
 import { MOCK_HOST_ID, type ScenarioName } from "@core/mock/fixtures";
 import {
   PHONE_CLOCK_OFFSET_MS,
@@ -5,7 +6,9 @@ import {
   phoneCommandFailures,
 } from "@core/mock/phone-errors";
 import { createMockTransport } from "@core/mock-transport";
+import { hostKeys } from "@core/query-keys";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
 import { ExpoRoot, router, Stack, useLocalSearchParams } from "expo-router";
 import {
@@ -21,7 +24,6 @@ import HostsRoute from "@/app/(hosts)/index";
 import { useHostSparkline } from "@/data/hosts";
 import type { PhoneSettings } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
-import * as Chart from "@/widgets/stream-area";
 
 const NOW = new Date(2026, 10, 24, 14, 0).getTime();
 const MINUTE = 60_000;
@@ -43,11 +45,11 @@ const routes = getMockContext({
   demo: () => <Text role="title">Demo entry</Text>,
 });
 
-function renderHosts(
+async function renderHosts(
   transport?: ReturnType<typeof createMockTransport>,
   settings?: Partial<PhoneSettings>
 ) {
-  return renderWithProviders(
+  const result = await renderWithProviders(
     <ExpoRoot context={routes} location="/(hosts)" />,
     {
       ...(transport ? { transport } : {}),
@@ -55,6 +57,26 @@ function renderHosts(
       demo: true,
     }
   );
+  if (transport) {
+    await waitFor(() =>
+      expect(result.client.getQueryState(hostKeys.list())?.fetchStatus).toBe(
+        "idle"
+      )
+    );
+  }
+  const records = result.client.getQueryData<HostRecord[]>(hostKeys.list());
+  if (records) {
+    await fireEvent(
+      screen.getByLabelText("Hosts list"),
+      "viewableItemsChanged",
+      {
+        viewableItems: records
+          .filter(({ id }) => !settings?.removed?.includes(id))
+          .map(({ id }) => ({ key: id })),
+      }
+    );
+  }
+  return result;
 }
 
 function demo() {
@@ -82,6 +104,7 @@ function pullToRefresh() {
 beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
+  mockAppState();
 });
 
 afterEach(() => {
@@ -114,7 +137,9 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
     screen.getAllByRole("button", { name: /CPU.*, Memory.*, Network/ })[0]
   ).toBe(build);
   expect(
-    screen.getByRole("button", { name: /macOS, Live, CPU 18%, Memory 42%/ })
+    await screen.findByRole("button", {
+      name: /macOS, Live, CPU 18%, Memory 42%/,
+    })
   ).toBeOnTheScreen();
   expect(
     screen.getByRole("button", {
@@ -133,50 +158,36 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
   ).toBeOnTheScreen();
 });
 
-test("uses minute CPU buckets, preserves a missing slot, and polls only while focused", async () => {
+test("uses the four row series once and stops reading on blur", async () => {
   const transport = sparklineDemo();
-  const chart = jest.spyOn(Chart, "StreamArea");
   const vitals = jest.spyOn(transport, "hostVitals");
   const history = jest.spyOn(transport, "hostHistory");
   const [local] = await transport.listHosts();
   await renderHosts(transport);
-  await waitFor(() => expect(chart).toHaveBeenCalled());
+  await screen.findByLabelText("CPU history over the last 30 minutes");
   const request = history.mock.calls[0]?.[0];
   if (!request || request.to_ms === null || !local)
     throw new Error("Expected the local host and its history request");
   expect(request).toMatchObject({
     host: local.id,
-    series: [{ metric: "cpu.total", labels: [] }],
+    series: ["cpu.total", "mem.used", "net.rx_total", "net.tx_total"].map(
+      (metric) => ({ metric, labels: [] })
+    ),
     events_for: null,
-    max_points: 31,
   });
   expect(request.to_ms - request.from_ms).toBe(30 * MINUTE);
-  const [data] = chart.mock.lastCall ?? [];
-  expect(data).toMatchObject({
-    accent: "cpu",
-    intervalMs: MINUTE,
-    tEndMs: request.to_ms - MINUTE,
-    yMax: 100,
-    series: [
-      {
-        key: "cpu.total",
-        values: [12, null, 16, ...Array(27).fill(null)],
-        step: 1,
-      },
-    ],
-  });
 
   await act(() => jest.advanceTimersByTimeAsync(5_000));
-  expect(vitals).toHaveBeenCalledTimes(2);
+  expect(vitals).toHaveBeenCalledTimes(1);
   expect(history).toHaveBeenCalledTimes(1);
   await act(() => jest.advanceTimersByTimeAsync(55_000));
-  expect(history).toHaveBeenCalledTimes(2);
+  expect(history).toHaveBeenCalledTimes(1);
 
   await fireEvent.press(screen.getByRole("button", { name: "Settings" }));
   const vitalsAtBlur = vitals.mock.calls.length;
   await act(() => jest.advanceTimersByTimeAsync(MINUTE));
   expect(vitals).toHaveBeenCalledTimes(vitalsAtBlur);
-  expect(history).toHaveBeenCalledTimes(2);
+  expect(history).toHaveBeenCalledTimes(1);
 });
 
 test("updates status from transport events and pull to refresh retries only visible offline hosts", async () => {
@@ -503,7 +514,7 @@ test("reconnecting hides cached readings until the vitals and history reads succ
   await screen.findByText("Live");
   expect(
     screen.getByRole("button", {
-      name: "build, Linux, Live, CPU —, Memory —, Network —",
+      name: /^build, Linux, Live, CPU —, Memory —, Network —/,
     })
   ).toBeOnTheScreen();
   expect(

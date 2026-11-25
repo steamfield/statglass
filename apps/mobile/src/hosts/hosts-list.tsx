@@ -1,9 +1,16 @@
-import type { HostId } from "@core/generated/types";
+import type { HostId, HostRecord } from "@core/generated/types";
 import { PHONE_OFFLINE_TITLE } from "@core/phone-connection";
 import { failureReason } from "@core/remote-errors";
 import { useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import {
+  FlatList,
+  Pressable,
+  RefreshControl,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useStatusAnnouncement } from "@/connection/use-status-announcement";
+import { RowVisibility, useVisibleHosts } from "@/data/demand";
 import {
   type HostRetryFailure,
   useHostListUpdates,
@@ -32,15 +39,21 @@ export function HostsList({
   const refresh = useRefreshHosts();
   const { set } = usePhoneSettingsActions();
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [retryErrors, setRetryErrors] = useState<HostRetryFailure[]>([]);
+  const { visible, onViewableItemsChanged } = useVisibleHosts();
+  const { width } = useWindowDimensions();
 
   async function onRefresh() {
     if (refreshing) return;
     setRefreshing(true);
     setRetryErrors([]);
     try {
-      setRetryErrors(await refresh(hosts.data ?? []));
+      setRetryErrors(
+        await refresh(hosts.data?.filter(({ id }) => visible.has(id)) ?? [])
+      );
     } finally {
+      setRefreshVersion((version) => version + 1);
       setRefreshing(false);
     }
   }
@@ -51,9 +64,27 @@ export function HostsList({
   }
 
   return (
-    <ScrollView
+    <FlatList<HostRecord>
       className="flex-1 bg-background"
+      contentContainerClassName="px-4 pt-2 pb-safe-or-4"
       contentInsetAdjustmentBehavior="automatic"
+      accessibilityLabel="Hosts list"
+      data={hosts.data}
+      keyExtractor={({ id }) => id}
+      onViewableItemsChanged={onViewableItemsChanged}
+      ItemSeparatorComponent={RowGap}
+      renderItem={({ item }) => (
+        <RowVisibility.Provider
+          // The list gutters are 16 pt each. The card has a border and 12 pt padding.
+          value={{
+            visible: visible.has(item.id),
+            width: width - 2 * (16 + 1 + 12),
+            refresh: refreshVersion,
+          }}
+        >
+          <HostRow host={item} onOpen={() => onOpen(item.id)} />
+        </RowVisibility.Provider>
+      )}
       refreshControl={
         <RefreshControl
           accessibilityLabel="Refresh hosts"
@@ -61,63 +92,66 @@ export function HostsList({
           onRefresh={onRefresh}
         />
       }
-    >
-      <View className="gap-2 px-4 pt-2 pb-safe-or-4">
-        {hosts.isPending && <Text role="body">Loading hosts…</Text>}
-        {hosts.isError && (
-          <Text
-            role="body"
-            accessibilityRole="alert"
-            className="text-destructive!"
-          >
-            Couldn’t load hosts.{" "}
-            {failureReason(hosts.error, "Pull down to try again.")}
-          </Text>
-        )}
-        <RetryErrors failures={retryErrors} />
-        {waitingForNetwork && (
-          <Text role="body" accessibilityLiveRegion="polite">
-            {PHONE_OFFLINE_TITLE}
-          </Text>
-        )}
-        {hosts.isSuccess && hosts.data.length === 0 && (
-          <View className="gap-3 py-4">
-            <Text role="title">No hosts yet</Text>
-            <Text role="body">
-              Pair a Mac to view its live metrics and history, or explore the
-              demo hosts.
+      ListHeaderComponent={
+        <View className="gap-2">
+          {hosts.isPending && <Text role="body">Loading hosts…</Text>}
+          {hosts.isError && (
+            <Text
+              role="body"
+              accessibilityRole="alert"
+              className="text-destructive!"
+            >
+              Couldn’t load hosts.{" "}
+              {failureReason(hosts.error, "Pull down to try again.")}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Pair with your Mac"
-              onPress={onPair}
-              className="min-h-[44px] justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70"
-            >
-              <Text
-                role="body"
-                className="font-semibold text-primary-foreground"
+          )}
+          <RetryErrors failures={retryErrors} />
+          {waitingForNetwork && (
+            <Text role="body" accessibilityLiveRegion="polite">
+              {PHONE_OFFLINE_TITLE}
+            </Text>
+          )}
+          {hosts.isSuccess && hosts.data.length === 0 && (
+            <View className="gap-3 py-4">
+              <Text role="title">No hosts yet</Text>
+              <Text role="body">
+                Pair a Mac to view its live metrics and history, or explore the
+                demo hosts.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Pair with your Mac"
+                onPress={onPair}
+                className="min-h-[44px] justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70"
               >
-                Pair with your Mac
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Try demo hosts"
-              onPress={tryDemo}
-              className="min-h-[44px] justify-center px-4 py-2 active:opacity-70"
-            >
-              <Text role="body" className="text-link">
-                Try demo hosts
-              </Text>
-            </Pressable>
-          </View>
-        )}
-        {hosts.data?.map((host) => (
-          <HostRow key={host.id} host={host} onOpen={() => onOpen(host.id)} />
-        ))}
-      </View>
-    </ScrollView>
+                <Text
+                  role="body"
+                  className="font-semibold text-primary-foreground"
+                >
+                  Pair with your Mac
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Try demo hosts"
+                onPress={tryDemo}
+                className="min-h-[44px] justify-center px-4 py-2 active:opacity-70"
+              >
+                <Text role="body" className="text-link">
+                  Try demo hosts
+                </Text>
+              </Pressable>
+            </View>
+          )}
+          {(waitingForNetwork || retryErrors.length > 0) && <RowGap />}
+        </View>
+      }
+    />
   );
+}
+
+function RowGap() {
+  return <View className="h-2" />;
 }
 
 function RetryErrors({ failures }: { failures: HostRetryFailure[] }) {

@@ -15,7 +15,7 @@ use crate::host_store::HostStore;
 use crate::lifecycle::Lifecycle;
 
 use super::{
-    callback, current_device_key, demand, endpoint,
+    callback, current_device_key, endpoint,
     host::{HostEntry, OpenError},
     internal,
     live::Live,
@@ -107,7 +107,6 @@ impl Registry {
             },
             self.signer.as_deref(),
         )?;
-        demand::admit(&entry.source, &self.lifecycle);
         Ok(entry)
     }
 
@@ -313,7 +312,7 @@ impl Registry {
             if let Some(network) = network {
                 entry.source.network_changed_with(network);
             }
-            entry.start()?;
+            self.lifecycle.install(&entry)?;
             self.live.register(entry.clone(), &run.context.runtime);
             run.entries.insert(id, entry);
             Ok(())

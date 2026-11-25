@@ -222,6 +222,12 @@ impl LiveHub {
         self.lock().status.clone()
     }
 
+    /// Releases the live ring and current readings when a remote source parks.
+    pub fn clear_live(&self) {
+        *self.lock() = Retained::default();
+        *self.usage() = UsageRing::default();
+    }
+
     fn net(&self) -> MutexGuard<'_, NetRing> {
         // As for `lock`: nothing panics while holding it.
         self.net.lock_ok()
@@ -489,6 +495,22 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn clear_live_releases_readings_for_every_handle_and_accepts_new_frames() {
+        let hub = LiveHub::default();
+        let source = hub.clone();
+        source.publish(frame(1_000, &layout(1)));
+        assert_eq!(hub.backfill_anchor(), Some((1_000, 1)));
+
+        hub.clear_live();
+        assert!(source.backfill(i64::MIN).is_empty());
+        assert!(source.latest_frame().is_none());
+        assert!(source.layout().is_none());
+
+        source.publish(frame(2_000, &layout(2)));
+        assert_eq!(hub.backfill_anchor(), Some((2_000, 2)));
     }
 
     #[test]

@@ -24,6 +24,7 @@ mod history;
 mod host;
 mod live;
 mod phone_id;
+mod processes;
 mod registry;
 #[cfg(test)]
 pub(crate) mod tests;

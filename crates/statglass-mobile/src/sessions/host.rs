@@ -1,22 +1,22 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use statglass_engine::{LiveHub, Source, SourceHandle, SourceSink, wall_ms};
 use statglass_ipc::error::CommandError;
-use statglass_ipc::mobile::{MobileEvent, MobileHost, MobileRemoteHost};
+use statglass_ipc::mobile::{DemandLevel, MobileEvent, MobileHost, MobileRemoteHost};
 use statglass_ipc::status::{RemoteConnection, connection_status};
 use statglass_ipc::vitals::{HostVitals, VitalsRateLimit, host_vitals};
 use statglass_schema::lock::LockExt;
 use statglass_schema::{HostId, HostRecord};
 use statglass_session::{
-    ConnectionFailureKind, ConnectionStatus, Dialer, RemoteSource, SourceOptions,
+    BoxFuture, ConnectionFailureKind, ConnectionStatus, Dialer, RemoteSource, SourceOptions,
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 use crate::ffi::{CoreEvents, NativeSigner, NativeSignerError};
 
-use super::{endpoint, internal, invalid};
+use super::{endpoint, internal, invalid, live::Live};
 
 pub(super) struct HostEntry {
     pub(super) config: MobileHost,
@@ -24,7 +24,17 @@ pub(super) struct HostEntry {
     pub(super) hub: LiveHub,
     pub(super) handle: Mutex<Option<SourceHandle>>,
     status: Mutex<Status>,
+    wire: Mutex<WireInterest>,
+    pub(super) live: Mutex<Weak<Live>>,
+    events: Arc<dyn CoreEvents>,
+    runtime: Handle,
     vitals_warnings: VitalsRateLimit,
+}
+
+#[derive(Default)]
+struct WireInterest {
+    demand: Option<DemandLevel>,
+    processes: statglass_proto::RemoteInterest,
 }
 
 pub(super) enum OpenError {
@@ -79,6 +89,8 @@ struct Status {
     dirty: bool,
     checking: bool,
     previous_timeline: Option<u32>,
+    last_frame_ms: Option<i64>,
+    parking: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -132,9 +144,10 @@ impl HostEntry {
             .ok_or_else(|| internal("mobile session needs a runtime"))?;
         Ok(Arc::new_cyclic(|entry: &std::sync::Weak<Self>| {
             let entry = entry.clone();
+            let (status_runtime, status_events) = (runtime.clone(), events.clone());
             let on_status = Arc::new(move |status| {
                 if let Some(entry) = entry.upgrade() {
-                    drop(entry.observe_status(status, &runtime, events.clone()));
+                    drop(entry.observe_status(status, &status_runtime, status_events.clone()));
                 }
             });
             let source = RemoteSource::with_options(
@@ -146,6 +159,10 @@ impl HostEntry {
                 hub: LiveHub::new(Default::default()),
                 handle: Mutex::default(),
                 status: Mutex::default(),
+                wire: Mutex::default(),
+                live: Mutex::default(),
+                events,
+                runtime,
                 vitals_warnings: VitalsRateLimit::default(),
             }
         }))
@@ -195,16 +212,21 @@ impl HostEntry {
         });
         let Some(frame) = current else {
             return HostVitals {
-                as_of_ms: latest.map(|frame| frame.ts_ms),
+                as_of_ms: latest.map(|frame| frame.ts_ms).or(status.last_frame_ms),
                 ..Default::default()
             };
         };
-        let mut vitals = host_vitals(
-            Some(frame),
-            self.config.id,
-            &self.source.host().info,
-            &self.vitals_warnings,
-        );
+        let peer = self.source.peer_info();
+        let mut vitals = if let Some(info) = peer.as_deref() {
+            host_vitals(Some(frame), self.config.id, info, &self.vitals_warnings)
+        } else {
+            host_vitals(
+                Some(frame),
+                self.config.id,
+                &self.source.host().info,
+                &self.vitals_warnings,
+            )
+        };
         vitals.as_of_ms = Some(self.source.clock().now_ms().unwrap_or_else(|| {
             // A frame gives us host time before the first heartbeat estimates the offset.
             let now = wall_ms();
@@ -216,12 +238,77 @@ impl HostEntry {
 
     pub(super) fn remote_host(&self) -> MobileRemoteHost {
         let status = self.status.lock_ok();
-        remote_host(
+        let mut row = remote_host(
             &self.config,
             self.source.host(),
             &status.connection,
             self.vitals_for(&status),
-        )
+        );
+        row.demand = self.demand_level();
+        row
+    }
+
+    pub(super) fn demand_level(&self) -> Option<DemandLevel> {
+        self.wire.lock_ok().demand
+    }
+
+    pub(super) fn set_demand_level(&self, level: Option<DemandLevel>) {
+        let mut wire = self.wire.lock_ok();
+        if wire.demand == level {
+            return;
+        }
+        wire.demand = level;
+        self.apply_wire_interest(&wire);
+        if let Some(handle) = self.handle.lock_ok().as_ref() {
+            handle
+                .control()
+                .set_detail_interest(level == Some(DemandLevel::Full));
+        }
+        let events = self.events.clone();
+        self.runtime.spawn(async move {
+            super::registry::emit(&*events, MobileEvent::RemoteHostsChanged);
+        });
+    }
+
+    pub(super) fn set_process_flags(
+        &self,
+        update: impl FnOnce(&mut statglass_proto::RemoteInterest),
+    ) {
+        let mut wire = self.wire.lock_ok();
+        update(&mut wire.processes);
+        self.apply_wire_interest(&wire);
+    }
+
+    fn apply_wire_interest(&self, wire: &WireInterest) {
+        let full = wire.demand == Some(DemandLevel::Full);
+        if let Some(handle) = self.handle.lock_ok().as_ref() {
+            let control = handle.control();
+            control
+                .set_process_interest(full.then_some(wire.processes.process_period_ms).flatten());
+            control.set_network_process_interest(full && wire.processes.network_processes);
+            control.set_gpu_process_interest(full && wire.processes.gpu_processes);
+            control.set_port_process_interest(full && wire.processes.port_processes);
+        }
+    }
+
+    pub(super) fn resume_demand(&self) {
+        self.status.lock_ok().parking = false;
+        self.source.resume();
+    }
+
+    pub(super) fn park_demand(&self, close_streams: bool) -> BoxFuture<'static, ()> {
+        let parked = {
+            let mut status = self.status.lock_ok();
+            status.parking = true;
+            if !status.connection.connected && !status.connection.dialing {
+                self.hub.clear_live();
+            }
+            self.source.quiesce()
+        };
+        if close_streams && let Some(live) = self.live.lock_ok().upgrade() {
+            live.park_host(self.config.id);
+        }
+        parked
     }
 
     pub(super) fn observe_status(
@@ -234,9 +321,16 @@ impl HostEntry {
         if !status.active {
             return None;
         }
+        let latest = self.hub.latest_frame();
+        if let Some(frame) = latest.as_ref() {
+            status.last_frame_ms = Some(frame.ts_ms);
+        }
         if !connection.connected {
+            if status.parking {
+                self.hub.clear_live();
+            }
             // The live hub keeps its latest frame across reconnects.
-            status.previous_timeline = self.hub.latest_frame().map(|frame| frame.timeline);
+            status.previous_timeline = latest.map(|frame| frame.timeline);
         }
         let notice = StatusNotice::from(&connection);
         status.connection = connection;

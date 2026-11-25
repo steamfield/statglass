@@ -28,6 +28,7 @@ function applyPhoneState(store: LiveStore, host: HostId, next: PhoneLive) {
   store.setState(
     {
       ...next,
+      stream: previous.stream,
       connection: next.awaitingFrame ? "reconnecting" : next.connection,
       lastFrame:
         next.frameVersion === previous.frameVersion
@@ -43,7 +44,8 @@ export function subscribeHostLive(
   store: LiveStore,
   transport: PhoneTransport,
   host: HostId,
-  status: () => RemoteHostStatus | null
+  status: () => RemoteHostStatus | null,
+  onStream: (stream: number, open: boolean) => void
 ) {
   let visible = AppState.currentState === "active";
   let release: (() => void) | undefined;
@@ -61,8 +63,13 @@ export function subscribeHostLive(
         subscribe: async (id, onMessage, options) => {
           let stopped = false;
           let unsubscribe: (() => void) | undefined;
+          let stream: number | undefined;
           const stop = () => {
             stopped = true;
+            if (stream !== undefined) {
+              onStream(stream, false);
+              stream = undefined;
+            }
             unsubscribe?.();
             unsubscribe = undefined;
             if (release === stop) release = undefined;
@@ -77,7 +84,13 @@ export function subscribeHostLive(
               options
             );
             if (stopped) sub.unsubscribe();
-            else unsubscribe = () => sub.unsubscribe();
+            else {
+              unsubscribe = () => sub.unsubscribe();
+              if (sub.info.status === "ok") {
+                stream = sub.info.data.stream;
+                onStream(stream, true);
+              }
+            }
             return { ...sub, unsubscribe: stop };
           } catch (error) {
             stop();

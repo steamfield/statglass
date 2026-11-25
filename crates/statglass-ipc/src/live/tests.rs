@@ -31,6 +31,7 @@ struct FakeFeed {
     gpu: Mutex<Vec<bool>>,
     ports: Mutex<Vec<bool>>,
     detail: AtomicI64,
+    min_frame_period_ms: AtomicU32,
     /// Behave like the engine (D-094): detail interest crossing between zero and one
     /// publishes a status with the visible 1 s or background 2 s tick before returning.
     background_tick: AtomicBool,
@@ -56,6 +57,7 @@ impl FakeFeed {
             gpu: Mutex::new(Vec::new()),
             ports: Mutex::new(Vec::new()),
             detail: AtomicI64::new(0),
+            min_frame_period_ms: AtomicU32::new(0),
             background_tick: AtomicBool::new(false),
             timeline: AtomicU32::new(0),
         });
@@ -126,6 +128,9 @@ impl LiveFeed for FakeFeed {
     }
     fn capabilities(&self) -> Capabilities {
         self.caps.lock().unwrap().clone()
+    }
+    fn min_frame_period_ms(&self) -> u32 {
+        self.min_frame_period_ms.load(Ordering::SeqCst)
     }
     fn set_process_interest(&self, period_ms: Option<u32>) {
         self.periods.lock().unwrap().push(period_ms);
@@ -1441,6 +1446,26 @@ async fn status_carries_display_idle_and_the_frame_period() {
     );
     assert_eq!(frame_period_ms(1_000, 0), 1_000);
     assert_eq!(frame_period_ms(3_000, 5_000), 6_000);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stream_status_honors_the_feeds_delivery_cadence() {
+    let feed = FakeFeed::new();
+    for (minimum, expected) in [(0, 1_000), (5_000, 5_000), (500, 1_000)] {
+        feed.min_frame_period_ms.store(minimum, Ordering::SeqCst);
+        let reg = registry(&["dashboard"]);
+        let (s, rx, _) = sink();
+        reg.subscribe("dashboard", feed.clone(), s, req(0)).unwrap();
+        let status = rx
+            .try_iter()
+            .find_map(|message| match message {
+                LiveMsg::Status(status) => Some(status),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(status.interval_ms, 1_000);
+        assert_eq!(status.frame_period_ms, expected);
+    }
 }
 
 /// Performance mode (D-088) paces every visible stream to at least 2 s, whatever it

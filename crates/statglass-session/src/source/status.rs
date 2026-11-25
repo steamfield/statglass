@@ -1,8 +1,35 @@
 //! What the shell is told about a source's connection.
+use std::sync::Arc;
+
 use crate::network::{self, LocalNetwork};
 use crate::{RemoteError, Route, UnreachableKind};
 use serde::{Deserialize, Serialize};
-use statglass_schema::HostId;
+use statglass_proto::Hello;
+use statglass_schema::{Capabilities, HostId, HostInfo, lock::LockExt};
+
+use super::RemoteSource;
+
+#[derive(Default)]
+pub(super) struct PeerFacts {
+    info: Option<Arc<HostInfo>>,
+    pub(super) capabilities: Capabilities,
+}
+
+impl PeerFacts {
+    pub(super) fn from_hello(hello: &Hello) -> Self {
+        Self {
+            info: Some(Arc::new(hello.host.info.clone())),
+            capabilities: hello.capabilities.clone(),
+        }
+    }
+}
+
+impl RemoteSource {
+    /// Hardware metadata from the most recent successful handshake.
+    pub fn peer_info(&self) -> Option<Arc<HostInfo>> {
+        self.peer.lock_ok().info.clone()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

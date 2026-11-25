@@ -4,6 +4,7 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { FlatList, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { PagerHost } from "@/data/demand";
 import { useHosts } from "@/data/hosts-list";
 import { useHostLiveSubscription } from "@/data/live";
 import { Text } from "@/ui/text";
@@ -72,7 +73,9 @@ export function HostScreen() {
   return (
     <View className="flex-1 bg-background pr-safe pl-safe">
       {hosts.data && index >= 0 ? (
-        <HostPager host={host} hosts={hosts.data} index={index} />
+        <PagerHost.Provider value={host}>
+          <HostPager host={host} hosts={hosts.data} index={index} />
+        </PagerHost.Provider>
       ) : (
         <Text
           {...{ role: "body" }}

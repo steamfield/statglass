@@ -2,10 +2,6 @@ use statglass_ipc::mobile::DataPolicy;
 
 use crate::ffi::NetworkPath;
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "demand will apply the live data policy")
-)]
 pub(crate) fn live_allowed(path: Option<NetworkPath>, data: DataPolicy) -> bool {
     data.live_on_cellular || !path.is_some_and(|path| path.expensive || path.constrained)
 }

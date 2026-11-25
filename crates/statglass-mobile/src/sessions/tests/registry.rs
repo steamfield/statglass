@@ -410,7 +410,7 @@ fn endpoint_uses_the_desktop_command_lines_in_target_order_with_pinned_keys() {
 #[tokio::test(start_paused = true)]
 async fn remote_status_uses_the_scaffold_json_and_does_not_repeat_unchanged_events() {
     let host = host(1);
-    let fixture = Fixture::start(vec![host.clone()]);
+    let fixture = Fixture::start_parked(vec![host.clone()], None);
     let entry = fixture
         .sessions
         .registry

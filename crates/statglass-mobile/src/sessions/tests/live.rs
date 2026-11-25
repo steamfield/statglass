@@ -4,7 +4,6 @@ use statglass_ipc::vitals::HostVitals;
 use statglass_proto::SourceStatus;
 
 use crate::control::SessionControl;
-use crate::lifecycle::Lifecycle;
 use statglass_ipc::error::CommandError;
 
 use super::*;
@@ -106,7 +105,7 @@ async fn a_refused_frame_releases_the_stream_and_an_unknown_unsubscribe_is_a_noo
     let host = host(1);
     let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
-    remote.handshake(&host).await;
+    assert!(remote.handshake(&host).await.detail);
     assert_eq!(
         fixture
             .sessions
@@ -116,14 +115,12 @@ async fn a_refused_frame_releases_the_stream_and_an_unknown_unsubscribe_is_a_noo
         Value::Null
     );
     fixture.sessions.call(subscribe(host.id, 42)).await.unwrap();
-    while !matches!(remote.read().await, Message::Interest(interest) if interest.detail) {}
     *fixture.events.refuse.lock_ok() = Some("frame");
     remote.layout().await;
     remote.frame(NOW, 11.).await;
     remote.frame(NOW + 1_000, 23.).await;
     assert_eq!(fixture.message("frame").await.0, 42);
     assert_eq!(fixture.sessions.registry.live.open_host(), None);
-    while !matches!(remote.read().await, Message::Interest(interest) if !interest.detail) {}
     assert!(fixture.messages.try_recv().is_err());
 
     *fixture.events.refuse.lock_ok() = None;
@@ -180,13 +177,18 @@ async fn a_panicking_live_callback_unregisters_the_stream() {
     let host = host(1);
     let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
-    remote.handshake(&host).await;
+    assert!(remote.handshake(&host).await.detail);
     fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
-    while !matches!(remote.read().await, Message::Interest(interest) if interest.detail) {}
     *fixture.events.panic_live.lock_ok() = true;
     remote.layout().await;
     remote.frame(NOW, 11.).await;
-    while !matches!(remote.read().await, Message::Interest(interest) if !interest.detail) {}
+    timeout(WAIT, async {
+        while fixture.sessions.registry.live.open_host().is_some() {
+            tokio::time::advance(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(
         fixture.sessions.call(subscribe(host.id, 7)).await.unwrap()["stream"],
         7
@@ -252,7 +254,7 @@ async fn frame_vitals_change_without_another_remote_hosts_event() {
             .count()
     };
     timeout(WAIT, async {
-        while read_events(&fixture.events) < 2 {
+        while read_events(&fixture.events) < 3 {
             fixture.events.event_ready.notified().await;
         }
     })
@@ -331,7 +333,7 @@ async fn quiescing_closes_the_session_at_once_and_offline_vitals_keep_only_the_f
     let elapsed = statglass_engine::wall_ms() - before;
     assert!((next..=next + elapsed + 1).contains(&live["as_of_ms"].as_i64().unwrap()));
 
-    let lifecycle = Lifecycle::new();
+    let lifecycle = fixture.sessions.lifecycle().clone();
     let now = tokio::time::Instant::now();
     let mut parked = lifecycle.quiesce(&fixture.sessions);
     timeout(WAIT, &mut peer.closing).await.unwrap().unwrap();
