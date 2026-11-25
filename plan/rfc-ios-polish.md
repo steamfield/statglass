@@ -772,6 +772,12 @@ The polish phases take the items in the files they own:
 | tests M1 (hosts list) | 11d | accessible values instead of export spies |
 | errors L3; tests L6 | 11e | module status error state; drop the dead latency option |
 
+Plan phase 13 (App Store readiness, after phases 9 and 12) takes the App Store work that was
+deferred here: arch I8's privacy manifest (13a), icon and splash (13b, with 13a's config
+entries), beside the release-build routes, in-app privacy link, iPhone privacy page and NAT64
+literal resolution the same audit found (13c to 13e). I8's `NSLocalNetworkUsageDescription`
+stays with the phase 8 scaffold.
+
 **Deferred or rejected, with reasons:**
 
 - **arch M4, route shape** (thin routes vs. screens): cosmetic. Pick it up when a route is next
@@ -786,8 +792,6 @@ The polish phases take the items in the files they own:
   Modules async API change is not worth churn while 7e rewrites the error mapping.
 - **arch M17, split the `MobileCall` dispatch:** deferred. `MobileCall` grows in the phase 7
   and phase 8 scaffolds and in 9c, so splitting it now would conflict with them. Do it once those land.
-- **arch I8, privacy manifest, icon, splash:** out of scope. These are App Store work (iPhone
-  RFC phases 5 and 6).
 - **tests L9, Rust fake of `SessionControl`:** rejected. The sources inside it are real, and
   the audit itself says no fix is needed.
 - **RFC 3.1, corporate VPN:** deferred. iOS gives no reliable signal for "another VPN is

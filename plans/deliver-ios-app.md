@@ -3839,6 +3839,380 @@ export function useTemperatureUnits(): TemperatureUnits; // "C" | "F" from getLo
 - **Out of scope:** the heat and ring models (phase 10 lane d), the frame.
 - **Done when:** the table's Done-when conditions are met.
 
+### Phase 13: App Store readiness
+
+Demo:
+- **Release archive, locally:** `make mobile-archive` builds the XCFramework, prebuilds, and archives a signed Release build with `xcodebuild`. It exports an App Store `.ipa` into `apps/mobile/dist/ios/` and uploads nothing. `make mobile-release-check` then passes on that archive and prints one line per check: Info.plist keys, the privacy manifest in the bundle against the binary's imports, no private symbols or private frameworks, the icon, the entitlements and the version.
+- **Simulator, Release build, light, dark and AX1:**
+  - The home screen shows the StatGlass icon in light, dark and tinted, not Expo's blank placeholder.
+  - The launch screen uses the theme background in light and dark, with no white flash in dark.
+  - The first launch shows the welcome screen. "Try demo hosts", then a host, then a module page all work, and `log stream` shows no session dial from subsystem `app.statglass`.
+  - `statglass://debug` redirects to `/`.
+  - Settings > About shows "1.0.0 (N)" with "Privacy policy" and "Support" rows that open the docs page.
+- **iPad simulator:** the iPhone-only app runs in compatibility mode with nothing clipped. In the iPhone Duo simulator (if the installed runtime has one), the closed and open postures render without black bars.
+- **Docs:** `/docs/iphone` renders, with its Privacy and Support sections.
+- **IPv6:** a russh session to the test SSH server on `[::1]` completes its handshake. On Apple targets an IPv4 literal goes through `getaddrinfo`, so a NAT64 network can synthesize its address.
+- **Checklist:** `.github/releasing-mobile.md` holds the steps the user completes in App Store Connect, the review notes text, and the device checks the simulator can't do.
+
+Depends on: phase 9, phase 12
+
+Why a phase: the user wants StatGlass for iPhone submitted to the App Store. This phase gets the code to the point where it passes App Review. It reopens the App Store part of RFC phases 5 and 6, which the Spec's out-of-scope line had deferred. Uploading, the App Store Connect record and submission stay the user's own steps; the phase ends with an archive and a checklist. It runs after phase 12 because review judges the finished screens, and lanes a and c edit files that phases 8, 11 and 12 own (`app.config.ts`, the root layout, About, `demo.tsx`).
+
+Requirements (primary sources, read 2026-11-25):
+- **Review Guidelines** (https://developer.apple.com/app-store/review/guidelines/):
+  - "Before You Submit" asks for a demo account or "fully-featured demo mode", and any hardware or resources review needs ("a sample QR code").
+  - 2.1(a): a built-in demo mode "in lieu of a demo account" needs Apple's prior approval. This app has no login, so the review notes explain the demo instead.
+  - 2.3.1(a): describe features "with specificity in the Notes for Review".
+  - 2.3.3: screenshots show the app in use.
+  - 2.4.1: iPhone apps should run on iPad.
+  - 2.5.5: the app must be "fully functional on IPv6-only networks".
+  - 4.2: minimum functionality.
+  - 5.1.1(i): every app links its privacy policy in App Store Connect and inside the app.
+  - 5.1.1(ii): purpose strings "clearly and completely describe" the use.
+  - Not re-read in this pass: whether 4.2.3's "work on its own without requiring installation of another app" applies to a companion to server software.
+- **Privacy manifests:**
+  - Required-reason API rules: https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api (enforced on upload since 1 May 2024).
+  - Reason codes: https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype. The codes used here:
+    - FileTimestamp (`stat`, `fstat`, `lstat`, `getattrlist*`): C617.1, files in the app container.
+    - SystemBootTime (`mach_absolute_time`, `systemUptime`): 35F9.1, elapsed time and timers.
+    - DiskSpace (`statfs`, `fstatfs`, `statvfs`): E174.1, check space before writing.
+    - UserDefaults: CA92.1, the app's own defaults.
+  - Third-party SDK list: https://developer.apple.com/support/third-party-SDK-requirements/. `hermes` is on it; React Native and Expo are not. A static library linked into the app is app code, so its reasons go in the app's manifest.
+- **Expo privacy guidance:** https://docs.expo.dev/guides/apple-privacy/. Set `ios.privacyManifests` in the app config and restate the pods' reasons there, because "Apple does not correctly parse all the PrivacyInfo files included by static CocoaPods dependencies".
+- **App Privacy labels:** https://developer.apple.com/app-store/app-privacy-details/. "Collect" means transmitting data off the device so that "you and/or your third-party partners" can access it. Data that reaches only the user's own hosts is therefore not collected, so the label is Data Not Collected; that is an inference, and the page has no rule naming user-owned servers. A privacy policy URL is required.
+- **Export compliance:**
+  - https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations: the key is `NO` only if the app uses no encryption or only exempt encryption. "Proprietary" or non-OS encryption is typically not exempt.
+  - https://developer.apple.com/help/app-store-connect/reference/app-information/export-compliance-documentation-for-encryption: a "standard algorithm, not provided within the Apple operating system" needs a French encryption declaration, and only if the app is distributed in France.
+  - https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption: without the key, App Store Connect asks the questionnaire on every upload.
+  - https://developer.apple.com/documentation/bundleresources/information-property-list/itsencryptionexportcompliancecode: the code Apple issues after reviewing the documents.
+  - BIS self-classification: https://www.bis.gov/learn-support/encryption-controls/annual-self-classification.
+- **Local network:**
+  - TN3179 (https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy): an outgoing TCP connection to a local address needs access, through any API including BSD sockets. Cellular and VPN don't count as local. `NSBonjourServices` is needed only for Bonjour.
+  - `NSLocalNetworkUsageDescription`: https://developer.apple.com/documentation/bundleresources/information-property-list/nslocalnetworkusagedescription.
+- **Camera:**
+  - `NSCameraUsageDescription` is required: https://developer.apple.com/documentation/bundleresources/information-property-list/nscamerausagedescription.
+  - The `expo-camera` plugin adds `NSMicrophoneUsageDescription` unless `microphonePermission: false`: https://docs.expo.dev/versions/latest/sdk/camera/ and `packages/expo-camera/plugin/src/withCamera.ts`.
+- **Icon and launch screen:**
+  - App icons are 1024 px, a bitmap or an Icon Composer file, with dark and tinted variants generated if missing: https://developer.apple.com/design/human-interface-guidelines/app-icons.
+  - Every app needs a launch screen: https://developer.apple.com/documentation/xcode/specifying-your-apps-launch-screen.
+  - Expo's `ios.icon` takes a path, a `.icon` directory, or `{ light, dark, tinted }`: https://docs.expo.dev/versions/latest/config/app/.
+- **IPv6:**
+  - https://developer.apple.com/support/ipv6/.
+  - Test with a NAT64 network from Internet Sharing, and resolve IPv4 literals with `getaddrinfo` to get a synthesized address: https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/NetworkingOverview/UnderstandingandPreparingfortheIPv6Transition/UnderstandingandPreparingfortheIPv6Transition.html.
+- **Upload minimums** (https://developer.apple.com/news/upcoming-requirements/):
+  - Since 28 April 2026: Xcode 26 or later with the iOS 26 SDK. This Mac has Xcode 27.2 with the iOS 27.2 SDK.
+  - Since 9 September 2026: target iOS 13 or later. The prebuild sets 16.4.
+  - Nothing is announced for 2027 on that page. The screenshot page, though, says iPhone Duo screenshots become required in April 2027 for apps built with the iOS 27.1 SDK or later, which a build from this Xcode is.
+- **Screenshots:**
+  - https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications: one iPhone set (1206x2622 or 1179x2556), no alpha.
+  - The 13-inch iPad set is required only if the app supports iPad.
+- **Accessibility Nutrition Labels** are voluntary for now: https://developer.apple.com/help/app-store-connect/manage-app-accessibility/overview-of-accessibility-nutrition-labels.
+- **Local release route:** https://docs.expo.dev/submit/ios-manual/. Archive locally, then upload through Organizer or Transporter, which is the user's step.
+
+Audit (2026-11-25, this worktree, with an `expo prebuild --platform ios --no-install` run in a scratch copy and since deleted). Blocking means App Store Connect or App Review would reject the build:
+
+- **Blocking:**
+  - **No icon.** `app.config.ts` sets no `icon`. Prebuild writes Expo's placeholder, a blank white 1024 PNG with an alpha channel (`AppIcon.appiconset/App-Icon-1024x1024@1x.png`, md5 `35a635a6c61497e3e5c08c0d66a2816f`). `brand/statglass-app-icon.svg` and `brand/build.mjs` already make the mark and a full-bleed crop for the web touch icon.
+  - **No privacy manifest.**
+    - The app config sets no `ios.privacyManifests`, and the prebuilt project has no `PrivacyInfo.xcprivacy`.
+    - The Podfile aggregates pod manifests only at `pod install` (`privacy_file_aggregation_enabled`).
+    - Expo modules are precompiled (`EXPO_USE_PRECOMPILED_MODULES` defaults to 1) and static, so per Expo's guidance their reasons must be restated in the app.
+    - The Rust staticlib ships no manifest of its own. It imports `stat`, `fstat`, `lstat`, `statfs` and `fstatfs` (checked with `nm` on the `aarch64-apple-ios` `libstatglass_mobile.a` built in the ios-p7a worktree on 2026-11-25). `statfs`/`fstatfs` come from bundled SQLite (`statglass-store`, `rusqlite` with `bundled`), which the phone still links for `phone_id.rs`.
+  - **Version 0.0.0 and a fixed build number.**
+    - `apps/mobile/package.json:4` is `"version": "0.0.0"`, so prebuild writes `CFBundleShortVersionString` 0.0.0. `app.config.ts:47-70` sets neither `version` nor `ios.buildNumber`, so `CFBundleVersion` is always `1`.
+    - Every upload needs a new build number. RFC 7.3 versions the phone on its own (`mobile-vX.Y.Z`, monotonic build numbers).
+    - About reads `Constants.expoConfig?.version` (`settings/about.tsx:16`).
+  - **No in-app privacy policy link (5.1.1(i)).**
+    - About has only version, core and protocol rows (`settings/about.tsx:13-23`). Phase 11 lane a adds a licenses link only.
+    - `docs-site/src/content/docs/privacy.md` covers the Mac app and the website and says nothing about the iPhone.
+  - **No export compliance answer.** No `ios.config.usesNonExemptEncryption`, so `ITSAppUsesNonExemptEncryption` is absent and every upload stops at the questionnaire. The app's SSH uses russh with ring, p256 and sha2 (non-OS crypto) for key exchange, transport encryption and signing, while the Secure Enclave key uses CryptoKit/Security. The classification is the user's decision (below).
+- **Blocking unless changed in phase 8:** the phase 8 scaffold adds `NSLocalNetworkUsageDescription` and the `expo-camera` plugin with its camera string (plan line 3021).
+  - It doesn't pass `microphonePermission: false`, so prebuild also writes `NSMicrophoneUsageDescription` with Expo's generic "Allow $(PRODUCT_NAME) to access your microphone", which the app never uses.
+  - That is a vague purpose string for an unused permission (5.1.1(ii)). Lane a removes it.
+- **Advisory:**
+  - **Debug and scenario routes in release.** `/debug` is registered in the root stack (`app/_layout.tsx:43`) and reachable through the `statglass` URL scheme in a release build. `/demo?scenario=` loads developer scenarios such as `phone-errors`. Review dislikes hidden features (2.3.1), so release builds redirect both.
+  - **Orientation.**
+    - The prebuilt `UISupportedInterfaceOrientations` allows all four orientations, because `app.config.ts` sets no `orientation`. The phone screens are designed for portrait only.
+    - Set `orientation: "portrait"`. Leave `UIRequiresFullScreen` false so iPad compatibility mode and the iPhone Duo's open posture aren't letterboxed.
+  - **Launch screen.** `SplashScreen.storyboard` names an image `SplashScreen` that the asset catalog doesn't have, and it uses `systemBackgroundColor`. `expo-splash-screen` isn't installed. It works, but it doesn't match the theme.
+  - **IPv4 literals and NAT64.**
+    - `crates/statglass-ssh/src/dialer.rs:188-190` notes that numeric IPv4 literals bypass `getaddrinfo` (tokio parses them first), so they get no NAT64 synthesis. The 2026-11-24 Log calls this a known limitation.
+    - Pairing targets are often literals (LAN and Tailscale addresses). Review itself uses demo mode, which opens no socket, so this doesn't block review, but 2.5.5 applies to the real app.
+  - **Strings naming private frameworks.** The staticlib has no IOKit or private-framework imports (`nm` found no `_IO*` symbols; `crates/statglass-collect` is gated off iOS). Its strings do contain `statglass_schema::caps` doc text that names "Private IOReport framework" and "IOHIDEventSystemClient" (`crates/statglass-schema/src/caps.rs:204,208`).
+    - The upload scan checks symbols and selectors, so lane v's check fails on symbols and only reports these strings.
+    - Other imports: `dlopen`/`dlsym` (Rust std's OS-version probe of CoreFoundation, and SQLite's extension loader) and `sysctlbyname` (`hw.*` CPU features for ring). None needs a declared reason.
+  - **ATS is already right.** The prebuilt plist has `NSAllowsArbitraryLoads` false and `NSAllowsLocalNetworking` true. The phone makes no HTTP requests; the public IP lookup is host-side (D-093).
+  - **Entitlements are empty** (`StatGlass.entitlements` is `<dict/>`). The Secure Enclave key uses the app's default keychain group and needs none.
+  - **iPhone only.**
+    - `supportsTablet: false` (`app.config.ts:58`), so `TARGETED_DEVICE_FAMILY` is 1. Review may still run the app on an iPad in compatibility mode (2.4.1), and no iPad screenshots are needed.
+    - The RFC lists iPad as later work.
+  - **4.2 minimum functionality and the companion question.** Real use needs StatGlass on a Mac or `statglass-agent` on Linux.
+    - After phase 11 lane b, the welcome screen offers "Try demo hosts" in one tap. The demo is the full app on the mock transport: live cards, module pages and history.
+    - The review notes name the companion software, explain the QR pairing, and point to the demo. Whether to also give review a live host is the user's decision (below).
+    - A pairing QR expires within minutes (`decode_payload`'s expiry), so a printed sample QR can't work.
+  - **5.1.1 data.** The phone keeps no history (D-152), sends no analytics, and has no account (so 5.1.1(v), account deletion, doesn't apply). Logs go to os_log only (phase 7 lane l). The diagnostics export is deferred (`plan/rfc-ios-polish.md` section 9). The label is Data Not Collected; RFC 7.4 says the same.
+  - **First launch offline.**
+    - With no paired hosts, phase 8's launch logic starts the core and shows welcome. No socket opens until a host is paired, and the Local Network prompt appears only on the first LAN dial (TN3179).
+    - Phase 11 lane b covers the welcome states. This phase adds a test of the full reviewer path with no native session call.
+  - **Accessibility.** Phases 10 to 12 cover VoiceOver labels, 44 pt targets and AX1 layouts. The Accessibility Inspector audit and the voluntary Nutrition Label answers are checklist items.
+  - **Hermes signature.** `hermes` is on Apple's SDK list. React Native's prebuilt `hermes-engine` ships its own manifest; lane v reports whether its xcframework is signed, because an unsigned listed SDK draws a warning on upload.
+  - **Duo screenshots.** A build from Xcode 27.2 uses the iOS 27.2 SDK, so iPhone Duo screenshots become required from April 2027. The checklist says so.
+
+Code facts this phase relies on (checked 2026-11-25; the state after phases 8 to 12 land):
+- **App config.**
+  - `apps/mobile/app.config.ts:43-71` `expoConfigFor(identity, base)` returns `ios: { bundleIdentifier, appleTeamId, supportsTablet: false }` and three plugins. After phase 8 it also carries `ios.infoPlist.NSLocalNetworkUsageDescription` and the `expo-camera` plugin.
+  - `apps/mobile/test/app-config.test.ts` tests the identity fallbacks and `expoConfigFor`.
+- **Prebuild facts** (Expo 58 template, `node_modules/expo/template.tgz`):
+  - The `SplashScreen.storyboard` launch screen.
+  - `NSAllowsArbitraryLoads` false and `NSAllowsLocalNetworking` true.
+  - `UIRequiredDeviceCapabilities` `arm64`, `IPHONEOS_DEPLOYMENT_TARGET` 16.4, `TARGETED_DEVICE_FAMILY` 1.
+  - A Podfile with `privacy_file_aggregation_enabled` on unless `apple.privacyManifestAggregationEnabled` is `false`.
+  - The `.gitignore` ignores `apps/mobile/ios/` and `apps/mobile/dist/`.
+- **Rust build.** `scripts/mobile/build-rust-ios.sh` builds `libstatglass_mobile.a` with the `mobile-release` profile for `aarch64-apple-ios` and `aarch64-apple-ios-sim` into `apps/mobile/modules/statglass-native/ios/StatglassCore.xcframework`. The podspec vendors it as a static framework (`StatglassNative.podspec`).
+- **Swift module.** It uses Keychain and Secure Enclave (`PhoneKey.swift:99-138`), `NWPathMonitor` (`AppLifecycle.swift:13`), and Application Support (`StatglassNativeModule.swift:134`). None of these is a required-reason API.
+- **Brand.** `brand/build.mjs` renders `statglass-app-icon.svg` with `rsvg-convert` and already writes a full-bleed square crop for `docs-site/public/apple-touch-icon.png`. The theme backgrounds are `#fafafa` (light) and `#09090b` (dark) in `apps/mobile/src/theme.generated.ts:6,73`.
+- **Docs site.**
+  - The docs live at `https://statglass.steamfield.io` (`docs-site/astro.config.mjs:11`), with pages from `docs-site/src/content/docs/*.md` and `make -C docs-site check test`.
+  - No workflow in `.github/workflows/` deploys it, so the user confirms the page is live before submitting.
+- **Routes.** `/debug` is registered in `apps/mobile/src/app/_layout.tsx` (line 43 today; phase 11 lane a owns the layout's options). The welcome screen with "Try demo hosts" is phase 11 lane b's `WelcomeScreen`. `/demo` reads a `scenario` param (phase 7 lane a).
+- **Dialer.** `crates/statglass-ssh/src/dialer.rs:187-205` `connect_tcp` resolves with `tokio::net::lookup_host` and tries each address in turn. `crates/statglass-ssh/tests/support/server.rs` is an in-process SSH server.
+- **Release policy.** Release builds are local, with no EAS and no hosted macOS job (D-118, D-131, RFC 7.2). `compat/mobile-protocol.json` is empty until the first release.
+
+Test cases:
+
+**App config (lane a)**
+- `expoConfigFor`:
+  - `version` comes from `apps/mobile/package.json` (1.0.0 after the scaffold).
+  - `ios.buildNumber` comes from `STATGLASS_MOBILE_BUILD_NUMBER`, a positive integer. A non-numeric value throws a named error, and unset defaults to `"1"`.
+  - `orientation` is `"portrait"`, and `ios.supportsTablet` stays `false`.
+  - `ios.config.usesNonExemptEncryption` equals the value the scaffold's D-entry records.
+- The privacy manifest (`ios.privacyManifests`):
+  - `NSPrivacyTracking` is false, and `NSPrivacyTrackingDomains` and `NSPrivacyCollectedDataTypes` are empty.
+  - `NSPrivacyAccessedAPITypes` lists FileTimestamp C617.1, DiskSpace E174.1, SystemBootTime 35F9.1 and UserDefaults CA92.1, each with a comment naming its caller (Rust std and SQLite, React Native, Expo modules).
+  - It also lists every further category and reason found in the aggregated manifest of a `pod install` run, which the lane records in its report.
+- Plugins:
+  - The `expo-camera` plugin keeps phase 8's camera string and passes `microphonePermission: false`.
+  - The `expo-splash-screen` plugin sets the image `./assets/splash-icon.png` and the backgrounds `#fafafa` and `#09090b` (dark), taken from `theme.generated.ts`, not typed twice.
+  - `ios.icon` is `{ light: "./assets/icon-light.png", dark: "./assets/icon-dark.png", tinted: "./assets/icon-tinted.png" }`.
+- Info.plist:
+  - `NSLocalNetworkUsageDescription`, `NSFaceIDUsageDescription` and the camera string are present, and none starts with "Allow $(PRODUCT_NAME)".
+  - No `NSBonjourServices`.
+
+**Icon and launch screen (lane b)**
+- `node brand/build.mjs` writes the four `apps/mobile/assets/` PNGs:
+  - `icon-light.png`: 1024x1024 with no alpha (`sips -g hasAlpha` says `no`), the full-bleed mark on its dark background, the same crop as the touch icon.
+  - `icon-dark.png`: the mark on a transparent background.
+  - `icon-tinted.png`: grayscale with transparency.
+  - `splash-icon.png`: the mark alone, transparent.
+- A second run is byte-identical.
+- `brand/README.md` lists the outputs.
+
+**Release surfaces (lane c)**
+- With `__DEV__` false:
+  - `/debug` renders a redirect to `/`, and the root stack registers no `debug` screen options.
+  - `/demo?scenario=phone-errors` starts the default demo scenario.
+  - With `__DEV__` true, both behave as today.
+- About:
+  - The rows are App version "1.0.0 (N)" (from `expoConfig.version` and `ios.buildNumber`), Core and Protocol, then "Privacy policy" and "Support".
+  - Each link row is a 44 pt `link`-role row that calls `Linking.openURL` with the URL from `apps/mobile/src/lib/links.ts`: `https://statglass.steamfield.io/docs/iphone#privacy` and `#support`.
+  - A failed `openURL` shows an inline "Couldn't open the page" with the URL as text.
+- The reviewer path, on `FakeNative` with no stored hosts: the welcome screen shows, then "Try demo hosts" (found by role and label), the hosts list, a host, and the CPU module page. Every step renders, and `FakeNative` records no session start, dial or pairing call.
+
+**Privacy and support page (lane d)**
+- `docs-site/src/content/docs/iphone.md`:
+  - It covers what the app does, what it needs (StatGlass on a Mac or `statglass-agent` on Linux), pairing, and demo hosts.
+  - `## Privacy` says the app sends nothing to the developer and has no account, analytics or ads. Metrics travel over SSH straight from the user's hosts, and the phone stores no history (D-152). The key lives in the Secure Enclave (Keychain on the simulator). It lists the camera (only for scanning the pairing code), Local Network (only for hosts on the same network) and Face ID (optional App Lock), says how to remove a host and revoke the key on the host, and says the website's analytics are separate (link to `privacy.md`).
+  - `## Support` names GitHub issues.
+- `privacy.md` links to the iPhone section.
+- `make -C docs-site check test` passes, and the built site has `/docs/iphone/` with both anchors.
+
+**NAT64 literals (lane e)**
+- On `target_vendor = "apple"`, `resolve(host, port)`:
+  - It uses `getaddrinfo` with `AF_UNSPEC`, `SOCK_STREAM` and `AI_DEFAULT` on `spawn_blocking` for names and literals alike.
+  - `"127.0.0.1"` returns `127.0.0.1:port`, and `"::1"` returns `[::1]:port`.
+  - An unresolvable name maps to `Unreachable { kind: NameNotResolved }` with the host in the detail.
+- Elsewhere `lookup_host` is unchanged (Linux CI runs that branch).
+- `tests/ipv6.rs`: a russh session to `tests/support/server.rs` bound on `[::1]` completes the handshake, skipped with a message when the machine has no IPv6 loopback.
+- `cargo test -p statglass-ssh` and `make mobile-rust-check` pass.
+
+**Archive and static checks (lane v)**
+- `scripts/mobile/release-check-test.sh` builds fixture bundles with `clang` and `plutil`: a minimal `.app` with an Info.plist, a `PrivacyInfo.xcprivacy` and a tiny Mach-O.
+  - The good fixture passes.
+  - Each of these fails with its own message:
+    - a missing `ITSAppUsesNonExemptEncryption`;
+    - an `NSMicrophoneUsageDescription`;
+    - a purpose string starting "Allow $(PRODUCT_NAME)";
+    - `NSAllowsArbitraryLoads` true;
+    - a landscape orientation;
+    - `CFBundleShortVersionString` 0.0.0;
+    - a binary importing `_mach_absolute_time` with no SystemBootTime reason;
+    - a binary importing a symbol from `private-symbols.txt`;
+    - a `/System/Library/PrivateFrameworks/` load command;
+    - the placeholder icon hash;
+    - a `get-task-allow` entitlement.
+- `scripts/mobile/archive.sh` never uploads: a grep test finds no `altool`, `notarytool` or `destination upload` in it or in `ExportOptions.plist`.
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | M | apps/mobile/app.config.ts, apps/mobile/test/app-config.test.ts | contracts, audit above, https://docs.expo.dev/guides/apple-privacy/, the required-reason page, the Expo camera and splash-screen docs | config keys, manifest reasons, plugins, purpose strings | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/app-config.test.ts`, `make mobile-check`; a scratch-copy `expo prebuild --platform ios` plus `pod install` whose Info.plist and aggregated `PrivacyInfo.xcprivacy` are attached to the report, scratch copy deleted |
+| b | S | brand/build.mjs, brand/README.md, apps/mobile/assets/ | contracts, `brand/statglass-app-icon.svg`, the HIG app icon page | four PNGs, opaque light icon, idempotent | gpt-6.2-sol | pending | | `node brand/build.mjs` twice with no diff on the second run; `sips -g hasAlpha apps/mobile/assets/icon-light.png` says `no`; simulator home-screen screenshots in light, dark and tinted, compared with the macOS icon |
+| c | M | apps/mobile/src/app/debug.tsx, apps/mobile/src/app/_layout.tsx, apps/mobile/src/app/demo.tsx, apps/mobile/src/app/settings/about.tsx, apps/mobile/src/lib/links.ts, apps/mobile/test/settings/about.test.tsx, apps/mobile/test/app/release-routes.test.tsx, apps/mobile/test/app/reviewer-path.test.tsx | contracts, guidelines 2.1, 2.3.1, 5.1.1(i), `.claude/rules/mobile/expo.md` | release redirects, About links, reviewer path with no session calls | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test`, `make mobile-check`; simulator screenshots of About in light, dark and AX1 next to the other settings pages |
+| d | S | docs-site/src/content/docs/iphone.md, docs-site/src/content/docs/privacy.md | contracts, D-152, guideline 5.1.1, the App Privacy details page | page builds with both anchors | gpt-6.2-sol | pending | | `make -C docs-site check test build`; the built `/docs/iphone/` page screenshotted in light and dark |
+| e | S | crates/statglass-ssh/src/dialer.rs, crates/statglass-ssh/src/dialer/resolve.rs, crates/statglass-ssh/tests/ipv6.rs, crates/statglass-ssh/Cargo.toml, Cargo.lock | contracts, Apple's IPv6 transition guide, `.claude/rules/rust/platform.md` | literal and name resolution, IPv6 loopback handshake | gpt-6.2-sol | pending | | `cargo test -p statglass-ssh`, `make rust-check`, `make mobile-rust-check`, `make rust-linux-check` |
+| v | L | scripts/mobile/archive.sh, scripts/mobile/release-check.sh, scripts/mobile/release-check-test.sh, scripts/mobile/ExportOptions.plist, scripts/mobile/fixtures/release/, Makefile, .github/releasing-mobile.md | contracts, every requirement URL above, D-118, D-131, `.github/releasing.md`, `.claude/skills/ios-simulator/` | fixture pass and each named failure, no-upload grep | gpt-6.2-sol | pending | | `make mobile-release-check-test`; after lanes a to e merge, rebased on the phase branch: `make mobile-archive` and `make mobile-release-check` pass on the archive, plus the simulator runs in lane v's brief, with results in the Log |
+
+Ownership:
+- **The scaffold owns the lockfiles' JS side and the version.** It runs `bunx expo install expo-splash-screen` in `apps/mobile` (`apps/mobile/package.json`, `bun.lock`) and sets `apps/mobile/package.json` `version` to `1.0.0`, so no lane edits either file. Lane e owns `Cargo.lock` for its one dependency change.
+- **Lanes a and b meet at fixed paths.** Lane a references `apps/mobile/assets/{icon-light,icon-dark,icon-tinted,splash-icon}.png`; lane b writes them. The scaffold commits the first `node brand/build.mjs` output there, so lane a's prebuild runs before b lands.
+- **Lane c takes files from earlier phases.** It owns `_layout.tsx`, `demo.tsx` and `about.tsx`, which phases 8 and 11 owned and which are merged before this phase starts.
+- **Lane v rebases last.** It writes and fixture-tests its scripts in parallel with the others. Its archive and simulator runs need lanes a to e merged, so it rebases on the phase branch for its final run, as phase 7's j2 did on j1.
+
+#### Scaffold contracts (phase 13)
+
+Inline before dispatch, after the user answers the questions in the "Decisions for the user" list below:
+- **D-entry.** It writes the next free D-entry in `plan/decisions.md`: StatGlass for iPhone on the App Store, distinct from D-015 (the Mac app stays off it).
+  - It records: iPhone only; portrait; Data Not Collected; the privacy policy at `/docs/iphone#privacy`; versions `1.0.0` with the build number `git rev-list --count HEAD`.
+  - It records the user's export compliance answer and the review-access choice.
+- **Installs and assets.**
+  - It runs `bunx expo install expo-splash-screen` and sets `apps/mobile/package.json` `version` to `1.0.0`.
+  - It runs `node brand/build.mjs` once after adding the four mobile outputs as a stub target that copies the touch-icon crop, which lane b replaces.
+- **Contracts.**
+  - The shared constant below in `apps/mobile/src/lib/links.ts`, as a stub lane c fills.
+  - The Make target names below.
+
+```ts
+// apps/mobile/src/lib/links.ts (lane c fills; lane d's anchors must match)
+export const PRIVACY_POLICY_URL = "https://statglass.steamfield.io/docs/iphone#privacy";
+export const SUPPORT_URL = "https://statglass.steamfield.io/docs/iphone#support";
+```
+
+```make
+# Makefile (lane v fills)
+mobile-archive:            # scripts/mobile/archive.sh: Release .xcarchive and App Store .ipa in apps/mobile/dist/ios, no upload
+mobile-release-check:      # scripts/mobile/release-check.sh apps/mobile/dist/ios/StatGlass.xcarchive
+mobile-release-check-test: # scripts/mobile/release-check-test.sh (fixtures, no Xcode project needed)
+```
+
+```rust
+// crates/statglass-ssh/src/dialer/resolve.rs (lane e)
+pub(crate) async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, RemoteError>;
+```
+
+Decisions for the user (asked before the scaffold; the defaults shown are recommendations):
+- **iPad.** Default: iPhone only (`supportsTablet: false`), checked in iPad compatibility mode. Supporting iPad adds a 13-inch screenshot set and layouts the RFC leaves for later.
+- **Export compliance.** The app implements standard algorithms (SSH through russh, ring and p256), not only Apple's. The choices:
+  1. `usesNonExemptEncryption: true` and the "standard algorithms" answer, with a French declaration or with France excluded from the storefronts.
+  2. `false`, on the user's or counsel's reading that an exemption covers it.
+  This phase records the answer; it doesn't make the legal call.
+- **Privacy policy and support hosting.** Default: `docs-site`, at `/docs/iphone#privacy` and `#support`. The user confirms the docs site deploys before submission.
+- **Name and category.**
+  - Default name: "StatGlass" (the App Store name must be unique; fallback "StatGlass Monitor").
+  - Default category: Utilities, with Developer Tools as secondary.
+- **Review access.** Default: demo mode only, explained in the review notes. Optionally, a reachable Linux host with `statglass-agent` for review. Pairing codes expire, so this needs a person available during review.
+
+#### Lane a brief
+- **Goal:** the app config produces an Info.plist and a privacy manifest that pass upload and review.
+- **Interface:** `expoConfigFor(identity, base)`, `appIdentityFromEnv(env)` gaining `buildNumber`.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - Derive the manifest's reasons from evidence: run `pod install` in a scratch prebuild, read the aggregated `PrivacyInfo.xcprivacy`, and add the Rust staticlib's categories.
+  - Restate everything in `ios.privacyManifests`, with a comment per entry naming the caller.
+  - If SQLite's `statfs` is the only DiskSpace use, keep E174.1 and say so in the report. Don't remove SQLite from the phone (`phone_id.rs` needs `statglass-store`).
+- **Decisions already made:** iPhone only; portrait; Data Not Collected; the export compliance value is the scaffold's D-entry; the build number comes from the environment (lane v sets it).
+- **Out of scope:** icons (lane b), routes (lane c), the archive (lane v).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** a real icon in every iOS appearance, and a launch image that matches the theme.
+- **Behavior:**
+  - Extend `brand/build.mjs` with the four `apps/mobile/assets/` outputs as in Test cases, from `statglass-app-icon.svg` and `statglass-icon-dark.svg`, using `rsvg-convert` as today.
+  - The light icon is opaque (flatten onto the squircle's dark fill, as the touch icon does).
+  - Check the result against the macOS icon and the HIG's dark and tinted guidance, and name any difference left.
+- **Decisions already made:** PNG variants, not an Icon Composer file (that needs the GUI tool; a later change can add one); same mark as the Mac app.
+- **Out of scope:** the app config entries (lane a), the App Store marketing art.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+- **Goal:** a release build shows review only what users get, and links its privacy policy.
+- **Interface:** `PRIVACY_POLICY_URL`, `SUPPORT_URL`.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - `debug.tsx` returns `<Redirect href="/" />` unless `__DEV__`, and the root layout registers the debug screen's options only under `__DEV__`.
+  - `demo.tsx` ignores `scenario` unless `__DEV__`.
+  - About's link rows use phase 10's `ListRow` and match the other settings rows.
+  - The reviewer-path test runs on `AppProviders` with `FakeNative`, not `jest.mock` (`.claude/rules/mobile/testing.md`).
+- **Decisions already made:** support goes through GitHub issues via the docs page; no in-app email.
+- **Out of scope:** the welcome layout (phase 11 lane b), the licenses link (phase 11 lane a).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane d brief
+- **Goal:** one public page that is both the iPhone app's privacy policy and its support page.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - Use plain statements a reviewer can check against the app's permission prompts.
+  - Follow `docs-site/AGENTS.md` and the frontmatter of the neighbouring pages (`group`, `order`).
+- **Decisions already made:** hosted on docs-site (pending the user's answer); the website's PostHog text stays in `privacy.md` and isn't repeated.
+- **Out of scope:** App Store marketing copy.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane e brief
+- **Goal:** an IPv4 literal from a pairing payload connects on a NAT64 network, as 2.5.5 requires.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - `connect_tcp` calls `resolve`, and the address order is kept.
+  - `libc` is added under `[target.'cfg(target_vendor = "apple")'.dependencies]` (or reused from the workspace pin).
+  - The `getaddrinfo` result is freed on every path.
+  - Errors keep the existing `RemoteError` kinds.
+- **Decisions already made:** no Happy Eyeballs rewrite; addresses are still tried in order within the deadline.
+- **Out of scope:** Network.framework, and Bonjour.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane v brief
+- **Goal:** one local command builds what the user uploads, one checks it, and one document lists what only the user can do.
+- **Behavior:**
+  - **`archive.sh`:**
+    - Steps: `build-rust-ios.sh`, then `expo prebuild --platform ios --clean` into the gitignored `apps/mobile/ios/`, then `pod install`.
+    - Then `xcodebuild -workspace apps/mobile/ios/StatGlass.xcworkspace -scheme StatGlass -configuration Release -destination generic/platform=iOS -archivePath apps/mobile/dist/ios/StatGlass.xcarchive archive`, with `STATGLASS_MOBILE_BUILD_NUMBER=$(git rev-list --count HEAD)`.
+    - Then `-exportArchive` with `ExportOptions.plist` (`method` `app-store-connect`, `destination` `export`, automatic signing, team from the identity).
+    - It refuses a dirty tree. It never uploads and never touches hosted CI (D-118, D-131).
+  - **`release-check.sh <xcarchive>`** runs every check in Test cases on the archived `.app`:
+    - Info.plist keys via `plutil -extract`.
+    - `PrivacyInfo.xcprivacy` at the bundle root and in each embedded framework.
+    - `nm -u` of the app executable and every embedded binary, against `fixtures/release/required-reason-symbols.txt` (category to symbols, from Apple's list).
+    - `nm -u` of the device slice of `libstatglass_mobile.a` and of the app executable, against `fixtures/release/private-symbols.txt` (`_IOReport*`, `_IOHIDEventSystemClient*`, `_IOHIDServiceClient*`, `_NStat*`, `_SMC*`, any `_IOService*`, `_task_for_pid`; each line with its reason).
+    - `otool -L` load commands: only `/System/Library/Frameworks`, `/usr/lib` and `@rpath` inside the bundle.
+    - `strings` matches for `PrivateFrameworks` and the IOReport text, reported but not failing.
+    - `xcrun assetutil --info` showing AppIcon, and the source icon's hash differing from the placeholder.
+    - `codesign -d --entitlements` with no `get-task-allow`.
+    - No `expo-dev-client` or dev-menu frameworks, and `main.jsbundle` present.
+    - `hermes` signature reported.
+  - **Simulator runs** (a Release build for `iphonesimulator`, following `.claude/skills/ios-simulator/`):
+    - First launch, with a cold install and no hosts: welcome within 3 s, no crash, the reviewer path, `log stream --predicate 'subsystem == "app.statglass"'` with no dial.
+    - An iPad simulator in compatibility mode.
+    - The iPhone Duo closed and open postures, if available.
+    - Light, dark and AX1.
+    - Five demo screenshots at 1206x2622 with `simctl status_bar override`, in `apps/mobile/dist/store/` (gitignored).
+  - **IPv6 locally:** lane e's `[::1]` test, plus `make ssh-docker-test` with the container reached on an IPv6 address if the Docker runtime gives one (else say so). NAT64 itself needs a device on a Mac's NAT64 Internet Sharing network, which is in the checklist.
+  - **`.github/releasing-mobile.md`** holds the runbook and the user's checklist:
+    - **App Store Connect record:** name, bundle id `com.tryopendata.statglass.mobile`, SKU, category.
+    - **URLs:** privacy policy and support.
+    - **App Privacy:** Data Not Collected.
+    - **Export compliance:** the D-entry's answers, and the French declaration if chosen.
+    - **Ratings and labels:** the age rating questionnaire, and the Accessibility Nutrition Labels (voluntary) after an Accessibility Inspector audit of welcome, hosts list, host, one module page and Settings.
+    - **Screenshots:** the iPhone set (and Duo from April 2027 on SDK 27.1+).
+    - **Review notes text:**
+      - There is no account.
+      - Tap "Try demo hosts" on the first screen; the demo hosts are simulated and show every feature.
+      - Real use pairs with StatGlass on a Mac or `statglass-agent` on Linux by scanning a QR code that expires in minutes, so no sample code can be attached.
+      - The camera is used only to scan that code. Local Network is asked only when connecting to a host on the same network. Face ID is the optional App Lock.
+      - Nothing is sent to the developer.
+    - **Device checks:** TestFlight on a device for the camera scanner, the Local Network prompt and `local_network` error, and the Secure Enclave key; the NAT64 Internet Sharing test.
+    - **Upload:** Validate App in Organizer, then the upload (Organizer or Transporter); the user's step.
+    - **After approval:** add the build to `compat/mobile-protocol.json`.
+- **Decisions already made:** local only; no EAS; no upload from scripts; checks fail on symbols, not strings.
+- **Out of scope:** submission, App Store Connect API calls, hosted CI.
+- **Done when:** the table's Done-when conditions are met.
+
 ## Log
 
 - 2026-11-24: plan critique (devils-advocate, opus) returned 8 findings; all verified and applied: lane a ownership (lib.rs, ipc.rs, test_biome_rules.py, comment references), collect gating ownership to lane d, `mobile-release` profile for catch_unwind, types/commands/events/constants split, `@core/*` alias on mobile with Metro `resolveRequest`, core move and Biome overrides and lockfile moved into the scaffold, live-stream and native error model, `CommandError` moving to `statglass-ipc` in phase 3.
@@ -3899,3 +4273,4 @@ export function useTemperatureUnits(): TemperatureUnits; // "C" | "F" from getLo
 - 2026-11-25: The user decided the phone keeps no persistent history (D-152), reversing `plan/rfc-ios-app.md`'s mirror design (4.4, D-146) at the user's request; a note at the top of that RFC points to the change and its body is unchanged. The host answers a new bounded `Query::History` (series, range, point budget, module events, stats in one answer; limits `HISTORY_MAX_POINTS` 500, `HISTORY_MAX_SERIES` 32, `HISTORY_MAX_ANSWER_BYTES` 512 KiB; coarsest tier that covers the budget, persisted rows only; one query per session, two host-wide, `Busy` beyond, a 10 s cache). Phase 7 gains lanes i (phone core without a mirror), j (host history query), k (phone history data, the one cellular switch) and l (logging and the facade test, split from lane d); lane d keeps the session and IPC error work and removes the phone-only `SyncPolicy`/`MirrorPolicy::phone`. The shared wire files moved from lane h to the scaffold. D-152 and D-153 (network addresses) written before any codec change. Offline hosts show dashes and "Offline since", never last readings. The user confirmed a 5 s hosts-list update is fine, so `HostSummary` stays at 5 s with no wire change; the RFC's open question on it is dropped. Phase 8 lane d now also measures history bytes and agent CPU per query (1 h, 24 h, 7 d, 30 d) and during 30 s of range flipping; results go here when run.
 - 2026-11-25: devil's-advocate review of phases 7 to 12, the polish RFC and D-152/D-153, applied. History answers now reach now through the hub's bounded recent rows (`history_through_now`, never the raw ring); events travel as `WireEvent` and `PublicIp`/`HistoryClamp` gain `Unknown` through `Tagged`/`lenient`; the per-session queue replaces only a same-chart query and 3 `Busy` answers end in the chart's load error; the reader gains a layout filter and the row bounds count the M15 read's `tier_1m` union; stats are per series key; hosts-list rows use `net.rx_total`/`net.tx_total`; the CPU heatmap is its own query with a 256-series per-core clamp; an unknown selector is `InvalidArgument`, a known one without data returns gaps. Lane j splits into j1 (read path) and j2 (concurrency, with the limits on `HostServer`); the scaffold cuts the phone's mirror calls so lanes d and i have no merge order, adds `SubscriptionInfo.recent_ms`, `MobileCall::SetProcessInterest` (implemented by 8d) and the facade test seam, removes the phone's dead `SetHostsRecentInterest`, and switches every TS caller to `hostHistory`; lane l's facade test runs over a scripted dialer, and the real end-to-end check is lane i's Docker test; seeds go by retention, with `serve.sh --seed` for the container (8b). The user then decided every host looks up its own public IP (24 h cache, early on a network change, 10 min after a failure, on demand only, no switch) and that the Mac shows addresses for remote hosts (new phase 8 lane e). Phase 11 depends on phase 9.
 - 2026-11-25: Phases 10 to 12 written from the accepted `plan/rfc-ios-polish.md`: phase 10 primitives (lanes a-e; the scaffold does the text variants, the `variant` rename with a `role` alias kept until phase 11 because phase 9 runs beside it, and installs `expo-localization`, `expo-symbols` (the RFC names it as the icon source but its scaffold list omitted it) and `react-native-reorderable-list`), phase 11 surfaces (lanes a, b, c1, c2, d, e; the RFC's lane c split in two because the host screen and the cards together were larger than L), phase 12 module pages (lanes a-c). Settings joins the root stack (architecture I6). The annotation layout model already exists in core (`widget-models/chart-annotation.ts`, with rows and "+N"), so lane 11e only renders pills in a band above the plot.
+- 2026-11-25: Phase 13 (App Store readiness) written at the user's request, after a requirements pass over Apple's and Expo's primary docs and an audit of `apps/mobile` with a scratch-copy prebuild (deleted). Blocking: Expo's blank placeholder icon, no privacy manifest (the Rust staticlib imports `stat`/`statfs` and has none of its own), version 0.0.0 with a fixed build number, no in-app privacy policy link, no export compliance answer, plus phase 8's camera plugin bringing an unused generic microphone string. Six lanes (a M, b S, c M, d S, e S, v L); the user answers iPad, export compliance, privacy page hosting, name and category, and review access before the scaffold. `plan/rfc-ios-polish.md` section 9 moves arch I8 to this phase.
