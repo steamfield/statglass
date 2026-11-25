@@ -257,4 +257,10 @@ fi
   fail "ExportOptions.plist destination must be export"
 pass "local export only"
 
+# The export command runs from its -exportArchive line to the first line without a
+# trailing backslash.
+sed -n '/-exportArchive/,/[^\\]$/p' scripts/mobile/archive.sh | grep -q -- -allowProvisioningUpdates ||
+  fail "the export must let Xcode create a missing distribution certificate"
+pass "export provisions its own signing"
+
 printf 'release-check-test: %d cases passed\n' "$passed"

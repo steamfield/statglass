@@ -75,8 +75,10 @@ step "archive build $STATGLASS_MOBILE_BUILD_NUMBER" xcodebuild \
   -workspace "$mobile/ios/StatGlass.xcworkspace" -scheme StatGlass -configuration Release \
   -destination generic/platform=iOS -archivePath "$archive" \
   DEVELOPMENT_TEAM="$team" CODE_SIGN_STYLE=Automatic CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO archive
+# Automatic signing creates the Apple Distribution certificate and App Store profile on
+# the team's account when this Mac has none; it never uploads (D-158).
 step "export App Store IPA" xcodebuild -exportArchive -archivePath "$archive" \
-  -exportOptionsPlist "$options" -exportPath "$scratch/export"
+  -exportOptionsPlist "$options" -exportPath "$scratch/export" -allowProvisioningUpdates
 
 shopt -s nullglob
 ipas=("$scratch"/export/*.ipa)
