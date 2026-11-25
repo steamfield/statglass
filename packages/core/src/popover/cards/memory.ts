@@ -106,11 +106,12 @@ export function memoryFullLegend(
 function describeMemory(
   pressure: InlineBarModel | undefined,
   segments: readonly StackBarSegment[],
-  items: readonly StatListItem[]
+  items: readonly StatListItem[],
+  hasWarning: boolean
 ): string {
   if (!pressure) return describeStats([...segments, ...items]);
   const reading =
-    pressure.value === MISSING
+    pressure.value === MISSING && !hasWarning
       ? { label: PRESSURE_LABEL, value: MISSING }
       : pressure;
   return describeStats([reading, ...segments, ...items]);
@@ -160,7 +161,12 @@ export function memoryCard(
     items,
     bars,
     get spoken() {
-      return describeMemory(bars[0], segments, items);
+      return describeMemory(
+        bars[0],
+        segments,
+        items,
+        level === "warn" || level === "critical"
+      );
     },
   };
 }

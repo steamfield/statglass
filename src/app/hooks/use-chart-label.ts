@@ -1,9 +1,11 @@
+import { BRUSH_STEP_MS } from "@core/brush";
+import {
+  chartLabelForSpan,
+  hasChartReading,
+  shouldRefreshFigures,
+} from "@core/chart-label";
 import { useRef } from "react";
 import { useOpenEdge } from "~/hooks/use-range-scope";
-
-/** Whether a figures clause carries a reading: a digit, not just a dash. */
-const hasReading = (now: string | undefined) =>
-  now !== undefined && /[0-9]/.test(now);
 
 export interface ChartLabel {
   /** What the chart shows: "CPU", "GPU power", "Network: upload above the line, download below". */
@@ -37,15 +39,21 @@ export function useChartLabel({
   // cost a second render on every new bucket. Figures that never arrived
   // (only "—" while a history read is in flight) don't hold: frames may be
   // stalled, and the edge with them.
-  const key = `${edge}|${subject}|${span}`;
-  const held = useRef({ key, now });
+  const key = `${subject}|${span}`;
+  const stream =
+    edge === null ? null : { bucketMs: BRUSH_STEP_MS, edgeMs: edge };
+  const held = useRef({ key, now, stream });
   if (
-    edge === null ||
+    stream === null ||
     held.current.key !== key ||
-    !hasReading(held.current.now)
+    !hasChartReading(held.current.now) ||
+    shouldRefreshFigures(held.current.stream, stream)
   )
-    held.current = { key, now };
-  const figures = held.current.now;
-  const label = `${subject}, ${span}${figures ? `, ${figures}` : ""}.`;
-  return brushable ? `${label} Drag to select a range.` : label;
+    held.current = { key, now, stream };
+  return chartLabelForSpan({
+    subject,
+    span,
+    now: held.current.now ?? null,
+    brushable,
+  });
 }

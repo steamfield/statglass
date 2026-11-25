@@ -1,54 +1,74 @@
+import { BRUSH_STEP_MS } from "@core/brush";
+import {
+  chartLabel,
+  hasChartReading,
+  shouldRefreshFigures,
+} from "@core/chart-label";
 import { type CeilingState, nextCeiling } from "@core/chart-math";
+import { formatPercent } from "@core/format";
 import type { HostId } from "@core/generated/types";
 import {
   gridIntervalMs,
+  type HostLive,
   ringLoading,
   type SeriesWindow,
   seriesWindow,
-  type WindowState,
 } from "@core/live-state";
-import { scaledWindowMs, spanWords, windowLabel } from "@core/live-window";
+import { scaledWindowMs, windowLabel } from "@core/live-window";
 import { MINUTE_MS } from "@core/time-grid";
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
 import type { Accent } from "@core/widget-models/tokens";
 import { useMemo, useRef } from "react";
-import { shallow } from "zustand/shallow";
 import { useHostLive } from "./live";
 
-function useLiveWindow(host: HostId, baseMs: number) {
-  const state = useHostLive(
-    host,
-    (s) => ({
-      columns: s.columns,
-      layouts: s.layouts,
-      lastTsMs: s.lastTsMs,
-      status: s.status,
-      rowsVersion: s.rowsVersion,
-      connection: s.connection,
-      historyPending: s.historyPending,
-    }),
-    shallow
-  );
-  const windowMs = scaledWindowMs(baseMs, gridIntervalMs(state.status));
-  return { state, windowMs, loading: ringLoading(state, windowMs) };
+interface CardSeriesWindow extends SeriesWindow {
+  windowMs: number;
+  loading: boolean;
+  edgeMs: number | null;
 }
 
-function useSeriesWindow(state: WindowState, key: string, windowMs: number) {
-  const previous = useRef<SeriesWindow | null>(null);
-  return useMemo(() => {
-    const next = seriesWindow(state, key, windowMs);
-    const cached = previous.current;
-    if (
-      cached?.tEndMs === next.tEndMs &&
-      cached.intervalMs === next.intervalMs &&
-      shallow(cached.values, next.values)
-    ) {
-      return cached;
-    }
-    previous.current = next;
-    return next;
-  }, [state, key, windowMs]);
+function sameWindow(a: CardSeriesWindow, b: CardSeriesWindow) {
+  return (
+    a.edgeMs === b.edgeMs &&
+    a.intervalMs === b.intervalMs &&
+    a.windowMs === b.windowMs &&
+    a.loading === b.loading &&
+    a.values.length === b.values.length &&
+    a.values.every((value, index) => Object.is(value, b.values[index]))
+  );
+}
+
+/** A frame can change held readings or other series without changing this chart. */
+function useCardSeriesWindow(host: HostId, key: string, baseMs: number) {
+  const select = useMemo(() => {
+    let cached: { state: HostLive; window: CardSeriesWindow } | undefined;
+    return (state: HostLive): CardSeriesWindow => {
+      const intervalMs = gridIntervalMs(state.status);
+      const windowMs = scaledWindowMs(baseMs, intervalMs);
+      const loading = ringLoading(state, windowMs);
+      const edgeMs = state.lastTsMs;
+      if (
+        cached?.state.rowsVersion === state.rowsVersion &&
+        cached.state.columns === state.columns &&
+        cached.state.layouts === state.layouts &&
+        cached.window.edgeMs === edgeMs &&
+        cached.window.intervalMs === intervalMs &&
+        cached.window.loading === loading
+      ) {
+        return cached.window;
+      }
+      const window = {
+        ...seriesWindow(state, key, windowMs),
+        windowMs,
+        loading,
+        edgeMs,
+      };
+      cached = { state, window };
+      return window;
+    };
+  }, [key, baseMs]);
+  return useHostLive(host, select, sameWindow);
 }
 
 function useCeiling(
@@ -75,21 +95,24 @@ function useCeiling(
 function useLiveChartLabel(
   subject: string,
   windowMs: number,
-  now: string | undefined,
-  scope: string
+  figure: string | undefined,
+  scope: string,
+  edgeMs: number | null
 ) {
-  const readAt = performance.now();
   const key = `${scope}:${subject}:${windowMs}`;
-  const label = useRef({ key, now, readAt });
+  const now = figure === undefined ? null : `now ${figure}`;
+  const stream = edgeMs === null ? null : { bucketMs: BRUSH_STEP_MS, edgeMs };
+  const held = useRef({ key, now, stream });
   if (
-    label.current.key !== key ||
-    !/[0-9]/.test(label.current.now ?? "") ||
-    readAt - label.current.readAt >= 10_000
+    stream === null ||
+    now === null ||
+    held.current.key !== key ||
+    !hasChartReading(held.current.now) ||
+    shouldRefreshFigures(held.current.stream, stream)
   ) {
-    label.current = { key, now, readAt };
+    held.current = { key, now, stream };
   }
-  const figure = label.current.now;
-  return `${subject}, ${spanWords(windowMs, null)}${figure === undefined ? "" : `, now ${figure}`}`;
+  return chartLabel({ subject, spanMs: windowMs, now: held.current.now });
 }
 
 /** Display options for a single series on a live card. */
@@ -101,13 +124,15 @@ export interface CompactStreamOptions {
   /** The subject of the accessible name, such as GPU. */
   subject: string;
   /** The formatted current figure. Omit it to leave the figure out of the name. */
-  now?: string;
+  now?: string | undefined;
   /** Plot height in points. */
   height: number;
   /** A fixed ceiling, such as 100 for a percentage. Omit it to autoscale. */
   yMax?: number;
   /** The minimum ceiling when autoscaling. Defaults to 10. */
   minCeiling?: number;
+  /** Formats the ceiling in the series' units. Defaults to percent for CPU and GPU. */
+  formatCeiling?: (ceiling: number) => string;
   /** Hide chart captions and the midline. */
   bare?: boolean;
 }
@@ -123,15 +148,12 @@ export function useCompactStream(
     height,
     yMax,
     minCeiling = 10,
+    formatCeiling = formatPercent,
     bare = false,
   }: CompactStreamOptions
 ): StreamAreaData | null {
-  const { state, windowMs, loading } = useLiveWindow(host, MINUTE_MS);
-  const { values, tEndMs, intervalMs } = useSeriesWindow(
-    state,
-    seriesKey,
-    windowMs
-  );
+  const { values, tEndMs, intervalMs, windowMs, edgeMs, loading } =
+    useCardSeriesWindow(host, seriesKey, MINUTE_MS);
   const auto = useCeiling(
     values,
     tEndMs,
@@ -143,9 +165,10 @@ export function useCompactStream(
     subject,
     windowMs,
     now,
-    `${host}:${seriesKey}`
+    `${host}:${seriesKey}`,
+    edgeMs
   );
-  const ready = state.lastTsMs !== null || loading;
+  const ready = edgeMs !== null || loading;
   const ceiling = yMax ?? auto;
   return useMemo<StreamAreaData | null>(
     () =>
@@ -161,7 +184,7 @@ export function useCompactStream(
             ariaLabel,
             gridlines: bare ? [] : [ceiling / 2],
             ...(!bare && {
-              ceilingLabel: `${ceiling}%`,
+              ceilingLabel: formatCeiling(ceiling),
               windowLabel: windowLabel(windowMs),
             }),
           }
@@ -178,6 +201,7 @@ export function useCompactStream(
       height,
       ariaLabel,
       bare,
+      formatCeiling,
       windowMs,
     ]
   );
@@ -185,9 +209,9 @@ export function useCompactStream(
 
 /** Prepare the upload and download bars and their held ceilings for a Network card. */
 export function useNetworkBars(host: HostId): MirrorBarsData | null {
-  const { state, windowMs, loading } = useLiveWindow(host, 48_000);
-  const up = useSeriesWindow(state, "net.tx_total", windowMs);
-  const down = useSeriesWindow(state, "net.rx_total", windowMs);
+  const up = useCardSeriesWindow(host, "net.tx_total", 48_000);
+  const down = useCardSeriesWindow(host, "net.rx_total", 48_000);
+  const { windowMs, loading, edgeMs } = up;
   const upMax = useCeiling(
     up.values,
     up.tEndMs,
@@ -202,7 +226,7 @@ export function useNetworkBars(host: HostId): MirrorBarsData | null {
     `${host}:${windowMs}`,
     100_000
   );
-  const ready = state.lastTsMs !== null || loading;
+  const ready = edgeMs !== null || loading;
   return useMemo<MirrorBarsData | null>(
     () =>
       ready
@@ -215,7 +239,11 @@ export function useNetworkBars(host: HostId): MirrorBarsData | null {
             upMax,
             downMax,
             accent: "net",
-            ariaLabel: `Network upload and download, ${spanWords(windowMs, null)}`,
+            ariaLabel: chartLabel({
+              subject: "Network: upload above the line, download below",
+              spanMs: windowMs,
+              now: null,
+            }),
           }
         : null,
     [ready, loading, up, down, upMax, downMax, windowMs]
