@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use rusqlite::params;
-use statglass_schema::{Gap, GapReason, HostId, Module, SeriesKey, Tier};
+use statglass_schema::{Event, EventDetail, Gap, GapReason, HostId, Module, SeriesKey, Tier};
 
 use super::{State, check_stats};
 use crate::blob;
@@ -127,28 +127,7 @@ impl State {
                 report.gaps_written += 1;
             }
         }
-        for e in &page.events {
-            let changed = if let Some(source_id) = e.source_id {
-                if source_id <= 0 {
-                    return Err(StoreError::Corrupt("invalid source event id".into()));
-                }
-                let seq = self.alloc_seq();
-                self.conn.execute(
-                    "INSERT INTO events(host_id,ts,kind,payload,seq,source_epoch,source_id,source_seq,export_id)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?5)
-                     ON CONFLICT(host_id,source_epoch,source_id) DO UPDATE SET
-                       ts=excluded.ts,kind=excluded.kind,payload=excluded.payload,
-                       seq=excluded.seq,source_seq=excluded.source_seq
-                     WHERE excluded.source_seq > events.source_seq",
-                    params![host_ref,e.ts_ms,e.kind,e.payload,seq,page.epoch.to_string(),source_id,e.seq],
-                )? > 0
-            } else {
-                self.upsert_event(host_ref, e.ts_ms, &e.kind, &e.payload)?
-            };
-            if changed {
-                report.events_written += 1;
-            }
-        }
+        self.ingest_events(host_ref, page, &mut report)?;
         self.conn
             .prepare_cached(
                 "INSERT INTO cursors (host_id, tier, epoch, seq, kinds) VALUES (?1, ?2, ?3, ?4, ?5)
@@ -163,6 +142,61 @@ impl State {
                 page.kinds.to_stored()
             ])?;
         Ok(report)
+    }
+
+    fn ingest_events(
+        &mut self,
+        host_ref: i64,
+        page: &CursorPage,
+        report: &mut IngestReport,
+    ) -> Result<()> {
+        let epoch = page.epoch.to_string();
+        for e in &page.events {
+            // Both lookups use the same key as their write, within the page's transaction.
+            let (changed, existed) = if let Some(source_id) = e.source_id {
+                if source_id <= 0 {
+                    return Err(StoreError::Corrupt("invalid source event id".into()));
+                }
+                let existed: bool = self.conn.prepare_cached(
+                    "SELECT EXISTS(SELECT 1 FROM events WHERE host_id = ?1 AND source_epoch = ?2 AND source_id = ?3)",
+                )?.query_row(params![host_ref, epoch, source_id], |r| r.get(0))?;
+                let seq = self.alloc_seq();
+                let changed = self.conn.execute(
+                    "INSERT INTO events(host_id,ts,kind,payload,seq,source_epoch,source_id,source_seq,export_id)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?5)
+                     ON CONFLICT(host_id,source_epoch,source_id) DO UPDATE SET
+                       ts=excluded.ts,kind=excluded.kind,payload=excluded.payload,
+                       seq=excluded.seq,source_seq=excluded.source_seq
+                     WHERE excluded.source_seq > events.source_seq",
+                    params![host_ref,e.ts_ms,e.kind,e.payload,seq,epoch,source_id,e.seq],
+                )? > 0;
+                (changed, existed)
+            } else {
+                let existed: bool = self.conn.prepare_cached(
+                    "SELECT EXISTS(SELECT 1 FROM events WHERE host_id = ?1 AND ts = ?2 AND kind = ?3)",
+                )?.query_row(params![host_ref, e.ts_ms, e.kind], |r| r.get(0))?;
+                (
+                    self.upsert_event(host_ref, e.ts_ms, &e.kind, &e.payload)?,
+                    existed,
+                )
+            };
+            if !changed {
+                continue;
+            }
+            report.events_written += 1;
+            if !existed {
+                match ciborium::from_reader::<Event, _>(e.payload.as_slice()) {
+                    Ok(event) if matches!(event.detail, EventDetail::Alert { .. }) => {
+                        report.alerts_inserted.push(event);
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::debug!(%error, "skipping alert reporting for an unreadable event")
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn record_truncation(

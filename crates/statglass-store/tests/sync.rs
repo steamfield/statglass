@@ -20,12 +20,12 @@ use statglass_proto::{
     decode_message, encode_message, local_features, negotiate,
 };
 use statglass_schema::{
-    Capabilities, Gap, GapReason, HostRecord, Labels, MetricId, Module, SeriesKey, SeriesSelector,
-    SyncKinds, SyncRowKind, Tier,
+    AlertCause, Capabilities, Cmp, Event, EventDetail, Gap, GapReason, HostRecord, Labels,
+    MetricId, Module, SeriesKey, SeriesSelector, SyncKinds, SyncRowKind, Tier,
 };
 use statglass_store::{
-    CursorPage, CursorRead, HistoryQuery, HistoryResult, PageEvent, PageGap, PageLayout, PageRow,
-    Reader, Retention, Store, TierChoice,
+    CursorPage, CursorRead, HistoryQuery, HistoryResult, IngestReport, PageEvent, PageGap,
+    PageLayout, PageRow, Reader, Retention, Store, StoreError, TierChoice,
 };
 use uuid::Uuid;
 
@@ -775,6 +775,199 @@ fn stable_source_rows_update_and_replay_durably() {
             .unwrap(),
         2
     );
+}
+
+#[test]
+fn sync_reports_new_alerts_in_page_order_and_skips_replays_and_updates() {
+    let dir = temp_dir("inserted-alerts");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+
+    let first = alert(T0 + MIN, "High CPU", 90.0);
+    let second = alert(T0, "Sustained CPU", 95.0);
+    let fan = Event {
+        ts_ms: T0 + 1,
+        start_ms: T0,
+        processes: vec![],
+        detail: EventDetail::FansRamped {
+            from_rpm: 1200.0,
+            to_rpm: 3000.0,
+        },
+    };
+    let mut page = event_page(vec![
+        page_event(&first, Some(1), 1),
+        page_event(&fan, Some(2), 2),
+        page_event(&second, Some(3), 3),
+    ]);
+    let first_report = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(
+        first_report,
+        IngestReport {
+            events_written: 3,
+            alerts_inserted: vec![first.clone(), second.clone()],
+            ..IngestReport::default()
+        }
+    );
+
+    let replay = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(replay, IngestReport::default());
+
+    let amended = alert(first.ts_ms, "High CPU", 99.0);
+    page.events = vec![page_event(&amended, Some(1), 4)];
+    page.last_seq = 4;
+    let update = w.ingest_page_durable(h.id, page).unwrap();
+    assert_eq!(
+        update,
+        IngestReport {
+            events_written: 1,
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(
+        mirror
+            .reader()
+            .unwrap()
+            .events(h.id, T0, T0 + HOUR)
+            .unwrap(),
+        [second, fan, amended],
+    );
+}
+
+#[test]
+fn sync_reports_a_legacy_alert_only_when_its_dedupe_key_is_new() {
+    let dir = temp_dir("legacy-alert");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+
+    let first = alert(T0, "High CPU", 90.0);
+    let mut page = event_page(vec![page_event(&first, None, 1)]);
+    let insert = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(
+        insert,
+        IngestReport {
+            events_written: 1,
+            alerts_inserted: vec![first],
+            ..IngestReport::default()
+        }
+    );
+
+    let replay = w.ingest_page_durable(h.id, page.clone()).unwrap();
+    assert_eq!(replay, IngestReport::default());
+
+    let amended = alert(T0, "High CPU", 99.0);
+    page.events = vec![page_event(&amended, None, 2)];
+    page.last_seq = 2;
+    let update = w.ingest_page_durable(h.id, page).unwrap();
+    assert_eq!(
+        update,
+        IngestReport {
+            events_written: 1,
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(
+        mirror
+            .reader()
+            .unwrap()
+            .events(h.id, T0, T0 + HOUR)
+            .unwrap(),
+        [amended],
+    );
+}
+
+#[test]
+fn sync_rolls_back_alerts_and_cursor_when_commit_accounting_fails() {
+    let dir = temp_dir("failed-commit-accounting");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+    w.flush().unwrap();
+    let event = alert(T0, "High CPU", 90.0);
+    let page = event_page(vec![page_event(&event, Some(1), 1)]);
+
+    let conn = rusqlite::Connection::open(mirror.path()).unwrap();
+    conn.execute(
+        "ALTER TABLE docker_accounting RENAME TO hidden_accounting",
+        [],
+    )
+    .unwrap();
+    let error = w.ingest_page_durable(h.id, page.clone()).unwrap_err();
+    let StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, message)) = error else {
+        panic!("expected the accounting query to fail, got {error:?}");
+    };
+    assert_eq!(code.extended_code, rusqlite::ffi::SQLITE_ERROR);
+    assert_eq!(message.as_deref(), Some("no such table: docker_accounting"));
+
+    let mut reader = mirror.reader().unwrap();
+    assert!(reader.events(h.id, T0, T0 + HOUR).unwrap().is_empty());
+    assert!(reader.cursor(h.id, Tier::M1).unwrap().is_none());
+
+    conn.execute(
+        "ALTER TABLE hidden_accounting RENAME TO docker_accounting",
+        [],
+    )
+    .unwrap();
+    let retry = w.ingest_page_durable(h.id, page).unwrap();
+    assert_eq!(
+        retry,
+        IngestReport {
+            events_written: 1,
+            alerts_inserted: vec![event.clone()],
+            ..IngestReport::default()
+        }
+    );
+    assert_eq!(reader.events(h.id, T0, T0 + HOUR).unwrap(), [event]);
+}
+
+fn alert(ts_ms: i64, rule_name: &str, value: f32) -> Event {
+    Event {
+        ts_ms,
+        start_ms: ts_ms - MIN,
+        processes: vec![],
+        detail: EventDetail::Alert {
+            rule_id: Uuid::from_u128(1),
+            rule_name: rule_name.into(),
+            cause: AlertCause::Threshold {
+                metric: key("cpu.total").metric,
+                labels: Labels::default(),
+                value,
+                op: Cmp::Gt,
+                threshold: 80.0,
+                for_secs: 60,
+            },
+        },
+    }
+}
+
+fn page_event(event: &Event, source_id: Option<i64>, seq: i64) -> PageEvent {
+    let mut payload = Vec::new();
+    ciborium::into_writer(event, &mut payload).unwrap();
+    PageEvent {
+        source_id,
+        seq,
+        ts_ms: event.ts_ms,
+        kind: event.detail.kind().into(),
+        payload,
+    }
+}
+
+fn event_page(events: Vec<PageEvent>) -> CursorPage {
+    CursorPage {
+        tier: Tier::M1,
+        epoch: Uuid::new_v4(),
+        kinds: SyncKinds::ALL,
+        layouts: vec![],
+        rows: vec![],
+        gaps: vec![],
+        last_seq: events.last().unwrap().seq,
+        events,
+        more: false,
+    }
 }
 
 #[test]
