@@ -1,10 +1,24 @@
 //! The file-backed [`DeviceKeys`]: StatGlass's edits to `~/.ssh/authorized_keys` (RFC
 //! `plan/rfc-ios-app.md` 2.5). Only `statglass-mobile:` and `statglass-pairing:` lines
 //! are added or removed; every other line is kept byte for byte.
-//!
-//! Scaffold: phase 5 lane a implements the parser and the atomic, locked edits.
+//! Pairing expiries use the host's /etc/localtime zone through seconds, the format sshd reads
+//! starting with OpenSSH 7.7. The pairing protocol also checks its UTC deadline.
+mod expiry;
+
 use crate::device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice};
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::{
+    fs::{self, DirBuilder, File, OpenOptions, Permissions},
+    io::{self, Read, Write},
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    path::{Path, PathBuf},
+};
+use uuid::Uuid;
+
+const KEY_TYPE: &str = "ecdsa-sha2-nistp256";
+const DEVICE: &str = "statglass-mobile:";
+const PAIRING: &str = "statglass-pairing:";
+const KEY_HEADER: &[u8] = b"\0\0\0\x13ecdsa-sha2-nistp256\0\0\0\x08nistp256\0\0\0\x41";
 
 /// One `authorized_keys` file, symlinks followed.
 pub struct AuthorizedKeys {
@@ -14,24 +28,133 @@ pub struct AuthorizedKeys {
 impl AuthorizedKeys {
     /// `~/.ssh/authorized_keys` of the user running this process.
     pub fn for_current_user() -> Result<Self, DeviceKeysError> {
-        let home = std::env::var_os("HOME").ok_or_else(|| {
-            DeviceKeysError::Invalid("HOME is not set, so ~/.ssh cannot be found".into())
-        })?;
-        Ok(Self::at(PathBuf::from(home).join(".ssh/authorized_keys")))
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .ok_or_else(|| {
+                DeviceKeysError::Invalid("HOME does not name an absolute path".into())
+            })?;
+        Ok(Self::at(home.join(".ssh/authorized_keys")))
     }
 
     /// The file at `path`.
     pub fn at(path: PathBuf) -> Self {
         Self { path }
     }
+
+    fn install(&self, token: &str, line: String, key: &str) -> Result<(), DeviceKeysError> {
+        let key = key.trim_end_matches('=').as_bytes();
+        self.edit(true, |current| {
+            for entry in entries(current) {
+                let same_key = entry.key.strip_suffix(b"=").unwrap_or(entry.key) == key;
+                if same_key && entry.token != token.as_bytes() {
+                    return Err(DeviceKeysError::Invalid(
+                        "key is already authorized by another line".into(),
+                    ));
+                }
+                if !same_key && entry.token == token.as_bytes() && decoded_blob(entry.key).is_some()
+                {
+                    return Err(DeviceKeysError::Invalid(format!(
+                        "another key already uses {token}"
+                    )));
+                }
+            }
+            let mut matching = current
+                .split_inclusive(|&byte| byte == b'\n')
+                .filter(|line| entry(line).is_some_and(|entry| entry.token == token.as_bytes()));
+            if matching.next().is_some_and(|existing| {
+                existing.trim_ascii_end() == line.trim_ascii_end().as_bytes()
+            }) && matching.next().is_none()
+            {
+                return Ok(Some(current.to_vec()));
+            }
+            let mut next = without_token(current, token);
+            // Place the entry before an unterminated final line to keep its bytes intact.
+            let end = next
+                .iter()
+                .rposition(|&byte| byte == b'\n')
+                .map_or(0, |i| i + 1);
+            next.splice(end..end, line.bytes());
+            Ok(Some(next))
+        })?;
+        Ok(())
+    }
+
+    fn remove(&self, token: &str) -> Result<bool, DeviceKeysError> {
+        self.edit(false, |current| {
+            let next = without_token(current, token);
+            Ok((next.len() != current.len()).then_some(next))
+        })
+    }
+
+    fn edit(
+        &self,
+        create: bool,
+        change: impl FnMut(&[u8]) -> Result<Option<Vec<u8>>, DeviceKeysError>,
+    ) -> Result<bool, DeviceKeysError> {
+        let directory = parent(&self.path);
+        if create {
+            key_io(
+                DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o700)
+                    .create(directory),
+                "creating",
+                directory,
+            )?;
+        } else if !key_io(directory.try_exists(), "looking for", directory)? {
+            return Ok(false);
+        }
+        let target = key_io(resolve_target(&self.path), "resolving", &self.path)?;
+        if directory.file_name().is_some_and(|name| name == ".ssh") {
+            key_io(
+                fs::set_permissions(directory, Permissions::from_mode(0o700)),
+                "securing",
+                directory,
+            )?;
+        }
+        let lock_path = parent(&target).join(".statglass.lock");
+        let open_lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(&lock_path);
+        let lock = key_io(open_lock, "opening", &lock_path)?;
+        key_io(
+            require_regular(&lock).and_then(|()| lock.lock()),
+            "locking",
+            &lock_path,
+        )?;
+        merge_and_replace(&self.path, &target, change)
+    }
 }
 
-/// Scaffold stubs: every method returns [`DeviceKeysError::NotImplemented`] until phase 5
-/// lane a.
 impl DeviceKeys for AuthorizedKeys {
     fn list_devices(&self) -> Result<Vec<PairedDevice>, DeviceKeysError> {
-        let _ = &self.path;
-        Err(DeviceKeysError::NotImplemented)
+        let Some(file) = key_io(
+            read_keys(&self.path, libc::O_NONBLOCK),
+            "reading",
+            &self.path,
+        )?
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(entries(&file.bytes)
+            .filter_map(|entry| {
+                let tag = DeviceTag::parse(
+                    std::str::from_utf8(entry.token.strip_prefix(DEVICE.as_bytes())?).ok()?,
+                )?;
+                let blob = decoded_blob(entry.key)?;
+                let digest = encode_base64(&Sha256::digest(blob));
+                Some(PairedDevice {
+                    tag,
+                    name: sanitize_name(&String::from_utf8_lossy(entry.name)),
+                    fingerprint: format!("SHA256:{}", digest.trim_end_matches('=')),
+                })
+            })
+            .collect())
     }
 
     fn add_device(
@@ -40,13 +163,21 @@ impl DeviceKeys for AuthorizedKeys {
         name: &str,
         command: &str,
     ) -> Result<DeviceTag, DeviceKeysError> {
-        let _ = (key, name, command);
-        Err(DeviceKeysError::NotImplemented)
+        let key_text = encode_key(key)?;
+        let command = escape_option(command)?;
+        let tag = DeviceTag::from_key(key);
+        let token = format!("{DEVICE}{tag}");
+        let comment = format!("{token} {}", sanitize_name(name));
+        let line = format!(
+            "restrict,command=\"{command}\" {KEY_TYPE} {key_text} {}\n",
+            comment.trim_end()
+        );
+        self.install(&token, line, &key_text)?;
+        Ok(tag)
     }
 
     fn revoke(&self, tag: DeviceTag) -> Result<bool, DeviceKeysError> {
-        let _ = tag;
-        Err(DeviceKeysError::NotImplemented)
+        self.remove(&format!("{DEVICE}{tag}"))
     }
 
     fn add_pairing(
@@ -56,12 +187,406 @@ impl DeviceKeys for AuthorizedKeys {
         expires_ms: i64,
         command: &str,
     ) -> Result<(), DeviceKeysError> {
-        let _ = (key, nonce, expires_ms, command);
-        Err(DeviceKeysError::NotImplemented)
+        let token = pairing_token(nonce)?;
+        let key = encode_key(key)?;
+        let command = escape_option(command)?;
+        let expiry = expiry::format(expires_ms)?;
+        let line = format!(
+            "restrict,expiry-time=\"{expiry}\",command=\"{command}\" {KEY_TYPE} {key} {token}\n"
+        );
+        self.install(&token, line, &key)
     }
 
     fn remove_pairing(&self, nonce: &str) -> Result<bool, DeviceKeysError> {
-        let _ = nonce;
-        Err(DeviceKeysError::NotImplemented)
+        self.remove(&pairing_token(nonce)?)
+    }
+}
+
+fn pairing_token(nonce: &str) -> Result<String, DeviceKeysError> {
+    if nonce.len() != 32 || !nonce.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(DeviceKeysError::Invalid(
+            "expected a 128-bit hex pairing nonce".into(),
+        ));
+    }
+    Ok(format!("{PAIRING}{nonce}"))
+}
+
+fn sanitize_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || " ._-".contains(*c))
+        .take(32)
+        .collect()
+}
+
+// The caller supplies a shell command with the executable and any paths already quoted.
+// OpenSSH's command option unescapes double quotes and copies other backslashes literally.
+fn escape_option(command: &str) -> Result<String, DeviceKeysError> {
+    if command.trim().is_empty() || command.chars().any(char::is_control) || command.ends_with('\\')
+    {
+        return Err(DeviceKeysError::Invalid("invalid forced command".into()));
+    }
+    Ok(command.replace('"', "\\\""))
+}
+
+struct Entry<'a> {
+    token: &'a [u8],
+    key: &'a [u8],
+    name: &'a [u8],
+}
+
+fn entries(bytes: &[u8]) -> impl Iterator<Item = Entry<'_>> {
+    bytes.split(|&byte| byte == b'\n').filter_map(entry)
+}
+
+fn entry(line: &[u8]) -> Option<Entry<'_>> {
+    let line = line.trim_ascii();
+    if line.starts_with(b"#") {
+        return None;
+    }
+    let (first, rest) = field(line)?;
+    let key_fields = if first == KEY_TYPE.as_bytes() {
+        rest
+    } else {
+        let (kind, rest) = field(rest)?;
+        if kind != KEY_TYPE.as_bytes() {
+            return None;
+        }
+        rest
+    };
+    let (key, comment) = field(key_fields)?;
+    let (token, name) = field(comment).unwrap_or_default();
+    Some(Entry { token, key, name })
+}
+
+// Whitespace inside quoted key options is part of the field. This mirrors OpenSSH's
+// handling of a backslash followed by a double quote, including inside other options.
+fn field(line: &[u8]) -> Option<(&[u8], &[u8])> {
+    if line.is_empty() {
+        return None;
+    }
+    let mut quoted = false;
+    let mut bytes = line.iter().enumerate().peekable();
+    while let Some((index, &byte)) = bytes.next() {
+        match byte {
+            b'\\' if bytes.peek().is_some_and(|&(_, next)| *next == b'"') => {
+                bytes.next();
+            }
+            b'"' => quoted = !quoted,
+            b' ' | b'\t' if !quoted => {
+                return Some((&line[..index], line[index..].trim_ascii_start()));
+            }
+            _ => {}
+        }
+    }
+    (!quoted).then_some((line, &[]))
+}
+
+fn without_token(bytes: &[u8], token: &str) -> Vec<u8> {
+    bytes
+        .split_inclusive(|&byte| byte == b'\n')
+        .filter(|line| entry(line).is_none_or(|entry| entry.token != token.as_bytes()))
+        .flatten()
+        .copied()
+        .collect()
+}
+
+fn encode_key(key: &EcdsaP256Public) -> Result<String, DeviceKeysError> {
+    if !valid_key(&key.0) {
+        return Err(DeviceKeysError::Invalid(
+            "expected a valid uncompressed P-256 key".into(),
+        ));
+    }
+    let blob = [KEY_HEADER, key.0.as_slice()].concat();
+    Ok(encode_base64(&blob))
+}
+
+fn valid_key(point: &[u8]) -> bool {
+    point.len() == 65
+        && point.first() == Some(&4)
+        && p256::PublicKey::from_sec1_bytes(point).is_ok()
+}
+
+const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn encode_base64(bytes: &[u8]) -> String {
+    let mut result = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let [a, b, c] = std::array::from_fn(|i| chunk.get(i).copied().unwrap_or(0));
+        let values = [
+            a >> 2,
+            ((a & 3) << 4) | (b >> 4),
+            ((b & 15) << 2) | (c >> 6),
+            c & 63,
+        ];
+        result.extend(
+            values
+                .iter()
+                .take(chunk.len() + 1)
+                .map(|&value| char::from(BASE64[usize::from(value)])),
+        );
+        result.extend(std::iter::repeat_n('=', 3 - chunk.len()));
+    }
+    result
+}
+
+fn decoded_blob(text: &[u8]) -> Option<Vec<u8>> {
+    let mut bits = 0;
+    let mut value = 0u16;
+    let mut blob = Vec::new();
+    let text = text.strip_suffix(b"=").unwrap_or(text);
+    for byte in text {
+        let digit = BASE64.iter().position(|entry| entry == byte)? as u16;
+        value = (value << 6) | digit;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            blob.push((value >> bits) as u8);
+        }
+    }
+    let point = blob.strip_prefix(KEY_HEADER)?;
+    (valid_key(point) && encode_base64(&blob).trim_end_matches('=').as_bytes() == text)
+        .then_some(blob)
+}
+
+fn parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|part| !part.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+fn resolve_target(path: &Path) -> io::Result<PathBuf> {
+    let mut path = path.to_path_buf();
+    // Canonicalize the directory and follow the final links even if the target is
+    // missing. Each alias then uses the same lock and rename directory.
+    for _ in 0..40 {
+        let name = path.file_name().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "authorized_keys needs a file name",
+            )
+        })?;
+        let directory = fs::canonicalize(parent(&path))?;
+        path = directory.join(name);
+        match fs::read_link(&path) {
+            Ok(target) => path = directory.join(target),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::InvalidInput | io::ErrorKind::NotFound
+                ) =>
+            {
+                return Ok(path);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "too many authorized_keys symlinks",
+    ))
+}
+
+#[derive(PartialEq)]
+struct KeysFile {
+    bytes: Vec<u8>,
+    mode: u32,
+}
+
+fn require_regular(file: &File) -> io::Result<()> {
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a regular file",
+        ));
+    }
+    Ok(())
+}
+
+fn read_keys(path: &Path, flags: i32) -> io::Result<Option<KeysFile>> {
+    let mut file = match OpenOptions::new().read(true).custom_flags(flags).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    require_regular(&file)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(Some(KeysFile {
+        bytes,
+        mode: file.metadata()?.permissions().mode() & 0o7777,
+    }))
+}
+
+fn merge_and_replace(
+    path: &Path,
+    target: &Path,
+    mut change: impl FnMut(&[u8]) -> Result<Option<Vec<u8>>, DeviceKeysError>,
+) -> Result<bool, DeviceKeysError> {
+    let read = || {
+        key_io(
+            read_keys(target, libc::O_NOFOLLOW | libc::O_NONBLOCK),
+            "reading",
+            target,
+        )
+    };
+    let mut current = read()?;
+    for _ in 0..4 {
+        let Some(bytes) = change(current.as_ref().map_or(&[], |file| file.bytes.as_slice()))?
+        else {
+            return Ok(false);
+        };
+        let next = KeysFile { bytes, mode: 0o600 };
+        if current.as_ref() == Some(&next) {
+            return Ok(false);
+        }
+        let temp = parent(target).join(format!(".statglass-{}.tmp", Uuid::new_v4()));
+        let staged = key_io(
+            StagedFile::create(temp.clone(), &next.bytes),
+            "staging",
+            &temp,
+        )?;
+        if key_io(resolve_target(path), "resolving", path)? != target {
+            return Err(DeviceKeysError::Invalid(format!(
+                "{} changed targets during the edit",
+                path.display()
+            )));
+        }
+        // A writer that ignores our lock may have changed the file while we staged
+        // and flushed the edit. Merge against the latest bytes before renaming.
+        let latest = read()?;
+        if latest == current {
+            key_io(fs::rename(&staged.0, target), "replacing", target)?;
+            return Ok(true);
+        }
+        current = latest;
+    }
+    key_io(
+        Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "authorized_keys kept changing during edit",
+        )),
+        "replacing",
+        target,
+    )
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{operation} {}", path.display())]
+struct KeyFileIo {
+    operation: &'static str,
+    path: PathBuf,
+    #[source]
+    source: io::Error,
+}
+
+fn key_io<T>(
+    result: io::Result<T>,
+    operation: &'static str,
+    path: &Path,
+) -> Result<T, DeviceKeysError> {
+    result.map_err(|source| {
+        io::Error::new(
+            source.kind(),
+            KeyFileIo {
+                operation,
+                path: path.to_path_buf(),
+                source,
+            },
+        )
+        .into()
+    })
+}
+
+#[derive(Debug)]
+struct StagedFile(PathBuf);
+
+impl StagedFile {
+    fn create(path: PathBuf, bytes: &[u8]) -> io::Result<Self> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)?;
+        let staged = Self(path);
+        file.set_permissions(Permissions::from_mode(0o600))?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(staged)
+    }
+}
+
+impl Drop for StagedFile {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_file(&self.0)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            tracing::warn!(path = %self.0.display(), error = &error as &dyn std::error::Error, "removing staged authorized_keys");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merges_an_append_made_after_the_initial_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("authorized_keys");
+        fs::write(&path, b"original\n").unwrap();
+        let keys = AuthorizedKeys::at(path.clone());
+        let mut appended = false;
+        keys.edit(true, |current| {
+            let mut next = current.to_vec();
+            next.extend_from_slice(b"our line\n");
+            if !appended {
+                OpenOptions::new()
+                    .append(true)
+                    .open(&path)?
+                    .write_all(b"other line\r\n")?;
+                appended = true;
+            }
+            Ok(Some(next))
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read(path).unwrap(),
+            b"original\nother line\r\nour line\n"
+        );
+    }
+
+    #[test]
+    fn an_edit_does_not_commit_to_a_retargeted_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("authorized_keys");
+        let original = dir.path().join("original");
+        let replacement = dir.path().join("replacement");
+        let redirected = dir.path().join("redirected");
+        fs::write(&original, b"original\n").unwrap();
+        fs::write(&replacement, b"replacement\n").unwrap();
+        std::os::unix::fs::symlink(&original, &link).unwrap();
+        std::os::unix::fs::symlink(&replacement, &redirected).unwrap();
+        let keys = AuthorizedKeys::at(link.clone());
+        let result = keys.edit(true, |_| {
+            fs::rename(&redirected, &link)?;
+            Ok(Some(b"our edit\n".to_vec()))
+        });
+        assert!(result.is_err());
+        assert_eq!(fs::read(&original).unwrap(), b"original\n");
+        assert_eq!(fs::read(&link).unwrap(), b"replacement\n");
+    }
+
+    #[test]
+    fn an_existing_temporary_file_is_never_removed_by_a_failed_stage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("existing");
+        fs::write(&path, b"other writer").unwrap();
+        assert_eq!(
+            StagedFile::create(path.clone(), b"ours")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(path).unwrap(), b"other writer");
     }
 }

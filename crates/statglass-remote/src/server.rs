@@ -1,4 +1,4 @@
-use crate::{RemoteError, Result, codec, socket};
+use crate::{RemoteError, Result, SessionScope, codec, read_preface, socket};
 use statglass_engine::{BusMsg, LiveHub, ProcessSample};
 use statglass_proto::{Hello, Message, RemoteInterest, SourceStatus, SyncRequest, WireProcess};
 use statglass_schema::{OsKind, SyncKinds};
@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite},
     sync::watch,
 };
 
@@ -34,7 +34,7 @@ pub trait ServerProvider: Send + Sync + 'static {
     /// The session ended: release what its queries hold.
     fn end_session(&self, session: u64);
     /// Where restricted connections record their device's last-seen time; `None` keeps
-    /// no log (the default, and every full-session host).
+    /// no log (the default). Full sessions never record to it.
     fn device_seen(&self) -> Option<&crate::DeviceSeenLog> {
         None
     }
@@ -104,7 +104,7 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     let (mut reader, mut writer) = tokio::io::split(stream);
     let hello = provider.hello();
     codec::write(&mut writer, &Message::Hello(Box::new(hello.clone()))).await?;
-    let ack = tokio::time::timeout(Duration::from_secs(5), codec::read(&mut reader))
+    let (scope, ack) = tokio::time::timeout(Duration::from_secs(5), read_ack(&mut reader))
         .await
         .map_err(|_| RemoteError::Transport("handshake deadline".into()))??;
     let Message::HelloAck(ack) = ack else {
@@ -118,6 +118,21 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
         return Err(RemoteError::Incompatible(
             "unsupported acknowledgement/features".into(),
         ));
+    }
+    if let SessionScope::Restricted { device } = scope
+        && provider.device_seen().is_some()
+    {
+        let provider = provider.clone();
+        let now_ms = statglass_engine::wall_ms();
+        if let Err(error) = tokio::task::spawn_blocking(move || {
+            if let Some(log) = provider.device_seen() {
+                log.record(device, now_ms);
+            }
+        })
+        .await
+        {
+            tracing::warn!(%device, error = &error as &dyn std::error::Error, "recording device connection");
+        }
     }
     let kinds = SyncKinds::from_features(ack.features.iter().map(String::as_str));
     let session = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
@@ -147,6 +162,7 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
         writer,
         session,
         kinds,
+        scope,
         interest,
         last_layout,
         last_process,
@@ -164,6 +180,16 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     }
 }
 
+async fn read_ack(reader: &mut (impl AsyncRead + Unpin)) -> Result<(SessionScope, Message)> {
+    let (scope, prefix) = read_preface(reader).await.map_err(|error| match error {
+        crate::ScopeError::Io(error) => error.into(),
+        crate::ScopeError::Preface(..) => RemoteError::Protocol(error.to_string()),
+    })?;
+    let prefix = prefix.as_ref().map_or(&[][..], |bytes| bytes.as_slice());
+    let ack = codec::read(&mut prefix.chain(reader)).await?;
+    Ok((scope, ack))
+}
+
 struct Connection<W> {
     answering: crate::answering::Answering,
     provider: Arc<dyn ServerProvider>,
@@ -172,6 +198,7 @@ struct Connection<W> {
     writer: W,
     session: u64,
     kinds: SyncKinds,
+    scope: SessionScope,
     interest: RemoteInterest,
     last_layout: Option<u32>,
     last_process: tokio::time::Instant,
@@ -274,6 +301,19 @@ impl<W: AsyncWrite + Unpin> Connection<W> {
     }
     /// Answers off the session loop, so a slow query never holds back live frames.
     async fn request(&mut self, id: u32, query: statglass_proto::Query) -> Result<()> {
+        if !self.scope.allows(&query) {
+            return codec::write(
+                &mut self.writer,
+                &Message::Reply {
+                    id,
+                    answer: statglass_proto::Answer::Error {
+                        code: statglass_proto::ErrorCode::Unsupported,
+                        message: "query unavailable in a restricted session".into(),
+                    },
+                },
+            )
+            .await;
+        }
         match self.answering.start(id, query) {
             Some(busy) => codec::write(&mut self.writer, &busy).await,
             None => Ok(()),
