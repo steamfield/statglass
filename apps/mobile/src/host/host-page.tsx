@@ -63,9 +63,9 @@ export function HostPage({
 
 const styles = StyleSheet.create({
   content: {
-    gap: 16,
+    gap: 12,
     paddingHorizontal: 16,
     paddingBottom: 20,
-    paddingTop: 12,
+    paddingTop: 8,
   },
 });

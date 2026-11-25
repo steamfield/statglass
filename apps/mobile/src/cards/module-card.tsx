@@ -133,7 +133,7 @@ export function ModuleCard({
     >
       <Pressable
         {...pressableAccessibility}
-        className="min-h-[44px] gap-2 p-3"
+        className="min-h-[44px] gap-1 px-3 pt-3 pb-2"
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityValue={value}

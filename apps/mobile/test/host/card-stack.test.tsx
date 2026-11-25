@@ -14,7 +14,12 @@ import * as Haptics from "expo-haptics";
 import { ExpoRoot, Stack, usePathname } from "expo-router";
 import { getMockContext } from "expo-router/testing-library";
 import type { ProfilerOnRenderCallback } from "react";
-import { ActionSheetIOS, AppState, Text, type ViewProps } from "react-native";
+import {
+  type AccessibilityActionInfo,
+  ActionSheetIOS,
+  AppState,
+  Text,
+} from "react-native";
 import {
   NestedReorderableList,
   type ReorderableListProps,
@@ -230,6 +235,8 @@ function dragCallbacks() {
 }
 
 const cpuButton = () => screen.getByRole("button", { name: /^CPU,/ });
+// The touch controls and their text sit inside the grouped VoiceOver card.
+const cardContents = { includeHiddenElements: true };
 
 function visibleCardTitles() {
   return within(screen.getByLabelText("Module cards"))
@@ -246,21 +253,26 @@ test("the density chevron plays a light haptic and saves density across a remoun
     .spyOn(Haptics, "impactAsync")
     .mockResolvedValue(undefined);
   const view = await openCards({ storage });
-  expect(within(cpuButton()).getByText("User")).toBeOnTheScreen();
-  const chevron = screen.queryByRole("button", { name: "Compact CPU card" });
-  if (chevron) await fireEvent.press(chevron);
-  else await fireEvent(cpuButton(), "toggleDensity");
+  expect(within(cpuButton()).getByText("User", cardContents)).toBeOnTheScreen();
+  const chevron = screen.getByLabelText("Compact CPU card", cardContents);
+  await fireEvent.press(chevron);
   expect(impact.mock.calls).toEqual([[Haptics.ImpactFeedbackStyle.Light]]);
-  expect(within(cpuButton()).queryByText("User")).toBeNull();
+  expect(
+    screen.getByLabelText("Expand CPU card", cardContents)
+  ).toBeOnTheScreen();
+  expect(within(cpuButton()).queryByText("User", cardContents)).toBeNull();
   await act(() => jest.advanceTimersByTimeAsync(500));
   await view.unmount();
   await openCards({ storage });
-  expect(within(cpuButton()).queryByText("User")).toBeNull();
+  expect(
+    screen.getByLabelText("Expand CPU card", cardContents)
+  ).toBeOnTheScreen();
+  expect(within(cpuButton()).queryByText("User", cardContents)).toBeNull();
 });
 
 test("the card body opens the selected module", async () => {
   await openCards();
-  await fireEvent.press(cpuButton());
+  await fireEvent.press(within(cpuButton()).getByText("CPU", cardContents));
   expect(await screen.findByText(`/${MOCK_HOST_ID}/cpu`)).toBeOnTheScreen();
 });
 
@@ -318,76 +330,62 @@ test("releasing a hold without moving shows the native menu and applies each cho
     sheet.mockClear();
   }
   await release(1, "Compact", 0);
-  expect(screen.queryByText("Swap")).not.toBeOnTheScreen();
+  expect(
+    screen.getByLabelText("Expand Memory card", cardContents)
+  ).toBeOnTheScreen();
+  expect(screen.queryByText("Swap", cardContents)).not.toBeOnTheScreen();
   await release(1, "Expand", 0);
-  expect(screen.getByText("Swap")).toBeOnTheScreen();
+  expect(
+    screen.getByLabelText("Compact Memory card", cardContents)
+  ).toBeOnTheScreen();
+  expect(screen.getByText("Swap", cardContents)).toBeOnTheScreen();
   await release(1, "Compact", 2);
   expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
   await release(0, "Compact", 3);
   expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
-  expect(screen.getByText("Swap")).toBeOnTheScreen();
+  expect(screen.getByText("Swap", cardContents)).toBeOnTheScreen();
   await release(0, "Compact", 1);
   expect(await screen.findByText(`/${MOCK_HOST_ID}/memory`)).toBeOnTheScreen();
 });
 
-type CardActions = Required<
-  Pick<ViewProps, "accessibilityActions" | "onAccessibilityAction">
->;
-
-function cpuActionProps(node: ReturnType<typeof cpuButton>) {
-  // In the scaffold, the callbacks reach the card adapter. Lane c2
-  // forwards the same callbacks to the native accessibility target.
-  for (let fiber = node.unstable_fiber; fiber; fiber = fiber.return) {
-    const props = fiber.memoizedProps as Partial<CardActions> | null;
-    if (
-      props?.onAccessibilityAction &&
-      props.accessibilityActions?.some(
-        ({ label }) => label === "Toggle compact"
-      )
-    ) {
-      return {
-        accessibilityActions: props.accessibilityActions,
-        onAccessibilityAction: props.onAccessibilityAction,
-        native: fiber === node.unstable_fiber,
-      };
-    }
-  }
-  throw new Error("Expected CPU's VoiceOver actions");
-}
-
-test("VoiceOver can move a card both ways, toggle density and open its module", async () => {
+test("one VoiceOver target per card can change density, open and reorder", async () => {
   await openCards();
-  async function perform(label: string) {
-    const node = cpuButton();
-    const { accessibilityActions, onAccessibilityAction, native } =
-      cpuActionProps(node);
-    expect(accessibilityActions.map(({ label }) => label)).toEqual([
-      "Toggle compact",
-      "Open",
-      ...(label === "Move up" ? ["Move up", "Move down"] : ["Move down"]),
-    ]);
+  const memoryButton = () => screen.getByRole("button", { name: /^Memory,/ });
+  const actions: AccessibilityActionInfo[] =
+    memoryButton().props.accessibilityActions;
+  expect(actions.map(({ label }) => label)).toEqual([
+    "Toggle compact",
+    "Open",
+    "Move up",
+    "Move down",
+    "Move to top",
+  ]);
+  expect(within(memoryButton()).queryAllByRole("button")).toHaveLength(0);
+  expect(screen.queryByLabelText("Compact Memory card")).toBeNull();
+
+  async function perform(node: ReturnType<typeof cpuButton>, label: string) {
+    const accessibilityActions: AccessibilityActionInfo[] =
+      node.props.accessibilityActions;
     const action = accessibilityActions.find(
       (action) => action.label === label
     );
-    if (!action) throw new Error(`Missing ${label} on CPU`);
-    const event = { nativeEvent: { actionName: action.name } };
-    if (native) await fireEvent(node, "accessibilityAction", event);
-    else
-      await act(() =>
-        onAccessibilityAction(
-          event as Parameters<
-            NonNullable<CardActions["onAccessibilityAction"]>
-          >[0]
-        )
-      );
+    if (!action) throw new Error(`Missing ${label} on card`);
+    await fireEvent(node, "accessibilityAction", {
+      nativeEvent: { actionName: action.name },
+    });
   }
-  await perform("Move down");
+  await perform(cpuButton(), "Move down");
   expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
-  await perform("Move up");
+  await perform(cpuButton(), "Move up");
   expect(visibleCardTitles().slice(0, 2)).toEqual(["CPU", "Memory"]);
-  await perform("Toggle compact");
-  expect(within(cpuButton()).queryByText("User")).toBeNull();
-  await perform("Open");
+  await perform(memoryButton(), "Move to top");
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
+  await perform(cpuButton(), "Toggle compact");
+  expect(
+    screen.getByLabelText("Expand CPU card", cardContents)
+  ).toBeOnTheScreen();
+  expect(within(cpuButton()).queryByText("User", cardContents)).toBeNull();
+  await perform(cpuButton(), "Open");
   expect(await screen.findByText(`/${MOCK_HOST_ID}/cpu`)).toBeOnTheScreen();
 });
 
