@@ -5,15 +5,19 @@
 import type { LiveMsg } from "@core/generated/types";
 import { SCENARIOS } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import { useRootNavigationState, useRouter } from "expo-router";
+import { useNavigationContainerRef, useRouter } from "expo-router";
 import {
+  createContext,
   createElement,
-  Fragment,
   type JSX,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
+  useRef,
 } from "react";
+import { useNativeCore } from "@/transport";
 import type { PhoneTransport } from "./seam";
 import {
   useIsDemo,
@@ -86,62 +90,71 @@ export function createDemoTransport(scenario?: string): DemoTransport {
   };
 }
 
-/** Disposes demo tickers when the session ends, the transport changes or the root unmounts. */
-function useDemoLifetime(hasDemoRoute: boolean) {
-  const transport = useOptionalPhoneTransport();
-  const demo = useIsDemo();
-  const setTransport = useSetPhoneTransport();
-  useEffect(() => {
-    if (demo && !hasDemoRoute) setTransport(null, false);
-  }, [demo, hasDemoRoute, setTransport]);
-  useEffect(() => {
-    if (
-      demo &&
-      transport &&
-      "dispose" in transport &&
-      typeof transport.dispose === "function"
-    ) {
-      const dispose = transport.dispose.bind(transport);
-      return dispose;
-    }
-  }, [demo, transport]);
+interface DemoSession {
+  active: boolean;
+  start(scenario?: string): void;
+  exit(): void;
 }
 
-/** Keeps the demo alive while its routes remain in the navigation stack. */
+const DemoContext = createContext<DemoSession | null>(null);
+
+/** Owns the mock transport for the duration of a demo session. */
 export function DemoProvider({
   children,
 }: {
   children: ReactNode;
 }): JSX.Element {
-  const root = useRootNavigationState();
-  const stack = root?.routes[root.index]?.state;
-  // A screen can cover the hosts stack while it remains in the back history.
-  const hasDemoRoute = stack?.routes.some(
-    ({ name }) => name === "demo" || name === "(hosts)"
-  );
-  useDemoLifetime(hasDemoRoute ?? false);
-  return createElement(Fragment, null, children);
-}
-
-export function useDemo(): {
-  active: boolean;
-  start(scenario?: string): void;
-  exit(): void;
-} {
   const active = useIsDemo();
+  const transport = useOptionalPhoneTransport();
   const setTransport = useSetPhoneTransport();
+  const { core } = useNativeCore();
   const router = useRouter();
+  const navigation = useNavigationContainerRef();
+  const owned = useRef<DemoTransport | null>(null);
+  const dispose = useCallback(() => {
+    owned.current?.dispose();
+    owned.current = null;
+  }, []);
+
+  useEffect(() => dispose, [dispose]);
+  useEffect(() => {
+    // The demo route can start the session in a child effect before selection commits.
+    if (transport === null || transport !== owned.current) return;
+    return () => {
+      if (transport === owned.current) dispose();
+    };
+  }, [dispose, transport]);
+
   const start = useCallback(
     (scenario?: string) => {
-      setTransport(createDemoTransport(scenario), true);
+      dispose();
+      const next = createDemoTransport(scenario);
+      owned.current = next;
+      setTransport(next, true);
       router.replace("/(hosts)");
     },
-    [router, setTransport]
+    [dispose, router, setTransport]
   );
   const exit = useCallback(() => {
-    if (!active) return;
-    setTransport(null, false);
-    router.replace("/");
-  }, [active, router, setTransport]);
-  return { active, start, exit };
+    const demo = owned.current;
+    if (!demo) return;
+    dispose();
+    setTransport(core, false, demo);
+    // The hosts index shares the `/` path. Target the welcome route in the root stack.
+    const root = navigation.getRootState();
+    const target = root.routes[root.index]?.state?.key ?? root.key;
+    navigation.dispatch({
+      type: "REPLACE",
+      payload: { name: "index" },
+      target,
+    });
+  }, [core, dispose, navigation, setTransport]);
+  const value = useMemo(() => ({ active, start, exit }), [active, start, exit]);
+  return createElement(DemoContext.Provider, { value }, children);
+}
+
+export function useDemo(): DemoSession {
+  const demo = useContext(DemoContext);
+  if (!demo) throw new Error("useDemo requires DemoProvider");
+  return demo;
 }

@@ -103,7 +103,7 @@ test("rejects an empty paste and previews a trimmed offer before dialing", async
     expect(screen.getByText(value)).toBeOnTheScreen();
   }
   expect(
-    screen.getByText("This host can also add the hosts it monitors.")
+    screen.getByText("Can also add the hosts it monitors")
   ).toBeOnTheScreen();
   expect(pairing.previewPairing).toHaveBeenCalledWith("SGP1:offer");
   expect(pairing.pair).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ test("shows the waiting code and leaves a late approval alone after Cancel", asy
   const { pairing, pending } = fixture({ os: "macOS 26" });
   const { onPaired } = await renderFlow(pairing);
   await preview("SGP1:offer");
-  expect(screen.queryByText(/This host can also add/)).toBeNull();
+  expect(screen.queryByText(/Can also add the hosts/)).toBeNull();
   await press("Confirm");
   expect(
     screen.getByRole("header", { name: "Waiting for approval on Build host" })

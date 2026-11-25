@@ -1,15 +1,12 @@
 import type { PairingPreview } from "@core/generated/types";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import { Icon, type IconName } from "@/ui/icons";
 import { Text } from "@/ui/text";
-import { useThemeColors } from "@/ui/theme-colors";
 import { PairAction } from "./action";
+import { PairingStep } from "./pairing-step";
 
-const GLYPHS = new Map([
-  ["macos", "M3 3h14v10H3z M7 17h6m-3-4v4"],
-  ["linux", "M3 4h14v12H3z M6 7l3 3-3 3m5 0h3"],
-]);
+const GLYPHS = new Map<string, IconName>([["macos", "apple.logo"]]);
 
 function Countdown({ expires }: { expires: number }) {
   const [now, setNow] = useState(Date.now);
@@ -38,21 +35,22 @@ export function Preview({
   confirm(): void;
   cancel(): void;
 }) {
-  const colors = useThemeColors();
   const platform = offer.os.toLowerCase().split(" ")[0] ?? "";
-  const glyph = GLYPHS.get(platform) ?? "M3 4h14v12H3z";
+  const glyph = GLYPHS.get(platform) ?? "server.rack";
   return (
-    <>
+    <PairingStep
+      title="Check the host"
+      explanation="Confirm this is the host you want to add."
+      actions={
+        <>
+          <PairAction label="Confirm" onPress={confirm} />
+          <PairAction label="Cancel" secondary onPress={cancel} />
+        </>
+      }
+    >
       <View className="gap-2 rounded-xl border border-border bg-card p-4">
         <View className="flex-row items-center gap-2">
-          <Svg width={20} height={20} viewBox="0 0 20 20" accessible={false}>
-            <Path
-              d={glyph}
-              fill="none"
-              stroke={colors.foreground}
-              strokeWidth={1.5}
-            />
-          </Svg>
+          <Icon name={glyph} size={20} />
           <Text variant="title" className="shrink">
             {offer.name}
           </Text>
@@ -65,15 +63,11 @@ export function Preview({
           </Text>
         ))}
         {offer.can_hand_over && (
-          <Text variant="body">
-            This host can also add the hosts it monitors.
-          </Text>
+          <Text variant="body">Can also add the hosts it monitors</Text>
         )}
         <Text variant="cardFigure">{offer.code}</Text>
         <Countdown expires={offer.expires_ms} />
       </View>
-      <PairAction label="Confirm" onPress={confirm} />
-      <PairAction label="Cancel" secondary onPress={cancel} />
-    </>
+    </PairingStep>
   );
 }

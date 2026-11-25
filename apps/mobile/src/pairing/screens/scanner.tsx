@@ -5,6 +5,7 @@ import { AppState, Linking, View } from "react-native";
 import type { CameraStep } from "@/pairing/flow";
 import { Text } from "@/ui/text";
 import { PairAction } from "./action";
+import { PairingStep, type PairingStepProps } from "./pairing-step";
 
 const PERMISSION_STEPS = {
   granted: "granted",
@@ -22,6 +23,33 @@ const PAIRING_CODE = {
   label: "Pairing QR scanner",
 };
 
+type ScannerActions = { paste(): void; cancel(): void };
+
+function ScannerStep({
+  paste,
+  cancel,
+  action,
+  ...step
+}: ScannerActions &
+  Omit<PairingStepProps, "actions"> & { action?: React.ReactNode }) {
+  return (
+    <PairingStep
+      {...step}
+      actions={
+        <>
+          {action}
+          <PairAction
+            label="Paste code"
+            secondary={!!action || step.embedded === true}
+            onPress={paste}
+          />
+          <PairAction label="Cancel" secondary onPress={cancel} />
+        </>
+      }
+    />
+  );
+}
+
 export function Scanner({
   camera,
   setCamera,
@@ -29,32 +57,34 @@ export function Scanner({
   paste,
   cancel,
   code = PAIRING_CODE,
-}: {
+}: ScannerActions & {
   camera: CameraStep;
   setCamera(step: CameraStep): void;
   inspect(code: string): void;
-  paste(): void;
-  cancel(): void;
   code?: typeof PAIRING_CODE;
 }) {
+  const embedded = code !== PAIRING_CODE;
+  if (!isDevice || camera === "unavailable") {
+    return (
+      <ScannerStep
+        title="Camera is unavailable"
+        explanation={code.unavailable}
+        paste={paste}
+        cancel={cancel}
+        embedded={embedded}
+      />
+    );
+  }
   return (
-    <>
-      {!isDevice || camera === "unavailable" ? (
-        <>
-          <Text variant="title">Camera is unavailable</Text>
-          <Text variant="body">{code.unavailable}</Text>
-        </>
-      ) : (
-        <CameraScanner
-          camera={camera}
-          setCamera={setCamera}
-          inspect={inspect}
-          code={code}
-        />
-      )}
-      <PairAction label="Paste code" secondary onPress={paste} />
-      <PairAction label="Cancel" secondary onPress={cancel} />
-    </>
+    <CameraScanner
+      camera={camera}
+      setCamera={setCamera}
+      inspect={inspect}
+      code={code}
+      paste={paste}
+      cancel={cancel}
+      embedded={embedded}
+    />
   );
 }
 
@@ -63,11 +93,13 @@ function CameraScanner({
   setCamera,
   inspect,
   code,
-}: {
+  ...layout
+}: ScannerActions & {
   camera: Exclude<CameraStep, "unavailable">;
   setCamera(step: CameraStep): void;
   inspect(code: string): void;
   code: typeof PAIRING_CODE;
+  embedded: boolean;
 }) {
   const [requesting, setRequesting] = useState(false);
   const [settingsError, setSettingsError] = useState(false);
@@ -143,32 +175,46 @@ function CameraScanner({
 
   if (camera === "denied") {
     return (
-      <>
-        <Text variant="title">Camera access is off</Text>
-        <Text variant="body">{code.denied}</Text>
-        <PairAction label="Open Settings" onPress={openSettings} />
+      <ScannerStep
+        {...layout}
+        title="Camera access is off"
+        explanation={code.denied}
+        action={<PairAction label="Open Settings" onPress={openSettings} />}
+      >
         {settingsError && (
           <Text variant="caption" accessibilityRole="alert">
             Couldn’t open Settings. Open it from the Home Screen or paste the
             code.
           </Text>
         )}
-      </>
+      </ScannerStep>
     );
   }
   if (camera === "priming") {
     return (
-      <>
-        <Text variant="title">{code.title}</Text>
-        <Text variant="body">{code.instructions}</Text>
-        <PairAction label="Continue" disabled={requesting} onPress={request} />
-      </>
+      <ScannerStep
+        {...layout}
+        title={code.title}
+        explanation={code.instructions}
+        action={
+          <PairAction
+            label="Continue"
+            disabled={requesting}
+            onPress={request}
+          />
+        }
+      />
     );
   }
 
   return (
-    <>
-      <Text variant="title">Scan QR</Text>
+    <ScannerStep
+      {...layout}
+      title="Scan QR"
+      {...(!layout.embedded && {
+        explanation: "Point the camera at the QR code shown on the host.",
+      })}
+    >
       <View className="h-64 overflow-hidden rounded-xl bg-card">
         <CameraView
           ref={view}
@@ -187,6 +233,6 @@ function CameraScanner({
           accessibilityLabel={code.label}
         />
       </View>
-    </>
+    </ScannerStep>
   );
 }

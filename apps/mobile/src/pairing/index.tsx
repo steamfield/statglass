@@ -3,16 +3,18 @@ import { hostKeys } from "@core/query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useEffectEvent } from "react";
-import { ActivityIndicator, ScrollView } from "react-native";
+import { ActivityIndicator } from "react-native";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
 import { useSetPhoneTransport } from "@/data/transport-context";
 import { useNativeCore, useNativeCoreStarting } from "@/transport";
+import { ScreenScroll } from "@/ui/screen-scroll";
 import { StartupFailurePanel } from "@/ui/startup-failure";
 import { Text } from "@/ui/text";
 import { afterPair } from "./after-pair";
 import { usePairingFlow } from "./flow";
 import { PairAction } from "./screens/action";
 import { ChooseMethod } from "./screens/choose-method";
+import { PairingStep } from "./screens/pairing-step";
 import { Paste } from "./screens/paste";
 import { Preview } from "./screens/preview";
 import { PairingFailure, PairingSuccess } from "./screens/result";
@@ -58,17 +60,16 @@ export function PairScreen() {
   const waiting = starting && core === null;
   if (waiting || error) {
     return (
-      <ScrollView
+      <ScreenScroll
         className="flex-1 bg-background"
         contentContainerClassName="px-6 pt-4 pb-safe-or-6"
-        contentInsetAdjustmentBehavior="automatic"
       >
         {waiting ? (
           <Text variant="body">Starting StatGlass…</Text>
         ) : (
           <StartupFailurePanel />
         )}
-      </ScrollView>
+      </ScreenScroll>
     );
   }
   return <PairingFlow onPaired={complete} onDone={done} />;
@@ -120,11 +121,12 @@ export function PairingFlow({
         );
       case "checking":
         return (
-          <>
+          <PairingStep
+            title="Reading pairing code…"
+            actions={<PairAction label="Cancel" secondary onPress={cancel} />}
+          >
             <ActivityIndicator accessibilityLabel="Reading pairing code" />
-            <Text variant="body">Reading pairing code…</Text>
-            <PairAction label="Cancel" secondary onPress={cancel} />
-          </>
+          </PairingStep>
         );
       case "previewing":
         return (
@@ -156,14 +158,5 @@ export function PairingFlow({
     }
   }
 
-  return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName="gap-4 px-6 pt-4 pb-safe-or-6"
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardShouldPersistTaps="handled"
-    >
-      {renderStep()}
-    </ScrollView>
-  );
+  return renderStep();
 }
