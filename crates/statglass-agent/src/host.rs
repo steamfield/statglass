@@ -1,18 +1,22 @@
 //! This machine as the agent samples it: the in-process engine, its hub and the
 //! combined collection interest of every connected session. The headless counterpart
 //! of the app's `HostEntry`.
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use statglass_engine::{
-    ContainerNames, EngineParts, LiveHub, LocalSource, NoScaleStore, Source, SourceHandle,
-    SourceSink,
+    ContainerNames, EngineParts, HistoryStore, LiveHub, LocalSource, NoScaleStore, Source,
+    SourceHandle, SourceSink,
 };
-use statglass_proto::RemoteInterest;
+use statglass_proto::{Answer, ErrorCode, RemoteInterest, RuleEntry};
 use statglass_remote::{InterestSet, ServedHost};
 use statglass_schema::lock::LockExt;
-use statglass_schema::{Capabilities, HostRecord, Settings};
+use statglass_schema::{Capabilities, Event, HostRecord, Settings};
 use statglass_store::Writer;
+use uuid::Uuid;
+
+use crate::alert_rules::AlertRuleStore;
 
 pub struct AgentHost {
     record: HostRecord,
@@ -20,6 +24,7 @@ pub struct AgentHost {
     hub: LiveHub,
     handle: Mutex<Option<SourceHandle>>,
     interests: Mutex<InterestSet>,
+    alert_rules: Option<AlertRuleStore>,
 }
 
 impl AgentHost {
@@ -31,12 +36,15 @@ impl AgentHost {
         settings: Settings,
         store: Option<Writer>,
         names: ContainerNames,
+        data_dir: Option<PathBuf>,
+        alert_history: Vec<Event>,
     ) -> anyhow::Result<Arc<Self>> {
         let source = Arc::new(LocalSource::new(
             record.clone(),
             EngineParts::platform_with(Arc::new(NoScaleStore), names),
-            settings,
+            settings.clone(),
         ));
+        source.seed_alert_history(alert_history);
         let hub = LiveHub::default();
         let handle = Arc::clone(&source)
             .start(SourceSink {
@@ -50,6 +58,7 @@ impl AgentHost {
             hub,
             handle: Mutex::new(Some(handle)),
             interests: Mutex::default(),
+            alert_rules: data_dir.map(|dir| AlertRuleStore::new(dir, settings)),
         }))
     }
 
@@ -64,9 +73,19 @@ impl AgentHost {
 
     /// Attaches the engine to a store that came back after starting without one, and
     /// returns once it is applied. A stopped engine has nothing to attach.
-    pub fn set_store(&self, store: Option<Writer>) {
+    pub fn attach_history(&self, history: &HistoryStore, writer: Writer) {
+        if let Some((rules, control)) = self.alert_rules.as_ref().zip(self.source.engine()) {
+            // Queue the seed before the attach so the first recorded tick has the cooldowns.
+            rules.with_alerts(|alerts| {
+                control.seed_alert_history(history.recent_alerts(
+                    self.record.id,
+                    statglass_engine::wall_ms(),
+                    alerts,
+                ));
+            });
+        }
         if let Some(handle) = self.handle.lock_ok().as_ref() {
-            handle.control().set_store(store);
+            handle.control().set_store(Some(writer));
         }
     }
 
@@ -110,6 +129,35 @@ impl ServedHost for AgentHost {
 
     fn set_remote_interest(&self, session: u64, interest: RemoteInterest) {
         self.change_interest(|all| all.set_remote(session, interest));
+    }
+
+    fn alert_rules(&self) -> Answer {
+        self.alert_rules
+            .as_ref()
+            .map_or_else(unsupported, |store| Answer::AlertRules(store.current()))
+    }
+
+    fn set_alert_rules(
+        &self,
+        base_revision: i64,
+        rules: Vec<RuleEntry>,
+        keep: Vec<Uuid>,
+    ) -> Answer {
+        let Some(store) = &self.alert_rules else {
+            return unsupported();
+        };
+        store.replace(base_revision, rules, keep, |settings| {
+            if let Some(handle) = self.handle.lock_ok().as_ref() {
+                handle.control().apply_settings(settings);
+            }
+        })
+    }
+}
+
+fn unsupported() -> Answer {
+    Answer::Error {
+        code: ErrorCode::Unsupported,
+        message: "This host does not answer that query".into(),
     }
 }
 
@@ -170,6 +218,7 @@ mod tests {
             hub,
             handle: Mutex::new(Some(handle)),
             interests: Mutex::default(),
+            alert_rules: None,
         };
         let control = host.source.engine().unwrap();
         let detail = RemoteInterest {

@@ -187,7 +187,14 @@ pub async fn sample(seconds: Option<u64>) -> anyhow::Result<Value> {
     let names = crate::container_names::spawn();
     crate::container_names::first_pass(&names, crate::container_names::FIRST_PASS_WITHIN).await;
     let host = tokio::task::spawn_blocking(move || {
-        let host = AgentHost::start(record, Settings::agent_default(), None, names)?;
+        let host = AgentHost::start(
+            record,
+            Settings::agent_default(),
+            None,
+            names,
+            None,
+            Vec::new(),
+        )?;
         host.set_local_interest(RemoteInterest {
             detail: true,
             process_period_ms: Some(0),
