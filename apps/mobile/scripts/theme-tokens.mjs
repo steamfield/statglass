@@ -20,7 +20,7 @@ const HEX_FALLBACK_TARGETS = { safari: 10 << 16 };
  * @typedef {{ light: ColorMap, dark: ColorMap }} SchemeColors
  */
 
-/** A problem in theme.css itself; the message alone explains it. */
+/** A problem in the source CSS; the message alone explains it. */
 export class ThemeSourceError extends Error {
   /** @override */
   name = "ThemeSourceError";
@@ -167,5 +167,135 @@ export function readSchemeColors(themeCss) {
   return {
     light: toHexMap(resolveReferences(light, "light")),
     dark: toHexMap(resolveReferences({ ...light, ...darkOverrides }, "dark")),
+  };
+}
+
+const NUMBER = /^[+-]?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?$/i;
+const DURATION = /^(.*?)(ms|s)$/i;
+const NO_PREFERENCE = /^\(\s*prefers-reduced-motion\s*:\s*no-preference\s*\)$/;
+const REQUIRED_DURATIONS = [
+  "--motion-tick",
+  "--motion-count",
+  "--motion-fast",
+  "--motion-entry",
+  "--motion-enter",
+  "--motion-page",
+  "--motion-stagger",
+  "--motion-crossfade",
+  "--motion-scan",
+];
+
+/**
+ * @param {Map<string, string>} tokens
+ * @param {import('postcss').Container} rule
+ * @param {string} prefix
+ */
+function collectMotionDeclarations(tokens, rule, prefix) {
+  for (const decl of rule.nodes ?? []) {
+    if (decl.type === "decl" && decl.prop.startsWith(prefix)) {
+      tokens.set(decl.prop, decl.value.trim());
+    }
+  }
+}
+
+/** @param {string} name @param {string} value */
+function milliseconds(name, value) {
+  const [, count = "", unit] = DURATION.exec(value) ?? [];
+  const ms = Number(count) * (unit?.toLowerCase() === "s" ? 1000 : 1);
+  if (!NUMBER.test(count) || !Number.isFinite(ms) || ms < 0) {
+    throw new ThemeSourceError(
+      `motion.css: ${name} ${JSON.stringify(value)} is not a duration`
+    );
+  }
+  return ms;
+}
+
+/** @param {string} name @param {string} value @returns {[number, number, number, number]} */
+function bezier(name, value) {
+  const args = /^cubic-bezier\(([^()]*)\)$/i
+    .exec(value)?.[1]
+    ?.split(",")
+    .map((part) => part.trim());
+  const [x1 = NaN, y1 = NaN, x2 = NaN, y2 = NaN] = args?.map(Number) ?? [];
+  if (
+    args?.length !== 4 ||
+    !args.every((part) => NUMBER.test(part)) ||
+    ![x1, y1, x2, y2].every(Number.isFinite) ||
+    x1 < 0 ||
+    x1 > 1 ||
+    x2 < 0 ||
+    x2 > 1
+  ) {
+    throw new ThemeSourceError(
+      `motion.css: ${name} ${JSON.stringify(value)} is not a cubic-bezier curve`
+    );
+  }
+  return [x1, y1, x2, y2];
+}
+
+/** @param {string} name */
+function camelCase(name) {
+  return name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+/** Reads enabled durations and easing curves from desktop motion.css. @param {string} motionCss */
+export function readMotionTokens(motionCss) {
+  let root;
+  try {
+    root = postcss.parse(motionCss, { from: "motion.css" });
+  } catch (error) {
+    if (!(error instanceof postcss.CssSyntaxError)) throw error;
+    throw new ThemeSourceError(
+      `motion.css:${error.line}:${error.column}: ${error.reason}`
+    );
+  }
+  /** @type {Map<string, string>} */
+  const durations = new Map();
+  root.walkAtRules("media", (media) => {
+    if (media.parent !== root || !NO_PREFERENCE.test(media.params)) return;
+    for (const rule of media.nodes ?? []) {
+      if (rule.type === "rule" && rule.selector === ":root") {
+        collectMotionDeclarations(durations, rule, "--motion-");
+      }
+    }
+  });
+  const required = new Set(REQUIRED_DURATIONS);
+  root.walkDecls(/^--motion-/, ({ prop }) => {
+    required.add(prop);
+  });
+  for (const name of required) {
+    if (!durations.has(name)) {
+      throw new ThemeSourceError(
+        `motion.css: ${name} is missing in prefers-reduced-motion: no-preference`
+      );
+    }
+  }
+
+  /** @type {Map<string, string>} */
+  const easings = new Map();
+  root.walkAtRules("theme", (theme) => {
+    if (theme.parent === root && theme.params === "static") {
+      collectMotionDeclarations(easings, theme, "--ease-");
+    }
+  });
+  for (const name of ["--ease-out", "--ease-tick", "--ease-enter"]) {
+    if (!easings.has(name))
+      throw new ThemeSourceError(
+        `motion.css: ${name} is missing in @theme static`
+      );
+  }
+  return {
+    durations: Object.fromEntries(
+      Array.from(durations, ([name, value]) => [
+        camelCase(name.slice("--motion-".length)),
+        milliseconds(name, value),
+      ])
+    ),
+    easings: Object.fromEntries(
+      Array.from(easings, ([name, value]) => [
+        camelCase(name.slice(2)),
+        bezier(name, value),
+      ])
+    ),
   };
 }

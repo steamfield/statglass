@@ -37,7 +37,6 @@ export const useHandler = () => undefined;
 export const useEvent = () => undefined;
 export const useComposedEventHandler = () => undefined;
 export const useAnimatedStyle = (build: () => unknown) => build();
-export const useReducedMotion = () => false;
 export const useSharedValue = (initial: number) =>
   useState(() => {
     let value = initial;

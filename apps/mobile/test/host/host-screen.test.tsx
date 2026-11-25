@@ -13,6 +13,7 @@ import {
   AccessibilityInfo,
   Animated,
   AppState,
+  DeviceEventEmitter,
   Dimensions,
   Pressable,
   Text,
@@ -23,6 +24,7 @@ import * as GpuCard from "@/cards/gpu-card";
 import { useHostLiveSubscription } from "@/data/live";
 import { useCompactStream } from "@/data/live-stream";
 import { HostScreen } from "@/host";
+import { motionDurations } from "@/theme.generated";
 import * as PhoneText from "@/ui/text";
 
 const context = getMockContext({
@@ -384,6 +386,43 @@ test("a frame that changes CPU readouts leaves the host heading and unchanged GP
   expect(gpu).not.toHaveBeenCalled();
 });
 
+test("motion events that leave the effective preference unchanged leave cards alone", async () => {
+  jest
+    .mocked(AccessibilityInfo.addEventListener)
+    .mockImplementation((event, listener) =>
+      DeviceEventEmitter.addListener(event, listener)
+    );
+  const cpu = jest.spyOn(CpuCard, "CpuCard");
+  const gpu = jest.spyOn(GpuCard, "GpuCard");
+  const text = jest.spyOn(PhoneText, "Text");
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  await renderWithProviders(
+    <ExpoRoot
+      context={context}
+      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+    />,
+    { transport }
+  );
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await act(() => transport.tick());
+  expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
+  expect(cpu).toHaveBeenCalled();
+  expect(gpu).toHaveBeenCalled();
+  cpu.mockClear();
+  gpu.mockClear();
+  text.mockClear();
+
+  await act(() => DeviceEventEmitter.emit("reduceMotionChanged", true));
+  await act(() =>
+    DeviceEventEmitter.emit("mockLowPowerModeChanged", { lowPowerMode: true })
+  );
+  await act(() => DeviceEventEmitter.emit("reduceMotionChanged", false));
+
+  expect(cpu).not.toHaveBeenCalled();
+  expect(gpu).not.toHaveBeenCalled();
+  expect(text).not.toHaveBeenCalled();
+});
+
 test("repeated transient subscription failures log once per reason before recovery", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   const originalSubscribe = transport.subscribeLive;
@@ -510,7 +549,7 @@ test("when motion is enabled, stale cards request the fast fade to half opacity"
     expect.anything(),
     expect.objectContaining({
       toValue: 0.5,
-      duration: 150,
+      duration: motionDurations.fast,
       useNativeDriver: true,
     })
   );

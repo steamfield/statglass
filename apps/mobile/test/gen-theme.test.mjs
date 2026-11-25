@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { MOTION } from "./motion-css-fixture.mjs";
 
 const script = path.resolve(import.meta.dirname, "../scripts/gen-theme.mjs");
 
@@ -26,6 +27,7 @@ const THEME = `@theme static { --color-background: #fafafa; }
 
 let workDir = "";
 let source = "";
+let motionSource = "";
 let outDir = "";
 
 beforeEach(async () => {
@@ -33,8 +35,10 @@ beforeEach(async () => {
   // relative to its resolved working directory.
   workDir = await realpath(await mkdtemp(path.join(tmpdir(), "gen-theme-")));
   source = path.join(workDir, "theme.css");
+  motionSource = path.join(workDir, "motion.css");
   outDir = path.join(workDir, "out");
   await writeFile(source, THEME);
+  await writeFile(motionSource, MOTION);
   await mkdir(outDir);
 });
 
@@ -46,7 +50,16 @@ afterEach(async () => {
 function genTheme(...args) {
   const run = spawnSync(
     process.execPath,
-    [script, "--source", source, "--out", outDir, ...args],
+    [
+      script,
+      "--source",
+      source,
+      "--motion-source",
+      motionSource,
+      "--out",
+      outDir,
+      ...args,
+    ],
     { cwd: workDir, encoding: "utf8" }
   );
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
@@ -64,7 +77,7 @@ async function outputFiles() {
   return Object.fromEntries(entries);
 }
 
-test("writes the stylesheet and the color map, then --check passes", async () => {
+test("writes the stylesheet, color map and motion tokens, then --check passes", async () => {
   assert.equal(genTheme().status, 0);
   const written = await outputFiles();
 
@@ -73,6 +86,14 @@ test("writes the stylesheet and the color map, then --check passes", async () =>
     "theme.generated.ts",
   ]);
   assert.match(written["theme.generated.css"], /--color-background: #fafafa;/);
+  assert.match(
+    written["theme.generated.ts"],
+    /motionDurations = \{\n {2}tick: 175,/
+  );
+  assert.match(
+    written["theme.generated.ts"],
+    /easeTick: \[0\.33, 1, 0\.68, 1\],/
+  );
   assert.deepEqual(genTheme("--check"), { status: 0, stdout: "", stderr: "" });
   assert.deepEqual(await outputFiles(), written);
 });
@@ -88,7 +109,7 @@ test("--check fails on a stale file, names it and leaves it alone", async () => 
   assert.equal(run.stdout, "");
   assert.match(
     run.stderr,
-    /^gen-theme: mobile theme is missing or out of date with theme\.css: out\/theme\.generated\.css\. Run/
+    /^gen-theme: mobile theme is missing or out of date with theme\.css or motion\.css: out\/theme\.generated\.css\. Run/
   );
   assert.deepEqual(await outputFiles(), before);
 });
@@ -115,3 +136,44 @@ test("reports a broken theme in one line, without a stack", async () => {
     stderr: "gen-theme: theme.css has no top-level .dark block\n",
   });
 });
+
+for (const [from, to] of /** @type {const} */ ([
+  ["175ms", "200ms"],
+  ["0.68, 1", "0.7, 1"],
+])) {
+  test(`--check catches a motion source change from ${from}`, async () => {
+    assert.equal(genTheme().status, 0);
+    const written = await outputFiles();
+    await writeFile(motionSource, MOTION.replace(from, to));
+
+    const run = genTheme("--check");
+
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /motion\.css: out\/theme\.generated\.ts\. Run/);
+    assert.deepEqual(await outputFiles(), written);
+  });
+}
+
+for (const [from, to, error] of /** @type {const} */ ([
+  ["175ms", "175px", '--motion-tick "175px" is not a duration'],
+  [
+    "175ms",
+    "calc(\n  175ms\n)",
+    '--motion-tick "calc(\\n  175ms\\n)" is not a duration',
+  ],
+  [
+    "cubic-bezier(0.33, 1, 0.68, 1)",
+    "linear",
+    '--ease-tick "linear" is not a cubic-bezier curve',
+  ],
+])) {
+  test(`reports malformed motion (${JSON.stringify(to)}) on one line`, async () => {
+    await writeFile(motionSource, MOTION.replace(from, to));
+
+    assert.deepEqual(genTheme("--check"), {
+      status: 1,
+      stdout: "",
+      stderr: `gen-theme: motion.css: ${error}\n`,
+    });
+  });
+}

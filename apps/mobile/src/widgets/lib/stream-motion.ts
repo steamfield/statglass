@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AccessibilityInfo } from "react-native";
+import { useLayoutEffect, useRef } from "react";
 import {
   Easing,
   ReduceMotion,
@@ -7,39 +6,9 @@ import {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { motionEasings } from "@/theme.generated";
 
-/** Duration of one live tick slide, matching --motion-tick on desktop. */
-export const TICK_DURATION_MS = 150;
-
-const TICK_TIMING = {
-  duration: TICK_DURATION_MS,
-  easing: Easing.bezier(0.33, 1, 0.68, 1),
-  reduceMotion: ReduceMotion.Never,
-};
-
-/** Reads Reduce Motion and follows system changes while the app is open. */
-export function useReduceMotionPreference() {
-  const [reduceMotion, setReduceMotion] = useState(true);
-  useEffect(() => {
-    let readPending = true;
-    const update = (enabled: boolean) => {
-      readPending = false;
-      setReduceMotion(enabled);
-    };
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      update
-    );
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (readPending) update(enabled);
-    });
-    return () => {
-      readPending = false;
-      subscription.remove();
-    };
-  }, []);
-  return reduceMotion;
-}
+const TICK_EASING = Easing.bezier(...motionEasings.easeTick);
 
 /** Slides a consecutive live tick by one slot, resetting across jumps and resizes. */
 export function useTickScroll(
@@ -47,7 +16,7 @@ export function useTickScroll(
   intervalMs: number,
   slotWidth: number,
   loading: boolean,
-  reduceMotion: boolean
+  duration: number
 ) {
   const translateX = useSharedValue(0);
   const previous = useRef<{
@@ -60,7 +29,7 @@ export function useTickScroll(
     const prev = previous.current;
     previous.current = { tEndMs, intervalMs, slotWidth, loading };
     if (
-      reduceMotion ||
+      duration === 0 ||
       !prev ||
       loading ||
       prev.loading ||
@@ -74,8 +43,14 @@ export function useTickScroll(
       return;
     }
     translateX.set(slotWidth);
-    translateX.set(withTiming(0, TICK_TIMING));
-  }, [tEndMs, intervalMs, slotWidth, loading, reduceMotion, translateX]);
+    translateX.set(
+      withTiming(0, {
+        duration,
+        easing: TICK_EASING,
+        reduceMotion: ReduceMotion.Never,
+      })
+    );
+  }, [tEndMs, intervalMs, slotWidth, loading, duration, translateX]);
 
   return useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.get() }],

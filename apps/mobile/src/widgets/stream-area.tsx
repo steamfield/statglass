@@ -22,11 +22,9 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 import { themeColors } from "@/theme.generated";
+import { useMotion } from "@/ui/motion";
 import { Text } from "@/ui/text";
-import {
-  useReduceMotionPreference,
-  useTickScroll,
-} from "@/widgets/lib/stream-motion";
+import { useTickScroll } from "@/widgets/lib/stream-motion";
 import { StreamScan } from "@/widgets/lib/stream-scan";
 import { ChartAnnotations } from "./chart-annotations";
 import { resolveColor } from "./colors";
@@ -58,17 +56,17 @@ export function StreamArea(data: StreamAreaData) {
     slots,
     windowLabel,
   } = model;
-  const reduceMotion = useReduceMotionPreference();
+  const { fast, scan, tick } = useMotion();
   const loadingColor = loading
     ? themeColors[scheme][`${accent}-ink`]
     : undefined;
-  const scan = loadingColor && !reduceMotion && widthPx > 0;
+  const scanning = loadingColor && scan > 0 && widthPx > 0;
   const scroll = useTickScroll(
     tEndMs,
     intervalMs,
     widthPx / (slots - 1),
     loading === true,
-    reduceMotion
+    tick
   );
 
   return (
@@ -93,12 +91,19 @@ export function StreamArea(data: StreamAreaData) {
             gridlines={gridlines}
             yMax={yMax}
             scheme={scheme}
-            loadingColor={scan ? undefined : loadingColor}
+            loadingColor={scanning ? undefined : loadingColor}
           />
           <Animated.View style={scroll}>
             <StreamSeries model={model} accent={accent} scheme={scheme} />
           </Animated.View>
-          {scan && <StreamScan widthPx={widthPx} color={loadingColor} />}
+          {scanning && (
+            <StreamScan
+              widthPx={widthPx}
+              color={loadingColor}
+              duration={scan}
+              delay={fast}
+            />
+          )}
         </View>
         {gaps.length > 0 && (
           <GapBands

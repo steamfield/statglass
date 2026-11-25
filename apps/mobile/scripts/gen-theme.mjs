@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * Writes theme.generated.css and theme.generated.ts from the desktop's
- * theme.css. With `--check` it writes nothing and exits 1 when either file is
+ * theme.css and motion.css. With `--check` it writes nothing and exits 1 when either file is
  * missing or differs from what it would write.
  *
- * Usage: gen-theme.mjs [--check] [--source <theme.css>] [--out <dir>]
- * Defaults: src/app/styles/theme.css and apps/mobile/src.
+ * Usage: gen-theme.mjs [--check] [--source <theme.css>] [--motion-source <motion.css>] [--out <dir>]
+ * Defaults: src/app/styles/{theme,motion}.css and apps/mobile/src.
  *
  * NativeWind cannot import theme.css itself: its dark values sit under a
  * `.dark` class and a class-based `dark` variant, which the native compiler
@@ -14,11 +14,19 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { renderColorModule, renderThemeCss } from "./theme-render.mjs";
-import { readSchemeColors, ThemeSourceError } from "./theme-tokens.mjs";
+import { renderThemeCss, renderThemeModule } from "./theme-render.mjs";
+import {
+  readMotionTokens,
+  readSchemeColors,
+  ThemeSourceError,
+} from "./theme-tokens.mjs";
 
 const appRoot = path.resolve(import.meta.dirname, "..");
 const DEFAULT_SOURCE = path.resolve(appRoot, "../../src/app/styles/theme.css");
+const DEFAULT_MOTION_SOURCE = path.resolve(
+  appRoot,
+  "../../src/app/styles/motion.css"
+);
 const DEFAULT_OUT = path.join(appRoot, "src");
 
 /** A stale or missing generated file; the message names it. */
@@ -29,10 +37,12 @@ class StaleThemeError extends Error {
 
 /**
  * @param {string} source theme.css text
+ * @param {string} motionSource motion.css text
  * @param {string} outDir
  */
-function outputsFor(source, outDir) {
+function outputsFor(source, motionSource, outDir) {
   const schemes = readSchemeColors(source);
+  const motion = readMotionTokens(motionSource);
   return [
     {
       file: path.join(outDir, "theme.generated.css"),
@@ -40,7 +50,7 @@ function outputsFor(source, outDir) {
     },
     {
       file: path.join(outDir, "theme.generated.ts"),
-      text: renderColorModule(schemes),
+      text: renderThemeModule(schemes, motion),
     },
   ];
 }
@@ -74,10 +84,15 @@ async function main() {
     options: {
       check: { type: "boolean", default: false },
       source: { type: "string", default: DEFAULT_SOURCE },
+      "motion-source": { type: "string", default: DEFAULT_MOTION_SOURCE },
       out: { type: "string", default: DEFAULT_OUT },
     },
   });
-  const outputs = outputsFor(await readFile(values.source, "utf8"), values.out);
+  const [themeCss, motionCss] = await Promise.all([
+    readFile(values.source, "utf8"),
+    readFile(values["motion-source"], "utf8"),
+  ]);
+  const outputs = outputsFor(themeCss, motionCss, values.out);
   if (!values.check) {
     await Promise.all(outputs.map(({ file, text }) => writeFile(file, text)));
     return;
@@ -85,7 +100,7 @@ async function main() {
   const stale = await staleFiles(outputs);
   if (stale.length > 0) {
     throw new StaleThemeError(
-      `mobile theme is missing or out of date with ${path.relative(process.cwd(), values.source)}: ${stale.join(", ")}. ` +
+      `mobile theme is missing or out of date with ${path.relative(process.cwd(), values.source)} or ${path.relative(process.cwd(), values["motion-source"])}: ${stale.join(", ")}. ` +
         "Run `node apps/mobile/scripts/gen-theme.mjs` and commit the result."
     );
   }
