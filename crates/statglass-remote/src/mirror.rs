@@ -9,6 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+/// Told about alert events a durable page inserted for the first time, with the page's
+/// epoch, after the page committed. Runs on the ingesting thread with no mirror lock held.
+pub type AlertListener = Arc<dyn Fn(Uuid, Vec<statglass_schema::Event>) + Send + Sync>;
+
 pub struct Mirror {
     history: Arc<statglass_engine::HistoryStore>,
     host: HostId,
@@ -19,6 +23,7 @@ pub struct Mirror {
     catalog: Catalog,
     /// A page had series over a cap; warned once per mirror.
     cap_warned: AtomicBool,
+    alert_listener: Mutex<Option<AlertListener>>,
 }
 
 #[derive(Default)]
@@ -85,7 +90,9 @@ impl MirrorSink for Mirror {
                 Ok((page.tier, row.bucket_ts, layout.series.clone()))
             })
             .collect::<Result<_, MirrorError>>()?;
-        self.history
+        let epoch = page.epoch;
+        let report = self
+            .history
             .writer()
             .map_err(MirrorError::from)?
             .ingest_page_durable(self.host, page)
@@ -104,6 +111,13 @@ impl MirrorSink for Mirror {
                 *tier == r.tier && *ts == r.bucket_ts && series.as_slice() == r.series.as_ref()
             })
         });
+        drop(current);
+        if !report.alerts_inserted.is_empty() {
+            let listener = self.alert_listener.lock_ok().clone();
+            if let Some(listener) = listener {
+                listener(epoch, report.alerts_inserted);
+            }
+        }
         Ok(())
     }
 
@@ -231,7 +245,13 @@ impl Mirror {
             epoch: Mutex::default(),
             catalog: Catalog::builtin(),
             cap_warned: AtomicBool::new(false),
+            alert_listener: Mutex::default(),
         }
+    }
+
+    /// Replaces the listener told about newly inserted alert events.
+    pub fn set_alert_listener(&self, listener: AlertListener) {
+        *self.alert_listener.lock_ok() = Some(listener);
     }
 
     /// Applies the cardinality caps to a remote page or snapshot before anything is

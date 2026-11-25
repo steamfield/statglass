@@ -235,7 +235,8 @@ impl From<statglass_remote::RemoteError> for CommandError {
                 reason: Some(crate::error::HistoryUnavailableReason::Failed { message }),
             },
             RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
-            RemoteError::Refused(_) => Self::Internal { message },
+            // Phase 2 lane c gives Stale its own variant.
+            RemoteError::Refused(_) | RemoteError::Stale(_) => Self::Internal { message },
             RemoteError::Transport(_)
             | RemoteError::Timeout(_)
             | RemoteError::Unreachable { .. }

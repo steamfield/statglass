@@ -91,7 +91,8 @@ impl ConnectionFailureKind {
             | RemoteError::Unsupported(_)
             | RemoteError::HistoryUnavailable(_)
             | RemoteError::InvalidArgument(_)
-            | RemoteError::Refused(_) => Self::Unreachable,
+            | RemoteError::Refused(_)
+            | RemoteError::Stale(_) => Self::Unreachable,
         }
     }
 

@@ -16,7 +16,7 @@ pub mod network;
 pub mod rr;
 pub use mirror_error::MirrorError;
 mod pages;
-pub use mirror::{Mirror, SyncWatermark};
+pub use mirror::{AlertListener, Mirror, SyncWatermark};
 mod server;
 mod socket;
 mod source;
@@ -97,6 +97,10 @@ pub enum RemoteError {
     /// The host's own refusal of a query (D-117), worded for the user.
     #[error("{0}")]
     Refused(String),
+    /// The host's state changed since the revision the request was based on
+    /// (`ErrorCode::Stale`): reload and try again.
+    #[error("{0}")]
+    Stale(String),
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -138,6 +142,7 @@ impl RemoteError {
                 | Self::Protocol(_)
                 | Self::Unsupported(_)
                 | Self::Refused(_)
+                | Self::Stale(_)
                 | Self::InvalidArgument(_)
         )
     }

@@ -36,6 +36,8 @@ pub mod host_poll;
 pub mod host_watch;
 #[cfg(test)]
 mod host_watch_tests;
+mod remote_delivery;
+mod remote_rules;
 pub mod store;
 #[cfg(test)]
 mod tests;
