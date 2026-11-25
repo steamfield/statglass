@@ -4,6 +4,9 @@
  */
 import { layoutMarkers } from "@core/chart-math";
 
+/** Estimated width of one chart caption character at text scale 1. */
+export const CHART_CAPTION_CHAR_WIDTH_PX = 6;
+
 /** A labelled marker on a chart (power spikes, D-083); JSON-serializable. */
 export interface ChartAnnotationData {
   /** When the annotated moment happened (ms epoch); the chart positions it. */
@@ -78,7 +81,10 @@ export function annotationsModel(
       toMs: tEndMs,
       widthPx,
       measure: (a) =>
-        shown(a.label, merged.get(a.key) ?? 0).length * 6 * captionScale + 16,
+        shown(a.label, merged.get(a.key) ?? 0).length *
+          CHART_CAPTION_CHAR_WIDTH_PX *
+          captionScale +
+        16,
       side: (a) =>
         (annotationFraction(a.tsMs, tEndMs, windowMs) ?? 0) > 0.5
           ? "end"

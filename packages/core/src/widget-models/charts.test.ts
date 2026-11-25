@@ -1,7 +1,9 @@
+import { expectTypeOf } from "vitest";
 import { annotationsModel } from "./chart-annotation";
 import { POPOVER_CPU_STREAM } from "./fixtures/charts";
 import { gapBandsModel } from "./gap-band";
 import { type StreamAreaModel, streamAreaModel } from "./stream-area";
+import type { ColorRef } from "./tokens";
 
 // Paths captured from the desktop gallery before extracting the model.
 const CPU_LINE =
@@ -24,6 +26,19 @@ const CPU_BASELINE =
   "52L135.593,52L118.644,52L101.695,52L84.746,52L67.797,52L50.847,52L33.898,52L16.949,52L0,52Z";
 
 describe("streamAreaModel", () => {
+  it("publishes the chart model with accent colors for both series marks", () => {
+    type SeriesColors = Pick<
+      StreamAreaModel["series"][number],
+      "stroke" | "fill"
+    >;
+    type AccentColor = Extract<ColorRef, { kind: "accent" }>;
+    expectTypeOf(streamAreaModel).returns.toEqualTypeOf<StreamAreaModel>();
+    expectTypeOf<SeriesColors>().toEqualTypeOf<{
+      stroke: AccentColor;
+      fill: AccentColor;
+    }>();
+  });
+
   it("preserves the popover CPU geometry and describes its colors as tokens", () => {
     expect(streamAreaModel(POPOVER_CPU_STREAM, { widthPx: 322 })).toEqual({
       height: 52,

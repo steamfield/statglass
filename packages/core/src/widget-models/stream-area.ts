@@ -107,6 +107,8 @@ export interface StreamAreaData {
   annotations?: readonly ChartAnnotationData[];
 }
 
+type StreamAreaColor = Extract<ColorRef, { kind: "accent" }>;
+
 /** One drawn series: its paths, edge dots and token colors. */
 export interface StreamAreaSeriesModel {
   key: string;
@@ -115,8 +117,8 @@ export interface StreamAreaSeriesModel {
   linePath: string;
   areaPath: string;
   edges: readonly { xFrac: number; y: number }[];
-  stroke: ColorRef;
-  fill: ColorRef;
+  stroke: StreamAreaColor;
+  fill: StreamAreaColor;
   dash: readonly [number, number] | null;
   weight: number;
 }
@@ -146,7 +148,7 @@ export function streamAreaModel(
     widthPx,
     annotationScale = 1,
   }: { widthPx: number; annotationScale?: number }
-) {
+): StreamAreaModel {
   const { height, intervalMs, loading, series, tEndMs, yMax } = data;
   let slots = 2;
   for (const s of series) slots = Math.max(slots, s.values.length);
@@ -179,7 +181,7 @@ export function streamAreaModel(
         ),
     ceilingLabel: data.ceilingLabel ?? null,
     windowLabel: data.windowLabel ?? null,
-  } satisfies StreamAreaModel;
+  };
 }
 
 function drawSeries(

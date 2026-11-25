@@ -4,24 +4,14 @@ import {
   type StreamAreaModel,
   streamAreaModel,
 } from "@core/widget-models/stream-area";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useState } from "react";
 import {
-  AccessibilityInfo,
   StyleSheet,
   useColorScheme,
   useWindowDimensions,
   View,
 } from "react-native";
-import Animated, {
-  cancelAnimation,
-  Easing,
-  ReduceMotion,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import Svg, {
   Circle,
   Defs,
@@ -33,6 +23,11 @@ import Svg, {
 } from "react-native-svg";
 import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
+import {
+  useReduceMotionPreference,
+  useTickScroll,
+} from "@/widgets/lib/stream-motion";
+import { StreamScan } from "@/widgets/lib/stream-scan";
 import { ChartAnnotations } from "./chart-annotations";
 import { resolveColor } from "./colors";
 import { GapBands } from "./gap-bands";
@@ -312,113 +307,4 @@ function StreamEdges({
       })}
     </Svg>
   );
-}
-
-// Mirrors --motion-fast and --motion-scan in the desktop motion styles.
-function StreamScan({ widthPx, color }: { widthPx: number; color: string }) {
-  const segment = widthPx / 5;
-  const translateX = useSharedValue(-segment);
-  useEffect(() => {
-    translateX.set(-segment);
-    translateX.set(
-      withDelay(
-        150,
-        withRepeat(
-          withTiming(widthPx, {
-            duration: 900,
-            easing: Easing.linear,
-            reduceMotion: ReduceMotion.Never,
-          }),
-          -1,
-          false,
-          undefined,
-          ReduceMotion.Never
-        ),
-        ReduceMotion.Never
-      )
-    );
-    return () => cancelAnimation(translateX);
-  }, [segment, translateX, widthPx]);
-  const motion = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.get() }],
-  }));
-  return (
-    <Animated.View
-      pointerEvents="none"
-      className="absolute bottom-0 left-0 h-px"
-      style={[{ width: segment, backgroundColor: color }, motion]}
-    />
-  );
-}
-
-// Mirrors --motion-tick and --ease-tick in the desktop motion styles.
-const TICK_DURATION_MS = 150;
-const TICK_TIMING = {
-  duration: TICK_DURATION_MS,
-  easing: Easing.bezier(0.33, 1, 0.68, 1),
-  reduceMotion: ReduceMotion.Never,
-};
-
-function useReduceMotionPreference() {
-  // Reanimated reads the system preference at launch. Follow changes while the app is open.
-  const [reduceMotion, setReduceMotion] = useState(true);
-  useEffect(() => {
-    let readPending = true;
-    const update = (enabled: boolean) => {
-      readPending = false;
-      setReduceMotion(enabled);
-    };
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      update
-    );
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (readPending) update(enabled);
-    });
-    return () => {
-      readPending = false;
-      subscription.remove();
-    };
-  }, []);
-  return reduceMotion;
-}
-
-function useTickScroll(
-  tEndMs: number,
-  intervalMs: number,
-  slotWidth: number,
-  loading: boolean,
-  reduceMotion: boolean
-) {
-  const translateX = useSharedValue(0);
-  const previous = useRef<{
-    tEndMs: number;
-    intervalMs: number;
-    slotWidth: number;
-    loading: boolean;
-  }>(null);
-  useLayoutEffect(() => {
-    const prev = previous.current;
-    previous.current = { tEndMs, intervalMs, slotWidth, loading };
-    if (
-      reduceMotion ||
-      !prev ||
-      loading ||
-      prev.loading ||
-      intervalMs <= 0 ||
-      prev.intervalMs !== intervalMs ||
-      slotWidth <= 0 ||
-      prev.slotWidth !== slotWidth ||
-      Math.abs(tEndMs - prev.tEndMs - intervalMs) > intervalMs / 2
-    ) {
-      translateX.set(0);
-      return;
-    }
-    translateX.set(slotWidth);
-    translateX.set(withTiming(0, TICK_TIMING));
-  }, [tEndMs, intervalMs, slotWidth, loading, reduceMotion, translateX]);
-
-  return useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.get() }],
-  }));
 }

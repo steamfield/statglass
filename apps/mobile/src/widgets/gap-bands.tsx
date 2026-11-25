@@ -1,10 +1,15 @@
 import { PAUSE_EXPLANATION } from "@core/history-state";
+import { CHART_CAPTION_CHAR_WIDTH_PX } from "@core/widget-models/chart-annotation";
 import type { PlacedGapBand } from "@core/widget-models/gap-band";
 import { useId } from "react";
 import { StyleSheet, useColorScheme, View, type ViewStyle } from "react-native";
 import Svg, { Defs, G, Path, Pattern, Rect } from "react-native-svg";
 import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
+
+const PAUSE_MARK_WIDTH_PX = 9;
+// Matches gap-1 between the pause mark and the caption.
+const PAUSE_MARK_GAP_PX = 4;
 
 /** Draws the clipped gap spans in the stream's measured plot. */
 export function GapBands({
@@ -24,10 +29,18 @@ export function GapBands({
 
   const captions = bands.map((band) => {
     const bandWidth = band.widthFrac * widthPx;
+    const pauseMarkSpace = band.paused
+      ? PAUSE_MARK_WIDTH_PX + PAUSE_MARK_GAP_PX
+      : 0;
     const width = band.showCaption
       ? Math.min(
           widthPx,
-          Math.max(bandWidth, band.label.length * 7 * fontScale + 16)
+          Math.max(
+            bandWidth,
+            band.label.length * CHART_CAPTION_CHAR_WIDTH_PX * fontScale +
+              16 +
+              pauseMarkSpace
+          )
         )
       : bandWidth;
     const center = (band.leftFrac + band.widthFrac / 2) * widthPx;
@@ -109,7 +122,7 @@ function GapCaption({
       {band.showCaption && (
         <View className="flex-row items-center justify-center gap-1">
           {band.paused && (
-            <Svg width={9} height={10}>
+            <Svg width={PAUSE_MARK_WIDTH_PX} height={10}>
               <Path d="M2,1V9M7,1V9" stroke={color} strokeWidth={2} />
             </Svg>
           )}

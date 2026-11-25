@@ -2,9 +2,10 @@ import { cssPercent } from "@core/format";
 import {
   STREAM_VIEWBOX_W,
   type StreamAreaData,
+  type StreamAreaModel,
+  type StreamAreaSeriesModel,
   streamAreaModel,
 } from "@core/widget-models/stream-area";
-import type { ColorRef } from "@core/widget-models/tokens";
 import {
   type ReactNode,
   useId,
@@ -165,7 +166,7 @@ const FILLS = {
   4: rampColor(4),
 };
 
-function streamColor(color: Extract<ColorRef, { kind: "accent" }>) {
+function streamColor(color: StreamAreaSeriesModel["stroke"]) {
   return (color.ink ? STROKES : FILLS)[color.step];
 }
 
@@ -173,7 +174,7 @@ function StreamSeries({
   uid,
   series,
   dashOffset,
-}: Pick<ReturnType<typeof streamAreaModel>, "series" | "dashOffset"> & {
+}: Pick<StreamAreaModel, "series" | "dashOffset"> & {
   uid: string;
 }) {
   return (

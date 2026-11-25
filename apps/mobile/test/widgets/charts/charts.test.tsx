@@ -1,3 +1,4 @@
+import { CHART_CAPTION_CHAR_WIDTH_PX } from "@core/widget-models/chart-annotation";
 import { POPOVER_CPU_STREAM } from "@core/widget-models/fixtures/charts";
 import { streamAreaModel } from "@core/widget-models/stream-area";
 import { afterEach, describe, expect, it, jest } from "@jest/globals";
@@ -177,7 +178,14 @@ describe("phone chart geometry", () => {
     const caption = screen.getByText("Recording paused");
     const group = caption.parent;
     const note = group?.parent;
-    expect(StyleSheet.flatten(note?.props.style)?.width).toBeGreaterThan(100);
+    const captionWidth =
+      "Recording paused".length *
+        CHART_CAPTION_CHAR_WIDTH_PX *
+        Dimensions.get("window").fontScale +
+      16 +
+      9 +
+      4;
+    expect(StyleSheet.flatten(note?.props.style)?.width).toBe(captionWidth);
     expect(group?.queryAll((el) => el.type === "RNSVGPath")).toHaveLength(1);
   });
 
