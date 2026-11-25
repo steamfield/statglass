@@ -23,8 +23,8 @@ import {
   type useModuleHistory,
 } from "@/data/history";
 import { useHostLive } from "@/data/live";
+import { HistoryNotice } from "@/module/history-notice";
 import { ModuleChart } from "@/module/module-chart";
-import { HistoryFeedback } from "@/module/pages/power/history-feedback";
 import { ListRow } from "@/ui/list-row";
 import { Text } from "@/ui/text";
 import { StatList } from "@/widgets/stat-list";
@@ -172,8 +172,8 @@ export function BatteryDayCard({
         grid={grid}
         loading={history.isPending}
       />
-      <HistoryFeedback
-        history={history}
+      <HistoryNotice
+        query={history}
         hostName={hostName}
         hasSamples={hasSamples}
       />

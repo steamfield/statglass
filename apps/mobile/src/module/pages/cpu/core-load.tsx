@@ -25,7 +25,6 @@ import {
 import type { ModulePageProps } from "@/module/pages/index";
 import { Text } from "@/ui/text";
 import { HeatMatrix } from "@/widgets/heat-matrix";
-import { HeatmapGaps } from "./heatmap-gaps";
 
 const columns = { columns: 60 };
 
@@ -167,10 +166,7 @@ export function CoreLoad({
         <>
           {grid && data && (
             <>
-              <View className="relative">
-                <HeatMatrix model={model} height={0} />
-                {bands.length > 0 && <HeatmapGaps bands={bands} />}
-              </View>
+              <HeatMatrix model={model} height={0} gapBands={bands} />
               <HeatmapTimeScale
                 windowMs={windowMs}
                 endMs={data.range.toMs}

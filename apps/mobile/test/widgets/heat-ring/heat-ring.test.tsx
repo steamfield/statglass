@@ -1,4 +1,5 @@
 import { formatTemperature } from "@core/format";
+import { PAUSE_EXPLANATION } from "@core/history-state";
 import {
   CORE_LOAD_FIXTURE,
   HEAT_MATRIX_FIXTURE,
@@ -11,7 +12,7 @@ import {
 } from "@core/widget-models/ring-gauge";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
-import { screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
 import * as ReactNative from "react-native";
 import { HeatMatrix } from "@/widgets/heat-matrix";
 import { RingGauge } from "@/widgets/ring-gauge";
@@ -58,11 +59,27 @@ test("hatches a pause over a bucket that still has a measured average", async ()
     <HeatMatrix
       model={model}
       height={80}
-      gapBands={[{ key: "pause", leftFrac: 0.25, widthFrac: 0.5 }]}
+      gapBands={[
+        {
+          key: "pause",
+          leftFrac: 0.25,
+          widthFrac: 0.5,
+          label: "Paused",
+          paused: true,
+          fromMs: 0,
+          toMs: 1,
+          showCaption: false,
+        },
+      ]}
     />
   );
+  await fireEvent(screen.getByTestId("heat-gap-plot"), "layout", {
+    nativeEvent: { layout: { width: 200, height: 40 } },
+  });
   expect(screen.getByTestId("heat-cell")).toBeOnTheScreen();
-  expect(screen.getByTestId("heat-gap-band")).toHaveProp("width", "50%");
+  expect(
+    screen.getByRole("note", { name: PAUSE_EXPLANATION })
+  ).toBeOnTheScreen();
 });
 
 test("announces a loading matrix without drawing missing buckets", async () => {

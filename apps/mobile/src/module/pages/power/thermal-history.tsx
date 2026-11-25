@@ -13,11 +13,11 @@ import { shallow } from "zustand/shallow";
 import { CARD_SURFACE } from "@/cards/module-card";
 import { type HistoryRange, useHostHistory } from "@/data/history";
 import { useHostLive } from "@/data/live";
+import { HistoryNotice } from "@/module/history-notice";
 import { ModuleNotice } from "@/module/module-notice";
 import { Text } from "@/ui/text";
 import { HeatMatrix } from "@/widgets/heat-matrix";
 import { StatList } from "@/widgets/stat-list";
-import { HistoryFeedback } from "./history-feedback";
 
 const TEMPERATURE_DOMAIN = [20, 110] as const;
 
@@ -95,7 +95,8 @@ export const ThermalHistory = memo(function ThermalHistory({
       gapBands(data.page.gaps, from, to, { module: "sensors" }),
       from,
       to
-    );
+      // Rows are too short for captions; VoiceOver still reads each band.
+    ).map((band) => ({ ...band, showCaption: false }));
   }, [data, grid, rows]);
   const temperatures = useHostLive(
     host,
@@ -148,8 +149,8 @@ export const ThermalHistory = memo(function ThermalHistory({
       {clamped && (
         <ModuleNotice message="History is available for only some temperature sensors." />
       )}
-      <HistoryFeedback
-        history={history}
+      <HistoryNotice
+        query={history}
         hostName={hostName}
         hasSamples={
           values !== undefined &&

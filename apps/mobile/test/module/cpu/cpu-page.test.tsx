@@ -327,7 +327,7 @@ test("a measured per-core bucket remains visible when a short pause crosses it",
     await screen.findByRole("image", { name: /1 of 1 cores with history/ })
   ).toBeOnTheScreen();
   expect(screen.queryByText("No samples in this range")).not.toBeOnTheScreen();
-  await fireEvent(screen.getByTestId("core-gap-plot"), "layout", {
+  await fireEvent(screen.getByTestId("heat-gap-plot"), "layout", {
     nativeEvent: { layout: { width: 200, height: 80 } },
   });
   expect(

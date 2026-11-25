@@ -36,6 +36,7 @@ import {
 } from "@/data/live";
 import { useTemperatureUnits } from "@/data/temperature-unit";
 import { EventLabelContext } from "@/module/events-list";
+import { HistoryNotice } from "@/module/history-notice";
 import { LiveProcessTable } from "@/module/live-process-table";
 import { ModuleChart } from "@/module/module-chart";
 import { ModuleFrame } from "@/module/module-frame";
@@ -46,7 +47,6 @@ import { StatStrip } from "@/module/stat-strip";
 import { Text } from "@/ui/text";
 import { BarSwatch } from "@/widgets/stack-bar";
 import { useEventsInRange, useTemperatureEventLabel } from "./history-events";
-import { HistoryFeedback } from "./history-feedback";
 import { PowerRings } from "./power-rings";
 import { ThermalHistory } from "./thermal-history";
 
@@ -313,8 +313,8 @@ function PowerDraw({
           grid={grid}
           loading={history.isPending}
         />
-        <HistoryFeedback
-          history={history}
+        <HistoryNotice
+          query={history}
           hostName={hostName}
           hasSamples={hasSamples}
         />

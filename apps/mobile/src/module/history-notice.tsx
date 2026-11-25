@@ -22,6 +22,7 @@ export function HistoryNotice({
   query,
   hostName,
   hasSamples,
+  showLoading = true,
 }: {
   query: Pick<
     Read,
@@ -35,6 +36,7 @@ export function HistoryNotice({
   >;
   hostName: string | undefined;
   hasSamples: boolean;
+  showLoading?: boolean;
 }) {
   const kind = commandError(query.error)?.kind;
   const retryable =
@@ -44,7 +46,7 @@ export function HistoryNotice({
   const retryingBusy =
     commandError(query.failureReason)?.kind === "remote_busy";
   if (query.isPending || (query.isFetching && (retryable || retryingBusy))) {
-    return <ModuleNotice message="Loading history…" />;
+    return showLoading ? <ModuleNotice message="Loading history…" /> : null;
   }
   if (query.isError)
     return (
