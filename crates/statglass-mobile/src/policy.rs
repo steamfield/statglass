@@ -7,17 +7,21 @@ use statglass_session::{PHONE_MIRROR_HOST_MB, PHONE_MIRROR_TOTAL_MB, SyncPolicy}
 use crate::ffi::NetworkPath;
 
 /// The sync policy for `path` (`None`: not reported yet) under `data`.
-/// With no usable path this returns the initial policy. Lifecycle keeps the last
-/// applied policy when a reported path is unsatisfied.
-pub(crate) fn sync_policy(path: Option<NetworkPath>, data: DataPolicy) -> SyncPolicy {
-    let Some(path) = path.filter(|path| path.satisfied) else {
-        return SyncPolicy::Full;
+/// An unsatisfied path returns `None` to keep the last applied policy.
+pub(crate) fn sync_policy(path: Option<NetworkPath>, data: DataPolicy) -> Option<SyncPolicy> {
+    let Some(path) = path else {
+        return Some(SyncPolicy::Full);
     };
-    match (path.constrained, path.expensive, data.sync_on_cellular) {
-        (true, _, _) | (false, true, false) => SyncPolicy::Off,
-        (false, true, true) => SyncPolicy::SummaryOnly,
-        (false, false, _) => SyncPolicy::Full,
+    if !path.satisfied {
+        return None;
     }
+    Some(
+        match (path.constrained, path.expensive, data.sync_on_cellular) {
+            (true, _, _) | (false, true, false) => SyncPolicy::Off,
+            (false, true, true) => SyncPolicy::SummaryOnly,
+            (false, false, _) => SyncPolicy::Full,
+        },
+    )
 }
 
 /// Each host's mirror budget when the phone has `hosts` hosts, so the total stays within
@@ -43,24 +47,40 @@ mod tests {
 
         for (path, expected) in [
             (None, [Full, Full]),
-            (Some((true, false, false)), [Full, Full]),
-            (Some((true, false, true)), [Off, Off]),
-            (Some((true, true, false)), [Off, SummaryOnly]),
-            (Some((true, true, true)), [Off, Off]),
-            // A caller without a last policy gets the initial policy.
-            (Some((false, false, false)), [Full, Full]),
-            (Some((false, false, true)), [Full, Full]),
-            (Some((false, true, false)), [Full, Full]),
-            (Some((false, true, true)), [Full, Full]),
+            (Some((false, false)), [Full, Full]),
+            (Some((false, true)), [Off, Off]),
+            (Some((true, false)), [Off, SummaryOnly]),
+            (Some((true, true)), [Off, Off]),
         ] {
-            let path = path.map(|(satisfied, expensive, constrained)| NetworkPath {
-                satisfied,
+            let path = path.map(|(expensive, constrained)| NetworkPath {
+                satisfied: true,
                 expensive,
                 constrained,
             });
             for (sync_on_cellular, expected) in [false, true].into_iter().zip(expected) {
                 let data = DataPolicy { sync_on_cellular };
-                assert_eq!(sync_policy(path, data), expected, "{path:?}, {data:?}");
+                assert_eq!(
+                    sync_policy(path, data),
+                    Some(expected),
+                    "{path:?}, {data:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unsatisfied_paths_keep_the_previous_sync_policy() {
+        for expensive in [false, true] {
+            for constrained in [false, true] {
+                let path = NetworkPath {
+                    satisfied: false,
+                    expensive,
+                    constrained,
+                };
+                for sync_on_cellular in [false, true] {
+                    let data = DataPolicy { sync_on_cellular };
+                    assert_eq!(sync_policy(Some(path), data), None, "{path:?}, {data:?}");
+                }
             }
         }
     }

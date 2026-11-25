@@ -27,11 +27,9 @@ struct State {
 
 impl State {
     fn apply_sync_policy(&mut self, sessions: &dyn SessionControl) {
-        if self.path.is_some_and(|path| !path.satisfied) {
-            return;
-        }
-        let next = crate::policy::sync_policy(self.path, self.data);
-        if next != self.sync {
+        if let Some(next) = crate::policy::sync_policy(self.path, self.data)
+            && next != self.sync
+        {
             sessions.set_sync_policy(next);
             self.sync = next;
         }
@@ -48,6 +46,18 @@ impl Lifecycle {
     /// The sync policy for the current path and data policy, for sources started now.
     pub(crate) fn sync_policy(&self) -> SyncPolicy {
         self.state.lock_ok().sync
+    }
+
+    /// Whether sources started now should remain parked.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "phase integration reads this when starting sources"
+        )
+    )]
+    pub(crate) fn backgrounded(&self) -> bool {
+        self.state.lock_ok().backgrounded
     }
 
     /// Quiesces every source and resolves once each has committed its in-flight mirror
@@ -375,6 +385,21 @@ mod tests {
         let mut quiesced = Lifecycle::new().quiesce(&TestSessions::default());
         let mut context = std::task::Context::from_waker(std::task::Waker::noop());
         assert!(quiesced.as_mut().poll(&mut context).is_ready());
+    }
+
+    #[tokio::test]
+    async fn quiesce_and_resume_update_the_backgrounded_flag() {
+        let lifecycle = Lifecycle::new();
+        let sessions = TestSessions::default();
+        assert!(!lifecycle.backgrounded());
+
+        let quiesced = lifecycle.quiesce(&sessions);
+        assert!(lifecycle.backgrounded());
+        quiesced.await;
+        assert!(lifecycle.backgrounded());
+
+        lifecycle.resume(&sessions);
+        assert!(!lifecycle.backgrounded());
     }
 
     #[test]

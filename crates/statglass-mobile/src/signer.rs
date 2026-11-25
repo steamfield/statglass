@@ -1,7 +1,7 @@
 //! The bridge from Swift's [`NativeSigner`] to the russh dialer's `Signer`, and the
 //! `authorized_keys` line for the phone's key (phase 4 lane d).
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use statglass_ipc::error::CommandError;
 use statglass_session::BoxFuture;
@@ -10,24 +10,33 @@ use statglass_ssh::{Signer, SignerError};
 use crate::ffi::{NativeSigner, NativeSignerError};
 
 /// The native key, as the dialer signs with it.
+///
+/// The adapter retries native reads until it receives a 65-byte uncompressed key.
+/// Regenerating the key requires rebuilding the core's sessions.
 pub(crate) struct NativeSignerAdapter {
     native: Arc<dyn NativeSigner>,
-    public_key: Vec<u8>,
+    public_key: OnceLock<Vec<u8>>,
 }
 
 impl NativeSignerAdapter {
-    /// Reads the public key once; the dialer asks for it on every connection.
     pub(crate) fn new(native: Arc<dyn NativeSigner>) -> Self {
         Self {
-            public_key: native.public_key(),
             native,
+            public_key: OnceLock::new(),
         }
     }
 }
 
 impl Signer for NativeSignerAdapter {
     fn public_key(&self) -> &[u8] {
-        &self.public_key
+        if let Some(cached) = self.public_key.get() {
+            return cached;
+        }
+        let key = self.native.public_key();
+        if matches!(key.as_slice(), [4, coordinates @ ..] if coordinates.len() == 64) {
+            return self.public_key.get_or_init(|| key);
+        }
+        self.public_key.get().map_or(&[], Vec::as_slice)
     }
 
     fn sign(&self, data: Vec<u8>) -> BoxFuture<'static, Result<Vec<u8>, SignerError>> {
@@ -72,23 +81,28 @@ pub(crate) fn authorized_key_line(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
+    use statglass_schema::lock::LockExt;
     use statglass_ssh::SoftwareSigner;
 
     use super::*;
 
     struct SoftwareNative {
         signer: SoftwareSigner,
+        public_key: Mutex<Vec<u8>>,
         key_reads: AtomicUsize,
         runtime_thread: std::thread::ThreadId,
     }
 
     impl SoftwareNative {
         fn new(signer: SoftwareSigner) -> Self {
+            let public_key = Mutex::new(signer.public_key().to_vec());
             Self {
                 signer,
+                public_key,
                 key_reads: AtomicUsize::new(0),
                 runtime_thread: std::thread::current().id(),
             }
@@ -98,7 +112,7 @@ mod tests {
     impl NativeSigner for SoftwareNative {
         fn public_key(&self) -> Vec<u8> {
             self.key_reads.fetch_add(1, Ordering::Relaxed);
-            self.signer.public_key().to_vec()
+            self.public_key.lock_ok().clone()
         }
 
         fn sign(&self, data: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {
@@ -130,7 +144,7 @@ mod tests {
     async fn signs_off_the_runtime_thread_with_the_cached_key() {
         let native = Arc::new(SoftwareNative::new(SoftwareSigner::generate()));
         let adapter = NativeSignerAdapter::new(native.clone());
-        assert_eq!(native.key_reads.load(Ordering::Relaxed), 1);
+        assert_eq!(native.key_reads.load(Ordering::Relaxed), 0);
         assert_eq!(adapter.public_key(), native.signer.public_key());
 
         let message = b"SSH authentication request";
@@ -143,6 +157,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_key_created_after_start_can_authenticate() {
+        let native = Arc::new(SoftwareNative::new(SoftwareSigner::generate()));
+        native.public_key.lock_ok().clear();
+        let adapter = NativeSignerAdapter::new(native.clone());
+        assert!(adapter.public_key().is_empty());
+
+        let public = native.signer.public_key();
+        let mut wrong_prefix = public.to_vec();
+        wrong_prefix[0] = 2;
+        for malformed in [wrong_prefix, public[..64].to_vec()] {
+            *native.public_key.lock_ok() = malformed;
+            assert!(adapter.public_key().is_empty());
+        }
+
+        *native.public_key.lock_ok() = public.to_vec();
+        assert_eq!(adapter.public_key(), public);
+
+        let message = b"SSH authentication after pairing";
+        let der = adapter.sign(message.to_vec()).await.unwrap();
+        let signature = Signature::from_der(&der).unwrap();
+        let key = VerifyingKey::from_sec1_bytes(adapter.public_key()).unwrap();
+        key.verify(message, &signature).unwrap();
+    }
+
+    #[tokio::test]
     async fn signing_errors_keep_the_native_message_and_refusal() {
         let cases: [(NativeFailure, bool); 3] = [
             (|message| NativeSignerError::Unavailable { message }, false),
@@ -150,7 +189,10 @@ mod tests {
             (|message| NativeSignerError::Refused { message }, true),
         ];
         for (error, refused) in cases {
-            let adapter = NativeSignerAdapter::new(Arc::new(FailingNative { key: vec![], error }));
+            let adapter = NativeSignerAdapter::new(Arc::new(FailingNative {
+                key: SoftwareSigner::generate().public_key().to_vec(),
+                error,
+            }));
             match (refused, adapter.sign(vec![]).await.unwrap_err()) {
                 (true, SignerError::Refused(message))
                 | (false, SignerError::Unavailable(message)) => {
