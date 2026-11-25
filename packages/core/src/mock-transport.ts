@@ -62,7 +62,7 @@
  */
 
 import type { HostDemand } from "./generated/types";
-import { createMockNetworkAddresses } from "./mock/addresses";
+import { mockAddressCommands } from "./mock/addresses";
 import type { MockTransport, MockTransportOptions } from "./mock/contracts";
 import { createMockDiskSpace } from "./mock/disk-space";
 import { createMockDocker } from "./mock/docker";
@@ -187,7 +187,7 @@ export function createMockTransport(
     hostHistory: scenarios.includes("phone-sparkline-gap")
       ? phoneSparklineFixture
       : createMockHostHistory(queries.methods, now, remote.remotes),
-    ...mockPhoneCommands(commands, remote, now),
+    ...mockAddressesAndPhoneCommands(commands, remote, now, power, flags.linux),
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,
     subscriberCount: () => channels.live.size,
@@ -213,17 +213,29 @@ export function createMockTransport(
   });
 }
 
-function mockPhoneCommands(
+function mockAddressesAndPhoneCommands(
   commands: MockCommands,
   remote: MockRemotes,
-  now: () => number
+  now: () => number,
+  power: MockPower,
+  localLinux: boolean
 ): Pick<
   MockTransport,
-  "networkAddresses" | "setDemand" | "demand" | "pairingState"
+  | "getHostAddresses"
+  | "networkAddresses"
+  | "setDemand"
+  | "demand"
+  | "pairingState"
 > {
   let demand: HostDemand[] = [];
   return {
-    networkAddresses: createMockNetworkAddresses(remote, now),
+    ...mockAddressCommands(
+      remote.remotes,
+      now,
+      () => power.status.primary_iface,
+      localLinux,
+      commands.record
+    ),
     async setDemand(nextDemand) {
       demand = nextDemand.map((entry) => ({ ...entry }));
       commands.record("set_demand", demand);
