@@ -2,9 +2,8 @@
  * Custom alert rules for the Alerts page (plan/rfc-alerts.md): rule
  * sentences and alert labels in the user's units, the metrics and series a
  * rule may watch, a new rule's defaults and when each rule last fired. Rust
- * validates rules and owns the notification wording; the sentences here
- * match it for the same rule. Value text and threshold unit conversion live
- * in `@core/alert-values`.
+ * validates rules and owns the notification wording. `@core/alert-values`
+ * formats values and converts threshold units.
  */
 import { formatAlertValue } from "@core/alert-values";
 import { displayUnits, formatPercent } from "@core/format";
@@ -67,8 +66,13 @@ function comparisonWord(op: Cmp): string {
 
 /** "Fan speed (Fan 1)", or just "Memory pressure" for every series. */
 function seriesLabel(metric: string, labels: Labels): string {
-  const name = seriesName(metric, Object.fromEntries(labels));
+  const selected = Object.fromEntries(labels);
   const label = metricLabel(metric);
+  if (metric === "mem.psi") {
+    if (selected.stall === "some") return label;
+    if (labels.length === 0) return `${label} (any)`;
+  }
+  const name = seriesName(metric, selected);
   return name === null ? label : `${label} (${name})`;
 }
 
@@ -79,8 +83,7 @@ function metricOfKey(key: string): string {
 }
 
 /**
- * A custom rule as one sentence, as Rust's `rule_summary` writes it:
- * "Memory pressure above 80% for 2 min", "Free disk space (/) below 20 GB".
+ * A custom rule as a sentence such as "Memory pressure above 80% for 2 min".
  * Throws for a built-in rule, which has no threshold to describe.
  */
 export function ruleSummary(rule: AlertRule, units: UnitSettings): string {
@@ -194,9 +197,8 @@ export function newRule(metric: AlertMetric, id: string): AlertRule {
 }
 
 /**
- * The display name of one series, as Rust's `series_name` gives it from
- * the first label: `null` without labels, "Fan {n+1}" for `fan.rpm` with a
- * numeric `fan` label, otherwise that label's value.
+ * The display name of one series from its first label. Fans are numbered
+ * from one and load average windows read in minutes.
  */
 export function seriesName(
   metric: string,
@@ -207,6 +209,9 @@ export function seriesName(
   const [key, value] = first;
   if (metric === FAN_METRIC && key === FAN_LABEL && /^\d+$/.test(value)) {
     return `Fan ${Number(value) + 1}`;
+  }
+  if (metric === "cpu.loadavg" && key === "window" && /^\d+$/.test(value)) {
+    return `${value} min`;
   }
   return value;
 }

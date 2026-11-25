@@ -137,7 +137,12 @@ mod tests {
         assert!(alert_label_keys("cpu.load").is_empty());
         assert_eq!(
             alert_limits().label_keys,
-            BTreeMap::from([("disk.free", vec!["vol"]), ("fan.rpm", vec!["fan"])])
+            BTreeMap::from([
+                ("cpu.loadavg", vec!["window"]),
+                ("disk.free", vec!["vol"]),
+                ("fan.rpm", vec!["fan"]),
+                ("mem.psi", vec!["stall"]),
+            ])
         );
     }
 }

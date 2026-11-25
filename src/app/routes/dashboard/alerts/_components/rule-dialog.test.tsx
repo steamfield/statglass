@@ -135,9 +135,9 @@ describe("Rule dialog", () => {
       { scenarios: ["no-battery"] }
     );
     expect(await optionsOf(user, "Metric")).toEqual(
-      ALERT_METRICS.filter((m) => m.metric !== "battery.charge").map(
-        (m) => m.label
-      )
+      ALERT_METRICS.filter(
+        (m) => m.metric !== "battery.charge" && m.metric !== "mem.psi"
+      ).map((m) => m.label)
     );
   });
 

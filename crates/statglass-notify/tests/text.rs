@@ -182,6 +182,25 @@ fn summary_names_the_series_a_labelled_rule_watches() {
     );
 }
 
+#[test]
+fn memory_stall_summary_distinguishes_any_from_the_default_series() {
+    let some = rule(
+        "mem.psi",
+        Labels::single("stall", "some"),
+        Cmp::Gt,
+        10.0,
+        120,
+    );
+    assert_eq!(
+        rule_summary(&some, &CELSIUS_DECIMAL),
+        "Memory stall above 10% for 2 min"
+    );
+    assert_eq!(
+        summary("mem.psi", Cmp::Gt, 10.0, 120),
+        "Memory stall (any) above 10% for 2 min"
+    );
+}
+
 /// Memory follows the memory unit; disk space is always decimal GB, as Finder shows it.
 #[test]
 fn summary_bytes_follow_the_memory_unit_for_memory_only() {
@@ -244,6 +263,14 @@ fn values_take_the_catalog_unit_in_the_users_terms() {
         format_value("mem.swap_used", 5e9, &FAHRENHEIT_BINARY),
         "4.7 GiB"
     );
+}
+
+#[test]
+fn memory_stall_and_load_average_values_keep_fractional_digits() {
+    let v = |metric, value| format_value(metric, value, &CELSIUS_DECIMAL);
+    assert_eq!(v("mem.psi", 0.01), "0.01%");
+    assert_eq!(v("cpu.loadavg", 0.1), "0.1");
+    assert_eq!(v("cpu.loadavg", 1234.5), "1,234.5");
 }
 
 // ---- alert_text --------------------------------------------------------------------
@@ -315,6 +342,26 @@ fn threshold_alert_names_the_series_and_uses_the_users_units() {
             "threshold",
             "Memory is tight",
             "Hottest sensor 207 °F · above 203 °F for 2 min"
+        )
+    );
+}
+
+#[test]
+fn load_average_alert_names_its_window_in_minutes() {
+    let event = threshold(
+        "cpu.loadavg",
+        Labels::single("window", "5"),
+        5.0,
+        Cmp::Gt,
+        4.0,
+        300,
+    );
+    assert_eq!(
+        alert_text(&event, &CELSIUS_DECIMAL),
+        fired(
+            "threshold",
+            "Memory is tight",
+            "Load average (5 min) 5 · above 4 for 5 min"
         )
     );
 }
