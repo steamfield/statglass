@@ -142,16 +142,43 @@ async fn a_listener_gone_during_initial_delivery_can_reuse_its_stream_id() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_host_added_before_any_policy_change_starts_full_sync() {
+    let host = host(1);
+    let mut fixture = Fixture::start(vec![], SyncPolicy::Full);
+    fixture.sessions.set_hosts(vec![host.clone()]).unwrap();
+    let mut remote = fixture.next_dial().await;
+    offer_history(&mut remote, &host).await;
+    let Message::SyncRequest(request) = remote.read().await else {
+        panic!("expected minute sync under the default policy");
+    };
+    assert_eq!(request.tier, Tier::M1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_later_source_uses_the_last_sync_policy_and_active_sources_follow_changes() {
     let host = host(1);
     let mut fixture = Fixture::start(vec![], SyncPolicy::Full);
     fixture.sessions.set_sync_policy(SyncPolicy::Off);
-    fixture
-        .sessions
-        .set_hosts(vec![host.clone()], SyncPolicy::Full)
-        .unwrap();
+    fixture.sessions.set_hosts(vec![host.clone()]).unwrap();
     let mut remote = fixture.next_dial().await;
-    remote.handshake(&host).await;
+    offer_history(&mut remote, &host).await;
+    assert!(
+        timeout(Duration::from_millis(500), codec::read(&mut remote.peer))
+            .await
+            .is_err(),
+        "policy Off suppresses initial sync"
+    );
+
+    fixture.sessions.set_sync_policy(SyncPolicy::Full);
+    assert!(matches!(remote.read().await, Message::Interest(_)));
+    let Message::SyncRequest(request) = remote.read().await else {
+        panic!("expected minute sync after enabling it")
+    };
+    assert_eq!(request.tier, Tier::M1);
+}
+
+async fn offer_history(remote: &mut Dial, host: &MobileHost) {
+    remote.handshake(host).await;
     let Message::Ping { nonce, t0_ms } = remote.read().await else {
         panic!("expected clock probe")
     };
@@ -175,19 +202,6 @@ async fn a_later_source_uses_the_last_sync_policy_and_active_sources_follow_chan
     )
     .await
     .unwrap();
-    assert!(
-        timeout(Duration::from_millis(500), codec::read(&mut remote.peer))
-            .await
-            .is_err(),
-        "policy Off suppresses initial sync"
-    );
-
-    fixture.sessions.set_sync_policy(SyncPolicy::Full);
-    assert!(matches!(remote.read().await, Message::Interest(_)));
-    let Message::SyncRequest(request) = remote.read().await else {
-        panic!("expected minute sync after enabling it")
-    };
-    assert_eq!(request.tier, Tier::M1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -359,7 +373,7 @@ async fn an_open_stream_keeps_its_id_when_a_configured_host_is_rebuilt() {
     viewed.name = "Renamed".into();
     fixture
         .sessions
-        .set_hosts(vec![other, viewed.clone()], SyncPolicy::Off)
+        .set_hosts(vec![other, viewed.clone()])
         .unwrap();
     timeout(WAIT, &mut old.closing).await.unwrap().unwrap();
     old.finish_close.send(()).unwrap();

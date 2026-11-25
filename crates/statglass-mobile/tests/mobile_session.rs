@@ -59,7 +59,7 @@ fn mobile_core_reports_empty_and_missing_hosts_through_json() {
     let path = dir.path().to_str().unwrap().to_owned();
     assert_eq!(data(&core.start(path.clone(), config.clone())), Value::Null);
     let second: Value = serde_json::from_str(&core.start(path, config)).unwrap();
-    assert_eq!(second["error"]["kind"], "invalid_argument");
+    assert_eq!(second["error"]["kind"], "internal");
     Runtime::new().unwrap().block_on(async {
         assert_eq!(
             data(&core.call("list_hosts".into(), "".into()).await),

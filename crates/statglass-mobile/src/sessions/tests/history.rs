@@ -120,10 +120,7 @@ async fn queued_reads_for_a_replaced_mirror_return_unknown_host() {
     let old = fixture.sessions.registry.entry(host.id).unwrap();
     let mut updated = host.clone();
     updated.name = "New name".into();
-    fixture
-        .sessions
-        .set_hosts(vec![updated], SyncPolicy::Off)
-        .unwrap();
+    fixture.sessions.set_hosts(vec![updated]).unwrap();
     timeout(WAIT, &mut dial.closing).await.unwrap().unwrap();
     dial.finish_close.send(()).unwrap();
     let _new = fixture.next_dial().await;

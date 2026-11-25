@@ -38,6 +38,10 @@ impl Sessions {
         }
     }
 
+    pub(crate) fn is_started(&self) -> bool {
+        self.registry.is_started()
+    }
+
     /// Opens mirrors under `data_dir`, loads or creates the phone id and starts
     /// a source per host on the core runtime.
     pub(crate) fn start(
@@ -46,24 +50,18 @@ impl Sessions {
         data_dir: PathBuf,
         config: MobileConfig,
         signer: Arc<dyn Signer>,
-        sync: SyncPolicy,
     ) -> Result<(), CommandError> {
         self.registry.start(
             runtime,
             data_dir,
             config.hosts,
             Arc::new(RusshDialer::new(signer)),
-            sync,
         )
     }
 
     /// Replaces the configured hosts and recomputes their mirror budgets.
-    pub(crate) fn set_hosts(
-        &self,
-        hosts: Vec<MobileHost>,
-        sync: SyncPolicy,
-    ) -> Result<(), CommandError> {
-        self.registry.set_hosts(hosts, sync)
+    pub(crate) fn set_hosts(&self, hosts: Vec<MobileHost>) -> Result<(), CommandError> {
+        self.registry.set_hosts(hosts)
     }
 
     /// Answers the host, live and history calls delegated by the core.
