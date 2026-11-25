@@ -1,5 +1,4 @@
-import { Stack, useRouter } from "expo-router";
-import { ScrollView } from "react-native";
+import { useRouter } from "expo-router";
 import {
   useOptionalPhoneTransport,
   useSetPhoneTransport,
@@ -10,6 +9,7 @@ import {
   useNativeCore,
   useNativeCoreStarting,
 } from "@/transport";
+import { ScreenScroll } from "@/ui/screen-scroll";
 import { StartupFailurePanel } from "@/ui/startup-failure";
 import { Text } from "@/ui/text";
 
@@ -33,13 +33,11 @@ export default function UpdateFromMac() {
   }
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
+    <ScreenScroll
+      className="flex-1"
       contentContainerClassName="gap-4 px-6 pt-4 pb-safe-or-6"
-      contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
     >
-      <Stack.Screen options={{ title: "Update from Mac" }} />
       {native ? (
         <UpdateFlow core={native} done={done} />
       ) : error ? (
@@ -51,6 +49,6 @@ export default function UpdateFromMac() {
             : "Updating hosts needs the StatGlass iPhone app."}
         </Text>
       )}
-    </ScrollView>
+    </ScreenScroll>
   );
 }

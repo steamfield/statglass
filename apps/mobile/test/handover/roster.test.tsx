@@ -1,14 +1,29 @@
+import "react-native-gesture-handler/jestSetup";
 import type { MobileRemoteHost } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { phoneProblem } from "@core/phone-connection";
-import { expect, test } from "@jest/globals";
-import { FakeNative, installNative, ok } from "@test/transport/fake-native";
-import { Slot } from "expo-router";
-import { fireEvent, renderRouter, screen } from "expo-router/testing-library";
+import { expect, jest, test } from "@jest/globals";
+import { renderWithProviders } from "@test/render";
+import { FakeNative, ok } from "@test/transport/fake-native";
+import { ExpoRoot, Slot, Stack } from "expo-router";
+import {
+  act,
+  fireEvent,
+  getMockContext,
+  renderRouter,
+  screen,
+} from "expo-router/testing-library";
+import { ActionSheetIOS } from "react-native";
+import HostsSettings from "@/app/settings/hosts";
 import { ProblemBanner } from "@/connection/problem-banner";
 import { AppProviders } from "@/lib/providers";
 import { createNativeTransport, toRemoteHostRecord } from "@/transport";
 import { Text } from "@/ui/text";
+
+jest.mock("react-native-reanimated", () => ({
+  ...require("@test/ui/reanimated-list-stub").reanimatedListStub,
+  withSpring: (target: number) => target,
+}));
 
 const handedOver: MobileRemoteHost = {
   id: "build",
@@ -75,15 +90,30 @@ test("Settings shows the applied Mac removal mark and keeps the normal Remove ac
         return ok(null);
     }
   });
-  installNative(native);
-  await renderRouter("./src/app", { initialUrl: "/settings/hosts" });
-  expect(await screen.findByText("Removed on your Mac")).toBeOnTheScreen();
-  await fireEvent.press(
-    screen.getByRole("button", { name: "Remove Build server" })
+  const menu = jest
+    .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+    .mockImplementation(() => undefined);
+  const routes = getMockContext({
+    _layout: () => <Stack />,
+    "settings/hosts": HostsSettings,
+  });
+  await renderWithProviders(
+    <ExpoRoot context={routes} location="/settings/hosts" />,
+    { transport: createNativeTransport(native) }
   );
-  await fireEvent.press(
-    await screen.findByRole("button", { name: "Remove host" })
-  );
+  const row = await screen.findByRole("button", {
+    name: /^Build server, .*Removed on your Mac$/,
+  });
+  await fireEvent(row, "accessibilityAction", {
+    nativeEvent: { actionName: "remove" },
+  });
+  const confirmation = menu.mock.lastCall;
+  expect(confirmation?.[0]).toMatchObject({
+    options: ["Remove Build server", "Cancel"],
+    destructiveButtonIndex: 0,
+  });
+  if (!confirmation) throw new Error("Expected the removal confirmation");
+  await act(() => confirmation[1](0));
   expect(await screen.findByText("No hosts on this iPhone.")).toBeOnTheScreen();
 });
 

@@ -5,7 +5,8 @@ import {
   FakeNative,
   installNative,
 } from "@test/transport/fake-native";
-import { screen, within } from "@testing-library/react-native";
+import { fireEvent, screen, within } from "@testing-library/react-native";
+import { Linking } from "react-native";
 import AboutSettings from "@/app/settings/about";
 
 test("shows the installed core's version and protocol range", async () => {
@@ -56,4 +57,24 @@ test("reads the native version once per mount even when About rerenders", async 
   await view.unmount();
   await renderWithProviders(<AboutSettings />);
   expect(native.version).toHaveBeenCalledTimes(2);
+});
+
+test("opens the StatGlass licenses from About", async () => {
+  const open = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+  await renderWithProviders(<AboutSettings />);
+  await fireEvent.press(screen.getByRole("button", { name: "Licenses" }));
+  expect(open).toHaveBeenCalledWith(
+    "https://github.com/steamfield/statglass/blob/main/LICENSE"
+  );
+});
+
+test("shows the reason when iOS cannot open the licenses", async () => {
+  jest
+    .spyOn(Linking, "openURL")
+    .mockRejectedValue(new Error("No browser is available."));
+  await renderWithProviders(<AboutSettings />);
+  await fireEvent.press(screen.getByRole("button", { name: "Licenses" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "No browser is available."
+  );
 });

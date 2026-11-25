@@ -16,11 +16,9 @@ import { themeColors } from "@/theme.generated";
 
 const APP_DIR = "./src/app";
 const PENDING_COLOR_MIGRATIONS: Record<string, number> = {
-  "app/settings/data.tsx": 1,
   "cards/battery-card.tsx": 1,
   "cards/module-card.tsx": 3,
   "hosts/host-row.tsx": 1,
-  "lock/app-lock-setting.tsx": 1,
   "widgets/chart-annotations.tsx": 1,
   "widgets/gap-bands.tsx": 1,
   "widgets/inline-bar.tsx": 1,
@@ -255,7 +253,7 @@ test("retrying a failed root-level screen preserves the active demo", async () =
   expect(await screen.findByRole("button", demoHost)).toBeOnTheScreen();
 });
 
-test("retrying a failed settings screen preserves its place in the settings stack", async () => {
+test("retrying a failed settings screen preserves its place in the root stack", async () => {
   installNative(null);
   let fails = true;
   function About() {

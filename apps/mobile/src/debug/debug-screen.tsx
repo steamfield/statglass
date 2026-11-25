@@ -117,7 +117,12 @@ function DebugHostForm({
         <Text variant="label">
           Add this line to ~/.ssh/authorized_keys on the Mac.
         </Text>
-        <Text variant="body" selectable>
+        <Text
+          variant="caption"
+          className="font-mono"
+          maxFontSizeMultiplier={1.5}
+          selectable
+        >
           {keyLine}
         </Text>
       </View>

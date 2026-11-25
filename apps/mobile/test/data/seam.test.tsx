@@ -11,10 +11,6 @@ import { Pressable, Text } from "react-native";
 import { createDemoTransport } from "@/data/demo";
 import { useHosts } from "@/data/hosts-list";
 import {
-  usePhoneSettings,
-  usePhoneSettingsActions,
-} from "@/data/phone-settings";
-import {
   useIsDemo,
   usePhoneTransport,
   useSetPhoneTransport,
@@ -139,26 +135,4 @@ test("reading the transport before one is chosen says what to do", async () => {
   await expect(renderWithProviders(<NeedsTransport />)).rejects.toThrow(
     "no transport is chosen yet"
   );
-});
-
-function Appearance() {
-  const appearance = usePhoneSettings((s) => s.appearance);
-  const { set } = usePhoneSettingsActions();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => set({ appearance: "dark" })}
-    >
-      <Text>{appearance}</Text>
-    </Pressable>
-  );
-}
-
-test("a settings write reaches the readers", async () => {
-  await renderWithProviders(<Appearance />);
-  expect(screen.getByText("system")).toBeOnTheScreen();
-
-  await fireEvent.press(screen.getByRole("button"));
-
-  expect(screen.getByText("dark")).toBeOnTheScreen();
 });
