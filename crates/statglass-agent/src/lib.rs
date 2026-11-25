@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use anyhow::Context;
 use statglass_remote::AgentEnv;
 
+mod alert_rules;
 mod cli;
 mod commands;
 mod container_names;

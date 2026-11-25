@@ -7,8 +7,8 @@ use crate::{DeviceSeenLog, ServerProvider};
 use statglass_engine::disk_space::SpaceService;
 use statglass_engine::{HistoryStore, LiveHub};
 use statglass_proto::{
-    Answer, Hello, Message, Query, RemoteInterest, SourceStatus, SyncRequest, WireBucket,
-    WireLayout,
+    Answer, Hello, Message, Query, RemoteInterest, RuleEntry, SourceStatus, SyncRequest,
+    WireBucket, WireLayout,
 };
 use statglass_schema::{Capabilities, HostRecord, SyncKinds, Tier, floor_to};
 use std::collections::HashMap;
@@ -22,6 +22,22 @@ pub trait ServedHost: Send + Sync + 'static {
     fn hub(&self) -> &LiveHub;
     /// Replace one session's interest; the default interest releases its demand.
     fn set_remote_interest(&self, session: u64, interest: RemoteInterest);
+    /// `Query::AlertRules`: the host's custom alert rules. Hosts that do not take rules
+    /// from a controller (the Mac app) keep this default refusal.
+    fn alert_rules(&self) -> Answer {
+        crate::host_queries::unsupported()
+    }
+    /// `Query::SetAlertRules`: replaces the custom alert rules (plan/rfc-remote-alerts.md
+    /// 5.1). Same default refusal as [`Self::alert_rules`].
+    fn set_alert_rules(
+        &self,
+        base_revision: i64,
+        rules: Vec<RuleEntry>,
+        keep: Vec<Uuid>,
+    ) -> Answer {
+        let _ = (base_revision, rules, keep);
+        crate::host_queries::unsupported()
+    }
 }
 
 /// What a host's viewers want collected: its own windows (`local`) and each remote

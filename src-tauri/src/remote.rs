@@ -142,6 +142,31 @@ impl RemoteManager {
             .cloned()
             .ok_or(CommandError::UnknownHost { host })
     }
+    pub(crate) fn alert_rules_source(
+        &self,
+        local: HostId,
+        host: HostId,
+    ) -> Result<Arc<RemoteSource>, CommandError> {
+        if host == local {
+            return Err(CommandError::InvalidArgument {
+                message: "This Mac's alert rules are set in its Alerts page".into(),
+            });
+        }
+        {
+            let saved = self.saved.lock_ok();
+            let saved_host = saved.get(&host).ok_or(CommandError::UnknownHost { host })?;
+            if !saved_host.is_linux() {
+                return Err(CommandError::InvalidArgument {
+                    message: format!(
+                        "Alert rules on {} are set on that Mac",
+                        saved_host.config.name
+                    ),
+                });
+            }
+        }
+        self.source(host)
+    }
+
     pub fn sources(&self) -> Vec<Arc<RemoteSource>> {
         self.sources.lock_ok().values().cloned().collect()
     }
@@ -214,6 +239,17 @@ pub struct SavedHostStatus {
     pub name: String,
     pub status: RemoteHostStatus,
 }
+/// The command error for an alert-rule query: the host's refusal of a rule's content is
+/// a settings error the rule dialog shows; everything else maps as any remote error.
+pub(crate) fn alert_rules_error(error: statglass_remote::RemoteError) -> CommandError {
+    match error {
+        statglass_remote::RemoteError::InvalidArgument(message) => {
+            CommandError::InvalidSettings { message }
+        }
+        error => error.into(),
+    }
+}
+
 /// The command error for a Linux agent install, update or restart failure. A function,
 /// not a `From` impl: `CommandError` lives in `statglass-ipc`, which never depends on
 /// `statglass-remote`, so the orphan rule keeps this mapping in the shell.
@@ -344,6 +380,8 @@ pub use vitals::{HostVitals, MemoryPressure};
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::alert_rules_test_source;
 
 #[cfg(test)]
 mod command_regressions {

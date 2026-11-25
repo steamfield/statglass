@@ -2,11 +2,12 @@
 //! on stdout and never starts a second writer of the daemon's history.
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use serde_json::{Value, json};
-use statglass_engine::identity;
+use statglass_engine::{EngineParts, NoScaleStore, identity};
 use statglass_proto::{Message, RemoteInterest};
 use statglass_remote::agent_install::{StepOutcome, UninstallReport, UninstallStep};
 use statglass_remote::{AgentLayout, AgentPaths, ServedHost};
@@ -187,7 +188,14 @@ pub async fn sample(seconds: Option<u64>) -> anyhow::Result<Value> {
     let names = crate::container_names::spawn();
     crate::container_names::first_pass(&names, crate::container_names::FIRST_PASS_WITHIN).await;
     let host = tokio::task::spawn_blocking(move || {
-        let host = AgentHost::start(record, Settings::agent_default(), None, names)?;
+        let host = AgentHost::start(
+            record,
+            Settings::agent_default(),
+            None,
+            EngineParts::platform_with(Arc::new(NoScaleStore), names),
+            None,
+            Vec::new(),
+        )?;
         host.set_local_interest(RemoteInterest {
             detail: true,
             process_period_ms: Some(0),

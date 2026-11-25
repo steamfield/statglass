@@ -1,6 +1,88 @@
 //! Shell configuration and cancellation behavior.
 use super::*;
 use statglass_remote::OpenSshDialer;
+
+pub(crate) fn alert_rules_test_source(
+    remotes: &RemoteManager,
+    local: HostId,
+    mut record: HostRecord,
+    command: RemoteCommand,
+) -> Arc<RemoteSource> {
+    record.is_local = false;
+    let host = record.id;
+    let saved = SavedHost {
+        config: RemoteHostConfig {
+            id: host.to_string(),
+            name: record.display_name.clone(),
+            lan: Some("fixture".into()),
+            tailscale: None,
+            enabled: true,
+            mirror_budget_mb: 100,
+        },
+        record: record.clone(),
+        command,
+        last_agent_version: None,
+    };
+    let source = RemoteSource::new(
+        record,
+        local,
+        Arc::<OpenSshDialer>::default(),
+        saved.endpoint().endpoint(),
+        Arc::new(|_| {}),
+        None,
+    );
+    remotes.sources.lock_ok().insert(host, source.clone());
+    remotes.saved.lock_ok().insert(host, saved);
+    source
+}
+
+#[test]
+fn remote_alert_rules_only_route_saved_linux_hosts_with_a_source() {
+    let remotes = RemoteManager::default();
+    let local = crate::test_support::mac_host(1).id;
+    let mac = crate::test_support::bare_host(2, "Studio", statglass_schema::OsKind::MacOs);
+    let linux = crate::test_support::bare_host(3, "Linux", statglass_schema::OsKind::Linux);
+    let unknown = HostId(Uuid::from_u128(4));
+    alert_rules_test_source(&remotes, local, mac.clone(), RemoteCommand::default());
+    let source = alert_rules_test_source(
+        &remotes,
+        local,
+        linux.clone(),
+        RemoteCommand::Agent {
+            bin: "/usr/bin/statglass-agent".into(),
+            system: false,
+            socket: None,
+        },
+    );
+
+    let routed = remotes.alert_rules_source(local, linux.id).unwrap();
+    assert!(Arc::ptr_eq(&routed, &source));
+    remotes.sources.lock_ok().remove(&linux.id);
+    for (host, error) in [
+        (
+            local,
+            serde_json::json!({"kind": "invalid_argument", "message": "This Mac's alert rules are set in its Alerts page"}),
+        ),
+        (
+            mac.id,
+            serde_json::json!({"kind": "invalid_argument", "message": "Alert rules on Studio are set on that Mac"}),
+        ),
+        (
+            linux.id,
+            serde_json::json!({"kind": "unknown_host", "host": linux.id}),
+        ),
+        (
+            unknown,
+            serde_json::json!({"kind": "unknown_host", "host": unknown}),
+        ),
+    ] {
+        assert_eq!(
+            serde_json::to_value(remotes.alert_rules_source(local, host).err().unwrap()).unwrap(),
+            error,
+        );
+    }
+}
+
 #[test]
 fn invalid_host_configuration_is_rejected_before_ssh_or_storage() {
     let valid = RemoteHostConfig {

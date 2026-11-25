@@ -21,6 +21,7 @@ import {
   ALERT_METRICS,
   type AlertMetric,
   type AlertRule,
+  type Cmp,
   type UnitSettings,
 } from "@core/generated/types";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
@@ -40,7 +41,7 @@ export interface RuleForm {
   metric: string;
   /** The watched series' labels; empty for every series ("Any"). */
   labels: Record<string, string>;
-  op: "gt" | "lt";
+  op: Cmp;
   /** The threshold as the user sees and types it, in the display unit. */
   shown: string;
   /**

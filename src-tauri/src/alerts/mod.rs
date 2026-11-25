@@ -11,6 +11,7 @@
 //! | [`host_offline`] | the built-in host-offline rule as a pure state machine |
 //! | [`host_watch`] | remote statuses as the watch's observations, its notices as alert events |
 //! | [`host_poll`] | the 30 s task that feeds the watch and fires its alerts |
+//! | [`remote_delivery`] | delivery floors for Linux agent alerts and catch-up batches |
 //!
 //! # Emitting
 //!
@@ -36,6 +37,8 @@ pub mod host_poll;
 pub mod host_watch;
 #[cfg(test)]
 mod host_watch_tests;
+pub(crate) mod remote_delivery;
+mod remote_rules;
 pub mod store;
 #[cfg(test)]
 mod tests;
@@ -86,6 +89,7 @@ pub struct DestinationView {
 pub struct AlertsService {
     writes: Mutex<Store>,
     view: Mutex<AlertDestinationsView>,
+    pub(crate) remote_delivery: remote_delivery::RemoteDelivery,
 }
 
 impl AlertsService {
@@ -109,6 +113,7 @@ impl AlertsService {
         Self {
             writes: Mutex::new(store),
             view: Mutex::new(view),
+            remote_delivery: remote_delivery::RemoteDelivery::open(dir),
         }
     }
 
@@ -164,7 +169,14 @@ impl AlertsService {
         let Some(text) = alert_text(event, units) else {
             return;
         };
-        let message = Message::from_alert_text(text, host_name, event.ts_ms);
+        self.send_message(
+            &Message::from_alert_text(text, host_name, event.ts_ms),
+            send,
+        );
+    }
+
+    /// Hands one prepared message to each enabled destination.
+    fn send_message(&self, message: &Message, send: impl Fn(Destination, Message)) {
         // Collected first so `send` runs without the lock: it may record an outcome.
         let enabled: Vec<Destination> = self
             .destinations()

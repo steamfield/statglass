@@ -46,6 +46,8 @@ export const SCENARIOS = [
   "linux",
   "linux-host",
   "linux-agent-update",
+  "linux-alerts-stale",
+  "linux-alerts-offline",
   "hosts-outdated",
   "host-updating",
   "host-update-failed",

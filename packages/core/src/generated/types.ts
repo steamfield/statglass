@@ -3,9 +3,9 @@
 /* Constants */
 export const ALERT_DESTINATION_LIMITS = {"max_destinations":8,"max_name_chars":40,"max_token_chars":256,"max_topic_chars":64,"max_url_chars":2048,"messages":{"name":"destination name must be 1 to 40 characters with no leading or trailing spaces","token":"access token must be at most 256 characters with no spaces","too_many":"at most 8 destinations can be saved","topic":"topic must be 1 to 64 letters, digits, hyphens or underscores","unknown_id":"no saved destination has that id","url":"address must start with http:// or https://, name a host, and be at most 2048 characters with no spaces, quotes or backslashes, with no user name or password in it"}} as const;
 
-export const ALERT_LIMITS = {"builtin_ids":["6b656c76-6f00-0000-0000-000000000001","6b656c76-6f00-0000-0000-000000000002","6b656c76-6f00-0000-0000-000000000003"],"host_offline_id":"6b656c76-6f00-0000-0000-000000000003","hot_process_id":"6b656c76-6f00-0000-0000-000000000001","label_keys":{"disk.free":["vol"],"fan.rpm":["fan"]},"max_cooldown_secs":86400,"max_custom":32,"max_for_secs":3600,"max_name_chars":60,"messages":{"cooldown":"cooldown must be between 1 minute and 24 hours","duplicate_id":"two rules share one id","duration":"duration must be at most 1 hour","labels":"a rule watches every series of its metric or one series named by a label it carries","metric":"metric {metric} cannot be alerted on; choose one of the listed metrics","name":"rule name must be 1 to 60 characters with no leading or trailing spaces","not_threshold":"a custom rule must be a threshold on one metric","reserved_id":"rule id belongs to a built-in rule","too_many":"at most 32 custom rules","value":"threshold is outside the range this metric accepts"},"min_cooldown_secs":60,"thermal_serious_id":"6b656c76-6f00-0000-0000-000000000002"} as const;
+export const ALERT_LIMITS = {"builtin_ids":["6b656c76-6f00-0000-0000-000000000001","6b656c76-6f00-0000-0000-000000000002","6b656c76-6f00-0000-0000-000000000003"],"host_offline_id":"6b656c76-6f00-0000-0000-000000000003","hot_process_id":"6b656c76-6f00-0000-0000-000000000001","label_keys":{"cpu.loadavg":["window"],"disk.free":["vol"],"fan.rpm":["fan"],"mem.psi":["stall"]},"max_cooldown_secs":86400,"max_custom":32,"max_for_secs":3600,"max_name_chars":60,"messages":{"cooldown":"cooldown must be between 1 minute and 24 hours","duplicate_id":"two rules share one id","duration":"duration must be at most 1 hour","labels":"a rule watches every series of its metric or one series named by a label it carries","metric":"metric {metric} cannot be alerted on; choose one of the listed metrics","name":"rule name must be 1 to 60 characters with no leading or trailing spaces","not_threshold":"a custom rule must be a threshold on one metric","reserved_id":"rule id belongs to a built-in rule","too_many":"at most 32 custom rules","value":"threshold is outside the range this metric accepts"},"min_cooldown_secs":60,"thermal_serious_id":"6b656c76-6f00-0000-0000-000000000002"} as const;
 
-export const ALERT_METRICS = [{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"CPU usage","max":100.0,"metric":"cpu.total","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"GPU usage","max":100.0,"metric":"gpu.util","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":80.0,"label":"Memory pressure","max":100.0,"metric":"mem.pressure","min":1.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":4000000000.0,"label":"Swap used","max":999999995904.0,"metric":"mem.swap_used","min":100000000.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":1000.0,"label":"Swapping out","max":1000000.0,"metric":"mem.swap_out","min":1.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":95.0,"label":"Hottest sensor","max":130.0,"metric":"thermal.hottest","min":30.0},{"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":4000.0,"label":"Fan speed","max":20000.0,"metric":"fan.rpm","min":500.0},{"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":60.0,"label":"System power","max":1000.0,"metric":"power.system","min":1.0},{"default_for_secs":0,"default_label":null,"default_op":"lt","default_value":20.0,"label":"Battery charge","max":100.0,"metric":"battery.charge","min":1.0},{"default_for_secs":0,"default_label":["vol","/"],"default_op":"lt","default_value":20000000000.0,"label":"Free disk space","max":100000000376832.0,"metric":"disk.free","min":100000000.0}] as const;
+export const ALERT_METRICS = [{"bare_label_value":null,"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"CPU usage","max":100.0,"metric":"cpu.total","min":1.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":300,"default_label":["window","5"],"default_op":"gt","default_value":4.0,"label":"Load average","max":1000.0,"metric":"cpu.loadavg","min":0.10000000149011612,"numeric_label_unit":"min","unlabelled_qualifier":null,"value_significant_digits":7},{"bare_label_value":null,"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":90.0,"label":"GPU usage","max":100.0,"metric":"gpu.util","min":1.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":80.0,"label":"Memory pressure","max":100.0,"metric":"mem.pressure","min":1.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":4000000000.0,"label":"Swap used","max":999999995904.0,"metric":"mem.swap_used","min":100000000.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":1000.0,"label":"Swapping out","max":1000000.0,"metric":"mem.swap_out","min":1.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":"some","default_for_secs":120,"default_label":["stall","some"],"default_op":"gt","default_value":10.0,"label":"Memory stall","max":100.0,"metric":"mem.psi","min":0.009999999776482582,"numeric_label_unit":null,"unlabelled_qualifier":"any","value_significant_digits":7},{"bare_label_value":null,"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":95.0,"label":"Hottest sensor","max":130.0,"metric":"thermal.hottest","min":30.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":120,"default_label":null,"default_op":"gt","default_value":4000.0,"label":"Fan speed","max":20000.0,"metric":"fan.rpm","min":500.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":300,"default_label":null,"default_op":"gt","default_value":60.0,"label":"System power","max":1000.0,"metric":"power.system","min":1.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":0,"default_label":null,"default_op":"lt","default_value":20.0,"label":"Battery charge","max":100.0,"metric":"battery.charge","min":1.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null},{"bare_label_value":null,"default_for_secs":0,"default_label":["vol","/"],"default_op":"lt","default_value":20000000000.0,"label":"Free disk space","max":100000000376832.0,"metric":"disk.free","min":100000000.0,"numeric_label_unit":null,"unlabelled_qualifier":null,"value_significant_digits":null}] as const;
 
 export const CHART_WINDOWS = ["5m","15m","30m","1h"] as const;
 
@@ -219,8 +219,25 @@ export type AlertMetric = {
 	 *  image, which is always full, does not fire them.
 	 */
 	default_label: [string, string] | null,
+	/**
+	 *  Maximum significant digits for directly displayed percent and count values.
+	 *  `None` uses the normal unit formatter.
+	 */
+	value_significant_digits: number | null,
+	/**  A value of the default label's key that leaves the metric name unqualified. */
+	bare_label_value: string | null,
+	/**  Qualifier in parentheses for a rule watching every series, if any. */
+	unlabelled_qualifier: string | null,
+	/**  Unit word appended to a numeric value of the default label's key. */
+	numeric_label_unit: string | null,
 };
 
+/**
+ *  Agents and controllers exchange rules per entry, and an entry counts as known only
+ *  when re-encoding it gives back the CBOR it arrived as (`statglass_proto::RuleEntry`).
+ *  A field added later must be skipped when it holds its default
+ *  (`skip_serializing_if`), or every rule from an older peer reads as newer.
+ */
 export type AlertRule = {
 	id: string,
 	name: string,
@@ -491,6 +508,8 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "remote_busy"; message: string } |
 /**  A connected, current host does not offer what was asked (its edition or setup). */
 { kind: "remote_unsupported"; message: string } |
+/**  The host's alert rules changed. Reload them before saving again. */
+{ kind: "remote_rules_changed"; message: string } |
 /**
  *  The Linux host has too little free space for the agent's history budget plus the
  *  low-disk reserve.
@@ -2379,6 +2398,10 @@ export type NetworkSpan = {
 /**  MB/s or Mb/s. */
 export type NetworkUnit = "bytes_per_sec" | "bits_per_sec";
 
+export type NewerRule = {
+	id: string | null,
+};
+
 export type OnboardingPatch = {
 	completed?: boolean | null,
 };
@@ -2713,6 +2736,12 @@ export type RemoteAccessSettings = {
  */
 export type RemoteAgentLayout = "system" | "user";
 
+export type RemoteAlertRules = {
+	revision: number,
+	rules: AlertRule[],
+	newer: NewerRule[],
+};
+
 /**  The platform-neutral part of a remote host's status. */
 export type RemoteConnection = {
 	state: RemoteState,
@@ -2860,6 +2889,9 @@ export type RrJob = {
 	started_ms: number,
 	peers: HostId[],
 };
+
+/**  The agent's opaque rule revision crosses IPC as a JavaScript number. */
+export type RulesRevision = number;
 
 export type SamplingPatch = {
 	interval_ms?: number | null,

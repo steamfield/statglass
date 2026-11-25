@@ -443,7 +443,7 @@ pub enum CursorRead {
 }
 
 /// What [`crate::Writer::ingest_page`] did.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct IngestReport {
     /// Rows inserted or changed.
     pub rows_written: u32,
@@ -453,4 +453,8 @@ pub struct IngestReport {
     /// Gaps for a module this build does not know (D-040).
     pub gaps_skipped: u32,
     pub events_written: u32,
+    /// Decoded alerts first inserted by this page. Use [`crate::Writer::ingest_page_durable`]
+    /// for once-only delivery across replays. [`crate::Writer::ingest_page`] can report
+    /// inserts before its batch commits.
+    pub alerts_inserted: Vec<statglass_schema::Event>,
 }

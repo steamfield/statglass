@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use statglass_schema::lock::LockExt;
-use statglass_schema::{Capabilities, HostId, Module, PowerSource, Settings};
+use statglass_schema::{Capabilities, Event, HostId, Module, PowerSource, Settings};
 use statglass_store::Writer;
 
 use super::Engine;
@@ -73,6 +73,11 @@ impl EngineControl {
     pub fn apply_settings(&self, settings: &Settings) {
         self.inbox
             .command(Command::Settings(Box::new(settings.clone())));
+    }
+
+    /// Restores alert cooldowns from stored events on the engine thread.
+    pub fn seed_alert_history(&self, events: Vec<Event>) {
+        self.inbox.command(Command::SeedAlertHistory(events));
     }
 
     /// Detaches from the store (`None`) or attaches to a new one; see

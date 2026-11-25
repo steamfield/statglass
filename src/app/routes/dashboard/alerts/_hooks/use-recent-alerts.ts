@@ -1,5 +1,5 @@
 /**
- * The alerts This Mac fired over the last 7 days, for the Alerts page's
+ * The alerts the page's host fired over the last 7 days, for the Alerts page's
  * Recent list and the rules' last-fired lines. Reads through the shared
  * events query, so a pushed alert shows without a refetch.
  */
@@ -38,9 +38,8 @@ function isAlert(event: Event): event is AlertEvent {
 
 /**
  * Alert events (`detail.kind === "alert"`) of the last 7 days, newest
- * first. The host is the current store's, which on the Alerts page is
- * always This Mac: the dashboard layout renders Alerts in the local host's
- * store whichever host is selected. History unavailable reads as no alerts;
+ * first. The dashboard scopes the store to the host whose rules the Alerts
+ * page shows. History unavailable reads as no alerts;
  * any other failed read is `isError`.
  */
 export function useRecentAlerts(): RecentAlerts {

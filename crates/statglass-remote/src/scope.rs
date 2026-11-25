@@ -59,6 +59,8 @@ impl SessionScope {
             | Query::SpaceSubtree { .. }
             | Query::SpaceLargestFiles { .. }
             | Query::SpacePath { .. }
+            | Query::AlertRules
+            | Query::SetAlertRules { .. }
             | Query::Unknown => matches!(self, Self::Full),
         }
     }

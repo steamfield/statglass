@@ -17,12 +17,14 @@
 //!   ([`Negotiated::sync_kinds`]), because an unknown field is dropped silently and the
 //!   receiver's cursor would move past rows it never stored (D-064).
 
+mod alert_rules;
 mod codec;
 mod handshake;
 mod message;
 pub mod pairing;
 mod query;
 
+pub use alert_rules::{HostAlertRules, RuleEntry};
 pub use codec::{
     CodecError, KNOWN_MESSAGE_TAGS, MAX_FRAME_LEN, decode_message, encode_frame, encode_message,
     read_frame, write_frame,

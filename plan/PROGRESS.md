@@ -21,6 +21,19 @@ The iPhone RFC (`plan/rfc-ios-app.md`, revision 2) is accepted: its ten section 
 - Verified: `make agent-config-check agent-config-test agent-hooks-test verification-test`; the new hook fixtures were each checked against a broken rule. `codex debug prompt-input` lists the three new skills.
 - Open: `.claude/commands/statglass:test.md` still shows `bun run test -- src/core/format` as its example; the mobile rules describe directories (`src/hooks`, `src/widgets`, `src/transport`) that later phases create.
 
+## Remote alert rules built (2026-11-24)
+
+Linux agent hosts now take threshold alert rules from this Mac: select the host, open Alerts, and add, edit, toggle or delete its rules. The agent stores and evaluates them live (revision-checked saves, cooldowns seeded at start and on history reattach), and this Mac sends the notification and destination messages as the alert events sync in, with alerts older than 10 minutes grouped into one catch-up message per host (persisted until delivered). The page handles a not-connected host, an agent too old to answer, a stale revision and rules saved by a newer build. Built on branch `sprint/remote-alerts` in three phases (tags `remote-alerts-phase-1` to `-3`, final `remote-alerts-final`); every review finding is in `plans/sprint-remote-alerts.md`.
+
+- **Verified**: `make check` green on the final commit (2,838 Vitest, all Rust suites); Playwright journey for add and stale save; browser QA of every page state against This Mac's page.
+- **Open**: not yet run against a real Linux agent over SSH. Merged to main 2026-11-25.
+
+## Remote alert rules RFC drafted (2026-11-24)
+
+[rfc-remote-alerts.md](rfc-remote-alerts.md) plans threshold rules on Linux agent hosts. The agent already evaluates `Settings.alerts.rules` from its `settings.json` and syncs the alert events to this Mac's mirror, so the plan adds two host queries to read and set rules live, cooldown seeding on the agent, and delivery from this Mac of the alert events the mirror inserts. Controller-side evaluation over `HostSummary` frames was rejected: they carry held display values only (`values` are NaN). A ce:devils-advocate review against the code found ten issues, all folded into revision 2 (section 9).
+
+- **Decided**: alerts older than 10 minutes are grouped into one catch-up message per host, and `cpu.loadavg` is alertable (RFC section 8). Recorded as D-152. Next: implementation.
+
 ## Dashboard pages enter card by card (D-139) (2026-11-24)
 
 Opening a dashboard page (navigation, first open, Disk's I/O and Space views, another host on a metric page) now fades and rises its header and then each card into place one after another, instead of lifting whole rows 3 px over 280 ms, which read as a flash. `usePageEntrance` in `src/app/lib/motion/page-entrance.ts` replaces the CSS `pageEnter`/`data-stagger` choreography; Settings panels enter one by one too. Cards that mount a beat late (the chart window, settings) still enter; ticks, range changes and later data never replay it.

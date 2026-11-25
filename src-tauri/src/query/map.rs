@@ -118,9 +118,10 @@ pub(super) fn from_remote(e: &RemoteError, host: &str, last_seen: Option<String>
         | RemoteError::HostKey(_)
         | RemoteError::Identity(_)
         | RemoteError::IdentityMismatch { .. } => ErrorTag::HostOffline,
-        RemoteError::Codec(_) | RemoteError::Protocol(_) | RemoteError::Refused(_) => {
-            ErrorTag::Defect
-        }
+        RemoteError::Codec(_)
+        | RemoteError::Protocol(_)
+        | RemoteError::Refused(_)
+        | RemoteError::Stale(_) => ErrorTag::Defect,
     };
     let offline = tag == ErrorTag::HostOffline;
     err_with(

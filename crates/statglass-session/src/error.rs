@@ -60,6 +60,10 @@ pub enum RemoteError {
     /// The host's own refusal of a query (D-117), worded for the user.
     #[error("{0}")]
     Refused(String),
+    /// The host's state changed since the revision the request was based on
+    /// (`ErrorCode::Stale`): reload and try again.
+    #[error("{0}")]
+    Stale(String),
     #[error(transparent)]
     Pairing(#[from] PairingRefusal),
     #[error("{0}")]
@@ -123,6 +127,7 @@ impl RemoteError {
                 | Self::Protocol(_)
                 | Self::Unsupported(_)
                 | Self::Refused(_)
+                | Self::Stale(_)
                 | Self::Pairing(_)
                 | Self::InvalidArgument(_)
         )

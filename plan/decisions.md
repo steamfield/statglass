@@ -4784,3 +4784,23 @@ Date: 2026-11-24. Amends RFC `plan/rfc-ios-app.md` 2.4 and D-145.
 ### Revisit when
 
 - The phone gains a non-Secure-Enclave key type (the RFC 2.2 Ed25519 fallback for hosts that refuse ECDSA): the pairing key may then follow the device key type.
+
+## D-152: Alert rules on Linux agent hosts, evaluated there and delivered from this Mac
+
+Date: 2026-11-24. Extends D-138 and D-116. Design and review: [rfc-remote-alerts.md](rfc-remote-alerts.md).
+
+- **Evaluated on the host**: the agent's engine runs the rules at full resolution from its own `settings.json`. Evaluating on this Mac over the summary stream is rejected: summary frames carry held values only (`values` are NaN), which the evaluator ignores, and the stream stops whenever a window shows detail.
+- **Edited over two host queries**: `Query::AlertRules` and `Query::SetAlertRules { base_revision, rules }` on the D-117 query channel. Rules encode one at a time, so a rule from a newer build is shown and kept, never the cause of an unreadable list. An entry decodes as known only when re-encoding it gives back the same CBOR, so a newer build's added field is kept too; a field added to `AlertRule` later must therefore be skipped at its default. The agent checks the revision, validates and writes under one mutex and applies the rules live.
+- **No capability flag in the handshake** (this is a wire capability bit, not a rollout flag; the app has no rollout flags or telemetry): a Linux host is an agent host (`HostInfo.os`). An agent too old for the queries answers `Unsupported`, which the page shows as "Update the agent". A headless agent for macOS would need a real host-kind field.
+- **Delivered from this Mac as events sync in**: only alert events the mirror actually inserted, past a per-host floor set when the host is registered (removing the host forgets it), through `fire::announce` with the host named. Staleness is measured on this Mac's clock; alerts older than 10 minutes are grouped into one catch-up message per host per sync pass. Latency is the sync period (60 s, 300 s on battery).
+- **Linux metrics**: `mem.psi` and `cpu.loadavg` (5-minute window) join `ALERT_METRICS`.
+
+### Not decided here
+
+Rules on remote Macs (they would deliver twice), built-in rules on agents, multi-host rules, live event forwarding, and the agent delivering by itself.
+
+### Revisit when
+
+- Users need alerts while every Mac is asleep: the agent delivers by itself, with a dedupe rule against this Mac.
+- Two Macs paired to one agent send duplicate alerts in practice.
+- Sync latency on battery proves too slow: forward `BusMsg::Event` live.

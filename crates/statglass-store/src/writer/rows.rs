@@ -10,6 +10,12 @@ use crate::error::Result;
 use crate::rolldown::NetFold;
 use crate::types::{BucketRow, NetBucket, ProcRow};
 
+pub(super) enum EventWrite {
+    Inserted,
+    Updated,
+    Unchanged,
+}
+
 impl State {
     // --- rows ---------------------------------------------------------------------------
 
@@ -161,14 +167,14 @@ impl State {
         Ok(())
     }
 
-    /// Upserts on `(host, ts, kind)`. Returns whether the row changed.
+    /// Upserts on `(host, ts, kind)` and reports what happened to the row.
     pub(super) fn upsert_event(
         &mut self,
         host_ref: i64,
         ts_ms: i64,
         kind: &str,
         payload: &[u8],
-    ) -> Result<bool> {
+    ) -> Result<EventWrite> {
         let existing: Option<(i64, Vec<u8>)> = self
             .conn
             .prepare_cached(
@@ -179,13 +185,13 @@ impl State {
             })
             .optional()?;
         match existing {
-            Some((_, p)) if p == payload => Ok(false),
+            Some((_, p)) if p == payload => Ok(EventWrite::Unchanged),
             Some((id, _)) => {
                 let seq = self.alloc_seq();
                 self.conn
                     .prepare_cached("UPDATE events SET payload = ?1, seq = ?2 WHERE id = ?3")?
                     .execute(params![payload, seq, id])?;
-                Ok(true)
+                Ok(EventWrite::Updated)
             }
             None => {
                 let seq = self.alloc_seq();
@@ -194,7 +200,7 @@ impl State {
                         "INSERT INTO events (host_id, ts, kind, payload, seq, export_id) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                     )?
                     .execute(params![host_ref, ts_ms, kind, payload, seq])?;
-                Ok(true)
+                Ok(EventWrite::Inserted)
             }
         }
     }

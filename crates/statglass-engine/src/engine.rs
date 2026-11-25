@@ -360,9 +360,9 @@ impl Engine {
         }
     }
 
-    /// Restores the alert rules' cooldowns from stored alert events, before the engine
-    /// starts: a restart must not re-fire a rule that fired minutes ago. The caller reads
-    /// the last [`crate::detect::alert_history_ms`] of events.
+    /// Restores the alert rules' cooldowns from stored alert events at startup or
+    /// when history becomes available. The caller reads the last
+    /// [`crate::detect::alert_history_ms`] of events.
     pub fn seed_alert_history(&mut self, events: &[Event]) {
         self.detect.seed_alert_history(events);
     }
@@ -461,6 +461,7 @@ impl Engine {
             Input::Hint(modules) => self.reprobe.modules.extend(modules),
             Input::Cmd(Command::Pause(p)) => self.set_paused(p),
             Input::Cmd(Command::Settings(s)) => self.apply_settings(&s),
+            Input::Cmd(Command::SeedAlertHistory(events)) => self.seed_alert_history(&events),
             Input::Cmd(Command::SetStore(store, ack)) => {
                 self.set_store(store);
                 ack.done();
@@ -500,6 +501,10 @@ fn stale_ms(period_ms: u32) -> i64 {
 pub fn hold_ms(period_ms: u32) -> u32 {
     u32::try_from(stale_ms(period_ms)).unwrap_or(u32::MAX)
 }
+
+#[cfg(test)]
+#[path = "engine/alert_tests.rs"]
+mod alert_tests;
 
 #[cfg(test)]
 mod tests {

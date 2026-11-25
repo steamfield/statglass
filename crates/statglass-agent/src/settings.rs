@@ -3,12 +3,14 @@
 //!
 //! The file holds only what `statglass-agent configure` was given (merged across calls), not
 //! a full copy, so a later build's defaults still apply to everything the controller
-//! never set. The daemon reads it once at start; a change applies on restart.
+//! never set. CLI changes apply on restart. The daemon also persists live rule changes here.
 use std::path::Path;
 
 use anyhow::{Context, bail};
+use serde::Deserialize;
 use serde_json::Value;
-use statglass_schema::Settings;
+use statglass_schema::{AlertRule, Settings};
+use uuid::Uuid;
 
 pub const SETTINGS_FILE: &str = "settings.json";
 
@@ -24,14 +26,39 @@ pub fn load(data_dir: &Path) -> Settings {
             return Settings::agent_default();
         }
     };
-    match serde_json::from_slice(&overlay)
+    let loaded = serde_json::from_slice(&overlay)
         .context("parsing")
-        .and_then(|overlay| resolve(&overlay))
-    {
+        .and_then(|overlay| {
+            let mut settings = resolve(&overlay)?;
+            if let Some(entries) = overlay.pointer("/alerts/rules").and_then(Value::as_array)
+                && entries.len() != settings.alerts.rules.len()
+            {
+                warn_undecodable_rules(entries);
+            }
+            for (id, reason) in settings.alerts.drop_invalid() {
+                tracing::warn!(rule_id = %id, %reason, "dropping invalid alert rule");
+            }
+            Ok(settings)
+        });
+    match loaded {
         Ok(settings) => settings,
         Err(e) => {
             tracing::warn!(path = %path.display(), "invalid settings ({e:#}); using the defaults");
             Settings::agent_default()
+        }
+    }
+}
+
+/// The lenient settings decoder has already skipped these entries. Recover the
+/// diagnostics from the raw overlay without decoding the rest of the settings again.
+fn warn_undecodable_rules(entries: &[Value]) {
+    for entry in entries {
+        if let Err(reason) = AlertRule::deserialize(entry) {
+            let id = entry
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|text| Uuid::parse_str(text).ok());
+            tracing::warn!(rule_id = ?id, %reason, "dropping undecodable alert rule");
         }
     }
 }
