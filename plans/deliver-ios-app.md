@@ -503,6 +503,7 @@ Demo:
 
 Depends on: phase 2
 Scaffold: 9b312222
+Tag: ios-app-phase-3
 
 Code facts this phase relies on (checked 2026-11-24; the RFC's line numbers have drifted, and the actual positions are given here):
 
