@@ -58,13 +58,6 @@ export function powerCard(
   const showBattery = src.showBattery ?? src.battery != null;
   const battery =
     showBattery && src.battery ? batteryCard(src.battery, src) : null;
-  const details = battery
-    ? [
-        ...items,
-        { label: battery.title, value: battery.headline },
-        ...battery.items,
-      ]
-    : items;
   return {
     title: showBattery ? "Power & battery" : "Power",
     headline,
@@ -82,6 +75,15 @@ export function powerCard(
     ],
     items,
     bars: [],
-    spoken: describeStats(details, note ?? undefined),
+    get spoken() {
+      const details = battery
+        ? [
+            ...items,
+            { label: battery.title, value: battery.headline },
+            ...battery.items,
+          ]
+        : items;
+      return describeStats(details, note ?? undefined);
+    },
   };
 }

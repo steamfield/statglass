@@ -12,7 +12,7 @@ export function GpuCard({ gpu, stream, ...chrome }: GpuCardProps) {
       title={card.title}
       accent="gpu"
       headline={card.headline}
-      spokenDetails={card.spoken}
+      spokenDetails={chrome.compact ? "" : card.spoken}
     >
       {stream && <StreamArea {...stream} />}
       <StatList layout="grid" items={card.items} />

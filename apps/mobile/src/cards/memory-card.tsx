@@ -6,17 +6,18 @@ import { InlineBar } from "@/widgets/inline-bar";
 import { StackBar } from "@/widgets/stack-bar";
 
 export function MemoryCard({ memory, totalBytes, ...chrome }: MemoryCardProps) {
-  const card = memoryCard(memory, { totalBytes });
+  const card = memoryCard(memory, { totalBytes, compact: chrome.compact });
+  const pressure = card.bars[0];
   return (
     <ModuleCard
       {...chrome}
       title={card.title}
       accent="mem"
       headline={card.headline}
-      spokenDetails={card.spoken}
+      spokenDetails={chrome.compact ? "" : card.spoken}
       unit={card.capacity ?? card.usedUnit}
     >
-      {card.hasPressure && (
+      {pressure && (
         <View className="flex-row items-start gap-1.5">
           {card.pressureStatus && (
             <View className="pt-0.5">
@@ -24,7 +25,7 @@ export function MemoryCard({ memory, totalBytes, ...chrome }: MemoryCardProps) {
             </View>
           )}
           <View className="min-w-0 flex-1">
-            <InlineBar model={card.bars[0]} />
+            <InlineBar model={pressure} />
           </View>
         </View>
       )}

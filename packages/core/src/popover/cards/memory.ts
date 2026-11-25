@@ -13,11 +13,19 @@ import {
   inlineBarModel,
 } from "@core/widget-models/inline-bar";
 import type { StackBarSegment } from "@core/widget-models/stack-bar";
-import { describeStats } from "@core/widget-models/stat-list";
+import {
+  describeStats,
+  type StatListItem,
+} from "@core/widget-models/stat-list";
 import type { CardContent, CardSource } from "./types";
 
 const PRESSURE_CODES = METRIC_CODES["mem.pressure_level"];
 const PRESSURE_LABEL = "Pressure";
+const PRESSURE_STATUS = {
+  normal: null,
+  warn: "warning",
+  critical: "critical",
+} as const;
 
 function pressureLevel(code: number | null) {
   switch (code) {
@@ -32,20 +40,11 @@ function pressureLevel(code: number | null) {
   }
 }
 
-export function memoryCard(
+function memorySegments(
   sel: MemorySelection,
-  { bytes = "GB", totalBytes = null }: CardSource
-): CardContent & {
-  headline: string;
-  capacity: string | null;
-  usedUnit: string | undefined;
-  usedFraction: number | null;
-  bars: readonly [InlineBarModel];
-  hasPressure: boolean;
-  pressureStatus: "critical" | "warning" | null;
-  compactPressure: string | null;
-  fullLegend: { segments: StackBarSegment[]; pressure: InlineBarModel };
-} {
+  totalBytes: number | null,
+  composition: boolean
+): StackBarSegment[] {
   const segment = (
     key: string,
     label: string,
@@ -60,30 +59,90 @@ export function memoryCard(
   });
   const cached = segment("cached", "Cached files", sel.cached, 4);
   const free = segment("free", "Free", sel.free, "track");
-  // The desktop keeps the full composition legend even when its readings are absent.
-  const compositionSegments = [
+  if (!composition) {
+    return [segment("used", "Used", sel.used, 1), cached, free];
+  }
+  return [
     segment("wired", "Wired", sel.wired, 1),
     segment("app", "App", sel.app, 2),
     segment("compressed", "Compressed", sel.compressed, "hatch"),
     cached,
     free,
   ];
-  const segments = sel.composition
-    ? compositionSegments
-    : [segment("used", "Used", sel.used, 1), cached, free];
-  const items = [{ label: "Swap", value: formatBytes(sel.swapUsed) }];
-  const level = pressureLevel(sel.pressureLevel);
-  const pressureSummary = `${PRESSURE_LABEL} · ${level ?? "normal"}`;
-  const pressure = inlineBarModel({
-    label: level === null ? PRESSURE_LABEL : pressureSummary,
-    value: formatPercent(sel.pressure),
-    fraction: ratio(sel.pressure, 100),
+}
+
+function pressureSummary(level: ReturnType<typeof pressureLevel>): string {
+  return `${PRESSURE_LABEL} · ${level ?? "normal"}`;
+}
+
+function memoryPressure(value: number | null, label: string): InlineBarModel {
+  return inlineBarModel({
+    label,
+    value: formatPercent(value),
+    fraction: ratio(value, 100),
     layout: "wide",
   });
-  const spokenPressure =
+}
+
+function memoryItems(sel: MemorySelection): StatListItem[] {
+  return [{ label: "Swap", value: formatBytes(sel.swapUsed) }];
+}
+
+/** The complete composition legend, including rows with absent readings. */
+export function memoryFullLegend(
+  sel: MemorySelection,
+  totalBytes: number | null
+) {
+  return {
+    segments: memorySegments(sel, totalBytes, true),
+    pressure: memoryPressure(
+      sel.pressure,
+      pressureSummary(pressureLevel(sel.pressureLevel))
+    ),
+    items: memoryItems(sel),
+  };
+}
+
+function describeMemory(
+  pressure: InlineBarModel | undefined,
+  segments: readonly StackBarSegment[],
+  items: readonly StatListItem[]
+): string {
+  if (!pressure) return describeStats([...segments, ...items]);
+  const reading =
     pressure.value === MISSING
       ? { label: PRESSURE_LABEL, value: MISSING }
       : pressure;
+  return describeStats([reading, ...segments, ...items]);
+}
+
+export function memoryCard(
+  sel: MemorySelection,
+  { bytes = "GB", totalBytes = null, compact = false }: CardSource
+): CardContent & {
+  headline: string;
+  capacity: string | null;
+  usedUnit: string | undefined;
+  usedFraction: number | null;
+  segments: StackBarSegment[];
+  pressureStatus: "critical" | "warning" | null;
+  compactPressure: string | null;
+} {
+  const segments = compact
+    ? []
+    : memorySegments(sel, totalBytes, sel.composition);
+  const items = compact ? [] : memoryItems(sel);
+  const level = pressureLevel(sel.pressureLevel);
+  const summary = sel.hasPressure ? pressureSummary(level) : null;
+  const bars =
+    !compact && summary !== null
+      ? [
+          memoryPressure(
+            sel.pressure,
+            level === null ? PRESSURE_LABEL : summary
+          ),
+        ]
+      : [];
   return {
     title: "Memory",
     headline:
@@ -95,22 +154,13 @@ export function memoryCard(
       totalBytes === null ? null : `/ ${formatMarketingMemory(totalBytes)}`,
     usedUnit: sel.used === null ? undefined : bytes,
     usedFraction: ratio(sel.used, totalBytes),
-    hasPressure: sel.hasPressure,
-    pressureStatus:
-      level === "warn" ? "warning" : level === "critical" ? "critical" : null,
-    compactPressure: sel.hasPressure ? pressureSummary : null,
-    fullLegend: {
-      segments: compositionSegments,
-      pressure:
-        level === null ? { ...pressure, label: pressureSummary } : pressure,
-    },
+    pressureStatus: level && PRESSURE_STATUS[level],
+    compactPressure: summary,
     segments,
     items,
-    bars: [pressure],
-    spoken: describeStats(
-      sel.hasPressure
-        ? [spokenPressure, ...segments, ...items]
-        : [...segments, ...items]
-    ),
+    bars,
+    get spoken() {
+      return describeMemory(bars[0], segments, items);
+    },
   };
 }

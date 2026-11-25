@@ -31,18 +31,13 @@ function Track({
   );
 }
 
-function modelAccent(track: MeterTrackModel | null) {
-  const color = track?.color;
-  return color && "accent" in color ? color.accent : undefined;
-}
-
 /** Label, value and a horizontal bar. */
 export function InlineBar(data: InlineBarProps | { model: InlineBarModel }) {
   const resolved = "model" in data;
   const { label, value, layout, track } = resolved
     ? data.model
     : inlineBarModel(data);
-  const accent = resolved ? modelAccent(track) : data.accent;
+  const accent = resolved ? undefined : data.accent;
   const style = accent ? accentVars(accent) : undefined;
 
   if (layout === "row") {

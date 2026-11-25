@@ -18,6 +18,8 @@ export function gpuCard(
     segments: [],
     items,
     bars: [],
-    spoken: describeStats(items, src.chartLabel),
+    get spoken() {
+      return describeStats(items, src.chartLabel);
+    },
   };
 }

@@ -18,14 +18,14 @@ export function NetworkCard({ network, bars, ...chrome }: NetworkCardProps) {
       accent="net"
       headline={headline}
       spokenHeadline={card.spokenHeadline}
-      spokenDetails={card.spoken}
+      spokenDetails={chrome.compact ? "" : card.spoken}
       headlineContent={
         chrome.compact ? null : (
           <StatList
             layout="grid"
-            items={card.items.map(({ label, value, unit }) => ({
+            items={card.items.map(({ label, joinedValue }) => ({
               label,
-              value: unit === undefined ? value : `${value}\u00a0${unit}`,
+              value: joinedValue.replace(" ", "\u00a0"),
             }))}
           />
         )

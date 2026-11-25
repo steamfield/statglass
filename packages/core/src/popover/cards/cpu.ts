@@ -32,6 +32,8 @@ export function cpuCard(
     segments: [],
     items: [],
     bars,
-    spoken: src.compact ? "" : describeStats(bars, src.chartLabel),
+    get spoken() {
+      return src.compact ? "" : describeStats(bars, src.chartLabel);
+    },
   };
 }

@@ -11,7 +11,8 @@ export interface CardContent {
   segments: readonly StackSegment[];
   items: readonly StatItemModel[];
   bars: readonly InlineBarModel[];
-  spoken: string;
+  /** VoiceOver details, built when the phone reads them. */
+  readonly spoken: string;
 }
 
 /** Readings and display settings that arrive outside the module selector. */

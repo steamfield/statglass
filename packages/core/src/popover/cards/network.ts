@@ -1,34 +1,39 @@
-import { isPresent, MISSING, type RateUnits, rateParts } from "@core/format";
+import {
+  isPresent,
+  joinQuantity,
+  MISSING,
+  type RateUnits,
+  rateParts,
+} from "@core/format";
 import type { NetworkSelection } from "@core/live-selectors";
 import type { StatListItem } from "@core/widget-models/stat-list";
 import type { CardContent, CardSource } from "./types";
+
+type RateItem = StatListItem & { joinedValue: string };
 
 function direction(
   label: string,
   value: number | null,
   units: RateUnits
-): StatListItem {
-  return isPresent(value)
-    ? { label, ...rateParts(value, { units }) }
-    : { label, value: MISSING };
+): RateItem {
+  if (!isPresent(value)) return { label, value: MISSING, joinedValue: MISSING };
+  const parts = rateParts(value, { units });
+  return { label, ...parts, joinedValue: joinQuantity(parts) };
 }
 
 export function networkCard(
   sel: NetworkSelection,
   { rate = "MBps", primaryIface = null, chartLabel }: CardSource
-): CardContent & {
+): Omit<CardContent, "items"> & {
   headline: string;
   spokenHeadline: string;
   subtitle: string;
+  items: readonly RateItem[];
 } {
   const upload = direction("↑ Upload", sel.tx, rate);
   const download = direction("↓ Download", sel.rx, rate);
-  const tx =
-    upload.unit === undefined ? upload.value : `${upload.value} ${upload.unit}`;
-  const rx =
-    download.unit === undefined
-      ? download.value
-      : `${download.value} ${download.unit}`;
+  const tx = upload.joinedValue;
+  const rx = download.joinedValue;
   const subtitle =
     primaryIface === null
       ? "All interfaces"
@@ -36,11 +41,15 @@ export function networkCard(
   return {
     title: "Network",
     headline: `↑ ${tx} · ↓ ${rx}`,
-    spokenHeadline: `Upload ${tx}, Download ${rx}`,
+    get spokenHeadline() {
+      return `Upload ${tx}, Download ${rx}`;
+    },
     subtitle,
     segments: [],
     items: [upload, download],
     bars: [],
-    spoken: chartLabel ? `${subtitle}, ${chartLabel}` : subtitle,
+    get spoken() {
+      return chartLabel ? `${subtitle}, ${chartLabel}` : subtitle;
+    },
   };
 }

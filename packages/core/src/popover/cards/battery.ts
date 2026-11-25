@@ -54,6 +54,8 @@ export function batteryCard(
     segments: [],
     items,
     bars: [],
-    spoken: describeStats(items),
+    get spoken() {
+      return describeStats(items);
+    },
   };
 }

@@ -18,7 +18,7 @@ export function BatteryCard({ battery, source, ...chrome }: BatteryCardProps) {
       title={card.title}
       accent="battery"
       headline={card.headline}
-      spokenDetails={card.spoken}
+      spokenDetails={chrome.compact ? "" : card.spoken}
     >
       <BatteryDetails card={card} />
     </ModuleCard>

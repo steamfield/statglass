@@ -20,7 +20,7 @@ export function PowerCard({
       accent="power"
       headline={card.headline}
       unit={card.headlineUnit}
-      spokenDetails={card.spoken}
+      spokenDetails={chrome.compact ? "" : card.spoken}
     >
       <StackBar segments={[...card.segments]} />
       <StatList layout="grid" items={card.items} />

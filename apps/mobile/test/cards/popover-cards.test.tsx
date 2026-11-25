@@ -45,7 +45,9 @@ test("CPU announces its chart, opens its page and opens the card menu", async ()
   expect(button()).toHaveAccessibilityValue({
     text: "User 12.4%, System —, CPU, last 60 seconds, 18%",
   });
-  expect(screen.getByText("18%")).toBeOnTheScreen();
+  expect(screen.getByText("18%")).toHaveStyle({
+    fontVariant: ["tabular-nums"],
+  });
   expect(screen.getByText("User")).toBeOnTheScreen();
   expect(screen.getByText("12.4%")).toBeOnTheScreen();
   expect(screen.getByText(MISSING)).toBeOnTheScreen();
@@ -66,7 +68,7 @@ test("CPU announces its chart, opens its page and opens the card menu", async ()
   await rerender(
     <CpuCard {...chrome} compact cpu={cpu} stream={POPOVER_CPU_STREAM} />
   );
-  expect(button()).not.toHaveAccessibilityValue({ text: /.+/ });
+  expect(button().props.accessibilityValue ?? {}).toEqual({});
   expect(screen.queryByText("User")).toBeNull();
   expect(
     screen.queryByRole("image", { name: POPOVER_CPU_STREAM.ariaLabel })
@@ -87,7 +89,7 @@ test("memory shows pressure, composition and missing swap below its headline", a
     composition: true,
     hasPressure: true,
   };
-  await renderWithProviders(
+  const { rerender } = await renderWithProviders(
     <MemoryCard {...chrome} memory={memory} totalBytes={16 * 2 ** 30} />
   );
   expect(
@@ -96,11 +98,34 @@ test("memory shows pressure, composition and missing swap below its headline", a
     text: "Pressure · warn 65%, Wired 2.0 GB, App 6.0 GB, Compressed 0 B, Cached files 4.0 GB, Free 4.0 GB, Swap —",
   });
   expect(screen.getByText("Pressure · warn")).toBeOnTheScreen();
+  expect(screen.getByTestId("status-warning")).toBeOnTheScreen();
+  expect(screen.queryByTestId("status-critical")).toBeNull();
   expect(screen.getByText("65%")).toBeOnTheScreen();
   expect(screen.getByText("Compressed")).toBeOnTheScreen();
   expect(screen.getByText("0 B")).toBeOnTheScreen();
   expect(screen.getByText("Swap")).toBeOnTheScreen();
   expect(screen.getByText(MISSING)).toBeOnTheScreen();
+
+  const levels = METRIC_CODES["mem.pressure_level"];
+  await rerender(
+    <MemoryCard
+      {...chrome}
+      memory={{ ...memory, pressureLevel: levels.critical }}
+      totalBytes={16 * 2 ** 30}
+    />
+  );
+  expect(screen.getByTestId("status-critical")).toBeOnTheScreen();
+  expect(screen.queryByTestId("status-warning")).toBeNull();
+
+  await rerender(
+    <MemoryCard
+      {...chrome}
+      memory={{ ...memory, pressureLevel: levels.normal }}
+      totalBytes={16 * 2 ** 30}
+    />
+  );
+  expect(screen.getByText("Pressure · normal")).toBeOnTheScreen();
+  expect(screen.queryByTestId(/^status-/)).toBeNull();
 });
 
 test("without readings, memory keeps the physical measurements missing", async () => {
@@ -136,17 +161,16 @@ test("Linux memory shows measured Used and omits capacity when a part is missing
       name: "Used 4.0 GB, Cached files 2.0 GB, Free —",
     })
   ).toBeOnTheScreen();
+  expect(screen.getByTestId("empty-stack")).toBeOnTheScreen();
+  expect(screen.queryAllByTestId("stack-segment")).toHaveLength(0);
   await rerender(
     <MemoryCard {...chrome} memory={memory} totalBytes={8 * 2 ** 30} />
   );
   expect(
     screen.getByRole("button", { name: "Memory, 4.0 / 8 GB" })
   ).toBeOnTheScreen();
-  expect(
-    screen.getByRole("image", {
-      name: "Used 4.0 GB, Cached files 2.0 GB, Free —",
-    })
-  ).toBeOnTheScreen();
+  expect(screen.getAllByTestId("stack-segment")).toHaveLength(2);
+  expect(screen.queryByTestId("empty-stack")).toBeNull();
 });
 
 test("GPU announces its chart and identifies its render utilization", async () => {

@@ -27,6 +27,7 @@ import {
   cpuCard,
   gpuCard,
   memoryCard,
+  memoryFullLegend,
   networkCard,
   powerCard,
 } from ".";
@@ -107,7 +108,6 @@ it("models installed capacity, memory composition and pressure from the host", (
     capacity: "/ 24 GB",
     usedUnit: "GiB",
     usedFraction: 17.6 / 24,
-    hasPressure: true,
     pressureStatus: "warning",
     compactPressure: "Pressure · warn",
     items: MEMORY_STACK.extraLegend,
@@ -128,6 +128,18 @@ it("models installed capacity, memory composition and pressure from the host", (
       value: ["4.2 GB", "12.5 GB", "2.3 GB", "4.3 GB", "2.6 GB"][index],
     }))
   );
+  expect(memoryFullLegend(memory, totalBytes)).toEqual({
+    segments: card.segments,
+    pressure: card.bars[0],
+    items: card.items,
+  });
+  expect(memoryCard(memory, { totalBytes, compact: true })).toMatchObject({
+    usedFraction: 17.6 / 24,
+    compactPressure: "Pressure · warn",
+    segments: [],
+    bars: [],
+    items: [],
+  });
 });
 
 it("models Linux memory with a used segment and missing capacity", () => {
@@ -138,8 +150,8 @@ it("models Linux memory with a used segment and missing capacity", () => {
     capacity: null,
     usedUnit: "GB",
     usedFraction: null,
-    hasPressure: false,
     pressureStatus: null,
+    bars: [],
     segments: [
       { key: "used", label: "Used", value: "4.0 GB", step: 1, fraction: null },
       {
@@ -160,6 +172,25 @@ it("models Linux memory with a used segment and missing capacity", () => {
   ).toEqual([4e9 / totalBytes, 2e9 / totalBytes, null]);
 });
 
+it("keeps every row in the full memory legend when the host omits readings", () => {
+  const totalBytes = 8 * 2 ** 30;
+  const memory = { ...selectMemory(empty), used: 4e9, cached: 2e9 };
+  expect(memoryFullLegend(memory, totalBytes)).toEqual({
+    segments: MEMORY_STACK.segments.map((segment) => ({
+      ...segment,
+      value: segment.key === "cached" ? "2.0 GB" : "—",
+      fraction: segment.key === "cached" ? 2e9 / totalBytes : null,
+    })),
+    pressure: inlineBarModel({
+      label: "Pressure · normal",
+      value: "—",
+      fraction: null,
+      layout: "wide",
+    }),
+    items: [{ label: "Swap", value: "—" }],
+  });
+});
+
 it("reports a gap in a supported pressure series without a spoken level", () => {
   const memory = {
     ...selectMemory(empty),
@@ -172,8 +203,7 @@ it("reports a gap in a supported pressure series without a spoken level", () => 
     "Pressure —, Used —, Cached files —, Free —, Swap —"
   );
   const unknown = memoryCard({ ...memory, pressureLevel: null }, {});
-  expect(unknown.bars[0].label).toBe("Pressure");
-  expect(unknown.fullLegend.pressure.label).toBe("Pressure · normal");
+  expect(unknown.bars[0]?.label).toBe("Pressure");
   expect(unknown.compactPressure).toBe("Pressure · normal");
 });
 
@@ -245,8 +275,13 @@ it("models network rates, interface context, and a missing direction", () => {
     subtitle: "All interfaces · en0",
     segments: [],
     items: [
-      { label: "↑ Upload", value: "19.2", unit: "Mb/s" },
-      { label: "↓ Download", value: "—" },
+      {
+        label: "↑ Upload",
+        value: "19.2",
+        unit: "Mb/s",
+        joinedValue: "19.2 Mb/s",
+      },
+      { label: "↓ Download", value: "—", joinedValue: "—" },
     ],
     bars: [],
     spoken: "All interfaces · en0, Network, last second",
@@ -260,8 +295,8 @@ it("treats non-finite network rates as missing in the headline and speech", () =
     headline: "↑ — · ↓ —",
     spokenHeadline: "Upload —, Download —",
     items: [
-      { label: "↑ Upload", value: "—" },
-      { label: "↓ Download", value: "—" },
+      { label: "↑ Upload", value: "—", joinedValue: "—" },
+      { label: "↓ Download", value: "—", joinedValue: "—" },
     ],
   });
 });

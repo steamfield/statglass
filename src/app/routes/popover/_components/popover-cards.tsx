@@ -5,14 +5,15 @@
  */
 import { spanWords } from "@core/live-window";
 import {
+  BATTERY_TITLE,
   batteryCard,
   cpuCard,
   gpuCard,
   memoryCard,
+  memoryFullLegend,
   networkCard,
   powerCard,
 } from "@core/popover/cards";
-import { BATTERY_TITLE } from "@core/popover/cards/battery";
 import { mirrorSubject } from "~/components/charts/mirror-chart";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
@@ -105,10 +106,13 @@ export function LiveMemoryCard({
   const mem = useMemory();
   const host = useHostRecord();
   const notice = useReadFailure("mem.used");
+  const totalBytes = host?.info.mem_total_bytes ?? null;
   const card = memoryCard(mem, {
     bytes: useUnits().bytes,
-    totalBytes: host?.info.mem_total_bytes ?? null,
+    totalBytes,
+    compact: true,
   });
+  const legend = compact ? null : memoryFullLegend(mem, totalBytes);
   return (
     <ModuleCard
       compact={compact}
@@ -121,7 +125,17 @@ export function LiveMemoryCard({
       unit={card.capacity === null ? undefined : ` ${card.capacity}`}
       notice={notice}
     >
-      {compact ? (
+      {legend ? (
+        <>
+          <InlineBar model={legend.pressure} />
+          <StackBar
+            showLegend
+            legendColumns={2}
+            segments={legend.segments}
+            extraLegend={legend.items}
+          />
+        </>
+      ) : (
         <div className="flex items-center gap-2">
           <MeterTrack fraction={card.usedFraction} className="flex-1" />
           {card.compactPressure && (
@@ -130,16 +144,6 @@ export function LiveMemoryCard({
             </span>
           )}
         </div>
-      ) : (
-        <>
-          <InlineBar model={card.fullLegend.pressure} />
-          <StackBar
-            showLegend
-            legendColumns={2}
-            segments={card.fullLegend.segments}
-            extraLegend={[...card.items]}
-          />
-        </>
       )}
     </ModuleCard>
   );

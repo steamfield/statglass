@@ -16,7 +16,7 @@ export function CpuCard({ cpu, stream, ...chrome }: CpuCardProps) {
       title={card.title}
       accent="cpu"
       headline={card.headline}
-      spokenDetails={card.spoken}
+      spokenDetails={chrome.compact ? "" : card.spoken}
     >
       {stream && <StreamArea {...stream} />}
       <View className="gap-1">
