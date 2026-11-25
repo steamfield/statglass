@@ -230,7 +230,7 @@ export function LivePowerCard({
  * Network card: the totals over the reported interfaces (`net.rx_total`,
  * D-092). The header shows the local and public addresses (D-093), each
  * copyable without opening the page. Before the local address is read, or
- * without one (no network, a remote host), the subtitle says the figures are
+ * without one (no network or an older host), the subtitle says the figures are
  * every interface's and names the one carrying the default route ("All
  * interfaces · en0"; "All interfaces" on a full-tunnel VPN).
  */
@@ -240,7 +240,7 @@ export function LiveNetworkCard({
 }: PresentationProps) {
   const open = useOpen();
   const iface = usePrimaryIface();
-  const { lan, publicIp } = useAddresses(compact ? null : iface);
+  const { lan, publicIp, failure } = useAddresses(iface, !compact);
   const { rate: rateUnits } = useUnits();
   const rxKey = "net.rx_total";
   const txKey = "net.tx_total";
@@ -282,7 +282,7 @@ export function LiveNetworkCard({
       value={compact ? card.headline : undefined}
       subtitle={compact ? undefined : card.subtitle}
       subtitleStyle="text"
-      aside={compact ? undefined : networkAddresses(lan, publicIp)}
+      aside={compact ? undefined : networkAddresses(lan, publicIp, failure)}
     >
       {!compact && <StatList layout="grid" items={card.items} />}
       <MirrorBars
@@ -347,8 +347,12 @@ function BatteryDetails() {
 
 function networkAddresses(
   lan: string | null,
-  publicIp: { data?: string | undefined; isError: boolean }
+  publicIp: { data?: string | undefined; isError: boolean },
+  failure: string | undefined
 ) {
+  if (failure !== undefined) {
+    return <span title={failure}>Addresses unavailable</span>;
+  }
   if (lan === null) return undefined;
   return (
     <>

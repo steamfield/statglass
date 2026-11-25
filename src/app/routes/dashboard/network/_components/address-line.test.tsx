@@ -3,8 +3,10 @@ import {
   MOCK_LOCAL_IPV4,
   MOCK_PUBLIC_IP,
 } from "@core/mock-transport";
-import { screen, waitFor } from "@testing-library/react";
-import { renderWithProviders } from "@tests/test-utils";
+import { act, render, screen } from "@testing-library/react";
+import { createTestQueryClient, renderWithProviders } from "@tests/test-utils";
+import { App } from "~/app";
+import { HostStoreProvider } from "~/stores/host-store";
 import { AddressLine } from "./address-line";
 
 const transport = () => createMockTransport({ autoTick: false });
@@ -28,32 +30,106 @@ describe("AddressLine (D-093)", () => {
     ).toBeVisible();
   });
 
-  it("does not request addresses without a network", async () => {
-    const t = transport();
-    const { container } = renderWithProviders(<AddressLine primary={null} />, {
-      transport: t,
+  it("uses the resolver's tunnel interface and link with no sampled primary", async () => {
+    const t = createMockTransport({ autoTick: false, scenarios: ["vpn"] });
+    t.getHostAddresses = async () => ({
+      status: "ok",
+      data: {
+        interface: "utun3",
+        link_mbps: 2500,
+        ipv4: ["192.0.2.24"],
+        ipv6: [],
+        public_ip: { state: "known", detail: { ip: "203.0.113.24" } },
+        as_of_ms: Date.now(),
+      },
     });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(container).toBeEmptyDOMElement();
-    expect(addressCalls(t)).toBe(0);
+    render(
+      <App transport={t} router={{ initialEntry: "/dashboard/network" }} />
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Copy local IP address 192.0.2.24",
+      })
+    ).toBeVisible();
+    expect(screen.getByText(/utun3 · 2.5 Gb\/s link/)).toBeVisible();
+    expect(screen.queryByText("No active interface")).toBeNull();
   });
 
-  it("shows no address line when the host cannot answer", async () => {
-    const t = transport();
-    let answered = false;
-    t.getHostAddresses = async () => {
-      answered = true;
-      return {
-        status: "error",
-        error: { kind: "remote_unsupported", message: "addresses unavailable" },
-      };
-    };
-    const { container } = renderWithProviders(<AddressLine primary="en0" />, {
-      transport: t,
+  it("shows the selected remote host's addresses on the Network page", async () => {
+    const t = createMockTransport({
+      scenarios: ["multi-host"],
+      autoTick: false,
     });
-    await waitFor(() => expect(answered).toBe(true));
-    expect(container).toBeEmptyDOMElement();
+    render(
+      <App
+        transport={t}
+        initialHost="remote-studio"
+        router={{ initialEntry: "/dashboard/network" }}
+      />
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Copy local IP address 192.0.2.20",
+      })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "Copy public IP address 203.0.113.20",
+      })
+    ).toBeVisible();
   });
+
+  it("reads addresses on return after the old Linux host is upgraded", async () => {
+    const t = createMockTransport({
+      scenarios: ["hosts-outdated"],
+      autoTick: false,
+    });
+    const queryClient = createTestQueryClient();
+    const host = (
+      <HostStoreProvider hostId="remote-nas">
+        <AddressLine primary="end0" />
+      </HostStoreProvider>
+    );
+    await expect(t.getHostAddresses("remote-nas")).resolves.toMatchObject({
+      status: "error",
+      error: { kind: "remote_unsupported" },
+    });
+    vi.useFakeTimers();
+    try {
+      const first = renderWithProviders(host, { transport: t, queryClient });
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(
+        screen.queryByRole("button", { name: /Copy.*IP address/ })
+      ).toBeNull();
+      first.unmount();
+      await t.updateRemoteAgent("remote-nas");
+      renderWithProviders(host, { transport: t, queryClient });
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(
+        screen.getByRole("button", {
+          name: "Copy public IP address 203.0.113.20",
+        })
+      ).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["/dashboard/network", "/dashboard/overview", "/popover"])(
+    "shows a command failure without addresses on %s",
+    async (initialEntry) => {
+      const t = transport();
+      t.failNext("getHostAddresses", {
+        kind: "remote_busy",
+        message: "Try again shortly",
+      });
+      render(<App transport={t} router={{ initialEntry }} />);
+      expect(await screen.findByText("Addresses unavailable")).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: /Copy.*IP address/ })
+      ).toBeNull();
+    }
+  );
 
   it("refreshes the public address when the host reports a new route", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -81,7 +157,7 @@ describe("AddressLine (D-093)", () => {
 
       // Same interface, same LAN address; only the route moves.
       publicIp = "198.51.100.9";
-      await vi.advanceTimersByTimeAsync(10_000);
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
       expect(
         await screen.findByRole("button", {
           name: "Copy public IP address 198.51.100.9",

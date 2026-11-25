@@ -1,8 +1,13 @@
 import type { LiveMsg } from "@core/generated/types";
-import { MOCK_LOCAL_IPV4, MOCK_PUBLIC_IP } from "@core/mock-transport";
-import { act, screen, waitFor } from "@testing-library/react";
+import {
+  createMockTransport,
+  MOCK_LOCAL_IPV4,
+  MOCK_PUBLIC_IP,
+} from "@core/mock-transport";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
+import { App } from "~/app";
 import { type HostStore, useHostStore } from "~/stores/host-store";
 import {
   LiveCpuCard,
@@ -109,6 +114,31 @@ describe("popover cards with missing values", () => {
 });
 
 describe("popover network card", () => {
+  it("shows a remote host's copyable addresses in the popover preview", async () => {
+    const transport = createMockTransport({
+      scenarios: ["multi-host"],
+      autoTick: false,
+    });
+    render(
+      <App
+        transport={transport}
+        initialHost="remote-studio"
+        router={{ initialEntry: "/popover" }}
+      />
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Copy local IP address 192.0.2.20",
+      })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "Copy public IP address 203.0.113.20",
+      })
+    ).toBeVisible();
+    expect(screen.queryByText(/All interfaces/)).toBeNull();
+  });
+
   it("copies an address without opening the page; the card still opens it", async () => {
     const { transport, user } = renderWithProviders(<LiveNetworkCard />);
     const write = vi
