@@ -1,7 +1,6 @@
 import Foundation
 import Network
 import os
-import statglass_mobileFFI
 import UIKit
 
 /// Issues app and network transitions off the main thread in notification order.
@@ -10,14 +9,15 @@ final class AppLifecycle: @unchecked Sendable {
   // before the next module starts opening mirrors.
   static let coreQueue = DispatchQueue(label: "app.statglass.core", qos: .userInitiated)
 
+  private let calls: DispatchGroup
   private let monitor = NWPathMonitor()
   private var observers: [NSObjectProtocol] = []
   // Accessed on coreQueue after initialization.
   private var core: MobileCore?
-  private var quiesces: [UInt64: BackgroundQuiesce] = [:]
 
-  init(core: MobileCore) {
+  init(core: MobileCore, calls: DispatchGroup) {
     self.core = core
+    self.calls = calls
   }
 
   func start() {
@@ -48,9 +48,6 @@ final class AppLifecycle: @unchecked Sendable {
     monitor.pathUpdateHandler = nil
     observers.forEach(NotificationCenter.default.removeObserver)
     observers.removeAll()
-    for quiesce in Array(quiesces.values) {
-      quiesce.finish()
-    }
     core = nil
   }
 
@@ -70,57 +67,17 @@ final class AppLifecycle: @unchecked Sendable {
         DispatchQueue.main.async(execute: end)
         return
       }
-      let handle = uniffi_statglass_mobile_fn_method_mobilecore_quiesce(core.uniffiCloneHandle())
-      let quiesce = BackgroundQuiesce(handle: handle) { [weak self] in
-        self?.quiesces.removeValue(forKey: handle)
-        DispatchQueue.main.async(execute: end)
+      _ = core.quiesce()
+      // Teardown drains this call off-main before starting a replacement core.
+      calls.enter()
+      Task.detached { [weak core, calls] in
+        var waitingCore = core
+        _ = await waitingCore?.quiesced()
+        waitingCore = nil
+        calls.leave()
+        await end()
       }
-      quiesces[handle] = quiesce
-      quiesce.poll()
     }
-  }
-}
-
-/// The first UniFFI poll issues Rust's quiesce requests synchronously on coreQueue.
-/// Wakes enqueue further polls, so resume can run while mirror writes are draining.
-private final class BackgroundQuiesce: @unchecked Sendable {
-  private let handle: UInt64
-  private let ended: () -> Void
-  private var finished = false // Accessed on coreQueue.
-
-  init(handle: UInt64, ended: @escaping () -> Void) {
-    self.handle = handle
-    self.ended = ended
-  }
-
-  func poll() {
-    // UniFFI calls this continuation once per poll, including when the future is freed.
-    let context = Unmanaged.passRetained(self).toOpaque()
-    ffi_statglass_mobile_rust_future_poll_rust_buffer(handle, { data, result in
-      guard let context = UnsafeRawPointer(bitPattern: UInt(data)) else { return }
-      let quiesce = Unmanaged<BackgroundQuiesce>.fromOpaque(context).takeRetainedValue()
-      AppLifecycle.coreQueue.async {
-        guard !quiesce.finished else { return }
-        if result == 0 { // UniFFI RustFuturePoll::Ready
-          quiesce.finish()
-        } else {
-          quiesce.poll()
-        }
-      }
-    }, UInt64(UInt(bitPattern: context)))
-  }
-
-  func finish() {
-    finished = true
-    // Completion takes any buffered result and drops the inner future even if it
-    // was pending during teardown. Free also releases any registered continuation.
-    var status = RustCallStatus()
-    let result = ffi_statglass_mobile_rust_future_complete_rust_buffer(handle, &status)
-    ffi_statglass_mobile_rust_future_free_rust_buffer(handle)
-    var freeStatus = RustCallStatus()
-    ffi_statglass_mobile_rustbuffer_free(result, &freeStatus)
-    ffi_statglass_mobile_rustbuffer_free(status.errorBuf, &freeStatus)
-    ended()
   }
 }
 

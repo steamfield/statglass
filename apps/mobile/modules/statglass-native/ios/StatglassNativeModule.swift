@@ -29,7 +29,7 @@ public class StatglassNativeModule: Module {
     OnCreate {
       let core = MobileCore(signer: PhoneKeySigner(currentPhoneKey()), events: EventsBridge(self))
       state.withLock { $0.core = core }
-      let lifecycle = AppLifecycle(core: core)
+      let lifecycle = AppLifecycle(core: core, calls: calls)
       self.lifecycle = lifecycle
       lifecycle.start()
       snapshotCover.start()
