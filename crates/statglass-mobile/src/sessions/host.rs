@@ -29,9 +29,15 @@ pub(super) struct HostEntry {
 
 pub(super) enum OpenError {
     Command(CommandError),
-    KeyUnavailable(CommandError),
+    /// The key is missing or locked. The diagnostic goes to the status line only; the
+    /// command error stays the diagnostic-free `phone_key_unavailable`.
+    KeyUnavailable(String),
+    /// The native signer failed unexpectedly.
+    SignerInternal(CommandError),
     Panicked(CommandError),
 }
+
+static PHONE_KEY_UNAVAILABLE: CommandError = CommandError::PhoneKeyUnavailable;
 
 impl From<CommandError> for OpenError {
     fn from(error: CommandError) -> Self {
@@ -42,7 +48,16 @@ impl From<CommandError> for OpenError {
 impl OpenError {
     pub(super) fn command(&self) -> &CommandError {
         match self {
-            Self::Command(error) | Self::KeyUnavailable(error) | Self::Panicked(error) => error,
+            Self::KeyUnavailable(_) => &PHONE_KEY_UNAVAILABLE,
+            Self::Command(error) | Self::SignerInternal(error) | Self::Panicked(error) => error,
+        }
+    }
+
+    /// The connection status line, which keeps the native diagnostic.
+    fn message(&self) -> String {
+        match self {
+            Self::KeyUnavailable(diagnostic) => diagnostic.clone(),
+            _ => self.command().to_string(),
         }
     }
 
@@ -50,7 +65,7 @@ impl OpenError {
         match self {
             Self::Command(_) => None,
             Self::KeyUnavailable(_) => Some(ConnectionFailureKind::PhoneKeyUnavailable),
-            Self::Panicked(_) => Some(ConnectionFailureKind::Internal),
+            Self::SignerInternal(_) | Self::Panicked(_) => Some(ConnectionFailureKind::Internal),
         }
     }
 }
@@ -270,16 +285,18 @@ fn check_phone_key(signer: &dyn NativeSigner) -> Result<(), OpenError> {
             ))
         })?
         .map_err(|error| {
-            let command = internal(format!("reading the phone's SSH public key: {error}"));
+            let diagnostic = format!("reading the phone's SSH public key: {error}");
             match error {
-                NativeSignerError::Unavailable { .. } => OpenError::KeyUnavailable(command),
-                _ => OpenError::Command(command),
+                NativeSignerError::Unavailable { .. } => OpenError::KeyUnavailable(diagnostic),
+                NativeSignerError::Unexpected { .. } => {
+                    OpenError::SignerInternal(internal(diagnostic))
+                }
             }
         })?;
     match key.as_slice() {
-        [] => Err(OpenError::KeyUnavailable(internal(
-            "the phone's SSH public key is unavailable",
-        ))),
+        [] => Err(OpenError::KeyUnavailable(
+            "the phone's SSH public key is unavailable".into(),
+        )),
         [4, coordinates @ ..] if coordinates.len() == 64 => Ok(()),
         _ => Err(internal("the phone's SSH public key is not an uncompressed P-256 point").into()),
     }
@@ -288,7 +305,7 @@ fn check_phone_key(signer: &dyn NativeSigner) -> Result<(), OpenError> {
 pub(super) fn unopened_host(host: &MobileHost, error: Option<&OpenError>) -> MobileRemoteHost {
     let status = ConnectionStatus {
         retrying: error.is_none(),
-        error: error.map(|error| error.command().to_string()),
+        error: error.map(OpenError::message),
         failure_kind: error.and_then(OpenError::failure_kind),
         ..Default::default()
     };

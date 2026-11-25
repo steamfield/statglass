@@ -200,7 +200,7 @@ impl NativeSigner for GatedSigner {
             !self.panic_on_open.swap(false, Ordering::Relaxed),
             "phone key callback panicked"
         );
-        Ok(statglass_ssh::Signer::public_key(&self.key).to_vec())
+        Ok(self.key.public_key().to_vec())
     }
 
     fn sign(&self, _: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {

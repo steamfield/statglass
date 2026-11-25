@@ -35,6 +35,8 @@ impl From<RemoteError> for CommandError {
         let message = error.to_string();
         match error {
             RemoteError::Authentication(_) => Self::RemoteAuth { message },
+            RemoteError::PhoneKeyUnavailable(_) => Self::PhoneKeyUnavailable,
+            RemoteError::SignerInternal(_) => Self::Internal { message },
             RemoteError::HostKey(_) => Self::HostKeyUnknown { message },
             RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. } => {
                 Self::RemoteIncompatible { message }
@@ -111,6 +113,17 @@ mod tests {
             CommandError::Store {
                 message: "i/o: opening history: permission denied".into()
             },
+        );
+    }
+
+    #[test]
+    fn an_unavailable_phone_key_has_its_own_diagnostic_free_command_error() {
+        let command = CommandError::from(RemoteError::PhoneKeyUnavailable(
+            "Could not load the phone key (OSStatus -25300)".into(),
+        ));
+        assert_eq!(
+            serde_json::to_value(command).unwrap(),
+            serde_json::json!({"kind": "phone_key_unavailable"})
         );
     }
 

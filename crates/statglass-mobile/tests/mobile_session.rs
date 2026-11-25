@@ -30,7 +30,7 @@ impl NativeSigner for SoftwareNativeKey {
         else {
             panic!("the software key signs synchronously");
         };
-        result.map_err(|error| NativeSignerError::Refused {
+        result.map_err(|error| NativeSignerError::Unexpected {
             message: error.to_string(),
         })
     }
@@ -111,16 +111,21 @@ fn an_unavailable_native_key_is_a_host_open_error() {
     start_host(&core, &dir, host);
     Runtime::new().unwrap().block_on(async {
         let rows = data(&core.call("list_remote_hosts".into(), "".into()).await);
-        let error = json!({
-            "kind": "internal",
-            "message": "reading the phone's SSH public key: signing key unavailable: Keychain is locked",
-        });
+        // The command error carries no OSStatus; the status line keeps the diagnostic.
+        let error = json!({"kind": "phone_key_unavailable"});
+        assert_eq!(
+            rows[0]["connection"]["message"],
+            "reading the phone's SSH public key: signing key unavailable: Keychain is locked"
+        );
         assert_eq!(rows[0]["connection"]["state"], "error");
         assert_eq!(rows[0]["connection"]["failure"], "phone_key_unavailable");
         assert_eq!(rows[0]["open_error"], error);
         let retried: Value = serde_json::from_str(
-            &core.call("retry_remote_host".into(), json!({"host": id}).to_string()).await,
-        ).unwrap();
+            &core
+                .call("retry_remote_host".into(), json!({"host": id}).to_string())
+                .await,
+        )
+        .unwrap();
         assert_eq!(retried, json!({"status": "error", "error": error}));
     });
 }

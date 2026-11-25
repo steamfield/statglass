@@ -2,38 +2,23 @@ import Foundation
 import os
 import Security
 
-/// A native module failure, with the Security framework's status when available.
-enum NativeFailure: Error, CustomStringConvertible {
-  case keychain(osStatus: OSStatus, message: String)
-  case secureEnclave(osStatus: OSStatus?, message: String)
-  case camera(message: String)
-  case localNetwork(message: String)
-
-  var description: String {
-    switch self {
-    case let .keychain(status, message), let .secureEnclave(.some(status), message):
-      return "\(message) (OSStatus \(status))"
-    case let .secureEnclave(nil, message), let .camera(message), let .localNetwork(message):
-      return message
-    }
-  }
-}
-
 /// The phone's SSH key. One implementation per build environment, chosen at compile time
 /// so a device build can never fall back to a software key.
 protocol PhoneKey {
   /// The SEC1 uncompressed P-256 public key, 65 bytes.
-  func publicKey() throws -> Data
+  func publicKey(createIfMissing: Bool) throws -> Data
   /// ECDSA P-256 over SHA-256 of `data`, ASN.1 DER
   /// (`SecKeyCreateSignature(.ecdsaSignatureMessageX962SHA256)`), returned unchanged.
   func sign(_ data: Data) throws -> Data
 }
 
-/// A Secure Enclave P-256 key, created on first use under a fixed Keychain tag.
+/// A Secure Enclave P-256 key under a fixed Keychain tag.
 struct SecureEnclaveKey: PhoneKey {
   private static let storage = KeychainPhoneKey(secureEnclave: true)
 
-  func publicKey() throws -> Data { try Self.storage.publicKey() }
+  func publicKey(createIfMissing: Bool) throws -> Data {
+    try Self.storage.publicKey(createIfMissing: createIfMissing)
+  }
   func sign(_ data: Data) throws -> Data { try Self.storage.sign(data) }
 }
 
@@ -42,7 +27,9 @@ struct SecureEnclaveKey: PhoneKey {
 struct SimulatorKey: PhoneKey {
   private static let storage = KeychainPhoneKey(secureEnclave: false)
 
-  func publicKey() throws -> Data { try Self.storage.publicKey() }
+  func publicKey(createIfMissing: Bool) throws -> Data {
+    try Self.storage.publicKey(createIfMissing: createIfMissing)
+  }
   func sign(_ data: Data) throws -> Data { try Self.storage.sign(data) }
 }
 
@@ -60,8 +47,8 @@ private struct KeychainPhoneKey {
   private let cachedKey = OSAllocatedUnfairLock<SecKey?>(initialState: nil)
   private let tag = Data("app.statglass.phone-key".utf8)
 
-  func publicKey() throws -> Data {
-    guard let publicKey = SecKeyCopyPublicKey(try privateKey()) else {
+  func publicKey(createIfMissing: Bool) throws -> Data {
+    guard let publicKey = SecKeyCopyPublicKey(try privateKey(createIfMissing: createIfMissing)) else {
       throw keyFailure(errSecInvalidKeyRef, "Could not get the phone's public key")
     }
     var error: Unmanaged<CFError>?
@@ -84,16 +71,16 @@ private struct KeychainPhoneKey {
     return signature as Data
   }
 
-  private func privateKey() throws -> SecKey {
+  private func privateKey(createIfMissing: Bool = false) throws -> SecKey {
     try cachedKey.withLock { key in
       if let key { return key }
-      let loaded = try loadOrCreate()
+      let loaded = try loadKey(createIfMissing: createIfMissing)
       key = loaded
       return loaded
     }
   }
 
-  private func loadOrCreate() throws -> SecKey {
+  private func loadKey(createIfMissing: Bool) throws -> SecKey {
     var query: [String: Any] = [
       kSecClass as String: kSecClassKey,
       kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
@@ -106,7 +93,7 @@ private struct KeychainPhoneKey {
     }
     var result: CFTypeRef?
     let lookup = SecItemCopyMatching(query as CFDictionary, &result)
-    if lookup == errSecItemNotFound { return try create() }
+    if lookup == errSecItemNotFound && createIfMissing { return try create() }
     guard lookup == errSecSuccess else {
       throw NativeFailure.keychain(osStatus: lookup, message: "Could not load the phone key")
     }
@@ -146,9 +133,7 @@ private struct KeychainPhoneKey {
   }
 
   private func keyFailure(_ status: OSStatus, _ message: String) -> NativeFailure {
-    secureEnclave
-      ? .secureEnclave(osStatus: status, message: message)
-      : .keychain(osStatus: status, message: message)
+    .phoneKey(status: status, secureEnclave: secureEnclave, message: message)
   }
 
   private func status(_ error: Unmanaged<CFError>?) -> OSStatus {

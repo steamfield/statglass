@@ -37,7 +37,10 @@ pub enum ConnectionFailureKind {
     LocalOffline,
     /// The failing route is Tailscale and Tailscale is not up on this Mac.
     TailscaleDown,
+    /// The phone's local SSH key is missing or locked.
     PhoneKeyUnavailable,
+    /// A local signer defect. It blocks every route and outranks network failures.
+    /// Reserve this kind for signer defects when classifying remote errors.
     Internal,
 }
 
@@ -49,29 +52,28 @@ pub struct RouteFailure {
 }
 
 impl ConnectionFailureKind {
-    /// How actionable this cause is from this Mac; lower wins when targets fail
-    /// differently (local_offline, tailscale_down, monitoring_off, app_not_running,
-    /// agent_not_running, refused, timeout, no_route, name_not_resolved, unreachable, then
-    /// the blocking kinds).
+    /// How actionable this cause is for the client. Lower wins when targets fail
+    /// differently. Local signer failures block every route and outrank network
+    /// and host failures.
     pub fn priority(self) -> u8 {
         match self {
-            Self::LocalOffline => 0,
-            Self::TailscaleDown => 1,
-            Self::MonitoringOff => 2,
-            Self::AppNotRunning => 3,
-            Self::AgentNotRunning => 4,
-            Self::Refused => 5,
-            Self::Timeout => 6,
-            Self::NoRoute => 7,
-            Self::NameNotResolved => 8,
-            Self::Unreachable => 9,
-            Self::Authentication => 10,
-            Self::HostKey => 11,
-            Self::Incompatible => 12,
-            Self::IdentityChanged => 13,
-            Self::Protocol => 14,
-            Self::PhoneKeyUnavailable => 15,
-            Self::Internal => 16,
+            Self::PhoneKeyUnavailable => 0,
+            Self::Internal => 1,
+            Self::LocalOffline => 2,
+            Self::TailscaleDown => 3,
+            Self::MonitoringOff => 4,
+            Self::AppNotRunning => 5,
+            Self::AgentNotRunning => 6,
+            Self::Refused => 7,
+            Self::Timeout => 8,
+            Self::NoRoute => 9,
+            Self::NameNotResolved => 10,
+            Self::Unreachable => 11,
+            Self::Authentication => 12,
+            Self::HostKey => 13,
+            Self::Incompatible => 14,
+            Self::IdentityChanged => 15,
+            Self::Protocol => 16,
         }
     }
 
@@ -96,6 +98,8 @@ impl ConnectionFailureKind {
                 .unwrap_or(Self::Unreachable),
             RemoteError::Timeout(_) => Self::Timeout,
             RemoteError::Authentication(_) => Self::Authentication,
+            RemoteError::PhoneKeyUnavailable(_) => Self::PhoneKeyUnavailable,
+            RemoteError::SignerInternal(_) => Self::Internal,
             RemoteError::Pairing(_) => Self::Refused,
             RemoteError::HostKey(_) => Self::HostKey,
             RemoteError::AgentNotRunning(_) => Self::AgentNotRunning,

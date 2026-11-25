@@ -10,6 +10,12 @@ pub enum RemoteError {
     Timeout(String),
     #[error("SSH authentication requires attention: {0}")]
     Authentication(String),
+    /// The local phone key could not be read or used. Retry after it becomes available.
+    #[error("{0}")]
+    PhoneKeyUnavailable(String),
+    /// The local signer returned an invalid key or signature or its callback failed.
+    #[error("{0}")]
+    SignerInternal(String),
     #[error("SSH host-key verification requires attention: {0}")]
     HostKey(String),
     #[error("incompatible remote: {0}")]

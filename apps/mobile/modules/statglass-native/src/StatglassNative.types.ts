@@ -36,11 +36,15 @@ export interface StatglassNativeModule
   version(): string;
   /**
    * Starts the core with a `MobileConfig` as JSON. Swift prepares the data
-   * directory and phone key first. Resolves to an envelope (`null`).
-   * @throws an `ERR_STATGLASS_*` Expo error if the phone key cannot be prepared
+   * directory first. Resolves to an envelope (`null`).
    * @throws a standard Expo error if data-directory setup fails
    */
   start(configJson: string): Promise<string>;
+  /**
+   * Creates or loads the phone's SSH key for pairing.
+   * @throws an `ERR_STATGLASS_*` Expo error if the key could not be prepared
+   */
+  preparePhoneKey(): Promise<void>;
   /**
    * One `MobileCall`: its `method` tag and its `args` as JSON (`"null"` for
    * none). Resolves to the call's envelope.
@@ -54,16 +58,12 @@ export interface StatglassNativeModule
 }
 
 /** A failure of the Swift side itself, never of the Rust core. */
-export type NativeModuleErrorKind =
-  | "keychain"
-  | "secureEnclave"
-  | "camera"
-  | "localNetwork";
+export type NativeModuleErrorKind = "keychain" | "secureEnclave" | "camera";
 
 /** A typed module error, parsed from a rejected native call. */
 export interface NativeModuleError {
   kind: NativeModuleErrorKind;
-  /** The `OSStatus` the failing Security or Network call returned. */
+  /** The `OSStatus` the failing Security call returned. */
   osStatus: number | null;
   message: string;
 }

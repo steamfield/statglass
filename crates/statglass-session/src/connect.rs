@@ -162,7 +162,10 @@ fn preferred_error(error: RemoteError) -> RemoteError {
     }
     if matches!(
         kind,
-        ConnectionFailureKind::MonitoringOff | ConnectionFailureKind::AppNotRunning
+        ConnectionFailureKind::MonitoringOff
+            | ConnectionFailureKind::AppNotRunning
+            | ConnectionFailureKind::PhoneKeyUnavailable
+            | ConnectionFailureKind::Internal
     ) && let RemoteError::Routes(mut routes) = error
     {
         if let Some(index) = routes

@@ -21,21 +21,20 @@ type Result<T> = std::result::Result<T, SignerError>;
 /// Signs SSH authentication requests with a P-256 key the caller holds.
 pub trait Signer: Send + Sync + 'static {
     /// SEC1 uncompressed P-256 point, 65 bytes (what SecKeyCopyExternalRepresentation returns).
-    fn public_key(&self) -> &[u8];
+    fn public_key(&self) -> BoxFuture<'_, Result<&[u8]>>;
     /// ECDSA P-256 over SHA-256 of `data`, ASN.1 DER (SecKeyCreateSignature .ecdsaSignatureMessageX962SHA256).
     fn sign(&self, data: Vec<u8>) -> BoxFuture<'static, std::result::Result<Vec<u8>, SignerError>>;
 }
 
-/// Why the signer produced no usable signature. The dialer reports each as
-/// `RemoteError::Authentication`.
+/// Why the signer could not supply a usable public key or signature.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
     #[error("signing key unavailable: {0}")]
     Unavailable(String),
-    #[error("signing refused: {0}")]
-    Refused(String),
     #[error("invalid signature: {0}")]
     Invalid(String),
+    #[error("native signer failed: {0}")]
+    Internal(String),
 }
 
 /// An ASN.1 DER ECDSA signature as the SSH `ecdsa-sha2-nistp256` signature blob: the
@@ -82,8 +81,7 @@ pub(crate) struct RusshSigner<'a> {
 }
 
 impl<'a> RusshSigner<'a> {
-    pub fn new(signer: &'a dyn Signer) -> Option<Self> {
-        let point = signer.public_key();
+    pub fn new(signer: &'a dyn Signer, point: &[u8]) -> Option<Self> {
         if !matches!(point, [4, coordinates @ ..] if coordinates.len() == 64) {
             return None;
         }
@@ -153,6 +151,11 @@ impl SoftwareSigner {
             .map_err(|err| SignerError::Invalid(format!("P-256 PKCS#8 key: {err}")))
     }
 
+    /// The uncompressed P-256 point held by this in-memory signer.
+    pub fn public_key(&self) -> &[u8] {
+        self.public.as_bytes()
+    }
+
     /// The `authorized_keys` line for this key, ending in `comment`.
     pub fn authorized_key_line(&self, comment: &str) -> String {
         let key = PublicKey::from(EcdsaPublicKey::from(self.key.verifying_key()));
@@ -170,8 +173,8 @@ impl SoftwareSigner {
 
 #[cfg(any(test, feature = "software-signer"))]
 impl Signer for SoftwareSigner {
-    fn public_key(&self) -> &[u8] {
-        self.public.as_bytes()
+    fn public_key(&self) -> BoxFuture<'_, Result<&[u8]>> {
+        Box::pin(async { Ok(self.public_key()) })
     }
 
     fn sign(&self, data: Vec<u8>) -> BoxFuture<'static, Result<Vec<u8>>> {
@@ -179,7 +182,7 @@ impl Signer for SoftwareSigner {
         Box::pin(async move {
             signature
                 .map(|value| value.to_der().as_bytes().to_vec())
-                .map_err(|err| SignerError::Refused(err.to_string()))
+                .map_err(|err| SignerError::Internal(err.to_string()))
         })
     }
 }

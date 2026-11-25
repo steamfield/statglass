@@ -489,6 +489,8 @@ export type Cmp = "gt" | "ge" | "lt" | "le";
 export type CommandError = { kind: "update"; message: string } |
 /**  SSH login to the other Mac failed (key, agent or account). */
 { kind: "remote_auth"; message: string } |
+/**  The phone needs its local SSH key before it can connect. */
+{ kind: "phone_key_unavailable" } |
 /**  The other Mac's host key isn't trusted yet, or needs checking in Terminal. */
 { kind: "host_key_unknown"; message: string } |
 /**  The other Mac can't run this StatGlass (architecture, macOS or protocol version). */

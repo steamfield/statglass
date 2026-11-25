@@ -28,6 +28,7 @@ export class FakeNative
 {
   readonly version = jest.fn(() => ok(BUILD_INFO));
   readonly start = jest.fn(async (_config: string) => ok(null));
+  readonly preparePhoneKey = jest.fn(async () => undefined);
   readonly call = jest.fn(
     async (method: MobileCall["method"], args: string) => {
       if (method === "subscribe_live") {

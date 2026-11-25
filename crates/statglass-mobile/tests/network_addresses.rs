@@ -29,7 +29,7 @@ impl NativeSigner for NativeKey {
         else {
             panic!("the software key signs synchronously");
         };
-        result.map_err(|error| NativeSignerError::Refused {
+        result.map_err(|error| NativeSignerError::Unexpected {
             message: error.to_string(),
         })
     }

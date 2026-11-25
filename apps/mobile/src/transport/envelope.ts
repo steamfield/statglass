@@ -2,12 +2,43 @@
  * Reads the core's JSON envelopes into the desktop's `CommandResult`, so
  * screens branch on `status` exactly as they do on the desktop.
  */
-import type { MobileCall } from "@core/generated/types";
+import type {
+  BuildInfo,
+  Capabilities,
+  HostAddressesInfo,
+  HostHistoryPage,
+  HostRecord,
+  HostVitals,
+  MobileCall,
+  MobileRemoteHost,
+  SubscriptionInfo,
+} from "@core/generated/types";
+import type { NativeError } from "@core/native-errors";
 import type { CommandResult } from "@core/transport";
 import {
   type StatglassNativeModule,
   toNativeModuleError,
 } from "@native/statglass-native";
+
+// Track crates/statglass-mobile/src/sessions/commands.rs and
+// crates/statglass-mobile/src/mobile_core.rs for each method's result.
+type MobileCallResult = {
+  build_info: BuildInfo;
+  set_hosts: null;
+  set_data_policy: null;
+  authorized_key_line: string;
+  list_hosts: HostRecord[];
+  list_remote_hosts: MobileRemoteHost[];
+  get_host: HostRecord;
+  get_capabilities: Capabilities;
+  host_vitals: HostVitals;
+  retry_remote_host: null;
+  subscribe_live: SubscriptionInfo;
+  unsubscribe_live: null;
+  host_history: HostHistoryPage;
+  network_addresses: HostAddressesInfo;
+  set_process_interest: null;
+};
 
 /**
  * The envelope in `json`. A string that is not an envelope becomes an
@@ -38,32 +69,61 @@ export function parseEnvelope<T>(json: string): CommandResult<T> {
 }
 
 /** Reads event JSON from the core and drops it if decoding fails. */
-export function parseEvent<T>(json: string, what: string): T | null {
+export function parseEvent<T>(
+  json: string,
+  what: string,
+  report = warnInvalidEvent
+): T | null {
   try {
     return JSON.parse(json) as T;
   } catch {
-    const preview = typeof json === "string" ? json.slice(0, 200) : typeof json;
-    console.warn(`[native core] invalid ${what} JSON`, preview);
+    report(json, what);
     return null;
   }
 }
 
-function rejectionMessage(error: unknown): string {
+function warnInvalidEvent(json: string, what: string) {
+  const preview = typeof json === "string" ? json.slice(0, 200) : typeof json;
+  console.warn(`[native core] invalid ${what} JSON`, preview);
+}
+
+/** Create one decoder for each subscription's event stream. */
+export function createEventParser<T>(what: string): (json: string) => T | null {
+  let warned = false;
+  function warnOnce(json: string) {
+    if (warned) return;
+    warned = true;
+    warnInvalidEvent(json, what);
+  }
+  return (json) => parseEvent<T>(json, what, warnOnce);
+}
+
+/** Decodes an Expo error without confusing it with a Rust command error. */
+function nativeRejection(error: unknown): NativeError | null {
   try {
-    const nativeError = toNativeModuleError(error);
-    if (nativeError) {
-      const { kind, message, osStatus } = nativeError;
-      return osStatus === null
-        ? `${kind}: ${message}`
-        : `${kind} (OSStatus ${osStatus}): ${message}`;
-    }
+    const decoded = toNativeModuleError(error);
+    return decoded ? { source: "native", ...decoded } : null;
   } catch (parseError) {
     console.warn(
       "[native core] could not decode native call rejection",
       parseError
     );
+    return null;
   }
+}
 
+/** Explicitly provisions the phone's key before pairing. */
+export async function preparePhoneKey(
+  native: StatglassNativeModule
+): Promise<void> {
+  try {
+    await native.preparePhoneKey();
+  } catch (error) {
+    throw nativeRejection(error) ?? error;
+  }
+}
+
+function rejectionMessage(error: unknown): string {
   try {
     if (
       typeof error === "object" &&
@@ -79,7 +139,7 @@ function rejectionMessage(error: unknown): string {
   }
 }
 
-/** Sends a generated facade request over the module's split wire interface. */
+/** Compatibility entry point while the existing transport callers migrate. */
 export async function callCore<T>(
   native: StatglassNativeModule,
   request: MobileCall
@@ -98,4 +158,12 @@ export async function callCore<T>(
       },
     };
   }
+}
+
+/** A facade call returns the result declared for its method. */
+export function callCoreByMethod<M extends MobileCall["method"]>(
+  native: StatglassNativeModule,
+  request: MobileCall & { method: M }
+): Promise<CommandResult<MobileCallResult[M]>> {
+  return callCore(native, request);
 }

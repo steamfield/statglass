@@ -16,7 +16,9 @@ export function nativeBuildInfo(
   if (!native) return null;
   try {
     const result = parseEnvelope<BuildInfo>(native.version());
-    return result.status === "ok" ? result.data : null;
+    if (result.status === "ok") return result.data;
+    console.warn("[native core] could not read version", result.error);
+    return null;
   } catch (error) {
     console.warn("[native core] could not read version", error);
     return null;
