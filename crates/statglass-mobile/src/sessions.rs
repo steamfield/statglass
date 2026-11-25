@@ -12,7 +12,7 @@ use statglass_session::{Dialer, RemoteSource};
 use tokio::runtime::Handle;
 
 use crate::control::SessionControl;
-use crate::ffi::CoreEvents;
+use crate::ffi::{CoreEvents, NativeSigner};
 
 mod addresses;
 mod commands;
@@ -33,9 +33,9 @@ pub(crate) struct Sessions {
 }
 
 impl Sessions {
-    pub(crate) fn new(events: Arc<dyn CoreEvents>) -> Self {
+    pub(crate) fn new(events: Arc<dyn CoreEvents>, signer: Option<Arc<dyn NativeSigner>>) -> Self {
         Self {
-            registry: Arc::new(Registry::new(events)),
+            registry: Arc::new(Registry::new(events, signer)),
         }
     }
 
@@ -91,8 +91,7 @@ fn callback<T>(name: &str, invoke: impl FnOnce() -> T) -> Option<T> {
     match catch_unwind(AssertUnwindSafe(invoke)) {
         Ok(result) => Some(result),
         Err(payload) => {
-            let error = crate::envelope::panicked(payload.as_ref());
-            tracing::error!(%error, callback = name, "mobile event callback");
+            crate::envelope::panicked(payload.as_ref(), name);
             None
         }
     }

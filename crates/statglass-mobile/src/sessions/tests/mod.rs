@@ -20,6 +20,7 @@ use tokio::time::timeout;
 use super::{CoreEvents, Sessions, endpoint};
 
 mod docker;
+mod history;
 mod live;
 mod registry;
 
@@ -148,10 +149,14 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn start(hosts: Vec<MobileHost>) -> Self {
-        Self::start_in(tempfile::tempdir().unwrap(), hosts)
+        Self::start_with_signer(hosts, None)
     }
 
-    fn start_in(dir: tempfile::TempDir, hosts: Vec<MobileHost>) -> Self {
+    fn start_with_signer(
+        hosts: Vec<MobileHost>,
+        signer: Option<Arc<dyn crate::ffi::NativeSigner>>,
+    ) -> Self {
+        let dir = tempfile::tempdir().unwrap();
         let (live, messages) = mpsc::unbounded_channel();
         let events = Arc::new(Recorder {
             live,
@@ -164,7 +169,7 @@ impl Fixture {
             panic_event: Mutex::default(),
             event_ready: Notify::new(),
         });
-        let sessions = Sessions::new(events.clone());
+        let sessions = Sessions::new(events.clone(), signer);
         let (dials, connections) = mpsc::unbounded_channel();
         sessions
             .registry
@@ -260,6 +265,15 @@ impl Dialer for PeerDialer {
 
 impl Dial {
     pub(crate) async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
+        self.handshake_with_features(host, statglass_proto::local_features())
+            .await
+    }
+
+    async fn handshake_with_features(
+        &mut self,
+        host: &MobileHost,
+        features: std::collections::BTreeSet<String>,
+    ) -> statglass_proto::RemoteInterest {
         codec::write(
             &mut self.peer,
             &Message::Hello(Box::new(Hello {
@@ -272,7 +286,7 @@ impl Dial {
                     revision: 5,
                     ..Default::default()
                 },
-                features: statglass_proto::local_features(),
+                features,
             })),
         )
         .await

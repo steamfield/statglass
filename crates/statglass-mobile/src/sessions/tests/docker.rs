@@ -10,7 +10,7 @@ use support::DockerFixture;
 #[ignore = "requires the Linux agent and sshd fixture from make ssh-docker-test"]
 async fn mobile_session() {
     let mut fixture = DockerFixture::new();
-    let sessions = Sessions::new(fixture.events.clone());
+    let sessions = Sessions::new(fixture.events.clone(), None);
     let host = fixture.host.id;
     sessions
         .start(

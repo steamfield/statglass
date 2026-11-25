@@ -29,6 +29,7 @@ statglass-engine.workspace = true
 statglass-session.workspace = true
 statglass-ipc.workspace = true
 statglass-ssh.workspace = true
+ciborium.workspace = true
 uniffi.workspace = true
 serde.workspace = true
 serde_json.workspace = true
