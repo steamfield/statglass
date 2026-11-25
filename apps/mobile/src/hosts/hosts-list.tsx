@@ -120,7 +120,7 @@ export function HostsList({
               </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Pair with your Mac"
+                accessibilityLabel="Add a host"
                 onPress={onPair}
                 className="min-h-[44px] justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70"
               >
@@ -128,7 +128,7 @@ export function HostsList({
                   role="body"
                   className="font-semibold text-primary-foreground"
                 >
-                  Pair with your Mac
+                  Add a host
                 </Text>
               </Pressable>
               <Pressable

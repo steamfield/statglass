@@ -401,9 +401,7 @@ test("offers the demo and pairing when the transport has no hosts", async () => 
   expect(
     screen.getByRole("button", { name: "Try demo hosts" })
   ).toBeOnTheScreen();
-  await fireEvent.press(
-    screen.getByRole("button", { name: "Pair with your Mac" })
-  );
+  await fireEvent.press(screen.getByRole("button", { name: "Add a host" }));
   expect(
     await screen.findByRole("header", { name: "Pairing screen" })
   ).toBeOnTheScreen();

@@ -39,7 +39,7 @@ function RootStack() {
   return (
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="pair" options={{ title: "Pair with your Mac" }} />
+      <Stack.Screen name="pair" options={{ title: "Add a host" }} />
       <Stack.Screen name="demo" options={{ title: "Demo hosts" }} />
       <Stack.Screen name="(hosts)" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
