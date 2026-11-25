@@ -25,7 +25,8 @@ has failed that test and is forked (see below). Background: `plan/rfc-ios-app.md
    `window`, `document` or `navigator` globals (tests running under happy-dom are exempt from
    the globals rule). Biome enforces this (`biome.json` overrides for `packages/core/**`), with
    fixtures in `scripts/architecture/test_biome_rules.py`. Models take measurable inputs, never a
-   platform enum.
+   platform enum. Annotation caption scale is measurable like plot width because Dynamic Type
+   changes how much room the text needs, and either app can pass that scale to the same layout.
 3. **Fork instead of flagging.** When a shared model needs an option only one app uses, that app
    copies the model and the copy is listed under "Forks" below.
 4. **Tested once, rendered twice.** Model tests assert view models from the shared fixtures; each
@@ -49,7 +50,7 @@ The desktop's Tauri adapters (`native*.ts`, `app-transport.ts`) live in
 
 ## Forks
 
-Models one app copied instead of adding a platform option. Each entry names the original, the
-copy and why.
-
-None yet.
+- [Gap bands](src/widget-models/gap-band.ts) share clipping and geometry. The
+  [iPhone renderer](../../apps/mobile/src/widgets/gap-bands.tsx) estimates caption
+  widths and moves colliding captions below the plot because narrow plots at large
+  Dynamic Type sizes can leave too little room for both labels.
