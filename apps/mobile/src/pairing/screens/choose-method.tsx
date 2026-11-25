@@ -1,15 +1,20 @@
-import { Text } from "@/ui/text";
+import { SetupGuidance } from "@/pairing/help/setup-guidance";
 import { PairAction } from "./action";
+import { PairingStep } from "./pairing-step";
 
 export function ChooseMethod({ scan, paste }: { scan(): void; paste(): void }) {
   return (
-    <>
-      <Text variant="body">
-        On a Mac, open StatGlass Settings and choose Pair iPhone under iPhone
-        access. Or run sudo statglass-agent pair in a terminal on the host.
-      </Text>
-      <PairAction label="Scan QR" onPress={scan} />
-      <PairAction label="Paste code" secondary onPress={paste} />
-    </>
+    <PairingStep
+      title="Get a pairing code"
+      explanation="Create the code on the host you want to add."
+      actions={
+        <>
+          <PairAction label="Scan QR" onPress={scan} />
+          <PairAction label="Paste code" secondary onPress={paste} />
+        </>
+      }
+    >
+      <SetupGuidance />
+    </PairingStep>
   );
 }

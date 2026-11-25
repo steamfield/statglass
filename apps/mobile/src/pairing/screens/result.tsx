@@ -1,15 +1,16 @@
 import { nativeErrorText } from "@core/native-errors";
 import { pairingAdvice } from "@core/remote-errors";
-import type { PairingStep } from "@/pairing/flow";
+import type { PairingStep as FlowStep } from "@/pairing/flow";
 import { Text } from "@/ui/text";
 import { PairAction } from "./action";
+import { PairingStep } from "./pairing-step";
 
 export function PairingFailure({
   step,
   retry,
   done,
 }: {
-  step: Extract<PairingStep, { kind: "failed" }>;
+  step: Extract<FlowStep, { kind: "failed" }>;
   retry(): void;
   done(): void;
 }) {
@@ -19,23 +20,28 @@ export function PairingFailure({
   const detail =
     error.kind === "pairing" && error.message !== title ? error.message : null;
   return (
-    <>
-      <Text variant="title" accessibilityRole="alert">
-        {title}
-      </Text>
+    <PairingStep
+      title={title}
+      explanation={recovery}
+      tone="warning"
+      actions={
+        <>
+          <PairAction label="Try again" onPress={retry} />
+          <PairAction label="Done" secondary onPress={done} />
+        </>
+      }
+    >
       {detail && <Text variant="caption">{detail}</Text>}
-      <Text variant="body">{recovery}</Text>
-      <PairAction label="Try again" onPress={retry} />
-      <PairAction label="Done" secondary onPress={done} />
-    </>
+    </PairingStep>
   );
 }
 
 export function PairingSuccess({ host, done }: { host: string; done(): void }) {
   return (
-    <>
-      <Text variant="title">{host} is paired</Text>
-      <PairAction label="View hosts" onPress={done} />
-    </>
+    <PairingStep
+      title={`${host} is paired`}
+      explanation="You can now view this host’s live metrics and history."
+      actions={<PairAction label="View hosts" onPress={done} />}
+    />
   );
 }

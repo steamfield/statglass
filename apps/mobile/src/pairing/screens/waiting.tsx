@@ -1,5 +1,6 @@
 import { Text } from "@/ui/text";
 import { PairAction } from "./action";
+import { PairingStep } from "./pairing-step";
 
 export function Waiting({
   host,
@@ -11,13 +12,12 @@ export function Waiting({
   cancel(): void;
 }) {
   return (
-    <>
-      <Text variant="title">Waiting for approval on {host}</Text>
-      <Text variant="body">
-        Compare this code with the one shown on the host.
-      </Text>
-      <Text variant="cardFigure">{code}</Text>
-      <PairAction label="Cancel" secondary onPress={cancel} />
-    </>
+    <PairingStep
+      title={`Waiting for approval on ${host}`}
+      explanation="Compare this code with the one shown on the host."
+      actions={<PairAction label="Cancel" secondary onPress={cancel} />}
+    >
+      <Text variant="heroFigure">{code}</Text>
+    </PairingStep>
   );
 }
