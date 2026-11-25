@@ -54,7 +54,7 @@ export function useSpaceStatus(enabled: boolean) {
         : false,
     refetchOnWindowFocus: false,
   });
-  const scanning = !query.isError && query.data?.phase === "scanning";
+  const scanning = currentSpaceStatus(query)?.phase === "scanning";
   const wasScanning = useRef(scanning);
   useEffect(() => {
     // Every mounted observer sees the scan end; the first read is shared, not
@@ -67,6 +67,17 @@ export function useSpaceStatus(enabled: boolean) {
     wasScanning.current = scanning;
   }, [client, host, scanning]);
   return query;
+}
+
+/**
+ * The status every view acts on: none after a failed read, even though the
+ * query still holds the last one it saw, so no view shows a scan as running
+ * on a host that stopped answering.
+ */
+export function currentSpaceStatus(
+  query: Pick<ReturnType<typeof useSpaceStatus>, "isError" | "data">
+): SpaceScanStatus | undefined {
+  return query.isError ? undefined : query.data;
 }
 
 /**

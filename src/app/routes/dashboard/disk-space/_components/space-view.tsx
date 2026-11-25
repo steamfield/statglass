@@ -6,6 +6,7 @@ import { useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import {
+  currentSpaceStatus,
   useSpaceDropped,
   useSpaceHighlights,
   useSpaceReport,
@@ -61,16 +62,17 @@ function HostSpace({
   // Keep the settled highlights available when a scan or report closes.
   const highlights = useSpaceHighlights();
   const status = useSpaceStatus(true);
-  const scanning = status.data?.phase === "scanning";
+  const current = currentSpaceStatus(status);
+  const scanning = current?.phase === "scanning";
   const report = useSpaceReport(
     status.isSuccess,
-    scanning ? null : (status.data?.report_id ?? null)
+    scanning ? null : (current?.report_id ?? null)
   );
   const scan = useSpaceScan();
-  const dropped = useSpaceDropped(status.data);
+  const dropped = useSpaceDropped(current);
   const [include, setInclude] = useState<ReadonlySet<string>>(new Set());
   const kept = report.data ?? null;
-  const { screen, ended } = spaceScreen(status.data, kept, vol);
+  const { screen, ended } = spaceScreen(current, kept, vol);
   const landingLoading = useLandingLoading(volumes, highlights, screen.mode);
   const busy = scan.starting || scanning;
   const start = (mount: string) => {
@@ -99,7 +101,7 @@ function HostSpace({
           onScan={start}
           onOpen={onVol}
           reportVolume={kept?.volume.mount ?? null}
-          scanningVolume={scanning ? (status.data?.volume ?? null) : null}
+          scanningVolume={scanning ? (current?.volume ?? null) : null}
           busy={busy}
         />
       ) : (

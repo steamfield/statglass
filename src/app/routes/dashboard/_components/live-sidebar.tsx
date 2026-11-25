@@ -10,17 +10,13 @@ import { memo, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { HostSwitcher } from "~/components/host-switcher";
 import { PerformanceExplainer } from "~/components/performance-explainer";
-import {
-  Sidebar,
-  type SidebarEntry,
-  type SidebarProps,
-} from "~/components/sidebar";
+import { Sidebar, type SidebarEntry } from "~/components/sidebar";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "~/components/ui/hover-card";
-import { useSpaceStatus } from "~/hooks/use-disk-space";
+import { currentSpaceStatus, useSpaceStatus } from "~/hooks/use-disk-space";
 import { useEdition } from "~/hooks/use-edition";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -94,6 +90,32 @@ const LOCAL_TOOLS: readonly SidebarEntry[] = [
 ];
 const SCAN_BUSY = { label: "Scan running" };
 
+/**
+ * The Utilities group's rows: Disk space where the edition can scan, marked
+ * while a scan runs. The same array while nothing changes, so the group's
+ * memo holds across the sidebar's 1 Hz renders.
+ */
+export function useUtilityEntries(): readonly SidebarEntry[] {
+  const diskSpace = useEdition()?.disk_space;
+  const status = currentSpaceStatus(useSpaceStatus(diskSpace === true));
+  const busy = status?.phase === "scanning" ? SCAN_BUSY : undefined;
+  return useMemo<readonly SidebarEntry[]>(
+    () =>
+      diskSpace === true
+        ? [
+            {
+              id: "disk-space",
+              href: "/dashboard/disk-space",
+              label: "Disk space",
+              icon: "disk-space",
+              busy,
+            },
+          ]
+        : [],
+    [diskSpace, busy]
+  );
+}
+
 const countBehind = (hosts: Parameters<typeof hostsNeedingUpdate>[0]) =>
   hostsNeedingUpdate(hosts).length;
 
@@ -153,9 +175,7 @@ const SidebarFeedbackAction = memo(function SidebarFeedbackAction() {
  * Modules switched off, or that this build cannot run, are dimmed without a
  * value. Network and Disk show the sum of both directions.
  */
-export function LiveSidebar({
-  onGroupRender,
-}: Pick<SidebarProps, "onGroupRender">) {
+export function LiveSidebar() {
   const local = useIsLocalHost();
   const hostId = useHostId();
   // A remote host lists Containers when it reports cgroup groups (D-116).
@@ -189,27 +209,7 @@ export function LiveSidebar({
     );
     return withHostAttention(listed, behind);
   }, [local, linux, cgroups, behind]);
-  const diskSpace = useEdition()?.disk_space;
-  const spaceStatus = useSpaceStatus(diskSpace === true);
-  const busy =
-    !spaceStatus.isError && spaceStatus.data?.phase === "scanning"
-      ? SCAN_BUSY
-      : undefined;
-  const utilities = useMemo<readonly SidebarEntry[]>(
-    () =>
-      diskSpace === true
-        ? [
-            {
-              id: "disk-space",
-              href: "/dashboard/disk-space",
-              label: "Disk space",
-              icon: "disk-space",
-              busy,
-            },
-          ]
-        : [],
-    [diskSpace, busy]
-  );
+  const utilities = useUtilityEntries();
   const configuredMs = useSettings((s) => s.sampling.interval_ms);
   const sampling = useSampling();
   const cpu = useCpu();
@@ -285,7 +285,6 @@ export function LiveSidebar({
 
   return (
     <Sidebar
-      onGroupRender={onGroupRender}
       hostSwitcher={<HostSwitcher />}
       groups={groups}
       active={pathname.split("/")[2] ?? "overview"}

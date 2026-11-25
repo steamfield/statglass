@@ -4,8 +4,6 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   memo,
-  Profiler,
-  type ProfilerOnRenderCallback,
   type ReactNode,
   useId,
   useLayoutEffect,
@@ -92,8 +90,6 @@ export interface SidebarProps {
   /** A second footer line under the sampling state (the Performance mode marker). */
   footerNote?: ReactNode;
   hostSwitcher?: ReactNode;
-  /** Optional React render probe for individual entry groups. */
-  onGroupRender?: ProfilerOnRenderCallback | undefined;
 }
 
 function intervalLabel(ms: number): string {
@@ -185,7 +181,6 @@ export function Sidebar({
   footerAction,
   footerNote,
   hostSwitcher,
-  onGroupRender,
 }: SidebarProps) {
   const entriesRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
@@ -278,13 +273,11 @@ export function Sidebar({
           {groups.map((g, gi) => (
             <SidebarGroup
               key={g.id}
-              id={g.id}
               label={g.label}
               entries={g.entries}
               first={gi === 0}
               active={active}
               onNavigate={onNavigate}
-              onRender={onGroupRender}
             />
           ))}
         </div>
@@ -389,21 +382,17 @@ const SidebarBrand = memo(function SidebarBrand() {
 });
 
 const SidebarGroup = memo(function SidebarGroup({
-  id,
   label,
   entries,
   first,
   active,
   onNavigate,
-  onRender,
 }: {
-  id: string;
   label?: string | undefined;
   entries: readonly SidebarEntry[];
   first: boolean;
   active: string;
   onNavigate?: ((href: string) => void) | undefined;
-  onRender?: ProfilerOnRenderCallback | undefined;
 }) {
   const headingId = useId();
   const spacing = first ? "pb-2" : "border-border-subtle border-t py-2";
@@ -427,7 +416,8 @@ const SidebarGroup = memo(function SidebarGroup({
     </ul>
   );
 
-  const content = label ? (
+  if (!label) return list;
+  return (
     <div className={spacing}>
       <h2
         id={headingId}
@@ -437,15 +427,5 @@ const SidebarGroup = memo(function SidebarGroup({
       </h2>
       {list}
     </div>
-  ) : (
-    list
-  );
-
-  return onRender ? (
-    <Profiler id={id} onRender={onRender}>
-      {content}
-    </Profiler>
-  ) : (
-    content
   );
 });

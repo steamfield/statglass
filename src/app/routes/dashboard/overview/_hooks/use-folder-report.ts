@@ -1,4 +1,5 @@
 import {
+  currentSpaceStatus,
   useSpaceHighlights,
   useSpaceScan,
   useSpaceStatus,
@@ -16,7 +17,7 @@ const BOOT = "/";
  */
 export function useFolderReport() {
   const summary = useSpaceHighlights();
-  const status = useSpaceStatus(true).data;
+  const status = currentSpaceStatus(useSpaceStatus(true));
   const scan = useSpaceScan();
   const scanning = status?.phase === "scanning" && status.volume === BOOT;
   // How the last boot scan failed, from here or from the Space view.

@@ -3,10 +3,12 @@ import { act, screen, within } from "@testing-library/react";
 import { nextFrame } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { expect, it } from "vitest";
+import type { SidebarEntry } from "~/components/sidebar";
 import { useSpaceScan } from "~/hooks/use-disk-space";
 import { useEdition } from "~/hooks/use-edition";
 import { type HostStore, useHostStore } from "~/stores/host-store";
-import { LiveSidebar } from "./live-sidebar";
+import { useCpu } from "~/stores/live-selectors";
+import { LiveSidebar, useUtilityEntries } from "./live-sidebar";
 
 function EditionReadout() {
   return useEdition()?.disk_space === false ? (
@@ -90,18 +92,21 @@ it("marks Disk space while a scan runs and clears the mark when it finishes", as
   ).toBeVisible();
 });
 
-it("keeps the busy Utilities group from re-rendering on live CPU frames", async () => {
+it("keeps the busy Utilities entries the same across live CPU frames", async () => {
   let hostStore: HostStore | undefined;
-  function CaptureStore() {
+  const seen: { cpu: number | null; entries: readonly SidebarEntry[] }[] = [];
+  // Re-renders on every CPU frame, as LiveSidebar does.
+  function Probe() {
     hostStore = useHostStore();
+    const cpu = useCpu();
+    seen.push({ cpu: cpu?.total ?? null, entries: useUtilityEntries() });
     return null;
   }
 
-  const commits: string[] = [];
   const { transport, user } = renderWithProviders(
     <>
-      <CaptureStore />
-      <LiveSidebar onGroupRender={(id) => commits.push(id)} />
+      <Probe />
+      <LiveSidebar />
       <StartScan />
     </>,
     {
@@ -113,15 +118,16 @@ it("keeps the busy Utilities group from re-rendering on live CPU frames", async 
   await screen.findByRole("link", { name: /^CPU \d/ });
   await user.click(screen.getByRole("button", { name: "Start scan" }));
   await screen.findByRole("link", { name: /, Scan running$/ });
-  expect(commits).toContain("utilities");
+  const busy = seen.at(-1)?.entries;
+  expect(busy?.[0]?.busy).toEqual({ label: "Scan running" });
 
   if (!hostStore) throw new Error("Missing live store");
   for (const cpu of [61, 62, 63]) {
-    commits.length = 0;
     const frame = nextFrame(hostStore.getState(), { "cpu.total": cpu });
     await act(async () => transport.push(frame));
     expect(screen.getByRole("link", { name: `CPU ${cpu}%` })).toBeVisible();
-    expect(commits).toContain("modules");
-    expect(commits).not.toContain("utilities");
   }
+  const during = seen.filter((s) => s.cpu !== null && s.cpu >= 61);
+  expect(during.length).toBeGreaterThanOrEqual(3);
+  for (const s of during) expect(s.entries).toBe(busy);
 });
