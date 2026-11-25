@@ -23,8 +23,8 @@ screen is the `mobile-bridge` skill.
 
 ## Lifecycle
 
-- `start()`, `quiesce()`, `resume()` and `pathChanged(path)` never block the calling thread; `quiesce()` is async and resolves after Rust commits in-flight mirror writes.
-- Background entry calls `beginBackgroundTask`, then `quiesce()`, and ends the task when it resolves or expires; never join a Rust thread on the main thread.
+- `start()`, `quiesce()`, `quiesced()`, `resume()` and `pathChanged(path)` never block the calling thread. `quiesce()` issues every park request before it returns, so call it on the same serial queue as `resume()` to keep UIKit's order; async `quiesced()` resolves after Rust commits in-flight mirror writes.
+- Background entry calls `beginBackgroundTask`, then `quiesce()`, awaits `quiesced()` off the queue, and ends the task when it resolves or expires; a foreground `resume()` never waits for `quiesced()`. Never join a Rust thread on the main thread.
 - A callback whose JS listener is gone ends its subscription and is logged once, not per message.
 
 ## Signer
