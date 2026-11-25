@@ -7,6 +7,7 @@ import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import {
   useSpaceDropped,
+  useSpaceHighlights,
   useSpaceReport,
   useSpaceScan,
   useSpaceStatus,
@@ -16,6 +17,7 @@ import { useHostNoun } from "~/hooks/use-host-record";
 import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { useHostId } from "~/stores/host-store";
 import { spaceScreen } from "../_lib/space";
+import { SpaceLastScan } from "./space-last-scan";
 import { SpaceReportView } from "./space-report";
 import { SpaceVolumes } from "./space-volumes";
 
@@ -56,6 +58,8 @@ function HostSpace({
   onVol: (mount: string | null) => void;
 }) {
   const volumes = useSpaceVolumes(true);
+  // Keep the settled highlights available when a scan or report closes.
+  const highlights = useSpaceHighlights();
   const status = useSpaceStatus(true);
   const scanning = status.data?.phase === "scanning";
   const report = useSpaceReport(
@@ -86,6 +90,8 @@ function HostSpace({
       {screen.mode === "volumes" ? (
         <VolumeList
           query={volumes}
+          highlights={highlights}
+          vol={vol}
           include={include}
           onInclude={(key, on) => setInclude((prev) => toggled(prev, key, on))}
           onScan={start}
@@ -147,20 +153,63 @@ function SpaceMessage({
 
 function VolumeList({
   query,
+  highlights,
+  vol,
   ...props
 }: {
   query: ReturnType<typeof useSpaceVolumes>;
-} & Omit<ComponentProps<typeof SpaceVolumes>, "volumes">) {
+  highlights: ReturnType<typeof useSpaceHighlights>;
+  vol: string | null;
+} & Omit<ComponentProps<typeof SpaceVolumes>, "volumes" | "primaryMount">) {
   const noun = useHostNoun();
-  if (query.data) return <SpaceVolumes volumes={query.data} {...props} />;
+  const [settled, setSettled] = useState(false);
+  if (
+    query.isPending ||
+    highlights.isPending ||
+    (!settled && (query.isFetching || highlights.isFetching))
+  )
+    return <InlineMessage tone="status">Loading volumes…</InlineMessage>;
+  // After the first render, refreshes must preserve focus and open disclosures.
+  if (!settled) setSettled(true);
+  if (query.isError && !query.data)
+    return (
+      <InlineMessage tone="status">
+        {volumeErrorText(query.error, noun)}
+      </InlineMessage>
+    );
+
+  const volumes = query.data;
+  const boot = volumes.find((volume) => volume.is_boot);
+  const selected = volumes.find((volume) => volume.mount === vol);
+  const summary = highlights.isSuccess ? highlights.data : null;
+  const showSummary =
+    boot !== undefined &&
+    (vol === null || selected?.is_boot === true) &&
+    summary !== null &&
+    summary.folders.length > 0;
   return (
-    <InlineMessage tone="status">
-      {!query.isError
-        ? "Loading volumes…"
-        : query.error.message.includes("edition")
-          ? "Space reports are not available in this edition."
-          : (remoteQueryText(query.error, "space reports") ??
-            `Couldn't list the volumes on this ${noun}.`)}
-    </InlineMessage>
+    <>
+      {showSummary && (
+        <SpaceLastScan
+          summary={summary}
+          busy={props.busy}
+          onScan={() => props.onScan(boot.mount)}
+        />
+      )}
+      <SpaceVolumes
+        volumes={volumes}
+        primaryMount={showSummary ? null : ((selected ?? boot)?.mount ?? null)}
+        {...props}
+      />
+    </>
+  );
+}
+
+function volumeErrorText(error: Error, noun: string) {
+  if (error.message.includes("edition"))
+    return "Space reports are not available in this edition.";
+  return (
+    remoteQueryText(error, "space reports") ??
+    `Couldn't list the volumes on this ${noun}.`
   );
 }

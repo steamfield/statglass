@@ -1,11 +1,14 @@
 import { MOCK_SCAN_MS } from "@core/mock/disk-space";
+import { MOCK_HIGHLIGHTS } from "@core/mock/disk-space-fixture";
 import { MOCK_HOST_ID, type ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import { hostKeys } from "@core/query-keys";
+import { diskSpaceKeys, hostKeys } from "@core/query-keys";
+import { unwrap } from "@core/transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import { renderWithProviders } from "@tests/test-utils";
+import { createTestQueryClient, renderWithProviders } from "@tests/test-utils";
 import { Profiler, useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { SPACE_POLL_MS } from "~/hooks/use-disk-space";
 import { HostSelectionContext } from "~/lib/host-selection";
 import { HostStoreProvider } from "~/stores/host-store";
 import DiskSpaceRoute from "./route";
@@ -47,6 +50,262 @@ async function finish(r: ReturnType<typeof setup>) {
   r.advance(MOCK_SCAN_MS);
   await screen.findByRole("button", { name: "Scan again" }, POLL);
 }
+
+describe("Disk space landing", () => {
+  it("shows every kept folder and rescans the boot volume with the selected includes", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    let t = Date.now();
+    const transport = createMockTransport({ now: () => t, autoTick: false });
+    const { user } = renderWithProviders(<DiskSpaceRoute />, { transport });
+
+    const card = await screen.findByRole("region", { name: "Largest folders" });
+    expect(within(card).getByText("Scanned 3 days ago")).toBeVisible();
+    expect(
+      within(card).getByText(
+        "From the last scan of Macintosh HD. Scanning again rebuilds the full breakdown."
+      )
+    ).toBeVisible();
+    const list = within(card).getByRole("list", { name: "Largest folders" });
+    expect(
+      within(list)
+        .getAllByRole("button")
+        .map((row) => row.title)
+    ).toEqual(MOCK_HIGHLIGHTS.folders.map((folder) => folder.path));
+    expect(
+      screen.getByRole("button", { name: "Scan Macintosh HD" })
+    ).toHaveAttribute("data-variant", "outline");
+    expect(
+      screen.getByRole("button", { name: "Scan SanDisk Extreme" })
+    ).toHaveAttribute("data-variant", "outline");
+    expect(
+      within(card).getByRole("button", { name: "Scan again" })
+    ).toHaveAttribute("data-variant", "default");
+
+    await user.click(screen.getByText("Protected locations · 7 of 7 skipped"));
+    await user.click(screen.getByRole("checkbox", { name: "Downloads" }));
+    await user.click(screen.getByRole("button", { name: "Scan again" }));
+    await screen.findByText(/Scanning · about/);
+    expect(
+      screen.queryByRole("region", { name: "Largest folders" })
+    ).toBeNull();
+
+    t += MOCK_SCAN_MS;
+    await act(() => vi.advanceTimersByTimeAsync(SPACE_POLL_MS));
+    expect(
+      await screen.findByText(/6 locations protected by macOS/, {}, POLL)
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "In Macintosh HD" })
+    ).toBeVisible();
+    await user.click(screen.getByText("Skipped folders"));
+    expect(screen.getByText(/Protected by macOS:/)).not.toHaveTextContent(
+      "Downloads"
+    );
+  });
+
+  it("makes the boot scan primary when there is no kept summary", async () => {
+    setup("/", ["disk-space-unscanned"]);
+    expect(
+      await screen.findByRole("heading", { name: "Choose a volume" })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("region", { name: "Largest folders" })
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Scan Macintosh HD" })
+    ).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.getByRole("button", { name: "Scan SanDisk Extreme" })
+    ).toHaveAttribute("data-variant", "outline");
+  });
+
+  it("makes the linked external volume primary and hides the boot summary", async () => {
+    setup("/?vol=/Volumes/SanDisk%20Extreme");
+    expect(
+      await screen.findByRole("button", { name: "Scan SanDisk Extreme" })
+    ).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.getByRole("button", { name: "Scan Macintosh HD" })
+    ).toHaveAttribute("data-variant", "outline");
+    expect(
+      screen.queryByRole("region", { name: "Largest folders" })
+    ).toBeNull();
+  });
+});
+
+describe("Disk space landing states", () => {
+  it.each([
+    { name: "the first visit", route: "/", cachedMiss: false },
+    { name: "a cached miss", route: "/", cachedMiss: true },
+    {
+      name: "a cached miss on an external link",
+      route: "/?vol=/Volumes/SanDisk%20Extreme",
+      cachedMiss: true,
+    },
+  ])(
+    "keeps the landing loading until highlights settle after $name",
+    async ({ route, cachedMiss }) => {
+      const transport = createMockTransport({ autoTick: false });
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(
+        diskSpaceKeys.volumes(MOCK_HOST_ID),
+        await unwrap(transport.diskSpaceVolumes(MOCK_HOST_ID))
+      );
+      if (cachedMiss)
+        queryClient.setQueryData(diskSpaceKeys.highlights(MOCK_HOST_ID), null);
+
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const highlights = transport.diskSpaceHighlights;
+      transport.diskSpaceHighlights = async (host) => {
+        await held;
+        return highlights(host);
+      };
+      renderWithProviders(<DiskSpaceRoute />, {
+        transport,
+        queryClient,
+        route,
+      });
+      expect(screen.getByText("Loading volumes…")).toBeVisible();
+      expect(
+        screen.queryByRole("region", { name: "Volumes to scan" })
+      ).toBeNull();
+      expect(
+        screen.queryByRole("region", { name: "Largest folders" })
+      ).toBeNull();
+
+      release();
+      expect(
+        await screen.findByRole("region", { name: "Volumes to scan" })
+      ).toBeVisible();
+      expect(screen.queryByText("Loading volumes…")).toBeNull();
+      if (route === "/") {
+        expect(
+          screen.getByRole("region", { name: "Largest folders" })
+        ).toBeVisible();
+      } else {
+        expect(
+          screen.getByRole("button", { name: "Scan SanDisk Extreme" })
+        ).toHaveAttribute("data-variant", "default");
+      }
+    }
+  );
+
+  it("preserves the open picker and its focus while a finished scan refreshes highlights", async () => {
+    const r = setup();
+    await scanBoot(r);
+    await r.user.click(
+      within(screen.getByRole("navigation", { name: "Folder path" })).getByRole(
+        "button",
+        { name: "Volumes" }
+      )
+    );
+    await r.user.click(
+      await screen.findByText("Protected locations · 7 of 7 skipped")
+    );
+    expect(screen.getByRole("button", { name: "Scan again" })).toBeDisabled();
+    await r.user.click(screen.getByRole("checkbox", { name: "Downloads" }));
+    expect(screen.getByRole("checkbox", { name: "Downloads" })).toHaveFocus();
+
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const highlights = r.transport.diskSpaceHighlights;
+    vi.spyOn(r.transport, "diskSpaceHighlights").mockImplementation(
+      async (host) => {
+        await held;
+        return highlights(host);
+      }
+    );
+    try {
+      r.advance(MOCK_SCAN_MS);
+      expect(
+        await screen.findByRole("button", { name: "Open report" }, POLL)
+      ).toBeVisible();
+      expect(screen.getByRole("checkbox", { name: "Downloads" })).toHaveFocus();
+      expect(screen.getByRole("checkbox", { name: "Downloads" })).toBeChecked();
+    } finally {
+      release();
+    }
+  });
+
+  it("quietly offers the boot scan when highlights fail to load", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    vi.spyOn(transport, "diskSpaceHighlights").mockResolvedValue({
+      status: "error",
+      error: { kind: "disk_space", message: "Couldn't read the last scan" },
+    });
+    renderWithProviders(<DiskSpaceRoute />, { transport });
+
+    expect(
+      await screen.findByRole("button", { name: "Scan Macintosh HD" })
+    ).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.queryByRole("region", { name: "Largest folders" })
+    ).toBeNull();
+    expect(screen.queryByText(/Couldn't read the last scan/)).toBeNull();
+  });
+
+  it("offers the boot scan when the kept summary has no folders", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    vi.spyOn(transport, "diskSpaceHighlights").mockResolvedValue({
+      status: "ok",
+      data: { ...MOCK_HIGHLIGHTS, folders: [] },
+    });
+    renderWithProviders(<DiskSpaceRoute />, { transport });
+
+    expect(
+      await screen.findByRole("button", { name: "Scan Macintosh HD" })
+    ).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.queryByRole("region", { name: "Largest folders" })
+    ).toBeNull();
+  });
+
+  it("says why Finder couldn't reveal a folder from the kept summary", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    vi.spyOn(transport, "diskSpaceRevealHighlight").mockResolvedValue({
+      status: "error",
+      error: { kind: "disk_space", message: "This item no longer exists" },
+    });
+    const { user } = renderWithProviders(<DiskSpaceRoute />, { transport });
+    const card = await screen.findByRole("region", { name: "Largest folders" });
+    await user.click(within(card).getByRole("button", { name: /^Downloads/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This item no longer exists"
+    );
+  });
+
+  it("shows an inline error when Finder's command rejects", async () => {
+    const transport = createMockTransport({ autoTick: false });
+    vi.spyOn(transport, "diskSpaceRevealHighlight").mockRejectedValue(
+      new Error("Finder could not be reached")
+    );
+    const { user } = renderWithProviders(<DiskSpaceRoute />, { transport });
+    await user.click(await screen.findByRole("button", { name: /^Downloads/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Finder could not be reached"
+    );
+  });
+
+  it("shows the edition message and no summary in the App Store edition", async () => {
+    setup("/", ["appstore"]);
+    expect(
+      await screen.findByText(
+        "Space reports are not available in this edition."
+      )
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("region", { name: "Largest folders" })
+    ).toBeNull();
+  });
+});
 
 describe("Disk space", () => {
   it("fills the report in while scanning, then shows the finished breakdown", async () => {

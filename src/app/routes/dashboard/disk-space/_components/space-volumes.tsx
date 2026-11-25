@@ -17,6 +17,7 @@ export function SpaceVolumes({
   onInclude,
   onScan,
   onOpen,
+  primaryMount,
   reportVolume,
   scanningVolume,
   busy,
@@ -26,6 +27,7 @@ export function SpaceVolumes({
   onInclude: (key: string, on: boolean) => void;
   onScan: (mount: string) => void;
   onOpen: (mount: string) => void;
+  primaryMount: string | null;
   /** The volume the kept report is for, which opens instead of rescanning. */
   reportVolume: string | null;
   /** The volume being scanned now, whose row opens the running scan. */
@@ -38,7 +40,7 @@ export function SpaceVolumes({
   return (
     <SectionCard
       accent="disk"
-      title="Volumes"
+      title="Choose a volume"
       variant="default"
       className="overflow-hidden"
     >
@@ -89,7 +91,7 @@ export function SpaceVolumes({
               ) : (
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={row.id === primaryMount ? "default" : "outline"}
                   disabled={busy}
                   aria-label={`Scan ${row.name}`}
                   onClick={() => onScan(row.id)}

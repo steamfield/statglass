@@ -65,7 +65,7 @@ function FolderRow({
       onClick={onReveal}
     >
       <span className="flex min-w-0 items-baseline gap-2">
-        <span className="shrink-0 text-fg-subtle">{name}</span>
+        <span className="min-w-0 truncate text-fg-subtle">{name}</span>
         <span className="min-w-0 truncate text-label text-muted-foreground">
           {detail(folder, name, parent)}
         </span>
