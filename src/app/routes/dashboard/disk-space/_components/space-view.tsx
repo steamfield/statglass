@@ -5,46 +5,45 @@ import type { ComponentProps, ReactNode } from "react";
 import { useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
-import { useHostNoun } from "~/hooks/use-host-record";
-import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
-import { useHostId } from "~/stores/host-store";
 import {
-  useSpaceDropped,
-  useSpaceReport,
+  currentSpaceStatus,
+  useSpaceHighlights,
   useSpaceScan,
   useSpaceStatus,
   useSpaceVolumes,
-} from "../_hooks/use-disk-space";
+} from "~/hooks/use-disk-space";
+import { useHostNoun } from "~/hooks/use-host-record";
+import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
+import { useHostId } from "~/stores/host-store";
+import { useSpaceDropped, useSpaceReport } from "../_hooks/use-space-report";
 import { spaceScreen } from "../_lib/space";
+import { SpaceLastScan } from "./space-last-scan";
 import { SpaceReportView } from "./space-report";
 import { SpaceVolumes } from "./space-volumes";
 
 /**
- * Disk › Space (plan/disk-space-report.md): pick a volume, scan it, and read
- * what uses it. `vol` is the volume in the URL; without one, the volume list.
+ * Utilities › Disk space (plan/utilities.md, D-153): pick a volume, scan it,
+ * and read what uses it. `vol` is the volume in the URL; without one, the volume list.
  * A remote host scans its own volumes over its session (D-117); each host
  * keeps its own scan, so switching hosts starts this view over.
  */
 export function SpaceView(props: {
   vol: string | null;
   onVol: (mount: string | null) => void;
-  switcher: ReactNode;
 }) {
   return <HostSpace key={useHostId()} {...props} />;
 }
 
 function SpaceShell({
   subtitle,
-  switcher,
   children,
 }: {
   subtitle: string;
-  switcher: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <PageHeader title="Disk" subtitle={subtitle} actions={switcher} />
+      <PageHeader title="Disk space" subtitle={subtitle} />
       <DashboardBanners />
       <DashboardBody>{children}</DashboardBody>
     </div>
@@ -54,24 +53,28 @@ function SpaceShell({
 function HostSpace({
   vol,
   onVol,
-  switcher,
 }: {
   vol: string | null;
   onVol: (mount: string | null) => void;
-  switcher: ReactNode;
 }) {
+  const noun = useHostNoun();
   const volumes = useSpaceVolumes(true);
+  // Observed here, not only on the landing, so the summary stays cached
+  // while a scan or report is open and the landing returns without a load.
+  const highlights = useSpaceHighlights();
   const status = useSpaceStatus(true);
-  const scanning = status.data?.phase === "scanning";
+  const current = currentSpaceStatus(status);
+  const scanning = current?.phase === "scanning";
   const report = useSpaceReport(
     status.isSuccess,
-    scanning ? null : (status.data?.report_id ?? null)
+    scanning ? null : (current?.report_id ?? null)
   );
   const scan = useSpaceScan();
-  const dropped = useSpaceDropped(status.data);
+  const dropped = useSpaceDropped(current);
   const [include, setInclude] = useState<ReadonlySet<string>>(new Set());
   const kept = report.data ?? null;
-  const { screen, ended } = spaceScreen(status.data, kept, vol);
+  const { screen, ended } = spaceScreen(current, kept, vol);
+  const landingLoading = useLandingLoading(volumes, highlights, screen.mode);
   const busy = scan.starting || scanning;
   const start = (mount: string) => {
     onVol(mount);
@@ -79,7 +82,7 @@ function HostSpace({
   };
   const volume = volumes.data?.find((v) => v.mount === vol);
   return (
-    <SpaceShell subtitle={volumeSubtitle(volume)} switcher={switcher}>
+    <SpaceShell subtitle={volumeSubtitle(volume, noun)}>
       <SpaceMessage
         error={scan.error}
         // A host that stops answering mid-scan keeps its last status on
@@ -91,12 +94,15 @@ function HostSpace({
       {screen.mode === "volumes" ? (
         <VolumeList
           query={volumes}
+          highlights={highlights}
+          loading={landingLoading}
+          vol={vol}
           include={include}
           onInclude={(key, on) => setInclude((prev) => toggled(prev, key, on))}
           onScan={start}
           onOpen={onVol}
           reportVolume={kept?.volume.mount ?? null}
-          scanningVolume={scanning ? (status.data?.volume ?? null) : null}
+          scanningVolume={scanning ? (current?.volume ?? null) : null}
           busy={busy}
         />
       ) : (
@@ -115,6 +121,21 @@ function HostSpace({
   );
 }
 
+function useLandingLoading(
+  volumes: ReturnType<typeof useSpaceVolumes>,
+  highlights: ReturnType<typeof useSpaceHighlights>,
+  mode: ReturnType<typeof spaceScreen>["screen"]["mode"]
+) {
+  const [settled, setSettled] = useState(false);
+  const loading =
+    volumes.isPending ||
+    highlights.isPending ||
+    (!settled && (volumes.isFetching || highlights.isFetching));
+  // Keep the picker available on return from a scan or report during a refresh.
+  if (mode === "volumes" && !loading && !settled) setSettled(true);
+  return loading;
+}
+
 function toggled(prev: ReadonlySet<string>, key: string, on: boolean) {
   const next = new Set(prev);
   if (on) next.add(key);
@@ -122,8 +143,8 @@ function toggled(prev: ReadonlySet<string>, key: string, on: boolean) {
   return next;
 }
 
-function volumeSubtitle(volume: SpaceVolume | undefined): string {
-  if (!volume) return "Choose a volume to scan";
+function volumeSubtitle(volume: SpaceVolume | undefined, noun: string): string {
+  if (!volume) return `What's using space on this ${noun}`;
   return `${volume.name} · ${formatBytes(volume.used_bytes)} of ${formatBytes(volume.total_bytes)} used`;
 }
 
@@ -152,20 +173,61 @@ function SpaceMessage({
 
 function VolumeList({
   query,
+  highlights,
+  loading,
+  vol,
   ...props
 }: {
   query: ReturnType<typeof useSpaceVolumes>;
-} & Omit<ComponentProps<typeof SpaceVolumes>, "volumes">) {
+  highlights: ReturnType<typeof useSpaceHighlights>;
+  loading: boolean;
+  vol: string | null;
+} & Omit<ComponentProps<typeof SpaceVolumes>, "volumes" | "primaryMount">) {
   const noun = useHostNoun();
-  if (query.data) return <SpaceVolumes volumes={query.data} {...props} />;
+  if (loading || !query.data)
+    return (
+      <InlineMessage tone="status">
+        {!loading && query.isError
+          ? volumeErrorText(query.error, noun)
+          : "Loading volumes…"}
+      </InlineMessage>
+    );
+
+  const volumes = query.data;
+  const boot = volumes.find((volume) => volume.is_boot);
+  const selected = volumes.find((volume) => volume.mount === vol);
+  const summary = highlights.data ?? null;
+  const hasBootReport = boot !== undefined && props.reportVolume === boot.mount;
+  const showSummary =
+    boot !== undefined &&
+    !hasBootReport &&
+    (vol === null || selected?.is_boot === true) &&
+    summary !== null &&
+    summary.folders.length > 0;
+  const primaryVolume = selected ?? boot;
   return (
-    <InlineMessage tone="status">
-      {!query.isError
-        ? "Loading volumes…"
-        : query.error.message.includes("edition")
-          ? "Space reports are not available in this edition."
-          : (remoteQueryText(query.error, "space reports") ??
-            `Couldn't list the volumes on this ${noun}.`)}
-    </InlineMessage>
+    <>
+      {showSummary && (
+        <SpaceLastScan
+          summary={summary}
+          busy={props.busy}
+          onScan={() => props.onScan(boot.mount)}
+        />
+      )}
+      <SpaceVolumes
+        volumes={volumes}
+        primaryMount={showSummary ? null : (primaryVolume?.mount ?? null)}
+        {...props}
+      />
+    </>
+  );
+}
+
+function volumeErrorText(error: Error, noun: string) {
+  if (error.message.includes("edition"))
+    return "Space reports are not available in this edition.";
+  return (
+    remoteQueryText(error, "space reports") ??
+    `Couldn't list the volumes on this ${noun}.`
   );
 }

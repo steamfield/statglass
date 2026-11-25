@@ -19,6 +19,10 @@ const THERMAL_SERIOUS_ID: Uuid = Uuid::from_u128(0x6b65_6c76_6f00_0000_0000_0000
 const FAN_METRIC: &str = "fan.rpm";
 const FAN_LABEL: &str = "fan";
 
+/// Agents and controllers exchange rules per entry, and an entry counts as known only
+/// when re-encoding it gives back the CBOR it arrived as (`statglass_proto::RuleEntry`).
+/// A field added later must be skipped when it holds its default
+/// (`skip_serializing_if`), or every rule from an older peer reads as newer.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct AlertRule {
     pub id: Uuid,

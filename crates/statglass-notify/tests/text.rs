@@ -2,7 +2,10 @@
 //! values in the user's units. The process and thermal wording is unchanged from the
 //! app shell's notifications before custom rules.
 
-use statglass_notify::{AlertText, alert_text, alerts_on_text, format_value, rule_summary};
+use statglass_notify::{
+    AlertText, alert_text, alerts_on_text, catch_up_text, format_value, remote_alert_text,
+    rule_summary,
+};
 use statglass_schema::settings::{MemoryUnit, NetworkUnit, TemperatureUnit, UnitSettings};
 use statglass_schema::{
     AlertCause, AlertRule, Cmp, Condition, Event, EventDetail, HostId, Labels, MetricId,
@@ -182,6 +185,67 @@ fn summary_names_the_series_a_labelled_rule_watches() {
     );
 }
 
+#[test]
+fn series_and_values_match_the_alerts_page() {
+    // Keep these cases in step with src/core/alerts.test.ts.
+    for (metric, series, value, label, shown) in [
+        (
+            "mem.psi",
+            Some(("stall", "some")),
+            16.777217,
+            "Memory stall",
+            "16.77722%",
+        ),
+        (
+            "mem.psi",
+            Some(("stall", "full")),
+            10.0,
+            "Memory stall (full)",
+            "10%",
+        ),
+        ("mem.psi", None, 0.01, "Memory stall (any)", "0.01%"),
+        (
+            "cpu.loadavg",
+            Some(("window", "1")),
+            0.1,
+            "Load average (1 min)",
+            "0.1",
+        ),
+        (
+            "cpu.loadavg",
+            Some(("window", "5")),
+            1234.5,
+            "Load average (5 min)",
+            "1,234.5",
+        ),
+        (
+            "cpu.loadavg",
+            Some(("window", "15")),
+            2.0078125,
+            "Load average (15 min)",
+            "2.007812",
+        ),
+        ("cpu.loadavg", None, 4.25, "Load average", "4.25"),
+        ("mem.pressure", None, 80.5, "Memory pressure", "81%"),
+    ] {
+        let labels = series.map_or_else(Labels::new, |(key, value)| Labels::single(key, value));
+        let rule = rule(metric, labels.clone(), Cmp::Gt, value, 120);
+        assert_eq!(
+            rule_summary(&rule, &CELSIUS_DECIMAL),
+            format!("{label} above {shown} for 2 min")
+        );
+        let event = threshold(metric, labels, value, Cmp::Gt, value, 120);
+        assert_eq!(
+            alert_text(&event, &CELSIUS_DECIMAL),
+            fired(
+                "threshold",
+                "Memory is tight",
+                &format!("{label} {shown} · above {shown} for 2 min")
+            )
+        );
+    }
+}
+
 /// Memory follows the memory unit; disk space is always decimal GB, as Finder shows it.
 #[test]
 fn summary_bytes_follow_the_memory_unit_for_memory_only() {
@@ -244,6 +308,14 @@ fn values_take_the_catalog_unit_in_the_users_terms() {
         format_value("mem.swap_used", 5e9, &FAHRENHEIT_BINARY),
         "4.7 GiB"
     );
+}
+
+#[test]
+fn memory_stall_and_load_average_values_keep_fractional_digits() {
+    let v = |metric, value| format_value(metric, value, &CELSIUS_DECIMAL);
+    assert_eq!(v("mem.psi", 0.01), "0.01%");
+    assert_eq!(v("cpu.loadavg", 0.1), "0.1");
+    assert_eq!(v("cpu.loadavg", 1234.5), "1,234.5");
 }
 
 // ---- alert_text --------------------------------------------------------------------
@@ -320,6 +392,26 @@ fn threshold_alert_names_the_series_and_uses_the_users_units() {
 }
 
 #[test]
+fn load_average_alert_names_its_window_in_minutes() {
+    let event = threshold(
+        "cpu.loadavg",
+        Labels::single("window", "5"),
+        5.0,
+        Cmp::Gt,
+        4.0,
+        300,
+    );
+    assert_eq!(
+        alert_text(&event, &CELSIUS_DECIMAL),
+        fired(
+            "threshold",
+            "Memory is tight",
+            "Load average (5 min) 5 · above 4 for 5 min"
+        )
+    );
+}
+
+#[test]
 fn process_alert_text_is_unchanged() {
     assert_eq!(
         alert_text(
@@ -388,6 +480,114 @@ fn non_alert_events_have_no_text() {
         ..hot(&["ffmpeg"], AlertRule::hot_process().id)
     };
     assert_eq!(alert_text(&e, &CELSIUS_DECIMAL), None);
+    assert_eq!(remote_alert_text("m1-linux", &e, &CELSIUS_DECIMAL), None);
+    assert_eq!(catch_up_text("m1-linux", &[e], &CELSIUS_DECIMAL), None);
+}
+
+#[test]
+fn remote_alert_names_the_host_and_this_macs_text_stays_the_same() {
+    let event = threshold("mem.pressure", Labels::new(), 84.0, Cmp::Gt, 80.0, 120);
+    let body = "Memory pressure 84% · above 80% for 2 min";
+    assert_eq!(
+        remote_alert_text("m1-linux", &event, &CELSIUS_DECIMAL),
+        fired("threshold", "m1-linux: Memory is tight", body)
+    );
+    assert_eq!(
+        alert_text(&event, &CELSIUS_DECIMAL),
+        fired("threshold", "Memory is tight", body)
+    );
+}
+
+#[test]
+fn catch_up_counts_repeated_rule_ids_and_keeps_first_seen_names() {
+    let disk = alert(
+        Uuid::from_u128(9),
+        &[],
+        AlertCause::ThermalState {
+            state: ThermalState::Fair,
+        },
+    );
+    let mut first = threshold("cpu.total", Labels::new(), 95.0, Cmp::Gt, 90.0, 0);
+    let EventDetail::Alert { rule_name, .. } = &mut first.detail else {
+        unreachable!()
+    };
+    *rule_name = "High CPU".into();
+    let mut renamed = first.clone();
+    let EventDetail::Alert { rule_name, .. } = &mut renamed.detail else {
+        unreachable!()
+    };
+    *rule_name = "CPU has a new name".into();
+    assert_eq!(
+        catch_up_text("m1-linux", &[first, disk, renamed], &CELSIUS_DECIMAL),
+        Some(AlertText {
+            title: "Alerts from m1-linux".into(),
+            body: "While this Mac was away, m1-linux raised 3 alerts: High CPU (twice) and Thermal state: Fair".into(),
+            rule: None,
+            kind: "catch_up",
+        })
+    );
+}
+
+#[test]
+fn catch_up_names_up_to_two_alerts_and_counts_the_rest() {
+    let named = |id: u128, name: &str, mut event: Event| {
+        if let EventDetail::Alert {
+            rule_id, rule_name, ..
+        } = &mut event.detail
+        {
+            *rule_id = Uuid::from_u128(id);
+            *rule_name = name.to_owned();
+        }
+        event
+    };
+    let disk = named(
+        10,
+        "Free disk space below 20 GB",
+        threshold("disk.free", Labels::new(), 12e9, Cmp::Lt, 20e9, 0),
+    );
+    let stall = named(
+        11,
+        "Memory stall above 10% for 2 min",
+        threshold(
+            "mem.psi",
+            Labels::single("stall", "some"),
+            12.0,
+            Cmp::Gt,
+            10.0,
+            120,
+        ),
+    );
+    let cpu = threshold("cpu.total", Labels::new(), 95.0, Cmp::Gt, 90.0, 0);
+    let non_alert = Event {
+        detail: EventDetail::ThermalState {
+            from: None,
+            to: ThermalState::Serious,
+        },
+        ..cpu.clone()
+    };
+    let events = [non_alert, disk, stall, cpu];
+    for (len, expected) in [
+        (2, "an alert: Free disk space below 20 GB"),
+        (
+            3,
+            "2 alerts: Free disk space below 20 GB and Memory stall above 10% for 2 min",
+        ),
+        (
+            4,
+            "3 alerts: Free disk space below 20 GB, Memory stall above 10% for 2 min, and 1 more",
+        ),
+    ] {
+        assert_eq!(
+            catch_up_text("m1-linux", &events[..len], &CELSIUS_DECIMAL),
+            Some(AlertText {
+                title: "Alerts from m1-linux".into(),
+                body: format!("While this Mac was away, m1-linux raised {expected}"),
+                rule: None,
+                kind: "catch_up",
+            })
+        );
+    }
+    assert_eq!(catch_up_text("m1-linux", &[], &CELSIUS_DECIMAL), None);
 }
 
 // ---- host offline ------------------------------------------------------------------

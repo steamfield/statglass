@@ -10,6 +10,8 @@ publish.workspace = true
 # The shared dialer conformance suite (`statglass_session::conformance`) that the
 # OpenSSH and russh dialers run against a live host, plus the test session constructor.
 conformance = ["dep:tempfile"]
+# Lets shell tests attach a fake peer to the query wire.
+test-support = []
 
 [dependencies]
 statglass-engine.workspace = true

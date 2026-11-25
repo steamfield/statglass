@@ -100,6 +100,11 @@ pub struct SpaceNode {
 /// Entries in a `SpaceNode::children` preview before the rest merge into smaller items.
 pub const SPACE_PREVIEW: usize = 24;
 
+/// Free space, in bytes (10^9 per GB), below which a volume counts as nearly full: Disk
+/// flags the volume and points at the space report, and a new free-disk-space alert rule
+/// starts from this threshold. An `f32` like rule values; 20e9 is exact in it.
+pub const LOW_DISK_FREE_BYTES: f32 = 20e9;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct SpaceCrumb {
     pub id: u32,

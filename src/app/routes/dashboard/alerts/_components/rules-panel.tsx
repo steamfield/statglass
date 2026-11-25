@@ -114,23 +114,56 @@ export function RulesPanel({ onEdit }: RulesPanelProps): ReactNode {
         />
       ))}
       {rules.map((rule) => (
-        <RuleRow
+        <CustomRuleRow
           key={rule.id}
-          label={rule.name}
-          sub={
-            <RuleSub
-              prefix={sentenceUnlessName(rule, units)}
-              measured={measured.has(ruleMetric(rule))}
-              lastAlert={lastAlert(rule.id)}
-            />
-          }
-          enabled={rule.enabled}
+          rule={rule}
+          units={units}
+          measured={measured}
+          lastAlert={lastAlert(rule.id)}
           disabled={pending}
           onEnabledChange={(on) => setEnabled(rule.id, on)}
           onEdit={() => onEdit(rule)}
         />
       ))}
     </SettingsPanel>
+  );
+}
+
+export function CustomRuleRow({
+  rule,
+  units,
+  measured,
+  lastAlert,
+  notMeasured,
+  disabled,
+  onEnabledChange,
+  onEdit,
+}: {
+  rule: AlertRule;
+  units: UnitSettings;
+  measured: ReadonlySet<string>;
+  lastAlert: LastAlert;
+  notMeasured?: string;
+  disabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  onEdit: () => void;
+}) {
+  return (
+    <RuleRow
+      label={rule.name}
+      sub={
+        <RuleSub
+          prefix={sentenceUnlessName(rule, units)}
+          measured={measured.has(ruleMetric(rule))}
+          notMeasured={notMeasured}
+          lastAlert={lastAlert}
+        />
+      }
+      enabled={rule.enabled}
+      disabled={disabled}
+      onEnabledChange={onEnabledChange}
+      onEdit={onEdit}
+    />
   );
 }
 
@@ -180,14 +213,14 @@ function useAlertsWrite() {
 }
 
 /** Each rule's `LastAlert` (`lastFiredByRule`), looked up by rule id. */
-function useLastAlerts(): (ruleId: string) => LastAlert {
+export function useLastAlerts(): (ruleId: string) => LastAlert {
   const { alerts, isError } = useRecentAlerts();
   const newest = useMemo(() => lastFiredByRule(alerts), [alerts]);
   return (ruleId) => (isError ? "unknown" : (newest.get(ruleId) ?? "never"));
 }
 
-/** The metric ids this Mac has a live series for; changes only with the layout. */
-function useMeasuredMetrics(): ReadonlySet<string> {
+/** The metric ids this host has a live series for; changes only with the layout. */
+export function useMeasuredMetrics(): ReadonlySet<string> {
   const seriesKeys = useSeriesKeys();
   return useMemo(
     () => new Set(availableMetrics(seriesKeys).map((m) => m.metric)),
@@ -219,14 +252,16 @@ function sentenceUnlessName(
 function RuleSub({
   prefix,
   measured = true,
+  notMeasured = NOT_MEASURED,
   lastAlert,
 }: {
   prefix: string | null;
   measured?: boolean;
+  notMeasured?: string | undefined;
   lastAlert: LastAlert;
 }) {
   const lead = prefix === null ? "" : `${prefix} · `;
-  if (!measured) return `${lead}${NOT_MEASURED}`;
+  if (!measured) return `${lead}${notMeasured}`;
   if (lastAlert === "unknown") return prefix;
   if (lastAlert === "never") return `${lead}${NEVER_FIRED}`;
   return (

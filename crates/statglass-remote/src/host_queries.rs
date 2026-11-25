@@ -88,7 +88,8 @@ impl SpaceAccess {
     }
 }
 
-fn unsupported() -> Answer {
+/// The standard refusal for a host query this host cannot answer.
+pub fn unsupported() -> Answer {
     Answer::Error {
         code: ErrorCode::Unsupported,
         message: "This host does not answer that query".into(),
@@ -149,6 +150,12 @@ impl<H: ServedHost> HostServer<H> {
                     .map(Answer::UsageProcesses)
                     .unwrap_or_else(usage_error)
             }
+            Query::AlertRules => self.host().alert_rules(),
+            Query::SetAlertRules {
+                base_revision,
+                rules,
+                keep,
+            } => self.host().set_alert_rules(base_revision, rules, keep),
             Query::Unknown => unsupported(),
             space => match self.space() {
                 Some(access) => access.answer(session, space),
@@ -205,8 +212,150 @@ fn usage_error(error: statglass_engine::HistoryStoreError) -> Answer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use statglass_engine::HistoryStoreError;
+    use crate::ServerProvider;
+    use statglass_engine::{HistoryStore, HistoryStoreError, LiveHub};
+    use statglass_proto::{HostAlertRules, RuleEntry};
+    use statglass_schema::{
+        AlertRule, Capabilities, Cmp, Condition, HostRecord, Labels, MetricId, OsKind,
+        SeriesSelector,
+    };
     use statglass_store::{StoreError, rusqlite};
+    use uuid::Uuid;
+
+    #[derive(Default)]
+    struct DefaultHost(LiveHub);
+
+    impl ServedHost for DefaultHost {
+        fn record(&self) -> HostRecord {
+            crate::test_support::bare_host(7, "Server", OsKind::Linux)
+        }
+
+        fn capabilities(&self) -> Capabilities {
+            Capabilities::default()
+        }
+
+        fn hub(&self) -> &LiveHub {
+            &self.0
+        }
+
+        fn set_remote_interest(&self, _: u64, _: statglass_proto::RemoteInterest) {}
+    }
+
+    #[derive(Default)]
+    struct AlertHost {
+        host: DefaultHost,
+        set_call: Mutex<Option<Query>>,
+    }
+
+    impl ServedHost for AlertHost {
+        fn record(&self) -> HostRecord {
+            self.host.record()
+        }
+
+        fn capabilities(&self) -> Capabilities {
+            self.host.capabilities()
+        }
+
+        fn hub(&self) -> &LiveHub {
+            self.host.hub()
+        }
+
+        fn set_remote_interest(&self, session: u64, interest: statglass_proto::RemoteInterest) {
+            self.host.set_remote_interest(session, interest);
+        }
+
+        fn alert_rules(&self) -> Answer {
+            Answer::AlertRules(HostAlertRules {
+                revision: 9,
+                rules: vec![],
+            })
+        }
+
+        fn set_alert_rules(
+            &self,
+            base_revision: i64,
+            rules: Vec<RuleEntry>,
+            keep: Vec<Uuid>,
+        ) -> Answer {
+            *self.set_call.lock_ok() = Some(Query::SetAlertRules {
+                base_revision,
+                rules: rules.clone(),
+                keep,
+            });
+            Answer::AlertRules(HostAlertRules {
+                revision: 12,
+                rules,
+            })
+        }
+    }
+
+    #[test]
+    fn host_without_alert_overrides_refuses_both_queries() {
+        let server = HostServer::new(
+            Arc::new(DefaultHost::default()),
+            Arc::new(HistoryStore::unavailable()),
+        );
+        for query in [
+            Query::AlertRules,
+            Query::SetAlertRules {
+                base_revision: 9,
+                rules: vec![],
+                keep: vec![],
+            },
+        ] {
+            assert!(matches!(
+                server.answer(1, query),
+                Answer::Error {
+                    code: ErrorCode::Unsupported,
+                    ..
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn alert_queries_use_host_overrides_and_forward_the_complete_update() {
+        let host = Arc::new(AlertHost::default());
+        let server = HostServer::new(host.clone(), Arc::new(HistoryStore::unavailable()));
+        assert_eq!(
+            server.answer(1, Query::AlertRules),
+            Answer::AlertRules(HostAlertRules {
+                revision: 9,
+                rules: vec![]
+            })
+        );
+        let rules = vec![
+            RuleEntry::Known(AlertRule {
+                id: Uuid::from_u128(1),
+                name: "Boot volume almost full".into(),
+                when: Condition::Threshold {
+                    series: SeriesSelector {
+                        metric: MetricId::from_static("disk.free"),
+                        labels: Labels::single("vol", "/"),
+                    },
+                    op: Cmp::Lt,
+                    value: 20e9,
+                },
+                for_secs: 60,
+                cooldown_secs: 600,
+                enabled: true,
+            }),
+            RuleEntry::Unknown(41_u32.into()),
+        ];
+        let query = Query::SetAlertRules {
+            base_revision: 9,
+            rules: rules.clone(),
+            keep: vec![Uuid::from_u128(6), Uuid::from_u128(3)],
+        };
+        assert_eq!(
+            server.answer(1, query.clone()),
+            Answer::AlertRules(HostAlertRules {
+                revision: 12,
+                rules
+            })
+        );
+        assert_eq!(host.set_call.lock_ok().take(), Some(query));
+    }
 
     #[test]
     fn source_query_errors_preserve_validation_availability_and_retryability() {

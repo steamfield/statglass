@@ -27,10 +27,7 @@ describe("Alerts page wiring", () => {
     expect(names[alerts + 1]).toBe("Settings");
   });
 
-  it.each([
-    ["remote-studio", ["multi-host"] as const],
-    ["remote-linux", ["linux-host", "multi-host"] as const],
-  ])(
+  it.each([["remote-studio", ["multi-host"] as const]])(
     "hides Alerts while %s is selected and keeps the page on This Mac",
     async (hostId, scenarios) => {
       const transport = createMockTransport({ scenarios: [...scenarios] });

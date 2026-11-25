@@ -55,6 +55,7 @@ impl From<RemoteError> for CommandError {
                 reason: Some(HistoryUnavailableReason::Failed { message }),
             },
             RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
+            RemoteError::Stale(_) => Self::RemoteRulesChanged { message },
             RemoteError::Refused(_) => Self::RemoteRefused { message },
             RemoteError::Internal(_) => Self::Internal { message },
             RemoteError::Pairing(refusal) => Self::Pairing {

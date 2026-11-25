@@ -45,6 +45,9 @@ pub enum CommandError {
     /// The host refused the query.
     #[error("{message}")]
     RemoteRefused { message: String },
+    /// The host's alert rules changed. Reload them before saving again.
+    #[error("{message}")]
+    RemoteRulesChanged { message: String },
     /// The Linux host has too little free space for the agent's history budget plus the
     /// low-disk reserve.
     #[error("{message}")]

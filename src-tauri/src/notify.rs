@@ -13,9 +13,9 @@
 //! ([`alerts_on`]) right away: the permission prompt then appears while the user is in
 //! Settings, not with the first real alert, which may be hours later.
 
-use statglass_notify::{AlertText, alert_text, alerts_on_text};
+use statglass_notify::{AlertText, alerts_on_text};
+use statglass_schema::AlertRule;
 use statglass_schema::settings::UnitSettings;
-use statglass_schema::{AlertRule, Event};
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
@@ -38,12 +38,8 @@ pub fn alerts_on(app: &AppHandle, rules: &[AlertRule], host_offline: bool, units
     post(app, text, "posting the alerts-on confirmation");
 }
 
-/// Posts the notification for an `alert` event, with values in `units`. Other events
-/// post nothing.
-pub fn alert(app: &AppHandle, event: &Event, units: &UnitSettings) {
-    let Some(text) = alert_text(event, units) else {
-        return;
-    };
+/// Posts prepared text for an alert notification.
+pub fn alert(app: &AppHandle, text: AlertText) {
     post(app, text, "posting an alert notification");
 }
 

@@ -73,33 +73,46 @@ impl State {
         if !self.in_txn {
             return Ok(());
         }
-        if !self.usage_pending.is_empty() {
-            self.apply(|s| s.flush_usage_pending())?;
-        }
+        let usage_flushed = if self.usage_pending.is_empty() {
+            Ok(())
+        } else {
+            self.apply(State::flush_usage_pending)
+        };
         self.in_txn = false;
         self.deadline = None;
-        if let Err(e) = self.commit_txn() {
-            // The batch is lost. Remember what it covered, then resynchronise in-memory
-            // state with the file.
-            for (host, (start, end)) in std::mem::take(&mut self.batch_span) {
-                widen(&mut self.lost, host, start, end);
+        // Read accounting while the batch can still be rolled back on error.
+        let commit_result =
+            usage_flushed
+                .and_then(|()| self.docker_used())
+                .and_then(|logical_bytes| {
+                    self.commit_txn()?;
+                    Ok(logical_bytes)
+                });
+        let logical_bytes = match commit_result {
+            Ok(logical_bytes) => logical_bytes,
+            Err(e) => {
+                // The batch is lost. Remember what it covered, then resynchronise in-memory
+                // state with the file.
+                for (host, (start, end)) in std::mem::take(&mut self.batch_span) {
+                    widen(&mut self.lost, host, start, end);
+                }
+                let _ = self.conn.execute_batch("ROLLBACK");
+                self.clear_caches();
+                self.usage_pending.clear();
+                self.usage_batch.finish(false);
+                for p in std::mem::take(&mut self.docker_pending) {
+                    p.finish(DockerOutcome::Failed, Some(e.to_string()));
+                }
+                self.next_seq = db::read_next_seq(&self.conn)?;
+                return Err(e);
             }
-            let _ = self.conn.execute_batch("ROLLBACK");
-            self.clear_caches();
-            self.usage_pending.clear();
-            self.usage_batch.finish(false);
-            for p in std::mem::take(&mut self.docker_pending) {
-                p.finish(DockerOutcome::Failed, Some(e.to_string()));
-            }
-            self.next_seq = db::read_next_seq(&self.conn)?;
-            return Err(e.into());
-        }
+        };
         self.batch_span.clear();
         self.usage_batch.finish(true);
         if host_loss_recorded {
             self.lost.clear();
         }
-        self.docker_admission.lock_ok().logical_bytes = self.docker_used()?;
+        self.docker_admission.lock_ok().logical_bytes = logical_bytes;
         for p in std::mem::take(&mut self.docker_pending) {
             p.finish(DockerOutcome::Persisted, None);
         }

@@ -18,7 +18,7 @@ import {
   useSpaceItemActions,
   useSpaceLargest,
   useSpaceSubtree,
-} from "../_hooks/use-disk-space";
+} from "../_hooks/use-space-report";
 import { canOpen } from "../_lib/space";
 import { SpaceMap } from "./space-map";
 import { SpaceProgress, SpaceSummary } from "./space-summary";

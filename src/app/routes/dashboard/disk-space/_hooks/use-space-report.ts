@@ -1,5 +1,4 @@
 import type {
-  CommandError,
   RemoteHostRecord,
   SpaceScanStatus,
   SpaceTarget,
@@ -9,54 +8,11 @@ import { CommandFailure, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCopyToClipboard } from "~/hooks/use-copy-to-clipboard";
+import { SPACE_POLL_MS, spaceErrorText } from "~/hooks/use-disk-space";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { holdWhile } from "~/lib/queries/hold";
-import { HALF_MINUTE_POLL_MS } from "~/lib/queries/timing";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
-
-/** How often a running scan is read: progress, and the treemap at most this often. */
-export const SPACE_POLL_MS = 1000;
-
-export function useSpaceVolumes(enabled: boolean) {
-  const transport = useTransport();
-  const host = useHostId();
-  return useQuery({
-    queryKey: diskSpaceKeys.volumes(host),
-    queryFn: () => unwrap(transport.diskSpaceVolumes(host)),
-    enabled,
-    staleTime: HALF_MINUTE_POLL_MS,
-  });
-}
-
-/**
- * The running scan, or how the last one ended. Polled only while one runs.
- * When a scan ends, the kept largest-folders summary (D-132) is read again,
- * whichever view started it: a finished boot scan replaces it.
- */
-export function useSpaceStatus(enabled: boolean) {
-  const transport = useTransport();
-  const host = useHostId();
-  const client = useQueryClient();
-  const query = useQuery({
-    queryKey: diskSpaceKeys.status(host),
-    queryFn: () => unwrap(transport.diskSpaceStatus(host)),
-    enabled,
-    refetchInterval: (q) =>
-      q.state.data?.phase === "scanning" ? SPACE_POLL_MS : false,
-    refetchOnWindowFocus: false,
-  });
-  const scanning = query.data?.phase === "scanning";
-  const wasScanning = useRef(scanning);
-  useEffect(() => {
-    if (wasScanning.current && !scanning)
-      void client.invalidateQueries({
-        queryKey: diskSpaceKeys.highlights(host),
-      });
-    wasScanning.current = scanning;
-  }, [client, host, scanning]);
-  return query;
-}
 
 /** The finished report; refetched when a scan ends. */
 export function useSpaceReport(enabled: boolean, settledScan: number | null) {
@@ -165,49 +121,6 @@ export function useSpaceLargest(report: number | null, enabled: boolean) {
   return query;
 }
 
-const message = (error: CommandError | unknown) =>
-  error instanceof CommandFailure && "message" in error.error
-    ? error.error.message
-    : String(error);
-
-/** Start and cancel on the host shown, with the error of the last start. */
-export function useSpaceScan() {
-  const transport = useTransport();
-  const host = useHostId();
-  const client = useQueryClient();
-  const [error, setError] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
-  const start = useCallback(
-    async (volume: string, include: readonly string[]) => {
-      setStarting(true);
-      setError(null);
-      try {
-        const status = await unwrap(
-          transport.diskSpaceStart(host, volume, [...include])
-        );
-        client.setQueryData<SpaceScanStatus>(
-          diskSpaceKeys.status(host),
-          status
-        );
-      } catch (e) {
-        setError(message(e));
-        await client.invalidateQueries({
-          queryKey: diskSpaceKeys.status(host),
-        });
-      } finally {
-        setStarting(false);
-      }
-    },
-    [client, host, transport]
-  );
-  const cancel = useCallback(async () => {
-    const r = await transport.diskSpaceCancel(host);
-    if (r.status === "error") setError(message(new CommandFailure(r.error)));
-    await client.invalidateQueries({ queryKey: diskSpaceKeys.status(host) });
-  }, [client, host, transport]);
-  return { start, cancel, starting, error };
-}
-
 /**
  * Reveal in Finder (this Mac only: `null` on a remote host) and Copy path,
  * which copies the path as the host shows it; the last failure, or the path
@@ -223,7 +136,8 @@ export function useSpaceItemActions(report: number | null, local: boolean) {
       if (report === null) return;
       setError(null);
       const r = await transport.diskSpaceReveal(report, target);
-      if (r.status === "error") setError(message(new CommandFailure(r.error)));
+      if (r.status === "error")
+        setError(spaceErrorText(new CommandFailure(r.error)));
     },
     [report, transport]
   );
@@ -235,7 +149,7 @@ export function useSpaceItemActions(report: number | null, local: boolean) {
       try {
         path = await unwrap(transport.diskSpacePath(host, report, target));
       } catch (e) {
-        setError(message(e));
+        setError(spaceErrorText(e));
         return;
       }
       if (!(await copy(path))) setError("Couldn't copy the path.");

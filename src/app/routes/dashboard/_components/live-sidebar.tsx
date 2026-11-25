@@ -16,11 +16,14 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "~/components/ui/hover-card";
+import { currentSpaceStatus, useSpaceStatus } from "~/hooks/use-disk-space";
+import { useEdition } from "~/hooks/use-edition";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { openExternalUrl } from "~/lib/github-links";
+import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import {
@@ -85,13 +88,34 @@ const LOCAL_TOOLS: readonly SidebarEntry[] = [
     icon: "settings" as const,
   },
 ];
-// Alert rules are This Mac's, so a remote host never lists Alerts.
-const REMOTE_CGROUP_TOOLS = LOCAL_TOOLS.filter(
-  (entry) => entry.id !== "alerts"
-);
-const REMOTE_TOOLS = REMOTE_CGROUP_TOOLS.filter(
-  (entry) => entry.id !== "containers"
-);
+const SCAN_BUSY = { label: "Scan running" };
+
+/**
+ * The Utilities group's rows: Disk space where the edition can scan, marked
+ * while a scan runs. The same array while nothing changes, so the group's
+ * memo holds across the sidebar's 1 Hz renders.
+ */
+export function useUtilityEntries(): readonly SidebarEntry[] {
+  const diskSpace = useEdition()?.disk_space;
+  const status = currentSpaceStatus(useSpaceStatus(diskSpace === true));
+  const busy = status?.phase === "scanning" ? SCAN_BUSY : undefined;
+  return useMemo<readonly SidebarEntry[]>(
+    () =>
+      diskSpace === true
+        ? [
+            {
+              id: "disk-space",
+              href: "/dashboard/disk-space",
+              label: "Disk space",
+              icon: "disk-space",
+              busy,
+            },
+          ]
+        : [],
+    [diskSpace, busy]
+  );
+}
+
 const countBehind = (hosts: Parameters<typeof hostsNeedingUpdate>[0]) =>
   hostsNeedingUpdate(hosts).length;
 
@@ -175,14 +199,17 @@ export function LiveSidebar() {
         view.tone === "destructive" ? ("error" as const) : ("idle" as const),
     };
   }, [activeRemote]);
+  const selected = useHostSelection()?.hosts.find((host) => host.id === hostId);
+  const linux = (activeRemote?.os ?? selected?.info.os) === "linux";
   const tools = useMemo(() => {
-    const listed = local
-      ? LOCAL_TOOLS
-      : cgroups
-        ? REMOTE_CGROUP_TOOLS
-        : REMOTE_TOOLS;
+    const listed = LOCAL_TOOLS.filter(
+      ({ id }) =>
+        (id !== "alerts" || local || linux) &&
+        (id !== "containers" || local || cgroups)
+    );
     return withHostAttention(listed, behind);
-  }, [local, cgroups, behind]);
+  }, [local, linux, cgroups, behind]);
+  const utilities = useUtilityEntries();
   const configuredMs = useSettings((s) => s.sampling.interval_ms);
   const sampling = useSampling();
   const cpu = useCpu();
@@ -251,6 +278,9 @@ export function LiveSidebar() {
       id: "tools",
       entries: tools,
     },
+    ...(utilities.length
+      ? [{ id: "utilities", label: "Utilities", entries: utilities }]
+      : []),
   ];
 
   return (

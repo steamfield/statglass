@@ -362,6 +362,7 @@ pub async fn remove_remote_host(
         )
         .await?
     };
+    state.alerts.remote_delivery.forget(id);
     state.emit_hosts_changed(&app);
     if delete_mirror {
         let dir = data_dir(&app)?.join("mirrors").join(id.to_string());

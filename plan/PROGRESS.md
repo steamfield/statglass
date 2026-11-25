@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Utilities sidebar group and the Disk space page (D-153) (2026-11-25)
+
+`plans/deliver-utilities.md` (tag `utilities-phase-1`) moved the disk space report out of Disk's Activity | Space switcher. The sidebar has a Utilities group with a Disk space row that shows a live dot while a scan runs on any screen; `/dashboard/disk-space` opens on the last scan's largest folders (Scan again is the one primary) or the volume picker, and a `?vol=` link leads with that volume. Disk moves Volumes up under Disk I/O, flags a boot volume under the low-space threshold ("Low space", icon and word) and links each scannable volume to Disk space; the Overview folders card links there too. Old `?view=space` links redirect.
+
+- Verified: `make check` except one engine perf gate (`gpu_process_ticks_stay_within_allocation_and_call_budgets`, IOKit 352.2 calls/tick against 350), which fails identically on main on this machine and touches no code here; the affected Playwright specs (sidebar-utilities, disk-space, disk-io, gallery, shell-screens, motion) in Chromium and WebKit; the browser dev server in dark and light at 1000 and 600 px, including the `disk-low-space` scenario and the sidebar mark during a scan. Every lane, the phase boundary and the final diff were reviewed; findings and rejections are in the plan's Log.
+- Open: light-mode `--color-link` is 3.68:1 on white app-wide; the low-space rule is a flat threshold on boot volumes until Rust publishes a size-relative one; `historical-usage-card.test.tsx` and a WebKit treemap hover in `disk-space.spec.ts` flake under full-suite load (both pass alone; the first predates this run).
+
 ## StatGlass for iPhone, RFC phases 0 to 4 built (2026-11-25)
 
 `plans/deliver-ios-app.md` landed phases 1 to 6 (tags `ios-app-phase-1` to `ios-app-phase-6`): the `apps/mobile` Expo workspace, the shared `statglass-session` and IPC crates, the UniFFI mobile core with a Swift native module and TypeScript transport, restricted phone sessions with QR pairing on hosts (the Mac's Pair iPhone flow and paired-devices settings), and the phone UI on demo data.
@@ -20,6 +27,19 @@ The iPhone RFC (`plan/rfc-ios-app.md`, revision 2) is accepted: its ten section 
 - Hooks: the write hook rejects React, React Native, Expo, `@tauri-apps/*`, `@steamfield/ui` and `@desktop/*` imports in `packages/core/src/` (and now really rejects `~/`, which the old pattern missed), and `react-dom`, Tauri, desktop imports or relative paths that leave the app in `apps/mobile/`. The generated-file guards cover `src/desktop-transport/commands.ts` for edits and shell writes.
 - Verified: `make agent-config-check agent-config-test agent-hooks-test verification-test`; the new hook fixtures were each checked against a broken rule. `codex debug prompt-input` lists the three new skills.
 - Open: `.claude/commands/statglass:test.md` still shows `bun run test -- src/core/format` as its example; the mobile rules describe directories (`src/hooks`, `src/widgets`, `src/transport`) that later phases create.
+
+## Remote alert rules built (2026-11-24)
+
+Linux agent hosts now take threshold alert rules from this Mac: select the host, open Alerts, and add, edit, toggle or delete its rules. The agent stores and evaluates them live (revision-checked saves, cooldowns seeded at start and on history reattach), and this Mac sends the notification and destination messages as the alert events sync in, with alerts older than 10 minutes grouped into one catch-up message per host (persisted until delivered). The page handles a not-connected host, an agent too old to answer, a stale revision and rules saved by a newer build. Built on branch `sprint/remote-alerts` in three phases (tags `remote-alerts-phase-1` to `-3`, final `remote-alerts-final`); every review finding is in `plans/sprint-remote-alerts.md`.
+
+- **Verified**: `make check` green on the final commit (2,838 Vitest, all Rust suites); Playwright journey for add and stale save; browser QA of every page state against This Mac's page.
+- **Open**: not yet run against a real Linux agent over SSH. Merged to main 2026-11-25.
+
+## Remote alert rules RFC drafted (2026-11-24)
+
+[rfc-remote-alerts.md](rfc-remote-alerts.md) plans threshold rules on Linux agent hosts. The agent already evaluates `Settings.alerts.rules` from its `settings.json` and syncs the alert events to this Mac's mirror, so the plan adds two host queries to read and set rules live, cooldown seeding on the agent, and delivery from this Mac of the alert events the mirror inserts. Controller-side evaluation over `HostSummary` frames was rejected: they carry held display values only (`values` are NaN). A ce:devils-advocate review against the code found ten issues, all folded into revision 2 (section 9).
+
+- **Decided**: alerts older than 10 minutes are grouped into one catch-up message per host, and `cpu.loadavg` is alertable (RFC section 8). Recorded as D-152. Next: implementation.
 
 ## Dashboard pages enter card by card (D-139) (2026-11-24)
 
@@ -1056,6 +1076,7 @@ Known follow-ups (small, not scheduled):
 | Containers monitoring UX revision | [UX RFC](docker-monitoring-ux-rfc.md) | Done (full gates, native recording and review; 2026-10-13) | October 13 product feedback: per-container CPU/Memory lines, two confirmed history bugs, bounded lists, monitoring settings and row Start/Stop |
 | Docker storage insights and cleanup | [Storage plan](docker-storage-cleanup.md) | Done | D-107; CE review approved, 863 Rust / 987 frontend tests and 294 browser checks passed; disposable OrbStack acceptance passed, Desktop/Colima follow-up remains |
 | Disk space report | [Space plan](disk-space-report.md) | Done (automated); real-hardware checks open | D-114; Space view in Disk with a progressive, drillable treemap. Privacy prompts on a fresh account, the dataless policy on File Provider folders, clone fixtures and tick lateness during a scan are unverified |
+| Utilities group | [Utilities plan](utilities.md) | Done | D-153; Disk space is its own page under a Utilities sidebar group, with a scan-running mark on the row; Disk leads with Volumes and flags low boot volumes. Light-mode link contrast and a size-relative low-space rule are follow-ups |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
 | v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Done (0.1.0 published) | Ad-hoc-signed GitHub release and signature-verified updates; paid Apple signing, notarization and Homebrew remain deferred |
 | v2.0 Widget manifest and popover composer | [v2](v2-customization-widgets.md) | Not started | |

@@ -37,6 +37,7 @@ export const SCENARIOS = [
   "disk-space-eject",
   "disk-space-boot-only",
   "disk-space-unscanned",
+  "disk-low-space",
 
   "ssh-auth",
   "ssh-untrusted",
@@ -46,6 +47,8 @@ export const SCENARIOS = [
   "linux",
   "linux-host",
   "linux-agent-update",
+  "linux-alerts-stale",
+  "linux-alerts-offline",
   "hosts-outdated",
   "host-updating",
   "host-update-failed",
@@ -132,6 +135,8 @@ export interface ScenarioFlags {
   diskIoComparison: boolean;
   diskIoNoOps: boolean;
   diskIoUnavailable: boolean;
+  /** "/" has 12 GB free and the Data volume exactly LOW_DISK_FREE_BYTES. */
+  diskLowSpace: boolean;
   sleepGap: boolean;
   unknownChip: boolean;
   noBattery: boolean;
@@ -231,6 +236,7 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
     diskIoComparison: has("disk-io-comparison"),
     diskIoNoOps: has("disk-io-no-ops"),
     diskIoUnavailable: has("disk-io-unavailable"),
+    diskLowSpace: has("disk-low-space"),
     sleepGap: has("sleep-gap"),
     unknownChip: has("unknown-chip"),
     noBattery: has("no-battery"),

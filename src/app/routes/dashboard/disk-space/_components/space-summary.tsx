@@ -4,14 +4,10 @@ import { ChevronRight } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useNow } from "~/hooks/use-now";
+import { agoLabel } from "~/lib/time-ago";
 import { MeterTrack } from "~/widgets/meter-track";
 import { StatList } from "~/widgets/stat-list";
-import {
-  agoLabel,
-  elapsedLabel,
-  itemsLabel,
-  middleTruncate,
-} from "../_lib/space";
+import { elapsedLabel, itemsLabel, middleTruncate } from "../_lib/space";
 
 /**
  * A running scan (plan "Core action and feedback", item 4): bytes measured

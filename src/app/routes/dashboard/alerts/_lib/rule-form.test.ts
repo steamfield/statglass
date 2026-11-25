@@ -174,6 +174,36 @@ describe("formForMetric", () => {
       enabled: true,
     } satisfies RuleForm);
   });
+
+  it.each([
+    {
+      metric: "mem.psi",
+      labels: { stall: "some" },
+      name: "Memory stall above 10% for 2 min",
+      shown: "10",
+      storedValue: 10,
+      forSecs: 120,
+    },
+    {
+      metric: "cpu.loadavg",
+      labels: { window: "5" },
+      name: "Load average (5 min) above 4 for 5 min",
+      shown: "4",
+      storedValue: 4,
+      forSecs: 300,
+    },
+  ])("starts $metric with its Rust defaults", (expected) => {
+    const form = formForMetric(metric(expected.metric), ID, METRIC_UNITS);
+    expect(form).toEqual({
+      ...expected,
+      id: ID,
+      autoName: true,
+      op: "gt",
+      storedShown: expected.shown,
+      cooldownSecs: 1800,
+      enabled: true,
+    } satisfies RuleForm);
+  });
 });
 
 describe("withMetric", () => {
@@ -215,6 +245,15 @@ describe("withMetric", () => {
 });
 
 describe("formProblem", () => {
+  it.each([
+    ["mem.psi", "0.01", "Between 0.01 and 100%"],
+    ["cpu.loadavg", "0.1", "Between 0.1 and 1,000"],
+  ])("shows the real minimum for %s and accepts it", (id, min, problem) => {
+    const form = formForMetric(metric(id), ID, METRIC_UNITS);
+    expect(formProblem({ ...form, shown: "0" }, METRIC_UNITS)).toBe(problem);
+    expect(formProblem({ ...form, shown: min }, METRIC_UNITS)).toBeNull();
+  });
+
   const cpu: RuleForm = {
     id: ID,
     name: "CPU usage above 90% for 5 min",

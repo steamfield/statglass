@@ -3,14 +3,14 @@ import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { unwrap } from "@core/transport";
 import { screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
-import DiskRoute from "./route";
+import DiskSpaceRoute from "./route";
 
-describe("Disk route report tab parameter", () => {
+describe("Disk space report tab parameter", () => {
   it.each(["largest", "bogus", ""])(
     "opens tab=%s on the finished report",
     async (tab) => {
-      const r = renderWithProviders(<DiskRoute />, {
-        route: `/dashboard/disk?view=space&vol=/&tab=${tab}`,
+      const r = renderWithProviders(<DiskSpaceRoute />, {
+        route: `/dashboard/disk-space?vol=/&tab=${tab}`,
         transportOptions: { spaceScan: "/" },
       });
       expect(
@@ -49,8 +49,8 @@ describe("Disk route report tab parameter", () => {
 
   it("rescans a seeded report with a fresh id", async () => {
     let now = Date.now();
-    const r = renderWithProviders(<DiskRoute />, {
-      route: "/dashboard/disk?view=space&vol=/&tab=largest",
+    const r = renderWithProviders(<DiskSpaceRoute />, {
+      route: "/dashboard/disk-space?vol=/&tab=largest",
       transportOptions: { spaceScan: "/", now: () => now },
     });
     await screen.findByRole("table", { name: "Largest files" });

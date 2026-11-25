@@ -98,6 +98,7 @@ import { MockProcesses } from "./mock/processes";
 import { ok } from "./mock/protocol";
 import { MockQueries } from "./mock/queries";
 import { MockRemotes } from "./mock/remote";
+import { mockRemoteMethods } from "./mock/remote-alerts";
 import { MockRing } from "./mock/ring";
 import { MockSettings } from "./mock/settings";
 import { MockShell } from "./mock/shell";
@@ -188,7 +189,7 @@ export function createMockTransport(
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,
     subscriberCount: () => channels.live.size,
-    ...remote.methods,
+    ...mockRemoteMethods(remote, commands, scenarios, ring.startMs),
     ...processes.methods,
     ...stream.methods,
     ...queries.methods,

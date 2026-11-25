@@ -10,6 +10,8 @@ impl RecentFeed for RemoteRecent {
         self.0.set_recent_interest(on);
     }
 }
+use crate::alerts::fire::AlertOutputs;
+use crate::alerts::remote_delivery::{MirrorAlerts, wire_mirror_alerts};
 
 pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
@@ -40,6 +42,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         status_callback(app.clone(), &saved, generation),
         Some(mirror.clone()),
     );
+    wire_alert_listener(app, &saved, &source, &mirror, &history, generation);
     source.set_controller_on_battery(state.host(state.local)?.hub().status().on_battery);
     state
         .live
@@ -59,6 +62,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         },
     );
     state.remotes.saved.lock_ok().insert(id, saved.clone());
+    let agent_version = saved.last_agent_version.clone();
     state.remotes.statuses.lock_ok().insert(
         id,
         RemoteHostStatus {
@@ -70,10 +74,10 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
             synced_through_ms,
             agent_update: super::commands::agent_update(
                 saved.is_linux(),
-                saved.last_agent_version.as_deref(),
+                agent_version.as_deref(),
                 false,
             ),
-            agent_version: saved.last_agent_version.clone(),
+            agent_version,
             ..Default::default()
         },
     );
@@ -128,6 +132,32 @@ fn status_callback(app: AppHandle, saved: &SavedHost, generation: Uuid) -> Statu
     })
 }
 
+fn wire_alert_listener(
+    app: &AppHandle,
+    saved: &SavedHost,
+    source: &RemoteSource,
+    mirror: &Mirror,
+    history: &Arc<History>,
+    generation: Uuid,
+) {
+    let clock = source.clock();
+    wire_mirror_alerts(
+        saved.is_linux(),
+        mirror,
+        history.clone(),
+        MirrorAlerts {
+            app: app.clone(),
+            host: saved.record.clone(),
+            generation,
+            generations: |app| &app.state::<AppState>().inner().remotes.generations,
+            alerts: |app| &app.state::<AppState>().inner().alerts,
+            units: |app| app.state::<AppState>().settings.settings().units,
+            clock: Box::new(move || (statglass_engine::wall_ms(), clock.now_ms())),
+            outputs: AlertOutputs::shell(app),
+        },
+    );
+}
+
 /// Status and rr connection identity change under the same status lock.
 fn publish_status(
     manager: &RemoteManager,
@@ -156,9 +186,11 @@ fn publish_status(
     };
     let refreshed_watermark = mirror_sink.map(|sink| sink.sync_watermark());
 
-    let mut statuses = manager.statuses.lock_ok();
-    // A host removed or re-registered meanwhile keeps its newer status.
-    if manager.generations.lock_ok().get(&id) == Some(&generation) {
+    // A host removed or re-registered meanwhile keeps its newer status. Wait for
+    // the generation lock before taking statuses, so reads can proceed during alert delivery.
+    let generations = manager.generations.lock_ok();
+    if generations.get(&id) == Some(&generation) {
+        let mut statuses = manager.statuses.lock_ok();
         let mut previous = statuses.get(&id).cloned().unwrap_or_default();
         manager.apply_update(id, &mut previous);
         manager.apply_rr(id, &mut previous);

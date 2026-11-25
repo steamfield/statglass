@@ -5,7 +5,6 @@ import type {
 } from "@core/generated/types";
 import { describe, expect, it } from "vitest";
 import {
-  agoLabel,
   canOpen,
   elapsedLabel,
   itemsLabel,
@@ -98,7 +97,7 @@ describe("spaceScreen", () => {
 });
 
 describe("labels", () => {
-  it("formats shares, items, ages and elapsed time", () => {
+  it("formats shares, items and elapsed time", () => {
     expect(shareLabel(0.1234)).toBe("12.3%");
     expect(shareLabel(0.0004)).toBe("<0.1%");
     expect(shareLabel(0)).toBe("0.0%");
@@ -106,11 +105,6 @@ describe("labels", () => {
     expect(itemsLabel(48_200)).toBe("48,200 items");
     expect(itemsLabel(482_000)).toBe("482 K items");
     expect(itemsLabel(1_840_000)).toBe("1.8 M items");
-    expect(agoLabel(10 * 60_000, 6 * 60_000)).toBe("4 min ago");
-    expect(agoLabel(3 * 3_600_000, 0)).toBe("3 h ago");
-    expect(agoLabel(30_000, 0)).toBe("just now");
-    expect(agoLabel(30 * 3_600_000, 0)).toBe("1 day ago");
-    expect(agoLabel(80 * 3_600_000, 0)).toBe("3 days ago");
     expect(elapsedLabel(123_400)).toBe("2:03");
   });
 

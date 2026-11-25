@@ -9,6 +9,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+/// Alerts inserted by a durable page and whether the minute tier caught up.
+#[derive(Debug, PartialEq)]
+pub struct MirrorAlertBatch {
+    pub alerts: Vec<statglass_schema::Event>,
+    pub caught_up: bool,
+}
+
+/// Runs after commit on the ingesting thread with no mirror lock held.
+pub type AlertListener = Arc<dyn Fn(MirrorAlertBatch) + Send + Sync>;
+
 pub struct Mirror {
     history: Arc<statglass_engine::HistoryStore>,
     host: HostId,
@@ -19,6 +29,7 @@ pub struct Mirror {
     catalog: Catalog,
     /// A page had series over a cap; warned once per mirror.
     cap_warned: AtomicBool,
+    alert_listener: Mutex<Option<AlertListener>>,
 }
 
 #[derive(Default)]
@@ -85,6 +96,7 @@ impl MirrorSink for Mirror {
             ));
         }
         self.cap(&mut page.layouts, &mut page.rows);
+        let caught_up = page.tier == Tier::M1 && !page.more;
         let page = crate::page_from_wire(page, kinds)?;
         let written: Vec<_> = page
             .rows
@@ -98,11 +110,14 @@ impl MirrorSink for Mirror {
                 Ok((page.tier, row.bucket_ts, layout.series.clone()))
             })
             .collect::<Result<_, MirrorError>>()?;
-        self.history
+        let report = self
+            .history
             .writer()
             .map_err(MirrorError::from)?
             .ingest_page_durable(self.host, page)
             .map_err(MirrorError::from)?;
+        // A crash after this commit and before the listener runs can leave a
+        // Timeline event without a notification. A replay dedupes the event.
         // Record coverage only AFTER its rows and cursor are durably committed.
         for key in &written {
             if !current.committed.contains(key) {
@@ -117,6 +132,16 @@ impl MirrorSink for Mirror {
                 *tier == r.tier && *ts == r.bucket_ts && series.as_slice() == r.series.as_ref()
             })
         });
+        drop(current);
+        if caught_up || !report.alerts_inserted.is_empty() {
+            let listener = self.alert_listener.lock_ok().clone();
+            if let Some(listener) = listener {
+                listener(MirrorAlertBatch {
+                    alerts: report.alerts_inserted,
+                    caught_up,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -224,7 +249,13 @@ impl Mirror {
             epoch: Mutex::default(),
             catalog: Catalog::builtin(),
             cap_warned: AtomicBool::new(false),
+            alert_listener: Mutex::default(),
         }
+    }
+
+    /// Replaces the listener for newly inserted alerts and minute-tier completion.
+    pub fn set_alert_listener(&self, listener: AlertListener) {
+        *self.alert_listener.lock_ok() = Some(listener);
     }
 
     /// Applies the cardinality caps to a remote page or snapshot before anything is

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crossbeam_channel::{Receiver, Sender};
 use statglass_collect::Tick;
-use statglass_schema::{Module, Settings};
+use statglass_schema::{Event, Module, Settings};
 use statglass_store::Writer;
 
 use crate::clock::ClockReading;
@@ -33,6 +33,7 @@ impl SleepAck {
 pub(crate) enum Command {
     Pause(bool),
     Settings(Box<Settings>),
+    SeedAlertHistory(Vec<Event>),
     /// Detach from the store (`None`) or attach to a new one; acknowledged once done.
     SetStore(Option<Writer>, SleepAck),
     /// Detail interest crossed between zero and one (D-094): re-choose the base tick;

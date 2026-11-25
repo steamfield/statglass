@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use statglass_engine::disk_space::SpaceService;
-use statglass_engine::{HistoryStore, identity, retention_for};
+use statglass_engine::{EngineParts, HistoryStore, NoScaleStore, identity, retention_for};
 use statglass_remote::{AgentPaths, HostServer};
 use statglass_schema::{HostId, HostRecord};
 use statglass_store::Writer;
@@ -61,8 +61,16 @@ pub async fn run(paths: &AgentPaths, system: bool) -> anyhow::Result<()> {
     }
     let names = crate::container_names::spawn();
     crate::container_names::first_pass(&names, crate::container_names::FIRST_PASS_WITHIN).await;
-    let host = AgentHost::start(record.clone(), settings.clone(), writer, names)?;
+    let alert_history = history.recent_alerts(id.id, statglass_engine::wall_ms(), &settings.alerts);
     let budget = settings.history;
+    let host = AgentHost::start(
+        record.clone(),
+        settings,
+        writer,
+        EngineParts::platform_with(Arc::new(NoScaleStore), names),
+        Some(paths.data_dir.clone()),
+        alert_history,
+    )?;
     let housekeeping = history
         .spawn_pruner(
             move || retention_for(&budget),
@@ -102,7 +110,9 @@ async fn retry_history(history: Arc<HistoryStore>, host: Arc<AgentHost>, record:
         every.tick().await;
         let (history, host, record) = (Arc::clone(&history), Arc::clone(&host), record.clone());
         let attempt = tokio::task::spawn_blocking(move || {
-            reattach(&history, &record, |writer| host.set_store(Some(writer)))
+            reattach(&history, &record, |writer| {
+                host.attach_history(&history, writer)
+            })
         });
         if let Err(e) = attempt.await {
             tracing::error!("history retry stopped: {e}");

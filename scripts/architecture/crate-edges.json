@@ -58,7 +58,7 @@
       "statglass-remote",
       "statglass-update"
     ],
-    "dev": []
+    "dev": ["statglass-collect"]
   },
   "statglass": {
     "normal": [
@@ -72,7 +72,7 @@
       "statglass-notify",
       "statglass-ipc"
     ],
-    "dev": []
+    "dev": ["statglass-remote"]
   },
   "statglass-update": { "normal": [], "dev": [] },
   "statglass-query": { "normal": ["statglass-schema"], "dev": [] },

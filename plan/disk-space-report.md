@@ -2,7 +2,8 @@
 
 Status: v1 implemented on `main`, 2026-10-19 (D-114). Phase 0 ran first; its results,
 the deviations from this plan and the checks still owed on real hardware are in
-"Implementation record" below.
+"Implementation record" below. Placement is being revised in
+[utilities.md](utilities.md) (D-153).
 
 Add a **Space** view to Disk. The user starts a scan of a volume, and StatGlass shows which
 folders and files use the space as a drillable treemap with a ranked table beside it.
@@ -79,6 +80,10 @@ visual simplicity: the unmeasured region and the skipped-locations line add comp
 a prettier chart would hide. We accept that, per "Label what we don't know".
 
 ### Entry point and the Disk route
+
+Superseded by D-153 (`utilities.md`): Disk space is its own page at `/dashboard/disk-space`
+under the sidebar's Utilities group, Disk has no switcher, `?view=space` redirects there, and
+each Volumes row links to it as "See what's using space". The original reasoning follows.
 
 Disk gets a `SegmentedControl` directly below its `PageHeader`, **Activity** | **Space**,
 placed and styled as in Containers (`containers/route.tsx`). The reason for a separate view:

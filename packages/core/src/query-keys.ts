@@ -245,6 +245,8 @@ export const hostKeys = {
   /** The phone's pairing state (a changed key reads "Needs pairing"). */
   pairing: () => [...hostKeys.all, "pairing"] as const,
   updates: (hostId: HostId) => [...hostKeys.all, hostId, "updates"] as const,
+  alertRules: (hostId: HostId) =>
+    [...hostKeys.all, hostId, "alert-rules"] as const,
   /** The dashboard host-update notice the user dismissed (D-123). */
   updateNotice: () => [...hostKeys.all, "update-notice"] as const,
   detail: (hostId: HostId) => [...hostKeys.all, hostId, "record"] as const,

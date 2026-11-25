@@ -20,8 +20,10 @@ This folder is the plan for StatGlass, from the first installable build through 
 | [rfc-agent-cli.md](rfc-agent-cli.md) | Draft: read-only `statglass` CLI for agents over an owner-only query socket, local and mirrored hosts; MCP deferred |
 | [rfc-alerts.md](rfc-alerts.md) | Implemented (D-138): custom threshold rules on an Alerts page, delivery to ntfy and webhooks, a host-offline rule; remote-metric rules and agent-side evaluation remain future work |
 | [rfc-ios-app.md](rfc-ios-app.md) | Accepted (D-140 to D-151), in progress: read-only iPhone viewer for remote hosts (Expo + reused Rust session/mirror core), Secure Enclave keys, QR pairing, Tailscale routes, monorepo and App Store release |
+| [rfc-remote-alerts.md](rfc-remote-alerts.md) | Implemented (D-152): threshold rules on Linux agent hosts, evaluated by the agent and delivered from this Mac as alert events sync in |
 | [io-performance-ux.md](io-performance-ux.md) | Draft: storage response-time history and process attribution in Disk; counter validation is the next step |
 | [disk-space-report.md](disk-space-report.md) | v1 implemented (D-114): on-demand Space view in Disk with a progressive, drillable treemap of what uses a volume; real-hardware privacy and lateness checks remain |
+| [utilities.md](utilities.md) | Accepted (D-153), not started: a Utilities sidebar group for on-demand tools no page owns; the disk space report moves there from Disk |
 | [rfc-shared-layers.md](rfc-shared-layers.md) | Accepted: consolidate charts, queries, UI states and Rust collectors onto shared owners, phased like the 0.6.2 table layer |
 | [decisions.md](decisions.md) | ADR log: every decision with its reasoning and when to revisit it |
 | [PROGRESS.md](PROGRESS.md) | Implementation progress tracker |

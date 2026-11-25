@@ -284,7 +284,7 @@ export function seedRemoteScenarios(
       enabled: true,
       mirror_budget_mb: 100,
     });
-  if (scenarios.includes("linux-host")) {
+  if (scenarios.some((s) => /^linux-(host|agent-update|alerts-)/.test(s))) {
     const linux = remotes.addRemote(
       {
         id: "remote-linux",

@@ -73,6 +73,10 @@ pub enum RemoteError {
     /// The host failed internally while answering a query.
     #[error("{0}")]
     Internal(String),
+    /// The host's state changed since the revision the request was based on
+    /// (`ErrorCode::Stale`): reload and try again.
+    #[error("{0}")]
+    Stale(String),
     #[error(transparent)]
     Pairing(#[from] PairingRefusal),
     #[error("{0}")]
@@ -137,6 +141,7 @@ impl RemoteError {
                 | Self::Unsupported(_)
                 | Self::Refused(_)
                 | Self::Internal(_)
+                | Self::Stale(_)
                 | Self::Pairing(_)
                 | Self::InvalidArgument(_)
         )

@@ -6,7 +6,8 @@ import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
-import { OverviewFoldersCard, splitPath } from "./folders-card";
+import { splitPath } from "~/components/largest-folders";
+import { OverviewFoldersCard } from "./folders-card";
 
 function setup(scenarios: ScenarioName[] = [], now = () => Date.now()) {
   const transport = createMockTransport({ autoTick: false, scenarios, now });
@@ -30,6 +31,10 @@ it("lists the five largest folders of the last scan, known ones by what they hol
   expect(rows[4]?.textContent).toMatch(/^Downloads~\d/);
   expect(screen.getByText("Scanned 3 days ago")).toBeVisible();
   expect(screen.getByRole("button", { name: "Re-run" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Open Disk space" })).toHaveAttribute(
+    "href",
+    "/dashboard/disk-space?vol=/"
+  );
 });
 
 it("shows a row's folder in Finder by its path", async () => {
@@ -47,6 +52,10 @@ it("runs the first report only when asked, then shows its folders", async () => 
   const { transport } = setup(["disk-space-unscanned"], () => clock);
   const start = vi.spyOn(transport, "diskSpaceStart");
   const run = await screen.findByRole("button", { name: "Run report" });
+  expect(screen.getByRole("link", { name: "Open Disk space" })).toHaveAttribute(
+    "href",
+    "/dashboard/disk-space?vol=/"
+  );
   expect(start).not.toHaveBeenCalled();
   fireEvent.click(run);
   expect(
@@ -142,18 +151,28 @@ it("says why the last report failed", async () => {
   );
 });
 
-it("explains a disabled Re-run while another volume is scanned", async () => {
-  const transport = createMockTransport({ autoTick: false });
-  vi.spyOn(transport, "diskSpaceStatus").mockResolvedValue({
-    status: "ok",
-    data: status({ phase: "scanning", volume: "/Volumes/Backup" }),
-  });
-  renderWithProviders(<OverviewFoldersCard origin="tl" />, {
-    transport,
-    route: "/dashboard/overview",
-  });
-  expect(
-    await screen.findByText(/Another volume is being scanned/)
-  ).toBeVisible();
-  expect(screen.getByRole("button", { name: "Re-run" })).toBeDisabled();
-});
+it.each([
+  ["Re-run", []],
+  ["Run report", ["disk-space-unscanned"] satisfies ScenarioName[]],
+])(
+  "explains a disabled %s and links from the busy message",
+  async (action, scenarios) => {
+    const transport = createMockTransport({ autoTick: false, scenarios });
+    vi.spyOn(transport, "diskSpaceStatus").mockResolvedValue({
+      status: "ok",
+      data: status({ phase: "scanning", volume: "/Volumes/Backup" }),
+    });
+    renderWithProviders(<OverviewFoldersCard origin="tl" />, {
+      transport,
+      route: "/dashboard/overview",
+    });
+    await screen.findByRole("button", { name: action });
+    const link = await screen.findByRole("link", { name: "Disk space" });
+    expect(link).toHaveAttribute("href", "/dashboard/disk-space?vol=/");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /^Another volume is being scanned in Disk space\.$/
+    );
+    expect(screen.getByRole("button", { name: action })).toBeDisabled();
+    expect(screen.queryByRole("link", { name: "Open Disk space" })).toBeNull();
+  }
+);

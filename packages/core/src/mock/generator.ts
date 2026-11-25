@@ -9,6 +9,7 @@
 import {
   HOLD_FACTOR,
   type LiveProcess,
+  LOW_DISK_FREE_BYTES,
   METRIC_PERIODS_MS,
   type Module,
   type SeriesKey,
@@ -363,9 +364,16 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   // Every APFS volume reports its container's figures, and Rust's
   // `disk.used` is total − free (a Data/System split is not
   // measured), so both volumes read 388 GB used.
+  // `disk-low-space` puts "/" under LOW_DISK_FREE_BYTES and the Data volume
+  // exactly at it, so both sides of Disk's low-space flag can be checked.
   for (const vol of ["/System/Volumes/Data", "/"]) {
-    add("disk", "disk.used", { vol }, 1000e9 - 612e9, { cadence: 60 });
-    add("disk", "disk.free", { vol }, 612e9, { cadence: 60 });
+    const free = !flags.diskLowSpace
+      ? 612e9
+      : vol === "/"
+        ? 12e9
+        : LOW_DISK_FREE_BYTES;
+    add("disk", "disk.used", { vol }, 1000e9 - free, { cadence: 60 });
+    add("disk", "disk.free", { vol }, free, { cadence: 60 });
     add("disk", "disk.total", { vol }, 1000e9, { cadence: 60 });
   }
 

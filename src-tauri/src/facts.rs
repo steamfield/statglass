@@ -371,6 +371,8 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         // The metrics a custom alert rule may watch, with defaults and ranges.
         .constant("ALERT_METRICS", statglass_schema::ALERT_METRICS)
         .constant("ALERT_LIMITS", statglass_schema::alert_limits())
+        // Free bytes below which Disk flags a volume as nearly full.
+        .constant("LOW_DISK_FREE_BYTES", statglass_schema::disk_space::LOW_DISK_FREE_BYTES)
         .constant(
             "ALERT_DESTINATION_LIMITS",
             statglass_schema::destination_limits(),

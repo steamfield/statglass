@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.15.0](https://github.com/steamfield/statglass/compare/v0.14.0...v0.15.0) - 2026-11-25
+
+### Added
+
+- Alert rules on Linux agent hosts (D-152): evaluated by the agent from its own
+  settings, read and edited over `Query::AlertRules` and `Query::SetAlertRules`, and
+  delivered from this Mac as inserted alert events sync in, past a per-host floor,
+  with late alerts grouped into one catch-up message per host per sync pass.
+- `mem.psi` and `cpu.loadavg` join `ALERT_METRICS` for Linux hosts.
+- A Utilities sidebar group with Disk space at `/dashboard/disk-space` (D-153).
+- Phone pairing on hosts (D-143 to D-145, D-151): Paired devices in Settings, a QR
+  with pinned host keys and a single-use P-256 pairing key, approval on the host,
+  per-device forced-command keys with a restricted scope, and
+  `statglass-agent devices` on Linux.
+- The shared session, mirror and dialer code for StatGlass for iPhone
+  (`statglass-session`, `statglass-ssh`, `statglass-ipc`, `statglass-mobile`;
+  D-140 to D-142, D-146 to D-150). The repository is now a Bun workspace with
+  `packages/core` shared by both apps.
+
+### Changed
+
+- Disk drops its Activity | Space switcher; Volumes moves up under Disk I/O, links to
+  Disk space and flags low space on boot volumes. `?view=space` redirects.
+- Alert value and label display facts come from the schema.
+
+### Fixed
+
+- The Covered tier falls back when minute history was never synced.
+- The store decodes only alert rows when reporting inserted alerts and rolls back
+  failed usage flushes.
+- The sidebar scrolls only its entries and re-places the host pill per breakpoint.
+
 ## [0.14.0](https://github.com/steamfield/statglass/compare/v0.13.2...v0.14.0) - 2026-11-24
 
 ### Added

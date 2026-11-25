@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use anyhow::Context;
 use statglass_remote::AgentEnv;
 
+mod alert_rules;
 mod authorize;
 mod cli;
 mod commands;

@@ -21,6 +21,8 @@ export function nativeRemote(): Pick<
   | "resetRemoteHostIdentity"
   | "updateRemoteAgent"
   | "restartRemoteAgent"
+  | "remoteAlertRules"
+  | "setRemoteAlertRules"
   | "hostUpdateNoticeDismissed"
   | "dismissHostUpdateNotice"
   | "repairRemoteHost"
@@ -67,6 +69,9 @@ export function nativeRemote(): Pick<
       commands.resetRemoteHostIdentity(lan, tailscale),
     updateRemoteAgent: (id) => commands.updateRemoteAgent(id),
     restartRemoteAgent: (id) => commands.restartRemoteAgent(id),
+    remoteAlertRules: (host) => commands.remoteAlertRules(host),
+    setRemoteAlertRules: (host, baseRevision, rules, keep) =>
+      commands.setRemoteAlertRules(host, baseRevision, rules, keep),
     hostUpdateNoticeDismissed: () => commands.hostUpdateNoticeDismissed(),
     dismissHostUpdateNotice: (key) => commands.dismissHostUpdateNotice(key),
     repairRemoteHost: (id) => commands.repairRemoteHost(id),

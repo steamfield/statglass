@@ -90,6 +90,19 @@ function ConnectionNotice({
   ) : null;
 }
 
+function isLinuxAlertsPage(
+  pathname: string,
+  os: RemoteHostRecord["os"] | undefined,
+  selection: ReturnType<typeof useHostSelection>,
+  hostId: string
+) {
+  if (pathname !== "/dashboard/alerts") return false;
+  const saved = selection?.hosts.find(
+    (host) => !host.is_local && host.id === hostId
+  );
+  return (os ?? saved?.info.os) === "linux";
+}
+
 /**
  * Dashboard window shell (plan 4.4): the 220 px sidebar under the overlay
  * title bar, and the scrolling page. Banners and focal remote-connection
@@ -103,36 +116,34 @@ export default function DashboardLayout() {
   useScrollTopOnNavigate(mainRef);
   const sampling = useSampling();
   const hostId = useHostId();
-  const local = useHostSelection()?.hosts.find((host) => host.is_local);
+  const selection = useHostSelection();
+  const local = selection?.hosts.find((host) => host.is_local);
   const remote = useRemoteHosts(selectConnection).data?.find(
     (host) => host.config.id === hostId
   );
-  const { pathname, search } = useLocation();
-  // Hosts, Settings and Alerts belong to This Mac: they render in its store
-  // and on its clock whichever host is selected.
-  const metricPage =
-    pathname !== "/dashboard/hosts" &&
-    pathname !== "/dashboard/settings" &&
-    pathname !== "/dashboard/alerts";
+  const { pathname } = useLocation();
+  const metricPage = ![
+    "/dashboard/hosts",
+    "/dashboard/settings",
+    "/dashboard/alerts",
+  ].includes(pathname);
+  const useSelectedHost =
+    metricPage || isLinuxAlertsPage(pathname, remote?.os, selection, hostId);
   const hasRemote = remote !== undefined;
   const remoteDisconnected = hasRemote && remote.status.state !== "connected";
-  const view = new URLSearchParams(search).get("view");
-  const isDiskSpace = pathname === "/dashboard/disk" && view === "space";
-
   const liveOnlyPage =
     pathname === "/dashboard/processes" ||
     pathname === "/dashboard/containers" ||
-    isDiskSpace;
+    pathname === "/dashboard/disk-space";
   const useFocal =
     metricPage &&
     remoteDisconnected &&
     (remote.status.synced_through_ms === null || liveOnlyPage);
-  // A page opens on a new route, Disk's I/O and Space views, or another host
-  // on a metric page (Settings, Hosts and Alerts show This Mac's whichever is
-  // selected). Range, filter and Containers' view params keep the same
-  // header and controls in place, so they never replay it.
+  // A page opens on a new route, or another host on a host-scoped page.
+  // Range, filter and Containers' view params keep the same header and
+  // controls in place, so they never replay it.
   const pageRef = usePageEntrance<HTMLDivElement>(
-    `${metricPage ? hostId : ""}|${pathname}|${isDiskSpace ? "space" : ""}`
+    `${useSelectedHost ? hostId : ""}|${pathname}`
   );
   const stale =
     metricPage && ((sampling.stale && !sampling.paused) || remoteDisconnected);
@@ -171,7 +182,7 @@ export default function DashboardLayout() {
         >
           <DashboardShellContext.Provider value={shell}>
             <div ref={pageRef}>
-              {!metricPage && local && local.id !== hostId ? (
+              {!useSelectedHost && local && local.id !== hostId ? (
                 <HostClockContext.Provider value={localNow}>
                   <HostStoreProvider hostId={local.id}>
                     <Outlet />

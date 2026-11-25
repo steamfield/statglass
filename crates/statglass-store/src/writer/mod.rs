@@ -305,6 +305,8 @@ impl Writer {
         self.call(|r| Op::PruneMirror(now_ms, retention, r))
     }
 
+    /// Applies a sync page and returns its report before the batch commits.
+    /// Use [`Self::ingest_page_durable`] to deliver inserted alerts once across replays.
     pub fn ingest_page(&self, host: HostId, page: CursorPage) -> Result<IngestReport> {
         self.call(|r| Op::IngestPage(host, page, r))
     }

@@ -139,6 +139,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             pairing::pairing_deny, pairing::pairing_cancel, pairing::paired_devices,
             pairing::revoke_device,
             handover::handover_bundle_start, handover::device_intents, handover::retry_device_intents,
+            alerts::commands::remote_alert_rules, alerts::commands::set_remote_alert_rules,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,

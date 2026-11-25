@@ -36,7 +36,7 @@ pub use dialer::{
 };
 pub use endpoint::{Endpoint, MAX_TARGETS, PinnedHostKey, Route, Target};
 pub use error::{RemoteError, Result, RouteError, UnreachableKind};
-pub use mirror::{Mirror, SyncWatermark};
+pub use mirror::{AlertListener, Mirror, MirrorAlertBatch, SyncWatermark};
 pub use mirror_error::MirrorError;
 pub use mirror_policy::MirrorPolicy;
 pub use mirror_sink::MirrorSink;
