@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { interfaceRows, networkSubtitle, ofLink } from "./network";
+import { interfaceRows, networkSubtitle, ofLink } from "./network-lines";
 
 describe("network page helpers", () => {
   it("builds rows in layout order and leaves unknown fields missing", () => {

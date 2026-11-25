@@ -1,6 +1,20 @@
 import { formatRate, MISSING } from "@core/format";
 import { keyByLabel } from "@core/series-key";
-import type { InterfaceRow } from "~/components/interface-table";
+
+export interface InterfaceRow {
+  /** BSD name and row key, "en0". */
+  id: string;
+  /** "Wi‑Fi", "Ethernet", "VPN", "Bridge". */
+  kind: string;
+  /** `net.rx{iface}` / `net.tx{iface}`, bytes per second; `null` is a gap. */
+  rxBps: number | null;
+  txBps: number | null;
+  /** Received and sent since boot, bytes. */
+  rxBytes: number | null;
+  txBytes: number | null;
+  /** The interface left the layout (cable pulled, VPN down). */
+  disconnected?: boolean;
+}
 
 /**
  * One row per interface in the layout, in layout order so rows do not jump.

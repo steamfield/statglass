@@ -1,3 +1,4 @@
+import type { InterfaceRow } from "@core/network-lines";
 import { seriesKey, sk } from "@core/series-key";
 import {
   act,
@@ -11,7 +12,7 @@ import { pushLayout } from "@tests/live-frames";
 import { renderWithProviders } from "@tests/test-utils";
 import { useHeld } from "~/hooks/use-ring";
 import { type HostStore, useHostStore } from "~/stores/host-store";
-import { type InterfaceRow, InterfaceTable } from "./interface-table";
+import { InterfaceTable } from "./interface-table";
 
 const rows: InterfaceRow[] = [
   { id: "en9", kind: "Wi-Fi", rxBps: 20, txBps: 1, rxBytes: 30, txBytes: 1 },

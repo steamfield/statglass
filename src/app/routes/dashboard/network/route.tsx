@@ -1,4 +1,5 @@
 import { formatPercent, formatRate } from "@core/format";
+import { interfaceRows, ofLink } from "@core/network-lines";
 import { keyByLabel, labelValues } from "@core/series-key";
 import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
@@ -22,7 +23,6 @@ import { AddressLine } from "./_components/address-line";
 import { AppsCard } from "./_components/apps-card";
 import { AppsNowCard } from "./_components/apps-now-card";
 import { SelectionSummary } from "./_components/selection-summary";
-import { interfaceRows, ofLink } from "./_lib/network";
 
 const NO_KEYS: readonly string[] = [];
 const linkRateKey = keyByLabel("net.link_rate", "iface");

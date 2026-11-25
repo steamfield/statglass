@@ -1,4 +1,5 @@
 import { formatBytes, formatRate, type RateUnits } from "@core/format";
+import type { InterfaceRow } from "@core/network-lines";
 import type { SortingState } from "@tanstack/react-table";
 import { useState } from "react";
 import {
@@ -9,21 +10,6 @@ import {
   useDataTable,
 } from "~/components/data-table";
 import { Table, TableCell, TableHeader, TableRow } from "~/components/ui/table";
-
-export interface InterfaceRow {
-  /** BSD name and row key, "en0". */
-  id: string;
-  /** "Wi‑Fi", "Ethernet", "VPN", "Bridge". */
-  kind: string;
-  /** `net.rx{iface}` / `net.tx{iface}`, bytes per second; `null` is a gap. */
-  rxBps: number | null;
-  txBps: number | null;
-  /** Received and sent since boot, bytes. */
-  rxBytes: number | null;
-  txBytes: number | null;
-  /** The interface left the layout (cable pulled, VPN down). */
-  disconnected?: boolean;
-}
 
 export interface InterfaceTableProps {
   rows: readonly InterfaceRow[];
