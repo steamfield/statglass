@@ -56,6 +56,7 @@ pub mod docker;
 pub mod docker_storage;
 pub mod durable_usage;
 mod event;
+mod event_module;
 mod history;
 mod host;
 pub mod lock;

@@ -1,17 +1,38 @@
+import { networkSubtitle } from "@core/network-lines";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
 
 /**
- * The header's addresses (D-093): the primary interface's IPv4 (its IPv6
+ * The header's addresses (D-093, D-155): the host's IPv4 (its IPv6
  * when it has no IPv4) and the public address. Each copies on click.
  * Nothing shows until the local address is read.
  */
-export function AddressLine({ primary }: { primary: string | null }) {
-  const { lan, publicIp } = useAddresses(primary);
-  // No local address: no network, or a host this Mac can't read addresses for.
-  if (primary === null || lan === null) return null;
+export function AddressLine({
+  primary,
+  link = null,
+}: {
+  primary: string | null;
+  link?: number | null;
+}) {
+  const { iface, linkMbps, lan, publicIp, failure } = useAddresses(primary);
+  const sampledLink = iface === primary ? link : null;
+  const speed = linkMbps === null ? sampledLink : linkMbps * 1_000_000;
+  const subtitle = networkSubtitle(iface, speed);
+  if (failure !== undefined) {
+    return (
+      <>
+        {subtitle}
+        {" · "}
+        <span className="text-muted-foreground" title={failure}>
+          Addresses unavailable
+        </span>
+      </>
+    );
+  }
+  if (lan === null) return subtitle;
   return (
     <>
+      {subtitle}
       {" · "}
       <CopyValue value={lan} label="local IP address" />
       {" · Public "}

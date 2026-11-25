@@ -1,37 +1,20 @@
-import { errorTone } from "@core/command-error";
 import { eventId, eventLabel } from "@core/events";
 import { formatHistoryTime } from "@core/format";
 import type { Event } from "@core/generated/types";
-import { type ReactNode, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { FlatList, View } from "react-native";
-import { historyReadError, type useEvents } from "@/data/history";
 import { Text } from "@/ui/text";
 
-function EventsHeading({ events }: { events: ReturnType<typeof useEvents> }) {
+const NO_EVENTS: readonly Event[] = [];
+
+export const EventLabelContext = createContext(eventLabel);
+
+function EventsHeading({ empty }: { empty: boolean }) {
   return (
     <View className="gap-2">
-      <Text {...{ role: "title" }}>Events</Text>
-      {events.isPending && (
-        <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
-          Loading events…
-        </Text>
-      )}
-      {events.isError && (
-        <Text
-          {...{ role: "label" }}
-          accessibilityLiveRegion="polite"
-          accessibilityRole={
-            errorTone(events.error) === "error" ? "alert" : undefined
-          }
-          className={
-            errorTone(events.error) === "error" ? "text-destructive" : ""
-          }
-        >
-          {historyReadError(events.error, "events")}
-        </Text>
-      )}
-      {events.isSuccess && events.data.length === 0 && (
-        <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+      <Text variant="title">Events</Text>
+      {empty && (
+        <Text variant="label" accessibilityLiveRegion="polite">
           No events in this range
         </Text>
       )}
@@ -40,34 +23,43 @@ function EventsHeading({ events }: { events: ReturnType<typeof useEvents> }) {
 }
 
 function EventRow({ event, showDate }: { event: Event; showDate: boolean }) {
+  const formatEvent = useContext(EventLabelContext);
   return (
     <View className="gap-0.5 border-border border-t py-2">
-      <Text {...{ role: "body" }}>{eventLabel(event)}</Text>
-      <Text {...{ role: "caption" }} className="tabular-nums">
+      <Text variant="body">{formatEvent(event)}</Text>
+      <Text variant="caption" className="tabular-nums">
         {formatHistoryTime(event.ts_ms, showDate)}
       </Text>
     </View>
   );
 }
 
-/** Show the module content above a virtualized, newest-first list of events. */
+/** Show newest events first. With page content, use a single virtualized scroll. */
 export function EventsList({
   events,
   showDate,
   children,
 }: {
-  events: ReturnType<typeof useEvents>;
+  events: readonly Event[] | undefined;
   showDate: boolean;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
-  const rows = useMemo(
-    () => events.data?.slice().reverse() ?? [],
-    [events.data]
-  );
+  const rows = useMemo(() => events?.slice().reverse() ?? NO_EVENTS, [events]);
+  const heading = <EventsHeading empty={events?.length === 0} />;
+  if (children === undefined) {
+    return (
+      <View className="gap-2">
+        {heading}
+        {rows.map((event) => (
+          <EventRow key={eventId(event)} event={event} showDate={showDate} />
+        ))}
+      </View>
+    );
+  }
   return (
     <FlatList
       className="flex-1 bg-background pr-safe pl-safe"
-      contentContainerClassName="px-4 py-4"
+      contentContainerClassName="px-4 pt-4 pb-5"
       contentInsetAdjustmentBehavior="automatic"
       data={rows}
       initialNumToRender={12}
@@ -76,7 +68,7 @@ export function EventsList({
       ListHeaderComponent={
         <View className="gap-5 pb-2">
           {children}
-          <EventsHeading events={events} />
+          {heading}
         </View>
       }
     />

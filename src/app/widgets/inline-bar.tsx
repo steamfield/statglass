@@ -1,5 +1,6 @@
 import {
   type InlineBarData,
+  type InlineBarModel,
   inlineBarModel,
 } from "@core/widget-models/inline-bar";
 import type { MeterTrackModel } from "@core/widget-models/meter-track";
@@ -31,9 +32,12 @@ function Track({
 }
 
 /** Label, value and a horizontal bar. */
-export function InlineBar(data: InlineBarProps) {
-  const { accent } = data;
-  const { label, value, layout, track } = inlineBarModel(data);
+export function InlineBar(data: InlineBarProps | { model: InlineBarModel }) {
+  const resolved = "model" in data;
+  const { label, value, layout, track } = resolved
+    ? data.model
+    : inlineBarModel(data);
+  const accent = resolved ? undefined : data.accent;
   const style = accent ? accentVars(accent) : undefined;
 
   if (layout === "row") {

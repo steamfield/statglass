@@ -1,7 +1,7 @@
 //! The russh dialer: resolve, connect, check the pinned host key, authenticate through
 //! the [`Signer`] and exec the endpoint's command on one session channel.
 use crate::{
-    Signer,
+    Signer, SignerError,
     signer::{AuthError, RusshSigner},
     stream::{SessionStream, SocketGuard},
 };
@@ -15,9 +15,11 @@ use statglass_session::{
 };
 use std::{future::Future, io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
-    net::{TcpStream, lookup_host},
+    net::TcpStream,
     time::{Instant, timeout_at},
 };
+
+mod resolve;
 
 // std has no ErrorKind for EHOSTDOWN on these platforms.
 #[cfg(target_vendor = "apple")]
@@ -88,8 +90,13 @@ impl RusshDialer {
             .command
             .serve_command()
             .map_err(|err| protocol_context(host, err))?;
-        let mut signer = RusshSigner::new(self.signer.as_ref()).ok_or_else(|| {
-            RemoteError::Authentication(format!(
+        let point = self
+            .signer
+            .public_key()
+            .await
+            .map_err(|error| signer_failure(host, error))?;
+        let mut signer = RusshSigner::new(self.signer.as_ref(), point).ok_or_else(|| {
+            RemoteError::SignerInternal(format!(
                 "{host}: the signing key's public key is not a 65-byte uncompressed P-256 point"
             ))
         })?;
@@ -112,7 +119,7 @@ impl RusshDialer {
             .authenticate_publickey_with(user, key, None, &mut signer)
             .await
             .map_err(|err| match err {
-                AuthError::Signer(error) => RemoteError::Authentication(format!("{host}: {error}")),
+                AuthError::Signer(error) => signer_failure(host, error),
                 AuthError::Send(error) => {
                     RemoteError::Transport(format!("{host}: SSH authentication: {error}"))
                 }
@@ -139,6 +146,14 @@ impl RusshDialer {
             .await
             .map_err(|err| RemoteError::Transport(format!("{host}: open SSH channel: {err}")))?;
         SessionStream::open(session, channel, guard, command, host).await
+    }
+}
+
+fn signer_failure(host: &str, error: SignerError) -> RemoteError {
+    let detail = format!("{host}: {error}");
+    match error {
+        SignerError::Unavailable(_) => RemoteError::PhoneKeyUnavailable(detail),
+        SignerError::Invalid(_) | SignerError::Internal(_) => RemoteError::SignerInternal(detail),
     }
 }
 
@@ -185,21 +200,7 @@ fn protocol_context(host: &str, error: RemoteError) -> RemoteError {
 }
 
 async fn connect_tcp(host: &str, port: u16, deadline: Instant) -> Result<(TcpStream, SocketGuard)> {
-    // Tokio resolves names through getaddrinfo, so they can get NAT64 synthesis.
-    // Numeric IPv4 literals bypass getaddrinfo and need an IPv4 route.
-    let addresses: Vec<_> = lookup_host((host, port))
-        .await
-        .map_err(|err| RemoteError::Unreachable {
-            kind: UnreachableKind::NameNotResolved,
-            detail: format!("{host}: SSH name lookup: {err}"),
-        })?
-        .collect();
-    if addresses.is_empty() {
-        return Err(RemoteError::Unreachable {
-            kind: UnreachableKind::NameNotResolved,
-            detail: format!("{host}: SSH name lookup returned no addresses"),
-        });
-    }
+    let addresses = resolve::resolve(host, port).await?;
     let socket = connect_addresses(host, &addresses, deadline, TcpStream::connect).await?;
     SocketGuard::new(socket)
         .map_err(|err| RemoteError::Transport(format!("{host}: configure SSH socket: {err}")))
@@ -370,3 +371,11 @@ impl client::Handler for HostKeyCheck {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+impl crate::test_server::Server {
+    async fn start(key: &crate::SoftwareSigner, script: crate::test_server::Script) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Self::start_with_listener(listener, &key.authorized_key_line("fixture"), script)
+    }
+}

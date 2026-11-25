@@ -46,6 +46,7 @@ test("explains why the app lock is disabled without biometrics or passcode", asy
     )
   ).toBeOnTheScreen();
   expect(lockSwitch()).toBeDisabled();
+  expect(screen.getAllByLabelText("App Lock")).toHaveLength(1);
   expect(prompt).not.toHaveBeenCalled();
 });
 

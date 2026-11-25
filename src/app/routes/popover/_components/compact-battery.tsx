@@ -1,6 +1,5 @@
-import { ratio } from "@core/chart-math";
-import { formatPercent } from "@core/format";
 import { spanWords } from "@core/live-window";
+import { batteryCard } from "@core/popover/cards";
 import { MINUTE_MS } from "@core/time-grid";
 import { useChartLabel } from "~/hooks/use-chart-label";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
@@ -16,25 +15,16 @@ import { MeterTrack } from "~/widgets/meter-track";
 import { StreamArea } from "~/widgets/stream-area";
 
 export function CompactBattery() {
-  const battery = useBattery();
-  const source = usePowerSource();
+  const card = batteryCard(useBattery(), { powerSource: usePowerSource() });
   const notice = useReadFailure("battery.charge");
-  const status =
-    source === "charging"
-      ? "Charging"
-      : source === "adapter"
-        ? "On power"
-        : source === "battery"
-          ? "On battery"
-          : "Power state unavailable";
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 text-caption">
         <span className="figures whitespace-nowrap">
-          {formatPercent(battery.charge)} · {status}
+          {card.headline} · {card.status}
         </span>
         <MeterTrack
-          fraction={ratio(battery.charge, 100)}
+          fraction={card.chargeFraction}
           fill="var(--color-battery)"
           className="min-w-6 flex-1"
         />

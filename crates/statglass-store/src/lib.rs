@@ -36,6 +36,7 @@ mod perms;
 mod reader;
 mod rolldown;
 mod slots;
+pub mod tier_budget;
 mod types;
 pub mod usage;
 mod writer;
@@ -73,7 +74,7 @@ pub use types::{
 pub use writer::NET_NEW_NAMES_PER_HOUR;
 #[cfg(feature = "write-stats")]
 pub use writer::WriteStats;
-pub use writer::Writer;
+pub use writer::{HistoryCacheEpoch, Writer};
 
 /// How often the writer commits its batch when nobody asks it to flush. A crash loses
 /// at most this much persisted history; the engine also flushes before sleep, on wake,

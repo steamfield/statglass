@@ -1,5 +1,10 @@
-import { heatmapAlpha } from "@core/chart-math";
-import { cssPercent, MISSING } from "@core/format";
+import { cssPercent } from "@core/format";
+import {
+  type HeatMatrixRow,
+  heatMatrixCellAlpha,
+  heatMatrixModel,
+  heatScaleLegendModel,
+} from "@core/widget-models/heat-matrix";
 import { type CSSProperties, memo, type ReactElement, useRef } from "react";
 import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
@@ -9,20 +14,7 @@ import { type Accent, accentVars } from "./lib/accent";
 import { historyTicks } from "./lib/chart-labels";
 import { WindowTicks } from "./window-ticks";
 
-export interface HeatMatrixRow {
-  /** Row key. */
-  id: string;
-  /** Short label in the left column ("P0", "Zone 01"). */
-  label: string;
-  /** Rows are grouped by this; an 8 px gap separates consecutive groups. */
-  group?: string;
-  /** Tooltip on the label, for detail that does not fit ("PMU tdie4"). */
-  title?: string;
-  /** Current value, or null when stale. */
-  now: number | null;
-  /** Oldest first; `null` is no samples. */
-  buckets: (number | null)[];
-}
+export type { HeatMatrixRow };
 
 export interface HeatMatrixProps {
   /** History for this window is still arriving: draw the frame and the loading mark, no data. */
@@ -60,7 +52,7 @@ interface CellProps {
 }
 
 const Cell = memo(function Cell({ v, min, max }: CellProps) {
-  const a = heatmapAlpha(v, max, min);
+  const a = heatMatrixCellAlpha(v, min, max);
   return (
     <span
       data-gap={a === null || undefined}
@@ -162,9 +154,16 @@ export function HeatMatrix({
   loading,
 }: HeatMatrixProps) {
   const reveal = useReveal<HTMLDivElement>(loading);
-  const cols = Math.max(1, Math.round(windowMs / bucketMs));
-  // Bucket number of the first column, or 0 for positional keys.
-  const firstKey = endMs === null ? 0 : Math.floor(endMs / bucketMs) - cols + 1;
+  const model = heatMatrixModel({
+    rows,
+    domain: [scale.min, scale.max],
+    format: formatNow,
+    timeline: { bucketMs, windowMs, endMs },
+    accent,
+    ariaLabel,
+    loading,
+  });
+  const { columns: cols, firstKey } = model;
   const right = (endMs ?? 0) + bucketMs;
   const ticks = historyTicks(right - cols * bucketMs, right, live, 3);
   // Rows are placed explicitly so the gap band can span the cell column of
@@ -175,62 +174,54 @@ export function HeatMatrix({
       ref={reveal}
       role="img"
       aria-busy={loading || undefined}
-      aria-label={ariaLabel}
+      aria-label={model.spoken}
       className="group grid items-center gap-x-2.5 gap-y-0.5"
       data-loading={loading || undefined}
       style={{
-        ...accentVars(accent),
+        ...accentVars(model.accent),
         gridTemplateColumns: `${labelWidth}px minmax(0, 1fr) 40px`,
       }}
     >
-      {rows.map((r, k) => {
-        const first = k > 0 && r.group !== rows[k - 1]?.group;
-        // Right-align: the newest bucket is always the last column.
-        const pad = Math.max(0, cols - r.buckets.length);
-        const cells = loading
-          ? Array<number | null>(cols).fill(null)
-          : [
-              ...Array<number | null>(pad).fill(null),
-              ...r.buckets.slice(-cols),
-            ];
-        return (
-          <div key={r.id} className={cn("contents", first && "[&>*]:mt-2")}>
-            <span
-              className="figures col-start-1 truncate text-caption text-muted-foreground"
-              style={row(k)}
-              title={r.title}
-            >
-              {r.label}
-            </span>
-            <div
-              data-reveal
-              className="col-start-2 grid origin-bottom gap-px"
-              style={{
-                ...row(k),
-                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              }}
-            >
-              <ClosedCells
-                values={cells.slice(0, -1)}
-                firstKey={firstKey}
-                min={scale.min}
-                max={scale.max}
-              />
-              <Cell
-                v={cells[cells.length - 1] ?? null}
-                min={scale.min}
-                max={scale.max}
-              />
-            </div>
-            <span
-              className="figures col-start-3 text-right text-label"
-              style={row(k)}
-            >
-              {r.now == null ? MISSING : formatNow(r.now)}
-            </span>
+      {model.mapRows((r, k) => (
+        <div
+          key={r.key}
+          className={cn("contents", r.startsGroup && "[&>*]:mt-2")}
+        >
+          <span
+            className="figures col-start-1 truncate text-caption text-muted-foreground"
+            style={row(k)}
+            title={r.title}
+          >
+            {r.label}
+          </span>
+          <div
+            data-reveal
+            className="col-start-2 grid origin-bottom gap-px"
+            style={{
+              ...row(k),
+              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+            }}
+          >
+            <ClosedCells
+              values={r.values.slice(0, -1)}
+              firstKey={firstKey}
+              min={scale.min}
+              max={scale.max}
+            />
+            <Cell
+              v={r.values[cols - 1] ?? null}
+              min={scale.min}
+              max={scale.max}
+            />
           </div>
-        );
-      })}
+          <span
+            className="figures col-start-3 text-right text-label"
+            style={row(k)}
+          >
+            {r.current}
+          </span>
+        </div>
+      ))}
       {!loading &&
         gaps &&
         gaps.length > 0 &&
@@ -266,24 +257,22 @@ export function HeatMatrix({
   );
 }
 
-/** Swatch alphas, faint to strong, when the caller doesn't pass its own. */
-const DEFAULT_STOPS = [0.08, 0.35, 0.65, 0.95] as const;
-
 /**
  * The min-to-max swatch legend that sits in a heat matrix card header.
  * `stops` are swatch alphas (0 to 1) on the `heatmapAlpha` ramp.
  */
 export function HeatScaleLegend({
   accent = "cpu",
-  minLabel = "0%",
-  maxLabel = "100%",
-  stops = DEFAULT_STOPS,
+  minLabel,
+  maxLabel,
+  stops,
 }: {
   accent?: Accent;
   minLabel?: string;
   maxLabel?: string;
   stops?: readonly number[];
 }) {
+  const legend = heatScaleLegendModel({ minLabel, maxLabel, stops });
   return (
     <div
       aria-hidden
@@ -291,9 +280,9 @@ export function HeatScaleLegend({
       style={accentVars(accent)}
     >
       <span className="figures mr-1 text-caption text-muted-foreground">
-        {minLabel}
+        {legend.min}
       </span>
-      {stops.map((a) => (
+      {legend.stops.map((a) => (
         <span
           key={a}
           className="h-2.5 w-3.5 rounded-mark"
@@ -303,7 +292,7 @@ export function HeatScaleLegend({
         />
       ))}
       <span className="figures ml-1 text-caption text-muted-foreground">
-        {maxLabel}
+        {legend.max}
       </span>
     </div>
   );

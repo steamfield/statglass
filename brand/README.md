@@ -1,7 +1,7 @@
 # StatGlass brand assets
 
-The SVGs here are the sources. Everything in `exports/` and the site's icons and
-social card are generated from them by `build.mjs`; don't edit those by hand.
+The SVGs here are the sources. Run `build.mjs` to regenerate the raster exports,
+site icons, social card, and iPhone assets.
 
 | Source                     | Use                                                   |
 | -------------------------- | ----------------------------------------------------- |
@@ -25,6 +25,13 @@ full-bleed square because iOS and launchers apply their own mask, and `favicon.i
 48), the app icon on its squircle for Google results and other crawlers. Browser tabs keep
 `favicon.svg`. With `--og` it also writes `docs-site/public/og.jpg`, the same card at
 1200x628 as JPEG, because LinkedIn and some chat unfurlers drop WebP og:images.
+
+The iPhone build uses four 1024×1024 PNGs in `apps/mobile/assets/`.
+
+- `icon-light.png` uses the opaque, full-bleed crop of the macOS icon.
+- `icon-dark.png` uses the same cyan grid on a transparent background so iOS can add its dark fill.
+- `icon-tinted.png` uses a grayscale grid with a translucent dark backing. Expo composites it onto white before iOS applies the tint.
+- `splash-icon.png` uses the standalone cyan mark so the launch screen's theme background shows through.
 
 ## Regenerating
 

@@ -10,6 +10,8 @@ pub(super) async fn bundle(
     layout: AgentLayout,
     paths: &AgentPaths,
     user: OsString,
+    targets: &[BundleTarget],
+    port: Option<u16>,
 ) -> anyhow::Result<BundleHost> {
     let status = crate::commands::status(layout, paths).await;
     ensure!(
@@ -27,22 +29,25 @@ pub(super) async fn bundle(
         .into_string()
         .ok()
         .context("the SSH login is not UTF-8")?;
-    let addresses =
-        usable_interface_addresses().context("reading this host's interface addresses")?;
-    let targets = bundle_targets(&info.display_name, &addresses);
+    let targets = if targets.is_empty() {
+        let addresses =
+            usable_interface_addresses().context("reading this host's interface addresses")?;
+        bundle_targets(&info.display_name, &addresses)
+    } else {
+        targets.to_vec()
+    };
     ensure!(
         !targets.is_empty(),
         "this host has no LAN or Tailscale address for the phone to dial"
     );
-    let host_keys = host_keys(Path::new("/etc/ssh")).context(
-        "Pairing uses OpenSSH on port 22 with standard SSH host public-key files in /etc/ssh",
-    )?;
+    let host_keys = host_keys(Path::new("/etc/ssh"))
+        .context("Pairing uses the standard OpenSSH host public-key files in /etc/ssh")?;
     Ok(BundleHost {
         host_id: info.id,
         name: info.display_name,
         os: std::env::consts::OS.into(),
         user,
-        port: None,
+        port,
         targets,
         host_keys,
     })

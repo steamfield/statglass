@@ -25,6 +25,16 @@ export const HEADER_BYTES_PER_PACKET = 66 as const;
 
 export const HISTORY_COMMIT_MS = 300000 as const;
 
+export const HISTORY_MAX_ANSWER_BYTES = 524288 as const;
+
+export const HISTORY_MAX_CORE_SERIES = 256 as const;
+
+export const HISTORY_MAX_EVENTS = 200 as const;
+
+export const HISTORY_MAX_POINTS = 500 as const;
+
+export const HISTORY_MAX_SERIES = 32 as const;
+
 export const HISTORY_PROJECTION = {"fill_minutes":[{"days":30,"mb":139.7,"series":150},{"days":30,"mb":203.4,"series":250}],"fill_rolled":[{"days":30,"mb":69.9,"series":150},{"days":30,"mb":95.7,"series":250}],"minute_days":7,"quarter_factor":15,"trim_low_water":0.9,"usage_fill":{"finest_day_bytes":35000000,"fixed_identity_bytes":200000,"identity_day_bytes":11550000,"measured_ms":2592000000,"minute_day_bytes":6750000,"quarter_day_bytes":1360000}} as const;
 
 export const HISTORY_RECENT_MS = 900000 as const;
@@ -359,6 +369,15 @@ export type BuildInfo = {
 	protocol_max: number,
 };
 
+export type BundleReconcile = {
+	from: HostId,
+	preview_id: number,
+	new: OfferedHost[],
+	removed: HostId[],
+	changed: HostId[],
+	unavailable: UnavailableHostInfo[],
+};
+
 /**  A byte count as a plain JS `number`; exact below 2^53 (8 PiB). */
 export type ByteCount = number;
 
@@ -498,6 +517,8 @@ export type Cmp = "gt" | "ge" | "lt" | "le";
 export type CommandError = { kind: "update"; message: string } |
 /**  SSH login to the other Mac failed (key, agent or account). */
 { kind: "remote_auth"; message: string } |
+/**  The phone needs its local SSH key before it can connect. */
+{ kind: "phone_key_unavailable" } |
 /**  The other Mac's host key isn't trusted yet, or needs checking in Terminal. */
 { kind: "host_key_unknown"; message: string } |
 /**  The other Mac can't run this StatGlass (architecture, macOS or protocol version). */
@@ -510,6 +531,8 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "remote_busy"; message: string } |
 /**  A connected, current host does not offer what was asked (its edition or setup). */
 { kind: "remote_unsupported"; message: string } |
+/**  The host refused the query. */
+{ kind: "remote_refused"; message: string } |
 /**  The host's alert rules changed. Reload them before saving again. */
 { kind: "remote_rules_changed"; message: string } |
 /**
@@ -590,7 +613,9 @@ export type CommandError = { kind: "update"; message: string } |
 /**  The other Mac's StatGlass has remote monitoring turned off. */
 { kind: "remote_monitoring_off"; message: string } |
 /**  Pairing a phone, or editing the paired devices, failed (RFC 2.4, 2.5). */
-{ kind: "pairing"; reason: PairingFailure; message: string };
+{ kind: "pairing"; reason: PairingFailure; message: string } |
+/**  Resolving, applying or encoding a handover failed. */
+{ kind: "handover"; message: string };
 
 export type Condition =
 /**  Any series matching `series` compared with `value` in the metric's unit. */
@@ -618,11 +643,7 @@ export type CoreKind = "performance" | "efficiency" |
 
 /**  The phone's choices about mobile data, from its settings. */
 export type DataPolicy = {
-	/**
-	 *  Sync history while the phone's path is cellular (expensive). Off: history waits
-	 *  for Wi-Fi; live frames still flow.
-	 */
-	sync_on_cellular: boolean,
+	live_on_cellular: boolean,
 };
 
 /**  Why a delivery failed, as far as the caller needs to tell failures apart. */
@@ -663,6 +684,12 @@ export type DeliveryRecord = {
 	at_ms: number,
 	outcome: DeliveryOutcome,
 };
+
+export type DemandLevel =
+/**  A host summary every five seconds. */
+"compact" |
+/**  A live frame every tick. */
+"full";
 
 /**  One place a fired alert is sent to, saved in `alert-destinations.json`. */
 export type Destination = {
@@ -718,6 +745,17 @@ export type DestinationView = {
 	destination: Destination,
 	/**  `None` until something has been sent to it since launch. */
 	last: DeliveryRecord | null,
+};
+
+export type DeviceIntentInfo = {
+	host: HostId,
+	host_name: string,
+	device: string,
+	device_name: string,
+	op: string,
+	state: string,
+	reason: string | null,
+	attempts: number,
 };
 
 /**  One block device a host's `disk.*` series cover. */
@@ -1418,6 +1456,22 @@ export type GeneralSettings = {
 	chart_window?: ChartWindow,
 };
 
+export type HandoverOffer = {
+	text: string,
+	qr_svg: string,
+	hosts: string[],
+	unavailable: HandoverUnavailableInfo[],
+	issued_ms: number,
+};
+
+export type HandoverReasonInfo = "proxy_jump" | "proxy_command" | "lan_literal" | "no_host_key" | "unresolvable";
+
+export type HandoverUnavailableInfo = {
+	id: HostId,
+	name: string,
+	reason: HandoverReasonInfo,
+};
+
 /**  One local day of the heatmap. */
 export type HeatmapDay = {
 	date: string,
@@ -1523,6 +1577,8 @@ export type HistoricalUsageRequest = {
 	 */
 	app_names: string[],
 };
+
+export type HistoryClamp = { kind: "points" } | { kind: "series" } | { kind: "events" } | { kind: "bytes" } | { kind: "unknown" };
 
 /**
  *  What history costs on this machine, measured from the database (`history_growth`):
@@ -1664,6 +1720,41 @@ export type HistoryUnavailableReason =
 /**  Anything else: an I/O error opening it, or the local host could not be registered. */
 { kind: "failed"; message: string };
 
+export type HostAddressesInfo = {
+	interface: string | null,
+	link_mbps: number | null,
+	ipv4: string[],
+	ipv6: string[],
+	public_ip: PublicIpInfo,
+	as_of_ms: number,
+};
+
+export type HostDemand = {
+	host: HostId,
+	level: DemandLevel,
+};
+
+export type HostHistoryPage = {
+	tier: Tier,
+	bucket_ms: number,
+	complete_to_ms: number,
+	series: HistorySeries[],
+	gaps: Gap[],
+	events: Event[],
+	stats: SeriesHistoryStats[],
+	clamped: HistoryClamp[],
+};
+
+export type HostHistoryRequest = {
+	host: HostId,
+	series: SeriesSelector[],
+	from_ms: number,
+	/**  `None` means ending now on the host. */
+	to_ms: number | null,
+	max_points: number,
+	events_for: Module | null,
+};
+
 /**  A host's persistent identity. Serialized as the hyphenated UUID string. */
 export type HostId = string;
 
@@ -1720,6 +1811,7 @@ export type HostRecord = {
 };
 
 export type HostVitals = {
+	as_of_ms: number | null,
 	cpu_pct: number | null,
 	memory_pct: number | null,
 	load_1m: number | null,
@@ -1740,6 +1832,8 @@ export type HostVitals = {
 export type HostsChanged = {
 	hosts: HostRecord[],
 };
+
+export type IncompatibleSide = "host" | "app";
 
 /**
  *  A module's status item of its own (D-080). Not every mode is offered for every
@@ -2108,6 +2202,35 @@ export type MobileCall =
 { method: "authorized_key_line"; args: {
 	comment: string,
 } } |
+/**  `PairingPreview`. */
+{ method: "preview_pairing"; args: {
+	text: string,
+} } |
+/**  `PairedHost`. */
+{ method: "pair"; args: {
+	text: string,
+	device_name: string,
+	model: string,
+} } |
+/**  `null`. Removes a paired host. */
+{ method: "remove_host"; args: {
+	host: HostId,
+} } |
+/**  `PairingState`. */
+{ method: "pairing_state" } |
+/**  `BundleReconcile`. */
+{ method: "decode_bundle"; args: {
+	text: string,
+} } |
+/**  `null`. Persists the selected hosts. */
+{ method: "add_handover_hosts"; args: {
+	hosts: OfferedHost[],
+	preview_id?: number | null,
+} } |
+/**  `null`. Replaces screen demand for all hosts. */
+{ method: "set_demand"; args: {
+	demand: HostDemand[],
+} } |
 /**  `HostRecord[]`, in the order the hosts were set. */
 { method: "list_hosts" } |
 /**  `MobileRemoteHost[]`, same order. */
@@ -2124,10 +2247,6 @@ export type MobileCall =
 { method: "host_vitals"; args: {
 	host: HostId,
 } } |
-/**  `null`. Summary history demand from the hosts list. */
-{ method: "set_hosts_recent_interest"; args: {
-	on: boolean,
-} } |
 /**  `null`. Dials a host now. */
 { method: "retry_remote_host"; args: {
 	host: HostId,
@@ -2138,13 +2257,18 @@ export type MobileCall =
 { method: "unsubscribe_live"; args: {
 	stream: number,
 } } |
-/**  `HistoryPage`. */
-{ method: "query_history"; args: HistoryRequest } |
-/**  `Event[]`, oldest first. */
-{ method: "query_events"; args: {
+/**  `HostHistoryPage`. */
+{ method: "host_history"; args: HostHistoryRequest } |
+/**  `HostAddressesInfo`. */
+{ method: "network_addresses"; args: {
 	host: HostId,
-	from_ms: number,
-	to_ms: number,
+} } |
+/**  `null`. Replaces a stream's process interest. */
+{ method: "set_process_interest"; args: {
+	host: HostId,
+	interested: boolean,
+	view: ProcessView | null,
+	stream: number | null,
 } };
 
 /**  What the session asks the host to run. */
@@ -2158,7 +2282,7 @@ export type MobileCommand =
 
 /**
  *  What the core starts with. The app's data directory comes from Swift, which owns the
- *  file protection and backup exclusion of the mirrors (RFC 3.4, 3.8).
+ *  file protection.
  */
 export type MobileConfig = {
 	hosts: MobileHost[],
@@ -2185,6 +2309,7 @@ export type MobileHost = {
 	/**  The host keys pairing pinned; at least one. */
 	host_keys: MobileHostKey[],
 	command: MobileCommand,
+	removed_by_controller?: boolean,
 };
 
 /**  A pinned host key, as `ssh-keygen -l` prints it. */
@@ -2217,11 +2342,14 @@ export type MobileLiveRequest = {
 export type MobileRemoteHost = {
 	id: HostId,
 	name: string,
+	source_mac?: HostId | null,
+	removed_by_controller?: boolean,
 	os: OsKind,
 	targets: MobileTarget[],
-	/**  This host's share of the phone's mirror storage. */
-	mirror_budget_mb: number,
 	connection: RemoteConnection,
+	open_error: CommandError | null,
+	/**  The live data level the core applies after evaluating data policy. */
+	demand: DemandLevel | null,
 	/**  Host clock, ms. */
 	last_seen_ms: number | null,
 	/**  End of the newest mirrored bucket on disk (host clock). */
@@ -2308,21 +2436,6 @@ export type NavigateRequested = {
 	route: string,
 };
 
-/**  The primary interface's addresses (`get_network_addresses`). */
-export type NetworkAddresses = {
-	/**  The interface carrying the default route, as `LiveStatus.primary_iface`. */
-	iface: string | null,
-	/**  Dotted quads, in the order the system lists them. */
-	ipv4: string[],
-	/**  Link-local addresses are left out. */
-	ipv6: string[],
-	/**
-	 *  The interface IPv4 internet traffic leaves through: a full-tunnel VPN's `utun`
-	 *  while `iface` stays on Wi-Fi, else usually `iface`. `None` without an IPv4 route.
-	 */
-	egress: string | null,
-};
-
 /**
  *  `query_network_by_app`: which apps moved the interface's bytes over a range (D-089).
  *
@@ -2404,6 +2517,16 @@ export type NewerRule = {
 	id: string | null,
 };
 
+export type OfferedHost = {
+	id: HostId,
+	name: string,
+	os: string,
+	user: string,
+	port: number | null,
+	targets: MobileTarget[],
+	host_keys: MobileHostKey[],
+};
+
 export type OnboardingPatch = {
 	completed?: boolean | null,
 };
@@ -2459,8 +2582,15 @@ export type PairedDeviceInfo = {
 	last_seen_ms: number | null,
 };
 
+export type PairedHost = {
+	id: HostId,
+	name: string,
+	offered: OfferedHost[],
+	unavailable: UnavailableHostInfo[],
+};
+
 /**  Why a pairing request failed. */
-export type PairingFailure = "denied" | "expired" | "used" | "unknown" | "unavailable" | "invalid";
+export type PairingFailure = "denied" | "expired" | "used" | "unknown" | "unavailable" | "monitoring_off" | "invalid";
 
 /**  One open pairing, as the sheet shows it. */
 export type PairingOffer = {
@@ -2474,6 +2604,23 @@ export type PairingOffer = {
 	expires_ms: number,
 };
 
+export type PairingPreview = {
+	host_id: HostId,
+	name: string,
+	os: string,
+	user: string,
+	targets: MobileTarget[],
+	code: string,
+	expires_ms: number,
+	can_hand_over: boolean,
+};
+
+export type PairingState = {
+	hosts: number,
+	/**  The phone was restored and needs to pair again. */
+	key_changed: boolean,
+};
+
 /**  Where an open pairing stands. */
 export type PairingStatus =
 /**  No phone has used the QR yet. */
@@ -2481,7 +2628,7 @@ export type PairingStatus =
 /**  A phone used the QR and waits for the user's approval. */
 { kind: "pending"; device_name: string; model: string; code: string } |
 /**  Approved: `device` is the new device's tag. */
-{ kind: "paired"; device: string } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; message: string };
+{ kind: "paired"; device: string } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; reason: PairingFailure; message: string };
 
 /**  Why Performance mode is in effect (D-088). */
 export type PerformanceReason = "off" |
@@ -2681,6 +2828,12 @@ export type ProcessesAt = {
 	rows: StoredProcess[],
 };
 
+export type PublicIpInfo = { state: "known"; detail: {
+	ip: string,
+} } | { state: "pending" } | { state: "unavailable"; detail: {
+	reason: string,
+} } | { state: "unknown" };
+
 /**  A value the combined item prints after the bars, with its marker (D-102). */
 export type Readout =
 /**  `cpu.total`. */
@@ -2750,6 +2903,7 @@ export type RemoteConnection = {
 	route: RemoteRoute | null,
 	sync: RemoteSync,
 	failure: RemoteFailureKind | null,
+	incompatible_side: IncompatibleSide | null,
 	message: string | null,
 	/**
 	 *  Per-route causes of the last failure; empty while connected or when the failure
@@ -2769,7 +2923,7 @@ export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "
 /**  The other Mac answered SSH but its StatGlass app is not running. */
 "app_not_running" |
 /**  The other Mac's StatGlass has remote monitoring turned off. */
-"monitoring_off" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down";
+"monitoring_off" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down" | "phone_key_unavailable" | "internal";
 
 export type RemoteHostConfig = {
 	id: string,
@@ -2954,6 +3108,19 @@ export type SensorDump = {
 export type SensorReading = {
 	key: SeriesKey,
 	value: number | null,
+};
+
+export type SeriesHistoryStats = {
+	key: SeriesKey,
+	avg: number | null,
+	peak: number | null,
+	/**  Time in the range with a reading; `None` from a host that predates range totals. */
+	measured_ms: number | null,
+	/**
+	 *  `avg` times the measured seconds: bytes for a bytes-per-second series. `None` when
+	 *  nothing was measured or the host predates range totals.
+	 */
+	integral: number | null,
 };
 
 /**
@@ -3273,6 +3440,8 @@ export type StoredProcess = {
 /**  What `subscribe_live` did before returning. */
 export type SubscriptionInfo = {
 	host: HostId,
+	/**  The recent window available for catch-up. */
+	recent_ms: number,
 	/**
 	 *  This subscription's id (the channel's): pass it to `set_process_interest` so the
 	 *  interest belongs to this page load and ends with it.
@@ -3327,6 +3496,12 @@ export type TierRequest =
  *  minutes cover it (7 days), else 15 min.
  */
 "auto" | "s10" | "m1" | "m15";
+
+export type UnavailableHostInfo = {
+	id: HostId,
+	name: string,
+	reason: HandoverReasonInfo,
+};
 
 export type UnitSettings = {
 	temperature: TemperatureUnit,

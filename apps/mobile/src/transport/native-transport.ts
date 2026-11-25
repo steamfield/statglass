@@ -4,7 +4,9 @@
  */
 import type {
   BuildInfo,
+  CommandError,
   DataPolicy,
+  HostId,
   HostRecord,
   MobileConfig,
   MobileEvent,
@@ -13,21 +15,29 @@ import type {
 } from "@core/generated/types";
 import type { CommandResult } from "@core/transport";
 import { unwrap } from "@core/transport/query";
-import {
-  getStatglassNative,
-  type StatglassNativeModule,
-  toNativeModuleError,
-} from "@native/statglass-native";
+import type { StatglassNativeModule } from "@native/statglass-native";
+import { useStore } from "zustand";
+import { createStore, type StoreApi } from "zustand/vanilla";
+import type { PhonePairing } from "@/data/pairing-seam";
 import type { PhoneTransport } from "@/data/seam";
-import { callCore, parseEnvelope, parseEvent } from "./envelope";
+import {
+  callCore,
+  callCoreByMethod,
+  parseEnvelope,
+  parseEvent,
+  preparePhoneKey,
+} from "./envelope";
+import { createHandoverCommands } from "./handover";
 import { createLiveStreams } from "./live-streams";
 import { toRemoteHostRecord } from "./remote-hosts";
 
 /** The seam plus what only the native core does. */
 export interface NativeTransport extends PhoneTransport {
+  readonly handover: ReturnType<typeof createHandoverCommands>;
   /** Replaces the configured hosts and serializes writes on this transport. */
   setHosts(hosts: MobileHost[]): Promise<CommandResult<null>>;
-  /** Updates whether the core syncs history over cellular. */
+  removeHost(host: HostId): Promise<CommandResult<null>>;
+  /** Updates the live data policy. */
   setDataPolicy(policy: DataPolicy): Promise<CommandResult<null>>;
   /** The `authorized_keys` line for this phone's key. */
   authorizedKeyLine(comment: string): Promise<CommandResult<string>>;
@@ -37,24 +47,39 @@ export interface NativeTransport extends PhoneTransport {
   dispose(): void;
 }
 
+type Pair = PhonePairing["pair"];
+type NativePairing = PhonePairing & {
+  pair(...args: [...Parameters<Pair>, signal?: AbortSignal]): ReturnType<Pair>;
+};
+
+// Keep phone-only pairing and policy feedback off the shared transport seam.
+const services = new WeakMap<
+  NativeTransport,
+  { pairing: NativePairing; policyError: StoreApi<CommandError | null> }
+>();
+const noPolicyError = createStore<CommandError | null>(() => null);
+
 /**
  * Starts the core with `config` and returns the transport over it.
- * @throws {NativeModuleError} if Swift rejects with an `ERR_STATGLASS_*` phone-key error
  * @throws the original Expo error if data-directory setup fails
  */
 export async function startNativeTransport(
   native: StatglassNativeModule,
   config: MobileConfig
 ): Promise<CommandResult<NativeTransport>> {
-  const json = await native
-    .start(JSON.stringify(config))
-    .catch((error: unknown) => {
-      throw toNativeModuleError(error) ?? error;
-    });
-  const result = parseEnvelope<null>(json);
+  const result = await startNativeCore(native, config);
   return result.status === "error"
     ? result
     : { status: "ok", data: createNativeTransport(native) };
+}
+
+/** Starts the Rust core independently of the JS transport's lifetime. */
+export async function startNativeCore(
+  native: StatglassNativeModule,
+  config: MobileConfig
+): Promise<CommandResult<null>> {
+  const json = await native.start(JSON.stringify(config));
+  return parseEnvelope<null>(json);
 }
 
 /** The transport over a core that has already started. */
@@ -84,7 +109,9 @@ export function createNativeTransport(
     return unsubscribe;
   }
 
-  return {
+  const policyError = createStore<CommandError | null>(() => null);
+  const transport: NativeTransport = {
+    handover: createHandoverCommands(native),
     listHosts: () =>
       unwrap(callCore<HostRecord[]>(native, { method: "list_hosts" })),
     async listRemoteHosts() {
@@ -106,17 +133,25 @@ export function createNativeTransport(
       callCore(native, { method: "get_capabilities", args: { host } }),
     hostVitals: (host) =>
       callCore(native, { method: "host_vitals", args: { host } }),
-    setHostsRecentInterest: (on) =>
-      callCore(native, { method: "set_hosts_recent_interest", args: { on } }),
     retryRemoteHost: (host) =>
       callCore(native, { method: "retry_remote_host", args: { host } }),
     subscribeLive: live.open,
-    queryHistory: (args) => callCore(native, { method: "query_history", args }),
-    queryEvents: (host, from_ms, to_ms) =>
+    hostHistory: (args) => callCore(native, { method: "host_history", args }),
+    networkAddresses: (host) =>
       callCore(native, {
-        method: "query_events",
-        args: { host, from_ms, to_ms },
+        method: "network_addresses",
+        args: { host },
       }),
+    setDemand: (demand) =>
+      callCore(native, { method: "set_demand", args: { demand } }),
+    setProcessInterest: (host, interested, view, stream) =>
+      callCore(native, {
+        method: "set_process_interest",
+        args: { host, interested, view, stream },
+      }),
+    pairingState: () => callCore(native, { method: "pairing_state" }),
+    removeHost: (host) =>
+      callCore(native, { method: "remove_host", args: { host } }),
     setHosts(hosts) {
       // A debug screen can unmount during Connect or reopen during cleanup.
       const write = hostsPending.then(() =>
@@ -125,8 +160,17 @@ export function createNativeTransport(
       hostsPending = write.then(() => undefined);
       return write;
     },
-    setDataPolicy: (args) =>
-      callCore(native, { method: "set_data_policy", args }),
+    async setDataPolicy(args) {
+      const result = await callCoreByMethod(native, {
+        method: "set_data_policy",
+        args,
+      });
+      policyError.setState(
+        result.status === "error" ? result.error : null,
+        true
+      );
+      return result;
+    },
     authorizedKeyLine: (comment) =>
       callCore(native, { method: "authorized_key_line", args: { comment } }),
     buildInfo: () => callCore(native, { method: "build_info" }),
@@ -136,39 +180,37 @@ export function createNativeTransport(
       live.dispose();
     },
   };
-}
-
-// The debug screen owns its subscriptions. The core itself starts once per app run.
-const debugCores = new WeakMap<
-  StatglassNativeModule,
-  Promise<NativeTransport>
->();
-
-/** Starts the empty core so the debug screen can read the key before connecting. */
-export function openDebugCore(
-  syncOnCellular: boolean
-): Promise<NativeTransport> | null {
-  const native = getStatglassNative();
-  if (native === null) return null;
-  const existing = debugCores.get(native);
-  if (existing) return existing;
-  const starting = unwrap(
-    startNativeTransport(native, {
-      hosts: [],
-      data: { sync_on_cellular: syncOnCellular },
-    })
-  ).catch((error: unknown) => {
-    debugCores.delete(native);
-    throw error;
+  services.set(transport, {
+    policyError,
+    pairing: {
+      previewPairing: (text) =>
+        callCoreByMethod(native, { method: "preview_pairing", args: { text } }),
+      async pair(text, deviceName, model, signal?: AbortSignal) {
+        await preparePhoneKey(native);
+        if (signal?.aborted) {
+          return {
+            status: "error",
+            error: { kind: "internal", message: "Pairing cancelled" },
+          };
+        }
+        return callCoreByMethod(native, {
+          method: "pair",
+          args: { text, device_name: deviceName, model },
+        });
+      },
+    },
   });
-  debugCores.set(native, starting);
-  return starting;
+  return transport;
 }
 
-/** The debug core if startup has begun. It stays available after the screen closes. */
-export function getDebugCore(): Promise<NativeTransport> | null {
-  const native = getStatglassNative();
-  return native === null ? null : (debugCores.get(native) ?? null);
+export function nativePairing(core: NativeTransport): NativePairing {
+  const pairing = services.get(core)?.pairing;
+  if (!pairing) throw new Error("Pairing requires a native core transport");
+  return pairing;
+}
+
+export function useDataPolicyError(core: NativeTransport | null) {
+  return useStore((core && services.get(core)?.policyError) || noPolicyError);
 }
 
 /** Whether `transport` is the native one (it carries the native-only calls). */

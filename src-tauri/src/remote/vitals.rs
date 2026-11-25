@@ -1,5 +1,5 @@
 //! Host vitals shared with the mobile command layer.
-pub use statglass_ipc::vitals::{HostVitals, MemoryPressure, host_vitals};
+pub use statglass_ipc::vitals::{HostVitals, MemoryPressure};
 
 #[cfg(test)]
 mod tests {

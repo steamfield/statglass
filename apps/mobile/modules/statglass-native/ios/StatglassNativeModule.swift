@@ -6,6 +6,8 @@ import os
 /// and events as module events, and drives the core's lifecycle from the app's state and
 /// network path. It never reads the JSON it carries.
 public class StatglassNativeModule: Module {
+  private static let phoneKeyQueue = DispatchQueue(label: "app.statglass.phone-key", qos: .userInitiated)
+
   private struct State {
     var core: MobileCore?
     var destroyed = false
@@ -65,14 +67,22 @@ public class StatglassNativeModule: Module {
       }
       do {
         let dataDir = try Self.prepareDataDirectory()
-        try signer.prepare()
         promise.resolve(core.start(dataDir: dataDir.path, configJson: configJson))
-      } catch let failure as NativeFailure {
-        promise.reject(failure.exception)
       } catch {
         promise.reject(error)
       }
     }.runOnQueue(AppLifecycle.coreQueue)
+
+    AsyncFunction("preparePhoneKey") { (promise: Promise) in
+      do {
+        try signer.prepare()
+        promise.resolve()
+      } catch let failure as NativeFailure {
+        promise.reject(failure.code, failure.description)
+      } catch {
+        promise.reject(error)
+      }
+    }.runOnQueue(Self.phoneKeyQueue)
 
     AsyncFunction("call") { (method: String, argsJson: String, promise: Promise) in
       Task { [state, calls] in
@@ -132,13 +142,10 @@ public class StatglassNativeModule: Module {
   private static func prepareDataDirectory() throws -> URL {
     let files = FileManager.default
     let support = try files.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-    var directory = support.appendingPathComponent("statglass", isDirectory: true)
+    let directory = support.appendingPathComponent("statglass", isDirectory: true)
     let protection: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
     try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: protection)
     try files.setAttributes(protection, ofItemAtPath: directory.path)
-    var resources = URLResourceValues()
-    resources.isExcludedFromBackup = true
-    try directory.setResourceValues(resources)
     return directory
   }
 }
@@ -146,34 +153,35 @@ public class StatglassNativeModule: Module {
 /// Both PhoneKey implementations share the same synchronized Keychain storage.
 private final class PhoneKeySigner: NativeSigner, @unchecked Sendable {
   private let key: PhoneKey
-  private let cachedPoint = OSAllocatedUnfairLock<Data?>(initialState: nil)
 
   init(_ key: PhoneKey) {
     self.key = key
   }
 
   func prepare() throws {
-    try cachedPoint.withLock { point in
-      if point == nil { point = try key.publicKey() }
-    }
+    _ = try key.publicKey(createIfMissing: true)
   }
 
-  func publicKey() -> Data {
-    // Startup loads the key before the core can use this callback.
-    cachedPoint.withLock { $0 ?? Data() }
+  func publicKey() throws -> Data {
+    do {
+      return try key.publicKey(createIfMissing: false)
+    } catch let failure as NativeFailure {
+      throw signerError(failure)
+    }
   }
 
   func sign(data: Data) throws -> Data {
     do {
       return try key.sign(data)
     } catch let failure as NativeFailure {
-      switch failure {
-      case .keychain, .secureEnclave:
-        throw NativeSignerError.Unavailable(message: failure.description)
-      case .camera, .localNetwork:
-        throw NativeSignerError.Unexpected(message: failure.description)
-      }
+      throw signerError(failure)
     }
+  }
+
+  private func signerError(_ failure: NativeFailure) -> NativeSignerError {
+    failure.isKeyUnavailable
+      ? .Unavailable(message: failure.description)
+      : .Unexpected(message: failure.description)
   }
 }
 

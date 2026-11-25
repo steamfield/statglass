@@ -16,6 +16,7 @@ pub enum PairingFailure {
     Used,
     Unknown,
     Unavailable,
+    MonitoringOff,
     Invalid,
 }
 
@@ -24,7 +25,7 @@ impl From<PairError> for PairingFailure {
         match error {
             PairError::Used => Self::Used,
             PairError::Unknown => Self::Unknown,
-            PairError::Unavailable => Self::Unavailable,
+            PairError::Unavailable | PairError::NotRunning | PairError::Busy => Self::Unavailable,
             PairError::Invalid => Self::Invalid,
         }
     }
@@ -35,6 +36,8 @@ impl From<RemoteError> for CommandError {
         let message = error.to_string();
         match error {
             RemoteError::Authentication(_) => Self::RemoteAuth { message },
+            RemoteError::PhoneKeyUnavailable(_) => Self::PhoneKeyUnavailable,
+            RemoteError::SignerInternal(_) => Self::Internal { message },
             RemoteError::HostKey(_) => Self::HostKeyUnknown { message },
             RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. } => {
                 Self::RemoteIncompatible { message }
@@ -53,7 +56,8 @@ impl From<RemoteError> for CommandError {
             },
             RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
             RemoteError::Stale(_) => Self::RemoteRulesChanged { message },
-            RemoteError::Refused(_) => Self::Internal { message },
+            RemoteError::Refused(_) => Self::RemoteRefused { message },
+            RemoteError::Internal(_) => Self::Internal { message },
             RemoteError::Pairing(refusal) => Self::Pairing {
                 reason: match refusal {
                     PairingRefusal::Denied => PairingFailure::Denied,
@@ -76,6 +80,54 @@ impl From<RemoteError> for CommandError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_query_refusal_keeps_its_kind_and_message_on_the_wire() {
+        let reason = "This session cannot start a disk scan";
+        let command = CommandError::from(RemoteError::Refused(reason.into()));
+        assert_eq!(
+            serde_json::to_value(command).unwrap(),
+            serde_json::json!({"kind": "remote_refused", "message": reason}),
+        );
+    }
+
+    #[test]
+    fn remote_worker_failure_reaches_ipc_as_internal() {
+        let reason = "query worker stopped";
+        let command = CommandError::from(RemoteError::Internal(reason.into()));
+        assert_eq!(
+            serde_json::to_value(command).unwrap(),
+            serde_json::json!({"kind": "internal", "message": reason}),
+        );
+    }
+
+    #[test]
+    fn store_command_error_retains_nested_io_cause_without_repeating_context() {
+        #[derive(Debug, thiserror::Error)]
+        #[error("opening history")]
+        struct OpenHistory(#[source] std::io::Error);
+
+        let error = statglass_store::StoreError::Io(std::io::Error::other(OpenHistory(
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+        )));
+        assert_eq!(
+            CommandError::from(error),
+            CommandError::Store {
+                message: "i/o: opening history: permission denied".into()
+            },
+        );
+    }
+
+    #[test]
+    fn an_unavailable_phone_key_has_its_own_diagnostic_free_command_error() {
+        let command = CommandError::from(RemoteError::PhoneKeyUnavailable(
+            "Could not load the phone key (OSStatus -25300)".into(),
+        ));
+        assert_eq!(
+            serde_json::to_value(command).unwrap(),
+            serde_json::json!({"kind": "phone_key_unavailable"})
+        );
+    }
 
     #[test]
     fn pairing_refusals_keep_their_reason_and_message_in_command_errors() {

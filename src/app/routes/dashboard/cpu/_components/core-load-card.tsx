@@ -1,3 +1,4 @@
+import type { ClusterView } from "@core/cpu-clusters";
 import { resolutionWords } from "@core/format";
 import { spanWords } from "@core/live-window";
 import { sk } from "@core/series-key";
@@ -13,7 +14,6 @@ import { useModuleEnd } from "~/hooks/use-module-end";
 import { useHeld } from "~/hooks/use-ring";
 import { CoreHeatmap } from "~/widgets/core-heatmap";
 import { HeatScaleLegend } from "~/widgets/heat-matrix";
-import type { ClusterView } from "../_lib/clusters";
 
 /**
  * Per-core load over the chart window (D-091) in about 60 columns from the

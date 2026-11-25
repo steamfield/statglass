@@ -105,5 +105,8 @@
     "@expo/fingerprint": {
       "minimatch": "11.0.1"
     }
+  },
+  "patchedDependencies": {
+    "react-native-reorderable-list@0.18.3": "patches/react-native-reorderable-list@0.18.3.patch"
   }
 }

@@ -1,8 +1,42 @@
 //! What the shell is told about a source's connection.
+use std::sync::Arc;
+
 use crate::network::{self, LocalNetwork};
 use crate::{RemoteError, Route, UnreachableKind};
 use serde::{Deserialize, Serialize};
-use statglass_schema::HostId;
+use statglass_proto::Hello;
+use statglass_schema::{Capabilities, HostId, HostInfo, lock::LockExt};
+
+use super::RemoteSource;
+
+#[derive(Default)]
+pub(super) struct PeerFacts {
+    info: Option<Arc<HostInfo>>,
+    pub(super) capabilities: Capabilities,
+}
+
+impl PeerFacts {
+    pub(super) fn from_hello(hello: &Hello) -> Self {
+        Self {
+            info: Some(Arc::new(hello.host.info.clone())),
+            capabilities: hello.capabilities.clone(),
+        }
+    }
+}
+
+impl RemoteSource {
+    /// Hardware metadata from the most recent successful handshake.
+    pub fn peer_info(&self) -> Option<Arc<HostInfo>> {
+        self.peer.lock_ok().info.clone()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IncompatibleSide {
+    Host,
+    App,
+}
 
 /// Typed classification of why the last remote connection attempt failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +64,11 @@ pub enum ConnectionFailureKind {
     LocalOffline,
     /// The failing route is Tailscale and Tailscale is not up on this Mac.
     TailscaleDown,
+    /// The phone's local SSH key is missing or locked.
+    PhoneKeyUnavailable,
+    /// A local signer defect. It blocks every route and outranks network failures.
+    /// Reserve this kind for signer defects when classifying remote errors.
+    Internal,
 }
 
 /// One configured route's failure from the last connection attempt.
@@ -40,27 +79,28 @@ pub struct RouteFailure {
 }
 
 impl ConnectionFailureKind {
-    /// How actionable this cause is from this Mac; lower wins when targets fail
-    /// differently (local_offline, tailscale_down, monitoring_off, app_not_running,
-    /// agent_not_running, refused, timeout, no_route, name_not_resolved, unreachable, then
-    /// the blocking kinds).
+    /// How actionable this cause is for the client. Lower wins when targets fail
+    /// differently. Local signer failures block every route and outrank network
+    /// and host failures.
     pub fn priority(self) -> u8 {
         match self {
-            Self::LocalOffline => 0,
-            Self::TailscaleDown => 1,
-            Self::MonitoringOff => 2,
-            Self::AppNotRunning => 3,
-            Self::AgentNotRunning => 4,
-            Self::Refused => 5,
-            Self::Timeout => 6,
-            Self::NoRoute => 7,
-            Self::NameNotResolved => 8,
-            Self::Unreachable => 9,
-            Self::Authentication => 10,
-            Self::HostKey => 11,
-            Self::Incompatible => 12,
-            Self::IdentityChanged => 13,
-            Self::Protocol => 14,
+            Self::PhoneKeyUnavailable => 0,
+            Self::Internal => 1,
+            Self::LocalOffline => 2,
+            Self::TailscaleDown => 3,
+            Self::MonitoringOff => 4,
+            Self::AppNotRunning => 5,
+            Self::AgentNotRunning => 6,
+            Self::Refused => 7,
+            Self::Timeout => 8,
+            Self::NoRoute => 9,
+            Self::NameNotResolved => 10,
+            Self::Unreachable => 11,
+            Self::Authentication => 12,
+            Self::HostKey => 13,
+            Self::Incompatible => 14,
+            Self::IdentityChanged => 15,
+            Self::Protocol => 16,
         }
     }
 
@@ -85,6 +125,8 @@ impl ConnectionFailureKind {
                 .unwrap_or(Self::Unreachable),
             RemoteError::Timeout(_) => Self::Timeout,
             RemoteError::Authentication(_) => Self::Authentication,
+            RemoteError::PhoneKeyUnavailable(_) => Self::PhoneKeyUnavailable,
+            RemoteError::SignerInternal(_) => Self::Internal,
             RemoteError::Pairing(_) => Self::Refused,
             RemoteError::HostKey(_) => Self::HostKey,
             RemoteError::AgentNotRunning(_) => Self::AgentNotRunning,
@@ -97,6 +139,7 @@ impl ConnectionFailureKind {
                 Self::IdentityChanged
             }
             RemoteError::Protocol(_) | RemoteError::Codec(_) => Self::Protocol,
+            RemoteError::Internal(_) => Self::Internal,
             RemoteError::Transport(_)
             | RemoteError::Io(_)
             | RemoteError::Busy(_)
@@ -155,6 +198,7 @@ pub struct ConnectionStatus {
     /// The last attempt failed because the peer's protocol is incompatible
     /// ([`RemoteError::Incompatible`]); only a coordinated upgrade reconnects it.
     pub incompatible: bool,
+    pub incompatible_side: Option<IncompatibleSide>,
     /// The id a host answered with when it is not the paired one
     /// ([`RemoteError::IdentityMismatch`]), so the shell can offer re-pairing.
     pub identity_changed: Option<HostId>,
@@ -221,6 +265,7 @@ impl ConnectionStatus {
         self.route_failures.clear();
         self.identity_changed = None;
         self.incompatible = false;
+        self.incompatible_side = None;
         self.remote_version = Some(remote_version);
     }
 
@@ -250,6 +295,16 @@ impl ConnectionStatus {
         self.waiting_for_network = false;
     }
 
+    pub(super) fn record_panic(&mut self) {
+        self.record_stopped();
+        self.error = Some("The remote session stopped unexpectedly".into());
+        self.failure_kind = Some(ConnectionFailureKind::Internal);
+        self.route_failures.clear();
+        self.identity_changed = None;
+        self.incompatible = false;
+        self.incompatible_side = None;
+    }
+
     /// Records a failed connection attempt. `single_route` is set for a single-target endpoint.
     pub(super) fn record_failure(&mut self, e: &RemoteError, single_route: Option<Route>) {
         self.connected = false;
@@ -264,9 +319,13 @@ impl ConnectionStatus {
             e,
             RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. }
         );
-        if let RemoteError::IncompatiblePeer { version, .. } = e {
-            self.remote_version = Some(version.clone());
-        }
+        self.incompatible_side = match e {
+            RemoteError::IncompatiblePeer { version, side, .. } => {
+                self.remote_version = Some(version.clone());
+                *side
+            }
+            _ => None,
+        };
         self.catching_up = false;
         self.retrying = e.retryable();
     }
@@ -289,6 +348,7 @@ mod tests {
             &crate::RemoteError::IncompatiblePeer {
                 version: "0.1.0".into(),
                 reason: "protocol 1 is below 2".into(),
+                side: Some(super::IncompatibleSide::Host),
             },
             None,
         );
@@ -298,8 +358,16 @@ mod tests {
             Some(ConnectionFailureKind::Incompatible)
         );
         assert_eq!(status.remote_version.as_deref(), Some("0.1.0"));
+        assert_eq!(
+            status.incompatible_side,
+            Some(super::IncompatibleSide::Host)
+        );
+        let mut reconnected = status.clone();
+        reconnected.record_connected(crate::Route::Lan, "0.2.0".into());
+        assert_eq!(reconnected.incompatible_side, None);
         status.record_failure(&crate::RemoteError::Transport("offline".into()), None);
         assert!(!status.incompatible && status.retrying);
+        assert_eq!(status.incompatible_side, None);
         assert_eq!(
             status.failure_kind,
             Some(ConnectionFailureKind::Unreachable)

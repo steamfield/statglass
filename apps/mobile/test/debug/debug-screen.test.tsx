@@ -7,6 +7,7 @@ import type {
 } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { expect, jest, test } from "@jest/globals";
+import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
 import { FakeNative, installNative, ok } from "@test/transport/fake-native";
 import { HOST, REMOTE } from "@test/transport/native-fixtures";
@@ -19,23 +20,29 @@ import {
 } from "expo-router/testing-library";
 import DebugScreen from "@/app/debug";
 import DataSettings from "@/app/settings/data";
-import { NativeCoreBridge } from "@/transport";
+import { CoreProvider, NativeCoreBridge } from "@/transport";
 
 const KEY_LINE = "ecdsa-sha2-nistp256 fake-public-key statglass-iphone";
 const SHA256 = `SHA256:${"A".repeat(43)}`;
 const CONNECTED: MobileRemoteHost = {
   ...REMOTE,
+  waiting_for_network: false,
+  next_attempt_ms: null,
+  identity_changed: null,
   connection: {
     state: "connected",
     route: "tailscale",
     sync: "current",
     failure: null,
+    incompatible_side: null,
     message: null,
     route_failures: [],
   },
 };
 const CONNECTING: MobileRemoteHost = {
   ...CONNECTED,
+  dialing: true,
+  last_seen_ms: null,
   connection: { ...CONNECTED.connection, state: "connecting" },
 };
 
@@ -46,7 +53,12 @@ const routes = getMockContext({
 });
 
 function renderDebug() {
-  return renderWithProviders(<ExpoRoot context={routes} location="/debug" />);
+  mockAppState();
+  return renderWithProviders(
+    <CoreProvider>
+      <ExpoRoot context={routes} location="/debug" />
+    </CoreProvider>
+  );
 }
 
 function debugModule() {
@@ -55,6 +67,7 @@ function debugModule() {
   let remotes = [CONNECTED];
   native.call.mockImplementation(async (method, args) => {
     if (method === "authorized_key_line") return ok(KEY_LINE);
+    if (method === "list_hosts") return ok([]);
     if (method === "list_remote_hosts") return ok(remotes);
     return call?.(method, args) ?? ok(null);
   });
@@ -110,32 +123,32 @@ test("requires a development build when the native module is absent", async () =
   expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
 });
 
-test("starts with the current cellular sync setting and updates the open debug core", async () => {
+test("starts with the current cellular live setting and updates the open debug core", async () => {
   const { native } = debugModule();
   await renderWithProviders(
-    <>
+    <CoreProvider>
       <NativeCoreBridge />
       <ExpoRoot context={routes} location="/debug" />
-    </>,
-    { settings: { syncOnCellular: true } }
+    </CoreProvider>,
+    { settings: { liveOnCellular: false } }
   );
   expect(await screen.findByText(KEY_LINE)).toBeOnTheScreen();
   expect(native.start).toHaveBeenCalledWith(
     JSON.stringify({
       hosts: [],
-      data: { sync_on_cellular: true },
+      data: { live_on_cellular: false },
     } satisfies MobileConfig)
   );
 
   await act(() => router.push("/data"));
-  const cellularSync = screen.getByRole("switch", {
-    name: "Sync history on cellular",
+  const cellularLive = screen.getByRole("switch", {
+    name: "Live updates on cellular",
   });
-  expect(cellularSync).toBeChecked();
-  await fireEvent(cellularSync, "valueChange", false);
+  expect(cellularLive).not.toBeChecked();
+  await fireEvent(cellularLive, "valueChange", true);
   expect(native.call).toHaveBeenCalledWith(
     "set_data_policy",
-    '{"sync_on_cellular":false}'
+    '{"live_on_cellular":true}'
   );
   expect(native.start).toHaveBeenCalledTimes(1);
 });
@@ -148,7 +161,7 @@ test("starts once, shows the key, then connects with the submitted Mac and displ
     [
       JSON.stringify({
         hosts: [],
-        data: { sync_on_cellular: false },
+        data: { live_on_cellular: true },
       } satisfies MobileConfig),
     ],
   ]);
@@ -192,12 +205,15 @@ test("starts once, shows the key, then connects with the submitted Mac and displ
   await act(() => setRemotes([REMOTE]));
   expect(await screen.findByText("Timed out")).toBeOnTheScreen();
   expect(screen.queryByText("39%")).toBeNull();
+  await act(() => pushCpu(native, 1, 43));
   await act(() => setRemotes([CONNECTED]));
   expect(await screen.findByText("Live")).toBeOnTheScreen();
   expect(screen.queryByText("39%")).toBeNull();
+  expect(screen.queryByText("43%")).toBeNull();
   await act(() => pushCpu(native, 1, 45));
   expect(screen.getByText("45%")).toBeOnTheScreen();
   await act(() => setRemotes([CONNECTING]));
+  expect(await screen.findByText("Connecting")).toBeOnTheScreen();
   await act(() => setRemotes([CONNECTED]));
   expect(await screen.findByText("Live")).toBeOnTheScreen();
   expect(screen.queryByText("45%")).toBeNull();
@@ -209,6 +225,70 @@ test("starts once, shows the key, then connects with the submitted Mac and displ
   await renderDebug();
   expect(await screen.findByText(KEY_LINE)).toBeOnTheScreen();
   expect(native.start).toHaveBeenCalledTimes(1);
+});
+
+test("a failed status refresh hides the cached Live reading", async () => {
+  const { native, setRemotes } = debugModule();
+  await renderDebug();
+  await screen.findByText(KEY_LINE);
+  await fillHost();
+  await fireEvent.press(screen.getByRole("button", { name: "Connect" }));
+  await screen.findByText("Live");
+  await act(() => pushCpu(native, 1, 39));
+  expect(screen.getByText("39%")).toBeOnTheScreen();
+
+  const call = native.call.getMockImplementation();
+  native.call.mockImplementation(async (method, args) =>
+    method === "list_remote_hosts"
+      ? JSON.stringify({
+          status: "error",
+          error: {
+            kind: "invalid_argument",
+            message: "Status failed",
+          } satisfies CommandError,
+        })
+      : (call?.(method, args) ?? ok(null))
+  );
+  await act(() => setRemotes([CONNECTED]));
+  expect(
+    await screen.findByRole("alert", { name: /Status failed/ })
+  ).toBeOnTheScreen();
+  expect(screen.queryByText("Live")).toBeNull();
+  expect(screen.queryByText("39%")).toBeNull();
+});
+
+test("a silent live stream hides the last CPU reading and looks for a new frame", async () => {
+  jest.useFakeTimers();
+  try {
+    const { native } = debugModule();
+    await renderDebug();
+    await screen.findByText(KEY_LINE);
+    await fillHost();
+    await fireEvent.press(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByText("Live");
+    await act(() => {
+      live(native, 1, {
+        kind: "status",
+        interval_ms: 1000,
+        frame_period_ms: 1000,
+        paused: false,
+        display_idle: false,
+        on_battery: false,
+        power_source: "adapter",
+        performance: "off",
+        primary_iface: null,
+      });
+      pushCpu(native, 1, 39);
+    });
+    expect(screen.getByText("39%")).toBeOnTheScreen();
+    await act(() => jest.advanceTimersByTimeAsync(3000));
+    expect(screen.getByText("Reconnecting")).toBeOnTheScreen();
+    expect(screen.queryByText("39%")).toBeNull();
+    await act(() => pushCpu(native, 1, 40));
+    expect(screen.getByText("40%")).toBeOnTheScreen();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test("keeps the first CPU frame that comes before the connected status", async () => {
@@ -267,6 +347,25 @@ test("clears the debug host after an in-flight Connect settles, and reports a cl
     expect.stringContaining("clear debug hosts"),
     error
   );
+});
+
+test("does not replace the app’s selected native hosts", async () => {
+  const { native } = debugModule();
+  const call = native.call.getMockImplementation();
+  const hosts = await createMockTransport().listHosts();
+  native.call.mockImplementation(async (method, args) =>
+    method === "list_hosts" ? ok(hosts) : (call?.(method, args) ?? ok(null))
+  );
+  await renderDebug();
+  await screen.findByText(KEY_LINE);
+  await fillHost();
+  await fireEvent.press(screen.getByRole("button", { name: "Connect" }));
+  expect(
+    await screen.findByText(
+      "Close the current hosts session before connecting from Debug."
+    )
+  ).toBeOnTheScreen();
+  expect(native.call).not.toHaveBeenCalledWith("set_hosts", expect.any(String));
 });
 
 test("opens a fresh stream when the replacement host becomes available", async () => {

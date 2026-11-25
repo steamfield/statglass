@@ -1,13 +1,15 @@
 /**
- * Which `PhoneTransport` the app reads through, and whether it is the demo.
- * Nothing is chosen at launch; the demo entry or (later) pairing sets one,
- * and every data hook reads it from here so the swap happens in one place.
+ * The app's selected transport and demo flag. A swap clears host and history
+ * queries before screens read from the new transport.
  */
+import { historyKeys, hostKeys } from "@core/query-keys";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
+  useRef,
   useState,
 } from "react";
 import type { PhoneTransport } from "./seam";
@@ -18,7 +20,11 @@ interface TransportChoice {
   demo: boolean;
 }
 
-type SetTransport = (transport: PhoneTransport | null, demo: boolean) => void;
+type SetTransport = (
+  transport: PhoneTransport | null,
+  demo: boolean,
+  expected?: PhoneTransport
+) => void;
 
 const NOTHING_CHOSEN: TransportChoice = { transport: null, demo: false };
 
@@ -40,9 +46,30 @@ export function PhoneTransportProvider({
   const [choice, setChoice] = useState<TransportChoice>(
     initial ?? NOTHING_CHOSEN
   );
+  const client = useQueryClient();
+  const current = useRef(choice);
   const set = useCallback<SetTransport>(
-    (transport, demo) => setChoice({ transport, demo }),
-    []
+    (transport, demo, expected) => {
+      const previous = current.current;
+      if (expected && previous.transport !== expected) return;
+      if (previous.transport === transport && previous.demo === demo) return;
+      if (previous.transport !== transport) {
+        const cache = client.getQueryCache();
+        const queries = [
+          ...cache.findAll({ queryKey: hostKeys.all }),
+          ...cache.findAll({ queryKey: historyKeys.all }),
+        ];
+        for (const query of queries) {
+          // A mounted observer can use the removed query as placeholder data.
+          query.reset();
+          cache.remove(query);
+        }
+      }
+      const next = { transport, demo };
+      current.current = next;
+      setChoice(next);
+    },
+    [client]
   );
   return (
     <SetContext.Provider value={set}>
@@ -85,6 +112,7 @@ export function useOptionalPhoneTransport(): PhoneTransport | null {
 
 /**
  * Chooses the transport (null clears it) and says whether it is the demo.
+ * With `expected`, the change only applies if that transport is still selected.
  * @throws {Error} outside the provider
  */
 export function useSetPhoneTransport(): SetTransport {

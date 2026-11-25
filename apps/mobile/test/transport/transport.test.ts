@@ -1,10 +1,9 @@
 import type {
   CommandError,
-  HistoryRequest,
+  HostHistoryRequest,
   LiveMsg,
   MobileCall,
   MobileConfig,
-  RemoteHostRecord,
 } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { expect, jest, test } from "@jest/globals";
@@ -20,7 +19,7 @@ import {
 } from "@/transport";
 
 const host = HOST;
-const cfg: MobileConfig = { hosts: [], data: { sync_on_cellular: false } };
+const cfg: MobileConfig = { hosts: [], data: { live_on_cellular: false } };
 const error: CommandError = { kind: "internal", message: "fixture failure" };
 const failed = JSON.stringify({ status: "error", error });
 const frame: LiveMsg = {
@@ -90,24 +89,12 @@ test("starts the core with a serialized config and preserves its startup error",
   });
 });
 
-test("rejects startup with the parsed error for an unavailable phone key", async () => {
-  const native = new FakeNative();
-  native.start.mockRejectedValueOnce(
-    Object.assign(new Error("Could not load the phone key (OSStatus -25308)"), {
-      code: "ERR_STATGLASS_KEYCHAIN",
-    })
-  );
-  await expect(startNativeTransport(native, cfg)).rejects.toEqual({
-    kind: "keychain",
-    osStatus: -25308,
-    message: "Could not load the phone key",
-  });
-});
-
 test("preserves an Expo rejection for data-directory setup", async () => {
   const native = new FakeNative();
   const rejection = Object.assign(
-    new Error("Could not create data directory"),
+    new Error(
+      "You don’t have permission to save the file “statglass” in the folder “Application Support”."
+    ),
     {
       code: "ERR_UNEXPECTED",
     }
@@ -120,12 +107,12 @@ test("sends commands as generated MobileCall tags and JSON arguments", async () 
   const native = new FakeNative();
   const transport = createNativeTransport(native);
   native.call.mockResolvedValueOnce(ok([])).mockResolvedValueOnce(ok([]));
-  const query: HistoryRequest = {
+  const query: HostHistoryRequest = {
     host,
-    selectors: [],
+    series: [{ metric: "cpu.total", labels: [] }],
     from_ms: 0,
     to_ms: 10,
-    tier: "auto",
+    events_for: null,
     max_points: 1,
   };
   const calls = [
@@ -134,10 +121,9 @@ test("sends commands as generated MobileCall tags and JSON arguments", async () 
     { method: "get_host", args: { host } },
     { method: "get_capabilities", args: { host } },
     { method: "host_vitals", args: { host } },
-    { method: "set_hosts_recent_interest", args: { on: true } },
     { method: "retry_remote_host", args: { host } },
-    { method: "query_history", args: query },
-    { method: "query_events", args: { host, from_ms: 0, to_ms: 10 } },
+    { method: "host_history", args: query },
+    { method: "network_addresses", args: { host } },
     { method: "set_hosts", args: { hosts: [] } },
     { method: "set_data_policy", args: cfg.data },
     { method: "authorized_key_line", args: { comment: "phone" } },
@@ -148,10 +134,9 @@ test("sends commands as generated MobileCall tags and JSON arguments", async () 
   await transport.getHost(host);
   await transport.getCapabilities(host);
   await transport.hostVitals(host);
-  await transport.setHostsRecentInterest(true);
   await transport.retryRemoteHost(host);
-  await transport.queryHistory(query);
-  await transport.queryEvents(host, 0, 10);
+  await transport.hostHistory(query);
+  await transport.networkAddresses(host);
   await transport.setHosts([]);
   await transport.setDataPolicy(cfg.data);
   await transport.authorizedKeyLine("phone");
@@ -372,10 +357,9 @@ test("stops local delivery even if the native unsubscribe command fails", async 
   ]);
 });
 
-test("maps the phone's complete remote record to the desktop shape", () => {
-  const { id, name, os, targets, mirror_budget_mb, connection, ...rest } =
-    remote;
-  const result: RemoteHostRecord = toRemoteHostRecord(remote);
+test("maps the phone's complete remote record to the shared phone shape", () => {
+  const { id, name, os, targets, connection, ...rest } = remote;
+  const result = toRemoteHostRecord(remote);
   expect(result).toEqual({
     config: {
       id,
@@ -383,7 +367,6 @@ test("maps the phone's complete remote record to the desktop shape", () => {
       lan: targets[0]?.host,
       tailscale: targets[1]?.host,
       enabled: true,
-      mirror_budget_mb,
     },
     os,
     status: {
@@ -393,6 +376,7 @@ test("maps the phone's complete remote record to the desktop shape", () => {
       sync: connection.sync,
       error: connection.message,
       failure_kind: connection.failure,
+      incompatible_side: connection.incompatible_side,
       route_failures: connection.route_failures,
       rr: null,
       update: null,

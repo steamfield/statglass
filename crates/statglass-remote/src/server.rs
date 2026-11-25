@@ -31,6 +31,10 @@ pub trait ServerProvider: Send + Sync + 'static {
     }
     /// Answers one remote query (D-117). Runs on the blocking pool.
     fn answer(&self, session: u64, query: statglass_proto::Query) -> statglass_proto::Answer;
+    /// Admission for history jobs, including their time waiting for a worker and encoding.
+    fn history_limits(&self) -> Option<&crate::history_query::limits::HistoryLimits> {
+        None
+    }
     /// The session ended: release what its queries hold.
     fn end_session(&self, session: u64);
     /// Where restricted connections record their device's last-seen time; `None` keeps

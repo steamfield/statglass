@@ -127,6 +127,7 @@ mod tests {
             nonce: "0123456789abcdef0123456789abcdef".into(),
             code: "ABC234".into(),
             expires_ms: 1_800_000_060_000,
+            can_hand_over: false,
         };
         let qr = terminal_qr(&encode_payload(&offer)).unwrap();
         let width = qr_columns(&qr);

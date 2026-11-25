@@ -17,7 +17,7 @@ screen is the `mobile-bridge` skill.
 - Commands are `call(method, argsJson) -> resultJson` in the desktop's `{ status, data | error }` shape, so `MobileTransport` maps one result type for both apps.
 - Streams arrive as Expo module events tagged with a subscription id; Swift forwards the JSON it gets and never reorders, drops or coalesces messages, because `reduceLive` depends on the producer's ordering.
 - Swift never parses, converts or formats metric data; meaning belongs to Rust and presentation to `@statglass/core`.
-- Swift reports its own failures as typed module errors `{ kind: "keychain" | "secureEnclave" | "camera" | "localNetwork", osStatus, message }`, so `MobileTransport` can map them to a `NativeError` instead of a string.
+- Swift reports its own failures as typed module errors `{ kind: "keychain" | "secureEnclave" | "camera", osStatus, message }`, so `MobileTransport` can map them to a `NativeError` instead of a string.
 - Add a method to the facade and the generated bindings, never a one-off Swift helper that computes something.
 
 ## Lifecycle

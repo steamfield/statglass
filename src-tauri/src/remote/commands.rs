@@ -24,7 +24,7 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
             if let Ok(entry) = state.host(*id)
                 && let Some(frame) = entry.latest_frame()
             {
-                status.vitals = super::vitals::host_vitals(Some(&frame), *id, &entry.record().info);
+                status.vitals = entry.vitals(Some(&frame));
             }
             RemoteHostRecord {
                 config: h.config.clone(),
@@ -39,11 +39,7 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
 #[specta::specta]
 pub fn host_vitals(state: State<'_, AppState>, host: HostId) -> Result<HostVitals, CommandError> {
     let entry = state.host(host)?;
-    Ok(super::vitals::host_vitals(
-        entry.latest_frame().as_deref(),
-        host,
-        &entry.record().info,
-    ))
+    Ok(entry.vitals(entry.latest_frame().as_deref()))
 }
 
 #[tauri::command]

@@ -135,7 +135,7 @@ fn a_dual_route_error_that_was_not_combined_records_no_routes() {
 }
 
 #[test]
-fn priority_orders_causes_by_what_this_mac_can_fix() {
+fn priority_orders_causes_by_what_the_client_can_fix() {
     let order = [
         K::LocalOffline,
         K::TailscaleDown,
@@ -148,8 +148,45 @@ fn priority_orders_causes_by_what_this_mac_can_fix() {
         K::NameNotResolved,
         K::Unreachable,
     ];
-    for pair in order.windows(2) {
-        assert!(pair[0].priority() < pair[1].priority(), "{pair:?}");
+    let local_signer_pairs = [
+        [K::PhoneKeyUnavailable, K::LocalOffline],
+        [K::PhoneKeyUnavailable, K::Timeout],
+        [K::Internal, K::LocalOffline],
+        [K::Internal, K::Timeout],
+    ];
+    for [higher, lower] in order
+        .array_windows::<2>()
+        .copied()
+        .chain(local_signer_pairs)
+    {
+        assert!(
+            higher.priority() < lower.priority(),
+            "{higher:?} vs {lower:?}"
+        );
+    }
+}
+
+#[test]
+fn a_route_timeout_does_not_hide_a_local_signer_failure() {
+    for (failure, expected) in [
+        (
+            RemoteError::PhoneKeyUnavailable("Key is missing".into()),
+            K::PhoneKeyUnavailable,
+        ),
+        (
+            RemoteError::SignerInternal("Signer failed".into()),
+            K::Internal,
+        ),
+    ] {
+        let mut status = ConnectionStatus::default();
+        status.record_failure(
+            &both(RemoteError::Timeout("LAN timed out".into()), failure),
+            None,
+        );
+        status.apply_network(ONLINE);
+        assert_eq!(status.failure_kind, Some(expected));
+        assert_eq!(status.route_failures[0].kind, K::Timeout);
+        assert_eq!(status.route_failures[1].kind, expected);
     }
 }
 

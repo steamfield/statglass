@@ -5314,6 +5314,7 @@ version = "0.15.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
+ "base64 0.22.1",
  "block2",
  "core-foundation 0.10.1",
  "libc",
@@ -5468,6 +5469,8 @@ dependencies = [
 name = "statglass-mobile"
 version = "0.15.0"
 dependencies = [
+ "base64 0.22.1",
+ "ciborium",
  "p256",
  "serde",
  "serde_json",
@@ -5482,6 +5485,8 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "tracing-oslog",
+ "tracing-subscriber",
  "uniffi",
 ]
 
@@ -5497,6 +5502,7 @@ dependencies = [
 name = "statglass-proto"
 version = "0.15.0"
 dependencies = [
+ "base64 0.22.1",
  "ciborium",
  "serde",
  "statglass-schema",
@@ -5534,6 +5540,7 @@ dependencies = [
  "statglass-proto",
  "statglass-schema",
  "statglass-session",
+ "statglass-ssh",
  "statglass-store",
  "tempfile",
  "thiserror 2.0.21",
@@ -5550,6 +5557,7 @@ dependencies = [
  "statglass-remote",
  "tempfile",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5590,6 +5598,7 @@ dependencies = [
 name = "statglass-ssh"
 version = "0.15.0"
 dependencies = [
+ "libc",
  "p256",
  "russh",
  "sha2 0.11.1",
@@ -6705,6 +6714,18 @@ dependencies = [
  "log",
  "once_cell",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-oslog"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d76902d2a8d5f9f55a81155c08971734071968c90f2d9bfe645fe700579b2950"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "tracing-core",
+ "tracing-subscriber",
 ]
 
 [[package]]

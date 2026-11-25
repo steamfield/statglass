@@ -3,49 +3,105 @@
  * bar and the navigation stack. Wiring only; screens own their content.
  */
 import "@/global.css";
-import { Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
-import { DemoLifetime } from "@/data/demo";
-import { PhoneSettingsProvider } from "@/data/phone-settings";
-import { PhoneTransportProvider } from "@/data/transport-context";
-import { Providers } from "@/lib/providers";
+import { type ErrorBoundaryProps, Stack } from "expo-router";
+import { useWindowDimensions, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { DemoProvider } from "@/data/demo";
+import { PairingProvider } from "@/data/pairing-context";
+import { AppProviders } from "@/lib/providers";
 import { AppLockGate } from "@/lock/app-lock-gate";
-import { NativeCoreBridge } from "@/transport";
-import { MotionProvider } from "@/ui/motion";
+import { CoreProvider, NativeCoreBridge } from "@/transport";
+import { RouteErrorBoundary } from "@/ui/route-error-boundary";
+import { screenOptions } from "@/ui/screen-options";
+import { useAnnounceStartupFailure } from "@/ui/startup-failure";
+import { useThemeColors } from "@/ui/theme-colors";
+
+/** Keeps screen recovery inside the root providers and navigation stacks. */
+export const unstable_settings = { screenErrorBoundary: RouteErrorBoundary };
+
+/** Last resort for errors that reach the root, outside the app providers. */
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return (
+    <SafeAreaProvider>
+      <View className="flex-1 bg-background pt-safe">
+        <RouteErrorBoundary {...props} />
+      </View>
+    </SafeAreaProvider>
+  );
+}
+
+function StartupFailureAnnouncement() {
+  useAnnounceStartupFailure();
+  return null;
+}
+
+function RootStack() {
+  const colors = useThemeColors();
+  // Subscribe to Dynamic Type changes so mounted headers recompute their options.
+  useWindowDimensions();
+  const settingsHeader = screenOptions(colors, { largeTitle: true });
+  return (
+    <Stack screenOptions={screenOptions(colors)}>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="pair" options={{ title: "Add a host" }} />
+      <Stack.Screen name="demo" options={{ title: "Demo hosts" }} />
+      <Stack.Screen name="(hosts)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="settings/index"
+        options={{ ...settingsHeader, title: "Settings" }}
+      />
+      <Stack.Screen
+        name="settings/hosts"
+        options={{ ...settingsHeader, title: "Hosts" }}
+      />
+      <Stack.Screen
+        name="settings/device"
+        options={{ ...settingsHeader, title: "This iPhone" }}
+      />
+      <Stack.Screen
+        name="settings/data"
+        options={{ ...settingsHeader, title: "Data" }}
+      />
+      <Stack.Screen
+        name="settings/appearance"
+        options={{ ...settingsHeader, title: "Appearance" }}
+      />
+      <Stack.Screen
+        name="settings/about"
+        options={{ ...settingsHeader, title: "About" }}
+      />
+      <Stack.Screen
+        name="settings/host/[host]"
+        options={{ title: "Host details" }}
+      />
+      <Stack.Screen
+        name="update-from-mac"
+        options={{ title: "Update from Mac" }}
+      />
+      <Stack.Screen name="pair-hosts" options={{ title: "Also on this Mac" }} />
+      {__DEV__ && <Stack.Screen name="debug" options={{ title: "Debug" }} />}
+    </Stack>
+  );
+}
 
 /** Mounts the providers and the app lock around the root stack. */
 export default function RootLayout() {
   return (
-    <PhoneTransportProvider>
-      <PhoneSettingsProvider>
-        <Providers>
-          <MotionProvider>
-            <DemoLifetime />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppProviders>
+        <CoreProvider>
+          <DemoProvider>
             <NativeCoreBridge />
-            <StatusBar style="auto" />
+            <StartupFailureAnnouncement />
             <AppLockGate>
-              <Stack>
-                <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="pair"
-                  options={{ title: "Pair with your Mac" }}
-                />
-                <Stack.Screen
-                  name="pair-linux"
-                  options={{ title: "Add a Linux server" }}
-                />
-                <Stack.Screen name="demo" options={{ title: "Demo hosts" }} />
-                <Stack.Screen name="(hosts)" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="settings"
-                  options={{ headerShown: false }}
-                />
-                <Stack.Screen name="debug" options={{ title: "Debug" }} />
-              </Stack>
+              <PairingProvider>
+                <RootStack />
+              </PairingProvider>
             </AppLockGate>
-          </MotionProvider>
-        </Providers>
-      </PhoneSettingsProvider>
-    </PhoneTransportProvider>
+          </DemoProvider>
+        </CoreProvider>
+      </AppProviders>
+    </GestureHandlerRootView>
   );
 }

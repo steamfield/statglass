@@ -1,5 +1,10 @@
 # RFC: StatGlass for iPhone
 
+> **Changed 2026-11-25 (the user's decision, D-154):** the phone no longer mirrors history. The
+> host answers bounded `Query::History` requests and the phone keeps answers in memory only.
+> Sections 3.4, 3.5, 4.4 and 4.5 still describe the mirror; read them with D-154 and
+> `plan/rfc-ios-polish.md` section 6. The body below is unchanged.
+
 Status: Draft, revision 2, 2026-11-22. Revision 2 folds in a ce:devils-advocate architecture
 review against the code (findings cited by file below), the decision that the popover is the
 phone's host screen, and an explicit inventory of what the two apps share. Nothing here is
@@ -69,8 +74,8 @@ phone app installs nothing on hosts.
 
 Must, for 1.0:
 
-- Pair with a Mac running StatGlass, and with Linux hosts through that Mac or through
-  `statglass-agent pair`, by scanning a QR code.
+- Add a host by scanning a QR code or pasting its pairing text. The code can come from
+  Pair iPhone in StatGlass on a Mac or from `sudo statglass-agent pair` on the host.
 - Hosts list with status, last-seen time and headline values from five-second summaries.
 - Host screen (the adapted popover card stack) and module pages for CPU, GPU, Memory, Power and
   Sensors, Network, Disk, Battery (Mac laptops) and Linux cgroups, with Live, 1h, 24h, 7d and 30d.
@@ -95,13 +100,13 @@ Won't, without a new decision:
 
 ### 1.4 Experience
 
-First launch shows one screen: what the app does, "Pair with your Mac", a secondary "Add a Linux
-server" link, and "Try demo hosts". Demo mode runs the real screens on `createMockTransport`
-with a "Demo" marker, and is what App Review sees (7.4).
+First launch shows what the app does, "Add a host" and "Try demo hosts". Demo mode runs the
+real screens on `createMockTransport` with a "Demo" marker, and is what App Review sees (7.4).
 
-Pairing a Mac: on the Mac, Settings → Hosts → "Pair iPhone". The Mac first checks that Remote
-Login is on for this user and that remote monitoring is enabled, disclosing that change as Add
-Mac does (D-105). It then shows a QR code and a six-character code. The phone scans; the Mac asks
+Pairing a Mac starts with "Pair iPhone" under iPhone access in StatGlass Settings. The Mac
+first checks that Remote Login is on for this user and that remote monitoring is enabled,
+disclosing that change as Add Mac does (D-105). It then shows a QR code and a six-character
+code. The phone scans; the Mac asks
 "Allow 'Alex's iPhone' to view this Mac's metrics?"; after approval the phone lists the Mac and
 the hosts the Mac can hand over (2.4), each with a checkbox, plus any it cannot hand over with
 the reason. The phone connects, syncs, and lands on the hosts list. Target: under 30 seconds.
@@ -252,10 +257,12 @@ restrict,expiry-time="202611221410Z",command="<helper> pair --nonce <n>" ssh-ed2
 `restrict` needs OpenSSH 7.2 and `expiry-time` 7.7; macOS and current Linux distributions ship
 newer versions, and pairing checks `ssh -V` output on the host when it can.
 
-The flow:
+On the phone, choose Add a host for either source. The offer carries the capability to hand over
+other monitored hosts (D-156).
 
-1. The phone scans, generates its Secure Enclave key, and dials with the pairing key, verifying
-   the host key against the QR's fingerprints.
+1. The phone scans the QR code or reads the pasted pairing text and previews the host and
+   the six-character code. On confirmation, it generates its Secure Enclave key and dials
+   with the pairing key, verifying the host key against the QR's fingerprints.
 2. sshd runs the forced `pair` command; the phone sends its public key, device name and model.
 3. Approval is a short-request protocol, because control requests are capped at 10 s on both ends
    and handled synchronously (`socket.rs:230-233`, `252`, `261`, `277`): `pair` sends
@@ -265,7 +272,8 @@ The flow:
    nonce, and the forced `pair` command talks to it.
 4. On approval, the host writes the phone's restricted line, removes the pairing line, and returns
    the host bundle.
-5. For each host the Mac monitors and can hand over, the Mac records an install intent (2.6) and
+5. When the offer includes the handover capability and the reply lists other hosts, the phone
+   offers to add them. For each host the Mac hands over, it records an install intent (2.6) and
    applies it over its own SSH access.
 6. The phone connects to each host with its own key.
 

@@ -94,5 +94,5 @@ module.exports = {
   transformIgnorePatterns: preset.transformIgnorePatterns.map((pattern) =>
     pattern.replace("(?!(", `(?!(${TRANSPILED_PACKAGES.join("|")}|`)
   ),
-  testTimeout: 15000,
+  testTimeout: 5000,
 };

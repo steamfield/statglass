@@ -1,4 +1,5 @@
 import { MISSING } from "@core/format";
+import { networkCard } from "@core/popover/cards";
 import {
   INLINE_BAR,
   MEMORY_STACK,
@@ -7,13 +8,15 @@ import {
 import { mirrorBarsModel } from "@core/widget-models/mirror-bars";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
-import { act, fireEvent, screen } from "@testing-library/react-native";
+import { act, fireEvent, screen, within } from "@testing-library/react-native";
 import { useState } from "react";
 import * as ReactNative from "react-native";
 import { motionDurations, themeColors } from "@/theme.generated";
+import { WidgetAccent } from "@/widgets/accent";
 import { InlineBar } from "@/widgets/inline-bar";
-import { BarFill, MeterTrack, WidgetAccent } from "@/widgets/meter-track";
+import { BarFill, MeterTrack } from "@/widgets/meter-track";
 import { MirrorBars } from "@/widgets/mirror-bars";
+import { Sparkbars } from "@/widgets/sparkbars";
 import { StackBar } from "@/widgets/stack-bar";
 import { StatList } from "@/widgets/stat-list";
 
@@ -149,24 +152,6 @@ test("places measured mirrored bars in their model slots and leaves gaps empty",
   expect(marks[0]).toHaveStyle({ height: model.up[0] });
   expect(marks[1]).toHaveStyle({ height: model.up[2] });
   expect(marks[2]).toHaveStyle({ height: model.down[1] });
-  expect(marks[0]?.parent).toHaveProp(
-    "className",
-    expect.stringContaining("gap-0.5")
-  );
-  expect(marks[2]?.parent).toHaveProp(
-    "className",
-    expect.stringContaining("gap-0.5")
-  );
-  expect(
-    screen.getAllByTestId(/mirror-(bar|gap)/).map((slot) => slot.props.testID)
-  ).toEqual([
-    "mirror-bar",
-    "mirror-gap",
-    "mirror-bar",
-    "mirror-gap",
-    "mirror-bar",
-    "mirror-gap",
-  ]);
 
   await rerender(<MirrorBars {...data} loading />);
   expect(
@@ -178,6 +163,80 @@ test("places measured mirrored bars in their model slots and leaves gaps empty",
     height: "100%",
   });
 });
+
+test.each(["light", "dark"] as const)(
+  "shows the Network card's direction labels and ramp colors in %s",
+  async (scheme) => {
+    jest.spyOn(ReactNative, "useColorScheme").mockReturnValue(scheme);
+    await renderWithProviders(<MirrorBars {...net} />);
+    const colors = themeColors[scheme];
+    const [up, , down] = screen.getAllByTestId("mirror-bar");
+    expect(up).toHaveStyle({ backgroundColor: `${colors.net}99` });
+    expect(down).toHaveStyle({ backgroundColor: colors.net });
+    const card = networkCard({ rx: 10, tx: 0, linkRate: null }, {});
+    for (const { label } of card.items) {
+      expect(
+        screen.getByText(label, { includeHiddenElements: true })
+      ).toBeOnTheScreen();
+    }
+  }
+);
+
+test("draws a compact mirroring with separate ceilings and no marks for missing buckets", async () => {
+  const gaps = Array<null>(59).fill(null);
+  const data = { ...net, up: [4, ...gaps], down: [...gaps, 10] };
+  const name = "Network over the last 30 minutes";
+  const { rerender } = await renderWithProviders(
+    <Sparkbars data={data} height={36} accessibilityLabel={name} />
+  );
+  const plot = screen.getByRole("image", { name });
+  const width = 96;
+  await fireEvent(plot, "layout", { nativeEvent: { layout: { width } } });
+  const marks = within(plot).getAllByTestId("mirror-bar");
+  const [up, down] = marks;
+  expect(marks).toHaveLength(2);
+  const model = mirrorBarsModel({ ...data, upHeight: 17.5, downHeight: 17.5 });
+  expect(up).toHaveStyle({
+    height: model.up[0],
+    backgroundColor: `${themeColors.light.net}99`,
+  });
+  expect(down).toHaveStyle({
+    height: model.down.at(-1),
+    backgroundColor: themeColors.light.net,
+  });
+  expect(
+    screen.queryByText("↓ Download", { includeHiddenElements: true })
+  ).toBeNull();
+
+  await rerender(
+    <Sparkbars
+      data={{ ...data, up: [], down: [] }}
+      height={36}
+      accessibilityLabel={name}
+    />
+  );
+  expect(screen.getByRole("image", { name })).toBeOnTheScreen();
+  expect(screen.queryAllByTestId("mirror-bar")).toHaveLength(0);
+});
+
+test.each(["light", "dark"] as const)(
+  "keeps both ramp steps visible on short %s sparkbars",
+  async (scheme) => {
+    jest.spyOn(ReactNative, "useColorScheme").mockReturnValue(scheme);
+    await renderWithProviders(
+      <Sparkbars
+        data={{ ...net, up: [1], down: [1] }}
+        height={36}
+        accessibilityLabel={net.ariaLabel}
+      />
+    );
+    const colors = themeColors[scheme];
+    const color = scheme === "light" ? colors["net-ink"] : colors.net;
+    const [up, down] = screen.getAllByTestId("mirror-bar");
+    expect(up).toHaveStyle({ backgroundColor: `${color}99` });
+    expect(down).toHaveStyle({ backgroundColor: color });
+  }
+);
 
 function LiveBars() {
   const [tEndMs, setEnd] = useState(1000);

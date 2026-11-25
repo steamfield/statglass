@@ -4,15 +4,12 @@
  */
 import { render } from "@testing-library/react-native";
 import type { ReactElement, ReactNode } from "react";
-import {
-  type PhoneSettings,
-  PhoneSettingsProvider,
-} from "@/data/phone-settings";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { DemoProvider } from "@/data/demo";
+import type { PhoneSettings } from "@/data/phone-settings";
 import type { PhoneTransport } from "@/data/seam";
-import { PhoneTransportProvider } from "@/data/transport-context";
-import { Providers } from "@/lib/providers";
+import { AppProviders } from "@/lib/providers";
 import { createQueryClient } from "@/lib/query-client";
-import { MotionProvider } from "@/ui/motion";
 
 /**
  * A client with the app's defaults and cache garbage collection off, so no
@@ -50,15 +47,15 @@ export async function renderWithProviders(
   const client = testQueryClient();
   function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <PhoneTransportProvider
-        {...(transport ? { initial: { transport, demo } } : {})}
-      >
-        <PhoneSettingsProvider {...(settings ? { initial: settings } : {})}>
-          <Providers client={client}>
-            <MotionProvider>{children}</MotionProvider>
-          </Providers>
-        </PhoneSettingsProvider>
-      </PhoneTransportProvider>
+      <GestureHandlerRootView>
+        <AppProviders
+          client={client}
+          initialTransport={transport ? { transport, demo } : undefined}
+          initialSettings={settings}
+        >
+          <DemoProvider>{children}</DemoProvider>
+        </AppProviders>
+      </GestureHandlerRootView>
     );
   }
   const view = await render(ui, { wrapper: Wrapper });

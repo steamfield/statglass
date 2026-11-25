@@ -8,7 +8,8 @@ use anyhow::Context;
 use statglass_engine::{
     EngineParts, HistoryStore, LiveHub, LocalSource, Source, SourceHandle, SourceSink,
 };
-use statglass_proto::{Answer, RemoteInterest, RuleEntry};
+use statglass_proto::{Answer, HostAddresses, RemoteInterest, RuleEntry};
+use statglass_remote::addresses::AddressResolver;
 use statglass_remote::{InterestSet, ServedHost, unsupported_query};
 use statglass_schema::lock::LockExt;
 use statglass_schema::{Capabilities, Event, HostRecord, Settings};
@@ -21,6 +22,7 @@ pub struct AgentHost {
     record: HostRecord,
     source: Arc<LocalSource>,
     hub: LiveHub,
+    addresses: AddressResolver,
     handle: Mutex<Option<SourceHandle>>,
     interests: Mutex<InterestSet>,
     alert_rules: Option<AlertRuleStore>,
@@ -50,6 +52,7 @@ impl AgentHost {
             record,
             source,
             hub,
+            addresses: AddressResolver::default(),
             handle: Mutex::new(Some(handle)),
             interests: Mutex::default(),
             alert_rules: data_dir.map(|dir| AlertRuleStore::new(dir, settings)),
@@ -119,6 +122,14 @@ impl ServedHost for AgentHost {
 
     fn hub(&self) -> &LiveHub {
         &self.hub
+    }
+
+    fn serves_addresses(&self) -> bool {
+        true
+    }
+
+    fn network_addresses(&self) -> HostAddresses {
+        self.addresses.network_addresses(&self.hub)
     }
 
     fn set_remote_interest(&self, session: u64, interest: RemoteInterest) {
@@ -209,6 +220,7 @@ mod tests {
             record,
             source,
             hub,
+            addresses: AddressResolver::default(),
             handle: Mutex::new(Some(handle)),
             interests: Mutex::default(),
             alert_rules: None,

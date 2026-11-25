@@ -1,16 +1,23 @@
 //! The app's lifecycle as the sessions see it: backgrounding quiesces every source,
-//! foregrounding resumes them (the open host first), and a path or data-policy change
-//! picks the sync policy and tells the sources (phase 4 lane d).
+//! foregrounding resumes demanded sources, and path changes reach the sources.
 
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 
-use statglass_ipc::mobile::DataPolicy;
+use statglass_engine::Source;
+use statglass_ipc::error::CommandError;
+use statglass_ipc::mobile::{DataPolicy, DemandLevel};
+use statglass_schema::HostId;
 use statglass_schema::lock::LockExt;
+use statglass_session::BoxFuture;
 use statglass_session::network::{self, LocalNetwork};
-use statglass_session::{BoxFuture, SyncPolicy};
+use tokio::task::AbortHandle;
+use tokio::time::Instant;
 
 use crate::control::SessionControl;
 use crate::ffi::NetworkPath;
+use crate::policy::live_allowed;
 
 /// The last path and data policy the app reported, and whether it is backgrounded.
 pub(crate) struct Lifecycle {
@@ -21,17 +28,41 @@ pub(crate) struct Lifecycle {
 struct State {
     path: Option<NetworkPath>,
     data: DataPolicy,
-    sync: SyncPolicy,
     backgrounded: bool,
+    demand: HashMap<HostId, DemandLevel>,
+    sources: HashMap<HostId, Tracked>,
+}
+
+struct Tracked {
+    entry: Weak<dyn DemandSource>,
+    grace: Option<(Instant, AbortHandle)>,
+}
+
+pub(crate) trait DemandSource: Send + Sync {
+    fn level(&self, level: Option<DemandLevel>);
+    fn resume(&self);
+    fn park(&self, close_streams: bool) -> BoxFuture<'static, ()>;
 }
 
 impl State {
-    fn apply_sync_policy(&mut self, sessions: &dyn SessionControl) {
-        if let Some(next) = crate::policy::sync_policy(self.path, self.data)
-            && next != self.sync
-        {
-            sessions.set_sync_policy(next);
-            self.sync = next;
+    fn effective(&self, host: HostId) -> Option<DemandLevel> {
+        if self.backgrounded {
+            return None;
+        }
+        self.demand.get(&host).map(|level| {
+            if *level == DemandLevel::Full && live_allowed(self.path, self.data) {
+                DemandLevel::Full
+            } else {
+                DemandLevel::Compact
+            }
+        })
+    }
+
+    fn refresh_levels(&self) {
+        for (&host, slot) in &self.sources {
+            if let Some(entry) = slot.entry.upgrade() {
+                entry.level(self.effective(host));
+            }
         }
     }
 }
@@ -43,29 +74,132 @@ impl Lifecycle {
         }
     }
 
-    /// Whether sources started now should remain parked.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "follow-up: sources added by set_hosts while backgrounded are not parked"
-        )
-    )]
-    pub(crate) fn backgrounded(&self) -> bool {
-        self.state.lock_ok().backgrounded
+    /// Installs a runner already parked, so setting its first interest and allowing
+    /// it to dial are serialized with foreground and background transitions.
+    pub(crate) fn track(
+        &self,
+        host: HostId,
+        entry: Arc<dyn DemandSource>,
+        start: impl FnOnce() -> Result<(), CommandError>,
+    ) -> Result<(), CommandError> {
+        let mut state = self.state.lock_ok();
+        start()?;
+        if let Some(old) = state.sources.insert(
+            host,
+            Tracked {
+                entry: Arc::downgrade(&entry),
+                grace: None,
+            },
+        ) && let Some((_, grace)) = old.grace
+        {
+            grace.abort();
+        }
+        let level = state.effective(host);
+        entry.level(level);
+        if level.is_some() {
+            entry.resume();
+        }
+        Ok(())
     }
 
-    /// Quiesces every source and resolves once each has committed its in-flight mirror
-    /// write and closed its session.
+    pub(crate) fn replace_demand(
+        self: &Arc<Self>,
+        next: HashMap<HostId, DemandLevel>,
+        park_grace: Duration,
+    ) {
+        let mut state = self.state.lock_ok();
+        let previous = std::mem::replace(&mut state.demand, next);
+        state
+            .sources
+            .retain(|_, slot| slot.entry.strong_count() > 0);
+        for (&host, &level) in &previous {
+            if !state.demand.contains_key(&host) {
+                self.release(&mut state, host, park_grace);
+            } else if state.demand.get(&host) != Some(&level)
+                && let Some(entry) = state
+                    .sources
+                    .get(&host)
+                    .and_then(|slot| slot.entry.upgrade())
+            {
+                entry.level(state.effective(host));
+            }
+        }
+        let added: Vec<_> = state
+            .demand
+            .keys()
+            .filter(|host| !previous.contains_key(host))
+            .copied()
+            .collect();
+        for host in added {
+            let level = state.effective(host);
+            if let Some(slot) = state.sources.get_mut(&host) {
+                if let Some((_, timer)) = slot.grace.take() {
+                    timer.abort();
+                }
+                if let Some(entry) = slot.entry.upgrade() {
+                    entry.level(level);
+                    if level.is_some() {
+                        entry.resume();
+                    }
+                }
+            }
+        }
+    }
+
+    fn release(self: &Arc<Self>, state: &mut State, host: HostId, grace: Duration) {
+        let Some(slot) = state.sources.get_mut(&host) else {
+            return;
+        };
+        let Some(entry) = slot.entry.upgrade() else {
+            return;
+        };
+        entry.level(None);
+        if state.backgrounded {
+            return;
+        }
+        let lifecycle = Arc::downgrade(self);
+        let expires = Instant::now() + grace;
+        let timer = tokio::spawn(async move {
+            tokio::time::sleep_until(expires).await;
+            let pending = lifecycle.upgrade().and_then(|lifecycle| {
+                let mut state = lifecycle.state.lock_ok();
+                if state.demand.contains_key(&host) {
+                    return None;
+                }
+                let slot = state.sources.get_mut(&host)?;
+                if slot.grace.as_ref()?.0 != expires {
+                    return None;
+                }
+                slot.grace = None;
+                Some(slot.entry.upgrade()?.park(true))
+            });
+            if let Some(parked) = pending {
+                parked.await;
+            }
+        })
+        .abort_handle();
+        slot.grace = Some((expires, timer));
+    }
+
+    /// Quiesces every source and resolves once each has closed its session.
     pub(crate) fn quiesce(&self, sessions: &dyn SessionControl) -> BoxFuture<'static, ()> {
+        // Registry installation takes the registry lock before the lifecycle lock.
+        let sources = sessions.sources();
         let mut state = self.state.lock_ok();
         state.backgrounded = true;
-        // Issue every request now. Awaiting them only collects the acknowledgements.
-        let pending: Vec<_> = sessions
-            .sources()
-            .iter()
-            .map(|source| source.quiesce())
-            .collect();
+        let mut pending: Vec<_> = sources.iter().map(|source| source.quiesce()).collect();
+        let State {
+            demand, sources, ..
+        } = &mut *state;
+        for (host, slot) in sources {
+            if let Some((_, grace)) = slot.grace.take() {
+                grace.abort();
+            }
+            if let Some(entry) = slot.entry.upgrade() {
+                entry.level(None);
+                pending.push(entry.park(!demand.contains_key(host)));
+            }
+        }
         Box::pin(async move {
             for parked in pending {
                 parked.await;
@@ -73,17 +207,35 @@ impl Lifecycle {
         })
     }
 
-    /// Resumes every source, the open host's first.
+    /// Resumes demanded sources, the open host's first.
     pub(crate) fn resume(&self, sessions: &dyn SessionControl) {
+        let sources = sessions.sources();
         let mut state = self.state.lock_ok();
+        if !state.backgrounded {
+            return;
+        }
         state.backgrounded = false;
-        for source in sessions.sources() {
-            source.resume();
+        let order: Vec<_> = sources.iter().map(|source| source.host().id).collect();
+        let mut demand: Vec<_> = state.demand.keys().copied().collect();
+        demand.sort_by_key(|host| {
+            (
+                state.demand.get(host) != Some(&DemandLevel::Full),
+                order.iter().position(|id| id == host).unwrap_or(usize::MAX),
+            )
+        });
+        for host in demand {
+            if let Some(entry) = state
+                .sources
+                .get(&host)
+                .and_then(|slot| slot.entry.upgrade())
+            {
+                entry.level(state.effective(host));
+                entry.resume();
+            }
         }
     }
 
-    /// Records the path, re-derives the sync policy and tells the sources the network
-    /// changed.
+    /// Records the path and tells the sources the network changed.
     pub(crate) fn path_changed(&self, sessions: &dyn SessionControl, path: NetworkPath) {
         self.path_changed_with_probe(sessions, path, network::probe);
     }
@@ -100,15 +252,16 @@ impl Lifecycle {
         };
         let mut state = self.state.lock_ok();
         state.path = Some(path);
-        state.apply_sync_policy(sessions);
+        state.refresh_levels();
+        drop(state);
         sessions.network_changed(network);
     }
 
-    /// Records the data policy and applies the sync policy it gives.
-    pub(crate) fn set_data_policy(&self, sessions: &dyn SessionControl, data: DataPolicy) {
+    /// Records the data policy.
+    pub(crate) fn set_data_policy(&self, data: DataPolicy) {
         let mut state = self.state.lock_ok();
         state.data = data;
-        state.apply_sync_policy(sessions);
+        state.refresh_levels();
     }
 }
 
@@ -127,7 +280,7 @@ mod tests {
     };
     use tokio::io::{DuplexStream, duplex};
     use tokio::sync::mpsc;
-    use tokio::time::{Instant, timeout};
+    use tokio::time::timeout;
 
     use super::*;
 
@@ -137,20 +290,12 @@ mod tests {
     #[derive(Default)]
     struct TestSessions {
         sources: Vec<Arc<RemoteSource>>,
-        policies: Mutex<Vec<SyncPolicy>>,
         networks: Mutex<Vec<LocalNetwork>>,
     }
 
     impl SessionControl for TestSessions {
         fn sources(&self) -> Vec<Arc<RemoteSource>> {
             self.sources.clone()
-        }
-
-        fn set_sync_policy(&self, policy: SyncPolicy) {
-            self.policies.lock_ok().push(policy);
-            for source in &self.sources {
-                source.set_sync_policy(policy);
-            }
         }
 
         fn network_changed(&self, network: LocalNetwork) {
@@ -203,7 +348,6 @@ mod tests {
                         lan_up: true,
                         tailscale_up: false,
                     })),
-                    ..Default::default()
                 },
             );
             let handle = source
@@ -220,7 +364,6 @@ mod tests {
 
     struct Attempt {
         host: String,
-        at: Instant,
         peer: Option<DuplexStream>,
     }
 
@@ -262,7 +405,6 @@ mod tests {
                 self.attempts
                     .send(Attempt {
                         host: target.host.clone(),
-                        at: Instant::now(),
                         peer,
                     })
                     .unwrap();
@@ -299,37 +441,6 @@ mod tests {
         let quiesced = lifecycle.quiesce(&sessions);
         assert!(timeout(TEN_MINUTES, attempts.recv()).await.is_err());
         timeout(WAIT, quiesced).await.unwrap();
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn resume_dials_the_open_host_first_and_only_once_per_source() {
-        let lifecycle = Lifecycle::new();
-        let mut sessions = TestSessions::default();
-        let (sent, mut attempts) = mpsc::unbounded_channel();
-        let dialer = Arc::new(TestDialer {
-            connects: false,
-            attempts: sent,
-        });
-        let _other = sessions.start_source(2, "other", dialer.clone());
-        let _open = sessions.start_source(1, "open", dialer);
-        next_attempt(&mut attempts).await;
-        next_attempt(&mut attempts).await;
-        sessions.sources.swap(0, 1);
-        timeout(WAIT, lifecycle.quiesce(&sessions)).await.unwrap();
-
-        let resumed = Instant::now();
-        lifecycle.resume(&sessions);
-        let open = next_attempt(&mut attempts).await;
-        // Resume again after the old backoff has been replaced by a new one.
-        lifecycle.resume(&sessions);
-        let other = next_attempt(&mut attempts).await;
-        assert_eq!((open.host.as_str(), open.at), ("open", resumed));
-        assert_eq!((other.host.as_str(), other.at), ("other", resumed));
-        assert!(
-            timeout(Duration::from_millis(100), attempts.recv())
-                .await
-                .is_err()
-        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -380,66 +491,6 @@ mod tests {
         let mut quiesced = Lifecycle::new().quiesce(&TestSessions::default());
         let mut context = std::task::Context::from_waker(std::task::Waker::noop());
         assert!(quiesced.as_mut().poll(&mut context).is_ready());
-    }
-
-    #[tokio::test]
-    async fn quiesce_and_resume_update_the_backgrounded_flag() {
-        let lifecycle = Lifecycle::new();
-        let sessions = TestSessions::default();
-        assert!(!lifecycle.backgrounded());
-
-        let quiesced = lifecycle.quiesce(&sessions);
-        assert!(lifecycle.backgrounded());
-        quiesced.await;
-        assert!(lifecycle.backgrounded());
-
-        lifecycle.resume(&sessions);
-        assert!(!lifecycle.backgrounded());
-    }
-
-    #[test]
-    fn sync_policy_updates_once_per_change_and_stays_put_while_offline() {
-        let lifecycle = Lifecycle::new();
-        let sessions = TestSessions::default();
-        let cellular = NetworkPath {
-            satisfied: true,
-            expensive: true,
-            constrained: false,
-        };
-        let wifi = NetworkPath {
-            expensive: false,
-            ..cellular
-        };
-
-        lifecycle.path_changed(&sessions, cellular);
-        lifecycle.path_changed(&sessions, cellular);
-        lifecycle.path_changed(
-            &sessions,
-            NetworkPath {
-                satisfied: false,
-                ..wifi
-            },
-        );
-        let allowed = DataPolicy {
-            sync_on_cellular: true,
-        };
-        lifecycle.set_data_policy(&sessions, allowed);
-        assert_eq!(*sessions.policies.lock_ok(), [SyncPolicy::Off]);
-
-        lifecycle.path_changed(&sessions, cellular);
-        lifecycle.set_data_policy(&sessions, DataPolicy::default());
-        lifecycle.set_data_policy(&sessions, allowed);
-        lifecycle.path_changed(&sessions, wifi);
-        assert_eq!(
-            *sessions.policies.lock_ok(),
-            [
-                SyncPolicy::Off,
-                SyncPolicy::SummaryOnly,
-                SyncPolicy::Off,
-                SyncPolicy::SummaryOnly,
-                SyncPolicy::Full
-            ]
-        );
     }
 
     #[test]

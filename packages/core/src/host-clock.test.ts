@@ -1,4 +1,10 @@
-import { hostClock } from "./host-clock";
+import { hostClock, hostTime } from "./host-clock";
+
+it("projects a fixed timestamp using the signed host offset", () => {
+  const wallMs = 1_700_000_000_000;
+  expect(hostTime(wallMs, 47_000)).toBe(1_700_000_047_000);
+  expect(hostTime(wallMs, -47_000)).toBe(1_699_999_953_000);
+});
 
 describe("source-relative clock", () => {
   afterEach(() => vi.restoreAllMocks());

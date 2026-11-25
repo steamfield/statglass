@@ -4,10 +4,41 @@
  */
 import type { HostId, HostRecord } from "@core/generated/types";
 import { hostKeys } from "@core/query-keys";
+import { unwrap } from "@core/transport";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useIsFocused } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { type PhoneSettings, usePhoneSettings } from "./phone-settings";
-import { usePhoneTransport } from "./transport-context";
+import { useIsDemo, usePhoneTransport } from "./transport-context";
+
+export function useHostsPairingState() {
+  const transport = usePhoneTransport();
+  const demo = useIsDemo();
+  const focused = useIsFocused();
+  return useQuery({
+    queryKey: hostKeys.pairing(),
+    queryFn: () => unwrap(transport.pairingState()),
+    enabled: !demo && focused,
+  });
+}
+
+/** A phone-side filter can hide a host without removing it from the registry. */
+export function useNativeRosterEmptied() {
+  const transport = usePhoneTransport();
+  const demo = useIsDemo();
+  const [seenHosts, setSeenHosts] = useState(false);
+  const count = useQuery({
+    queryKey: hostKeys.list(),
+    queryFn: () => transport.listHosts(),
+    select: (hosts) => hosts.length,
+    enabled: !demo,
+  });
+  useEffect(() => {
+    if (demo || !count.isSuccess) return;
+    if (count.data > 0) setSeenHosts(true);
+  }, [count.data, count.isSuccess, demo]);
+  return !demo && count.isSuccess && count.data === 0 && seenHosts;
+}
 
 /** The settings that decide which hosts show, in what order, under what name. */
 export type HostListSettings = Pick<

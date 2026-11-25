@@ -7,6 +7,8 @@ order: 40
 
 Local monitoring reads macOS data as your user, without a privileged helper, and keeps everything on your Mac. StatGlass has no backend and sends no metrics, history or machine identifier anywhere.
 
+See the [StatGlass for iPhone privacy policy](/docs/iphone#privacy) or [get help with the iPhone app](/docs/iphone#support).
+
 ## Permissions
 
 If you turn on an alert in Settings, macOS asks once whether StatGlass may send notifications. Monitoring another Mac requires Remote Login and SSH key access on that Mac; setup uses a bundled SSH helper and may require native macOS approval there. See [Monitor another Mac](/docs/remote-macs).

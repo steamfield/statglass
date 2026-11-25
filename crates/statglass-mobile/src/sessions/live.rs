@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 
-use statglass_engine::{LiveHub, Source};
+use statglass_engine::{LiveHub, ProcessView, Source};
 use statglass_ipc::error::CommandError;
 use statglass_ipc::live::{
     LiveFeed, LiveMsg, LiveRegistry, LiveRequest, LiveSink, SubscriptionInfo,
 };
-use statglass_ipc::mobile::MobileLiveRequest;
+use statglass_ipc::mobile::{DemandLevel, MobileLiveRequest};
 use statglass_schema::{Capabilities, HostId, lock::LockExt};
 use tokio::{runtime::Handle, sync::watch};
 
@@ -31,35 +31,32 @@ impl LiveFeed for HostEntry {
         self.source.capabilities()
     }
 
-    fn set_process_interest(&self, period_ms: Option<u32>) {
-        if let Some(handle) = self.handle.lock_ok().as_ref() {
-            handle.control().set_process_interest(period_ms);
+    fn min_frame_period_ms(&self) -> u32 {
+        if self.demand_level() == Some(DemandLevel::Compact) {
+            5_000
+        } else {
+            0
         }
+    }
+
+    fn set_process_interest(&self, period_ms: Option<u32>) {
+        self.set_process_flags(|flags| flags.process_period_ms = period_ms);
     }
 
     fn set_network_process_interest(&self, interested: bool) {
-        if let Some(handle) = self.handle.lock_ok().as_ref() {
-            handle.control().set_network_process_interest(interested);
-        }
+        self.set_process_flags(|flags| flags.network_processes = interested);
     }
 
     fn set_gpu_process_interest(&self, interested: bool) {
-        if let Some(handle) = self.handle.lock_ok().as_ref() {
-            handle.control().set_gpu_process_interest(interested);
-        }
+        self.set_process_flags(|flags| flags.gpu_processes = interested);
     }
 
     fn set_port_process_interest(&self, interested: bool) {
-        if let Some(handle) = self.handle.lock_ok().as_ref() {
-            handle.control().set_port_process_interest(interested);
-        }
+        self.set_process_flags(|flags| flags.port_processes = interested);
     }
 
-    fn set_detail_interest(&self, interested: bool) {
-        if let Some(handle) = self.handle.lock_ok().as_ref() {
-            handle.control().set_detail_interest(interested);
-        }
-    }
+    // Screen demand owns wire detail. Local IPC streams can also carry summaries.
+    fn set_detail_interest(&self, _interested: bool) {}
 }
 
 #[derive(Default)]
@@ -82,11 +79,13 @@ struct Stream {
     sink: Arc<EventSink>,
     open: bool,
     established: bool,
+    process_view: Option<ProcessView>,
     sending: watch::Sender<bool>,
 }
 
 impl Live {
     pub(super) fn register(self: &Arc<Self>, entry: Arc<HostEntry>, runtime: &Handle) {
+        *entry.live.lock_ok() = Arc::downgrade(self);
         let mut streams = self.streams.lock_ok();
         self.registry.replace_host(entry.clone());
         for slot in streams
@@ -125,6 +124,39 @@ impl Live {
             }
             stream.open || *stream.sending.borrow()
         });
+    }
+
+    pub(super) fn park_host(&self, host: HostId) {
+        let mut streams = self.streams.lock_ok();
+        streams.active.retain(|_, stream| {
+            if stream.host == host && stream.open {
+                stream.open = false;
+                self.registry.window_closed(&stream.sink.label);
+            }
+            stream.open || *stream.sending.borrow()
+        });
+    }
+
+    pub(super) fn set_process_interest(
+        &self,
+        entry: Arc<HostEntry>,
+        stream: u32,
+        view: Option<ProcessView>,
+    ) -> Result<(), CommandError> {
+        let mut streams = self.streams.lock_ok();
+        let Some(slot) = streams.active.get_mut(&stream).filter(|slot| slot.open) else {
+            // Blur can race the stream's own unsubscribe.
+            return Ok(());
+        };
+        if slot.host != entry.config.id {
+            return Err(invalid(format!(
+                "live stream {stream} belongs to another host"
+            )));
+        }
+        slot.process_view = view.clone();
+        self.registry
+            .set_process_interest(&slot.sink.label, entry, view, Some(stream));
+        Ok(())
     }
 
     pub(super) fn open_host(&self) -> Option<HostId> {
@@ -174,6 +206,7 @@ impl Live {
                     sink: sink.clone(),
                     open: true,
                     established: false,
+                    process_view: None,
                     sending: watch::Sender::new(false),
                 },
             );
@@ -212,6 +245,14 @@ impl Live {
         {
             if result.is_some() && entry.is_active() {
                 slot.established = true;
+                if let Some(view) = slot.process_view.clone() {
+                    self.registry.set_process_interest(
+                        &sink.label,
+                        entry,
+                        Some(view),
+                        Some(sink.stream),
+                    );
+                }
                 return result;
             }
             if entry.is_active() || !slot.established {

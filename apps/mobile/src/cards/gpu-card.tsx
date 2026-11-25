@@ -1,28 +1,21 @@
-import { formatGhz, formatPercent, formatWatts } from "@core/format";
+import { gpuCard } from "@core/popover/cards";
+import { CardStream } from "@/cards/card-stream";
 import { ModuleCard } from "@/cards/module-card";
 import type { GpuCardProps } from "@/cards/types";
-import { describeStats, StatList } from "@/widgets/stat-list";
-import { StreamArea } from "@/widgets/stream-area";
+import { StatList } from "@/widgets/stat-list";
 
 export function GpuCard({ gpu, stream, ...chrome }: GpuCardProps) {
-  const items = [
-    { label: "Freq", value: formatGhz(gpu.freqHz) },
-    { label: "Power", value: formatWatts(gpu.powerW) },
-    { label: "Render", value: formatPercent(gpu.render) },
-  ];
-  const details = describeStats(items);
+  const card = gpuCard(gpu, { chartLabel: stream?.ariaLabel });
   return (
     <ModuleCard
       {...chrome}
-      title="GPU"
+      card="gpu"
+      content={card}
       accent="gpu"
-      headline={formatPercent(gpu.util)}
-      spokenDetails={
-        stream?.ariaLabel ? `${details}, ${stream.ariaLabel}` : details
-      }
+      compactDetails={stream?.ariaLabel}
     >
-      {stream && <StreamArea {...stream} />}
-      <StatList layout="grid" items={items} />
+      <CardStream stream={stream} compact={chrome.compact} height={40} />
+      {!chrome.compact && <StatList layout="grid" items={card.items} />}
     </ModuleCard>
   );
 }

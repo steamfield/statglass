@@ -191,7 +191,7 @@ impl AppState {
             }),
             housekeeping,
         };
-        let entry = state.hosts.insert(record, source.clone());
+        let entry = state.hosts.insert_local(record, source.clone());
         // Subscribe before starting, so the watcher sees the first capabilities.
         spawn_host_watcher(app.clone(), Arc::clone(&entry));
         // A store that cannot take the host goes unavailable here and the source runs

@@ -17,6 +17,7 @@ import type {
   CommandError,
   DeliveryOutcome,
   Destination,
+  DeviceIntentInfo,
   DiskIoDevices,
   DiskIoPage,
   DiskIoRequest,
@@ -45,6 +46,7 @@ import type {
   EventRecorded,
   ExportOutcome,
   ExportRequest,
+  HandoverOffer,
   HeatmapDay,
   HeatmapRequest,
   HistoricalUsageReply,
@@ -54,6 +56,10 @@ import type {
   HistoryHealthChanged,
   HistoryPage,
   HistoryRequest,
+  HostAddressesInfo,
+  HostDemand,
+  HostHistoryPage,
+  HostHistoryRequest,
   HostId,
   HostRecord,
   HostsChanged,
@@ -61,10 +67,10 @@ import type {
   LiveMsg,
   Millis,
   NavigateRequested,
-  NetworkAddresses,
   NetworkByApp,
   PairedDeviceInfo,
   PairingOffer,
+  PairingState,
   PairingStatus,
   ProcessesAt,
   ProcessView,
@@ -108,6 +114,16 @@ import type { ProcessSignalResult, SignalKind } from "../process-signal";
 export type CommandResult<T> =
   | { status: "ok"; data: T }
   | { status: "error"; error: CommandError };
+
+/** Calls shared by the phone's native and mock transports. */
+export interface PhoneQueries {
+  hostHistory(
+    request: HostHistoryRequest
+  ): Promise<CommandResult<HostHistoryPage>>;
+  networkAddresses(host: HostId): Promise<CommandResult<HostAddressesInfo>>;
+  setDemand(demand: HostDemand[]): Promise<CommandResult<null>>;
+  pairingState(): Promise<CommandResult<PairingState>>;
+}
 
 export type Unsubscribe = () => void;
 
@@ -334,13 +350,8 @@ export interface Transport {
    * week before now, null when it did not sleep. Needs stored history.
    */
   lastWake(host: HostId): Promise<CommandResult<Millis | null>>;
-  /** The primary interface's addresses, read locally on each call. */
-  getNetworkAddresses(host: HostId): Promise<CommandResult<NetworkAddresses>>;
-  /**
-   * This Mac's public address, from an outside service over HTTPS (D-093):
-   * a network request, so only the Network page asks, while it shows.
-   */
-  getPublicIp(): Promise<CommandResult<string>>;
+  /** The monitored host's local and public addresses. */
+  getHostAddresses(host: HostId): Promise<CommandResult<HostAddressesInfo>>;
   /**
    * Hourly averages (`cpu.total` or `thermal.hottest`) per local day. Build
    * `days` with `heatmapDays` (heatmap-days.ts): Rust takes each day's
@@ -502,6 +513,9 @@ export interface Transport {
   pairedDevices(): Promise<CommandResult<PairedDeviceInfo[]>>;
   /** Removes the device `tag`'s key; false when no device has that tag. */
   revokeDevice(tag: string): Promise<CommandResult<boolean>>;
+  handoverBundleStart(): Promise<CommandResult<HandoverOffer>>;
+  deviceIntents(): Promise<CommandResult<DeviceIntentInfo[]>>;
+  retryDeviceIntents(): Promise<CommandResult<null>>;
   /** Open an http(s) URL in the default browser (sensor dump GitHub issue). */
   openUrl(url: string): Promise<void>;
   /** Close this window (onboarding Skip and Done). */

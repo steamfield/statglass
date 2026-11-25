@@ -1,54 +1,76 @@
-import { appKeys, hostKeys } from "@core/query-keys";
-import { MINUTE_MS } from "@core/time-grid";
-import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import type { HostAddressesInfo } from "@core/generated/types";
+import { hostKeys } from "@core/query-keys";
+import { CommandFailure } from "@core/transport";
+import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
 /**
  * A DHCP lease or a VPN can change the addresses without a primary-interface
- * change. The local read is cheap (no network request), so it runs often
- * enough that a VPN toggle shows within seconds.
+ * change. Re-read the host's addresses so a route change shows within seconds.
  */
 const LOCAL_REFRESH_MS = 10_000;
-/** The public lookup is a request to an outside service; ask rarely. */
-const PUBLIC_STALE_MS = 10 * MINUTE_MS;
+const PENDING_REFRESH_MS = 2_000;
+const MAX_PENDING_POLLS = 5;
 
-/**
- * The primary interface's addresses, read locally, and the public address
- * from an outside service (D-093). The local read is keyed by the primary
- * interface and refreshes every 10 s; the public one by the interface, the
- * local address it read and the interface internet traffic leaves through,
- * so joining another network or a VPN asks again. The
- * public lookup waits for the local read, so a remote host (which has none
- * here) never shows this Mac's address. It runs only while the Network page,
- * the Overview machine header or the popover's Network card is shown (a
- * hidden window pauses both intervals), at most every 10 minutes per window,
- * and is not retried on failure. Showing the window re-reads the local
- * addresses at once, so a network changed while the popover was closed is
- * caught on open.
- */
-export function useAddresses(primary: string | null) {
-  const isLocal = useIsLocalHost();
+type AddressRead = {
+  answer: HostAddressesInfo | null;
+  // Includes the first pending answer, before the five fast polls.
+  pendingReads: number;
+};
+
+/** Reads addresses while a surface that shows them is visible. */
+export function useAddresses(primary: string | null, shown = true) {
   const transport = useTransport();
   const hostId = useHostId();
-  const local = useQuery({
-    queryKey: hostKeys.networkAddresses(hostId, primary),
-    queryFn: () => unwrap(transport.getNetworkAddresses(hostId)),
-    enabled: isLocal && primary !== null,
-    refetchInterval: LOCAL_REFRESH_MS,
-    refetchOnWindowFocus: "always",
+  const client = useQueryClient();
+  const key = hostKeys.addresses(hostId);
+  const addresses = useQuery({
+    queryKey: key,
+    queryFn: async (): Promise<AddressRead> => {
+      const result = await transport.getHostAddresses(hostId);
+      if (result.status === "error") {
+        if (result.error.kind === "remote_unsupported") {
+          return { answer: null, pendingReads: 0 };
+        }
+        throw new CommandFailure(result.error);
+      }
+      const answer = result.data;
+      const previous = client.getQueryData<AddressRead>(key);
+      return {
+        answer,
+        pendingReads:
+          answer.public_ip.state === "pending"
+            ? Math.min((previous?.pendingReads ?? 0) + 1, MAX_PENDING_POLLS + 1)
+            : 0,
+      };
+    },
+    enabled: () => shown && focusManager.isFocused(),
+    // Reopening a surface can see a host upgrade before this query is evicted.
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.answer === null) return false;
+      return !query.state.error &&
+        data?.answer.public_ip.state === "pending" &&
+        data.pendingReads <= MAX_PENDING_POLLS
+        ? PENDING_REFRESH_MS
+        : LOCAL_REFRESH_MS;
+    },
+    refetchOnWindowFocus: (query) =>
+      query.state.data?.answer === null ? false : "always",
   });
-  const lan = local.data?.ipv4[0] ?? local.data?.ipv6[0] ?? null;
-  const egress = local.data?.egress ?? null;
-  const publicIp = useQuery({
-    queryKey: appKeys.publicIp(primary, lan, egress),
-    queryFn: () => unwrap(transport.getPublicIp()),
-    enabled: isLocal && primary !== null && lan !== null,
-    staleTime: PUBLIC_STALE_MS,
-    gcTime: PUBLIC_STALE_MS,
-    refetchInterval: PUBLIC_STALE_MS,
-  });
-  return { lan, publicIp };
+  const data = shown && !addresses.isError ? addresses.data?.answer : undefined;
+  const publicIp = data?.public_ip;
+  return {
+    iface: data?.interface ?? primary,
+    linkMbps: data?.link_mbps ?? null,
+    lan: data?.ipv4[0] ?? data?.ipv6[0] ?? null,
+    failure: addresses.error?.message,
+    publicIp: {
+      data: publicIp?.state === "known" ? publicIp.detail.ip : undefined,
+      isError:
+        publicIp?.state === "unavailable" || publicIp?.state === "unknown",
+    },
+  };
 }

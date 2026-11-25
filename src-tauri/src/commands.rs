@@ -14,9 +14,9 @@ use tauri::{AppHandle, Manager, State};
 use crate::error::CommandError;
 use crate::ipc::{
     ByteCount, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest, HistoryGrowth,
-    HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkAddresses, NetworkByApp,
-    ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats, SettingsSnapshot,
-    SubscriptionInfo, UsageByApp, UsageKey, WindowAppearance,
+    HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkByApp, ProcessView,
+    ProcessesAt, SensorDump, SensorReading, SeriesStats, SettingsSnapshot, SubscriptionInfo,
+    UsageByApp, UsageKey, WindowAppearance,
 };
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink, TauriSink};
 use crate::process_signal::{Micros, ProcessSignalError, SignalKind, SystemProcessOs};
@@ -391,31 +391,6 @@ pub async fn last_wake(app: AppHandle, host: HostId) -> Result<Option<Millis>, C
             .map(Millis))
     })
     .await
-}
-
-/// The addresses of the interface carrying the default route. Read from the system on
-/// each call; no network request. `remote_host` for a host other than this Mac.
-#[tauri::command]
-#[specta::specta]
-pub fn get_network_addresses(
-    state: State<'_, AppState>,
-    host: HostId,
-) -> Result<NetworkAddresses, CommandError> {
-    let entry = state.local_host(host)?;
-    Ok(crate::addresses::network_addresses(
-        entry.primary_iface().as_deref(),
-    ))
-}
-
-/// This Mac's public address, from an outside service over HTTPS (D-093). The one
-/// request StatGlass makes on its own; only the Network page asks, and only while shown.
-#[tauri::command]
-#[specta::specta]
-pub async fn get_public_ip() -> Result<String, CommandError> {
-    spawn_blocking(crate::addresses::public_ip)
-        .await?
-        .map(|ip| ip.to_string())
-        .map_err(|message| CommandError::PublicIp { message })
 }
 
 /// Hourly averages of `cpu.total` or `thermal.hottest` for the requested local days,

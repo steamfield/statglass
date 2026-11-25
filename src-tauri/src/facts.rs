@@ -9,6 +9,10 @@ use statglass_engine::{
     EngineStatus, PerformanceSlowdown, PowerState, background_interval_ms, effective_interval_ms,
     performance_period,
 };
+use statglass_remote::history_query::{
+    HISTORY_MAX_ANSWER_BYTES, HISTORY_MAX_CORE_SERIES, HISTORY_MAX_EVENTS, HISTORY_MAX_POINTS,
+    HISTORY_MAX_SERIES,
+};
 use statglass_schema::settings::{
     ChartWindow, HistorySettings, ItemMode, Readout, SETTINGS_MODULES, SamplingSettings,
 };
@@ -357,6 +361,11 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .constant("DEFAULT_CHART_WINDOW", ChartWindow::default())
         .constant("READOUTS", READOUTS)
         .constant("HISTORY_TIERS", history_tiers())
+        .constant("HISTORY_MAX_POINTS", HISTORY_MAX_POINTS)
+        .constant("HISTORY_MAX_SERIES", HISTORY_MAX_SERIES)
+        .constant("HISTORY_MAX_CORE_SERIES", HISTORY_MAX_CORE_SERIES)
+        .constant("HISTORY_MAX_EVENTS", HISTORY_MAX_EVENTS)
+        .constant("HISTORY_MAX_ANSWER_BYTES", HISTORY_MAX_ANSWER_BYTES)
         .constant("HISTORY_PROJECTION", history_projection())
         .constant("SAMPLING_PLANS", sampling_plans())
         // The metrics a custom alert rule may watch, with defaults and ranges.
@@ -380,6 +389,11 @@ pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Bui
         .typ::<statglass_ipc::mobile::MobileCall>()
         .typ::<statglass_ipc::mobile::MobileRemoteHost>()
         .typ::<statglass_ipc::mobile::MobileEvent>()
+        .typ::<statglass_ipc::mobile::HostHistoryPage>()
+        .typ::<statglass_ipc::mobile::PairingPreview>()
+        .typ::<statglass_ipc::mobile::PairedHost>()
+        .typ::<statglass_ipc::mobile::PairingState>()
+        .typ::<statglass_ipc::mobile::BundleReconcile>()
 }
 
 #[cfg(test)]

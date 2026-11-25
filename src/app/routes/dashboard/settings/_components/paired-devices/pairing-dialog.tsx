@@ -1,8 +1,6 @@
-import { commandErrorText } from "@core/command-error";
 import type { PairingOffer } from "@core/generated/types";
 import { unwrap } from "@core/transport";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -13,13 +11,13 @@ import {
   DialogTrigger,
 } from "~/components/ui/dialog";
 import { useTransport } from "~/lib/transport-context";
-import { PairingOfferView } from "./pairing-offer-view";
+import { PairingErrorMessage, PairingOfferView } from "./pairing-offer-view";
 
 export function PairingDialog({ onPaired }: { onPaired: () => void }) {
   const transport = useTransport();
   const [open, setOpen] = useState(false);
   const [offer, setOffer] = useState<PairingOffer | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
   const attempt = useRef<{ nonce: string | null } | null>(null);
 
   const cancel = useCallback(
@@ -51,7 +49,7 @@ export function PairingDialog({ onPaired }: { onPaired: () => void }) {
     const opening: NonNullable<typeof attempt.current> = { nonce: null };
     attempt.current = opening;
     setOffer(null);
-    setError(null);
+    setFailure(null);
     try {
       const offer = await unwrap(transport.pairingStart());
       if (attempt.current === opening) {
@@ -63,7 +61,7 @@ export function PairingDialog({ onPaired }: { onPaired: () => void }) {
       }
     } catch (cause) {
       if (attempt.current === opening) {
-        setError(commandErrorText(cause, "Couldn’t start pairing."));
+        setFailure({ cause });
       }
     }
   };
@@ -93,10 +91,13 @@ export function PairingDialog({ onPaired }: { onPaired: () => void }) {
               offer={offer}
               onPaired={onPaired}
             />
-          ) : error ? (
+          ) : failure ? (
             <DialogDescription asChild>
               <div>
-                <InlineMessage tone="error">{error}</InlineMessage>
+                <PairingErrorMessage
+                  cause={failure.cause}
+                  fallback="Couldn’t start pairing."
+                />
               </div>
             </DialogDescription>
           ) : (

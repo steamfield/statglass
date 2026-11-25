@@ -1,8 +1,11 @@
 //! Client-side remote queries (D-117): send requests and match replies to callers by id.
 use crate::{RemoteError, Result};
-use statglass_proto::{Answer, Message, Query};
+use statglass_proto::{
+    ADDRESSES_QUERY_FEATURE, Answer, HISTORY_QUERY_FEATURE, Message, QUERY_FEATURE, Query,
+    USAGE_HISTORY_FEATURE,
+};
 use statglass_schema::lock::LockExt;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -22,7 +25,7 @@ pub(crate) enum Line {
     Old,
     Up {
         calls: mpsc::Sender<Call>,
-        usage_history: bool,
+        features: BTreeSet<String>,
     },
 }
 
@@ -33,21 +36,34 @@ const QUEUED: usize = 16;
 /// `Answer::Error` is the host's own refusal; connection failures and a host too busy or
 /// slow to answer are errors.
 pub(crate) async fn call(line: &Mutex<Line>, query: Query, timeout: Duration) -> Result<Answer> {
-    let durable = matches!(&query, Query::HistoricalUsage(_) | Query::UsageProcesses(_));
+    let required = match &query {
+        Query::HistoricalUsage(_) | Query::UsageProcesses(_) => Some((
+            USAGE_HISTORY_FEATURE,
+            "This host does not support usage history; update StatGlass on that host",
+        )),
+        Query::History(_) => Some((
+            HISTORY_QUERY_FEATURE,
+            "This host does not support history queries; update StatGlass on that host",
+        )),
+        Query::NetworkAddresses => Some((
+            ADDRESSES_QUERY_FEATURE,
+            "Addresses are not available from this host",
+        )),
+        _ => None,
+    };
     let calls = match &*line.lock_ok() {
-        Line::Up {
-            usage_history: false,
-            ..
+        Line::Up { calls, features } => {
+            if let Some((feature, message)) = required
+                && !features.contains(feature)
+            {
+                return Err(RemoteError::Unsupported(message.into()));
+            }
+            calls.clone()
         }
-        | Line::Old
-            if durable =>
-        {
-            return Err(RemoteError::Unsupported(
-                "This host does not support usage history; update StatGlass on that host".into(),
-            ));
-        }
-        Line::Up { calls, .. } => calls.clone(),
         Line::Old => {
+            if let Some((_, message)) = required {
+                return Err(RemoteError::Unsupported(message.into()));
+            }
             return Err(RemoteError::Incompatible(
                 "this host's StatGlass is too old to answer; update it".into(),
             ));
@@ -78,15 +94,11 @@ fn disconnected() -> RemoteError {
 /// the guard puts the line down; calls still queued or pending then fail as disconnected.
 pub(crate) fn open(
     line: &Mutex<Line>,
-    answers: bool,
-    usage_history: bool,
+    features: BTreeSet<String>,
 ) -> (LineGuard<'_>, mpsc::Receiver<Call>) {
     let (calls, queued) = mpsc::channel(QUEUED);
-    *line.lock_ok() = if answers {
-        Line::Up {
-            calls,
-            usage_history,
-        }
+    *line.lock_ok() = if features.contains(QUERY_FEATURE) {
+        Line::Up { calls, features }
     } else {
         Line::Old
     };
@@ -169,13 +181,13 @@ mod tests {
             call(&line, historical(), WAIT).await,
             Err(RemoteError::Transport(_))
         ));
-        let (old, queued) = open(&line, false, false);
+        let (old, queued) = open(&line, BTreeSet::new());
         assert!(matches!(
             call(&line, historical(), WAIT).await,
             Err(RemoteError::Unsupported(_))
         ));
         drop((old, queued));
-        let (guard, mut queued) = open(&line, true, false);
+        let (guard, mut queued) = open(&line, [QUERY_FEATURE.to_owned()].into());
         assert!(matches!(
             call(&line, historical(), WAIT).await,
             Err(RemoteError::Unsupported(_))
@@ -187,7 +199,7 @@ mod tests {
         });
         assert_eq!(ordinary.unwrap(), Answer::Done);
         drop((guard, queued));
-        let (guard, mut queued) = open(&line, true, true);
+        let (guard, mut queued) = open(&line, statglass_proto::local_features());
         let (durable, ()) = tokio::join!(call(&line, historical(), WAIT), async {
             let call = queued.recv().await.unwrap();
             assert_eq!(call.query, historical());
@@ -205,7 +217,7 @@ mod tests {
     #[tokio::test]
     async fn replies_reach_their_callers_out_of_order() {
         let line = Mutex::new(Line::Down);
-        let (_guard, mut queued) = open(&line, true, true);
+        let (_guard, mut queued) = open(&line, statglass_proto::local_features());
         let session = async {
             let mut pending = Pending::default();
             let mut ids = Vec::new();
@@ -240,16 +252,16 @@ mod tests {
             call(&line, usage(1), WAIT).await,
             Err(RemoteError::Transport(_))
         ));
-        drop(open(&line, false, false));
+        drop(open(&line, BTreeSet::new()));
         assert!(matches!(&*line.lock_ok(), Line::Down));
-        let (guard, queued) = open(&line, false, false);
+        let (guard, queued) = open(&line, BTreeSet::new());
         assert!(matches!(
             call(&line, usage(1), WAIT).await,
             Err(RemoteError::Incompatible(_))
         ));
         drop((guard, queued));
 
-        let (guard, mut queued) = open(&line, true, true);
+        let (guard, mut queued) = open(&line, statglass_proto::local_features());
         let session = async {
             let mut pending = Pending::default();
             let _sent = pending.request(queued.recv().await.unwrap());
@@ -275,7 +287,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn an_unanswered_call_times_out_and_is_forgotten() {
         let line = Mutex::new(Line::Down);
-        let (_guard, mut queued) = open(&line, true, true);
+        let (_guard, mut queued) = open(&line, statglass_proto::local_features());
         let mut pending = Pending::default();
         let (late, ()) = tokio::join!(call(&line, usage(1), Duration::from_secs(10)), async {
             let _ = pending.request(queued.recv().await.unwrap());

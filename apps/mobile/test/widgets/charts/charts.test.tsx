@@ -18,40 +18,8 @@ import * as Reanimated from "react-native-reanimated";
 import { motionDurations, themeColors } from "@/theme.generated";
 import { StreamArea } from "@/widgets/stream-area";
 
-// Only the native animation boundary is replaced. The bundled Reanimated
-// mock loads native Worklets under jest-expo's iOS resolver.
-jest.mock("react-native-reanimated", () => {
-  const { useState } = jest.requireActual<typeof import("react")>("react");
-  const { View } =
-    jest.requireActual<typeof import("react-native")>("react-native");
-  return {
-    __esModule: true,
-    default: { View },
-    Easing: { bezier: () => (t: number) => t, linear: (t: number) => t },
-    ReduceMotion: { Never: "never" },
-    cancelAnimation: () => {},
-    useAnimatedStyle: (build: () => unknown) => build(),
-    useSharedValue: (initial: number) =>
-      useState(() => {
-        let value = initial;
-        return {
-          get: () => value,
-          set: (next: number) => {
-            mockSetTranslation(next);
-            value = next;
-          },
-        };
-      })[0],
-    withDelay: (_delay: number, target: number) => target,
-    withRepeat: (target: number) => target,
-    withTiming: (target: number) => target,
-  };
-});
-
-const mockSetTranslation = jest.fn<(next: number) => void>();
 afterEach(() => {
   jest.mocked(useColorScheme).mockReturnValue("light");
-  mockSetTranslation.mockClear();
 });
 
 const fixture = POPOVER_CPU_STREAM;
@@ -73,6 +41,8 @@ const layout = () =>
   });
 
 function TickChart() {
+  // Another consumer can create a shared value before the chart mounts.
+  Reanimated.useSharedValue(1);
   const [index, setIndex] = useState(0);
   const tick = [0, 1, 3, 4, 5][index] ?? 0;
   return (
@@ -109,6 +79,58 @@ describe("phone chart geometry", () => {
       );
     }
   );
+
+  it.each(["chart", "spark"] as const)(
+    "puts the %s ceiling on the top gridline without changing the plot height or spoken value",
+    async (variant) => {
+      const plotHeight = variant === "spark" ? 36 : height;
+      await renderWithProviders(
+        <StreamArea {...fixture} variant={variant} height={plotHeight} />
+      );
+      const plot = chart();
+      const ceiling = screen.getByText(fixture.ceilingLabel);
+      const rules = plot.queryAll((el) => el.type === "RNSVGLine");
+      const top = Math.min(...rules.map((rule) => Number(rule.props.y1)));
+      expect(top).toBe(1);
+      expect(ceiling).toHaveStyle({
+        fontVariant: ["tabular-nums"],
+        fontSize: 11,
+      });
+      const background = StyleSheet.flatten(
+        ceiling.props.style
+      )?.backgroundColor;
+      expect(background ?? "transparent").toBe("transparent");
+      expect(ceiling).toHaveProp("maxFontSizeMultiplier", 1.5);
+      expect(plot).toHaveStyle({ height: plotHeight });
+      if (variant === "spark") {
+        expect(rules).toHaveLength(1);
+        expect(screen.queryByText(fixture.windowLabel)).toBeNull();
+        const [area, line] = plot.queryAll((el) => el.type === "RNSVGPath");
+        const [series] = streamAreaModel(
+          { ...fixture, height: plotHeight },
+          {
+            widthPx: 0,
+          }
+        ).series;
+        expect(area?.props.d).toBe(series?.areaPath);
+        expect(line?.props.d).toBe(series?.linePath);
+        expect(line?.props.stroke).toEqual(
+          expect.objectContaining({
+            payload: processColor(themeColors.light["cpu-ink"]),
+          })
+        );
+      }
+    }
+  );
+
+  it("draws a top reference for a zero ceiling even when zero is also a grid tick", async () => {
+    await renderWithProviders(
+      <StreamArea {...fixture} yMax={0} gridlines={[0]} ceilingLabel="0%" />
+    );
+    expect(screen.getByText("0%")).toBeOnTheScreen();
+    const rules = chart().queryAll((el) => el.type === "RNSVGLine");
+    expect(Math.min(...rules.map((rule) => Number(rule.props.y1)))).toBe(1);
+  });
 
   it("places a clipped and named gap and an in-window annotation after measuring", async () => {
     const { container } = await renderWithProviders(
@@ -268,7 +290,7 @@ describe("phone chart states and motion", () => {
     expect(screen.getByRole("img", { name, busy: true })).toBeOnTheScreen();
     expect(chart().queryAll((el) => el.type === "RNSVGPath")).toHaveLength(0);
     const rules = chart().queryAll((el) => el.type === "RNSVGLine");
-    expect(rules).toHaveLength(3);
+    expect(rules).toHaveLength(4);
     expect(rules.at(-1)?.props.stroke).toEqual(
       expect.objectContaining({
         payload: processColor(themeColors.light["cpu-ink"]),
@@ -332,7 +354,7 @@ describe("phone chart states and motion", () => {
     );
     await layout();
     expect(chart().queryAll((el) => el.type === "RNSVGPath")).toHaveLength(0);
-    expect(chart().queryAll((el) => el.type === "RNSVGLine")).toHaveLength(2);
+    expect(chart().queryAll((el) => el.type === "RNSVGLine")).toHaveLength(3);
     expect(screen.queryByRole("note")).toBeNull();
   });
 
@@ -346,19 +368,25 @@ describe("phone chart states and motion", () => {
         DeviceEventEmitter.addListener(event, handler)
       );
     const timing = jest.spyOn(Reanimated, "withTiming");
+    const sharedValues = jest.spyOn(Reanimated, "useSharedValue");
     await renderWithProviders(<TickChart />);
     const advance = () =>
       fireEvent.press(screen.getByRole("button", { name: "Advance chart" }));
     await layout();
     expect(timing).not.toHaveBeenCalled();
-    mockSetTranslation.mockClear();
+    const translationIndex = sharedValues.mock.calls.findIndex(
+      ([initial]) => initial === 0
+    );
+    const translation = sharedValues.mock.results[translationIndex];
+    if (translation?.type !== "return") throw new Error("No chart translation");
+    const setTranslation = jest.spyOn(translation.value, "set");
     await advance();
     expect(timing).toHaveBeenCalledTimes(1);
     expect(timing).toHaveBeenCalledWith(
       0,
       expect.objectContaining({ duration: motionDurations.tick })
     );
-    expect(mockSetTranslation.mock.calls).toEqual([[5], [0]]);
+    expect(setTranslation.mock.calls).toEqual([[5], [0]]);
     timing.mockClear();
     await advance();
     expect(timing).not.toHaveBeenCalled();

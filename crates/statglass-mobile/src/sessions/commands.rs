@@ -2,12 +2,24 @@ use serde::Serialize;
 use serde_json::Value;
 use statglass_engine::Source;
 use statglass_ipc::error::CommandError;
-use statglass_ipc::history;
 use statglass_ipc::mobile::MobileCall;
-use statglass_schema::HostId;
 use std::sync::Arc;
 
-use super::{host::HostEntry, internal, registry::Registry};
+use super::{Sessions, demand, internal, processes, registry::Registry};
+
+impl Sessions {
+    /// Answers the host, live and history calls delegated by the core.
+    pub(crate) async fn call(&self, call: MobileCall) -> Result<Value, CommandError> {
+        match call {
+            MobileCall::RemoveHost { host } => {
+                let sessions = self.clone();
+                blocking(move || sessions.remove_host(host).map(|()| Value::Null)).await
+            }
+            MobileCall::SetDemand { demand } => demand::set_demand(self, demand),
+            other => self.registry.call(other).await,
+        }
+    }
+}
 
 impl Registry {
     pub(super) async fn call(self: &Arc<Self>, call: MobileCall) -> Result<Value, CommandError> {
@@ -17,9 +29,17 @@ impl Registry {
                 let registry = self.clone();
                 blocking(move || value(registry.remote_hosts()?)).await
             }
-            MobileCall::GetHost { host } => value(self.entry(host)?.source.host()),
-            MobileCall::GetCapabilities { host } => value(self.entry(host)?.source.capabilities()),
-            MobileCall::HostVitals { host } => value(self.entry(host)?.vitals()),
+            MobileCall::GetHost { host } => value(self.entry(host)?.record()),
+            MobileCall::GetCapabilities { host } => value(
+                self.entry(host)?
+                    .ready()?
+                    .map_or_else(Default::default, |entry| entry.source.capabilities()),
+            ),
+            MobileCall::HostVitals { host } => value(
+                self.entry(host)?
+                    .ready()?
+                    .map_or_else(Default::default, |entry| entry.vitals()),
+            ),
             MobileCall::RetryRemoteHost { host } => {
                 let registry = self.clone();
                 blocking(move || {
@@ -28,64 +48,36 @@ impl Registry {
                 })
                 .await
             }
-            MobileCall::SetHostsRecentInterest { on } => {
-                self.set_recent_interest(on)?;
-                Ok(Value::Null)
-            }
             MobileCall::SubscribeLive(request) => {
-                let entry = self.entry(request.host)?;
+                let entry = self.entry(request.host)?.running()?;
                 value(self.live.subscribe(entry, request, self.events.clone())?)
             }
             MobileCall::UnsubscribeLive { stream } => {
                 self.live.unsubscribe(stream);
                 Ok(Value::Null)
             }
-            MobileCall::QueryHistory(request) => {
-                let entry = self.entry(request.host)?;
-                blocking(move || entry.query_history(&request)).await
-            }
-            MobileCall::QueryEvents {
+            MobileCall::HostHistory(request) => value(self.host_history(request).await?),
+            MobileCall::NetworkAddresses { host } => value(self.network_addresses(host).await?),
+            MobileCall::SetProcessInterest {
                 host,
-                from_ms,
-                to_ms,
-            } => {
-                let entry = self.entry(host)?;
-                blocking(move || entry.query_events(host, from_ms, to_ms)).await
-            }
+                interested,
+                view,
+                stream,
+            } => processes::set_interest(self, host, interested, view, stream),
             MobileCall::BuildInfo
             | MobileCall::SetHosts { .. }
             | MobileCall::SetDataPolicy(_)
-            | MobileCall::AuthorizedKeyLine { .. } => {
+            | MobileCall::AuthorizedKeyLine { .. }
+            | MobileCall::PreviewPairing { .. }
+            | MobileCall::Pair { .. }
+            | MobileCall::PairingState
+            | MobileCall::DecodeBundle { .. }
+            | MobileCall::AddHandoverHosts { .. }
+            | MobileCall::RemoveHost { .. }
+            | MobileCall::SetDemand { .. } => {
                 Err(internal("core call reached the session registry"))
             }
         }
-    }
-}
-
-impl HostEntry {
-    pub(super) fn query_history(
-        &self,
-        request: &history::HistoryRequest,
-    ) -> Result<Value, CommandError> {
-        let from = request.from_ms;
-        self.with_history(|store| {
-            value(history::query_history(
-                store,
-                request,
-                self.policy.auto_choice(),
-                || self.mirror.recent_rows(from, request.to_ms),
-                |key, bucket| self.hub.history_hold_ms(key, bucket, from),
-            )?)
-        })
-    }
-
-    pub(super) fn query_events(
-        &self,
-        host: HostId,
-        from_ms: i64,
-        to_ms: i64,
-    ) -> Result<Value, CommandError> {
-        self.with_history(|store| value(history::query_events(store, host, from_ms, to_ms)?))
     }
 }
 
@@ -99,5 +91,5 @@ async fn blocking(
 ) -> Result<Value, CommandError> {
     tokio::task::spawn_blocking(run)
         .await
-        .map_err(|error| internal(format!("mobile history task failed: {error}")))?
+        .map_err(|error| internal(format!("mobile registry task failed: {error}")))?
 }

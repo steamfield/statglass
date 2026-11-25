@@ -3,7 +3,9 @@
 //! `ask`.
 use super::RemoteSource;
 use crate::{RemoteError, Result};
-use statglass_proto::{Answer, ErrorCode, HostAlertRules, Query, RuleEntry};
+use statglass_proto::{
+    Answer, ErrorCode, HistoryAnswer, HistoryQuery, HostAddresses, HostAlertRules, Query, RuleEntry,
+};
 use statglass_schema::disk_space::{
     SpaceFile, SpaceReport, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume,
 };
@@ -22,12 +24,13 @@ impl RemoteSource {
                 ErrorCode::HistoryUnavailable => RemoteError::HistoryUnavailable(message),
                 ErrorCode::InvalidArgument => RemoteError::InvalidArgument(message),
                 ErrorCode::Busy => RemoteError::Busy(message),
+                ErrorCode::Internal => RemoteError::Internal(message),
                 ErrorCode::Stale => RemoteError::Stale(message),
                 _ => RemoteError::Refused(message),
             }),
             // A newer host's answer this build cannot read.
             Answer::Unknown => Err(RemoteError::Unsupported(
-                "This host answered in a form this StatGlass can't read; update StatGlass on this Mac"
+                "This host sent an answer this version can't read. Update StatGlass on this device."
                     .into(),
             )),
             answer => pick(answer)
@@ -68,6 +71,22 @@ impl RemoteSource {
         };
         self.ask(query, |a| match a {
             Answer::UsageByApp(usage) => Some(usage),
+            _ => None,
+        })
+        .await
+    }
+
+    pub async fn history(&self, query: HistoryQuery) -> Result<HistoryAnswer> {
+        self.ask(Query::History(query), |answer| match answer {
+            Answer::History(history) => Some(history),
+            _ => None,
+        })
+        .await
+    }
+
+    pub async fn network_addresses(&self) -> Result<HostAddresses> {
+        self.ask(Query::NetworkAddresses, |answer| match answer {
+            Answer::NetworkAddresses(addresses) => Some(addresses),
             _ => None,
         })
         .await
@@ -207,7 +226,14 @@ impl RemoteSource {
         use crate::codec;
         use statglass_proto::Message;
 
-        let (line, mut calls) = open(&self.line, answers, false);
+        // A peer that answers speaks every query this build knows; one that does not is an
+        // older host without the query line.
+        let features = if answers {
+            statglass_proto::local_features()
+        } else {
+            std::collections::BTreeSet::new()
+        };
+        let (line, mut calls) = open(&self.line, features);
         let (client, peer) = tokio::io::duplex(64 * 1024);
         let driver = async move {
             let _line = line;
@@ -350,7 +376,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn alert_rules_queries_preserve_host_refusals() {
-        use RemoteError::{InvalidArgument, Refused, Stale, Unsupported};
+        use RemoteError::{Internal, InvalidArgument, Stale, Unsupported};
 
         let source = source();
         let cases = [
@@ -365,7 +391,7 @@ mod tests {
             ),
             (
                 ErrorCode::Internal,
-                Refused("saving the rules failed".into()),
+                Internal("saving the rules failed".into()),
             ),
         ];
         for (code, expected) in cases {
@@ -469,7 +495,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn alert_rules_queries_ask_for_a_controller_update_for_an_unknown_answer() {
         assert_refusal(read_with_answer(Answer::Unknown).await, RemoteError::Unsupported(
-            "This host answered in a form this StatGlass can't read; update StatGlass on this Mac".into(),
+            "This host sent an answer this version can't read. Update StatGlass on this device."
+                .into(),
         ), false);
     }
 

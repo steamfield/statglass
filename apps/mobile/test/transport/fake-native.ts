@@ -4,12 +4,12 @@ import type {
   MobileLiveRequest,
   SubscriptionInfo,
 } from "@core/generated/types";
-import { jest } from "@jest/globals";
-import type {
-  StatglassNativeEvents,
-  StatglassNativeModule,
+import { afterEach, jest } from "@jest/globals";
+import {
+  __setNativeForTests,
+  type StatglassNativeEvents,
+  type StatglassNativeModule,
 } from "@native/statglass-native";
-import * as moduleLoader from "@native/statglass-native/src/StatglassNativeModule";
 import { NativeModule } from "expo";
 
 export function ok(data: unknown): string {
@@ -28,6 +28,7 @@ export class FakeNative
 {
   readonly version = jest.fn(() => ok(BUILD_INFO));
   readonly start = jest.fn(async (_config: string) => ok(null));
+  readonly preparePhoneKey = jest.fn(async () => undefined);
   readonly call = jest.fn(
     async (method: MobileCall["method"], args: string) => {
       if (method === "subscribe_live") {
@@ -35,6 +36,7 @@ export class FakeNative
         return ok({
           host,
           stream,
+          recent_ms: 120_000,
           backfill_start_ms: null,
           backfill_rows: 0,
           earlier_start_ms: null,
@@ -48,5 +50,9 @@ export class FakeNative
 }
 
 export function installNative(native: StatglassNativeModule | null) {
-  jest.spyOn(moduleLoader, "getStatglassNative").mockReturnValue(native);
+  __setNativeForTests(native);
 }
+
+afterEach(() => {
+  __setNativeForTests(undefined);
+});

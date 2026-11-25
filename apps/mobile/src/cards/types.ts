@@ -13,17 +13,35 @@ import type {
   PowerSelection,
 } from "@core/live-selectors";
 import type { ModuleState, UiModule } from "@core/module-state";
+import type { PopoverCard } from "@core/popover/card-order";
+import type { CardContent } from "@core/popover/cards";
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
+import type { ViewProps } from "react-native";
 
-/** What every card's chrome needs: its density and its two gestures. */
-export interface CardChrome {
-  /** Header and headline only. */
+export interface ModuleCardProps
+  extends Pick<ViewProps, "accessibilityActions" | "onAccessibilityAction"> {
+  card: PopoverCard;
+  content: CardContent;
   compact: boolean;
-  /** Opens the module's page. */
+  onToggleDensity(): void;
   onOpen(): void;
-  /** Opens the card menu (density, move up or down). */
-  onLongPress(): void;
+  stale: boolean;
+}
+
+/** Props shared by the current card renderers. */
+export interface CardChrome
+  extends Pick<
+    ModuleCardProps,
+    | "compact"
+    | "onToggleDensity"
+    | "onOpen"
+    | "stale"
+    | "accessibilityActions"
+    | "onAccessibilityAction"
+  > {
+  /** Accepted from the host stack scaffold until it owns the whole gesture. */
+  onLongPress?(): void;
 }
 
 export interface CpuCardProps extends CardChrome {

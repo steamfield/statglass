@@ -1,61 +1,24 @@
-import { formatClock } from "@core/format";
-import type { HostId, RemoteHostStatus } from "@core/generated/types";
+import type { HostId } from "@core/generated/types";
+import {
+  hostStatusSummary,
+  type PhoneRemoteHostStatus,
+} from "@core/phone-connection";
 import { useEffect, useState } from "react";
-import { AccessibilityInfo, Platform, View } from "react-native";
-import { shallow } from "zustand/shallow";
-import { useHostLive, useLastFrame, useLiveFailure } from "@/data/live";
+import { View } from "react-native";
+import { useStatusAnnouncement } from "@/connection/use-status-announcement";
+import { type useConnection, useLastFrame } from "@/data/live";
 import { Text } from "@/ui/text";
 
-/** Label an offline remote with its last-seen time when the status supplies one. */
-export function offlineLabel(remote: RemoteHostStatus | undefined) {
-  if (!remote || !["offline", "error", "disabled"].includes(remote.state))
-    return null;
-  return remote.last_seen_ms === null
-    ? "Offline"
-    : `Offline since ${formatClock(remote.last_seen_ms)}`;
-}
-
-/** Select connection changes that affect the page, leaving frame age to the pill. */
-export function useConnection(
-  host: HostId,
-  remote: RemoteHostStatus | undefined,
-  statusError: string | null
+function useConnectionAnnouncement(
+  connection: ReturnType<typeof useConnection>,
+  active: boolean
 ) {
-  const { connection, stale, paused, idle } = useHostLive(
-    host,
-    (s) => ({
-      connection: s.connection,
-      stale: s.stale,
-      paused: s.status?.paused,
-      idle: s.status?.display_idle,
-    }),
-    shallow
+  const { label, state, remoteState, problemKind } = connection;
+  const announce = active && (state === "offline" || state === "reconnecting");
+  useStatusAnnouncement(
+    announce ? label : null,
+    announce ? `${state}:${remoteState ?? ""}:${problemKind ?? ""}` : null
   );
-  const failure = useLiveFailure(host);
-  const offline = statusError ?? failure ?? offlineLabel(remote);
-
-  if (offline) return { state: "offline", label: offline } as const;
-  if (remote?.state === "connecting") {
-    return { state: "reconnecting", label: "Reconnecting" } as const;
-  }
-  if (paused || idle) {
-    return {
-      state: "waiting",
-      label: paused ? "Paused" : "Display asleep",
-    } as const;
-  }
-  if (stale || connection === "reconnecting") {
-    return { state: "reconnecting", label: "Reconnecting" } as const;
-  }
-  if (connection !== "live")
-    return { state: "waiting", label: "Connecting" } as const;
-  const route =
-    remote?.route === "lan"
-      ? "LAN"
-      : remote?.route === "tailscale"
-        ? "Tailscale"
-        : null;
-  return { state: "live", label: "Live", route } as const;
 }
 
 function useFrameAge(lastFrame: number | null) {
@@ -69,29 +32,46 @@ function useFrameAge(lastFrame: number | null) {
   return `${Math.max(1, Math.floor((now - (lastFrame ?? now)) / 1000))}s`;
 }
 
+function pillLabel(
+  connection: ReturnType<typeof useConnection>,
+  status: PhoneRemoteHostStatus | undefined,
+  hasFrame: boolean,
+  active: boolean,
+  age: string
+) {
+  if (connection.state !== "live") return connection.label;
+  if (status?.state === "connected" && status.demand === "compact") {
+    return hostStatusSummary(status, {
+      nowMs: Date.now(),
+      requestedDemand: "full",
+    }).label;
+  }
+  if (!hasFrame) return "Connecting";
+  if (!active) return connection.label;
+  return connection.route
+    ? `${connection.label} · ${connection.route} ${age}`
+    : `${connection.label} · ${age}`;
+}
+
 /** Show the connection and announce outages. Frame updates stop at this component. */
 export function ConnectionPill({
   host,
   connection,
+  status,
   active,
 }: {
   host: HostId;
   connection: ReturnType<typeof useConnection>;
+  status: PhoneRemoteHostStatus | undefined;
   active: boolean;
 }) {
-  const { label, state } = connection;
+  const { state } = connection;
   const lastFrame = useLastFrame(host);
   const live = state === "live" && lastFrame !== null;
-  const age = useFrameAge(live && active ? lastFrame : null);
-  useEffect(() => {
-    if (
-      active &&
-      Platform.OS === "ios" &&
-      (state === "offline" || state === "reconnecting")
-    ) {
-      AccessibilityInfo.announceForAccessibility(label);
-    }
-  }, [active, label, state]);
+  const age = useFrameAge(
+    live && active && status?.demand !== "compact" ? lastFrame : null
+  );
+  useConnectionAnnouncement(connection, active);
 
   return (
     <View className="flex-row items-center gap-2 self-start rounded-full border border-border bg-card px-2.5 py-1">
@@ -104,17 +84,11 @@ export function ConnectionPill({
         }
       />
       <Text
-        {...{ role: "caption" }}
+        variant="caption"
         accessibilityLiveRegion={active && state !== "live" ? "polite" : "none"}
         className="shrink tabular-nums"
       >
-        {state === "live" && !live
-          ? "Connecting"
-          : state === "live" && active
-            ? connection.route
-              ? `Live · ${connection.route} ${age}`
-              : `Live · ${age}`
-            : label}
+        {pillLabel(connection, status, live, active, age)}
       </Text>
     </View>
   );

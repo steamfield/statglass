@@ -2,7 +2,8 @@
 //! `plan/rfc-ios-app.md` 2.3): compares `SSH_ORIGINAL_COMMAND` exactly against `serve`,
 //! `version` and `status`, and refuses anything else with exit 2.
 use statglass_remote::{
-    ControlRequest, DeviceTag, SessionScope, SocketPaths, control_request, scope::RestrictedCommand,
+    ControlRequest, DeviceTag, HELPER_COMMAND_NOT_ALLOWED, SessionScope, SocketPaths,
+    control_request, scope::RestrictedCommand,
 };
 
 /// Runs the forced command for `device` and returns the process exit code.
@@ -13,7 +14,7 @@ pub async fn run(device: &str) -> crate::CommandResult {
     };
     let original = std::env::var_os("SSH_ORIGINAL_COMMAND");
     let Some(command) = RestrictedCommand::parse(original.as_deref()) else {
-        eprintln!("statglass-remote-helper: command not allowed");
+        eprintln!("{HELPER_COMMAND_NOT_ALLOWED}");
         return Ok(2);
     };
     match command {

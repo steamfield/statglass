@@ -123,6 +123,8 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-133 | Charts hold back until their history has arrived, then reveal once | Accepted |
 | D-138 | Custom alert rules, phone delivery through ntfy and webhooks, and a host-offline rule | Accepted |
 | D-153 | A Utilities sidebar group, starting with the disk space report | Accepted |
+| D-154 | The phone keeps no history; the host answers bounded history queries | Accepted |
+| D-158 | StatGlass for iPhone ships on the App Store | Accepted |
 
 ---
 
@@ -4829,3 +4831,94 @@ Settings. Not decided: a Docker disk image cross-link (needs a category on `Spac
 wire change), a built-in low-disk alert and clickable Timeline events. Scanning,
 accounting, retention and the no-delete rule (D-114, D-132) are unchanged; nothing here
 touches the wire, series or host identity.
+
+---
+
+## D-154: The phone keeps no history; the host answers bounded history queries
+
+Date: 2026-11-25. The user's decision. Reverses the mirror design of RFC `plan/rfc-ios-app.md` 4.4 for the phone, supersedes D-146, and amends D-141 (the phone no longer uses `Mirror`) and the wire rule in D-141 ("the wire format does not change for 1.0"). One-way door (`plan/architecture.md`): the message shape below is additive and optional. Plan: `plans/deliver-ios-app.md` phase 7 lanes i, j1, j2 and k.
+
+### Context
+
+The phone mirrored each host's history into a per-host SQLite file (M1 for a day, M15 for 30 days, 25 MB per host), with a sync policy for cellular, a storage budget, backup exclusion, quiesce waiting on mirror writes, and its own corruption and too-new states. The phone is a basic monitor of hosts that already keep their own history. The mirror duplicated that store, spent cellular data on history nobody opened, and carried most of the phone's failure states.
+
+### Decision
+
+1. **The monitored host is the source of truth.** The phone stores no history. A chart asks its host, holds the answer in memory, and drops it when the view that asked unmounts (React Query `gcTime` and `staleTime` of 30 s, so going back and forth doesn't refetch; the live ring's 60 s backfill covers anything newer). Changing a chart's range asks the host again. An offline host shows no history.
+2. **`Query::History(HistoryQuery)` and `Answer::History(HistoryAnswer)`** in `statglass-proto`, over the D-117 request/reply path. It is a bounded one-shot read like `HistoricalUsage`, not a stream, so it does not belong among the live or durable sync messages. It gets `Query::Unknown` skew handling, per-variant restricted-scope control, `ErrorCode::Busy` and the existing `spawn_blocking` answering for free. Hosts advertise it with the Hello feature `query.history.v1`. The client never sends it to a host without the feature and reports `CommandError::RemoteUnsupported` ("Update StatGlass on <host> to see history") while live data keeps flowing.
+3. **The request carries only what the chart draws**: series selectors, `from_ms`/`to_ms` (`to_ms = None` means "ending now"), a point budget the client sets from the chart's width (about one point per 2-3 pt: 120-200 on a phone-width chart, the column count for a heatmap), and the module whose events it wants.
+4. **The host bounds every request.** `HISTORY_MAX_POINTS = 500`, `HISTORY_MAX_SERIES = 32`, `HISTORY_MAX_EVENTS = 200` and `HISTORY_MAX_ANSWER_BYTES = 512 KiB` (encoded). A request whose selectors are all one per-core metric (the CPU heatmap, `cpu.load{core=*}`) is clamped at `HISTORY_MAX_CORE_SERIES = 256` instead, with its budget set to the heatmap's column count, so a host with more than 32 cores still draws every core. A request over a limit is clamped and the answer lists what was clamped. A request that can't be satisfied at all gets `ErrorCode::InvalidArgument`: an empty or inverted range, no selectors, or a selector whose metric the catalog doesn't know. A known selector with no data in range is not an error: it comes back with no points and the gaps that cover the range.
+5. **The host reads persisted tier rows, then the recent rows the writer hasn't committed.** It picks the coarsest tier whose bucket is no wider than `(to - from) / budget` (S10, M1, M15), or the next coarser tier that still retains the range start. It reads through the tier's unique `(host_id, bucket_ts, layout_id)` index with a `layout_id IN (...)` filter, so only the layouts holding the requested series are read and decoded, and merges buckets into at most `budget` slots in one pass with avg, min and max (the store's existing `max_points` merge). The writer commits every 5 minutes, so persisted rows alone would leave a hole of up to 5 minutes before now. The host closes it the way `HostServer::recent` (`crates/statglass-remote/src/host_server.rs:121-127`) does: `HistoryStore::history_through_now` gets a `recent` closure returning the hub's recent bucket rows for the host, bounded to `[max(from, now - RECENT_ROWS_MS), min(to, now)]` (`statglass_engine::RECENT_ROWS_MS`, 15 minutes). It never passes the raw live ring. `complete_to_ms` comes from that same snapshot. Its work is bounded by tier rows, never raw samples: per layout, at most 8,640 S10 rows (one day), 10,080 M1 rows (seven days) or, for a 30-day M15 read, about 2,200 M15 rows plus the 10,080 M1 rows of the last seven days that an M15 read also takes from `tier_1m` (`db.rs` `bucket_sources`).
+6. **The answer is final**: per series avg/min/max points, explicit gaps, the tier and bucket width used, `complete_to_ms`, the module's events in range (as `WireEvent` rows, so an event kind from a newer host passes the codec and the client skips the one it can't decode, D-083), and avg and peak per requested series key. `statglass_store::range_stats` pools every series of a metric (`reader/stats.rs:50`), so the host computes stats per key, never per metric: a per-interface or per-core average is not the average of all of them. The phone does no aggregation (`data-boundary.md`).
+7. **Host CPU is protected.** Queries run on the blocking pool beside the other D-117 answers, never on the sampler. One history query runs per session at a time and the rest wait in a per-session queue. A newer query replaces a queued one only when it has the same chart key (the selector set and the budget), so flipping one chart's range doesn't stack work while a page's other charts keep their place. At most `HISTORY_MAX_CONCURRENT = 2` run host-wide, and beyond that the answer is `Busy`, which the phone shows as loading and retries after 1 s, at most 3 times; after the third `Busy` the chart shows its load error with Retry. Identical requests within `HISTORY_CACHE_TTL = 10 s` (range rounded to the bucket width) are served from a 16-entry cache. The host-wide semaphore and cache live on `HostServer`, never in statics.
+8. **The restricted session allows `History`.** Every other refused query stays refused.
+9. **The desktop keeps its mirror** for remote hosts in this run, because its alerts, timeline and offline history read the local store. A later "view without mirroring" mode for desktop remote hosts should use this query rather than a second path.
+
+### Consequences
+
+- Removed from the phone: per-host mirror stores, `SyncPolicy`, `MirrorPolicy::phone`, the per-host storage budget, the "Sync history on cellular" setting, backup exclusion of mirrors, quiesce waiting on mirror writes, the mirror's corrupt and too-new states, and `not_synced` spans. Settings > Data keeps "Live updates on cellular", now wired.
+- `statglass-mobile` keeps its direct `statglass-store` edge for the phone identity lock (`sessions/phone_id.rs`).
+- History needs a reachable host. That is the accepted cost.
+
+### Revisit when
+
+- Users ask for history of hosts while they are offline, or cellular history reads are measured to cost more than the mirror's sync did.
+
+## D-155: Hosts serve their network addresses to their clients
+
+Date: 2026-11-25. The user's decision, reversing the iPhone polish RFC's proposal (`plan/rfc-ios-polish.md` section 6). Extends D-093's address rules to remote clients. One-way door: additive and optional. Plan: `plans/deliver-ios-app.md` phase 7 lane h and phase 8 lane e.
+
+### Decision
+
+1. `Query::NetworkAddresses` and `Answer::NetworkAddresses(HostAddresses)` over the D-117 path, advertised with the Hello feature `query.addresses.v1`. `HostAddresses { interface, link_mbps, ipv4, ipv6, public_ip, as_of_ms }` is a CBOR map with optional fields. `PublicIp` is `known { ip }`, `pending`, `unavailable { reason }` or `unknown`. `unknown` is the fallback for a state a newer host adds: the enum is adjacently tagged and decoded through `statglass-proto`'s `Tagged`/`lenient` pattern (`query.rs`, as `Query` and `Answer` are), not `#[serde(other)]`, which can't be exported through specta. The phone shows `unknown` as "Public unavailable".
+2. The host answers with its egress interface (falling back to the primary), link speed when known, IPv4 and non-link-local IPv6, and the public IP under D-093's rule: on demand, after the local read succeeds, through `/usr/bin/curl` to `api.ipify.org` with a 5 s timeout. Every host looks up its own public IP, Linux agents included; a host without `/usr/bin/curl` answers `unavailable: curl not installed` (D-058). A lookup runs only on demand, when a client asks for `NetworkAddresses` (the phone while its Network page is open, the Mac while a surface showing addresses is visible), never in the background. A known answer is cached for 24 hours and looked up again early only when the host's network changes: the primary or egress interface changes, or its local address changes, so a laptop that moves networks gets the right answer. A failed lookup is cached for 10 minutes and is not retried in a loop. The host never blocks the answer on the lookup: on a cold cache it answers `pending`, and the phone polls (every 2 s, at most 5 tries, only while the Network page is visible). The public IP never rides the 1 Hz frames; it is only in this answer.
+3. The restricted session allows it. The Mac app and the agent share one resolver in `statglass-remote::addresses`.
+4. **This widens D-093, and the user accepted it.** D-093 weighed the third-party request for the user's own Mac, where the user opened the Network page. Now a headless Linux server makes the same request occasionally, when a phone or a controlling Mac shows its addresses and the cache is cold or the host's network changed. On this Mac the public IP now follows the same 24-hour rule instead of the desktop's 10-minute refresh. There is no switch for it. The user accepted that tradeoff (2026-11-25).
+5. **The Mac shows these addresses for its remote hosts too** (the user's decision, 2026-11-25). One desktop command, `get_host_addresses`, answers this Mac from the shared resolver and a remote host through its session's `NetworkAddresses` query, replacing `get_network_addresses` and `get_public_ip`. The Network page address line, the Overview machine header and the popover Network card show addresses for every host. A host without `query.addresses.v1` shows no address row and no error. Plan: phase 8 lane e.
+
+## D-156: One Add a host flow on the iPhone
+
+Date: 2026-11-25. The user's decision. Updates RFC `plan/rfc-ios-app.md` sections 1.3, 1.4 and 2.4.
+
+### Decision
+
+Use one Add a host flow for offers from Pair iPhone on a Mac and from `sudo statglass-agent pair` on a host. Both offers support Scan QR and Paste code. The payload's `can_hand_over` field tells the phone whether the host can hand over other monitored hosts. The phone uses the OS field for display.
+
+## D-157: History answers carry range totals
+
+Date: 2026-11-25. Follows D-154. One-way door: additive and optional. Plan: `plans/deliver-ios-app.md` phase 12 (the Network page strip).
+
+### Decision
+
+`WireSeriesStats` in the D-154 history answer gains `measured_ms` and `integral`, both optional and omitted when absent, and `SeriesHistoryStats` carries them to the phone. The host fills them from `statglass-store`'s `range_stats`, the function behind the desktop's `query_series_stats`: `measured_ms` is the time in the range with a reading outside the gaps that apply to the metric, and `integral` is the average times the measured seconds, `None` when nothing was measured. The phone's Network page shows Downloaded and Uploaded from them, with the measured time when it is shorter than the range, as the desktop strip does. The phone never integrates bucket averages itself (`data-boundary.md`): a host that predates this sends neither field, and the phone shows no totals for it. An older decoder ignores the new fields and a newer one reads their absence as `None`; `statglass-proto/tests/history_skew.rs` covers both directions.
+
+## D-158: StatGlass for iPhone ships on the App Store
+
+Date: 2026-11-25. Follows D-015, D-118, D-131, D-154. Plan: `plans/deliver-ios-app.md` phase 13.
+
+### Decision
+
+StatGlass for iPhone (`com.tryopendata.statglass.mobile`) is distributed through TestFlight and the App Store; the Mac app stays off the App Store (D-015). The listing is iPhone only (`supportsTablet: false`, reviewed in iPad compatibility mode), portrait only, named "StatGlass" (fallback "StatGlass Monitor"), category Utilities with Developer Tools second. The App Privacy label is Data Not Collected: metrics travel over SSH from the user's own hosts to the phone, the phone keeps no history (D-154), and nothing reaches the developer. The privacy policy and support page is `https://statglass.steamfield.io/docs/iphone` (`#privacy`, `#support`), linked from Settings > About.
+
+Versions: `CFBundleShortVersionString` comes from `apps/mobile/package.json` (1.0.0 for the first release, tagged `mobile-vX.Y.Z`); `CFBundleVersion` is `git rev-list --count HEAD` at archive time, passed as `STATGLASS_MOBILE_BUILD_NUMBER`, so every upload is monotonic.
+
+Export compliance (the user's answer, 2026-11-25): the app's SSH uses standard algorithms not provided by the OS (russh with ring and p256), so `ITSAppUsesNonExemptEncryption` is `true`. App Store Connect gets the "standard algorithms" answer, France is excluded from the storefronts so no French declaration is filed, and the BIS annual self-classification report covers the app.
+
+Review access (the user's answer): demo mode only. The review notes explain "Try demo hosts" on the first screen and the QR pairing with StatGlass on a Mac or `statglass-agent` on Linux; no live host is provided, because pairing codes expire in minutes.
+
+Builds are local only (D-118, D-131): `make mobile-archive` builds and exports, `make mobile-release-check` checks the archive, and the upload and submission are the user's steps (`.github/releasing-mobile.md`).
+
+## D-159: The phone's live ring starts with the host's recent five minutes
+
+Date: 2026-11-25. Follows D-154. The user's report: a host screen opened on a fresh connection drew only the frames received since the app connected, instead of a full chart window. No wire change.
+
+### Context
+
+D-154 removed the phone's mirror and said the live ring's backfill covers the newest minute. The ring had no source for that minute: a session refilled its ring only from a mirror (`refill_ring`), and without one it still counted the three sync tiers, never synced them and so never sent `RecentRequest`. Every phone chart drawn from the ring started empty on each connection, on hosts of every version.
+
+### Decision
+
+1. A `RemoteSource` without a mirror syncs no tiers. While live detail is on and its ring has not been refilled, it sends one `RecentRequest` for the last five minutes (retried after 5 s if no snapshot arrives) and refills the ring from the `RecentRows` reply through `statglass_store::history_recent`, on a new timeline, the way the desktop refills from its mirror. The snapshot is validated by the same function as the mirror's (`recent_rows::recent_buckets`) and held only in the ring. Detail stopping and starting again refills again.
+2. The phone subscribes with a five-minute backfill, the span the snapshot covers. Refilled rows are 10 s buckets, as on the desktop for a remote host; frames received after the connection are 1 s rows.
+3. Hosts of every version answer `RecentRequest`, so this needs no host update. Module pages still read bounded history queries (D-154), which need a host with `query.history.v1`.
+4. Until that refill lands, a phone chart loads the way a desktop chart does (D-133): frame and scan line, then the data settles in once. The session marks the hub `refill_pending` while it has no mirror, the host keeps history and this stretch of detail has not been refilled (cleared on the refill, a failed snapshot and a timed-out request). The flag does not wait for live detail itself, because a screen subscribes a frame before its demand reaches the session. A stream opened meanwhile with a backfill sends a `BackfillPlan` whose `earlier_start_ms` is the start of its window, so the window waits; the refill's new timeline restarts the stream with a plan that ends the wait, and a refill that added nothing, or none within `REFILL_WAIT_MS` (10 s, for detail withheld on cellular), ends it with an empty plan on the next frame. The phone's charts reveal through a Reanimated twin of `useReveal` (`apps/mobile/src/widgets/lib/reveal.ts`) on the enter token, still under Reduce Motion and Low Power Mode.

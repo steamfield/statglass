@@ -9,6 +9,7 @@ import type {
   HistoricalUsageMetric,
   HostId,
   Module,
+  SeriesSelector,
   Settings,
   Tier,
   UsageKey,
@@ -31,6 +32,23 @@ export type TierKey = Tier | "auto";
 
 export const historyKeys = {
   all: ["history"] as const,
+  hostHistory: (
+    host: HostId,
+    series: readonly SeriesSelector[],
+    range: { windowMs: number } | { fromMs: number; toMs: number },
+    budget: number,
+    eventsFor: Module | null = null
+  ) =>
+    [
+      ...historyKeys.host(host),
+      "host-history",
+      series,
+      "windowMs" in range
+        ? (["window", range.windowMs] as const)
+        : (["bounds", range.fromMs, range.toMs] as const),
+      budget,
+      eventsFor,
+    ] as const,
   recent: (hostId: HostId, windowMs: number) =>
     [...historyKeys.host(hostId), "recent", windowMs] as const,
   moduleSeries: (
@@ -224,6 +242,8 @@ export const hostKeys = {
   all: ["hosts"] as const,
   list: () => [...hostKeys.all, "list"] as const,
   remote: () => [...hostKeys.all, "remote"] as const,
+  /** The phone's pairing state (a changed key reads "Needs pairing"). */
+  pairing: () => [...hostKeys.all, "pairing"] as const,
   updates: (hostId: HostId) => [...hostKeys.all, hostId, "updates"] as const,
   alertRules: (hostId: HostId) =>
     [...hostKeys.all, hostId, "alert-rules"] as const,
@@ -242,9 +262,8 @@ export const hostKeys = {
     [...hostKeys.all, hostId, "history-health"] as const,
   sensorDump: (hostId: HostId) =>
     [...hostKeys.all, hostId, "sensor-dump"] as const,
-  /** The primary interface's addresses; keyed by it, so a route change rereads. */
-  networkAddresses: (hostId: HostId, iface: string | null) =>
-    [...hostKeys.all, hostId, "addresses", iface] as const,
+  addressesAll: ["hosts", "addresses"] as const,
+  addresses: (hostId: HostId) => [...hostKeys.addressesAll, hostId] as const,
 };
 
 export const appKeys = {
@@ -259,17 +278,6 @@ export const appKeys = {
    * `alert-destinations-changed` rather than read again.
    */
   alertDestinations: ["app", "alert-destinations"] as const,
-  /**
-   * The public address (D-093), keyed by the primary interface, its local
-   * address and the egress interface: another network (a new lease, even on
-   * the same Wi-Fi interface) or a VPN coming up asks again.
-   */
-  publicIp: (
-    iface: string | null,
-    local: string | null,
-    egress: string | null
-  ) => [...appKeys.publicIpAll, iface, local, egress] as const,
-  publicIpAll: ["app", "public-ip"] as const,
 };
 
 /** True for a query key that starts with `prefix`. */

@@ -36,7 +36,7 @@ statglass-query         -> schema
 statglass-cli           -> query, schema
 statglass-agent         -> schema, proto, store, engine, remote
 statglass (src-tauri)   -> schema, proto, store, engine, remote, query, notify, ipc
-statglass-mobile        -> schema, proto, store, engine (never remote)
+statglass-mobile        -> schema, proto, store, engine, session, ipc, ssh (never remote)
 ```
 
 The policy records dev edges separately (including store's protocol fixtures). Do not

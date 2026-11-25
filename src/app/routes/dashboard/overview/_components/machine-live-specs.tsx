@@ -6,7 +6,6 @@ import { useShallow } from "zustand/react/shallow";
 import { CopyValue } from "~/components/copy-value";
 import type { MachineSpec } from "~/components/machine-header";
 import { useAddresses } from "~/hooks/use-addresses";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { cn } from "~/lib/utils";
 import { useHost } from "~/stores/host-store";
 import { held, keysOf, usePrimaryIface } from "~/stores/live-selectors";
@@ -14,25 +13,30 @@ import { held, keysOf, usePrimaryIface } from "~/stores/live-selectors";
 const LOADAVG = ["1", "5", "15"].map((window) => sk("cpu.loadavg", { window }));
 
 /**
- * The primary interface with its local and public addresses, each copied on
- * click as on the Network page (D-093). A remote host shows the interface
- * alone: its addresses are not read from here.
+ * The host's interface with its local and public addresses, each copied on
+ * click as on the Network page (D-093). Older hosts show the interface alone.
  */
 export function NetworkSpec() {
   const primary = usePrimaryIface();
-  const local = useIsLocalHost();
-  const { lan, publicIp } = useAddresses(primary);
-  if (primary === null) return "No active interface";
-  if (!local) return primary;
+  const { iface, lan, publicIp, failure } = useAddresses(primary);
+  const name = iface ?? "No active interface";
+  if (failure !== undefined) {
+    return (
+      <>
+        {name}
+        {" · "}
+        <span className="text-muted-foreground" title={failure}>
+          Addresses unavailable
+        </span>
+      </>
+    );
+  }
+  if (lan === null) return name;
   return (
     <>
-      {primary}
+      {name}
       {" · "}
-      {lan === null ? (
-        <span className="text-muted-foreground">…</span>
-      ) : (
-        <CopyValue value={lan} label="local IP address" />
-      )}
+      <CopyValue value={lan} label="local IP address" />
       {" · Public "}
       {publicIp.data ? (
         <CopyValue value={publicIp.data} label="public IP address" />

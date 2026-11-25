@@ -1,5 +1,6 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
+import { FakeNative, installNative } from "@test/transport/fake-native";
 import {
   fireEvent,
   renderHook,
@@ -7,43 +8,36 @@ import {
   waitFor,
 } from "@testing-library/react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useLayoutEffect } from "react";
 import DeviceSettings from "@/app/settings/device";
 import { usePhoneSettings } from "@/data/phone-settings";
 import { AppLockGate } from "@/lock/app-lock-gate";
 import { useSnapshotCover } from "@/lock/snapshot-cover";
 
-jest.mock("@native/statglass-native", () => ({
-  getStatglassNative: () =>
-    mockNativeAvailable ? { setSnapshotCover: mockSetSnapshotCover } : null,
-}));
-
-const mockSetSnapshotCover = jest.fn<(enabled: boolean) => void>();
-let mockNativeAvailable: boolean;
+let native: FakeNative;
 
 beforeEach(() => {
-  mockSetSnapshotCover.mockReset();
-  mockNativeAvailable = true;
+  native = new FakeNative();
+  installNative(native);
 });
 
 test("forwards the initial flag and one update per change", async () => {
   const { rerender } = await renderHook(useSnapshotCover, {
     initialProps: true,
   });
-  expect(mockSetSnapshotCover.mock.calls).toEqual([[true]]);
+  expect(native.setSnapshotCover.mock.calls).toEqual([[true]]);
 
   await rerender(false);
   await rerender(false);
-  expect(mockSetSnapshotCover.mock.calls).toEqual([[true], [false]]);
+  expect(native.setSnapshotCover.mock.calls).toEqual([[true], [false]]);
 });
 
 test("can mount and update without a native module", async () => {
-  mockNativeAvailable = false;
+  installNative(null);
   const { rerender } = await renderHook(useSnapshotCover, {
     initialProps: true,
   });
   await rerender(false);
-  expect(mockSetSnapshotCover).not.toHaveBeenCalled();
+  expect(native.setSnapshotCover).not.toHaveBeenCalled();
 });
 
 test.each([true, false])(
@@ -55,27 +49,29 @@ test.each([true, false])(
     await renderWithProviders(<AppLockGate>{null}</AppLockGate>, {
       settings: { appLock },
     });
-    expect(mockSetSnapshotCover.mock.calls).toEqual([[appLock]]);
+    expect(native.setSnapshotCover.mock.calls).toEqual([[appLock]]);
   }
 );
 
-test("enabling App Lock arms the native cover before the setting renders", async () => {
+test("enabling App Lock arms the native cover before publishing the setting", async () => {
   jest
     .spyOn(LocalAuthentication, "getEnrolledLevelAsync")
     .mockResolvedValue(LocalAuthentication.SecurityLevel.SECRET);
   jest
     .spyOn(LocalAuthentication, "authenticateAsync")
     .mockResolvedValue({ success: true });
-  const transitions: string[] = [];
-  mockSetSnapshotCover.mockImplementation((enabled) => {
-    if (enabled) transitions.push("cover armed");
+  let setting: boolean | undefined;
+  const settingWhenArmed: (boolean | undefined)[] = [];
+  native.setSnapshotCover.mockImplementation((enabled) => {
+    if (enabled) settingWhenArmed.push(setting);
   });
 
   function DeviceSettingsWithObserver() {
-    const appLock = usePhoneSettings((settings) => settings.appLock);
-    useLayoutEffect(() => {
-      if (appLock) transitions.push("setting enabled");
-    }, [appLock]);
+    // The subscription reads synchronously when the setting changes, before React commits.
+    usePhoneSettings((settings) => {
+      setting = settings.appLock;
+      return settings.appLock;
+    });
     return <DeviceSettings />;
   }
 
@@ -88,5 +84,5 @@ test("enabling App Lock arms the native cover before the setting renders", async
   await waitFor(() => expect(appLock).toBeEnabled());
   await fireEvent(appLock, "valueChange", true);
   expect(appLock).toBeChecked();
-  expect(transitions.slice(0, 2)).toEqual(["cover armed", "setting enabled"]);
+  expect(settingWhenArmed[0]).toBe(false);
 });

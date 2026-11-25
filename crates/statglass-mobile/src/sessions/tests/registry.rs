@@ -1,5 +1,6 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileConfig, MobileHostKey};
@@ -8,13 +9,14 @@ use statglass_session::{ConnectionFailureKind, ConnectionStatus, Route};
 use statglass_ssh::SoftwareSigner;
 
 use crate::control::SessionControl;
+use crate::ffi::{NativeSigner, NativeSignerError};
 use statglass_engine::Source;
 
 use super::*;
 
 #[tokio::test]
 async fn phone_identity_is_private_stable_and_never_replaces_a_corrupt_file() {
-    let fixture = Fixture::start(vec![], SyncPolicy::Off);
+    let fixture = Fixture::start(vec![]);
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let start = |sessions: &Sessions| {
@@ -22,11 +24,13 @@ async fn phone_identity_is_private_stable_and_never_replaces_a_corrupt_file() {
             Handle::current(),
             data.clone(),
             MobileConfig::default(),
-            Arc::new(SoftwareSigner::generate()),
+            Arc::new(statglass_ssh::RusshDialer::new(Arc::new(
+                SoftwareSigner::generate(),
+            ))),
         )
     };
 
-    let first = Sessions::new(fixture.events.clone());
+    let first = Sessions::new(fixture.events.clone(), None);
     start(&first).unwrap();
     let path = data.join("phone-id");
     let original = fs::read_to_string(&path).unwrap();
@@ -42,13 +46,13 @@ async fn phone_identity_is_private_stable_and_never_replaces_a_corrupt_file() {
     assert!(matches!(start(&first), Err(CommandError::Internal { .. })));
     drop(first);
 
-    let second = Sessions::new(fixture.events.clone());
+    let second = Sessions::new(fixture.events.clone(), None);
     start(&second).unwrap();
     assert_eq!(fs::read_to_string(&path).unwrap(), original);
     drop(second);
 
     fs::write(&path, "broken").unwrap();
-    let third = Sessions::new(fixture.events.clone());
+    let third = Sessions::new(fixture.events.clone(), None);
     let error = start(&third).unwrap_err();
     assert!(error.to_string().contains("invalid phone identity"));
     assert_eq!(fs::read_to_string(&path).unwrap(), "broken");
@@ -56,7 +60,7 @@ async fn phone_identity_is_private_stable_and_never_replaces_a_corrupt_file() {
 
 #[tokio::test(start_paused = true)]
 async fn empty_and_invalid_host_lists_leave_the_current_roster_intact() {
-    let fixture = Fixture::start(vec![], SyncPolicy::Off);
+    let fixture = Fixture::start(vec![]);
     let sessions = &fixture.sessions;
     let first = host(2);
     let second = host(1);
@@ -69,11 +73,6 @@ async fn empty_and_invalid_host_lists_leave_the_current_roster_intact() {
         MobileCall::RetryRemoteHost { host: first.id },
         MobileCall::HostVitals { host: first.id },
         subscribe(first.id, 42),
-        MobileCall::QueryEvents {
-            host: first.id,
-            from_ms: NOW,
-            to_ms: NOW + 1,
-        },
     ] {
         assert_eq!(
             sessions.call(request).await,
@@ -113,13 +112,24 @@ async fn empty_and_invalid_host_lists_leave_the_current_roster_intact() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn removing_a_host_closes_the_session_and_keeps_the_private_mirror() {
+async fn removing_a_host_closes_the_session_without_a_mirror() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     let mut dial = fixture.next_dial().await;
     dial.handshake(&host).await;
     fixture.sessions.call(subscribe(host.id, 9)).await.unwrap();
     assert_eq!(fixture.message("caps").await.0, 9);
+    let files: Vec<_> = fs::read_dir(fixture.dir.path())
+        .unwrap()
+        .map(|file| file.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert!(files.iter().any(|file| file == "phone-id"), "{files:?}");
+    assert!(
+        !files
+            .iter()
+            .any(|file| file == "mirrors" || file.starts_with("history.sqlite")),
+        "{files:?}"
+    );
 
     fixture.sessions.set_hosts(vec![]).unwrap();
     assert_eq!(
@@ -145,18 +155,142 @@ async fn removing_a_host_closes_the_session_and_keeps_the_private_mirror() {
         "the lifecycle drain still sees a closing source"
     );
     dial.finish_close.send(()).unwrap();
-    let mirror = fixture.dir.path().join("mirrors").join(host.id.to_string());
+    assert!(!fixture.dir.path().join("mirrors").exists());
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_invalid_endpoint_stays_in_the_roster_with_its_open_error() {
+    let mut invalid = host(1);
+    invalid.port = Some(0);
+    let good = host(2);
+    let mut fixture = Fixture::start(vec![invalid.clone(), good.clone()]);
+    assert_eq!(fixture.next_dial().await.target, good.targets[0].host);
+    let rows = fixture
+        .sessions
+        .call(MobileCall::ListRemoteHosts)
+        .await
+        .unwrap();
+    let error = CommandError::InvalidArgument {
+        message: "invalid remote message: SSH port 0 is not valid".into(),
+    };
+    assert_eq!(rows[0]["id"], json!(invalid.id));
+    assert_eq!(rows[0]["connection"]["state"], "error");
+    assert_eq!(rows[0]["open_error"], json!(error));
+    assert_eq!(rows[1]["id"], json!(good.id));
+    assert_eq!(rows[1]["open_error"], Value::Null);
     assert_eq!(
-        fs::metadata(&mirror).unwrap().permissions().mode() & 0o777,
-        0o700
+        fixture.sessions.call(subscribe(invalid.id, 9)).await,
+        Err(error)
     );
-    assert!(mirror.join(statglass_engine::HISTORY_DB_FILE).is_file());
+}
+
+struct GatedSigner {
+    key: SoftwareSigner,
+    gate: Mutex<Option<CallbackGate>>,
+    panic_on_open: AtomicBool,
+}
+
+impl NativeSigner for GatedSigner {
+    fn public_key(&self) -> Result<Vec<u8>, NativeSignerError> {
+        let gate = self.gate.lock_ok().take();
+        if let Some(gate) = gate {
+            gate.block();
+        }
+        assert!(
+            !self.panic_on_open.swap(false, Ordering::Relaxed),
+            "phone key callback panicked"
+        );
+        Ok(self.key.public_key().to_vec())
+    }
+
+    fn sign(&self, _: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {
+        panic!("the scripted peer does not ask the phone to sign");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_host_between_sources_is_connecting_and_a_panicking_open_can_be_retried() {
+    let mut original = host(1);
+    original.host_keys.push(MobileHostKey {
+        algorithm: "ssh-ed25519".into(),
+        sha256: "SHA256:fixture".into(),
+    });
+    let signer = Arc::new(GatedSigner {
+        key: SoftwareSigner::generate(),
+        gate: Mutex::default(),
+        panic_on_open: AtomicBool::default(),
+    });
+    let mut fixture = Fixture::start_with_signer(vec![original.clone()], Some(signer.clone()));
+    let mut old = fixture.next_dial().await;
+    old.handshake(&original).await;
+    let mut replacement = original.clone();
+    replacement.name = "Replacement".into();
+    let (gate, entered, release) = CallbackGate::new();
+    *signer.gate.lock_ok() = Some(gate);
+    fixture
+        .sessions
+        .set_hosts(vec![replacement.clone()])
+        .unwrap();
+    timeout(WAIT, &mut old.closing).await.unwrap().unwrap();
+    old.finish_close.send(()).unwrap();
+    timeout(WAIT, entered).await.unwrap().unwrap();
+
+    let get = fixture
+        .sessions
+        .call(MobileCall::GetHost { host: original.id })
+        .await;
+    let rows = fixture.sessions.call(MobileCall::ListRemoteHosts).await;
+    let subscription = fixture.sessions.call(subscribe(original.id, 9)).await;
+    signer.panic_on_open.store(true, Ordering::Relaxed);
+    release.send(()).unwrap();
+
+    assert_eq!(get.unwrap(), json!(endpoint::record(&replacement)));
+    let rows = rows.unwrap();
+    assert_eq!(rows[0]["id"], json!(original.id));
+    assert_eq!(rows[0]["connection"]["state"], "connecting");
+    assert_eq!(rows[0]["open_error"], Value::Null);
+    assert!(matches!(
+        subscription,
+        Err(CommandError::RemoteUnreachable { .. })
+    ));
+    let failed = timeout(WAIT, async {
+        loop {
+            let rows = fixture
+                .sessions
+                .call(MobileCall::ListRemoteHosts)
+                .await
+                .unwrap();
+            if rows[0]["open_error"].is_object() {
+                break rows;
+            }
+            fixture.events.event_ready.notified().await;
+        }
+    })
+    .await
+    .expect("the callback panic becomes a host open error");
+    assert_eq!(failed[0]["connection"]["failure"], "internal");
+    assert_eq!(failed[0]["open_error"]["kind"], "internal");
+    assert_eq!(
+        fixture
+            .sessions
+            .call(MobileCall::RetryRemoteHost { host: original.id })
+            .await
+            .unwrap(),
+        Value::Null
+    );
+    fixture.next_dial().await.handshake(&replacement).await;
+    let rows = fixture
+        .sessions
+        .call(MobileCall::ListRemoteHosts)
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["open_error"], Value::Null);
 }
 
 #[tokio::test(start_paused = true)]
 async fn replacement_waits_for_the_old_transport_and_uses_the_latest_host_list() {
     let original = host(1);
-    let mut fixture = Fixture::start(vec![original.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![original.clone()]);
     let mut old = fixture.next_dial().await;
     old.handshake(&original).await;
     let mut replacement = original.clone();
@@ -191,7 +325,7 @@ async fn replacement_waits_for_the_old_transport_and_uses_the_latest_host_list()
         .unwrap();
     assert!(
         fixture.dials.try_recv().is_err(),
-        "one replacement owns the mirror"
+        "only one replacement can start"
     );
     old.finish_close.send(()).unwrap();
     let mut new = fixture.next_dial().await;
@@ -204,19 +338,6 @@ async fn replacement_waits_for_the_old_transport_and_uses_the_latest_host_list()
             .await
             .unwrap(),
         json!(endpoint::record(&replacement)),
-    );
-    assert_eq!(
-        fixture
-            .sessions
-            .call(MobileCall::QueryEvents {
-                host: original.id,
-                from_ms: NOW,
-                to_ms: NOW + 1,
-            })
-            .await
-            .unwrap(),
-        json!([]),
-        "replacement can read its reopened mirror"
     );
 }
 
@@ -289,8 +410,14 @@ fn endpoint_uses_the_desktop_command_lines_in_target_order_with_pinned_keys() {
 #[tokio::test(start_paused = true)]
 async fn remote_status_uses_the_scaffold_json_and_does_not_repeat_unchanged_events() {
     let host = host(1);
-    let fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
-    let entry = fixture.sessions.registry.entry(host.id).unwrap();
+    let fixture = Fixture::start_parked(vec![host.clone()], None);
+    let entry = fixture
+        .sessions
+        .registry
+        .entry(host.id)
+        .unwrap()
+        .running()
+        .unwrap();
     entry.source.quiesce().await;
     timeout(WAIT, async {
         loop {
@@ -349,10 +476,13 @@ async fn remote_status_uses_the_scaffold_json_and_does_not_repeat_unchanged_even
             .unwrap(),
         json!([{
             "id": host.id, "name": host.name, "os": "mac_os", "targets": host.targets,
-            "mirror_budget_mb": crate::policy::host_budget_mb(1),
+            "source_mac": null, "removed_by_controller": false,
+            "open_error": null,
+            "demand": null,
             "connection": {
                 "state": "error", "route": "tailscale", "sync": "idle",
-                "failure": "authentication", "message": "access denied", "route_failures": [],
+                "failure": "authentication", "incompatible_side": null,
+                "message": "access denied", "route_failures": [],
             },
         "last_seen_ms": NOW + 15, "synced_through_ms": null, "next_attempt_ms": null,
             "attempt": 0, "dialing": false, "waiting_for_network": false, "clock_offset_ms": 15,
@@ -364,7 +494,7 @@ async fn remote_status_uses_the_scaffold_json_and_does_not_repeat_unchanged_even
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_sets_deliver_rosters_in_order() {
-    let fixture = Fixture::start(vec![], SyncPolicy::Off);
+    let fixture = Fixture::start(vec![]);
     let first = host(1);
     let second = host(2);
     fixture.events.events.lock_ok().clear();
@@ -390,164 +520,4 @@ async fn concurrent_sets_deliver_rosters_in_order() {
         .map(|event| ids(event["hosts"].clone()))
         .collect();
     assert_eq!(rosters, [vec![first.id], vec![first.id, second.id]]);
-}
-
-#[tokio::test(start_paused = true)]
-async fn retry_recovers_a_configured_host_after_its_mirror_directory_recovers() {
-    let original = host(1);
-    let mut fixture = Fixture::start(vec![original.clone()], SyncPolicy::Off);
-    let mut dial = fixture.next_dial().await;
-    dial.handshake(&original).await;
-    let mut updated = original.clone();
-    updated.name = "Updated host".into();
-    fixture.sessions.set_hosts(vec![updated.clone()]).unwrap();
-    timeout(WAIT, &mut dial.closing).await.unwrap().unwrap();
-    fixture.events.events.lock_ok().clear();
-    let path = fixture
-        .dir
-        .path()
-        .join("mirrors")
-        .join(original.id.to_string());
-    let saved = path.with_extension("saved");
-    fs::rename(&path, &saved).unwrap();
-    fs::write(&path, "temporarily unavailable").unwrap();
-    dial.finish_close.send(()).unwrap();
-    assert_eq!(fixture.next_roster().await, [original.id]);
-    assert_eq!(
-        fixture.sessions.call(MobileCall::ListHosts).await.unwrap(),
-        json!([endpoint::record(&updated)])
-    );
-    let failed = fixture
-        .sessions
-        .call(MobileCall::ListRemoteHosts)
-        .await
-        .unwrap();
-    assert_eq!(failed[0]["id"], json!(original.id));
-    assert_eq!(failed[0]["connection"]["state"], "error");
-    assert!(
-        failed[0]["connection"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("creating mirror directory")
-    );
-    fs::remove_file(&path).unwrap();
-    fs::rename(saved, path).unwrap();
-    assert_eq!(
-        fixture
-            .sessions
-            .call(MobileCall::RetryRemoteHost { host: original.id })
-            .await
-            .unwrap(),
-        Value::Null
-    );
-    let mut dial = fixture.next_dial().await;
-    dial.handshake(&updated).await;
-    assert_eq!(
-        ids(fixture.sessions.call(MobileCall::ListHosts).await.unwrap()),
-        [original.id]
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn startup_lists_a_failed_host_with_its_error_alongside_healthy_hosts() {
-    let dir = tempfile::tempdir().unwrap();
-    let failed = host(1);
-    let healthy = host(2);
-    let mirrors = dir.path().join("mirrors");
-    fs::create_dir(&mirrors).unwrap();
-    fs::write(
-        mirrors.join(failed.id.to_string()),
-        "cannot open a directory here",
-    )
-    .unwrap();
-    let mut fixture =
-        Fixture::start_in(dir, vec![failed.clone(), healthy.clone()], SyncPolicy::Off);
-    let mut peer = fixture.next_dial().await;
-    assert_eq!(peer.target, healthy.targets[0].host);
-    peer.handshake(&healthy).await;
-    assert_eq!(
-        ids(fixture.sessions.call(MobileCall::ListHosts).await.unwrap()),
-        [failed.id, healthy.id]
-    );
-    let rows = fixture
-        .sessions
-        .call(MobileCall::ListRemoteHosts)
-        .await
-        .unwrap();
-    assert_eq!(rows[0]["id"], json!(failed.id));
-    assert_eq!(rows[0]["connection"]["state"], "error");
-    assert!(
-        rows[0]["connection"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("creating mirror directory")
-    );
-    assert_eq!(rows[1]["connection"]["state"], "connected");
-}
-
-#[tokio::test(start_paused = true)]
-async fn growing_from_two_to_eleven_hosts_rebuilds_the_old_mirrors_at_the_new_budget() {
-    let hosts: Vec<_> = (1..=11).map(host).collect();
-    let mut fixture = Fixture::start(hosts[..2].to_vec(), SyncPolicy::Off);
-    let mut old = Vec::new();
-    for _ in 0..2 {
-        let mut dial = fixture.next_dial().await;
-        let host = hosts
-            .iter()
-            .find(|host| host.targets[0].host == dial.target)
-            .unwrap();
-        dial.handshake(host).await;
-        old.push(dial);
-    }
-    let budgets = |rows: Value| {
-        rows.as_array()
-            .unwrap()
-            .iter()
-            .map(|row| row["mirror_budget_mb"].as_u64().unwrap())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        budgets(
-            fixture
-                .sessions
-                .call(MobileCall::ListRemoteHosts)
-                .await
-                .unwrap()
-        ),
-        vec![u64::from(crate::policy::host_budget_mb(2)); 2]
-    );
-
-    fixture.sessions.set_hosts(hosts.clone()).unwrap();
-    for dial in &mut old {
-        timeout(WAIT, &mut dial.closing)
-            .await
-            .unwrap()
-            .expect("old dial closes orderly");
-    }
-    let mut new = Vec::new();
-    for _ in 0..9 {
-        let dial = fixture.next_dial().await;
-        assert!(old.iter().all(|old| old.target != dial.target));
-        new.push(dial);
-    }
-    assert!(
-        fixture.dials.try_recv().is_err(),
-        "neither old host can dial before closing"
-    );
-    for dial in old {
-        dial.finish_close.send(()).unwrap();
-        let replacement = fixture.next_dial().await;
-        assert_eq!(replacement.target, dial.target);
-        new.push(replacement);
-    }
-    assert_eq!(
-        budgets(
-            fixture
-                .sessions
-                .call(MobileCall::ListRemoteHosts)
-                .await
-                .unwrap()
-        ),
-        vec![u64::from(crate::policy::host_budget_mb(11)); 11]
-    );
 }

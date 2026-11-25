@@ -24,6 +24,7 @@
 //! every process batch to the last hour of per-process usage (D-093, D-099):
 //! [`LiveHub::usage_by_app`].
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use std::collections::BTreeMap;
@@ -80,6 +81,10 @@ pub struct LiveHub {
     /// Its own lock: a process batch adds to it, and a range query sums it.
     usage: Arc<Mutex<UsageRing>>,
     durable_usage: Arc<Mutex<crate::durable_usage::UsageRecent>>,
+    /// The source will refill the ring from history it has not received yet (a phone
+    /// session waiting on the host's recent rows). A window opened meanwhile is told to
+    /// wait for that history rather than draw the ring's first seconds (D-133, D-159).
+    refill_pending: Arc<AtomicBool>,
 }
 
 impl LiveHub {
@@ -92,6 +97,7 @@ impl LiveHub {
             rollups: Arc::default(),
             usage: Arc::default(),
             durable_usage: Arc::default(),
+            refill_pending: Arc::default(),
         }
     }
 
@@ -188,6 +194,15 @@ impl LiveHub {
         )
     }
 
+    /// Says whether a refill from history is on its way; see `refill_pending` on the hub.
+    pub fn set_refill_pending(&self, pending: bool) {
+        self.refill_pending.store(pending, Ordering::Relaxed);
+    }
+
+    pub fn refill_pending(&self) -> bool {
+        self.refill_pending.load(Ordering::Relaxed)
+    }
+
     /// Raw ring rows at or after `since_ms`, as evenly spaced segments in time order.
     pub fn backfill(&self, since_ms: i64) -> Vec<BackfillSegment> {
         self.lock().ring.backfill(since_ms)
@@ -220,6 +235,12 @@ impl LiveHub {
     /// The latest status the source published (default before the first one).
     pub fn status(&self) -> EngineStatus {
         self.lock().status.clone()
+    }
+
+    /// Releases the live ring and current readings when a remote source parks.
+    pub fn clear_live(&self) {
+        *self.lock() = Retained::default();
+        *self.usage() = UsageRing::default();
     }
 
     fn net(&self) -> MutexGuard<'_, NetRing> {
@@ -489,6 +510,22 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn clear_live_releases_readings_for_every_handle_and_accepts_new_frames() {
+        let hub = LiveHub::default();
+        let source = hub.clone();
+        source.publish(frame(1_000, &layout(1)));
+        assert_eq!(hub.backfill_anchor(), Some((1_000, 1)));
+
+        hub.clear_live();
+        assert!(source.backfill(i64::MIN).is_empty());
+        assert!(source.latest_frame().is_none());
+        assert!(source.layout().is_none());
+
+        source.publish(frame(2_000, &layout(2)));
+        assert_eq!(hub.backfill_anchor(), Some((2_000, 2)));
     }
 
     #[test]

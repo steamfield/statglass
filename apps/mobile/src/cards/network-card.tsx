@@ -1,39 +1,44 @@
-import { formatRate } from "@core/format";
+import { networkCard } from "@core/popover/cards";
+import { View } from "react-native";
 import { ModuleCard } from "@/cards/module-card";
 import type { NetworkCardProps } from "@/cards/types";
 import { Text } from "@/ui/text";
-import { MirrorBars } from "@/widgets/mirror-bars";
-import { StatList } from "@/widgets/stat-list";
+import { MirrorBars, MirrorBarsPlot } from "@/widgets/mirror-bars";
 
 export function NetworkCard({ network, bars, ...chrome }: NetworkCardProps) {
-  const upload = formatRate(network.tx);
-  const download = formatRate(network.rx);
+  const card = networkCard(network, { chartLabel: bars?.ariaLabel });
   // Keep each rate together when Dynamic Type wraps the headline.
-  const headline = `↑\u00a0${upload.replace(" ", "\u00a0")} · ↓\u00a0${download.replace(" ", "\u00a0")}`;
+  const headline = card.headline
+    .replaceAll(" ", "\u00a0")
+    .replace("\u00a0·\u00a0", " · ");
   return (
     <ModuleCard
       {...chrome}
-      title="Network"
+      card="network"
+      content={card}
       accent="net"
       headline={headline}
-      spokenHeadline={`Upload ${upload}, Download ${download}`}
-      spokenDetails={
-        bars ? `All interfaces, ${bars.ariaLabel}` : "All interfaces"
-      }
-      headlineContent={
-        chrome.compact ? null : (
-          <StatList
-            layout="grid"
-            items={[
-              { label: "↑ Upload", value: upload.replace(" ", "\u00a0") },
-              { label: "↓ Download", value: download.replace(" ", "\u00a0") },
-            ]}
-          />
-        )
-      }
+      spokenHeadline={card.spokenHeadline}
+      compactDetails={bars?.ariaLabel}
     >
-      <Text role="caption">All interfaces</Text>
-      {bars && <MirrorBars {...bars} />}
+      {chrome.compact ? (
+        bars && <MirrorBarsPlot {...bars} upHeight={6} downHeight={8} />
+      ) : (
+        <>
+          <Text variant="caption">{card.subtitle}</Text>
+          {bars ? (
+            <MirrorBars {...bars} />
+          ) : (
+            <View className="flex-row flex-wrap justify-between gap-x-2">
+              {card.items.map(({ label }) => (
+                <Text key={label} variant="axis">
+                  {label}
+                </Text>
+              ))}
+            </View>
+          )}
+        </>
+      )}
     </ModuleCard>
   );
 }

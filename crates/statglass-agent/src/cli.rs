@@ -2,7 +2,8 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, bail};
-use statglass_remote::{AgentEnv, AgentLayout, AgentPaths};
+use statglass_proto::pairing::{BundleRoute, BundleTarget};
+use statglass_remote::{AgentEnv, AgentLayout, AgentPaths, MAX_TARGETS};
 
 pub const USAGE: &str = "\
 usage: statglass-agent <command> [options]
@@ -21,9 +22,13 @@ commands:
   uninstall [--purge] [--system] [--data-dir P]
   reset-identity [--system] [--data-dir P]     give this host a new id
   sample [--json] [SECONDS]                    sample (2.5 s by default) and print every series
-  pair [--ttl SECONDS]                         pair an iPhone: show a QR and code, approve here
+  pair [--ttl SECONDS] [--target ROUTE=HOST]... [--port N]
+                                               pair an iPhone: show a QR and code, approve here
+                                               up to four targets (lan or tailscale), port 1 to 65535
   devices                                      list paired iPhones and when each was last seen
   devices revoke TAG                           remove a paired iPhone's key
+  authorize-key --key K --name N [--system] [--socket P]
+  revoke-key --device TAG
 
 forced commands (run by sshd from an authorized_keys line, not by hand):
   restricted --device TAG [--system] [--socket P]
@@ -112,6 +117,8 @@ pub enum DeviceCommand {
     /// Interactive pairing on this terminal (RFC 2.4).
     Pair {
         ttl_s: u64,
+        targets: Vec<BundleTarget>,
+        port: Option<u16>,
     },
     /// The one-time pairing key's forced command.
     PairForced {
@@ -119,6 +126,15 @@ pub enum DeviceCommand {
     },
     Devices,
     RevokeDevice {
+        tag: String,
+    },
+    AuthorizeKey {
+        key: String,
+        name: String,
+        system: bool,
+        socket: Option<PathBuf>,
+    },
+    RevokeKey {
         tag: String,
     },
 }
@@ -152,10 +168,13 @@ struct Parsed {
     scheduled: bool,
     request: bool,
     restart: bool,
-    /// `restricted --device`, `pair --nonce` and `pair --ttl`.
     device: Option<String>,
+    key: Option<String>,
+    name: Option<String>,
     nonce: Option<String>,
     ttl: Option<String>,
+    targets: Vec<BundleTarget>,
+    port: Option<u16>,
     positional: Vec<String>,
 }
 
@@ -172,8 +191,8 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
         "configure" | "uninstall" | "reset-identity" => accepts(true, true, false, false),
         "install-unit" | "unit-templates" => accepts(true, true, true, false),
         "sample" => accepts(false, false, false, true),
-        "restricted" => accepts(true, false, true, false),
-        "pair" | "devices" => accepts(false, false, false, false),
+        "restricted" | "authorize-key" => accepts(true, false, true, false),
+        "pair" | "devices" | "revoke-key" => accepts(false, false, false, false),
         "help" | "--help" | "-h" => return Ok(Command::Help),
         other => bail!("unknown command {other:?}\n\n{USAGE}"),
     };
@@ -251,7 +270,9 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
             Command::ResetIdentity(p.at)
         }
         "sample" => parse_sample(&p.positional)?,
-        "restricted" | "pair" | "devices" => Command::Device(parse_device(name, p)?),
+        "restricted" | "pair" | "devices" | "authorize-key" | "revoke-key" => {
+            Command::Device(parse_device(name, p)?)
+        }
         _ => {
             positional(0)?;
             Command::Version
@@ -283,24 +304,68 @@ fn parse_device(name: &str, p: Parsed) -> anyhow::Result<DeviceCommand> {
             system: p.at.system,
             socket: p.at.socket,
         }),
-        _ => parse_pair(p.nonce, p.ttl.as_deref()),
+        "authorize-key" => Ok(DeviceCommand::AuthorizeKey {
+            key: p.key.context("authorize-key: --key K is required")?,
+            name: p.name.context("authorize-key: --name N is required")?,
+            system: p.at.system,
+            socket: p.at.socket,
+        }),
+        "revoke-key" => Ok(DeviceCommand::RevokeKey {
+            tag: p.device.context("revoke-key: --device TAG is required")?,
+        }),
+        _ => parse_pair(p),
     }
 }
 
 /// `pair --nonce N` is the forced form; anything else is the interactive one.
-fn parse_pair(nonce: Option<String>, ttl: Option<&str>) -> anyhow::Result<DeviceCommand> {
-    match (nonce, ttl) {
-        (Some(_), Some(_)) => bail!("pair: --nonce and --ttl are separate forms"),
-        (Some(nonce), None) => Ok(DeviceCommand::PairForced { nonce }),
-        (None, ttl) => Ok(DeviceCommand::Pair {
-            ttl_s: ttl.map_or(Ok(DEFAULT_PAIR_TTL_S), |s| {
-                s.parse()
-                    .ok()
-                    .filter(|&s| (1..=3600).contains(&s))
-                    .with_context(|| format!("pair: --ttl {s:?} is not 1 to 3600 seconds"))
-            })?,
-        }),
+fn parse_pair(p: Parsed) -> anyhow::Result<DeviceCommand> {
+    if let Some(nonce) = p.nonce {
+        if p.ttl.is_some() || !p.targets.is_empty() || p.port.is_some() {
+            bail!("pair: --nonce and interactive pairing options are separate forms");
+        }
+        return Ok(DeviceCommand::PairForced { nonce });
     }
+    Ok(DeviceCommand::Pair {
+        ttl_s: p.ttl.as_deref().map_or(Ok(DEFAULT_PAIR_TTL_S), |s| {
+            s.parse()
+                .ok()
+                .filter(|&s| (1..=3600).contains(&s))
+                .with_context(|| format!("pair: --ttl {s:?} is not 1 to 3600 seconds"))
+        })?,
+        targets: p.targets,
+        port: p.port,
+    })
+}
+
+fn parse_pair_target(value: &str) -> anyhow::Result<BundleTarget> {
+    let (route, host) = value
+        .split_once('=')
+        .with_context(|| format!("pair: --target {value:?} needs ROUTE=HOST"))?;
+    let route = match route {
+        "lan" => BundleRoute::Lan,
+        "tailscale" => BundleRoute::Tailscale,
+        _ => bail!("pair: target route {route:?} must be lan or tailscale"),
+    };
+    if host.is_empty()
+        || host.starts_with('-')
+        || host.len() > 255
+        || host.contains('=')
+        || host.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
+        bail!("pair: {host:?} is not a valid SSH host");
+    }
+    Ok(BundleTarget {
+        route,
+        host: host.into(),
+    })
+}
+
+fn parse_pair_port(value: &str) -> anyhow::Result<u16> {
+    value
+        .parse()
+        .ok()
+        .filter(|&port| port != 0)
+        .with_context(|| format!("pair: --port {value:?} is not 1 to 65535"))
 }
 
 fn parse_devices(positional: &[String]) -> anyhow::Result<DeviceCommand> {
@@ -331,9 +396,23 @@ fn parse_flags(name: &str, rest: &[String], flags: Accepts) -> anyhow::Result<Pa
             "--scheduled" if name == "update" => p.scheduled = true,
             "--request" if name == "update" => p.request = true,
             "--restart" if name == "recover-update" => p.restart = true,
-            "--device" if name == "restricted" => p.device = Some(text(&mut args, "--device")?),
+            "--device" if matches!(name, "restricted" | "revoke-key") => {
+                p.device = Some(text(&mut args, "--device")?);
+            }
+            "--key" if name == "authorize-key" => p.key = Some(text(&mut args, "--key")?),
+            "--name" if name == "authorize-key" => p.name = Some(text(&mut args, "--name")?),
             "--nonce" if name == "pair" => p.nonce = Some(text(&mut args, "--nonce")?),
             "--ttl" if name == "pair" => p.ttl = Some(text(&mut args, "--ttl")?),
+            "--target" if name == "pair" => {
+                if p.targets.len() == MAX_TARGETS {
+                    bail!("pair: at most {MAX_TARGETS} --target options are allowed");
+                }
+                p.targets
+                    .push(parse_pair_target(&text(&mut args, "--target")?)?);
+            }
+            "--port" if name == "pair" => {
+                p.port = Some(parse_pair_port(&text(&mut args, "--port")?)?);
+            }
             flag if flag.starts_with("--") => bail!("{name}: unknown option {flag}"),
             _ => p.positional.push(arg.clone()),
         }

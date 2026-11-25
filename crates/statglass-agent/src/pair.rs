@@ -5,16 +5,18 @@ mod bundle;
 mod terminal;
 
 use anyhow::{Context, ensure};
-use statglass_proto::pairing::{PAIR_RECEIPT_GRACE, PairReply, PairingPayload, valid_nonce};
+use statglass_proto::pairing::{
+    BundleTarget, PAIR_RECEIPT_GRACE, PairReply, PairingPayload, valid_nonce,
+};
 use statglass_remote::{
-    AgentEnv, AgentLayout, AgentPaths, AuthorizedKeys, ControlRequest, ControlResponse,
-    PairCommands, PairingHost, command::shell_quote, effective_user::EffectiveUser,
-    pairing::run_forced_for_nonce, serve_control,
+    AGENT_COMMAND_NOT_ALLOWED, AgentEnv, AgentLayout, AgentPaths, AuthorizedKeys, ControlRequest,
+    ControlResponse, PairCommands, PairingHost, command::shell_quote,
+    effective_user::EffectiveUser, pairing::run_forced_for_nonce, serve_control,
 };
 use std::future::Future;
 use std::io;
 use std::os::unix::fs::MetadataExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal::unix::{SignalKind, signal};
@@ -22,7 +24,11 @@ use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
 /// Offers a pairing for `ttl` and asks for approval on this terminal.
-pub fn interactive(ttl: Duration) -> anyhow::Result<()> {
+pub fn interactive(
+    ttl: Duration,
+    targets: &[BundleTarget],
+    port: Option<u16>,
+) -> anyhow::Result<()> {
     let user = EffectiveUser::lookup().context("locating the pairing account")?;
     let uid = rustix::process::geteuid().as_raw();
     let env = pairing_env(AgentEnv::from_process(), user.home, uid);
@@ -38,7 +44,7 @@ pub fn interactive(ttl: Duration) -> anyhow::Result<()> {
     let runtime = runtime()?;
     let result = runtime.block_on(async {
         let interrupt = pairing_interrupt().context("listening for terminal signals")?;
-        let host = bundle::bundle(layout, &paths, user.name).await?;
+        let host = bundle::bundle(layout, &paths, user.name, targets, port).await?;
         let pairing = Arc::new(PairingHost::new(
             Arc::new(AuthorizedKeys::for_current_user()?),
             commands(layout, &paths, &env)?,
@@ -73,7 +79,7 @@ pub fn forced(nonce: &str) -> anyhow::Result<i32> {
         return Ok(2);
     }
     if std::env::var_os("SSH_ORIGINAL_COMMAND").is_some_and(|command| command != "pair") {
-        eprintln!("statglass-agent: command not allowed");
+        eprintln!("{AGENT_COMMAND_NOT_ALLOWED}");
         return Ok(2);
     }
     let user = EffectiveUser::lookup().context("locating the pairing account")?;
@@ -98,7 +104,7 @@ fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
         .context("starting the pairing runtime")
 }
 
-fn pairing_env(mut env: AgentEnv, home: PathBuf, uid: u32) -> AgentEnv {
+pub(crate) fn pairing_env(mut env: AgentEnv, home: PathBuf, uid: u32) -> AgentEnv {
     env.home = Some(home);
     env.xdg_runtime_dir = env.xdg_runtime_dir.filter(|path| {
         std::fs::symlink_metadata(path)
@@ -127,6 +133,15 @@ fn commands(
     paths: &AgentPaths,
     env: &AgentEnv,
 ) -> anyhow::Result<PairCommands> {
+    commands_at(layout, paths, env, None)
+}
+
+pub(crate) fn commands_at(
+    layout: AgentLayout,
+    paths: &AgentPaths,
+    env: &AgentEnv,
+    socket: Option<&Path>,
+) -> anyhow::Result<PairCommands> {
     let bin = shell_quote(
         paths
             .binary
@@ -139,13 +154,13 @@ fn commands(
             .context("the pairing runtime directory is not UTF-8")?,
         None => "",
     };
-    let at = match layout {
-        AgentLayout::System => "--system".into(),
-        AgentLayout::User => format!(
+    let at = match (layout, socket) {
+        (AgentLayout::System, None) => "--system".into(),
+        (_, socket) => format!(
             "--socket {}",
             shell_quote(
-                paths
-                    .socket
+                socket
+                    .unwrap_or(&paths.socket)
                     .to_str()
                     .context("the agent socket path is not UTF-8")?
             )
@@ -268,7 +283,6 @@ mod tests {
     use statglass_remote::{
         DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice, control_request,
     };
-    use std::path::Path;
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     struct TestKeys {
@@ -365,11 +379,11 @@ mod tests {
     fn pair_cli_parses_both_forms_and_defaults_to_ten_minutes() {
         assert!(matches!(
             parse_pair(&["pair"]).unwrap(),
-            Command::Device(DeviceCommand::Pair { ttl_s: 600 })
+            Command::Device(DeviceCommand::Pair { ttl_s: 600, targets, port: None }) if targets.is_empty()
         ));
         assert!(matches!(
             parse_pair(&["pair", "--ttl", "60"]).unwrap(),
-            Command::Device(DeviceCommand::Pair { ttl_s: 60 })
+            Command::Device(DeviceCommand::Pair { ttl_s: 60, targets, port: None }) if targets.is_empty()
         ));
         assert!(
             matches!(parse_pair(&["pair", "--nonce", "abc"]).unwrap(), Command::Device(DeviceCommand::PairForced { nonce }) if nonce == "abc")
@@ -389,6 +403,44 @@ mod tests {
         ] {
             assert!(parse_pair(args).is_err(), "{args:?}");
         }
+    }
+
+    #[test]
+    fn pairing_cli_preserves_all_four_targets_in_order_and_the_published_port() {
+        let parsed = parse_pair(&[
+            "pair",
+            "--target",
+            "lan=127.0.0.1",
+            "--port",
+            "65535",
+            "--target",
+            "tailscale=100.64.1.1",
+            "--target",
+            "lan=office.local",
+            "--target",
+            "tailscale=fd7a:115c:a1e0::1",
+        ])
+        .unwrap();
+        use statglass_proto::pairing::BundleRoute::{Lan, Tailscale};
+        assert_eq!(
+            parsed,
+            Command::Device(DeviceCommand::Pair {
+                ttl_s: 600,
+                port: Some(65535),
+                targets: [
+                    (Lan, "127.0.0.1"),
+                    (Tailscale, "100.64.1.1"),
+                    (Lan, "office.local"),
+                    (Tailscale, "fd7a:115c:a1e0::1"),
+                ]
+                .into_iter()
+                .map(|(route, host)| BundleTarget {
+                    route,
+                    host: host.into()
+                })
+                .collect(),
+            })
+        );
     }
 
     #[test]

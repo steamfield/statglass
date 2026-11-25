@@ -9,6 +9,8 @@ import { InlineMessage } from "~/components/inline-message";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
+import { DeviceIntents } from "../device-intents";
+import { UpdateFromMac } from "../update-from-mac";
 import { PairingDialog } from "./pairing-dialog";
 
 const devicesKey = ["paired-devices"] as const;
@@ -53,7 +55,7 @@ export function PairedDevicesPanel() {
     <SettingsPanel title="Paired devices">
       <SettingsRow
         label="iPhone access"
-        sub="iPhones you approve can read this Mac’s metrics."
+        sub="iPhones you approve can read metrics from this Mac and the hosts you share with them."
       >
         <PairingDialog onPaired={() => void refresh()} />
       </SettingsRow>
@@ -109,6 +111,8 @@ export function PairedDevicesPanel() {
           </SettingsRow>
         );
       })}
+      <DeviceIntents />
+      <UpdateFromMac />
       {selected && (
         <ConfirmDialog
           open
@@ -116,7 +120,7 @@ export function PairedDevicesPanel() {
             if (!open) setSelected(null);
           }}
           title={`Revoke ${selected.label}?`}
-          description="This iPhone will need to pair again to reconnect. A phone that's already connected stays connected until it disconnects."
+          description="StatGlass removes access on this Mac and queues removal on the hosts it shared with this iPhone. This iPhone will need to pair again to reconnect. A phone that's already connected stays connected until it disconnects."
           confirmLabel="Revoke access"
           confirmVariant="destructive"
           onConfirm={() => revoke.mutate(selected.tag)}

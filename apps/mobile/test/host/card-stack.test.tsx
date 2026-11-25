@@ -1,237 +1,436 @@
-import {
-  selectBattery,
-  selectCpu,
-  selectGpu,
-  selectMemory,
-  selectNetwork,
-  selectPower,
-  selectPowerSource,
-} from "@core/live-selectors";
-import { initialHostLive, reduceLive } from "@core/live-state";
+import type { LiveMsg } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
-import {
-  POPOVER_CPU_STREAM,
-  POPOVER_GPU_STREAM,
-} from "@core/widget-models/fixtures/charts";
-import { expect, jest, test } from "@jest/globals";
+import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
-import { fireEvent, screen } from "@testing-library/react-native";
-import { useState } from "react";
-import { Pressable, Text } from "react-native";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react-native";
+import * as Haptics from "expo-haptics";
+import { ExpoRoot, Stack, usePathname } from "expo-router";
+import { getMockContext } from "expo-router/testing-library";
+import type { ProfilerOnRenderCallback } from "react";
+import {
+  type AccessibilityActionInfo,
+  ActionSheetIOS,
+  AppState,
+  Text,
+} from "react-native";
+import {
+  NestedReorderableList,
+  type ReorderableListProps,
+} from "react-native-reorderable-list";
 import {
   DEFAULT_PHONE_SETTINGS,
-  usePhoneSettings,
+  PhoneSettingsProvider,
 } from "@/data/phone-settings";
-import { CardMenu } from "@/host/card-menu";
-import {
-  buildCardStack,
-  cardActions,
-  cardModuleStates,
-  moveCard,
-} from "@/host/card-stack";
+import { HostScreen } from "@/host";
 
-async function demoSelections(host = MOCK_HOST_ID) {
+const mockCardCommit = jest.fn<ProfilerOnRenderCallback>();
+
+jest.mock("react-native-reanimated", () => ({
+  ...require("@test/ui/reanimated-list-stub").reanimatedListStub,
+  runOnJS: (callback: unknown) => callback,
+}));
+
+// Render the real list and capture the events the native drag worklets deliver.
+jest.mock("react-native-reorderable-list", () => {
+  const list: typeof import("react-native-reorderable-list") =
+    jest.requireActual("react-native-reorderable-list");
+  const { Profiler } = jest.requireActual<typeof import("react")>("react");
+  return {
+    ...list,
+    __esModule: true,
+    NestedReorderableList: jest.fn((props: ReorderableListProps<unknown>) => (
+      <list.NestedReorderableList
+        {...props}
+        renderItem={(info) => (
+          <Profiler
+            id={
+              props.keyExtractor?.(info.item, info.index) ?? String(info.index)
+            }
+            onRender={mockCardCommit}
+          >
+            {props.renderItem?.(info)}
+          </Profiler>
+        )}
+      />
+    )),
+  };
+});
+
+const context = getMockContext({
+  _layout: () => <Stack screenOptions={{ headerShown: false }} />,
+  "(hosts)/[host]/index": HostScreen,
+  "(hosts)/[host]/[module]": function ModulePage() {
+    return <Text>{usePathname()}</Text>;
+  },
+});
+
+const location = new URL(`statglass:///${MOCK_HOST_ID}`);
+
+const initialAppState = AppState.currentState;
+beforeEach(() => {
+  AppState.currentState = "active";
+  jest.mocked(NestedReorderableList).mockClear();
+});
+afterEach(() => {
+  AppState.currentState = initialAppState;
+  jest.useRealTimers();
+});
+
+test("the host shows saved card order and density", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const view = await renderWithProviders(
+    <ExpoRoot context={context} location={location} />,
+    {
+      transport,
+      settings: {
+        compact: {
+          ...DEFAULT_PHONE_SETTINGS.compact,
+          memory: true,
+          network: true,
+        },
+        cardOrder: ["network", "memory", "gpu", "power", "cpu"],
+      },
+    }
+  );
+  try {
+    await screen.findByRole("button", { name: /^Power & battery,/ });
+    const cards = within(screen.getByLabelText("Module cards"));
+    const buttons = cards.getAllByRole("button", {
+      name: /^(CPU|Memory|GPU|Power|Network)([^,]*),/,
+    });
+    expect(buttons).toHaveLength(5);
+    for (const [index, title] of [
+      "Network",
+      "Memory",
+      "GPU",
+      "Power & battery",
+      "CPU",
+    ].entries()) {
+      expect(buttons[index]).toHaveAccessibleName(new RegExp(`^${title},`));
+    }
+    expect(cards.queryByText("Swap")).not.toBeOnTheScreen();
+    expect(cards.queryByText("Remaining")).not.toBeOnTheScreen();
+    const network = cards.getByRole("button", { name: /^Network,/ });
+    expect(within(network).queryByRole("image")).not.toBeOnTheScreen();
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
+});
+
+test("Linux keeps usable cards in order and explains why GPU is unavailable", async () => {
   const transport = createMockTransport({
     autoTick: false,
-    scenarios: ["hosts-dashboard"],
+    scenarios: ["linux"],
     historyRows: 2,
   });
-  let state = initialHostLive(host);
-  const subscription = await transport.subscribeLive(host, (message) => {
-    state = reduceLive(state, message);
-  });
-  subscription.unsubscribe();
-  const record = (await transport.listHosts()).find(({ id }) => id === host);
-  const bars = {
-    accent: "net",
-    up: [1],
-    down: [null],
-    upMax: 100,
-    downMax: 100,
-    intervalMs: 1000,
-    ariaLabel: "Network upload and download",
-  } as const;
-  return {
-    states: cardModuleStates(state.capabilities),
-    data: {
-      cpu: { cpu: selectCpu(state), stream: POPOVER_CPU_STREAM },
-      memory: {
-        memory: selectMemory(state),
-        totalBytes: record?.info.mem_total_bytes ?? null,
-      },
-      gpu: { gpu: selectGpu(state), stream: POPOVER_GPU_STREAM },
-      power: { power: selectPower(state), source: selectPowerSource(state) },
-      network: { network: selectNetwork(state), bars },
-      battery: {
-        battery: selectBattery(state),
-        source: selectPowerSource(state),
-      },
-    },
-  };
-}
-
-test("assembles each card's own selection, chart, actions and saved density in phone order", async () => {
-  const { states, data } = await demoSelections();
-  const open = jest.fn();
-  const menu = jest.fn();
-  const actions = cardActions(open, menu);
-  const settings = {
-    ...DEFAULT_PHONE_SETTINGS,
-    compact: { ...DEFAULT_PHONE_SETTINGS.compact, memory: true, network: true },
-    cardOrder: moveCard(null, "network", "cpu"),
-  };
-  const slots = buildCardStack(
-    {
-      ...states,
-      cpu: "on",
-      memory: "on",
-      gpu: "on",
-      power: "on",
-      network: "on",
-      battery: "on",
-    },
-    settings,
-    data,
-    actions
+  const view = await renderWithProviders(
+    <ExpoRoot context={context} location={location} />,
+    { transport }
   );
-  expect(slots.map(({ kind }) => kind)).toEqual([
-    "network",
-    "memory",
-    "gpu",
-    "power",
-    "cpu",
-  ]);
-  for (const slot of slots) {
-    if (slot.kind === "unavailable") throw new Error("Expected usable cards");
-    expect(slot.props).toEqual({
-      ...data[slot.kind],
-      ...(slot.kind === "power" && { battery: data.battery.battery }),
-      compact: settings.compact[slot.kind],
-      onOpen: expect.any(Function),
-      onLongPress: expect.any(Function),
+  try {
+    await screen.findByText("Not available on this host");
+    const cards = within(screen.getByLabelText("Module cards"));
+    const buttons = cards.getAllByRole("button", {
+      name: /^(CPU|Memory|Power|Network)([^,]*),/,
     });
-    slot.props.onOpen();
-    slot.props.onLongPress();
+    expect(buttons).toHaveLength(4);
+    for (const [index, title] of [
+      "CPU",
+      "Memory",
+      "Power",
+      "Network",
+    ].entries()) {
+      expect(buttons[index]).toHaveAccessibleName(new RegExp(`^${title},`));
+    }
+    expect(
+      cards.queryByRole("button", { name: /^GPU,/ })
+    ).not.toBeOnTheScreen();
+    expect(cards.queryByText("Battery")).not.toBeOnTheScreen();
+  } finally {
+    await view.unmount();
+    transport.dispose();
   }
-  expect(open.mock.calls).toEqual([
-    ["network"],
-    ["memory"],
-    ["gpu"],
-    ["power"],
-    ["cpu"],
-  ]);
-  expect(menu.mock.calls).toEqual(open.mock.calls);
+});
 
-  const onBattery = buildCardStack(
-    { ...states, power: "absent", battery: "on" },
-    DEFAULT_PHONE_SETTINGS,
-    data,
-    actions
-  ).at(-1);
-  expect(onBattery).toEqual({
-    kind: "battery",
-    props: {
-      ...data.battery,
-      source: data.power.source,
-      compact: false,
-      onOpen: expect.any(Function),
-      onLongPress: expect.any(Function),
+test("renders a standalone Battery and explains the edition-blocked GPU", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const capabilities = await transport.getCapabilities(MOCK_HOST_ID);
+  if (capabilities.status !== "ok")
+    throw new Error("Expected demo capabilities");
+  const view = await renderWithProviders(
+    <ExpoRoot context={context} location={location} />,
+    { transport }
+  );
+  try {
+    await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+    await act(() =>
+      transport.push({
+        kind: "caps",
+        capabilities: {
+          ...capabilities.data,
+          revision: capabilities.data.revision + 1,
+          modules: {
+            ...capabilities.data.modules,
+            power: "not_present",
+            gpu: { unsupported: "missing_entitlement" },
+          },
+        },
+      })
+    );
+    expect(
+      await screen.findByRole("button", { name: /^Battery,/ })
+    ).toBeOnTheScreen();
+    expect(screen.getByText("Not available in this edition")).toBeOnTheScreen();
+    expect(
+      screen.queryByRole("button", { name: /^(GPU|Power),/ })
+    ).not.toBeOnTheScreen();
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
+});
+
+function storageFixture() {
+  let saved: string | null = null;
+  return {
+    read: () => saved,
+    write: (text: string) => {
+      saved = text;
     },
-  });
-});
-
-test("keeps Linux capability order and renders one unavailable slot when a capability cannot run", async () => {
-  const transport = createMockTransport({
-    autoTick: false,
-    scenarios: ["hosts-dashboard"],
-  });
-  const linux = (await transport.listHosts()).find(
-    (host) => host.info.os === "linux"
-  );
-  if (!linux) throw new Error("The demo needs a Linux host");
-  const { states, data } = await demoSelections(linux.id);
-  const actions = cardActions(
-    () => {},
-    () => {}
-  );
-  const slots = buildCardStack(states, DEFAULT_PHONE_SETTINGS, data, actions);
-  expect(slots.map(({ kind }) => kind)).toEqual([
-    "cpu",
-    "memory",
-    "unavailable",
-    "power",
-    "network",
-  ]);
-  const unavailable = buildCardStack(
-    { ...states, gpu: "edition" },
-    DEFAULT_PHONE_SETTINGS,
-    data,
-    actions
-  );
-  expect(unavailable.map(({ kind }) => kind)).toEqual([
-    "cpu",
-    "memory",
-    "unavailable",
-    "power",
-    "network",
-  ]);
-  expect(unavailable[2]).toEqual({
-    kind: "unavailable",
-    props: { module: "gpu", state: "edition" },
-  });
-  expect(slots.find(({ kind }) => kind === "power")?.props).toMatchObject({
-    battery: null,
-  });
-});
-
-function MenuHarness() {
-  const [open, setOpen] = useState(false);
-  const first = usePhoneSettings((state) => state.cardOrder?.[0] ?? "cpu");
-  const moved = first !== "cpu";
-  return (
-    <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="CPU card options"
-        onPress={() => setOpen(true)}
-      >
-        <Text>CPU card options</Text>
-      </Pressable>
-      {open && (
-        <CardMenu
-          card="cpu"
-          previous={moved ? "memory" : undefined}
-          next={moved ? "gpu" : "memory"}
-          onClose={() => setOpen(false)}
-        />
-      )}
-    </>
-  );
+  };
 }
 
-test("the menu saves compact and order preferences across reopening", async () => {
-  await renderWithProviders(<MenuHarness />);
-  const open = () =>
-    fireEvent.press(screen.getByRole("button", { name: "CPU card options" }));
-  await open();
-  expect(screen.getByRole("header", { name: "CPU card" })).toBeOnTheScreen();
-  expect(screen.getByRole("button", { name: "Move up" })).toBeDisabled();
-  await fireEvent.press(
-    screen.getByRole("button", { name: "Use compact card" })
+async function openCards({
+  host = MOCK_HOST_ID,
+  storage = storageFixture(),
+  transport = createMockTransport({ autoTick: false, historyRows: 2 }),
+} = {}) {
+  const view = await renderWithProviders(
+    <PhoneSettingsProvider storage={storage}>
+      <ExpoRoot context={context} location={new URL(`statglass:///${host}`)} />
+    </PhoneSettingsProvider>,
+    { transport, settings: {} }
   );
+  await screen.findByRole("button", { name: /^CPU,/ });
+  return view;
+}
+
+function dragCallbacks() {
+  const props = jest.mocked(NestedReorderableList).mock.lastCall?.[0];
+  if (!props?.onDragStart || !props.onDragEnd)
+    throw new Error("Expected a nested drag list");
+  return {
+    onDragStart: props.onDragStart,
+    onDragEnd: props.onDragEnd,
+    onReorder: props.onReorder,
+  };
+}
+
+const cpuButton = () => screen.getByRole("button", { name: /^CPU,/ });
+// The touch controls and their text sit inside the grouped VoiceOver card.
+const cardContents = { includeHiddenElements: true };
+
+function visibleCardTitles() {
+  return within(screen.getByLabelText("Module cards"))
+    .getAllByRole("button", {
+      name: /^(CPU|Memory|GPU|Power|Network|Battery)([^,]*),/,
+    })
+    .map(({ props }) => String(props.accessibilityLabel).split(",")[0]);
+}
+
+test("the density chevron plays a light haptic and saves density across a remount", async () => {
+  jest.useFakeTimers();
+  const storage = storageFixture();
+  const impact = jest
+    .spyOn(Haptics, "impactAsync")
+    .mockResolvedValue(undefined);
+  const view = await openCards({ storage });
+  expect(within(cpuButton()).getByText("User", cardContents)).toBeOnTheScreen();
+  const chevron = screen.getByLabelText("Compact CPU card", cardContents);
+  await fireEvent.press(chevron);
+  expect(impact.mock.calls).toEqual([[Haptics.ImpactFeedbackStyle.Light]]);
   expect(
-    screen.queryByRole("header", { name: "CPU card" })
-  ).not.toBeOnTheScreen();
-  await open();
-  expect(
-    screen.getByRole("button", { name: "Use expanded card" })
+    screen.getByLabelText("Expand CPU card", cardContents)
   ).toBeOnTheScreen();
-  await fireEvent.press(screen.getByRole("button", { name: "Move down" }));
-  await open();
-  expect(screen.getByRole("button", { name: "Move up" })).toBeEnabled();
-  await fireEvent.press(screen.getByRole("button", { name: "Done" }));
+  expect(within(cpuButton()).queryByText("User", cardContents)).toBeNull();
+  await act(() => jest.advanceTimersByTimeAsync(500));
+  await view.unmount();
+  await openCards({ storage });
   expect(
-    screen.queryByRole("header", { name: "CPU card" })
-  ).not.toBeOnTheScreen();
+    screen.getByLabelText("Expand CPU card", cardContents)
+  ).toBeOnTheScreen();
+  expect(within(cpuButton()).queryByText("User", cardContents)).toBeNull();
+});
+
+test("the card body opens the selected module", async () => {
+  await openCards();
+  await fireEvent.press(within(cpuButton()).getByText("CPU", cardContents));
+  expect(await screen.findByText(`/${MOCK_HOST_ID}/cpu`)).toBeOnTheScreen();
+});
+
+test("a hold and drag saves the new order for a different host after remount", async () => {
+  jest.useFakeTimers();
+  const storage = storageFixture();
+  const transport = createMockTransport({
+    scenarios: ["hosts-dashboard"],
+    autoTick: false,
+    historyRows: 2,
+  });
+  const remote = (await transport.listHosts()).find(
+    ({ info }) => info.os === "linux"
+  );
+  if (!remote) throw new Error("Expected a Linux host");
+  // On relaunch the test only needs the other host to read the stored order.
+  jest.spyOn(transport, "listHosts").mockResolvedValue([remote]);
+  const sheet = jest
+    .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+    .mockImplementation(() => {});
+  const view = await openCards({ storage });
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["CPU", "Memory"]);
+  const drag = dragCallbacks();
+  await act(() => drag.onDragStart({ index: 0 }));
+  await act(() => drag.onDragEnd({ from: 0, to: 1, cancelled: false }));
+  await act(() => drag.onReorder({ from: 0, to: 1 }));
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
+  expect(sheet).not.toHaveBeenCalled();
+  await act(() => jest.advanceTimersByTimeAsync(500));
+  await view.unmount();
+  await openCards({ host: remote.id, storage, transport });
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
+});
+
+test("releasing a hold without moving shows the native menu and applies each choice", async () => {
+  const sheet = jest
+    .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+    .mockImplementation(() => {});
+  await openCards();
+  async function release(index: number, density: string, select: number) {
+    const drag = dragCallbacks();
+    await act(() => drag.onDragStart({ index }));
+    expect(sheet).not.toHaveBeenCalled();
+    await act(() =>
+      drag.onDragEnd({ from: index, to: index, cancelled: false })
+    );
+    expect(sheet).toHaveBeenCalledTimes(1);
+    expect(sheet.mock.lastCall?.[0]).toEqual({
+      options: [density, "Open Memory", "Move to top", "Cancel"],
+      cancelButtonIndex: 3,
+    });
+    const choose = sheet.mock.lastCall?.[1];
+    if (!choose) throw new Error("Expected an action sheet");
+    await act(() => choose(select));
+    sheet.mockClear();
+  }
+  await release(1, "Compact", 0);
+  expect(
+    screen.getByLabelText("Expand Memory card", cardContents)
+  ).toBeOnTheScreen();
+  expect(screen.queryByText("Swap", cardContents)).not.toBeOnTheScreen();
+  await release(1, "Expand", 0);
+  expect(
+    screen.getByLabelText("Compact Memory card", cardContents)
+  ).toBeOnTheScreen();
+  expect(screen.getByText("Swap", cardContents)).toBeOnTheScreen();
+  await release(1, "Compact", 2);
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
+  await release(0, "Compact", 3);
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
+  expect(screen.getByText("Swap", cardContents)).toBeOnTheScreen();
+  await release(0, "Compact", 1);
+  expect(await screen.findByText(`/${MOCK_HOST_ID}/memory`)).toBeOnTheScreen();
+});
+
+test("one VoiceOver target per card can change density, open and reorder", async () => {
+  await openCards();
+  const memoryButton = () => screen.getByRole("button", { name: /^Memory,/ });
+  const actions: AccessibilityActionInfo[] =
+    memoryButton().props.accessibilityActions;
+  expect(actions.map(({ label }) => label)).toEqual([
+    "Toggle compact",
+    "Open",
+    "Move up",
+    "Move down",
+    "Move to top",
+  ]);
+  expect(within(memoryButton()).queryAllByRole("button")).toHaveLength(0);
+  expect(screen.queryByLabelText("Compact Memory card")).toBeNull();
+
+  async function perform(node: ReturnType<typeof cpuButton>, label: string) {
+    const accessibilityActions: AccessibilityActionInfo[] =
+      node.props.accessibilityActions;
+    const action = accessibilityActions.find(
+      (action) => action.label === label
+    );
+    if (!action) throw new Error(`Missing ${label} on card`);
+    await fireEvent(node, "accessibilityAction", {
+      nativeEvent: { actionName: action.name },
+    });
+  }
+  await perform(cpuButton(), "Move down");
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
+  await perform(cpuButton(), "Move up");
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["CPU", "Memory"]);
+  await perform(memoryButton(), "Move to top");
+  expect(visibleCardTitles().slice(0, 2)).toEqual(["Memory", "CPU"]);
+  await perform(cpuButton(), "Toggle compact");
+  expect(
+    screen.getByLabelText("Expand CPU card", cardContents)
+  ).toBeOnTheScreen();
+  expect(within(cpuButton()).queryByText("User", cardContents)).toBeNull();
+  await perform(cpuButton(), "Open");
+  expect(await screen.findByText(`/${MOCK_HOST_ID}/cpu`)).toBeOnTheScreen();
+});
+
+test("a frame with only a changed CPU reading commits only the CPU card", async () => {
+  mockCardCommit.mockClear();
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const subscribe = transport.subscribeLive;
+  const messages: LiveMsg[] = [];
+  jest
+    .spyOn(transport, "subscribeLive")
+    .mockImplementation((host, receive, options) =>
+      subscribe(
+        host,
+        (message) => {
+          messages.push(message);
+          receive(message);
+        },
+        options
+      )
+    );
+  await openCards({ transport });
+  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await act(() => transport.tick());
+  const frame = messages.find((message) => message.kind === "frame");
+  const layout = messages.find(
+    (message) =>
+      message.kind === "layout" && message.layout_no === frame?.layout_no
+  );
+  if (!frame || layout?.kind !== "layout")
+    throw new Error("Expected a live frame and layout");
+  const cpu = layout.series.findIndex(({ metric }) => metric === "cpu.total");
+  if (cpu < 0) throw new Error("Expected CPU in the live layout");
+  expect(mockCardCommit.mock.calls.map(([id]) => id)).toEqual(
+    expect.arrayContaining(["cpu", "memory", "gpu", "power", "network"])
+  );
+  const before = cpuButton().props.accessibilityLabel;
+  mockCardCommit.mockClear();
+  await act(() =>
+    transport.push({
+      ...frame,
+      held: frame.held.map((value, index) =>
+        index === cpu ? (value ?? 0) + 2 : value
+      ),
+    })
+  );
+  expect(cpuButton().props.accessibilityLabel).not.toBe(before);
+  expect(mockCardCommit.mock.calls.map(([id]) => id)).toEqual(["cpu"]);
 });

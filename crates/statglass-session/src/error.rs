@@ -10,6 +10,12 @@ pub enum RemoteError {
     Timeout(String),
     #[error("SSH authentication requires attention: {0}")]
     Authentication(String),
+    /// The local phone key could not be read or used. Retry after it becomes available.
+    #[error("{0}")]
+    PhoneKeyUnavailable(String),
+    /// The local signer returned an invalid key or signature or its callback failed.
+    #[error("{0}")]
+    SignerInternal(String),
     #[error("SSH host-key verification requires attention: {0}")]
     HostKey(String),
     #[error("incompatible remote: {0}")]
@@ -17,7 +23,11 @@ pub enum RemoteError {
     /// The peer's handshake could not be negotiated. Carries the version it reported,
     /// so the shell can still show it and offer the coordinated upgrade (D-119).
     #[error("incompatible remote: {reason}")]
-    IncompatiblePeer { version: String, reason: String },
+    IncompatiblePeer {
+        version: String,
+        reason: String,
+        side: Option<crate::IncompatibleSide>,
+    },
     #[error("remote host identity does not match: {0}")]
     Identity(String),
     /// The host answered with a different id than the one paired. Carries both, so the
@@ -60,6 +70,9 @@ pub enum RemoteError {
     /// The host's own refusal of a query (D-117), worded for the user.
     #[error("{0}")]
     Refused(String),
+    /// The host failed internally while answering a query.
+    #[error("{0}")]
+    Internal(String),
     /// The host's state changed since the revision the request was based on
     /// (`ErrorCode::Stale`): reload and try again.
     #[error("{0}")]
@@ -127,6 +140,7 @@ impl RemoteError {
                 | Self::Protocol(_)
                 | Self::Unsupported(_)
                 | Self::Refused(_)
+                | Self::Internal(_)
                 | Self::Stale(_)
                 | Self::Pairing(_)
                 | Self::InvalidArgument(_)

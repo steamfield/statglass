@@ -54,3 +54,11 @@ The desktop's Tauri adapters (`native*.ts`, `app-transport.ts`) live in
   [iPhone renderer](../../apps/mobile/src/widgets/gap-bands.tsx) estimates caption
   widths and moves colliding captions below the plot because narrow plots at large
   Dynamic Type sizes can leave too little room for both labels.
+- The [Power card model](src/popover/cards/power.ts) is shared. The
+  [iPhone card](../../apps/mobile/src/cards/power-card.tsx) lists only the rails the
+  host reported (a measured zero stays), where the desktop keeps the full rail legend,
+  because a phone-width card with a column of dashes buries the readings it has.
+- The [Memory card model](src/popover/cards/memory.ts) is shared. The
+  [iPhone card](../../apps/mobile/src/cards/memory-card.tsx) draws a one-column
+  legend with Swap last on a hatched swatch, where the desktop uses two columns,
+  because two columns of label and value truncate at phone width and large Dynamic Type.

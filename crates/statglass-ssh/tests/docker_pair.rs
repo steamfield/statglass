@@ -13,7 +13,7 @@ use statglass_session::{
     pair,
     pairing::{PairingRefusal, endpoint_from_host},
 };
-use statglass_ssh::{RusshDialer, Signer, SoftwareSigner};
+use statglass_ssh::{RusshDialer, SoftwareSigner};
 use std::{env, process::Stdio, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},

@@ -10,6 +10,7 @@ publish.workspace = true
 statglass-remote = { path = "../statglass-remote" }
 tokio = { workspace = true, features = ["rt", "macros"] }
 serde_json.workspace = true
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt"] }
 
 [dev-dependencies]
 tempfile.workspace = true

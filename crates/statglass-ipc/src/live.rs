@@ -72,6 +72,10 @@ pub trait LiveFeed: Send + Sync + 'static {
     fn status(&self) -> EngineStatus {
         self.hub().status()
     }
+    /// A feed may deliver less often than its engine samples.
+    fn min_frame_period_ms(&self) -> u32 {
+        0
+    }
     /// The shortest period any visible window wants process rows at (`None`: none does).
     fn set_process_interest(&self, period_ms: Option<u32>);
     /// Whether any visible window with process interest shows network rates (D-081).
@@ -105,6 +109,11 @@ pub const RECENT_MS: i64 = 120_000;
 /// Rows per `BackfillEarlier` chunk and per resume `Backfill` message (10 minutes at
 /// 1 s).
 pub const EARLIER_CHUNK_ROWS: usize = 600;
+
+/// How long a window waits for a pending refill (D-159) before it shows what the ring
+/// holds. A refill normally lands within a few seconds; one that never comes (live
+/// detail withheld, or the screen left before it asked) must not hold a chart empty.
+pub const REFILL_WAIT_MS: i64 = 10_000;
 
 /// Older history starts after the first frame, or this long after the stream started if
 /// no frame comes (paused, or a slow interval).
@@ -264,6 +273,10 @@ struct Stream {
     /// Older history may go: a frame went out since it was queued, or `earlier_at` passed.
     earlier_go: bool,
     earlier_at: Instant,
+    /// The plan told the window to wait for a refill the source had not made yet
+    /// ([`LiveHub::refill_pending`]), until this frame time at the latest; if the
+    /// refill adds nothing or never comes, a plan says so.
+    awaiting_refill: Option<i64>,
 }
 
 impl Stream {
@@ -298,6 +311,7 @@ impl Stream {
             earlier: VecDeque::new(),
             earlier_go: false,
             earlier_at: Instant::now(),
+            awaiting_refill: None,
         }
     }
 
@@ -359,6 +373,7 @@ impl Stream {
     fn send_status(&mut self, s: &EngineStatus) -> Result<(), Closed> {
         self.performance = s.performance;
         let mut status = status_msg(s, self.min_period_ms);
+        status.frame_period_ms = status.frame_period_ms.max(self.feed.min_frame_period_ms());
         status.display_idle &= self.feed.is_local();
         self.display_idle = status.display_idle;
         if self.status.as_ref() != Some(&status) {
@@ -395,10 +410,37 @@ impl Stream {
             self.catch_up()?;
             self.sent_until = i64::MIN;
             self.last_frame_ts = None;
-        } else if f.ts_ms <= self.sent_until {
-            // Already sent as a backfill row (published between the subscribe and the
-            // ring read).
-            return Ok(());
+        } else {
+            if let Some(deadline) = self.awaiting_refill
+                && (!self.feed.hub().refill_pending() || f.ts_ms >= deadline)
+            {
+                if self
+                    .feed
+                    .hub()
+                    .backfill_anchor()
+                    .is_some_and(|(_, ring)| Some(ring) != self.timeline)
+                {
+                    // The refill landed while this frame, from before it, sat on the
+                    // bus: restart on the ring's new timeline, whose plan ends the
+                    // wait. The frame belongs to the old one and is dropped.
+                    self.catch_up()?;
+                    self.sent_until = i64::MIN;
+                    self.last_frame_ts = None;
+                    return Ok(());
+                }
+                // The refill the window waits for added nothing, or has not come in
+                // REFILL_WAIT_MS, so no new timeline follows to end the wait.
+                self.awaiting_refill = None;
+                self.send(LiveMsg::BackfillPlan {
+                    recent_rows: 0,
+                    earlier_start_ms: None,
+                })?;
+            }
+            if f.ts_ms <= self.sent_until {
+                // Already sent as a backfill row (published between the subscribe and
+                // the ring read).
+                return Ok(());
+            }
         }
         let tolerance = i64::from(f.interval_ms) / 2;
         let min_period_ms = effective_min_period_ms(self.min_period_ms, self.performance);

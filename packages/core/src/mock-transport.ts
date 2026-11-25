@@ -61,11 +61,17 @@
  * user than `MOCK_USER`, and a signalled process leaves later process rows.
  */
 
+import type { HostDemand } from "./generated/types";
+import { mockAddressCommands } from "./mock/addresses";
 import type { MockTransport, MockTransportOptions } from "./mock/contracts";
 import { createMockDiskSpace } from "./mock/disk-space";
 import { createMockDocker } from "./mock/docker";
 import { createMockEmitters, mockEventSubscriptions } from "./mock/emitters";
+import { withFailures } from "./mock/failures";
 import { scenarioFlags } from "./mock/fixtures";
+import { createMockHandover } from "./mock/handover";
+import { createMockHostHistory } from "./mock/host-history";
+import { phoneSparklineFixture, seedPhoneErrors } from "./mock/phone-errors";
 
 export type {
   MockCall,
@@ -89,6 +95,7 @@ import { MockCommands } from "./mock/commands";
 import { createMockPairing } from "./mock/pairing";
 import { MockPower } from "./mock/power";
 import { MockProcesses } from "./mock/processes";
+import { ok } from "./mock/protocol";
 import { MockQueries } from "./mock/queries";
 import { MockRemotes } from "./mock/remote";
 import { mockRemoteMethods } from "./mock/remote-alerts";
@@ -118,6 +125,10 @@ export function createMockTransport(
     createMockTransport
   );
   const [scenarios, now] = [options.scenarios ?? [], options.now ?? Date.now];
+  const { onApprove, onRevoke, ...handover } = createMockHandover(
+    commands,
+    now
+  );
   const docker = createMockDocker(scenarios, now, (next) =>
     settings.setDocker(next)
   );
@@ -157,14 +168,6 @@ export function createMockTransport(
     queries,
     commands
   );
-  const shell = new MockShell(
-    ring,
-    power,
-    settings,
-    commands,
-    emitters,
-    options
-  );
   settings.onChanged = (before, after) => {
     store.recordNetworkSetting(before, after);
     power.updatePower();
@@ -174,10 +177,15 @@ export function createMockTransport(
     if (retimed) stream.retime();
   };
   remote.seedScenario();
-  return {
+  if (scenarios.includes("phone-errors")) seedPhoneErrors(remote, now);
+  return withFailures({
     kind: "mock",
     flags,
     calls: commands.calls,
+    hostHistory: scenarios.includes("phone-sparkline-gap")
+      ? phoneSparklineFixture
+      : createMockHostHistory(queries.methods, now, remote.remotes),
+    ...mockAddressesAndPhoneCommands(commands, remote, now, power, flags.linux),
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,
     subscriberCount: () => channels.live.size,
@@ -186,9 +194,11 @@ export function createMockTransport(
     ...stream.methods,
     ...queries.methods,
     ...remote.routeUsage(usage.methods),
-    ...shell.methods,
+    ...new MockShell(ring, power, settings, commands, emitters, options)
+      .methods,
     ...new MockAlertDestinations(commands, emitters, flags).methods,
-    ...createMockPairing(commands, settings, now),
+    ...createMockPairing(commands, settings, now, { onApprove, onRevoke }),
+    ...handover,
     ...settings.methods,
     ...store.methods,
     ...ring.methods,
@@ -199,6 +209,42 @@ export function createMockTransport(
     dispose() {
       for (const source of [docker, stream, remote]) source.dispose();
       for (const e of Object.values(emitters)) e.clear();
+    },
+  });
+}
+
+function mockAddressesAndPhoneCommands(
+  commands: MockCommands,
+  remote: MockRemotes,
+  now: () => number,
+  power: MockPower,
+  localLinux: boolean
+): Pick<
+  MockTransport,
+  | "getHostAddresses"
+  | "networkAddresses"
+  | "setDemand"
+  | "demand"
+  | "pairingState"
+> {
+  let demand: HostDemand[] = [];
+  return {
+    ...mockAddressCommands(
+      remote.remotes,
+      now,
+      () => power.status.primary_iface,
+      localLinux,
+      commands.record
+    ),
+    async setDemand(nextDemand) {
+      demand = nextDemand.map((entry) => ({ ...entry }));
+      commands.record("set_demand", demand);
+      return ok(null);
+    },
+    demand: () => demand,
+    async pairingState() {
+      commands.record("pairing_state");
+      return ok({ hosts: 0, key_changed: false });
     },
   };
 }

@@ -39,7 +39,7 @@ impl RestrictedCommand {
 pub enum SessionScope {
     /// The desktop or a full key: everything.
     Full,
-    /// A phone's restricted key: live metrics, sync, recent rows and events, no `Query`.
+    /// A phone's restricted key: metrics, history and network addresses.
     Restricted { device: DeviceTag },
 }
 
@@ -47,6 +47,7 @@ impl SessionScope {
     /// Whether `query` is answered in this scope.
     pub fn allows(&self, query: &Query) -> bool {
         match query {
+            Query::History(_) | Query::NetworkAddresses => true,
             Query::UsageByApp { .. }
             | Query::HistoricalUsage(_)
             | Query::UsageProcesses(_)

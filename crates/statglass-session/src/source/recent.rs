@@ -1,58 +1,32 @@
 //! Transient history refresh, independent of wire detail demand.
 use super::*;
+use statglass_proto::{WireBucket, WireLayout};
+
+/// How soon a session without a mirror asks again for the rows its ring is missing.
+const RING_RETRY: Duration = Duration::from_secs(5);
 
 impl Session<'_> {
-    pub(super) fn recent_first(&self) -> bool {
-        self.source
-            .mirror
-            .as_ref()
-            .is_some_and(|mirror| mirror.recent_first())
-    }
-
-    async fn prepare_recent_epoch(&mut self) -> Result<quiesce::WriteResult> {
-        if !self.mirror_epoch_ready
-            && let Some(mirror) = self.source.mirror.clone()
-        {
-            // The mirror accepts recent rows only after it has seen this database epoch.
-            let tier = mirror.sync_tiers().first().copied().unwrap_or(Tier::S10);
-            let (epoch, kinds) = (self.epoch, self.kinds);
-            let result = self
-                .mirror_write
-                .read(move || mirror.cursor(tier, epoch, kinds).map(|_| ()))
-                .await?;
-            self.mirror_epoch_ready = result.is_ok();
-            return Ok(result);
-        }
-        Ok(Ok(()))
-    }
-
     pub(super) async fn request_recent(&mut self) -> Result<()> {
         let (detail, recent) = {
             let control = self.control.borrow();
             (control.interest.detail, control.recent_interest)
         };
         let period = if recent && !detail { 15 } else { 30 };
-        let recent_first = self.recent_first();
+        let due = if self.source.mirror.is_some() {
+            (detail || recent) && self.last_recent.elapsed() >= Duration::from_secs(period)
+        } else {
+            // Without a mirror the snapshot only refills the live ring, once per stretch
+            // of live detail; a failed request is tried again after a short pause.
+            detail && !self.ring_filled && self.last_recent.elapsed() >= RING_RETRY
+        };
         if self.history_available
-            && (detail || recent)
-            && (!recent_first || self.clock_ready)
-            && (self.recent_due || self.last_recent.elapsed() >= Duration::from_secs(period))
+            && due
             && self.in_flight.is_none()
             && !self.mirror_write.running()
             && !self.recent_pending
             && self.recent_timed_out.is_none()
-            && (recent_first || self.next_tier >= self.tiers.len())
+            && self.next_tier >= self.tiers.len()
         {
-            if recent_first && let Err(error) = self.prepare_recent_epoch().await? {
-                self.recent_due = false;
-                self.watermark_failed = true;
-                self.status.history_error = Some(format!(
-                    "reading the mirror cursor for recent history: {error}"
-                ));
-                self.last_recent = Instant::now();
-                (self.source.on_status)(self.status.clone());
-                return Ok(());
-            }
             let now = self
                 .source
                 .clock
@@ -69,7 +43,6 @@ impl Session<'_> {
                     match watermark {
                         Ok(from) => from.unwrap_or_else(|| now.saturating_sub(300_000)),
                         Err(error) => {
-                            self.recent_due = false;
                             self.watermark_failed = true;
                             self.status.history_error =
                                 Some(format!("reading the mirror watermark: {error}"));
@@ -92,7 +65,6 @@ impl Session<'_> {
             if request_changed {
                 return Ok(());
             }
-            self.recent_due = false;
             if self.watermark_failed {
                 self.watermark_failed = false;
                 self.status.history_error = None;
@@ -108,5 +80,105 @@ impl Session<'_> {
         }
 
         Ok(())
+    }
+
+    /// A recent snapshot goes to the mirror, or without one straight into the live ring.
+    pub(super) fn recent_rows(
+        &mut self,
+        epoch: uuid::Uuid,
+        tier: Tier,
+        complete_to_ms: i64,
+        layouts: Vec<WireLayout>,
+        rows: Vec<WireBucket>,
+    ) -> Result<()> {
+        if self.recent_timed_out.take().is_some() {
+            tracing::debug!("dropping late recent snapshot");
+            return Ok(());
+        }
+        if !self.recent_pending {
+            return Err(RemoteError::Transport("unsolicited recent snapshot".into()));
+        }
+        self.recent_pending = false;
+        if epoch != self.epoch {
+            return Err(RemoteError::Transport(
+                "source history was reset; reconnecting".into(),
+            ));
+        }
+        if let Some(mirror) = self.source.mirror.clone() {
+            self.mirror_write.start(MirrorWork::Recent, move || {
+                mirror.recent(epoch, tier, complete_to_ms, layouts, rows)
+            });
+        } else {
+            self.refill_ring_from_recent(tier, complete_to_ms, layouts, rows);
+        }
+        Ok(())
+    }
+
+    /// A session without a mirror fills its live ring from the host's recent snapshot,
+    /// so a window opened on a fresh connection shows the minutes before it. Runs once
+    /// per stretch of live detail, like [`Self::refill_ring`]; a snapshot that fails
+    /// validation is logged, not asked for again, and the ring keeps its live frames.
+    fn refill_ring_from_recent(
+        &mut self,
+        tier: Tier,
+        complete_to_ms: i64,
+        layouts: Vec<WireLayout>,
+        rows: Vec<WireBucket>,
+    ) {
+        if self.ring_filled || !self.control.borrow().interest.detail {
+            return;
+        }
+        self.ring_filled = true;
+        let host = self.source.record.id;
+        let recent = match crate::recent_rows::recent_buckets(
+            &statglass_schema::Catalog::builtin(),
+            host,
+            tier,
+            complete_to_ms,
+            layouts,
+            rows,
+        ) {
+            Ok(recent) => recent,
+            Err(error) => {
+                tracing::warn!(%host, "refilling the live ring from recent rows: {error}");
+                self.sync_refill_pending();
+                return;
+            }
+        };
+        let now = self
+            .source
+            .clock
+            .now_ms()
+            .unwrap_or_else(statglass_engine::wall_ms);
+        let query = statglass_engine::ring_history_query(host, now);
+        let history = match statglass_store::history_recent(&query, &recent.rows) {
+            Ok(history) => history,
+            Err(error) => {
+                tracing::warn!(%host, "reading recent rows for the live ring: {error}");
+                self.sync_refill_pending();
+                return;
+            }
+        };
+        let timeline = self.source.next_timeline.fetch_add(1, Ordering::Relaxed);
+        let added = self.sink.live.refill(&history, timeline);
+        if added > 0 {
+            self.timeline = timeline;
+            tracing::info!(%host, added, "live ring refilled from recent rows");
+        }
+        self.sync_refill_pending();
+    }
+
+    /// Tells open windows whether the ring still waits on a refill from the host's
+    /// recent rows (D-159): a session without a mirror whose host keeps history, before
+    /// its refill for this stretch of detail has run or its request has timed out. It
+    /// does not wait for live detail to be on: a screen subscribes before its demand
+    /// reaches the session, and a window that never sees the refill (detail withheld on
+    /// cellular) stops waiting after [`statglass_ipc`]'s bound.
+    pub(super) fn sync_refill_pending(&self) {
+        let pending = self.source.mirror.is_none()
+            && self.history_available
+            && !self.ring_filled
+            && self.recent_timed_out.is_none();
+        self.sink.live.set_refill_pending(pending);
     }
 }

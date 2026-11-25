@@ -10,6 +10,7 @@ import {
   type ScenarioName,
   scenarioFlags,
 } from "./fixtures";
+import * as demo from "./history";
 import { fail, ok } from "./protocol";
 import {
   APP_VERSION,
@@ -55,7 +56,10 @@ export class MockRemotes {
     private readonly createPeer: (
       options: MockTransportOptions
     ) => MockTransport
-  ) {}
+  ) {
+    demo.seedDemoRing(ring, this.remotes, options);
+  }
+
   /** `call` on a remote host's peer, as its session forwards it; null for any other host. */
   readonly forward = <T>(host: string, call: (peer: MockTransport) => T) => {
     const remote = this.remotes.get(host);
@@ -102,7 +106,7 @@ export class MockRemotes {
       record: remote,
       automaticUpdates: true,
       flags: scenarioFlags(peerScenarios),
-      peer: this.createPeer({
+      peer: demo.seedDemoPeer(this.remotes, remote, this.createPeer, {
         ...this.options,
         latencyMs: 0,
         scenarios: [...peerScenarios],
@@ -143,7 +147,10 @@ export class MockRemotes {
     return remoteRecords(this, this.options.scenarios ?? [], this.ring.now());
   };
   readonly hostVitals: MockTransport["hostVitals"] = async (host) => {
-    if (host === MOCK_HOST_ID) return ok(mockHostVitals(this.ring.flags.linux));
+    if (host === MOCK_HOST_ID) {
+      const value = mockHostVitals(this.ring.flags.linux);
+      return ok(demo.demoVitals(demo.demoHostOf(this.remotes), value));
+    }
     const remote = this.remotes.get(host);
     return remote
       ? ok(remote.record.status.vitals)

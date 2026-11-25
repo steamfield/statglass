@@ -66,7 +66,11 @@ function currentStatus(
     return entry.status;
   }
   if (!enabled) {
-    entry.status = { kind: "failed", message: MONITORING_OFF };
+    entry.status = {
+      kind: "failed",
+      reason: "monitoring_off",
+      message: MONITORING_OFF,
+    };
     return entry.status;
   }
   return now >= offer.expires_ms - TTL_MS + SCAN_MS
@@ -88,7 +92,11 @@ const MONITORING_OFF =
 export function createMockPairing(
   commands: MockCommands,
   settings: MockSettings,
-  now: () => number
+  now: () => number,
+  handover: {
+    onApprove: (device: string) => void;
+    onRevoke: (device: string) => void;
+  }
 ): Pick<
   Transport,
   | "pairingStart"
@@ -129,7 +137,7 @@ export function createMockPairing(
     async pairingStart() {
       commands.record("pairing_start");
       if (!monitoringEnabled())
-        return pairingFailure("unavailable", MONITORING_OFF);
+        return pairingFailure("monitoring_off", MONITORING_OFF);
       const nonce = (++nextNonce).toString(16).padStart(32, "0");
       const offer = {
         nonce,
@@ -145,7 +153,11 @@ export function createMockPairing(
       commands.record("pairing_status", nonce);
       const entry = offers.get(nonce);
       if (!entry)
-        return ok({ kind: "failed", message: "Unknown pairing offer." });
+        return ok({
+          kind: "failed",
+          reason: "unknown",
+          message: "Unknown pairing offer.",
+        });
       return ok(currentStatus(entry, now(), monitoringEnabled()));
     },
     async pairingApprove(nonce) {
@@ -157,6 +169,7 @@ export function createMockPairing(
         return pairingFailure("invalid", "No iPhone is waiting for approval.");
       if (status.kind !== "pending") return ok(status);
       if (!devices.has(PHONE.tag)) devices.set(PHONE.tag, PHONE);
+      handover.onApprove(PHONE.tag);
       entry.status = { kind: "paired", device: PHONE.tag };
       return ok(entry.status);
     },
@@ -173,7 +186,9 @@ export function createMockPairing(
       commands.record("revoke_device", tag);
       if (!/^[0-9A-F]{6}$/.test(tag))
         return pairingFailure("invalid", "Invalid paired device tag.");
-      return ok(devices.delete(tag));
+      const removed = devices.delete(tag);
+      if (removed) handover.onRevoke(tag);
+      return ok(removed);
     },
   };
 }

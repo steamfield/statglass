@@ -9,7 +9,10 @@ use statglass_engine::{
 use statglass_proto::{Message, RemoteInterest};
 use statglass_schema::{Capabilities, Cursor, HostId, HostRecord, SyncKinds, Tier, lock::LockExt};
 use std::{
+    any::Any,
     collections::{HashMap, HashSet},
+    future::{Future, poll_fn},
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -32,10 +35,10 @@ mod route_watch;
 mod status;
 use backoff::Backoff;
 use control::Control;
-pub use policy::{NETWORK_CHANGE_PROBE, SourceOptions, SyncPolicy};
+pub use policy::{NETWORK_CHANGE_PROBE, SourceOptions};
 use quiesce::{ActiveRun, MirrorWork, MirrorWrite, RunStatus};
 use route_watch::RouteWatch;
-pub use status::{ConnectionFailureKind, ConnectionStatus, RouteFailure};
+pub use status::{ConnectionFailureKind, ConnectionStatus, IncompatibleSide, RouteFailure};
 
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
 #[derive(Clone, Default)]
@@ -47,7 +50,6 @@ struct ControlState {
     retry: u64,
     network: u64,
     local_network: Option<crate::network::LocalNetwork>,
-    sync: SyncPolicy,
     backgrounded: bool,
     quiesce: u64,
     resumed: u64,
@@ -61,7 +63,7 @@ pub struct RemoteSource {
     mirror: Option<Arc<dyn MirrorSink>>,
     options: SourceOptions,
     clock: HostClock,
-    caps: Mutex<Capabilities>,
+    peer: Mutex<status::PeerFacts>,
     status: Mutex<EngineStatus>,
     control: watch::Sender<ControlState>,
     parked: watch::Sender<Option<u64>>,
@@ -91,7 +93,7 @@ impl RemoteSource {
         )
     }
 
-    /// Creates a source with the caller's runtime, history policy and network probe.
+    /// Creates a source with the caller's runtime and network probe.
     pub fn with_options(
         record: HostRecord,
         local: HostId,
@@ -101,10 +103,7 @@ impl RemoteSource {
         mirror: Option<Arc<dyn MirrorSink>>,
         options: SourceOptions,
     ) -> Arc<Self> {
-        let (control, _) = watch::channel(ControlState {
-            sync: options.sync,
-            ..Default::default()
-        });
+        let (control, _) = watch::channel(ControlState::default());
         let (parked, _) = watch::channel(None);
         Arc::new(Self {
             record,
@@ -115,7 +114,7 @@ impl RemoteSource {
             mirror,
             options,
             clock: HostClock::default(),
-            caps: Mutex::new(Capabilities::default()),
+            peer: Mutex::default(),
             status: Mutex::new(EngineStatus::default()),
             control,
             parked,
@@ -168,7 +167,7 @@ impl Source for RemoteSource {
         self.record.clone()
     }
     fn capabilities(&self) -> Capabilities {
-        self.caps.lock_ok().clone()
+        self.peer.lock_ok().capabilities.clone()
     }
     fn start(self: Arc<Self>, sink: SourceSink) -> std::result::Result<SourceHandle, SourceError> {
         if self.started.swap(true, Ordering::SeqCst) {
@@ -205,25 +204,88 @@ impl Source for RemoteSource {
 }
 async fn run(source: Arc<RemoteSource>, sink: SourceSink, active: Arc<ActiveRun>) {
     let mut control = source.control.subscribe();
+    let mut last = ConnectionStatus::default();
+    let mut quiesced = 0;
+    loop {
+        let mut status = RunStatus::new(last, &source.on_status);
+        let Err(payload) = catch_task_panic(run_loop(
+            &source,
+            &sink,
+            &active,
+            &mut status.status,
+            &mut quiesced,
+        ))
+        .await
+        else {
+            return;
+        };
+        let retry = control.borrow().retry;
+        log_panic(source.record.id, payload.as_ref());
+        status.status.record_panic();
+        last = status.status.clone();
+        // Publish the terminal error once. Keep the runner available for a manual retry.
+        drop(status);
+        let stopping = control
+            .wait_for(|state| {
+                if state.quiesce != quiesced {
+                    quiesced = state.quiesce;
+                    active.acknowledge(quiesced);
+                }
+                state.stop || (!state.asleep && !state.backgrounded && state.retry != retry)
+            })
+            .await
+            .map_or(true, |state| state.stop);
+        if stopping {
+            return;
+        }
+    }
+}
+
+/// Requires unwinding (`mobile-release`, dev and test). A desktop release panic aborts.
+async fn catch_task_panic<T>(task: impl Future<Output = T>) -> std::thread::Result<T> {
+    let mut task = std::pin::pin!(task);
+    poll_fn(
+        |cx| match catch_unwind(AssertUnwindSafe(|| task.as_mut().poll(cx))) {
+            Ok(poll) => poll.map(Ok),
+            Err(payload) => std::task::Poll::Ready(Err(payload)),
+        },
+    )
+    .await
+}
+
+fn log_panic(host: HostId, payload: &(dyn Any + Send)) {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload");
+    tracing::error!(%host, detail, "remote source panicked");
+}
+
+async fn run_loop(
+    source: &Arc<RemoteSource>,
+    sink: &SourceSink,
+    active: &Arc<ActiveRun>,
+    status: &mut ConnectionStatus,
+    quiesced: &mut u64,
+) {
+    let mut control = source.control.subscribe();
     let mut backoff = Backoff::new();
     let mut replacement: Option<Candidate> = None;
-    let mut final_status = RunStatus::new(&source.on_status);
-    let status = &mut final_status.status;
     let mut resumed = 0;
-    let mut quiesced = 0;
     loop {
         let before = control.borrow_and_update().clone();
         if before.stop {
             break;
         }
-        if before.quiesce != quiesced {
+        if before.quiesce != *quiesced {
             if let Some(candidate) = replacement.take() {
                 candidate.session.close().await;
             }
             status.record_stopped();
             (source.on_status)(status.clone());
-            quiesced = before.quiesce;
-            active.acknowledge(quiesced);
+            *quiesced = before.quiesce;
+            active.acknowledge(*quiesced);
         }
         if before.resumed != resumed {
             resumed = before.resumed;
@@ -239,25 +301,25 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink, active: Arc<ActiveRun>
         let result = tokio::select! {
             biased;
             _ = control.wait_for(|s| s.interrupts(&before)) => continue,
-            result = next_session(&source, &mut replacement, before.network) => result,
+            result = next_session(source, &mut replacement, before.network) => result,
         };
         let started = Instant::now();
         let result = match result {
             Ok(session) => {
                 status.record_connected(session.route, session.hello.app_version.clone());
                 backoff.connected();
-                *source.caps.lock_ok() = session.hello.capabilities.clone();
+                *source.peer.lock_ok() = status::PeerFacts::from_hello(&session.hello);
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
                 (source.on_status)(status.clone());
                 session_loop(
-                    &source,
-                    &sink,
+                    source,
+                    sink,
                     session,
                     &mut control,
                     status,
                     &before,
-                    Some(&active),
+                    Some(active),
                 )
                 .await
             }
@@ -356,21 +418,10 @@ async fn session_loop(
     let kinds = session.negotiated.sync_kinds();
     let reader = std::mem::replace(&mut session.reader, Box::pin(tokio::io::empty()));
     let (messages, task) = codec::reader_task(reader);
-    let mut reader = codec::AbortOnDrop(task);
+    let reader = codec::AbortOnDrop(task);
     let initial = control.borrow_and_update().clone();
     let detail = initial.interest.detail;
-    let answers = session
-        .negotiated
-        .features
-        .contains(statglass_proto::QUERY_FEATURE);
-    let (line, calls) = crate::calls::open(
-        &source.line,
-        answers,
-        session
-            .negotiated
-            .features
-            .contains(statglass_proto::USAGE_HISTORY_FEATURE),
-    );
+    let (line, calls) = crate::calls::open(&source.line, session.negotiated.features.clone());
     let mut state = Session {
         layout: None,
         summary_layout: None,
@@ -386,21 +437,22 @@ async fn session_loop(
         page_bytes: 16 * 1024,
         unpruned_bytes: 0,
         unpruned_pages: 0,
-        tiers: initial.sync.tiers(source.mirror.as_deref()),
-        sync_policy: initial.sync,
+        tiers: source
+            .mirror
+            .as_deref()
+            // Without a sink there is nowhere to sync into; recent rows refill the ring.
+            .map_or(&[], MirrorSink::sync_tiers),
         next_tier: 0,
         in_flight: None,
         timed_out: HashMap::new(),
         history_available: false,
         history_failed: false,
-        mirror_epoch_ready: false,
         watermark_failed: false,
         floors: HashMap::new(),
         restart_cursor: HashSet::new(),
         last_recent: Instant::now() - Duration::from_secs(60),
         pending: crate::calls::Pending::default(),
         recent_pending: false,
-        recent_due: false,
         pending_interest: None,
         recent_timed_out: None,
         ring_filled: false,
@@ -416,29 +468,43 @@ async fn session_loop(
         writer: &mut session.writer,
         route: session.route,
     };
-    let result = state
-        .run_until_interrupted(initial, before, messages, calls)
-        .await;
-    let result = if state.route_watch.interrupted_write() {
-        Ok(None)
-    } else {
-        result
-    };
+    let result =
+        catch_task_panic(state.run_until_interrupted(initial, before, messages, calls)).await;
+    let interrupted_write = state.route_watch.interrupted_write();
     let quiescing = state.control.borrow().quiesce != before.quiesce;
-    let mut mirror_write = std::mem::take(&mut state.mirror_write);
+    let mirror_write = std::mem::take(&mut state.mirror_write);
     drop(state);
     drop(line);
+    // Drain the mirror before reporting a panic so Retry cannot overlap its pending write.
+    let reader_result = finish_session(session, reader, mirror_write, status, quiescing).await;
+    let result = result.unwrap_or_else(|payload| resume_unwind(payload));
+    if let Err(error) = reader_result
+        && error.is_panic()
+    {
+        resume_unwind(error.into_panic());
+    }
+    if interrupted_write { Ok(None) } else { result }
+}
+
+async fn finish_session(
+    session: SshSession,
+    mut reader: codec::AbortOnDrop,
+    mut mirror_write: MirrorWrite,
+    status: &mut ConnectionStatus,
+    quiescing: bool,
+) -> std::result::Result<(), tokio::task::JoinError> {
     if quiescing {
         mirror_write.finish_interrupted(status).await;
         reader.0.abort();
-        let _ = (&mut reader.0).await;
+        let result = (&mut reader.0).await;
         session.close().await;
+        result
     } else {
-        drop(reader);
+        reader.0.abort();
         drop(session);
         mirror_write.finish_interrupted(status).await;
+        (&mut reader.0).await
     }
-    result
 }
 
 enum SessionAction {
@@ -469,14 +535,12 @@ struct Session<'a> {
     unpruned_bytes: usize,
     unpruned_pages: usize,
     tiers: &'a [Tier],
-    sync_policy: SyncPolicy,
     next_tier: usize,
     in_flight: Option<(Tier, Option<Cursor>, Instant)>,
     /// Tiers whose request timed out, and when: a late reply is dropped, not misread.
     timed_out: HashMap<Tier, Instant>,
     history_available: bool,
     history_failed: bool,
-    mirror_epoch_ready: bool,
     watermark_failed: bool,
     floors: HashMap<Tier, i64>,
     restart_cursor: HashSet<Tier>,
@@ -484,7 +548,6 @@ struct Session<'a> {
     /// Calls sent to the host awaiting their reply.
     pending: crate::calls::Pending,
     recent_pending: bool,
-    recent_due: bool,
     pending_interest: Option<RemoteInterest>,
     recent_timed_out: Option<Instant>,
     /// The live ring was refilled from the mirror since live detail began: while no
@@ -520,16 +583,11 @@ impl Session<'_> {
         self.detail = next.interest.detail;
         if !next.interest.detail {
             self.ring_filled = false;
-            self.recent_due = false;
-        } else if detail_starts {
-            if self.recent_first() {
-                self.recent_due = true;
-            }
-            if self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
-                self.next_tier = 0;
-                self.history_failed = false;
-            }
+        } else if detail_starts && self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
+            self.next_tier = 0;
+            self.history_failed = false;
         }
+        self.sync_refill_pending();
         self.pending_interest = Some(next.interest);
         Ok(SessionAction::Continue)
     }
@@ -660,6 +718,7 @@ impl Session<'_> {
             }
             Message::SourceStatus(wire) => {
                 self.history_available = wire.history_available;
+                self.sync_refill_pending();
                 if !self.history_available {
                     self.watermark_failed = false;
                     self.status.history_error =
@@ -676,7 +735,7 @@ impl Session<'_> {
                 (self.source.on_status)(self.status.clone());
             }
             Message::CapabilitiesChanged(c) => {
-                *self.source.caps.lock_ok() = c.clone();
+                self.source.peer.lock_ok().capabilities = c.clone();
                 self.sink.live.publish(BusMsg::Caps(Arc::new(c)));
             }
             Message::LiveProcesses(p) => {
@@ -816,31 +875,12 @@ impl Session<'_> {
                 self.restart_cursor.insert(tier);
             }
             Message::RecentRows {
-                epoch: remote_epoch,
+                epoch,
                 tier,
                 complete_to_ms,
                 layouts,
                 rows,
-            } => {
-                if self.recent_timed_out.take().is_some() {
-                    tracing::debug!("dropping late recent snapshot");
-                    return Ok(SessionAction::Continue);
-                }
-                if !self.recent_pending {
-                    return Err(RemoteError::Transport("unsolicited recent snapshot".into()));
-                }
-                self.recent_pending = false;
-                if remote_epoch != self.epoch {
-                    return Err(RemoteError::Transport(
-                        "source history was reset; reconnecting".into(),
-                    ));
-                }
-                if let Some(mirror) = self.source.mirror.clone() {
-                    self.mirror_write.start(MirrorWork::Recent, move || {
-                        mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows)
-                    });
-                }
-            }
+            } => self.recent_rows(epoch, tier, complete_to_ms, layouts, rows)?,
             Message::Error { message, .. } => {
                 if !self.timed_out.is_empty() || self.recent_timed_out.is_some() {
                     // Errors have no tier either, so reconnect rather than misattribute one.
@@ -894,6 +934,7 @@ impl Session<'_> {
         if self.recent_pending && self.last_recent.elapsed() > Duration::from_secs(30) {
             self.recent_pending = false;
             self.recent_timed_out = Some(Instant::now());
+            self.sync_refill_pending();
             self.watermark_failed = false;
             self.status.history_error = Some("recent history request timed out".into());
         }
@@ -945,9 +986,7 @@ impl Session<'_> {
                 self.history_failed = false;
             }
         }
-        if !self.recent_first() {
-            self.request_recent().await?;
-        }
+        self.request_recent().await?;
 
         Ok(SessionAction::Continue)
     }
@@ -991,7 +1030,8 @@ mod tests {
             page_size: 100,
             cursor: Some("opaque-snapshot-page2".into()),
         };
-        let (_line, mut queued) = crate::calls::open(&source.line, true, true);
+        let (_line, mut queued) =
+            crate::calls::open(&source.line, statglass_proto::local_features());
         request.page_size = 101;
         assert!(matches!(
             source.usage_processes(request.clone()).await,
@@ -1050,7 +1090,8 @@ mod tests {
             page_size: 1,
             cursor: None,
         };
-        let (_line, mut queued) = crate::calls::open(&source.line, true, true);
+        let (_line, mut queued) =
+            crate::calls::open(&source.line, statglass_proto::local_features());
         for answer in [
             statglass_proto::Answer::Error {
                 code: statglass_proto::ErrorCode::InvalidArgument,
@@ -1098,20 +1139,17 @@ mod tests {
             unpruned_bytes: 0,
             unpruned_pages: 0,
             tiers: &[Tier::S10, Tier::M1, Tier::M15],
-            sync_policy: SyncPolicy::Full,
             next_tier: 0,
             in_flight: None,
             timed_out: HashMap::new(),
             history_available: true,
             history_failed: false,
-            mirror_epoch_ready: false,
             watermark_failed: false,
             floors: HashMap::new(),
             restart_cursor: HashSet::new(),
             last_recent: Instant::now(),
             pending: crate::calls::Pending::default(),
             recent_pending: false,
-            recent_due: false,
             pending_interest: None,
             recent_timed_out: None,
             ring_filled: false,

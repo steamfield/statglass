@@ -1,9 +1,19 @@
-/**
- * Placeholder for pairing a Mac (phase 7). Says the screen is not built yet.
- */
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { Stack } from "expo-router";
+import { PairScreen } from "@/pairing";
+import { screenOptions } from "@/ui/screen-options";
+import { useThemeColors } from "@/ui/theme-colors";
 
-/** Pairing a Mac, not built yet. */
-export default function PairMac() {
-  return <NotBuiltYet />;
+export default function Pair() {
+  const colors = useThemeColors();
+  return (
+    <>
+      <Stack.Screen
+        options={{
+          ...screenOptions(colors),
+          title: "Add a host",
+        }}
+      />
+      <PairScreen />
+    </>
+  );
 }

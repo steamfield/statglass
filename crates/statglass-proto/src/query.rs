@@ -4,6 +4,8 @@
 //! A query or answer kind this build does not know decodes as `Unknown`, so a host asked
 //! something new answers `Answer::Error { code: Unsupported }` and the session goes on.
 
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
 use serde::{Deserialize, Serialize};
 use statglass_schema::disk_space::{
     SpaceFile, SpaceReport, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume,
@@ -12,11 +14,12 @@ use statglass_schema::durable_usage::{
     HistoricalUsageReply, HistoricalUsageRequest, UsageProcessReply, UsageProcessRequest,
 };
 use statglass_schema::usage::{UsageByApp, UsageKey};
+use statglass_schema::{Gap, Module, SeriesKey, SeriesSelector, Tier};
 
 use uuid::Uuid;
 
-use crate::ErrorCode;
 use crate::alert_rules::{HostAlertRules, RuleEntry};
+use crate::{ErrorCode, WireEvent};
 
 /// Adjacently tagged like [`crate::Message`]: `{"q": "UsageByApp", "a": {...}}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -54,6 +57,8 @@ pub enum Query {
         report: u32,
         target: SpaceTarget,
     },
+    History(HistoryQuery),
+    NetworkAddresses,
     /// The host's custom alert rules (plan/rfc-remote-alerts.md 5.1).
     AlertRules,
     /// Replaces the host's custom alert rules when `base_revision` is still current.
@@ -80,6 +85,8 @@ pub enum Answer {
     SpaceSubtree(SpaceSubtree),
     SpaceFiles(Vec<SpaceFile>),
     SpacePath(String),
+    History(HistoryAnswer),
+    NetworkAddresses(HostAddresses),
     /// The custom alert rules in force, answering both `AlertRules` and `SetAlertRules`.
     AlertRules(HostAlertRules),
     /// Done, with nothing to return (`SpaceCancel`, `SpaceClear`).
@@ -91,6 +98,135 @@ pub enum Answer {
     },
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryQuery {
+    pub series: Vec<SeriesSelector>,
+    pub from_ms: i64,
+    /// `None` means ending now, on the host's clock.
+    pub to_ms: Option<i64>,
+    pub max_points: u32,
+    pub events_for: Option<Module>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HistoryAnswer {
+    pub tier: Tier,
+    pub bucket_ms: i64,
+    pub complete_to_ms: i64,
+    pub series: Vec<WireHistorySeries>,
+    pub gaps: Vec<Gap>,
+    pub events: Vec<WireEvent>,
+    pub stats: Vec<WireSeriesStats>,
+    #[serde(deserialize_with = "history_clamps")]
+    pub clamped: Vec<HistoryClamp>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WireHistorySeries {
+    pub key: SeriesKey,
+    pub points: Vec<WireHistoryPoint>,
+    pub hold_ms: i64,
+}
+
+/// One measured slot, encoded as `(t, avg, min, max)`.
+pub type WireHistoryPoint = (i64, f32, f32, f32);
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WireSeriesStats {
+    pub key: SeriesKey,
+    pub avg: Option<f32>,
+    pub peak: Option<f32>,
+    /// Time in the range with a reading, outside the gaps that apply to the metric.
+    /// Absent from hosts that predate range totals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_ms: Option<i64>,
+    /// `avg` times the measured seconds: bytes for a bytes-per-second series. `None`
+    /// when nothing was measured or the host predates range totals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integral: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
+pub enum HistoryClamp {
+    Points,
+    Series,
+    Events,
+    Bytes,
+    Unknown,
+}
+
+fn history_clamps<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<HistoryClamp>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(transparent)]
+    struct Clamp(#[serde(deserialize_with = "lenient")] HistoryClamp);
+
+    Vec::<Clamp>::deserialize(deserializer).map(|clamps| clamps.into_iter().map(|c| c.0).collect())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostAddresses {
+    pub interface: Option<String>,
+    pub link_mbps: Option<u32>,
+    #[serde(default)]
+    pub ipv4: Vec<Ipv4Addr>,
+    #[serde(default)]
+    pub ipv6: Vec<Ipv6Addr>,
+    #[serde(deserialize_with = "lenient")]
+    pub public_ip: PublicIp,
+    pub as_of_ms: i64,
+}
+
+impl HostAddresses {
+    pub fn unavailable(reason: impl Into<String>) -> Self {
+        Self {
+            interface: None,
+            link_mbps: None,
+            ipv4: Vec::new(),
+            ipv6: Vec::new(),
+            public_ip: PublicIp::Unavailable {
+                reason: reason.into(),
+            },
+            as_of_ms: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum PublicIp {
+    Known {
+        // Serde can buffer `detail` before it reads `state`. Text decodes the same
+        // way from either the wire or the buffered content.
+        #[serde(with = "ip_text")]
+        ip: IpAddr,
+    },
+    Pending,
+    Unavailable {
+        reason: String,
+    },
+    Unknown,
+}
+
+mod ip_text {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::net::IpAddr;
+
+    pub(super) fn serialize<S: Serializer>(ip: &IpAddr, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(ip)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<IpAddr, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 /// An adjacently tagged enum with an `Unknown` variant for kinds it cannot decode.
@@ -105,6 +241,18 @@ impl Tagged for Query {
 }
 
 impl Tagged for Answer {
+    fn unknown() -> Self {
+        Self::Unknown
+    }
+}
+
+impl Tagged for HistoryClamp {
+    fn unknown() -> Self {
+        Self::Unknown
+    }
+}
+
+impl Tagged for PublicIp {
     fn unknown() -> Self {
         Self::Unknown
     }

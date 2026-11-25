@@ -1,141 +1,232 @@
-use statglass_ipc::error::CommandError;
-use statglass_ipc::history::{HistoryRequest, TierRequest};
-use statglass_proto::{SyncPage, WireBucket};
-use statglass_schema::{Event, EventDetail, SeriesSelector, SyncKinds, Tier};
-use statglass_session::MirrorSink;
+use statglass_ipc::{error::CommandError, mobile::HostHistoryRequest};
+use statglass_proto::{
+    Answer, ErrorCode, HISTORY_QUERY_FEATURE, HistoryAnswer, HistoryClamp, HistoryQuery, Query,
+    WireEvent, WireHistorySeries, WireSeriesStats,
+};
+use statglass_schema::{Event, EventDetail, Gap, GapReason, Module, SeriesSelector, Tier};
+use tokio::time::Instant;
 
 use super::*;
 
-#[tokio::test(start_paused = true)]
-async fn history_auto_uses_phone_coverage_and_events_read_the_same_mirror() {
-    const DAY: i64 = 86_400_000;
-    let host = host(1);
-    let fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
-    let entry = fixture.sessions.registry.entry(host.id).unwrap();
-    for (tier, from_ms, value) in [(Tier::M1, NOW - DAY, 21.), (Tier::M15, NOW - 7 * DAY, 35.)] {
-        entry
-            .mirror
-            .cursor(tier, host.id.0, SyncKinds::ALL)
-            .unwrap();
-        entry
-            .mirror
-            .ingest(
-                SyncPage {
-                    tier,
-                    epoch: host.id.0,
-                    layouts: vec![WireLayout {
-                        layout_no: 0,
-                        series: vec![cpu()],
-                    }],
-                    rows: vec![WireBucket {
-                        seq: 1,
-                        bucket_ts: from_ms,
-                        layout_no: 0,
-                        stats: vec![value, value, value],
-                    }],
-                    gaps: vec![],
-                    events: vec![],
-                    last_seq: 1,
-                    more: false,
-                },
-                SyncKinds::ALL,
-            )
-            .unwrap();
-        let request = HistoryRequest {
-            host: host.id,
-            from_ms,
-            to_ms: NOW,
-            tier: TierRequest::Auto,
-            max_points: 2_000,
-            selectors: vec![SeriesSelector {
-                metric: cpu().metric,
-                labels: Default::default(),
-            }],
-        };
-        let page = fixture
-            .sessions
-            .call(MobileCall::QueryHistory(request.clone()))
-            .await
-            .unwrap();
-        assert_eq!(page["tier"], json!(tier));
-        assert_eq!(page["series"][0]["key"], json!(cpu()));
-        let point = json!({"t": from_ms, "min": value, "max": value, "avg": value});
-        let points = if tier == Tier::M1 {
-            json!([point])
-        } else {
-            // The HistoryStore also folds the covered minute into its quarter hour.
-            json!([point, {"t": NOW - DAY, "min": 21., "max": 21., "avg": 21.}])
-        };
-        assert_eq!(page["series"][0]["points"], points);
-        assert!(matches!(
-            fixture
-                .sessions
-                .call(MobileCall::QueryHistory(HistoryRequest {
-                    max_points: 0,
-                    ..request
-                }))
-                .await,
-            Err(CommandError::InvalidArgument { .. })
-        ));
+fn query(host: HostId) -> HostHistoryRequest {
+    HostHistoryRequest {
+        host,
+        series: vec![SeriesSelector {
+            metric: cpu().metric,
+            labels: Default::default(),
+        }],
+        from_ms: NOW - 60_000,
+        to_ms: Some(NOW),
+        max_points: 31,
+        events_for: Some(Module::Cpu),
     }
-    let remote = fixture
-        .sessions
-        .call(MobileCall::ListRemoteHosts)
+}
+
+async fn handshake(peer: &mut Dial, host: &MobileHost, history: bool) {
+    let mut features = statglass_proto::local_features();
+    if !history {
+        assert!(features.remove(HISTORY_QUERY_FEATURE));
+    }
+    peer.handshake_with_features(host, features).await;
+    assert!(matches!(peer.read().await, Message::Ping { .. }));
+}
+
+async fn reply(peer: &mut Dial, request: &HostHistoryRequest, answer: Answer) {
+    let message = peer.read().await;
+    let Message::Request { id, query } = message else {
+        panic!("expected one history request, got {message:?}");
+    };
+    assert_eq!(
+        query,
+        Query::History(HistoryQuery {
+            series: request.series.clone(),
+            from_ms: request.from_ms,
+            to_ms: request.to_ms,
+            max_points: request.max_points,
+            events_for: request.events_for,
+        })
+    );
+    codec::write(&mut peer.peer, &Message::Reply { id, answer })
         .await
         .unwrap();
-    assert_eq!(remote[0]["synced_through_ms"], json!(NOW - DAY + 60_000));
+}
 
+fn wire_event(seq: i64, ts_ms: i64, kind: &str, payload: &impl serde::Serialize) -> WireEvent {
+    let mut bytes = Vec::new();
+    ciborium::into_writer(payload, &mut bytes).unwrap();
+    WireEvent {
+        source_id: None,
+        seq,
+        ts_ms,
+        kind: kind.into(),
+        payload: bytes,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_host_page_keeps_points_gaps_stats_and_known_events_without_retaining_rows() {
+    let host = host(1);
+    let mut fixture = Fixture::start(vec![host.clone()]);
+    let mut peer = fixture.next_dial().await;
+    handshake(&mut peer, &host, true).await;
+    let request = query(host.id);
+    let point = (NOW - 10_000, 20.0, 11.0, 35.0);
+    let gap = Gap::new(NOW - 40_000, Some(NOW - 30_000), None, GapReason::Sleep).unwrap();
     let event = Event {
-        ts_ms: NOW,
-        start_ms: NOW,
-        processes: vec![],
-        detail: EventDetail::FansRamped {
-            from_rpm: 800.,
-            to_rpm: 1_200.,
+        ts_ms: NOW - 20_000,
+        start_ms: NOW - 25_000,
+        processes: vec!["example".into()],
+        detail: EventDetail::SustainedProcess {
+            process: "example".into(),
+            cpu_pct: 25.0,
+            secs: 5,
         },
     };
-    let writer = entry.mirror.store().writer().unwrap();
-    writer.record_event(host.id, &event).unwrap();
-    writer.flush().unwrap();
-    assert_eq!(
+    let later = Event {
+        ts_ms: NOW - 12_000,
+        ..event.clone()
+    };
+    let answer = HistoryAnswer {
+        tier: Tier::S10,
+        bucket_ms: 10_000,
+        complete_to_ms: NOW - 1_000,
+        series: vec![WireHistorySeries {
+            key: cpu(),
+            points: vec![point],
+            hold_ms: 12_000,
+        }],
+        gaps: vec![gap],
+        events: vec![
+            wire_event(1, event.ts_ms, event.detail.kind(), &event),
+            wire_event(2, NOW - 18_000, "future_detector", &event),
+            wire_event(3, later.ts_ms, later.detail.kind(), &later),
+        ],
+        stats: vec![WireSeriesStats {
+            key: cpu(),
+            avg: Some(22.0),
+            peak: Some(35.0),
+            measured_ms: Some(60_000),
+            integral: Some(1_320.0),
+        }],
+        clamped: vec![HistoryClamp::Bytes, HistoryClamp::Unknown],
+    };
+    let (page, ()) = tokio::join!(
         fixture
             .sessions
-            .call(MobileCall::QueryEvents {
-                host: host.id,
-                from_ms: NOW,
-                to_ms: NOW + 1,
-            })
-            .await
-            .unwrap(),
-        json!([event])
+            .call(MobileCall::HostHistory(request.clone())),
+        reply(&mut peer, &request, Answer::History(answer)),
+    );
+    assert_eq!(
+        page.unwrap(),
+        json!({
+            "tier": "s10", "bucket_ms": 10_000, "complete_to_ms": NOW - 1_000,
+            "series": [{
+                "key": cpu(), "hold_ms": 12_000,
+                "points": [{"t": point.0, "avg": point.1, "min": point.2, "max": point.3}],
+            }],
+            "gaps": [gap],
+            "events": [event, later],
+            "stats": [{"key": cpu(), "avg": 22.0, "peak": 35.0, "measured_ms": 60_000, "integral": 1_320.0}],
+            "clamped": [{"kind": "bytes"}, {"kind": "unknown"}],
+        })
+    );
+    let registry = &fixture.sessions.registry;
+    let entry = registry.entry(host.id).unwrap().running().unwrap();
+    assert!(entry.hub.latest_frame().is_none());
+    assert!(entry.hub.backfill(i64::MIN).is_empty());
+    assert!(
+        entry
+            .hub
+            .recent_rows(host.id, i64::MIN, i64::MAX)
+            .is_empty()
+    );
+
+    let empty = HistoryAnswer {
+        tier: Tier::S10,
+        bucket_ms: 10_000,
+        complete_to_ms: NOW,
+        series: Vec::new(),
+        gaps: Vec::new(),
+        events: Vec::new(),
+        stats: Vec::new(),
+        clamped: Vec::new(),
+    };
+    let (second, ()) = tokio::join!(
+        fixture
+            .sessions
+            .call(MobileCall::HostHistory(request.clone())),
+        reply(&mut peer, &request, Answer::History(empty)),
+    );
+    assert_eq!(
+        second.unwrap(),
+        json!({
+            "tier": "s10", "bucket_ms": 10_000, "complete_to_ms": NOW,
+            "series": [], "gaps": [], "events": [], "stats": [], "clamped": [],
+        })
     );
 }
 
 #[tokio::test(start_paused = true)]
-async fn queued_reads_for_a_replaced_mirror_return_unknown_host() {
+async fn a_host_without_history_support_receives_no_request() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
-    let mut dial = fixture.next_dial().await;
-    dial.handshake(&host).await;
-    let old = fixture.sessions.registry.entry(host.id).unwrap();
-    let mut updated = host.clone();
-    updated.name = "New name".into();
-    fixture.sessions.set_hosts(vec![updated]).unwrap();
-    timeout(WAIT, &mut dial.closing).await.unwrap().unwrap();
-    dial.finish_close.send(()).unwrap();
-    let _new = fixture.next_dial().await;
-    let request = HistoryRequest {
-        host: host.id,
-        from_ms: NOW - 60_000,
-        to_ms: NOW,
-        tier: TierRequest::M1,
-        max_points: 1,
-        selectors: vec![SeriesSelector {
-            metric: cpu().metric,
-            labels: Default::default(),
-        }],
-    };
-    let unknown = Err(CommandError::UnknownHost { host: host.id });
-    assert_eq!(old.query_history(&request), unknown);
-    assert_eq!(old.query_events(host.id, NOW - 60_000, NOW), unknown);
+    let mut fixture = Fixture::start(vec![host.clone()]);
+    let mut peer = fixture.next_dial().await;
+    handshake(&mut peer, &host, false).await;
+    assert!(matches!(
+        fixture
+            .sessions
+            .call(MobileCall::HostHistory(query(host.id)))
+            .await,
+        Err(CommandError::RemoteUnsupported { .. }),
+    ));
+    assert!(timeout(WAIT, codec::read(&mut peer.peer)).await.is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_busy_host_returns_its_typed_error_without_a_retry() {
+    let host = host(1);
+    let mut fixture = Fixture::start(vec![host.clone()]);
+    let mut peer = fixture.next_dial().await;
+    handshake(&mut peer, &host, true).await;
+    let request = query(host.id);
+    let message = "history queue is full".to_owned();
+    let (page, ()) = tokio::join!(
+        fixture
+            .sessions
+            .call(MobileCall::HostHistory(request.clone())),
+        reply(
+            &mut peer,
+            &request,
+            Answer::Error {
+                code: ErrorCode::Busy,
+                message: message.clone()
+            }
+        ),
+    );
+    assert_eq!(page, Err(CommandError::RemoteBusy { message }));
+    assert!(timeout(WAIT, codec::read(&mut peer.peer)).await.is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn history_fails_at_once_while_disconnected_and_is_never_sent_after_connecting() {
+    let host = host(1);
+    let mut fixture = Fixture::start(vec![host.clone()]);
+    let mut peer = fixture.next_dial().await;
+    let before = Instant::now();
+    assert_eq!(
+        timeout(
+            Duration::ZERO,
+            fixture
+                .sessions
+                .call(MobileCall::HostHistory(query(host.id)))
+        )
+        .await
+        .unwrap(),
+        Err(CommandError::RemoteUnreachable {
+            message: "the host is not connected".into()
+        }),
+    );
+    assert_eq!(Instant::now(), before);
+    handshake(&mut peer, &host, true).await;
+    assert!(timeout(WAIT, codec::read(&mut peer.peer)).await.is_err());
 }

@@ -3,21 +3,17 @@
  * Each card reads its own module selector, so a frame that only moves CPU
  * values re-renders the CPU cards and nothing else.
  */
-import { ratio, stackRemainder } from "@core/chart-math";
-import { cpuPowerNote } from "@core/cpu-power-source";
-import {
-  bytesParts,
-  formatBytes,
-  formatGhz,
-  formatPercent,
-  formatWatts,
-  MISSING,
-  marketingGb,
-  rateParts,
-} from "@core/format";
-import { batteryTime } from "@core/format/battery";
-import { METRIC_CODES } from "@core/generated/types";
 import { spanWords } from "@core/live-window";
+import {
+  BATTERY_TITLE,
+  batteryCard,
+  cpuCard,
+  gpuCard,
+  memoryCard,
+  memoryFullLegend,
+  networkCard,
+  powerCard,
+} from "@core/popover/cards";
 import { mirrorSubject } from "~/components/charts/mirror-chart";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
@@ -31,13 +27,12 @@ import { useShownRingLoading } from "~/hooks/use-ring";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import { useUnits } from "~/hooks/use-units";
 import { useTransport } from "~/lib/transport-context";
-import { useHost } from "~/stores/host-store";
 import {
-  held,
   useBattery,
   useCpu,
   useGpu,
   useMemory,
+  useNetwork,
   usePower,
   usePowerSource,
   usePrimaryIface,
@@ -70,12 +65,12 @@ const NET_MIN_CEILING = 100_000;
 
 export function LiveCpuCard({ compact = false, onToggle }: PresentationProps) {
   const open = useOpen();
-  const cpu = useCpu();
+  const card = cpuCard(useCpu(), { compact });
   const stream = useCompactStream({
     seriesKey: "cpu.total",
     accent: "cpu",
-    subject: "CPU",
-    now: formatPercent(cpu.total),
+    subject: card.title,
+    now: card.headline,
     height: compact ? 14 : 52,
     bare: compact,
   });
@@ -85,28 +80,18 @@ export function LiveCpuCard({ compact = false, onToggle }: PresentationProps) {
       compact={compact}
       onToggle={onToggle}
       accent="cpu"
-      title="CPU"
+      title={card.title}
       href="/dashboard/cpu"
       onOpen={open}
-      value={formatPercent(cpu.total)}
+      value={card.headline}
       notice={notice}
     >
       <StreamArea {...stream} />
       {!compact && (
         <div className="flex flex-col gap-[5px] pt-1.5">
-          <InlineBar
-            label="User"
-            value={formatPercent(cpu.user, { decimals: 1 })}
-            fraction={ratio(cpu.user, 100)}
-            layout="row"
-          />
-          <InlineBar
-            label="System"
-            value={formatPercent(cpu.system, { decimals: 1 })}
-            fraction={ratio(cpu.system, 100)}
-            rampStep={2}
-            layout="row"
-          />
+          {card.bars.map((bar) => (
+            <InlineBar key={bar.label} model={bar} />
+          ))}
         </div>
       )}
     </ModuleCard>
@@ -121,83 +106,47 @@ export function LiveMemoryCard({
   const mem = useMemory();
   const host = useHostRecord();
   const notice = useReadFailure("mem.used");
-  const total = host?.info.mem_total_bytes ?? null;
-  // Used follows the GB/GiB setting; the total is the marketing size (plan 4.9).
-  const bytes = useUnits().bytes;
-  const frac = (v: number | null) => ratio(v, total);
-  const codes = METRIC_CODES["mem.pressure_level"];
-  const level =
-    mem.pressureLevel === codes.critical
-      ? "critical"
-      : mem.pressureLevel === codes.warn
-        ? "warn"
-        : "normal";
+  const totalBytes = host?.info.mem_total_bytes ?? null;
+  const card = memoryCard(mem, {
+    bytes: useUnits().bytes,
+    totalBytes,
+    compact: true,
+  });
+  const legend = compact ? null : memoryFullLegend(mem, totalBytes);
   return (
     <ModuleCard
       compact={compact}
       onToggle={onToggle}
       accent="mem"
-      title="Memory"
+      title={card.title}
       href="/dashboard/memory"
       onOpen={open}
-      value={
-        mem.used === null
-          ? MISSING
-          : bytesParts(mem.used, { units: bytes, unit: bytes, decimals: 1 })
-              .value
-      }
-      unit={total === null ? undefined : ` / ${marketingGb(total)} GB`}
+      value={card.headline}
+      unit={card.capacity === null ? undefined : ` ${card.capacity}`}
       notice={notice}
     >
-      {compact ? (
-        <div className="flex items-center gap-2">
-          <MeterTrack fraction={frac(mem.used)} className="flex-1" />
-          {mem.hasPressure && (
-            <span className="whitespace-nowrap text-caption text-muted-foreground">
-              Pressure · {level}
-            </span>
-          )}
-        </div>
-      ) : (
+      {legend ? (
         <>
-          <InlineBar
-            label={`Pressure · ${level}`}
-            value={formatPercent(mem.pressure)}
-            fraction={ratio(mem.pressure, 100)}
-            layout="wide"
-          />
+          <InlineBar model={legend.pressure} />
           <StackBar
             showLegend
             legendColumns={2}
-            segments={[
-              seg("wired", "Wired", mem.wired, frac(mem.wired), 1),
-              seg("app", "App", mem.app, frac(mem.app), 2),
-              seg(
-                "compressed",
-                "Compressed",
-                mem.compressed,
-                frac(mem.compressed),
-                "hatch"
-              ),
-              seg("cached", "Cached files", mem.cached, frac(mem.cached), 4),
-              seg("free", "Free", mem.free, frac(mem.free), "track"),
-            ]}
-            extraLegend={[{ label: "Swap", value: formatBytes(mem.swapUsed) }]}
+            segments={legend.segments}
+            extraLegend={legend.items}
           />
         </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <MeterTrack fraction={card.usedFraction} className="flex-1" />
+          {card.compactPressure && (
+            <span className="whitespace-nowrap text-caption text-muted-foreground">
+              {card.compactPressure}
+            </span>
+          )}
+        </div>
       )}
     </ModuleCard>
   );
-}
-
-function seg(
-  key: string,
-  label: string,
-  bytes: number | null,
-  fraction: number | null,
-  step: 1 | 2 | 3 | 4 | "hatch" | "track"
-) {
-  return { key, label, value: formatBytes(bytes), fraction, step };
 }
 
 /**
@@ -206,12 +155,12 @@ function seg(
  */
 export function LiveGpuCard({ compact = false, onToggle }: PresentationProps) {
   const open = useOpen();
-  const gpu = useGpu();
+  const card = gpuCard(useGpu(), {});
   const stream = useCompactStream({
     seriesKey: "gpu.util",
     accent: "gpu",
-    subject: "GPU",
-    now: formatPercent(gpu.util),
+    subject: card.title,
+    now: card.headline,
     height: compact ? 14 : 40,
     yMax: 100,
     bare: compact,
@@ -222,23 +171,14 @@ export function LiveGpuCard({ compact = false, onToggle }: PresentationProps) {
       compact={compact}
       onToggle={onToggle}
       accent="gpu"
-      title="GPU"
+      title={card.title}
       href="/dashboard/gpu"
       onOpen={open}
-      value={formatPercent(gpu.util)}
+      value={card.headline}
       notice={notice}
     >
       <StreamArea {...stream} />
-      {!compact && (
-        <StatList
-          layout="grid"
-          items={[
-            { label: "Freq", value: formatGhz(gpu.freqHz) },
-            { label: "Power", value: formatWatts(gpu.powerW) },
-            { label: "Render", value: formatPercent(gpu.render) },
-          ]}
-        />
-      )}
+      {!compact && <StatList layout="grid" items={card.items} />}
     </ModuleCard>
   );
 }
@@ -252,56 +192,32 @@ export function LivePowerCard({
   onToggle,
 }: PresentationProps) {
   const open = useOpen();
-  const p = usePower();
-  const showBattery = useModuleStates().battery === "on";
+  const card = powerCard(usePower(), {
+    showBattery: useModuleStates().battery === "on",
+  });
   const notice = useReadFailure("power.system");
-  const cpuNote = cpuPowerNote(p.cpuSource);
-  // The rest of the system is what the named rails leave.
-  const rest = stackRemainder(p.system, [p.cpu, p.gpu, p.ane, p.dram]);
-  const frac = (v: number | null) => ratio(v, p.system);
   return (
     <ModuleCard
       compact={compact}
       onToggle={onToggle}
       accent="power"
-      title={showBattery ? "Power & battery" : "Power"}
+      title={card.title}
       href="/dashboard/power"
       onOpen={open}
-      value={formatWatts(p.system)}
-      unit=" system"
+      value={card.headline}
+      unit={` ${card.unit}`}
       notice={notice}
     >
       {compact ? (
-        <CompactPower showBattery={showBattery} />
+        <CompactPower showBattery={card.hasBattery} />
       ) : (
         <>
-          <StackBar
-            segments={[
-              seg2("cpu", "CPU", p.cpu, frac(p.cpu), 1),
-              seg2("gpu", "GPU", p.gpu, frac(p.gpu), 2),
-              seg2("ane", "ANE", p.ane, frac(p.ane), "hatch"),
-              seg2("dram", "DRAM", p.dram, frac(p.dram), 3),
-              seg2("rest", "Rest of system", rest, frac(rest), "track"),
-            ]}
-          />
-          <StatList
-            layout="grid"
-            items={[
-              { label: "CPU", value: formatWatts(p.cpu), swatch: 1 },
-              { label: "GPU", value: formatWatts(p.gpu), swatch: 2 },
-              {
-                label: "ANE",
-                value: formatWatts(p.ane),
-                swatch: "hatch",
-                muted: !p.ane,
-              },
-              { label: "DRAM", value: formatWatts(p.dram), swatch: 3 },
-            ]}
-          />
-          {showBattery && <BatteryDetails />}
-          {cpuNote && (
+          <StackBar segments={[...card.segments]} />
+          <StatList layout="grid" items={card.items} />
+          {card.hasBattery && <BatteryDetails />}
+          {card.note && (
             <p className="m-0 font-normal text-label text-muted-foreground">
-              {cpuNote}
+              {card.note}
             </p>
           )}
         </>
@@ -310,21 +226,11 @@ export function LivePowerCard({
   );
 }
 
-function seg2(
-  key: string,
-  label: string,
-  watts: number | null,
-  fraction: number | null,
-  step: 1 | 2 | 3 | "hatch" | "track"
-) {
-  return { key, label, value: formatWatts(watts), fraction, step };
-}
-
 /**
  * Network card: the totals over the reported interfaces (`net.rx_total`,
  * D-092). The header shows the local and public addresses (D-093), each
  * copyable without opening the page. Before the local address is read, or
- * without one (no network, a remote host), the subtitle says the figures are
+ * without one (no network or an older host), the subtitle says the figures are
  * every interface's and names the one carrying the default route ("All
  * interfaces · en0"; "All interfaces" on a full-tunnel VPN).
  */
@@ -334,7 +240,7 @@ export function LiveNetworkCard({
 }: PresentationProps) {
   const open = useOpen();
   const iface = usePrimaryIface();
-  const { lan, publicIp } = useAddresses(compact ? null : iface);
+  const { lan, publicIp, failure } = useAddresses(iface, !compact);
   const { rate: rateUnits } = useUnits();
   const rxKey = "net.rx_total";
   const txKey = "net.tx_total";
@@ -342,13 +248,10 @@ export function LiveNetworkCard({
   const loading = useShownRingLoading(windowMs);
   const rx = useSeriesWindow(rxKey, windowMs);
   const tx = useSeriesWindow(txKey, windowMs);
-  const rxNow = useHost((s) => held(s, rxKey));
-  const txNow = useHost((s) => held(s, txKey));
-  const rate = (bps: number | null) => {
-    if (bps === null) return { value: MISSING };
-    const q = rateParts(bps, { units: rateUnits });
-    return { value: q.value, unit: q.unit };
-  };
+  const card = networkCard(useNetwork(), {
+    rate: rateUnits,
+    primaryIface: iface,
+  });
   // Held ceilings: per-tick maxima would rescale the bars every second.
   const upMax = useNiceCeiling(tx.values, tx.tEndMs, NET_MIN_CEILING, windowMs);
   const downMax = useNiceCeiling(
@@ -359,7 +262,7 @@ export function LiveNetworkCard({
   );
   const ariaLabel = useChartLabel({
     subject: mirrorSubject({
-      subject: "Network",
+      subject: card.title,
       upLabel: "Upload",
       downLabel: "Download",
     }),
@@ -373,33 +276,15 @@ export function LiveNetworkCard({
       onToggle={onToggle}
       notice={rxNotice ?? txNotice}
       accent="net"
-      title="Network"
+      title={card.title}
       href="/dashboard/network"
       onOpen={open}
-      value={
-        compact
-          ? `↑ ${rate(txNow).value} ${rate(txNow).unit ?? ""} · ↓ ${rate(rxNow).value} ${rate(rxNow).unit ?? ""}`
-          : undefined
-      }
-      subtitle={
-        compact
-          ? undefined
-          : iface === null
-            ? "All interfaces"
-            : `All interfaces · ${iface}`
-      }
+      value={compact ? card.headline : undefined}
+      subtitle={compact ? undefined : card.subtitle}
       subtitleStyle="text"
-      aside={compact ? undefined : networkAddresses(lan, publicIp)}
+      aside={compact ? undefined : networkAddresses(lan, publicIp, failure)}
     >
-      {!compact && (
-        <StatList
-          layout="grid"
-          items={[
-            { label: "↑ Upload", ...rate(txNow) },
-            { label: "↓ Download", ...rate(rxNow) },
-          ]}
-        />
-      )}
+      {!compact && <StatList layout="grid" items={card.items} />}
       <MirrorBars
         loading={loading}
         up={tx.values}
@@ -428,7 +313,7 @@ export function LiveBatteryCard({
       compact={compact}
       onToggle={onToggle}
       accent="battery"
-      title="Battery"
+      title={BATTERY_TITLE}
       href="/dashboard/battery"
       onOpen={open}
     >
@@ -439,45 +324,35 @@ export function LiveBatteryCard({
 
 /** Battery readings shared by the combined and standalone cards. */
 function BatteryDetails() {
-  const b = useBattery();
-  const source = usePowerSource();
+  const card = batteryCard(useBattery(), { powerSource: usePowerSource() });
   const notice = useReadFailure("battery.charge");
-  const remaining = batteryTime(b, source).value;
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-label text-muted-foreground">Battery</span>
-        <span className="figures-display text-figure">
-          {formatPercent(b.charge)}
-        </span>
+        <span className="text-label text-muted-foreground">{card.title}</span>
+        <span className="figures-display text-figure">{card.headline}</span>
       </div>
       {notice && (
         <p className="m-0 text-label text-muted-foreground">{notice}</p>
       )}
       <MeterTrack
-        fraction={ratio(b.charge, 100)}
+        fraction={card.chargeFraction}
         fill="var(--color-battery)"
         height="h-1.5"
       />
-      <StatList
-        layout="grid"
-        items={[
-          { label: "Remaining", value: remaining },
-          { label: "Health", value: formatPercent(b.health) },
-          {
-            label: "Cycles",
-            value: b.cycles === null ? MISSING : String(Math.round(b.cycles)),
-          },
-        ]}
-      />
+      <StatList layout="grid" items={card.remainingItems} />
     </>
   );
 }
 
 function networkAddresses(
   lan: string | null,
-  publicIp: { data?: string | undefined; isError: boolean }
+  publicIp: { data?: string | undefined; isError: boolean },
+  failure: string | undefined
 ) {
+  if (failure !== undefined) {
+    return <span title={failure}>Addresses unavailable</span>;
+  }
   if (lan === null) return undefined;
   return (
     <>

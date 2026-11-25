@@ -19,7 +19,7 @@ export const appAlias = {
   "@statglass/widgets": app("app/widgets/index.ts"),
   "@statglass/tokens.css": app("app/styles/tokens.css"),
   "~": app("app"),
-  "@core": app("core"),
+  "@core": fileURLToPath(new URL("../packages/core/src", import.meta.url)),
 };
 
 // https://astro.build/config

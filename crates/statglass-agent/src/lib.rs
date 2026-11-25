@@ -9,6 +9,7 @@ use anyhow::Context;
 use statglass_remote::AgentEnv;
 
 mod alert_rules;
+mod authorize;
 mod cli;
 mod commands;
 mod container_names;
@@ -35,7 +36,18 @@ pub mod transaction {
 pub fn main() -> ExitCode {
     init_logging();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match cli::parse(&args).and_then(run) {
+    let command = match cli::parse(&args) {
+        Err(error)
+            if args.first().is_some_and(|arg| {
+                matches!(arg.as_str(), "pair" | "authorize-key" | "revoke-key")
+            }) =>
+        {
+            eprintln!("statglass-agent: {error:#}\n\n{}", cli::USAGE);
+            return ExitCode::from(2);
+        }
+        command => command,
+    };
+    match command.and_then(run) {
         Ok(code) => code,
         Err(e) => {
             eprintln!("statglass-agent: {e:#}");
@@ -87,9 +99,12 @@ fn run_device_command(command: &DeviceCommand) -> anyhow::Result<ExitCode> {
         } => restricted_paths(*system, socket.as_deref())
             .and_then(|paths| restricted::run(device, &paths))
             .map(code),
-        DeviceCommand::Pair { ttl_s } => {
-            pair::interactive(std::time::Duration::from_secs(*ttl_s)).map(|()| ExitCode::SUCCESS)
-        }
+        DeviceCommand::Pair {
+            ttl_s,
+            targets,
+            port,
+        } => pair::interactive(std::time::Duration::from_secs(*ttl_s), targets, *port)
+            .map(|()| ExitCode::SUCCESS),
         DeviceCommand::PairForced { nonce } => pair::forced(nonce).map(code),
         DeviceCommand::Devices => devices::list().map(|()| ExitCode::SUCCESS),
         DeviceCommand::RevokeDevice { tag } => devices::revoke(tag).map(|found| {
@@ -99,6 +114,18 @@ fn run_device_command(command: &DeviceCommand) -> anyhow::Result<ExitCode> {
                 ExitCode::FAILURE
             }
         }),
+        DeviceCommand::AuthorizeKey {
+            key,
+            name,
+            system,
+            socket,
+        } => Ok(code(authorize::authorize_key(
+            key,
+            name,
+            *system,
+            socket.as_deref(),
+        ))),
+        DeviceCommand::RevokeKey { tag } => Ok(code(authorize::revoke_key(tag))),
     }
 }
 

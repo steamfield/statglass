@@ -5,14 +5,18 @@
 //! registers them; no desktop command uses them).
 
 use serde::{Deserialize, Serialize};
-use statglass_schema::{HostId, HostRecord, OsKind};
+use statglass_engine::ProcessView;
+use statglass_schema::{
+    Event, Gap, HostId, HostRecord, JsSafeInt, Module, OsKind, SeriesKey, SeriesSelector, Tier,
+};
 
-use crate::history::HistoryRequest;
+use crate::error::CommandError;
+use crate::history::HistorySeries;
 use crate::status::{RemoteConnection, RemoteRoute};
 use crate::vitals::HostVitals;
 
 /// What the core starts with. The app's data directory comes from Swift, which owns the
-/// file protection and backup exclusion of the mirrors (RFC 3.4, 3.8).
+/// file protection.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct MobileConfig {
     pub hosts: Vec<MobileHost>,
@@ -22,9 +26,7 @@ pub struct MobileConfig {
 /// The phone's choices about mobile data, from its settings.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct DataPolicy {
-    /// Sync history while the phone's path is cellular (expensive). Off: history waits
-    /// for Wi-Fi; live frames still flow.
-    pub sync_on_cellular: bool,
+    pub live_on_cellular: bool,
 }
 
 /// A host the phone reaches over SSH, as pairing (phase 7) or the debug screen gives it.
@@ -41,6 +43,8 @@ pub struct MobileHost {
     /// The host keys pairing pinned; at least one.
     pub host_keys: Vec<MobileHostKey>,
     pub command: MobileCommand,
+    #[serde(default)]
+    pub removed_by_controller: bool,
 }
 
 /// One way to reach a host.
@@ -89,6 +93,28 @@ pub enum MobileCall {
     SetDataPolicy(DataPolicy),
     /// `string`: the `authorized_keys` line for this phone's key.
     AuthorizedKeyLine { comment: String },
+    /// `PairingPreview`.
+    PreviewPairing { text: String },
+    /// `PairedHost`.
+    Pair {
+        text: String,
+        device_name: String,
+        model: String,
+    },
+    /// `null`. Removes a paired host.
+    RemoveHost { host: HostId },
+    /// `PairingState`.
+    PairingState,
+    /// `BundleReconcile`.
+    DecodeBundle { text: String },
+    /// `null`. Persists the selected hosts.
+    AddHandoverHosts {
+        hosts: Vec<OfferedHost>,
+        #[serde(default)]
+        preview_id: Option<u32>,
+    },
+    /// `null`. Replaces screen demand for all hosts.
+    SetDemand { demand: Vec<HostDemand> },
     /// `HostRecord[]`, in the order the hosts were set.
     ListHosts,
     /// `MobileRemoteHost[]`, same order.
@@ -99,24 +125,174 @@ pub enum MobileCall {
     GetCapabilities { host: HostId },
     /// `HostVitals`.
     HostVitals { host: HostId },
-    /// `null`. Summary history demand from the hosts list.
-    SetHostsRecentInterest { on: bool },
     /// `null`. Dials a host now.
     RetryRemoteHost { host: HostId },
     /// `SubscriptionInfo`. Messages arrive through `CoreEvents::live` tagged `stream`.
     SubscribeLive(MobileLiveRequest),
     /// `null`. Ends a stream; unknown streams are ignored.
     UnsubscribeLive { stream: u32 },
-    /// `HistoryPage`.
-    QueryHistory(HistoryRequest),
-    /// `Event[]`, oldest first.
-    QueryEvents {
+    /// `HostHistoryPage`.
+    HostHistory(HostHistoryRequest),
+    /// `HostAddressesInfo`.
+    NetworkAddresses { host: HostId },
+    /// `null`. Replaces a stream's process interest.
+    SetProcessInterest {
         host: HostId,
-        #[specta(type = statglass_schema::JsSafeInt)]
-        from_ms: i64,
-        #[specta(type = statglass_schema::JsSafeInt)]
-        to_ms: i64,
+        interested: bool,
+        view: Option<ProcessView>,
+        stream: Option<u32>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairingPreview {
+    pub host_id: HostId,
+    pub name: String,
+    pub os: String,
+    pub user: String,
+    pub targets: Vec<MobileTarget>,
+    pub code: String,
+    #[specta(type = JsSafeInt)]
+    pub expires_ms: i64,
+    pub can_hand_over: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairedHost {
+    pub id: HostId,
+    pub name: String,
+    pub offered: Vec<OfferedHost>,
+    pub unavailable: Vec<UnavailableHostInfo>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct OfferedHost {
+    pub id: HostId,
+    pub name: String,
+    pub os: String,
+    pub user: String,
+    pub port: Option<u16>,
+    pub targets: Vec<MobileTarget>,
+    pub host_keys: Vec<MobileHostKey>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct UnavailableHostInfo {
+    pub id: HostId,
+    pub name: String,
+    pub reason: HandoverReasonInfo,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoverReasonInfo {
+    ProxyJump,
+    ProxyCommand,
+    LanLiteral,
+    NoHostKey,
+    Unresolvable,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct BundleReconcile {
+    pub from: HostId,
+    pub preview_id: u32,
+    pub new: Vec<OfferedHost>,
+    pub removed: Vec<HostId>,
+    pub changed: Vec<HostId>,
+    pub unavailable: Vec<UnavailableHostInfo>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairingState {
+    pub hosts: u32,
+    /// The phone was restored and needs to pair again.
+    pub key_changed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, specta::Type)]
+pub struct HostDemand {
+    pub host: HostId,
+    pub level: DemandLevel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DemandLevel {
+    /// A host summary every five seconds.
+    Compact,
+    /// A live frame every tick.
+    Full,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, specta::Type)]
+pub struct HostHistoryRequest {
+    pub host: HostId,
+    pub series: Vec<SeriesSelector>,
+    #[specta(type = JsSafeInt)]
+    pub from_ms: i64,
+    /// `None` means ending now on the host.
+    #[specta(type = Option<JsSafeInt>)]
+    pub to_ms: Option<i64>,
+    pub max_points: u32,
+    pub events_for: Option<Module>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct HostHistoryPage {
+    pub tier: Tier,
+    #[specta(type = JsSafeInt)]
+    pub bucket_ms: i64,
+    #[specta(type = JsSafeInt)]
+    pub complete_to_ms: i64,
+    pub series: Vec<HistorySeries>,
+    pub gaps: Vec<Gap>,
+    pub events: Vec<Event>,
+    pub stats: Vec<SeriesHistoryStats>,
+    pub clamped: Vec<HistoryClamp>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct SeriesHistoryStats {
+    pub key: SeriesKey,
+    pub avg: Option<f32>,
+    pub peak: Option<f32>,
+    /// Time in the range with a reading; `None` from a host that predates range totals.
+    #[specta(type = Option<JsSafeInt>)]
+    pub measured_ms: Option<i64>,
+    /// `avg` times the measured seconds: bytes for a bytes-per-second series. `None` when
+    /// nothing was measured or the host predates range totals.
+    pub integral: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
+pub enum HistoryClamp {
+    Points,
+    Series,
+    Events,
+    Bytes,
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct HostAddressesInfo {
+    pub interface: Option<String>,
+    pub link_mbps: Option<u32>,
+    pub ipv4: Vec<String>,
+    pub ipv6: Vec<String>,
+    pub public_ip: PublicIpInfo,
+    #[specta(type = JsSafeInt)]
+    pub as_of_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum PublicIpInfo {
+    Known { ip: String },
+    Pending,
+    Unavailable { reason: String },
+    Unknown,
 }
 
 /// A live stream the app opens. The app picks `stream`, unique among its open streams,
@@ -140,11 +316,16 @@ pub struct MobileLiveRequest {
 pub struct MobileRemoteHost {
     pub id: HostId,
     pub name: String,
+    #[serde(default)]
+    pub source_mac: Option<HostId>,
+    #[serde(default)]
+    pub removed_by_controller: bool,
     pub os: OsKind,
     pub targets: Vec<MobileTarget>,
-    /// This host's share of the phone's mirror storage.
-    pub mirror_budget_mb: u32,
     pub connection: RemoteConnection,
+    pub open_error: Option<CommandError>,
+    /// The live data level the core applies after evaluating data policy.
+    pub demand: Option<DemandLevel>,
     /// Host clock, ms.
     #[specta(type = Option<statglass_schema::JsSafeInt>)]
     pub last_seen_ms: Option<i64>,

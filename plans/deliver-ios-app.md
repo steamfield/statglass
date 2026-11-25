@@ -2,13 +2,13 @@
 
 Skill: deliver. Profile: deliver. On resume, re-read shared/lane-dag.md before anything else.
 plan_graph: /Users/riley/.claude/plugins/cache/claude-essentials/ce/6.0.4/shared/scripts/plan_graph.py
-Status: done (2026-11-25), phases 1-6; phases 7-8 not run. Started: 2026-11-24. Timebox: none. Landing branch: deliver/ios-app.
+Status: done (2026-11-25); phases 1-13 landed and merged to main. App Store submission is the maintainer's (`plan/handoff-ios-app-store.md`). Started: 2026-11-24. Timebox: none. Landing branch: deliver/ios-app.
 Worktree: /Users/riley/Projects/statglass/.claude/worktrees/deliver-ios-app
 Gate: `make agent-config-check agent-config-test agent-hooks-test verification-test architecture-check architecture-test rust-check appstore-check rust-test bindings-check mobile-check mobile-rust-check && bun run check` (about 10 min; `make check` minus `updater-patch-test`, which fails in any worktree nested under the main checkout and runs once from main after the merge; `bun run check` alone is 68 s).
 Commits: conventional commit subjects are enforced by the commit hook (`type(scope): subject`). Filtered tests: `bun run test -- <path>` (desktop and packages/core), `bun run --cwd apps/mobile test -- <path>` (mobile, jest-expo), `cargo test -p <crate> <filter>` (Rust). Typecheck: `bun run typecheck`.
 Runner: plain commands.
 Worktree setup: `bun install --frozen-lockfile`.
-Executors: phase 1 lanes run as opus `ce:builder` agents. Phases 2 to 7 run as foreman Codex runs (model gpt-6.2-sol), one run per lane, each with a contract built from the lane brief below; lane review, check-lane and landing are unchanged.
+Executors: phase 1 lanes run as opus `ce:builder` agents. Phases 2 to 12 run as foreman Codex runs (model gpt-6.2-sol), one run per lane, each with a contract built from the lane brief below; lane review, check-lane and landing are unchanged.
 
 Source RFC: `plan/rfc-ios-app.md` (revision 2). Section numbers below refer to it.
 
@@ -17,6 +17,8 @@ Source RFC: `plan/rfc-ios-app.md` (revision 2). Section numbers below refer to i
 StatGlass for iPhone is a read-only viewer for the Macs and Linux servers a person already monitors with StatGlass. It reaches each host over SSH (russh inside the app, Secure Enclave key, forced-command restricted session), speaks the existing CBOR session protocol through Rust code shared with the desktop, keeps a small per-host mirror, and draws the desktop popover's card stack natively in an Expo app.
 
 In scope (this run: RFC phases 0 to 4, verified in the iOS Simulator):
+
+- Reopened 2026-11-25: a foundation phase from the architecture, error and test audits (phase 7, including the host-served network addresses query); RFC phase 4's remaining work, pairing in the app (phase 8, one OS-neutral "Add a host" flow, the user's decision, with screen-scoped data demand in lane d) and the Mac handing its other hosts to the phone (phase 9); and design and UX parity with the macOS app (phase 10 onward, lanes from `plan/rfc-ios-polish.md` after its review).
 
 - RFC section 10 decisions 1 to 10 are accepted as written and recorded as D-entries in `plan/decisions.md` during phase 1.
 - Monorepo per RFC 6: Bun workspace with the desktop at the root, `apps/mobile`, `packages/core` (`@statglass/core`).
@@ -29,12 +31,12 @@ In scope (this run: RFC phases 0 to 4, verified in the iOS Simulator):
 - Desktop stays at the repo root (open question 3). No alerts while closed (open question 6). No "Viewing now" indicator (open question 8).
 - Native renderers from shared widget models (RFC 4.6); the Expo DOM component comparison is not run, because the accepted decision 1 already chooses Expo and 4.6 chooses native renderers.
 
-Out of scope: RFC phases 5 and 6 (hardening checklist on devices, NAT64 test, TestFlight, App Store submission), pairing from a physical iPhone, Home Screen widgets, iPad layout, manual host entry, ProxyJump, SSH certificates, moving the desktop into `apps/desktop`, adding `docs-site` to the workspace.
+Out of scope: RFC phases 5 and 6 (hardening checklist on devices, NAT64 test, TestFlight, App Store submission), pairing from a physical iPhone, Home Screen widgets, iPad layout, manual host entry, ProxyJump, SSH certificates, moving the desktop into `apps/desktop`, adding `docs-site` to the workspace. By the user's choice (2026-11-25), the phone is a basic monitor, not an investigation tool: no brush or range selection and its attribution, selection veils or chips, per-app usage tables over a range (the user chose the live process table over reopening the restricted allowlist), row expansion or drill-down. No background modes or BGTask work.
 
 Assumptions (user can override):
 
 - The Secure Enclave is not available in the iOS Simulator, so the signer has two implementations behind one Swift protocol: Secure Enclave on device, a Keychain `ThisDeviceOnly` P-256 software key in the simulator. Simulator verification uses the software key.
-- The simulator end-to-end check (phase 7) uses this Mac as the host, with Remote Login on and the phone's key installed by the pairing flow against `localhost`.
+- The simulator end-to-end checks (phases 7 and 8) use a Linux `statglass-agent` in the repo's ssh-docker OpenSSH container as the host: `statglass-agent pair` prints the payload and code, and approval happens in the terminal. The run does not turn on macOS Remote Login or edit `~/.ssh/authorized_keys`, so the Mac's "Pair iPhone" side is verified by its existing tests and the browser dev server with the mock transport.
 - `docs-site` keeps its own lockfile and is not a workspace member in this run; only its `@core` alias path changes.
 - `bun run check`, `make check` and Playwright keep their current scope for the desktop; mobile checks are separate Make targets so the desktop gate is unchanged in meaning.
 
@@ -107,7 +109,7 @@ Test cases:
 - Desktop: every existing Vitest, Playwright and `e2e-perf` test passes unchanged except for import-path edits; gallery screenshots at `/?route=/dev/gallery` match main.
 - `packages/core` has no import of react, react-dom, react-native, expo-*, @tauri-apps/* or @steamfield/ui, and no use of `window`, `document` or `navigator` (Biome rule plus a fixture in `make architecture-test` or Biome's own run).
 - `make bindings-check` regenerates `packages/core/src/generated/types.ts` and `src/desktop-transport/commands.ts` and finds no drift; `types.ts` contains no `@tauri-apps` import.
-- Mobile: the first-launch screen renders the title, "Pair with your Mac", "Add a Linux server" and "Try demo hosts" (accessible roles: buttons); the providers are the real ones; tests run under jest-expo on Node.
+- Mobile: the first-launch screen renders the title, "Pair with your Mac", "Add a Linux server" and "Try demo hosts" (accessible roles: buttons); the providers are the real ones; tests run under jest-expo on Node. (Superseded 2026-11-25 by the user's one "Add a host" flow, phase 7.)
 - Mobile: a screen file importing `react-dom`, `@tauri-apps/api` or `src/app/...` fails `bun run lint`.
 - `scripts/mobile/single-react.mjs` passes on the real export and fails on a fixture bundle containing two React copies.
 - `cargo check --target aarch64-apple-ios-sim -p statglass-mobile` passes; `statglass-engine`'s clock uses `CLOCK_MONOTONIC_RAW` for `target_vendor = "apple"` targets other than macOS, and `disk_space` and `docker` are compiled out on iOS.
@@ -134,7 +136,7 @@ Test cases:
 
 - Goal: add the Expo app shell at `apps/mobile` from the `stacks` `mobile-expo` stack's app half, with the first-launch screen, real providers, tests, the single-React check and Linux CI jobs.
 - Interface: follow `~/Projects/stacks/packages/cli/registry/stacks/mobile-expo/` (STACK.md Setup step 1 and the `files/apps/mobile` tree) for Expo Router with typed routes, NativeWind on its CSS-first line with Tailwind v4, TanStack Query (one production `QueryClient`, one query retry, no mutation retry, no focus refetch), jest-expo and React Native Testing Library with real providers, Metro config, generated uncommitted `ios/` via prebuild. Drop the API, Postgres, Drizzle, zod schemas and Clerk. Package name `@statglass/mobile`, dependency `"@statglass/core": "workspace:*"`; core is imported through the `@core/*` alias, mapped in mobile's tsconfig, Metro `resolver.resolveRequest` and jest `moduleNameMapper`. Install with `bunx expo install` so versions match the SDK; add `react-native-svg`, `react-native-gesture-handler`, `react-native-reanimated` now (used in phase 6). `app.config.ts` reads `STATGLASS_MOBILE_BUNDLE_ID`, `STATGLASS_MOBILE_TEAM_ID`, `STATGLASS_MOBILE_NAME` with defaults `com.tryopendata.statglass.mobile`, `YWA9Q642YP`, `StatGlass`. Metro: `watchFolders` includes `../../packages`; `resolver.resolveRequest` maps `@core/*` and forces `react`, `react/*`, `react-native` and `react-native/*` to `apps/mobile/node_modules` (not `extraNodeModules`, which is only a fallback and would let the root React 19.3 win). `scripts/mobile/check.sh` runs, from the repo root: Biome on `apps/mobile`, mobile `tsc` (after route type generation), jest, `expo export --platform ios` into an ignored dir, `expo install --check`, then `node scripts/mobile/single-react.mjs <export dir>`.
-- Behavior: first-launch screen per RFC 1.4: app name, one sentence on what it does, primary "Pair with your Mac", secondary "Add a Linux server", and "Try demo hosts"; the three actions are buttons with accessible labels and do nothing yet beyond navigating to placeholder routes `pair`, `pair-linux`, `demo` that say "Not built yet" (replaced in phases 6 and 7). Colors come from the shared token source: check whether NativeWind can read `src/app/styles/theme.css` (or tokens.css) directly; if it can, import it; if it cannot, write a small generator `apps/mobile/scripts/gen-theme.mjs` that emits `apps/mobile/src/theme.generated.css` and a plain color map from `theme.css`, with a check that fails on drift. Record which in your report. Light and dark appearance follow the system. `single-react.mjs` counts React module definitions in the Hermes/JS bundle by package path and exits 1 with the paths when more than one copy exists; its fixture test runs under `node --test`. Add `apps/mobile/test/core-import.test.ts` that imports `@core/format` and `@core/live-state` and calls one function from each, proving the alias works under jest. CI: add a Linux job `mobile` to `.github/workflows/ci.yml` that runs on changes under `apps/mobile/**`, `packages/**`, `bun.lock`, `scripts/mobile/**`, and runs `make mobile-check`'s Linux-capable steps (all of check.sh runs on Linux). No macOS runner.
+- Behavior: first-launch screen per RFC 1.4: app name, one sentence on what it does, primary "Pair with your Mac", secondary "Add a Linux server", and "Try demo hosts"; the three actions are buttons with accessible labels and do nothing yet beyond navigating to placeholder routes `pair`, `pair-linux`, `demo` that say "Not built yet" (replaced in phases 6 and 7). Colors come from the shared token source: check whether NativeWind can read `src/app/styles/theme.css` (or tokens.css) directly; if it can, import it; if it cannot, write a small generator `apps/mobile/scripts/gen-theme.mjs` that emits `apps/mobile/src/theme.generated.css` and a plain color map from `theme.css`, with a check that fails on drift. Record which in your report. Light and dark appearance follow the system. `single-react.mjs` counts React module definitions in the Hermes/JS bundle by package path and exits 1 with the paths when more than one copy exists; its fixture test runs under `node --test`. Add `apps/mobile/test/core-import.test.ts` that imports `@core/format` and `@core/live-state` and calls one function from each, proving the alias works under jest. CI: add a Linux job `mobile` to `.github/workflows/ci.yml` that runs on changes under `apps/mobile/**`, `packages/**`, `bun.lock`, `scripts/mobile/**`, and runs `make mobile-check`'s Linux-capable steps (all of check.sh runs on Linux). No macOS runner. (Superseded 2026-11-25 by the user's one "Add a host" flow, phase 7.)
 - Decisions already made: Expo, not Tauri mobile or SwiftUI; local builds only; mobile tests never use `bun test`; each app pins its own React.
 - Biome: the scaffold's root `biome.json` already lints `apps/mobile` with an override that restricts `react-dom`, `@tauri-apps/*` and desktop app imports; a lint probe for it belongs to lane a. If mobile needs other Biome settings (React Native globals), report them instead of editing `biome.json`.
 - Out of scope: demo mode data, MobileTransport, the native module, widgets, any screen beyond the first-launch screen and placeholders, Android.
@@ -2204,7 +2206,7 @@ Route stubs saying "Not built yet":
   - The local mock Mac (`is_local`) is presented as a host like the others.
   - The Demo marker sits in the navigation bar.
   - Pull to refresh refetches and calls `retryRemoteHost` on offline hosts.
-  - The empty list shows an explanation with "Try demo hosts" and "Pair with your Mac".
+  - The empty list shows an explanation with "Try demo hosts" and "Pair with your Mac". (Superseded 2026-11-25 by the user's one "Add a host" flow, phase 7.)
   - The settings Hosts section renames (trimmed, 1 to 64 characters), reorders by drag or up/down buttons, and removes with a confirm sheet. Changes are in the phone-settings store only.
   - This iPhone reads "Available after pairing". Data has the two cellular toggles. Appearance drives `Appearance.setColorScheme`. About shows the app version and protocol range.
   - App lock: enabling requires `authenticateAsync` success. When enabled, foregrounding prompts until success, and `AppState` going `inactive`/`background` shows an `expo-blur` cover. With no enrollment and no passcode (`getEnrolledLevelAsync` is `NONE`), the toggle is disabled with that reason.
@@ -2281,45 +2283,1935 @@ Route stubs saying "Not built yet":
 - Out of scope: widget internals, card content, the hosts list, settings, pairing, and `MobileTransport`.
 - Done when: `bun run --cwd apps/mobile test -- test/host test/module` and `make mobile-check` pass, with simulator screenshots (light and dark) of the host screen beside the desktop popover (`/?window=popover&theme=dark`) and a module page, every difference named.
 
-### Phase 7: pairing and live hosts in the app
-
-Demo: in the simulator, scan (or paste) the QR from this Mac's "Pair iPhone", approve on the Mac, and land on the hosts list with this Mac live; every RFC section 3 error state reachable from a mock scenario renders its specific message.
-Depends on: phase 4, phase 5, phase 6
-
-| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | apps/mobile/src/app/pair/, apps/mobile/src/pairing/ | contracts | | gpt-6.2-sol | pending | | |
-| b | M | apps/mobile/src/connection/, apps/mobile/src/app/(hosts)/_errors/ | contracts | | gpt-6.2-sol | pending | | |
-
-### Phase 8: the Mac hands its other hosts to the phone
+### Phase 7: foundation for pairing and polish
 
 Demo:
-- After pairing with this Mac, the phone also gets the Linux Docker host the Mac monitors. The Mac applies an install intent over its own SSH access, and the phone connects to that host with its own restricted key.
-- A host that cannot be handed over is listed with its reason (ProxyJump/ProxyCommand, a literal LAN `HostName`, or no stored host key).
-- "Update from Mac" reconciles new and removed hosts.
-- A revoke queued while the host is offline supersedes an earlier install when the host comes back.
+- **Simulator, demo hosts:** `/demo?scenario=phone-errors` lists one host per RFC 3.2 failure, and each shows its own sentence and action on the hosts list and the host screen, for example "StatGlass isn't running on studio", "This iPhone is no longer authorized on build", "Update StatGlass on nas". An offline host shows dashes in its row and no frozen reading. Headers follow the theme in dark mode, and the module title is legible.
+- **Rust:** the facade test runs a full session through `MobileCore` without Docker (subscribe, frame, quiesce, resume, frame) and shows a refused key as a typed envelope.
+- **Docker host:** `NetworkAddresses` returns the container's interface, link speed and addresses, with `pending` for the public IP on the first ask and the IP (or `unavailable` with the reason) on the next.
+- **History from the host:** against the Docker agent, the module page's 1 h, 24 h, 7 d and 30 d charts come from `Query::History`, with the stat strip's avg and peak and the module's events in the same answer. The phone's data directory has no `mirrors/` folder, and Settings > Data has one switch, "Live updates on cellular". A host built before the feature shows "Update StatGlass on <host> to see history" on the chart while its live values keep ticking.
+- **Logs:** a failed session open appears in Console.app under subsystem `app.statglass` (simulator log stream).
+- **Desktop:** the popover renders the same card wording from the shared card models. Its screenshots and gallery are unchanged.
 
-Depends on: phase 5, phase 7
+Depends on: phase 6
 
-Briefs, scaffold contracts and test cases are written while earlier phases run. Scope comes from RFC 2.4 steps 4-5, "Building the bundle", "Keeping the list current", the manual-pairing `authorize-key` path, and RFC 2.6:
-- a durable per-host intent log, where a revoke supersedes a queued install
-- `ssh -G` / `ssh-keygen -F` bundle resolution with handover reasons
-- agent and helper `authorize-key` / `revoke-key` for the Mac's intents and for manual pairing
-- an "Update from Mac" bundle QR that carries no pairing key
-- pending intents shown per host on the Mac
-- phone-side reconcile
+Why a phase of its own, not folded into the pairing scaffold: the audits (`audit-architecture.md` F1-F4, `audit-errors.md` H1-H4, `audit-tests.md` High) touch the files that pairing's lanes build on. Those are the native transport, the root layout, the data hooks, the connection status wording, `remote-errors.ts`, the session status and the host row. Folded into one scaffold they would make the scaffold an L-sized job run serially before any lane. Folded into the pairing lanes, they would give several lanes the same file. As a phase, they fan out as thirteen disjoint lanes, and pairing (phase 8) starts on settled seams: one core owner, typed failures, one live-session policy and one status wording. The user's decision that the phone keeps no history (D-154: the host answers every history read) lands here too, because every chart and the demand lane build on it.
+
+Source: the three audits of 2026-11-25 (copied into the Log entry of that date). Items not landed here are assigned to a later phase or deferred in `plan/rfc-ios-polish.md` section 9, "Audit items: placement".
+
+Code facts this phase relies on (checked 2026-11-25):
+- **The debug screen owns the core.** The only code that starts the Rust core is `openDebugCore`/`getDebugCore` in `apps/mobile/src/transport/native-transport.ts`, a module-level `WeakMap`. The debug screen reimplements status polling and live reduction in `apps/mobile/src/debug/use-debug-connection.ts`.
+- **No navigator theme.** No `ThemeProvider` exists. Header colors are set by hand in `(hosts)/index.tsx`, `settings/_layout.tsx` and `debug/debug-screen.tsx`, and every other screen gets React Navigation's light theme.
+- **The live state machine exists twice and has drifted.** Desktop `src/app/stores/host-store.tsx` and phone `apps/mobile/src/data/live-subscription.ts` each implement it:
+  - catch-up after 120 s on the desktop, 60 s on the phone;
+  - the phone stops on six terminal error kinds, the desktop retries forever.
+- **Rust logs go nowhere.** `statglass-mobile` has `tracing` but no subscriber.
+- **A failed host open is reported as the wrong error.** An unopened host returns `UnknownHost` (`sessions/registry.rs:304-311`) while its typed open error sits in `open_errors`. `vitals()` returns the last frame after a disconnect (`sessions/host.rs:171-177`).
+- **Native errors lose their type, and one case is a guess.** Native rejections flatten to `internal` (`transport/envelope.ts:83-100`), and `isCommandError` accepts any `{ kind }` (`packages/core/src/command-error.ts`). The Swift side throws only `keychain`/`secureEnclave`. `publicKey()` returns empty `Data()` when the key is missing, which reads as an authentication failure.
+- **Card content is written twice.** Desktop `src/app/routes/popover/_components/popover-cards.tsx` and `apps/mobile/src/cards/*` each define segments, swatches and wording. `describeStats` exists only on the phone.
+- **The phone has two wordings for connection state.** `apps/mobile/src/data/hosts.ts` adds `clock_offset_ms` to a `last_seen_ms` that Rust already converted to the host clock. `host/connection-pill.tsx` doesn't add it.
+- **The phone mirrors history.** `sessions/host.rs:69-114` opens a `HistoryStore` under `mirrors/<id>` for each host and hands a `Mirror` to its `RemoteSource`. `policy.rs` turns the network path and `DataPolicy.sync_on_cellular` into a `SyncPolicy` and splits `PHONE_MIRROR_TOTAL_MB` across hosts (`MobileRemoteHost.mirror_budget_mb`). `MobileCall::QueryHistory` and `QueryEvents` read the mirror. `StatglassNativeModule.swift:140` marks it `isExcludedFromBackup`. In `statglass-session`, `SyncPolicy`, `MirrorPolicy::phone` and `PHONE_MIRROR_*` are used only by the phone: `src-tauri`, `statglass-remote` and the agent never reference them. The TS setting `liveOnCellular` is read by nothing (tests audit M7). `syncOnCellular` is the only cellular setting pushed to Rust (`native-core-bridge.tsx:14-38`).
+- **Bounded history reads exist.** `statglass_ipc::query_history` builds a `statglass_store::HistoryQuery` with `max_points` and reads it through `HistoryStore::history_through_now`. The store merges whole buckets per slot to stay under `max_points` and keeps avg, min and max (`slots.rs`, `disk_io.rs:110-117`). `statglass_store::range_stats` (`reader/stats.rs:35`) gives avg and peak per metric from a read, pooling every series of the metric (`reader/stats.rs:50` filters by `key.metric`), so it can't give a per-interface or per-core figure as is. Tier rows are one blob per `(host_id, bucket_ts, layout_id)`, found through the unique index `tier_10s_key`/`tier_1m_key`/`tier_15m_key` (`db.rs:77,87,183`). An M15 read also takes the minutes still in `tier_1m` (`db.rs` `bucket_sources`/`bucket_rows_sql`), and the reader's SQL (`reader.rs:218`) has no layout filter, so today it reads every layout's rows. Tier retention and the pruned marks live in `reader/tiers.rs`. `history_through_now` merges a `recent` closure's rows after the read. The writer commits every 5 minutes (`DEFAULT_COMMIT_INTERVAL`), so persisted rows alone end up to 5 minutes before now. `HostServer::recent` (`crates/statglass-remote/src/host_server.rs:121-127`) already bounds the hub's recent rows to the last 5 minutes, and `statglass_engine::RECENT_ROWS_MS` (`accum.rs:37`, 15 minutes) is how long the hub keeps them. `statglass-remote` can't depend on `statglass-ipc`, so the host calls the engine and store functions directly.
+- **Events cross the wire as rows.** `Answer` events are `statglass_proto::WireEvent` (`message.rs:298`, `kind` a string and the payload a CBOR blob). `EventDetail` has no `Unknown` variant on purpose (`statglass-schema/src/event.rs:31-36`): a newer kind fails to decode and the reader skips the row.
+- **Proto enums that must survive a newer peer** are adjacently tagged with an `Unknown` variant and decoded through `Tagged`/`lenient` (`crates/statglass-proto/src/query.rs:78-82`).
+- **Queries already run off the session loop.** `answering.rs` answers every `Query` on `spawn_blocking` as soon as it arrives (no queue), with at most `MAX_IN_FLIGHT = 8` per session and `ErrorCode::Busy` beyond that. `HostServer` (`host_server.rs:61`) holds the per-host state the server shares across sessions. `HistoryStore` pools idle readers (`MAX_IDLE_READERS = 2`, `history_store.rs:17`) but doesn't cap concurrent checkouts. Hosts advertise features in Hello (`handshake.rs:87`, for example `query.usage-history.v1`). `CommandError::RemoteUnsupported` and `RemoteBusy` exist.
+- **The phone still needs `statglass-store` without a mirror.** `sessions/phone_id.rs` uses its `WriterLock` and `create_private_dir` for the phone identity, so the direct edge stays in `crate-edges.json`. `statglass-ipc` depends on the store too.
+- **The facade has no dialer seam.** `Sessions::start` builds `RusshDialer::new(signer)` itself (`crates/statglass-mobile/src/sessions.rs:58`), and `MobileCore::new` takes only the signer and events. The crate's unit tests already have fake dialers (`sessions/tests/mod.rs`, `lifecycle.rs:227`). `crates/statglass-ssh/tests/support/server.rs` is an SSH server that speaks no StatGlass protocol, and `statglass-mobile` can't depend on `statglass-remote` (`crate-edges.json`). The end-to-end facade test is the Docker one, `tests/mobile_session.rs` `mobile_core_streams_and_reads_its_mirror`, run by `scripts/ssh-docker/run.sh:133`.
+- **The phone calls into the mirror from many files.** `MirrorPolicy::phone`, `SyncPolicy`, `set_sync_policy` or `PHONE_MIRROR_*` appear in `crates/statglass-mobile/src/{control,lifecycle,policy,sessions}.rs`, `sessions/host.rs:88`, `sessions/registry.rs`, `sessions/registry/tests.rs`, `sessions/tests/{history,live,mod,registry}.rs`, and in `crates/statglass-ipc/tests/phase3_gate.rs` (`MirrorPolicy::phone`, `PHONE_MIRROR_HOST_MB`).
+- **The phone's recent-rows interest is dead.** `MobileCall::SetHostsRecentInterest` reaches `Registry::set_recent_interest` (`sessions/registry.rs:347,463`), but no phone hook calls `setHostsRecentInterest`; only `test/transport/transport.test.ts` does.
+- **The catch-up window is a Rust constant TS copies.** `statglass_ipc::live::RECENT_MS = 120_000` (`live.rs:103`) is what `subscribe_live` sends before returning. `SubscriptionInfo` doesn't carry it, so `src/app/stores/host-store.tsx:108` copies 120 s and the phone uses 60 s.
+- **The phone has no process interest call.** `MobileCall` has no `SetProcessInterest`; the desktop's is `set_process_interest(host, interested, view, stream)` (`src-tauri/src/commands.rs:109`) over `LiveRegistry::set_process_interest`.
+- **Host addresses.** The engine's collectors have `interface_addresses`/`egress_interface` for macOS and Linux. `src-tauri/src/addresses.rs` reads the public IP with `/usr/bin/curl` from `api.ipify.org` (D-093). The protocol has no addresses query. The restricted scope (`crates/statglass-remote/src/scope.rs`) refuses every `Query`.
+
+Test cases:
+
+**Core owner and app shell (lane a)**
+- `CoreProvider` in the root layout:
+  - It starts the native core once per app run and exposes `{ core, error }`.
+  - When `listHosts` is non-empty it selects the native transport.
+  - It disposes the core on unmount.
+  - A start failure renders its typed error with Retry.
+  - Under jest it uses `FakeNative`.
+- Getting the core:
+  - `useNativeCore()` returns the same instance to the debug screen and the data hooks.
+  - `debugCores`, `openDebugCore` and `getDebugCore` are gone. The debug screen renders from `useHostLiveSubscription`/`useRemoteStatus` and passes its existing tests.
+- Theme:
+  - The navigator theme comes from `themeColors` for each scheme, so switching to Dark recolors the host and module headers.
+  - No screen sets `headerTintColor` or `headerUserInterfaceStyle` (asserted by a grep test in `test/navigation/`).
+  - `useThemeColors()` replaces the 20 direct lookups.
+- Root layout:
+  - `GestureHandlerRootView` wraps the root once, and `ModuleHistory` no longer mounts one.
+  - `ErrorBoundary`, exported from the root layout, renders a retry action and logs the route params once.
+- Routes and cache:
+  - Opening `/(hosts)/<id>` with no transport replaces to `/`, not to Expo's error screen.
+  - Swapping transports clears host and history queries inside `PhoneTransportProvider.set`. `demo.tsx` no longer clears the cache by hand.
+  - `/demo?scenario=<name>` passes the scenario to `createMockTransport`.
+- Query retry is driven by error kind: `unknown_host`, `store_too_new` and `invalid_argument` are not retried, `internal` is retried once.
+- `AppProviders` is exported once and used by both `_layout.tsx` and `test/render.tsx`.
+
+**Boundaries and tooling (lane b)**
+- Biome:
+  - Importing `@native/statglass-native` outside `apps/mobile/src/transport/**` fails.
+  - `apps/mobile/src/widgets/**` and `apps/mobile/src/cards/**` importing `@/data`, `@/transport`, `expo-router` or `@tanstack/*` fails.
+  - Each rule has a positive and a negative fixture in `scripts/architecture/test_biome_rules.py`.
+  - The hook (`.claude/hooks/enforce-boundaries.sh`) has the same native rule.
+- `setSnapshotCover` moves behind `apps/mobile/src/transport/device.ts`. `test/native/snapshot-cover.test.tsx` uses `FakeNative`/`installNative`, with no `jest.mock` of the native module anywhere (grep test).
+- The native module exports a test seam from its `index.ts`, so `fake-native.ts` stops deep-importing.
+- Jest and checks:
+  - `testTimeout` drops to 5000 ms.
+  - One `mockAppState()` helper replaces the three hand-rolled stubs.
+  - `scripts/mobile/check.sh` runs `expo-doctor`.
+  - `lib: ["DOM"]` is removed from the mobile tsconfig if typecheck passes without it; otherwise the lane reports which type needs it.
+- Docs: `.claude/rules/mobile/expo.md` lists `src/debug/` and `@native/*`. `.claude/rules/rust/crates.md` lists the real `statglass-mobile` edges.
+
+**Live session policy (lane c)**
+- `createLiveSession` in `packages/core/src/live-session.ts`:
+  - It owns retry, stale, backoff, catch-up and terminal state, with one set of constants.
+  - Under a fake clock it reproduces the desktop's current tests: `src/app/stores/host-store.test.tsx` and `host-store-live.test.tsx` pass unchanged.
+- Catch-up threshold:
+  - One threshold for both apps, taken from the subscription's recent window.
+  - If Rust doesn't publish that window, the lane adds `recent_ms` to `SubscriptionInfo`, and the desktop and phone stop hardcoding 120 s and 60 s.
+- Terminal state: both apps keep backing off. "Stop retrying" comes from `RemoteHostStatus` (state `error` with a terminal failure kind), never from a local list of `CommandError` kinds. That list is deleted (errors audit L1).
+- Phone adapter: it maps focus and `AppState` to `isVisible`. It reaches stale, then "Reconnecting", then a fresh frame through the shared session, tested with fake timers.
+- `connectionStatusError` no longer routes a local call through `remoteQueryText` (errors audit L5).
+
+**Session and IPC errors (lane d)**
+- `RemoteError::IncompatiblePeer` carries `side`:
+  - `Host` when the peer's max is below our min, `App` when the peer's min is above our max.
+  - `ConnectionStatus.incompatible_side` and `RemoteConnection.incompatible_side` carry it.
+- A panic in a source task publishes `state: error` with failure kind `internal` and logs once, instead of freezing the last status (M3).
+- `RemoteError::Refused` maps to `CommandError::RemoteRefused { message }` with tone `status` (M7).
+- The agent's restricted refusal ("command not allowed") prints a marker that the phone maps to `incompatible` (L7).
+- `StoreError` keeps its source chain in the message (L8).
+- The query refusal text no longer says "this Mac" on a phone (L5).
+- The phone-only mirror code leaves `statglass-session`: `SyncPolicy`, `RemoteSource::set_sync_policy`, `MirrorPolicy::phone`, `PHONE_MIRROR_HOST_MB`/`PHONE_MIRROR_TOTAL_MB`, and the sync cases in `source/phone_tests.rs`. `crates/statglass-ipc/tests/phase3_gate.rs` drops its `MirrorPolicy::phone` and `PHONE_MIRROR_HOST_MB` cases. The desktop mirror, `MirrorPolicy::desktop` and their tests don't change: `cargo test -p statglass-session -p statglass-remote` and `cargo test -p statglass remote` pass with unchanged assertions. The scaffold already removed every phone call into this code, so the deletion compiles while lane i runs.
+
+**Phone core without a mirror (lane i)**
+- No mirror:
+  - Opening a host creates no directory under `mirrors/` and opens no `HistoryStore` (a temp-dir test lists the data directory after start).
+  - `RemoteSource` is built with no mirror.
+  - `policy.rs` keeps one rule, `live_allowed(path, data)`: false on an expensive or constrained path when `live_on_cellular` is off. Phase 8 lane d applies it to demand.
+  - `mirror_budget_mb` and the storage split are gone.
+- Unopened hosts (H2, reshaped by D-154):
+  - With no store, opening a host can't fail on a corrupt, too-new or locked store, and those tests are deleted.
+  - `entry()` for a desired host whose source hasn't started returns that host with state `connecting`, never `unknown_host`.
+  - A host whose start fails (an invalid endpoint, an unavailable signer) carries `MobileRemoteHost.open_error`.
+- Vitals when disconnected (H4): `vitals()` returns empty readings with `as_of_ms` set to the last frame's time. A connected host returns current readings with `as_of_ms` set to now.
+- Quiesce: `quiesce()` closes sessions and resolves without waiting on any mirror write. The lifecycle test asserts it resolves within one runtime turn under paused time.
+- History client: `MobileCall::HostHistory(HostHistoryRequest)` forwards to the session's `Query::History`.
+  - A host without `query.history.v1` returns `CommandError::RemoteUnsupported` without sending anything.
+  - `Busy` maps to `CommandError::RemoteBusy`.
+  - A disconnected host returns `RemoteUnreachable` at once, with no queued retry.
+  - `sessions/history.rs` converts each `WireEvent` to an `Event`; one whose kind this build doesn't know is skipped and the others are kept (a test with a future kind). A `HistoryClamp::Unknown` passes through as `unknown`.
+- The core holds no history between calls: after an answer is returned, no per-host buffer remains (a test inspects `Sessions` after a call). Phase 8 lane d proves the same after `PARK_GRACE`.
+- `Registry::set_recent_interest` and its `recent` field are gone (the scaffold removed `MobileCall::SetHostsRecentInterest`; no phone hook ever called it).
+- `envelope::panicked` logs once (a test with a capturing subscriber).
+- Docker (`tests/mobile_session.rs`, `--ignored`): `mobile_core_streams_and_reads_its_mirror` becomes `mobile_core_streams_and_reads_host_history`. Through `MobileCore` with a software native signer it streams a live frame from the container's agent, then makes one `host_history` call answered by the agent's store, and asserts the data directory has no `mirrors/`. `scripts/ssh-docker/run.sh` names the renamed test. This is the end-to-end facade test (tests audit M8); it runs in this phase's Docker demo and again in phase 8's verification.
+
+**Logging and the facade test (lane l)**
+- Logging (H1):
+  - `MobileCore::new` installs a tracing subscriber once, an os_log layer with subsystem `app.statglass`. A second `new` in the same process doesn't panic.
+  - Errors are recorded as `error = &e as &dyn Error`.
+- Facade unit test (`crates/statglass-mobile/src/facade_tests.rs`, `#[cfg(test)]`, tests audit M8): it builds the core with the scaffold's test-only `MobileCore::with_dialer` and the scripted `PeerDialer` from `sessions/tests/`, so it runs the real facade, envelope and session code with no network.
+  - It runs `start`, `subscribe_live`, a frame, `quiesce`, `quiesced`, `resume` and a frame, then one `host_history` call that the scripted peer answers with a fixed `Answer::History`, and checks the JSON envelope of each.
+  - A dial that fails with `RemoteError::Authentication` returns an error envelope with the `remote_auth` kind.
+  - The real russh and agent path is lane i's Docker test, not this one: the in-process SSH server in `statglass-ssh/tests/support/` speaks no StatGlass protocol, and the facade can't depend on `statglass-remote` for a real server.
+
+**Native errors (lane e)**
+- `NativeError` (`{ source: "native", kind, osStatus, message }`) has its own discriminant. `isCommandError` rejects it, and `nativeErrorText` words each kind ("Unlock this iPhone to connect" for `errSecInteractionNotAllowed`).
+- `callCore` keeps a native rejection typed instead of flattening it to `internal`.
+- The facade surfaces a missing key:
+  - `NativeSigner::public_key` becomes fallible in the UniFFI trait.
+  - `errSecItemNotFound` and `errSecInteractionNotAllowed` map to a `phone_key_unavailable` failure kind, distinct from `authentication` (errors audit M2).
+- Swift constructs `.localNetwork` where the dialer sees `EHOSTUNREACH` on a LAN target with Local Network denied, or the case is deleted. The lane reports which.
+- A Swift test package (`apps/mobile/modules/statglass-native/ios-tests/`, `swift test`) checks the `NativeFailure` codes and the "(OSStatus N)" message against the same strings `test/native/native-error.test.ts` parses.
+- The mirror's `isExcludedFromBackup` block in `StatglassNativeModule.swift` is deleted (D-154). No mirror directory exists to exclude.
+- `callCore` gets a typed result table keyed by method (architecture M11). `parseEvent` warns once per stream, not per message. `build-info.ts` logs the error envelope it drops.
+
+**Connection states (lane f)**
+- `phoneProblem(record, nowMs)` covers each row of the RFC 3 coverage table in `plan/rfc-ios-polish.md`. It returns kind, title, short text, recovery, action and tone, in phone wording, and `null` while connected.
+  - The input is `failure_kind`, `route_failures`, `incompatible_side`, `identity_changed`, `open_error` and `last_seen_ms`.
+  - It never reads the `error` text.
+- One `hostStatusSummary(status, { now })` drives the hosts-list status line, the pill and the module page. Times are converted once, following the epoch Rust documents for `last_seen_ms`. A test with a non-zero `clock_offset_ms` asserts the same time on every screen.
+- The hosts list:
+  - shows the problem's short text beside "Needs attention";
+  - shows an offline host with dashes, no chart and "Offline since HH:MM" in host time, never its last readings (D-154: there is no history behind them, and errors audit H4 found stale values reading as live);
+  - shows one "This iPhone is offline" line when every host reports `waiting_for_network`, and "Retrying at HH:MM" from `next_attempt_ms`.
+- The host page shows a banner with title, recovery and action:
+  - Re-pair pushes `/pair`.
+  - Retry calls `retryRemoteHost`.
+  - Open Settings calls `Linking.openSettings()`.
+  - Open Tailscale calls `tailscale://`, with a fallback message.
+- Fixtures:
+  - The `phone-errors` scenario seeds one host per table row.
+  - `failNext(method, error)` on the mock transport injects command failures.
+  - The 22 per-test response overrides in `hosts-list`, `host-screen` and `module-screen` tests move to these fixtures. Spies that only count calls stay.
+- Offline assertions use the exact strings from `last_seen_ms` (tests audit M5, M6). The `getQueryState` assertions in `module-screen.test.tsx` go (tests audit M3).
+
+**Card content models (lane g)**
+- `packages/core/src/popover/cards/{cpu,memory,gpu,power,network,battery}.ts` each return `{ title, headline, segments, items, bars, spoken }` from a selection and source. They are tested once against `widget-models/fixtures`.
+- `describeStats` moves to `widget-models/stat-list.ts`.
+- The desktop `popover-cards.tsx` and the phone cards render the models. Desktop popover tests, the gallery spec and the render-count specs pass unchanged, and `make e2e-perf` is reported before and after.
+- `WidgetAccent` moves to `apps/mobile/src/widgets/accent.tsx`.
+- `popover-cards.test.tsx` drops its `StreamArea` export spies and asserts accessible values instead (tests audit M1).
+
+**Host addresses on the wire (lane h)**
+- Codec:
+  - `Query::NetworkAddresses` and `Answer::NetworkAddresses(HostAddresses)` round-trip.
+  - Skew test 1: a new client asking an old host gets `Query::Unknown`, then `ErrorCode::Unsupported`, which the client maps to "Addresses are not available from this host".
+  - Skew test 2: an old client never sends the query, and a new host decodes old messages unchanged.
+  - Skew test 3: an answer carrying a `PublicIp` state this build doesn't know (`{"state": "via_stun", ...}`) decodes as `PublicIp::Unknown`, and the rest of `HostAddresses` decodes unchanged.
+- `SessionScope::Restricted` allows `NetworkAddresses`, and every other `Query` is still refused (`crates/statglass-remote/tests/restricted.rs`).
+- Host answer:
+  - The interface comes from the egress interface, falling back to the primary.
+  - The host also sends link speed when known, IPv4 and non-link-local IPv6, and `public_ip`.
+- Public IP follows D-093 as widened by D-155 (tests drive the resolver with a fake clock and a counting curl runner):
+  - Every host looks it up itself, Linux agents included. It is asked only on demand (a client's `NetworkAddresses`) and only after the local read succeeds; with no client asking, nothing runs (zero spawns over a fake hour).
+  - It goes through `/usr/bin/curl` to `api.ipify.org` with a 5 s timeout. A host without `/usr/bin/curl` answers `PublicIp::Unavailable { reason: "curl not installed" }`.
+  - Cold cache: the first request answers `Pending` at once and starts one lookup; the answer never waits on curl. A request while that lookup runs starts no second one.
+  - Cache hit: a second request 23 h 59 min after a successful lookup spawns nothing and answers `Known`. A request after 24 h looks up again.
+  - Network change: a changed local address, primary interface or egress interface makes the next request look up again inside the 24 h.
+  - Failure TTL: a failed lookup answers `Unavailable` with the reason for 10 minutes, with no retry before then (one spawn across requests at 1 s intervals for 9 minutes), and looks up again on the first request after.
+  - The public IP is never in a live frame or `HostSummary`: only `Answer::NetworkAddresses` carries it.
+- The Mac app and the agent share one resolver. `src-tauri/src/addresses.rs` delegates to it.
+- The phone's `MobileCall::NetworkAddresses { host }` returns the answer. The mock serves fixed addresses for demo hosts and `unavailable` for the Linux demo host.
+
+**History read path (lane j1)** (D-154)
+- Codec:
+  - `Query::History` and `Answer::History` round-trip.
+  - Skew (`crates/statglass-proto/tests/history_skew.rs`): an old host decodes the query as `Query::Unknown` and answers `Unsupported`; an old client never sends it; a new host decodes every pre-change fixture unchanged.
+  - A future event kind: an answer whose `events` hold a `WireEvent` with a kind this build doesn't know decodes with that event intact as a row (lane i's conversion skips it on the phone).
+  - A future clamp: an answer whose `clamped` holds a `HistoryClamp` this build doesn't know decodes it as `HistoryClamp::Unknown`.
+  - `query.history.v1` is in `local_features()`.
+- The restricted session answers `History`, and every other refused query stays refused (`tests/restricted.rs`, which the scaffold extends).
+- Seed (`crates/statglass-remote/tests/support/history_seed.rs`): `seed_by_retention` writes, through the store's own `Writer`, S10 for the last day, M1 for the last 7 days and M15 for 30 days, for 40 series in several layouts (two of them per-interface `net.rx`/`net.tx`, and 64 `cpu.load{core}` series in their own layout). Writing by retention keeps the temp database small and makes reads cross the M15 and `tier_1m` union.
+- Bounds (`crates/statglass-remote/tests/history_query.rs`, on that seed):
+  - 30 days of 20 series at a 200-point budget: the answer has at most 200 points per series and 4,000 in total, and its encoded size is under 160,000 bytes. A point encodes to about 27 to 36 bytes (an i64 time and three floats), so 4,000 points take about 110 to 145 KB. The bound is on bytes on the wire after downsampling, not on rows read.
+  - The same request at 7 days and at 30 days encodes to sizes within 5 % of each other.
+  - A 5,000-point budget comes back with 500 points per series and `clamped` listing `points`. 40 series come back as 32, with `series` listed. An answer over `HISTORY_MAX_ANSWER_BYTES` halves its points until it fits, and lists `bytes`.
+  - The heatmap request: 64 `cpu.load{core=*}` selectors at a 60-column budget come back as 64 series (`HISTORY_MAX_CORE_SERIES = 256` applies, not 32). 300 come back as 256 with `series` listed. A per-core request mixed with any other metric gets the 32 clamp.
+  - An inverted range, an empty selector list, or a selector whose metric the catalog doesn't know: `InvalidArgument`. A known selector with no rows in range comes back with no points and the gaps over the range, not an error.
+- Tier choice (`tier_for_budget`, a table test): 1 h at 200 picks S10; 24 h picks M1; 7 d and 30 d pick M15. A range starting before S10's retention moves to M1, never to a finer tier. Retention comes from the pruned marks in `reader/tiers.rs`.
+- Reads:
+  - The reader's SQL filters `layout_id IN (...)` to the layouts holding the requested series. A counting reader asserts the rows read for a 30-day M15 request are at most about 2,200 M15 rows plus 10,080 M1 rows per requested layout, and that a layout holding no requested series is never read or decoded.
+  - The filter is computed in the reader from the query's selectors, so every read gets it, the desktop's `query_history` included. The store's existing history tests pass unchanged.
+  - Recent rows: the read goes through `HistoryStore::history_through_now` with a `recent` closure over the hub's recent bucket rows for the host, bounded to `[max(from, now - RECENT_ROWS_MS), min(to, now)]`. A test with rows written but not committed asserts the answer reaches the last closed bucket before now (no 5-minute hole), and a closure that records its arguments asserts it is called once with that bound. `complete_to_ms` comes from the same snapshot.
+- Content:
+  - Gaps overlapping the range are included, and nothing is interpolated.
+  - `stats` are per series key: each requested key's avg and peak equal `range_stats` over a read holding only that key. Two `net.rx` interfaces get two entries, never one pooled figure.
+  - Events are those whose `EventDetail::module()` matches the request's module:
+    - `power_spike`, `fans_ramped` and `thermal_state` go to Power & Sensors;
+    - `sustained_process` goes to CPU;
+    - `alert` goes to its rule's metric's module.
+  - A Network request on a fixture holding an ANE `power_spike` returns no events.
+
+**History concurrency and CPU (lane j2)** (D-154)
+- Per-session queue (`answering.rs`; today every query is spawned as it arrives):
+  - One history query runs per session; the next ones wait in arrival order, and other `Query` kinds are unaffected.
+  - A queued query is replaced, and answered `Busy`, only by a newer one with the same chart key (selector set and budget). Three charts on one page each queue a query and all three get answers.
+  - The queue holds at most `MAX_IN_FLIGHT` queries; one more is answered `Busy`.
+- Host-wide (`history_query/limits.rs`, held by `HostServer`, never a static):
+  - At most `HISTORY_MAX_CONCURRENT` run across sessions. The next is answered `Busy`.
+  - An identical request within `HISTORY_CACHE_TTL` reads no rows (a counting reader).
+  - Two `HostServer`s in one process (two tests in one binary) don't share limits or cache.
+- Tick timing (`crates/statglass-remote/tests/history_tick.rs`, in the style of `statglass-engine/tests/perf_gates.rs`): an engine on a fake ticker, with lane j1's seed, keeps every tick on its deadline (no tick later than the same run with no query) while 30-day, 32-series queries run back to back on the blocking pool.
+
+**Phone history data (lane k)**
+- `useHostHistory(host, selection, range, width)`:
+  - It issues one `hostHistory` query, keyed by host, series, range and budget through `@core/query-keys`. The budget is `clamp(floor(width / 2.5), 30, 200)`, and a heatmap passes its column count.
+  - It uses `staleTime` and `gcTime` of 30 s.
+  - The existing hooks (`useModuleHistory`, `useEvents`, the stat values) keep their names and return shapes, and read that one query.
+- Memory (`apps/mobile/test/data/host-history.test.tsx`):
+  - Unmounting a module page and advancing fake time by 30 s leaves no history entry in the query cache.
+  - Remounting inside 30 s makes no new call.
+  - Changing the range makes one new call.
+- Errors:
+  - `RemoteUnsupported` renders "Update StatGlass on <host> to see history" in the chart area while the live value still updates.
+  - `RemoteBusy` stays in the loading state and retries after 1 s, at most 3 times. After the third `RemoteBusy` the chart shows its load error ("StatGlass on <host> is busy") with Retry, and Retry starts a new round of 3 (a fake-timer test walks all four answers).
+  - An offline host shows no history and makes no call.
+- Settings > Data:
+  - It has one switch, "Live updates on cellular", with a footer saying the host screen updates every 5 s on cellular when it is off.
+  - The switch's value reaches Rust as `DataPolicy.live_on_cellular`, which `apps/mobile/test/transport/native-core-bridge.test.tsx` asserts (this lane owns that test; lane a owns the bridge, which the scaffold already switched).
+  - `syncOnCellular` is gone from `phone-settings.tsx`, and the stored value is dropped on load.
+- Mock (`packages/core/src/mock/host-history.ts`): it answers `hostHistory` from the existing generator with the same budget rule, clamp flags, module-filtered events and stats. It is tested once, and the demo hosts' charts use it.
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | L | crates/statglass-remote/src/ssh_config.rs, crates/statglass-remote/src/ssh_config/, crates/statglass-remote/src/intents.rs, crates/statglass-remote/src/intents/, crates/statglass-remote/tests/intents.rs, crates/statglass-remote/tests/docker_handover.rs, crates/statglass-agent/src/authorize.rs, crates/statglass-agent/tests/authorize.rs, crates/statglass-remote-helper/src/authorize.rs | contracts, RFC 2.4, 2.5, 2.6 | | gpt-6.2-sol | pending | | |
-| b | L | src-tauri/src/handover.rs, src-tauri/src/handover/, src/app/routes/dashboard/settings/_components/device-intents/, src/app/routes/dashboard/settings/_components/update-from-mac/, src/desktop-transport/native-handover.ts, packages/core/src/mock/handover.ts, tests/e2e/settings-handover.spec.ts | contracts, RFC 2.4, 2.6 | | gpt-6.2-sol | pending | | |
-| c | M | crates/statglass-proto/src/handover.rs, crates/statglass-session/src/handover.rs, crates/statglass-mobile/src/handover.rs, apps/mobile/src/handover/, apps/mobile/src/app/update-from-mac.tsx, apps/mobile/test/handover/ | contracts, RFC 2.4 | | gpt-6.2-sol | pending | | |
+| a | L | apps/mobile/src/transport/core-provider.tsx, apps/mobile/src/transport/native-transport.ts, apps/mobile/src/transport/native-core-bridge.tsx, apps/mobile/src/transport/index.ts, apps/mobile/src/data/transport-context.tsx, apps/mobile/src/data/demo.ts, apps/mobile/src/app/_layout.tsx, apps/mobile/src/app/(hosts)/_layout.tsx, apps/mobile/src/app/(hosts)/index.tsx, apps/mobile/src/app/settings/_layout.tsx, apps/mobile/src/app/demo.tsx, apps/mobile/src/lib/query-client.ts, apps/mobile/src/module/index.tsx, apps/mobile/src/ui/navigation-theme.ts, apps/mobile/src/ui/theme-colors.ts, apps/mobile/src/debug/, apps/mobile/test/render.tsx, apps/mobile/test/transport/core-provider.test.tsx, apps/mobile/test/navigation/, apps/mobile/test/debug/, apps/mobile/test/app/ | contracts, audit-architecture F1, F4, I2, I7, M2, M3 (providers), M5; audit-errors M8, L4 | core owner, theme, error boundary, route guard, cache scope | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test`, `make mobile-check`, `make mobile-native-check`; simulator screenshots of the hosts list, host and module headers in light and dark, the module title legible in dark |
+| b | M | biome.json, scripts/architecture/test_biome_rules.py, .claude/hooks/enforce-boundaries.sh, apps/mobile/src/lock/snapshot-cover.ts, apps/mobile/src/transport/device.ts, apps/mobile/modules/statglass-native/index.ts, apps/mobile/test/native/snapshot-cover.test.tsx, apps/mobile/test/transport/fake-native.ts, apps/mobile/test/helpers/, apps/mobile/jest.config.cjs, apps/mobile/tsconfig.json, scripts/mobile/check.sh, .claude/rules/mobile/expo.md, .claude/rules/rust/crates.md | contracts, audit-architecture I1, M15, M16, M18; audit-tests H1, L5, L7 | boundary rules with fixtures, FakeNative only | gpt-6.2-sol | pending | | `make architecture-test architecture-check agent-hooks-test`, `bun run lint`, `bun run --cwd apps/mobile test`, `make mobile-check` |
+| c | L | packages/core/src/live-session.ts, packages/core/src/live-session.test.ts, src/app/stores/host-store.tsx, apps/mobile/src/data/live-subscription.ts, apps/mobile/src/data/live.ts, apps/mobile/test/data/live-session.test.tsx | contracts, audit-architecture F3; audit-errors L1, L5 | one live-session policy, both adapters | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/live-session.test.ts src/app/stores`, `bun run --cwd apps/mobile test -- test/data test/host`, `bun run typecheck`, `make e2e-perf` (before and after reported) |
+| d | L | crates/statglass-ipc/src/vitals.rs, crates/statglass-ipc/src/error.rs, crates/statglass-ipc/src/error/remote.rs, crates/statglass-session/src/connect.rs, crates/statglass-session/src/connect/tests.rs, crates/statglass-session/src/source/status.rs, crates/statglass-session/src/source.rs, crates/statglass-session/src/source/quiesce.rs, crates/statglass-session/src/source/control.rs, crates/statglass-session/src/source/policy.rs, crates/statglass-session/src/source/phone_tests.rs, crates/statglass-session/src/mirror_policy.rs, crates/statglass-session/src/mirror/tests.rs, crates/statglass-session/src/lib.rs, crates/statglass-session/src/dialer.rs, crates/statglass-agent/src/restricted.rs, crates/statglass-ipc/tests/phase3_gate.rs | contracts, audit-errors H3 (Rust half), M3, M4, M7, L5, L7, L8; RFC 3.3; D-154 | incompatible side, panic status, refusals, phone-only mirror code removed, desktop mirror unchanged | gpt-6.2-sol | pending | | `cargo test -p statglass-session -p statglass-ipc -p statglass-remote -p statglass-agent`, `cargo test -p statglass remote`, `make rust-check`, `make architecture-check` |
+| e | M | apps/mobile/modules/statglass-native/ios/, apps/mobile/modules/statglass-native/ios-tests/, apps/mobile/modules/statglass-native/src/, apps/mobile/src/transport/envelope.ts, apps/mobile/src/transport/build-info.ts, packages/core/src/command-error.ts, packages/core/src/native-errors.ts, packages/core/src/native-errors.test.ts, crates/statglass-mobile/src/signer.rs, crates/statglass-mobile/src/ffi.rs, apps/mobile/test/native/native-error.test.ts, apps/mobile/test/transport/envelope.test.ts | contracts, audit-errors M1, M2, L6; audit-architecture M11; audit-tests M9 | typed native errors, fallible key, Swift contract test | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/native-errors.test.ts`, `bun run --cwd apps/mobile test -- test/native test/transport`, `swift test --package-path apps/mobile/modules/statglass-native/ios-tests`, `cargo test -p statglass-mobile signer`, `make mobile-native-check` |
+| f | L | packages/core/src/phone-connection.ts, packages/core/src/phone-connection.test.ts, packages/core/src/remote-errors.ts, packages/core/src/remote-errors.test.ts, packages/core/src/mock/phone-errors.ts, packages/core/src/mock/failures.ts, packages/core/src/mock/failures.test.ts, apps/mobile/src/connection/, apps/mobile/src/data/hosts.ts, apps/mobile/src/host/connection-pill.tsx, apps/mobile/src/host/host-page.tsx, apps/mobile/src/hosts/host-row.tsx, apps/mobile/src/hosts/hosts-list.tsx, apps/mobile/test/connection/, apps/mobile/test/hosts/hosts-list.test.tsx, apps/mobile/test/host/host-screen.test.tsx, apps/mobile/test/module/module-screen.test.tsx | contracts, RFC 3, audit-errors H3, M9, L2; audit-architecture I3; audit-tests H2, M3, M5, M6, M10 | one test per RFC 3 row, fixtures in the mock | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/phone-connection.test.ts packages/core/src/remote-errors.test.ts packages/core/src/mock`, `bun run --cwd apps/mobile test`, `make mobile-check`; simulator screenshots of each `phone-errors` host in light and dark |
+| g | L | packages/core/src/popover/cards/, packages/core/src/widget-models/stat-list.ts, src/app/routes/popover/_components/popover-cards.tsx, apps/mobile/src/cards/, apps/mobile/src/host/card-stack.ts, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/src/widgets/stat-list.tsx, apps/mobile/src/widgets/meter-track.tsx, apps/mobile/src/widgets/accent.tsx, apps/mobile/test/cards/ | contracts, audit-architecture F2, M6; audit-tests M1; `.claude/skills/widget-model/` | card models tested once, both renderers | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/popover src/app/routes/popover`, gallery and render-count e2e, `make e2e-perf` (before and after), `bun run --cwd apps/mobile test -- test/cards`, `make mobile-check`; desktop popover screenshots unchanged, phone host screen unchanged |
+| h | L | crates/statglass-proto/tests/addresses_skew.rs, crates/statglass-remote/src/host_server.rs, crates/statglass-remote/src/addresses.rs, crates/statglass-agent/src/host.rs, src-tauri/src/addresses.rs, src-tauri/src/hosts.rs, crates/statglass-mobile/src/sessions/addresses.rs, packages/core/src/mock/addresses.ts | contracts, D-093, D-155, `plan/architecture.md` (one-way doors), RFC 3.3 | codec round trip and skew both ways, D-093 rules, Docker answer | gpt-6.2-sol | pending | | `cargo test -p statglass-proto -p statglass-remote -p statglass-session -p statglass-agent addresses`, `cargo test -p statglass addresses`, `make ssh-docker-test` (container answers), `make rust-check`, `make rust-linux-check` |
+| i | L | crates/statglass-mobile/src/mobile_core.rs, crates/statglass-mobile/src/envelope.rs, crates/statglass-mobile/src/policy.rs, crates/statglass-mobile/src/control.rs, crates/statglass-mobile/src/lifecycle.rs, crates/statglass-mobile/src/sessions.rs, crates/statglass-mobile/src/sessions/host.rs, crates/statglass-mobile/src/sessions/registry.rs, crates/statglass-mobile/src/sessions/registry/, crates/statglass-mobile/src/sessions/commands.rs, crates/statglass-mobile/src/sessions/history.rs, crates/statglass-mobile/src/sessions/tests/, crates/statglass-mobile/tests/mobile_session.rs, scripts/ssh-docker/run.sh | contracts, D-154, audit-errors H2, H4 | no mirror directory, reshaped open errors, vitals age, history client and its errors, unknown events skipped, quiesce without writes, panic logged once, Docker facade test | gpt-6.2-sol | pending | | `cargo test -p statglass-mobile`, `make mobile-rust-check`, `make rust-check`, `make architecture-check` (the `statglass-store` edge kept), `make ssh-docker-test` passes `mobile_core_streams_and_reads_host_history` |
+| j1 | L | crates/statglass-store/src/tier_budget.rs, crates/statglass-store/src/reader.rs, crates/statglass-store/src/reader/tiers.rs, crates/statglass-schema/src/event_module.rs, crates/statglass-remote/src/history_query.rs, crates/statglass-remote/src/history_query/read.rs, crates/statglass-remote/tests/history_query.rs, crates/statglass-remote/tests/support/history_seed.rs, crates/statglass-proto/tests/history_skew.rs | contracts, D-154, D-083, `.claude/rules/rust/testing.md`, `crates/statglass-store/src/db.rs` | codec and skew (future event kind, future clamp), bounds and clamps, heatmap clamp, tier choice, layout filter and rows read, recent rows, per-key stats, event filter | gpt-6.2-sol | pending | | `cargo test -p statglass-proto -p statglass-store -p statglass-schema -p statglass-remote history`, `cargo test -p statglass-store`, `make rust-check`, `make rust-linux-check`; the byte bound, clamp and recent-rows tests reverted-verified |
+| j2 | M | crates/statglass-remote/src/answering.rs, crates/statglass-remote/src/history_query/limits.rs, crates/statglass-remote/tests/history_concurrency.rs, crates/statglass-remote/tests/history_tick.rs | contracts, D-154, D-117, `crates/statglass-engine/tests/perf_gates.rs`, `perf-budget.json`, lane j1's `tests/support/history_seed.rs` | per-session queue by chart key, host-wide semaphore and cache on `HostServer`, tick timing | gpt-6.2-sol | pending | | `cargo test -p statglass-remote answering history`, `cargo test -p statglass-agent`, `make rust-check`, `make rust-linux-check`; the queue, semaphore and tick-timing tests reverted-verified |
+| k | M | apps/mobile/src/data/history.ts, apps/mobile/src/data/phone-settings.tsx, apps/mobile/src/app/settings/data.tsx, packages/core/src/mock/host-history.ts, packages/core/src/mock/host-history.test.ts, apps/mobile/test/data/host-history.test.tsx, apps/mobile/test/settings/data.test.tsx, apps/mobile/test/transport/native-core-bridge.test.tsx | contracts, D-154, `.claude/rules/mobile/testing.md` | budget from width, 30 s cache, release on unmount, unsupported, busy and busy-exhausted states, one cellular switch and its bridge test, mock answers | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/mock/host-history.test.ts`, `bun run --cwd apps/mobile test`, `make mobile-check`; simulator screenshots of a module page at 1 h and 7 d on a demo host |
+| l | M | crates/statglass-mobile/Cargo.toml, Cargo.lock, crates/statglass-mobile/src/logging.rs, crates/statglass-mobile/src/facade_tests.rs | contracts, audit-errors H1; audit-tests M8; `crates/statglass-mobile/src/sessions/tests/mod.rs` (`PeerDialer`) | os_log subscriber, facade unit test over a scripted dialer | gpt-6.2-sol | pending | | `cargo test -p statglass-mobile facade_tests logging`, `make mobile-rust-check`; one simulator log line from a forced open failure |
 
-None of these files is owned by a lane in phase 3, 5, 6 or 7:
-- Phase 5 lane c keeps `src-tauri/src/pairing/`, `paired-devices/` and `route.tsx`. Phase 8's scaffold mounts `device-intents/` and `update-from-mac/` from them.
-- Phase 5 lane b keeps `proto/src/pairing*` and `session/src/pairing*`.
-- Phase 6 lane a keeps `apps/mobile/src/app/settings/`. Phase 7 keeps `apps/mobile/src/app/pair/` and `apps/mobile/src/pairing/`.
-- `crates/statglass-mobile/src/handover.rs` is a new file in phase 4's crate. Phase 4 is finished by then, and phase 8's scaffold registers the module.
+Ownership:
+- **Lanes a and f split the app shell from the status wording.** Lane a owns `module/index.tsx` only to remove its `GestureHandlerRootView` and header options. Lane f renders its status through `hostStatusSummary` by the props the page already passes, so f doesn't touch that file.
+- **The live tests stay put.** Lane c owns no existing screen test. If a host-screen assertion must change, it reports it to lane f.
+- **Lane d's session status is read, not edited.** Lane f reads `incompatible_side` and `open_error` from the scaffold's types.
+- **The scaffold cuts the phone off the mirror code, so lanes d and i don't depend on each other.** It removes every phone call into `SyncPolicy`, `set_sync_policy`, `MirrorPolicy::phone` and `PHONE_MIRROR_*` (the files listed in the code facts), leaving stubs lane i fills. Lane d then deletes the code from `statglass-session` and owns `crates/statglass-ipc/tests/phase3_gate.rs`, and both lanes pass the workspace gate in either merge order.
+- **Lanes j1 and j2 split the host query by concern.** j1 owns the read path (store, tier, stats, events, the seed helper); j2 owns concurrency (`answering.rs`'s per-session queue, the host-wide semaphore and cache in `history_query/limits.rs`, the tick-timing test). The scaffold adds the `HostServer` field that holds j2's limits, so lane h keeps `host_server.rs` and nothing is a static. j2's tick test uses j1's `seed_by_retention`; the scaffold declares it, and j2 rebases on j1 before its final run.
+- **Lane i owns `envelope.rs` and its log test.** Lane l installs the subscriber and tests it in `logging.rs`; the "`panicked` logs once" test sits with the file, in lane i.
+- **Lane k owns `test/transport/native-core-bridge.test.tsx`.** Lane a owns the bridge; the scaffold already switched it to `live_on_cellular`.
+- **The scaffold owns the shared wire files.** `crates/statglass-proto/src/query.rs`, `handshake.rs`, `crates/statglass-remote/src/scope.rs`, `host_queries.rs`, `crates/statglass-remote/tests/restricted.rs`, `crates/statglass-session/src/source/queries.rs` and `crates/statglass-ipc/src/mobile.rs` change only in the scaffold, so lanes h, i, j1 and j2 never share them. D-154 and D-155 are already in `plan/decisions.md` (written with this plan, before any codec change).
+- **Lane e takes the backup exclusion.** It owns `statglass-native/ios/`, so it deletes `StatglassNativeModule.swift`'s mirror `isExcludedFromBackup` block.
+- **Lane k's history hooks keep their signatures.** `module/index.tsx` (lane a) and `events-list.tsx` keep compiling unchanged.
+- **Lane h's agent file is limited.** It owns `crates/statglass-agent/src/host.rs` only for `ServedHost::network_addresses`.
+
+#### Scaffold contracts (phase 7)
+
+Inline before dispatch. It registers the new modules with stub bodies (`statglass_store::tier_budget`, `statglass_schema::event_module`, `statglass_remote::{history_query, history_query::read, history_query::limits, addresses}`), extends `tests/restricted.rs` for both new queries, and runs `make bindings`, `bun run typecheck`, `make mobile-check` and `make rust-check`.
+
+It also does the cross-lane cuts, so no lane waits on another:
+- **Rust, phone off the mirror.** In `crates/statglass-mobile/src/{control,lifecycle,policy,sessions}.rs`, `sessions/host.rs` (the `MirrorPolicy::phone` at line 88), `sessions/registry.rs`, `sessions/registry/tests.rs` and `sessions/tests/{history,live,mod,registry}.rs`, every use of `SyncPolicy`, `set_sync_policy`, `MirrorPolicy::phone` and `PHONE_MIRROR_*` goes: `HostSession` opens no mirror (`mirror: None`), `policy.rs` keeps a `live_allowed` stub returning `true`, and the mirror-only tests are deleted. Lane i fills the rest; lane d deletes the session-crate code.
+- **Rust, dead calls.** `MobileCall::SetHostsRecentInterest` and its `commands.rs` arm go (lane i removes `Registry::set_recent_interest`).
+- **Rust, facade test seam.** `Sessions::start` takes the dialer as a parameter (`MobileCore::start` passes `RusshDialer::new(signer)` as today). `#[cfg(test)] pub(crate) fn MobileCore::with_dialer(signer, events, dialer: Arc<dyn Dialer>)`, `#[cfg(test)] mod facade_tests;` in `lib.rs`, and `sessions/tests/mod.rs`'s `PeerDialer` and `Dial` made `pub(crate)`.
+- **TypeScript, one switch from `queryHistory`/`queryEvents` to `hostHistory`.** Every phone caller, spy and fixture moves in the scaffold: `apps/mobile/src/data/history.ts` (a stub over `hostHistory` that lane k fills), `data/hosts.ts`, `data/seam.ts`, `transport/native-transport.ts`, `test/transport/transport.test.ts`, `test/hosts/hosts-list.test.tsx` and `test/module/module-screen.test.tsx`. `setHostsRecentInterest` leaves `data/seam.ts`, `native-transport.ts` and `transport.test.ts`. `syncOnCellular` becomes `liveOnCellular` in `debug/use-debug-core.ts`, `test/debug/debug-screen.test.tsx`, `transport/native-core-bridge.tsx`, `test/transport/native-core-bridge.test.tsx` and `test/transport/transport.test.ts` (lane k then removes it from `phone-settings.tsx` and `settings/data.tsx`). `mirror_budget_mb` leaves `transport/remote-hosts.ts`, `test/transport/native-fixtures.ts` and `test/transport/transport.test.ts`. The desktop `Transport`'s `queryHistory`/`queryEvents` and `packages/core`'s callers don't change.
+
+```rust
+// crates/statglass-session/src/source/status.rs (lane d fills it)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IncompatibleSide { Host, App }
+// ConnectionStatus gains `pub incompatible_side: Option<IncompatibleSide>`
+// RemoteError::IncompatiblePeer gains `side: Option<IncompatibleSide>`; constructors pass None
+// statglass_ipc::status::RemoteConnection gains `pub incompatible_side: Option<IncompatibleSide>`
+// ConnectionFailureKind gains `PhoneKeyUnavailable` (lane e produces it), `Internal` (lane d)
+
+// crates/statglass-ipc/src/mobile.rs
+// MobileRemoteHost gains `pub open_error: Option<CommandError>` and loses `mirror_budget_mb`
+// DataPolicy becomes `{ pub live_on_cellular: bool }` (D-154); native-core-bridge.tsx pushes it
+// MobileCall::QueryHistory and QueryEvents are replaced by:
+MobileCall::HostHistory(HostHistoryRequest), // -> HostHistoryPage (specta mirrors of the proto types)
+// HostVitals gains `#[specta(type = Option<JsSafeInt>)] pub as_of_ms: Option<i64>`
+MobileCall::NetworkAddresses { host: HostId }, // -> HostAddressesInfo (specta mirror of HostAddresses)
+// Phase 8 lane d's useProcessDemand calls this; phase 8 lane d implements it in sessions/processes.rs (stub: Ok(Null))
+MobileCall::SetProcessInterest { host: HostId, interested: bool, view: Option<ProcessView>, stream: Option<u32> }, // -> null
+// MobileCall::SetHostsRecentInterest is removed (dead on the phone)
+// crates/statglass-ipc/src/live/contracts.rs: SubscriptionInfo gains
+#[specta(type = JsSafeInt)] pub recent_ms: i64, // filled from statglass_ipc::live::RECENT_MS; lane c reads it, so both apps stop copying 120 s and 60 s
+// crates/statglass-ipc/src/error.rs
+CommandError::RemoteRefused { message: String },
+
+// crates/statglass-proto/src/query.rs (lane h fills the codec and the answer)
+Query::NetworkAddresses,
+Answer::NetworkAddresses(HostAddresses),
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostAddresses {
+    pub interface: Option<String>, pub link_mbps: Option<u32>,
+    pub ipv4: Vec<Ipv4Addr>, pub ipv6: Vec<Ipv6Addr>,
+    pub public_ip: PublicIp, pub as_of_ms: i64,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum PublicIp { Known { ip: IpAddr }, Pending, Unavailable { reason: String }, Unknown }
+// Unknown: a state from a newer host. Decoded through query.rs's Tagged/lenient (impl Tagged for PublicIp), never #[serde(other)]
+// crates/statglass-remote/src/host_server.rs: ServedHost gains
+fn network_addresses(&self) -> HostAddresses { HostAddresses::unavailable("not implemented") } // default
+// crates/statglass-mobile/src/ffi.rs: NativeSigner::public_key -> Result<Vec<u8>, NativeSignerError> (lane e)
+// crates/statglass-mobile/src/logging.rs: pub(crate) fn init() (lane l; stub no-op, called from MobileCore::new)
+
+// crates/statglass-proto/src/query.rs (lane j1 fills the answer; D-154)
+Query::History(HistoryQuery),
+Answer::History(HistoryAnswer),
+pub struct HistoryQuery {
+    pub series: Vec<SeriesSelector>, pub from_ms: i64, pub to_ms: Option<i64>, // None: ending now
+    pub max_points: u32, pub events_for: Option<Module>,
+}
+pub struct HistoryAnswer {
+    pub tier: Tier, pub bucket_ms: i64, pub complete_to_ms: i64,
+    pub series: Vec<WireHistorySeries>, // { key, points: Vec<(t, avg, min, max)>, hold_ms }
+    pub gaps: Vec<Gap>,
+    pub events: Vec<WireEvent>, // rows, so a newer kind passes; the client skips what it can't decode (D-083)
+    pub stats: Vec<WireSeriesStats>, // { key: SeriesKey, avg, peak }: per series key, never pooled per metric
+    pub clamped: Vec<HistoryClamp>,
+}
+#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
+pub enum HistoryClamp { Points, Series, Events, Bytes, Unknown } // Unknown through Tagged/lenient, like PublicIp
+// crates/statglass-proto/src/handshake.rs
+pub const HISTORY_QUERY_FEATURE: &str = "query.history.v1"; // in local_features()
+pub const ADDRESSES_QUERY_FEATURE: &str = "query.addresses.v1";
+// crates/statglass-remote/src/scope.rs: Restricted allows History and NetworkAddresses; restricted.rs asserts both and every other refusal
+// crates/statglass-remote/src/host_queries.rs: Query::History => history_query::answer(..) (stub: Unsupported)
+// crates/statglass-remote/src/history_query.rs (lane j1): the limits as named constants
+pub const HISTORY_MAX_POINTS: u32 = 500; pub const HISTORY_MAX_SERIES: usize = 32;
+pub const HISTORY_MAX_CORE_SERIES: usize = 256; // a request whose selectors are all one per-core metric (the CPU heatmap)
+pub const HISTORY_MAX_EVENTS: usize = 200; pub const HISTORY_MAX_ANSWER_BYTES: usize = 512 * 1024;
+// crates/statglass-remote/src/history_query/limits.rs (lane j2)
+pub const HISTORY_MAX_CONCURRENT: usize = 2; pub const HISTORY_CACHE_TTL: Duration = Duration::from_secs(10);
+pub struct HistoryLimits { /* semaphore, 16-entry cache */ } // stub: no limit, no cache
+// crates/statglass-remote/src/host_server.rs: HostServer gains `history_limits: Arc<HistoryLimits>`, built in HostServer::new
+// crates/statglass-store/src/tier_budget.rs (lane j1): pub fn tier_for_budget(from_ms: i64, to_ms: i64, max_points: u32, retained: TierCoverage) -> Tier
+// crates/statglass-schema/src/event_module.rs (lane j1): impl EventDetail { pub fn module(&self, catalog: &Catalog) -> Option<Module> }
+// crates/statglass-remote/tests/support/history_seed.rs (lane j1): pub fn seed_by_retention(dir: &Path, series: &[SeriesKey], now_ms: i64) -> Arc<HistoryStore> // stub: an empty store
+// crates/statglass-session/src/source/queries.rs: history(q) and network_addresses(), checking the negotiated feature
+```
+
+```ts
+// apps/mobile/src/transport/core-provider.tsx (lane a)
+export function CoreProvider(props: { children: ReactNode }): JSX.Element;
+export function useNativeCore(): { core: NativeTransport | null; error: NativeError | CommandError | null; retry(): void };
+// packages/core/src/live-session.ts (lane c)
+export interface LiveSessionDeps<S> { subscribe: Transport["subscribeLive"]; apply(state: S): void;
+  clock: { now(): number; setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };
+  visible(): boolean; onVisible(listener: (visible: boolean) => void): () => void; status(): RemoteHostStatus | null }
+export function createLiveSession<S>(host: HostId, request: LiveRequest, deps: LiveSessionDeps<S>): { stop(): void; retry(): void };
+// packages/core/src/phone-connection.ts (lane f), re-exported from remote-errors.ts
+export function phoneProblem(record: RemoteHostRecord, nowMs: number): PhoneProblem | null;
+export function hostStatusSummary(status: RemoteHostStatus | null, opts: { nowMs: number }): { label: string; tone: Tone; stale: boolean };
+// packages/core/src/native-errors.ts (lane e)
+export interface NativeError { source: "native"; kind: "keychain" | "secureEnclave" | "camera" | "localNetwork"; osStatus: number | null; message: string }
+export function isNativeError(e: unknown): e is NativeError;
+export function nativeErrorText(e: NativeError): { title: string; recovery: string };
+// packages/core/src/popover/cards/index.ts (lane g)
+export interface CardContent { title: string; headline: string | null; segments: readonly StackSegment[];
+  items: readonly StatItemModel[]; bars: readonly InlineBarModel[]; spoken: string }
+export function cpuCard(sel: CpuSelection, src: CardSource): CardContent; /* memoryCard, gpuCard, powerCard, networkCard, batteryCard */
+// packages/core/src/mock-transport.ts: failNext(method: keyof Transport, error: CommandError): void (lane f implements in mock/failures.ts)
+// PhoneTransport adds "networkAddresses" and "hostHistory" and drops "queryHistory"/"queryEvents"; native-transport.ts adds the callCore lines; mock wires mock/addresses.ts and mock/host-history.ts (stubs)
+// packages/core/src/query-keys.ts: hostHistory(host, series, fromMs, toMs | "now", budget) key
+```
+
+`PhoneProblem`, `PhoneProblemKind` and `PhoneAction` are as listed in `plan/rfc-ios-polish.md` section 4.0. The `phone-errors` scenario name is registered in `packages/core/src/mock/fixtures.ts`.
+
+#### Lane a brief
+- **Goal:** one owner for the native core and the app shell, so pairing and demand build on production paths, not the debug screen.
+- **Interface:** `CoreProvider`, `useNativeCore`, `navigationTheme(scheme)`, `useThemeColors()`, `AppProviders`, the root `ErrorBoundary`.
+- **Behavior:**
+  - `CoreProvider` sits inside `PhoneTransportProvider` in the root layout. It starts the core from persisted config once, keeps it in a ref, disposes it on unmount, and selects the native transport when hosts exist.
+  - The debug screen reads hooks only.
+  - The transport barrel becomes the only import path for `@/transport` outside the folder.
+  - The route guard lives in `(hosts)/_layout.tsx` and redirects to `/` when `useOptionalPhoneTransport()` is null.
+- **Decisions already made:** no persisted host list in TypeScript (phase 8 keeps hosts in Rust); settings stay a nested stack until the polish phase decides presentation (architecture I6).
+- **Out of scope:** pairing, the welcome layout, status wording (lane f).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** make the module boundaries and test rules mechanical.
+- **Behavior:** as in Test cases.
+  - Fixtures prove both a forbidden and an allowed import.
+  - The `FakeNative` seam is exported as `__setNativeForTests` from `@native/statglass-native` under a `__DEV__`-only branch, so production bundles don't carry it. If Metro can't strip it, the seam stays as it is and the lane says why.
+- **Out of scope:** moving other native calls (none exist).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+- **Goal:** one live-subscription policy shared by both apps.
+- **Behavior:**
+  - Extract the desktop store's machine into `createLiveSession` with injected clock and visibility. The desktop adapter uses `document.visibilityState`; the phone adapter uses focus and `AppState`.
+  - Constants live in one place, and the catch-up window comes from Rust.
+  - Terminal state comes from the host status.
+  - The desktop's behavior is the reference: its tests must pass unchanged.
+- **Decisions already made:**
+  - Both apps keep retrying with backoff, because Rust's status, not a client list, says when a host needs the user.
+  - Data hooks stay per platform (RFC 4.6).
+- **Out of scope:** focus-driven demand (phase 8), chart label hooks (polish).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane d brief
+- **Goal:** session failures reach the phone typed, and the session crate loses the phone-only mirror code.
+- **Behavior:** as in Test cases.
+  - The 1 Hz paths log through `RateLimit`.
+  - Deleting `SyncPolicy` is a pure removal for the desktop: every desktop source ran `Full`.
+- **Decisions already made:**
+  - Vitals meaning stays in Rust (`as_of_ms`), so the phone never guesses staleness.
+  - Incompatible direction is computed where the handshake ranges are known.
+- **Out of scope:** TypeScript wording (lane f), native key errors (lane e), the phone facade (lanes i and l).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane e brief
+- **Goal:** native failures keep their kind from Swift to the screen, and a missing phone key is not reported as a host refusal.
+- **Behavior:** as in Test cases.
+  - The UniFFI trait change regenerates the Swift bindings through `make mobile-native-check`.
+  - `PhoneKey.swift` maps OSStatus to the kinds.
+- **Out of scope:** the screens that show these errors (lane f, phase 8 pairing).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane f brief
+- **Goal:** every RFC 3 state that Rust classifies renders its own phone sentence and action, and the phone has one status wording.
+- **Behavior:**
+  - The copy is the RFC 3 coverage table's.
+  - `macMonitoringAdvice` is reused.
+  - `remoteErrorAdvice` stays desktop-only.
+  - The banner is a `connection/` component mounted by `host-page.tsx`.
+  - Fixtures are typed with the generated types and live in core, so desktop tests can use them.
+- **Decisions already made:**
+  - Phone copy lives in core next to the desktop's, keyed by kind.
+  - "Key not accepted by sshd" applies when the host was never seen. "No longer authorized" applies when it was seen.
+- **Out of scope:** pairing failures (phase 8), visual polish (phase 10).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane g brief
+- **Goal:** each popover card's content is decided once in core.
+- **Behavior:**
+  - Follow the `widget-model` skill, one card per commit.
+  - The models take selections and return text and segment models. The renderers keep layout.
+  - Spoken text comes from the model.
+- **Out of scope:** card visuals (phase 10), new cards.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane h brief
+- **Goal:** the host serves its own network addresses to its clients, including the restricted phone session.
+- **Behavior:**
+  - D-155 is written. The scaffold adds the types, the feature and the allowlist entry. `HostAddresses` is encoded as a CBOR map with optional fields, so later additions stay additive.
+  - The resolver moves from `src-tauri/src/addresses.rs` into `statglass-remote::addresses`. That crate already spawns processes. The address readers come through `statglass_engine`'s re-export of the collect readers; add the re-export if it's absent, with no new crate edge.
+  - `ServedHost::network_addresses` is implemented for the app (`src-tauri/src/hosts.rs`) and the agent (`crates/statglass-agent/src/host.rs`).
+  - The resolver owns the public-IP cache: a known answer for 24 hours, a failure for 10 minutes, a fresh lookup early only when the local address, primary interface or egress interface changes. It looks up only when a client asks, never in the background, and answers `Pending` on a cold cache instead of waiting.
+  - The desktop's own "This Mac" path keeps its current commands in this phase; phase 8 lane e moves every desktop surface onto the resolver's answer.
+- **Decisions already made:**
+  - The user's 2026-11-25 decisions: show the host's addresses on the phone (reversing the polish RFC's proposal), and every host, Linux agents included, looks up its own public IP with no switch (D-155).
+  - Wire changes are additive only. `PublicIp` decodes a newer state as `Unknown` through `Tagged`/`lenient`.
+  - On Linux, curl comes from `/usr/bin/curl` only, matching D-058's "system tools only".
+- **Out of scope:** the phone Network page UI (phase 12), the desktop surfaces (phase 8 lane e).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane i brief
+- **Goal:** the phone's Rust core holds no history and reads it from the host.
+- **Interface:** `MobileCall::HostHistory`, `policy::live_allowed`, `MobileRemoteHost.open_error`.
+- **Behavior:** as in Test cases.
+  - `HostSession` loses `mirror`, `with_history` and `close_history`.
+  - `sessions/history.rs` converts between the proto answer and the IPC page, with no aggregation.
+  - `statglass-store` stays a direct dependency for `phone_id.rs`. The lane states that in its report and leaves `crate-edges.json` unchanged.
+  - The scaffold already removed the phone's calls into the mirror code and left stubs; the lane fills them.
+- **Decisions already made:** D-154. No merge order with lane d (the scaffold cut the calls).
+- **Out of scope:** demand and `PARK_GRACE` (phase 8 lane d), the host side (lanes j1 and j2), the subscriber (lane l).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane j1 brief
+- **Goal:** a host answers a phone's history question with a bounded, final answer that reaches now.
+- **Behavior:** as in Test cases.
+  - `history_query::answer` runs inside the existing `Answering` blocking task; the read lives in `history_query/read.rs`.
+  - The read path:
+    - build a `statglass_store::HistoryQuery` with `TierChoice::Fixed(tier_for_budget(..))` and the clamped `max_points`;
+    - read with `HistoryStore::history_through_now(&query, recent)`, where `recent` returns `self.host.hub().recent_rows(host_id, from.max(now - RECENT_ROWS_MS), to.min(now))`, the same bounded call `HostServer::recent` makes (`host_server.rs:121-127`). Never pass the raw live ring;
+    - take `complete_to_ms` from that snapshot;
+    - compute stats per series key, calling `range_stats` on the read narrowed to each key (or a per-key variant in `reader/stats.rs` if the lane adds one to its files; say which);
+    - read events with `r.events(..)` as `WireEvent` rows, filtered by `EventDetail::module`.
+  - `reader.rs` adds `layout_id IN (...)` to the tier SQL, computed from the selectors, for every read.
+  - The store's existing reader checkout is used. There is no second pool.
+  - `seed_by_retention` writes through the store's own `Writer` and prunes as the app does, so the M15 and `tier_1m` union is real.
+- **Decisions already made:** D-154 (the limits, the heatmap clamp, the tier rule, recent rows bounded as above), D-117 (the query path), D-083 (events as rows).
+- **Out of scope:** the queue, semaphore, cache and tick test (lane j2), the client (lane i), the desktop's use of the query.
+- **Done when:** the table's Done-when conditions are met. Report wall and CPU time per query at 1 h, 24 h, 7 d and 30 d from `history_query.rs` (they're also measured on the container in phase 8 lane d).
+
+#### Lane j2 brief
+- **Goal:** history queries can't stack up on a host or delay its sampler.
+- **Behavior:** as in Test cases.
+  - `answering.rs` gains a per-session history queue: one runs, the rest wait in order, and a newer query with the same chart key (selector set and budget) replaces the queued one, which is answered `Busy`. Other `Query` kinds keep today's path.
+  - `history_query/limits.rs` holds the host-wide semaphore and the 16-entry cache, reached through the `HostServer.history_limits` field the scaffold added. No statics: two servers in one process share nothing.
+  - `HISTORY_CACHE_TTL` keys on the selectors, the range rounded to the bucket width, and the budget. If lane j1's measurement shows a 30-day query under 5 ms of CPU, this lane may drop the cache and record why.
+- **Decisions already made:** D-154 (the queue rule, the host-wide limit and the cache), D-117.
+- **Out of scope:** what a query reads (lane j1).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane k brief
+- **Goal:** phone charts ask the host for exactly what they draw and forget it when they leave the screen.
+- **Behavior:** as in Test cases.
+  - Widths come from `onLayout`. The first render with no width doesn't query.
+  - The hosts-list row series (`cpu.total`, `mem.used`, `net.rx_total`, `net.tx_total`, 30 minutes, budget from the column width) use the same hook. The row uses the totals, never the per-interface `net.rx`/`net.tx` (`catalog.rs:246-247` carry an `iface` label). Phase 8 lane d appends summaries to them.
+  - The CPU heatmap's per-core series (`cpu.load{core=*}`) are their own query, separate from the page's other charts, with the heatmap's column count as the budget, so the host's 256-series per-core clamp applies to it.
+- **Decisions already made:** D-154. A 30 s cache: back-and-forth taps don't refetch, and the live ring's 60 s backfill covers anything newer.
+- **Out of scope:** chart visuals (phase 11), demand (phase 8).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane l brief
+- **Goal:** Rust failures on the phone leave a trace, and the facade has a hermetic test over a scripted dialer.
+- **Behavior:** as in Test cases.
+  - The facade test uses the scaffold's `MobileCore::with_dialer` and `PeerDialer`; it writes no SSH or protocol server. The real-SSH end-to-end test is lane i's Docker test.
+  - The subscriber uses `tracing-oslog`, pinned exactly, added through this lane's Cargo.toml grant. If the crate is unavailable or pulls a non-system library (D-058), write a 30-line `Layer` over `os_log` through FFI and say so.
+- **Out of scope:** what the facade does and `envelope.rs`'s log test (lane i).
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 8: pairing and live hosts in the app
+
+Demo:
+- **Linux host in Docker (the live check):** `scripts/ssh-docker/serve.sh` starts the repo's OpenSSH test container with the Linux `statglass-agent` and leaves it running, printing the published `127.0.0.1:<port>`. `docker exec -it <container> statglass-agent pair --target lan=127.0.0.1 --port <port>` prints the payload text, a Unicode QR and the code. In the simulator, "Add a host" > "Paste code" takes the payload text (the simulator has no camera), shows the host name and the code, and starts pairing. The terminal prompts `Approve <name> (<model>), code <ABC123>? [y/N]`; `y` lands the phone on the hosts list with the container's host Live, its CPU tracking a `stress`-style load started with `docker exec`. After a full app relaunch the host is still listed and goes Live again without pairing.
+- **Mac side:** "Pair iPhone" is exercised by its existing `cargo test -p statglass pairing`, `src/app/routes/dashboard/settings/_components/paired-devices/pairing.test.tsx` and `tests/e2e/settings-pairing.spec.ts`, plus a browser screenshot of the sheet on `bun run dev:fast` with the mock transport. The run does not turn on Remote Login or edit `~/.ssh/authorized_keys`, so no live pairing against this Mac.
+- **Camera:** "Scan QR" is built with `expo-camera` for devices; in the simulator it shows the camera-unavailable state and offers Paste. The camera path is unverified until a device run; Paste covers the simulator.
+- **Local Network privacy:** the simulator doesn't enforce it, so the `local_network` error path (phase 7 lane e) and the `NSLocalNetworkUsageDescription` prompt are marked "unverified on device" in the Log, not done. The key itself is in `app.config.ts` (this phase's scaffold), because LAN pairing needs it on any device.
+- **Facade end to end:** `make ssh-docker-test` runs phase 7 lane i's `mobile_core_streams_and_reads_host_history` again, after pairing and demand land.
+- **Desktop addresses for remote hosts (lane e):** on `bun run dev:fast` with the mock, a remote demo host's Network page address line, Overview machine header and popover Network card show its interface, LAN address and public IP; a mock host built before `query.addresses.v1` shows no address row and no error.
+- **Error states:** each pairing outcome renders its own message from `@core/remote-errors` through `SGPDEMO:<outcome>` payloads (dev builds and jest only); connection states were built in phase 7 lane f and are re-shot after pairing.
+- **Data demand:** measured bytes per second per host from the Docker agent at Compact, Full and Full with process interest, plus bytes and agent CPU per history query at 1 h, 24 h, 7 d and 30 d and during 30 s of range flipping, recorded in the Log.
+
+Depends on: phase 7
+
+Code facts this phase relies on (checked 2026-11-25):
+
+- `MobileCall` (`crates/statglass-ipc/src/mobile.rs:83-120`) has no pairing or host-removal call. `MobileCore::start` (`mobile_core.rs:55-68`) takes its hosts only from `MobileConfig`; nothing persists a host across launches. `MobileCore::call` (`mobile_core.rs:77-104`) dispatches core-level calls itself and the rest to `Sessions::call` (`sessions/commands.rs:31-60`, an exhaustive match that errors on core calls).
+- `statglass_session::pairing::pair(dialer, payload, device_key, device_name, model, local)` is implemented (`crates/statglass-session/src/pairing.rs:24-80`); the dialer must carry the payload's pairing key. `statglass_proto::pairing::decode_payload(text, now_ms)` is implemented. `PairingPayload.pairing_key` is a P-256 scalar (`[u8; 32]`).
+- `statglass-ssh`'s only in-memory signer, `SoftwareSigner`, is behind `#[cfg(any(test, feature = "software-signer"))]` (`signer.rs:136-180`) and has no constructor from a raw scalar. `RusshDialer::new(Arc<dyn Signer>)` is at `dialer.rs:61`.
+- `statglass-mobile` may depend on schema, proto, store, engine, session, ipc and ssh, never remote (`scripts/architecture/crate-edges.json`).
+- `CommandError::Pairing { reason: PairingFailure }` and `From<RemoteError> for CommandError` exist (`crates/statglass-ipc/src/error/remote.rs`). `PairingFailure` is `denied | expired | used | unknown | unavailable | invalid`.
+- Handshake incompatibility knows its direction (`statglass-proto` `HandshakeError::Incompatible { local_min, local_max, peer_min, peer_max }`), but `connect.rs:263-267` flattens it into `RemoteError::IncompatiblePeer { version, reason }`, so no client can tell "update the host" from "update this app" (RFC 3.3).
+- Agent pairing discovers targets from interfaces and assumes port 22 (`crates/statglass-agent/src/pair/bundle.rs:9-100`); the Docker fixture publishes sshd on `127.0.0.1:<random>` (`scripts/ssh-docker/run.sh:53-67`), so a bundle built inside the container is not dialable from the simulator without an override. `run.sh` removes the container on exit.
+- The phone has two entry points, `pair.tsx` ("Pair with your Mac") and `pair-linux.tsx` ("Add a Linux server"), both "Not built yet" placeholders. The user collapsed them into one OS-neutral "Add a host" flow (Log 2026-11-25); `pair-linux.tsx` and its `Stack.Screen` are deleted in this phase. Both QR sources (the Mac app's "Pair iPhone" and `statglass-agent pair`) produce the same `PairingPayload`; `settings/device.tsx` reads "Available after pairing". `openDebugCore` (`apps/mobile/src/transport/native-transport.ts:131-152`) starts the one core per app run with no hosts, for the debug screen only.
+- `phone-settings.tsx` is in memory ("persistence arrives with pairing").
+- `@core/remote-errors` has `PAIRING_FAILURE_TEXT`, `macMonitoringAdvice` and desktop-worded `remoteErrorAdvice` ("SSH could not sign in… use the account signed in there"), which is wrong on a phone (RFC 2.5, 3.2).
+- `expo-camera`, `expo-device` and `expo-file-system` are not installed.
+
+Test cases:
+
+**Facade pairing (Rust)**
+- `preview_pairing(text)` decodes `SGP1:` text and returns `PairingPreview { host_id, name, os, user, targets, code, expires_ms }` without dialing. An expired payload returns `pairing{reason: expired}`; a bad checksum, wrong version, truncated base45 or a non-`SGP1:` string returns `pairing{reason: invalid}`.
+- `pair` over a fake dialer: dials with an `EphemeralSigner` built from the payload's scalar (its public key equals the payload's), sends the phone's native-signer public key, device name and model, and on `Approved` adds the host (`MobileCommand::Restricted`, the approved targets, port, user and pinned keys) to the running sessions, persists it, emits `HostsChanged`, and returns `PairedHost { id, name }`.
+- `Denied`, `Expired`, `Error{Used}`, `Error{Unknown}` and `Error{Unavailable}` map to `pairing{reason}` with that reason, and nothing is persisted. A host-key mismatch against the QR's fingerprints returns `host_key_unknown` and nothing is persisted. Pairing a payload whose host id is the phone's own id returns `remote_identity`.
+- Pairing a host id that is already paired replaces its endpoint (re-pair) and keeps its name and card settings; the host list keeps one entry.
+- `EphemeralSigner::from_scalar` rejects a zero or out-of-range scalar with `SignerError::Invalid`; a signature it makes verifies against `authorized_key_line` of its public key.
+- Persistence: `<data_dir>/hosts.json` is written atomically (temp file in the same directory, then rename) with mode 0600; `start` with `MobileConfig { hosts: [] }` loads it and starts a session per stored host; a corrupt file is moved aside to `hosts.json.corrupt-<ms>`, logged, and the core starts with none (never fails startup); `set_hosts` and `remove_host` rewrite it; `remove_host` of an unknown id returns `unknown_host`.
+- Docker (`crates/statglass-mobile/tests/docker_pair.rs`, `--ignored`, run by `make ssh-docker-test`): `MobileCore` with a software native signer pairs against `statglass-agent pair --ttl 60 --target lan=127.0.0.1 --port <p>` fed `y`, then streams a live frame from the restricted session; a second core built on the same data dir lists the host after `start`; a `n` run returns `pairing{reason: denied}` and leaves `hosts.json` unchanged.
+
+- Restored phone: `hosts.json` records the phone's device public key; when `start` finds stored hosts and the native signer's key differs (an iCloud or device restore, since the Keychain key is `ThisDeviceOnly`), `PairingState` returns `{ hosts: n, key_changed: true }` and every stored host stays listed; a fresh install returns `{ hosts: 0, key_changed: false }`.
+
+**Host side (Rust and Mac)**
+- Pairing relay reasons: an unreachable control socket answers `PairError::NotRunning` (worded like the `APP_NOT_RUNNING`/`AGENT_NOT_RUNNING` markers), another device already waiting answers `Busy`, and relay failures log at `warn`; on the phone a deadline that fires mid-dial keeps the dial error instead of reporting `expired` (errors audit M6).
+- Mac: `PairingStatus::Failed { reason: PairingFailure, message }` plus a `MonitoringOff` reason; the Pair iPhone views show `PAIRING_FAILURE_TEXT[reason]` with the message as detail (errors audit M5). `tests/e2e/settings-pairing.spec.ts` runs the flow once, takes dark screenshots in a screenshot-only loop, and expiry moves into `pairing.test.tsx` with fake timers (tests audit M11).
+- Agent `pair --target lan=HOST` (repeatable, at most four, routes `lan` or `tailscale`) and `--port N` (1 to 65535) replace interface discovery and port 22 in the bundle; `--target` with an unknown route or no `=` exits 2 with usage; host keys still come from `/etc/ssh`.
+- `scripts/ssh-docker/serve.sh` starts the fixture like `run.sh` without running tests, prints host, port, container name and the agent path, and leaves the container running until `serve.sh --stop <name>`; `scripts/ssh-docker/test_run.py` covers argument handling for both scripts.
+- Container seed: `bun run seed` is the store's `seed` example with a macOS default directory. It already takes `--dir <data dir>` and seeds by retention (10 s buckets for the last day, minutes for the range, pruning rolling minutes older than 7 days into 15-minute buckets). `serve.sh --seed` builds the example for Linux in the same builder step that builds the agent (`cargo build -p statglass-store --example seed`), stops the agent, runs `seed --dir <agent data dir> --days 30` as the `statglass` user (it needs the `history.sqlite` the agent wrote on its first run), and starts the agent again. A test in `test_run.py` covers the argument; the seeded row counts are printed.
+
+**Phone pairing (TS)**
+- One primary action, "Add a host", opens one pairing screen with "Scan QR" and "Paste code" and help text naming both sources in plain words (the StatGlass app's "Pair iPhone" on a Mac; `sudo statglass-agent pair` in a terminal on any host). Paste accepts text with surrounding whitespace, rejects an empty field, and shows the preview (host name, OS glyph, user, routes, the six-character code, a countdown to `expires_ms`) before any dialing. No code path in `apps/mobile/src/pairing/` reads the host's OS to decide behavior (a test greps the module for `os ===`/`"macos"` branches); the OS only picks the glyph.
+- Handover capability: a payload with `can_hand_over: true` (the Mac app's offers) shows "This host can also add the hosts it monitors" on the preview; the agent's payloads carry `false`. After approval the phone offers "Also add the N hosts this Mac monitors" only when the capability is set and the reply lists hosts (phase 8 builds that screen; phase 7 routes through `after-pair.ts`, which goes straight to `/(hosts)` until then).
+- Scan: camera permission is requested on first use; granted shows the scanner and a decoded `SGP1:` QR goes to the preview; denied shows the camera-denied message with "Open Settings" and "Paste code"; no camera (simulator) shows the unavailable message with "Paste code".
+- Confirm shows "Waiting for approval on <host>" with the code to compare and Cancel; Cancel abandons the wait locally (the host's offer expires on its own).
+- Approved: the native transport is chosen (`setTransport(native, false)`), the query cache for hosts is invalidated, and the app replaces to `/(hosts)` with the new host listed. Each pairing failure (`denied`, `expired`, `used`, `unknown`, `unavailable`, `invalid`, `host_key_unknown`, `remote_unreachable`, `remote_auth`) shows its `@core/remote-errors` title and recovery with "Try again" (back to scan or paste) and "Done".
+- Launch: with stored hosts, the first-launch screen starts the native core, chooses the native transport and replaces to `/(hosts)` before showing the welcome actions; with none it shows the welcome screen; a core start failure shows its native or command error text with Retry. The debug screen reuses the same core.
+- Phone settings persist to `phone-settings.json` (document directory): a change is written within one debounce (500 ms), a relaunch restores it, a corrupt file falls back to defaults and is logged once. Settings > Hosts > Remove calls `removeHost` on the native transport, then drops the host from the phone settings. Settings > This iPhone shows the phone's public key line (`authorizedKeyLine("statglass-mobile")`) with a Copy button. Settings > Hosts has an "Update from Mac" row that opens `/update-from-mac` (a placeholder until phase 8).
+- Mock pairing (`createMockPhonePairing`): `SGPDEMO:approve` approves after one tick, `SGPDEMO:<reason>` fails with that reason, anything else decodes like the real one (invalid). The pairing screen only accepts `SGPDEMO:` in `__DEV__`.
+
+**Screen-scoped data demand (lane d)**
+- Demand rules, one table in `apps/mobile/src/data/demand.ts`: hosts list focused: `compact` for each host whose row is visible (`onViewableItemsChanged`), nothing for rows off screen; host screen focused: `full` for the pager's current host only; module page focused: `full` for its host; Settings, pairing, welcome, demo chooser and debug: nothing. The app sends the union as one `SetDemand` call whenever it changes (coalesced to one call per frame).
+- jest (real providers, mock transport recording `setDemand`): focusing a host screen sends exactly `[{ host, level: "full" }]`; swiping the pager to the next host sends the next host only; pushing Settings from a host screen sends `[]`; returning sends the host again; scrolling the hosts list changes the `compact` set to the visible rows.
+- Rust (`crates/statglass-mobile/tests/demand.rs`, paused tokio time, fake dialer):
+  - A host dropped from demand stays connected for `PARK_GRACE` (15 s) and is then parked: quiesced and its session closed. A host re-demanded inside the grace is never closed. `SetDemand([])` followed by `PARK_GRACE` leaves zero open sessions, and the core holds no per-host live ring, stream or history buffer for a parked host (`tests/demand.rs` inspects `Sessions`; D-154).
+  - `compact` sends `Interest { detail: false }` and never `Subscribe { Live1s }`. The host then sends a `HostSummary` every 5 s, and nothing per tick. There is no history sync (D-154).
+  - The row's 30-minute sparkline comes from one `Query::History` for its four series (`cpu.total`, `mem.used`, `net.rx_total`, `net.tx_total`; the totals, not the per-interface `net.rx`/`net.tx`) at the row's point budget, through phase 7 lane k's hook. It doesn't use `RecentRequest`, which carries only `from_ms`/`to_ms` and so returns every series' recent rows. A host without `query.history.v1` draws its sparkline from summaries as they arrive.
+  - Each `HostSummary` appends one point to the row's sparkline series. The row's values and sparkline update every 5 s, and the status still reads Live.
+  - `full` sends `Subscribe { Live1s }` (detail on, every engine frame). When `policy::live_allowed` is false (an expensive or constrained path with "Live updates on cellular" off), `full` runs as `compact`, and the status carries `demand: compact` so the pill can say so.
+  - Process interest (`RemoteInterest.process_period_ms`, `network_processes`, `gpu_processes`) is set only while a module page's live process table is on screen, and cleared on blur. A host screen with no table sends none. `MobileCall::SetProcessInterest` (stubbed in the phase 7 scaffold) is implemented in `sessions/processes.rs`: it sets the session's interest, and the interest ends with the stream named by `stream` (a test closes the stream and sees the interest cleared).
+- Measured (`crates/statglass-mobile/tests/docker_demand.rs`, `--ignored`, in `make ssh-docker-test`): a counting dialer wraps the russh channel and records bytes received per host from the Docker agent over 60 s at `compact`, `full` and `full` plus CPU process interest. The test prints the three rates and asserts only their order (`compact` < `full` < `full` + processes). The numbers go into the Log.
+- Measured, history (same test file, same container, the agent's store seeded with 30 days by `scripts/ssh-docker/serve.sh --seed`, lane b):
+  - Bytes received for one `Query::History` of a module page's series at a 200-point budget: 1 h, 24 h, 7 d and 30 d.
+  - Agent CPU time and wall time per query for the same four ranges, read from `/proc/<agent pid>/stat` before and after each query.
+  - Agent CPU while the client flips between 1 h, 24 h, 7 d and 30 d every 500 ms for 30 s.
+  - All recorded in the Log. If any number is out of line with the engine's budgets in `perf-budget.json`, add a gate entry there. Raising an existing threshold needs a D-entry (`.claude/rules/verification.md`).
+- Backgrounding: `quiesce` parks every source as today; a source added by `set_hosts` or `Pair` while backgrounded starts parked and dials nothing until `resume` (the Log's 4/a follow-up), and `resume` resumes only demanded sources.
+- `apps/mobile/test/config/background-modes.test.ts` loads `app.config.ts` and asserts no `UIBackgroundModes` and no `BGTaskSchedulerPermittedIdentifiers` in `ios.infoPlist`, and no plugin that adds them (checked against the prebuilt `Info.plist` too when `apps/mobile/ios` exists).
+
+**Desktop addresses for every host (lane e)**
+- `get_host_addresses(host)` returns `HostAddressesInfo` for any host. For a remote host it calls the session's `network_addresses()` (`statglass-session` `source/queries.rs`, which owns the client query calls; the phase 7 scaffold added it). For this Mac it answers the same shape from the shared `statglass_remote::addresses` resolver, the one this Mac's host server uses for phones. `get_network_addresses` and `get_public_ip` are removed, so the desktop has one path and one public-IP cache rule (24 h, early on a network change, 10 min after a failure), held on the host.
+- A remote host without `query.addresses.v1` returns `CommandError::RemoteUnsupported`; `useAddresses` maps it to no address row, with no error and no retry.
+- `useAddresses` has no local-only gate. It asks while a surface that shows addresses is visible, re-reads the local part every 10 s as today, and while `public_ip` is `pending` polls every 2 s, at most 5 times.
+- Vitest: the Network page's `address-line.tsx`, the Overview `machine-live-specs.tsx` header and the popover Network card in `popover-cards.tsx` each render a remote mock host's addresses; an old mock host renders no address row; `pending` turns into the IP after one poll under fake timers.
+- The mock answers `getHostAddresses` for every demo host, local and remote, and `unsupported` for one old host.
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | crates/statglass-mobile/src/pairing.rs, crates/statglass-mobile/src/pairing/, crates/statglass-mobile/src/host_store.rs, crates/statglass-mobile/src/host_store/, crates/statglass-mobile/src/sessions.rs, crates/statglass-mobile/src/sessions/registry.rs, crates/statglass-mobile/src/sessions/tests/registry.rs, crates/statglass-mobile/tests/pairing.rs, crates/statglass-ssh/src/signer/ephemeral.rs | contracts, RFC 2.4, 3.4, `crates/statglass-session/src/pairing.rs` | facade pairing, persistence, ephemeral signer | gpt-6.2-sol | pending | | `cargo test -p statglass-mobile -p statglass-ssh`, `make mobile-rust-check`, clippy clean |
+| b | L | crates/statglass-agent/src/pair.rs, crates/statglass-agent/src/pair/, crates/statglass-agent/src/cli.rs, crates/statglass-agent/tests/pair.rs, crates/statglass-remote/src/pairing/relay.rs, crates/statglass-session/src/pairing.rs, crates/statglass-mobile/tests/docker_pair.rs, scripts/ssh-docker/serve.sh, scripts/ssh-docker/run.sh, scripts/ssh-docker/test_run.py, src-tauri/src/pairing/status.rs, src/app/routes/dashboard/settings/_components/paired-devices/, tests/e2e/settings-pairing.spec.ts | contracts, `scripts/ssh-docker/`, audit-errors M5, M6, audit-tests M11 | agent target override, relay reasons, Mac pairing reasons, Docker serve, container seed and mobile pairing | gpt-6.2-sol | pending | | `serve.sh --seed` prints seeded S10, M1 and M15 row counts for the agent's store, `cargo test -p statglass-session -p statglass-agent -p statglass-remote pairing`, `cargo test -p statglass pairing`, `bun run test -- src/app/routes/dashboard/settings`, `tests/e2e/settings-pairing.spec.ts`, `python3 -B -m unittest discover -s scripts/ssh-docker -p 'test_*.py'`; `make ssh-docker-test` passes `docker_pair` (mobile) once lane a is merged |
+| c | L | apps/mobile/src/app/pair.tsx, apps/mobile/src/app/pair-linux.tsx, apps/mobile/src/app/_layout.tsx, apps/mobile/src/app/index.tsx, apps/mobile/src/app/settings/data.tsx, apps/mobile/src/app/settings/appearance.tsx, apps/mobile/src/app/update-from-mac.tsx, apps/mobile/src/app/settings/device.tsx, apps/mobile/src/pairing/, apps/mobile/src/transport/native-transport.ts, apps/mobile/src/data/phone-settings.tsx, apps/mobile/src/data/pairing-context.tsx, apps/mobile/src/hosts/host-settings.tsx, apps/mobile/src/hosts/first-launch-redirect.tsx, packages/core/src/remote-errors.ts, packages/core/src/remote-errors.test.ts, packages/core/src/mock/phone-pairing.ts, packages/core/src/mock/phone-pairing.test.ts, apps/mobile/test/pairing/, apps/mobile/test/transport/pairing.test.ts, apps/mobile/test/settings/persistence.test.tsx, apps/mobile/test/first-launch.test.tsx, plan/decisions.md, plan/rfc-ios-app.md | contracts, RFC 1.4, 2.4, `.claude/rules/mobile/` | phone pairing, launch, persistence | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/pairing test/transport test/settings test/first-launch.test.tsx`, `bun run test -- packages/core/src/remote-errors.test.ts packages/core/src/mock/phone-pairing.test.ts`, `make mobile-check`, `make mobile-native-check`; simulator pairing against the Docker host (Demo) with screenshots |
+| d | L | apps/mobile/src/data/demand.ts, apps/mobile/src/data/live.ts, apps/mobile/src/data/hosts.ts, apps/mobile/src/data/history.ts, apps/mobile/src/hosts/hosts-list.tsx, apps/mobile/src/data/processes.ts, apps/mobile/src/host/index.tsx, crates/statglass-mobile/src/sessions/demand.rs, crates/statglass-mobile/src/sessions/processes.rs, crates/statglass-mobile/src/lifecycle.rs, crates/statglass-mobile/tests/demand.rs, crates/statglass-mobile/tests/docker_demand.rs, apps/mobile/test/demand/, apps/mobile/test/config/background-modes.test.ts | contracts, RFC 3.1, `apps/mobile/modules/statglass-native/ios/AppLifecycle.swift` | screen-scoped demand, park grace, backgrounded sources, no background modes | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/demand test/config test/data`, `cargo test -p statglass-mobile demand lifecycle`, `make mobile-rust-check`, `make mobile-check`; on the Docker host in the simulator, the debug screen's session list shows the session closing 15 s after opening Settings and reopening on return; `docker_demand` run, with its three byte rates, the history bytes and agent CPU per query at 1 h, 24 h, 7 d and 30 d, and the agent CPU during 30 s of range flipping recorded in the Log |
+| e | M | src-tauri/src/host_addresses.rs, src/app/hooks/use-addresses.ts, src/app/hooks/use-addresses.test.tsx, src/app/routes/dashboard/network/_components/address-line.tsx, src/app/routes/dashboard/network/_components/address-line.test.tsx, src/app/routes/dashboard/overview/_components/machine-live-specs.tsx, src/app/routes/dashboard/overview/_components/machine-live-specs.test.tsx, src/app/routes/popover/_components/popover-cards.tsx, src/app/routes/popover/_components/popover-cards.test.tsx, packages/core/src/mock/addresses.ts, packages/core/src/mock/usage-queries.ts | contracts, D-093, D-155, `plan/design-system.md`, `crates/statglass-remote/src/addresses.rs` | one command for every host, old host shows no row, pending poll, three surfaces on a remote host | gpt-6.2-sol | pending | | `cargo test -p statglass host_addresses`, `bun run test -- src/app/hooks src/app/routes/dashboard/network src/app/routes/dashboard/overview src/app/routes/popover packages/core/src/mock`, `bun run typecheck`, `make e2e-perf` (before and after); browser screenshots on `bun run dev:fast` of the three surfaces for the local host, a remote demo host and the old host, compared with today's local screenshots, every difference named |
+
+Ownership: no phase 8 file is owned by a running lane of another phase. Lane e takes the desktop address surfaces after phase 7: `popover-cards.tsx` was phase 7 lane g's and `mock/addresses.ts` lane h's, both merged before phase 8 starts, so the address work is a lane here rather than part of lane h. Lane d owns the data hooks (`data/live.ts`, `hosts.ts`, `history.ts`) so demand is declared in one place, the data layer, not per screen; later phases that edit those hooks keep the `useFocusDemand` calls. Lane a owns `sessions/registry.rs`; the scaffold adds the one call it makes into lane d's code (`demand::admit(&source, &lifecycle)` when a source is added). Lane c writes the pairing views under `apps/mobile/src/pairing/screens/` and the flow logic beside them (`flow.ts`, `after-pair.ts`), because phase 9 takes `after-pair.ts` and the polish phases take `screens/`.
+
+#### Scaffold contracts (phase 8)
+
+The scaffold runs `make bindings`, `bun install` and `bunx expo install expo-camera expo-device expo-file-system` in `apps/mobile`, then the typecheck, and fixes each file the type changes flag.
+
+**Rust**
+
+```rust
+// crates/statglass-ipc/src/mobile.rs: three new MobileCall variants and two results
+MobileCall::PreviewPairing { text: String },                                  // -> PairingPreview
+MobileCall::Pair { text: String, device_name: String, model: String },       // -> PairedHost
+MobileCall::RemoveHost { host: HostId },                                      // -> null
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairingPreview {
+    pub host_id: HostId, pub name: String, pub os: String, pub user: String,
+    pub targets: Vec<MobileTarget>, pub code: String,
+    #[specta(type = statglass_schema::JsSafeInt)] pub expires_ms: i64,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairedHost { pub id: HostId, pub name: String }
+// PairingPreview also has `pub can_hand_over: bool`, from the payload capability below.
+MobileCall::PairingState,                                                     // -> PairingState
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairingState { pub hosts: u32, pub key_changed: bool }            // key_changed: restored phone, re-pair needed
+MobileCall::SetDemand { demand: Vec<HostDemand> },                            // -> null
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, specta::Type)]
+pub struct HostDemand { pub host: HostId, pub level: DemandLevel }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DemandLevel { Compact, Full } // compact: HostSummary every 5 s; full: Live1s (D-154: no sync at either)
+
+// crates/statglass-proto/src/pairing.rs: the handover capability (never an OS check)
+// PairingPayload gains `#[serde(default)] pub can_hand_over: bool`, encoded last, with the
+// round-trip and skew test (an old payload decodes as false; a new one decodes on old code).
+// src-tauri/src/pairing/bundle.rs sets it true; statglass-agent leaves it false.
+
+// crates/statglass-mobile/src/sessions/demand.rs (lane d)
+/// How long a host stays connected after no screen demands it. Long enough that swiping
+/// across the pager and back, or a quick look at Settings, keeps the SSH session (a fresh
+/// dial and handshake costs 1-3 s on LAN, more on Tailscale); short enough that nothing
+/// keeps pulling once the user has moved on.
+pub(crate) const PARK_GRACE: Duration = Duration::from_secs(15);
+pub(crate) fn set_demand(sessions: &Sessions, demand: Vec<HostDemand>) -> Result<Value, CommandError>; // stub: Ok(Null)
+pub(crate) fn admit(source: &RemoteSource, lifecycle: &Lifecycle);                                    // stub: no-op
+
+// crates/statglass-ssh/src/signer/ephemeral.rs (declared from signer.rs, re-exported; not behind a feature)
+/// The one-time pairing key from a QR: a P-256 scalar held in memory for one pairing.
+pub struct EphemeralSigner { /* SigningKey, Sec1Point */ }
+impl EphemeralSigner { pub fn from_scalar(scalar: &[u8; 32]) -> Result<Self, SignerError>; } // stub: Err(Invalid("not implemented"))
+impl Signer for EphemeralSigner { /* stub */ }
+
+// crates/statglass-mobile/src/pairing.rs (declared in lib.rs; mobile_core.rs dispatches the two calls here)
+pub(crate) fn preview(text: &str, now_ms: i64) -> Result<PairingPreview, CommandError>;            // stub: Err(Internal)
+pub(crate) async fn pair(sessions: &Sessions, device_key: Vec<u8>, text: String,
+    device_name: String, model: String) -> Result<PairedHost, CommandError>;                      // stub: Err(Internal)
+// crates/statglass-mobile/src/host_store.rs
+pub(crate) struct HostStore { path: PathBuf }
+impl HostStore {
+    pub(crate) fn new(data_dir: &Path) -> Self;                                 // <data_dir>/hosts.json
+    pub(crate) fn load(&self) -> Vec<MobileHost>;                               // stub: vec![]; logs and quarantines a bad file
+    pub(crate) fn save(&self, hosts: &[MobileHost]) -> Result<(), CommandError>; // stub: Ok(())
+}
+// Sessions::remove_host(&self, host: HostId) -> Result<(), CommandError> // stub: Err(UnknownHost)
+
+// crates/statglass-agent/src/cli.rs
+DeviceCommand::Pair { ttl_s: u64, targets: Vec<BundleTarget>, port: Option<u16> } // empty targets: discover
+```
+
+`sessions/commands.rs` gets `RemoveHost` routed to `Sessions::remove_host` and the two pairing calls listed with the other core-level calls. `mobile_core.rs` routes `PreviewPairing` and `Pair` to `pairing.rs` (Pair needs the native signer's public key, read through `NativeSignerAdapter`). No new crate edges.
+
+**TypeScript**
+
+```ts
+// apps/mobile/src/data/pairing-seam.ts (scaffold-owned)
+export interface PhonePairing {
+  previewPairing(text: string): Promise<CommandResult<PairingPreview>>;
+  pair(text: string, deviceName: string, model: string): Promise<CommandResult<PairedHost>>;
+}
+// apps/mobile/src/data/pairing-context.tsx (lane c): native when the module exists, else the mock
+export function PairingProvider(props: { children: ReactNode; pairing?: PhonePairing }): JSX.Element;
+export function usePhonePairing(): PhonePairing;
+// apps/mobile/src/transport/native-transport.ts (lane c; the core itself comes from phase 7's useNativeCore): NativeTransport gains
+removeHost(host: HostId): Promise<CommandResult<null>>;
+export function nativePairing(core: NativeTransport): PhonePairing;
+// packages/core/src/mock/phone-pairing.ts (lane c)
+export function createMockPhonePairing(options?: { now?: () => number }): PhonePairing & { tick(): void };
+```
+
+```ts
+// apps/mobile/src/data/demand.ts (lane d)
+export type DemandLevel = "compact" | "full";
+/** Declares demand for `host` while the calling screen is focused (useFocusEffect); the union goes to the core. */
+export function useFocusDemand(host: HostId | null, level: DemandLevel): void;
+export function useVisibleHosts(): { onViewableItemsChanged(info: { viewableItems: { key: string }[] }): void };
+```
+
+`PhoneTransport` gains `setDemand` and `pairingState`; `native-transport.ts` gets the `callCore` lines; the mock records demand (`mock.demand()` for tests).
+
+Also: `PairingProvider` wraps the root stack in `apps/mobile/src/app/_layout.tsx` (scaffold edit); `PairError` gains `NotRunning` and `Busy` and `PairingStatus::Failed` gains `reason` (lane b fills both); `app.config.ts` gains `ios.infoPlist.NSLocalNetworkUsageDescription` ("StatGlass connects to your hosts on this network over SSH.", architecture audit I8) and the `expo-camera` plugin with `cameraPermission: "StatGlass uses the camera to scan the pairing code shown on your Mac or server."`; `settings/hosts.tsx` stays as is.
+
+Desktop addresses (lane e): the scaffold declares `#[tauri::command] get_host_addresses(state, host: HostId) -> Result<HostAddressesInfo, CommandError>` in `src-tauri/src/host_addresses.rs` (stub: `Err(RemoteUnsupported)`) and registers it in `src-tauri/src/lib.rs`'s `collect_commands!`; removes `get_network_addresses` and `get_public_ip` from `src-tauri/src/commands.rs` and `lib.rs`; replaces `Transport.getNetworkAddresses`/`getPublicIp` with `getHostAddresses(host)` in `packages/core/src/transport/contracts.ts` and `src/desktop-transport/native-history.ts`; replaces `hostKeys.networkAddresses` and `appKeys.publicIp`/`publicIpAll` with `hostKeys.addresses(host)` in `packages/core/src/query-keys.ts` (and its test, `src/app/lib/query.tsx`, `query.test.ts`); and runs `make bindings`. `useAddresses` keeps its return shape over a stub, so the three surfaces keep compiling.
+
+#### Lane a brief
+
+- **Goal:** the Rust core can preview and complete a pairing from QR or pasted text, keeps paired hosts across launches, and can remove one.
+- **Interface:** the scaffold signatures in `crates/statglass-mobile/src/{pairing,host_store}.rs`, `Sessions::remove_host`, `EphemeralSigner`.
+- **Behavior:**
+  - `preview`: `decode_payload(text.trim(), now_ms)`; map `PairError` to `CommandError::Pairing { reason }` (expired payloads say `expired`, every decode failure `invalid`). Targets keep the payload order.
+  - `pair`: decode; refuse the phone's own id (`phone_id.rs`); build `RusshDialer::new(Arc::new(EphemeralSigner::from_scalar(&payload.pairing_key)?))`; call `statglass_session::pairing::pair(&dialer, &payload, &device_key, &name, &model, phone_id)`; turn the returned `Endpoint` into a `MobileHost { command: Restricted, .. }`; add or replace it in the running sessions (replace keeps the host's name and card settings), then `HostStore::save` of the whole list, then emit `HostsChanged`. A save failure after the session was added removes it again and returns the error, so the list on screen and on disk agree.
+  - Errors map through `From<RemoteError> for CommandError`; the pairing key is dropped when `pair` returns.
+  - `HostStore`: JSON array of `MobileHost`, atomic write (tempfile in the same directory, `fsync`, rename) at 0600; `load` never fails startup: a parse error renames the file to `hosts.json.corrupt-<ms>` and logs once.
+  - `start`: hosts are `config.hosts` (the debug screen) followed by stored hosts not already in it; `set_hosts` and `remove_host` save.
+  - The file is `{ "device_key": <base64 SEC1>, "hosts": [...] }`; `PairingState` compares `device_key` with the native signer's current key (restore detection). Re-pairing any host rewrites `device_key`.
+  - Runs off the caller's thread on the core runtime like the other calls; never blocks Swift.
+- **Decisions already made:** the phone's paired hosts live in Rust (`hosts.json` in the core's data directory), not in JS storage, so the core can start sessions before the UI asks; re-pairing an id replaces it; no new crate edge (the ephemeral signer lives in `statglass-ssh`, production code, because the pairing key is a bearer secret for minutes and P-256 like every other key, D-151).
+- **Out of scope:** the host side, the agent CLI, Swift, the TypeScript screens, handover of other hosts (phase 9).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+
+- **Goal:** the Docker host can be paired from the simulator, and both pairing hosts (relay and Mac) report why a pairing failed by reason, not text.
+- **Behavior:**
+  - Agent `pair`: parse `--target ROUTE=HOST` (repeatable, at most four) and `--port N`; when given, they replace `bundle_targets` and the default port in `pair/bundle.rs`; usage text lists both.
+  - Relay: `NotRunning` and `Busy` reasons, `warn` logs; `session/src/pairing.rs` keeps the dial error when the deadline fires mid-dial.
+  - Mac: `PairingStatus::Failed { reason, message }` and the views read `remoteErrorText` (which uses `PAIRING_FAILURE_TEXT[reason]`); the e2e spec runs once.
+  - `serve.sh`: shares setup with `run.sh` (factor the container start into a function both call), prints `host`, `port`, `container`, `agent`, and keeps the container until `serve.sh --stop <container>`. `run.sh` behavior is unchanged.
+  - `crates/statglass-mobile/tests/docker_pair.rs`: the approve and deny paths from the Test cases, through `MobileCore` with a software native signer, added to `run.sh`'s `--ignored` list.
+- **Out of scope:** the facade (lane a), phone copy (lane c).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+
+- **Goal:** pairing from the phone (scan or paste), the native transport chosen at launch for paired hosts, persisted phone settings, host removal, and the This iPhone key.
+- **Interface:** `PhonePairing`, `PairingProvider`/`usePhonePairing`, `nativePairing`, `createMockPhonePairing`; the core from phase 7's `useNativeCore`.
+- **Behavior:**
+  - Routes: `pair.tsx` renders `PairScreen` from `@/pairing`; `pair-linux.tsx` is deleted with its `Stack.Screen` in `_layout.tsx` (the only edit to that file), and the welcome screen shows "Add a host" (primary) and "Try demo hosts" (secondary). The flow also models camera states for the polish phases' presentation: `priming` (before the system prompt), `denied`, `unavailable`. Views live in `apps/mobile/src/pairing/screens/` (`choose-method.tsx`, `scanner.tsx`, `paste.tsx`, `preview.tsx`, `waiting.tsx`, `result.tsx`); the state machine in `apps/mobile/src/pairing/flow.ts` (`idle → scanning|pasting → previewing → waiting → paired|failed`), tested without a router; `after-pair.ts` exports `afterPair(router, result)` which replaces to `/(hosts)`.
+  - Scanner: `expo-camera` `CameraView` with `barcodeScannerSettings: { barcodeTypes: ["qr"] }`; the first QR whose text starts with `SGP1:` stops scanning. Permission states as in Test cases. No camera device shows the unavailable message.
+  - Device name and model come from `expo-device` (`deviceName ?? "iPhone"`, `modelName ?? "iPhone"`).
+  - Copy for failures comes from `remoteErrorText`/`remoteErrorAdvice`-style functions in `@core/remote-errors`; add phone pairing advice (`pairingAdvice(error, host)`) there, next to `PAIRING_FAILURE_TEXT`, with each failure's recovery ("Start pairing again on <host>", "Ask for a new code", "Check the host is reachable on this network").
+  - Launch (`index.tsx`): once phase 7's `CoreProvider` has selected the native transport (hosts exist), replace to `/(hosts)`; a core start error renders through `nativeErrorText`/`remoteErrorText` with Retry. The welcome content is a placeholder layout the polish phases restyle; keep the actions.
+  - Settings: Appearance is applied from the store by a bridge mounted in the root layout, not as a side effect in the route (architecture M7); a failed data-policy push shows inline in Settings > Data (errors L6); Settings > Data keeps the one switch phase 7 lane k wired, "Live updates on cellular" (tests audit M7 is resolved by wiring it, D-154).
+  - Persistence in `phone-settings.tsx`: `expo-file-system` `Paths.document/phone-settings.json`, read once at provider mount (render children after the read resolves, at most one frame), write debounced 500 ms, write errors logged once per session. Tests inject a storage adapter prop, not a module mock.
+  - `host-settings.tsx`: Remove calls `removeHost` when the transport is native, then updates settings; failures show `remoteErrorText`. Adds the "Update from Mac" row.
+  - `update-from-mac.tsx`: "Not built yet" placeholder with the RFC sentence of what it will do.
+  - `settings/device.tsx`: the key line in a selectable caption, Copy via `expo-clipboard` only if already installed, otherwise `Share.share`; keeps `AppLockSetting`.
+- **Decisions already made:** one OS-neutral flow (the user's decision; the lane writes the D-entry in `plan/decisions.md` and changes RFC 1.3 and 2.4's "Pair with your Mac" / "Add a Linux server" wording in `plan/rfc-ios-app.md` to "Add a host": "one Add a host flow; handover is a payload capability, never an OS check"); the simulator path is Paste; `SGPDEMO:` payloads exist only in `__DEV__` and jest; Cancel does not tell the host (its offer expires; RFC 2.4); handover of other hosts is phase 9.
+- **Out of scope:** connection error rendering (phase 7 lane f), visual polish of these screens (phase 11, from `plan/rfc-ios-polish.md`), Rust.
+- **Done when:** the table's Done-when conditions are met, with simulator screenshots (light, dark) of every pairing step against the Docker host and of each `SGPDEMO:` failure.
+
+#### Lane d brief
+
+- **Goal:** the app pulls data only for what is on screen, in the foreground: compact live for visible hosts-list rows, full for the focused host screen or module page, nothing for Settings, pairing, welcome or debug, nothing in the background.
+- **Interface:** `useFocusDemand`, `useVisibleHosts`, `MobileCall::SetDemand`, `PARK_GRACE`, `demand::admit`.
+- **Behavior:**
+  - TS: a small store of demand entries keyed by screen instance; `useFocusDemand` adds on focus and removes on blur (React Navigation's `useFocusEffect`), and the store sends the union. The data hooks declare demand themselves: `useHostVitals`/`useHostSparkline` (compact, only while the row is visible), `useHostLiveSubscription` (full, only for the pager's current page; `host/index.tsx` provides that through a context), `useModuleHistory` (full). No screen component calls the store.
+  - Rust: `set_demand` diffs against the current demand; added hosts resume (`full`: `Subscribe { Live1s }`, or `compact` when `live_allowed` is false; `compact`: `Interest { detail: false }` so the host sends a `HostSummary` every 5 s; a compact host never subscribes `Live1s`, and its sparkline history is the row hook's `Query::History`); dropped hosts get a `PARK_GRACE` timer, cancelled if re-demanded, then `quiesce()`. `admit` parks a new source when the core is backgrounded or the host is not demanded, and the `expect(dead_code)` on `Lifecycle::backgrounded` goes. `resume` after background resumes only demanded sources, the open host's first.
+  - Process interest: `apps/mobile/src/data/processes.ts` exports `useProcessDemand(host, view)`, which sets `RemoteInterest` process flags through `setProcessInterest` on focus of a screen that renders a live process table and clears them on blur; nothing else sets them. The call is `MobileCall::SetProcessInterest`, declared in the phase 7 scaffold; this lane implements it in `crates/statglass-mobile/src/sessions/processes.rs` over the session's interest, so the polish phases add no Rust for it.
+  - Summaries: the hosts-list hooks append each `HostSummary` to the row's series (values and sparkline every 5 s); the row says nothing about the cadence, and the status still reads Live.
+  - Verify on an iOS 27 simulator that quiesce and the snapshot cover fire on scene background, not on a Notification Center pull (architecture M13); if not, move `AppLifecycle.swift` to scene notifications in this lane and say so.
+  - Swift: unchanged unless the M13 check fails; `AppLifecycle.swift` keeps `beginBackgroundTask` plus `quiesce`. No `UIBackgroundModes`, no BGTask identifiers.
+- **Decisions already made:** demand is declared in the data layer, driven by focus (the user's instruction: no per-screen effects). The hosts list's sparklines show the last 30 minutes from one scoped `Query::History` per visible row (D-154), not from `RecentRequest`, which can't be scoped to the row's series. Hosts-list rows update every 5 s, the host's `HostSummary` period; the user confirmed 5 s is fine (10 s would be too), so there is no wire change for it. `PARK_GRACE` is 15 s, for the reason in its doc comment. The Rust test `quiesce_and_resume_update_the_backgrounded_flag` is deleted (tests audit L8): the observable tests cover it.
+- **Out of scope:** what each screen renders, pairing, wire changes.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane e brief
+
+- **Goal:** the Mac shows local and public addresses for every host it monitors, not only itself, from the same host-served answer the phone uses.
+- **Interface:** `get_host_addresses`, `Transport.getHostAddresses`, `useAddresses(primary)`.
+- **Behavior:**
+  - Route by host as the other per-host commands do (`commands.rs`'s `Route::Remote(source)` pattern): remote hosts call `source.network_addresses()`; this Mac calls `statglass_remote::addresses` directly. Chosen over keeping `src-tauri/src/addresses.rs`'s separate local path because it leaves one answer shape, one public-IP cache on the host side, and one TS path, instead of two commands and a TS-side cache keyed by interface. `src-tauri/src/addresses.rs` is already a thin delegate after phase 7 lane h.
+  - `useAddresses` drops `useIsLocalHost()`. `RemoteUnsupported` means no address row, silently. `pending` polls every 2 s, at most 5 times, while the surface is shown; a hidden window pauses it as today.
+  - The three surfaces (`address-line.tsx`, `machine-live-specs.tsx`, the popover Network card) keep their layout; only the data source changes.
+  - The mock serves addresses for every demo host and one old host without the feature, in the same change (`data-boundary.md`).
+- **Decisions already made:** the user's 2026-11-25 decision that the Mac shows remote hosts' addresses; D-155's public-IP rule applies to every host and is enforced on the host, so the desktop adds no client-side public-IP cache.
+- **Out of scope:** the phone's Network page (phase 12), the resolver (phase 7 lane h).
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 9: the Mac hands its other hosts to the phone
+
+Demo:
+- **Rust, Docker (`make ssh-docker-test`, `docker_handover`):** the fixture's `ssh_config` alias resolves through `ssh -G -F <config>` and `ssh-keygen -F` into a `BundleHost`; an install intent for a phone key is applied over the fixture's full-access SSH by running the agent's `authorize-key`, after which a phone session with that key streams through the restricted forced command. A revoke recorded while the container is stopped is applied when it comes back and supersedes the earlier install: the key is refused.
+- **Simulator, Docker as the handed-over Linux host:** copy the phone's key line from Settings > This iPhone; `cargo run -p statglass-remote --example handover-bundle -- --ssh-config <fixture>/ssh_config --alias <alias> --key "<line>"` applies the install and prints an `SGB1:` bundle; Settings > Hosts > "Update from Mac" > Paste lists the container as new with a checkbox; adding it lands it Live in the hosts list. A second bundle without it marks it "Removed on your Mac".
+- **Mac (browser dev server, mock transport):** Paired devices shows pending intents per host ("revoke pending: build-server offline"); "Update iPhone" shows the bundle QR with the hosts that cannot be handed over and why. `tests/e2e/settings-handover.spec.ts` covers it.
+- **Not run:** pairing against this Mac with Remote Login on (the run does not change the user's security settings); the Mac-side apply path runs in Rust tests against the Docker fixture through the same code the app calls.
+
+Depends on: phase 5, phase 8
+
+Scope, from RFC 2.4 steps 4-5, "Building the bundle", "Keeping the list current", the manual-pairing `authorize-key` path, and RFC 2.6.
+
+Test cases:
+
+**Intent log (`statglass-remote::intents`)**
+- `record` appends one JSON line per intent with a sequence number that increases per log, survives reopen, and fsyncs before returning.
+- `pending()` returns, per `(host, device)`, only the highest-sequence intent that is not applied: install then revoke gives the revoke; revoke then install (a re-pair) gives the install; an applied revoke followed by nothing gives nothing.
+- `mark_applied(seq)` of a superseded intent is a no-op; `mark_failed(seq, reason)` keeps it pending with the reason and attempt count.
+- A truncated last line (crash mid-write) is ignored with one log line; earlier lines load. Unknown fields are ignored; an unknown `op` line is skipped and logged.
+- The file is 0600 in the app's data directory; writes take the same advisory lock pattern as `authorized_keys`.
+
+**Bundle resolution (`statglass-remote::ssh_config`)**
+- `parse_ssh_g` reads `hostname`, `user`, `port`, `proxyjump`, `proxycommand` (lowercase keys, `none` values) from captured `ssh -G` output.
+- `handover_host` returns `Unavailable` with `ProxyJump`, `ProxyCommand`, `LanLiteral` (an RFC 1918, link-local or CGNAT literal `HostName` with no Tailscale route), `NoHostKey` (`ssh-keygen -F` finds none, hashed or not) or `Unresolvable` (`ssh -G` fails), in that precedence; otherwise a `BundleHost` with the remote host's id, name, OS, user, port, targets (LAN then Tailscale alias, resolved names) and SHA-256 fingerprints from `ssh-keygen -lf -`.
+- Hashed `known_hosts` entries and `[host]:port` entries are found.
+
+**Authorize and revoke on hosts**
+- Helper `authorize-key --key <base64 SEC1> --name <name>` and `revoke-key --device <tag>`, and agent `authorize-key`/`revoke-key [--system|--socket P]`: write or remove the same restricted line pairing writes (lane a's `DeviceKeys`), print the tag, exit 0; a malformed key exits 2; a revoke of an absent tag exits 0 (idempotent, so a replayed revoke settles).
+- They run only under a full key (they are not in the restricted token table); a restricted session sending them exits 2.
+
+**Mac**
+- On `pairing_approve`, the Mac resolves every enabled remote host, records an install intent for each resolvable one, and the `Approved` reply carries `hosts` (this Mac first) and `unavailable` with reasons.
+- The applier runs on connect and every 5 minutes for hosts with pending intents, over the Mac's existing SSH access (`ssh <alias> <helper|agent> authorize-key ...`), marks applied or failed with the reason, and never blocks the registry.
+- `revoke_device` on the Mac records a revoke intent for every host that had an install for that tag; Paired devices lists pending intents per host with the reason.
+- `handover_bundle_start` returns `HandoverOffer { text, qr_svg, hosts, unavailable, issued_ms }` with no pairing key; the bundle QR is under 1.2 KB for ten hosts.
+- The mock mirrors every new command; Playwright covers the panel and the Update sheet.
+
+**Phone**
+- `decode_bundle` round-trips `SGB1:` text; a pairing payload pasted into Update from Mac, and a bundle pasted into Pair, each fail with a typed `invalid` and the screen says which kind of code it wants.
+- After pairing a Mac whose reply carries other hosts, the phone shows "Also on <Mac>" with a checkbox per host (all checked) and the unavailable ones with their reason; "Add" adds the checked hosts (restricted command, pinned keys) and persists them; "Skip" adds none.
+- Update from Mac: reconcile against the current list by host id: new hosts offered with checkboxes, hosts no longer in the bundle marked "Removed on your Mac" (kept, with Remove), unchanged hosts untouched, changed targets or keys updated in place.
+- A handed-over host whose install is still pending on the Mac fails `remote_auth` with no `last_seen_ms`, so it shows "Key not accepted by sshd" until the Mac applies it, then connects on retry.
+- Proto skew: a phase 5 `PairReply::Approved` without `unavailable` decodes on the new phone, and the new reply decodes on a phase 5 phone (unknown field ignored).
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | crates/statglass-remote/src/ssh_config.rs, crates/statglass-remote/src/ssh_config/, crates/statglass-remote/src/intents.rs, crates/statglass-remote/src/intents/, crates/statglass-remote/src/pairing.rs, crates/statglass-remote/tests/intents.rs, crates/statglass-remote/tests/ssh_config.rs, crates/statglass-remote/tests/docker_handover.rs, crates/statglass-remote/examples/handover-bundle.rs, crates/statglass-agent/src/authorize.rs, crates/statglass-agent/tests/authorize.rs, crates/statglass-remote-helper/src/authorize.rs, crates/statglass-remote-helper/tests/authorize.rs | contracts, RFC 2.4, 2.5, 2.6 | intent log, resolution, authorize/revoke, Docker handover | gpt-6.2-sol | pending | | `cargo test -p statglass-remote -p statglass-agent -p statglass-remote-helper` pass; `make ssh-docker-test` passes `docker_handover`; clippy clean |
+| b | L | src-tauri/src/handover.rs, src-tauri/src/handover/, src/app/routes/dashboard/settings/_components/device-intents/, src/app/routes/dashboard/settings/_components/update-from-mac/, src/desktop-transport/native-handover.ts, packages/core/src/mock/handover.ts, packages/core/src/mock/handover.test.ts, tests/e2e/settings-handover.spec.ts | contracts, RFC 2.4, 2.6, plan/design-system.md | src-tauri handover tests, Vitest panel/sheet/mock, Playwright | gpt-6.2-sol | pending | | `cargo test -p statglass handover`, `bun run typecheck`, `bun run test`, `tests/e2e/settings-handover.spec.ts` pass; screenshots compared to Paired devices |
+| c | L | crates/statglass-proto/src/handover.rs, crates/statglass-proto/tests/handover_skew.rs, crates/statglass-session/src/handover.rs, crates/statglass-mobile/src/handover.rs, apps/mobile/src/handover/, apps/mobile/src/transport/handover.ts, apps/mobile/src/app/update-from-mac.tsx, apps/mobile/src/app/pair-hosts.tsx, apps/mobile/src/pairing/after-pair.ts, apps/mobile/test/handover/ | contracts, RFC 2.4 | bundle codec and skew, reconcile, phone screens | gpt-6.2-sol | pending | | `cargo test -p statglass-proto -p statglass-session -p statglass-mobile handover`, `bun run --cwd apps/mobile test -- test/handover`, `make mobile-check`, `make mobile-rust-check`; the simulator Demo above |
+
+Ownership: phase 9 can run beside the design-parity phases that `plan/rfc-ios-polish.md` proposes, which must not own these paths. Phase 8 needs none of the polish work's files (`apps/mobile/src/app/_layout.tsx`, `apps/mobile/src/app/settings/`, `apps/mobile/src/pairing/screens/`): its two routes set their own header options (phase 11 lane a, which depends on phase 9, later moves them onto the shared `screenOptions` and back chevron), the Settings entry point is the "Update from Mac" row phase 8 added (the RFC's host detail page links to `/update-from-mac`), and the pairing flow reaches `pair-hosts` through `after-pair.ts`. Phase 5 lane c's `src-tauri/src/pairing/`, `paired-devices/` and the settings `route.tsx` are merged; phase 9's scaffold mounts `device-intents/` and `update-from-mac/` there and adds the `HandoverSource` call in `src-tauri/src/pairing.rs`.
+
+#### Scaffold contracts (phase 9)
+
+The scaffold runs `make bindings`, then the typecheck, and fixes what it flags. No new crate edges: the Mac reaches intents and resolution through `statglass-remote`, the phone reaches the bundle codec through proto and session.
+
+```rust
+// crates/statglass-proto/src/handover.rs (lane c fills the codec)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoverReason { ProxyJump, ProxyCommand, LanLiteral, NoHostKey, Unresolvable }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnavailableHost { pub host_id: HostId, pub name: String, pub reason: HandoverReason }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostBundle { pub version: u8, pub from: HostId, pub hosts: Vec<BundleHost>, pub unavailable: Vec<UnavailableHost>, pub issued_ms: i64 }
+pub fn encode_bundle(b: &HostBundle) -> String;                    // "SGB1:" + base45(cbor), reusing pairing's base45
+pub fn decode_bundle(s: &str) -> Result<HostBundle, PairError>;    // stub: Err(PairError::Invalid)
+// crates/statglass-proto/src/pairing.rs: PairReply::Approved gains
+//   #[serde(default, skip_serializing_if = "Vec::is_empty")] unavailable: Vec<UnavailableHost>
+
+// crates/statglass-remote/src/intents.rs (lane a)
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum IntentOp { Install { key: String /* base64 SEC1 */, name: String }, Revoke, Applied { seq: u64 }, Failed { seq: u64, reason: String } }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntentRecord { pub seq: u64, pub host: HostId, pub device: String /* DeviceTag */, #[serde(flatten)] pub op: IntentOp, pub at_ms: i64 }
+pub struct IntentLog { /* path */ }
+impl IntentLog {
+    pub fn open(path: PathBuf) -> Result<Self, IntentError>;
+    pub fn record(&self, host: HostId, device: DeviceTag, op: IntentOp, now_ms: i64) -> Result<u64, IntentError>;
+    pub fn pending(&self) -> Result<Vec<PendingIntent>, IntentError>; // effective, unapplied, per (host, device)
+    pub fn mark_applied(&self, seq: u64, now_ms: i64) -> Result<(), IntentError>;
+    pub fn mark_failed(&self, seq: u64, reason: &str, now_ms: i64) -> Result<(), IntentError>;
+}
+pub struct PendingIntent { pub seq: u64, pub host: HostId, pub device: DeviceTag, pub install: Option<(EcdsaP256Public, String)>, pub attempts: u32, pub last_error: Option<String> }
+#[derive(Debug, thiserror::Error)] pub enum IntentError { #[error("intent log: {0}")] Io(#[from] std::io::Error), #[error("intent log: {0}")] Invalid(String) }
+```
+
+Intent log format: JSON Lines at `~/Library/Application Support/com.tryopendata.statglass/device-intents.jsonl`, one `IntentRecord` per line, for example `{"seq":12,"host":"<uuid>","device":"7F3A2C","op":"install","key":"BHd…","name":"Riley's iPhone","at_ms":1795000000000}`, `{"seq":13,"host":"<uuid>","device":"7F3A2C","op":"revoke","at_ms":…}`, `{"seq":14,"host":"<uuid>","device":"7F3A2C","op":"applied","seq_applied":13,…}` (the `Applied`/`Failed` payload field is `seq` inside the op, serialized as `applied_seq`/`failed_seq` via `#[serde(rename)]`). Append-only; compaction past 256 KiB under the lock keeps the effective record and last outcome per `(host, device)`.
+
+```rust
+// crates/statglass-remote/src/ssh_config.rs (lane a)
+pub struct ResolvedAlias { pub hostname: String, pub user: String, pub port: u16, pub proxy_jump: Option<String>, pub proxy_command: Option<String> }
+pub fn parse_ssh_g(output: &str) -> Result<ResolvedAlias, SshConfigError>;
+pub fn resolve(alias: &str, config: Option<&Path>) -> Result<ResolvedAlias, SshConfigError>;         // /usr/bin/ssh -G [-F config]
+pub fn known_host_keys(host: &str, port: u16, known_hosts: Option<&Path>) -> Result<Vec<BundleHostKey>, SshConfigError>;
+pub fn handover_host(remote: &HandoverInput, config: Option<&Path>) -> Result<BundleHost, HandoverReason>;
+pub struct HandoverInput { pub host_id: HostId, pub name: String, pub os: String, pub lan: Option<String>, pub tailscale: Option<String> }
+#[derive(Debug, thiserror::Error)] pub enum SshConfigError { #[error("ssh -G: {0}")] Resolve(String), #[error("ssh-keygen: {0}")] Keys(String), #[error(transparent)] Io(#[from] std::io::Error) }
+
+// crates/statglass-remote/src/pairing.rs: the hook the Mac fills (lane a calls it in approve)
+pub struct Handover { pub hosts: Vec<BundleHost>, pub unavailable: Vec<UnavailableHost> }
+pub trait HandoverSource: Send + Sync { fn handover(&self, device: DeviceTag, key: &EcdsaP256Public, name: &str) -> Handover; }
+impl PairingHost { pub fn set_handover(&self, source: Arc<dyn HandoverSource>); } // default: none (agent pairing hands over nothing)
+
+// crates/statglass-agent/src/cli.rs and crates/statglass-remote-helper/src/main.rs
+DeviceCommand::AuthorizeKey { key: String, name: String, system: bool, socket: Option<PathBuf> }, DeviceCommand::RevokeKey { tag: String }
+// helper: `authorize-key --key K --name N`, `revoke-key --device T` dispatch to authorize.rs stubs (exit 2)
+
+// crates/statglass-ipc/src/error.rs
+CommandError::Handover { message: String } // resolving, applying or encoding a handover failed
+
+// crates/statglass-ipc/src/mobile.rs
+MobileCall::DecodeBundle { text: String },             // -> BundleReconcile
+MobileCall::AddHandoverHosts { hosts: Vec<OfferedHost> }, // -> null; persisted like Pair
+PairedHost gains `offered: Vec<OfferedHost>, unavailable: Vec<UnavailableHostInfo>`
+pub struct OfferedHost { pub id: HostId, pub name: String, pub os: String, pub user: String, pub port: Option<u16>, pub targets: Vec<MobileTarget>, pub host_keys: Vec<MobileHostKey> }
+pub struct UnavailableHostInfo { pub id: HostId, pub name: String, pub reason: HandoverReasonInfo } // snake_case mirror of HandoverReason
+pub struct BundleReconcile { pub from: HostId, pub new: Vec<OfferedHost>, pub removed: Vec<HostId>, pub changed: Vec<HostId>, pub unavailable: Vec<UnavailableHostInfo> }
+// MobileHost gains #[serde(default)] removed_by_controller: bool ("Removed on your Mac")
+
+// src-tauri/src/handover.rs (lane b), registered in collect_commands!
+#[derive(Clone, Debug, Serialize, specta::Type)]
+pub struct HandoverOffer { pub text: String, pub qr_svg: String, pub hosts: Vec<String>, pub unavailable: Vec<HandoverUnavailableInfo>, pub issued_ms: JsSafeInt }
+#[derive(Clone, Debug, Serialize, specta::Type)]
+pub struct DeviceIntentInfo { pub host: HostId, pub host_name: String, pub device: String, pub device_name: String, pub op: String /* install | revoke */, pub state: String /* pending | failed */, pub reason: Option<String>, pub attempts: u32 }
+pub async fn handover_bundle_start(state: State<'_, HandoverState>) -> Result<HandoverOffer, CommandError>;     // stub: Err(Handover)
+pub async fn device_intents(state: State<'_, HandoverState>) -> Result<Vec<DeviceIntentInfo>, CommandError>;  // stub: Ok(vec![])
+pub async fn retry_device_intents(state: State<'_, HandoverState>) -> Result<(), CommandError>;               // stub: Ok(())
+```
+
+TypeScript: `Transport` gains `handoverBundleStart`, `deviceIntents`, `retryDeviceIntents` (desktop-only, not in `PhoneTransport`); the mock wires `packages/core/src/mock/handover.ts` (stub, lane b); `app-transport.ts` delegates to `native-handover.ts` (stub). The phone's `apps/mobile/src/transport/handover.ts` (lane c) exports `nativeHandover(core): { decodeBundle(text), addHandoverHosts(hosts) }`. `crates/statglass-mobile/src/mobile_core.rs` routes the two calls to `handover.rs` (stubs returning `internal`).
+
+#### Lane a brief
+
+- **Goal:** the host-side and controller-side pieces of handover: the durable intent log, alias resolution into bundle hosts with reasons, `authorize-key`/`revoke-key` on the helper and agent, the approve hook, and the Docker proof.
+- **Behavior:** as Test cases. `handover_host` checks in the precedence listed and never dials. `authorize-key` reuses `DeviceKeys::add_device` with the same command string pairing writes, so a phone sees one line whoever installed it. `approve` calls the `HandoverSource` (if set) after writing this host's device line and before replying; a panicking or slow source is not possible because the trait is synchronous and the Mac's implementation only resolves and records (applying is async, lane b). `examples/handover-bundle.rs` takes `--ssh-config`, `--alias`, `--key` (an `authorized_keys` line), records and applies the install over `ssh -F`, and prints the `SGB1:` text (it uses `encode_bundle` once lane c lands; until then a scaffold-owned stub prints the bundle JSON).
+- **Decisions already made:** a revoke always supersedes an earlier install per `(host, device)`; intents live on the Mac only; the agent pairing hands over nothing.
+- **Out of scope:** the Mac's commands and UI (lane b), the bundle codec and the phone (lane c).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+
+- **Goal:** the Mac records and applies intents, answers approval with other hosts, shows pending intents, and offers "Update iPhone" bundles.
+- **Behavior:** `HandoverState` owns an `IntentLog` at the app data directory and implements `HandoverSource` over the remote registry's enabled hosts (resolution through `ssh_config::handover_host` with the user's own config). An applier task, started in setup, runs pending intents for a host when it connects and every 5 minutes, through the registry's existing SSH runner, with a 20 s timeout per host; results go to `mark_applied`/`mark_failed`. `revoke_device` (phase 5 command) also records revoke intents. Settings: `device-intents/` lists pending and failed intents under Paired devices with Retry; `update-from-mac/` is the "Update iPhone" sheet showing the QR, the hosts and the unavailable list with reasons; both use the Paired devices panel's components and copy style.
+- **Out of scope:** resolution and log internals (lane a), the phone (lane c).
+- **Done when:** the table's Done-when conditions are met, with browser screenshots compared against the Paired devices panel and `plan/design-system.md`, every difference named.
+
+#### Lane c brief
+
+- **Goal:** the phone can take other hosts from a Mac at pairing time and from an Update bundle, and reconcile.
+- **Behavior:** `decode_bundle`/`encode_bundle` (proto) with the round-trip and skew tests; `statglass-session::handover::reconcile(current: &[MobileHost], bundle: &HostBundle) -> BundleReconcile`; facade `DecodeBundle` and `AddHandoverHosts` (persist through the phase 8 `HostStore`). Phone: `pair-hosts.tsx` renders the "Also on <Mac>" chooser from `PairedHost.offered/unavailable`; `after-pair.ts` routes there when the payload had `can_hand_over` and `offered` or `unavailable` is non-empty ("Also add the N hosts this Mac monitors"), else to `/(hosts)`; nothing reads the host's OS; `update-from-mac.tsx` takes Scan or Paste (the phase 8 scanner and paste views, imported), shows the reconcile with checkboxes and "Removed on your Mac" marks, and applies. Copy for each `HandoverReason` lives in `@core/remote-errors` (`handoverReasonText`).
+- **Out of scope:** the Mac (lanes a and b), restyling the pairing views (the polish phases).
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 10: design primitives
+
+Demo:
+- **Simulator, dev route `/dev/primitives` (debug builds only, removed in phase 11):** every primitive on one scrolling screen in light, dark and AX1: the eleven text variants with their sizes, the header button and back chevron with their 44 pt hit areas outlined, a grouped list with plain, value, checkmark, chevron and destructive rows, a swipe row that reveals Remove, a five-row `ReorderList` that lifts with a haptic and reorders, a segmented control whose thumb slides, a sheet, the CPU and memory sparklines with a corner ceiling, mirrored `Sparkbars`, a heat matrix and two ring gauges on the shared fixtures. Scrolling it puts content under the status bar with the system chrome material behind it.
+- **Desktop:** the dev gallery's ring gauge, heat matrix and module hero sections render as before (screenshots before and after, no difference), and `make e2e-perf` is reported before and after.
+- **Text:** no screen renders weight 700; headline figures are SF Pro Rounded with tabular digits.
+
+Depends on: phase 8
+
+Why the primitives are a phase of their own: every surface in phases 11 and 12 renders through them, so building them once keeps those lanes disjoint (`plan/rfc-ios-polish.md` section 5). Phase 10 runs beside phase 9, so it owns none of phase 9's files (`update-from-mac.tsx`, `pair-hosts.tsx`, `pairing/after-pair.ts`, `handover/`, `transport/handover.ts`, `test/handover/`, and phase 9's Rust and desktop files), and its scaffold adds no `MobileCall` variant.
+
+Code facts this phase relies on (checked 2026-11-25 against the tree, stated as the state after phases 7 and 8 land):
+- **Text.** `apps/mobile/src/ui/text.tsx` has seven roles. `largeTitle` and `title` are `font-bold` (700), `cardTitle` is 17 pt, `cardFigure` is 28 pt with `tabular-nums` and no rounded face. The prop is `role`, which shadows React Native's ARIA `role`; 96 call sites in 29 files set it, many through a `{...{ role: "body" }}` spread (architecture M1). Phases 7, 8 and 9 add more call sites, including phase 9's `update-from-mac.tsx` and `pair-hosts.tsx`.
+- **Chrome is hand-drawn per screen.** The hosts route draws an inline SVG gear and a plain-text "Demo" label in `unstable_headerLeftItems` (`(hosts)/index.tsx`). Settings has its own chevron (`settings/index.tsx`), host rows another (`hosts/host-row.tsx`), cards a third (`cards/module-card.tsx`). After phase 7 lane a, header colors come from the navigator theme (`navigationTheme(scheme)`, `useThemeColors()` in `apps/mobile/src/ui/`) and no screen sets `headerTintColor`.
+- **The grouped-list markup is repeated** about 14 times (`rounded-xl border border-border bg-card` with separators) across the settings routes, `host-row`, `host-settings`, the lock screens and the debug screen (architecture M3).
+- **No reorder, sheet or segmented primitive exists.** `module/range-control.tsx` is a bordered row of `Pressable`s. `host/card-menu.tsx` is a React Native `Modal` with "Move up"/"Move down".
+- **Dependencies.** Installed: `expo-haptics`, `expo-blur`, `react-native-gesture-handler` ~3.3, `react-native-reanimated` 4.7.1, `react-native-svg`. Not installed: `expo-symbols` (the RFC's icon source), `expo-localization` (phase 12's temperature unit), `react-native-reorderable-list`. `ActionSheetIOS` ships with React Native.
+- **Axis ticks.** Core has `niceCeiling` (`chart-math/nice-ceiling.ts`) and the desktop has `ceilingAxis`, `windowTicks` and `historyTicks` in `src/app/widgets/lib/chart-labels.ts`. No core module produces labelled value and time ticks.
+- **Module specs.** `CPU_HERO`, `GPU_HERO`, `MEMORY_PRESSURE_HERO`, `BATTERY_HERO`, `POWER_HERO`, `NETWORK_HERO`, `memoryUsedHero` and `memoryHero` live in `src/app/components/module-hero.ts` (181 lines, with a test), imported by ten desktop files.
+- **Heat and ring.** The desktop renders `src/app/widgets/heat-matrix.tsx` (310 lines, `HeatMatrixProps`, `HeatScaleLegend`) and `ring-gauge.tsx` (123 lines, `RingGaugeProps`, sizes 88 and 112). Their math is partly in core already (`chart-math/heatmap.ts` `heatmapAlpha`, `chart-math/ring.ts` `ringArcs`); labels, legend, spoken text and cell layout are in the components. `core-heatmap.tsx` and `ring-stat-card.tsx` compose them. The phone has neither.
+- **Sparklines.** The phone's `widgets/stream-area.tsx` (over core `streamAreaModel`) places its ceiling label above the plot, about 40 pt from the top gridline on the CPU card (audit item 8). `widgets/mirror-bars.tsx` draws both directions in the full-saturation accent with no labels (item 12). `test/widgets/bars/bars.test.tsx` asserts `className` and `testID` order (tests audit L3).
+- **Shared-package rules.** `packages/core/README.md`: pull never push, fork instead of flag, tested once and rendered twice; forks are listed under "Forks".
+
+Test cases:
+
+**Scaffold: text variants**
+- `apps/mobile/test/ui/text.test.tsx`: each variant renders the size, weight and style of the RFC 1.4 table (`plan/rfc-ios-polish.md` section 3): no variant has weight 700; `cardFigure` and `heroFigure` set `fontFamily: "ui-rounded"` and `fontVariant: ["tabular-nums"]`; `value` and `axis` are tabular; `axis` sets `maxFontSizeMultiplier` 1.5; `largeTitle`, `title` and `onboardingTitle` announce as headers.
+- A grep test fails on a `{...{ role:` spread anywhere in `apps/mobile/src`.
+
+**Chrome (lane a)**
+- `HeaderButton`: a 28 pt icon inside a 44 by 44 pt pressable, tinted `foreground` from `useThemeColors()`, with no fill; its accessibility label is required by type.
+- `BackButton`: chevron only, no text, `accessibilityLabel="Back"`, 44 pt; pressing calls `router.back()`. `useAccessibilityEscape(onEscape)` sets `onAccessibilityEscape` on the screen root and calls back.
+- `screenOptions(colors)`: `headerTransparent: true`, `headerBlurEffect: "systemChromeMaterial"`, `headerLargeTitleShadowVisible: false`, `headerBackVisible: false` with `headerLeft` rendering `BackButton` on pushed screens, title style weight `"600"`, and the same values in light and dark except colors.
+- `ScreenScroll`: a `ScrollView` with `contentInsetAdjustmentBehavior="automatic"`; a `headerShown: false` variant clips at the top safe-area inset instead.
+- `Icon`: every `IconName` maps to an SF Symbol through `expo-symbols`; a test renders each name. No `Svg` chevron or gear remains in `ui/`.
+- `GroupedList`, `ListSection` (header in `cardTitle`, optional footer in `caption`), `ListRow` (glyph, title, subtitle, value right-aligned in `value`, accessory chevron or checkmark, destructive variant in `--color-destructive`, never cyan; at least 44 pt tall at AX1); a checkmark row announces as selected.
+- `SwipeRow`: a trailing destructive action through Gesture Handler's `ReanimatedSwipeable`; VoiceOver gets the same action as a custom action.
+- `DemoBadge`: a "Demo" chip button; pressing opens `ActionSheetIOS` with "Exit demo" (destructive) and Cancel; Exit calls `onExit`.
+
+**Interaction (lane b)**
+- `ReorderList` over `react-native-reorderable-list` (or the fallback named in the scaffold's report):
+  - a long press lifts the item with a medium haptic, moving reorders, and the drop fires a light haptic and `onReorder(ids)` once with the new order;
+  - a long press released without movement calls `onReleaseWithoutMove(id)` and not `onReorder`;
+  - VoiceOver custom actions "Move up" and "Move down" call `onReorder` with the item moved one place; the first item has no "Move up", the last no "Move down";
+  - `nested` renders `NestedReorderableList` for use inside a `ScreenScroll`.
+- `SegmentedControl`: `accessibilityRole="tablist"`, each segment a 44 pt `tab` with `selected` state; the thumb slides over the motion token's 150 ms and moves at once under Reduce Motion or Low Power Mode (`ui/motion.tsx`).
+- `Sheet`: a native page sheet (`Modal` with `presentationStyle="pageSheet"`) with a title and a Done button; Done and the swipe-down both call `onClose`.
+
+**Axis ticks and module specs (lane c)**
+- `valueTicks(ceiling, format, opts)`: 0, the midpoint and the ceiling for percent, bytes, rate and watts, with labels from `@core/format`; a ceiling of 0 or a non-finite one returns one tick at 0.
+- `timeTicks(fromMs, toMs, widthPx, opts)`: labels at clock-aligned steps for 5 m, 1 h, 24 h, 7 d and 30 d, in host time through `clockOffsetMs`; fewer ticks at larger `captionScale` so labels never overlap at a given width; the right edge is labelled "now" only when `toMs` is now.
+- `packages/core/src/module-hero.test.ts` is the moved `src/app/components/module-hero.test.ts`, unchanged in assertions. Desktop importers keep `~/components/module-hero`, now a re-export; `bun run test -- src/app` passes unchanged.
+
+**Heat and ring models (lane d)**
+- `heatMatrixModel` and `ringGaugeModel` produce, from `widget-models/fixtures/heat-ring.ts`, the cells, alphas, legend labels, current values and spoken text the desktop components render today; one test file asserts the models.
+- The desktop `heat-matrix.tsx` and `ring-gauge.tsx` render the models; `src/app/widgets/heat-matrix.test.tsx`, `ring-gauge.test.tsx`, `core-heatmap.test.tsx` and `ring-stat-card.test.tsx` pass unchanged; the gallery renders unchanged.
+- Phone twins `widgets/heat-matrix.tsx` and `widgets/ring-gauge.tsx` render the same fixtures; tests assert accessible names and values from the model (not class names), and that a `null` cell is drawn as a gap, not a zero.
+- `formatTemperature` units pass through: a model given `units: "F"` labels the legend and current values in °F.
+
+**Sparklines (lane e)**
+- `StreamArea` with `variant="spark"`: no axes, the ceiling label in `axis` at the top-left corner on the top gridline; with `variant="chart"` the ceiling label sits on the top gridline, not above it (item 8). Accessible values unchanged from phase 7's card models.
+- `Sparkbars`: mirrored bars on the sparkline scale, download at ramp step 1 below the axis and upload at ramp step 2 above, each direction autoscaled; a `null` bucket draws nothing.
+- `MirrorBars` (the card's): ramp steps 1 and 2 instead of the full accent, with "↓ Download" and "↑ Upload" labels from the card model (item 12).
+- `bars.test.tsx` drops its `className` assertions and keeps the heights from the model (tests audit L3).
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | apps/mobile/src/ui/header-button.tsx, apps/mobile/src/ui/back-button.tsx, apps/mobile/src/ui/screen-options.ts, apps/mobile/src/ui/screen-scroll.tsx, apps/mobile/src/ui/icons.tsx, apps/mobile/src/ui/grouped-list.tsx, apps/mobile/src/ui/list-row.tsx, apps/mobile/src/ui/swipe-row.tsx, apps/mobile/src/ui/demo-badge.tsx, apps/mobile/test/ui/chrome/ | contracts, `plan/rfc-ios-polish.md` 3, 4.1, 4.7; `plan/design-system.md`; audit-architecture M3 | 44 pt and labelled buttons, blur material, automatic insets, every icon, list rows, swipe action, demo sheet | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/ui`, `make mobile-check`; simulator screenshots of `/dev/primitives` chrome rows in light, dark and AX1, and of a scrolled screen with content under the status bar, compared with the popover header |
+| b | M | apps/mobile/src/ui/reorder-list.tsx, apps/mobile/src/ui/segmented-control.tsx, apps/mobile/src/ui/sheet.tsx, apps/mobile/test/ui/interaction/ | contracts, RFC 4.5, 4.7, 5; the scaffold's drag-list and zeego report; `apps/mobile/src/ui/motion.tsx` | reorder, release-without-move, VoiceOver moves, segment thumb, sheet close | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/ui`, `make mobile-check`; simulator recording of a drag reorder and a release-without-move, screenshots in light, dark and AX1 |
+| c | M | packages/core/src/chart-math/axis-ticks.ts, packages/core/src/chart-math/axis-ticks.test.ts, packages/core/src/module-hero.ts, packages/core/src/module-hero.test.ts, src/app/components/module-hero.ts, src/app/components/module-hero.test.ts | contracts, `src/app/widgets/lib/chart-labels.ts`, `packages/core/src/chart-math/nice-ceiling.ts`, `packages/core/README.md` | ticks on four units and five ranges, host-clock labels, moved hero test unchanged | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/chart-math packages/core/src/module-hero.test.ts src/app`, `bun run typecheck`, `make mobile-check` |
+| d | L | packages/core/src/widget-models/heat-matrix.ts, packages/core/src/widget-models/ring-gauge.ts, packages/core/src/widget-models/heat-ring.test.ts, packages/core/src/widget-models/fixtures/heat-ring.ts, src/app/widgets/heat-matrix.tsx, src/app/widgets/ring-gauge.tsx, apps/mobile/src/widgets/heat-matrix.tsx, apps/mobile/src/widgets/ring-gauge.tsx, apps/mobile/test/widgets/heat-ring/ | contracts, `.claude/skills/widget-model/`, `packages/core/README.md`, `src/app/widgets/core-heatmap.tsx`, `ring-stat-card.tsx` | models tested once, desktop tests unchanged, phone twins on the same fixtures | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/widget-models src/app/widgets`, gallery and render-count e2e, `make e2e-perf` (before and after), `bun run --cwd apps/mobile test -- test/widgets`, `make mobile-check`; desktop gallery screenshots unchanged; phone twins in light, dark and AX1 next to the gallery |
+| e | M | apps/mobile/src/widgets/stream-area.tsx, apps/mobile/src/widgets/mirror-bars.tsx, apps/mobile/src/widgets/sparkbars.tsx, apps/mobile/test/widgets/bars/, apps/mobile/test/widgets/charts/, packages/core/README.md | contracts, `packages/core/src/widget-models/stream-area.ts`, `mirror-bars.ts`, `plan/design-system.md` (mirrored bars, ramp steps) | spark variant, ceiling on the gridline, ramp-step bars with labels, L3 cleanup | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/widgets`, `make mobile-check`; simulator screenshots of the CPU and Network cards and the sparklines in light, dark and AX1 next to the popover |
+
+Ownership:
+- **The scaffold owns `text.tsx`, every `Text` call site and the manifests.** The rename touches 29 files across every lane's area, so it happens once before dispatch. `apps/mobile/package.json`, `bun.lock`, `apps/mobile/jest.config.cjs` and `apps/mobile/app.config.ts` change only in the scaffold.
+- **`role` stays as an alias until phase 11.** Phase 9 runs beside this phase and its files use `role`. The scaffold keeps `role?: TextVariant` on `TextProps` as an alias for `variant` (typed, not a spread), renames every call site outside phase 9's files, and phase 11's scaffold, after phase 9 has merged, renames phase 9's call sites and deletes the alias. This is the one transitional shim in the run; it exists only so phase 9's lane doesn't conflict with this scaffold.
+- **Lane e owns `packages/core/README.md`.** It lists a fork there if the spark variant needs a model option only the phone uses. Lane d's models are shared, not forks; if lane d needs a README line it reports the text and the orchestrator adds it at landing.
+- **No lane edits `chart-math/index.ts`.** Callers import `@core/chart-math/axis-ticks` by path.
+- **The dev route `/dev/primitives`** (`apps/mobile/src/app/dev/primitives.tsx`, `__DEV__` only) is scaffold-owned and renders each lane's stub, so each lane's screenshot shows its own primitive without touching a shared file. Phase 11's lane a deletes it.
+
+#### Scaffold contracts (phase 10)
+
+Inline before dispatch, in this order, each step checked before the next:
+
+1. **Dependencies.** `bunx expo install expo-localization expo-symbols react-native-reorderable-list` in `apps/mobile`, then `bun install`. Confirm `react-native-reorderable-list`'s peer ranges cover Reanimated 4.7 and Gesture Handler 3.3, add it to jest's `transformIgnorePatterns` if needed, render a two-item list under jest and in a simulator build. If it doesn't fit, stop and report: the fallback is a `ReorderList` written on Reanimated and Gesture Handler directly, which replaces lane b with an L lane of its own. Add a plugin entry to `app.config.ts` only if `expo install` asks for one (`expo-localization` doesn't need one to read the locale).
+2. **zeego check.** Read zeego's current documentation once for a lift-then-drag handoff from a native context menu to a Gesture Handler or Reanimated drag. If it documents one, switch the card menu plan to zeego, install it here, and say so in the Log; otherwise record "ActionSheetIOS on release, per RFC 4.5" in the Log.
+3. **Text.** Write the full `ui/text.tsx` (below) and `test/ui/text.test.tsx`, rename `role` to `variant` at every call site outside phase 9's files, and remove every `{...{ role: ... }}` spread.
+4. **Move `host-settings.tsx`.** `apps/mobile/src/hosts/host-settings.tsx` moves to `apps/mobile/src/settings/host-settings.tsx`; `app/settings/hosts.tsx` and its test imports follow. Phase 11 lane a owns `src/settings/`, lane d owns `src/hosts/`.
+5. **Stubs** for every signature below, the `/dev/primitives` route, then `bun run typecheck`, `make mobile-check` and `bun run test -- packages/core`.
+
+```ts
+// apps/mobile/src/ui/text.tsx (scaffold, complete; RFC 3)
+export type TextVariant =
+  | "largeTitle" | "title" | "onboardingTitle" | "cardTitle" | "cardFigure" | "heroFigure"
+  | "body" | "label" | "value" | "caption" | "axis";
+// 34/600, 22/600, 28/600, 13/600, 15/600 rounded tabular, 28/600 rounded tabular,
+// 17/400, 13/400 muted, 13/400 tabular, 12/400 muted, 11/400 muted tabular (maxFontSizeMultiplier 1.5)
+export type TextProps = Omit<NativeTextProps, "role"> & { variant: TextVariant; /** removed in the phase 11 scaffold */ role?: TextVariant };
+export function Text(props: TextProps): JSX.Element;
+
+// apps/mobile/src/ui/icons.tsx (lane a)
+export type IconName = "chevron.left" | "chevron.right" | "chevron.down" | "chevron.up" | "gearshape" | "xmark"
+  | "ellipsis" | "checkmark" | "line.3.horizontal" | "apple.logo" | "server.rack" | "doc.on.doc";
+export function Icon(props: { name: IconName; size?: number; color?: string; accessibilityLabel?: string }): JSX.Element;
+// apps/mobile/src/ui/header-button.tsx, back-button.tsx, screen-options.ts, screen-scroll.tsx (lane a)
+export function HeaderButton(props: { icon: IconName; accessibilityLabel: string; onPress(): void }): JSX.Element;
+export function BackButton(props: { onPress?: () => void }): JSX.Element; // default: router.back()
+export function useAccessibilityEscape(onEscape?: () => void): { onAccessibilityEscape(): void };
+export function screenOptions(colors: ThemeColors, opts?: { largeTitle?: boolean; root?: boolean }): NativeStackNavigationOptions;
+export function ScreenScroll(props: ScrollViewProps & { headerShown?: boolean }): JSX.Element;
+// apps/mobile/src/ui/grouped-list.tsx, list-row.tsx, swipe-row.tsx, demo-badge.tsx (lane a)
+export function GroupedList(props: { children: ReactNode }): JSX.Element;
+export function ListSection(props: { title?: string; footer?: string; children: ReactNode }): JSX.Element;
+export interface ListRowProps {
+  title: string; subtitle?: string; glyph?: IconName; value?: string;
+  accessory?: "chevron" | "checkmark" | "none"; selected?: boolean; destructive?: boolean;
+  onPress?: () => void; accessibilityHint?: string; trailing?: ReactNode;
+}
+export function ListRow(props: ListRowProps): JSX.Element;
+export function SwipeRow(props: { children: ReactNode; actionLabel: string; onAction(): void }): JSX.Element;
+export function DemoBadge(props: { onExit(): void }): JSX.Element;
+
+// apps/mobile/src/ui/reorder-list.tsx, segmented-control.tsx, sheet.tsx (lane b)
+export interface ReorderListProps<T> {
+  data: readonly T[]; keyOf(item: T): string; itemLabel(item: T): string; nested?: boolean;
+  renderItem(info: { item: T; index: number; isActive: boolean }): ReactElement;
+  onReorder(ids: string[]): void; onReleaseWithoutMove?(id: string): void;
+}
+export function ReorderList<T>(props: ReorderListProps<T>): JSX.Element;
+export function SegmentedControl<V extends string | number>(props: {
+  segments: readonly { value: V; label: string }[]; value: V; onChange(value: V): void; accessibilityLabel: string;
+}): JSX.Element;
+export function Sheet(props: { visible: boolean; title: string; onClose(): void; children: ReactNode }): JSX.Element;
+
+// packages/core/src/chart-math/axis-ticks.ts (lane c)
+export interface AxisTick { value: number; frac: number; label: string }
+export function valueTicks(ceiling: number, format: (value: number) => string, opts?: { count?: number }): AxisTick[];
+export function timeTicks(fromMs: number, toMs: number, widthPx: number,
+  opts: { clockOffsetMs: number; nowMs: number; captionScale?: number }): AxisTick[];
+// packages/core/src/module-hero.ts (lane c): moved unchanged; src/app/components/module-hero.ts re-exports it
+
+// packages/core/src/widget-models/heat-matrix.ts, ring-gauge.ts (lane d); shapes follow today's desktop props
+export interface HeatMatrixInput {
+  rows: readonly { key: string; label: string; values: readonly (number | null)[] }[];
+  domain: readonly [number, number]; format(value: number): string;
+}
+export interface HeatMatrixModel {
+  cells: readonly { row: number; col: number; alpha: number | null }[];
+  rows: readonly { key: string; label: string; current: string }[];
+  legend: { min: string; max: string }; spoken: string;
+}
+export function heatMatrixModel(input: HeatMatrixInput): HeatMatrixModel;
+export interface RingGaugeInput { value: number | null; max: number; label: string; format(value: number): string; secondary?: string }
+export interface RingGaugeModel { arcs: readonly RingArc[]; figure: string; label: string; secondary: string | null; spoken: string }
+export function ringGaugeModel(input: RingGaugeInput, geometry: RingGeometry): RingGaugeModel;
+// apps/mobile/src/widgets/heat-matrix.tsx, ring-gauge.tsx (lane d): HeatMatrix({ model, height }), RingGauge({ model, size })
+
+// apps/mobile/src/widgets/stream-area.tsx (lane e): StreamArea gains `variant?: "chart" | "spark"` (default "chart")
+// apps/mobile/src/widgets/sparkbars.tsx (lane e)
+export function Sparkbars(props: { data: MirrorBarsData; height: number; accessibilityLabel: string }): JSX.Element;
+```
+
+#### Lane a brief
+- **Goal:** one set of navigation chrome and list primitives, so every screen in phase 11 reads as one app and no content draws under the status bar without a material behind it.
+- **Interface:** `Icon`, `HeaderButton`, `BackButton`, `useAccessibilityEscape`, `screenOptions`, `ScreenScroll`, `GroupedList`, `ListSection`, `ListRow`, `SwipeRow`, `DemoBadge`, as in the scaffold contracts.
+- **Behavior:**
+  - Colors only through `useThemeColors()` (phase 7 lane a); no literal colors, no `themeColors[...]` lookups.
+  - `screenOptions` returns the shared header config: `headerTransparent`, `headerBlurEffect: "systemChromeMaterial"`, `headerLargeTitleShadowVisible: false`, title weight `"600"` (RFC 3: weight 590 renders as `"600"`), `headerBackVisible: false` plus `headerLeft: () => <BackButton />` unless `root`. Native edge swipe-back stays on (`gestureEnabled: true`).
+  - `ScreenScroll` sets `contentInsetAdjustmentBehavior="automatic"` and the screen background; with `headerShown={false}` it pads by the top safe-area inset and clips instead.
+  - `Icon` renders `SymbolView` from `expo-symbols` with the theme tint; jest renders it through the module's own jest mock if it ships one, else a test helper in `test/ui/chrome/`.
+  - `ListRow` is the grouped-list row for every settings page: min height 44 pt, title in `body`, subtitle in `caption`, value in `value` right-aligned, chevron or checkmark accessory, destructive rows in `--color-destructive` and never cyan.
+  - `SwipeRow` uses Gesture Handler's `ReanimatedSwipeable`, a destructive trailing action, and the same action as an `accessibilityActions` entry.
+  - `DemoBadge` is a chip-styled `Pressable` ("Demo", `label` variant in a bordered pill), opening `ActionSheetIOS.showActionSheetWithOptions` with "Exit demo" (`destructiveButtonIndex`) and "Cancel".
+- **Decisions already made:** chevron-only back with no label and no glass fill, tinted `foreground`, in a 44 pt hit area, with `accessibilityLabel="Back"` and the escape gesture; native edge swipe-back stays; the host pager stays, so the chevron stays visible (the user, 2026-11-25). Header buttons are 28 pt stroke icons with no glass fill. Scroll-edge material through the native blur, not a custom view (RFC 4.1, item 22). Icons come from SF Symbols through `expo-symbols`, replacing three chevron paths and the inline gear (architecture M3).
+- **Out of scope:** adopting the primitives in screens (phase 11), the reorder list (lane b), text (scaffold).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** the drag-reorder, segmented control and sheet primitives the card stack, Settings > Hosts and the range control use.
+- **Interface:** `ReorderList`, `SegmentedControl`, `Sheet`.
+- **Behavior:**
+  - `ReorderList` wraps `react-native-reorderable-list` (`ReorderableList`, or `NestedReorderableList` when `nested`), with `onDragStart` firing `Haptics.impactAsync(Medium)` and `onDragEnd` `Haptics.impactAsync(Light)`. Release-without-move is detected from the drag events (start and end at the same index with no `onReorder`) and calls `onReleaseWithoutMove`. Each item carries `accessibilityActions` "Move up"/"Move down" (omitted at the ends) built from `itemLabel`.
+  - `SegmentedControl`: a compact track (no heavy border box, audit item 19) with a Reanimated thumb; duration from the motion tokens (`ui/motion.tsx`), 0 under Reduce Motion or Low Power Mode.
+  - `Sheet`: React Native `Modal` with `presentationStyle="pageSheet"`, a `title` header and Done.
+  - If the scaffold reported the library doesn't fit, this lane is replaced by the L fallback lane named in the scaffold report.
+- **Decisions already made:** `react-native-reorderable-list` over a hand-written list (maintained, on Reanimated and Gesture Handler, has a nested variant); haptics from `expo-haptics`; one primitive for the card stack and Settings > Hosts (RFC 4.5, 4.7, 5).
+- **Out of scope:** the card action menu (phase 11 lane c1 uses `ActionSheetIOS` on `onReleaseWithoutMove`), persistence of orders (the callers).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+- **Goal:** labelled value and time ticks, and the module hero specs, available to both apps from core.
+- **Interface:** `valueTicks`, `timeTicks`, the moved `module-hero.ts`.
+- **Behavior:**
+  - `valueTicks` follows the design-system Y-scale rule: a fixed domain's ceiling or a `niceCeiling` passed in; labels through the caller's formatter.
+  - `timeTicks` uses `@core/host-clock` for host time and `@core/time-grid` steps; label width is estimated with `CHART_CAPTION_CHAR_WIDTH_PX` times `captionScale`, as the annotation model does, so the same rule works at AX sizes.
+  - `module-hero.ts` moves to core with its test, unchanged; `src/app/components/module-hero.ts` becomes `export * from "@core/module-hero"`. It has no React or desktop import today; if one appears, the lane stops and reports.
+- **Decisions already made:** the ticks are a shared model the desktop adopts later (RFC 5); the move happens now because the phone is the second consumer (README guard 1).
+- **Out of scope:** desktop adoption of the ticks, any chart renderer.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane d brief
+- **Goal:** the Power & Sensors rings and the thermal and per-core heat matrices are decided once in core and rendered by both apps.
+- **Interface:** `heatMatrixModel`, `ringGaugeModel`, the phone `HeatMatrix` and `RingGauge`.
+- **Behavior:**
+  - Follow the `widget-model` skill, one widget per commit: extract the label, legend, current-value, spoken-text and cell logic from the desktop components into the models, over the existing `heatmapAlpha` and `ringArcs`. The desktop components render the models and keep their layout, motion and DOM.
+  - The models take measurable inputs (values, domain, formatter, geometry), never a platform flag. Temperature unit is a formatter input (`formatTemperature(v, { units })`), so the phone's locale unit in phase 12 needs no model change.
+  - The phone twins draw with `react-native-svg`, colors from the ramp tokens, gaps as gaps.
+- **Decisions already made:** shared widget models, tested once and rendered twice (`packages/core/README.md`); rings and the SoC heatmap port to the phone (the user's Power & Sensors decision).
+- **Out of scope:** the Power & Sensors and CPU pages (phase 12), the desktop's `core-heatmap.tsx` and `ring-stat-card.tsx` (unchanged; they compose the changed components).
+- **Done when:** the table's Done-when conditions are met, with `make e2e-perf` before and after reported.
+
+#### Lane e brief
+- **Goal:** the sparklines the hosts-list rows need, and the CPU and Network card charts drawn the popover's way.
+- **Interface:** `StreamArea` `variant`, `Sparkbars`, `MirrorBars` (existing props).
+- **Behavior:**
+  - `variant="spark"`: no time axis, line plus area at the module accent, the ceiling label in the `axis` variant at the top-left corner on the top gridline, sized for a 36 pt plot.
+  - `variant="chart"` (default): the ceiling label moves onto the top gridline (audit item 8). Height stays the caller's.
+  - `Sparkbars` and `MirrorBars` draw download at ramp step 1 below the axis and upload at ramp step 2 above, from `mirrorBarsModel`; `MirrorBars` shows "↓ Download" and "↑ Upload" labels from its data (item 12).
+  - A model option only the phone needs is a fork listed under "Forks" in `packages/core/README.md` (RFC 5).
+- **Decisions already made:** sparklines are phone twins of the existing `streamAreaModel`/`mirrorBarsModel` (RFC 5); ramp steps 1 and 2 per `plan/design-system.md`.
+- **Out of scope:** the row layout and its data (phase 11 lane d), card layout (phase 11 lane c2).
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 11: surfaces
+
+Demo:
+- **Simulator, demo hosts, light, dark and AX1:** the welcome screen shows a live labelled "Example host" preview of the CPU, Memory and Network cards ticking at 1 Hz, one sentence, "Add a host" and "Try demo hosts". "Try demo hosts" lands on Hosts, where each row shows the name, OS glyph, status and three accent charts (CPU, memory, network) with distinct values per host; the offline host shows dashes and "Offline since HH:MM". The "Demo" chip opens "Exit demo", which returns to welcome.
+- **Host screen:** the host name is the large title and collapses on scroll, with the chevron-only back; scrolled cards pass under the status bar with the chrome material behind them. CPU, Memory, GPU and Network fit one iPhone 18 Pro screen; the chevron toggles density, a body tap opens the module, long-press-and-move reorders with haptics, long-press-and-release opens the action sheet.
+- **Module page (generic per module):** a 5m/1h/More segmented control, a stat strip with avg and peak from the history answer, a ticked chart with hatched gaps and pill annotations, scrubbing with a pinned readout, the live process table (on a host that sends processes) and the module's own events. The Network page shows no power event.
+- **Settings:** Hosts is one grouped list; a row opens the host detail page; swipe-to-delete asks before removing; press-hold-and-drag reorders. Appearance has checkmarks. The settings back control matches the host screen's.
+- **Pairing:** each step (priming, denied, unavailable, paste, preview with and without `can_hand_over`, waiting, success, failure) in the shared layout with actions above the home indicator; the setup guidance sits before scanning. `update-from-mac` and `pair-hosts` use the shared header.
+
+Depends on: phase 9, phase 10
+
+Code facts this phase relies on (checked 2026-11-25; the state after phases 7 to 10 land, naming the contract each relies on):
+- **Headers.** `(hosts)/_layout.tsx` sets `headerLargeTitle: true` for every screen and `title: ""` on `[host]/index` (audit item 1); `HostScreen` then draws its own title in content. After phase 7 lane a the colors come from the navigator theme; after phase 10 lane a `screenOptions(colors)` and `BackButton` exist but no layout uses them.
+- **Settings is a nested stack with a hand-drawn back.** `app/_layout.tsx` mounts `settings` with `headerShown: false`, so `settings/index.tsx` draws its own chevron (architecture I6). `settings/_layout.tsx` declares six screens. Phase 10's scaffold moved `host-settings.tsx` to `apps/mobile/src/settings/`; it renders every host as a card with a cyan Rename, arrows and a cyan Remove, and the "Update from Mac" row phase 8 lane c added.
+- **Phase 9's screens set their own headers.** `update-from-mac.tsx` and `pair-hosts.tsx` (phase 9 lane c) set their own `Stack.Screen` options and still use `role` on `Text` (phase 10's alias).
+- **The demo lives by route names.** `DemoLifetime` in `data/demo.ts` keeps the demo transport while a route named `"demo"` or `"(hosts)"` is on the stack (architecture M8). `test/first-launch.test.tsx` spies on `setInterval`/`clearInterval` (tests M4).
+- **Welcome and pairing.** After phase 8 lane c, `app/index.tsx` is a placeholder welcome with "Add a host" and "Try demo hosts", and it imports `ActionButton` from `src/components/` (architecture I9; the only other importer, `pair-linux.tsx`, was deleted in phase 8). The pairing views are in `pairing/screens/` (`choose-method`, `scanner`, `paste`, `preview`, `waiting`, `result`), the logic in `pairing/flow.ts` (phase 8 lane c) and `after-pair.ts` (phase 9 lane c). `PairingState { hosts, key_changed }` is a `PhoneTransport` call (phase 8 scaffold).
+- **The card stack rebuilds every tick.** `host/host-page.tsx` subscribes to six selections and two streams in one component and runs `buildCardStack` each render (architecture I5); card dimming uses React Native `Animated` (M14). `host/card-menu.tsx` is a `Modal` with "Move up"/"Move down". `test/host/host-screen.test.tsx` spies on component exports for render counts (tests M2) and on `Animated.timing` (L2), and its first test covers seven behaviors (L4). Card content comes from `packages/core/src/popover/cards/` (phase 7 lane g, `CardContent`).
+- **Chart wording is written twice.** `data/live-stream.ts` builds "CPU, last 60 seconds, now 18%" itself and holds figures on `performance.now()`; the desktop's `src/app/hooks/use-chart-label.ts` adds a trailing period and holds per 10 s bucket of the stream edge (architecture I4).
+- **Connection wording** is `phoneProblem` and `hostStatusSummary` in `packages/core/src/phone-connection.ts` (phase 7 lane f); the banner is in `apps/mobile/src/connection/`. The pill reads `status.demand` (phase 8 lane d: `compact` when `live_allowed` is false) but has no wording for it yet.
+- **Hosts list.** Rows (`hosts/host-row.tsx`) show one CPU sparkline pinned to the floor and values that aren't accent-tied (items 15, 16). The row data is one `useHostHistory` query for `cpu.total`, `mem.used`, `net.rx_total`, `net.tx_total` over 30 minutes (phase 7 lane k) with each `HostSummary` appended (phase 8 lane d, `useFocusDemand(host, "compact")`). `test/hosts/hosts-list.test.tsx` spies on `StreamArea` (tests M1).
+- **Demo data.** Every demo host reports the same vitals from `packages/core/src/mock/remote.ts`; `mock/history.ts`'s `mockGaps` always cuts past nights and, with `sleep-gap`, an hour gap; `mock/host-history.ts` (phase 7 lane k) answers `hostHistory` from the same generator for every host. Desktop tests read the default mock.
+- **Module page.** `module/index.tsx` is one 153-line screen with one 0-100 % chart, a custom bordered `RangeControl` over `PHONE_RANGES` (`data/history.ts`), `ScrubbableChart`, and `EventsList`. Phase 7 lane k's hooks (`useModuleHistory`, `useEvents`, `useHostHistory`) read one `hostHistory` answer that carries `stats` and the module's events, filtered on the host by `EventDetail::module()` (phase 7 lane j1). A failed status read shows only the error line (errors L3). `test/module/module-screen.test.tsx` sets an unused `latencyMs` (tests L6).
+- **Annotations already have a shared layout model.** `packages/core/src/widget-models/chart-annotation.ts` `annotationsModel` places markers in rows through `layoutMarkers` and merges collisions into "+N"; the desktop's `src/app/widgets/chart-annotation.tsx` uses it. The phone's `widgets/chart-annotations.tsx` draws the `marker` variant at `top: 12` inside the plot, so labels sit over the series (audit item 23).
+- **Process interest.** `useProcessDemand(host, view)` in `data/processes.ts` sets and clears `MobileCall::SetProcessInterest` on focus and blur (phase 8 lane d). `ProcessInterest`, `FULL_TABLE`, `unionViews` (`@core/process-interest`) and `groupLiveProcesses` (`@core/process-groups`) are the desktop's.
+- **Titles.** `HISTORY_MODULES` (`data/history.ts`) names the power module "Power".
+
+Test cases:
+
+**Navigation and settings (lane a)**
+- Headers (`test/navigation/`):
+  - The hosts list keeps the large title "Hosts"; the host screen's large title is the host name (set by the host screen), with no in-content title; module pages use a standard title.
+  - Every pushed screen (host, module, settings pages, host detail, pairing, `update-from-mac`, `pair-hosts`, debug) renders `BackButton` and sets `headerBlurEffect: "systemChromeMaterial"` through `screenOptions`; a grep test finds no `headerTintColor`, `headerBackTitle` or hand-drawn chevron outside `ui/`.
+  - The hosts list's header has the settings `HeaderButton` and, in demo mode, the `DemoBadge`; "Exit demo" calls `useDemo().exit()`.
+  - The `/dev/primitives` route is gone.
+- Settings presentation: `settings/_layout.tsx` is deleted and the settings screens join the root stack, so every settings page gets the native back gesture and `BackButton`; `settings/index.tsx` draws no chevron (architecture I6).
+- Settings > Hosts:
+  - One grouped list; each row shows the OS glyph, name and the `hostStatusSummary` subtitle and opens `/settings/host/<id>`.
+  - Swipe-to-delete opens an action sheet whose "Remove <host>" is destructive and says this iPhone stops monitoring the host, whose history stays on the host; confirming calls `removeHost` and drops the row; Cancel leaves the host and makes no call.
+  - Drag reorder persists `hostOrder` across a relaunch (the phase 8 persistence adapter); VoiceOver "Move up"/"Move down" reorder.
+- Host detail (`settings/host/[host]`): Rename is an inline field that saves on submit; Routes are read-only rows; Re-pair pushes `/pair`; "Update from Mac" pushes `/update-from-mac`; Remove is a destructive full-width row at the bottom with the same confirmation.
+- This iPhone: the key line in a monospace caption with Copy; App Lock as a switch row. Data: one switch, "Live updates on cellular", with the footer "When this is off, the host screen updates every 5 s on cellular." Appearance: three checkmark rows (System, Light, Dark), no link-colored text. About: label/value rows with values right-aligned in `value`, and the licenses link.
+- Tests audit L1 and L4: `about.test.tsx` keeps the no-build-info case and `transport.test.ts`'s duplicate is not this lane's (left); `settings.test.tsx` is split per page; the Appearance round trip in `test/data/seam.test.tsx` is deleted here as the duplicate of the settings test (the lane owns that file for the deletion only).
+
+**Front door (lane b)**
+- Welcome:
+  - Renders the live preview (`CpuCard`, `MemoryCard`, `NetworkCard` on a mock transport's live fixture) labelled "Example host" with one VoiceOver label, one sentence, "Add a host" (primary, pushes `/pair`) and "Try demo hosts" (secondary, starts the demo).
+  - The preview ticks only while the welcome screen is focused: after blur, advancing fake time 5 s delivers no frame (the transport has no subscriber), and focus resumes it. Under Reduce Motion or Low Power Mode it shows one still frame.
+  - The title uses `onboardingTitle`; there is no weight 700 and no raw `react-native` `Text` (architecture I9).
+- States: first launch shows welcome; "Exit demo" returns to welcome and clears the demo transport; `pairingState` with `key_changed: true` shows the restore notice ("This iPhone needs to pair again…") with "Pair again", which pushes `/pair`.
+- Demo lifetime (architecture M8): `DemoProvider` starts and ends the demo through `useDemo().start(scenario?)` and `exit()`; renaming a route doesn't end it (a test navigates through a renamed test route and the demo stays). `test/first-launch.test.tsx` asserts outcomes, not timer ids (tests M4).
+- Pairing presentation: each step renders the shared step layout (title, explanation, content, actions pinned above the home indicator); the choose-method step shows the four setup steps, "Host doesn't have StatGlass yet?" with the copyable releases URL and the Linux line, and "What the phone can see"; failures render the `PhoneProblem` tone and wording; the preview shows "Can also add the hosts it monitors" only with `can_hand_over`. `pairing/flow.ts` tests stay green unchanged.
+- `src/components/` is deleted.
+
+**Host screen (lane c1)**
+- The host name is set as the native large title; no in-content title; content is in `ScreenScroll`.
+- Gestures, one test each:
+  - tapping the card header chevron toggles compact or expanded with a light haptic, and the density persists across a remount (`compact[card]`);
+  - tapping the card body pushes the module page;
+  - long-press then move reorders the stack and persists `cardOrder` for every host;
+  - long-press released without moving opens `ActionSheetIOS` with "Compact"/"Expand", "Open <module title>" and "Move to top", and each acts;
+  - VoiceOver custom actions "Toggle compact", "Move up", "Move down" and "Open" act.
+- `card-menu.tsx` and its Modal are gone.
+- Rendering cost: a `Profiler` per card counts commits; a frame that changes only CPU re-renders only the CPU card (revert-verified by widening a selector). The export spies go (tests M2).
+- Dimming: a stale host dims cards to 50 % through Reanimated; under Reduce Motion the opacity is 0.5 at once. The `Animated.timing` spy test is deleted (tests L2).
+- `host-screen.test.tsx`'s first test is split into paging and URL, blur and back, and unmount (tests L4); the expected `[live]` error and warning and the router warning are asserted with spies (tests L10).
+- The pill says "Every 5 s on cellular" when the status carries `demand: compact`, from `hostStatusSummary`; a core test covers it.
+- The connection banner (phase 7 lane f) uses the grouped-list surface and `HeaderButton`-style action; its wording is unchanged (`test/connection/` passes with no copy edits).
+
+**Cards (lane c2)**
+- Card header: an 8 pt accent swatch, the `cardTitle`, the `cardFigure` value, and the density chevron as the only header control (44 pt hit area).
+- CPU: a 52 pt chart with the ceiling label on the top gridline. Memory: "Pressure · normal|warn|critical" and a one-column legend with a swatch for every segment (Swap hatched). Power: unreported components omitted; with none, a compact unavailable row; "Power & battery" shows the battery inline. Unavailable modules: one compact line with title and reason, in `popoverSlots` order. Network: the `MirrorBars` with ramp steps and "↓ Download"/"↑ Upload" labels.
+- Chart accessible names come from core `chartLabel` (architecture I4): the phone and the desktop produce the same string for the same input, with the desktop's trailing period and its per-bucket hold rule; `src/app/hooks/use-chart-label.test.tsx` passes unchanged.
+- Desktop: `bun run test -- packages/core/src/popover src/app/routes/popover src/app/hooks`, the gallery and the render-count e2e pass unchanged.
+
+**Hosts list and demo data (lane d)**
+- Row: name, OS glyph, `hostStatusSummary` status on the top line; three equal columns, each a `cardFigure` in the accent's ink over a 36 pt chart: CPU spark (cyan), memory spark (violet, % of `mem_total_bytes`), network `Sparkbars` (green).
+- Scale: CPU and memory ceilings are `niceCeiling` of the 30-minute maximum with floors 10 % and 25 %, labelled; a 5-25 % CPU series draws under a 30 % ceiling.
+- A null bucket is a gap. A stale row dims to 50 %. An offline row shows dashes, no chart and "Offline since HH:MM" in host time (exact string). With `key_changed`, every row's status reads "Needs pairing".
+- Assertions read accessible names and values ("CPU history over the last 30 minutes, peak 24%"), not `StreamArea` props (tests M1).
+- No `subscribeLive` call from the list (the mock records it).
+- Demo data: each demo host's vitals and history are seeded from its id, so two hosts' values differ; with no scenario, a live demo host's chart has no gap where the live window joins history; only `sleep-gap` shows one. Desktop tests that read the default mock pass unchanged.
+- Empty: when the native host list becomes empty (last host removed), the list replaces to `/`.
+
+**Module frame (lane e)**
+- Frame: native title with the hardware subtitle (`headerTitle` with a caption line); `SegmentedControl` with 5m, 1h and More; More opens a `Sheet` of `RANGE_PRESETS` the host keeps, and choosing one closes it and asks the host again (one new `hostHistory` call).
+- Stat strip: a `heroFigure` lead, labelled items from the module's hero spec (`@core/module-hero`), and Avg and Peak from the answer's `stats`; a missing value shows `MISSING`, never 0.
+- `ModuleChart`: value ticks (`valueTicks`) and time ticks (`timeTicks`) labelled, ramp series, hatched gaps; scrubbing shows a crosshair and a host-time readout of every series; a long press pins the readout with a haptic; VoiceOver gets an adjustable element stepping through buckets.
+- Annotations: pills in a band above the plot area from `annotationsModel(..., variant "pill")`; two colliding events form a second row or a "+N" pill; no label is drawn inside the plot.
+- Events: the list and the annotations use the same module-filtered list; the Network page on a fixture holding an ANE `power_spike` shows no event.
+- `LiveProcessTable`: at most 10 rows from `groupLiveProcesses`, sorted by the page's sort; interest set on focus and cleared on blur (the mock records `setProcessInterest(true)` then `false`); a host that sends no processes shows "Processes are not available from this host".
+- Errors: a failed status read shows the module's error state with Retry, not a blank page (errors L3); `RemoteUnsupported` and `RemoteBusy` render phase 7 lane k's states in the chart area.
+- `HISTORY_MODULES.power.title` is "Power & Sensors".
+- `module-screen.test.tsx` drops the unused `latencyMs` (tests L6).
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | apps/mobile/src/app/_layout.tsx, apps/mobile/src/app/(hosts)/_layout.tsx, apps/mobile/src/app/(hosts)/index.tsx, apps/mobile/src/app/settings/, apps/mobile/src/app/update-from-mac.tsx, apps/mobile/src/app/pair-hosts.tsx, apps/mobile/src/app/debug.tsx, apps/mobile/src/app/dev/, apps/mobile/src/settings/, apps/mobile/src/lock/app-lock-setting.tsx, apps/mobile/test/settings/, apps/mobile/test/navigation/, apps/mobile/test/data/seam.test.tsx | contracts, RFC 4.1, 4.7; audit-architecture I6, M4; audit-tests L1, L4; design audit items 1-3, 17, 21, 22 and the settings sub-page notes | headers on every pushed screen, settings in the root stack, Hosts list, swipe-delete confirm and cancel, reorder persistence, host detail actions, Appearance checkmarks | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/settings test/navigation test/data`, `make mobile-check`; simulator screenshots of each settings page, host detail, `update-from-mac` and `pair-hosts` in light, dark and AX1, compared with the dashboard settings page |
+| b | L | apps/mobile/src/app/index.tsx, apps/mobile/src/app/demo.tsx, apps/mobile/src/app/pair.tsx, apps/mobile/src/welcome/, apps/mobile/src/pairing/screens/, apps/mobile/src/pairing/help/, apps/mobile/src/data/demo.ts, apps/mobile/src/components/, apps/mobile/test/welcome/, apps/mobile/test/pairing/, apps/mobile/test/first-launch.test.tsx | contracts, RFC 4.2, 4.3; audit-architecture I9, M8; audit-tests M4; design audit item 20; `apps/mobile/src/pairing/flow.ts` | welcome states, preview ticks only while focused, demo lifetime, restore notice, every pairing step | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/welcome test/pairing test/first-launch.test.tsx`, `make mobile-check`; simulator screenshots of welcome (iPhone SE and 18 Pro at the default size, AX1 scrolled) and every pairing step in light and dark, compared with the desktop onboarding and "Pair iPhone" sheet |
+| c1 | L | apps/mobile/src/host/, apps/mobile/src/connection/, packages/core/src/phone-connection.ts, packages/core/src/phone-connection.test.ts, apps/mobile/test/host/, apps/mobile/test/connection/ | contracts, RFC 4.0, 4.5; audit-architecture I5, M14; audit-tests M2, L2, L4, L10 | card gestures one test each, Profiler counts, Reanimated dimming, cellular pill wording, banner restyle | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/phone-connection.test.ts`, `bun run --cwd apps/mobile test -- test/host test/connection`, `make mobile-check`; simulator recording of reorder and the release menu; screenshots of the host screen at rest and scrolled under the status bar in light, dark and AX1 next to the popover |
+| c2 | L | apps/mobile/src/cards/, apps/mobile/src/widgets/stat-list.tsx, apps/mobile/src/widgets/meter-track.tsx, apps/mobile/src/data/live-stream.ts, packages/core/src/popover/cards/, packages/core/src/chart-label.ts, packages/core/src/chart-label.test.ts, src/app/hooks/use-chart-label.ts, apps/mobile/test/cards/ | contracts, RFC 4.5; audit-architecture I4; design audit items 5-12; `src/app/routes/popover/_components/popover-cards.tsx` | card anatomy, CPU, memory, power, unavailable and network cards, one chart wording for both apps | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/popover packages/core/src/chart-label.test.ts src/app/routes/popover src/app/hooks`, gallery and render-count e2e, `make e2e-perf` (before and after), `bun run --cwd apps/mobile test -- test/cards`, `make mobile-check`; card screenshots in light, dark and AX1 next to the popover, desktop popover screenshots unchanged |
+| d | M | apps/mobile/src/hosts/, apps/mobile/src/data/hosts.ts, apps/mobile/src/data/hosts-list.ts, packages/core/src/mock/remote.ts, packages/core/src/mock/history.ts, packages/core/src/mock/host-history.ts, packages/core/src/mock/host-history.test.ts, packages/core/src/mock/demo-hosts.test.ts, apps/mobile/test/hosts/ | contracts, RFC 4.4, 4.8; audit-tests M1; design audit items 13-16 | three columns and accents, autoscaled ceilings, gaps, stale and offline, Needs pairing, per-host demo values, no live gap, empty to welcome | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/mock`, `bun run test` (desktop, unchanged), `bun run --cwd apps/mobile test -- test/hosts`, `make mobile-check`; hosts-list screenshots with live, stale and offline demo hosts in light, dark and AX1 next to the popover cards |
+| e | L | apps/mobile/src/module/, apps/mobile/src/data/history.ts, apps/mobile/src/data/processes.ts, apps/mobile/src/widgets/chart-annotations.tsx, apps/mobile/test/module/, apps/mobile/test/data/host-history.test.tsx | contracts, RFC 4.6, 4.8; audit-errors L3; audit-tests L6; design audit items 18, 19, 23; `src/app/components/module-page.tsx` | range control and More sheet, stat strip from `stats`, ticks, scrub and pin, pill annotations, process table and interest, module error state | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/module test/data`, `make mobile-check`; simulator screenshots of each module's generic page at 1 h and 7 d in light, dark and AX1 next to `/dashboard/<module>` |
+
+Ownership:
+- **The RFC's lane c is split in two (c1, c2).** As one lane it owned the host screen, its gestures and tests, every card, the shared card models and the chart wording, an XL job. c1 owns the host screen and the connection surfaces; c2 owns the card visuals and their content. They meet at `ModuleCardProps` (scaffold): c2's cards stay render-only (`src/cards/**` may not import `@/data` or the router, phase 7 lane b's rule) and take `compact`, `onToggleDensity` and `onOpen`; c1 wraps them in `ReorderList` and owns the gestures around them.
+- **Lane a owns route headers; content lanes own titles.** The host screen sets its own title (c1) and the module page its title and subtitle (e) through `<Stack.Screen options>`; lane a owns the layouts, `(hosts)/index.tsx` and the root stack's options for `pair`, `demo`, `debug`, `update-from-mac` and `pair-hosts`. Lane a edits phase 9's two route files for header options only.
+- **The demo provider is lane b's, mounted by the scaffold.** The scaffold replaces `<DemoLifetime />` in `_layout.tsx` with `<DemoProvider>` (stub in `data/demo.ts`), so lane a's root layout and lane b's provider don't wait on each other. Lane a's `DemoBadge` calls `useDemo().exit()`.
+- **The restore notice is lane b's, mounted by the scaffold** in the hosts list's header slot (`hosts/hosts-list.tsx` renders `<RestoreNotice />` from `@/welcome/restore-notice`, a stub); lane d renders "Needs pairing" on the rows.
+- **Lane d owns the demo mocks.** Lane e's tests use `mock/host-history.ts` as it is at phase start and assert relative to the mock's own output, so lane d's per-host seeding doesn't break them; lane e rebases on d before its final run if a value assertion moves.
+- **The data hooks keep phase 8 lane d's demand calls.** `data/hosts.ts` (d), `history.ts` and `processes.ts` (e) keep `useFocusDemand` and `useProcessDemand`.
+- **Lane c2 is the only lane touching desktop code** (`use-chart-label.ts`, the popover card models). The desktop's tests, gallery and render counts pass unchanged and `make e2e-perf` is reported before and after.
+- **Lane a takes `test/data/seam.test.tsx`** only to delete the duplicate Appearance round trip (tests L1).
+
+#### Scaffold contracts (phase 11)
+
+Inline before dispatch, after phase 9 and phase 10 have merged:
+- **Finish the `variant` rename.** Rename `role` in phase 9's files (`update-from-mac.tsx`, `pair-hosts.tsx`, `apps/mobile/src/handover/`), delete the `role` alias from `TextProps`, and extend the text grep test to fail on `role=` for `Text`.
+- **Demo provider.** Replace `<DemoLifetime />` with `<DemoProvider>` around the root stack in `app/_layout.tsx`; stub `DemoProvider` and `useDemo` in `data/demo.ts` over today's behavior.
+- **Restore notice.** Stub `apps/mobile/src/welcome/restore-notice.tsx` and render it from `hosts/hosts-list.tsx`'s header.
+- **Card props.** Write `ModuleCardProps` into `apps/mobile/src/cards/types.ts` and pass the new props from `host/card-stack.ts` with today's behavior.
+- **Module pages.** Create `apps/mobile/src/module/pages/index.ts` mapping each `PopoverCard` to the generic page, and `module/pages/generic.tsx` wrapping today's `ModuleHistory`.
+- **Chart label.** Stub `packages/core/src/chart-label.ts`.
+- Then `bun run typecheck`, `make mobile-check`, `bun run test`.
+
+```ts
+// apps/mobile/src/data/demo.ts (lane b)
+export function DemoProvider(props: { children: ReactNode }): JSX.Element;
+export function useDemo(): { active: boolean; start(scenario?: string): void; exit(): void };
+// apps/mobile/src/welcome/restore-notice.tsx (lane b): renders nothing unless pairingState().key_changed
+export function RestoreNotice(): JSX.Element | null;
+// apps/mobile/src/welcome/welcome-screen.tsx (lane b)
+export function WelcomeScreen(): JSX.Element;
+export function ExamplePreview(props: { focused: boolean }): JSX.Element; // its own mock transport, live fixture
+
+// apps/mobile/src/cards/types.ts (lane c2 renders, lane c1 passes)
+export interface ModuleCardProps {
+  card: PopoverCard; content: CardContent; compact: boolean;
+  onToggleDensity(): void; onOpen(): void; stale: boolean;
+}
+// packages/core/src/chart-label.ts (lane c2), the desktop's wording and hold rule
+export function chartLabel(input: { subject: string; spanMs: number; now: string | null; brushable?: boolean }): string;
+export function shouldRefreshFigures(prev: { bucketMs: number; edgeMs: number } | null, next: { bucketMs: number; edgeMs: number }): boolean;
+// packages/core/src/phone-connection.ts (lane c1): hostStatusSummary's label covers demand "compact" ("Every 5 s on cellular")
+
+// apps/mobile/src/module/pages/index.ts (scaffold; phase 12's scaffold rewires it)
+export interface ModulePageProps { host: HostId; module: PopoverCard; range: HistoryRangeChoice; remote: RemoteHostStatus }
+export const MODULE_PAGES: Record<PopoverCard, ComponentType<ModulePageProps>>;
+// apps/mobile/src/module/ (lane e), the frame phase 12's pages compose
+export function ModuleFrame(props: { title: string; subtitle: string | null; range: HistoryRangeChoice;
+  onRange(r: HistoryRangeChoice): void; children: ReactNode }): JSX.Element;
+export function StatStrip(props: { lead: StatItem; items: readonly StatItem[]; stats: readonly SeriesStatsInfo[] }): JSX.Element;
+export function ModuleChart(props: { series: readonly ChartSeries[]; gaps: readonly Gap[]; ceiling: Ceiling;
+  format(v: number): string; range: HistoryRange; events: readonly Event[]; clockOffsetMs: number; height: number }): JSX.Element;
+export function LiveProcessTable(props: { host: HostId; sort: ProcessSort; view: ProcessView }): JSX.Element;
+export function EventsList(props: { events: readonly Event[]; showDate: boolean }): JSX.Element;
+// apps/mobile/src/data/processes.ts (lane e): useLiveProcesses(host, sort): { rows: LiveGroup[] | null; available: boolean }
+```
+
+#### Lane a brief
+- **Goal:** every header and every settings page follows one iOS convention, and nothing draws under the status bar without a material.
+- **Interface:** `screenOptions`, `BackButton`, `HeaderButton`, `DemoBadge`, `GroupedList`, `ListRow`, `SwipeRow`, `ReorderList` (phase 10), `useDemo().exit()` (scaffold).
+- **Behavior:**
+  - Root and hosts layouts use `screenOptions(colors)`; the hosts list sets `headerLargeTitle`, the host screen keeps `headerLargeTitle` with the title the screen sets, module pages set `headerLargeTitle: false`.
+  - Settings joins the root stack: delete `settings/_layout.tsx`, declare the settings screens' titles in the root layout, push `/settings` normally. Chosen over a modal sheet because the host screen and settings sub-pages must share the same back chevron and edge swipe (the user's back decision), and a sheet's first page has a Done button instead.
+  - Settings pages are thin routes that render screens from `apps/mobile/src/settings/` ("route reads params, renders the screen", the part of architecture M4 RFC section 9 assigns here).
+  - Settings > Hosts: `ReorderList` of `SwipeRow`-wrapped `ListRow`s; swipe opens `ActionSheetIOS` with "Remove <host>" (destructive) and the message "This iPhone stops monitoring <host>. Its history stays on the host."; confirm calls `removeHost` then updates settings, as phase 8 lane c's code does today.
+  - Host detail at `app/settings/host/[host].tsx`: Rename (inline `TextInput` saving to `hostNames`), Routes, Re-pair, "Update from Mac", Remove.
+  - Delete `apps/mobile/src/app/dev/` (phase 10's primitives route).
+- **Decisions already made:** chevron-only back, edge swipe kept (the user, 2026-11-25); Remove is destructive, never cyan, with swipe-delete, a confirmation, and drag reorder with haptics and VoiceOver moves (the user's Settings > Hosts decision); "Sync history on cellular" is gone (D-154).
+- **Out of scope:** the hosts list content (lane d), the welcome and pairing views (lane b), titles set by screens (c1, e), phase 9's screen bodies.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** the welcome screen is the front door, and pairing reads as one designed flow.
+- **Interface:** `WelcomeScreen`, `ExamplePreview`, `RestoreNotice`, `DemoProvider`, `useDemo`.
+- **Behavior:**
+  - Layout top to bottom: the live preview, one sentence ("StatGlass shows your Macs' and servers' CPU, memory, power and network, live, from this iPhone."), "Add a host" (primary), "Try demo hosts" (secondary). It fits an iPhone SE at the default size and scrolls at AX1 inside `ScreenScroll`.
+  - The preview renders c2's real `CpuCard`, `MemoryCard` and `NetworkCard` on its own `createMockTransport()` live fixture, subscribed only while the screen is focused (`useIsFocused`), one VoiceOver label ("Example host: CPU 18%, memory 42%, network 1.4 MB/s down"), a still frame under the motion tokens' reduced state.
+  - `DemoProvider` owns the demo transport: `start` swaps in the mock transport and replaces to `/(hosts)`; `exit` disposes it, restores the native transport (or none) and replaces to `/`. No route-name checks.
+  - `app/index.tsx` renders `WelcomeScreen` once phase 8's launch logic finds no hosts.
+  - `RestoreNotice`: the RFC 4.2 restore sentence and "Pair again".
+  - Pairing views: one `PairingStep` layout in `pairing/screens/` (title, explanation, content, actions pinned above the home indicator); the setup guidance lives in `pairing/help/` and renders on the choose-method step and is reachable from Re-pair. "Host doesn't have StatGlass yet?" uses the Mac answer and, for Linux, "The Linux agent is installed from the Mac app (see the README's "Monitor a Linux host")" (RFC open question 1 is unanswered, so no Mac-less install is offered).
+  - Delete `src/components/` and its last import.
+- **Decisions already made:** the welcome screen is the front door with a live labelled preview, "Add a host" primary and "Try demo hosts" secondary, and first-run, demo-exit, restore and no-hosts states (the user, 2026-11-25); setup guidance on the pairing screen, before scanning (RFC 4.2); `flow.ts` logic stays phase 8's.
+- **Out of scope:** pairing logic, `after-pair.ts` and the handover screens (phases 8 and 9), the hosts list's empty redirect (lane d).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c1 brief
+- **Goal:** the host screen reads like the popover at phone scale and its cards respond to the four gestures the user chose.
+- **Interface:** `ModuleCardProps` (scaffold), `ReorderList` with `onReleaseWithoutMove` (phase 10 lane b), `ScreenScroll`.
+- **Behavior:**
+  - `HostScreen` sets `<Stack.Screen options={{ title: name }}>` and drops its in-content title. The pager stays.
+  - `CardStack` renders one container per card in `popoverSlots` order; each container selects its own slice with module-scope selectors and builds its `CardContent` (architecture I5). The parent keeps only order and density.
+  - Gestures: chevron tap toggles `compact[card]` with `Haptics.impactAsync(Light)`; body tap pushes the module; `ReorderList` (`nested`) reorders and writes `cardOrder`; `onReleaseWithoutMove` opens `ActionSheetIOS` with Compact/Expand, "Open <HISTORY_MODULES[card].title>", "Move to top". VoiceOver custom actions on each card.
+  - Dimming moves to Reanimated `useAnimatedStyle` over the motion tokens (M14).
+  - Delete `host/card-menu.tsx`.
+  - `hostStatusSummary` gains the compact-demand wording in core.
+  - The `connection/` banner uses `GroupedList`'s surface and `Text` variants; copy unchanged.
+- **Decisions already made:** the chevron toggles density, a body tap opens the module, long-press-move drags, long-press-release opens the menu, no pressure-based press (the user's card gestures decision); `ActionSheetIOS`, not a native context menu, unless phase 10's scaffold switched to zeego (RFC 4.5); one card order for all hosts.
+- **Out of scope:** card visuals and content (c2), the module page (e).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c2 brief
+- **Goal:** each card matches the popover's anatomy and density, and the chart wording is the desktop's.
+- **Interface:** `ModuleCardProps`, `CardContent` (phase 7 lane g), `chartLabel`, `StreamArea`, `MirrorBars` (phase 10 lane e).
+- **Behavior:**
+  - `module-card.tsx` header: 8 pt swatch, `cardTitle`, `cardFigure` value right, density chevron (`Icon chevron.down`/`chevron.up`) in a 44 pt area; no module chevron.
+  - Sizes per RFC 1.4's mapping (phase 10's variants); tighter gaps (12 pt padding, 8 pt gaps) so CPU, Memory, GPU and Network fit an iPhone 18 Pro at the default size.
+  - Card content changes go in the shared models in `packages/core/src/popover/cards/` only when the popover already behaves that way (Power's omitted components, Memory's pressure line); a change the popover doesn't want is a phone fork listed in `packages/core/README.md` through the orchestrator.
+  - `chartLabel` and `shouldRefreshFigures` are the desktop's current wording and hold rule moved to core; `use-chart-label.ts` and `data/live-stream.ts` call them; callers pass the ceiling format, replacing `live-stream.ts`'s hardcoded `%`.
+- **Decisions already made:** card text from the shared models, so phone and popover say the same words (RFC 4.5); unavailable modules as one compact line in unchanged slot order; Network as mirrored bars on the card (the user's Network decision).
+- **Out of scope:** gestures and the stack (c1), the welcome preview's layout (b renders these cards).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane d brief
+- **Goal:** hosts-list rows read as compact popover cards, honest about gaps, staleness and offline hosts, with demo hosts that differ.
+- **Interface:** `useHostHistory` and the summary appends (phases 7 k, 8 d), `StreamArea variant="spark"`, `Sparkbars`, `hostStatusSummary`.
+- **Behavior:**
+  - Row layout per the Test cases; values in the accent's ink (`--color-cpu-ink` and so on), figures in `cardFigure`.
+  - Ceilings: `niceCeiling(max(30-minute max, floor))` with floors 10 % (CPU) and 25 % (memory); network autoscales each direction.
+  - Memory % comes from `mem.used / mem_total_bytes` per bucket in `data/hosts.ts`, a view transform (`data-boundary.md`).
+  - The row reads `pairingState` and shows "Needs pairing" when `key_changed`.
+  - When the native host list goes from non-empty to empty, `router.replace("/")`.
+  - Demo: seed each host's vitals and history from a hash of its id (`mock/rng.ts`); find and remove the hole where the live window joins seeded history on a live demo host. Desktop-visible defaults stay as they are: if a desktop test reads a value that would change, give the phone's demo hosts their own seed path instead and say so.
+  - Keep phase 8 lane d's `useFocusDemand(host, "compact")` and `useVisibleHosts` calls.
+- **Decisions already made:** three accent charts tall enough to show normal variation, gaps as gaps, offline rows with dashes and "Offline since" rather than dimmed last values (no history behind them, D-154), demo data varying per host (the user's hosts-list decision); rows update every 5 s while the pill says Live.
+- **Out of scope:** Settings > Hosts (lane a), the restore notice's view (lane b).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane e brief
+- **Goal:** one module-page frame every module uses, so phase 12 only fills in each module's sections.
+- **Interface:** `ModuleFrame`, `StatStrip`, `ModuleChart`, `LiveProcessTable`, `EventsList`, `useLiveProcesses`, `MODULE_PAGES`' generic page (scaffold).
+- **Behavior:**
+  - Frame order: title with subtitle, range control, stat strip, charts, live process table, events (RFC 4.6).
+  - Range: `SegmentedControl` with 5m, 1h and More; More opens a `Sheet` of `RANGE_PRESETS` within the host's retention. `PHONE_RANGES` follows.
+  - Stat strip items from `@core/module-hero` specs and `@core/format`; Avg and Peak from the history answer's `stats` for the series key; no aggregation on the phone.
+  - `ModuleChart` replaces `scrubbable-chart.tsx` and `history-chart.ts`: `valueTicks` and `timeTicks` (phase 10 lane c), ramp series, hatched gaps, scrub crosshair and readout in host time, long-press pin with `Haptics.impactAsync(Medium)`, an `adjustable` VoiceOver element.
+  - Annotations: `annotationsModel` with `variant: "pill"`, drawn in a reserved band above the plot (`widgets/chart-annotations.tsx`), never over a series. The existing core model already stacks rows and merges "+N", so no core change; if the phone needs a different rule, fork it per the README.
+  - `LiveProcessTable` calls `useProcessDemand(host, view)` while mounted and focused and renders at most 10 `groupLiveProcesses` rows, read-only.
+  - The generic page shows the module's hero chart, stat strip, process table and events; phase 12 replaces it per module.
+  - `HISTORY_MODULES.power.title` becomes "Power & Sensors".
+- **Decisions already made:** visualization parity with no brush, attribution, selection, per-app range tables or drill-down; a live process table on every page sorted by the page's metric (the user's basic-monitor and process-table decisions); events filtered to the module at the source, annotations that never overlap (item 23); history from the host only (D-154).
+- **Out of scope:** each module's sections (phase 12), the per-core heatmap query (phase 12 lane a).
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 12: module pages
+
+Demo:
+- **Simulator, demo hosts (a Mac and a Linux host), light, dark and AX1, each page next to `/dashboard/<module>`:**
+  - CPU: "chip · N performance + M efficiency cores", the stat strip (Total, User, System, I/O wait and Steal where present, Idle, Load avg, Pressure stall, Avg, Peak), the user/system ramp chart, the per-core heatmap with P and E rows, processes by CPU.
+  - GPU: utilization chart and strip, frequency ring, residency stack bar, power chart, processes by GPU.
+  - Memory: the composition stack bar and strip, the pressure chart on the Mac and Used/Cached on Linux, the swap card, processes by memory.
+  - Network: "en0 · 143 Mb/s link · 192.168.86.242 · Public 76.143.14.53", the strip, mirrored history bars with labelled ceilings both ways, the interfaces list, processes by rate. A host whose public IP lookup is cold shows "Public …" then the IP.
+  - Power & Sensors: four rings, the strip, the ticked power chart with its legend and notes, the SoC thermal zones heatmap in °C with an en-GB locale and °F with en-US, the battery day card, processes by energy.
+  - Battery: rings for Charge, Health and Cycles, and Power, the battery day chart, processes by energy.
+- **Docker host:** the Network page header shows the container's interface and addresses from `NetworkAddresses` (phase 7 lane h).
+
+Depends on: phase 11
+
+Code facts this phase relies on (checked 2026-11-25; the state after phases 7 to 11 land):
+- **Pages.** After phase 11, `apps/mobile/src/module/pages/index.ts` maps every module to the generic page, over phase 11 lane e's `ModuleFrame`, `StatStrip`, `ModuleChart`, `LiveProcessTable` and `EventsList`.
+- **Data.** `useHostHistory(host, selection, range, width)` (phase 7 lane k) issues one `hostHistory` query per chart key with the width budget; a heatmap passes its column count, and a request of only `cpu.load{core=*}` selectors gets the host's 256-series clamp (phase 7 lanes j1 and k). The answer carries per-key `stats` and module-filtered events.
+- **Addresses.** `PhoneTransport.networkAddresses(host)` returns `HostAddressesInfo` with `public_ip.state` `known | pending | unavailable | unknown`; a host without `query.addresses.v1` returns `RemoteUnsupported`; the mock serves fixed addresses for demo hosts and `unavailable` for the Linux demo host (phase 7 lane h).
+- **Desktop sources the pages port.** CPU: `src/app/routes/dashboard/cpu/` (`total-card.tsx`, `core-load-card.tsx`) and `_lib/clusters.ts` (`clusterViews`, `coreCounts`, with a test). GPU: `gpu/_components/{usage,frequency,power}-card.tsx`. Memory: `memory/_components/{composition,pressure,swap,used}-card.tsx`. Network: `network/route.tsx` over `LiveMirrorChart`, `RangeTotalsStrip`, `InterfaceTable` and `_lib/network.ts` (`interfaceRows`, `ofLink`, `networkSubtitle`), plus `AddressLine`. Power: `power/_components/{ring-cards,power-draw-card,zones-card}.tsx` and `BatteryDayCard`. Hero specs are in `@core/module-hero` (phase 10 lane c).
+- **Heat and ring models** are `@core/widget-models/heat-matrix` and `ring-gauge`, with phone twins (phase 10 lane d).
+- **Temperature.** Core formats °C or °F from `TemperatureUnits` (`format/temperature.ts`); the desktop reads its unit from its settings (`units.temperature`). The phone has no setting. `expo-localization` is installed (phase 10 scaffold); `getLocales()[0].temperatureUnit` is `"celsius"` or `"fahrenheit"`.
+- **Power notes.** `@core/cpu-power-source` explains what "CPU power" measures ("CPU power: P cores").
+
+Test cases:
+
+**CPU and GPU (lane a)**
+- CPU page, Mac and Linux fixtures: the header subtitle from `coreCounts`; each stat strip item equals `@core/format` of the selector or the answer's `stats`; Steal and I/O wait only where the host reports them; the total chart has user and system ramp series; the per-core heatmap renders P and E rows on the Mac and one row group on Linux, from its own `hostHistory` query with the heatmap's column count as the budget (the mock records two calls: the page's and the heatmap's); a 64-core fixture draws 64 rows.
+- GPU page: utilization chart and strip items (Utilization, Renderer, Tiler, Frequency, Power, Avg, Peak); frequency ring from `ringGaugeModel`; residency stack bar; power chart; a host with no GPU shows the module's unavailable state.
+- Processes: CPU sorts by CPU %, GPU by GPU with `gpu: true` in the view.
+- No `UsageAppsCard` text or "Every process" link on either page.
+- `packages/core/src/cpu-clusters.test.ts` is the moved desktop test, unchanged in assertions; desktop CPU tests pass unchanged.
+
+**Memory and Network (lane b)**
+- Memory: header "N GB unified" on the Mac and MemTotal on Linux; composition stack bar and strip (Used, Pressure or Pressure stall, Swap, Compressed, Peak used, Peak swap); pressure chart on the Mac, Used/Cached on Linux; swap card with Used, In, Out and a chart; processes by memory.
+- Network header, one test per state: `known` shows "en0 · 143 Mb/s link · 192.168.86.242 · Public 76.143.14.53"; IPv6 adds a second caption line; `pending` shows "Public …" and polls every 2 s at most 5 times only while the page is focused (fake timers: blur stops polling); `unavailable` shows "Public unavailable" with the reason as the accessibility hint; `unknown` shows "Public unavailable"; an old host (`RemoteUnsupported`) shows the interface and link speed from the live frame and no address line. Addresses are fetched on focus only.
+- Network strip: Download lead, Upload, Of link, and range totals; the mirrored history chart has upload above and download below with a labelled ceiling per direction and time ticks, replacing the two area lines; the interfaces list; processes by rate (`network: true`).
+- No `AppsCard`, `AppsNowCard` or selection text; no power event on the page.
+- `packages/core/src/network-lines.test.ts` covers `interfaceRows`, `ofLink` and `networkSubtitle` moved from the desktop; the desktop Network page tests pass unchanged.
+
+**Power & Sensors and Battery (lane c)**
+- Power & Sensors, Mac fixture: subtitle (power source, system draw); four rings (CPU temperature with P-cluster, GPU temperature with frequency, Fans RPM with left/right and mode, System W with source and package) from `ringGaugeModel`; strip (System W, CPU, GPU, ANE, DRAM, Avg, Peak); the ticked power chart with its legend and the note from `@core/cpu-power-source`; the thermal zones heatmap with legend and current value per zone; the battery day card when present; processes by energy.
+- Linux fixture: rings and zones the host doesn't report are omitted, by the same rule as the cards.
+- Temperature unit: with a Fahrenheit locale every temperature on the page (rings, zones legend, current values) is °F; with a Celsius locale °C; a test sets each through `expo-localization`'s jest mock.
+- The title is "Power & Sensors"; no "Drag across the chart" text and no app power lines.
+- Battery: header charge state; rings for Charge, Health and Cycles, and Power; the battery day chart with Charge, Health, Cycles, Remaining, Full charge and Temperature; processes by energy.
+- Annotations on the power chart are the page's `power_spike`, `fans_ramped` and `thermal_state` events as pills; two at the same minute form a second row or "+N".
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | L | apps/mobile/src/module/pages/cpu/, apps/mobile/src/module/pages/gpu/, packages/core/src/cpu-clusters.ts, packages/core/src/cpu-clusters.test.ts, src/app/routes/dashboard/cpu/_lib/clusters.ts, src/app/routes/dashboard/cpu/_lib/clusters.test.ts, apps/mobile/test/module/cpu/, apps/mobile/test/module/gpu/ | contracts, RFC 4.6 (CPU, GPU rows); `src/app/routes/dashboard/cpu/`, `gpu/`; `.claude/skills/widget-model/` | sections ported on Mac and Linux fixtures, separate per-core query, process sort, omitted sections absent | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/cpu-clusters.test.ts src/app/routes/dashboard/cpu`, `bun run typecheck`, `bun run --cwd apps/mobile test -- test/module`, `make mobile-check`; CPU and GPU page screenshots in light, dark and AX1 next to `/dashboard/cpu` and `/dashboard/gpu` |
+| b | L | apps/mobile/src/module/pages/memory/, apps/mobile/src/module/pages/network/, apps/mobile/src/data/addresses.ts, packages/core/src/network-lines.ts, packages/core/src/network-lines.test.ts, src/app/routes/dashboard/network/_lib/network.ts, apps/mobile/test/module/memory/, apps/mobile/test/module/network/ | contracts, RFC 4.6 (Memory, Network rows, Network header), D-155; `src/app/routes/dashboard/memory/`, `network/`, `src/app/components/live-mirror-chart.tsx` | memory sections both OSes, every address state with the bounded poll, mirrored history bars, no attribution | gpt-6.2-sol | pending | | `bun run test -- packages/core/src/network-lines.test.ts src/app/routes/dashboard/network`, `bun run typecheck`, `bun run --cwd apps/mobile test -- test/module`, `make mobile-check`; Memory and Network screenshots in light, dark and AX1 next to the dashboard pages; the Network header against the Docker host |
+| c | L | apps/mobile/src/module/pages/power/, apps/mobile/src/module/pages/battery/, apps/mobile/src/data/temperature-unit.ts, apps/mobile/test/module/power/, apps/mobile/test/module/battery/ | contracts, RFC 4.6 (Power & Sensors, Battery rows); `src/app/routes/dashboard/power/`, `src/app/components/battery-day-card.tsx`, `@core/cpu-power-source` | rings, strip, ticked chart with notes, zones heatmap, °C and °F from the locale, Linux omission, battery page | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/module`, `make mobile-check`; Power & Sensors and Battery screenshots in light, dark and AX1 with a Celsius and a Fahrenheit simulator region, next to `/dashboard/power` and `/dashboard/battery` |
+
+Ownership:
+- **The scaffold owns `module/pages/index.ts` and the mocks.** Each lane fills its own page directories; the registry already points at them.
+- **The mock answers are checked once in the scaffold.** No lane edits `packages/core/src/mock/`; the scaffold confirms the mock answers every selector the three lanes request and adds what's missing in the same change (`data-boundary.md`).
+- **Code moves to core only with its second consumer.** Lane a moves `clusters.ts`, lane b moves `network/_lib/network.ts`; each desktop file becomes a re-export and its desktop tests pass unchanged. Battery-day and power-chart logic stays per app unless a lane finds the phone needs the same function; then that lane moves it and lists it in its report.
+
+#### Scaffold contracts (phase 12)
+
+Inline before dispatch:
+- Create `apps/mobile/src/module/pages/{cpu,gpu,memory,network,power,battery}/index.tsx`, each a stub rendering the generic page, and point `MODULE_PAGES` at them.
+- Stub `packages/core/src/cpu-clusters.ts` and `packages/core/src/network-lines.ts` as re-exports of the desktop files (lanes move the bodies).
+- Run each module's page against the mock with a recording transport, list every `hostHistory` selector and `networkAddresses` call the RFC 4.6 sections need, and add any series the mock doesn't answer (per-core `cpu.load{core}`, `thermal.zone{sensor}`, GPU residency, swap in and out, per-interface `net.rx`/`net.tx`), with a mock test for each addition.
+- Then `bun run typecheck`, `make mobile-check`, `bun run test -- packages/core/src/mock`.
+
+```ts
+// apps/mobile/src/module/pages/<module>/index.tsx (one lane each)
+export default function CpuPage(props: ModulePageProps): JSX.Element; // GpuPage, MemoryPage, NetworkPage, PowerPage, BatteryPage
+// packages/core/src/cpu-clusters.ts (lane a): moved from src/app/routes/dashboard/cpu/_lib/clusters.ts
+export function clusterViews(topology: readonly ClusterInfo[]): ClusterView[];
+export function coreCounts(info: HostInfo): { performance: number; efficiency: number; total: number };
+// packages/core/src/network-lines.ts (lane b): moved from src/app/routes/dashboard/network/_lib/network.ts
+export function interfaceRows(/* as today */): InterfaceRow[];
+export function ofLink(/* as today */): string;
+export function networkSubtitle(/* as today */): string;
+// apps/mobile/src/data/addresses.ts (lane b)
+export function useHostAddresses(host: HostId): { line: string | null; ipv6: string | null; hint: string | null; supported: boolean };
+// apps/mobile/src/data/temperature-unit.ts (lane c)
+export function useTemperatureUnits(): TemperatureUnits; // "C" | "F" from getLocales()[0].temperatureUnit, "C" when unknown
+```
+
+#### Lane a brief
+- **Goal:** the CPU and GPU pages show what the dashboard's pages show, minus investigation.
+- **Interface:** `ModulePageProps`, `ModuleFrame`, `StatStrip`, `ModuleChart`, `LiveProcessTable`, `HeatMatrix`, `RingGauge`, `useHostHistory`, `clusterViews`, `coreCounts`.
+- **Behavior:**
+  - Port the sections in RFC 4.6's CPU and GPU rows, one column, in the desktop's order. Each figure comes from a selector or the answer's `stats` through `@core/format`.
+  - The per-core heatmap issues its own `useHostHistory` with only `cpu.load{core=*}` selectors and its column count as the budget, separate from the page's other charts, so the 256-series clamp applies and a host with more than 32 cores draws every core.
+  - Move `clusters.ts` and its test to core; the desktop file re-exports.
+  - Processes: CPU sorts by CPU %; GPU passes `gpu: true`.
+- **Decisions already made:** `UsageAppsCard` and the "Every process" link are omitted (per-app over a range is the user's non-goal and the session refuses it); live processes stay (the user's process-table decision).
+- **Out of scope:** the frame (phase 11 lane e), other modules.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** the Memory and Network pages match the dashboard, and Network shows the host's addresses.
+- **Interface:** `ModulePageProps`, the frame components, `useHostAddresses`, `networkAddresses` (phase 7 lane h), `mirrorBarsModel`, `valueTicks`, `timeTicks`.
+- **Behavior:**
+  - Memory: RFC 4.6's Memory row; the chart choice (pressure or Used/Cached) follows what the host reports, not an OS check.
+  - Network header: fetch `networkAddresses` on focus only; while `pending`, poll every 2 s at most 5 times while focused; `PublicIp.state` selects the text as in the Test cases; `RemoteUnsupported` falls back to the live frame's interface and link speed with no address line.
+  - The mirrored history chart is a phone renderer over `mirrorBarsModel` with a labelled ceiling per direction and `timeTicks`, replacing today's two overlapping area lines.
+  - Move `network/_lib/network.ts` to core as `network-lines.ts`; the desktop file re-exports.
+- **Decisions already made:** the header shows interface, link speed, local IPv4/IPv6 and the public IP served by the host; the strip has Download, Upload, Of link and range totals; mirrored bars on the page (the user's Network decision, D-155); `AppsCard`, `AppsNowCard` and `SelectionSummary` are omitted (attribution and selection, the user's non-goal).
+- **Out of scope:** the resolver and the wire (phase 7 lane h), the desktop surfaces (phase 8 lane e).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+- **Goal:** the Power & Sensors and Battery pages match the dashboard, with temperatures in the phone's locale unit.
+- **Interface:** `ModulePageProps`, the frame components, `RingGauge`, `HeatMatrix`, `useTemperatureUnits`.
+- **Behavior:**
+  - Port RFC 4.6's Power & Sensors and Battery rows, one column. Rings sit two per row at the default size and one per row at AX1.
+  - Temperature unit: `useTemperatureUnits()` reads `getLocales()[0].temperatureUnit` and passes `units` to every `formatTemperature` and to the heat and ring models; no phone setting.
+  - The power chart's legend and notes come from `@core/cpu-power-source`; annotations are the page's own events as pills.
+  - Linux hosts omit rings and zones they don't report.
+- **Decisions already made:** all servable Power & Sensors sections port; out are "Drag across the chart to see what used it" and the app power lines (the user's Power & Sensors decision); the module is "Power & Sensors" everywhere; the unit follows the iOS locale's measurement system (RFC 4.6).
+- **Out of scope:** the heat and ring models (phase 10 lane d), the frame.
+- **Done when:** the table's Done-when conditions are met.
+
+### Phase 13: App Store readiness
+
+Demo:
+- **Release archive, locally:** `make mobile-archive` builds the XCFramework, prebuilds, and archives a signed Release build with `xcodebuild`. It exports an App Store `.ipa` into `apps/mobile/dist/ios/` and uploads nothing. `make mobile-release-check` then passes on that archive and prints one line per check: Info.plist keys, the privacy manifest in the bundle against the binary's imports, no private symbols or private frameworks, the icon, the entitlements and the version.
+- **Simulator, Release build, light, dark and AX1:**
+  - The home screen shows the StatGlass icon in light, dark and tinted, not Expo's blank placeholder.
+  - The launch screen uses the theme background in light and dark, with no white flash in dark.
+  - The first launch shows the welcome screen. "Try demo hosts", then a host, then a module page all work, and `log stream` shows no session dial from subsystem `app.statglass`.
+  - `statglass://debug` redirects to `/`.
+  - Settings > About shows "1.0.0 (N)" with "Privacy policy" and "Support" rows that open the docs page.
+- **iPad simulator:** the iPhone-only app runs in compatibility mode with nothing clipped. In the iPhone Duo simulator (if the installed runtime has one), the closed and open postures render without black bars.
+- **Docs:** `/docs/iphone` renders, with its Privacy and Support sections.
+- **IPv6:** a russh session to the test SSH server on `[::1]` completes its handshake. On Apple targets an IPv4 literal goes through `getaddrinfo`, so a NAT64 network can synthesize its address.
+- **Checklist:** `.github/releasing-mobile.md` holds the steps the user completes in App Store Connect, the review notes text, and the device checks the simulator can't do.
+
+Depends on: phase 9, phase 12
+
+Why a phase: the user wants StatGlass for iPhone submitted to the App Store. This phase gets the code to the point where it passes App Review. It reopens the App Store part of RFC phases 5 and 6, which the Spec's out-of-scope line had deferred. Uploading, the App Store Connect record and submission stay the user's own steps; the phase ends with an archive and a checklist. It runs after phase 12 because review judges the finished screens, and lanes a and c edit files that phases 8, 11 and 12 own (`app.config.ts`, the root layout, About, `demo.tsx`).
+
+Requirements (primary sources, read 2026-11-25):
+- **Review Guidelines** (https://developer.apple.com/app-store/review/guidelines/):
+  - "Before You Submit" asks for a demo account or "fully-featured demo mode", and any hardware or resources review needs ("a sample QR code").
+  - 2.1(a): a built-in demo mode "in lieu of a demo account" needs Apple's prior approval. This app has no login, so the review notes explain the demo instead.
+  - 2.3.1(a): describe features "with specificity in the Notes for Review".
+  - 2.3.3: screenshots show the app in use.
+  - 2.4.1: iPhone apps should run on iPad.
+  - 2.5.5: the app must be "fully functional on IPv6-only networks".
+  - 4.2: minimum functionality.
+  - 5.1.1(i): every app links its privacy policy in App Store Connect and inside the app.
+  - 5.1.1(ii): purpose strings "clearly and completely describe" the use.
+  - Not re-read in this pass: whether 4.2.3's "work on its own without requiring installation of another app" applies to a companion to server software.
+- **Privacy manifests:**
+  - Required-reason API rules: https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api (enforced on upload since 1 May 2024).
+  - Reason codes: https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype. The codes used here:
+    - FileTimestamp (`stat`, `fstat`, `lstat`, `getattrlist*`): C617.1, files in the app container.
+    - SystemBootTime (`mach_absolute_time`, `systemUptime`): 35F9.1, elapsed time and timers.
+    - DiskSpace (`statfs`, `fstatfs`, `statvfs`): E174.1, check space before writing.
+    - UserDefaults: CA92.1, the app's own defaults.
+  - Third-party SDK list: https://developer.apple.com/support/third-party-SDK-requirements/. `hermes` is on it; React Native and Expo are not. A static library linked into the app is app code, so its reasons go in the app's manifest.
+- **Expo privacy guidance:** https://docs.expo.dev/guides/apple-privacy/. Set `ios.privacyManifests` in the app config and restate the pods' reasons there, because "Apple does not correctly parse all the PrivacyInfo files included by static CocoaPods dependencies".
+- **App Privacy labels:** https://developer.apple.com/app-store/app-privacy-details/. "Collect" means transmitting data off the device so that "you and/or your third-party partners" can access it. Data that reaches only the user's own hosts is therefore not collected, so the label is Data Not Collected; that is an inference, and the page has no rule naming user-owned servers. A privacy policy URL is required.
+- **Export compliance:**
+  - https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations: the key is `NO` only if the app uses no encryption or only exempt encryption. "Proprietary" or non-OS encryption is typically not exempt.
+  - https://developer.apple.com/help/app-store-connect/reference/app-information/export-compliance-documentation-for-encryption: a "standard algorithm, not provided within the Apple operating system" needs a French encryption declaration, and only if the app is distributed in France.
+  - https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption: without the key, App Store Connect asks the questionnaire on every upload.
+  - https://developer.apple.com/documentation/bundleresources/information-property-list/itsencryptionexportcompliancecode: the code Apple issues after reviewing the documents.
+  - BIS self-classification: https://www.bis.gov/learn-support/encryption-controls/annual-self-classification.
+- **Local network:**
+  - TN3179 (https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy): an outgoing TCP connection to a local address needs access, through any API including BSD sockets. Cellular and VPN don't count as local. `NSBonjourServices` is needed only for Bonjour.
+  - `NSLocalNetworkUsageDescription`: https://developer.apple.com/documentation/bundleresources/information-property-list/nslocalnetworkusagedescription.
+- **Camera:**
+  - `NSCameraUsageDescription` is required: https://developer.apple.com/documentation/bundleresources/information-property-list/nscamerausagedescription.
+  - The `expo-camera` plugin adds `NSMicrophoneUsageDescription` unless `microphonePermission: false`: https://docs.expo.dev/versions/latest/sdk/camera/ and `packages/expo-camera/plugin/src/withCamera.ts`.
+- **Icon and launch screen:**
+  - App icons are 1024 px, a bitmap or an Icon Composer file, with dark and tinted variants generated if missing: https://developer.apple.com/design/human-interface-guidelines/app-icons.
+  - Every app needs a launch screen: https://developer.apple.com/documentation/xcode/specifying-your-apps-launch-screen.
+  - Expo's `ios.icon` takes a path, a `.icon` directory, or `{ light, dark, tinted }`: https://docs.expo.dev/versions/latest/config/app/.
+- **IPv6:**
+  - https://developer.apple.com/support/ipv6/.
+  - Test with a NAT64 network from Internet Sharing, and resolve IPv4 literals with `getaddrinfo` to get a synthesized address: https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/NetworkingOverview/UnderstandingandPreparingfortheIPv6Transition/UnderstandingandPreparingfortheIPv6Transition.html.
+- **Upload minimums** (https://developer.apple.com/news/upcoming-requirements/):
+  - Since 28 April 2026: Xcode 26 or later with the iOS 26 SDK. This Mac has Xcode 27.2 with the iOS 27.2 SDK.
+  - Since 9 September 2026: target iOS 13 or later. The prebuild sets 16.4.
+  - Nothing is announced for 2027 on that page. The screenshot page, though, says iPhone Duo screenshots become required in April 2027 for apps built with the iOS 27.1 SDK or later, which a build from this Xcode is.
+- **Screenshots:**
+  - https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications: one iPhone set (1206x2622 or 1179x2556), no alpha.
+  - The 13-inch iPad set is required only if the app supports iPad.
+- **Accessibility Nutrition Labels** are voluntary for now: https://developer.apple.com/help/app-store-connect/manage-app-accessibility/overview-of-accessibility-nutrition-labels.
+- **Local release route:** https://docs.expo.dev/submit/ios-manual/. Archive locally, then upload through Organizer or Transporter, which is the user's step.
+
+Audit (2026-11-25, this worktree, with an `expo prebuild --platform ios --no-install` run in a scratch copy and since deleted). Blocking means App Store Connect or App Review would reject the build:
+
+- **Blocking:**
+  - **No icon.** `app.config.ts` sets no `icon`. Prebuild writes Expo's placeholder, a blank white 1024 PNG with an alpha channel (`AppIcon.appiconset/App-Icon-1024x1024@1x.png`, md5 `35a635a6c61497e3e5c08c0d66a2816f`). `brand/statglass-app-icon.svg` and `brand/build.mjs` already make the mark and a full-bleed crop for the web touch icon.
+  - **No privacy manifest.**
+    - The app config sets no `ios.privacyManifests`, and the prebuilt project has no `PrivacyInfo.xcprivacy`.
+    - The Podfile aggregates pod manifests only at `pod install` (`privacy_file_aggregation_enabled`).
+    - Expo modules are precompiled (`EXPO_USE_PRECOMPILED_MODULES` defaults to 1) and static, so per Expo's guidance their reasons must be restated in the app.
+    - The Rust staticlib ships no manifest of its own. It imports `stat`, `fstat`, `lstat`, `statfs` and `fstatfs` (checked with `nm` on the `aarch64-apple-ios` `libstatglass_mobile.a` built in the ios-p7a worktree on 2026-11-25). `statfs`/`fstatfs` come from bundled SQLite (`statglass-store`, `rusqlite` with `bundled`), which the phone still links for `phone_id.rs`.
+  - **Version 0.0.0 and a fixed build number.**
+    - `apps/mobile/package.json:4` is `"version": "0.0.0"`, so prebuild writes `CFBundleShortVersionString` 0.0.0. `app.config.ts:47-70` sets neither `version` nor `ios.buildNumber`, so `CFBundleVersion` is always `1`.
+    - Every upload needs a new build number. RFC 7.3 versions the phone on its own (`mobile-vX.Y.Z`, monotonic build numbers).
+    - About reads `Constants.expoConfig?.version` (`settings/about.tsx:16`).
+  - **No in-app privacy policy link (5.1.1(i)).**
+    - About has only version, core and protocol rows (`settings/about.tsx:13-23`). Phase 11 lane a adds a licenses link only.
+    - `docs-site/src/content/docs/privacy.md` covers the Mac app and the website and says nothing about the iPhone.
+  - **No export compliance answer.** No `ios.config.usesNonExemptEncryption`, so `ITSAppUsesNonExemptEncryption` is absent and every upload stops at the questionnaire. The app's SSH uses russh with ring, p256 and sha2 (non-OS crypto) for key exchange, transport encryption and signing, while the Secure Enclave key uses CryptoKit/Security. The classification is the user's decision (below).
+- **Blocking unless changed in phase 8:** the phase 8 scaffold adds `NSLocalNetworkUsageDescription` and the `expo-camera` plugin with its camera string (plan line 3021).
+  - It doesn't pass `microphonePermission: false`, so prebuild also writes `NSMicrophoneUsageDescription` with Expo's generic "Allow $(PRODUCT_NAME) to access your microphone", which the app never uses.
+  - That is a vague purpose string for an unused permission (5.1.1(ii)). Lane a removes it.
+- **Advisory:**
+  - **Debug and scenario routes in release.** `/debug` is registered in the root stack (`app/_layout.tsx:43`) and reachable through the `statglass` URL scheme in a release build. `/demo?scenario=` loads developer scenarios such as `phone-errors`. Review dislikes hidden features (2.3.1), so release builds redirect both.
+  - **Orientation.**
+    - The prebuilt `UISupportedInterfaceOrientations` allows all four orientations, because `app.config.ts` sets no `orientation`. The phone screens are designed for portrait only.
+    - Set `orientation: "portrait"`. Leave `UIRequiresFullScreen` false so iPad compatibility mode and the iPhone Duo's open posture aren't letterboxed.
+  - **Launch screen.** `SplashScreen.storyboard` names an image `SplashScreen` that the asset catalog doesn't have, and it uses `systemBackgroundColor`. `expo-splash-screen` isn't installed. It works, but it doesn't match the theme.
+  - **IPv4 literals and NAT64.**
+    - `crates/statglass-ssh/src/dialer.rs:188-190` notes that numeric IPv4 literals bypass `getaddrinfo` (tokio parses them first), so they get no NAT64 synthesis. The 2026-11-24 Log calls this a known limitation.
+    - Pairing targets are often literals (LAN and Tailscale addresses). Review itself uses demo mode, which opens no socket, so this doesn't block review, but 2.5.5 applies to the real app.
+  - **Strings naming private frameworks.** The staticlib has no IOKit or private-framework imports (`nm` found no `_IO*` symbols; `crates/statglass-collect` is gated off iOS). Its strings do contain `statglass_schema::caps` doc text that names "Private IOReport framework" and "IOHIDEventSystemClient" (`crates/statglass-schema/src/caps.rs:204,208`).
+    - The upload scan checks symbols and selectors, so lane v's check fails on symbols and only reports these strings.
+    - Other imports: `dlopen`/`dlsym` (Rust std's OS-version probe of CoreFoundation, and SQLite's extension loader) and `sysctlbyname` (`hw.*` CPU features for ring). None needs a declared reason.
+  - **ATS is already right.** The prebuilt plist has `NSAllowsArbitraryLoads` false and `NSAllowsLocalNetworking` true. The phone makes no HTTP requests; the public IP lookup is host-side (D-093).
+  - **Entitlements are empty** (`StatGlass.entitlements` is `<dict/>`). The Secure Enclave key uses the app's default keychain group and needs none.
+  - **iPhone only.**
+    - `supportsTablet: false` (`app.config.ts:58`), so `TARGETED_DEVICE_FAMILY` is 1. Review may still run the app on an iPad in compatibility mode (2.4.1), and no iPad screenshots are needed.
+    - The RFC lists iPad as later work.
+  - **4.2 minimum functionality and the companion question.** Real use needs StatGlass on a Mac or `statglass-agent` on Linux.
+    - After phase 11 lane b, the welcome screen offers "Try demo hosts" in one tap. The demo is the full app on the mock transport: live cards, module pages and history.
+    - The review notes name the companion software, explain the QR pairing, and point to the demo. Whether to also give review a live host is the user's decision (below).
+    - A pairing QR expires within minutes (`decode_payload`'s expiry), so a printed sample QR can't work.
+  - **5.1.1 data.** The phone keeps no history (D-154), sends no analytics, and has no account (so 5.1.1(v), account deletion, doesn't apply). Logs go to os_log only (phase 7 lane l). The diagnostics export is deferred (`plan/rfc-ios-polish.md` section 9). The label is Data Not Collected; RFC 7.4 says the same.
+  - **First launch offline.**
+    - With no paired hosts, phase 8's launch logic starts the core and shows welcome. No socket opens until a host is paired, and the Local Network prompt appears only on the first LAN dial (TN3179).
+    - Phase 11 lane b covers the welcome states. This phase adds a test of the full reviewer path with no native session call.
+  - **Accessibility.** Phases 10 to 12 cover VoiceOver labels, 44 pt targets and AX1 layouts. The Accessibility Inspector audit and the voluntary Nutrition Label answers are checklist items.
+  - **Hermes signature.** `hermes` is on Apple's SDK list. React Native's prebuilt `hermes-engine` ships its own manifest; lane v reports whether its xcframework is signed, because an unsigned listed SDK draws a warning on upload.
+  - **Duo screenshots.** A build from Xcode 27.2 uses the iOS 27.2 SDK, so iPhone Duo screenshots become required from April 2027. The checklist says so.
+
+Code facts this phase relies on (checked 2026-11-25; the state after phases 8 to 12 land):
+- **App config.**
+  - `apps/mobile/app.config.ts:43-71` `expoConfigFor(identity, base)` returns `ios: { bundleIdentifier, appleTeamId, supportsTablet: false }` and three plugins. After phase 8 it also carries `ios.infoPlist.NSLocalNetworkUsageDescription` and the `expo-camera` plugin.
+  - `apps/mobile/test/app-config.test.ts` tests the identity fallbacks and `expoConfigFor`.
+- **Prebuild facts** (Expo 58 template, `node_modules/expo/template.tgz`):
+  - The `SplashScreen.storyboard` launch screen.
+  - `NSAllowsArbitraryLoads` false and `NSAllowsLocalNetworking` true.
+  - `UIRequiredDeviceCapabilities` `arm64`, `IPHONEOS_DEPLOYMENT_TARGET` 16.4, `TARGETED_DEVICE_FAMILY` 1.
+  - A Podfile with `privacy_file_aggregation_enabled` on unless `apple.privacyManifestAggregationEnabled` is `false`.
+  - The `.gitignore` ignores `apps/mobile/ios/` and `apps/mobile/dist/`.
+- **Rust build.** `scripts/mobile/build-rust-ios.sh` builds `libstatglass_mobile.a` with the `mobile-release` profile for `aarch64-apple-ios` and `aarch64-apple-ios-sim` into `apps/mobile/modules/statglass-native/ios/StatglassCore.xcframework`. The podspec vendors it as a static framework (`StatglassNative.podspec`).
+- **Swift module.** It uses Keychain and Secure Enclave (`PhoneKey.swift:99-138`), `NWPathMonitor` (`AppLifecycle.swift:13`), and Application Support (`StatglassNativeModule.swift:134`). None of these is a required-reason API.
+- **Brand.** `brand/build.mjs` renders `statglass-app-icon.svg` with `rsvg-convert` and already writes a full-bleed square crop for `docs-site/public/apple-touch-icon.png`. The theme backgrounds are `#fafafa` (light) and `#09090b` (dark) in `apps/mobile/src/theme.generated.ts:6,73`.
+- **Docs site.**
+  - The docs live at `https://statglass.steamfield.io` (`docs-site/astro.config.mjs:11`), with pages from `docs-site/src/content/docs/*.md` and `make -C docs-site check test`.
+  - No workflow in `.github/workflows/` deploys it, so the user confirms the page is live before submitting.
+- **Routes.** `/debug` is registered in `apps/mobile/src/app/_layout.tsx` (line 43 today; phase 11 lane a owns the layout's options). The welcome screen with "Try demo hosts" is phase 11 lane b's `WelcomeScreen`. `/demo` reads a `scenario` param (phase 7 lane a).
+- **Dialer.** `crates/statglass-ssh/src/dialer.rs:187-205` `connect_tcp` resolves with `tokio::net::lookup_host` and tries each address in turn. `crates/statglass-ssh/tests/support/server.rs` is an in-process SSH server.
+- **Release policy.** Release builds are local, with no EAS and no hosted macOS job (D-118, D-131, RFC 7.2). `compat/mobile-protocol.json` is empty until the first release.
+
+Test cases:
+
+**App config (lane a)**
+- `expoConfigFor`:
+  - `version` comes from `apps/mobile/package.json` (1.0.0 after the scaffold).
+  - `ios.buildNumber` comes from `STATGLASS_MOBILE_BUILD_NUMBER`, a positive integer. A non-numeric value throws a named error, and unset defaults to `"1"`.
+  - `orientation` is `"portrait"`, and `ios.supportsTablet` stays `false`.
+  - `ios.config.usesNonExemptEncryption` equals the value the scaffold's D-entry records.
+- The privacy manifest (`ios.privacyManifests`):
+  - `NSPrivacyTracking` is false, and `NSPrivacyTrackingDomains` and `NSPrivacyCollectedDataTypes` are empty.
+  - `NSPrivacyAccessedAPITypes` lists FileTimestamp C617.1, DiskSpace E174.1, SystemBootTime 35F9.1 and UserDefaults CA92.1, each with a comment naming its caller (Rust std and SQLite, React Native, Expo modules).
+  - It also lists every further category and reason found in the aggregated manifest of a `pod install` run, which the lane records in its report.
+- Plugins:
+  - The `expo-camera` plugin keeps phase 8's camera string and passes `microphonePermission: false`.
+  - The `expo-splash-screen` plugin sets the image `./assets/splash-icon.png` and the backgrounds `#fafafa` and `#09090b` (dark), taken from `theme.generated.ts`, not typed twice.
+  - `ios.icon` is `{ light: "./assets/icon-light.png", dark: "./assets/icon-dark.png", tinted: "./assets/icon-tinted.png" }`.
+- Info.plist:
+  - `NSLocalNetworkUsageDescription`, `NSFaceIDUsageDescription` and the camera string are present, and none starts with "Allow $(PRODUCT_NAME)".
+  - No `NSBonjourServices`.
+
+**Icon and launch screen (lane b)**
+- `node brand/build.mjs` writes the four `apps/mobile/assets/` PNGs:
+  - `icon-light.png`: 1024x1024 with no alpha (`sips -g hasAlpha` says `no`), the full-bleed mark on its dark background, the same crop as the touch icon.
+  - `icon-dark.png`: the mark on a transparent background.
+  - `icon-tinted.png`: grayscale with transparency.
+  - `splash-icon.png`: the mark alone, transparent.
+- A second run is byte-identical.
+- `brand/README.md` lists the outputs.
+
+**Release surfaces (lane c)**
+- With `__DEV__` false:
+  - `/debug` renders a redirect to `/`, and the root stack registers no `debug` screen options.
+  - `/demo?scenario=phone-errors` starts the default demo scenario.
+  - With `__DEV__` true, both behave as today.
+- About:
+  - The rows are App version "1.0.0 (N)" (from `expoConfig.version` and `ios.buildNumber`), Core and Protocol, then "Privacy policy" and "Support".
+  - Each link row is a 44 pt `link`-role row that calls `Linking.openURL` with the URL from `apps/mobile/src/lib/links.ts`: `https://statglass.steamfield.io/docs/iphone#privacy` and `#support`.
+  - A failed `openURL` shows an inline "Couldn't open the page" with the URL as text.
+- The reviewer path, on `FakeNative` with no stored hosts: the welcome screen shows, then "Try demo hosts" (found by role and label), the hosts list, a host, and the CPU module page. Every step renders, and `FakeNative` records no session start, dial or pairing call.
+
+**Privacy and support page (lane d)**
+- `docs-site/src/content/docs/iphone.md`:
+  - It covers what the app does, what it needs (StatGlass on a Mac or `statglass-agent` on Linux), pairing, and demo hosts.
+  - `## Privacy` says the app sends nothing to the developer and has no account, analytics or ads. Metrics travel over SSH straight from the user's hosts, and the phone stores no history (D-154). The key lives in the Secure Enclave (Keychain on the simulator). It lists the camera (only for scanning the pairing code), Local Network (only for hosts on the same network) and Face ID (optional App Lock), says how to remove a host and revoke the key on the host, and says the website's analytics are separate (link to `privacy.md`).
+  - `## Support` names GitHub issues.
+- `privacy.md` links to the iPhone section.
+- `make -C docs-site check test` passes, and the built site has `/docs/iphone/` with both anchors.
+
+**NAT64 literals (lane e)**
+- On `target_vendor = "apple"`, `resolve(host, port)`:
+  - It uses `getaddrinfo` with `AF_UNSPEC`, `SOCK_STREAM` and `AI_DEFAULT` on `spawn_blocking` for names and literals alike.
+  - `"127.0.0.1"` returns `127.0.0.1:port`, and `"::1"` returns `[::1]:port`.
+  - An unresolvable name maps to `Unreachable { kind: NameNotResolved }` with the host in the detail.
+- Elsewhere `lookup_host` is unchanged (Linux CI runs that branch).
+- `tests/ipv6.rs`: a russh session to `tests/support/server.rs` bound on `[::1]` completes the handshake, skipped with a message when the machine has no IPv6 loopback.
+- `cargo test -p statglass-ssh` and `make mobile-rust-check` pass.
+
+**Archive and static checks (lane v)**
+- `scripts/mobile/release-check-test.sh` builds fixture bundles with `clang` and `plutil`: a minimal `.app` with an Info.plist, a `PrivacyInfo.xcprivacy` and a tiny Mach-O.
+  - The good fixture passes.
+  - Each of these fails with its own message:
+    - a missing `ITSAppUsesNonExemptEncryption`;
+    - an `NSMicrophoneUsageDescription`;
+    - a purpose string starting "Allow $(PRODUCT_NAME)";
+    - `NSAllowsArbitraryLoads` true;
+    - a landscape orientation;
+    - `CFBundleShortVersionString` 0.0.0;
+    - a binary importing `_mach_absolute_time` with no SystemBootTime reason;
+    - a binary importing a symbol from `private-symbols.txt`;
+    - a `/System/Library/PrivateFrameworks/` load command;
+    - the placeholder icon hash;
+    - a `get-task-allow` entitlement.
+- `scripts/mobile/archive.sh` never uploads: a grep test finds no `altool`, `notarytool` or `destination upload` in it or in `ExportOptions.plist`.
+
+| Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| a | M | apps/mobile/app.config.ts, apps/mobile/test/app-config.test.ts | contracts, audit above, https://docs.expo.dev/guides/apple-privacy/, the required-reason page, the Expo camera and splash-screen docs | config keys, manifest reasons, plugins, purpose strings | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test -- test/app-config.test.ts`, `make mobile-check`; a scratch-copy `expo prebuild --platform ios` plus `pod install` whose Info.plist and aggregated `PrivacyInfo.xcprivacy` are attached to the report, scratch copy deleted |
+| b | S | brand/build.mjs, brand/README.md, apps/mobile/assets/ | contracts, `brand/statglass-app-icon.svg`, the HIG app icon page | four PNGs, opaque light icon, idempotent | gpt-6.2-sol | pending | | `node brand/build.mjs` twice with no diff on the second run; `sips -g hasAlpha apps/mobile/assets/icon-light.png` says `no`; simulator home-screen screenshots in light, dark and tinted, compared with the macOS icon |
+| c | M | apps/mobile/src/app/debug.tsx, apps/mobile/src/app/_layout.tsx, apps/mobile/src/app/demo.tsx, apps/mobile/src/app/settings/about.tsx, apps/mobile/src/lib/links.ts, apps/mobile/test/settings/about.test.tsx, apps/mobile/test/app/release-routes.test.tsx, apps/mobile/test/app/reviewer-path.test.tsx | contracts, guidelines 2.1, 2.3.1, 5.1.1(i), `.claude/rules/mobile/expo.md` | release redirects, About links, reviewer path with no session calls | gpt-6.2-sol | pending | | `bun run --cwd apps/mobile test`, `make mobile-check`; simulator screenshots of About in light, dark and AX1 next to the other settings pages |
+| d | S | docs-site/src/content/docs/iphone.md, docs-site/src/content/docs/privacy.md | contracts, D-154, guideline 5.1.1, the App Privacy details page | page builds with both anchors | gpt-6.2-sol | pending | | `make -C docs-site check test build`; the built `/docs/iphone/` page screenshotted in light and dark |
+| e | S | crates/statglass-ssh/src/dialer.rs, crates/statglass-ssh/src/dialer/resolve.rs, crates/statglass-ssh/tests/ipv6.rs, crates/statglass-ssh/Cargo.toml, Cargo.lock | contracts, Apple's IPv6 transition guide, `.claude/rules/rust/platform.md` | literal and name resolution, IPv6 loopback handshake | gpt-6.2-sol | pending | | `cargo test -p statglass-ssh`, `make rust-check`, `make mobile-rust-check`, `make rust-linux-check` |
+| v | L | scripts/mobile/archive.sh, scripts/mobile/release-check.sh, scripts/mobile/release-check-test.sh, scripts/mobile/ExportOptions.plist, scripts/mobile/fixtures/release/, Makefile, .github/releasing-mobile.md | contracts, every requirement URL above, D-118, D-131, `.github/releasing.md`, `.claude/skills/ios-simulator/` | fixture pass and each named failure, no-upload grep | gpt-6.2-sol | pending | | `make mobile-release-check-test`; after lanes a to e merge, rebased on the phase branch: `make mobile-archive` and `make mobile-release-check` pass on the archive, plus the simulator runs in lane v's brief, with results in the Log |
+
+Ownership:
+- **The scaffold owns the lockfiles' JS side and the version.** It runs `bunx expo install expo-splash-screen` in `apps/mobile` (`apps/mobile/package.json`, `bun.lock`) and sets `apps/mobile/package.json` `version` to `1.0.0`, so no lane edits either file. Lane e owns `Cargo.lock` for its one dependency change.
+- **Lanes a and b meet at fixed paths.** Lane a references `apps/mobile/assets/{icon-light,icon-dark,icon-tinted,splash-icon}.png`; lane b writes them. The scaffold commits the first `node brand/build.mjs` output there, so lane a's prebuild runs before b lands.
+- **Lane c takes files from earlier phases.** It owns `_layout.tsx`, `demo.tsx` and `about.tsx`, which phases 8 and 11 owned and which are merged before this phase starts.
+- **Lane v rebases last.** It writes and fixture-tests its scripts in parallel with the others. Its archive and simulator runs need lanes a to e merged, so it rebases on the phase branch for its final run, as phase 7's j2 did on j1.
+
+#### Scaffold contracts (phase 13)
+
+Inline before dispatch, after the user answers the questions in the "Decisions for the user" list below:
+- **D-entry.** It writes the next free D-entry in `plan/decisions.md`: StatGlass for iPhone on the App Store, distinct from D-015 (the Mac app stays off it).
+  - It records: iPhone only; portrait; Data Not Collected; the privacy policy at `/docs/iphone#privacy`; versions `1.0.0` with the build number `git rev-list --count HEAD`.
+  - It records the user's export compliance answer and the review-access choice.
+- **Installs and assets.**
+  - It runs `bunx expo install expo-splash-screen` and sets `apps/mobile/package.json` `version` to `1.0.0`.
+  - It runs `node brand/build.mjs` once after adding the four mobile outputs as a stub target that copies the touch-icon crop, which lane b replaces.
+- **Contracts.**
+  - The shared constant below in `apps/mobile/src/lib/links.ts`, as a stub lane c fills.
+  - The Make target names below.
+
+```ts
+// apps/mobile/src/lib/links.ts (lane c fills; lane d's anchors must match)
+export const PRIVACY_POLICY_URL = "https://statglass.steamfield.io/docs/iphone#privacy";
+export const SUPPORT_URL = "https://statglass.steamfield.io/docs/iphone#support";
+```
+
+```make
+# Makefile (lane v fills)
+mobile-archive:            # scripts/mobile/archive.sh: Release .xcarchive and App Store .ipa in apps/mobile/dist/ios, no upload
+mobile-release-check:      # scripts/mobile/release-check.sh apps/mobile/dist/ios/StatGlass.xcarchive
+mobile-release-check-test: # scripts/mobile/release-check-test.sh (fixtures, no Xcode project needed)
+```
+
+```rust
+// crates/statglass-ssh/src/dialer/resolve.rs (lane e)
+pub(crate) async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, RemoteError>;
+```
+
+Decisions for the user (asked before the scaffold; the defaults shown are recommendations):
+- **iPad.** Default: iPhone only (`supportsTablet: false`), checked in iPad compatibility mode. Supporting iPad adds a 13-inch screenshot set and layouts the RFC leaves for later.
+- **Export compliance.** The app implements standard algorithms (SSH through russh, ring and p256), not only Apple's. The choices:
+  1. `usesNonExemptEncryption: true` and the "standard algorithms" answer, with a French declaration or with France excluded from the storefronts.
+  2. `false`, on the user's or counsel's reading that an exemption covers it.
+  This phase records the answer; it doesn't make the legal call.
+- **Privacy policy and support hosting.** Default: `docs-site`, at `/docs/iphone#privacy` and `#support`. The user confirms the docs site deploys before submission.
+- **Name and category.**
+  - Default name: "StatGlass" (the App Store name must be unique; fallback "StatGlass Monitor").
+  - Default category: Utilities, with Developer Tools as secondary.
+- **Review access.** Default: demo mode only, explained in the review notes. Optionally, a reachable Linux host with `statglass-agent` for review. Pairing codes expire, so this needs a person available during review.
+
+#### Lane a brief
+- **Goal:** the app config produces an Info.plist and a privacy manifest that pass upload and review.
+- **Interface:** `expoConfigFor(identity, base)`, `appIdentityFromEnv(env)` gaining `buildNumber`.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - Derive the manifest's reasons from evidence: run `pod install` in a scratch prebuild, read the aggregated `PrivacyInfo.xcprivacy`, and add the Rust staticlib's categories.
+  - Restate everything in `ios.privacyManifests`, with a comment per entry naming the caller.
+  - If SQLite's `statfs` is the only DiskSpace use, keep E174.1 and say so in the report. Don't remove SQLite from the phone (`phone_id.rs` needs `statglass-store`).
+- **Decisions already made:** iPhone only; portrait; Data Not Collected; the export compliance value is the scaffold's D-entry; the build number comes from the environment (lane v sets it).
+- **Out of scope:** icons (lane b), routes (lane c), the archive (lane v).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane b brief
+- **Goal:** a real icon in every iOS appearance, and a launch image that matches the theme.
+- **Behavior:**
+  - Extend `brand/build.mjs` with the four `apps/mobile/assets/` outputs as in Test cases, from `statglass-app-icon.svg` and `statglass-icon-dark.svg`, using `rsvg-convert` as today.
+  - The light icon is opaque (flatten onto the squircle's dark fill, as the touch icon does).
+  - Check the result against the macOS icon and the HIG's dark and tinted guidance, and name any difference left.
+- **Decisions already made:** PNG variants, not an Icon Composer file (that needs the GUI tool; a later change can add one); same mark as the Mac app.
+- **Out of scope:** the app config entries (lane a), the App Store marketing art.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane c brief
+- **Goal:** a release build shows review only what users get, and links its privacy policy.
+- **Interface:** `PRIVACY_POLICY_URL`, `SUPPORT_URL`.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - `debug.tsx` returns `<Redirect href="/" />` unless `__DEV__`, and the root layout registers the debug screen's options only under `__DEV__`.
+  - `demo.tsx` ignores `scenario` unless `__DEV__`.
+  - About's link rows use phase 10's `ListRow` and match the other settings rows.
+  - The reviewer-path test runs on `AppProviders` with `FakeNative`, not `jest.mock` (`.claude/rules/mobile/testing.md`).
+- **Decisions already made:** support goes through GitHub issues via the docs page; no in-app email.
+- **Out of scope:** the welcome layout (phase 11 lane b), the licenses link (phase 11 lane a).
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane d brief
+- **Goal:** one public page that is both the iPhone app's privacy policy and its support page.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - Use plain statements a reviewer can check against the app's permission prompts.
+  - Follow `docs-site/AGENTS.md` and the frontmatter of the neighbouring pages (`group`, `order`).
+- **Decisions already made:** hosted on docs-site (pending the user's answer); the website's PostHog text stays in `privacy.md` and isn't repeated.
+- **Out of scope:** App Store marketing copy.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane e brief
+- **Goal:** an IPv4 literal from a pairing payload connects on a NAT64 network, as 2.5.5 requires.
+- **Behavior:**
+  - Behavior is as in Test cases.
+  - `connect_tcp` calls `resolve`, and the address order is kept.
+  - `libc` is added under `[target.'cfg(target_vendor = "apple")'.dependencies]` (or reused from the workspace pin).
+  - The `getaddrinfo` result is freed on every path.
+  - Errors keep the existing `RemoteError` kinds.
+- **Decisions already made:** no Happy Eyeballs rewrite; addresses are still tried in order within the deadline.
+- **Out of scope:** Network.framework, and Bonjour.
+- **Done when:** the table's Done-when conditions are met.
+
+#### Lane v brief
+- **Goal:** one local command builds what the user uploads, one checks it, and one document lists what only the user can do.
+- **Behavior:**
+  - **`archive.sh`:**
+    - Steps: `build-rust-ios.sh`, then `expo prebuild --platform ios --clean` into the gitignored `apps/mobile/ios/`, then `pod install`.
+    - Then `xcodebuild -workspace apps/mobile/ios/StatGlass.xcworkspace -scheme StatGlass -configuration Release -destination generic/platform=iOS -archivePath apps/mobile/dist/ios/StatGlass.xcarchive archive`, with `STATGLASS_MOBILE_BUILD_NUMBER=$(git rev-list --count HEAD)`.
+    - Then `-exportArchive` with `ExportOptions.plist` (`method` `app-store-connect`, `destination` `export`, automatic signing, team from the identity).
+    - It refuses a dirty tree. It never uploads and never touches hosted CI (D-118, D-131).
+  - **`release-check.sh <xcarchive>`** runs every check in Test cases on the archived `.app`:
+    - Info.plist keys via `plutil -extract`.
+    - `PrivacyInfo.xcprivacy` at the bundle root and in each embedded framework.
+    - `nm -u` of the app executable and every embedded binary, against `fixtures/release/required-reason-symbols.txt` (category to symbols, from Apple's list).
+    - `nm -u` of the device slice of `libstatglass_mobile.a` and of the app executable, against `fixtures/release/private-symbols.txt` (`_IOReport*`, `_IOHIDEventSystemClient*`, `_IOHIDServiceClient*`, `_NStat*`, `_SMC*`, any `_IOService*`, `_task_for_pid`; each line with its reason).
+    - `otool -L` load commands: only `/System/Library/Frameworks`, `/usr/lib` and `@rpath` inside the bundle.
+    - `strings` matches for `PrivateFrameworks` and the IOReport text, reported but not failing.
+    - `xcrun assetutil --info` showing AppIcon, and the source icon's hash differing from the placeholder.
+    - `codesign -d --entitlements` with no `get-task-allow`.
+    - No `expo-dev-client` or dev-menu frameworks, and `main.jsbundle` present.
+    - `hermes` signature reported.
+  - **Simulator runs** (a Release build for `iphonesimulator`, following `.claude/skills/ios-simulator/`):
+    - First launch, with a cold install and no hosts: welcome within 3 s, no crash, the reviewer path, `log stream --predicate 'subsystem == "app.statglass"'` with no dial.
+    - An iPad simulator in compatibility mode.
+    - The iPhone Duo closed and open postures, if available.
+    - Light, dark and AX1.
+    - Five demo screenshots at 1206x2622 with `simctl status_bar override`, in `apps/mobile/dist/store/` (gitignored).
+  - **IPv6 locally:** lane e's `[::1]` test, plus `make ssh-docker-test` with the container reached on an IPv6 address if the Docker runtime gives one (else say so). NAT64 itself needs a device on a Mac's NAT64 Internet Sharing network, which is in the checklist.
+  - **`.github/releasing-mobile.md`** holds the runbook and the user's checklist:
+    - **App Store Connect record:** name, bundle id `com.tryopendata.statglass.mobile`, SKU, category.
+    - **URLs:** privacy policy and support.
+    - **App Privacy:** Data Not Collected.
+    - **Export compliance:** the D-entry's answers, and the French declaration if chosen.
+    - **Ratings and labels:** the age rating questionnaire, and the Accessibility Nutrition Labels (voluntary) after an Accessibility Inspector audit of welcome, hosts list, host, one module page and Settings.
+    - **Screenshots:** the iPhone set (and Duo from April 2027 on SDK 27.1+).
+    - **Review notes text:**
+      - There is no account.
+      - Tap "Try demo hosts" on the first screen; the demo hosts are simulated and show every feature.
+      - Real use pairs with StatGlass on a Mac or `statglass-agent` on Linux by scanning a QR code that expires in minutes, so no sample code can be attached.
+      - The camera is used only to scan that code. Local Network is asked only when connecting to a host on the same network. Face ID is the optional App Lock.
+      - Nothing is sent to the developer.
+    - **Device checks:** TestFlight on a device for the camera scanner, the Local Network prompt and `local_network` error, and the Secure Enclave key; the NAT64 Internet Sharing test.
+    - **Upload:** Validate App in Organizer, then the upload (Organizer or Transporter); the user's step.
+    - **After approval:** add the build to `compat/mobile-protocol.json`.
+- **Decisions already made:** local only; no EAS; no upload from scripts; checks fail on symbols, not strings.
+- **Out of scope:** submission, App Store Connect API calls, hosted CI.
+- **Done when:** the table's Done-when conditions are met.
 
 ## Log
 
@@ -2372,3 +4264,23 @@ None of these files is owned by a lane in phase 3, 5, 6 or 7:
 - 2026-11-24: Phase 4 demo ran against the ssh-docker OpenSSH container (Linux statglass-agent on its default socket, helper path /usr/local/bin/statglass-agent) instead of this Mac: adding the phone's key to ~/.ssh/authorized_keys and turning on Remote Login change the user's security settings, which the run does not do. Same russh session, simulator key (Keychain), pinned ed25519 host key. Debug screen went Disconnected to Live; CPU tracked a 2-of-16-core load (0% to 9%); the session came back Live after HOME and relaunch; About shows core 0.14.0 and protocol 1. Gate on HEAD: mobile-check 192 tests, mobile-native-check simulator build passed; Rust/frontend/Docker gate from phase 5 unchanged by 4b (Swift/TS only).
 - 2026-11-24: Final review, split three ways (host crates; mobile core and app; Mac shell and shared core). Accepted 20 of 21. Host: Linux pairing read HOME/USER from the environment, so `sudo -E statglass-agent pair` edited the invoking user's authorized_keys as root and bundled login `root` (fix: passwd entry of the euid); pairing refusals collapsed into one CommandError string (fix: typed `PairingFailure`); unused `start_attempt`/test-only `start`/root re-export of unbound `run_forced`; authorized_keys.rs and agent pair.rs at the size ceiling (splits); stray pairing re-exports and missing docs. Rejected: replacing the authorized_keys key-blob/base64/fingerprint code with `ssh-key` during review (different parser in a security path; follow-up). Mac shell: duplicated offer state in src-tauri (moved into PairingHost), wildcard ControlRequest arm, stale stub docs, `pairing_deny` returning `()` (two-call race), misplaced core copy and its tests, mock pairing reading `this`/`Date.now()`, undocumented selectors. Mobile: Swift never produced the typed `ERR_STATGLASS_*` errors TS parses, phone settings never reached the debug core, blocking SetHosts/AuthorizedKeyLine on tokio workers, sync policy held in four places, no test of foreground during a budget rebuild, missing-listener log once per lifetime, DemoLifetime logic in the root layout, missing docs. Fixes run as foreman ios-fin-host, ios-fin-mcore, ios-fin-mapp.
 - 2026-11-24: Final review fixes merged (ios-fin-mcore, ios-fin-mapp, ios-fin-host). Fix review: all 25 findings fixed, no regressions (checked pairing single use after `used` became `attempt`, cancel_open/withdraw_if_open against the old shell on monitoring-off and shutdown, registry policy default Full, duplicate start now `internal`). Combined gate on landing: 950 Rust tests, 2834 frontend, 194 mobile, bindings, rust-check, architecture-check, mobile-rust-check, ssh-docker-test (pairing over sshd, mobile sessions), mobile-native-check. Follow-up: replace authorized_keys key encoding with `ssh-key` behind a cross-check test.
+- 2026-11-25: Run reopened at the user's request for phases 7 and 8 (briefs written in full) and a new phase 9, design and UX parity with the macOS app. Why: a simulator design audit (items 1 to 21 and 18b: an empty large-title band giving massive top padding on the host screen, native headers that ignore the theme, top nav buttons off the design system, weight-700 titles, card type far above RFC 1.4's mapping, identical demo values, a bare module page) and the user's notes since: module pages at dashboard visualization parity with a live read-only process table on every page and no investigation features; three accent charts per hosts-list row; Settings > Hosts rebuilt with iOS list conventions, swipe-to-delete and drag reorder; the welcome screen as the front door with first-run, restore and empty states. Because those items are too many to go straight to lanes, phase 9 is a stub until `plan/rfc-ios-polish.md` is reviewed (devil's advocate) and its lanes are written here.
+- 2026-11-25: User decision: one OS-neutral pairing flow. "Pair with your Mac" and "Add a Linux server" become one "Add a host" (RFC 1.3 and 2.4 wording), scan or paste; `pair-linux.tsx` is deleted; handing over a Mac's other hosts is a payload capability (`can_hand_over`), never an OS check. Phase 7 lane c writes the D-entry in `plan/decisions.md`.
+- 2026-11-25: User requirement: screen-scoped data demand (phase 7 lane e). The app pulls only while foregrounded and a hosts list, host or module screen is focused; Settings, pairing, onboarding and debug pull nothing; no background modes. Lane e also closes the 4/a follow-up (sources added while backgrounded are not parked).
+- 2026-11-25: Assumption changed: the phase 7 and 8 live checks use the ssh-docker Linux agent, not this Mac with Remote Login (the orchestrator may not turn on Remote Login or edit `~/.ssh/authorized_keys`).
+- 2026-11-25: Restructured at the user's request after three audits (architecture, error handling, tests; scratchpad `audit-architecture.md`, `audit-errors.md`, `audit-tests.md`). A foundation phase lands first as phase 7: one native-core owner (F1), shared card content models (F2), one live-session policy (F3), a navigator theme (F4), boundary lint rules, transport-scoped query keys, one connection-status wording, Rust logging and typed open errors, vitals age, typed native errors, an error boundary and route guard, FakeNative-only tests and error fixtures in the mock, and the host-served `NetworkAddresses` query (the user's Network decision; a one-way door with its D-entry). Pairing moves to phase 8 (its connection-state lane moved into phase 7 lane f, its incompatible-side work into phase 7 lane d), handover to phase 9, polish to phase 10 onward. A separate phase rather than the pairing scaffold, because the audit fixes touch the files pairing's lanes own and fan out as eight disjoint lanes. Audit items not in phase 7 are placed or deferred in `plan/rfc-ios-polish.md` section 9.
+- 2026-11-25: User question on data pull: phase 8 lane d now specifies that compact (hosts-list) demand runs without `Live1s` (a `HostSummary` every 5 s plus one 30-minute `RecentRequest`, which cannot be scoped to three series), full demand subscribes `Live1s`, process interest only while a live process table is on screen, and no session after `PARK_GRACE`. Bytes per second at each level are measured against the Docker agent in that lane and recorded here.
+- 2026-11-25: The user decided the phone keeps no persistent history (D-154), reversing `plan/rfc-ios-app.md`'s mirror design (4.4, D-146) at the user's request; a note at the top of that RFC points to the change and its body is unchanged. The host answers a new bounded `Query::History` (series, range, point budget, module events, stats in one answer; limits `HISTORY_MAX_POINTS` 500, `HISTORY_MAX_SERIES` 32, `HISTORY_MAX_ANSWER_BYTES` 512 KiB; coarsest tier that covers the budget, persisted rows only; one query per session, two host-wide, `Busy` beyond, a 10 s cache). Phase 7 gains lanes i (phone core without a mirror), j (host history query), k (phone history data, the one cellular switch) and l (logging and the facade test, split from lane d); lane d keeps the session and IPC error work and removes the phone-only `SyncPolicy`/`MirrorPolicy::phone`. The shared wire files moved from lane h to the scaffold. D-154 and D-155 (network addresses) written before any codec change. Offline hosts show dashes and "Offline since", never last readings. The user confirmed a 5 s hosts-list update is fine, so `HostSummary` stays at 5 s with no wire change; the RFC's open question on it is dropped. Phase 8 lane d now also measures history bytes and agent CPU per query (1 h, 24 h, 7 d, 30 d) and during 30 s of range flipping; results go here when run.
+- 2026-11-25: devil's-advocate review of phases 7 to 12, the polish RFC and D-154/D-155, applied. History answers now reach now through the hub's bounded recent rows (`history_through_now`, never the raw ring); events travel as `WireEvent` and `PublicIp`/`HistoryClamp` gain `Unknown` through `Tagged`/`lenient`; the per-session queue replaces only a same-chart query and 3 `Busy` answers end in the chart's load error; the reader gains a layout filter and the row bounds count the M15 read's `tier_1m` union; stats are per series key; hosts-list rows use `net.rx_total`/`net.tx_total`; the CPU heatmap is its own query with a 256-series per-core clamp; an unknown selector is `InvalidArgument`, a known one without data returns gaps. Lane j splits into j1 (read path) and j2 (concurrency, with the limits on `HostServer`); the scaffold cuts the phone's mirror calls so lanes d and i have no merge order, adds `SubscriptionInfo.recent_ms`, `MobileCall::SetProcessInterest` (implemented by 8d) and the facade test seam, removes the phone's dead `SetHostsRecentInterest`, and switches every TS caller to `hostHistory`; lane l's facade test runs over a scripted dialer, and the real end-to-end check is lane i's Docker test; seeds go by retention, with `serve.sh --seed` for the container (8b). The user then decided every host looks up its own public IP (24 h cache, early on a network change, 10 min after a failure, on demand only, no switch) and that the Mac shows addresses for remote hosts (new phase 8 lane e). Phase 11 depends on phase 9.
+- 2026-11-25: Phases 10 to 12 written from the accepted `plan/rfc-ios-polish.md`: phase 10 primitives (lanes a-e; the scaffold does the text variants, the `variant` rename with a `role` alias kept until phase 11 because phase 9 runs beside it, and installs `expo-localization`, `expo-symbols` (the RFC names it as the icon source but its scaffold list omitted it) and `react-native-reorderable-list`), phase 11 surfaces (lanes a, b, c1, c2, d, e; the RFC's lane c split in two because the host screen and the cards together were larger than L), phase 12 module pages (lanes a-c). Settings joins the root stack (architecture I6). The annotation layout model already exists in core (`widget-models/chart-annotation.ts`, with rows and "+N"), so lane 11e only renders pills in a band above the plot.
+- 2026-11-25: Phase 13 (App Store readiness) written at the user's request, after a requirements pass over Apple's and Expo's primary docs and an audit of `apps/mobile` with a scratch-copy prebuild (deleted). Blocking: Expo's blank placeholder icon, no privacy manifest (the Rust staticlib imports `stat`/`statfs` and has none of its own), version 0.0.0 with a fixed build number, no in-app privacy policy link, no export compliance answer, plus phase 8's camera plugin bringing an unused generic microphone string. Six lanes (a M, b S, c M, d S, e S, v L); the user answers iPad, export compliance, privacy page hosting, name and category, and review access before the scaffold. `plan/rfc-ios-polish.md` section 9 moves arch I8 to this phase.
+- 2026-11-25: phase 13 user decisions: ITSAppUsesNonExemptEncryption true, answered as standard algorithms (the SSH crypto is non-Apple; France declaration or exclusion handled in App Store Connect); iPhone only, checked in iPad compatibility mode; privacy policy and support at docs-site /docs/iphone; name StatGlass, Utilities with Developer Tools secondary; review access through demo mode only. Linux-only setup (polish open question 1): the welcome screen links the README section and says a Mac is needed.
+- 2026-11-25: Phase 7 tagged `ios-app-phase-7` (754dd55a). Lanes a, c, d, e, f, g, h, i, j1, j2, k merged, each reviewed with follow-ups. Integration fixes at merge: `OpenError` keeps lane e's typed phone-key errors over lane d's entry enum; the mock's `complete_to_ms` follows the Rust watermark rule (one sampler tick behind); j2's answer cache needed the gap test to use a fresh server per store state; lane c's `useLiveFailure(host, remote)` wired into `useConnection`. Gate: `make check` green except `updater-patch-test`, which cannot run from a worktree nested in the main checkout (Cargo finds the parent workspace; `vendor/` is identical to main and passes 26/26 there); `make ssh-docker-test` 13/13 after fixing the history watermark race in `mobile_core_streams_and_reads_host_history`; `make e2e-perf`, `make mobile-check`, `make mobile-rust-check` green. Simulator (iPhone 18 Pro, native rebuild): hosts list, host screen, CPU module at 1 h and 7 d with hatched gaps and event pills, Settings > Data, debug core start, in dark, light and accessibility-extra-large. Carried forward: the host title breaks mid-word at AX1 (phase 11 lane c1); identical demo values per host (phase 11 lane d); old two-button welcome (phase 8 lane c).
+- 2026-11-25: Phase 8 scaffold q1: `can_hand_over` is a plain seventh tuple element with a decoder that accepts six or seven; no SGP1 decoder ships outside the phone (the Mac and agent only decode in tests), so the old-decoder skew direction is dropped.
+- 2026-11-25: Phase 8 landed: lanes a (pairing core, host store), b (host pairing and the Docker pairing fixture), c (Add a host flow, D-156), d (screen-scoped demand) and e (Mac host addresses), each reviewed. Integration: lane d admits a host parked until `SetDemand` names it, so lane a's pairing tests declare demand before waiting for the dial; `docker_demand` stays a manual benchmark against `serve.sh --seed` (it needs seeded history, which the gate's container lacks). Lane answers: NotRunning and Busy stay folded into `Unavailable` at the IPC layer; the scene background is authoritative for demand, and iOS 27's Notification Center pull (which does not background the scene) is an accepted deviation; `LiveFeed::min_frame_period_ms()` is 0 by default and 5000 on the phone's compact level; the native tray popover stays pinned to This Mac. Measured against the Docker agent: compact 76.91 B/s, full 819.49 B/s, full plus the CPU process table 1,597.86 B/s; history answers 4,709 B (1 h), 4,783 (24 h), 5,092 (7 d), 10,391 (30 d); 60 range flips cost 150 ms of agent CPU; a host parks 15.06 s after its last demand. Lane e's Overview frontend cost 14.75 ms/s against 7.21 before, inside the `frontend` budget. Gate: `bun run check` (2,947), Rust workspace tests, updater 26/26 from the main checkout, `make mobile-check` (337 jest), `make mobile-rust-check`, `make e2e-perf`, `make ssh-docker-test` including both `docker_pair` tests (statglass-ssh, and mobile approval and denial). Simulator (iPhone 18 Pro, Docker agent over LAN 127.0.0.1): paste, preview, waiting code and host prompt match; approval on a fresh install fell back to the method choice, because the roster event arrived before the flow's paired step and `PairScreen` swapped the flow for its starting panel while hosts existed with no transport chosen (fixed in 037c4688, with the first-launch test now emitting the roster event during `pair`, revert-verified). After the fix, approval lands on Hosts with the host Live; checked dark, light and AX1. Carried to phase 11: the row OS icon shows "?" for Linux and does not scale with Dynamic Type, and the offer expiry reads in seconds ("Expires in 568s"). Carried to phase 13: `statglass://debug` is reachable in release builds and its `setHosts` now writes `hosts.json`.
+- 2026-11-25: Phases 9 and 10 tagged `ios-app-phase-9` and `ios-app-phase-10` (both at a8cbe73e, where the combined gate passed). Phase 10: lanes a to e merged; `zeego` was dropped for `ActionSheetIOS` (no native context menu dependency); `react-native-reorderable-list@0.18.3` carries a bun patch under `patches/` (upstream issue still to file, draft in the archived ios-p10b result), and `.pre-commit-config.yaml` excludes `^patches/` from trailing-whitespace because the hook corrupted the patch's blank context lines. Phase 9: lanes a to c merged; `installed_hosts` and `list_device_keys` landed on the Mac side; `statglass-ssh` is a dev-dependency edge of `statglass-remote` for its tests; bundles carry provenance (`from`, `issued_ms`) and apply only to hosts from the same Mac; the desktop reuses core's `handoverReasonText`; the browser mock QR stays `SGB1:DEMO`, a hand-built 21x21 matrix used only in the browser demo; QR budget measured at 1,160 bytes for ten single-pin hosts, and multi-pin bundles can pass 1.2 KB. Simulator demo on iPhone 18 Pro against the Docker Linux host: a bundle from `handover-bundle` listed `demo-linux` as new, applying it brought it Live (CPU 14%, memory 19%), and a second bundle from the same Mac without it showed "Removed on your Mac". The demo container needs the `~/.local/bin/statglass-agent` symlink the Docker test creates, since the user layout's binary lives there. `/dev/primitives` rendered every primitive on the integrated build.
+- 2026-11-25: Phase 11 lane answers: b edits `pairing/index.tsx` only to mount `PairingStep`, and keeps `components/action-button.tsx` until lane a lands (orchestrator deletes it at integration); c1 extends `ui/screen-scroll.tsx` with an opt-in reorderable scroll surface; c2's header chevron calls `onToggleDensity`, body press `onOpen`, and c1 owns long-press; d keeps phase 8's compact listener (the list's only HostSummary path) and asserts compact demand and no Live1s instead of zero `subscribeLive` calls; e caps More at 7 days because the phone receives no per-host retention (follow-up: carry `retention_days` to the phone); a deletes the phase 10 dev-route test and makes a targeted AX1 edit to the Debug key.
+- 2026-11-25: Phase 11 landed: lanes a (headers and settings pages), b (welcome, demo provider, pairing layout), c1 (host screen gestures and card stack), c2 (card anatomy and chart wording in core), d (hosts-list rows and per-host demo data) and e (module page frame), each reviewed. Gate at the integration merge: rust-check, architecture-check, mobile-check, mobile-rust-check and bindings-check pass; `bun run check` 3,008, e2e 595 plus the pre-existing flaky `io-pages.spec.ts:76`, e2e-perf 16, cargo 1,124 plus `callsPerTick.windowGpu.iokit` at 352 against 350 (environment-dependent, not investigated), mobile jest 503. Simulator pass on demo hosts and the Docker Linux agent (iPhone 18 Pro) found and fixed: a host parked after `PARK_GRACE` read "Offline since" though nothing had failed, now "Last seen" (`parkedSummary` in core, eda2292b); the status bar ignored the in-app appearance because the plist makes it view-controller based, so `screenOptions` sets `statusBarStyle` and the `expo-status-bar` component is gone; Remove on host settings is a destructive `ListRow`; hosts-list rows stack one metric per line (360aef69); rows with nothing to read collapse to their status line, keeping dashes while the status loads or the host first dials (6c155001). Forks recorded in `packages/core/README.md`: Power lists only reported rails, Memory uses a one-column legend. Known and left: the Linux agent's Network card shows dashes inside a container because the collector keeps only interfaces with a `device` link, which a veth lacks (by design); hosts-list Network bars have no ceiling label, so they start about 60 pt left of the CPU and Memory plots; tapping outside an open swipe row does not close it; the 7 d x-axis shows one tick label.
+- 2026-11-25: Phase 12 scaffold: page stubs under `apps/mobile/src/module/pages/<module>/index.tsx` as named exports (`CpuPage` and the rest, by the repo's named-export rule) and `MODULE_PAGES` points at them. The core re-export stubs are dropped: `packages/core` may not import the desktop app, and `network/_lib/network.ts` imports `InterfaceRow` from `~/components/interface-table`, so lanes a and b create `cpu-clusters.ts` and `network-lines.ts` with the moved bodies (lane b moves `InterfaceRow` with them) and turn the desktop files into re-exports. Mock check (a probe over every phase 12 selector on the phone demo transport, 1 h): the Mac answers 14 `cpu.load` cores, 5 `gpu.residency` states, 10 `thermal.zone` series, 2 fans, swap in and out and battery; the Linux hosts answer 8 cores, `cpu.iowait`, `cpu.steal`, `cpu.psi`, `mem.psi`, 3 interfaces of `net.rx`/`net.tx` and 3 `thermal.sensor`, and no GPU, zones or battery, which the pages omit. No mock additions were needed. `networkAddresses` serves `known` for demo hosts, `unavailable` for `remote-linux` and `remote_unsupported` for the hosts-outdated NAS; tests reach `pending` and `unknown` by spying on `networkAddresses`.
+- 2026-11-25: Phase 12 landed: lanes a (CPU, GPU), b (Memory, Network) and c (Power & Sensors, Battery), each reviewed, plus consolidation (one `HistoryNotice`, heat-matrix gap overlay), the D-157 range totals on Network (`measuredShort` moved to `@core/range-totals`), and the generic page deleted. Gate: mobile-check 564, `bun run check` 3,011. Simulator (iPhone 18 Pro on the Docker Linux agent; iPhone 17e on demo hosts, light, dark, AX1): CPU heatmap with P/E rows, Network header "en0 · 1.2 Gb/s link · 192.168.1.24 · Public 203.0.113.42", range totals, mirrored bars with both ceilings. Fixed during the pass: the network ceiling label rendered "↑Upload·" because RN drops gap-x between Text runs, now one string (d6c6757b, test 72374905); per the user, hosts-list rows lead with a figures row and stack full-width charts, the network bars get an ↑/↓ ceiling gutter, and the three plots share the widest measured gutter (a355f8d3, a723c843). Known and left: "Try demo hosts" takes about 1-2 s with only a dimmed label as feedback.
+- 2026-11-25: Phase 13 landed: lanes a (release config, D-156), b (icon variants and launch screen), c (release routes, About links), d (`/docs/iphone` privacy and support page; the docs site's `@core` alias fixed to `packages/core`), e (IPv4 literals through `getaddrinfo` for NAT64) and v (`make mobile-archive`, `make mobile-release-check`, `.github/releasing-mobile.md`), each reviewed. After the lanes: the host screen opens with the host's last five minutes from recent rows (618b07dc, D-159) and its charts load like the desktop's (49b3171a). The final whole-branch review found two issues in that loading path (a frame from before the refill could end the wait early; the wait had no end without live detail); both fixed with revert-verified tests (14a756bd). The simulator then showed the first fix's detail gate made the host screen skip its loading state, because the screen subscribes a frame before its demand reaches the session, so the wait is bounded at `REFILL_WAIT_MS` (10 s) instead (987ea6fe). Main (0.15.0, remote alert rules, Utilities) merged in at 47e23493. `make mobile-archive` builds and signs the archive; its App Store export fails for want of an Apple Distribution certificate, which is left to the maintainer, as are the device pass, store screenshots and the App Store Connect record (`plan/handoff-ios-app-store.md`).

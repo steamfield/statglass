@@ -25,6 +25,41 @@ const DEVICE: &str = "statglass-mobile:";
 const PAIRING: &str = "statglass-pairing:";
 const KEY_HEADER: &[u8] = b"\0\0\0\x13ecdsa-sha2-nistp256\0\0\0\x08nistp256\0\0\0\x41";
 
+impl EcdsaP256Public {
+    /// The uncompressed public key as padded base64 SEC1.
+    pub fn to_base64(&self) -> String {
+        encode_base64(&self.0)
+    }
+
+    /// Decodes the SEC1 public key passed to the one-shot authorization commands.
+    pub fn from_base64(text: &str) -> Result<Self, DeviceKeysError> {
+        let key = matches!(text.len(), 87 | 88)
+            .then(|| decode_base64(text.as_bytes()))
+            .flatten()
+            .and_then(|point| <[u8; 65]>::try_from(point).ok())
+            .filter(|point| valid_key(point))
+            .map(Self);
+        key.ok_or_else(|| {
+            DeviceKeysError::Invalid("expected a base64 uncompressed P-256 public key".into())
+        })
+    }
+
+    /// Decodes the public key line the phone displays, ignoring its optional comment.
+    pub fn from_authorized_key(line: &str) -> Result<Self, DeviceKeysError> {
+        let mut fields = line.split_ascii_whitespace();
+        if !line.contains(['\r', '\n'])
+            && fields.next() == Some(KEY_TYPE)
+            && let Some(blob) = fields.next().and_then(|key| decoded_blob(key.as_bytes()))
+            && let Some(Ok(point)) = blob.strip_prefix(KEY_HEADER).map(<[u8; 65]>::try_from)
+        {
+            return Ok(Self(point));
+        }
+        Err(DeviceKeysError::Invalid(
+            "expected one ecdsa-sha2-nistp256 public key line".into(),
+        ))
+    }
+}
+
 /// One `authorized_keys` file, symlinks followed.
 pub struct AuthorizedKeys {
     path: PathBuf,
@@ -40,6 +75,40 @@ impl AuthorizedKeys {
     /// The file at `path`.
     pub fn at(path: PathBuf) -> Self {
         Self { path }
+    }
+
+    /// The enrolled device keys and names to provision when a controller adds a host.
+    pub fn list_device_keys(
+        &self,
+    ) -> Result<Vec<(DeviceTag, String, EcdsaP256Public)>, DeviceKeysError> {
+        self.read_devices(|tag, name, blob| {
+            let key = EcdsaP256Public(blob.strip_prefix(KEY_HEADER)?.try_into().ok()?);
+            (DeviceTag::from_key(&key) == tag).then_some((tag, name, key))
+        })
+    }
+
+    fn read_devices<T>(
+        &self,
+        mut view: impl FnMut(DeviceTag, String, Vec<u8>) -> Option<T>,
+    ) -> Result<Vec<T>, DeviceKeysError> {
+        let Some(file) = key_io(
+            read_keys(&self.path, libc::O_NONBLOCK),
+            "reading",
+            &self.path,
+        )?
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(entries(&file.bytes)
+            .filter_map(|entry| {
+                let tag = DeviceTag::parse(
+                    std::str::from_utf8(entry.token.strip_prefix(DEVICE.as_bytes())?).ok()?,
+                )?;
+                let blob = decoded_blob(entry.key)?;
+                let name = sanitize_name(&String::from_utf8_lossy(entry.name));
+                view(tag, name, blob)
+            })
+            .collect())
     }
 
     fn install(
@@ -142,28 +211,14 @@ impl AuthorizedKeys {
 
 impl DeviceKeys for AuthorizedKeys {
     fn list_devices(&self) -> Result<Vec<PairedDevice>, DeviceKeysError> {
-        let Some(file) = key_io(
-            read_keys(&self.path, libc::O_NONBLOCK),
-            "reading",
-            &self.path,
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        Ok(entries(&file.bytes)
-            .filter_map(|entry| {
-                let tag = DeviceTag::parse(
-                    std::str::from_utf8(entry.token.strip_prefix(DEVICE.as_bytes())?).ok()?,
-                )?;
-                let blob = decoded_blob(entry.key)?;
-                let digest = encode_base64(&Sha256::digest(blob));
-                Some(PairedDevice {
-                    tag,
-                    name: sanitize_name(&String::from_utf8_lossy(entry.name)),
-                    fingerprint: format!("SHA256:{}", digest.trim_end_matches('=')),
-                })
+        self.read_devices(|tag, name, blob| {
+            let digest = encode_base64(&Sha256::digest(blob));
+            Some(PairedDevice {
+                tag,
+                name,
+                fingerprint: format!("SHA256:{}", digest.trim_end_matches('=')),
             })
-            .collect())
+        })
     }
 
     fn add_device(
@@ -278,11 +333,19 @@ fn encode_base64(bytes: &[u8]) -> String {
 }
 
 fn decoded_blob(text: &[u8]) -> Option<Vec<u8>> {
+    let blob = decode_base64(text)?;
+    valid_key(blob.strip_prefix(KEY_HEADER)?).then_some(blob)
+}
+
+fn decode_base64(text: &[u8]) -> Option<Vec<u8>> {
     let mut bits = 0;
     let mut value = 0u16;
     let mut blob = Vec::new();
-    let text = text.strip_suffix(b"=").unwrap_or(text);
-    for byte in text {
+    let unpadded = text
+        .strip_suffix(b"==")
+        .or_else(|| text.strip_suffix(b"="))
+        .unwrap_or(text);
+    for byte in unpadded {
         let digit = BASE64.iter().position(|entry| entry == byte)? as u16;
         value = (value << 6) | digit;
         bits += 6;
@@ -291,8 +354,8 @@ fn decoded_blob(text: &[u8]) -> Option<Vec<u8>> {
             blob.push((value >> bits) as u8);
         }
     }
-    let point = blob.strip_prefix(KEY_HEADER)?;
-    (valid_key(point) && encode_base64(&blob).trim_end_matches('=').as_bytes() == text)
+    let canonical = encode_base64(&blob);
+    (canonical.as_bytes() == text || canonical.trim_end_matches('=').as_bytes() == text)
         .then_some(blob)
 }
 
@@ -476,6 +539,28 @@ impl Drop for StagedFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_the_sec1_key_for_an_enrolled_device() {
+        use p256::elliptic_curve::sec1::ToSec1Point;
+
+        let dir = tempfile::tempdir().unwrap();
+        let keys = AuthorizedKeys::at(dir.path().join("authorized_keys"));
+        let secret = p256::SecretKey::from_slice(&[1; 32]).unwrap();
+        let point = secret.public_key().to_sec1_point(false);
+        let key = EcdsaP256Public(point.as_bytes().try_into().unwrap());
+        keys.add_pairing(&key, &"a".repeat(32), 2_000_000_000_000, "/helper pair")
+            .unwrap();
+        assert!(keys.list_device_keys().unwrap().is_empty());
+        keys.remove_pairing(&"a".repeat(32)).unwrap();
+        let tag = keys
+            .add_device(&key, "Travel iPhone", "/helper restricted")
+            .unwrap();
+        assert_eq!(
+            keys.list_device_keys().unwrap(),
+            [(tag, "Travel iPhone".into(), key)]
+        );
+    }
 
     #[test]
     fn current_users_authorized_keys_uses_the_passwd_home() {

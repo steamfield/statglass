@@ -3,14 +3,14 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use statglass_ipc::mobile::{
-    MobileCall, MobileCommand, MobileHost, MobileLiveRequest, MobileTarget,
+    DemandLevel, HostDemand, MobileCall, MobileCommand, MobileHost, MobileLiveRequest, MobileTarget,
 };
 use statglass_ipc::status::RemoteRoute;
 use statglass_proto::{Hello, Message, WireLayout};
-use statglass_schema::{Capabilities, HostId, SeriesKey, lock::LockExt};
+use statglass_schema::{Capabilities, HostId, HostIdentity, SeriesKey, lock::LockExt};
 use statglass_session::{
-    BoxFuture, Close, DialFailure, DialedStream, Dialer, Endpoint, RemoteError, StderrTail,
-    SyncPolicy, Target, codec,
+    BoxFuture, Close, DialFailure, DialedStream, Dialer, Endpoint, RemoteError, StderrTail, Target,
+    codec,
 };
 use tokio::io::DuplexStream;
 use tokio::runtime::Handle;
@@ -18,7 +18,6 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::timeout;
 
 use super::{CoreEvents, Sessions, endpoint};
-use crate::control::SessionControl;
 
 mod docker;
 mod history;
@@ -39,6 +38,7 @@ pub(super) fn host(n: u8) -> MobileHost {
             host: format!("mac{n}.local"),
         }],
         host_keys: Vec::new(),
+        removed_by_controller: false,
         command: MobileCommand::MacHelper {
             path: String::new(),
         },
@@ -49,7 +49,7 @@ fn cpu() -> SeriesKey {
     SeriesKey::parse("cpu.total").unwrap()
 }
 
-fn subscribe(host: HostId, stream: u32) -> MobileCall {
+pub(super) fn subscribe(host: HostId, stream: u32) -> MobileCall {
     MobileCall::SubscribeLive(MobileLiveRequest {
         host,
         stream,
@@ -149,11 +149,31 @@ pub(super) struct Fixture {
 }
 
 impl Fixture {
-    pub(super) fn start(hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
-        Self::start_in(tempfile::tempdir().unwrap(), hosts, sync)
+    pub(super) fn start(hosts: Vec<MobileHost>) -> Self {
+        Self::start_with_signer(hosts, None)
     }
 
-    fn start_in(dir: tempfile::TempDir, hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
+    fn start_with_signer(
+        hosts: Vec<MobileHost>,
+        signer: Option<Arc<dyn crate::ffi::NativeSigner>>,
+    ) -> Self {
+        let demand = hosts
+            .iter()
+            .map(|host| HostDemand {
+                host: host.id,
+                level: DemandLevel::Full,
+            })
+            .collect();
+        let fixture = Self::start_parked(hosts, signer);
+        super::demand::set_demand(&fixture.sessions, demand).unwrap();
+        fixture
+    }
+
+    pub(super) fn start_parked(
+        hosts: Vec<MobileHost>,
+        signer: Option<Arc<dyn crate::ffi::NativeSigner>>,
+    ) -> Self {
+        let dir = tempfile::tempdir().unwrap();
         let (live, messages) = mpsc::unbounded_channel();
         let events = Arc::new(Recorder {
             live,
@@ -166,10 +186,7 @@ impl Fixture {
             panic_event: Mutex::default(),
             event_ready: Notify::new(),
         });
-        let sessions = Sessions::new(events.clone());
-        if sync != SyncPolicy::Full {
-            sessions.set_sync_policy(sync);
-        }
+        let sessions = Sessions::new(events.clone(), signer);
         let (dials, connections) = mpsc::unbounded_channel();
         sessions
             .registry
@@ -196,7 +213,7 @@ impl Fixture {
             .unwrap()
     }
 
-    async fn message(&mut self, kind: &str) -> (u32, Value) {
+    pub(super) async fn message(&mut self, kind: &str) -> (u32, Value) {
         timeout(WAIT, async {
             loop {
                 let (stream, msg) = self.messages.recv().await.unwrap();
@@ -208,34 +225,15 @@ impl Fixture {
         .await
         .expect("expected a live message")
     }
-
-    async fn next_roster(&self) -> Vec<HostId> {
-        timeout(WAIT, async {
-            loop {
-                if let Some(event) = self
-                    .events
-                    .events
-                    .lock_ok()
-                    .iter()
-                    .find(|event| event["kind"] == "hosts_changed")
-                {
-                    return ids(event["hosts"].clone());
-                }
-                self.events.event_ready.notified().await;
-            }
-        })
-        .await
-        .expect("host roster event")
-    }
 }
 
-struct PeerDialer(mpsc::UnboundedSender<Dial>);
+pub(crate) struct PeerDialer(pub(crate) mpsc::UnboundedSender<Dial>);
 
-pub(super) struct Dial {
-    peer: DuplexStream,
-    pub(super) target: String,
-    pub(super) closing: oneshot::Receiver<()>,
-    pub(super) finish_close: oneshot::Sender<()>,
+pub(crate) struct Dial {
+    pub(crate) peer: DuplexStream,
+    pub(crate) target: String,
+    pub(crate) closing: oneshot::Receiver<()>,
+    pub(crate) finish_close: oneshot::Sender<()>,
 }
 
 struct CloseGate(oneshot::Sender<()>, oneshot::Receiver<()>);
@@ -283,20 +281,39 @@ impl Dialer for PeerDialer {
 }
 
 impl Dial {
-    pub(super) async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
+    pub(crate) async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
+        self.handshake_with_features(host, statglass_proto::local_features())
+            .await
+    }
+
+    async fn handshake_with_features(
+        &mut self,
+        host: &MobileHost,
+        features: std::collections::BTreeSet<String>,
+    ) -> statglass_proto::RemoteInterest {
+        self.handshake_as(endpoint::record(host).identity(), features)
+            .await
+    }
+
+    pub(super) async fn handshake_as(
+        &mut self,
+        identity: HostIdentity,
+        features: std::collections::BTreeSet<String>,
+    ) -> statglass_proto::RemoteInterest {
+        let host = identity.id;
         codec::write(
             &mut self.peer,
             &Message::Hello(Box::new(Hello {
                 proto_version: statglass_proto::PROTO_VERSION,
                 min_compatible: statglass_proto::MIN_COMPATIBLE,
                 app_version: "fixture".into(),
-                host: endpoint::record(host).identity(),
-                db_instance_uuid: host.id.0,
+                host: identity,
+                db_instance_uuid: host.0,
                 capabilities: Capabilities {
                     revision: 5,
                     ..Default::default()
                 },
-                features: statglass_proto::local_features(),
+                features,
             })),
         )
         .await
@@ -308,14 +325,14 @@ impl Dial {
         interest
     }
 
-    async fn read(&mut self) -> Message {
+    pub(crate) async fn read(&mut self) -> Message {
         timeout(WAIT, codec::read(&mut self.peer))
             .await
             .unwrap()
             .unwrap()
     }
 
-    async fn layout(&mut self) {
+    pub(crate) async fn layout(&mut self) {
         codec::write(
             &mut self.peer,
             &Message::LayoutDef(WireLayout {
@@ -327,7 +344,7 @@ impl Dial {
         .unwrap();
     }
 
-    async fn frame(&mut self, ts_ms: i64, value: f32) {
+    pub(crate) async fn frame(&mut self, ts_ms: i64, value: f32) {
         codec::write(
             &mut self.peer,
             &Message::Live(statglass_proto::LiveFrame {

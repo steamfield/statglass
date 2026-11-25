@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Exports the brand pack in brand/exports/ and the site's icons and social
-// card in docs-site/public/ from the SVG sources beside this file.
+// Exports the brand pack, site icons and social card, and iPhone assets from
+// the SVG sources beside this file.
 //
 //   node brand/build.mjs            raster exports only
 //   node brand/build.mjs --og URL   also screenshot the landing page at URL
@@ -23,7 +23,6 @@ const root = new URL("..", import.meta.url).pathname;
 const brand = join(root, "brand");
 const exportsDir = join(brand, "exports");
 const site = join(root, "docs-site/public");
-const tmp = mkdtempSync(join(tmpdir(), "statglass-brand-"));
 
 mkdirSync(exportsDir, { recursive: true });
 
@@ -80,13 +79,30 @@ function ico(svg, sizes, out) {
 // iOS and PWA launchers apply their own mask, so the touch icon is the app
 // icon's squircle content cropped to a full-bleed square.
 const appIcon = readFileSync(join(brand, "statglass-app-icon.svg"), "utf8");
-const fullBleed = join(tmp, "app-icon-full-bleed.svg");
-writeFileSync(
-  fullBleed,
-  appIcon
-    .replace('viewBox="0 0 1024 1024"', 'viewBox="100 100 824 824"')
-    .replace(/ rx="18[35]"/g, "")
+const squircleInset = 100;
+const squircleWidth = 824;
+const fullBleedSvg = appIcon
+  .replace(
+    'viewBox="0 0 1024 1024"',
+    `viewBox="${squircleInset} ${squircleInset} ${squircleWidth} ${squircleWidth}"`
+  )
+  .replace(/ rx="18[35]"/g, "");
+
+// Keep the same crop while removing the layers that would cover iOS's dark
+// icon background. Match the backing elements regardless of SVG indentation.
+const appIconMark = fullBleedSvg.replace(
+  /\s*<defs\b[^>]*>[\s\S]*?<\/defs>\s*(?:<rect\b[^>]*\/>\s*){2}(?=<g\s+fill=")/,
+  "\n"
 );
+if (appIconMark === fullBleedSvg) {
+  throw new Error(
+    "statglass-app-icon.svg must have gradient definitions and two backing rectangles before the tile group"
+  );
+}
+
+const tmp = mkdtempSync(join(tmpdir(), "statglass-brand-"));
+const fullBleed = join(tmp, "app-icon-full-bleed.svg");
+writeFileSync(fullBleed, fullBleedSvg);
 
 const jobs = [
   ...["light", "dark"].flatMap((theme) => {
@@ -121,6 +137,30 @@ png(fullBleed, 512, join(site, "icon-512.png"));
 // The raster favicon is the app icon on its squircle, so it reads on light and
 // dark result pages; Google wants a multiple of 48 px. Tabs keep favicon.svg.
 ico(join(brand, "statglass-app-icon.svg"), [32, 48], join(site, "favicon.ico"));
+
+const mobileAssets = join(root, "apps/mobile/assets");
+mkdirSync(mobileAssets, { recursive: true });
+png(fullBleed, 1024, join(mobileAssets, "icon-light.png"));
+
+const darkIcon = join(tmp, "app-icon-dark.svg");
+writeFileSync(darkIcon, appIconMark);
+png(darkIcon, 1024, join(mobileAssets, "icon-dark.png"));
+
+// Expo flattens the tinted icon onto white during prebuild. A translucent
+// black backing keeps the grayscale tiles lighter than their background.
+const tintedIcon = join(tmp, "app-icon-tinted.svg");
+const tintedBacking = `<rect x="${squircleInset}" y="${squircleInset}" width="${squircleWidth}" height="${squircleWidth}" fill="#000" fill-opacity=".95"/>`;
+writeFileSync(
+  tintedIcon,
+  appIconMark.replace(/<g\s+fill="[^"]+"/, `${tintedBacking}\n<g fill="#fff"`)
+);
+png(tintedIcon, 1024, join(mobileAssets, "icon-tinted.png"));
+
+png(
+  join(brand, "statglass-icon-dark.svg"),
+  1024,
+  join(mobileAssets, "splash-icon.png")
+);
 
 const ogIndex = process.argv.indexOf("--og");
 if (ogIndex !== -1) {

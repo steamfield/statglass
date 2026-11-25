@@ -29,20 +29,30 @@ statglass-engine.workspace = true
 statglass-session.workspace = true
 statglass-ipc.workspace = true
 statglass-ssh.workspace = true
+ciborium.workspace = true
+base64 = "0.22.1"
 uniffi.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 # The core's own runtime: every source, stream and blocking query runs on it, so no
 # exported call blocks Swift. No `process`: the phone never spawns a program.
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
 
+[target.'cfg(target_os = "ios")'.dependencies]
+tracing-oslog = "=0.3.0"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+tracing-oslog = "=0.3.0"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+
 [dev-dependencies]
 p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic", "ecdsa", "pkcs8", "std"] }
 statglass-ssh = { workspace = true, features = ["software-signer"] }
-tokio = { workspace = true, features = ["test-util"] }
-tempfile.workspace = true
+tokio = { workspace = true, features = ["process", "test-util"] }
 
 [lints]
 workspace = true

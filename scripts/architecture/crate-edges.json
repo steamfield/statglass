@@ -46,7 +46,7 @@
       "statglass-engine",
       "statglass-session"
     ],
-    "dev": ["statglass-session"]
+    "dev": ["statglass-session", "statglass-ssh"]
   },
   "statglass-remote-helper": { "normal": ["statglass-remote"], "dev": [] },
   "statglass-agent": {

@@ -1,0 +1,88 @@
+import { commandErrorText } from "@core/command-error";
+import type { DeviceIntentInfo } from "@core/generated/types";
+import { unwrap } from "@core/transport";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { InlineMessage } from "~/components/inline-message";
+import { SettingsRow } from "~/components/settings-row";
+import { Button } from "~/components/ui/button";
+import { useTransport } from "~/lib/transport-context";
+
+function IntentRow({ intent }: { intent: DeviceIntentInfo }) {
+  const operation = intent.op === "revoke" ? "Revoke" : "Install";
+  const state = intent.state === "failed" ? "failed" : "pending";
+  return (
+    <SettingsRow
+      label={intent.host_name}
+      sub={
+        <span className="wrap-anywhere">
+          {operation} {state} · {intent.device_name}
+          {intent.reason && <span className="block">{intent.reason}</span>}
+        </span>
+      }
+    />
+  );
+}
+
+export function DeviceIntents() {
+  const transport = useTransport();
+  const intents = useQuery({
+    queryKey: ["device-intents"],
+    queryFn: () => unwrap(transport.deviceIntents()),
+    refetchInterval: 10000,
+    retry: false,
+  });
+  const retry = useMutation({
+    mutationFn: () => unwrap(transport.retryDeviceIntents()),
+    onSettled: () => intents.refetch(),
+  });
+  const hasIntents = Boolean(intents.data?.length);
+  const { reset } = retry;
+  useEffect(() => {
+    if (intents.data?.length === 0) reset();
+  }, [intents.data, reset]);
+  return (
+    <>
+      <SettingsRow
+        label="Device access on other hosts"
+        sub={
+          intents.isPending ? (
+            <span role="status">Loading device updates…</span>
+          ) : hasIntents ? (
+            "This Mac applies changes when it can reach each host."
+          ) : !intents.isError ? (
+            "No pending device updates."
+          ) : undefined
+        }
+      >
+        {(intents.isError || hasIntents) && (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Retry device updates"
+            disabled={intents.isFetching || retry.isPending}
+            onClick={() => {
+              if (intents.isError) void intents.refetch();
+              else retry.mutate();
+            }}
+          >
+            {retry.isPending ? "Retrying…" : "Retry"}
+          </Button>
+        )}
+      </SettingsRow>
+      {intents.isError && (
+        <InlineMessage tone="error" className="px-4 py-3">
+          {commandErrorText(intents.error, "Couldn’t read device updates.")}
+        </InlineMessage>
+      )}
+      {retry.isError && hasIntents && (
+        <InlineMessage tone="error" className="px-4 py-3">
+          {commandErrorText(retry.error, "Couldn’t retry device updates.")}
+        </InlineMessage>
+      )}
+      {intents.data?.map((intent) => (
+        <IntentRow key={`${intent.host}/${intent.device}`} intent={intent} />
+      ))}
+    </>
+  );
+}

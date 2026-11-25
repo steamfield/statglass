@@ -2,9 +2,9 @@
 //! [`Dialer`].
 use crate::{
     ConnectionFailureKind, DialFailure, DialedStream, Dialer, Endpoint, HandshakeFailure,
-    RemoteError, Result, RouteError, SshSession, Target, marker_error,
+    IncompatibleSide, RemoteError, Result, RouteError, SshSession, Target, marker_error,
 };
-use statglass_proto::{Hello, Message, Negotiated, Offer};
+use statglass_proto::{HandshakeError, Hello, Message, Negotiated, Offer};
 use statglass_schema::HostId;
 use std::{
     future::{Future, pending, poll_fn},
@@ -162,7 +162,10 @@ fn preferred_error(error: RemoteError) -> RemoteError {
     }
     if matches!(
         kind,
-        ConnectionFailureKind::MonitoringOff | ConnectionFailureKind::AppNotRunning
+        ConnectionFailureKind::MonitoringOff
+            | ConnectionFailureKind::AppNotRunning
+            | ConnectionFailureKind::PhoneKeyUnavailable
+            | ConnectionFailureKind::Internal
     ) && let RemoteError::Routes(mut routes) = error
     {
         if let Some(index) = routes
@@ -258,13 +261,28 @@ fn negotiate(
             actual: hello.host.id,
         });
     }
-    statglass_proto::negotiate(
-        &Offer::local(statglass_proto::local_features()),
-        &Offer::from(hello),
-    )
-    .map_err(|error| RemoteError::IncompatiblePeer {
-        version: hello.app_version.clone(),
-        reason: error.to_string(),
+    let mut features = statglass_proto::local_features();
+    // Clients can read addresses as soon as a host implements and advertises its resolver.
+    features.insert(statglass_proto::ADDRESSES_QUERY_FEATURE.into());
+    statglass_proto::negotiate(&Offer::local(features), &Offer::from(hello)).map_err(|error| {
+        let side = match error {
+            HandshakeError::Incompatible {
+                peer_max,
+                local_min,
+                ..
+            } if peer_max < local_min => Some(IncompatibleSide::Host),
+            HandshakeError::Incompatible {
+                peer_min,
+                local_max,
+                ..
+            } if peer_min > local_max => Some(IncompatibleSide::App),
+            _ => None,
+        };
+        RemoteError::IncompatiblePeer {
+            version: hello.app_version.clone(),
+            reason: error.to_string(),
+            side,
+        }
     })
 }
 

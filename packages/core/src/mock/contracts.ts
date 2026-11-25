@@ -1,17 +1,19 @@
 import type {
   ChartWindow,
   CliLinkStatus,
+  CommandError,
   Event,
   HistoryGrowth,
   HistoryHealth,
+  HostDemand,
   LiveMsg,
   ProcessView,
-  RemoteHostStatus,
   SeriesKey,
   StarPromptStatus,
   UpdateStatus,
 } from "@core/generated/types";
-import type { Transport } from "../transport";
+import type { PhoneRemoteHostStatus } from "../phone-connection";
+import type { PhoneQueries, Transport } from "../transport";
 import type { ScenarioFlags, ScenarioName } from "./fixtures";
 /**
  * The page embedding a mock-transport build (docs-site's live demo). Shell
@@ -67,14 +69,20 @@ export interface MockCall {
   command: string;
   args: unknown[];
 }
-export interface MockTransport extends Transport {
+export interface MockTransport extends Transport, PhoneQueries {
   readonly kind: "mock";
   readonly flags: ScenarioFlags;
   /** Every command the app sent, in order. */
   readonly calls: MockCall[];
+  /** The last screen demand sent by the phone. */
+  demand(): readonly HostDemand[];
+  failNext(
+    method: keyof Transport | keyof PhoneQueries,
+    error: CommandError
+  ): void;
   /** Deliver one message to every live subscriber. */
   push(msg: LiveMsg): void;
-  pushRemoteStatus(id: string, status: Partial<RemoteHostStatus>): void;
+  pushRemoteStatus(id: string, status: Partial<PhoneRemoteHostStatus>): void;
   /** Generate one tick: a frame (unless paused or stale) and processes. */
   tick(): void;
   /** Number of live subscribers. */

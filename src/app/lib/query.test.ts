@@ -16,7 +16,7 @@ it("never retries the polled and one-shot families", () => {
   expect(retry(diskSpaceKeys.subtree("h", 1, null, false))).toBe(false);
   expect(retry(dockerKeys.storage("e", 0))).toBe(false);
   expect(retry(dockerKeys.operation("e"))).toBe(false);
-  expect(retry(appKeys.publicIp("en0", "10.0.0.2", null))).toBe(false);
+  expect(retry(hostKeys.addresses("h"))).toBe(false);
   expect(retry(appKeys.appearance)).toBe(false);
   expect(retry(hostKeys.sshConfig())).toBe(false);
 });

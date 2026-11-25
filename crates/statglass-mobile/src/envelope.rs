@@ -31,7 +31,7 @@ pub(crate) fn run_result<T: Serialize>(body: impl FnOnce() -> Result<T, CommandE
     // The body's state is dropped with the panic and never observed again, so a
     // broken invariant inside it cannot leak to the caller.
     let outcome = catch_unwind(AssertUnwindSafe(body))
-        .unwrap_or_else(|payload| Err(panicked(payload.as_ref())));
+        .unwrap_or_else(|payload| Err(panicked(payload.as_ref(), "exported call")));
     encode(outcome)
 }
 
@@ -46,10 +46,16 @@ pub(crate) fn encode<T: Serialize>(outcome: Result<T, CommandError>) -> String {
 
 /// The `internal` error for a panic payload: an exported body, or a task it awaited,
 /// panicked.
-pub(crate) fn panicked(payload: &(dyn Any + Send)) -> CommandError {
-    CommandError::Internal {
+pub(crate) fn panicked(payload: &(dyn Any + Send), operation: &str) -> CommandError {
+    let error = CommandError::Internal {
         message: panic_message(payload),
-    }
+    };
+    tracing::error!(
+        error = &error as &dyn std::error::Error,
+        operation,
+        "mobile core panic"
+    );
+    error
 }
 
 /// The text of a panic payload, or a fixed description when it carries no string.
@@ -79,7 +85,11 @@ fn serialize_failure(err: &serde_json::Error) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use serde_json::Value;
+    use statglass_schema::lock::LockExt;
+    use tracing::{Level, Metadata, Subscriber, field, span};
 
     use super::*;
 
@@ -96,9 +106,18 @@ mod tests {
     }
 
     #[test]
-    fn a_panicking_body_is_an_internal_error_naming_the_panic() {
+    fn a_panicking_body_returns_an_internal_error_and_logs_it_once() {
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        // Keep both dispatchers registered so interest is evaluated per thread.
+        // Other tests can hit this callsite with no subscriber.
+        let envelope =
+            tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+                tracing::subscriber::with_default(PanicLog(logs.clone()), || {
+                    run(|| -> u8 { panic!("ring buffer gone") })
+                })
+            });
         assert_eq!(
-            parsed(&run(|| -> u8 { panic!("ring buffer gone") })),
+            parsed(&envelope),
             json!({
                 "status": "error",
                 "error": {
@@ -107,6 +126,52 @@ mod tests {
                 },
             })
         );
+        assert_eq!(
+            *logs.lock_ok(),
+            [Some(
+                "internal error: panic in statglass-mobile: ring buffer gone".into()
+            )]
+        );
+    }
+
+    struct PanicLog(Arc<Mutex<Vec<Option<String>>>>);
+
+    impl Subscriber for PanicLog {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            *metadata.level() == Level::ERROR
+        }
+
+        fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+            span::Id::from_u64(1)
+        }
+
+        fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+        fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+        fn enter(&self, _: &span::Id) {}
+        fn exit(&self, _: &span::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            #[derive(Default)]
+            struct Capture(Option<String>);
+
+            impl field::Visit for Capture {
+                fn record_debug(&mut self, _: &field::Field, _: &dyn std::fmt::Debug) {}
+
+                fn record_error(
+                    &mut self,
+                    field: &field::Field,
+                    error: &(dyn std::error::Error + 'static),
+                ) {
+                    if field.name() == "error" {
+                        self.0 = Some(error.to_string());
+                    }
+                }
+            }
+
+            let mut capture = Capture::default();
+            event.record(&mut capture);
+            self.0.lock_ok().push(capture.0);
+        }
     }
 
     #[test]

@@ -14,13 +14,7 @@ import {
 } from "./net-apps";
 import type { MockPower } from "./power";
 import type { MockProcesses } from "./processes";
-import {
-  coverRates,
-  MOCK_LOCAL_IPV4,
-  MOCK_PUBLIC_IP,
-  MOCK_USER,
-  ok,
-} from "./protocol";
+import { coverRates, MOCK_USER, ok } from "./protocol";
 import type { MockQueries } from "./queries";
 import type { MockRing } from "./ring";
 import type { MockSettings } from "./settings";
@@ -183,37 +177,12 @@ export class MockUsageQueries {
         )
     );
   };
-  readonly getNetworkAddresses: MockTransport["getNetworkAddresses"] = async (
-    host
-  ) => {
-    return this.commands.hostCommand(
-      "get_network_addresses",
-      host,
-      [host],
-      {},
-      () =>
-        ok({
-          iface: this.power.status.primary_iface,
-          ipv4:
-            this.power.status.primary_iface === null ? [] : [MOCK_LOCAL_IPV4],
-          ipv6: [],
-          egress: this.power.status.primary_iface,
-        })
-    );
-  };
-  readonly getPublicIp: MockTransport["getPublicIp"] = async () => {
-    this.commands.record("get_public_ip");
-    return ok(MOCK_PUBLIC_IP);
-  };
-
   get methods() {
     return {
       ...this.durable.methods,
       queryNetworkByApp: this.queryNetworkByApp,
       queryUsageByApp: this.queryUsageByApp,
       queryUsageSeries: this.queryUsageSeries,
-      getNetworkAddresses: this.getNetworkAddresses,
-      getPublicIp: this.getPublicIp,
     };
   }
 }

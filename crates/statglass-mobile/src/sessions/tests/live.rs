@@ -2,7 +2,6 @@ use statglass_engine::Source;
 use statglass_ipc::live::LiveMsg;
 use statglass_ipc::vitals::HostVitals;
 use statglass_proto::SourceStatus;
-use statglass_schema::Tier;
 
 use crate::control::SessionControl;
 use statglass_ipc::error::CommandError;
@@ -13,7 +12,7 @@ use super::*;
 async fn live_cpu_arrives_in_order_and_prioritizes_the_open_source() {
     let first = host(1);
     let second = host(2);
-    let mut fixture = Fixture::start(vec![first.clone(), second.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![first.clone(), second.clone()]);
     let one = fixture.next_dial().await;
     let two = fixture.next_dial().await;
     let mut remote = if one.target == second.targets[0].host {
@@ -39,6 +38,7 @@ async fn live_cpu_arrives_in_order_and_prioritizes_the_open_source() {
         info,
         json!({
             "host": second.id, "stream": 7, "backfill_start_ms": null,
+            "recent_ms": statglass_ipc::live::RECENT_MS,
             "backfill_rows": 0, "earlier_start_ms": null, "earlier_rows": 0,
         })
     );
@@ -51,6 +51,7 @@ async fn live_cpu_arrives_in_order_and_prioritizes_the_open_source() {
             .collect::<Vec<_>>(),
         [second.id, first.id]
     );
+    let before = statglass_engine::wall_ms();
     remote.layout().await;
     remote.frame(NOW, 11.).await;
     remote.frame(NOW + 1_000, 23.).await;
@@ -71,13 +72,19 @@ async fn live_cpu_arrives_in_order_and_prioritizes_the_open_source() {
         };
         assert_eq!(message, serde_json::to_value(expected).unwrap());
     }
+    let vitals = fixture
+        .sessions
+        .call(MobileCall::HostVitals { host: second.id })
+        .await
+        .unwrap();
+    let as_of_ms = vitals["as_of_ms"].as_i64().unwrap();
+    let last_frame = NOW + 1_000;
+    let elapsed = statglass_engine::wall_ms() - before;
+    assert!((last_frame..=last_frame + elapsed).contains(&as_of_ms));
     assert_eq!(
-        fixture
-            .sessions
-            .call(MobileCall::HostVitals { host: second.id })
-            .await
-            .unwrap(),
+        vitals,
         json!(HostVitals {
+            as_of_ms: Some(as_of_ms),
             cpu_pct: Some(23.),
             ..Default::default()
         })
@@ -96,9 +103,9 @@ async fn live_cpu_arrives_in_order_and_prioritizes_the_open_source() {
 #[tokio::test(start_paused = true)]
 async fn a_refused_frame_releases_the_stream_and_an_unknown_unsubscribe_is_a_noop() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
-    remote.handshake(&host).await;
+    assert!(remote.handshake(&host).await.detail);
     assert_eq!(
         fixture
             .sessions
@@ -108,14 +115,12 @@ async fn a_refused_frame_releases_the_stream_and_an_unknown_unsubscribe_is_a_noo
         Value::Null
     );
     fixture.sessions.call(subscribe(host.id, 42)).await.unwrap();
-    while !matches!(remote.read().await, Message::Interest(interest) if interest.detail) {}
     *fixture.events.refuse.lock_ok() = Some("frame");
     remote.layout().await;
     remote.frame(NOW, 11.).await;
     remote.frame(NOW + 1_000, 23.).await;
     assert_eq!(fixture.message("frame").await.0, 42);
     assert_eq!(fixture.sessions.registry.live.open_host(), None);
-    while !matches!(remote.read().await, Message::Interest(interest) if !interest.detail) {}
     assert!(fixture.messages.try_recv().is_err());
 
     *fixture.events.refuse.lock_ok() = None;
@@ -128,7 +133,7 @@ async fn a_refused_frame_releases_the_stream_and_an_unknown_unsubscribe_is_a_noo
 #[tokio::test(start_paused = true)]
 async fn a_listener_gone_during_initial_delivery_can_reuse_its_stream_id() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     *fixture.events.refuse.lock_ok() = Some("caps");
     assert!(fixture.sessions.call(subscribe(host.id, 8)).await.is_err());
     assert_eq!(fixture.message("caps").await.0, 8);
@@ -141,73 +146,10 @@ async fn a_listener_gone_during_initial_delivery_can_reuse_its_stream_id() {
     );
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_host_added_before_any_policy_change_starts_full_sync() {
-    let host = host(1);
-    let mut fixture = Fixture::start(vec![], SyncPolicy::Full);
-    fixture.sessions.set_hosts(vec![host.clone()]).unwrap();
-    let mut remote = fixture.next_dial().await;
-    offer_history(&mut remote, &host).await;
-    let Message::SyncRequest(request) = remote.read().await else {
-        panic!("expected minute sync under the default policy");
-    };
-    assert_eq!(request.tier, Tier::M1);
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_later_source_uses_the_last_sync_policy_and_active_sources_follow_changes() {
-    let host = host(1);
-    let mut fixture = Fixture::start(vec![], SyncPolicy::Full);
-    fixture.sessions.set_sync_policy(SyncPolicy::Off);
-    fixture.sessions.set_hosts(vec![host.clone()]).unwrap();
-    let mut remote = fixture.next_dial().await;
-    offer_history(&mut remote, &host).await;
-    assert!(
-        timeout(Duration::from_millis(500), codec::read(&mut remote.peer))
-            .await
-            .is_err(),
-        "policy Off suppresses initial sync"
-    );
-
-    fixture.sessions.set_sync_policy(SyncPolicy::Full);
-    assert!(matches!(remote.read().await, Message::Interest(_)));
-    let Message::SyncRequest(request) = remote.read().await else {
-        panic!("expected minute sync after enabling it")
-    };
-    assert_eq!(request.tier, Tier::M1);
-}
-
-async fn offer_history(remote: &mut Dial, host: &MobileHost) {
-    remote.handshake(host).await;
-    let Message::Ping { nonce, t0_ms } = remote.read().await else {
-        panic!("expected clock probe")
-    };
-    codec::write(
-        &mut remote.peer,
-        &Message::Pong {
-            nonce,
-            t0_ms,
-            t_remote_ms: NOW,
-        },
-    )
-    .await
-    .unwrap();
-    codec::write(
-        &mut remote.peer,
-        &Message::SourceStatus(SourceStatus {
-            history_available: true,
-            interval_ms: 1_000,
-            ..Default::default()
-        }),
-    )
-    .await
-    .unwrap();
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_in_flight_callback_keeps_its_stream_id_until_it_returns() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
     remote.handshake(&host).await;
     fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
@@ -233,15 +175,20 @@ async fn an_in_flight_callback_keeps_its_stream_id_until_it_returns() {
 #[tokio::test(start_paused = true)]
 async fn a_panicking_live_callback_unregisters_the_stream() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
-    remote.handshake(&host).await;
+    assert!(remote.handshake(&host).await.detail);
     fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
-    while !matches!(remote.read().await, Message::Interest(interest) if interest.detail) {}
     *fixture.events.panic_live.lock_ok() = true;
     remote.layout().await;
     remote.frame(NOW, 11.).await;
-    while !matches!(remote.read().await, Message::Interest(interest) if !interest.detail) {}
+    timeout(WAIT, async {
+        while fixture.sessions.registry.live.open_host().is_some() {
+            tokio::time::advance(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(
         fixture.sessions.call(subscribe(host.id, 7)).await.unwrap()["stream"],
         7
@@ -251,7 +198,7 @@ async fn a_panicking_live_callback_unregisters_the_stream() {
 #[tokio::test(start_paused = true)]
 async fn a_panicking_status_callback_leaves_the_session_running() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
     *fixture.events.panic_event.lock_ok() = true;
     remote.handshake(&host).await;
@@ -264,7 +211,7 @@ async fn a_panicking_status_callback_leaves_the_session_running() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_blocked_status_callback_does_not_block_live_frames() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
     remote.handshake(&host).await;
     fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
@@ -296,7 +243,7 @@ async fn a_blocked_status_callback_does_not_block_live_frames() {
 #[tokio::test(start_paused = true)]
 async fn frame_vitals_change_without_another_remote_hosts_event() {
     let host = host(1);
-    let mut fixture = Fixture::start(vec![host.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![host.clone()]);
     let mut remote = fixture.next_dial().await;
     let read_events = |events: &Recorder| {
         events
@@ -307,7 +254,7 @@ async fn frame_vitals_change_without_another_remote_hosts_event() {
             .count()
     };
     timeout(WAIT, async {
-        while read_events(&fixture.events) < 2 {
+        while read_events(&fixture.events) < 3 {
             fixture.events.event_ready.notified().await;
         }
     })
@@ -349,10 +296,92 @@ async fn frame_vitals_change_without_another_remote_hosts_event() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn quiescing_closes_the_session_at_once_and_offline_vitals_keep_only_the_frame_time() {
+    let host = host(1);
+    let mut fixture = Fixture::start(vec![host.clone()]);
+    let mut peer = fixture.next_dial().await;
+    peer.handshake(&host).await;
+    let Message::Ping { nonce, t0_ms } = peer.read().await else {
+        panic!("expected the initial heartbeat");
+    };
+    fixture.sessions.call(subscribe(host.id, 7)).await.unwrap();
+    peer.layout().await;
+    let before = statglass_engine::wall_ms();
+    peer.frame(NOW, 23.0).await;
+    assert_eq!(fixture.message("frame").await.1["ts_ms"], NOW);
+    let request = MobileCall::HostVitals { host: host.id };
+    let live = fixture.sessions.call(request.clone()).await.unwrap();
+    assert_eq!(live["cpu_pct"], 23.);
+    let elapsed = statglass_engine::wall_ms() - before;
+    assert!((NOW..=NOW + elapsed).contains(&live["as_of_ms"].as_i64().unwrap()));
+
+    let next = NOW + 1_000;
+    codec::write(
+        &mut peer.peer,
+        &Message::Pong {
+            nonce,
+            t0_ms,
+            t_remote_ms: next,
+        },
+    )
+    .await
+    .unwrap();
+    peer.frame(next, 28.0).await;
+    assert_eq!(fixture.message("frame").await.1["ts_ms"], next);
+    let live = fixture.sessions.call(request.clone()).await.unwrap();
+    assert_eq!(live["cpu_pct"], 28.);
+    let elapsed = statglass_engine::wall_ms() - before;
+    assert!((next..=next + elapsed + 1).contains(&live["as_of_ms"].as_i64().unwrap()));
+
+    let lifecycle = fixture.sessions.lifecycle().clone();
+    let now = tokio::time::Instant::now();
+    let mut parked = lifecycle.quiesce(&fixture.sessions);
+    timeout(WAIT, &mut peer.closing).await.unwrap().unwrap();
+    assert!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(parked.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
+    peer.finish_close.send(()).unwrap();
+    timeout(WAIT, parked).await.unwrap();
+    assert_eq!(tokio::time::Instant::now(), now);
+    let last_seen = json!(HostVitals {
+        as_of_ms: Some(next),
+        ..Default::default()
+    });
+    assert_eq!(
+        fixture.sessions.call(request.clone()).await.unwrap(),
+        last_seen
+    );
+    let rows = fixture
+        .sessions
+        .call(MobileCall::ListRemoteHosts)
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["connection"]["state"], "offline");
+    assert_eq!(rows[0]["vitals"], last_seen);
+
+    lifecycle.resume(&fixture.sessions);
+    let mut reconnected = fixture.next_dial().await;
+    reconnected.handshake(&host).await;
+    assert_eq!(
+        fixture.sessions.call(request.clone()).await.unwrap(),
+        last_seen
+    );
+    reconnected.layout().await;
+    reconnected.frame(next + 1000, 12.0).await;
+    assert_eq!(fixture.message("frame").await.1["ts_ms"], next + 1000);
+    assert_eq!(
+        fixture.sessions.call(request).await.unwrap()["cpu_pct"],
+        12.
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_open_stream_keeps_its_id_when_a_configured_host_is_rebuilt() {
     let other = host(2);
     let mut viewed = host(1);
-    let mut fixture = Fixture::start(vec![other.clone(), viewed.clone()], SyncPolicy::Off);
+    let mut fixture = Fixture::start(vec![other.clone(), viewed.clone()]);
     let first = fixture.next_dial().await;
     let second = fixture.next_dial().await;
     let (mut old, _other) = if first.target == viewed.targets[0].host {

@@ -1,7 +1,7 @@
 //! What a pairing QR carries and what the forced `pair` command says (RFC
 //! `plan/rfc-ios-app.md` 2.4, D-145, D-151). The payload is `"SGP1:"` + base45(CBOR);
 //! base45 is written here rather than taken from a crate.
-use crate::CodecError;
+use crate::{CodecError, handover::UnavailableHost};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use statglass_schema::HostId;
 use std::time::Duration;
@@ -60,6 +60,9 @@ pub struct PairingPayload {
     pub code: String,
     /// When the pairing line expires, ms epoch (UTC).
     pub expires_ms: i64,
+    /// The host can offer other hosts that it monitors.
+    #[serde(default)]
+    pub can_hand_over: bool,
 }
 
 /// The phone's first frame on the forced `pair` command.
@@ -88,6 +91,8 @@ pub enum PairReply {
     Approved {
         device: String,
         hosts: Vec<BundleHost>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unavailable: Vec<UnavailableHost>,
     },
     Denied,
     Expired,
@@ -110,6 +115,10 @@ pub enum PairError {
     Unavailable,
     #[error("invalid pairing data")]
     Invalid,
+    #[error("the monitoring app or agent is not running on this host")]
+    NotRunning,
+    #[error("another device is already waiting for pairing approval")]
+    Busy,
 }
 
 const PREFIX: &str = "SGP1:";
@@ -122,7 +131,16 @@ pub const PAIR_RECEIPT_GRACE: Duration = Duration::from_secs(11);
 
 // Positional fields keep the QR small. PairStart and PairReply keep their own wire layout.
 #[derive(Serialize, Deserialize)]
-struct QrPayload(u8, QrHost, [u8; 32], String, String, i64);
+struct QrPayload(
+    u8,
+    QrHost,
+    [u8; 32],
+    String,
+    String,
+    i64,
+    // Omit the default so ordinary agent QR codes still fit an 80-column terminal.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")] bool,
+);
 
 #[derive(Serialize, Deserialize)]
 struct QrHost(
@@ -185,11 +203,16 @@ pub fn encode_payload(p: &PairingPayload) -> String {
         p.nonce.clone(),
         p.code.clone(),
         p.expires_ms,
+        p.can_hand_over,
     );
     // All fields have infallible serde implementations, and Vec writes cannot fail.
     ciborium::into_writer(&compact, &mut bytes).expect("pairing payload serializes to a Vec");
+    encode_qr(PREFIX, bytes)
+}
+
+pub(crate) fn encode_qr(prefix: &str, mut bytes: Vec<u8>) -> String {
     bytes.extend_from_slice(&checksum(&bytes).to_be_bytes());
-    let mut text = String::from(PREFIX);
+    let mut text = String::from(prefix);
     for chunk in bytes.chunks(2) {
         let (mut value, digits) = match chunk {
             [high, low] => (usize::from(u16::from_be_bytes([*high, *low])), 3),
@@ -206,19 +229,18 @@ pub fn encode_payload(p: &PairingPayload) -> String {
 
 /// Reads QR text, refusing an expired, wrong-version, corrupt or malformed payload.
 pub fn decode_payload(s: &str, now_ms: i64) -> Result<PairingPayload, PairError> {
-    if s.len() > MAX_QR_TEXT {
+    let payload = parse_payload(s)?;
+    if now_ms >= payload.expires_ms {
         return Err(PairError::Invalid);
     }
-    let encoded = s.strip_prefix(PREFIX).ok_or(PairError::Invalid)?;
-    let bytes = decode_base45(encoded.as_bytes())?;
-    let (body, crc) = bytes.split_last_chunk::<4>().ok_or(PairError::Invalid)?;
-    if checksum(body) != u32::from_be_bytes(*crc) {
-        return Err(PairError::Invalid);
-    }
-    let QrPayload(version, host, pairing_key, nonce, code, expires_ms) =
-        decode_pair_body(body).map_err(|_| PairError::Invalid)?;
+    Ok(payload)
+}
+
+/// Validates the QR's structure, version and checksum. The caller checks its expiry.
+pub fn parse_payload(s: &str) -> Result<PairingPayload, PairError> {
+    let QrPayload(version, host, pairing_key, nonce, code, expires_ms, can_hand_over) =
+        decode_qr(s, PREFIX, MAX_QR_TEXT)?;
     if version != PAYLOAD_VERSION
-        || now_ms >= expires_ms
         || !valid_nonce(&nonce)
         || code.len() != 6
         || !code.chars().all(|c| CODE_ALPHABET.contains(c))
@@ -232,7 +254,25 @@ pub fn decode_payload(s: &str, now_ms: i64) -> Result<PairingPayload, PairError>
         nonce,
         code,
         expires_ms,
+        can_hand_over,
     })
+}
+
+pub(crate) fn decode_qr<T: DeserializeOwned>(
+    text: &str,
+    prefix: &str,
+    max_text: usize,
+) -> Result<T, PairError> {
+    if text.len() > max_text {
+        return Err(PairError::Invalid);
+    }
+    let encoded = text.strip_prefix(prefix).ok_or(PairError::Invalid)?;
+    let bytes = decode_base45(encoded.as_bytes())?;
+    let (body, crc) = bytes.split_last_chunk::<4>().ok_or(PairError::Invalid)?;
+    if checksum(body) != u32::from_be_bytes(*crc) {
+        return Err(PairError::Invalid);
+    }
+    decode_pair_body(body).map_err(|_| PairError::Invalid)
 }
 
 /// A nonce is also the suffix of the Linux pairing socket and a forced-command argument.
@@ -349,16 +389,44 @@ mod tests {
             nonce: "0123456789abcdef0123456789abcdef".into(),
             code: "ABC234".into(),
             expires_ms: 1_800_000_060_000,
+            can_hand_over: false,
         }
     }
 
     #[test]
     fn pairing_payload_round_trips_a_full_single_host_under_1200_bytes() {
-        let payload = payload();
-        let text = encode_payload(&payload);
-        assert!(text.starts_with("SGP1:"));
-        assert!(text.len() < 1200, "{} bytes", text.len());
-        assert_eq!(decode_payload(&text, payload.expires_ms - 1), Ok(payload));
+        for can_hand_over in [false, true] {
+            let payload = PairingPayload {
+                can_hand_over,
+                ..payload()
+            };
+            let text = encode_payload(&payload);
+            assert!(text.starts_with("SGP1:"));
+            assert!(text.len() < 1200, "{} bytes", text.len());
+            assert_eq!(decode_payload(&text, payload.expires_ms - 1), Ok(payload));
+        }
+    }
+
+    #[test]
+    fn pairing_payload_without_a_capability_decodes_as_false() {
+        // Captured from the six-element SGP1 encoder before the capability was added.
+        const OLD_PAYLOAD: &str = concat!(
+            "SGP1:F.GZ4H000000000000000000000X20DKEO.COEDDZCK4F-KE QEIEC ED1/DXVDH/D-9F*KETVD%DF$",
+            "XGRPCCECMFE04ECQD3WEBWE-3E4*5U3EAECYLGPVD8/D1A6LF6/96R47Z96.Q6YLGPVD5/DM.C646BG7*961",
+            "N6-ED7EC/VDGPCTVD5JD646+$5%Q6%Q6GH6.LGZQET7D  CSF6RW6.B7DG6269SF6M%6:DC:DC:DC:DC:DC:",
+            "DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DCWECLQEJPCHQEPX5 8DKF65/D QEC8EWW6Z8FZ",
+            "NA+A8WW65H7:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC%LGZQET7D4",
+            "LEMECDG6269SF6M%6:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC:DC9FCQ",
+            "24L3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL3SL",
+            "3SL3SL3SL3SR5S534*96DL6WW66:6JB7WJC6VCF-C*96DL6WW66:6JB7WJC6VCO.CBB8CM8DL6RI3100$RKG",
+            "ZB-8CI1382",
+        );
+        let expected = payload();
+        assert_eq!(encode_payload(&expected), OLD_PAYLOAD);
+        assert_eq!(
+            decode_payload(OLD_PAYLOAD, expected.expires_ms - 1),
+            Ok(expected)
+        );
     }
 
     #[test]
@@ -366,6 +434,7 @@ mod tests {
         let good = payload();
         let text = encode_payload(&good);
         let now = good.expires_ms - 1;
+        assert_eq!(parse_payload(&text), Ok(good.clone()));
         assert_eq!(
             decode_payload(&text, good.expires_ms),
             Err(PairError::Invalid)

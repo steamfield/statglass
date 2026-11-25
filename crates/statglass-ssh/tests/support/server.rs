@@ -1,4 +1,3 @@
-use crate::SoftwareSigner;
 use russh::{
     Channel, ChannelId, Pty,
     keys::{
@@ -63,8 +62,11 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn start(key: &SoftwareSigner, script: Script) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    pub fn start_with_listener(
+        listener: TcpListener,
+        authorized_key: &str,
+        script: Script,
+    ) -> Self {
         let address = listener.local_addr().unwrap();
         let host_key = PrivateKey::from(Ed25519Keypair::from_seed(&[3; 32]));
         let mut keys = vec![host_key.clone()];
@@ -106,7 +108,7 @@ impl Server {
         let (event, events) = mpsc::unbounded_channel();
         let auth_gate = Arc::new(Notify::new());
         let handler = Handler {
-            key: PublicKey::from_openssh(&key.authorized_key_line("fixture")).unwrap(),
+            key: PublicKey::from_openssh(authorized_key).unwrap(),
             auth_gate: auth_gate.clone(),
             script,
             event,

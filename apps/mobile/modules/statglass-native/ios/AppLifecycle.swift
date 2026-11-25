@@ -23,10 +23,12 @@ final class AppLifecycle: @unchecked Sendable {
   func start() {
     let center = NotificationCenter.default
     observers = [
-      center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+      center.addObserver(forName: UIScene.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] notification in
+        guard notification.object is UIWindowScene else { return }
         MainActor.assumeIsolated { self?.quiesce() }
       },
-      center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+      center.addObserver(forName: UIScene.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] notification in
+        guard notification.object is UIWindowScene else { return }
         Self.coreQueue.async { [weak self] in
           _ = self?.core?.resume()
         }
@@ -100,8 +102,11 @@ final class SnapshotCover {
         guard let self else { return }
         if !enabled {
           removeCovers()
-        } else if UIApplication.shared.applicationState == .inactive {
-          showCovers()
+        } else {
+          for case let scene as UIWindowScene in UIApplication.shared.connectedScenes
+          where scene.activationState == .background {
+            showCovers(in: scene)
+          }
         }
       }
     }
@@ -110,10 +115,13 @@ final class SnapshotCover {
   func start() {
     let center = NotificationCenter.default
     observers = [
-      center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { self?.showCovers() }
+      center.addObserver(forName: UIScene.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] notification in
+        MainActor.assumeIsolated {
+          guard let scene = notification.object as? UIWindowScene else { return }
+          self?.showCovers(in: scene)
+        }
       },
-      center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      center.addObserver(forName: UIScene.didActivateNotification, object: nil, queue: .main) { [weak self] _ in
         MainActor.assumeIsolated { self?.removeCovers() }
       },
     ]
@@ -127,18 +135,15 @@ final class SnapshotCover {
   }
 
   @MainActor
-  private func showCovers() {
+  private func showCovers(in scene: UIWindowScene) {
     guard enabled, covers.isEmpty else { return }
-    for case let scene as UIWindowScene in UIApplication.shared.connectedScenes
-    where scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive {
-      for window in scene.windows where !window.isHidden {
-        let cover = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-        cover.frame = window.bounds
-        cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        cover.isUserInteractionEnabled = false
-        window.addSubview(cover)
-        covers.append(cover)
-      }
+    for window in scene.windows where !window.isHidden {
+      let cover = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+      cover.frame = window.bounds
+      cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      cover.isUserInteractionEnabled = false
+      window.addSubview(cover)
+      covers.append(cover)
     }
   }
 

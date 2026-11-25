@@ -12,6 +12,34 @@ fn sqlite(code: i32) -> StoreError {
 }
 
 #[test]
+fn busy_sqlite_message_includes_the_code_once() {
+    let error = rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+        Some("database is locked".into()),
+    );
+    assert_eq!(
+        CommandError::from(StoreError::Sqlite(error)),
+        CommandError::StoreBusy {
+            message: "sqlite: database is locked (code 5)".into()
+        },
+    );
+}
+
+#[test]
+fn corrupt_sqlite_message_includes_the_code_once() {
+    let error = rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+        Some("database disk image is malformed".into()),
+    );
+    assert_eq!(
+        CommandError::from(StoreError::Sqlite(error)),
+        CommandError::StoreCorrupt {
+            message: "sqlite: database disk image is malformed (code 11)".into()
+        },
+    );
+}
+
+#[test]
 fn store_errors_map_to_typed_command_errors() {
     let kind = |e: StoreError| {
         serde_json::to_value(CommandError::from(e)).unwrap()["kind"]

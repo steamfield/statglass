@@ -1,65 +1,75 @@
-/**
- * The app's text roles, mapped to the iOS text styles they stand for. Sizes
- * are the styles' default (Large) sizes and scale with Dynamic Type, since
- * React Native scales font sizes by the user's text size unless told not to.
- */
 import {
   Text as NativeText,
   type TextProps as NativeTextProps,
+  StyleSheet,
 } from "react-native";
 
-/** Where a piece of text sits in the hierarchy. */
-export type TextRole =
+export type TextVariant =
   | "largeTitle"
   | "title"
+  | "onboardingTitle"
   | "cardTitle"
   | "cardFigure"
+  | "heroFigure"
   | "body"
   | "label"
-  | "caption";
+  | "value"
+  | "caption"
+  | "axis";
 
-/**
- * Role to classes: the iOS text style's default size and weight, in the
- * theme's foreground colors. Figures use tabular digits so a live value
- * does not shift width every tick.
- */
-const ROLE_CLASS: Record<TextRole, string> = {
-  // Large Title: 34 pt bold.
-  largeTitle: "text-[34px] font-bold text-foreground",
-  // Title 2: 22 pt bold.
-  title: "text-[22px] font-bold text-foreground",
-  // Headline: 17 pt semibold.
-  cardTitle: "text-[17px] font-semibold text-foreground",
-  // Title 1 figures: 28 pt semibold, tabular.
-  cardFigure: "text-[28px] font-semibold text-foreground tabular-nums",
-  // Body: 17 pt.
-  body: "text-[17px] text-foreground",
-  // Subheadline: 15 pt.
-  label: "text-[15px] text-muted-foreground",
-  // Caption 1: 12 pt.
-  caption: "text-[12px] text-muted-foreground",
+// RFC 3 defaults at Large. React Native scales these sizes with Dynamic Type.
+// 34/600, 22/600, 28/600, 13/600, 15/600 rounded tabular, 28/600 rounded tabular,
+// 17/400, 13/400 muted, 13/400 tabular, 12/400 muted, 11/400 muted tabular (max scale 1.5).
+const typography = StyleSheet.create({
+  largeTitle: { fontSize: 34, fontWeight: "600" },
+  title: { fontSize: 22, fontWeight: "600" },
+  onboardingTitle: { fontSize: 28, fontWeight: "600" },
+  cardTitle: { fontSize: 13, fontWeight: "600" },
+  cardFigure: {
+    fontSize: 15,
+    fontWeight: "600",
+    fontFamily: "ui-rounded",
+    fontVariant: ["tabular-nums"],
+  },
+  heroFigure: {
+    fontSize: 28,
+    fontWeight: "600",
+    fontFamily: "ui-rounded",
+    fontVariant: ["tabular-nums"],
+  },
+  body: { fontSize: 17, fontWeight: "400" },
+  label: { fontSize: 13, fontWeight: "400" },
+  value: { fontSize: 13, fontWeight: "400", fontVariant: ["tabular-nums"] },
+  caption: { fontSize: 12, fontWeight: "400" },
+  axis: { fontSize: 11, fontWeight: "400", fontVariant: ["tabular-nums"] },
+});
+
+export type TextProps = Omit<NativeTextProps, "role"> & {
+  variant: TextVariant;
 };
 
-/**
- * Props for {@link Text}: React Native's, with its ARIA `role` replaced by
- * the text role (use `accessibilityRole` for the accessibility role).
- */
-export type TextProps = Omit<NativeTextProps, "role"> & { role: TextRole };
+export function Text({
+  variant,
+  className,
+  style,
+  maxFontSizeMultiplier,
+  ...rest
+}: TextProps) {
+  const heading =
+    variant === "largeTitle" ||
+    variant === "title" ||
+    variant === "onboardingTitle";
+  const muted =
+    variant === "label" || variant === "caption" || variant === "axis";
+  const color = muted ? "text-muted-foreground" : "text-foreground";
 
-/**
- * Text in one of the app's roles. Extra `className` classes follow the
- * role's, so a caller can recolor or align it. Headers announce as headers.
- */
-export function Text({ role, className, ...rest }: TextProps) {
   return (
     <NativeText
-      accessibilityRole={
-        role === "largeTitle" || role === "title" ? "header" : undefined
-      }
+      accessibilityRole={heading ? "header" : undefined}
       {...rest}
-      className={
-        className ? `${ROLE_CLASS[role]} ${className}` : ROLE_CLASS[role]
-      }
+      className={className ? `${color} ${className}` : color}
+      maxFontSizeMultiplier={variant === "axis" ? 1.5 : maxFontSizeMultiplier}
+      style={[typography[variant], style]}
     />
   );
 }

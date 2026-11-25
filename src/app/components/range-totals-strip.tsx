@@ -1,5 +1,6 @@
 import { formatSpan, MISSING } from "@core/format";
 import type { MetricStat } from "@core/generated/types";
+import { measuredShort } from "@core/range-totals";
 import { useMemo } from "react";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useSeriesStats } from "~/hooks/use-series-stats";
@@ -12,21 +13,6 @@ export interface RangeTotal {
   label: string;
   /** The figure; `stat` is undefined until the answer arrives. */
   format: (stat: MetricStat) => string;
-}
-
-/**
- * A metric's measured time when it fell short of the range (asleep, the
- * module off), for "in 11 min" after its figure; null when it covered the
- * range. A second or 1% of slack absorbs sampling jitter.
- */
-export function measuredShort(stat: MetricStat, spanMs: number): string | null {
-  if (
-    spanMs <= 0 ||
-    stat.measured_ms >= spanMs - Math.max(1_000, spanMs * 0.01)
-  ) {
-    return null;
-  }
-  return formatSpan(stat.measured_ms);
 }
 
 /**

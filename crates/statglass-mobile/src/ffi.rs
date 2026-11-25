@@ -2,17 +2,14 @@
 //! the FFI contract with `apps/mobile/modules/statglass-native`; nothing here reaches
 //! TypeScript, which sees only the JSON the core sends through [`CoreEvents`].
 
-/// Why the native signer could not sign. Rust maps every case to an authentication
-/// failure that keeps the message (`statglass_ssh::SignerError`).
+/// Why the native signer could not supply a key or signature. The dialer can report
+/// a local key failure separately from the host's authentication decision.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum NativeSignerError {
-    /// The key is missing or the Keychain or Secure Enclave would not hand it over.
+    /// The key is missing or the phone must be unlocked first.
     #[error("signing key unavailable: {message}")]
     Unavailable { message: String },
-    /// The key exists but signing was refused.
-    #[error("signing refused: {message}")]
-    Refused { message: String },
-    /// The Swift side threw something UniFFI did not expect.
+    /// A native key operation or the UniFFI callback failed unexpectedly.
     #[error("unexpected signer failure: {message}")]
     Unexpected { message: String },
 }
@@ -30,7 +27,11 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for NativeSignerError {
 #[uniffi::export(with_foreign)]
 pub trait NativeSigner: Send + Sync {
     /// The SEC1 uncompressed P-256 public key, 65 bytes.
-    fn public_key(&self) -> Vec<u8>;
+    ///
+    /// # Errors
+    ///
+    /// The native signer could not supply the key.
+    fn public_key(&self) -> Result<Vec<u8>, NativeSignerError>;
     /// ECDSA P-256 over SHA-256 of `data`, ASN.1 DER, unchanged from
     /// `SecKeyCreateSignature(.ecdsaSignatureMessageX962SHA256)`.
     ///

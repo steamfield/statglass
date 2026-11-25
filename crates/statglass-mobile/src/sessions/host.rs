@@ -1,43 +1,96 @@
-use std::path::Path;
-use std::sync::{Arc, Mutex, RwLock};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::{Arc, Mutex, Weak};
 
-use statglass_engine::{HistoryStore, LiveHub, Source, SourceHandle, SourceSink};
+use statglass_engine::{LiveHub, Source, SourceHandle, SourceSink, wall_ms};
 use statglass_ipc::error::CommandError;
-use statglass_ipc::mobile::{MobileEvent, MobileHost, MobileRemoteHost};
+use statglass_ipc::mobile::{DemandLevel, MobileEvent, MobileHost, MobileRemoteHost};
 use statglass_ipc::status::{RemoteConnection, connection_status};
-use statglass_ipc::vitals::{HostVitals, host_vitals};
-use statglass_schema::lock::{LockExt, RwLockExt};
+use statglass_ipc::vitals::{HostVitals, VitalsRateLimit, host_vitals};
+use statglass_schema::lock::LockExt;
 use statglass_schema::{HostId, HostRecord};
 use statglass_session::{
-    ConnectionStatus, Dialer, Mirror, MirrorPolicy, RemoteSource, SourceOptions,
+    BoxFuture, ConnectionFailureKind, ConnectionStatus, Dialer, RemoteSource, SourceOptions,
 };
-use statglass_store::create_private_dir;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
-use crate::ffi::CoreEvents;
+use crate::ffi::{CoreEvents, NativeSigner, NativeSignerError};
 
-use super::{endpoint, internal};
+use super::{endpoint, internal, invalid, live::Live};
 
 pub(super) struct HostEntry {
     pub(super) config: MobileHost,
-    pub(super) policy: MirrorPolicy,
     pub(super) source: Arc<RemoteSource>,
-    pub(super) mirror: Arc<Mirror>,
     pub(super) hub: LiveHub,
     pub(super) handle: Mutex<Option<SourceHandle>>,
-    history_open: RwLock<bool>,
     status: Mutex<Status>,
+    wire: Mutex<WireInterest>,
+    pub(super) live: Mutex<Weak<Live>>,
+    events: Arc<dyn CoreEvents>,
+    runtime: Handle,
+    vitals_warnings: VitalsRateLimit,
+}
+
+#[derive(Default)]
+struct WireInterest {
+    demand: Option<DemandLevel>,
+    processes: statglass_proto::RemoteInterest,
+}
+
+pub(super) enum OpenError {
+    Command(CommandError),
+    /// The key is missing or locked. The diagnostic goes to the status line only; the
+    /// command error stays the diagnostic-free `phone_key_unavailable`.
+    KeyUnavailable(String),
+    /// The native signer failed unexpectedly.
+    SignerInternal(CommandError),
+    Panicked(CommandError),
+}
+
+static PHONE_KEY_UNAVAILABLE: CommandError = CommandError::PhoneKeyUnavailable;
+
+impl From<CommandError> for OpenError {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
+}
+
+impl OpenError {
+    pub(super) fn command(&self) -> &CommandError {
+        match self {
+            Self::KeyUnavailable(_) => &PHONE_KEY_UNAVAILABLE,
+            Self::Command(error) | Self::SignerInternal(error) | Self::Panicked(error) => error,
+        }
+    }
+
+    /// The connection status line, which keeps the native diagnostic.
+    fn message(&self) -> String {
+        match self {
+            Self::KeyUnavailable(diagnostic) => diagnostic.clone(),
+            _ => self.command().to_string(),
+        }
+    }
+
+    fn failure_kind(&self) -> Option<ConnectionFailureKind> {
+        match self {
+            Self::Command(_) => None,
+            Self::KeyUnavailable(_) => Some(ConnectionFailureKind::PhoneKeyUnavailable),
+            Self::SignerInternal(_) | Self::Panicked(_) => Some(ConnectionFailureKind::Internal),
+        }
+    }
 }
 
 #[derive(Default)]
 struct Status {
     connection: ConnectionStatus,
     notice: Option<StatusNotice>,
-    published: Option<(StatusNotice, Option<i64>)>,
+    published: Option<StatusNotice>,
     active: bool,
     dirty: bool,
     checking: bool,
+    previous_timeline: Option<u32>,
+    last_frame_ms: Option<i64>,
+    parking: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -68,60 +121,59 @@ impl From<&ConnectionStatus> for StatusNotice {
 impl HostEntry {
     pub(super) fn open(
         config: MobileHost,
-        budget_mb: u32,
-        data_dir: &Path,
         phone: statglass_schema::HostId,
         dialer: Arc<dyn Dialer>,
         events: Arc<dyn CoreEvents>,
         options: SourceOptions,
-    ) -> Result<Arc<Self>, CommandError> {
-        let dir = data_dir.join("mirrors").join(config.id.to_string());
-        create_private_dir(&dir).map_err(|error| {
-            internal(format!(
-                "creating mirror directory {}: {error}",
-                dir.display()
-            ))
-        })?;
+        signer: Option<&dyn NativeSigner>,
+    ) -> Result<Arc<Self>, OpenError> {
         let record = endpoint::record(&config);
-        let history = Arc::new(HistoryStore::open(&dir));
-        history.register_host(&record);
-        let policy = MirrorPolicy::phone(budget_mb);
-        let mirror = Arc::new(Mirror::with_policy(history, config.id, policy.clone()));
+        let endpoint = endpoint::endpoint(&config);
+        endpoint
+            .validate()
+            .map_err(|error| invalid(error.to_string()))?;
+        if let Some(signer) = signer {
+            if endpoint.host_keys.is_empty() {
+                return Err(invalid("a paired SSH host key is required").into());
+            }
+            check_phone_key(signer)?;
+        }
         let runtime = options
             .runtime
             .clone()
             .ok_or_else(|| internal("mobile session needs a runtime"))?;
         Ok(Arc::new_cyclic(|entry: &std::sync::Weak<Self>| {
             let entry = entry.clone();
+            let (status_runtime, status_events) = (runtime.clone(), events.clone());
             let on_status = Arc::new(move |status| {
                 if let Some(entry) = entry.upgrade() {
-                    drop(entry.observe_status(status, &runtime, events.clone()));
+                    drop(entry.observe_status(status, &status_runtime, status_events.clone()));
                 }
             });
             let source = RemoteSource::with_options(
-                record,
-                phone,
-                dialer,
-                endpoint::endpoint(&config),
-                on_status,
-                Some(mirror.clone()),
-                options,
+                record, phone, dialer, endpoint, on_status, None, options,
             );
             Self {
                 config,
-                policy,
                 source,
-                mirror,
                 hub: LiveHub::new(Default::default()),
                 handle: Mutex::default(),
-                history_open: RwLock::new(true),
                 status: Mutex::default(),
+                wire: Mutex::default(),
+                live: Mutex::default(),
+                events,
+                runtime,
+                vitals_warnings: VitalsRateLimit::default(),
             }
         }))
     }
 
     pub(super) fn start(&self) -> Result<(), CommandError> {
-        self.status.lock_ok().active = true;
+        {
+            let mut status = self.status.lock_ok();
+            status.active = true;
+            status.connection.retrying = true;
+        }
         let handle = self.source.clone().start(SourceSink {
             live: self.hub.clone(),
             store: None,
@@ -149,43 +201,122 @@ impl HostEntry {
         self.status.lock_ok().active
     }
 
-    pub(super) fn with_history<T>(
-        &self,
-        f: impl FnOnce(&HistoryStore) -> Result<T, CommandError>,
-    ) -> Result<T, CommandError> {
-        let open = self.history_open.read_ok();
-        if !*open {
-            return Err(CommandError::UnknownHost {
-                host: self.config.id,
-            });
+    pub(super) fn record(&self) -> HostRecord {
+        let mut record = self.source.host();
+        if let Some(info) = self.source.peer_info() {
+            record.info = (*info).clone();
         }
-        f(&self.mirror.store())
-    }
-
-    pub(super) fn close_history(&self) {
-        let mut open = self.history_open.write_ok();
-        *open = false;
-        self.mirror.store().close();
+        record
     }
 
     pub(super) fn vitals(&self) -> HostVitals {
-        host_vitals(
-            self.hub.latest_frame().as_deref(),
-            self.config.id,
-            &self.source.host().info,
-        )
+        self.vitals_for(&self.status.lock_ok())
+    }
+
+    fn vitals_for(&self, status: &Status) -> HostVitals {
+        let latest = self.hub.latest_frame();
+        let current = latest.as_ref().filter(|frame| {
+            status.connection.connected && Some(frame.timeline) != status.previous_timeline
+        });
+        let Some(frame) = current else {
+            return HostVitals {
+                as_of_ms: latest.map(|frame| frame.ts_ms).or(status.last_frame_ms),
+                ..Default::default()
+            };
+        };
+        let peer = self.source.peer_info();
+        let mut vitals = if let Some(info) = peer.as_deref() {
+            host_vitals(Some(frame), self.config.id, info, &self.vitals_warnings)
+        } else {
+            host_vitals(
+                Some(frame),
+                self.config.id,
+                &self.source.host().info,
+                &self.vitals_warnings,
+            )
+        };
+        vitals.as_of_ms = Some(self.source.clock().now_ms().unwrap_or_else(|| {
+            // A frame gives us host time before the first heartbeat estimates the offset.
+            let now = wall_ms();
+            let elapsed = now.saturating_sub(status.connection.last_seen_ms.unwrap_or(now));
+            frame.ts_ms.saturating_add(elapsed.max(0))
+        }));
+        vitals
     }
 
     pub(super) fn remote_host(&self) -> MobileRemoteHost {
-        let status = self.status.lock_ok().connection.clone();
-        remote_host(
+        let status = self.status.lock_ok();
+        let mut row = remote_host(
             &self.config,
             self.source.host(),
-            self.policy.budget_mb(),
-            &status,
-            self.watermark(),
-            self.vitals(),
-        )
+            &status.connection,
+            self.vitals_for(&status),
+        );
+        row.demand = self.demand_level();
+        row
+    }
+
+    pub(super) fn demand_level(&self) -> Option<DemandLevel> {
+        self.wire.lock_ok().demand
+    }
+
+    pub(super) fn set_demand_level(&self, level: Option<DemandLevel>) {
+        let mut wire = self.wire.lock_ok();
+        if wire.demand == level {
+            return;
+        }
+        wire.demand = level;
+        self.apply_wire_interest(&wire);
+        if let Some(handle) = self.handle.lock_ok().as_ref() {
+            handle
+                .control()
+                .set_detail_interest(level == Some(DemandLevel::Full));
+        }
+        let events = self.events.clone();
+        self.runtime.spawn(async move {
+            super::registry::emit(&*events, MobileEvent::RemoteHostsChanged);
+        });
+    }
+
+    pub(super) fn set_process_flags(
+        &self,
+        update: impl FnOnce(&mut statglass_proto::RemoteInterest),
+    ) {
+        let mut wire = self.wire.lock_ok();
+        update(&mut wire.processes);
+        self.apply_wire_interest(&wire);
+    }
+
+    fn apply_wire_interest(&self, wire: &WireInterest) {
+        let full = wire.demand == Some(DemandLevel::Full);
+        if let Some(handle) = self.handle.lock_ok().as_ref() {
+            let control = handle.control();
+            control
+                .set_process_interest(full.then_some(wire.processes.process_period_ms).flatten());
+            control.set_network_process_interest(full && wire.processes.network_processes);
+            control.set_gpu_process_interest(full && wire.processes.gpu_processes);
+            control.set_port_process_interest(full && wire.processes.port_processes);
+        }
+    }
+
+    pub(super) fn resume_demand(&self) {
+        self.status.lock_ok().parking = false;
+        self.source.resume();
+    }
+
+    pub(super) fn park_demand(&self, close_streams: bool) -> BoxFuture<'static, ()> {
+        let parked = {
+            let mut status = self.status.lock_ok();
+            status.parking = true;
+            if !status.connection.connected && !status.connection.dialing {
+                self.hub.clear_live();
+            }
+            self.source.quiesce()
+        };
+        if close_streams && let Some(live) = self.live.lock_ok().upgrade() {
+            live.park_host(self.config.id);
+        }
+        parked
     }
 
     pub(super) fn observe_status(
@@ -198,13 +329,23 @@ impl HostEntry {
         if !status.active {
             return None;
         }
+        let latest = self.hub.latest_frame();
+        if let Some(frame) = latest.as_ref() {
+            status.last_frame_ms = Some(frame.ts_ms);
+        }
+        if !connection.connected {
+            if status.parking {
+                self.hub.clear_live();
+            }
+            // The live hub keeps its latest frame across reconnects.
+            status.previous_timeline = latest.map(|frame| frame.timeline);
+        }
         let notice = StatusNotice::from(&connection);
         status.connection = connection;
         if status.notice.as_ref() == Some(&notice) {
             return None;
         }
-        // Frames update observations for ListRemoteHosts. Read SQLite for
-        // notifications only on status transitions, including sync completion.
+        // Frames update observations for ListRemoteHosts. Notify on status transitions.
         status.notice = Some(notice);
         status.dirty = true;
         if status.checking {
@@ -217,7 +358,7 @@ impl HostEntry {
 
     fn publish_pending_status(&self, events: &dyn CoreEvents) {
         loop {
-            let notice = {
+            let next = {
                 let mut status = self.status.lock_ok();
                 if !status.active || !status.dirty {
                     status.checking = false;
@@ -226,7 +367,6 @@ impl HostEntry {
                 status.dirty = false;
                 status.notice.clone()
             };
-            let next = notice.map(|notice| (notice, self.watermark()));
             let mut status = self.status.lock_ok();
             if !status.active || status.dirty || status.published == next {
                 continue;
@@ -236,54 +376,66 @@ impl HostEntry {
             super::registry::emit(events, MobileEvent::RemoteHostsChanged);
         }
     }
+}
 
-    fn watermark(&self) -> Option<i64> {
-        self.mirror
-            .sync_watermark()
-            .ok()
-            .and_then(|w| w.synced_through())
+fn check_phone_key(signer: &dyn NativeSigner) -> Result<(), OpenError> {
+    let key = catch_unwind(AssertUnwindSafe(|| signer.public_key()))
+        .map_err(|payload| {
+            OpenError::Panicked(crate::envelope::panicked(
+                payload.as_ref(),
+                "reading phone key",
+            ))
+        })?
+        .map_err(|error| {
+            let diagnostic = format!("reading the phone's SSH public key: {error}");
+            match error {
+                NativeSignerError::Unavailable { .. } => OpenError::KeyUnavailable(diagnostic),
+                NativeSignerError::Unexpected { .. } => {
+                    OpenError::SignerInternal(internal(diagnostic))
+                }
+            }
+        })?;
+    match key.as_slice() {
+        [] => Err(OpenError::KeyUnavailable(
+            "the phone's SSH public key is unavailable".into(),
+        )),
+        [4, coordinates @ ..] if coordinates.len() == 64 => Ok(()),
+        _ => Err(internal("the phone's SSH public key is not an uncompressed P-256 point").into()),
     }
 }
 
-pub(super) fn unopened_host(
-    host: &MobileHost,
-    budget: u32,
-    error: Option<&CommandError>,
-) -> MobileRemoteHost {
+pub(super) fn unopened_host(host: &MobileHost, error: Option<&OpenError>) -> MobileRemoteHost {
     let status = ConnectionStatus {
         retrying: error.is_none(),
-        error: error.map(ToString::to_string),
+        error: error.map(OpenError::message),
+        failure_kind: error.and_then(OpenError::failure_kind),
         ..Default::default()
     };
-    remote_host(
-        host,
-        endpoint::record(host),
-        budget,
-        &status,
-        None,
-        HostVitals::default(),
-    )
+    let mut row = remote_host(host, endpoint::record(host), &status, HostVitals::default());
+    row.open_error = error.map(|error| error.command().clone());
+    row
 }
 
 fn remote_host(
     host: &MobileHost,
     record: HostRecord,
-    budget: u32,
     status: &ConnectionStatus,
-    synced_through_ms: Option<i64>,
     vitals: HostVitals,
 ) -> MobileRemoteHost {
     MobileRemoteHost {
         id: record.id,
         name: record.display_name,
+        source_mac: None,
+        removed_by_controller: host.removed_by_controller,
         os: record.info.os,
         targets: host.targets.clone(),
-        mirror_budget_mb: budget,
+        open_error: None,
+        demand: None,
         connection: connection_status(status),
         last_seen_ms: status
             .last_seen_ms
             .map(|seen| seen.saturating_add(status.clock_offset_ms)),
-        synced_through_ms,
+        synced_through_ms: None,
         next_attempt_ms: status.next_attempt_ms,
         attempt: status.attempt,
         dialing: status.dialing,

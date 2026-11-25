@@ -12,7 +12,6 @@ use std::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
 };
 
 use qrcode::{QrCode, render::svg};
@@ -20,14 +19,17 @@ use statglass_engine::wall_ms;
 use statglass_proto::pairing::{BundleHost, encode_payload};
 use statglass_remote::{
     AuthorizedKeys, ControlRequest, ControlResponse, DeviceKeys, DeviceSeenLog, DeviceTag,
-    PairingHost,
+    HandoverSource, PairingHost,
 };
 use statglass_schema::{HostRecord, lock::LockExt};
 use tauri::State;
 
 use crate::error::{CommandError, PairingFailure};
+use crate::handover::HandoverState;
 pub use status::{PairedDeviceInfo, PairingOffer, PairingStatus};
-use status::{device_keys_error, pairing_error, pairing_message, unavailable};
+use status::{
+    device_keys_error, monitoring_off_status, pairing_error, pairing_message, unavailable,
+};
 
 /// The local pairing host and its settings, initialized before the control socket starts.
 #[derive(Default)]
@@ -42,16 +44,25 @@ struct LocalPairing {
     keys: Result<Arc<AuthorizedKeys>, String>,
     seen: DeviceSeenLog,
     monitoring_off: Mutex<HashMap<String, i64>>,
+    key_edits: Mutex<()>,
 }
 
 impl PairingState {
-    pub(crate) fn initialize(&self, data_dir: &Path, record: HostRecord) {
+    pub(crate) fn initialize(
+        &self,
+        data_dir: &Path,
+        record: HostRecord,
+        handover: Option<Arc<dyn HandoverSource>>,
+    ) {
         let commands = helper_link::install(data_dir).map_err(|error| format!("{error:#}"));
         let keys = AuthorizedKeys::for_current_user()
             .map(Arc::new)
             .map_err(|error| error.to_string());
         let host =
             commands.and_then(|commands| keys.clone().map(|keys| PairingHost::new(keys, commands)));
+        if let (Ok(host), Some(source)) = (&host, handover) {
+            host.set_handover(source);
+        }
         if let Err(message) = &host {
             tracing::info!(%message, "iPhone pairing unavailable");
         }
@@ -62,6 +73,7 @@ impl PairingState {
             enabled: AtomicBool::new(false),
             seen: device_seen(data_dir),
             monitoring_off: Mutex::default(),
+            key_edits: Mutex::default(),
         };
         if self.local.set(Arc::new(local)).is_err() {
             tracing::warn!("iPhone pairing was already initialized");
@@ -112,6 +124,17 @@ impl PairingState {
                 unavailable(format!("The pairing command could not finish. {error}"))
             })?
     }
+
+    pub(crate) async fn with_device_keys<T: Send + 'static>(
+        &self,
+        task: impl FnOnce(&AuthorizedKeys) -> Result<T, CommandError> + Send + 'static,
+    ) -> Result<T, CommandError> {
+        self.run(move |local| {
+            let _edit = local.key_edits.lock_ok();
+            task(local.keys()?)
+        })
+        .await
+    }
 }
 
 pub(crate) fn device_seen(data_dir: &Path) -> DeviceSeenLog {
@@ -133,7 +156,7 @@ impl LocalPairing {
 
     fn check_monitoring(&self) -> Result<(), CommandError> {
         bundle::check_monitoring(self.enabled.load(Ordering::Relaxed))
-            .map_err(|error| unavailable(error.to_string()))
+            .map_err(|error| pairing_message(PairingFailure::MonitoringOff, error.to_string()))
     }
 
     fn start(&self) -> Result<PairingOffer, CommandError> {
@@ -151,9 +174,7 @@ impl LocalPairing {
         self.monitoring_off
             .lock_ok()
             .retain(|_, deadline| *deadline > now_ms);
-        let payload = host
-            .offer(bundle, Duration::ZERO, now_ms)
-            .map_err(pairing_error)?;
+        let payload = bundle::offer(host, bundle, now_ms).map_err(pairing_error)?;
         let text = encode_payload(&payload);
         let qr = match QrCode::new(&text) {
             Ok(qr) => qr,
@@ -179,6 +200,7 @@ impl LocalPairing {
     }
 
     fn decision(&self, nonce: &str, approve: bool) -> Result<PairingStatus, CommandError> {
+        let _edit = approve.then(|| self.key_edits.lock_ok());
         let mut monitoring_off = self.monitoring_off.lock_ok();
         if monitoring_off.contains_key(nonce) {
             return Ok(monitoring_off_status());
@@ -209,12 +231,6 @@ impl LocalPairing {
         } else {
             reply.into()
         })
-    }
-}
-
-fn monitoring_off_status() -> PairingStatus {
-    PairingStatus::Failed {
-        message: bundle::MONITORING_OFF.into(),
     }
 }
 
@@ -332,11 +348,17 @@ pub async fn paired_devices(
 pub async fn revoke_device(
     tag: String,
     state: State<'_, PairingState>,
+    handover: State<'_, HandoverState>,
 ) -> Result<bool, CommandError> {
     let tag = DeviceTag::parse(&tag)
         .ok_or_else(|| pairing_message(PairingFailure::Invalid, "Invalid paired device tag."))?;
+    let handover = handover.inner().clone();
     state
-        .run(move |local| local.keys()?.revoke(tag).map_err(device_keys_error))
+        .with_device_keys(move |keys| {
+            let removed = keys.revoke(tag).map_err(device_keys_error)?;
+            handover.record_revocations(tag)?;
+            Ok(removed)
+        })
         .await
 }
 
@@ -395,8 +417,10 @@ pub(crate) mod tests {
             enabled: AtomicBool::new(false),
             seen: device_seen(dir),
             monitoring_off: Mutex::default(),
+            key_edits: Mutex::default(),
         };
         mock_builder()
+            .manage(HandoverState::default())
             .manage(PairingState {
                 local: OnceLock::from(Arc::new(local)),
             })
@@ -470,13 +494,13 @@ pub(crate) mod tests {
         let app = app(dir.path());
         let state = app.state::<PairingState>();
         assert!(
-            matches!(pairing_start(app.state()).await, Err(CommandError::Pairing { reason: PairingFailure::Unavailable, message })
+            matches!(pairing_start(app.state()).await, Err(CommandError::Pairing { reason: PairingFailure::MonitoringOff, message })
             if message.contains("Allow remote monitoring"))
         );
         assert!(paired_devices(app.state()).await.unwrap().is_empty());
         state.set_enabled(true);
         assert!(matches!(
-            revoke_device("invalid".into(), app.state()).await,
+            revoke_device("invalid".into(), app.state(), app.state()).await,
             Err(CommandError::Pairing { .. })
         ));
 
@@ -550,8 +574,16 @@ pub(crate) mod tests {
         assert_eq!(devices[0].name, "Travel iPhone");
         assert_eq!(devices[0].last_seen_ms, Some(now - 1));
         assert!(devices[0].fingerprint.starts_with("SHA256:"));
-        assert!(revoke_device(tag.to_string(), app.state()).await.unwrap());
-        assert!(!revoke_device(tag.to_string(), app.state()).await.unwrap());
+        assert!(
+            revoke_device(tag.to_string(), app.state(), app.state())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !revoke_device(tag.to_string(), app.state(), app.state())
+                .await
+                .unwrap()
+        );
         assert!(paired_devices(app.state()).await.unwrap().is_empty());
 
         let denied = make_offer(now);
@@ -596,12 +628,14 @@ pub(crate) mod tests {
                 pairing_status(withdrawn.nonce.clone(), app.state()).await
             };
             let guidance = bundle::check_monitoring(false).unwrap_err().to_string();
-            assert!(matches!(result, Ok(PairingStatus::Failed { message }) if message == guidance));
+            assert!(
+                matches!(result, Ok(PairingStatus::Failed { reason: PairingFailure::MonitoringOff, message }) if message == guidance)
+            );
             assert_eq!(host.status(&withdrawn.nonce, now), PairReply::Denied);
             state.set_enabled(true);
             assert!(matches!(
                 pairing_status(withdrawn.nonce, app.state()).await.unwrap(),
-                PairingStatus::Failed { message } if message == guidance
+                PairingStatus::Failed { reason: PairingFailure::MonitoringOff, message } if message == guidance
             ));
         }
         assert!(paired_devices(app.state()).await.unwrap().is_empty());

@@ -3,9 +3,22 @@
  * dashboard and incompatible-host scenarios the desktop tests use.
  */
 import type { LiveMsg } from "@core/generated/types";
+import { SCENARIOS } from "@core/mock/fixtures";
+import { phoneDemoOptions } from "@core/mock/history";
 import { createMockTransport } from "@core/mock-transport";
-import { useRootNavigationState } from "expo-router";
-import { useEffect } from "react";
+import { useNavigationContainerRef, useRouter } from "expo-router";
+import {
+  createContext,
+  createElement,
+  type JSX,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { useNativeCore } from "@/transport";
 import type { PhoneTransport } from "./seam";
 import {
   useIsDemo,
@@ -42,12 +55,23 @@ function demoLiveReceiver(
   };
 }
 
+const DEMO_RING_ROWS = 330;
+
 /** A fresh demo transport; each call starts its own mock hosts. */
-export function createDemoTransport(): DemoTransport {
-  const transport = createMockTransport({
-    scenarios: ["hosts-dashboard", "host-incompatible"],
-    autoTick: true,
-  });
+export function createDemoTransport(scenario?: string): DemoTransport {
+  const requested = SCENARIOS.find((name) => name === scenario);
+  const transport = createMockTransport(
+    phoneDemoOptions({
+      scenarios: requested
+        ? [requested]
+        : ["hosts-dashboard", "host-incompatible"],
+      autoTick: true,
+      // Each demo host backfills its own ring when the demo starts. The phone's
+      // live views reach back at most five minutes (longer ranges read history),
+      // so a 5.5-minute ring keeps the start fast without a gap at the edge.
+      historyRows: DEMO_RING_ROWS,
+    })
+  );
   let unavailable: Set<string> | null = null;
   const refreshAvailability = () => {
     void transport.listRemoteHosts().then((remotes) => {
@@ -75,35 +99,71 @@ export function createDemoTransport(): DemoTransport {
   };
 }
 
-/** Disposes demo tickers when the session ends, the transport changes or the root unmounts. */
-export function useDemoLifetime(hasDemoRoute: boolean) {
-  const transport = useOptionalPhoneTransport();
-  const demo = useIsDemo();
-  const setTransport = useSetPhoneTransport();
-  useEffect(() => {
-    if (demo && !hasDemoRoute) setTransport(null, false);
-  }, [demo, hasDemoRoute, setTransport]);
-  useEffect(() => {
-    if (
-      demo &&
-      transport &&
-      "dispose" in transport &&
-      typeof transport.dispose === "function"
-    ) {
-      const dispose = transport.dispose.bind(transport);
-      return dispose;
-    }
-  }, [demo, transport]);
+interface DemoSession {
+  active: boolean;
+  start(scenario?: string): void;
+  exit(): void;
 }
 
-/** Keeps the demo alive while its routes remain in the navigation stack. */
-export function DemoLifetime(): null {
-  const root = useRootNavigationState();
-  const stack = root?.routes[root.index]?.state;
-  // A screen can cover the hosts stack while it remains in the back history.
-  const hasDemoRoute = stack?.routes.some(
-    ({ name }) => name === "demo" || name === "(hosts)"
+const DemoContext = createContext<DemoSession | null>(null);
+
+/** Owns the mock transport for the duration of a demo session. */
+export function DemoProvider({
+  children,
+}: {
+  children: ReactNode;
+}): JSX.Element {
+  const active = useIsDemo();
+  const transport = useOptionalPhoneTransport();
+  const setTransport = useSetPhoneTransport();
+  const { core } = useNativeCore();
+  const router = useRouter();
+  const navigation = useNavigationContainerRef();
+  const owned = useRef<DemoTransport | null>(null);
+  const dispose = useCallback(() => {
+    owned.current?.dispose();
+    owned.current = null;
+  }, []);
+
+  useEffect(() => dispose, [dispose]);
+  useEffect(() => {
+    // The demo route can start the session in a child effect before selection commits.
+    if (transport === null || transport !== owned.current) return;
+    return () => {
+      if (transport === owned.current) dispose();
+    };
+  }, [dispose, transport]);
+
+  const start = useCallback(
+    (scenario?: string) => {
+      dispose();
+      const next = createDemoTransport(scenario);
+      owned.current = next;
+      setTransport(next, true);
+      router.replace("/(hosts)");
+    },
+    [dispose, router, setTransport]
   );
-  useDemoLifetime(hasDemoRoute ?? false);
-  return null;
+  const exit = useCallback(() => {
+    const demo = owned.current;
+    if (!demo) return;
+    dispose();
+    setTransport(core, false, demo);
+    // The hosts index shares the `/` path. Target the welcome route in the root stack.
+    const root = navigation.getRootState();
+    const target = root.routes[root.index]?.state?.key ?? root.key;
+    navigation.dispatch({
+      type: "REPLACE",
+      payload: { name: "index" },
+      target,
+    });
+  }, [core, dispose, navigation, setTransport]);
+  const value = useMemo(() => ({ active, start, exit }), [active, start, exit]);
+  return createElement(DemoContext.Provider, { value }, children);
+}
+
+export function useDemo(): DemoSession {
+  const demo = useContext(DemoContext);
+  if (!demo) throw new Error("useDemo requires DemoProvider");
+  return demo;
 }

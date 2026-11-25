@@ -2,17 +2,25 @@
 //! key, bind it to the first `PairStart`, and complete only when the host's approver
 //! says so. Also the forced `pair` command every host runs for the phone.
 use crate::device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public};
-use crate::{ControlRequest, ControlResponse};
+use crate::{ControlRequest, ControlResponse, command::shell_quote};
 use p256::elliptic_curve::{Generate, sec1::ToSec1Point};
+use statglass_proto::handover::UnavailableHost;
 use statglass_proto::pairing::{
     BundleHost, CODE_ALPHABET, PAYLOAD_VERSION, PairError, PairReply, PairStart, PairingPayload,
+    encode_pair_frame,
 };
 use statglass_schema::lock::LockExt;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    io,
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
+mod helper_link;
 mod relay;
+pub use helper_link::{ensure_helper_link, link_helper};
 pub use relay::{run_forced, run_forced_for_nonce};
 
 /// The `command=` prefixes for the lines pairing installs; the nonce or device tag is
@@ -22,6 +30,34 @@ pub struct PairCommands {
     pub pair: String,
     /// The forced restricted command, before `--device <tag>`.
     pub restricted: String,
+}
+
+impl PairCommands {
+    pub fn for_helper(link: &Path) -> io::Result<Self> {
+        let command = shell_quote(link.to_str().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the SSH helper path is not UTF-8",
+            )
+        })?);
+        Ok(Self {
+            pair: format!("{command} pair"),
+            restricted: format!("{command} restricted"),
+        })
+    }
+
+    pub fn restricted_for(&self, tag: DeviceTag) -> String {
+        format!("{} --device {tag}", self.restricted)
+    }
+}
+
+pub struct Handover {
+    pub hosts: Vec<BundleHost>,
+    pub unavailable: Vec<UnavailableHost>,
+}
+
+pub trait HandoverSource: Send + Sync {
+    fn handover(&self, device: DeviceTag, key: &EcdsaP256Public, name: &str) -> Handover;
 }
 
 /// Why the host could not offer or decide a pairing.
@@ -40,6 +76,7 @@ pub struct PairingHost {
     keys: Arc<dyn DeviceKeys>,
     commands: PairCommands,
     state: Mutex<HostState>,
+    handover: Mutex<Option<Arc<dyn HandoverSource>>>,
 }
 
 #[derive(Default)]
@@ -65,6 +102,7 @@ enum Phase {
         model: String,
         key: EcdsaP256Public,
     },
+    HandingOver,
     RemovingPairingLine(PairReply),
     Finished(PairReply),
 }
@@ -80,7 +118,12 @@ impl PairingHost {
             keys,
             commands,
             state: Mutex::default(),
+            handover: Mutex::default(),
         }
+    }
+
+    pub fn set_handover(&self, source: Arc<dyn HandoverSource>) {
+        *self.handover.lock_ok() = Some(source);
     }
 
     /// Installs a pairing line for `host` valid for `ttl` and returns the QR payload.
@@ -143,6 +186,7 @@ impl PairingHost {
             nonce,
             code,
             expires_ms,
+            can_hand_over: self.handover.lock_ok().is_some(),
         })
     }
 
@@ -230,27 +274,40 @@ impl PairingHost {
 
     /// Writes the device line, then removes the pairing line.
     pub fn approve(&self, nonce: &str, now_ms: i64) -> Result<PairReply, PairingError> {
+        let source = self.handover.lock_ok().clone();
         let mut state = self.state.lock_ok();
         let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
         offer.mark_expired(now_ms);
-        if let Phase::Pending {
+        let Phase::Pending {
             device_name, key, ..
         } = &offer.phase
-        {
-            let tag = DeviceTag::from_key(key);
-            let command = format!("{} --device {tag}", self.commands.restricted);
-            let device = self
-                .keys
-                .add_device(key, device_name, &command)?
-                .to_string();
-            offer.phase = Phase::RemovingPairingLine(PairReply::Approved {
-                device,
-                hosts: vec![offer.host.clone()],
-            });
+        else {
+            return self.finish_approval(offer, nonce);
+        };
+        let command = self.commands.restricted_for(DeviceTag::from_key(key));
+        let device = self.keys.add_device(key, device_name, &command)?;
+        let mut reply = PairReply::Approved {
+            device: device.to_string(),
+            hosts: vec![offer.host.clone()],
+            unavailable: Vec::new(),
+        };
+        if let Some(source) = source {
+            let (key, name) = (key.clone(), device_name.clone());
+            offer.phase = Phase::HandingOver;
+            drop(state);
+            add_handover(&mut reply, source.handover(device, &key, &name));
+            state = self.state.lock_ok();
         }
+        let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
+        offer.phase = Phase::RemovingPairingLine(reply);
+        self.finish_approval(offer, nonce)
+    }
+
+    fn finish_approval(&self, offer: &mut Offer, nonce: &str) -> Result<PairReply, PairingError> {
         offer.finish(self.keys.as_ref(), nonce)?;
         match &offer.phase {
             Phase::Finished(reply) => Ok(reply.clone()),
+            Phase::HandingOver => Ok(PairReply::Waiting),
             _ => Err(PairError::Invalid.into()),
         }
     }
@@ -304,11 +361,32 @@ impl PairingHost {
     }
 }
 
+fn add_handover(reply: &mut PairReply, handover: Handover) {
+    if let PairReply::Approved {
+        hosts, unavailable, ..
+    } = reply
+    {
+        hosts.extend(handover.hosts);
+        *unavailable = handover.unavailable;
+    }
+    if let Err(error) = encode_pair_frame(reply)
+        && let PairReply::Approved {
+            hosts, unavailable, ..
+        } = reply
+    {
+        tracing::warn!(%error, "sending local-only pairing approval because the handover does not fit");
+        hosts.truncate(1);
+        unavailable.clear();
+    }
+}
+
 impl Offer {
     fn start(&mut self, req: &PairStart, attempt: [u8; 16]) -> PairReply {
         if let Some(accepted) = self.attempt {
             return if attempt == accepted {
                 self.reply(false)
+            } else if matches!(self.phase, Phase::Pending { .. }) {
+                reject(PairError::Busy)
             } else {
                 reject(PairError::Used)
             };
@@ -423,4 +501,223 @@ fn validate_start(start: &PairStart) -> Result<EcdsaP256Public, PairError> {
 
 fn reject(error: PairError) -> PairReply {
     PairReply::Error { error }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::AuthorizedKeys;
+    use statglass_proto::handover::HandoverReason;
+    use statglass_schema::HostId;
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        },
+        thread,
+    };
+    use uuid::Uuid;
+
+    struct Source {
+        keys: Arc<AuthorizedKeys>,
+        calls: AtomicUsize,
+        offered: BundleHost,
+        unavailable: UnavailableHost,
+        suspend_removal: PathBuf,
+    }
+
+    impl HandoverSource for Source {
+        fn handover(&self, device: DeviceTag, key: &EcdsaP256Public, name: &str) -> Handover {
+            let devices = self.keys.list_devices().unwrap();
+            assert_eq!(devices.len(), 1);
+            assert_eq!(devices[0].tag, device);
+            assert_eq!(device, DeviceTag::from_key(key));
+            assert_eq!(devices[0].name, name);
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            // Simulate a filesystem failure between installing the device and
+            // removing the one-time line.
+            fs::rename(
+                &self.suspend_removal,
+                self.suspend_removal.with_extension("saved"),
+            )
+            .unwrap();
+            fs::create_dir(&self.suspend_removal).unwrap();
+            Handover {
+                hosts: vec![self.offered.clone()],
+                unavailable: vec![self.unavailable.clone()],
+            }
+        }
+    }
+
+    impl<F> HandoverSource for F
+    where
+        F: Fn(DeviceTag, &EcdsaP256Public, &str) -> Handover + Send + Sync,
+    {
+        fn handover(&self, tag: DeviceTag, key: &EcdsaP256Public, name: &str) -> Handover {
+            self(tag, key, name)
+        }
+    }
+
+    const NOW: i64 = 1_800_000_000_000;
+
+    fn device_key() -> EcdsaP256Public {
+        EcdsaP256Public::from_base64("BGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/UfU=").unwrap()
+    }
+
+    fn request(pairing: &PairingHost, nonce: &str) {
+        let start = PairStart {
+            nonce: nonce.into(),
+            device_key: device_key().0.into(),
+            device_name: "Phone".into(),
+            model: "iPhone".into(),
+        };
+        let reply = pairing.control_reply(
+            ControlRequest::PairStart {
+                start,
+                attempt: [1; 16],
+            },
+            NOW,
+        );
+        assert_eq!(reply.pairing, Some(PairReply::Waiting));
+    }
+
+    fn host(keys: Arc<AuthorizedKeys>) -> PairingHost {
+        PairingHost::new(
+            keys,
+            PairCommands {
+                pair: "/helper pair".into(),
+                restricted: "/helper restricted".into(),
+            },
+        )
+    }
+
+    fn bundle(id: u128, name: &str) -> BundleHost {
+        BundleHost {
+            host_id: HostId(Uuid::from_u128(id)),
+            name: name.into(),
+            os: "macos".into(),
+            user: "tester".into(),
+            port: None,
+            targets: vec![],
+            host_keys: vec![],
+        }
+    }
+
+    #[test]
+    fn approval_hands_over_other_hosts_once_and_after_installing_the_local_key() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("authorized_keys");
+        let keys = Arc::new(AuthorizedKeys::at(path.clone()));
+        let pairing = host(keys.clone());
+        let mac = bundle(1, "Mac");
+        let source = Arc::new(Source {
+            keys,
+            calls: AtomicUsize::new(0),
+            offered: bundle(2, "Workshop"),
+            unavailable: UnavailableHost {
+                host_id: HostId(Uuid::from_u128(3)),
+                name: "Office".into(),
+                reason: HandoverReason::ProxyJump,
+            },
+            suspend_removal: path.clone(),
+        });
+        let standalone = pairing.offer(mac.clone(), Duration::ZERO, NOW).unwrap();
+        assert!(!standalone.can_hand_over);
+        pairing.cancel(&standalone.nonce).unwrap();
+        pairing.set_handover(source.clone());
+        let payload = pairing.offer(mac.clone(), Duration::ZERO, NOW).unwrap();
+        assert!(payload.can_hand_over);
+        let nonce = payload.nonce;
+        request(&pairing, &nonce);
+        assert_eq!(source.calls.load(Ordering::Relaxed), 0);
+        let expected = PairReply::Approved {
+            device: DeviceTag::from_key(&device_key()).to_string(),
+            hosts: vec![mac, source.offered.clone()],
+            unavailable: vec![source.unavailable.clone()],
+        };
+        assert!(pairing.approve(&nonce, NOW).is_err());
+        fs::remove_dir(&path).unwrap();
+        fs::rename(path.with_extension("saved"), &path).unwrap();
+        assert_eq!(pairing.approve(&nonce, NOW).unwrap(), expected);
+        assert_eq!(pairing.status(&nonce, NOW), expected);
+        assert_eq!(pairing.approve(&nonce, NOW).unwrap(), expected);
+        assert_eq!(source.calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn status_and_other_offers_can_progress_while_handover_resolves() {
+        let dir = tempfile::tempdir().unwrap();
+        let pairing = host(Arc::new(AuthorizedKeys::at(
+            dir.path().join("authorized_keys"),
+        )));
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let resume_rx = Mutex::new(resume_rx);
+        pairing.set_handover(Arc::new(
+            move |_: DeviceTag, _: &EcdsaP256Public, _: &str| {
+                entered_tx.send(()).unwrap();
+                resume_rx
+                    .lock_ok()
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap();
+                Handover {
+                    hosts: Vec::new(),
+                    unavailable: Vec::new(),
+                }
+            },
+        ));
+        let nonce = pairing
+            .offer(bundle(1, "Mac"), Duration::ZERO, NOW)
+            .unwrap()
+            .nonce;
+        request(&pairing, &nonce);
+        thread::scope(|scope| {
+            let approve = scope.spawn(|| pairing.approve(&nonce, NOW));
+            entered_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            let (poll_tx, poll_rx) = mpsc::channel();
+            let (p, n) = (&pairing, &nonce);
+            scope.spawn(move || {
+                let status = p.status(n, NOW);
+                let next = p.offer(bundle(2, "Mac"), Duration::ZERO, NOW);
+                poll_tx.send((status, next)).unwrap();
+            });
+            let result = poll_rx.recv_timeout(Duration::from_secs(2));
+            resume_tx.send(()).unwrap();
+            let (status, next) = result.expect("pairing operations can run during handover");
+            assert_eq!(status, PairReply::Waiting);
+            assert!(next.is_ok());
+            assert!(matches!(
+                approve.join().unwrap().unwrap(),
+                PairReply::Approved { .. }
+            ));
+        });
+    }
+
+    #[test]
+    fn oversized_handover_still_delivers_an_encodable_local_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        let keys = Arc::new(AuthorizedKeys::at(dir.path().join("authorized_keys")));
+        let pairing = host(keys.clone());
+        pairing.set_handover(Arc::new(|_: DeviceTag, _: &EcdsaP256Public, _: &str| {
+            Handover {
+                hosts: vec![bundle(
+                    2,
+                    &"x".repeat(statglass_proto::pairing::MAX_PAIR_FRAME_BYTES),
+                )],
+                unavailable: Vec::new(),
+            }
+        }));
+        let mac = bundle(1, "Mac");
+        let nonce = pairing
+            .offer(mac.clone(), Duration::ZERO, NOW)
+            .unwrap()
+            .nonce;
+        request(&pairing, &nonce);
+        let reply = pairing.approve(&nonce, NOW).unwrap();
+        assert!(encode_pair_frame(&reply).is_ok());
+        assert!(matches!(reply, PairReply::Approved { hosts, .. } if hosts == [mac]));
+        assert_eq!(keys.list_devices().unwrap().len(), 1);
+    }
 }

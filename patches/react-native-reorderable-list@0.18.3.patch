@@ -1,0 +1,187 @@
+# A quick release can end the pan before the queued UI job starts the lift.
+# Lift inline from a UI worklet and report cancelled drags to the caller.
+diff --git a/lib/commonjs/components/ReorderableListCell.js b/lib/commonjs/components/ReorderableListCell.js
+index 8b9612b1882e6029c818db268a5ef9b7164edd7b..707a6f7a9ead3025d6005d517aa66571eeb74fc4 100644
+--- a/lib/commonjs/components/ReorderableListCell.js
++++ b/lib/commonjs/components/ReorderableListCell.js
+@@ -34,7 +34,15 @@ const ReorderableListCell = exports.ReorderableListCell = /*#__PURE__*/(0, _reac
+     itemLayoutAnimation,
+     horizontal
+   } = (0, _hooks.useContext)(_contexts.ReorderableListContext);
+-  const dragHandler = (0, _react.useCallback)(() => (0, _reactNativeReanimated.runOnUI)(startDrag)(index), [startDrag, index]);
++  const dragHandler = (0, _react.useCallback)(() => {
++    'worklet';
++
++    if (globalThis._WORKLET) {
++      startDrag(index);
++    } else {
++      (0, _reactNativeReanimated.runOnUI)(startDrag)(index);
++    }
++  }, [startDrag, index]);
+   const [showDropIndicator, setShowDropIndicator] = (0, _react.useState)(false);
+   const isActive = activeIndex === index;
+   const contextValue = (0, _react.useMemo)(() => ({
+diff --git a/lib/commonjs/components/ReorderableListCore.js b/lib/commonjs/components/ReorderableListCore.js
+index f659ccfeff63e2bcab856f1e4166970b6ae39e47..2049258796f750e6563ec2197ae8cc990c7a23be 100644
+--- a/lib/commonjs/components/ReorderableListCore.js
++++ b/lib/commonjs/components/ReorderableListCore.js
+@@ -411,14 +411,20 @@ const ReorderableListCore = ({
+       }
+ 
+       // Trigger onDragEnd event.
+-      let e = {
+-        from: draggedIndex.value,
+-        to: currentIndex.value
+-      };
+-      onDragEnd === null || onDragEnd === void 0 || onDragEnd(e);
++      const from = draggedIndex.value;
++      const to = currentIndex.value;
++      const cancelled = gestureState.value !== _reactNativeGestureHandler.State.END;
++      onDragEnd === null || onDragEnd === void 0 || onDragEnd({ from, to, cancelled });
++      if (cancelled) {
++        const step = from < to ? -1 : 1;
++        for (let index = to; index !== from; index += step) {
++          recomputeLayout(index, index + step);
++        }
++        currentIndex.value = from;
++      }
+       const handlers = dragEndHandlers.value[draggedIndex.value];
+       if (Array.isArray(handlers)) {
+-        handlers.forEach(fn => fn(e.from, e.to));
++        handlers.forEach(fn => fn(from, to));
+       }
+ 
+       // they are actually swapped on drag translation
+diff --git a/lib/module/components/ReorderableListCell.js b/lib/module/components/ReorderableListCell.js
+index 2ef06ebcf6806c94759d39212c6c52e56791dae5..9a55e66c5aac1eaf7617c182184e65343f3f3682 100644
+--- a/lib/module/components/ReorderableListCell.js
++++ b/lib/module/components/ReorderableListCell.js
+@@ -26,7 +26,15 @@ export const ReorderableListCell = /*#__PURE__*/memo(({
+     itemLayoutAnimation,
+     horizontal
+   } = useContext(ReorderableListContext);
+-  const dragHandler = useCallback(() => runOnUI(startDrag)(index), [startDrag, index]);
++  const dragHandler = useCallback(() => {
++    'worklet';
++
++    if (globalThis._WORKLET) {
++      startDrag(index);
++    } else {
++      runOnUI(startDrag)(index);
++    }
++  }, [startDrag, index]);
+   const [showDropIndicator, setShowDropIndicator] = useState(false);
+   const isActive = activeIndex === index;
+   const contextValue = useMemo(() => ({
+diff --git a/lib/module/components/ReorderableListCore.js b/lib/module/components/ReorderableListCore.js
+index 6acda86565c009cb8bfc461b5dfc5979a65310ac..42e193878793b443b702e698e3f20ce402c21ade 100644
+--- a/lib/module/components/ReorderableListCore.js
++++ b/lib/module/components/ReorderableListCore.js
+@@ -403,14 +403,20 @@ const ReorderableListCore = ({
+       }
+ 
+       // Trigger onDragEnd event.
+-      let e = {
+-        from: draggedIndex.value,
+-        to: currentIndex.value
+-      };
+-      onDragEnd === null || onDragEnd === void 0 || onDragEnd(e);
++      const from = draggedIndex.value;
++      const to = currentIndex.value;
++      const cancelled = gestureState.value !== State.END;
++      onDragEnd === null || onDragEnd === void 0 || onDragEnd({ from, to, cancelled });
++      if (cancelled) {
++        const step = from < to ? -1 : 1;
++        for (let index = to; index !== from; index += step) {
++          recomputeLayout(index, index + step);
++        }
++        currentIndex.value = from;
++      }
+       const handlers = dragEndHandlers.value[draggedIndex.value];
+       if (Array.isArray(handlers)) {
+-        handlers.forEach(fn => fn(e.from, e.to));
++        handlers.forEach(fn => fn(from, to));
+       }
+ 
+       // they are actually swapped on drag translation
+diff --git a/lib/typescript/types/props.d.ts b/lib/typescript/types/props.d.ts
+index 009f1a70408cc2c27ca4d9efd303b10312ab8254..919b0463e5c401b5c6dda48bbd5c5abcd8be52c9 100644
+--- a/lib/typescript/types/props.d.ts
++++ b/lib/typescript/types/props.d.ts
+@@ -25,6 +25,8 @@ export interface ReorderableListIndexChangeEvent {
+     index: number;
+ }
+ export interface ReorderableListDragEndEvent {
++  /** Whether the gesture ended through cancellation rather than release. */
++  cancelled: boolean;
+     /**
+      * Index of the dragged item.
+      */
+diff --git a/src/components/ReorderableListCell.tsx b/src/components/ReorderableListCell.tsx
+index 8a1d8607fbf7920ee2068bf60942fb443241ebfc..91261a378ba5d4f09f3fd196a285db4080c6b24f 100644
+--- a/src/components/ReorderableListCell.tsx
++++ b/src/components/ReorderableListCell.tsx
+@@ -54,10 +54,15 @@ export const ReorderableListCell = memo(
+       horizontal,
+     } = useContext(ReorderableListContext);
+ 
+-    const dragHandler = useCallback(
+-      () => runOnUI(startDrag)(index),
+-      [startDrag, index],
+-    );
++    const dragHandler = useCallback(() => {
++      'worklet';
++
++      if (globalThis._WORKLET) {
++        startDrag(index);
++      } else {
++        runOnUI(startDrag)(index);
++      }
++    }, [startDrag, index]);
+ 
+     const [showDropIndicator, setShowDropIndicator] = useState(false);
+ 
+diff --git a/src/components/ReorderableListCore.tsx b/src/components/ReorderableListCore.tsx
+index 1ed661b30013aa0d1dc676de41c39271591b412f..add266b6b34e9d3da5288184fe6a7c67e21ca5e7 100644
+--- a/src/components/ReorderableListCore.tsx
++++ b/src/components/ReorderableListCore.tsx
+@@ -659,12 +659,23 @@ const ReorderableListCore = <T,>(
+         }
+ 
+         // Trigger onDragEnd event.
+-        let e = {from: draggedIndex.value, to: currentIndex.value};
+-        onDragEnd?.(e);
++        const from = draggedIndex.value;
++        const to = currentIndex.value;
++        const cancelled = gestureState.value !== State.END;
++        onDragEnd?.({from, to, cancelled});
++
++        // A cancelled gesture puts each shifted cell back in its original slot.
++        if (cancelled) {
++          const step = from < to ? -1 : 1;
++          for (let index = to; index !== from; index += step) {
++            recomputeLayout(index, index + step);
++          }
++          currentIndex.value = from;
++        }
+ 
+         const handlers = dragEndHandlers.value[draggedIndex.value];
+         if (Array.isArray(handlers)) {
+-          handlers.forEach(fn => fn(e.from, e.to));
++          handlers.forEach(fn => fn(from, to));
+         }
+ 
+         // they are actually swapped on drag translation
+diff --git a/src/types/props.ts b/src/types/props.ts
+index cc69dcb71234007b18b39b51f1a7a4efadd8dc3b..231b8c5683bed7ac74ef5885353ca253e01223ad 100644
+--- a/src/types/props.ts
++++ b/src/types/props.ts
+@@ -48,6 +48,8 @@ export interface ReorderableListIndexChangeEvent {
+ }
+ 
+ export interface ReorderableListDragEndEvent {
++  /** Whether the gesture ended through cancellation rather than release. */
++  cancelled: boolean;
+   /**
+    * Index of the dragged item.
+    */

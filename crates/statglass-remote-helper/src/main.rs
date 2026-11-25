@@ -2,12 +2,16 @@
 //! Only bridges authenticated local sockets; it never starts a collector or opens SQLite.
 use statglass_remote::{ControlRequest, SessionScope, SocketPaths, control_request};
 
+mod authorize;
 mod markers;
 mod pair;
 mod restricted;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = handover_command(&args) {
+        std::process::exit(code);
+    }
     if let [mode, flag, nonce] = args.as_slice()
         && mode == "pair"
         && flag == "--nonce"
@@ -37,6 +41,22 @@ fn main() {
         }
     }
 }
+
+fn handover_command(args: &[String]) -> Option<i32> {
+    match args {
+        [mode, key_flag, key, name_flag, name]
+            if mode == "authorize-key" && key_flag == "--key" && name_flag == "--name" =>
+        {
+            Some(authorize::authorize_key(key, name))
+        }
+        [mode, flag, tag] if mode == "revoke-key" && flag == "--device" => {
+            Some(authorize::revoke_key(tag))
+        }
+        [mode, ..] if mode == "authorize-key" || mode == "revoke-key" => Some(2),
+        _ => None,
+    }
+}
+
 type CommandResult = Result<i32, Box<dyn std::error::Error>>;
 
 async fn run(args: &[String]) -> CommandResult {

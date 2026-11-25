@@ -31,6 +31,7 @@ struct FakeFeed {
     gpu: Mutex<Vec<bool>>,
     ports: Mutex<Vec<bool>>,
     detail: AtomicI64,
+    min_frame_period_ms: AtomicU32,
     /// Behave like the engine (D-094): detail interest crossing between zero and one
     /// publishes a status with the visible 1 s or background 2 s tick before returning.
     background_tick: AtomicBool,
@@ -56,6 +57,7 @@ impl FakeFeed {
             gpu: Mutex::new(Vec::new()),
             ports: Mutex::new(Vec::new()),
             detail: AtomicI64::new(0),
+            min_frame_period_ms: AtomicU32::new(0),
             background_tick: AtomicBool::new(false),
             timeline: AtomicU32::new(0),
         });
@@ -126,6 +128,9 @@ impl LiveFeed for FakeFeed {
     }
     fn capabilities(&self) -> Capabilities {
         self.caps.lock().unwrap().clone()
+    }
+    fn min_frame_period_ms(&self) -> u32 {
+        self.min_frame_period_ms.load(Ordering::SeqCst)
     }
     fn set_process_interest(&self, period_ms: Option<u32>) {
         self.periods.lock().unwrap().push(period_ms);
@@ -1443,6 +1448,26 @@ async fn status_carries_display_idle_and_the_frame_period() {
     assert_eq!(frame_period_ms(3_000, 5_000), 6_000);
 }
 
+#[tokio::test(start_paused = true)]
+async fn stream_status_honors_the_feeds_delivery_cadence() {
+    let feed = FakeFeed::new();
+    for (minimum, expected) in [(0, 1_000), (5_000, 5_000), (500, 1_000)] {
+        feed.min_frame_period_ms.store(minimum, Ordering::SeqCst);
+        let reg = registry(&["dashboard"]);
+        let (s, rx, _) = sink();
+        reg.subscribe("dashboard", feed.clone(), s, req(0)).unwrap();
+        let status = rx
+            .try_iter()
+            .find_map(|message| match message {
+                LiveMsg::Status(status) => Some(status),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(status.interval_ms, 1_000);
+        assert_eq!(status.frame_period_ms, expected);
+    }
+}
+
 /// Performance mode (D-088) paces every visible stream to at least 2 s, whatever it
 /// asked for, and says so in the status; it lets a longer requested period stand.
 #[tokio::test(start_paused = true)]
@@ -1586,3 +1611,167 @@ mod protocol;
 mod replacement;
 
 mod pending;
+
+/// A phone session waits on the host's recent rows to refill its ring (D-159). A window
+/// opened meanwhile is told to wait for its whole range rather than draw the ring's
+/// first seconds, and the refill, arriving on a new timeline, ends the wait.
+#[tokio::test(start_paused = true)]
+async fn a_window_waits_for_a_pending_refill_and_the_refill_ends_the_wait() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    for ts in [19_000, 20_000] {
+        feed.tick(&l, ts, 1.0);
+    }
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    let first = drain(&rx).await;
+    assert!(
+        first.contains(&"plan 2 Some(-280000)".to_string()),
+        "the plan asks the window to wait for 300 s before the latest frame: {first:?}"
+    );
+
+    let history = statglass_store::HistoryResult {
+        tier: statglass_schema::Tier::S10,
+        bucket_ms: 10_000,
+        series: vec![statglass_store::SeriesPoints {
+            key: SeriesKey::bare(MetricId::from_static("cpu.total")),
+            points: [(0, 20.0), (10_000, 25.0)]
+                .into_iter()
+                .map(|(t, avg)| statglass_store::Point {
+                    t,
+                    min: avg,
+                    max: avg,
+                    avg,
+                })
+                .collect(),
+        }],
+        gaps: Vec::new(),
+    };
+    feed.step();
+    assert!(feed.hub.refill(&history, 1) > 0);
+    feed.hub.set_refill_pending(false);
+    feed.tick(&l, 21_000, 7.0);
+    let after = drain(&rx).await;
+    assert_eq!(
+        after.first().map(String::as_str),
+        Some("plan 4 None"),
+        "the restart's plan, with nothing earlier to wait for: {after:?}"
+    );
+    assert!(after.iter().all(|m| !m.starts_with("plan 0")), "{after:?}");
+}
+
+/// A refill that adds nothing moves no timeline, so a plan ends the window's wait.
+#[tokio::test(start_paused = true)]
+async fn a_refill_that_adds_nothing_still_ends_the_wait() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    feed.tick(&l, 20_000, 1.0);
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    drain(&rx).await;
+
+    feed.tick(&l, 21_000, 2.0);
+    let waiting = drain(&rx).await;
+    assert!(
+        waiting.iter().all(|m| !m.starts_with("plan")),
+        "{waiting:?}"
+    );
+
+    feed.hub.set_refill_pending(false);
+    feed.tick(&l, 22_000, 3.0);
+    assert_eq!(drain(&rx).await, ["plan 0 None", "frame 1 @22000"]);
+    feed.tick(&l, 23_000, 4.0);
+    assert_eq!(drain(&rx).await, ["frame 1 @23000"], "the plan goes once");
+}
+
+/// A refill that never comes (live detail withheld) must not hold the window empty:
+/// after `REFILL_WAIT_MS` of frames the stream says to stop waiting.
+#[tokio::test(start_paused = true)]
+async fn a_refill_that_never_comes_ends_the_wait_after_the_bound() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    feed.tick(&l, 20_000, 1.0);
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    drain(&rx).await;
+
+    feed.tick(&l, 20_000 + REFILL_WAIT_MS - 1_000, 2.0);
+    let waiting = drain(&rx).await;
+    assert!(
+        waiting.iter().all(|m| !m.starts_with("plan")),
+        "{waiting:?}"
+    );
+    feed.tick(&l, 20_000 + REFILL_WAIT_MS, 3.0);
+    assert_eq!(
+        drain(&rx).await,
+        [
+            "plan 0 None".to_string(),
+            format!("frame 1 @{}", 20_000 + REFILL_WAIT_MS)
+        ]
+    );
+}
+
+/// The refill can land while a frame from before it still sits on the bus. That frame
+/// must not end the wait with an empty plan: the stream restarts on the ring's new
+/// timeline instead, so the window takes the whole range at once.
+#[tokio::test(start_paused = true)]
+async fn a_frame_from_before_the_refill_restarts_on_the_new_timeline() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    feed.tick(&l, 20_000, 1.0);
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    drain(&rx).await;
+
+    // A frame on the old timeline is published, then the refill moves the ring before
+    // the stream task reads it.
+    feed.tick(&l, 21_000, 2.0);
+    let history = statglass_store::HistoryResult {
+        tier: statglass_schema::Tier::S10,
+        bucket_ms: 10_000,
+        series: vec![statglass_store::SeriesPoints {
+            key: SeriesKey::bare(MetricId::from_static("cpu.total")),
+            points: [(0, 20.0), (10_000, 25.0)]
+                .into_iter()
+                .map(|(t, avg)| statglass_store::Point {
+                    t,
+                    min: avg,
+                    max: avg,
+                    avg,
+                })
+                .collect(),
+        }],
+        gaps: Vec::new(),
+    };
+    assert!(feed.hub.refill(&history, 1) > 0);
+    feed.hub.set_refill_pending(false);
+    let after = drain(&rx).await;
+    assert!(
+        after.iter().all(|m| !m.starts_with("plan 0")),
+        "no empty plan: {after:?}"
+    );
+    assert!(
+        after
+            .iter()
+            .any(|m| m.starts_with("plan ") && m.ends_with(" None")),
+        "the restart's plan ends the wait: {after:?}"
+    );
+    assert!(
+        after
+            .iter()
+            .any(|m| m.starts_with("backfill") && m.ends_with(" t1")),
+        "the ring's rows on the new timeline: {after:?}"
+    );
+}

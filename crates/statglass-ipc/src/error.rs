@@ -21,6 +21,9 @@ pub enum CommandError {
     /// SSH login to the other Mac failed (key, agent or account).
     #[error("{message}")]
     RemoteAuth { message: String },
+    /// The phone needs its local SSH key before it can connect.
+    #[error("the phone's SSH key is unavailable")]
+    PhoneKeyUnavailable,
     /// The other Mac's host key isn't trusted yet, or needs checking in Terminal.
     #[error("{message}")]
     HostKeyUnknown { message: String },
@@ -39,6 +42,9 @@ pub enum CommandError {
     /// A connected, current host does not offer what was asked (its edition or setup).
     #[error("{message}")]
     RemoteUnsupported { message: String },
+    /// The host refused the query.
+    #[error("{message}")]
+    RemoteRefused { message: String },
     /// The host's alert rules changed. Reload them before saving again.
     #[error("{message}")]
     RemoteRulesChanged { message: String },
@@ -143,6 +149,9 @@ pub enum CommandError {
         reason: PairingFailure,
         message: String,
     },
+    /// Resolving, applying or encoding a handover failed.
+    #[error("handover: {message}")]
+    Handover { message: String },
 }
 
 impl CommandError {
@@ -179,17 +188,45 @@ impl From<StoreError> for CommandError {
             StoreError::TooNew { found, supported } => {
                 CommandError::StoreTooNew { found, supported }
             }
-            e if e.is_busy() => CommandError::StoreBusy {
-                message: e.to_string(),
-            },
-            e if e.is_corrupt() => CommandError::StoreCorrupt {
-                message: e.to_string(),
-            },
-            e => CommandError::Store {
-                message: e.to_string(),
-            },
+            e => {
+                let message = store_message(&e);
+                if e.is_busy() {
+                    CommandError::StoreBusy { message }
+                } else if e.is_corrupt() {
+                    CommandError::StoreCorrupt { message }
+                } else {
+                    CommandError::Store { message }
+                }
+            }
         }
     }
+}
+
+fn store_message(error: &StoreError) -> String {
+    // SQLite's extended code is useful; its standard explanation often repeats its message.
+    if let StoreError::Sqlite(statglass_store::rusqlite::Error::SqliteFailure(code, Some(detail))) =
+        error
+        && !detail.is_empty()
+    {
+        return format!("sqlite: {detail} (code {})", code.extended_code);
+    }
+
+    let mut message = error.to_string();
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        let detail = cause.to_string();
+        // StoreError's Display already includes its immediate cause.
+        if message != detail
+            && !message
+                .strip_suffix(&detail)
+                .is_some_and(|prefix| prefix.ends_with(": "))
+        {
+            message.push_str(": ");
+            message.push_str(&detail);
+        }
+        source = cause.source();
+    }
+    message
 }
 
 impl From<statglass_engine::HistoryStoreError> for CommandError {
