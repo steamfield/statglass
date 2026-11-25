@@ -187,7 +187,7 @@ export function createMockTransport(
     ...remote.routeUsage(usage.methods),
     ...shell.methods,
     ...new MockAlertDestinations(commands, emitters, flags).methods,
-    ...createMockPairing(commands),
+    ...createMockPairing(commands, settings, now),
     ...settings.methods,
     ...store.methods,
     ...ring.methods,

@@ -1,5 +1,14 @@
-import type { CommandError } from "@core/generated/types";
+import type { CommandError, PairingFailure } from "@core/generated/types";
 import { commandError, commandErrorText } from "./command-error";
+
+const PAIRING_FAILURE_TEXT: Record<PairingFailure, string> = {
+  denied: "The host declined the pairing request.",
+  expired: "The pairing code expired.",
+  used: "The pairing code has already been used.",
+  unknown: "The host does not recognize this pairing code.",
+  unavailable: "Pairing is unavailable on this host.",
+  invalid: "The pairing data is invalid.",
+};
 
 export function remoteErrorText(error: CommandError): string {
   switch (error.kind) {
@@ -11,6 +20,11 @@ export function remoteErrorText(error: CommandError): string {
       return "History is unavailable.";
     case "store_too_new":
       return "This history was saved by a newer StatGlass version.";
+    case "pairing":
+      return commandErrorText(
+        error,
+        PAIRING_FAILURE_TEXT[error.reason] ?? "Please try again."
+      );
     default:
       return commandErrorText(error, "Please try again.");
   }
@@ -54,6 +68,7 @@ export function isHostKeyError(error: CommandError): boolean {
   return error.kind === "host_key_unknown";
 }
 
+/** Recovery copy for a host whose StatGlass app or remote monitoring is off. */
 export function macMonitoringAdvice(
   kind: "app_not_running" | "monitoring_off",
   host: string

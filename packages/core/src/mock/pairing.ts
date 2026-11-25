@@ -1,11 +1,13 @@
 import type {
   PairedDeviceInfo,
+  PairingFailure,
   PairingOffer,
   PairingStatus,
 } from "@core/generated/types";
 import type { Transport } from "../transport";
 import type { MockCommands } from "./commands";
 import { fail, ok } from "./protocol";
+import type { MockSettings } from "./settings";
 
 const CODE = "K7M2RX";
 const TTL_MS = 600_000;
@@ -52,11 +54,17 @@ const PHONE: PairedDeviceInfo = {
 
 type MockOffer = { offer: PairingOffer; status: PairingStatus };
 
-function currentStatus(entry: MockOffer, enabled = true): PairingStatus {
+function currentStatus(
+  entry: MockOffer,
+  now: number,
+  enabled = true
+): PairingStatus {
   const { status, offer } = entry;
   if (status.kind !== "waiting" && status.kind !== "pending") return status;
-  const now = Date.now();
-  if (now >= offer.expires_ms) return { kind: "expired" };
+  if (now >= offer.expires_ms) {
+    entry.status = { kind: "expired" };
+    return entry.status;
+  }
   if (!enabled) {
     entry.status = { kind: "failed", message: MONITORING_OFF };
     return entry.status;
@@ -71,19 +79,16 @@ function currentStatus(entry: MockOffer, enabled = true): PairingStatus {
     : { kind: "waiting" };
 }
 
-const pairingFailure = (message: string) => fail({ kind: "pairing", message });
+const pairingFailure = (reason: PairingFailure, message: string) =>
+  fail({ kind: "pairing", reason, message });
 const MONITORING_OFF =
   "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again.";
 
-async function monitoringEnabled(transport: Pick<Transport, "getSettings">) {
-  return (
-    (await transport.getSettings()).settings.remote_access?.enabled ?? false
-  );
-}
-
 /** Settings and the pairing demo share the per-window mock transport. */
 export function createMockPairing(
-  commands: MockCommands
+  commands: MockCommands,
+  settings: MockSettings,
+  now: () => number
 ): Pick<
   Transport,
   | "pairingStart"
@@ -94,6 +99,8 @@ export function createMockPairing(
   | "pairedDevices"
   | "revokeDevice"
 > {
+  const monitoringEnabled = () =>
+    settings.snapshot.settings.remote_access?.enabled ?? false;
   const offers = new Map<string, MockOffer>();
   const devices = new Map<string, PairedDeviceInfo>([
     [
@@ -102,7 +109,7 @@ export function createMockPairing(
         tag: "7F3A2C",
         name: "Home iPhone",
         fingerprint: "SHA256:UoP7jm1c8pYse5QlaRgkaSL/n9TVa5EDMbvGX5Qd98U",
-        last_seen_ms: Date.now() - 7_200_000,
+        last_seen_ms: now() - 7_200_000,
       },
     ],
   ]);
@@ -110,51 +117,54 @@ export function createMockPairing(
   const deny = (nonce: string, command: string) => {
     commands.record(command, nonce);
     const entry = offers.get(nonce);
-    if (!entry) return pairingFailure("Unknown pairing offer.");
-    const status = currentStatus(entry);
+    if (!entry) return pairingFailure("unknown", "Unknown pairing offer.");
+    const status = currentStatus(entry, now());
     entry.status =
       status.kind === "waiting" || status.kind === "pending"
         ? { kind: "denied" }
         : status;
-    return ok(null);
+    return ok(entry.status);
   };
   return {
-    async pairingStart(this: Pick<Transport, "getSettings">) {
+    async pairingStart() {
       commands.record("pairing_start");
-      if (!(await monitoringEnabled(this)))
-        return pairingFailure(MONITORING_OFF);
+      if (!monitoringEnabled())
+        return pairingFailure("unavailable", MONITORING_OFF);
       const nonce = (++nextNonce).toString(16).padStart(32, "0");
       const offer = {
         nonce,
         code: CODE,
-        expires_ms: Date.now() + TTL_MS,
+        expires_ms: now() + TTL_MS,
         qr_svg: qrSvg,
         text: DEMO_TEXT,
       };
       offers.set(nonce, { offer, status: { kind: "waiting" } });
       return ok(offer);
     },
-    async pairingStatus(this: Pick<Transport, "getSettings">, nonce) {
+    async pairingStatus(nonce) {
       commands.record("pairing_status", nonce);
       const entry = offers.get(nonce);
       if (!entry)
         return ok({ kind: "failed", message: "Unknown pairing offer." });
-      return ok(currentStatus(entry, await monitoringEnabled(this)));
+      return ok(currentStatus(entry, now(), monitoringEnabled()));
     },
-    async pairingApprove(this: Pick<Transport, "getSettings">, nonce) {
+    async pairingApprove(nonce) {
       commands.record("pairing_approve", nonce);
       const entry = offers.get(nonce);
-      if (!entry) return pairingFailure("Unknown pairing offer.");
-      const status = currentStatus(entry, await monitoringEnabled(this));
+      if (!entry) return pairingFailure("unknown", "Unknown pairing offer.");
+      const status = currentStatus(entry, now(), monitoringEnabled());
       if (status.kind === "waiting")
-        return pairingFailure("No iPhone is waiting for approval.");
+        return pairingFailure("invalid", "No iPhone is waiting for approval.");
       if (status.kind !== "pending") return ok(status);
       if (!devices.has(PHONE.tag)) devices.set(PHONE.tag, PHONE);
       entry.status = { kind: "paired", device: PHONE.tag };
       return ok(entry.status);
     },
     pairingDeny: async (nonce) => deny(nonce, "pairing_deny"),
-    pairingCancel: async (nonce) => deny(nonce, "pairing_cancel"),
+    pairingCancel: async (nonce) => {
+      const result = deny(nonce, "pairing_cancel");
+      return result.status === "ok" ? ok(null) : result;
+    },
     pairedDevices: async () => {
       commands.record("paired_devices");
       return ok([...devices.values()]);
@@ -162,7 +172,7 @@ export function createMockPairing(
     revokeDevice: async (tag) => {
       commands.record("revoke_device", tag);
       if (!/^[0-9A-F]{6}$/.test(tag))
-        return pairingFailure("Invalid paired device tag.");
+        return pairingFailure("invalid", "Invalid paired device tag.");
       return ok(devices.delete(tag));
     },
   };

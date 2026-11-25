@@ -233,3 +233,33 @@ describe("remoteConnectionView for network causes", () => {
     expect(view(remote).routeLines).toEqual([]);
   });
 });
+
+it.each([
+  [
+    "app_not_running",
+    "StatGlass isn't running on Studio Mac",
+    "Open StatGlass",
+  ],
+  [
+    "monitoring_off",
+    "Remote monitoring is off on Studio Mac",
+    "Turn on Allow remote monitoring",
+  ],
+] as const)(
+  "shows the %s marker and retry advice for a saved Mac",
+  (kind, title, recovery) => {
+    const connection = view(
+      failing(kind, [{ route: "lan", kind }], {
+        name: "Studio Mac",
+        tailscale: null,
+      })
+    );
+    expect(connection.title).toBe(title);
+    expect(connection.summary).toContain(recovery);
+    expect(connection.kind).toBe(kind);
+    expect(connection.showRetry).toBe(true);
+    expect(connection.routeLines).not.toContainEqual(
+      expect.stringContaining("connection failed")
+    );
+  }
+);

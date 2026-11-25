@@ -279,6 +279,11 @@ fn checksum(bytes: &[u8]) -> u32 {
 /// Pairing uses the proto u32-length CBOR framing and only carries small messages.
 pub const MAX_PAIR_FRAME_BYTES: usize = 16 * 1024;
 
+/// Encodes a CBOR pairing value with a four-byte big-endian length prefix.
+///
+/// # Errors
+///
+/// Returns `Encode` on a serialization failure or `TooLarge` above [`MAX_PAIR_FRAME_BYTES`].
 pub fn encode_pair_frame(value: &impl Serialize) -> Result<Vec<u8>, CodecError> {
     let mut frame = vec![0; 4];
     ciborium::into_writer(value, &mut frame).map_err(|e| CodecError::Encode(e.to_string()))?;
@@ -290,6 +295,11 @@ pub fn encode_pair_frame(value: &impl Serialize) -> Result<Vec<u8>, CodecError> 
     Ok(frame)
 }
 
+/// Decodes a pairing frame body after the caller has checked its length.
+///
+/// # Errors
+///
+/// Returns `Decode` for malformed CBOR or trailing bytes.
 pub fn decode_pair_body<T: DeserializeOwned>(mut body: &[u8]) -> Result<T, CodecError> {
     let value = ciborium::from_reader(&mut body).map_err(|e| CodecError::Decode(e.to_string()))?;
     if !body.is_empty() {

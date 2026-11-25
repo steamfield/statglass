@@ -419,19 +419,65 @@ export const commands = {
 	 *  `invalid_argument` with the reason when `destination` is invalid.
 	 */
 	alertDestinationTest: (destination: Destination) => typedError<DeliveryOutcome, CommandError>(__TAURI_INVOKE("alert_destination_test", { destination })),
-	/**  Opens a pairing offer and returns its QR. Scaffold stub (phase 5 lane c). */
+	/**
+	 *  Opens a pairing offer and returns its QR.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns `pairing` if preflight, key installation, or QR generation fails, or the app is quitting.
+	 */
 	pairingStart: () => typedError<PairingOffer, CommandError>(__TAURI_INVOKE("pairing_start")),
-	/**  Where the offer `nonce` stands. Scaffold stub (phase 5 lane c). */
+	/**
+	 *  Where the offer `nonce` stands.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns `pairing` if the pairing host or command worker is unavailable.
+	 */
 	pairingStatus: (nonce: string) => typedError<PairingStatus, CommandError>(__TAURI_INVOKE("pairing_status", { nonce })),
-	/**  Approves the phone waiting on `nonce`. Scaffold stub (phase 5 lane c). */
+	/**
+	 *  Approves the phone waiting on `nonce`.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns `pairing` if the host or worker is unavailable, the offer is unknown or
+	 *  still waiting for a phone, or a key edit fails.
+	 */
 	pairingApprove: (nonce: string) => typedError<PairingStatus, CommandError>(__TAURI_INVOKE("pairing_approve", { nonce })),
-	/**  Denies the phone waiting on `nonce`. Scaffold stub (phase 5 lane c). */
-	pairingDeny: (nonce: string) => typedError<null, CommandError>(__TAURI_INVOKE("pairing_deny", { nonce })),
-	/**  Withdraws the offer `nonce`. Scaffold stub (phase 5 lane c). */
+	/**
+	 *  Denies the phone waiting on `nonce` and returns the offer's resulting status.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns `pairing` if the host or worker is unavailable, the offer is unknown,
+	 *  or the pairing line cannot be removed.
+	 */
+	pairingDeny: (nonce: string) => typedError<PairingStatus, CommandError>(__TAURI_INVOKE("pairing_deny", { nonce })),
+	/**
+	 *  Withdraws the offer `nonce`.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns `pairing` if the host or worker is unavailable, the offer is unknown,
+	 *  or the pairing line cannot be removed.
+	 */
 	pairingCancel: (nonce: string) => typedError<null, CommandError>(__TAURI_INVOKE("pairing_cancel", { nonce })),
-	/**  The phones paired with this Mac. Scaffold stub (phase 5 lane c). */
+	/**
+	 *  The phones paired with this Mac.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns `pairing` if the command worker or authorized keys file cannot be readied.
+	 */
 	pairedDevices: () => typedError<PairedDeviceInfo[], CommandError>(__TAURI_INVOKE("paired_devices")),
-	/**  Removes the device `tag`; false when no device has it. Scaffold stub (phase 5 lane c). */
+	/**
+	 *  Removes the device `tag`. Returns false when no device has it.
+	 *
+	 *  # Errors
+	 *
+	 *  Returns `pairing` if the tag is invalid, the command worker is unavailable,
+	 *  or the authorized keys file cannot be edited.
+	 */
 	revokeDevice: (tag: string) => typedError<boolean, CommandError>(__TAURI_INVOKE("revoke_device", { tag })),
 };
 

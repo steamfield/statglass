@@ -3,7 +3,7 @@ use statglass_proto::pairing::{BundleHost, CODE_ALPHABET, PairError, PairReply, 
 use statglass_remote::{
     AuthorizedKeys, ControlRequest, ControlResponse, DeviceKeys, DeviceKeysError, DeviceTag,
     EcdsaP256Public, PairCommands, PairedDevice, PairingError, PairingHost, bind_private,
-    pairing::run_forced_for_nonce, run_forced,
+    pairing::{run_forced, run_forced_for_nonce},
 };
 use statglass_schema::HostId;
 use statglass_schema::lock::LockExt;
@@ -126,6 +126,78 @@ fn start(nonce: &str, scalar: u8) -> PairStart {
     }
 }
 
+fn submit_start(pairing: &PairingHost, request: &PairStart, now_ms: i64) -> PairReply {
+    relay_start(pairing, request, uuid::Uuid::new_v4().into_bytes(), now_ms)
+}
+
+fn relay_start(
+    pairing: &PairingHost,
+    request: &PairStart,
+    attempt: [u8; 16],
+    now_ms: i64,
+) -> PairReply {
+    pairing
+        .control_reply(
+            ControlRequest::PairStart {
+                start: request.clone(),
+                attempt,
+            },
+            now_ms,
+        )
+        .pairing
+        .expect("pairing reply")
+}
+
+#[test]
+fn closing_withdraws_open_offers_and_preserves_committed_replies() {
+    let (pairing, keys) = pairing();
+    let waiting = pairing.offer(host(), Duration::ZERO, NOW).unwrap();
+    let pending = pairing.offer(host(), Duration::ZERO, NOW).unwrap();
+    let expired = pairing.offer(host(), Duration::from_secs(1), NOW).unwrap();
+    let approved = pairing.offer(host(), Duration::ZERO, NOW).unwrap();
+    assert_eq!(
+        submit_start(&pairing, &start(&pending.nonce, 2), NOW),
+        PairReply::Waiting
+    );
+    assert_eq!(
+        submit_start(&pairing, &start(&approved.nonce, 3), NOW),
+        PairReply::Waiting
+    );
+    let approval = pairing.approve(&approved.nonce, NOW).unwrap();
+
+    pairing.cancel_open(NOW + 1000);
+    pairing.cancel_open(NOW + 1000);
+
+    assert_eq!(
+        pairing.status(&waiting.nonce, NOW + 1000),
+        PairReply::Denied
+    );
+    assert_eq!(
+        pairing.status(&pending.nonce, NOW + 1000),
+        PairReply::Denied
+    );
+    assert_eq!(
+        pairing.status(&expired.nonce, NOW + 1000),
+        PairReply::Expired
+    );
+    assert_eq!(pairing.status(&approved.nonce, NOW + 1000), approval);
+    assert!(matches!(
+        pairing.offer(host(), Duration::ZERO, NOW + 1000),
+        Err(PairingError::Closing)
+    ));
+    let edits = keys.edits.lock_ok();
+    assert_eq!(edits.len(), 9);
+    for nonce in [waiting.nonce, pending.nonce, expired.nonce, approved.nonce] {
+        assert_eq!(
+            edits
+                .iter()
+                .filter(|edit| **edit == Edit::Remove(nonce.clone()))
+                .count(),
+            1
+        );
+    }
+}
+
 #[test]
 fn pairing_offer_installs_the_matching_key_and_utc_deadline() {
     let (pairing, keys) = pairing();
@@ -162,7 +234,10 @@ fn pairing_waits_for_approval_and_installs_device_before_removing_the_pairing_ke
     let (pairing, keys) = pairing();
     let offer = pairing.offer(host(), Duration::from_secs(60), NOW).unwrap();
     let request = start(&offer.nonce, 2);
-    assert_eq!(pairing.start(&request, NOW + 10), PairReply::Waiting);
+    assert_eq!(
+        submit_start(&pairing, &request, NOW + 10),
+        PairReply::Waiting
+    );
     assert_eq!(
         pairing.pending(&offer.nonce, NOW + 50),
         PairReply::Pending {
@@ -210,7 +285,7 @@ fn pairing_denial_cancel_and_expiry_remove_only_the_one_time_key() {
     {
         let offer = pairing.offer(host(), Duration::from_secs(1), NOW).unwrap();
         assert_eq!(
-            pairing.start(&start(&offer.nonce, 3), NOW),
+            submit_start(&pairing, &start(&offer.nonce, 3), NOW),
             PairReply::Waiting
         );
         let expired = terminal == PairReply::Expired;
@@ -239,21 +314,21 @@ fn pairing_rejects_a_second_start_before_and_after_approval_and_unknown_or_inval
     let mut invalid = same.clone();
     invalid.device_key.fill(0);
     assert_eq!(
-        pairing.start(&invalid, NOW),
+        submit_start(&pairing, &invalid, NOW),
         PairReply::Error {
             error: PairError::Invalid
         }
     );
     assert_eq!(
-        pairing.start(&start(NONCE, 4), NOW),
+        submit_start(&pairing, &start(NONCE, 4), NOW),
         PairReply::Error {
             error: PairError::Unknown
         }
     );
-    assert_eq!(pairing.start(&same, NOW), PairReply::Waiting);
+    assert_eq!(submit_start(&pairing, &same, NOW), PairReply::Waiting);
     for later in [&same, &different] {
         assert_eq!(
-            pairing.start(later, NOW),
+            submit_start(&pairing, later, NOW),
             PairReply::Error {
                 error: PairError::Used
             }
@@ -262,7 +337,7 @@ fn pairing_rejects_a_second_start_before_and_after_approval_and_unknown_or_inval
     pairing.approve(&offer.nonce, NOW).unwrap();
     for later in [&same, &different] {
         assert_eq!(
-            pairing.start(later, NOW),
+            submit_start(&pairing, later, NOW),
             PairReply::Error {
                 error: PairError::Used
             }
@@ -270,7 +345,7 @@ fn pairing_rejects_a_second_start_before_and_after_approval_and_unknown_or_inval
     }
     let untouched = pairing.offer(host(), Duration::from_secs(1), NOW).unwrap();
     assert_eq!(
-        pairing.start(&start(&untouched.nonce, 6), NOW + 1000),
+        submit_start(&pairing, &start(&untouched.nonce, 6), NOW + 1000),
         PairReply::Expired
     );
 }
@@ -280,7 +355,7 @@ fn pairing_retries_cleanup_before_reporting_approval_without_installing_twice() 
     let (pairing, keys) = pairing();
     let offer = pairing.offer(host(), Duration::from_secs(60), NOW).unwrap();
     assert_eq!(
-        pairing.start(&start(&offer.nonce, 5), NOW),
+        submit_start(&pairing, &start(&offer.nonce, 5), NOW),
         PairReply::Waiting
     );
     keys.fail_removal.store(true, Ordering::Relaxed);
@@ -307,7 +382,7 @@ fn pairing_key_cannot_be_registered_as_the_permanent_device_key() {
     let mut request = start(&offer.nonce, 9);
     request.device_key = public(&offer.pairing_key).0.into();
     assert_eq!(
-        pairing.start(&request, NOW),
+        submit_start(&pairing, &request, NOW),
         PairReply::Error {
             error: PairError::Invalid
         }
@@ -471,7 +546,7 @@ async fn pairing_forced_recovers_when_the_host_accepted_start_but_its_reply_time
             panic!("expected first start")
         };
         assert_eq!(
-            pairing.start_attempt(&first, attempt, NOW),
+            relay_start(&pairing, &first, attempt, NOW),
             PairReply::Waiting
         );
         let (
@@ -489,12 +564,12 @@ async fn pairing_forced_recovers_when_the_host_accepted_start_but_its_reply_time
         let mut different_attempt = attempt;
         different_attempt[0] ^= 1;
         assert_eq!(
-            pairing.start_attempt(&retry, different_attempt, NOW),
+            relay_start(&pairing, &retry, different_attempt, NOW),
             PairReply::Error {
                 error: PairError::Used
             }
         );
-        let reply = pairing.start_attempt(&retry, retried_attempt, NOW);
+        let reply = relay_start(&pairing, &retry, retried_attempt, NOW);
         let waiting = reply == PairReply::Waiting;
         respond(stream, reply).await;
         drop(lost);
@@ -503,9 +578,9 @@ async fn pairing_forced_recovers_when_the_host_accepted_start_but_its_reply_time
                 panic!("expected status poll")
             };
             let approved = pairing.approve(&nonce, NOW).unwrap();
-            assert_eq!(pairing.start_attempt(&retry, attempt, NOW), approved);
+            assert_eq!(relay_start(&pairing, &retry, attempt, NOW), approved);
             assert_eq!(
-                pairing.start_attempt(&retry, different_attempt, NOW),
+                relay_start(&pairing, &retry, different_attempt, NOW),
                 PairReply::Error {
                     error: PairError::Used
                 }

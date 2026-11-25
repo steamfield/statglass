@@ -4,9 +4,13 @@
 //! Pairing expiries use the host's /etc/localtime zone through seconds, the format sshd reads
 //! starting with OpenSSH 7.7. The pairing protocol also checks its UTC deadline.
 mod expiry;
+mod line;
+
+use line::{entries, entry, without_token};
 
 use crate::device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice};
 use sha2::{Digest, Sha256};
+use statglass_proto::pairing::valid_nonce;
 use std::{
     borrow::Cow,
     fs::{self, DirBuilder, File, OpenOptions, Permissions},
@@ -29,13 +33,8 @@ pub struct AuthorizedKeys {
 impl AuthorizedKeys {
     /// `~/.ssh/authorized_keys` of the user running this process.
     pub fn for_current_user() -> Result<Self, DeviceKeysError> {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .ok_or_else(|| {
-                DeviceKeysError::Invalid("HOME does not name an absolute path".into())
-            })?;
-        Ok(Self::at(home.join(".ssh/authorized_keys")))
+        let user = crate::effective_user::EffectiveUser::lookup()?;
+        Ok(Self::at(user.home.join(".ssh/authorized_keys")))
     }
 
     /// The file at `path`.
@@ -214,7 +213,7 @@ impl DeviceKeys for AuthorizedKeys {
 }
 
 fn pairing_token(nonce: &str) -> Result<String, DeviceKeysError> {
-    if nonce.len() != 32 || !nonce.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if !valid_nonce(nonce) {
         return Err(DeviceKeysError::Invalid(
             "expected a 128-bit hex pairing nonce".into(),
         ));
@@ -237,68 +236,6 @@ fn escape_option(command: &str) -> Result<String, DeviceKeysError> {
         return Err(DeviceKeysError::Invalid("invalid forced command".into()));
     }
     Ok(command.replace('"', "\\\""))
-}
-
-struct Entry<'a> {
-    token: &'a [u8],
-    key: &'a [u8],
-    name: &'a [u8],
-}
-
-fn entries(bytes: &[u8]) -> impl Iterator<Item = Entry<'_>> {
-    bytes.split(|&byte| byte == b'\n').filter_map(entry)
-}
-
-fn entry(line: &[u8]) -> Option<Entry<'_>> {
-    let line = line.trim_ascii();
-    if line.starts_with(b"#") {
-        return None;
-    }
-    let (first, rest) = field(line)?;
-    let key_fields = if first == KEY_TYPE.as_bytes() {
-        rest
-    } else {
-        let (kind, rest) = field(rest)?;
-        if kind != KEY_TYPE.as_bytes() {
-            return None;
-        }
-        rest
-    };
-    let (key, comment) = field(key_fields)?;
-    let (token, name) = field(comment).unwrap_or_default();
-    Some(Entry { token, key, name })
-}
-
-// Whitespace inside quoted key options is part of the field. This mirrors OpenSSH's
-// handling of a backslash followed by a double quote, including inside other options.
-fn field(line: &[u8]) -> Option<(&[u8], &[u8])> {
-    if line.is_empty() {
-        return None;
-    }
-    let mut quoted = false;
-    let mut bytes = line.iter().enumerate().peekable();
-    while let Some((index, &byte)) = bytes.next() {
-        match byte {
-            b'\\' if bytes.peek().is_some_and(|&(_, next)| *next == b'"') => {
-                bytes.next();
-            }
-            b'"' => quoted = !quoted,
-            b' ' | b'\t' if !quoted => {
-                return Some((&line[..index], line[index..].trim_ascii_start()));
-            }
-            _ => {}
-        }
-    }
-    (!quoted).then_some((line, &[]))
-}
-
-fn without_token(bytes: &[u8], token: &str) -> Vec<u8> {
-    bytes
-        .split_inclusive(|&byte| byte == b'\n')
-        .filter(|line| entry(line).is_none_or(|entry| entry.token != token.as_bytes()))
-        .flatten()
-        .copied()
-        .collect()
 }
 
 fn encode_key(key: &EcdsaP256Public) -> Result<String, DeviceKeysError> {
@@ -539,6 +476,33 @@ impl Drop for StagedFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn current_users_authorized_keys_uses_the_passwd_home() {
+        const EXPECTED_HOME: &str = "STATGLASS_TEST_AUTHORIZED_KEYS_HOME";
+        if let Some(home) = std::env::var_os(EXPECTED_HOME) {
+            let keys = AuthorizedKeys::for_current_user().unwrap();
+            assert_eq!(keys.path, Path::new(&home).join(".ssh/authorized_keys"));
+            return;
+        }
+
+        let user = crate::effective_user::EffectiveUser::lookup().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "authorized_keys::tests::current_users_authorized_keys_uses_the_passwd_home",
+            ])
+            .env("HOME", "/fake-authorized-keys-home")
+            .env("USER", "fake-authorized-keys-user")
+            .env(EXPECTED_HOME, user.home)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
 
     #[test]
     fn merges_an_append_made_after_the_initial_read() {

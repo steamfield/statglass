@@ -115,10 +115,12 @@ pub fn sh_word(value: &str) -> Result<String> {
     Ok(word)
 }
 
+/// Quotes a literal as one POSIX shell word. Infallible.
 pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// Builds the helper invocation with a quoted path and a trusted operation. Infallible.
 pub fn helper_command(path: &str, operation: &str) -> String {
     let path = if path.is_empty() {
         "\"$HOME\"/Applications/StatGlass.app/Contents/MacOS/statglass-remote-helper".to_string()

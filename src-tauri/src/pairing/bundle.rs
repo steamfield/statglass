@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{Context, ensure};
 use statglass_proto::pairing::{BundleHost, BundleHostKey, BundleRoute, BundleTarget};
-use statglass_remote::pairing::usable_interface_addresses;
+use statglass_remote::network::usable_interface_addresses;
 use statglass_schema::HostRecord;
 
 pub(super) const MONITORING_OFF: &str =

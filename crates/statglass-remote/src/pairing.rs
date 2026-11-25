@@ -8,9 +8,6 @@ use statglass_proto::pairing::{
     BundleHost, CODE_ALPHABET, PAYLOAD_VERSION, PairError, PairReply, PairStart, PairingPayload,
 };
 use statglass_schema::lock::LockExt;
-pub use statglass_session::{
-    MAX_TARGETS, command::shell_quote, network::usable_interface_addresses,
-};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -34,20 +31,27 @@ pub enum PairingError {
     Keys(#[from] DeviceKeysError),
     #[error("{0}")]
     Pair(#[from] PairError),
+    #[error("StatGlass is quitting.")]
+    Closing,
 }
 
 /// Every open pairing offer on this host and the keys it edits.
 pub struct PairingHost {
     keys: Arc<dyn DeviceKeys>,
     commands: PairCommands,
-    offers: Mutex<HashMap<String, Offer>>,
+    state: Mutex<HostState>,
+}
+
+#[derive(Default)]
+struct HostState {
+    offers: HashMap<String, Offer>,
+    closing: bool,
 }
 
 struct Offer {
     host: BundleHost,
     code: String,
     expires_ms: i64,
-    used: bool,
     attempt: Option<[u8; 16]>,
     phase: Phase,
 }
@@ -75,7 +79,7 @@ impl PairingHost {
         Self {
             keys,
             commands,
-            offers: Mutex::default(),
+            state: Mutex::default(),
         }
     }
 
@@ -111,19 +115,21 @@ impl PairingHost {
                 .map_err(|_| PairError::Invalid)?,
         );
         let command = format!("{} --nonce {nonce}", self.commands.pair);
-        let mut offers = self.offers.lock_ok();
-        if offers.contains_key(&nonce) {
+        let mut state = self.state.lock_ok();
+        if state.closing {
+            return Err(PairingError::Closing);
+        }
+        if state.offers.contains_key(&nonce) {
             return Err(PairError::Unavailable.into());
         }
         self.keys
             .add_pairing(&public, &nonce, expires_ms, &command)?;
-        offers.insert(
+        state.offers.insert(
             nonce.clone(),
             Offer {
                 host: host.clone(),
                 code: code.clone(),
                 expires_ms,
-                used: false,
                 attempt: None,
                 phase: Phase::Offered {
                     pairing_key: public,
@@ -140,25 +146,14 @@ impl PairingHost {
         })
     }
 
-    /// Binds the offer to the phone's first valid `PairStart`.
-    pub fn start(&self, req: &PairStart, now_ms: i64) -> PairReply {
-        self.start_inner(req, None, now_ms).0
-    }
-
-    /// Starts an exchange for the relay on the owner-only control socket. Retries
-    /// of that local request can recover a lost reply without accepting new starts.
-    pub fn start_attempt(&self, req: &PairStart, attempt: [u8; 16], now_ms: i64) -> PairReply {
-        self.start_inner(req, Some(attempt), now_ms).0
-    }
-
     fn start_inner(
         &self,
         req: &PairStart,
-        attempt: Option<[u8; 16]>,
+        attempt: [u8; 16],
         now_ms: i64,
     ) -> (PairReply, Option<i64>) {
-        let mut offers = self.offers.lock_ok();
-        let Some(offer) = offers.get_mut(&req.nonce) else {
+        let mut state = self.state.lock_ok();
+        let Some(offer) = state.offers.get_mut(&req.nonce) else {
             return (reject(PairError::Unknown), None);
         };
         offer.refresh(self.keys.as_ref(), &req.nonce, now_ms);
@@ -172,7 +167,7 @@ impl PairingHost {
     pub fn control_reply(&self, request: ControlRequest, now_ms: i64) -> ControlResponse {
         let (reply, pairing_expires_ms) = match request {
             ControlRequest::PairStart { start, attempt } => {
-                self.start_inner(&start, Some(attempt), now_ms)
+                self.start_inner(&start, attempt, now_ms)
             }
             ControlRequest::PairStatus { nonce } => (self.status(&nonce, now_ms), None),
             ControlRequest::PairAbandon { nonce, attempt } => {
@@ -200,17 +195,16 @@ impl PairingHost {
 
     /// Withdraws the relay's start. A committed host decision remains available.
     pub fn abandon(&self, nonce: &str, attempt: [u8; 16], now_ms: i64) -> PairReply {
-        let mut offers = self.offers.lock_ok();
-        let Some(offer) = offers.get_mut(nonce) else {
+        let mut state = self.state.lock_ok();
+        let Some(offer) = state.offers.get_mut(nonce) else {
             return reject(PairError::Unknown);
         };
         if matches!(offer.phase, Phase::Offered { .. }) {
             // A timed-out start can still be queued on the control server. Reserve
             // the attempt so a delayed start cannot reopen the abandoned offer.
-            offer.used = true;
             offer.attempt = Some(attempt);
         }
-        if offer.used && offer.attempt != Some(attempt) {
+        if offer.attempt.is_some_and(|accepted| accepted != attempt) {
             return reject(PairError::Used);
         }
         if matches!(offer.phase, Phase::Offered { .. } | Phase::Pending { .. }) {
@@ -226,8 +220,8 @@ impl PairingHost {
     }
 
     fn view(&self, nonce: &str, now_ms: i64, approver: bool) -> PairReply {
-        let mut offers = self.offers.lock_ok();
-        let Some(offer) = offers.get_mut(nonce) else {
+        let mut state = self.state.lock_ok();
+        let Some(offer) = state.offers.get_mut(nonce) else {
             return reject(PairError::Unknown);
         };
         offer.refresh(self.keys.as_ref(), nonce, now_ms);
@@ -236,8 +230,8 @@ impl PairingHost {
 
     /// Writes the device line, then removes the pairing line.
     pub fn approve(&self, nonce: &str, now_ms: i64) -> Result<PairReply, PairingError> {
-        let mut offers = self.offers.lock_ok();
-        let offer = offers.get_mut(nonce).ok_or(PairError::Unknown)?;
+        let mut state = self.state.lock_ok();
+        let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
         offer.mark_expired(now_ms);
         if let Phase::Pending {
             device_name, key, ..
@@ -261,25 +255,47 @@ impl PairingHost {
         }
     }
 
-    /// Refuses the pairing and removes its line.
-    pub fn deny(&self, nonce: &str) -> Result<(), PairingError> {
-        let mut offers = self.offers.lock_ok();
-        let offer = offers.get_mut(nonce).ok_or(PairError::Unknown)?;
-        if matches!(offer.phase, Phase::Offered { .. } | Phase::Pending { .. }) {
-            offer.phase = Phase::RemovingPairingLine(PairReply::Denied);
-        }
+    /// Refuses the pairing, removes its line and returns the resulting reply.
+    pub fn deny(&self, nonce: &str) -> Result<PairReply, PairingError> {
+        let mut state = self.state.lock_ok();
+        let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
+        offer.deny_if_open();
         offer.finish(self.keys.as_ref(), nonce)?;
-        Ok(())
+        Ok(offer.reply(true))
     }
 
     /// Withdraws the offer and removes its line.
     pub fn cancel(&self, nonce: &str) -> Result<(), PairingError> {
-        self.deny(nonce)
+        self.deny(nonce).map(|_| ())
+    }
+
+    /// Withdraws a still-open offer and returns its deadline for the caller's status note.
+    /// An already decided or unknown offer returns its current reply and no deadline.
+    pub fn withdraw_if_open(&self, nonce: &str, now_ms: i64) -> (PairReply, Option<i64>) {
+        let mut state = self.state.lock_ok();
+        let Some(offer) = state.offers.get_mut(nonce) else {
+            return (reject(PairError::Unknown), None);
+        };
+        offer.mark_expired(now_ms);
+        let deadline = offer.deny_if_open().then_some(offer.expires_ms);
+        offer.refresh(self.keys.as_ref(), nonce, now_ms);
+        (offer.reply(true), deadline)
+    }
+
+    /// Withdraws unfinished offers and stops accepting new offers on this host.
+    pub fn cancel_open(&self, now_ms: i64) {
+        let mut state = self.state.lock_ok();
+        state.closing = true;
+        for (nonce, offer) in &mut state.offers {
+            offer.mark_expired(now_ms);
+            offer.deny_if_open();
+            offer.refresh(self.keys.as_ref(), nonce, now_ms);
+        }
     }
 
     /// Expires every offer past its TTL at `now_ms`.
     pub fn expire(&self, now_ms: i64) {
-        self.offers.lock_ok().retain(|nonce, offer| {
+        self.state.lock_ok().offers.retain(|nonce, offer| {
             offer.refresh(self.keys.as_ref(), nonce, now_ms);
             // Keep terminal replies available to the final poll and to late retries.
             !matches!(offer.phase, Phase::Finished(_))
@@ -289,9 +305,9 @@ impl PairingHost {
 }
 
 impl Offer {
-    fn start(&mut self, req: &PairStart, attempt: Option<[u8; 16]>) -> PairReply {
-        if self.used {
-            return if attempt.is_some() && attempt == self.attempt {
+    fn start(&mut self, req: &PairStart, attempt: [u8; 16]) -> PairReply {
+        if let Some(accepted) = self.attempt {
+            return if attempt == accepted {
                 self.reply(false)
             } else {
                 reject(PairError::Used)
@@ -306,14 +322,22 @@ impl Offer {
         if key == *pairing_key {
             return reject(PairError::Invalid);
         }
-        self.used = true;
-        self.attempt = attempt;
+        self.attempt = Some(attempt);
         self.phase = Phase::Pending {
             device_name: req.device_name.clone(),
             model: req.model.clone(),
             key,
         };
         PairReply::Waiting
+    }
+
+    fn deny_if_open(&mut self) -> bool {
+        if matches!(self.phase, Phase::Offered { .. } | Phase::Pending { .. }) {
+            self.phase = Phase::RemovingPairingLine(PairReply::Denied);
+            true
+        } else {
+            false
+        }
     }
 
     fn mark_expired(&mut self, now_ms: i64) {

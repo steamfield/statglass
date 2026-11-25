@@ -1,5 +1,7 @@
 import {
   failureReason,
+  remoteErrorAdvice,
+  remoteErrorText,
   remoteQueryText,
   sshTestCommand,
   sshVerificationCommand,
@@ -55,4 +57,49 @@ it("words why a connected host did not answer a query apart from a dropped one",
     "This host isn't connected, so its space reports can't be read now."
   );
   expect(remoteQueryText(new Error("other"), "space reports")).toBeNull();
+});
+
+it.each([
+  ["denied", "The host declined the pairing request."],
+  ["expired", "The pairing code expired."],
+  ["used", "The pairing code has already been used."],
+  ["unknown", "The host does not recognize this pairing code."],
+  ["unavailable", "Pairing is unavailable on this host."],
+  ["invalid", "The pairing data is invalid."],
+] as const)(
+  "words a %s pairing failure when the host gives no details",
+  (reason, copy) => {
+    expect(remoteErrorText({ kind: "pairing", reason, message: "" })).toBe(
+      copy
+    );
+  }
+);
+
+it("keeps the host's pairing setup guidance", () => {
+  const message = "Turn on Allow remote monitoring in StatGlass Settings.";
+  expect(
+    remoteErrorText({ kind: "pairing", reason: "unavailable", message })
+  ).toBe(message);
+});
+
+it.each([
+  [
+    "remote_not_running",
+    "StatGlass isn't running on the other Mac",
+    "Open StatGlass on",
+  ],
+  [
+    "remote_monitoring_off",
+    "Remote monitoring is off on the other Mac",
+    "Turn on Allow remote monitoring in StatGlass Settings on",
+  ],
+] as const)("gives targeted recovery for %s", (kind, title, recovery) => {
+  const error = { kind, message: "" };
+  expect(remoteErrorAdvice(error)).toEqual({
+    title,
+    recovery: `${recovery} the other Mac, then retry.`,
+  });
+  expect(remoteQueryText(error, "space reports")).toBe(
+    `${recovery} this Mac host, then retry.`
+  );
 });

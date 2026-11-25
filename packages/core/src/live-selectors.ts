@@ -60,6 +60,7 @@ const volTotal = keyByLabel("disk.total", "vol");
 const volFree = keyByLabel("disk.free", "vol");
 const volUsed = keyByLabel("disk.used", "vol");
 
+/** Load and I/O wait from `cpu.*`, plus P0/E0 cluster frequency. A `null` reading is a gap. */
 export const selectCpu = (s: S) => ({
   total: held(s, "cpu.total"),
   user: held(s, "cpu.user"),
@@ -73,6 +74,7 @@ export const selectCpu = (s: S) => ({
 /** Per-core load keyed by core label ("P0", "E3"). */
 export const selectCpuCores = (s: S) => byLabel(s, "cpu.load", "core");
 
+/** Utilization, render, tiler and frequency from `gpu.*`, plus `power.gpu`. A `null` reading is a gap. */
 export const selectGpu = (s: S) => ({
   util: held(s, "gpu.util"),
   render: held(s, "gpu.render"),
@@ -81,6 +83,7 @@ export const selectGpu = (s: S) => ({
   powerW: held(s, "power.gpu"),
 });
 
+/** Composition, pressure, swap and PSI from `mem.*`. A `null` reading is a gap. */
 export const selectMemory = (s: S) => ({
   used: held(s, "mem.used"),
   app: held(s, "mem.app"),
@@ -102,6 +105,7 @@ export const selectMemory = (s: S) => ({
   hasPressure: keysOf(s, "mem.pressure").length > 0,
 });
 
+/** System and component readings from `power.*`. A `null` reading is a gap. */
 export const selectPower = (s: S) => ({
   system: held(s, "power.system"),
   cpu: held(s, "power.cpu"),
@@ -122,6 +126,7 @@ export const selectPower = (s: S) => ({
 export const selectPowerComponents = (s: S): boolean =>
   keysOf(s, "power.cpu").length > 0;
 
+/** Temperatures and thermal state from `thermal.*`, plus max `fan.rpm` and `fan.max`. A `null` reading is a gap. */
 export const selectSensors = (s: S) => ({
   hottest: held(s, "thermal.hottest"),
   cpu: held(s, "thermal.cpu"),
@@ -171,6 +176,7 @@ export function selectVolumeCapacity(
   };
 }
 
+/** Charge, power source flags, time, health and cycles from `battery.*`. A `null` reading is a gap. */
 export const selectBattery = (s: S) => ({
   charge: held(s, "battery.charge"),
   charging: held(s, "battery.charging"),
@@ -192,6 +198,7 @@ export const selectSampling = (s: S) => ({
   connection: s.connection,
 });
 
+/** StatGlass process load from `self.cpu`. A `null` reading is a gap. */
 export const selectSelfCpu = (s: S) => held(s, "self.cpu");
 
 /**
