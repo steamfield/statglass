@@ -68,6 +68,7 @@
         "noUnusedImports": "error"
       },
       "nursery": {
+        "noFloatingPromises": "error",
         "useSortedClasses": {
           "level": "error",
           "fix": "safe",
@@ -75,6 +76,9 @@
             "functions": ["cn", "cva", "clsx"]
           }
         }
+      },
+      "suspicious": {
+        "noImportCycles": "error"
       },
       "complexity": {
         "noExcessiveLinesPerFunction": {

@@ -44,12 +44,35 @@ const typography = StyleSheet.create({
   axis: { fontSize: 11, fontWeight: "400", fontVariant: ["tabular-nums"] },
 });
 
+/** A theme text colour. Each tone is one token, so light and dark follow the system. */
+export type TextTone =
+  | "default"
+  | "muted"
+  | "subtle"
+  | "faint"
+  | "link"
+  | "destructive"
+  | "warning"
+  | "onPrimary";
+
 export type TextProps = Omit<NativeTextProps, "role"> & {
   variant: TextVariant;
+  /** Text colour. Label, caption and axis default to `muted`, every other variant to `default`. */
+  tone?: TextTone;
+  /** Overrides the variant's weight. */
+  weight?: "regular" | "semibold";
+  /** Fixed-width digits on a variant that doesn't already have them. */
+  tabular?: boolean;
+  /** Layout only. Colour, weight and numerals come from the props above. */
+  className?: string;
 };
 
 export function Text({
   variant,
+  // Declared by the phase-1 scaffold; lane 1/a makes them take effect.
+  tone: _tone,
+  weight: _weight,
+  tabular: _tabular,
   className,
   style,
   maxFontSizeMultiplier,
