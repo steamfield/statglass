@@ -27,11 +27,14 @@ for (const theme of ["dark", "light"] as const) {
           )
         )
         .toBe(true);
-      const table = page.getByRole("table", { name: "Disk by app" });
-      await expect(table.getByRole("row").nth(5)).toBeVisible();
       if (width === 1280) {
-        const fifth = await table.getByRole("row").nth(5).boundingBox();
-        expect((fifth?.y ?? 900) + (fifth?.height ?? 1)).toBeLessThanOrEqual(
+        const firstVolume = page
+          .getByRole("region", { name: "Volume capacity" })
+          .getByRole("row")
+          .nth(1);
+        await expect(firstVolume).toBeVisible();
+        const bounds = await firstVolume.boundingBox();
+        expect((bounds?.y ?? 900) + (bounds?.height ?? 1)).toBeLessThanOrEqual(
           900
         );
       }
@@ -50,12 +53,18 @@ for (const theme of ["dark", "light"] as const) {
           })
         )
         .toEqual({ pageOverflow: 0, contentOverflow: 0 });
+      const table = page.getByRole("table", { name: "Disk by app" });
+      await table.scrollIntoViewIfNeeded();
+      await expect(table.getByRole("row").nth(5)).toBeVisible();
+      await page.getByRole("main").evaluate((main) => {
+        main.scrollTop = 0;
+      });
       await page.screenshot({
         path: `test-results/screens/disk-io-${theme}-${width}-${info.project.name}.png`,
         fullPage: true,
       });
+      await table.scrollIntoViewIfNeeded();
       if (width === 360) {
-        await table.scrollIntoViewIfNeeded();
         await page.screenshot({
           path: `test-results/screens/disk-io-processes-${theme}-${width}-${info.project.name}.png`,
         });
