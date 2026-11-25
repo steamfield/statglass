@@ -201,6 +201,14 @@ impl HostEntry {
         self.status.lock_ok().active
     }
 
+    pub(super) fn record(&self) -> HostRecord {
+        let mut record = self.source.host();
+        if let Some(info) = self.source.peer_info() {
+            record.info = (*info).clone();
+        }
+        record
+    }
+
     pub(super) fn vitals(&self) -> HostVitals {
         self.vitals_for(&self.status.lock_ok())
     }

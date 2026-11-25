@@ -11,17 +11,136 @@ import {
   type HistoryPage,
   type HistoryPoint,
   type HistoryRequest,
+  type HostVitals,
   METRIC_MODULES,
+  type RemoteHostRecord,
   type SeriesStats,
   type Tier,
 } from "@core/generated/types";
 import { seriesKeyString } from "@core/series-key";
 import { ceilTo, DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
-import type { ScenarioFlags } from "./fixtures";
+import type { MockTransport, MockTransportOptions } from "./contracts";
+import { MOCK_HOST_ID, type ScenarioFlags } from "./fixtures";
 import type { SeriesSpec } from "./generator";
 import { mockBuckets } from "./protocol";
+import type { MockRing } from "./ring";
 import { rng, seedOf } from "./rng";
 import { holdMs, matches } from "./series";
+
+/** Seed the phone's demo measurements by host and metric. */
+export function demoMetricScale(host: string, metric: string): number {
+  const random = rng(seedOf(`${host}:${metric}`))();
+  switch (metric) {
+    case "cpu.total":
+      return 0.6 + 1.3 * random;
+    case "mem.used":
+      return 0.65 + 0.65 * random;
+    case "net.rx_total":
+    case "net.tx_total":
+      return 0.25 + 3 * random;
+    default:
+      return 1;
+  }
+}
+
+const PHONE_DEMO_HOST = Symbol("phone demo host");
+type DemoOptions = MockTransportOptions & { [PHONE_DEMO_HOST]?: string };
+
+/** Pass these options to createMockTransport for a phone demo or scenario. */
+export function phoneDemoOptions(
+  options: MockTransportOptions,
+  host = MOCK_HOST_ID
+): MockTransportOptions {
+  const tagged: DemoOptions = { ...options, [PHONE_DEMO_HOST]: host };
+  return tagged;
+}
+
+function phoneDemoHost(options: DemoOptions) {
+  const scenarios = options.scenarios ?? [];
+  // The existing phone entry combines these two presets.
+  const existingPreset =
+    scenarios.includes("hosts-dashboard") &&
+    scenarios.includes("host-incompatible");
+  return options[PHONE_DEMO_HOST] ?? (existingPreset ? MOCK_HOST_ID : null);
+}
+
+const demoHosts = new WeakMap<object, string>();
+
+export const demoHostOf = (remotes?: object) =>
+  (remotes && demoHosts.get(remotes)) ?? null;
+
+/** Apply the same host magnitudes to the ring backfill and its future samples. */
+export function seedDemoRing(
+  ring: MockRing,
+  remotes: object,
+  options: DemoOptions
+) {
+  const host = phoneDemoHost(options);
+  if (host === null) return;
+  demoHosts.set(remotes, host);
+  const scales = ring.gen.keys.map(({ metric }) =>
+    demoMetricScale(host, metric)
+  );
+  const scale = (value: number | null, index: number) =>
+    value === null ? null : value * (scales[index] ?? 1);
+  ring.rows = ring.rows.map((row) => ({
+    ...row,
+    values: row.values.map(scale),
+  }));
+  const sample = ring.gen.next.bind(ring.gen);
+  ring.gen.next = (land) => {
+    const row = sample(land);
+    return { ...row, values: row.values.map(scale), held: row.held.map(scale) };
+  };
+}
+
+export function demoVitals(
+  host: string | null,
+  vitals: HostVitals
+): HostVitals {
+  if (host === null) return vitals;
+  const scale = (metric: string, value: number | null) =>
+    value === null ? null : value * demoMetricScale(host, metric);
+  return {
+    ...vitals,
+    cpu_pct: scale("cpu.total", vitals.cpu_pct),
+    memory_pct: scale("mem.used", vitals.memory_pct),
+    net_rx_bps: scale("net.rx_total", vitals.net_rx_bps),
+    net_tx_bps: scale("net.tx_total", vitals.net_tx_bps),
+  };
+}
+
+/** The NAS fixture has a working full stream but stops delivering compact summaries. */
+function staleDemoPeer(peer: MockTransport): MockTransport {
+  return {
+    ...peer,
+    subscribeLive(id, receive, options) {
+      if (options?.backfillMs !== 0 || options.minPeriodMs !== 5_000)
+        return peer.subscribeLive(id, receive, options);
+      return peer.subscribeLive(
+        id,
+        (message) => {
+          if (message.kind !== "frame") receive(message);
+        },
+        options
+      );
+    },
+  };
+}
+
+export function seedDemoPeer(
+  remotes: object,
+  { config: { id: host }, status }: RemoteHostRecord,
+  createPeer: (options: MockTransportOptions) => MockTransport,
+  options: MockTransportOptions
+): MockTransport {
+  if (demoHostOf(remotes) === null) return createPeer(options);
+  status.vitals = demoVitals(host, status.vitals);
+  if (status.last_seen_ms !== null)
+    status.last_seen_ms += status.clock_offset_ms ?? 0;
+  const peer = createPeer(phoneDemoOptions(options, host));
+  return host === "remote-nas" ? staleDemoPeer(peer) : peer;
+}
 
 const MIN = MINUTE_MS;
 const HOUR = HOUR_MS;

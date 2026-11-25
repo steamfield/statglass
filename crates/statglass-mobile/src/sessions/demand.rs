@@ -280,10 +280,15 @@ mod tests {
         let host = host(1);
         let mut fixture = Fixture::start_parked(vec![host.clone()], None);
         let sessions = fixture.sessions.clone();
+        let saved = sessions.call(MobileCall::ListHosts).await.unwrap();
+        let get_host = || MobileCall::GetHost { host: host.id };
+        assert_eq!(sessions.call(get_host()).await.unwrap(), saved[0]);
+        assert_eq!(saved[0]["info"]["mem_total_bytes"], 0);
         demand(&sessions, &[(host.id, DemandLevel::Compact)]).await;
         let mut peer = fixture.next_dial().await;
         let mut identity = super::super::endpoint::record(&host).identity();
-        identity.info.mem_total_bytes = 16 * 1024 * 1024 * 1024;
+        let capacity = 16_u64 * 1024 * 1024 * 1024;
+        identity.info.mem_total_bytes = capacity;
         peer.handshake_as(identity, statglass_proto::local_features())
             .await;
         sessions.call(subscribe(host.id, 7)).await.unwrap();
@@ -301,6 +306,10 @@ mod tests {
         .await
         .unwrap();
         fixture.message("frame").await;
+        let reported = sessions.call(MobileCall::ListHosts).await.unwrap();
+        assert_eq!(sessions.call(get_host()).await.unwrap(), reported[0]);
+        assert_eq!(reported[0]["info"]["mem_total_bytes"], capacity);
+        assert_eq!(reported[0]["display_name"], saved[0]["display_name"]);
         let vitals = sessions
             .call(MobileCall::HostVitals { host: host.id })
             .await

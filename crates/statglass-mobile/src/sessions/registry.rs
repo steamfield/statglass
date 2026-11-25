@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
-use statglass_engine::Source;
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileEvent, MobileHost, PairingState};
 use statglass_schema::{HostId, HostRecord, lock::LockExt};
@@ -71,7 +70,7 @@ pub(super) enum Entry {
 impl Entry {
     pub(super) fn record(self) -> HostRecord {
         match self {
-            Self::Running(entry) => entry.source.host(),
+            Self::Running(entry) => entry.record(),
             Self::Unopened { record, .. } => *record,
         }
     }

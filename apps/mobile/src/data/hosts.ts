@@ -1,6 +1,14 @@
 import { commandError } from "@core/command-error";
-import type { HostId, HostRecord, LiveMsg } from "@core/generated/types";
+import type {
+  HistoryPage,
+  HostHistoryPage,
+  HostId,
+  HostRecord,
+  LiveMsg,
+  Module,
+} from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
+import { gapBands } from "@core/history-state";
 import { hostClock } from "@core/host-clock";
 import {
   type PhoneRemoteHostRecord,
@@ -9,13 +17,20 @@ import {
 } from "@core/phone-connection";
 import { historyKeys, hostKeys } from "@core/query-keys";
 import { failureReason } from "@core/remote-errors";
-import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
-import type { StreamAreaData } from "@core/widget-models/stream-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useIsFocused } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useWindowDimensions } from "react-native";
+import {
+  appendSummary,
+  networkSparkbars,
+  percentSparkline,
+  SPARKLINE_MS,
+  SUMMARY_MS,
+  type Summary,
+  sparkWindow,
+} from "@/hosts/sparkline-model";
 import { QUERY_DEFAULTS } from "@/lib/query-client";
 import { RowVisibility, useFocusDemand } from "./demand";
 import {
@@ -23,26 +38,36 @@ import {
   historyPointBudget,
   useHostHistory,
 } from "./history";
+import { pairingKey } from "./hosts-list";
 import { useAppActive, useFocusedAppEffect } from "./live";
-import { usePhoneTransport } from "./transport-context";
+import { useIsDemo, usePhoneTransport } from "./transport-context";
 
 const CPU = "cpu.total";
-const SPARKLINE_MS = 30 * MINUTE_MS;
-const SUMMARY_MS = 5_000;
 const ROW_METRICS = [CPU, "mem.used", "net.rx_total", "net.tx_total"] as const;
 const ROW_SERIES = ROW_METRICS.map((metric) => ({ metric, labels: [] }));
 
 /** Refresh the shared host queries from one subscription per focused list. */
 export function useHostListUpdates() {
   const transport = usePhoneTransport();
+  const demo = useIsDemo();
   const cache = useQueryClient();
   useFocusEffect(
     useCallback(() => {
-      const stopHosts = transport.onHostsChanged(({ hosts }) =>
-        cache.setQueryData(hostKeys.list(), hosts)
-      );
+      const stopHosts = transport.onHostsChanged(({ hosts }) => {
+        void cache
+          .cancelQueries({ queryKey: hostKeys.list(), exact: true })
+          .then(() => {
+            cache.setQueryData(hostKeys.list(), hosts);
+            void cache.invalidateQueries({ queryKey: pairingKey });
+          });
+      });
       const stopRemote = transport.onRemoteHostsChanged(() => {
         void cache.invalidateQueries({ queryKey: hostKeys.remote() });
+        if (!demo)
+          void cache.invalidateQueries({
+            queryKey: hostKeys.list(),
+            exact: true,
+          });
       });
       if (cache.getQueryData(hostKeys.list()) !== undefined) {
         // The registry may have changed while this screen was blurred.
@@ -55,7 +80,7 @@ export function useHostListUpdates() {
         stopHosts();
         stopRemote();
       };
-    }, [cache, transport])
+    }, [cache, demo, transport])
   );
 }
 
@@ -122,13 +147,12 @@ export function useHostsWaitingForNetwork(hosts: readonly HostRecord[]) {
   return status.isSuccess && status.data;
 }
 
-/** The row's latest host-side summary, refreshed when its stream delivers a frame. */
+/** Headline readings while the row is waiting for summaries or memory capacity. */
 export function useHostVitals(id: HostId, connected: boolean) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
   const active = useAppActive();
   const visible = useContext(RowVisibility)?.visible ?? true;
-  useFocusDemand(visible ? id : null, "compact");
   return useQuery({
     queryKey: hostKeys.vitals(id),
     queryFn: () => unwrap(transport.hostVitals(id)),
@@ -156,20 +180,36 @@ export function useClearOfflineHostReadings(id: HostId, connected: boolean) {
   }, [cache, connected, id, width]);
 }
 
-type Summary = { ts: number; timeline: number; values: (number | null)[] };
-
-function useRowSummaries(id: HostId, visible: boolean, refresh: number) {
+function useRowSummaries(
+  id: HostId,
+  visible: boolean,
+  refresh: number,
+  width: number
+) {
   const transport = usePhoneTransport();
   const cache = useQueryClient();
   const [summaries, setSummaries] = useState<Summary[]>([]);
+  const [stale, setStale] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [failure, setFailure] = useState<{
     refresh: number;
     reason: unknown;
   } | null>(null);
   useFocusedAppEffect(
     useCallback(() => {
-      return visible ? () => setSummaries([]) : undefined;
-    }, [visible])
+      return visible
+        ? () => {
+            setSummaries([]);
+            setStale(false);
+            setPaused(false);
+            // The next opening needs the history the row missed while hidden.
+            cache.removeQueries({
+              queryKey: sparklineKey(id, width),
+              exact: true,
+            });
+          }
+        : undefined;
+    }, [cache, id, visible, width])
   );
   useFocusedAppEffect(
     useCallback(() => {
@@ -177,33 +217,47 @@ function useRowSummaries(id: HostId, visible: boolean, refresh: number) {
       let stopped = false;
       let unsubscribe: (() => void) | undefined;
       let retry: ReturnType<typeof setTimeout> | undefined;
+      let staleTimer: ReturnType<typeof setTimeout> | undefined;
+      let intervalMs = SUMMARY_MS;
+      let expecting = true;
       let layout: number | undefined;
       let indices: number[] = [];
+      const expectSummary = () => {
+        clearTimeout(staleTimer);
+        if (expecting)
+          staleTimer = setTimeout(() => setStale(true), 3 * intervalMs);
+      };
+      expectSummary();
       const onMessage = (message: LiveMsg) => {
         if (stopped) return;
-        if (message.kind === "layout") {
-          layout = message.layout_no;
-          indices = ROW_METRICS.map((metric) =>
-            message.series.findIndex(
-              (key) => key.metric === metric && !key.labels.length
-            )
-          );
-        }
-        if (message.kind !== "frame" || message.layout_no !== layout) return;
-        const { ts_ms: ts, held, timeline } = message;
-        const values = indices.map((i) => held[i] ?? null);
-        setSummaries((previous) => [
-          ...(previous.at(-1)?.timeline === timeline
-            ? previous.filter(
-                (point) => point.ts < ts && point.ts > ts - SPARKLINE_MS
+        switch (message.kind) {
+          case "status":
+            intervalMs = Math.max(SUMMARY_MS, message.frame_period_ms);
+            expecting = !message.paused && message.frame_period_ms > 0;
+            setPaused(message.paused);
+            if (!expecting) setStale(false);
+            expectSummary();
+            break;
+          case "layout":
+            layout = message.layout_no;
+            indices = ROW_METRICS.map((metric) =>
+              message.series.findIndex(
+                (key) => key.metric === metric && !key.labels.length
               )
-            : []),
-          { ts, timeline, values },
-        ]);
-        void cache.invalidateQueries({
-          queryKey: hostKeys.vitals(id),
-          exact: true,
-        });
+            );
+            break;
+          case "frame": {
+            if (message.layout_no !== layout) break;
+            setStale(false);
+            expectSummary();
+            const { ts_ms: ts, held, timeline } = message;
+            const values = indices.map((i) => held[i] ?? null);
+            setSummaries((previous) =>
+              appendSummary(previous, { ts, timeline, intervalMs, values })
+            );
+            break;
+          }
+        }
       };
       const reportFailure = (reason: unknown, attempt: number) => {
         if (stopped) return;
@@ -218,6 +272,7 @@ function useRowSummaries(id: HostId, visible: boolean, refresh: number) {
           const subscription = await transport.subscribeLive(id, onMessage, {
             series: ROW_SERIES,
             backfillMs: 0,
+            minPeriodMs: SUMMARY_MS,
           });
           if (stopped || subscription.info.status === "error") {
             subscription.unsubscribe();
@@ -235,76 +290,106 @@ function useRowSummaries(id: HostId, visible: boolean, refresh: number) {
       return () => {
         stopped = true;
         clearTimeout(retry);
+        clearTimeout(staleTimer);
         unsubscribe?.();
         setFailure(null);
       };
-    }, [cache, id, refresh, transport, visible])
+    }, [id, refresh, transport, visible])
   );
   return {
     summaries,
+    stale,
+    paused,
     error: failure?.refresh === refresh ? failure.reason : null,
   };
 }
 
-function cpuSparkline(
-  history: ReturnType<typeof historyGrid> | null,
-  historyEnd: number,
-  summaries: readonly Summary[]
-): StreamAreaData | null {
-  const latest = summaries.at(-1);
-  const historyCpu = history?.values[CPU];
-  let values = historyCpu ?? [];
-  let tEndMs = history?.endMs ?? 0;
-  let intervalMs = history?.bucketMs ?? SUMMARY_MS;
-  if (latest) {
-    tEndMs = latest.ts;
-    intervalMs = SUMMARY_MS;
-    const count = SPARKLINE_MS / SUMMARY_MS + 1;
-    const start = tEndMs - (count - 1) * intervalMs;
-    const historyStart =
-      history && historyCpu
-        ? history.endMs - (historyCpu.length - 1) * history.bucketMs
-        : 0;
-    values = Array.from({ length: count }, (_, i) => {
-      // Plot the host's bucket average across the span the bucket covers.
-      const ts = start + i * intervalMs;
-      if (!history || !historyCpu || ts >= historyEnd) return null;
-      const bucket = Math.floor((ts - historyStart) / history.bucketMs);
-      return historyCpu[bucket] ?? null;
-    });
-    // Keep distinct samples when host timestamps round to the same grid slot.
-    // Place the newer sample first and use the previous slot for the older one.
-    let next = count;
-    for (const sample of summaries.slice().reverse()) {
-      const i = Math.min(
-        next - 1,
-        Math.round((sample.ts - start) / intervalMs)
-      );
-      if (i < 0) break;
-      values[i] = sample.values[0] ?? null;
-      next = i;
-    }
-  }
-  if (!values.some((value) => value !== null)) return null;
+function rowHistory(page: HostHistoryPage, range: HistoryRange) {
+  const gridFor = (page: HistoryPage) =>
+    historyGrid(page, ROW_METRICS, range.fromMs, range.toMs);
   return {
-    accent: "cpu",
-    height: 28,
-    yMax: 100,
-    intervalMs,
-    tEndMs,
-    series: [{ key: CPU, values, step: 1 }],
-    ariaLabel: "CPU history over the last 30 minutes",
+    averages: gridFor(page),
+    bands: gapBands(page.gaps, range.fromMs, range.toMs).map((band) => ({
+      ...band,
+      showCaption: false,
+    })),
+    maxima: gridFor({
+      ...page,
+      series: page.series.map((series) => ({
+        ...series,
+        points: series.points.map((point) => ({
+          ...point,
+          avg: point.max ?? point.avg,
+        })),
+      })),
+    }),
+    // A full reply also covers the right edge of the requested plot.
+    endMs:
+      page.complete_to_ms < range.toMs ? page.complete_to_ms - 1 : range.toMs,
+  };
+}
+
+function rowCharts(
+  history: ReturnType<typeof rowHistory> | null,
+  summaries: readonly Summary[],
+  memoryBytes: number,
+  width: number
+) {
+  const historyEnd = history?.endMs ?? 0;
+  const {
+    values: [cpu = [], bytes = [], down = [], up = []],
+    ...timing
+  } = sparkWindow(
+    history?.averages ?? null,
+    historyEnd,
+    summaries,
+    ROW_METRICS
+  );
+  const {
+    values: [cpuMax = [], bytesMax = [], downMax = [], upMax = []],
+  } = sparkWindow(history?.maxima ?? null, historyEnd, summaries, ROW_METRICS);
+  const memory = bytes.map((value) => memoryPercent(value, memoryBytes));
+  const memoryMax = bytesMax.map((value) => memoryPercent(value, memoryBytes));
+  const latest = summaries.at(-1)?.values;
+  const bandsFor = (module: Module) =>
+    history?.bands.filter(
+      (band) => band.module === null || band.module === module
+    ) ?? [];
+  return {
+    data: percentSparkline("cpu", cpu, cpuMax, timing, bandsFor("cpu")),
+    memory: percentSparkline(
+      "mem",
+      memory,
+      memoryMax,
+      timing,
+      bandsFor("memory")
+    ),
+    network: networkSparkbars(
+      down,
+      up,
+      downMax,
+      upMax,
+      timing,
+      historyPointBudget(width),
+      bandsFor("network")
+    ),
+    latest: latest && {
+      cpu_pct: latest[0] ?? null,
+      memory_pct: memoryPercent(latest[1] ?? null, memoryBytes),
+      net_rx_bps: latest[2] ?? null,
+      net_tx_bps: latest[3] ?? null,
+    },
   };
 }
 
 /** One bounded history read, with subsequent summaries appended while the row is visible. */
-export function useHostSparkline(id: HostId) {
+export function useHostSparkline(id: HostId, memoryBytes = 0, allowed = true) {
   const transport = usePhoneTransport();
   const focused = useIsFocused();
   const row = useContext(RowVisibility);
   const window = useWindowDimensions();
   const visible = row?.visible ?? true;
-  useFocusDemand(visible ? id : null, "compact");
+  useFocusDemand(visible && allowed ? id : null, "compact");
   const status = useHostStatus(id);
   const local = useQuery({
     queryKey: hostKeys.list(),
@@ -320,6 +405,8 @@ export function useHostSparkline(id: HostId) {
     : remote?.state === "connected"
       ? remote.clock_offset_ms
       : null;
+  const width = row?.width ?? window.width;
+  const connected = allowed && status.isSuccess && offsetMs !== null;
   const range = useMemo<HistoryRange>(() => {
     const toMs = Math.floor(hostClock(offsetMs ?? 0)());
     return {
@@ -333,42 +420,40 @@ export function useHostSparkline(id: HostId) {
     id,
     ROW_SERIES,
     range,
-    row?.width ?? window.width,
+    width,
     null,
-    visible && status.isSuccess && offsetMs !== null,
+    visible && connected,
     false
   );
-  const { summaries, error } = useRowSummaries(
+  const { summaries, error, stale, paused } = useRowSummaries(
     id,
-    visible && offsetMs !== null,
-    row?.refresh ?? 0
+    visible && connected,
+    row?.refresh ?? 0,
+    width
   );
+  const { data: answer } = history;
   const grid = useMemo(
-    () =>
-      history.data
-        ? historyGrid(
-            history.data.page,
-            ROW_METRICS,
-            history.data.range.fromMs,
-            history.data.range.toMs
-          )
-        : null,
-    [history.data]
+    () => (answer ? rowHistory(answer.page, answer.range) : null),
+    [answer]
   );
-  const historyEnd = history.data
-    ? Math.min(history.data.range.toMs, history.data.page.complete_to_ms)
-    : 0;
-  const data = useMemo(
-    () => cpuSparkline(grid, historyEnd, summaries),
-    [grid, historyEnd, summaries]
+  const charts = useMemo(
+    () => rowCharts(grid, summaries, memoryBytes, width),
+    [grid, memoryBytes, summaries, width]
   );
   return {
-    data,
+    ...charts,
+    stale,
+    paused,
+    summaryError: error,
     error:
       commandError(history.error)?.kind === "remote_unsupported"
-        ? error
-        : (history.error ?? error),
+        ? null
+        : history.error,
   };
+}
+
+function memoryPercent(value: number | null, capacity: number) {
+  return value === null || capacity <= 0 ? null : (value / capacity) * 100;
 }
 
 export interface HostRetryFailure {
@@ -412,6 +497,7 @@ export function useRefreshHosts() {
     await Promise.all([
       cache.invalidateQueries({ queryKey: hostKeys.list() }),
       cache.invalidateQueries({ queryKey: hostKeys.remote() }),
+      cache.invalidateQueries({ queryKey: pairingKey }),
       ...hosts.flatMap(({ id }) => [
         cache.invalidateQueries({ queryKey: hostKeys.vitals(id) }),
         cache.invalidateQueries({ queryKey: historyKeys.host(id) }),

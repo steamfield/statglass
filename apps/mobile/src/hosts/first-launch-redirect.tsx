@@ -1,13 +1,10 @@
 import { useNavigation } from "expo-router";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useNativeCoreStarting } from "@/transport";
 
-/** Opens the root index when a host route has no chosen transport. */
-export function FirstLaunchRedirect() {
+export function useReplaceWithWelcome() {
   const root = useNavigation("/");
-  const starting = useNativeCoreStarting();
-  useEffect(() => {
-    if (starting) return;
+  return useCallback(() => {
     const target = root.getState()?.key;
     if (!target) return;
     // Both index routes have pathname `/`. Target the root route by name.
@@ -16,6 +13,15 @@ export function FirstLaunchRedirect() {
       payload: { name: "index" },
       target,
     });
-  }, [root, starting]);
+  }, [root]);
+}
+
+/** Opens the root index when a host route has no chosen transport. */
+export function FirstLaunchRedirect() {
+  const replace = useReplaceWithWelcome();
+  const starting = useNativeCoreStarting();
+  useEffect(() => {
+    if (!starting) replace();
+  }, [replace, starting]);
   return null;
 }

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use statglass_engine::Source;
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::MobileRemoteHost;
 use statglass_schema::{HostRecord, lock::LockExt};
@@ -66,7 +65,7 @@ impl Run {
             .map(|host| {
                 self.entries
                     .get(&host.id)
-                    .map_or_else(|| endpoint::record(host), |entry| entry.source.host())
+                    .map_or_else(|| endpoint::record(host), |entry| entry.record())
             })
             .collect()
     }
