@@ -6,17 +6,17 @@ use crate::{
     stream::{SessionStream, SocketGuard},
 };
 use russh::{
-    client,
-    keys::{HashAlg, PublicKeyOrCertificate},
+    AlgorithmKind, Preferred, client,
+    keys::{Algorithm, HashAlg, PublicKeyOrCertificate},
 };
 use statglass_session::{
     BoxFuture, DialFailure, DialedStream, Dialer, Endpoint, HandshakeFailure, PinnedHostKey,
     RemoteError, Result, Target, UnreachableKind,
 };
-use std::{io, sync::Arc, time::Duration};
+use std::{future::Future, io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     net::{TcpStream, lookup_host},
-    time::timeout,
+    time::{Instant, timeout_at},
 };
 
 // std has no ErrorKind for EHOSTDOWN on these platforms.
@@ -66,7 +66,12 @@ impl RusshDialer {
         Self { signer, config }
     }
 
-    async fn open(&self, endpoint: &Endpoint, host: &str) -> Result<DialedStream> {
+    async fn open(
+        &self,
+        endpoint: &Endpoint,
+        host: &str,
+        deadline: Instant,
+    ) -> Result<DialedStream> {
         endpoint
             .validate()
             .map_err(|err| protocol_context(host, err))?;
@@ -83,30 +88,26 @@ impl RusshDialer {
             .command
             .serve_command()
             .map_err(|err| protocol_context(host, err))?;
-        let mut signer = RusshSigner(self.signer.as_ref());
-        let key = signer
-            .public_key()
-            .map_err(|err| RemoteError::Authentication(format!("{host}: {err}")))?;
-        let (socket, guard) = connect_tcp(host, endpoint.port.unwrap_or(22)).await?;
+        let mut signer = RusshSigner::new(self.signer.as_ref()).ok_or_else(|| {
+            RemoteError::Authentication(format!(
+                "{host}: the signing key's public key is not a 65-byte uncompressed P-256 point"
+            ))
+        })?;
+        let key = signer.public_key();
+        let handler = HostKeyCheck::new(host, &endpoint.host_keys)?;
         let config = client::Config {
             keepalive_interval: Some(self.config.keepalive_interval),
             keepalive_max: self.config.keepalive_max,
+            preferred: Preferred {
+                key: handler.preferred_algorithms().into(),
+                ..Preferred::default()
+            },
             ..Default::default()
         };
-        let handler = HostKeyCheck {
-            host: host.into(),
-            keys: endpoint.host_keys.clone(),
-        };
+        let (socket, guard) = connect_tcp(host, endpoint.port.unwrap_or(22), deadline).await?;
         let mut session = client::connect_stream(Arc::new(config), socket, handler)
             .await
-            .map_err(|err| match err {
-                SessionError::HostKey(fp) => RemoteError::HostKey(format!(
-                    "{host}: host key does not match the paired key ({fp})"
-                )),
-                SessionError::Ssh(error) => {
-                    RemoteError::Transport(format!("{host}: SSH handshake: {error}"))
-                }
-            })?;
+            .map_err(|err| err.into_remote(host))?;
         let auth = session
             .authenticate_publickey_with(user, key, None, &mut signer)
             .await
@@ -149,7 +150,14 @@ impl Dialer for RusshDialer {
     ) -> BoxFuture<'a, Result<DialedStream>> {
         Box::pin(async {
             let host = &target.host;
-            timeout(self.config.connect_timeout, self.open(endpoint, host))
+            let deadline = Instant::now()
+                .checked_add(self.config.connect_timeout)
+                .ok_or_else(|| {
+                    RemoteError::Protocol(format!(
+                        "{host}: SSH connection timeout exceeds the supported range"
+                    ))
+                })?;
+            timeout_at(deadline, self.open(endpoint, host, deadline))
                 .await
                 .map_err(|_| RemoteError::Timeout(format!("{host}: SSH connection timed out")))?
         })
@@ -176,7 +184,7 @@ fn protocol_context(host: &str, error: RemoteError) -> RemoteError {
     }
 }
 
-async fn connect_tcp(host: &str, port: u16) -> Result<(TcpStream, SocketGuard)> {
+async fn connect_tcp(host: &str, port: u16, deadline: Instant) -> Result<(TcpStream, SocketGuard)> {
     // Tokio resolves names through getaddrinfo, so they can get NAT64 synthesis.
     // Numeric IPv4 literals bypass getaddrinfo and need an IPv4 route.
     let addresses: Vec<_> = lookup_host((host, port))
@@ -192,11 +200,55 @@ async fn connect_tcp(host: &str, port: u16) -> Result<(TcpStream, SocketGuard)> 
             detail: format!("{host}: SSH name lookup returned no addresses"),
         });
     }
-    let socket = TcpStream::connect(addresses.as_slice())
-        .await
-        .map_err(|err| connect_error(host, &err))?;
+    let socket = connect_addresses(host, &addresses, deadline, TcpStream::connect).await?;
     SocketGuard::new(socket)
         .map_err(|err| RemoteError::Transport(format!("{host}: configure SSH socket: {err}")))
+}
+
+async fn connect_addresses<F: Future<Output = io::Result<TcpStream>>>(
+    host: &str,
+    addresses: &[SocketAddr],
+    deadline: Instant,
+    mut connect: impl FnMut(SocketAddr) -> F,
+) -> Result<TcpStream> {
+    let mut best = RemoteError::Timeout(format!("{host}: SSH connection timed out"));
+    for (index, &address) in addresses.iter().enumerate() {
+        let now = Instant::now();
+        let remaining = deadline.saturating_duration_since(now);
+        if remaining.is_zero() {
+            break;
+        }
+        let addresses_left = u32::try_from(addresses.len() - index).unwrap_or(u32::MAX);
+        let share = (remaining / addresses_left)
+            .max(Duration::from_secs(1))
+            .min(remaining);
+        match timeout_at(now + share, connect(address)).await {
+            Ok(Ok(socket)) => return Ok(socket),
+            Ok(Err(err)) => {
+                let next = connect_error(host, &err);
+                if connect_error_priority(&next) > connect_error_priority(&best) {
+                    best = next;
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    Err(best)
+}
+
+fn connect_error_priority(error: &RemoteError) -> u8 {
+    match error {
+        RemoteError::Unreachable {
+            kind: UnreachableKind::Refused,
+            ..
+        } => 3,
+        RemoteError::Unreachable {
+            kind: UnreachableKind::NoRoute,
+            ..
+        } => 2,
+        RemoteError::Transport(_) => 1,
+        _ => 0,
+    }
 }
 
 fn connect_error(host: &str, error: &io::Error) -> RemoteError {
@@ -217,7 +269,47 @@ fn connect_error(host: &str, error: &io::Error) -> RemoteError {
 
 pub(crate) struct HostKeyCheck {
     host: String,
-    keys: Vec<PinnedHostKey>,
+    keys: Vec<(Algorithm, String)>,
+}
+
+impl HostKeyCheck {
+    fn new(host: &str, pins: &[PinnedHostKey]) -> Result<Self> {
+        let keys = pins
+            .iter()
+            .map(|pin| {
+                let algorithm = match Algorithm::new(&pin.algorithm) {
+                    Ok(algorithm) if !matches!(algorithm, Algorithm::Other(_)) => algorithm,
+                    _ => {
+                        return Err(RemoteError::Protocol(format!(
+                            "{host}: unknown pinned SSH host key algorithm {:?}",
+                            pin.algorithm
+                        )));
+                    }
+                };
+                Ok((algorithm, pin.sha256.clone()))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            host: host.into(),
+            keys,
+        })
+    }
+
+    fn preferred_algorithms(&self) -> Vec<Algorithm> {
+        let mut preferred = Vec::new();
+        for (algorithm, _) in &self.keys {
+            if matches!(algorithm, Algorithm::Rsa { hash: None }) {
+                // ssh-rsa identifies the key. Use SHA-2 signatures for that key.
+                preferred.extend(
+                    [HashAlg::Sha512, HashAlg::Sha256]
+                        .map(|hash| Algorithm::Rsa { hash: Some(hash) }),
+                );
+            } else {
+                preferred.push(algorithm.clone());
+            }
+        }
+        preferred
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -228,6 +320,21 @@ pub(crate) enum SessionError {
     Ssh(#[from] russh::Error),
 }
 
+impl SessionError {
+    fn into_remote(self, host: &str) -> RemoteError {
+        match self {
+            Self::HostKey(_) => RemoteError::HostKey(format!("{host}: {self}")),
+            Self::Ssh(russh::Error::NoCommonAlgo {
+                kind: AlgorithmKind::Key,
+                ..
+            }) => RemoteError::HostKey(format!(
+                "{host}: the host did not offer a paired SSH host key algorithm"
+            )),
+            Self::Ssh(error) => RemoteError::Transport(format!("{host}: SSH handshake: {error}")),
+        }
+    }
+}
+
 impl client::Handler for HostKeyCheck {
     type Error = SessionError;
 
@@ -236,12 +343,16 @@ impl client::Handler for HostKeyCheck {
         offered: &PublicKeyOrCertificate,
     ) -> std::result::Result<bool, Self::Error> {
         let key = offered.public_key();
+        let algorithm = key.algorithm();
         let fp = key.fingerprint(HashAlg::Sha256).to_string();
-        if self
-            .keys
-            .iter()
-            .any(|pin| pin.algorithm == key.algorithm().as_str() && pin.sha256 == fp)
-        {
+        if self.keys.iter().any(|(pinned, sha256)| {
+            let same_family = pinned == &algorithm
+                || matches!(
+                    (pinned, &algorithm),
+                    (Algorithm::Rsa { .. }, Algorithm::Rsa { .. })
+                );
+            same_family && sha256 == &fp
+        }) {
             Ok(true)
         } else {
             Err(SessionError::HostKey(fp))

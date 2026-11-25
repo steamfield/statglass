@@ -1,6 +1,6 @@
 //! The key that authenticates the phone: a P-256 signer behind a trait, so the Secure
 //! Enclave and an in-memory test key share one path into russh.
-use p256::ecdsa::{self, VerifyingKey};
+use p256::ecdsa::{self, VerifyingKey, signature::Verifier as _};
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg, PublicKey, agent::AgentIdentity};
 use russh::keys::{
     ssh_encoding::{Encode, Mpint},
@@ -41,8 +41,14 @@ pub enum SignerError {
 /// An ASN.1 DER ECDSA signature as the SSH `ecdsa-sha2-nistp256` signature blob: the
 /// mpint `r` followed by the mpint `s`.
 pub fn der_to_ssh_signature(der: &[u8]) -> Result<Vec<u8>> {
-    let signature = ecdsa::Signature::from_der(der)
-        .map_err(|err| SignerError::Invalid(format!("P-256 DER: {err}")))?;
+    ssh_signature_blob(&parse_der(der)?)
+}
+
+fn parse_der(der: &[u8]) -> Result<ecdsa::Signature> {
+    ecdsa::Signature::from_der(der).map_err(|err| SignerError::Invalid(format!("P-256 DER: {err}")))
+}
+
+fn ssh_signature_blob(signature: &ecdsa::Signature) -> Result<Vec<u8>> {
     let (r, s) = signature.split_bytes();
     let mut blob = Vec::new();
     for scalar in [r, s] {
@@ -53,19 +59,23 @@ pub fn der_to_ssh_signature(der: &[u8]) -> Result<Vec<u8>> {
     Ok(blob)
 }
 
-pub(crate) struct RusshSigner<'a>(pub &'a dyn Signer);
+pub(crate) struct RusshSigner<'a> {
+    signer: &'a dyn Signer,
+    key: VerifyingKey,
+}
 
-impl RusshSigner<'_> {
-    pub fn public_key(&self) -> Result<PublicKey> {
-        let point = self.0.public_key();
+impl<'a> RusshSigner<'a> {
+    pub fn new(signer: &'a dyn Signer) -> Option<Self> {
+        let point = signer.public_key();
         if !matches!(point, [4, coordinates @ ..] if coordinates.len() == 64) {
-            return Err(SignerError::Invalid(
-                "expected an uncompressed P-256 public key".into(),
-            ));
+            return None;
         }
-        let key = VerifyingKey::from_sec1_bytes(point)
-            .map_err(|err| SignerError::Invalid(format!("P-256 public key: {err}")))?;
-        Ok(EcdsaPublicKey::from(key).into())
+        let key = VerifyingKey::from_sec1_bytes(point).ok()?;
+        Some(Self { signer, key })
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        EcdsaPublicKey::from(&self.key).into()
     }
 }
 
@@ -86,11 +96,16 @@ impl russh::Signer for RusshSigner<'_> {
         _hash_alg: Option<HashAlg>,
         mut data: Vec<u8>,
     ) -> std::result::Result<Vec<u8>, AuthError> {
-        let der = self.0.sign(data.clone()).await?;
+        let der = self.signer.sign(data.clone()).await?;
+        let parsed = parse_der(&der)?;
+        let blob = ssh_signature_blob(&parsed)?;
+        self.key.verify(&data, &parsed).map_err(|_| {
+            SignerError::Invalid("signature does not verify with the signer's public key".into())
+        })?;
         let algorithm = Algorithm::Ecdsa {
             curve: EcdsaCurve::NistP256,
         };
-        let signature = Signature::new(algorithm, der_to_ssh_signature(&der)?)
+        let signature = Signature::new(algorithm, blob)
             .map_err(|err| SignerError::Invalid(format!("SSH signature: {err}")))?;
         // russh expects the original authentication request with an SSH string appended.
         signature

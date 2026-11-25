@@ -7,6 +7,7 @@ use statglass_session::{RemoteCommand, Route, STDERR_TAIL_BYTES};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpSocket},
+    time::timeout,
 };
 
 fn dial<'a>(
@@ -72,7 +73,9 @@ async fn exec_carries_stdio_without_extra_requests_and_closes_orderly() {
         .unwrap()
         .unwrap();
     assert_eq!(&echo, b"ack\0");
-    stream.close.close().await;
+    timeout(Duration::from_millis(300), stream.close.close())
+        .await
+        .expect("orderly SSH close exceeded 300 ms");
 
     let events = server.finish().await;
     let requests: Vec<_> = events
@@ -88,6 +91,7 @@ async fn exec_carries_stdio_without_extra_requests_and_closes_orderly() {
             &Event::Exec(endpoint.command.serve_command().unwrap().into_bytes()),
             &Event::Data(b"ack\0".to_vec()),
             &Event::Eof,
+            &Event::CleanDisconnect,
         ]
     );
     assert!(events.contains(&Event::TcpClosed));
@@ -154,6 +158,32 @@ async fn stdout_and_stderr_arriving_before_exec_confirmation_are_kept() {
     assert!(server.finish().await.contains(&Event::TcpClosed));
     assert_eq!(stdout, expected);
     assert_eq!(stream.stderr.text(), "early stderr");
+}
+
+#[tokio::test]
+async fn rejects_more_than_two_mib_before_exec_confirmation() {
+    let key = Arc::new(SoftwareSigner::generate());
+    let server = Server::start(
+        &key,
+        Script {
+            stdout: vec![b'o'; 2 * 1024 * 1024 + 1],
+            output_before_exec_reply: true,
+            withhold_exec_reply: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let dialer = RusshDialer::new(key);
+    let error = timeout(
+        Duration::from_secs(1),
+        dial_error(&dialer, &server.endpoint),
+    )
+    .await
+    .expect("the dial stalled behind the exec reply");
+    assert!(server.finish().await.contains(&Event::TcpClosed));
+    assert!(
+        matches!(error, RemoteError::Transport(detail) if detail == "127.0.0.1: the host sent over 2 MiB of stdout before confirming SSH exec")
+    );
 }
 
 #[tokio::test]
@@ -226,17 +256,75 @@ async fn pin_checks_algorithm_and_fingerprint_before_authentication() {
         let server = Server::start(&key, Script::default()).await;
         let mut endpoint = server.endpoint.clone();
         let fp = endpoint.host_keys[0].sha256.clone();
-        if matching_algorithm {
+        let expected = if matching_algorithm {
             endpoint.host_keys[0].sha256 = "SHA256:other".into();
+            format!("127.0.0.1: host key does not match the paired key ({fp})")
         } else {
             endpoint.host_keys[0].algorithm = "ecdsa-sha2-nistp256".into();
-        }
+            "127.0.0.1: the host did not offer a paired SSH host key algorithm".into()
+        };
         let error = dial_error(&dialer, &endpoint).await;
-        assert!(
-            matches!(error, RemoteError::HostKey(detail) if detail == format!("127.0.0.1: host key does not match the paired key ({fp})"))
-        );
+        assert!(matches!(error, RemoteError::HostKey(detail) if detail == expected));
         assert_eq!(server.finish().await, [Event::TcpClosed]);
     }
+}
+
+#[tokio::test]
+async fn negotiates_the_pinned_ecdsa_key_on_a_multi_key_host() {
+    let key = Arc::new(SoftwareSigner::generate());
+    let server = Server::start(
+        &key,
+        Script {
+            only_pin_ecdsa: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let stream = dial(&RusshDialer::new(key), &server.endpoint)
+        .await
+        .unwrap();
+    stream.close.close().await;
+    assert!(
+        server
+            .finish()
+            .await
+            .contains(&Event::Auth("statglass".into()))
+    );
+}
+
+#[tokio::test]
+async fn rsa_sha2_pin_matches_the_rsa_public_key_family() {
+    use russh::{client::Handler, keys::ssh_encoding::Mpint, keys::ssh_key::public::RsaPublicKey};
+
+    let key = russh::keys::PublicKey::from(
+        RsaPublicKey::new(
+            Mpint::from_positive_bytes(&[1, 0, 1]),
+            Mpint::from_positive_bytes(&[0x87; 256]),
+        )
+        .unwrap(),
+    );
+    let pins = vec![PinnedHostKey {
+        algorithm: "rsa-sha2-512".into(),
+        sha256: key.fingerprint(HashAlg::Sha256).to_string(),
+    }];
+    let mut handler = HostKeyCheck::new("studio", &pins).unwrap();
+    assert!(handler.check_server_key(&key.into()).await.unwrap());
+}
+
+#[tokio::test]
+async fn unknown_pin_algorithm_fails_before_tcp_connect() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut endpoint = endpoint("127.0.0.1", listener.local_addr().unwrap().port());
+    endpoint.host_keys[0].algorithm = "ssh-unknown@example.com".into();
+    let dialer = RusshDialer::new(Arc::new(SoftwareSigner::generate()));
+    let error = tokio::select! {
+        biased;
+        result = listener.accept() => panic!("unknown pin algorithm opened TCP: {result:?}"),
+        error = dial_error(&dialer, &endpoint) => error,
+    };
+    assert!(
+        matches!(error, RemoteError::Protocol(detail) if detail.starts_with("127.0.0.1: ") && detail.contains("ssh-unknown@example.com"))
+    );
 }
 
 #[tokio::test]
@@ -303,6 +391,72 @@ impl Signer for FailedSignature {
                 Err(SignerError::Unavailable("fixture key was deleted".into()))
             }
         })
+    }
+}
+
+struct WrongMessage(Arc<SoftwareSigner>);
+
+impl Signer for WrongMessage {
+    fn public_key(&self) -> &[u8] {
+        self.0.public_key()
+    }
+
+    fn sign(&self, _: Vec<u8>) -> BoxFuture<'static, std::result::Result<Vec<u8>, SignerError>> {
+        self.0.sign(b"different SSH request".to_vec())
+    }
+}
+
+#[tokio::test]
+async fn wrong_message_signature_is_rejected_locally_before_signed_auth() {
+    let key = Arc::new(SoftwareSigner::generate());
+    let server = Server::start(&key, Script::default()).await;
+    let error = dial_error(
+        &RusshDialer::new(Arc::new(WrongMessage(key))),
+        &server.endpoint,
+    )
+    .await;
+    assert!(
+        matches!(error, RemoteError::Authentication(detail) if detail == "127.0.0.1: invalid signature: signature does not verify with the signer's public key")
+    );
+    assert_eq!(
+        server.finish().await,
+        [Event::AuthOffer("statglass".into()), Event::TcpClosed]
+    );
+}
+
+struct InvalidPublicKey(Vec<u8>);
+
+impl Signer for InvalidPublicKey {
+    fn public_key(&self) -> &[u8] {
+        &self.0
+    }
+
+    fn sign(&self, _: Vec<u8>) -> BoxFuture<'static, std::result::Result<Vec<u8>, SignerError>> {
+        panic!("must reject the public key before signing")
+    }
+}
+
+#[tokio::test]
+async fn invalid_public_points_report_the_signing_key_error_without_tcp() {
+    let key = SoftwareSigner::generate();
+    let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(key.public_key()).unwrap();
+    let compressed = verifying_key.to_sec1_point(true).as_bytes().to_vec();
+    let mut wrong_prefix = key.public_key().to_vec();
+    wrong_prefix[0] = 5;
+    let mut off_curve = vec![0; 65];
+    off_curve[0] = 4;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = endpoint("127.0.0.1", listener.local_addr().unwrap().port());
+    for point in [compressed, wrong_prefix, off_curve] {
+        let dialer = RusshDialer::new(Arc::new(InvalidPublicKey(point)));
+        let error = tokio::select! {
+            biased;
+            result = listener.accept() => panic!("invalid public key opened TCP: {result:?}"),
+            error = dial_error(&dialer, &endpoint) => error,
+        };
+        assert!(
+            matches!(error, RemoteError::Authentication(detail) if detail == "127.0.0.1: the signing key's public key is not a 65-byte uncompressed P-256 point")
+        );
     }
 }
 
@@ -389,6 +543,56 @@ async fn refused_port_and_unresolvable_name_are_distinct() {
         assert!(
             matches!(&error, RemoteError::Unreachable { kind, detail } if *kind == expected && detail.starts_with(&format!("{host}: "))),
             "{host}: {error:?}"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_silent_first_address_leaves_time_to_connect_to_the_second() {
+    let listen = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let good = listen.local_addr().unwrap();
+    let silent = ([127, 0, 0, 2], good.port()).into();
+    let start = Instant::now();
+    let deadline = start + Duration::from_secs(4);
+    let connected = connect_addresses("studio", &[silent, good], deadline, |address| async move {
+        if address == silent {
+            std::future::pending().await
+        } else {
+            assert_eq!(start.elapsed(), Duration::from_secs(2));
+            tokio::time::resume();
+            TcpStream::connect(address).await
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(connected.peer_addr().unwrap(), good);
+    assert!(Instant::now() < deadline);
+}
+
+#[tokio::test(start_paused = true)]
+async fn refused_and_no_route_errors_survive_a_later_address_timeout() {
+    let first = ([127, 0, 0, 1], 1).into();
+    let silent = ([127, 0, 0, 1], 2).into();
+    for (kind, expected) in [
+        (io::ErrorKind::ConnectionRefused, UnreachableKind::Refused),
+        (io::ErrorKind::NetworkUnreachable, UnreachableKind::NoRoute),
+    ] {
+        let err = connect_addresses(
+            "studio",
+            &[first, silent],
+            Instant::now() + Duration::from_secs(2),
+            |address| async move {
+                if address == first {
+                    Err(kind.into())
+                } else {
+                    std::future::pending().await
+                }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, RemoteError::Unreachable { kind, detail } if kind == expected && detail.starts_with("studio: "))
         );
     }
 }
@@ -519,7 +723,9 @@ async fn dropping_the_stream_disconnects_even_if_the_writer_is_retained() {
             drop(stream);
             None
         };
-        assert!(server.finish().await.contains(&Event::TcpClosed));
+        let events = server.finish().await;
+        assert!(events.contains(&Event::TcpClosed));
+        assert!(!events.contains(&Event::CleanDisconnect));
         if let Some(mut writer) = writer {
             assert!(writer.write_all(b"late write").await.is_err());
         }

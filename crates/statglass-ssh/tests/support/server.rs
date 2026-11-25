@@ -1,13 +1,21 @@
 use crate::SoftwareSigner;
 use russh::{
     Channel, ChannelId, Pty,
-    keys::{HashAlg, PrivateKey, PublicKey, ssh_key::private::Ed25519Keypair},
+    keys::{
+        HashAlg, PrivateKey, PublicKey,
+        ssh_key::private::{EcdsaKeypair, Ed25519Keypair},
+    },
     server::{self, Auth, ChannelOpenHandle, Msg, PublicKeyOffer, Session, VerifiedPublicKey},
 };
 use statglass_session::{Endpoint, PinnedHostKey, RemoteCommand, Route, Target};
-use std::{sync::Arc, time::Duration};
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tokio::{
-    io::{self, AsyncWriteExt},
+    io::{self, AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf},
     net::TcpListener,
     sync::{Notify, mpsc, oneshot},
     task::JoinHandle,
@@ -23,6 +31,7 @@ pub enum Event {
     Data(Vec<u8>),
     Unexpected(&'static str),
     Eof,
+    CleanDisconnect,
     TcpClosed,
 }
 
@@ -40,6 +49,8 @@ pub struct Script {
     pub disconnect_during_auth: bool,
     pub refuse_exec: bool,
     pub output_before_exec_reply: bool,
+    pub withhold_exec_reply: bool,
+    pub only_pin_ecdsa: bool,
     pub exit_before_output: Option<u32>,
 }
 
@@ -56,6 +67,19 @@ impl Server {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let host_key = PrivateKey::from(Ed25519Keypair::from_seed(&[3; 32]));
+        let mut keys = vec![host_key.clone()];
+        let pinned = if script.only_pin_ecdsa {
+            let private = p256::SecretKey::from_slice(&[7; 32]).unwrap();
+            let public = p256::ecdsa::VerifyingKey::from(private.public_key()).to_sec1_point(false);
+            let ecdsa = PrivateKey::from(EcdsaKeypair::NistP256 {
+                public,
+                private: private.into(),
+            });
+            keys.push(ecdsa.clone());
+            ecdsa
+        } else {
+            host_key
+        };
         let endpoint = Endpoint {
             targets: vec![Target {
                 host: address.ip().to_string(),
@@ -64,11 +88,8 @@ impl Server {
             port: Some(address.port()),
             user: Some("statglass".into()),
             host_keys: vec![PinnedHostKey {
-                algorithm: host_key.algorithm().to_string(),
-                sha256: host_key
-                    .public_key()
-                    .fingerprint(HashAlg::Sha256)
-                    .to_string(),
+                algorithm: pinned.algorithm().to_string(),
+                sha256: pinned.public_key().fingerprint(HashAlg::Sha256).to_string(),
             }],
             command: RemoteCommand::Agent {
                 bin: "/usr/local/bin/statglass-agent".into(),
@@ -77,7 +98,7 @@ impl Server {
             },
         };
         let config = Arc::new(server::Config {
-            keys: vec![host_key],
+            keys,
             auth_rejection_time: Duration::ZERO,
             auth_rejection_time_initial: Some(Duration::ZERO),
             ..Default::default()
@@ -162,11 +183,67 @@ async fn serve(
         drop(server_read);
     };
     let serve = async {
+        let ssh = ObservedSession {
+            stream: ssh,
+            event: event.clone(),
+            saw_eof: false,
+            recorded_shutdown: false,
+        };
         if let Ok(session) = server::run_stream(config, ssh, handler).await {
             let _ = session.await;
         }
     };
     tokio::join!(receive, send, serve);
+}
+
+struct ObservedSession {
+    stream: DuplexStream,
+    event: mpsc::UnboundedSender<Event>,
+    saw_eof: bool,
+    recorded_shutdown: bool,
+}
+
+impl AsyncRead for ObservedSession {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let before = buf.filled().len();
+        let result = Pin::new(&mut self.stream).poll_read(cx, buf);
+        if matches!(result, Poll::Ready(Ok(())))
+            && buf.remaining() > 0
+            && buf.filled().len() == before
+        {
+            self.saw_eof = true;
+        }
+        result
+    }
+}
+
+impl AsyncWrite for ObservedSession {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.stream).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let result = Pin::new(&mut self.stream).poll_shutdown(cx);
+        // russh shuts down its write half as soon as it receives SSH_MSG_DISCONNECT.
+        // A bare TCP close makes its read half observe EOF first.
+        if matches!(result, Poll::Ready(Ok(()))) && !self.saw_eof && !self.recorded_shutdown {
+            let _ = self.event.send(Event::CleanDisconnect);
+            self.recorded_shutdown = true;
+        }
+        result
+    }
 }
 
 struct Handler {
@@ -244,7 +321,7 @@ impl server::Handler for Handler {
         }
         session.data(channel, std::mem::take(&mut self.script.stdout))?;
         session.extended_data(channel, 1, std::mem::take(&mut self.script.stderr))?;
-        if self.script.output_before_exec_reply {
+        if self.script.output_before_exec_reply && !self.script.withhold_exec_reply {
             session.channel_success(channel)?;
         }
         match self.script.end {
@@ -331,6 +408,54 @@ impl server::Handler for Handler {
         _: &mut Session,
     ) -> Result<(), Self::Error> {
         self.record(Event::Unexpected("direct-tcpip"));
+        Ok(())
+    }
+
+    async fn agent_request(&mut self, _: ChannelId, _: &mut Session) -> Result<bool, Self::Error> {
+        self.record(Event::Unexpected("agent-forward"));
+        Ok(false)
+    }
+
+    async fn streamlocal_forward(&mut self, _: &str, _: &mut Session) -> Result<bool, Self::Error> {
+        self.record(Event::Unexpected("streamlocal-forward"));
+        Ok(false)
+    }
+
+    async fn channel_open_direct_streamlocal(
+        &mut self,
+        _: Channel<Msg>,
+        _: &str,
+        _: ChannelOpenHandle,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.record(Event::Unexpected("direct-streamlocal"));
+        Ok(())
+    }
+
+    async fn channel_open_forwarded_tcpip(
+        &mut self,
+        _: Channel<Msg>,
+        _: &str,
+        _: u32,
+        _: &str,
+        _: u32,
+        _: ChannelOpenHandle,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.record(Event::Unexpected("forwarded-tcpip"));
+        Ok(())
+    }
+
+    async fn window_change_request(
+        &mut self,
+        _: ChannelId,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.record(Event::Unexpected("window-change"));
         Ok(())
     }
 }

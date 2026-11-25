@@ -89,7 +89,7 @@ async fn exec(
             ChannelMsg::Data { data } => {
                 if early_stdout.len() + data.len() > MAX_EARLY_STDOUT {
                     return Err(RemoteError::Transport(format!(
-                        "{host}: too much stdout before SSH exec confirmation"
+                        "{host}: the host sent over 2 MiB of stdout before confirming SSH exec"
                     )));
                 }
                 early_stdout.extend_from_slice(&data);

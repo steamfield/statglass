@@ -1,17 +1,22 @@
 #!/bin/sh
 set -eu
+cd "$(dirname "$0")/../.."
 umask 077
 
-fixture=$(mktemp -d)
+fixture=
 container=
 trap '
     if [ -n "$container" ]; then
         docker rm -f "$container" >/dev/null || :
     fi
-    rm -rf "$fixture"
+    if [ -n "$fixture" ]; then
+        rm -rf "$fixture"
+    fi
 ' EXIT
+trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+fixture=$(mktemp -d)
 
 mkdir "$fixture/server"
 # Reuse rust-linux-test's intermediate build cache. Keep the final binary in this
@@ -34,7 +39,8 @@ openssl pkcs8 -topk8 -nocrypt -in "$fixture/client" -outform DER -out "$fixture/
 ssh-keygen -y -f "$fixture/client" > "$fixture/server/authorized_keys"
 
 docker build --tag statglass-ssh-docker scripts/ssh-docker
-container=$(docker run --detach --publish 127.0.0.1::22 -v "$fixture/server":/fixture:ro \
+container=statglass-ssh-docker-$$
+docker run --detach --name "$container" --publish 127.0.0.1::22 -v "$fixture/server":/fixture:ro \
     statglass-ssh-docker sh -ec '
         install -m 600 /fixture/host /etc/ssh/fixture_host_key
         install -d -o statglass -g statglass -m 700 /home/statglass/.ssh
@@ -43,7 +49,7 @@ container=$(docker run --detach --publish 127.0.0.1::22 -v "$fixture/server":/fi
         exec /usr/sbin/sshd -D -e -f /dev/null -h /etc/ssh/fixture_host_key \
             -o UsePAM=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
             -o PermitRootLogin=no -o AllowUsers=statglass
-    ')
+    ' >/dev/null
 
 host=127.0.0.1
 address=$(docker port "$container" 22/tcp)
