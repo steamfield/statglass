@@ -2,7 +2,7 @@ import Foundation
 import os
 import Security
 
-/// A failure of the native signer, with the Security framework's status when available.
+/// A native module failure, with the Security framework's status when available.
 enum NativeFailure: Error, CustomStringConvertible {
   case keychain(osStatus: OSStatus, message: String)
   case secureEnclave(osStatus: OSStatus?, message: String)
@@ -68,7 +68,11 @@ private struct KeychainPhoneKey {
     guard let point = SecKeyCopyExternalRepresentation(publicKey, &error) else {
       throw keyFailure(status(error), "Could not export the phone's public key")
     }
-    return point as Data
+    let encoded = point as Data
+    guard encoded.count == 65, encoded.first == 0x04 else {
+      throw keyFailure(errSecInvalidKeyRef, "The phone's public key has an invalid P-256 encoding")
+    }
+    return encoded
   }
 
   func sign(_ data: Data) throws -> Data {

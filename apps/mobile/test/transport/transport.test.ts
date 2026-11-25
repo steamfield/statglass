@@ -90,6 +90,32 @@ test("starts the core with a serialized config and preserves its startup error",
   });
 });
 
+test("rejects startup with the parsed error for an unavailable phone key", async () => {
+  const native = new FakeNative();
+  native.start.mockRejectedValueOnce(
+    Object.assign(new Error("Could not load the phone key (OSStatus -25308)"), {
+      code: "ERR_STATGLASS_KEYCHAIN",
+    })
+  );
+  await expect(startNativeTransport(native, cfg)).rejects.toEqual({
+    kind: "keychain",
+    osStatus: -25308,
+    message: "Could not load the phone key",
+  });
+});
+
+test("preserves an Expo rejection for data-directory setup", async () => {
+  const native = new FakeNative();
+  const rejection = Object.assign(
+    new Error("Could not create data directory"),
+    {
+      code: "ERR_UNEXPECTED",
+    }
+  );
+  native.start.mockRejectedValueOnce(rejection);
+  await expect(startNativeTransport(native, cfg)).rejects.toBe(rejection);
+});
+
 test("sends commands as generated MobileCall tags and JSON arguments", async () => {
   const native = new FakeNative();
   const transport = createNativeTransport(native);

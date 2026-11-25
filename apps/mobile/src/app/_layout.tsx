@@ -3,26 +3,15 @@
  * bar and the navigation stack. Wiring only; screens own their content.
  */
 import "@/global.css";
-import { Stack, useRootNavigationState } from "expo-router";
+import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useDemoLifetime } from "@/data/demo";
+import { DemoLifetime } from "@/data/demo";
 import { PhoneSettingsProvider } from "@/data/phone-settings";
 import { PhoneTransportProvider } from "@/data/transport-context";
 import { Providers } from "@/lib/providers";
 import { AppLockGate } from "@/lock/app-lock-gate";
 import { NativeCoreBridge } from "@/transport";
 import { MotionProvider } from "@/ui/motion";
-
-function DemoLifetime() {
-  const root = useRootNavigationState();
-  const stack = root?.routes[root.index]?.state;
-  // A screen can cover the hosts stack while it remains in the back history.
-  const hasDemoRoute = stack?.routes.some(
-    ({ name }) => name === "demo" || name === "(hosts)"
-  );
-  useDemoLifetime(hasDemoRoute ?? false);
-  return null;
-}
 
 /** Mounts the providers and the app lock around the root stack. */
 export default function RootLayout() {

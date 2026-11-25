@@ -10,7 +10,7 @@ import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { FakeNative, installNative, ok } from "@test/transport/fake-native";
 import { HOST, REMOTE } from "@test/transport/native-fixtures";
-import { ExpoRoot, Stack } from "expo-router";
+import { ExpoRoot, router, Stack } from "expo-router";
 import {
   act,
   fireEvent,
@@ -18,6 +18,8 @@ import {
   screen,
 } from "expo-router/testing-library";
 import DebugScreen from "@/app/debug";
+import DataSettings from "@/app/settings/data";
+import { NativeCoreBridge } from "@/transport";
 
 const KEY_LINE = "ecdsa-sha2-nistp256 fake-public-key statglass-iphone";
 const SHA256 = `SHA256:${"A".repeat(43)}`;
@@ -40,6 +42,7 @@ const CONNECTING: MobileRemoteHost = {
 const routes = getMockContext({
   _layout: () => <Stack />,
   debug: DebugScreen,
+  data: DataSettings,
 });
 
 function renderDebug() {
@@ -105,6 +108,36 @@ test("requires a development build when the native module is absent", async () =
     await screen.findByText("The debug screen needs a development build.")
   ).toBeOnTheScreen();
   expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+});
+
+test("starts with the current cellular sync setting and updates the open debug core", async () => {
+  const { native } = debugModule();
+  await renderWithProviders(
+    <>
+      <NativeCoreBridge />
+      <ExpoRoot context={routes} location="/debug" />
+    </>,
+    { settings: { syncOnCellular: true } }
+  );
+  expect(await screen.findByText(KEY_LINE)).toBeOnTheScreen();
+  expect(native.start).toHaveBeenCalledWith(
+    JSON.stringify({
+      hosts: [],
+      data: { sync_on_cellular: true },
+    } satisfies MobileConfig)
+  );
+
+  await act(() => router.push("/data"));
+  const cellularSync = screen.getByRole("switch", {
+    name: "Sync history on cellular",
+  });
+  expect(cellularSync).toBeChecked();
+  await fireEvent(cellularSync, "valueChange", false);
+  expect(native.call).toHaveBeenCalledWith(
+    "set_data_policy",
+    '{"sync_on_cellular":false}'
+  );
+  expect(native.start).toHaveBeenCalledTimes(1);
 });
 
 test("starts once, shows the key, then connects with the submitted Mac and displays live CPU", async () => {

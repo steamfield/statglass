@@ -4,6 +4,7 @@
  */
 import type { LiveMsg } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
+import { useRootNavigationState } from "expo-router";
 import { useEffect } from "react";
 import type { PhoneTransport } from "./seam";
 import {
@@ -93,4 +94,16 @@ export function useDemoLifetime(hasDemoRoute: boolean) {
       return dispose;
     }
   }, [demo, transport]);
+}
+
+/** Keeps the demo alive while its routes remain in the navigation stack. */
+export function DemoLifetime(): null {
+  const root = useRootNavigationState();
+  const stack = root?.routes[root.index]?.state;
+  // A screen can cover the hosts stack while it remains in the back history.
+  const hasDemoRoute = stack?.routes.some(
+    ({ name }) => name === "demo" || name === "(hosts)"
+  );
+  useDemoLifetime(hasDemoRoute ?? false);
+  return null;
 }
