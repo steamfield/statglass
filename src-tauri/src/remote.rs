@@ -142,6 +142,23 @@ impl RemoteManager {
             .cloned()
             .ok_or(CommandError::UnknownHost { host })
     }
+    pub(crate) fn alert_rules_source(
+        &self,
+        local: HostId,
+        host: HostId,
+    ) -> Result<Arc<RemoteSource>, CommandError> {
+        if host != local {
+            let saved = self.saved.lock_ok();
+            let saved_host = saved.get(&host).ok_or(CommandError::UnknownHost { host })?;
+            if saved_host.is_linux() {
+                return self.source(host);
+            }
+        }
+        Err(CommandError::InvalidArgument {
+            message: "Alert rules on this host are set on that Mac".into(),
+        })
+    }
+
     pub fn sources(&self) -> Vec<Arc<RemoteSource>> {
         self.sources.lock_ok().values().cloned().collect()
     }
@@ -235,8 +252,8 @@ impl From<statglass_remote::RemoteError> for CommandError {
                 reason: Some(crate::error::HistoryUnavailableReason::Failed { message }),
             },
             RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
-            // Phase 2 lane c gives Stale its own variant.
-            RemoteError::Refused(_) | RemoteError::Stale(_) => Self::Internal { message },
+            RemoteError::Stale(_) => Self::RemoteRulesChanged { message },
+            RemoteError::Refused(_) => Self::Internal { message },
             RemoteError::Transport(_)
             | RemoteError::Timeout(_)
             | RemoteError::Unreachable { .. }
@@ -244,6 +261,17 @@ impl From<statglass_remote::RemoteError> for CommandError {
             | RemoteError::Io(_)
             | RemoteError::Codec(_)
             | RemoteError::Protocol(_) => Self::RemoteUnreachable { message },
+        }
+    }
+}
+
+impl CommandError {
+    pub(crate) fn from_alert_rules(error: statglass_remote::RemoteError) -> Self {
+        match error {
+            statglass_remote::RemoteError::InvalidArgument(message) => {
+                Self::InvalidSettings { message }
+            }
+            error => error.into(),
         }
     }
 }
@@ -371,6 +399,9 @@ pub use setup::*;
 use setup::{most_actionable, setup_step};
 pub use update_controls::*;
 pub use vitals::{HostVitals, MemoryPressure};
+#[cfg(test)]
+#[path = "alerts/remote_rules_tests.rs"]
+mod remote_rules_tests;
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;

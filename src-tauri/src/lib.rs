@@ -149,6 +149,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             star_prompt::get_star_prompt_status, star_prompt::act_on_star_prompt,
             alerts::commands::alert_destinations_get, alerts::commands::alert_destination_save,
             alerts::commands::alert_destination_delete, alerts::commands::alert_destination_test,
+            alerts::commands::remote_alert_rules, alerts::commands::set_remote_alert_rules,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,
