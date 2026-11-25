@@ -14,8 +14,13 @@ export function nativeBuildInfo(
   native: StatglassNativeModule | null
 ): BuildInfo | null {
   if (!native) return null;
-  const result = parseEnvelope<BuildInfo>(native.version());
-  return result.status === "ok" ? result.data : null;
+  try {
+    const result = parseEnvelope<BuildInfo>(native.version());
+    return result.status === "ok" ? result.data : null;
+  } catch (error) {
+    console.warn("[native core] could not read version", error);
+    return null;
+  }
 }
 
 /** Build information for the module installed in this app. */

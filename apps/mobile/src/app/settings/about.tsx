@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import {
   currentNativeBuildInfo,
@@ -8,7 +9,7 @@ import { Text } from "@/ui/text";
 
 /** Shows the app version and the installed core's build info. */
 export default function AboutSettings() {
-  const core = currentNativeBuildInfo();
+  const [core] = useState(currentNativeBuildInfo);
   const rows = [
     {
       label: "App version",

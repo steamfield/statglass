@@ -50,6 +50,25 @@ async function retryOffline(
   }
 }
 
+function useClearDebugHostOnUnmount(
+  transport: NativeTransport,
+  hasAttempt: boolean
+) {
+  useEffect(() => {
+    if (!hasAttempt) return;
+    return () => {
+      void transport.setHosts([]).then((result) => {
+        if (result.status === "error") {
+          console.warn(
+            "[native core] could not clear debug hosts",
+            result.error
+          );
+        }
+      });
+    };
+  }, [transport, hasAttempt]);
+}
+
 export function useDebugConnection(transport: NativeTransport) {
   const [host, setHost] = useState<MobileHost | null>(null);
   const [reading, setReading] = useState(initial);
@@ -171,6 +190,8 @@ export function useDebugConnection(transport: NativeTransport) {
     });
     return stop;
   }, [host, transport]);
+
+  useClearDebugHostOnUnmount(transport, host !== null);
 
   return {
     ...reading,

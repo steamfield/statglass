@@ -6,7 +6,7 @@ import type {
   MobileRemoteHost,
 } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
-import { expect, test } from "@jest/globals";
+import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { FakeNative, installNative, ok } from "@test/transport/fake-native";
 import { HOST, REMOTE } from "@test/transport/native-fixtures";
@@ -190,6 +190,50 @@ test("keeps the first CPU frame that comes before the connected status", async (
   await act(() => setRemotes([CONNECTED]));
   expect(await screen.findByText("Live")).toBeOnTheScreen();
   expect(screen.getByText("41%")).toBeOnTheScreen();
+});
+
+test("stops the live subscription before clearing the debug host on unmount", async () => {
+  const { native } = debugModule();
+  const view = await renderDebug();
+  await screen.findByText(KEY_LINE);
+  await fillHost();
+  await fireEvent.press(screen.getByRole("button", { name: "Connect" }));
+  await screen.findByText("Live");
+  await view.unmount();
+  expect(native.call.mock.calls.slice(-2)).toEqual([
+    ["unsubscribe_live", '{"stream":1}'],
+    ["set_hosts", '{"hosts":[]}'],
+  ]);
+  await renderDebug();
+  expect(await screen.findByText("Disconnected")).toBeOnTheScreen();
+});
+
+test("clears the debug host after an in-flight Connect settles, and reports a cleanup failure", async () => {
+  const { native } = debugModule();
+  const view = await renderDebug();
+  await screen.findByText(KEY_LINE);
+  await fillHost();
+  const reply = Promise.withResolvers<string>();
+  native.call.mockReturnValueOnce(reply.promise);
+  await fireEvent.press(screen.getByRole("button", { name: "Connect" }));
+  expect(native.call).toHaveBeenLastCalledWith(
+    "set_hosts",
+    expect.stringContaining(HOST)
+  );
+  const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  await view.unmount();
+  expect(native.call).not.toHaveBeenCalledWith("set_hosts", '{"hosts":[]}');
+  const error: CommandError = {
+    kind: "internal",
+    message: "Could not clear hosts",
+  };
+  native.call.mockResolvedValueOnce(JSON.stringify({ status: "error", error }));
+  await act(() => reply.resolve(ok(null)));
+  expect(native.call).toHaveBeenLastCalledWith("set_hosts", '{"hosts":[]}');
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining("clear debug hosts"),
+    error
+  );
 });
 
 test("opens a fresh stream when the replacement host becomes available", async () => {

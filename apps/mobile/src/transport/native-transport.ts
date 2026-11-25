@@ -19,7 +19,7 @@ import {
   toNativeModuleError,
 } from "@native/statglass-native";
 import type { PhoneTransport } from "@/data/seam";
-import { callCore, parseEnvelope } from "./envelope";
+import { callCore, parseEnvelope, parseEvent } from "./envelope";
 import { createLiveStreams } from "./live-streams";
 import { toRemoteHostRecord } from "./remote-hosts";
 
@@ -61,11 +61,18 @@ export function createNativeTransport(
   const live = createLiveStreams(native);
   const subscriptions = new Set<() => void>();
   let disposed = false;
+  let hostsPending = Promise.resolve();
 
   function onCoreEvent(cb: (event: MobileEvent) => void) {
     if (disposed) return () => undefined;
     const listener = native.addListener("onCoreEvent", ({ event }) => {
-      cb(JSON.parse(event) as MobileEvent);
+      const message = parseEvent<MobileEvent>(event, "onCoreEvent");
+      if (message === null) return;
+      try {
+        cb(message);
+      } catch (error) {
+        console.warn("[native core] onCoreEvent subscriber failed", error);
+      }
     });
     function unsubscribe() {
       if (subscriptions.delete(unsubscribe)) listener.remove();
@@ -107,8 +114,14 @@ export function createNativeTransport(
         method: "query_events",
         args: { host, from_ms, to_ms },
       }),
-    setHosts: (hosts) =>
-      callCore(native, { method: "set_hosts", args: { hosts } }),
+    setHosts(hosts) {
+      // A debug screen can unmount during Connect or reopen during cleanup.
+      const write = hostsPending.then(() =>
+        callCore<null>(native, { method: "set_hosts", args: { hosts } })
+      );
+      hostsPending = write.then(() => undefined);
+      return write;
+    },
     setDataPolicy: (args) =>
       callCore(native, { method: "set_data_policy", args }),
     authorizedKeyLine: (comment) =>

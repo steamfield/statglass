@@ -1,4 +1,4 @@
-import { expect, test } from "@jest/globals";
+import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import {
   BUILD_INFO,
@@ -29,4 +29,31 @@ test("marks the core and protocol unavailable without a native module", async ()
   expect(
     within(screen.getByLabelText("Protocol")).getByText("Unavailable")
   ).toBeOnTheScreen();
+});
+
+test("marks the core and protocol unavailable when native version throws", async () => {
+  const native = new FakeNative();
+  jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  native.version.mockImplementation(() => {
+    throw new Error("The version bridge went away");
+  });
+  installNative(native);
+  await renderWithProviders(<AboutSettings />);
+  expect(
+    within(screen.getByLabelText("Core")).getByText("Unavailable")
+  ).toBeOnTheScreen();
+  expect(
+    within(screen.getByLabelText("Protocol")).getByText("Unavailable")
+  ).toBeOnTheScreen();
+});
+
+test("reads the native version once per mount even when About rerenders", async () => {
+  const native = new FakeNative();
+  installNative(native);
+  const view = await renderWithProviders(<AboutSettings />);
+  await view.rerender(<AboutSettings />);
+  expect(native.version).toHaveBeenCalledTimes(1);
+  await view.unmount();
+  await renderWithProviders(<AboutSettings />);
+  expect(native.version).toHaveBeenCalledTimes(2);
 });

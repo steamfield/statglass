@@ -218,6 +218,98 @@ test("rejects a failed live subscription with the command error and releases its
   transport.dispose();
 });
 
+test("drops malformed live messages and keeps delivering frames", async () => {
+  const native = new FakeNative();
+  const transport = createNativeTransport(native);
+  const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  const emitterError = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+  const messages = jest.fn();
+  const sub = await transport.subscribeLive(host, messages);
+  const malformed = `not json ${"x".repeat(200)}`;
+  expect(() =>
+    native.emit("onLive", { stream: 1, message: "not json" })
+  ).not.toThrow();
+  native.emit("onLive", { stream: 1, message: malformed });
+  native.emit("onLive", { stream: 1, message: JSON.stringify(frame) });
+  expect(messages.mock.calls).toEqual([[frame]]);
+  expect(emitterError).not.toHaveBeenCalled();
+  expect(warn.mock.calls).toEqual([
+    [expect.stringContaining("onLive"), "not json"],
+    [expect.stringContaining("onLive"), malformed.slice(0, 200)],
+  ]);
+  sub.unsubscribe();
+});
+
+test("catches a throwing live consumer and keeps its subscription usable", async () => {
+  const native = new FakeNative();
+  const transport = createNativeTransport(native);
+  const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  const emitterError = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+  const failure = new Error("The live consumer failed");
+  const messages = jest.fn().mockImplementationOnce(() => {
+    throw failure;
+  });
+  const sub = await transport.subscribeLive(host, messages);
+  const event = { stream: 1, message: JSON.stringify(frame) };
+  expect(() => native.emit("onLive", event)).not.toThrow();
+  native.emit("onLive", event);
+  expect(messages.mock.calls).toEqual([[frame], [frame]]);
+  expect(emitterError).not.toHaveBeenCalled();
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining("onLive"), failure);
+  sub.unsubscribe();
+});
+
+test("drops malformed core events and delivers valid events past a throwing subscriber", () => {
+  const native = new FakeNative();
+  const transport = createNativeTransport(native);
+  const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  const emitterError = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+  const failure = new Error("The first core consumer failed");
+  const first = jest.fn(() => {
+    throw failure;
+  });
+  const second = jest.fn();
+  transport.onRemoteHostsChanged(first);
+  transport.onRemoteHostsChanged(second);
+
+  expect(() => native.emit("onCoreEvent", { event: "not json" })).not.toThrow();
+  expect(() =>
+    native.emit("onCoreEvent", { event: '{"kind":"remote_hosts_changed"}' })
+  ).not.toThrow();
+  expect(first.mock.calls).toEqual([[{}]]);
+  expect(second.mock.calls).toEqual([[{}]]);
+  expect(emitterError).not.toHaveBeenCalled();
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining("onCoreEvent"),
+    "not json"
+  );
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining("onCoreEvent"),
+    failure
+  );
+  transport.dispose();
+});
+
+test("resolves getHost with a bounded command error when native.call rejects", async () => {
+  const native = new FakeNative();
+  const transport = createNativeTransport(native);
+  const reason = `The native bridge went away ${"x".repeat(200)}`;
+  native.call.mockRejectedValueOnce(new Error(reason));
+  await expect(transport.getHost(host)).resolves.toEqual({
+    status: "error",
+    error: {
+      kind: "internal",
+      message: `get_host failed: ${reason.slice(0, 200)}`,
+    },
+  });
+});
+
 test("does not retain a callback when native listener registration throws", async () => {
   const native = new FakeNative();
   const transport = createNativeTransport(native);
@@ -349,4 +441,18 @@ test("reads the core version and formats single or mixed protocol versions", () 
   expect(nativeBuildInfo(native)).toBeNull();
   expect(protocolRangeText(BUILD_INFO)).toBe("3 to 5");
   expect(protocolRangeText({ ...BUILD_INFO, protocol_max: 3 })).toBe("3");
+});
+
+test("returns no build info and warns when native version throws", () => {
+  const native = new FakeNative();
+  const failure = new Error("The version bridge went away");
+  native.version.mockImplementationOnce(() => {
+    throw failure;
+  });
+  const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  expect(nativeBuildInfo(native)).toBeNull();
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining("version"),
+    failure
+  );
 });

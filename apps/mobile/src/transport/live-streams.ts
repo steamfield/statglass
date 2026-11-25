@@ -11,7 +11,7 @@ import type {
 } from "@core/generated/types";
 import type { LiveOptions, LiveSubscription } from "@core/transport";
 import type { StatglassNativeModule } from "@native/statglass-native";
-import { callCore } from "./envelope";
+import { callCore, parseEvent } from "./envelope";
 
 /** Every live stream open on one native core. */
 export interface LiveStreams {
@@ -64,6 +64,21 @@ export function createLiveStreams(native: StatglassNativeModule): LiveStreams {
     }
   }
 
+  function deliver(id: number, message: string) {
+    const entry = streams.get(id);
+    if (!entry) return;
+    const event = parseEvent<LiveMsg>(message, "onLive");
+    if (event === null) return;
+    try {
+      entry.onMsg(event);
+    } catch (error) {
+      console.warn(
+        `[native core] onLive subscriber failed for stream ${id}`,
+        error
+      );
+    }
+  }
+
   return {
     async open(host, onMsg, options) {
       if (disposed) throw closed;
@@ -74,7 +89,7 @@ export function createLiveStreams(native: StatglassNativeModule): LiveStreams {
 
       try {
         listener ??= native.addListener("onLive", ({ stream: id, message }) => {
-          streams.get(id)?.onMsg(JSON.parse(message) as LiveMsg);
+          deliver(id, message);
         });
         const info = await callCore<SubscriptionInfo>(native, {
           method: "subscribe_live",
