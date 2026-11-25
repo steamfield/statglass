@@ -500,8 +500,10 @@ test("network identifies both series before scrubbing and history mounts only vi
   if (!first || !last) throw new Error("The event list needs two endpoints");
   expect(await screen.findByText(eventLabel(last))).toBeOnTheScreen();
   expect(screen.queryByText(eventLabel(first))).not.toBeOnTheScreen();
-  expect(screen.getAllByText("Download")).toHaveLength(2);
-  expect(screen.getAllByText("Upload")).toHaveLength(2);
+  expect(screen.getByText("Download")).toBeOnTheScreen();
+  expect(screen.getByText("Upload")).toBeOnTheScreen();
+  expect(screen.getByText(/^↓ Download · /)).toBeOnTheScreen();
+  expect(screen.getByText(/^↑ Upload · /)).toBeOnTheScreen();
 });
 
 test("the first query for a skewed remote uses its host clock for history and events", async () => {
