@@ -25,31 +25,25 @@ export interface MeterTrackProps extends MeterTrackData {
  * A rounded track with a fill scaled from the left: a bar meter. Decorative:
  * every caller prints the figure beside it, so it is hidden from assistive tech.
  */
-export function MeterTrack({ fraction, ...props }: MeterTrackProps) {
-  return (
-    <MeterTrackView {...props} fraction={meterTrackModel({ fraction }).fill} />
-  );
-}
-
-/** Draws a fill already resolved by the meter or inline bar model. */
-export function MeterTrackView({
+export function MeterTrack({
   fraction,
   fill = "var(--a)",
   height = "h-1",
   className,
   transition = false,
 }: MeterTrackProps) {
+  const scaledFill = meterTrackModel({ fraction }).fill;
   return (
     <span
       aria-hidden
-      data-missing={fraction === null || undefined}
+      data-missing={scaledFill === null || undefined}
       className={cn(
         "block overflow-hidden rounded-full bg-track",
         height,
         className
       )}
     >
-      {fraction !== null && (
+      {scaledFill !== null && (
         <span
           className={cn(
             "block h-full origin-left rounded-full",
@@ -58,7 +52,7 @@ export function MeterTrackView({
           )}
           style={{
             background: fill,
-            transform: `scaleX(${fraction})`,
+            transform: `scaleX(${scaledFill})`,
           }}
         />
       )}

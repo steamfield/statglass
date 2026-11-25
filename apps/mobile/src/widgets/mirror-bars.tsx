@@ -152,7 +152,7 @@ function BarRow({
   return (
     <View
       className={
-        above ? "flex-row items-end gap-px" : "flex-row items-start gap-px"
+        above ? "flex-row items-end gap-0.5" : "flex-row items-start gap-0.5"
       }
       style={{ height }}
     >

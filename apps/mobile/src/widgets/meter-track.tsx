@@ -34,16 +34,7 @@ export function BarFill({
 }) {
   const scheme = useColorScheme() ?? "light";
   const scope = use(WidgetAccent);
-  const fallback = accent ?? scope;
-  const hasAccent =
-    fallback !== undefined || ("accent" in color && color.accent !== undefined);
-  const paint = resolveColor(
-    color.kind === "token" || hasAccent
-      ? color
-      : { kind: "token", name: "fg-muted" },
-    scheme,
-    fallback
-  );
+  const paint = resolveColor(color, scheme, accent ?? scope);
   return (
     <View
       testID={testID}
@@ -111,6 +102,9 @@ export function MeterTrackView({
 }
 
 /** A decorative meter whose figure is supplied by its caller. */
-export function MeterTrack(data: MeterTrackData) {
-  return <MeterTrackView track={meterTrackModel(data)} />;
+export function MeterTrack({
+  fraction,
+  wide = false,
+}: MeterTrackData & { wide?: boolean }) {
+  return <MeterTrackView track={meterTrackModel({ fraction })} wide={wide} />;
 }

@@ -12,7 +12,7 @@ import { useState } from "react";
 import * as ReactNative from "react-native";
 import { themeColors } from "@/theme.generated";
 import { InlineBar } from "@/widgets/inline-bar";
-import { MeterTrack } from "@/widgets/meter-track";
+import { BarFill, MeterTrack, WidgetAccent } from "@/widgets/meter-track";
 import { MirrorBars } from "@/widgets/mirror-bars";
 import { StackBar } from "@/widgets/stack-bar";
 import { StatList } from "@/widgets/stat-list";
@@ -88,18 +88,29 @@ test("keeps the standalone meter visible and decorative when no sample exists", 
 });
 
 test.each(["light", "dark"] as const)(
-  "paints a standalone meter in the %s theme",
+  "paints the battery ink ramp in the %s theme",
   async (scheme) => {
     jest.spyOn(ReactNative, "useColorScheme").mockReturnValue(scheme);
-    await renderWithProviders(<MeterTrack fraction={0.5} />);
-    expect(
-      screen.getByTestId("meter-fill", { includeHiddenElements: true })
-    ).toHaveStyle({
-      width: "50%",
-      backgroundColor: themeColors[scheme]["muted-foreground"],
+    await renderWithProviders(
+      <WidgetAccent value="battery">
+        <BarFill
+          className="h-1"
+          color={{ kind: "accent", ink: true, step: 2 }}
+          testID="battery-ink"
+        />
+      </WidgetAccent>
+    );
+    expect(screen.getByTestId("battery-ink")).toHaveStyle({
+      backgroundColor: `${themeColors[scheme]["battery-ink"]}99`,
     });
   }
 );
+
+test("rejects a measured meter without an accent in scope", async () => {
+  await expect(
+    renderWithProviders(<MeterTrack fraction={0.5} />)
+  ).rejects.toThrow("the color names no accent and none is in scope");
+});
 
 test("puts the meter below the label and figure at accessibility text sizes", async () => {
   jest.spyOn(ReactNative, "useWindowDimensions").mockReturnValue({
@@ -138,6 +149,14 @@ test("places measured mirrored bars in their model slots and leaves gaps empty",
   expect(marks[0]).toHaveStyle({ height: model.up[0] });
   expect(marks[1]).toHaveStyle({ height: model.up[2] });
   expect(marks[2]).toHaveStyle({ height: model.down[1] });
+  expect(marks[0]?.parent).toHaveProp(
+    "className",
+    expect.stringContaining("gap-0.5")
+  );
+  expect(marks[2]?.parent).toHaveProp(
+    "className",
+    expect.stringContaining("gap-0.5")
+  );
   expect(
     screen.getAllByTestId(/mirror-(bar|gap)/).map((slot) => slot.props.testID)
   ).toEqual([

@@ -15,7 +15,12 @@ import {
 } from "@core/widget-models/fixtures/charts";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
-import { fireEvent, screen, userEvent } from "@testing-library/react-native";
+import {
+  fireEvent,
+  screen,
+  userEvent,
+  within,
+} from "@testing-library/react-native";
 import { BatteryCard } from "@/cards/battery-card";
 import { CpuCard } from "@/cards/cpu-card";
 import { GpuCard } from "@/cards/gpu-card";
@@ -189,7 +194,11 @@ test("power includes the battery readings when the combined card occupies both s
   const card = { ...chrome, power, battery, source: "charging" } as const;
   const { rerender } = await renderWithProviders(<PowerCard {...card} />);
   const name = "Power & battery, 14.8 W system";
-  expect(screen.getByRole("button", { name })).toBeOnTheScreen();
+  expect(
+    within(screen.getByRole("button", { name })).getByTestId("meter-track", {
+      includeHiddenElements: true,
+    })
+  ).toHaveProp("className", expect.stringContaining("h-1.5"));
   expect(screen.getByText("Battery")).toBeOnTheScreen();
   expect(screen.getByText("78%")).toBeOnTheScreen();
   expect(screen.getByText("To full")).toBeOnTheScreen();
@@ -251,8 +260,11 @@ test("battery shows charge, remaining time, health and rounded cycles", async ()
     <BatteryCard {...chrome} battery={battery} source="battery" />
   );
   expect(
-    screen.getByRole("button", { name: "Battery, 78%" })
-  ).toBeOnTheScreen();
+    within(screen.getByRole("button", { name: "Battery, 78%" })).getByTestId(
+      "meter-track",
+      { includeHiddenElements: true }
+    )
+  ).toHaveProp("className", expect.stringContaining("h-1.5"));
   expect(screen.getByText("Remaining")).toBeOnTheScreen();
   expect(screen.getByText("1:45")).toBeOnTheScreen();
   expect(screen.getByText("Health")).toBeOnTheScreen();

@@ -69,7 +69,7 @@ export function BatteryDetails({
           </Text>
         </View>
       )}
-      <MeterTrack fraction={ratio(charge, 100)} />
+      <MeterTrack fraction={ratio(charge, 100)} wide />
       <StatList layout="grid" items={items} />
     </WidgetAccent>
   );

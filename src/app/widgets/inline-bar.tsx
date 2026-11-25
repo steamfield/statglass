@@ -6,7 +6,7 @@ import type { MeterTrackModel } from "@core/widget-models/meter-track";
 import { cn } from "~/lib/utils";
 import { accentVars, rampBackground } from "./lib/accent";
 import { FIELD_LABEL } from "./lib/classes";
-import { MeterTrackView } from "./meter-track";
+import { MeterTrack } from "./meter-track";
 
 /** Props of the label, value and bar row: the shared data contract. */
 export type InlineBarProps = InlineBarData;
@@ -19,7 +19,7 @@ function Track({
   height: "h-1" | "h-1.5";
 }) {
   return (
-    <MeterTrackView
+    <MeterTrack
       fraction={track.fill}
       fill={rampBackground(
         track.color.kind === "accent" ? track.color.step : "hatch"

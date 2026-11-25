@@ -28,19 +28,8 @@ export function MirrorBars(data: MirrorBarsProps) {
     downHeight = 30,
     loading,
   } = data;
-  const {
-    slots: n,
-    up,
-    down,
-    upColor,
-    downColor,
-    ariaLabel,
-  } = mirrorBarsModel(data);
+  const { slots: n, up, down, ariaLabel } = mirrorBarsModel(data);
   const reveal = useReveal<HTMLDivElement>(loading);
-  const upBackground =
-    upColor.kind === "accent" ? rampColor(upColor.step) : undefined;
-  const downBackground =
-    downColor.kind === "accent" ? rampColor(downColor.step) : undefined;
   const shift = cssPercent(1 / n);
   const upRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
   const downRef = useTickScroll<HTMLDivElement>(tEndMs, intervalMs, shift);
@@ -81,7 +70,7 @@ export function MirrorBars(data: MirrorBarsProps) {
               className="flex-1 rounded-t-hair"
               style={{
                 height: up[i] ?? 0,
-                background: upBackground,
+                background: rampColor(2),
               }}
             />
           ))}
@@ -95,8 +84,8 @@ export function MirrorBars(data: MirrorBarsProps) {
             <span
               key={i}
               data-gap={(!loading && down[i] == null) || undefined}
-              className="flex-1 rounded-b-hair"
-              style={{ height: down[i] ?? 0, background: downBackground }}
+              className="flex-1 rounded-b-hair bg-(--a)"
+              style={{ height: down[i] ?? 0 }}
             />
           ))}
         </div>
