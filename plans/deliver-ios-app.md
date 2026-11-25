@@ -1445,6 +1445,7 @@ Demo:
 
 Depends on: phase 2
 Scaffold: 8a2ce900
+Tag: ios-app-phase-5
 The phase 5 scaffold is committed after phase 3's, so phase 5 lanes run concurrently with phase 3 lanes.
 
 Code facts this phase relies on (checked 2026-11-24):
