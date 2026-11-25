@@ -38,14 +38,15 @@ impl CacheEntry {
         self.query.max_points == query.max_points
             && self.query.events_for == query.events_for
             && self.query.series == query.series
-            && snap(range, self.grid.width) == Some(self.grid.bounds)
+            && HistoryGrid::for_tier(self.grid.tier, range.from_ms(), range.to_ms())
+                .is_some_and(|grid| grid.bounds == self.grid.bounds)
     }
 }
 
 /// The source-tier grid selected by the reader before it scans any history rows.
 pub(crate) struct HistoryGrid {
-    pub(crate) bounds: TimeRange,
-    width: i64,
+    bounds: TimeRange,
+    tier: Tier,
 }
 
 impl HistoryGrid {
@@ -55,7 +56,16 @@ impl HistoryGrid {
         }
         let width = tier.bucket_ms()?;
         let bounds = snap(TimeRange::new(from_ms, to_ms, i64::MAX).ok()?, width)?;
-        Some(Self { bounds, width })
+        Some(Self { bounds, tier })
+    }
+
+    /// The exact query to scan once the persisted tier has been selected.
+    pub(crate) fn query(&self, request: &HistoryQuery) -> HistoryQuery {
+        HistoryQuery {
+            from_ms: self.bounds.from_ms(),
+            to_ms: Some(self.bounds.to_ms()),
+            ..request.clone()
+        }
     }
 }
 
@@ -95,7 +105,7 @@ impl HistoryLimits {
         &self,
         store: &HistoryStore,
         query: &HistoryQuery,
-        read: impl FnOnce(&HistoryQuery, &mut Option<HistoryGrid>) -> Answer,
+        read: impl FnOnce(&HistoryQuery) -> (Answer, Option<HistoryGrid>),
     ) -> Answer {
         self.answer_at(store, query, statglass_engine::wall_ms(), read)
     }
@@ -105,11 +115,10 @@ impl HistoryLimits {
         store: &HistoryStore,
         query: &HistoryQuery,
         now_ms: i64,
-        read: impl FnOnce(&HistoryQuery, &mut Option<HistoryGrid>) -> Answer,
+        read: impl FnOnce(&HistoryQuery) -> (Answer, Option<HistoryGrid>),
     ) -> Answer {
-        let mut grid = None;
         let Some(range) = effective_range(query, now_ms) else {
-            return read(query, &mut grid);
+            return read(query).0;
         };
         if let Some(answer) = self.cached(query, range) {
             return Answer::History((*answer).clone());
@@ -127,14 +136,15 @@ impl HistoryLimits {
                 ..query.clone()
             })
         };
-        let answer = read(&effective, &mut grid);
+        let (answer, grid) = read(&effective);
         if let Answer::History(history) = &answer
             && let (Some(epoch), Some(grid)) = (epoch, grid)
+            && history.complete_to_ms == grid.bounds.to_ms()
             && epoch.is_current()
         {
             let entry = CacheEntry {
                 epoch,
-                query: effective.into_owned(),
+                query: grid.query(&effective),
                 grid,
                 answer: Arc::new(history.clone()),
                 expires: Instant::now() + HISTORY_CACHE_TTL,
@@ -212,17 +222,13 @@ mod tests {
 
     fn read_on_grid(
         read: impl FnOnce(&HistoryQuery) -> Answer,
-    ) -> impl FnOnce(&HistoryQuery, &mut Option<HistoryGrid>) -> Answer {
-        move |query, grid| {
-            *grid = query
+    ) -> impl FnOnce(&HistoryQuery) -> (Answer, Option<HistoryGrid>) {
+        move |query| {
+            let grid = query
                 .to_ms
                 .and_then(|to| HistoryGrid::for_tier(Tier::M1, query.from_ms, to));
-            let snapped = grid.as_ref().map(|grid| HistoryQuery {
-                from_ms: grid.bounds.from_ms(),
-                to_ms: Some(grid.bounds.to_ms()),
-                ..query.clone()
-            });
-            read(snapped.as_ref().unwrap_or(query))
+            let snapped = grid.as_ref().map(|grid| grid.query(query));
+            (read(snapped.as_ref().unwrap_or(query)), grid)
         }
     }
 
@@ -316,8 +322,11 @@ mod tests {
         let store = HistoryStore::open(dir.path());
         let limits = HistoryLimits::default();
         let baseline = query(200);
-        let first = Answer::History(page(1));
-        let second = Answer::History(page(2));
+        let first = Answer::History(page(120_000));
+        let second = Answer::History(HistoryAnswer {
+            clamped: vec![statglass_proto::HistoryClamp::Points],
+            ..page(120_000)
+        });
         assert_eq!(
             limits.answer(&store, &baseline, read_on_grid(|_| first.clone())),
             first
@@ -379,7 +388,7 @@ mod tests {
             valid_answer,
         );
         assert_eq!(
-            limits.answer_at(&store, &invalid, 120_010, |_, _| error.clone()),
+            limits.answer_at(&store, &invalid, 120_010, |_| (error.clone(), None)),
             error
         );
         let outside_wire_range = HistoryQuery {
@@ -387,7 +396,10 @@ mod tests {
             ..valid
         };
         assert_eq!(
-            limits.answer_at(&store, &outside_wire_range, 120_010, |_, _| error.clone()),
+            limits.answer_at(&store, &outside_wire_range, 120_010, |_| (
+                error.clone(),
+                None
+            )),
             error
         );
     }
@@ -398,18 +410,16 @@ mod tests {
         limits: &HistoryLimits,
         q: &HistoryQuery,
     ) -> Answer {
-        limits.answer(
-            store,
-            q,
-            read_on_grid(|q| {
-                let end = q.to_ms.expect("effective end");
-                let mut answer = page(end);
-                answer.gaps = store
-                    .read(|r| r.gaps(host, q.from_ms, end))
-                    .expect("read history gaps");
-                Answer::History(answer)
-            }),
-        )
+        limits.answer(store, q, read_on_grid(|q| gap_page(store, host, q)))
+    }
+
+    fn gap_page(store: &HistoryStore, host: HostId, q: &HistoryQuery) -> Answer {
+        let end = q.to_ms.expect("effective end");
+        let mut answer = page(end);
+        answer.gaps = store
+            .read(|r| r.gaps(host, q.from_ms, end))
+            .expect("read history gaps");
+        Answer::History(answer)
     }
 
     #[test]
@@ -474,6 +484,112 @@ mod tests {
             read_gaps(&store, host.id, &limits, &q),
             Answer::History(page(120_000))
         );
+    }
+
+    #[test]
+    fn fixed_range_history_reads_rewritten_data_after_a_clock_step() {
+        let dir = tempfile::tempdir().expect("test history directory");
+        let store = HistoryStore::open(dir.path());
+        let host = crate::test_support::bare_host(1, "Test host", OsKind::Linux);
+        let writer = store.register_host(&host).expect("register host");
+        let original = Gap::host(90_000, Some(95_000), GapReason::Paused).expect("valid gap");
+        writer
+            .write_gap(host.id, original)
+            .expect("write original gap");
+        writer.flush().expect("commit original gap");
+
+        let limits = HistoryLimits::default();
+        let fixed = query(200);
+        let mut before = page(120_000);
+        before.gaps = vec![original];
+        assert_eq!(
+            read_gaps(&store, host.id, &limits, &fixed),
+            Answer::History(before)
+        );
+        writer
+            .discard_from(host.id, 90_000)
+            .expect("discard future history");
+        let rewritten =
+            Gap::host(90_000, Some(95_000), GapReason::AppNotRunning).expect("valid gap");
+        writer
+            .write_gap(host.id, rewritten)
+            .expect("rewrite gap after the clock step");
+        writer.flush().expect("commit rewritten gap");
+
+        let mut after = page(120_000);
+        after.gaps = vec![rewritten];
+        assert_eq!(
+            read_gaps(&store, host.id, &limits, &fixed),
+            Answer::History(after)
+        );
+    }
+
+    #[test]
+    fn history_cleared_during_a_read_is_not_cached() {
+        let dir = tempfile::tempdir().expect("test history directory");
+        let store = HistoryStore::open(dir.path());
+        let host = crate::test_support::bare_host(1, "Test host", OsKind::Linux);
+        let writer = store.register_host(&host).expect("register host");
+        let gap = Gap::host(90_000, Some(95_000), GapReason::Paused).expect("valid gap");
+        writer.write_gap(host.id, gap).expect("write gap");
+        writer.flush().expect("commit gap");
+
+        let limits = HistoryLimits::default();
+        let fixed = query(200);
+        let mut before = page(120_000);
+        before.gaps = vec![gap];
+        let first = limits.answer(
+            &store,
+            &fixed,
+            read_on_grid(|q| {
+                let answer = gap_page(&store, host.id, q);
+                writer
+                    .clear_host(host.id, 120_002)
+                    .expect("clear history during the read");
+                writer.flush().expect("flush the clear");
+                answer
+            }),
+        );
+        assert_eq!(first, Answer::History(before));
+
+        let read_again = Cell::new(false);
+        let second = limits.answer(
+            &store,
+            &fixed,
+            read_on_grid(|q| {
+                read_again.set(true);
+                gap_page(&store, host.id, q)
+            }),
+        );
+        assert!(
+            read_again.get(),
+            "the old page must miss the cache after the clear"
+        );
+        assert_eq!(second, Answer::History(page(120_000)));
+    }
+
+    #[test]
+    fn history_is_cached_only_when_complete_through_the_snapped_end() {
+        let dir = tempfile::tempdir().expect("test history directory");
+        let store = HistoryStore::open(dir.path());
+        let limits = HistoryLimits::default();
+        let complete = Answer::History(page(120_000));
+        for (budget, wrong_end) in [(200, 110_000), (201, 130_000)] {
+            let fixed = query(budget);
+            let wrong = Answer::History(page(wrong_end));
+            assert_eq!(
+                limits.answer(&store, &fixed, read_on_grid(|_| wrong.clone())),
+                wrong
+            );
+            assert_eq!(
+                limits.answer(&store, &fixed, read_on_grid(|_| complete.clone())),
+                complete
+            );
+            assert_eq!(
+                limits.answer(&store, &fixed, read_on_grid(|_| Answer::Unknown)),
+                complete
+            );
+        }
     }
 
     struct TestHost {
@@ -584,8 +700,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("history directory");
         let store = HistoryStore::open(dir.path());
         let limits = HistoryLimits::default();
-        let original = Answer::History(page(1));
-        let fresh = Answer::History(page(2));
+        let original = Answer::History(page(120_000));
         assert_eq!(
             limits.answer(&store, &query(1), read_on_grid(|_| busy())),
             busy()
@@ -606,8 +721,8 @@ mod tests {
         }
         assert_eq!(hits, 16);
         assert_eq!(
-            limits.answer(&store, &query(18), read_on_grid(|_| fresh.clone())),
-            fresh
+            limits.answer(&store, &query(18), read_on_grid(|_| Answer::Unknown)),
+            Answer::Unknown
         );
     }
 }

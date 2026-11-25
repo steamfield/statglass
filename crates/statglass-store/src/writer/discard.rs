@@ -89,7 +89,9 @@ impl State {
                 }
             }
         }
-        self.commit()
+        self.commit()?;
+        self.history_epoch.fetch_add(1, Ordering::Release);
+        Ok(())
     }
 
     pub(super) fn clear_host(&mut self, host: HostId, now: i64) -> Result<()> {

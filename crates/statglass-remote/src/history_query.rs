@@ -16,7 +16,6 @@ pub const HISTORY_MAX_ANSWER_BYTES: usize = 512 * 1024;
 pub(crate) fn answer<H: ServedHost>(
     server: &HostServer<H>,
     query: &HistoryQuery,
-    grid: &mut Option<HistoryGrid>,
-) -> Answer {
-    read::answer(server, query, grid)
+) -> (Answer, Option<HistoryGrid>) {
+    read::answer(server, query)
 }
