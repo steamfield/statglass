@@ -1,5 +1,5 @@
 import type { ClusterInfo } from "@core/generated/types";
-import { clusterViews } from "./clusters";
+import { clusterViews } from "./cpu-clusters";
 
 const e0: ClusterInfo = {
   name: "E0",
