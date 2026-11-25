@@ -8,6 +8,11 @@ import { useRevealHighlight } from "~/hooks/use-disk-space";
 import { useNow } from "~/hooks/use-now";
 import { agoLabel } from "~/lib/time-ago";
 
+/**
+ * The landing's lead card: the folders kept from this Mac's last boot-volume
+ * scan (D-132) with how long ago it ran, and Scan again, where `onScan`
+ * starts a boot-volume scan.
+ */
 export function SpaceLastScan({
   summary,
   busy,

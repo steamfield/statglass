@@ -11,14 +11,14 @@ import { useSearchParams } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useSeriesFocus } from "~/hooks/use-series-focus";
+import { cn } from "~/lib/utils";
 import {
   useSpaceItemActions,
   useSpaceLargest,
   useSpaceSubtree,
-} from "~/hooks/use-disk-space";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
-import { useSeriesFocus } from "~/hooks/use-series-focus";
-import { cn } from "~/lib/utils";
+} from "../_hooks/use-space-report";
 import { canOpen } from "../_lib/space";
 import { SpaceMap } from "./space-map";
 import { SpaceProgress, SpaceSummary } from "./space-summary";

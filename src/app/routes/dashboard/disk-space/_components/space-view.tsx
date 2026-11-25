@@ -7,9 +7,7 @@ import { InlineMessage } from "~/components/inline-message";
 import { PageHeader } from "~/components/page-header";
 import {
   currentSpaceStatus,
-  useSpaceDropped,
   useSpaceHighlights,
-  useSpaceReport,
   useSpaceScan,
   useSpaceStatus,
   useSpaceVolumes,
@@ -17,6 +15,7 @@ import {
 import { useHostNoun } from "~/hooks/use-host-record";
 import { DashboardBanners, DashboardBody } from "~/lib/dashboard-shell";
 import { useHostId } from "~/stores/host-store";
+import { useSpaceDropped, useSpaceReport } from "../_hooks/use-space-report";
 import { spaceScreen } from "../_lib/space";
 import { SpaceLastScan } from "./space-last-scan";
 import { SpaceReportView } from "./space-report";
@@ -58,8 +57,10 @@ function HostSpace({
   vol: string | null;
   onVol: (mount: string | null) => void;
 }) {
+  const noun = useHostNoun();
   const volumes = useSpaceVolumes(true);
-  // Keep the settled highlights available when a scan or report closes.
+  // Observed here, not only on the landing, so the summary stays cached
+  // while a scan or report is open and the landing returns without a load.
   const highlights = useSpaceHighlights();
   const status = useSpaceStatus(true);
   const current = currentSpaceStatus(status);
@@ -81,7 +82,7 @@ function HostSpace({
   };
   const volume = volumes.data?.find((v) => v.mount === vol);
   return (
-    <SpaceShell subtitle={volumeSubtitle(volume)}>
+    <SpaceShell subtitle={volumeSubtitle(volume, noun)}>
       <SpaceMessage
         error={scan.error}
         // A host that stops answering mid-scan keeps its last status on
@@ -142,8 +143,8 @@ function toggled(prev: ReadonlySet<string>, key: string, on: boolean) {
   return next;
 }
 
-function volumeSubtitle(volume: SpaceVolume | undefined): string {
-  if (!volume) return "Choose a volume to scan";
+function volumeSubtitle(volume: SpaceVolume | undefined, noun: string): string {
+  if (!volume) return `What's using space on this ${noun}`;
   return `${volume.name} · ${formatBytes(volume.used_bytes)} of ${formatBytes(volume.total_bytes)} used`;
 }
 
@@ -203,7 +204,7 @@ function VolumeList({
     (vol === null || selected?.is_boot === true) &&
     summary !== null &&
     summary.folders.length > 0;
-  const primaryVolume = hasBootReport ? boot : (selected ?? boot);
+  const primaryVolume = selected ?? boot;
   return (
     <>
       {showSummary && (

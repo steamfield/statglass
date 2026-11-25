@@ -172,6 +172,19 @@ describe("Disk space landing", () => {
       screen.queryByRole("region", { name: "Largest folders" })
     ).toBeNull();
   });
+
+  it("leads with the linked external volume even while a boot report is kept", async () => {
+    renderWithProviders(<DiskSpaceRoute />, {
+      route: "/?vol=/Volumes/SanDisk%20Extreme",
+      transportOptions: { spaceScan: "/" },
+    });
+    expect(
+      await screen.findByRole("button", { name: "Open report" })
+    ).not.toHaveAttribute("data-variant", "default");
+    expect(
+      screen.getByRole("button", { name: "Scan SanDisk Extreme" })
+    ).toHaveAttribute("data-variant", "default");
+  });
 });
 
 describe("Disk space landing states", () => {
