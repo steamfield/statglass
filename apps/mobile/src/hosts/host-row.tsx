@@ -82,8 +82,9 @@ export function HostRow({
       ? failureReason(status.error, "Pull down to reload.")
       : null;
   const platform = PLATFORMS[host.info.os];
-  const readings = headlineReadings(
+  const readings = rowReadings(
     connected,
+    pendingRemote || firstDial(remote, needsPairing),
     charts.latest,
     vitals.data,
     memoryKnown
@@ -162,12 +163,13 @@ function Readings({
   memory,
   network,
 }: {
-  readings: ReturnType<typeof headlineReadings>;
+  readings: ReturnType<typeof rowReadings>;
   cpu: ReturnType<typeof useHostSparkline>["data"];
   memory: ReturnType<typeof useHostSparkline>["memory"];
   network: ReturnType<typeof useHostSparkline>["network"];
 }) {
   const colors = useThemeColors();
+  if (readings.length === 0) return null;
   const charts = [
     cpu && <StreamArea variant="spark" {...cpu} />,
     memory && <StreamArea variant="spark" {...memory} />,
@@ -252,6 +254,34 @@ type Readings = Pick<
   HostVitals,
   "cpu_pct" | "memory_pct" | "net_rx_bps" | "net_tx_bps"
 >;
+
+/**
+ * A host with nothing to read (disabled, offline, needs pairing or attention)
+ * collapses to its status line; while its status loads or it first connects
+ * the readings stay, so the row doesn't jump.
+ */
+function rowReadings(
+  connected: boolean,
+  settling: boolean,
+  latest: Readings | undefined,
+  vitals: HostVitals | undefined,
+  memoryKnown: boolean
+) {
+  if (!connected && !settling) return [];
+  return headlineReadings(connected, latest, vitals, memoryKnown);
+}
+
+/** A first dial keeps the dashes so the row doesn't shrink and regrow on launch. */
+function firstDial(
+  remote: PhoneRemoteHostStatus | null,
+  needsPairing: boolean
+) {
+  return (
+    !needsPairing &&
+    remote?.state === "connecting" &&
+    remote.failure_kind === null
+  );
+}
 
 function headlineReadings(
   connected: boolean,

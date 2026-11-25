@@ -147,11 +147,11 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
     name: "Build server, Linux, Connecting, CPU —, Memory —, Network —",
   });
   expect(
-    screen.getAllByRole("button", { name: /CPU.*, Memory.*, Network/ })
+    screen.getAllByRole("button", { name: /, Linux|, macOS/ })
   ).toHaveLength(records.length);
-  expect(
-    screen.getAllByRole("button", { name: /CPU.*, Memory.*, Network/ })[0]
-  ).toBe(build);
+  expect(screen.getAllByRole("button", { name: /, Linux|, macOS/ })[0]).toBe(
+    build
+  );
   expect(
     await screen.findByRole("button", {
       name: new RegExp(
@@ -161,7 +161,7 @@ test("shows local and remote hosts in phone order with OS, statuses and headline
   ).toBeOnTheScreen();
   expect(
     screen.getByRole("button", {
-      name: "offline, Linux, Offline since 14:02, CPU —, Memory —, Network —",
+      name: "offline, Linux, Offline since 14:02",
     })
   ).toBeOnTheScreen();
   expect(
@@ -529,12 +529,10 @@ test("shows Needs pairing on every row when this iPhone's key changed", async ()
   const records = await transport.listHosts();
   await renderHosts(transport, undefined, false);
   await screen.findByRole("button", {
-    name: /^MacBook Pro, macOS, Needs pairing, CPU —/,
+    name: "MacBook Pro, macOS, Needs pairing",
   });
   expect(
-    screen.getAllByRole("button", {
-      name: /Needs pairing, CPU —, Memory —, Network —/,
-    })
+    screen.getAllByRole("button", { name: /, Needs pairing$/ })
   ).toHaveLength(records.length);
   expect(transport.demand()).toEqual([]);
 });
@@ -796,12 +794,12 @@ test("redirects a direct hosts link to first launch before a transport is picked
   ).toBeOnTheScreen();
 });
 
-test("shows missing readings as dashes", async () => {
+test("collapses a host that needs attention to its status line", async () => {
   const transport = createMockTransport({ scenarios: ["host-unreachable"] });
   await renderHosts(transport);
   expect(
     await screen.findByRole("button", {
-      name: "unreachable, Linux, Needs attention · Host unreachable, CPU —, Memory —, Network —",
+      name: "unreachable, Linux, Needs attention · Host unreachable",
     })
   ).toBeOnTheScreen();
 });
@@ -830,7 +828,7 @@ test("going offline removes the previous readings and sparkline and stops pollin
   expect(await screen.findByText("Offline since 14:02")).toBeOnTheScreen();
   expect(
     screen.getByRole("button", {
-      name: "build, Linux, Offline since 14:02, CPU —, Memory —, Network —",
+      name: "build, Linux, Offline since 14:02",
     })
   ).toBeOnTheScreen();
   expect(
