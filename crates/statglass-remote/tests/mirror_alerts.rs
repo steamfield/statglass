@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use statglass_engine::{HISTORY_DB_FILE, HistoryStore};
 use statglass_proto::{Message, SyncPage};
-use statglass_remote::{Mirror, MirrorError, MirrorSink, page_to_wire};
+use statglass_remote::{Mirror, MirrorAlertBatch, MirrorError, MirrorSink, page_to_wire};
 use statglass_schema::{
     AlertCause, Cmp, Cursor, Event, EventDetail, HostId, HostInfo, HostRecord, Labels, MetricId,
     OsKind, SyncKinds, Tier, lock::LockExt,
@@ -15,9 +15,43 @@ use uuid::Uuid;
 const TS: i64 = 1_788_220_800_000;
 
 #[test]
+fn only_the_final_minute_page_reports_an_empty_pass_completion() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mirror, _, mut page, _) = fixture(dir.path());
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let capture = received.clone();
+    mirror.set_alert_listener(Arc::new(move |batch| {
+        capture.lock_ok().push(batch);
+    }));
+    page.events.clear();
+    page.last_seq = 0;
+    page.more = true;
+    mirror.cursor(Tier::M1, page.epoch, SyncKinds::ALL).unwrap();
+    mirror.ingest(page.clone(), SyncKinds::ALL).unwrap();
+    assert!(received.lock_ok().is_empty());
+    let mut other_tier = page.clone();
+    other_tier.tier = Tier::S10;
+    other_tier.more = false;
+    mirror.ingest(other_tier, SyncKinds::ALL).unwrap();
+    assert!(received.lock_ok().is_empty());
+    page.more = false;
+    let epoch = page.epoch;
+    mirror.ingest(page, SyncKinds::ALL).unwrap();
+    assert_eq!(
+        *received.lock_ok(),
+        [MirrorAlertBatch {
+            epoch,
+            alerts: vec![],
+            caught_up: true
+        }]
+    );
+}
+
+#[test]
 fn mirror_delivers_alerts_once_and_only_after_commit() {
     let dir = tempfile::tempdir().unwrap();
-    let (mirror, record, page, alerts) = fixture(dir.path());
+    let (mirror, record, mut page, alerts) = fixture(dir.path());
+    page.more = true;
     let mirror = Arc::new(mirror);
     let listener_mirror = Arc::downgrade(&mirror);
     let host = record.id;
@@ -26,19 +60,17 @@ fn mirror_delivers_alerts_once_and_only_after_commit() {
     let db = dir.path().join(HISTORY_DB_FILE);
     let deliveries = Arc::new(Mutex::new(Vec::new()));
     let received = Arc::clone(&deliveries);
-    mirror.set_alert_listener(Arc::new(move |epoch, inserted| {
+    mirror.set_alert_listener(Arc::new(move |batch| {
         let cursor = listener_mirror
             .upgrade()
             .unwrap()
-            .cursor(Tier::M1, epoch, SyncKinds::ALL)
+            .cursor(Tier::M1, batch.epoch, SyncKinds::ALL)
             .unwrap();
         let mut reader = Reader::open(&db).expect("open mirror reader inside the listener");
         let committed = reader
             .events(host, TS, TS + 60_000)
             .expect("read committed alerts");
-        received
-            .lock_ok()
-            .push((epoch, inserted, committed, cursor));
+        received.lock_ok().push((batch, committed, cursor));
     }));
 
     mirror
@@ -76,8 +108,11 @@ fn mirror_delivers_alerts_once_and_only_after_commit() {
     ingest.join().unwrap();
     let [later, earlier] = alerts;
     let expected = [(
-        epoch,
-        vec![later.clone(), earlier.clone()],
+        MirrorAlertBatch {
+            epoch,
+            alerts: vec![later.clone(), earlier.clone()],
+            caught_up: false,
+        },
         vec![earlier, later],
         Some(Cursor { epoch, seq }),
     )];
@@ -92,8 +127,8 @@ fn mirror_delivers_alerts_with_reused_source_ids_in_a_new_epoch() {
     let (mirror, host, page, alerts) = fixture(dir.path());
     let deliveries = Arc::new(Mutex::new(Vec::new()));
     let received = Arc::clone(&deliveries);
-    mirror.set_alert_listener(Arc::new(move |epoch, inserted| {
-        received.lock_ok().push((epoch, inserted));
+    mirror.set_alert_listener(Arc::new(move |batch| {
+        received.lock_ok().push(batch);
     }));
 
     let first = page.epoch;
@@ -117,7 +152,18 @@ fn mirror_delivers_alerts_with_reused_source_ids_in_a_new_epoch() {
     mirror.ingest(next_page, SyncKinds::ALL).unwrap();
     assert_eq!(
         deliveries.lock_ok().as_slice(),
-        &[(first, alerts.to_vec()), (next, next_alerts.to_vec())]
+        &[
+            MirrorAlertBatch {
+                epoch: first,
+                alerts: alerts.to_vec(),
+                caught_up: true
+            },
+            MirrorAlertBatch {
+                epoch: next,
+                alerts: next_alerts.to_vec(),
+                caught_up: true
+            },
+        ]
     );
 }
 

@@ -89,7 +89,7 @@ pub struct DestinationView {
 pub struct AlertsService {
     writes: Mutex<Store>,
     view: Mutex<AlertDestinationsView>,
-    remote_delivery: remote_delivery::RemoteDelivery,
+    pub(crate) remote_delivery: remote_delivery::RemoteDelivery,
 }
 
 impl AlertsService {

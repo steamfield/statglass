@@ -457,18 +457,54 @@ fn remote_alert_names_the_host_and_this_macs_text_stays_the_same() {
 }
 
 #[test]
+fn catch_up_counts_repeated_rule_ids_and_keeps_first_seen_names() {
+    let disk = alert(
+        Uuid::from_u128(9),
+        &[],
+        AlertCause::ThermalState {
+            state: ThermalState::Fair,
+        },
+    );
+    let mut first = threshold("cpu.total", Labels::new(), 95.0, Cmp::Gt, 90.0, 0);
+    let EventDetail::Alert { rule_name, .. } = &mut first.detail else {
+        unreachable!()
+    };
+    *rule_name = "High CPU".into();
+    let mut renamed = first.clone();
+    let EventDetail::Alert { rule_name, .. } = &mut renamed.detail else {
+        unreachable!()
+    };
+    *rule_name = "CPU has a new name".into();
+    assert_eq!(
+        catch_up_text("m1-linux", &[first, disk, renamed], &CELSIUS_DECIMAL),
+        Some(AlertText {
+            title: "Alerts from m1-linux".into(),
+            body: "While this Mac was away, m1-linux raised 3 alerts: High CPU (twice) and Thermal state: Fair".into(),
+            rule: None,
+            kind: "catch_up",
+        })
+    );
+}
+
+#[test]
 fn catch_up_names_up_to_two_alerts_and_counts_the_rest() {
-    let named = |name: &str, mut event: Event| {
-        if let EventDetail::Alert { rule_name, .. } = &mut event.detail {
+    let named = |id: u128, name: &str, mut event: Event| {
+        if let EventDetail::Alert {
+            rule_id, rule_name, ..
+        } = &mut event.detail
+        {
+            *rule_id = Uuid::from_u128(id);
             *rule_name = name.to_owned();
         }
         event
     };
     let disk = named(
+        10,
         "Free disk space below 20 GB",
         threshold("disk.free", Labels::new(), 12e9, Cmp::Lt, 20e9, 0),
     );
     let stall = named(
+        11,
         "Memory stall above 10% for 2 min",
         threshold(
             "mem.psi",

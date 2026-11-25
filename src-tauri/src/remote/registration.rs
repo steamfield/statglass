@@ -1,6 +1,7 @@
 //! Install/remove one registered source; generation guards reject old callbacks.
 use super::*;
-use crate::alerts::remote_delivery;
+use crate::alerts::fire::AlertOutputs;
+use crate::alerts::remote_delivery::{MirrorAlerts, wire_mirror_alerts};
 
 pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
@@ -112,17 +113,20 @@ fn wire_alert_listener(
     mirror: &Mirror,
     history: &Arc<History>,
 ) {
-    let app = app.clone();
-    let host = saved.record.clone();
     let clock = source.clock();
-    let history = history.clone();
-    if let Some(listener) =
-        remote_delivery::listener_for_host(saved.is_linux(), move |epoch, events| {
-            remote_delivery::on_mirrored_alerts(&app, &host, &clock, &history, epoch, &events);
-        })
-    {
-        mirror.set_alert_listener(listener);
-    }
+    wire_mirror_alerts(
+        saved.is_linux(),
+        mirror,
+        history.clone(),
+        MirrorAlerts {
+            app: app.clone(),
+            host: saved.record.clone(),
+            alerts: |app| &app.state::<AppState>().inner().alerts,
+            units: |app| app.state::<AppState>().settings.settings().units,
+            clock: Box::new(move || (statglass_engine::wall_ms(), clock.now_ms())),
+            outputs: AlertOutputs::shell(app),
+        },
+    );
 }
 
 /// Status and rr connection identity change under the same status lock.
