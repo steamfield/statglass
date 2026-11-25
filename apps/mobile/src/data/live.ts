@@ -1,8 +1,20 @@
+import { commandErrorText } from "@core/command-error";
 import type { HostId } from "@core/generated/types";
-import { type HostLive, initialHostLive } from "@core/live-state";
+import {
+  initialLiveSessionState,
+  type LiveSessionState,
+} from "@core/live-session";
+import type { HostLive } from "@core/live-state";
+import {
+  hostStatusSummary,
+  type PhoneRemoteHostRecord,
+} from "@core/phone-connection";
 import { hostKeys } from "@core/query-keys";
-import { failureReason, remoteQueryText } from "@core/remote-errors";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState } from "react-native";
@@ -13,10 +25,9 @@ import type { PhoneTransport } from "./seam";
 import { usePhoneTransport } from "./transport-context";
 
 /** Held host data and the phone's connection state. */
-export interface PhoneLive extends HostLive {
+export interface PhoneLive extends LiveSessionState {
   /** Monotonic receipt time. Backfill alone does not make a frame fresh. */
   lastFrame: number | null;
-  failure: string | null;
 }
 
 /** The store for one host on one transport. */
@@ -31,9 +42,8 @@ function hostStore(transport: PhoneTransport, host: HostId): LiveStore {
   let store = hosts.get(host);
   if (!store) {
     store = createStore<PhoneLive>(() => ({
-      ...initialHostLive(host),
+      ...initialLiveSessionState(host),
       lastFrame: null,
-      failure: null,
     }));
     hosts.set(host, store);
   }
@@ -63,13 +73,25 @@ export function useFocusedAppEffect(start: () => (() => void) | undefined) {
   );
 }
 
+function cachedRemoteStatus(client: QueryClient, host: HostId) {
+  return (
+    client
+      .getQueryData<PhoneRemoteHostRecord[]>(hostKeys.remote())
+      ?.find(({ config }) => config.id === host)?.status ?? null
+  );
+}
+
 /** Only the focused host page owns a live subscription. */
 export function useHostLiveSubscription(host: HostId) {
   const transport = usePhoneTransport();
-  useFocusedAppEffect(
+  const client = useQueryClient();
+  useFocusEffect(
     useCallback(
-      () => subscribeHostLive(hostStore(transport, host), transport, host),
-      [host, transport]
+      () =>
+        subscribeHostLive(hostStore(transport, host), transport, host, () =>
+          cachedRemoteStatus(client, host)
+        ),
+      [client, host, transport]
     )
   );
 }
@@ -109,9 +131,12 @@ export function useLastFrame(host: HostId) {
   return useLiveSelection(host, (state) => state.lastFrame);
 }
 
-/** The terminal failure message for the host's live subscription, if one failed. */
+/** Show a terminal failure only while it is still the latest host status. */
 export function useLiveFailure(host: HostId) {
-  return useLiveSelection(host, (state) => state.failure);
+  const client = useQueryClient();
+  const terminal = useLiveSelection(host, (state) => state.terminal);
+  if (!terminal || terminal !== cachedRemoteStatus(client, host)) return null;
+  return hostStatusSummary(terminal, { nowMs: Date.now() }).label || null;
 }
 
 /** Read one host's remote status and refresh the shared list when it changes. */
@@ -132,10 +157,7 @@ export function useRemoteStatus(host: HostId, enabled = true) {
   });
 }
 
-/** Explain a failed connection-status read using the shared remote error wording. */
+/** Explain an error from the local core's status read. */
 export function connectionStatusError(error: unknown) {
-  return (
-    remoteQueryText(error, "connection status") ??
-    `Couldn’t read connection status. ${failureReason(error, "Please try again.")}`
-  );
+  return `Couldn’t read connection status. ${commandErrorText(error, "Please try again.")}`;
 }

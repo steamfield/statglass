@@ -10,19 +10,21 @@
  * hosts in one window); `useHost` reads the nearest provider's host unless a
  * host id is passed.
  */
-import type { HostId, LiveMsg, SeriesSelector } from "@core/generated/types";
+import type {
+  HostId,
+  RemoteHostRecord,
+  SeriesSelector,
+} from "@core/generated/types";
 import {
-  awaitHistory,
-  type Connection,
-  clearRows,
-  type HostLive,
-  initialHostLive,
-  reduceLive,
-  settleSubscribe,
-} from "@core/live-state";
+  createLiveSession,
+  initialLiveSessionState,
+  type LiveSessionState,
+} from "@core/live-session";
 import { ProcessInterest } from "@core/process-interest";
+import { hostKeys } from "@core/query-keys";
 import { MINUTE_MS } from "@core/time-grid";
-import type { LiveSubscription, Transport } from "@core/transport";
+import type { Transport } from "@core/transport";
+import { QueryClientContext } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -36,14 +38,7 @@ import { createStore, type StoreApi, useStore } from "zustand";
 import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 
-export interface HostLiveState extends HostLive {
-  apply: (msg: LiveMsg) => void;
-  awaitHistory: () => void;
-  settleSubscribe: () => void;
-  setStale: (stale: boolean) => void;
-  setConnection: (connection: Connection) => void;
-  /** Drop every row (a resubscribe that refills the ring from Rust). */
-  clearRows: () => void;
+export interface HostLiveState extends LiveSessionState {
   /**
    * This window's process interest for the host (D-066): consumers add
    * their views, the union goes to Rust with the live stream's id. The same
@@ -73,15 +68,8 @@ export function createHostStore(
         }
       });
   });
-  return createStore<HostLiveState>()((set) => ({
-    ...initialHostLive(hostId),
-    apply: (msg) => set((s) => reduceLive(s, msg)),
-    setStale: (stale) => set((s) => (s.stale === stale ? s : { stale })),
-    setConnection: (connection) =>
-      set((s) => (s.connection === connection ? s : { connection })),
-    clearRows: () => set((s) => clearRows(s)),
-    awaitHistory: () => set((s) => awaitHistory(s)),
-    settleSubscribe: () => set((s) => settleSubscribe(s)),
+  return createStore<HostLiveState>()(() => ({
+    ...initialLiveSessionState(hostId),
     processInterest: interest,
   }));
 }
@@ -89,34 +77,8 @@ export function createHostStore(
 const HostsContext = createContext<Readonly<Record<HostId, HostStore>>>({});
 const CurrentHostContext = createContext<HostId | null>(null);
 
-/** Retry delays after a failed subscribe, capped at the last one. */
-const RETRY_MS = [500, 1000, 2000, 5000];
-/** Intervals without a frame before the window reads stale (plan 4.17). */
-const STALE_INTERVALS = 3;
-/**
- * Intervals a visible, unpaused window stays stale before it resubscribes
- * (review #14): Rust may have ended the channel without saying so. Doubles
- * per attempt without a frame, capped at `MAX_RECONNECT_MS`.
- */
-export const RECONNECT_INTERVALS = 3;
-const MAX_RECONNECT_MS = MINUTE_MS;
-/**
- * What Rust sends before `subscribe_live` returns (D-066). A missed span
- * longer than this would arrive partly as earlier chunks, which go in front
- * of the oldest row, so the resubscribe refills the ring instead.
- */
-const RECENT_MS = 120_000;
-
-/**
- * True while the window is hidden. Rust stops a hidden window's channel and
- * restarts it on show (D-049), so a hidden window neither retries a failed
- * subscribe nor counts missing frames as stale. There is no Rust visibility
- * event yet; `visibilityState` is the best signal WKWebView gives.
- */
-function isHidden(): boolean {
-  return (
-    typeof document !== "undefined" && document.visibilityState === "hidden"
-  );
+function windowVisible() {
+  return document.visibilityState !== "hidden";
 }
 
 interface LiveRequest {
@@ -124,19 +86,6 @@ interface LiveRequest {
   series: readonly SeriesSelector[] | undefined;
 }
 
-/**
- * Subscribe `store` to the host's live channel for as long as it is mounted.
- *
- * - A failed subscribe shows as `reconnecting` and retries; Rust resends a
- *   backfill on every subscribe, so nothing is lost.
- * - Stale is set when no frame arrives for three frame periods while
- *   sampling is not paused and the display is awake (plan 4.17).
- * - Stale for `RECONNECT_INTERVALS` more while visible: the channel may have
- *   ended silently (review #14), so it shows `reconnecting` and
- *   resubscribes with the window's full history horizon.
- * - Every subscription's `stream` goes to the window's process interest, so
- *   interest follows the live subscription (D-066).
- */
 function useLiveSubscription(
   store: HostStore,
   transport: Transport,
@@ -151,200 +100,68 @@ function useLiveSubscription(
   clockRef.current = clock;
   const seriesRef = useRef(request.series);
   seriesRef.current = request.series;
+  const client = useContext(QueryClientContext);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: seriesKey stands for request.series, read through seriesRef.
   useEffect(() => {
-    let cancelled = false;
-    let generation = 0;
-    let unsubscribe = () => {};
-    let staleTimer: ReturnType<typeof setTimeout> | undefined;
-    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let onVisible: (() => void) | undefined;
-    // Resubscribes since the last frame; each waits twice as long.
-    let reconnects = 0;
-    const interest = store.getState().processInterest;
-    const clearOnVisible = () => {
-      if (onVisible)
-        document.removeEventListener("visibilitychange", onVisible);
-      onVisible = undefined;
-    };
-
-    const armStale = () => {
-      clearTimeout(staleTimer);
-      clearTimeout(reconnectTimer);
-      const status = store.getState().status;
-      // Paused or display asleep: Rust sends no frames until it changes, and
-      // says so with a status, which re-arms this.
-      if (!status || status.paused || status.display_idle) return;
-      // Frames come every frame period: the interval, or the multiple of it
-      // a minimum period thins them to.
-      const period = Math.max(status.frame_period_ms, status.interval_ms);
-      // A remote that has never connected reports zero until its first status.
-      if (!Number.isFinite(period) || period <= 0) return;
-      staleTimer = setTimeout(() => {
-        if (isHidden()) return;
-        store.getState().setStale(true);
-        const wait = Math.min(
-          MAX_RECONNECT_MS,
-          RECONNECT_INTERVALS * period * 2 ** reconnects
-        );
-        reconnectTimer = setTimeout(() => {
-          const s = store.getState();
+    const series = seriesRef.current;
+    let stopping = false;
+    const session = createLiveSession(
+      hostId,
+      { backfillMs, ...(series === undefined ? {} : { series }) },
+      {
+        initial: store.getState(),
+        subscribe: (...args) => transport.subscribeLive(...args),
+        apply: (next) => {
+          const previous = store.getState();
           if (
-            cancelled ||
-            isHidden() ||
-            !s.stale ||
-            s.status?.paused ||
-            s.status?.display_idle
-          )
-            return;
-          reconnect();
-        }, wait);
-      }, STALE_INTERVALS * period);
-    };
-
-    const onMsg = (msg: LiveMsg) => {
-      store.getState().apply(msg);
-      if (msg.kind === "frame") reconnects = 0;
-      if (msg.kind === "frame" || msg.kind === "status") armStale();
-    };
-
-    const retry = (attempt: number, reason: unknown, backfill: number) => {
-      console.error("[live] subscribe failed", {
-        hostId,
-        window: transport.windowLabel(),
-        reason,
-      });
-      store.getState().setConnection("reconnecting");
-      const delay = RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
-      retryTimer = setTimeout(() => {
-        if (!isHidden()) {
-          void connect(attempt + 1, backfill);
-          return;
-        }
-        // Hidden: wait for the window to show instead of polling Rust.
-        clearOnVisible();
-        onVisible = () => {
-          if (isHidden() || cancelled) return;
-          clearOnVisible();
-          void connect(attempt + 1, backfill);
-        };
-        document.addEventListener("visibilitychange", onVisible);
-      }, delay);
-    };
-
-    // Setup can finish after unmount or return a typed failure. Acquire the
-    // subscription only once those lifecycle outcomes have been handled.
-    const acceptSubscription = (
-      sub: LiveSubscription,
-      attempt: number,
-      backfill: number,
-      attemptGeneration: number
-    ) => {
-      if (cancelled || generation !== attemptGeneration) {
-        sub.unsubscribe();
-        return;
+            next.subscribeFailure &&
+            next.subscribeFailure !== previous.subscribeFailure
+          ) {
+            console.error("[live] subscribe failed", {
+              hostId,
+              window: transport.windowLabel(),
+              reason: next.subscribeFailure.error,
+            });
+          }
+          if (next.watchdogAttempt > previous.watchdogAttempt) {
+            console.warn("[live] no frames while visible; resubscribing", {
+              hostId,
+              window: transport.windowLabel(),
+              lastTsMs: next.lastTsMs,
+              attempt: next.watchdogAttempt,
+            });
+          }
+          if (!stopping && next.stream !== previous.stream)
+            next.processInterest.setStream(next.stream);
+          store.setState(next, true);
+        },
+        clock: { now: () => clockRef.current(), setTimeout, clearTimeout },
+        visible: windowVisible,
+        onVisible: (listener) => {
+          const onChange = () => listener(windowVisible());
+          document.addEventListener("visibilitychange", onChange);
+          return () =>
+            document.removeEventListener("visibilitychange", onChange);
+        },
+        status: () =>
+          client
+            ?.getQueryData<RemoteHostRecord[]>(hostKeys.remote())
+            ?.find(({ config }) => config.id === hostId)?.status ?? null,
       }
-      if (sub.info.status === "error") {
-        sub.unsubscribe();
-        store.getState().settleSubscribe();
-        retry(attempt, sub.info.error, backfill);
-        return;
-      }
-      if (
-        sub.info.data.backfill_rows === 0 &&
-        sub.info.data.earlier_start_ms === null
-      )
-        store.getState().settleSubscribe();
-      unsubscribe = sub.unsubscribe;
-      interest.setStream(sub.info.data.stream);
-      armStale();
-    };
+    );
 
-    const connect = async (attempt: number, backfill: number) => {
-      const attemptGeneration = ++generation;
-      const options = {
-        backfillMs: backfill,
-        ...(seriesRef.current === undefined
-          ? {}
-          : { series: seriesRef.current }),
-      };
-      try {
-        if (cancelled) return;
-        store.getState().awaitHistory();
-        const sub = await transport.subscribeLive(
-          hostId,
-          (msg) => {
-            if (!cancelled && generation === attemptGeneration) onMsg(msg);
-          },
-          options
-        );
-        acceptSubscription(sub, attempt, backfill, attemptGeneration);
-      } catch (err) {
-        if (!cancelled && generation === attemptGeneration) {
-          store.getState().settleSubscribe();
-          retry(attempt, err, backfill);
-        }
-      }
-    };
-
-    const reconnect = () => {
-      clearTimeout(staleTimer);
-      clearTimeout(reconnectTimer);
-      clearTimeout(retryTimer);
-      clearOnVisible();
-      reconnects++;
-      const s = store.getState();
-      console.warn("[live] no frames while visible; resubscribing", {
-        hostId,
-        window: transport.windowLabel(),
-        lastTsMs: s.lastTsMs,
-        attempt: reconnects,
-      });
-      unsubscribe();
-      unsubscribe = () => {};
-      interest.setStream(null);
-      s.setConnection("reconnecting");
-      // backfillMs is also Rust's recovery horizon for every later show/wake.
-      // Shrinking it to this reconnect's missed span permanently loses older
-      // samples on subsequent resumes. Keep the window's full horizon.
-      // A longer outage needs a fresh ring: earlier chunks only prepend and
-      // cannot repair a hole between rows already held.
-      const interval = s.status?.interval_ms ?? 1000;
-      if (
-        s.lastTsMs !== null &&
-        clockRef.current() - s.lastTsMs + 2 * interval >= RECENT_MS
-      ) {
-        s.clearRows();
-      }
-      void connect(0, backfillMs);
-    };
-
-    // Shown again: frames should resume within three intervals (Rust
-    // restarts the channel), so count from now.
-    const rearmOnShow = () => {
-      if (!isHidden()) armStale();
-    };
-    document.addEventListener("visibilitychange", rearmOnShow);
-
-    // Registration replaces a source even when a paused/idle status disables the
-    // frame watchdog. Reconnect mounted remote views on the existing host event.
+    // Registration can replace the source while paused or idle.
     const stopHostsChanged = transport.onHostsChanged(({ hosts }) => {
-      if (hosts.some((h) => h.id === hostId && !h.is_local)) reconnect();
+      if (hosts.some((h) => h.id === hostId && !h.is_local)) session.retry();
     });
-    void connect(0, backfillMs);
     return () => {
-      cancelled = true;
       stopHostsChanged();
-      unsubscribe();
-      clearTimeout(staleTimer);
-      clearTimeout(reconnectTimer);
-      clearTimeout(retryTimer);
-      clearOnVisible();
-      document.removeEventListener("visibilitychange", rearmOnShow);
+      // Child cleanups still withdraw their interest using the last stream id.
+      stopping = true;
+      session.stop();
     };
-  }, [store, transport, hostId, backfillMs, seriesKey]);
+  }, [store, transport, hostId, backfillMs, seriesKey, client]);
 }
 
 /**
