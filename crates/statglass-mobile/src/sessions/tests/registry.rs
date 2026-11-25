@@ -476,6 +476,7 @@ async fn remote_status_uses_the_scaffold_json_and_does_not_repeat_unchanged_even
             .unwrap(),
         json!([{
             "id": host.id, "name": host.name, "os": "mac_os", "targets": host.targets,
+            "source_mac": null, "removed_by_controller": false,
             "open_error": null,
             "demand": null,
             "connection": {

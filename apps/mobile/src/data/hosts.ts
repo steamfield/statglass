@@ -73,6 +73,16 @@ function useRemoteStatuses<T>(
   });
 }
 
+export function useControllerRemovedHosts(enabled: boolean) {
+  return useRemoteStatuses(
+    (records) =>
+      records
+        .filter(({ status }) => status.removed_by_controller)
+        .map(({ config }) => config.id),
+    enabled
+  );
+}
+
 /** One host's connection record, updated by the screen's event subscription. */
 export function useHostStatus(id: HostId, enabled = true) {
   return useRemoteStatuses(

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use statglass_engine::wall_ms;
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::MobileHost;
+use statglass_schema::HostId;
 use tempfile::NamedTempFile;
 
 use crate::sessions::validate_hosts;
@@ -17,12 +19,18 @@ pub(crate) struct HostStore {
     path: PathBuf,
     device_key: OnceLock<String>,
     read_failure: OnceLock<String>,
+    pub(crate) controllers: BTreeMap<HostId, HostId>,
+    pub(crate) applied_bundles: BTreeMap<HostId, i64>,
 }
 
 #[derive(Deserialize, Serialize)]
 struct HostFile<Hosts> {
     device_key: Option<String>,
     hosts: Hosts,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    controllers: BTreeMap<HostId, HostId>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    applied_bundles: BTreeMap<HostId, i64>,
 }
 
 impl HostStore {
@@ -31,10 +39,12 @@ impl HostStore {
             path: data_dir.join("hosts.json"),
             device_key: OnceLock::new(),
             read_failure: OnceLock::new(),
+            controllers: BTreeMap::new(),
+            applied_bundles: BTreeMap::new(),
         }
     }
 
-    pub(crate) fn load(&self) -> Vec<MobileHost> {
+    pub(crate) fn load(&mut self) -> Vec<MobileHost> {
         let bytes = match fs::read(&self.path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == ErrorKind::NotFound => return Vec::new(),
@@ -49,6 +59,8 @@ impl HostStore {
                 if let Some(key) = file.device_key {
                     self.device_key.get_or_init(|| key);
                 }
+                self.controllers = file.controllers;
+                self.applied_bundles = file.applied_bundles;
                 file.hosts
             }
             Err(error) => {
@@ -111,6 +123,8 @@ impl HostStore {
             &HostFile {
                 device_key: self.device_key.get().cloned(),
                 hosts,
+                controllers: self.controllers.clone(),
+                applied_bundles: self.applied_bundles.clone(),
             },
         )?;
         temp.as_file().sync_all()?;

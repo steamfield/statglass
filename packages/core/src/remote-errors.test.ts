@@ -1,6 +1,7 @@
 import type { PairingFailure } from "./generated/types";
 import {
   failureReason,
+  handoverReasonText,
   pairingAdvice,
   remoteErrorAdvice,
   remoteErrorText,
@@ -9,6 +10,16 @@ import {
   sshVerificationCommand,
 } from "./remote-errors";
 import { CommandFailure } from "./transport/query";
+
+it.each([
+  ["proxy_jump", "SSH uses a jump host."],
+  ["proxy_command", "SSH uses a proxy command."],
+  ["lan_literal", "SSH uses a local IP address with no Tailscale route."],
+  ["no_host_key", "The Mac has no saved SSH host key."],
+  ["unresolvable", "The Mac couldn’t resolve its SSH alias."],
+] as const)("explains why %s cannot be handed over", (reason, text) => {
+  expect(handoverReasonText(reason)).toBe(text);
+});
 
 it("words a failure's reason as a sentence, typed or not", () => {
   expect(

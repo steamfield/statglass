@@ -352,6 +352,7 @@ export type BuildInfo = {
 
 export type BundleReconcile = {
 	from: HostId,
+	preview_id: number,
 	new: OfferedHost[],
 	removed: HostId[],
 	changed: HostId[],
@@ -2203,6 +2204,7 @@ export type MobileCall =
 /**  `null`. Persists the selected hosts. */
 { method: "add_handover_hosts"; args: {
 	hosts: OfferedHost[],
+	preview_id?: number | null,
 } } |
 /**  `null`. Replaces screen demand for all hosts. */
 { method: "set_demand"; args: {
@@ -2319,6 +2321,8 @@ export type MobileLiveRequest = {
 export type MobileRemoteHost = {
 	id: HostId,
 	name: string,
+	source_mac?: HostId | null,
+	removed_by_controller?: boolean,
 	os: OsKind,
 	targets: MobileTarget[],
 	connection: RemoteConnection,

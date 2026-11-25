@@ -207,8 +207,12 @@ pub fn encode_payload(p: &PairingPayload) -> String {
     );
     // All fields have infallible serde implementations, and Vec writes cannot fail.
     ciborium::into_writer(&compact, &mut bytes).expect("pairing payload serializes to a Vec");
+    encode_qr(PREFIX, bytes)
+}
+
+pub(crate) fn encode_qr(prefix: &str, mut bytes: Vec<u8>) -> String {
     bytes.extend_from_slice(&checksum(&bytes).to_be_bytes());
-    let mut text = String::from(PREFIX);
+    let mut text = String::from(prefix);
     for chunk in bytes.chunks(2) {
         let (mut value, digits) = match chunk {
             [high, low] => (usize::from(u16::from_be_bytes([*high, *low])), 3),
@@ -234,17 +238,8 @@ pub fn decode_payload(s: &str, now_ms: i64) -> Result<PairingPayload, PairError>
 
 /// Validates the QR's structure, version and checksum. The caller checks its expiry.
 pub fn parse_payload(s: &str) -> Result<PairingPayload, PairError> {
-    if s.len() > MAX_QR_TEXT {
-        return Err(PairError::Invalid);
-    }
-    let encoded = s.strip_prefix(PREFIX).ok_or(PairError::Invalid)?;
-    let bytes = decode_base45(encoded.as_bytes())?;
-    let (body, crc) = bytes.split_last_chunk::<4>().ok_or(PairError::Invalid)?;
-    if checksum(body) != u32::from_be_bytes(*crc) {
-        return Err(PairError::Invalid);
-    }
     let QrPayload(version, host, pairing_key, nonce, code, expires_ms, can_hand_over) =
-        decode_pair_body(body).map_err(|_| PairError::Invalid)?;
+        decode_qr(s, PREFIX, MAX_QR_TEXT)?;
     if version != PAYLOAD_VERSION
         || !valid_nonce(&nonce)
         || code.len() != 6
@@ -261,6 +256,23 @@ pub fn parse_payload(s: &str) -> Result<PairingPayload, PairError> {
         expires_ms,
         can_hand_over,
     })
+}
+
+pub(crate) fn decode_qr<T: DeserializeOwned>(
+    text: &str,
+    prefix: &str,
+    max_text: usize,
+) -> Result<T, PairError> {
+    if text.len() > max_text {
+        return Err(PairError::Invalid);
+    }
+    let encoded = text.strip_prefix(prefix).ok_or(PairError::Invalid)?;
+    let bytes = decode_base45(encoded.as_bytes())?;
+    let (body, crc) = bytes.split_last_chunk::<4>().ok_or(PairError::Invalid)?;
+    if checksum(body) != u32::from_be_bytes(*crc) {
+        return Err(PairError::Invalid);
+    }
+    decode_pair_body(body).map_err(|_| PairError::Invalid)
 }
 
 /// A nonce is also the suffix of the Linux pairing socket and a forced-command argument.

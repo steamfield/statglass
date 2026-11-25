@@ -126,8 +126,11 @@ impl MobileCore {
             MobileCall::DecodeBundle { text } => {
                 runtime.spawn_blocking(move || to_value(handover::decode_bundle(&sessions, &text)?))
             }
-            MobileCall::AddHandoverHosts { hosts } => runtime
-                .spawn_blocking(move || to_value(handover::add_handover_hosts(&sessions, hosts)?)),
+            MobileCall::AddHandoverHosts { hosts, preview_id } => {
+                runtime.spawn_blocking(move || {
+                    to_value(handover::add_handover_hosts(&sessions, hosts, preview_id)?)
+                })
+            }
             other => runtime.spawn(async move { sessions.call(other).await }),
         };
         envelope::encode(joined(task.await))

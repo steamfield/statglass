@@ -32,10 +32,12 @@ export function ProblemBanner({
   const [running, setRunning] = useState(false);
   const [actionFailure, setActionFailure] = useState<string | null>(null);
   useStatusAnnouncement(actionFailure);
-  const { action } = problem;
+  const actions = [problem.action, problem.alternateAction].filter(
+    (action) => action != null
+  );
 
-  async function actOnProblem() {
-    if (!action || running) return;
+  async function actOnProblem(action: PhoneAction) {
+    if (running) return;
     setRunning(true);
     setActionFailure(null);
     try {
@@ -89,12 +91,13 @@ export function ProblemBanner({
         </Text>
       </View>
       <Text variant="body">{problem.recovery}</Text>
-      {action && (
+      {actions.map((action) => (
         <Pressable
+          key={action}
           accessibilityRole="button"
           className="min-h-[44px] justify-center self-start rounded-lg bg-primary px-3 active:opacity-70 disabled:opacity-50"
           disabled={running}
-          onPress={actOnProblem}
+          onPress={() => void actOnProblem(action)}
         >
           <Text
             variant="body"
@@ -103,7 +106,7 @@ export function ProblemBanner({
             {actionLabel[action]}
           </Text>
         </Pressable>
-      )}
+      ))}
       {actionFailure && (
         <Text
           variant="caption"

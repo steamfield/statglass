@@ -108,7 +108,11 @@ pub enum MobileCall {
     /// `BundleReconcile`.
     DecodeBundle { text: String },
     /// `null`. Persists the selected hosts.
-    AddHandoverHosts { hosts: Vec<OfferedHost> },
+    AddHandoverHosts {
+        hosts: Vec<OfferedHost>,
+        #[serde(default)]
+        preview_id: Option<u32>,
+    },
     /// `null`. Replaces screen demand for all hosts.
     SetDemand { demand: Vec<HostDemand> },
     /// `HostRecord[]`, in the order the hosts were set.
@@ -192,6 +196,7 @@ pub enum HandoverReasonInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
 pub struct BundleReconcile {
     pub from: HostId,
+    pub preview_id: u32,
     pub new: Vec<OfferedHost>,
     pub removed: Vec<HostId>,
     pub changed: Vec<HostId>,
@@ -305,6 +310,10 @@ pub struct MobileLiveRequest {
 pub struct MobileRemoteHost {
     pub id: HostId,
     pub name: String,
+    #[serde(default)]
+    pub source_mac: Option<HostId>,
+    #[serde(default)]
+    pub removed_by_controller: bool,
     pub os: OsKind,
     pub targets: Vec<MobileTarget>,
     pub connection: RemoteConnection,

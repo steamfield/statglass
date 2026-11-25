@@ -269,7 +269,7 @@ test("keeps a host on failure and clears its phone name and order after removal"
   );
   expect(router.getPathname()).toBe("/update-from-mac");
   expect(
-    await screen.findByRole("header", { name: "Not built yet" })
+    await screen.findByRole("button", { name: "Paste code" })
   ).toBeOnTheScreen();
   await testRouter.back("/settings/hosts");
   await fireEvent.press(screen.getByRole("button", { name: "Add a host" }));

@@ -3,12 +3,23 @@ import { TextInput } from "react-native";
 import { Text } from "@/ui/text";
 import { PairAction } from "./action";
 
+const PAIRING_COPY = {
+  label: "Pairing code",
+  instructions: "Paste the full pairing text from the host.",
+  empty: "Paste a pairing code to continue.",
+  submit: "Preview host",
+};
+
 export function Paste({
   inspect,
   cancel,
+  copy = PAIRING_COPY,
+  checking = false,
 }: {
   inspect(text: string): void;
   cancel(): void;
+  copy?: typeof PAIRING_COPY;
+  checking?: boolean;
 }) {
   const [text, setText] = useState("");
   const [empty, setEmpty] = useState(false);
@@ -22,10 +33,11 @@ export function Paste({
   return (
     <>
       <Text variant="title">Paste code</Text>
-      <Text variant="body">Paste the full pairing text from the host.</Text>
+      <Text variant="body">{copy.instructions}</Text>
       <TextInput
-        accessibilityLabel="Pairing code"
+        accessibilityLabel={copy.label}
         value={text}
+        editable={!checking}
         onChangeText={(value) => {
           setText(value);
           setEmpty(false);
@@ -42,11 +54,16 @@ export function Paste({
           accessibilityRole="alert"
           className="text-destructive!"
         >
-          Paste a pairing code to continue.
+          {copy.empty}
         </Text>
       )}
-      <PairAction label="Preview host" onPress={submit} />
-      <PairAction label="Cancel" secondary onPress={cancel} />
+      <PairAction label={copy.submit} disabled={checking} onPress={submit} />
+      <PairAction
+        label="Cancel"
+        secondary
+        disabled={checking}
+        onPress={cancel}
+      />
     </>
   );
 }

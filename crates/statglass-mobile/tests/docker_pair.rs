@@ -184,7 +184,10 @@ fn docker_pair_approval_streams_and_persists_while_denial_keeps_the_saved_hosts(
     assert_eq!(json!(payload.host.host_keys), json!(fixture.host.host_keys));
     runtime.block_on(async {
         let paired = data(&pair(&core, text).await);
-        assert_eq!(paired, json!({ "id": host_id, "name": payload.host.name }));
+        assert_eq!(
+            paired,
+            json!({ "id": host_id, "name": payload.host.name, "offered": [], "unavailable": [] })
+        );
         let demand = json!({ "demand": [{ "host": host_id, "level": "full" }] });
         assert!(data(&call(&core, "set_demand", demand).await).is_null());
         let stream = 81;

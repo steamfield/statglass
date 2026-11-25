@@ -11,11 +11,12 @@ import { macMonitoringAdvice } from "./remote-errors";
 
 export type Tone = "live" | "muted" | "warning";
 
-export type PhoneRemoteHostStatus = RemoteHostStatus & {
-  demand?: MobileRemoteHost["demand"];
-  incompatible_side?: IncompatibleSide | null;
-  open_error?: CommandError | null;
-};
+export type PhoneRemoteHostStatus = RemoteHostStatus &
+  Pick<MobileRemoteHost, "source_mac" | "removed_by_controller"> & {
+    demand?: MobileRemoteHost["demand"];
+    incompatible_side?: IncompatibleSide | null;
+    open_error?: CommandError | null;
+  };
 
 export type PhoneRemoteHostRecord = Omit<
   RemoteHostRecord,
@@ -57,6 +58,7 @@ export interface PhoneProblem {
   short: string;
   recovery: string;
   action: PhoneAction | null;
+  alternateAction?: PhoneAction;
   tone: Tone;
 }
 
@@ -377,6 +379,18 @@ export function phoneProblem({
   if (!variant) return null;
   const kind = publicKind(variant);
   const { short, action, advice } = copy[variant];
+  if (variant === "key_not_accepted" && status.source_mac) {
+    return {
+      kind,
+      short,
+      title: short,
+      recovery:
+        "Your Mac may still be installing this iPhone’s key. Retry after your Mac can reach this host.",
+      tone: problemTone(kind),
+      action: "retry",
+      alternateAction: "re_pair",
+    };
+  }
   return {
     kind,
     short,

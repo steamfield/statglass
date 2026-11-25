@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { ActionButton } from "@/components/action-button";
-import { useHostListUpdates } from "@/data/hosts";
+import { useControllerRemovedHosts, useHostListUpdates } from "@/data/hosts";
 import { useHosts } from "@/data/hosts-list";
 import {
   usePhoneSettings,
@@ -30,6 +30,7 @@ export function HostSettings() {
   const names = usePhoneSettings((s) => s.hostNames);
   const { set } = usePhoneSettingsActions();
   const transport = usePhoneTransport();
+  const removedOnMac = useControllerRemovedHosts(isNativeTransport(transport));
   const cache = useQueryClient();
   const [edit, setEdit] = useState<HostEdit | null>(null);
 
@@ -94,6 +95,9 @@ export function HostSettings() {
               className="rounded-xl border border-border bg-card px-3 pt-3 pb-1"
             >
               <Text variant="cardTitle">{host.display_name}</Text>
+              {removedOnMac.data?.includes(host.id) && (
+                <Text variant="caption">Removed on your Mac</Text>
+              )}
               <View className="flex-row flex-wrap items-center">
                 <EditButton
                   label={`Rename ${host.display_name}`}
