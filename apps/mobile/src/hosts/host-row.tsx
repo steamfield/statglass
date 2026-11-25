@@ -168,49 +168,38 @@ function Readings({
   network: ReturnType<typeof useHostSparkline>["network"];
 }) {
   const colors = useThemeColors();
+  const charts = [
+    cpu && <StreamArea variant="spark" {...cpu} />,
+    memory && <StreamArea variant="spark" {...memory} />,
+    network && <NetworkReading data={network} />,
+  ];
+  // One metric per line, figure left and its chart filling the rest: three
+  // side-by-side columns leave each chart too narrow to read on a phone.
   return (
-    <View className="gap-1">
-      <View className="flex-row items-baseline gap-2">
-        {readings.map(({ label }) => (
-          <Text
-            key={label}
-            variant="caption"
-            className="min-w-0 flex-1"
-            maxFontSizeMultiplier={2}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            {label}
-          </Text>
-        ))}
-      </View>
-      <View className="flex-row items-baseline gap-2">
-        {readings.map(({ label, value, accent }) => (
-          <Text
-            key={label}
-            variant="cardFigure"
-            className="min-w-0 flex-1"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            style={{ color: colors[`${accent}-ink`] }}
-          >
-            {value}
-          </Text>
-        ))}
-      </View>
-      {(cpu || memory || network) && (
-        <View className="flex-row gap-2">
-          <View className="min-w-0 flex-1">
-            {cpu && <StreamArea variant="spark" {...cpu} />}
+    <View className="gap-2">
+      {readings.map(({ label, value, accent }, i) => (
+        <View key={label} className="flex-row items-center gap-3">
+          <View className="w-2/5 min-w-0">
+            <Text
+              variant="caption"
+              maxFontSizeMultiplier={2}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {label}
+            </Text>
+            <Text
+              variant="cardFigure"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={{ color: colors[`${accent}-ink`] }}
+            >
+              {value}
+            </Text>
           </View>
-          <View className="min-w-0 flex-1">
-            {memory && <StreamArea variant="spark" {...memory} />}
-          </View>
-          <View className="min-w-0 flex-1">
-            {network && <NetworkReading data={network} />}
-          </View>
+          <View className="min-w-0 flex-1">{charts[i]}</View>
         </View>
-      )}
+      ))}
     </View>
   );
 }
