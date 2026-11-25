@@ -11,7 +11,7 @@ export default function DemoHosts() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    start(typeof scenario === "string" ? scenario : undefined);
+    start(__DEV__ && typeof scenario === "string" ? scenario : undefined);
   }, [scenario, start]);
 
   return null;

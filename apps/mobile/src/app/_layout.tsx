@@ -80,7 +80,7 @@ function RootStack() {
         options={{ title: "Update from Mac" }}
       />
       <Stack.Screen name="pair-hosts" options={{ title: "Also on this Mac" }} />
-      <Stack.Screen name="debug" options={{ title: "Debug" }} />
+      {__DEV__ && <Stack.Screen name="debug" options={{ title: "Debug" }} />}
     </Stack>
   );
 }
