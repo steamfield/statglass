@@ -1,24 +1,17 @@
 //! Window demand, subscription ownership and source replacement.
 use super::*;
-use crate::windows::WindowVisibilityChanged;
 use std::collections::VecDeque;
 use std::sync::MutexGuard;
 use tokio::task::JoinHandle;
 
 mod effects;
 
-type VisibilityEmitter = Arc<dyn Fn(&str, WindowVisibilityChanged) + Send + Sync>;
+type VisibilityEmitter = Arc<dyn Fn(&str, bool) + Send + Sync>;
 
 /// Summary-only demand, independent of a host's live/detail channels.
 pub trait RecentFeed: Send + Sync + 'static {
     fn set_recent_interest(&self, on: bool);
 }
-impl RecentFeed for statglass_remote::RemoteSource {
-    fn set_recent_interest(&self, on: bool) {
-        self.set_recent_interest(on);
-    }
-}
-
 struct StreamSlot {
     id: u32,
     task: JoinHandle<()>,
@@ -186,18 +179,26 @@ impl Inner {
 #[derive(Default)]
 pub struct LiveRegistry {
     inner: Mutex<Inner>,
+    refusals: Option<Arc<dyn RefusalSource>>,
     visibility_emitter: Mutex<Option<VisibilityEmitter>>,
 }
 
 impl LiveRegistry {
+    /// A registry with no refusal source: its process rows have `refusal: None`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn set_visibility_emitter(
-        &self,
-        emit: impl Fn(&str, WindowVisibilityChanged) + Send + Sync + 'static,
-    ) {
+    /// A registry whose process rows carry the refusals supplied for their batch.
+    pub fn with_refusals(refusals: Arc<dyn RefusalSource>) -> Self {
+        Self {
+            refusals: Some(refusals),
+            ..Self::default()
+        }
+    }
+
+    /// Installs the callback told `(window label, visible)` when visibility changes.
+    pub fn set_visibility_emitter(&self, emit: impl Fn(&str, bool) + Send + Sync + 'static) {
         *self.visibility_emitter.lock_ok() = Some(Arc::new(emit));
     }
 
@@ -316,6 +317,7 @@ impl LiveRegistry {
             sink.clone(),
             req.clone(),
             Arc::clone(&procs),
+            self.refusals.clone(),
         );
         let mut sub = None;
         if *visible.borrow_and_update() {
@@ -444,9 +446,9 @@ impl LiveRegistry {
         inner.queue_recent_interest();
         if changed && let Some(emit) = self.visibility_emitter.lock_ok().clone() {
             let label = label.to_owned();
-            inner.effects.push_back(Box::new(move || {
-                emit(&label, WindowVisibilityChanged { visible })
-            }));
+            inner
+                .effects
+                .push_back(Box::new(move || emit(&label, visible)));
         }
         drop(inner);
         self.apply_effects();
@@ -531,7 +533,7 @@ mod remote_recent_tests {
     fn remote_recent_demand_does_not_survive_a_webview_reload() {
         let registry = LiveRegistry::new();
         let feed = Arc::new(Feed::default());
-        registry.register_recent_source(HostId(uuid::Uuid::nil()), feed.clone());
+        registry.register_recent_source(HostId(Default::default()), feed.clone());
         registry.window_visible("dashboard", true);
         registry.set_hosts_recent_interest("dashboard", true);
         assert!(feed.0.load(Ordering::SeqCst));
@@ -562,7 +564,7 @@ mod remote_recent_tests {
     #[test]
     fn remote_recent_demand_follows_visibility_replacement_and_window_lifetime() {
         let registry = LiveRegistry::new();
-        let host = HostId(uuid::Uuid::nil());
+        let host = HostId(Default::default());
         let first = Arc::new(Feed::default());
         registry.register_recent_source(host, first.clone());
         registry.set_hosts_recent_interest("dashboard", true);

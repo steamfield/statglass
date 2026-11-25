@@ -1,9 +1,7 @@
 //! A remote host's connection as clients see it: state, route, sync progress and the
 //! typed cause of the last failure. The desktop adds its own fields (vitals, remote
 //! runs, agent updates) on top of [`RemoteConnection`].
-//!
-//! Scaffold: phase 3 lane a moves the enums from `src-tauri/src/remote/contracts.rs`
-//! here, replacing these copies, and points `registration.rs` at [`connection_status`].
+
 use serde::{Deserialize, Serialize};
 use statglass_session::{ConnectionFailureKind, ConnectionStatus, Route};
 

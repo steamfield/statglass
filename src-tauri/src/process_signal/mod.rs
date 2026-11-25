@@ -13,7 +13,7 @@
 //! `WindowServer`, `loginwindow` and StatGlass's own processes (its WebKit helpers), and only
 //! then signals. `EPERM` becomes `PermissionDenied`; StatGlass never escalates.
 //!
-//! The refuse list is [`SignalRefusal::of`]. Live process rows carry its answer
+//! The refuse list is `refusal_of`. Live process rows carry its answer
 //! (`LiveProcess::refusal`, D-092), so the UI disables the actions with the same rule.
 //!
 //! The start-time check and the signal are two calls, so a PID could in principle be
@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 pub use statglass_engine::process_control::{
     OsError, ProcessInfo, ProcessOs, StopKind, SystemProcessOs, signals_available,
 };
+pub use statglass_ipc::process::SignalRefusal;
+use statglass_ipc::process::{RefusalRule, RefusalSource};
 use statglass_schema::{HostId, JsSafeInt};
 
 /// What to ask of the process.
@@ -83,58 +85,49 @@ pub enum ProcessSignalError {
     Failed { message: String },
 }
 
-/// Why StatGlass will not signal a process. The UI words it (`process-signal.ts`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum SignalRefusal {
-    /// The macOS kernel (pid 0), or a pid kill(2) would treat as a process group.
-    KernelTask,
-    Launchd,
-    WindowServer,
-    LoginWindow,
-    /// StatGlass itself or one of its helpers.
-    #[serde(rename = "statglass")]
-    StatGlass,
-}
-
-impl SignalRefusal {
-    /// Refused by pid alone, before the process is read: kill(2) treats 0 and negative
-    /// pids as process groups, 1 is launchd, and `me` is StatGlass.
-    fn by_pid(pid: i32, me: i32) -> Option<Self> {
-        match pid {
-            ..=0 => Some(Self::KernelTask),
-            1 => Some(Self::Launchd),
-            _ if pid == me => Some(Self::StatGlass),
-            _ => None,
-        }
-    }
-
-    /// Refused once the process is read: by name, or because it is one of StatGlass's own.
-    fn by_process(name: &str, own: bool) -> Option<Self> {
-        match name {
-            "kernel_task" => Some(Self::KernelTask),
-            "launchd" => Some(Self::Launchd),
-            "WindowServer" => Some(Self::WindowServer),
-            "loginwindow" => Some(Self::LoginWindow),
-            _ if own => Some(Self::StatGlass),
-            _ => None,
-        }
-    }
-
-    /// Whether, and why, [`signal_process`] refuses `pid` named `name`, with `me` the
-    /// calling process and `own` whether `pid` is one of StatGlass's own processes.
-    pub fn of(pid: i32, name: &str, me: i32, own: bool) -> Option<Self> {
-        Self::by_pid(pid, me).or_else(|| Self::by_process(name, own))
+/// Refused by pid alone, before the process is read: kill(2) treats 0 and negative
+/// pids as process groups, 1 is launchd, and `me` is StatGlass.
+fn refusal_by_pid(pid: i32, me: i32) -> Option<SignalRefusal> {
+    match pid {
+        ..=0 => Some(SignalRefusal::KernelTask),
+        1 => Some(SignalRefusal::Launchd),
+        _ if pid == me => Some(SignalRefusal::StatGlass),
+        _ => None,
     }
 }
 
-/// [`SignalRefusal::of`] for rows of one batch, taking `(pid, start_time_us, name)`: this
+/// Refused once the process is read: by name, or because it is one of StatGlass's own.
+fn refusal_by_process(name: &str, own: bool) -> Option<SignalRefusal> {
+    match name {
+        "kernel_task" => Some(SignalRefusal::KernelTask),
+        "launchd" => Some(SignalRefusal::Launchd),
+        "WindowServer" => Some(SignalRefusal::WindowServer),
+        "loginwindow" => Some(SignalRefusal::LoginWindow),
+        _ if own => Some(SignalRefusal::StatGlass),
+        _ => None,
+    }
+}
+
+/// Whether, and why, [`signal_process`] refuses `pid` named `name`, with `me` the
+/// calling process and `own` whether `pid` is one of StatGlass's own processes.
+fn refusal_of(pid: i32, name: &str, me: i32, own: bool) -> Option<SignalRefusal> {
+    refusal_by_pid(pid, me).or_else(|| refusal_by_process(name, own))
+}
+
+/// `refusal_of` for rows of one batch, taking `(pid, start_time_us, name)`: this
 /// process's pid and StatGlass's own processes are read once, here.
 pub fn refusals() -> impl Fn(i32, i64, &str) -> Option<SignalRefusal> {
     let me = SystemProcessOs.self_pid();
     let own = statglass_engine::process_control::own_processes();
-    move |pid, start_time_us, name| {
-        SignalRefusal::of(pid, name, me, own.contains(pid, start_time_us))
+    move |pid, start_time_us, name| refusal_of(pid, name, me, own.contains(pid, start_time_us))
+}
+
+/// The desktop's refusal rule for live process rows.
+pub struct DesktopRefusals;
+
+impl RefusalSource for DesktopRefusals {
+    fn batch(&self) -> RefusalRule<'_> {
+        Box::new(refusals())
     }
 }
 
@@ -160,7 +153,7 @@ pub fn signal_process(
     }
     let me = os.self_pid();
     // Never let a process group (pid 0 or below) through to kill(2).
-    if let Some(refusal) = SignalRefusal::by_pid(pid, me) {
+    if let Some(refusal) = refusal_by_pid(pid, me) {
         return Err(ProcessSignalError::Refused { refusal });
     }
     let info = os.info(pid).map_err(map_os)?;
@@ -168,7 +161,7 @@ pub fn signal_process(
         return Err(ProcessSignalError::PidReused);
     }
     let own = info.responsible_pid == Some(me) || os.is_own(pid, info.start_time_us);
-    if let Some(refusal) = SignalRefusal::by_process(&info.name, own) {
+    if let Some(refusal) = refusal_by_process(&info.name, own) {
         return Err(ProcessSignalError::Refused { refusal });
     }
     os.send(pid, kind.into()).map_err(map_os)
@@ -292,7 +285,7 @@ mod tests {
         );
     }
 
-    /// A live row's refusal (`SignalRefusal::of`, from the row and the own-process list)
+    /// A live row's refusal (`refusal_of`, from the row and the own-process list)
     /// is what `signal_process` answers for the same process.
     #[test]
     fn row_refusal_matches_signal_process() {
@@ -313,7 +306,7 @@ mod tests {
         os.own = vec![ME, 400, 401];
         for pid in [-1, 0, 1, ME, 300, 301, 302, 303, 400, 401, 4242, 4243] {
             let name = os.info(pid).map(|i| i.name).unwrap_or_default();
-            let row = SignalRefusal::of(pid, &name, ME, os.own.contains(&pid));
+            let row = refusal_of(pid, &name, ME, os.own.contains(&pid));
             let signal = match signal_process(&os, pid, 1, SignalKind::Quit) {
                 Err(ProcessSignalError::Refused { refusal }) => Some(refusal),
                 Ok(()) => None,

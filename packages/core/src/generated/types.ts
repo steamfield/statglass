@@ -1940,7 +1940,7 @@ export type LiveProcess = {
 	/**
 	 *  Quit on this process's app acts on it: the app's running main executables when it
 	 *  has any, otherwise every process of the app. Decided over the whole sample, before
-	 *  the view's limit (`app_quit::live_quit_set`); per-app and recorded tables quit
+	 *  the view's limit (`live_quit_set`); per-app and recorded tables quit
 	 *  through it by app name.
 	 */
 	app_quit: boolean,

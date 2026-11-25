@@ -39,11 +39,22 @@ impl History {
         recent: impl Fn() -> Vec<BucketRow>,
         hold: impl Fn(&SeriesKey, i64) -> i64,
     ) -> Result<HistoryPage, CommandError> {
-        let query = request.to_query()?;
-        Ok(history_page(
-            self.history_through_now(&query, recent)?,
+        statglass_ipc::history::query_history(
+            &self.storage,
+            request,
+            TierChoice::Auto,
+            recent,
             hold,
-        ))
+        )
+    }
+
+    pub fn events(
+        &self,
+        host: HostId,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<Event>, CommandError> {
+        statglass_ipc::history::query_events(&self.storage, host, from_ms, to_ms)
     }
 
     /// Bounded disk query. Pairing and operation weighting remain in statglass-store.

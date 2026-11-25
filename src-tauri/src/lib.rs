@@ -9,7 +9,6 @@ pub mod alerts;
 #[cfg(test)]
 mod alerts_tests;
 pub mod app_menu;
-mod app_quit;
 mod bench;
 mod bindings;
 mod calibration;
@@ -26,7 +25,6 @@ mod history;
 mod hosts;
 pub mod ipc;
 pub mod live;
-mod live_process;
 mod logging;
 mod notify;
 mod pairing;
