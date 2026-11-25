@@ -10,6 +10,7 @@ use statglass_schema::{AlertRule, Settings};
 use uuid::Uuid;
 
 /// FNV-1a over the ordered JSON list, limited to a JavaScript-safe integer.
+/// Deriving the revision from the rules keeps it stable across agent restarts.
 pub fn rules_revision(rules: &[AlertRule]) -> i64 {
     let bytes = serde_json::to_vec(rules).expect("alert rules serialize to JSON into a Vec");
     let hash = bytes
@@ -20,12 +21,15 @@ pub fn rules_revision(rules: &[AlertRule]) -> i64 {
     i64::try_from(hash & ((1 << 53) - 1)).expect("53 bits fit in i64")
 }
 
+/// Owns the agent's custom rules and the lock that orders edits against cooldown
+/// seeding when history reattaches.
 pub struct AlertRuleStore {
     data_dir: PathBuf,
     settings: Mutex<Settings>,
 }
 
 impl AlertRuleStore {
+    /// Creates a store from the agent's loaded settings and data directory.
     pub fn new(data_dir: PathBuf, settings: Settings) -> Self {
         Self {
             data_dir,
@@ -33,6 +37,7 @@ impl AlertRuleStore {
         }
     }
 
+    /// Returns the rules in force and their content revision.
     pub fn current(&self) -> HostAlertRules {
         answer_rules(&self.settings.lock_ok().alerts.rules)
     }
@@ -42,6 +47,15 @@ impl AlertRuleStore {
         seed(&self.settings.lock_ok().alerts);
     }
 
+    /// Under the rule lock, checks the revision, requires known entries, appends kept
+    /// rules, validates the merged list, saves it, and applies it.
+    ///
+    /// Returns `Stale` for a revision mismatch, `InvalidArgument` for an unknown
+    /// entry or invalid merged list, and `Internal` if the save fails.
+    ///
+    /// `apply` runs only after the save succeeds and receives the updated in-memory
+    /// settings. The `configure` return value is discarded so CLI changes still take
+    /// effect on restart.
     pub fn replace(
         &self,
         base_revision: i64,
@@ -57,35 +71,15 @@ impl AlertRuleStore {
             };
         }
 
-        let mut next = Vec::with_capacity(rules.len());
-        for entry in rules {
-            let RuleEntry::Known(rule) = entry else {
+        let alerts = match next_alerts(&settings.alerts, rules, &keep) {
+            Ok(alerts) => alerts,
+            Err(message) => {
                 return Answer::Error {
                     code: ErrorCode::InvalidArgument,
-                    message: "This agent does not know one of these rules. Update the agent."
-                        .into(),
+                    message,
                 };
-            };
-            next.push(rule);
-        }
-        next.extend(
-            settings
-                .alerts
-                .rules
-                .iter()
-                .filter(|r| keep.contains(&r.id))
-                .cloned(),
-        );
-        let alerts = AlertSettings {
-            rules: next,
-            ..settings.alerts
+            }
         };
-        if let Err(e) = alerts.validate() {
-            return Answer::Error {
-                code: ErrorCode::InvalidArgument,
-                message: e.to_string(),
-            };
-        }
 
         let patch = json!({ "alerts": { "rules": alerts.rules } }).to_string();
         if let Err(e) = crate::settings::configure(&self.data_dir, &patch) {
@@ -94,11 +88,37 @@ impl AlertRuleStore {
                 message: format!("Saving the alert rules: {e:#}"),
             };
         }
-        // The file may also contain CLI edits that take effect on restart.
         settings.alerts.rules = alerts.rules;
         apply(&settings);
         Answer::AlertRules(answer_rules(&settings.alerts.rules))
     }
+}
+
+fn next_alerts(
+    current: &AlertSettings,
+    rules: Vec<RuleEntry>,
+    keep: &[Uuid],
+) -> Result<AlertSettings, String> {
+    let mut next = Vec::with_capacity(rules.len());
+    for entry in rules {
+        let RuleEntry::Known(rule) = entry else {
+            return Err("This agent does not know one of these rules. Update the agent.".into());
+        };
+        next.push(rule);
+    }
+    next.extend(
+        current
+            .rules
+            .iter()
+            .filter(|r| keep.contains(&r.id))
+            .cloned(),
+    );
+    let alerts = AlertSettings {
+        rules: next,
+        ..*current
+    };
+    alerts.validate().map_err(|e| e.to_string())?;
+    Ok(alerts)
 }
 
 fn answer_rules(rules: &[AlertRule]) -> HostAlertRules {
