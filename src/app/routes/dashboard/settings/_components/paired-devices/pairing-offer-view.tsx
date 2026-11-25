@@ -3,7 +3,7 @@ import type { PairingOffer, PairingStatus } from "@core/generated/types";
 import { remoteErrorText } from "@core/remote-errors";
 import { unwrap } from "@core/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { DialogDescription, DialogFooter } from "~/components/ui/dialog";
@@ -15,7 +15,19 @@ function waiting(status: PairingStatus | undefined) {
   return !status || status.kind === "waiting" || status.kind === "pending";
 }
 
-function PairingQr({ source }: { source: string }) {
+export function PairingQr({
+  source,
+  label = "Pairing QR code",
+  fallback = (
+    <InlineMessage tone="error">
+      Couldn’t display the pairing QR code.
+    </InlineMessage>
+  ),
+}: {
+  source: string;
+  label?: string;
+  fallback?: ReactNode;
+}) {
   const qr = useMemo(() => {
     // The installed app's image CSP excludes data URLs. Render the two paths
     // from the Rust QR renderer without inserting its markup into the page.
@@ -36,7 +48,7 @@ function PairingQr({ source }: { source: string }) {
   return qr ? (
     <svg
       role="img"
-      aria-label="Pairing QR code"
+      aria-label={label}
       className="mx-auto aspect-square w-full max-w-56"
       viewBox={qr.viewBox}
       shapeRendering="crispEdges"
@@ -45,9 +57,7 @@ function PairingQr({ source }: { source: string }) {
       <path fill="#000" d={qr.modules} />
     </svg>
   ) : (
-    <InlineMessage tone="error">
-      Couldn’t display the pairing QR code.
-    </InlineMessage>
+    fallback
   );
 }
 

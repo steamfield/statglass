@@ -124,6 +124,10 @@ export function createMockTransport(
     createMockTransport
   );
   const [scenarios, now] = [options.scenarios ?? [], options.now ?? Date.now];
+  const { onApprove, onRevoke, ...handover } = createMockHandover(
+    commands,
+    now
+  );
   const docker = createMockDocker(scenarios, now, (next) =>
     settings.setDocker(next)
   );
@@ -192,8 +196,8 @@ export function createMockTransport(
     ...new MockShell(ring, power, settings, commands, emitters, options)
       .methods,
     ...new MockAlertDestinations(commands, emitters, flags).methods,
-    ...createMockPairing(commands, settings, now),
-    ...createMockHandover(commands),
+    ...createMockPairing(commands, settings, now, { onApprove, onRevoke }),
+    ...handover,
     ...settings.methods,
     ...store.methods,
     ...ring.methods,

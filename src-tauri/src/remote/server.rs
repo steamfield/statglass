@@ -27,12 +27,11 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     super::rr::start(app, rx.clone());
     *state.remotes.stop.lock_ok() = Some(stop);
     let dir = data_dir(app)?;
+    let handover = app.state::<HandoverState>();
+    handover.start(app, &dir, rx.clone());
     if let Ok(local) = state.host(state.local) {
-        app.state::<PairingState>().initialize(
-            &dir,
-            local.record(),
-            app.state::<HandoverState>().source(),
-        );
+        app.state::<PairingState>()
+            .initialize(&dir, local.record(), handover.source());
     }
     let paths = SocketPaths::new(dir);
     let handle = app.clone();

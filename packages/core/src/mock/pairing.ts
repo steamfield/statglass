@@ -92,7 +92,11 @@ const MONITORING_OFF =
 export function createMockPairing(
   commands: MockCommands,
   settings: MockSettings,
-  now: () => number
+  now: () => number,
+  handover: {
+    onApprove: (device: string) => void;
+    onRevoke: (device: string) => void;
+  }
 ): Pick<
   Transport,
   | "pairingStart"
@@ -165,6 +169,7 @@ export function createMockPairing(
         return pairingFailure("invalid", "No iPhone is waiting for approval.");
       if (status.kind !== "pending") return ok(status);
       if (!devices.has(PHONE.tag)) devices.set(PHONE.tag, PHONE);
+      handover.onApprove(PHONE.tag);
       entry.status = { kind: "paired", device: PHONE.tag };
       return ok(entry.status);
     },
@@ -181,7 +186,9 @@ export function createMockPairing(
       commands.record("revoke_device", tag);
       if (!/^[0-9A-F]{6}$/.test(tag))
         return pairingFailure("invalid", "Invalid paired device tag.");
-      return ok(devices.delete(tag));
+      const removed = devices.delete(tag);
+      if (removed) handover.onRevoke(tag);
+      return ok(removed);
     },
   };
 }

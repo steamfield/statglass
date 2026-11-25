@@ -59,6 +59,10 @@ impl IntentLog {
         Ok(Vec::new())
     }
 
+    pub fn installed_hosts(&self, _device: &DeviceTag) -> Result<Vec<HostId>, IntentError> {
+        Ok(vec![])
+    }
+
     pub fn mark_applied(&self, _seq: u64, _now_ms: i64) -> Result<(), IntentError> {
         Err(IntentError::Invalid("not implemented".into()))
     }
