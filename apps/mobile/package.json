@@ -1,7 +1,7 @@
 {
   "name": "@statglass/mobile",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "license": "Apache-2.0",
   "main": "expo-router/entry",
   "scripts": {
@@ -28,6 +28,7 @@
     "expo-local-authentication": "~58.0.3",
     "expo-localization": "~58.0.5",
     "expo-router": "~58.0.32",
+    "expo-splash-screen": "~58.0.14",
     "expo-status-bar": "~58.0.5",
     "expo-symbols": "~58.0.5",
     "expo-system-ui": "~58.0.7",

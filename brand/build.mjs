@@ -122,6 +122,14 @@ png(fullBleed, 512, join(site, "icon-512.png"));
 // dark result pages; Google wants a multiple of 48 px. Tabs keep favicon.svg.
 ico(join(brand, "statglass-app-icon.svg"), [32, 48], join(site, "favicon.ico"));
 
+// The iPhone app's icon variants and launch image (phase 13 lane b replaces
+// this stub; until then every output is the full-bleed touch-icon crop).
+const mobileAssets = join(root, "apps/mobile/assets");
+mkdirSync(mobileAssets, { recursive: true });
+for (const name of ["icon-light", "icon-dark", "icon-tinted", "splash-icon"]) {
+  png(fullBleed, 1024, join(mobileAssets, `${name}.png`));
+}
+
 const ogIndex = process.argv.indexOf("--og");
 if (ogIndex !== -1) {
   const url = process.argv[ogIndex + 1];

@@ -4842,3 +4842,19 @@ Date: 2026-11-25. Follows D-152. One-way door: additive and optional. Plan: `pla
 ### Decision
 
 `WireSeriesStats` in the D-152 history answer gains `measured_ms` and `integral`, both optional and omitted when absent, and `SeriesHistoryStats` carries them to the phone. The host fills them from `statglass-store`'s `range_stats`, the function behind the desktop's `query_series_stats`: `measured_ms` is the time in the range with a reading outside the gaps that apply to the metric, and `integral` is the average times the measured seconds, `None` when nothing was measured. The phone's Network page shows Downloaded and Uploaded from them, with the measured time when it is shorter than the range, as the desktop strip does. The phone never integrates bucket averages itself (`data-boundary.md`): a host that predates this sends neither field, and the phone shows no totals for it. An older decoder ignores the new fields and a newer one reads their absence as `None`; `statglass-proto/tests/history_skew.rs` covers both directions.
+
+## D-156: StatGlass for iPhone ships on the App Store
+
+Date: 2026-11-25. Follows D-015, D-118, D-131, D-152. Plan: `plans/deliver-ios-app.md` phase 13.
+
+### Decision
+
+StatGlass for iPhone (`com.tryopendata.statglass.mobile`) is distributed through TestFlight and the App Store; the Mac app stays off the App Store (D-015). The listing is iPhone only (`supportsTablet: false`, reviewed in iPad compatibility mode), portrait only, named "StatGlass" (fallback "StatGlass Monitor"), category Utilities with Developer Tools second. The App Privacy label is Data Not Collected: metrics travel over SSH from the user's own hosts to the phone, the phone keeps no history (D-152), and nothing reaches the developer. The privacy policy and support page is `https://statglass.steamfield.io/docs/iphone` (`#privacy`, `#support`), linked from Settings > About.
+
+Versions: `CFBundleShortVersionString` comes from `apps/mobile/package.json` (1.0.0 for the first release, tagged `mobile-vX.Y.Z`); `CFBundleVersion` is `git rev-list --count HEAD` at archive time, passed as `STATGLASS_MOBILE_BUILD_NUMBER`, so every upload is monotonic.
+
+Export compliance (the user's answer, 2026-11-25): the app's SSH uses standard algorithms not provided by the OS (russh with ring and p256), so `ITSAppUsesNonExemptEncryption` is `true`. App Store Connect gets the "standard algorithms" answer, France is excluded from the storefronts so no French declaration is filed, and the BIS annual self-classification report covers the app.
+
+Review access (the user's answer): demo mode only. The review notes explain "Try demo hosts" on the first screen and the QR pairing with StatGlass on a Mac or `statglass-agent` on Linux; no live host is provided, because pairing codes expire in minutes.
+
+Builds are local only (D-118, D-131): `make mobile-archive` builds and exports, `make mobile-release-check` checks the archive, and the upload and submission are the user's steps (`.github/releasing-mobile.md`).
