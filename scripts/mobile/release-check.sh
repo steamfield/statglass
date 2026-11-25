@@ -14,7 +14,9 @@ plist_value() {
   plutil -extract "$2" raw -expect "$3" "$1" 2>/dev/null
 }
 
-[[ $# -eq 1 ]] || fail 'usage: release-check.sh <xcarchive>'
+[[ $# -eq 2 ]] || fail 'usage: release-check.sh <xcarchive> <ipa>'
+ipa="$2"
+[[ -f "$ipa" ]] || fail "missing exported IPA $ipa"
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 mobile="$repo/apps/mobile"
 rules="$repo/scripts/mobile/fixtures/release"
@@ -108,6 +110,10 @@ manifest_file_json() {
   printf '%s\n' "$data"
 }
 
+# A framework's required-reason APIs are declared in its own manifest when it ships one,
+# otherwise in the app's (Expo's guidance for dependencies that ship none); Apple requires a
+# framework manifest only for SDKs on its commonly-used list. Prints nothing when a framework
+# has no manifest, so the caller falls back to the app's.
 manifest_json() {
   local bundle="$1" manifest
   local manifests=()
@@ -117,11 +123,12 @@ manifest_json() {
   if [[ "$bundle" == *.framework ]]; then
     manifests+=("$bundle"/*.bundle/PrivacyInfo.xcprivacy)
   fi
-  [[ ${#manifests[@]} -gt 0 ]] || fail "PrivacyInfo.xcprivacy is missing from $bundle"
   if [[ "$bundle" == *.framework ]]; then
+    [[ ${#manifests[@]} -gt 0 ]] || return 0
     for manifest in "${manifests[@]}"; do manifest_file_json "$manifest"; done |
       jq -cs '{NSPrivacyAccessedAPITypes: ([.[].NSPrivacyAccessedAPITypes[]?])}'
   else
+    [[ ${#manifests[@]} -gt 0 ]] || fail "PrivacyInfo.xcprivacy is missing from $bundle"
     manifest_file_json "${manifests[0]}"
   fi
 }
@@ -131,8 +138,9 @@ jq -e '.NSPrivacyTracking == false and .NSPrivacyTrackingDomains == [] and .NSPr
   <<< "$app_manifest" >/dev/null || fail "app privacy manifest must declare no tracking or data collection"
 
 undefined_symbols() {
-  # Archive members can repeat imports. Only keep the Mach-O symbol lines.
-  xcrun nm -u -j "$1" | awk '/^_/ { print }' | sort -u > "$scratch/imports" ||
+  # Archive members can repeat imports. Only keep the Mach-O symbol lines. Rust embeds
+  # bitcode from a newer LLVM than Xcode's nm can parse, so read the Mach-O symbols only.
+  xcrun nm -u -j --no-llvm-bc "$1" | awk '/^_/ { print }' | sort -u > "$scratch/imports" ||
     fail "cannot read undefined symbols in $1"
 }
 
@@ -164,7 +172,7 @@ check_required_reasons() {
       jq -e --arg category "NSPrivacyAccessedAPICategory$category" '
         any(.NSPrivacyAccessedAPITypes[]?; .NSPrivacyAccessedAPIType == $category)' \
         <<< "$manifest" >/dev/null ||
-        fail "${image##*/} imports ${matches%%$'\n'*} without a $category reason in its bundle manifest ($image)"
+        fail "${image##*/} imports ${matches%%$'\n'*} without a $category reason in its privacy manifest ($image)"
     elif [[ $? -ne 1 ]]; then
       fail "cannot match required-reason symbols in $image"
     fi
@@ -247,6 +255,7 @@ while IFS= read -r -d '' image; do
   manifest="$app_manifest"
   if [[ "$bundle" != "$app" ]]; then
     manifest=$(manifest_json "$bundle")
+    [[ -n "$manifest" ]] || manifest="$app_manifest"
   fi
   undefined_symbols "$image"
   check_private_symbols "$image"
@@ -284,12 +293,18 @@ jq -e 'any(.[]; .Name? == "AppIcon")' "$scratch/assets.json" >/dev/null ||
   fail "Assets.car does not contain AppIcon"
 pass "AppIcon and source icon hash passed"
 
-codesign -d --entitlements - --xml "$binary" > "$scratch/entitlements.plist" 2> "$scratch/codesign.log" ||
+# The archive is signed for development; the export re-signs it for distribution, so the
+# shipped entitlements are read from the IPA. Distribution signing writes get-task-allow false.
+mkdir "$scratch/ipa"
+ditto -x -k -- "$ipa" "$scratch/ipa" || fail "cannot unpack $ipa"
+signed_apps=("$scratch"/ipa/Payload/*.app)
+[[ ${#signed_apps[@]} -eq 1 ]] || fail "expected exactly one .app in $ipa"
+codesign -d --entitlements - --xml "${signed_apps[0]}" > "$scratch/entitlements.plist" 2> "$scratch/codesign.log" ||
   fail "cannot read the app signature entitlements ($(cat "$scratch/codesign.log"))"
 if [[ -s "$scratch/entitlements.plist" ]]; then
   plutil -lint -s -- "$scratch/entitlements.plist" || fail "cannot parse the app signature entitlements"
-  if plutil -extract get-task-allow raw "$scratch/entitlements.plist" >/dev/null 2>&1; then
-    fail "get-task-allow entitlement must be absent"
+  if [[ $(plutil -extract get-task-allow raw "$scratch/entitlements.plist" 2>/dev/null) == true ]]; then
+    fail "get-task-allow entitlement must not be true"
   fi
 fi
 pass "distribution entitlements passed"
