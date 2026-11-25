@@ -1,18 +1,19 @@
 //! The phone's remote hosts and live streams.
 
+use std::collections::HashSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use statglass_ipc::error::CommandError;
-use statglass_ipc::mobile::{MobileConfig, MobileHost};
+use statglass_ipc::mobile::{MobileConfig, MobileHost, PairedHost, PairingState};
 use statglass_schema::HostId;
 use statglass_session::network::LocalNetwork;
 use statglass_session::{Dialer, RemoteSource};
 use tokio::runtime::Handle;
 
 use crate::control::SessionControl;
-use crate::ffi::{CoreEvents, NativeSigner};
+use crate::ffi::{CoreEvents, NativeSigner, NativeSignerError};
 use crate::lifecycle::Lifecycle;
 
 mod addresses;
@@ -63,11 +64,52 @@ impl Sessions {
 
     /// Replaces the configured hosts.
     pub(crate) fn set_hosts(&self, hosts: Vec<MobileHost>) -> Result<(), CommandError> {
-        self.registry.set_hosts(hosts)
+        self.registry.update_hosts(None, |desired| {
+            *desired = hosts;
+            Ok(())
+        })
     }
 
     pub(crate) fn remove_host(&self, host: HostId) -> Result<(), CommandError> {
-        Err(CommandError::UnknownHost { host })
+        self.registry.update_hosts(None, |hosts| {
+            let index = hosts
+                .iter()
+                .position(|entry| entry.id == host)
+                .ok_or(CommandError::UnknownHost { host })?;
+            hosts.remove(index);
+            Ok(())
+        })
+    }
+
+    pub(crate) fn phone_id(&self) -> Result<HostId, CommandError> {
+        self.registry.phone_id()
+    }
+
+    pub(crate) fn add_paired_host(
+        &self,
+        mut host: MobileHost,
+        device_key: &[u8],
+    ) -> Result<PairedHost, CommandError> {
+        self.registry
+            .update_hosts(Some((host.id, device_key)), |hosts| {
+                let existing = hosts.iter_mut().find(|entry| entry.id == host.id);
+                if let Some(existing) = existing.as_ref() {
+                    host.name.clone_from(&existing.name);
+                }
+                let paired = PairedHost {
+                    id: host.id,
+                    name: host.name.clone(),
+                };
+                match existing {
+                    Some(existing) => *existing = host,
+                    None => hosts.push(host),
+                }
+                Ok(paired)
+            })
+    }
+
+    pub(crate) fn pairing_state(&self) -> PairingState {
+        self.registry.pairing_state()
     }
 }
 
@@ -91,6 +133,48 @@ fn internal(message: impl Into<String>) -> CommandError {
     CommandError::Internal {
         message: message.into(),
     }
+}
+
+pub(crate) fn validate_hosts(hosts: &[MobileHost]) -> Result<(), CommandError> {
+    let mut ids = HashSet::with_capacity(hosts.len());
+    for host in hosts {
+        if !ids.insert(host.id) {
+            return Err(invalid(format!("duplicate host {}", host.id)));
+        }
+        if host.targets.is_empty() || host.user.is_empty() {
+            return Err(invalid(format!(
+                "host {} needs a user and at least one target",
+                host.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn current_device_key(signer: Option<&dyn NativeSigner>) -> Result<Option<Vec<u8>>, CommandError> {
+    let Some(signer) = signer else {
+        return Ok(None);
+    };
+    let key = callback("reading phone key", || signer.public_key())
+        .ok_or_else(|| internal("reading the phone's SSH public key panicked"))?
+        .map_err(|error| match error {
+            NativeSignerError::Unavailable { .. } => CommandError::PhoneKeyUnavailable,
+            error => internal(format!("reading the phone's SSH public key: {error}")),
+        })?;
+    match key.as_slice() {
+        [4, coordinates @ ..] if coordinates.len() == 64 => Ok(Some(key)),
+        [] => Err(CommandError::PhoneKeyUnavailable),
+        _ => Err(internal(
+            "the phone's SSH public key is not an uncompressed P-256 point",
+        )),
+    }
+}
+
+fn observed_device_key(signer: Option<&dyn NativeSigner>) -> Option<Vec<u8>> {
+    current_device_key(signer)
+        .inspect_err(|error| tracing::warn!(%error, "checking the phone's SSH public key for the host store"))
+        .ok()
+        .flatten()
 }
 
 fn callback<T>(name: &str, invoke: impl FnOnce() -> T) -> Option<T> {

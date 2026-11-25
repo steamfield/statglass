@@ -4,21 +4,22 @@ use std::sync::{Arc, Mutex, Weak};
 
 use statglass_engine::Source;
 use statglass_ipc::error::CommandError;
-use statglass_ipc::mobile::{MobileEvent, MobileHost};
+use statglass_ipc::mobile::{MobileEvent, MobileHost, PairingState};
 use statglass_schema::{HostId, HostRecord, lock::LockExt};
 use statglass_session::network::LocalNetwork;
 use statglass_session::{Dialer, RemoteSource, SourceOptions};
 use tokio::runtime::Handle;
 
 use crate::ffi::{CoreEvents, NativeSigner};
+use crate::host_store::HostStore;
 use crate::lifecycle::Lifecycle;
 
 use super::{
-    callback, demand, endpoint,
+    callback, current_device_key, demand, endpoint,
     host::{HostEntry, OpenError},
-    internal, invalid,
+    internal,
     live::Live,
-    phone_id,
+    observed_device_key, phone_id, validate_hosts,
 };
 
 mod roster;
@@ -45,6 +46,7 @@ struct State {
 
 struct Run {
     context: Context,
+    store: HostStore,
     desired: Vec<MobileHost>,
     entries: HashMap<HostId, Arc<HostEntry>>,
     open_errors: HashMap<HostId, OpenError>,
@@ -128,7 +130,7 @@ impl Registry {
         self: &Arc<Self>,
         runtime: Handle,
         data_dir: PathBuf,
-        hosts: Vec<MobileHost>,
+        mut hosts: Vec<MobileHost>,
         dialer: Arc<dyn Dialer>,
     ) -> Result<(), CommandError> {
         {
@@ -136,13 +138,24 @@ impl Registry {
             if self.is_started() {
                 return Err(internal("the mobile core has already started"));
             }
-            validate(&hosts)?;
+            validate_hosts(&hosts)?;
+            let phone = phone_id::load(&data_dir)?;
+            let mut store = HostStore::new(&data_dir);
+            let mut ids: HashSet<_> = hosts.iter().map(|host| host.id).collect();
+            hosts.extend(store.load().into_iter().filter(|host| ids.insert(host.id)));
+            if !hosts.is_empty()
+                && !store.has_device_key()
+                && let Some(key) = observed_device_key(self.signer.as_deref())
+            {
+                store = store.with_device_key(&key);
+            }
             let mut run = Run {
                 context: Context {
-                    phone: phone_id::load(&data_dir)?,
+                    phone,
                     runtime,
                     dialer,
                 },
+                store,
                 desired: Vec::new(),
                 entries: HashMap::new(),
                 open_errors: HashMap::new(),
@@ -150,7 +163,7 @@ impl Registry {
             };
             let new = self.open_hosts(&run.context, &hosts);
             let mut state = self.state.lock_ok();
-            self.apply_hosts(&mut run, hosts, new, state.network);
+            self.apply_hosts(&mut run, hosts, new, state.network, None);
             state.run = Some(run);
             state.queue_roster();
         }
@@ -158,13 +171,19 @@ impl Registry {
         Ok(())
     }
 
-    pub(super) fn set_hosts(self: &Arc<Self>, hosts: Vec<MobileHost>) -> Result<(), CommandError> {
-        validate(&hosts)?;
-        {
+    pub(super) fn update_hosts<T>(
+        self: &Arc<Self>,
+        pairing: Option<(HostId, &[u8])>,
+        change: impl FnOnce(&mut Vec<MobileHost>) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let result = {
             let _update = self.updates.lock_ok();
-            let (context, missing) = {
+            let (context, mut store, hosts, missing, result) = {
                 let state = self.state.lock_ok();
                 let run = state.run.as_ref().ok_or_else(not_started)?;
+                let mut hosts = run.desired.clone();
+                let result = change(&mut hosts)?;
+                validate_hosts(&hosts)?;
                 let missing: Vec<_> = hosts
                     .iter()
                     .filter(|host| {
@@ -172,17 +191,65 @@ impl Registry {
                     })
                     .cloned()
                     .collect();
-                (run.context.clone(), missing)
+                (
+                    run.context.clone(),
+                    run.store.clone(),
+                    hosts,
+                    missing,
+                    result,
+                )
             };
+            if let Some((_, key)) = pairing {
+                store = store.with_device_key(key);
+            } else if !hosts.is_empty()
+                && !store.has_device_key()
+                && let Some(key) = current_device_key(self.signer.as_deref())?
+            {
+                store = store.with_device_key(&key);
+            }
             let new = self.open_hosts(&context, &missing);
+            // Commit the staged roster before publishing it or starting new sources.
+            // A failed save leaves the previous sessions, including a re-paired host, intact.
+            store.save(&hosts)?;
             let mut state = self.state.lock_ok();
             let network = state.network;
             let run = state.run.as_mut().ok_or_else(not_started)?;
-            self.apply_hosts(run, hosts, new, network);
+            let re_paired = pairing
+                .map(|(id, _)| id)
+                .filter(|id| run.entries.contains_key(id));
+            run.store = store;
+            self.apply_hosts(run, hosts, new, network, re_paired);
             state.queue_roster();
-        }
+            result
+        };
         self.emit_rosters();
-        Ok(())
+        Ok(result)
+    }
+
+    pub(super) fn phone_id(&self) -> Result<HostId, CommandError> {
+        let state = self.state.lock_ok();
+        Ok(state.run.as_ref().ok_or_else(not_started)?.context.phone)
+    }
+
+    pub(super) fn pairing_state(&self) -> PairingState {
+        let (hosts, store) = {
+            let state = self.state.lock_ok();
+            let Some(run) = &state.run else {
+                return PairingState {
+                    hosts: 0,
+                    key_changed: false,
+                };
+            };
+            (
+                u32::try_from(run.desired.len()).unwrap_or(u32::MAX),
+                run.store.clone(),
+            )
+        };
+        let key_changed = hosts > 0
+            && store.has_device_key()
+            && observed_device_key(self.signer.as_deref())
+                .is_some_and(|key| store.key_changed(&key));
+        PairingState { hosts, key_changed }
     }
 
     fn open_hosts(&self, context: &Context, hosts: &[MobileHost]) -> Vec<OpenedHost> {
@@ -198,6 +265,7 @@ impl Registry {
         hosts: Vec<MobileHost>,
         new: Vec<OpenedHost>,
         network: Option<LocalNetwork>,
+        re_paired: Option<HostId>,
     ) {
         let desired: HashSet<_> = hosts.iter().map(|host| host.id).collect();
         for host in &run.desired {
@@ -216,8 +284,10 @@ impl Registry {
             .entries
             .values()
             .filter(|entry| {
-                run.host(entry.config.id)
-                    .is_none_or(|host| host != &entry.config)
+                Some(entry.config.id) == re_paired
+                    || run
+                        .host(entry.config.id)
+                        .is_none_or(|host| host != &entry.config)
             })
             .cloned()
             .collect();
@@ -456,22 +526,6 @@ fn connecting() -> CommandError {
     CommandError::RemoteUnreachable {
         message: "The host session is still connecting".into(),
     }
-}
-
-fn validate(hosts: &[MobileHost]) -> Result<(), CommandError> {
-    let mut ids = HashSet::with_capacity(hosts.len());
-    for host in hosts {
-        if !ids.insert(host.id) {
-            return Err(invalid(format!("duplicate host {}", host.id)));
-        }
-        if host.targets.is_empty() || host.user.is_empty() {
-            return Err(invalid(format!(
-                "host {} needs a user and at least one target",
-                host.id
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn not_started() -> CommandError {
