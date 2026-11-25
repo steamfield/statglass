@@ -44,10 +44,11 @@ pub use statglass_proto::RemoteInterest;
 pub(crate) use statglass_session::codec;
 pub use statglass_session::wire::status_to_wire;
 pub use statglass_session::{
-    AGENT_NOT_RUNNING, ConnectionFailureKind, ConnectionStatus, DIAL_TIMEOUT_MS, Dialer, Endpoint,
-    HostClock, Mirror, MirrorError, MirrorSink, PinnedHostKey, RemoteCommand, RemoteError,
-    RemoteSource, Result, Route, RouteError, RouteFailure, SshSession, StatusCallback,
-    SyncWatermark, Target, UnreachableKind, network, page_from_wire, page_to_wire,
+    AGENT_COMMAND_NOT_ALLOWED, AGENT_NOT_RUNNING, ConnectionFailureKind, ConnectionStatus,
+    DIAL_TIMEOUT_MS, Dialer, Endpoint, HELPER_COMMAND_NOT_ALLOWED, HostClock, Mirror, MirrorError,
+    MirrorSink, PinnedHostKey, RemoteCommand, RemoteError, RemoteSource, Result, Route, RouteError,
+    RouteFailure, SshSession, StatusCallback, SyncWatermark, Target, UnreachableKind, network,
+    page_from_wire, page_to_wire,
 };
 pub use statglass_session::{MAX_TARGETS, command};
 pub use stdio::stdio_bridge;

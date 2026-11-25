@@ -9,6 +9,7 @@ use statglass_proto::{SourceStatus, SyncPage, SyncRequest};
 use std::{
     io,
     pin::Pin,
+    sync::atomic::AtomicUsize,
     task::{Context, Poll, Waker},
 };
 use tokio::{
@@ -189,6 +190,7 @@ struct FakeMirror {
     tiers: &'static [Tier],
     cursors: Mutex<HashMap<Tier, Cursor>>,
     ingest_gate: Mutex<Option<IngestGate>>,
+    panic_on_ingest: AtomicBool,
     observer: Option<MirrorObserver>,
 }
 
@@ -198,6 +200,7 @@ impl FakeMirror {
             tiers,
             cursors: Mutex::default(),
             ingest_gate: Mutex::default(),
+            panic_on_ingest: AtomicBool::new(false),
             observer: None,
         })
     }
@@ -246,6 +249,10 @@ impl MirrorSink for FakeMirror {
     }
 
     fn ingest(&self, page: SyncPage, _: SyncKinds) -> std::result::Result<(), MirrorError> {
+        assert!(
+            !self.panic_on_ingest.load(Ordering::Relaxed),
+            "scripted mirror write panic"
+        );
         if let Some(gate) = self.ingest_gate.lock_ok().take() {
             gate.entered.send(()).unwrap();
             let _ = gate.release.recv();
@@ -491,13 +498,121 @@ async fn a_panicking_reader_publishes_one_internal_failure_and_can_retry() {
     assert_live_panic_recovery(true).await;
 }
 
-async fn assert_live_panic_recovery(panic_on_read: bool) {
-    use std::sync::atomic::AtomicUsize;
-    use tracing::{Event, Level, Metadata, Subscriber, span};
+#[tokio::test(start_paused = true)]
+async fn a_panicking_mirror_write_publishes_one_internal_failure() {
+    let (logged, _subscriber) = capture_panic_logs();
+    let mirror = FakeMirror::new(MINUTE_TIERS);
+    mirror.panic_on_ingest.store(true, Ordering::Relaxed);
+    let mut phone = Phone::new(Route::Lan, Some(mirror));
+    let _handle = phone.start();
+    let mut dial = phone.connect().await;
+    history_available(&mut dial.peer).await;
+    sync_request(&mut dial.peer, Tier::M1).await;
+    sync_page(&mut dial.peer, Tier::M1, 7, true).await;
+
+    let status = timeout(WAIT, phone.status.wait_for(|status| !status.connected))
+        .await
+        .unwrap()
+        .unwrap()
+        .clone();
+    assert_eq!(status.failure_kind, Some(ConnectionFailureKind::Internal));
+    assert!(!status.retrying && !status.dialing);
+    assert_eq!(status.next_attempt_ms, None);
+    eof(&mut dial.peer).await;
+    assert!(timeout(WAIT, phone.dial.recv()).await.is_err());
+    assert_eq!(
+        phone
+            .published
+            .lock_ok()
+            .iter()
+            .filter(|status| { status.failure_kind == Some(ConnectionFailureKind::Internal) })
+            .count(),
+        1
+    );
+    assert_eq!(logged.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn quiesce_after_a_panic_acknowledges_and_resume_reconnects() {
+    let (_logged, _subscriber) = capture_panic_logs();
+    let mut phone = Phone::new(Route::Lan, None);
+    let handle = phone.start();
+    let mut dial = phone.connect().await;
+    dial.writes.panic_on_write.store(true, Ordering::Relaxed);
+    handle.control().set_detail_interest(true);
+    timeout(
+        WAIT,
+        phone
+            .status
+            .wait_for(|status| status.failure_kind == Some(ConnectionFailureKind::Internal)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    timeout(WAIT, phone.source.quiesce())
+        .await
+        .expect("the panicked source should acknowledge quiesce");
+    eof(&mut dial.peer).await;
+    assert!(phone.dial.try_recv().is_err());
+    phone.source.resume();
+    let _next_dial = phone.connect().await;
+    assert!(phone.status.borrow().connected);
+    assert_eq!(phone.status.borrow().failure_kind, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_after_a_writer_panic_waits_for_the_mirror_write_to_finish() {
+    let (_logged, _subscriber) = capture_panic_logs();
+    let mirror = FakeMirror::new(MINUTE_TIERS);
+    let (entered, release) = mirror.block_next_ingest();
+    let mut phone = Phone::new(Route::Lan, Some(mirror));
+    let handle = phone.start();
+    let mut dial = phone.connect().await;
+    history_available(&mut dial.peer).await;
+    sync_request(&mut dial.peer, Tier::M1).await;
+    sync_page(&mut dial.peer, Tier::M1, 7, true).await;
+    timeout(WAIT, entered).await.unwrap().unwrap();
+
+    dial.writes.panic_on_write.store(true, Ordering::Relaxed);
+    handle.control().set_detail_interest(true);
+    eof(&mut dial.peer).await;
+
+    let source = phone.source.clone();
+    let mut status = phone.status.clone();
+    let mut retry = std::pin::pin!(async move {
+        status
+            .wait_for(|status| status.failure_kind == Some(ConnectionFailureKind::Internal))
+            .await
+            .unwrap();
+        source.retry();
+    });
+    tokio::select! {
+        biased;
+        () = &mut retry => {
+            let _early_dial = phone.next_dial().await;
+            panic!("a second session dialed while the mirror write was still blocked");
+        }
+        () = advance(Duration::from_secs(1)) => {}
+    }
+
+    release.send(()).unwrap();
+    timeout(WAIT, retry).await.unwrap();
+    let mut next = phone.connect().await;
+    history_available(&mut next.peer).await;
+    let cursor = sync_request(&mut next.peer, Tier::M1).await.after.unwrap();
+    assert_eq!(cursor.seq, 7);
+}
+
+fn capture_panic_logs() -> (Arc<AtomicUsize>, tracing::subscriber::DefaultGuard) {
+    use tracing::{Event, Level, Metadata, Subscriber, span, subscriber::Interest};
 
     struct ErrorCount(Arc<AtomicUsize>);
 
     impl Subscriber for ErrorCount {
+        fn register_callsite(&self, _: &'static Metadata<'static>) -> Interest {
+            Interest::sometimes()
+        }
         fn enabled(&self, metadata: &Metadata<'_>) -> bool {
             *metadata.level() == Level::ERROR
         }
@@ -514,7 +629,12 @@ async fn assert_live_panic_recovery(panic_on_read: bool) {
     }
 
     let logged = Arc::new(AtomicUsize::new(0));
-    let _subscriber = tracing::subscriber::set_default(ErrorCount(logged.clone()));
+    let subscriber = tracing::subscriber::set_default(ErrorCount(logged.clone()));
+    (logged, subscriber)
+}
+
+async fn assert_live_panic_recovery(panic_on_read: bool) {
+    let (logged, _subscriber) = capture_panic_logs();
     let mut phone = Phone::new(Route::Lan, None);
     let handle = phone.start();
     let mut dial = phone.connect().await;

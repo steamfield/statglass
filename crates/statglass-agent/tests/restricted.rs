@@ -1,4 +1,6 @@
-use statglass_remote::{AGENT_NOT_RUNNING, DeviceTag, SessionScope, encode_preface};
+use statglass_remote::{
+    AGENT_COMMAND_NOT_ALLOWED, AGENT_NOT_RUNNING, DeviceTag, SessionScope, encode_preface,
+};
 use std::{
     ffi::OsString,
     os::unix::ffi::OsStringExt,
@@ -60,7 +62,10 @@ async fn forbidden_tokens_and_invalid_tags_exit_two_without_connecting() {
         .await;
         assert_eq!(result.status.code(), Some(2), "{original:?}");
         assert!(result.stdout.is_empty());
-        assert_eq!(result.stderr, b"statglass-agent: command not allowed\n");
+        assert_eq!(
+            result.stderr,
+            format!("{AGENT_COMMAND_NOT_ALLOWED}\n").as_bytes()
+        );
     }
     let bad_tag = output(
         agent(Some("serve".as_ref()))

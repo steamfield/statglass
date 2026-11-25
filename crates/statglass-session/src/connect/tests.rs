@@ -593,15 +593,25 @@ async fn marker_line_from_cleanup_takes_priority_over_dialer_classification() {
 
 #[tokio::test(start_paused = true)]
 async fn restricted_command_refusal_is_incompatible_without_a_version_direction() {
+    assert_restricted_refusal(crate::AGENT_COMMAND_NOT_ALLOWED).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_mac_helpers_restricted_refusal_is_incompatible() {
+    assert_restricted_refusal(crate::HELPER_COMMAND_NOT_ALLOWED).await;
+}
+
+async fn assert_restricted_refusal(marker: &'static str) {
     let (dialer, endpoint, _) = fixture(vec![Step {
         frame: Some(Vec::new()),
         ack: AckBehavior::Close,
-        stderr_on_close: "login banner\nstatglass-agent: command not allowed\n",
+        stderr: "login banner\n",
+        stderr_on_close: marker,
         ..Step::default()
     }]);
     let error = failed(connect(&dialer, &endpoint, LOCAL, None).await);
     assert!(matches!(&error, RemoteError::Incompatible(reason)
-        if reason == &format!("{}: the agent refused the restricted command", endpoint.targets[0].host)));
+        if reason == &format!("{}: the host refused the restricted command", endpoint.targets[0].host)));
     assert!(!error.retryable());
 }
 

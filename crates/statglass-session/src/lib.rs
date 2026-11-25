@@ -28,8 +28,9 @@ pub use clock::HostClock;
 pub use command::{ForcedToken, RemoteCommand};
 pub use connect::{DIAL_TIMEOUT_MS, HANDSHAKE_TIMEOUT, PROMOTION_DEBOUNCE, ROUTE_GRACE, connect};
 pub use dialer::{
-    AGENT_NOT_RUNNING, APP_NOT_RUNNING, BoxFuture, Close, DialFailure, DialedStream, Dialer,
-    HandshakeFailure, MONITORING_OFF, STDERR_TAIL_BYTES, StderrTail, marker_error,
+    AGENT_COMMAND_NOT_ALLOWED, AGENT_NOT_RUNNING, APP_NOT_RUNNING, BoxFuture, Close, DialFailure,
+    DialedStream, Dialer, HELPER_COMMAND_NOT_ALLOWED, HandshakeFailure, MONITORING_OFF,
+    STDERR_TAIL_BYTES, StderrTail, marker_error,
 };
 pub use endpoint::{Endpoint, MAX_TARGETS, PinnedHostKey, Route, Target};
 pub use error::{RemoteError, Result, RouteError, UnreachableKind};

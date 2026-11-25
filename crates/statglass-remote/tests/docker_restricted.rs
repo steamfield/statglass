@@ -5,7 +5,7 @@ use statglass_remote::{
     Route, SshSession, Target,
 };
 use statglass_schema::{HostId, Tier, usage::UsageKey};
-use statglass_session::{ForcedToken, codec};
+use statglass_session::{AGENT_COMMAND_NOT_ALLOWED, ForcedToken, codec};
 use std::{
     env, fs,
     os::unix::fs::{MetadataExt, PermissionsExt, symlink},
@@ -80,7 +80,10 @@ async fn restricted_key_streams_and_syncs_but_refuses_queries_and_other_commands
         .unwrap();
     assert_eq!(denied.status.code(), Some(2));
     assert!(denied.stdout.is_empty());
-    assert_eq!(denied.stderr, b"statglass-agent: command not allowed\n");
+    assert_eq!(
+        denied.stderr,
+        format!("{AGENT_COMMAND_NOT_ALLOWED}\n").as_bytes()
+    );
 
     let paired = checked(Command::new("docker").args([
         "exec",

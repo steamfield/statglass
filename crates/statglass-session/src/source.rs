@@ -17,7 +17,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
-    task::Poll,
     time::Duration,
 };
 use tokio::{sync::watch, time::Instant};
@@ -242,12 +241,13 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink, active: Arc<ActiveRun>
     }
 }
 
+/// Requires unwinding (`mobile-release`, dev and test). A desktop release panic aborts.
 async fn catch_task_panic<T>(task: impl Future<Output = T>) -> std::thread::Result<T> {
     let mut task = std::pin::pin!(task);
     poll_fn(
         |cx| match catch_unwind(AssertUnwindSafe(|| task.as_mut().poll(cx))) {
             Ok(poll) => poll.map(Ok),
-            Err(payload) => Poll::Ready(Err(payload)),
+            Err(payload) => std::task::Poll::Ready(Err(payload)),
         },
     )
     .await

@@ -45,6 +45,8 @@ impl SourceControl for Control {
     fn status(&self) -> EngineStatus {
         self.source.status.lock_ok().clone()
     }
+    /// A joined thread can report a panic in dev/test builds that unwind. The desktop
+    /// release profile aborts the process on panic.
     fn stop(&mut self) {
         self.source.control.send_modify(|s| s.stop = true);
         match &mut self.runner {

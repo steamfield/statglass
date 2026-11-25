@@ -1,5 +1,5 @@
 use statglass_remote::{
-    SocketPaths,
+    HELPER_COMMAND_NOT_ALLOWED, SocketPaths,
     scope::{APP_NOT_RUNNING, MONITORING_OFF},
 };
 use std::{
@@ -66,7 +66,7 @@ async fn restricted_cli_accepts_bare_version_and_status_and_rejects_other_comman
         assert!(result.stdout.is_empty());
         assert_eq!(
             result.stderr,
-            b"statglass-remote-helper: command not allowed\n"
+            format!("{HELPER_COMMAND_NOT_ALLOWED}\n").as_bytes()
         );
     }
     let bad_tag = fixture

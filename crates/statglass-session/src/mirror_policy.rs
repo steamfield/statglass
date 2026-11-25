@@ -51,11 +51,6 @@ impl MirrorPolicy {
     pub fn auto_choice(&self) -> TierChoice {
         TierChoice::Auto
     }
-
-    /// Whether recent rows are asked for before the first sync page.
-    pub fn recent_first(&self) -> bool {
-        false
-    }
 }
 
 #[cfg(test)]
@@ -82,6 +77,5 @@ mod tests {
             }
         );
         assert_eq!(policy.auto_choice(), TierChoice::Auto);
-        assert!(!policy.recent_first());
     }
 }

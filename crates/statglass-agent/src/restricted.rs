@@ -3,7 +3,8 @@
 //! `--system` or `--socket` baked into the `authorized_keys` line.
 use anyhow::Context;
 use statglass_remote::{
-    AGENT_NOT_RUNNING, DeviceTag, SessionScope, SocketPaths, scope::RestrictedCommand,
+    AGENT_COMMAND_NOT_ALLOWED, AGENT_NOT_RUNNING, DeviceTag, SessionScope, SocketPaths,
+    scope::RestrictedCommand,
 };
 use tokio::net::UnixStream;
 
@@ -15,8 +16,7 @@ pub fn run(device: &str, paths: &SocketPaths) -> anyhow::Result<i32> {
     };
     let original = std::env::var_os("SSH_ORIGINAL_COMMAND");
     let Some(command) = RestrictedCommand::parse(original.as_deref()) else {
-        // The client recognizes this stderr line as a restricted-command incompatibility.
-        eprintln!("statglass-agent: command not allowed");
+        eprintln!("{AGENT_COMMAND_NOT_ALLOWED}");
         return Ok(2);
     };
     if matches!(command, RestrictedCommand::Version) {

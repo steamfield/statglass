@@ -164,6 +164,9 @@ impl MirrorWrite {
         let result = task.await;
         self.pending = None;
         let result = result.map_err(|error| {
+            if error.is_panic() {
+                std::panic::resume_unwind(error.into_panic());
+            }
             RemoteError::Transport(format!("joining remote mirror write: {error}"))
         })?;
         Ok((work, result))

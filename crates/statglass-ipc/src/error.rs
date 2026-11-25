@@ -180,21 +180,7 @@ impl From<StoreError> for CommandError {
                 CommandError::StoreTooNew { found, supported }
             }
             e => {
-                let mut message = e.to_string();
-                let mut source = std::error::Error::source(&e);
-                while let Some(cause) = source {
-                    let detail = cause.to_string();
-                    // StoreError's Display already includes its immediate cause.
-                    if message != detail
-                        && !message
-                            .strip_suffix(&detail)
-                            .is_some_and(|prefix| prefix.ends_with(": "))
-                    {
-                        message.push_str(": ");
-                        message.push_str(&detail);
-                    }
-                    source = cause.source();
-                }
+                let message = store_message(&e);
                 if e.is_busy() {
                     CommandError::StoreBusy { message }
                 } else if e.is_corrupt() {
@@ -205,6 +191,33 @@ impl From<StoreError> for CommandError {
             }
         }
     }
+}
+
+fn store_message(error: &StoreError) -> String {
+    // SQLite's extended code is useful; its standard explanation often repeats its message.
+    if let StoreError::Sqlite(statglass_store::rusqlite::Error::SqliteFailure(code, Some(detail))) =
+        error
+        && !detail.is_empty()
+    {
+        return format!("sqlite: {detail} (code {})", code.extended_code);
+    }
+
+    let mut message = error.to_string();
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        let detail = cause.to_string();
+        // StoreError's Display already includes its immediate cause.
+        if message != detail
+            && !message
+                .strip_suffix(&detail)
+                .is_some_and(|prefix| prefix.ends_with(": "))
+        {
+            message.push_str(": ");
+            message.push_str(&detail);
+        }
+        source = cause.source();
+    }
+    message
 }
 
 impl From<statglass_engine::HistoryStoreError> for CommandError {

@@ -116,13 +116,18 @@ pub const APP_NOT_RUNNING: &str = "statglass-remote-helper: not running";
 /// remote monitoring off.
 pub const MONITORING_OFF: &str = "statglass-remote-helper: remote monitoring off";
 
+/// The agent refused the SSH command for a restricted or pairing key.
+pub const AGENT_COMMAND_NOT_ALLOWED: &str = "statglass-agent: command not allowed";
+
+/// The Mac helper refused the SSH command for a restricted or pairing key.
+pub const HELPER_COMMAND_NOT_ALLOWED: &str = "statglass-remote-helper: command not allowed";
+
 /// Marker lines the shared handshake checks before asking the dialer (phase 5 adds more).
 pub fn marker_error(target: &Target, stderr: &str) -> Option<RemoteError> {
     let has_line = |marker| stderr.lines().any(|line| line.trim() == marker);
-    // The restricted agent has emitted this exact line since pairing was introduced.
-    if has_line("statglass-agent: command not allowed") {
+    if has_line(AGENT_COMMAND_NOT_ALLOWED) || has_line(HELPER_COMMAND_NOT_ALLOWED) {
         return Some(RemoteError::Incompatible(format!(
-            "{}: the agent refused the restricted command",
+            "{}: the host refused the restricted command",
             target.host
         )));
     }
