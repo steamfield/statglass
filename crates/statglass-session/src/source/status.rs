@@ -49,28 +49,28 @@ pub struct RouteFailure {
 }
 
 impl ConnectionFailureKind {
-    /// How actionable this cause is from this Mac; lower wins when targets fail
-    /// differently. An unavailable phone key blocks every route. Network and host
-    /// causes are ranked after that.
+    /// How actionable this cause is for the client. Lower wins when targets fail
+    /// differently. Local signer failures block every route and outrank network
+    /// and host failures.
     pub fn priority(self) -> u8 {
         match self {
             Self::PhoneKeyUnavailable => 0,
-            Self::LocalOffline => 1,
-            Self::TailscaleDown => 2,
-            Self::MonitoringOff => 3,
-            Self::AppNotRunning => 4,
-            Self::AgentNotRunning => 5,
-            Self::Refused => 6,
-            Self::Timeout => 7,
-            Self::NoRoute => 8,
-            Self::NameNotResolved => 9,
-            Self::Unreachable => 10,
-            Self::Authentication => 11,
-            Self::HostKey => 12,
-            Self::Incompatible => 13,
-            Self::IdentityChanged => 14,
-            Self::Protocol => 15,
-            Self::Internal => 16,
+            Self::Internal => 1,
+            Self::LocalOffline => 2,
+            Self::TailscaleDown => 3,
+            Self::MonitoringOff => 4,
+            Self::AppNotRunning => 5,
+            Self::AgentNotRunning => 6,
+            Self::Refused => 7,
+            Self::Timeout => 8,
+            Self::NoRoute => 9,
+            Self::NameNotResolved => 10,
+            Self::Unreachable => 11,
+            Self::Authentication => 12,
+            Self::HostKey => 13,
+            Self::Incompatible => 14,
+            Self::IdentityChanged => 15,
+            Self::Protocol => 16,
         }
     }
 

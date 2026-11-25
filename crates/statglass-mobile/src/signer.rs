@@ -66,7 +66,6 @@ fn native_error(error: NativeSignerError) -> SignerError {
     match error {
         NativeSignerError::Unavailable { message } => SignerError::Unavailable(message),
         NativeSignerError::Unexpected { message } => SignerError::Internal(message),
-        NativeSignerError::Refused { message } => SignerError::Refused(message),
     }
 }
 
@@ -84,11 +83,12 @@ pub(crate) fn authorized_key_line(
             message: "The SSH public key comment must fit on one line.".into(),
         });
     }
-    let key = native
-        .public_key()
-        .map_err(|error| CommandError::Internal {
+    let key = native.public_key().map_err(|error| match error {
+        NativeSignerError::Unavailable { .. } => CommandError::PhoneKeyUnavailable,
+        error @ NativeSignerError::Unexpected { .. } => CommandError::Internal {
             message: format!("reading the phone's SSH public key: {error}"),
-        })?;
+        },
+    })?;
     statglass_ssh::authorized_key_line(&key, comment).map_err(|error| CommandError::Internal {
         message: format!("formatting the phone's SSH public key: {error}"),
     })
@@ -103,7 +103,6 @@ mod tests {
     use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
     use serde_json::{Value, json};
     use statglass_schema::lock::LockExt;
-    use statglass_session::{ConnectionFailureKind, RemoteError, Route, RouteError};
     use statglass_ssh::SoftwareSigner;
     use tokio::sync::Notify;
 
@@ -193,16 +192,10 @@ mod tests {
 
     #[test]
     fn mobile_core_publishes_local_signer_failures() {
-        let unavailable: NativeFailure = |message| NativeSignerError::Unavailable { message };
-        let cases: [(NativeFailure, &str, &str); 3] = [
+        let cases: [(NativeFailure, &str, &str); 2] = [
             (
-                unavailable,
+                |message| NativeSignerError::Unavailable { message },
                 "Could not load the phone key (OSStatus -25300)",
-                "phone_key_unavailable",
-            ),
-            (
-                unavailable,
-                "Could not load the phone key (OSStatus -25308)",
                 "phone_key_unavailable",
             ),
             (
@@ -267,20 +260,15 @@ mod tests {
     }
 
     #[test]
-    fn a_route_timeout_does_not_hide_an_unavailable_phone_key() {
-        let lan = RouteError {
-            route: Route::Lan,
-            host: "studio.local".into(),
-            error: RemoteError::Timeout("LAN timed out".into()),
-        };
-        let tailnet = RouteError {
-            route: Route::Tailscale,
-            host: "studio.tailnet".into(),
-            error: RemoteError::PhoneKeyUnavailable("Phone key unavailable".into()),
-        };
+    fn an_unavailable_phone_key_has_its_own_authorized_key_line_error() {
+        let signer = FailedPublicKey(
+            |message| NativeSignerError::Unavailable { message },
+            "Could not load the phone key (OSStatus -25300)",
+        );
+        let error = authorized_key_line(&signer, "iPhone").unwrap_err();
         assert_eq!(
-            ConnectionFailureKind::from_error(&RemoteError::Routes(vec![lan, tailnet])),
-            ConnectionFailureKind::PhoneKeyUnavailable
+            serde_json::to_value(error).unwrap(),
+            json!({"kind": "phone_key_unavailable"})
         );
     }
 
@@ -335,8 +323,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn signing_errors_keep_the_native_message_and_refusal() {
-        let cases: [(NativeFailure, SignerFailure); 3] = [
+    async fn signing_errors_keep_the_native_kind_and_message() {
+        let cases: [(NativeFailure, SignerFailure); 2] = [
             (
                 |message| NativeSignerError::Unavailable { message },
                 SignerError::Unavailable,
@@ -344,10 +332,6 @@ mod tests {
             (
                 |message| NativeSignerError::Unexpected { message },
                 SignerError::Internal,
-            ),
-            (
-                |message| NativeSignerError::Refused { message },
-                SignerError::Refused,
             ),
         ];
         for (error, expected) in cases {

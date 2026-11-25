@@ -44,7 +44,7 @@ export interface StatglassNativeModule
    * Creates or loads the phone's SSH key for pairing.
    * @throws an `ERR_STATGLASS_*` Expo error if the key could not be prepared
    */
-  preparePhoneKey?(): Promise<void>;
+  preparePhoneKey(): Promise<void>;
   /**
    * One `MobileCall`: its `method` tag and its `args` as JSON (`"null"` for
    * none). Resolves to the call's envelope.

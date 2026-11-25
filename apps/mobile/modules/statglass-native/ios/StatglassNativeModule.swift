@@ -6,6 +6,8 @@ import os
 /// and events as module events, and drives the core's lifecycle from the app's state and
 /// network path. It never reads the JSON it carries.
 public class StatglassNativeModule: Module {
+  private static let phoneKeyQueue = DispatchQueue(label: "app.statglass.phone-key", qos: .userInitiated)
+
   private struct State {
     var core: MobileCore?
     var destroyed = false
@@ -72,10 +74,6 @@ public class StatglassNativeModule: Module {
     }.runOnQueue(AppLifecycle.coreQueue)
 
     AsyncFunction("preparePhoneKey") { (promise: Promise) in
-      guard state.withLock({ $0.activeCore != nil }) else {
-        promise.reject(Exceptions.AppContextLost())
-        return
-      }
       do {
         try signer.prepare()
         promise.resolve()
@@ -84,7 +82,7 @@ public class StatglassNativeModule: Module {
       } catch {
         promise.reject(error)
       }
-    }.runOnQueue(AppLifecycle.coreQueue)
+    }.runOnQueue(Self.phoneKeyQueue)
 
     AsyncFunction("call") { (method: String, argsJson: String, promise: Promise) in
       Task { [state, calls] in
@@ -181,12 +179,9 @@ private final class PhoneKeySigner: NativeSigner, @unchecked Sendable {
   }
 
   private func signerError(_ failure: NativeFailure) -> NativeSignerError {
-    switch failure {
-    case .keychain, .secureEnclave:
-      return .Unavailable(message: failure.description)
-    case .camera:
-      return .Unexpected(message: failure.description)
-    }
+    failure.isKeyUnavailable
+      ? .Unavailable(message: failure.description)
+      : .Unexpected(message: failure.description)
   }
 }
 

@@ -22,12 +22,6 @@ test.each([
     "Camera is unavailable",
     "Allow camera access for StatGlass in Settings to scan a pairing code.",
   ],
-  [
-    "localNetwork",
-    null,
-    "Local network access is unavailable",
-    "Allow Local Network access for StatGlass in Settings.",
-  ],
 ] as const)(
   "words a %s failure with status %s",
   (kind, osStatus, title, recovery) => {
@@ -43,6 +37,7 @@ test.each([
   null,
   { kind: "keychain", osStatus: -25308, message: "Locked" },
   { source: "native", kind: "internal", osStatus: null, message: "Failed" },
+  { source: "native", kind: "localNetwork", osStatus: null, message: "Failed" },
   { source: "native", kind: "keychain", osStatus: "-25308", message: "Locked" },
 ])("rejects a value outside the native error contract (%j)", (error) => {
   expect(isNativeError(error)).toBe(false);
@@ -51,5 +46,13 @@ test.each([
 test("a host's refusal of a query is a status", () => {
   expect(errorTone({ kind: "remote_refused", message: "Query refused" })).toBe(
     "status"
+  );
+});
+
+test("words an unavailable phone key without a native diagnostic", () => {
+  expect(
+    commandErrorText({ kind: "phone_key_unavailable" }, "Could not read key")
+  ).toBe(
+    "This iPhone’s key is unavailable. Unlock this iPhone or pair it again."
   );
 });

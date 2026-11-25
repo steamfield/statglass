@@ -21,6 +21,9 @@ pub enum CommandError {
     /// SSH login to the other Mac failed (key, agent or account).
     #[error("{message}")]
     RemoteAuth { message: String },
+    /// The phone needs its local SSH key before it can connect.
+    #[error("the phone's SSH key is unavailable")]
+    PhoneKeyUnavailable,
     /// The other Mac's host key isn't trusted yet, or needs checking in Terminal.
     #[error("{message}")]
     HostKeyUnknown { message: String },

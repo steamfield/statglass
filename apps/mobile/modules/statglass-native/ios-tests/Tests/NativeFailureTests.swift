@@ -3,6 +3,24 @@ import XCTest
 @testable import NativeFailure
 
 final class NativeFailureTests: XCTestCase {
+  func testOnlyMissingAndLockedKeysAreUnavailable() {
+    for (status, unavailable): (OSStatus, Bool) in [
+      (errSecItemNotFound, true),
+      (errSecInteractionNotAllowed, true),
+      (errSecParam, false),
+      (errSecInvalidKeyRef, false),
+      (errSecInternalComponent, false),
+    ] {
+      let failures: [NativeFailure] = [
+        .keychain(osStatus: status, message: "Could not use the phone key"),
+        .secureEnclave(osStatus: status, message: "Could not use the phone key"),
+      ]
+      for failure in failures {
+        XCTAssertEqual(failure.isKeyUnavailable, unavailable, "OSStatus \(status)")
+      }
+    }
+  }
+
   // These are the same Expo codes and messages that native-error.test.ts decodes.
   func testMissingPhoneKey() {
     let failure = NativeFailure.phoneKey(

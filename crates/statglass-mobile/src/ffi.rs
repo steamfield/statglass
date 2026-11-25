@@ -6,13 +6,10 @@
 /// a local key failure separately from the host's authentication decision.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum NativeSignerError {
-    /// The key is missing or the Keychain or Secure Enclave would not hand it over.
+    /// The key is missing or the phone must be unlocked first.
     #[error("signing key unavailable: {message}")]
     Unavailable { message: String },
-    /// The key exists but signing was refused.
-    #[error("signing refused: {message}")]
-    Refused { message: String },
-    /// The Swift side threw something UniFFI did not expect.
+    /// A native key operation or the UniFFI callback failed unexpectedly.
     #[error("unexpected signer failure: {message}")]
     Unexpected { message: String },
 }

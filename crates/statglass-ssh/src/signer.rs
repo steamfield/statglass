@@ -31,8 +31,6 @@ pub trait Signer: Send + Sync + 'static {
 pub enum SignerError {
     #[error("signing key unavailable: {0}")]
     Unavailable(String),
-    #[error("signing refused: {0}")]
-    Refused(String),
     #[error("invalid signature: {0}")]
     Invalid(String),
     #[error("native signer failed: {0}")]
@@ -184,7 +182,7 @@ impl Signer for SoftwareSigner {
         Box::pin(async move {
             signature
                 .map(|value| value.to_der().as_bytes().to_vec())
-                .map_err(|err| SignerError::Refused(err.to_string()))
+                .map_err(|err| SignerError::Internal(err.to_string()))
         })
     }
 }

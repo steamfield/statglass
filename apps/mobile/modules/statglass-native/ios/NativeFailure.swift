@@ -7,10 +7,23 @@ enum NativeFailure: Error, CustomStringConvertible {
   case camera(message: String)
 
   static func phoneKey(status: OSStatus, secureEnclave: Bool, message: String) -> NativeFailure {
-    if status == errSecItemNotFound || status == errSecInteractionNotAllowed || !secureEnclave {
+    if isUnavailableStatus(status) || !secureEnclave {
       return .keychain(osStatus: status, message: message)
     }
     return .secureEnclave(osStatus: status, message: message)
+  }
+
+  var isKeyUnavailable: Bool {
+    switch self {
+    case let .keychain(status, _), let .secureEnclave(.some(status), _):
+      return Self.isUnavailableStatus(status)
+    case .secureEnclave(nil, _), .camera:
+      return false
+    }
+  }
+
+  private static func isUnavailableStatus(_ status: OSStatus) -> Bool {
+    status == errSecItemNotFound || status == errSecInteractionNotAllowed
   }
 
   var code: String {

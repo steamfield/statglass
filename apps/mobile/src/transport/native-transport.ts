@@ -16,7 +16,6 @@ import { unwrap } from "@core/transport/query";
 import {
   getStatglassNative,
   type StatglassNativeModule,
-  toNativeModuleError,
 } from "@native/statglass-native";
 import type { PhoneTransport } from "@/data/seam";
 import { callCore, parseEnvelope, parseEvent } from "./envelope";
@@ -39,18 +38,13 @@ export interface NativeTransport extends PhoneTransport {
 
 /**
  * Starts the core with `config` and returns the transport over it.
- * @throws {NativeModuleError} if Swift rejects with an `ERR_STATGLASS_*` phone-key error
  * @throws the original Expo error if data-directory setup fails
  */
 export async function startNativeTransport(
   native: StatglassNativeModule,
   config: MobileConfig
 ): Promise<CommandResult<NativeTransport>> {
-  const json = await native
-    .start(JSON.stringify(config))
-    .catch((error: unknown) => {
-      throw toNativeModuleError(error) ?? error;
-    });
+  const json = await native.start(JSON.stringify(config));
   const result = parseEnvelope<null>(json);
   return result.status === "error"
     ? result

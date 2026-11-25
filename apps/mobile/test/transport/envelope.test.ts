@@ -1,5 +1,7 @@
 import { commandErrorText } from "@core/command-error";
+import { unwrap } from "@core/transport/query";
 import { expect, jest, test } from "@jest/globals";
+import { createQueryClient } from "@/lib/query-client";
 import { nativeBuildInfo } from "@/transport/build-info";
 import {
   callCoreByMethod,
@@ -21,21 +23,35 @@ const lockedNativeError = {
   message: "Could not load the phone key",
 };
 
-test("keeps a rejected native call typed through the transport", async () => {
+test("returns an unavailable phone key as a command error without retrying", async () => {
   const native = new FakeNative();
-  native.call.mockRejectedValueOnce(lockedKey);
+  const result = {
+    status: "error",
+    error: { kind: "phone_key_unavailable" },
+  };
+  native.call.mockResolvedValue(JSON.stringify(result));
   const transport = createNativeTransport(native);
-  await expect(transport.authorizedKeyLine("iPhone")).rejects.toEqual(
-    lockedNativeError
-  );
+  await expect(transport.authorizedKeyLine("iPhone")).resolves.toEqual(result);
+
+  const client = createQueryClient();
+  try {
+    await expect(
+      client.fetchQuery({
+        queryKey: ["phone-key"],
+        queryFn: () => unwrap(transport.authorizedKeyLine("iPhone")),
+        retryDelay: 0,
+      })
+    ).rejects.toMatchObject({ error: result.error });
+    expect(native.call).toHaveBeenCalledTimes(2);
+  } finally {
+    client.clear();
+    transport.dispose();
+  }
 });
 
 test("preparing a key reports a locked phone and can be retried after unlocking", async () => {
-  const native = Object.assign(new FakeNative(), {
-    preparePhoneKey: jest
-      .fn(async () => undefined)
-      .mockRejectedValueOnce(lockedKey),
-  });
+  const native = new FakeNative();
+  native.preparePhoneKey.mockRejectedValueOnce(lockedKey);
   const preparing = preparePhoneKey(native);
   await expect(preparing).rejects.toEqual(lockedNativeError);
   const text = await preparing.catch((error: unknown) =>
@@ -43,12 +59,6 @@ test("preparing a key reports a locked phone and can be retried after unlocking"
   );
   expect(text).toBe("Unlock this iPhone to connect");
   await expect(preparePhoneKey(native)).resolves.toBeUndefined();
-});
-
-test("diagnoses a native module without the key preparation method", async () => {
-  await expect(preparePhoneKey(new FakeNative())).rejects.toThrow(
-    "This build cannot prepare the phone key."
-  );
 });
 
 test("keeps a typed core failure in its result envelope", async () => {
@@ -66,16 +76,22 @@ test("keeps a typed core failure in its result envelope", async () => {
   ).resolves.toEqual(result);
 });
 
-test("a generic native rejection keeps the command and its diagnostic", async () => {
-  const native = new FakeNative();
-  native.call.mockRejectedValueOnce(new Error("App context lost"));
-  await expect(
-    callCoreByMethod(native, { method: "build_info" })
-  ).resolves.toEqual({
-    status: "error",
-    error: { kind: "internal", message: "build_info failed: App context lost" },
-  });
-});
+test.each([new Error("App context lost"), lockedKey])(
+  "resolves native command rejections as internal errors (%s)",
+  async (rejection) => {
+    const native = new FakeNative();
+    native.call.mockRejectedValueOnce(rejection);
+    await expect(
+      callCoreByMethod(native, { method: "build_info" })
+    ).resolves.toEqual({
+      status: "error",
+      error: {
+        kind: "internal",
+        message: `build_info failed: ${rejection.message}`,
+      },
+    });
+  }
+);
 
 test("decodes build info by method and diagnoses an empty reply", async () => {
   const native = new FakeNative();

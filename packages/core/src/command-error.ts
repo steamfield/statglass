@@ -50,6 +50,9 @@ export function errorTone(error: unknown): "status" | "error" {
 export function commandErrorText(error: unknown, fallback: string): string {
   if (isNativeError(error)) return nativeErrorText(error).title;
   const typed = commandError(error);
+  if (typed?.kind === "phone_key_unavailable") {
+    return "This iPhone’s key is unavailable. Unlock this iPhone or pair it again.";
+  }
   if (typed) {
     return "message" in typed && typed.message ? typed.message : fallback;
   }

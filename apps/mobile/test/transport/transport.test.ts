@@ -89,18 +89,13 @@ test("starts the core with a serialized config and preserves its startup error",
   });
 });
 
-test("rejects startup with the parsed error for an unavailable phone key", async () => {
+test("preserves the original Expo rejection during startup", async () => {
   const native = new FakeNative();
-  native.start.mockRejectedValueOnce(
-    Object.assign(new Error("Could not load the phone key (OSStatus -25308)"), {
-      code: "ERR_STATGLASS_KEYCHAIN",
-    })
-  );
-  await expect(startNativeTransport(native, cfg)).rejects.toEqual({
-    kind: "keychain",
-    osStatus: -25308,
-    message: "Could not load the phone key",
+  const rejection = Object.assign(new Error("Could not access Keychain"), {
+    code: "ERR_STATGLASS_KEYCHAIN",
   });
+  native.start.mockRejectedValueOnce(rejection);
+  await expect(startNativeTransport(native, cfg)).rejects.toBe(rejection);
 });
 
 test("preserves an Expo rejection for data-directory setup", async () => {

@@ -1,6 +1,6 @@
 export interface NativeError {
   source: "native";
-  kind: "keychain" | "secureEnclave" | "camera" | "localNetwork";
+  kind: "keychain" | "secureEnclave" | "camera";
   osStatus: number | null;
   message: string;
 }
@@ -14,8 +14,7 @@ export function isNativeError(error: unknown): error is NativeError {
     "kind" in error &&
     (error.kind === "keychain" ||
       error.kind === "secureEnclave" ||
-      error.kind === "camera" ||
-      error.kind === "localNetwork") &&
+      error.kind === "camera") &&
     "osStatus" in error &&
     (error.osStatus === null ||
       (typeof error.osStatus === "number" &&
@@ -60,11 +59,6 @@ export function nativeErrorText(error: NativeError): {
         title: "Camera is unavailable",
         recovery:
           "Allow camera access for StatGlass in Settings to scan a pairing code.",
-      };
-    case "localNetwork":
-      return {
-        title: "Local network access is unavailable",
-        recovery: "Allow Local Network access for StatGlass in Settings.",
       };
   }
 }

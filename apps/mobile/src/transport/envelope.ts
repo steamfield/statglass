@@ -20,6 +20,8 @@ import {
   toNativeModuleError,
 } from "@native/statglass-native";
 
+// Track crates/statglass-mobile/src/sessions/commands.rs and
+// crates/statglass-mobile/src/mobile_core.rs for each method's result.
 type MobileCallResult = {
   build_info: BuildInfo;
   set_hosts: null;
@@ -97,7 +99,7 @@ export function createEventParser<T>(what: string): (json: string) => T | null {
 }
 
 /** Decodes an Expo error without confusing it with a Rust command error. */
-export function nativeRejection(error: unknown): NativeError | null {
+function nativeRejection(error: unknown): NativeError | null {
   try {
     const decoded = toNativeModuleError(error);
     return decoded ? { source: "native", ...decoded } : null;
@@ -114,9 +116,6 @@ export function nativeRejection(error: unknown): NativeError | null {
 export async function preparePhoneKey(
   native: StatglassNativeModule
 ): Promise<void> {
-  if (!native.preparePhoneKey) {
-    throw new Error("This build cannot prepare the phone key.");
-  }
   try {
     await native.preparePhoneKey();
   } catch (error) {
@@ -151,8 +150,6 @@ export async function callCore<T>(
       await native.call(request.method, JSON.stringify(args))
     );
   } catch (error) {
-    const failure = nativeRejection(error);
-    if (failure) throw failure;
     return {
       status: "error",
       error: {

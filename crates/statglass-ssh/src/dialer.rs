@@ -150,9 +150,7 @@ impl RusshDialer {
 fn signer_failure(host: &str, error: SignerError) -> RemoteError {
     let detail = format!("{host}: {error}");
     match error {
-        SignerError::Unavailable(_) | SignerError::Refused(_) => {
-            RemoteError::PhoneKeyUnavailable(detail)
-        }
+        SignerError::Unavailable(_) => RemoteError::PhoneKeyUnavailable(detail),
         SignerError::Invalid(_) | SignerError::Internal(_) => RemoteError::SignerInternal(detail),
     }
 }
