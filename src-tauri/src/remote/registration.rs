@@ -1,5 +1,7 @@
 //! Install/remove one registered source; generation guards reject old callbacks.
 use super::*;
+use crate::alerts::remote_delivery;
+
 pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
     let id = saved.record.id;
@@ -55,6 +57,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         cb,
         Some(mirror.clone()),
     );
+    wire_alert_listener(app, &saved, &source, &mirror, &history);
     source.set_controller_on_battery(state.host(state.local)?.hub().status().on_battery);
     state.live.register_recent_source(id, source.clone());
     state.remotes.sources.lock_ok().insert(id, source.clone());
@@ -72,6 +75,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         },
     );
     state.remotes.saved.lock_ok().insert(id, saved.clone());
+    let agent_version = saved.last_agent_version.clone();
     state.remotes.statuses.lock_ok().insert(
         id,
         RemoteHostStatus {
@@ -81,12 +85,8 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
                 RemoteState::Disabled
             },
             synced_through_ms,
-            agent_update: super::commands::agent_update(
-                saved.is_linux(),
-                saved.last_agent_version.as_deref(),
-                false,
-            ),
-            agent_version: saved.last_agent_version.clone(),
+            agent_update: super::commands::agent_update(linux, agent_version.as_deref(), false),
+            agent_version,
             ..Default::default()
         },
     );
@@ -103,6 +103,26 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     state.live.replace_host(entry);
     state.emit_hosts_changed(app);
     Ok(())
+}
+
+fn wire_alert_listener(
+    app: &AppHandle,
+    saved: &SavedHost,
+    source: &RemoteSource,
+    mirror: &Mirror,
+    history: &Arc<History>,
+) {
+    let app = app.clone();
+    let host = saved.record.clone();
+    let clock = source.clock();
+    let history = history.clone();
+    if let Some(listener) =
+        remote_delivery::listener_for_host(saved.is_linux(), move |epoch, events| {
+            remote_delivery::on_mirrored_alerts(&app, &host, &clock, &history, epoch, &events);
+        })
+    {
+        mirror.set_alert_listener(listener);
+    }
 }
 
 /// Status and rr connection identity change under the same status lock.

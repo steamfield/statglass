@@ -24,10 +24,10 @@ const TIMELINE_HINT: &str = "Open StatGlass's Timeline to see what else was runn
 pub struct AlertText {
     pub title: String,
     pub body: String,
-    /// The name of the rule that fired, `None` for the "Alerts are on" confirmation.
+    /// The name of the rule that fired, if this text is for an individual alert.
     pub rule: Option<String>,
     /// The `AlertCause` serde tag ("threshold", "process_cpu", "thermal_state",
-    /// "host_offline", "host_back"), or "alerts_on" for the confirmation.
+    /// "host_offline", "host_back"), "alerts_on" for the confirmation, or "catch_up".
     pub kind: &'static str,
 }
 
@@ -102,6 +102,49 @@ pub fn alert_text(event: &Event, units: &UnitSettings) -> Option<AlertText> {
         body,
         rule: Some(rule_name.clone()),
         kind: cause_kind(cause),
+    })
+}
+
+/// The text for an individual alert raised by a remote host.
+pub fn remote_alert_text(
+    host_name: &str,
+    event: &Event,
+    units: &UnitSettings,
+) -> Option<AlertText> {
+    let mut text = alert_text(event, units)?;
+    text.title = format!("{host_name}: {}", text.title);
+    Some(text)
+}
+
+/// One message for alert events that arrived late together from a remote host.
+pub fn catch_up_text<'a>(
+    host_name: &str,
+    events: impl IntoIterator<Item = &'a Event>,
+    units: &UnitSettings,
+) -> Option<AlertText> {
+    let mut alerts = events
+        .into_iter()
+        .filter(|event| matches!(event.detail, EventDetail::Alert { .. }));
+    let first = alert_text(alerts.next()?, units)?.title;
+    let body = match alerts.next().and_then(|event| alert_text(event, units)) {
+        None => format!("While this Mac was away, {host_name} raised an alert: {first}"),
+        Some(second) => {
+            let second = second.title;
+            let remaining = alerts.count();
+            let count = remaining + 2;
+            let names = if remaining == 0 {
+                format!("{first} and {second}")
+            } else {
+                format!("{first}, {second}, and {remaining} more")
+            };
+            format!("While this Mac was away, {host_name} raised {count} alerts: {names}")
+        }
+    };
+    Some(AlertText {
+        title: format!("Alerts from {host_name}"),
+        body,
+        rule: None,
+        kind: "catch_up",
     })
 }
 
