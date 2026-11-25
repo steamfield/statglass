@@ -592,6 +592,30 @@ async fn marker_line_from_cleanup_takes_priority_over_dialer_classification() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn restricted_command_refusal_is_incompatible_without_a_version_direction() {
+    assert_restricted_refusal(crate::AGENT_COMMAND_NOT_ALLOWED).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_mac_helpers_restricted_refusal_is_incompatible() {
+    assert_restricted_refusal(crate::HELPER_COMMAND_NOT_ALLOWED).await;
+}
+
+async fn assert_restricted_refusal(marker: &'static str) {
+    let (dialer, endpoint, _) = fixture(vec![Step {
+        frame: Some(Vec::new()),
+        ack: AckBehavior::Close,
+        stderr: "login banner\n",
+        stderr_on_close: marker,
+        ..Step::default()
+    }]);
+    let error = failed(connect(&dialer, &endpoint, LOCAL, None).await);
+    assert!(matches!(&error, RemoteError::Incompatible(reason)
+        if reason == &format!("{}: the host refused the restricted command", endpoint.targets[0].host)));
+    assert!(!error.retryable());
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_oversized_greeting_is_rejected_from_its_prefix() {
     let (dialer, endpoint, _) = fixture(vec![Step {
         frame: Some((1024 * 1024 + 1_u32).to_be_bytes().to_vec()),
@@ -664,18 +688,31 @@ async fn hello_from_an_unpaired_identity_is_rejected() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn incompatible_hello_preserves_the_peer_app_version() {
-    let hello = Hello {
-        proto_version: statglass_proto::PROTO_VERSION + 1,
-        min_compatible: statglass_proto::PROTO_VERSION + 1,
-        ..hello(HOST)
-    };
-    let (dialer, endpoint, _) = fixture(vec![Step::with_hello(0, hello)]);
-    assert!(matches!(
-        failed(connect(&dialer, &endpoint, LOCAL, None).await),
-        RemoteError::IncompatiblePeer { version, .. } if version == "test peer"
-    ));
-    assert_eq!(dialer.steps[0].closed.load(SeqCst), 1);
+async fn incompatible_hello_preserves_the_peer_app_version_and_update_direction() {
+    use crate::IncompatibleSide::{App, Host};
+    let old = statglass_proto::MIN_COMPATIBLE - 1;
+    let new = statglass_proto::PROTO_VERSION + 1;
+    for (min_compatible, proto_version, expected) in [
+        (old, old, Some(Host)),
+        (new, new, Some(App)),
+        (new, old, None), // A malformed range gives no upgrade direction.
+    ] {
+        let greeting = Hello {
+            proto_version,
+            min_compatible,
+            ..hello(HOST)
+        };
+        let (dialer, endpoint, _) = fixture(vec![Step::with_hello(0, greeting)]);
+        assert!(
+            matches!(
+                failed(connect(&dialer, &endpoint, LOCAL, None).await),
+                RemoteError::IncompatiblePeer { version, side, .. }
+                    if version == "test peer" && side == expected
+            ),
+            "peer range {min_compatible}..={proto_version}"
+        );
+        assert_eq!(dialer.steps[0].closed.load(SeqCst), 1);
+    }
 }
 
 #[tokio::test(start_paused = true)]

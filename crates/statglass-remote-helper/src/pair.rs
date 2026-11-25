@@ -1,12 +1,12 @@
 //! The helper as the one-time pairing key's forced command (`pair --nonce <n>`, RFC
 //! `plan/rfc-ios-app.md` 2.4): relays the phone's `PairStart` to the app's control socket
 //! through the shared pairing relay.
-use statglass_remote::{SocketPaths, pairing::run_forced_for_nonce};
+use statglass_remote::{HELPER_COMMAND_NOT_ALLOWED, SocketPaths, pairing::run_forced_for_nonce};
 
 /// Runs the pairing exchange for the nonce on the forced command line.
 pub fn run(nonce: &str) -> i32 {
     if std::env::var_os("SSH_ORIGINAL_COMMAND").is_some_and(|command| command != "pair") {
-        eprintln!("statglass-remote-helper: command not allowed");
+        eprintln!("{HELPER_COMMAND_NOT_ALLOWED}");
         return 2;
     }
     let result = (|| {

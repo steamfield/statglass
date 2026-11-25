@@ -10,6 +10,7 @@ use statglass_engine::{
     Bus, LiveFrame, LiveHub, RecentNet, Source, SourceControl, SourceError, SourceHandle,
     SourceSink,
 };
+use statglass_ipc::vitals::{HostVitals, VitalsRateLimit, host_vitals};
 use statglass_remote::InterestSet;
 use statglass_schema::lock::{LockExt, RwLockExt};
 use statglass_schema::{Capabilities, HostId, HostRecord, SeriesKey, Settings};
@@ -26,6 +27,7 @@ pub struct HostEntry {
     source: Arc<dyn Source>,
     handle: Mutex<Option<SourceHandle>>,
     live: LiveHub,
+    vitals_warnings: VitalsRateLimit,
 }
 
 impl HostEntry {
@@ -82,6 +84,11 @@ impl HostEntry {
     /// sensor dump; the tray subscribes to the bus instead).
     pub fn latest_frame(&self) -> Option<Arc<LiveFrame>> {
         self.live.latest_frame()
+    }
+
+    pub fn vitals(&self, frame: Option<&LiveFrame>) -> HostVitals {
+        let record = self.record();
+        host_vitals(frame, record.id, &record.info, &self.vitals_warnings)
     }
 
     /// Starts the source into this host's hub and, when history is available, the store.
@@ -270,6 +277,7 @@ impl HostRegistry {
             source,
             handle: Mutex::new(None),
             live: LiveHub::default(),
+            vitals_warnings: VitalsRateLimit::default(),
         });
         self.hosts.write_ok().insert(id, Arc::clone(&entry));
         entry

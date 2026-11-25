@@ -1,7 +1,34 @@
 //! The same held-frame projection for local and remote host cards (D-134).
 use serde::{Deserialize, Serialize};
 use statglass_engine::LiveFrame;
-use statglass_schema::{Catalog, HostId, HostInfo};
+use statglass_schema::{Catalog, HostId, HostInfo, lock::LockExt};
+use std::{sync::Mutex, time::Duration};
+use tokio::time::Instant;
+
+/// Invalid-frame warning state for one host entry.
+#[derive(Default)]
+pub struct VitalsRateLimit(Mutex<RateLimit>);
+
+#[derive(Default)]
+struct RateLimit {
+    last: Option<Instant>,
+    suppressed: u32,
+}
+
+impl VitalsRateLimit {
+    fn check(&self, now: Instant) -> Option<u32> {
+        let mut limit = self.0.lock_ok();
+        if limit
+            .last
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(60))
+        {
+            limit.suppressed = limit.suppressed.saturating_add(1);
+            return None;
+        }
+        limit.last = Some(now);
+        Some(std::mem::take(&mut limit.suppressed))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -53,7 +80,12 @@ pub struct HostVitals {
     pub net_tx_bps: Option<f64>,
 }
 
-pub fn host_vitals(frame: Option<&LiveFrame>, host: HostId, info: &HostInfo) -> HostVitals {
+pub fn host_vitals(
+    frame: Option<&LiveFrame>,
+    host: HostId,
+    info: &HostInfo,
+    warning_limit: &VitalsRateLimit,
+) -> HostVitals {
     let cores = info
         .cpu_topology
         .iter()
@@ -67,7 +99,9 @@ pub fn host_vitals(frame: Option<&LiveFrame>, host: HostId, info: &HostInfo) -> 
     let snapshot = match frame.snapshot(host, &Catalog::builtin()) {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            tracing::warn!(%error, "invalid host vitals frame");
+            if let Some(suppressed) = warning_limit.check(Instant::now()) {
+                tracing::warn!(%host, suppressed, error = &error as &dyn std::error::Error, "invalid host vitals frame");
+            }
             return out;
         }
     };
@@ -157,7 +191,12 @@ mod tests {
             held: values.iter().map(|(_, value)| *value).collect(),
             holds: vec![2500; values.len()].into(),
         };
-        host_vitals(Some(&frame), HostId(Default::default()), &info())
+        host_vitals(
+            Some(&frame),
+            HostId(Default::default()),
+            &info(),
+            &VitalsRateLimit::default(),
+        )
     }
     #[test]
     fn linux_host_vitals_preserve_labels_and_every_measured_field() {
@@ -201,7 +240,13 @@ mod tests {
         let mut info = info();
         info.mem_total_bytes = 0;
         assert_eq!(
-            host_vitals(None, HostId(Default::default()), &info).memory_pct,
+            host_vitals(
+                None,
+                HostId(Default::default()),
+                &info,
+                &VitalsRateLimit::default()
+            )
+            .memory_pct,
             None
         );
         let frame = LiveFrame {
@@ -217,7 +262,13 @@ mod tests {
             holds: vec![2500].into(),
         };
         assert_eq!(
-            host_vitals(Some(&frame), HostId(Default::default()), &info).memory_pct,
+            host_vitals(
+                Some(&frame),
+                HostId(Default::default()),
+                &info,
+                &VitalsRateLimit::default()
+            )
+            .memory_pct,
             None
         );
     }
@@ -287,6 +338,93 @@ mod tests {
             serde_json::from_str::<MemoryPressure>(r#"{"kind":"future_pressure","value":42}"#)
                 .unwrap(),
             MemoryPressure::Unknown
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn invalid_vitals_keep_host_facts_and_log_at_most_once_a_minute_per_host() {
+        use tracing::field::{Field, Visit};
+        use tracing::{Event, Level, Metadata, Subscriber, span};
+
+        struct Suppressed(Option<u64>);
+
+        impl Visit for Suppressed {
+            fn record_debug(&mut self, _: &Field, _: &dyn std::fmt::Debug) {}
+
+            fn record_u64(&mut self, field: &Field, value: u64) {
+                if field.name() == "suppressed" {
+                    self.0 = Some(value);
+                }
+            }
+        }
+
+        struct WarningCounts(Arc<Mutex<Vec<Option<u64>>>>);
+
+        impl Subscriber for WarningCounts {
+            fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+                *metadata.level() == Level::WARN
+            }
+            fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+                span::Id::from_u64(1)
+            }
+            fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+            fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+            fn event(&self, event: &Event<'_>) {
+                let mut count = Suppressed(None);
+                event.record(&mut count);
+                self.0.lock_ok().push(count.0);
+            }
+            fn enter(&self, _: &span::Id) {}
+            fn exit(&self, _: &span::Id) {}
+        }
+
+        let warnings = Arc::new(Mutex::new(Vec::new()));
+        let _subscriber = tracing::subscriber::set_default(WarningCounts(warnings.clone()));
+        let frame = LiveFrame {
+            ts_ms: 0,
+            interval_ms: 1000,
+            timeline: 0,
+            layout: Arc::new(FrameLayout {
+                layout_no: 1,
+                series: vec![SeriesKey::parse("cpu.total").unwrap()].into(),
+            }),
+            values: vec![12.5].into(),
+            held: Arc::new([]),
+            holds: vec![2500].into(),
+        };
+        let hosts = [
+            serde_json::from_str(r#""7f3a2c00-0000-4000-8000-000000000001""#).unwrap(),
+            serde_json::from_str(r#""7f3a2c00-0000-4000-8000-000000000002""#).unwrap(),
+        ];
+        let limits = [VitalsRateLimit::default(), VitalsRateLimit::default()];
+        let read = || {
+            std::array::from_fn::<_, 2, _>(|i| {
+                host_vitals(Some(&frame), hosts[i], &info(), &limits[i])
+            })
+        };
+        let expected = HostVitals {
+            cores: Some(2),
+            ..Default::default()
+        };
+        assert_eq!(read(), [expected.clone(), expected.clone()]);
+        assert_eq!(*warnings.lock_ok(), [Some(0), Some(0)]);
+        for _ in 1..60 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            assert_eq!(read(), [expected.clone(), expected.clone()]);
+        }
+        assert_eq!(*warnings.lock_ok(), [Some(0), Some(0)]);
+        // Recreating a host entry gives it a fresh warning window, even for the same host id.
+        let new_owner = VitalsRateLimit::default();
+        assert_eq!(
+            host_vitals(Some(&frame), hosts[0], &info(), &new_owner),
+            expected
+        );
+        assert_eq!(*warnings.lock_ok(), [Some(0), Some(0), Some(0)]);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(read(), [expected.clone(), expected]);
+        assert_eq!(
+            *warnings.lock_ok(),
+            [Some(0), Some(0), Some(0), Some(59), Some(59)]
         );
     }
 }

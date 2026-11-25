@@ -7,9 +7,9 @@ mod terminal;
 use anyhow::{Context, ensure};
 use statglass_proto::pairing::{PAIR_RECEIPT_GRACE, PairReply, PairingPayload, valid_nonce};
 use statglass_remote::{
-    AgentEnv, AgentLayout, AgentPaths, AuthorizedKeys, ControlRequest, ControlResponse,
-    PairCommands, PairingHost, command::shell_quote, effective_user::EffectiveUser,
-    pairing::run_forced_for_nonce, serve_control,
+    AGENT_COMMAND_NOT_ALLOWED, AgentEnv, AgentLayout, AgentPaths, AuthorizedKeys, ControlRequest,
+    ControlResponse, PairCommands, PairingHost, command::shell_quote,
+    effective_user::EffectiveUser, pairing::run_forced_for_nonce, serve_control,
 };
 use std::future::Future;
 use std::io;
@@ -73,7 +73,7 @@ pub fn forced(nonce: &str) -> anyhow::Result<i32> {
         return Ok(2);
     }
     if std::env::var_os("SSH_ORIGINAL_COMMAND").is_some_and(|command| command != "pair") {
-        eprintln!("statglass-agent: command not allowed");
+        eprintln!("{AGENT_COMMAND_NOT_ALLOWED}");
         return Ok(2);
     }
     let user = EffectiveUser::lookup().context("locating the pairing account")?;

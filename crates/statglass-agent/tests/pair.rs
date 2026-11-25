@@ -1,3 +1,4 @@
+use statglass_remote::AGENT_COMMAND_NOT_ALLOWED;
 use std::process::{Command, Stdio};
 
 const NONCE: &str = "1cdd0c2c3aa881dad8a557c28b983f0a";
@@ -26,7 +27,10 @@ fn pair_forced_refuses_invalid_nonce_and_non_pair_ssh_commands() {
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("command not allowed"));
+        assert_eq!(
+            output.stderr,
+            format!("{AGENT_COMMAND_NOT_ALLOWED}\n").as_bytes()
+        );
     }
 }
 

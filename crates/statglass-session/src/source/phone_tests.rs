@@ -5,20 +5,21 @@ use crate::{
     network::{LocalNetwork, UNKNOWN_NETWORK},
     test_support::{endpoint, fixture_hello},
 };
-use statglass_proto::{HostSummary, SourceStatus, SyncPage, SyncRequest, WireBucket, WireLayout};
+use statglass_proto::{SourceStatus, SyncPage, SyncRequest};
 use std::{
     io,
     pin::Pin,
+    sync::atomic::AtomicUsize,
     task::{Context, Poll, Waker},
 };
 use tokio::{
-    io::{AsyncWrite, DuplexStream, WriteHalf},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf, ReadHalf, WriteHalf},
     sync::{Notify, mpsc, oneshot},
     time::{advance, timeout},
 };
 
 const WAIT: Duration = Duration::from_secs(3);
-const PHONE_TIERS: &[Tier] = &[Tier::M1, Tier::M15];
+const MINUTE_TIERS: &[Tier] = &[Tier::M1, Tier::M15];
 const DESKTOP_TIERS: &[Tier] = &[Tier::S10, Tier::M1, Tier::M15];
 const BOTH_UP: LocalNetwork = LocalNetwork {
     online: true,
@@ -33,9 +34,24 @@ struct Dial {
     target: Target,
     stderr: StderrTail,
     writes: Arc<WriteGate>,
+    panic_on_read: Arc<AtomicBool>,
+}
+
+struct GateReader(ReadHalf<DuplexStream>, Arc<AtomicBool>);
+
+impl AsyncRead for GateReader {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        assert!(!self.1.load(Ordering::Relaxed), "scripted read panic");
+        Pin::new(&mut self.0).poll_read(cx, buf)
+    }
 }
 
 struct WriteGate {
+    panic_on_write: AtomicBool,
     remaining: AtomicU32,
     stalled: Notify,
     flush: Mutex<FlushGate>,
@@ -65,6 +81,10 @@ impl AsyncWrite for GateWriter {
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
+        assert!(
+            !self.1.panic_on_write.load(Ordering::Relaxed),
+            "scripted write panic"
+        );
         if self
             .1
             .remaining
@@ -116,7 +136,9 @@ impl Dialer for PhoneDialer {
             let (client, peer) = tokio::io::duplex(65536);
             let (close, closed) = oneshot::channel();
             let stderr = StderrTail::default();
+            let panic_on_read = Arc::new(AtomicBool::new(false));
             let writes = Arc::new(WriteGate {
+                panic_on_write: AtomicBool::new(false),
                 remaining: AtomicU32::new(u32::MAX),
                 stalled: Notify::new(),
                 flush: Mutex::default(),
@@ -129,11 +151,12 @@ impl Dialer for PhoneDialer {
                     target: target.clone(),
                     stderr: stderr.clone(),
                     writes: writes.clone(),
+                    panic_on_read: panic_on_read.clone(),
                 })
                 .unwrap();
             let (reader, writer) = tokio::io::split(client);
             Ok(DialedStream {
-                reader: Box::pin(reader),
+                reader: Box::pin(GateReader(reader, panic_on_read)),
                 writer: Box::pin(GateWriter(writer, writes)),
                 stderr,
                 close: Box::new(CloseSignal(close)),
@@ -156,49 +179,37 @@ enum MirrorCall {
     Cursor,
     Floor,
     Truncated,
-    Recent,
 }
 
 struct MirrorObserver {
     runtime: std::thread::ThreadId,
     calls: mpsc::UnboundedSender<(MirrorCall, bool)>,
-    recent_release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
 }
 
 struct FakeMirror {
     tiers: &'static [Tier],
-    recent_first: bool,
     cursors: Mutex<HashMap<Tier, Cursor>>,
-    epoch: Mutex<Option<uuid::Uuid>>,
-    recent: Mutex<Option<oneshot::Sender<Tier>>>,
     ingest_gate: Mutex<Option<IngestGate>>,
-    cursor_unavailable: AtomicBool,
+    panic_on_ingest: AtomicBool,
     observer: Option<MirrorObserver>,
 }
 
 impl FakeMirror {
-    fn new(tiers: &'static [Tier], recent_first: bool) -> Arc<Self> {
+    fn new(tiers: &'static [Tier]) -> Arc<Self> {
         Arc::new(Self {
             tiers,
-            recent_first,
             cursors: Mutex::default(),
-            epoch: Mutex::default(),
-            recent: Mutex::default(),
             ingest_gate: Mutex::default(),
-            cursor_unavailable: AtomicBool::new(false),
+            panic_on_ingest: AtomicBool::new(false),
             observer: None,
         })
     }
 
-    fn observed(
-        mirror: &mut Arc<Self>,
-        recent_release: Option<std::sync::mpsc::Receiver<()>>,
-    ) -> mpsc::UnboundedReceiver<(MirrorCall, bool)> {
+    fn observed(mirror: &mut Arc<Self>) -> mpsc::UnboundedReceiver<(MirrorCall, bool)> {
         let (calls, received) = mpsc::unbounded_channel();
         Arc::get_mut(mirror).unwrap().observer = Some(MirrorObserver {
             runtime: std::thread::current().id(),
             calls,
-            recent_release: Mutex::new(recent_release),
         });
         received
     }
@@ -207,13 +218,6 @@ impl FakeMirror {
         if let Some(observer) = &self.observer {
             let off_runtime = std::thread::current().id() != observer.runtime;
             observer.calls.send((call, off_runtime)).unwrap();
-            // Report an inline call without parking the test's only runtime thread.
-            if call == MirrorCall::Recent
-                && off_runtime
-                && let Some(release) = observer.recent_release.lock_ok().take()
-            {
-                let _ = release.recv();
-            }
         }
     }
 
@@ -236,10 +240,6 @@ impl MirrorSink for FakeMirror {
         _: SyncKinds,
     ) -> std::result::Result<Option<Cursor>, MirrorError> {
         self.record_call(MirrorCall::Cursor);
-        if self.cursor_unavailable.load(Ordering::Relaxed) {
-            return Err(MirrorError::InvalidInput("test cursor unavailable"));
-        }
-        *self.epoch.lock_ok() = Some(epoch);
         Ok(self
             .cursors
             .lock_ok()
@@ -249,6 +249,10 @@ impl MirrorSink for FakeMirror {
     }
 
     fn ingest(&self, page: SyncPage, _: SyncKinds) -> std::result::Result<(), MirrorError> {
+        assert!(
+            !self.panic_on_ingest.load(Ordering::Relaxed),
+            "scripted mirror write panic"
+        );
         if let Some(gate) = self.ingest_gate.lock_ok().take() {
             gate.entered.send(()).unwrap();
             let _ = gate.release.recv();
@@ -263,33 +267,8 @@ impl MirrorSink for FakeMirror {
         Ok(())
     }
 
-    fn recent(
-        &self,
-        epoch: uuid::Uuid,
-        tier: Tier,
-        _: i64,
-        _: Vec<WireLayout>,
-        _: Vec<WireBucket>,
-    ) -> std::result::Result<(), MirrorError> {
-        self.record_call(MirrorCall::Recent);
-        if *self.epoch.lock_ok() != Some(epoch) {
-            return Err(MirrorError::EpochChanged {
-                operation: "recent-history",
-            });
-        }
-        assert_eq!(tier, Tier::S10, "the host sends transient S10 snapshots");
-        if let Some(recent) = self.recent.lock_ok().take() {
-            recent.send(tier).unwrap();
-        }
-        Ok(())
-    }
-
     fn sync_tiers(&self) -> &[Tier] {
         self.tiers
-    }
-
-    fn recent_first(&self) -> bool {
-        self.recent_first
     }
 
     fn history_floor(&self, _: Tier, now: i64) -> i64 {
@@ -308,32 +287,33 @@ struct Phone {
     dial: mpsc::UnboundedReceiver<Dial>,
     live: statglass_engine::LiveHub,
     status: watch::Receiver<ConnectionStatus>,
+    published: Arc<Mutex<Vec<ConnectionStatus>>>,
 }
 
 impl Phone {
-    fn new(route: Route, mirror: Option<Arc<dyn MirrorSink>>, sync: SyncPolicy) -> Self {
-        Self::with_routes(&[(route, "test-host")], mirror, sync)
+    fn new(route: Route, mirror: Option<Arc<dyn MirrorSink>>) -> Self {
+        Self::with_routes(&[(route, "test-host")], mirror)
     }
 
-    fn with_routes(
-        routes: &[(Route, &str)],
-        mirror: Option<Arc<dyn MirrorSink>>,
-        sync: SyncPolicy,
-    ) -> Self {
+    fn with_routes(routes: &[(Route, &str)], mirror: Option<Arc<dyn MirrorSink>>) -> Self {
         let (dial_tx, dial) = mpsc::unbounded_channel();
         let (status_tx, status) = watch::channel(ConnectionStatus::default());
+        let published = Arc::new(Mutex::new(Vec::new()));
         let source = RemoteSource::with_options(
             HostRecord::from_identity(fixture_hello().host, false),
             HostId(uuid::Uuid::nil()),
             Arc::new(PhoneDialer(dial_tx)),
             endpoint(routes),
-            Arc::new(move |status| {
-                status_tx.send_replace(status);
+            Arc::new({
+                let published = published.clone();
+                move |status| {
+                    published.lock_ok().push(status.clone());
+                    status_tx.send_replace(status);
+                }
             }),
             mirror,
             SourceOptions {
                 runtime: Some(tokio::runtime::Handle::current()),
-                sync,
                 probe: Some(Arc::new(|| BOTH_UP)),
             },
         );
@@ -342,6 +322,7 @@ impl Phone {
             dial,
             live: Default::default(),
             status,
+            published,
         }
     }
 
@@ -408,20 +389,6 @@ async fn history_available(peer: &mut DuplexStream) {
     .await;
 }
 
-async fn recent_rows(peer: &mut DuplexStream) {
-    send(
-        peer,
-        Message::RecentRows {
-            epoch: fixture_hello().db_instance_uuid,
-            tier: Tier::S10,
-            complete_to_ms: 9_000_000,
-            layouts: vec![],
-            rows: vec![],
-        },
-    )
-    .await;
-}
-
 async fn sync_request(peer: &mut DuplexStream, tier: Tier) -> SyncRequest {
     let Message::SyncRequest(request) = read(peer).await else {
         panic!("expected sync for {tier:?}");
@@ -462,134 +429,17 @@ async fn eof(peer: &mut DuplexStream) {
 }
 
 #[tokio::test(start_paused = true)]
-async fn off_keeps_live_frames_and_policy_changes_take_effect_on_the_same_stream() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::Off);
-    let mut events = phone.live.subscribe();
-    let _handle = phone.start();
-    let mut dial = phone.connect().await;
-    history_available(&mut dial.peer).await;
-    send(
-        &mut dial.peer,
-        Message::HostSummary(HostSummary {
-            ts_ms: 42,
-            online: true,
-            headline: vec![],
-        }),
-    )
-    .await;
-    timeout(WAIT, async {
-        while let Some(event) = events.recv().await {
-            if let BusMsg::Frame(frame) = event {
-                assert_eq!(frame.ts_ms, 42);
-                return;
-            }
-        }
-        panic!("source closed the live feed");
-    })
-    .await
-    .unwrap();
-    silence(&mut dial.peer).await;
-
-    phone.source.set_sync_policy(SyncPolicy::Full);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(_)));
-    sync_request(&mut dial.peer, Tier::M1).await;
-    sync_page(&mut dial.peer, Tier::M1, 1, false).await;
-    sync_request(&mut dial.peer, Tier::M15).await;
-    phone.source.set_sync_policy(SyncPolicy::Off);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(_)));
-    sync_page(&mut dial.peer, Tier::M15, 1, true).await;
-    silence(&mut dial.peer).await;
-    assert!(phone.dial.try_recv().is_err());
-}
-
-#[tokio::test(start_paused = true)]
-async fn summary_only_requests_the_last_sink_tier() {
-    let mut phone = Phone::new(
-        Route::Lan,
-        Some(FakeMirror::new(PHONE_TIERS, true)),
-        SyncPolicy::SummaryOnly,
-    );
-    let _handle = phone.start();
-    let mut dial = phone.connect().await;
-    history_available(&mut dial.peer).await;
-    sync_request(&mut dial.peer, Tier::M15).await;
-    sync_page(&mut dial.peer, Tier::M15, 1, false).await;
-    silence(&mut dial.peer).await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn an_empty_sink_tier_list_sends_no_sync_under_either_active_policy() {
-    let mut phone = Phone::new(
-        Route::Lan,
-        Some(FakeMirror::new(&[], true)),
-        SyncPolicy::SummaryOnly,
-    );
+async fn an_empty_sink_tier_list_sends_no_sync() {
+    let mut phone = Phone::new(Route::Lan, Some(FakeMirror::new(&[])));
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     history_available(&mut dial.peer).await;
     silence(&mut dial.peer).await;
-    phone.source.set_sync_policy(SyncPolicy::Full);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(_)));
-    silence(&mut dial.peer).await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn phone_detail_requests_and_delivers_recent_rows_before_first_sync_page() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
-    let (tx, rx) = oneshot::channel();
-    *mirror.recent.lock_ok() = Some(tx);
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::Full);
-    let handle = phone.start();
-    let mut dial = phone.connect().await;
-    handle.control().set_detail_interest(true);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(interest) if interest.detail));
-    history_available(&mut dial.peer).await;
-    assert!(
-        matches!(read(&mut dial.peer).await, Message::RecentRequest { from_ms, to_ms } if to_ms - from_ms == 300_000)
-    );
-    silence(&mut dial.peer).await;
-    recent_rows(&mut dial.peer).await;
-    assert_eq!(timeout(WAIT, rx).await.unwrap().unwrap(), Tier::S10);
-    sync_request(&mut dial.peer, Tier::M1).await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn opening_detail_during_catchup_gets_recent_rows_before_the_next_sync_page() {
-    let mut phone = Phone::new(
-        Route::Lan,
-        Some(FakeMirror::new(PHONE_TIERS, true)),
-        SyncPolicy::Full,
-    );
-    let handle = phone.start();
-    let mut dial = phone.connect().await;
-    history_available(&mut dial.peer).await;
-    sync_request(&mut dial.peer, Tier::M1).await;
-    handle.control().set_detail_interest(true);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(interest) if interest.detail));
-    sync_page(&mut dial.peer, Tier::M1, 8, true).await;
-    assert!(matches!(
-        read(&mut dial.peer).await,
-        Message::RecentRequest { .. }
-    ));
-    recent_rows(&mut dial.peer).await;
-    assert_eq!(
-        sync_request(&mut dial.peer, Tier::M1)
-            .await
-            .after
-            .unwrap()
-            .seq,
-        8
-    );
 }
 
 #[tokio::test(start_paused = true)]
 async fn desktop_detail_still_syncs_all_tiers_before_requesting_recent_rows() {
-    let mut phone = Phone::new(
-        Route::Lan,
-        Some(FakeMirror::new(DESKTOP_TIERS, false)),
-        SyncPolicy::Full,
-    );
+    let mut phone = Phone::new(Route::Lan, Some(FakeMirror::new(DESKTOP_TIERS)));
     let handle = phone.start();
     let mut dial = phone.connect().await;
     handle.control().set_detail_interest(true);
@@ -607,7 +457,7 @@ async fn desktop_detail_still_syncs_all_tiers_before_requesting_recent_rows() {
 
 #[tokio::test(start_paused = true)]
 async fn the_injected_current_thread_runtime_dials_on_paused_time_and_stop_closes() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let mut handle = phone.start();
     let now = Instant::now();
     let mut dial = phone.connect().await;
@@ -629,7 +479,7 @@ async fn the_injected_current_thread_runtime_dials_on_paused_time_and_stop_close
 
 #[tokio::test(start_paused = true)]
 async fn resume_without_quiesce_keeps_the_live_session() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     phone.source.resume();
@@ -639,8 +489,280 @@ async fn resume_without_quiesce_keeps_the_live_session() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_panicking_writer_publishes_one_internal_failure_and_can_retry() {
+    assert_live_panic_recovery(false).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_panicking_reader_publishes_one_internal_failure_and_can_retry() {
+    assert_live_panic_recovery(true).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_panicking_mirror_write_publishes_one_internal_failure() {
+    let (logged, _subscriber) = capture_panic_logs();
+    let mirror = FakeMirror::new(MINUTE_TIERS);
+    mirror.panic_on_ingest.store(true, Ordering::Relaxed);
+    let mut phone = Phone::new(Route::Lan, Some(mirror));
+    let _handle = phone.start();
+    let mut dial = phone.connect().await;
+    history_available(&mut dial.peer).await;
+    sync_request(&mut dial.peer, Tier::M1).await;
+    sync_page(&mut dial.peer, Tier::M1, 7, true).await;
+
+    let status = timeout(WAIT, phone.status.wait_for(|status| !status.connected))
+        .await
+        .unwrap()
+        .unwrap()
+        .clone();
+    assert_eq!(status.failure_kind, Some(ConnectionFailureKind::Internal));
+    assert!(!status.retrying && !status.dialing);
+    assert_eq!(status.next_attempt_ms, None);
+    eof(&mut dial.peer).await;
+    assert!(timeout(WAIT, phone.dial.recv()).await.is_err());
+    assert_eq!(
+        phone
+            .published
+            .lock_ok()
+            .iter()
+            .filter(|status| { status.failure_kind == Some(ConnectionFailureKind::Internal) })
+            .count(),
+        1
+    );
+    assert_eq!(logged.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn quiesce_after_a_panic_acknowledges_and_resume_reconnects() {
+    let (_logged, _subscriber) = capture_panic_logs();
+    let mut phone = Phone::new(Route::Lan, None);
+    let handle = phone.start();
+    let mut dial = phone.connect().await;
+    dial.writes.panic_on_write.store(true, Ordering::Relaxed);
+    handle.control().set_detail_interest(true);
+    timeout(
+        WAIT,
+        phone
+            .status
+            .wait_for(|status| status.failure_kind == Some(ConnectionFailureKind::Internal)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    timeout(WAIT, phone.source.quiesce())
+        .await
+        .expect("the panicked source should acknowledge quiesce");
+    eof(&mut dial.peer).await;
+    assert!(phone.dial.try_recv().is_err());
+    phone.source.resume();
+    let _next_dial = phone.connect().await;
+    assert!(phone.status.borrow().connected);
+    assert_eq!(phone.status.borrow().failure_kind, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_after_a_writer_panic_waits_for_the_mirror_write_to_finish() {
+    let (_logged, _subscriber) = capture_panic_logs();
+    let mirror = FakeMirror::new(MINUTE_TIERS);
+    let (entered, release) = mirror.block_next_ingest();
+    let mut phone = Phone::new(Route::Lan, Some(mirror));
+    let handle = phone.start();
+    let mut dial = phone.connect().await;
+    history_available(&mut dial.peer).await;
+    sync_request(&mut dial.peer, Tier::M1).await;
+    sync_page(&mut dial.peer, Tier::M1, 7, true).await;
+    timeout(WAIT, entered).await.unwrap().unwrap();
+
+    dial.writes.panic_on_write.store(true, Ordering::Relaxed);
+    handle.control().set_detail_interest(true);
+    eof(&mut dial.peer).await;
+
+    let source = phone.source.clone();
+    let mut status = phone.status.clone();
+    let mut retry = std::pin::pin!(async move {
+        status
+            .wait_for(|status| status.failure_kind == Some(ConnectionFailureKind::Internal))
+            .await
+            .unwrap();
+        source.retry();
+    });
+    tokio::select! {
+        biased;
+        () = &mut retry => {
+            let _early_dial = phone.next_dial().await;
+            panic!("a second session dialed while the mirror write was still blocked");
+        }
+        () = advance(Duration::from_secs(1)) => {}
+    }
+
+    release.send(()).unwrap();
+    timeout(WAIT, retry).await.unwrap();
+    let mut next = phone.connect().await;
+    history_available(&mut next.peer).await;
+    let cursor = sync_request(&mut next.peer, Tier::M1).await.after.unwrap();
+    assert_eq!(cursor.seq, 7);
+}
+
+fn capture_panic_logs() -> (Arc<AtomicUsize>, tracing::subscriber::DefaultGuard) {
+    use tracing::{Event, Level, Metadata, Subscriber, span, subscriber::Interest};
+
+    struct ErrorCount(Arc<AtomicUsize>);
+
+    impl Subscriber for ErrorCount {
+        fn register_callsite(&self, _: &'static Metadata<'static>) -> Interest {
+            Interest::sometimes()
+        }
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            *metadata.level() == Level::ERROR
+        }
+        fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+            span::Id::from_u64(1)
+        }
+        fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+        fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+        fn event(&self, _: &Event<'_>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+        fn enter(&self, _: &span::Id) {}
+        fn exit(&self, _: &span::Id) {}
+    }
+
+    let logged = Arc::new(AtomicUsize::new(0));
+    let subscriber = tracing::subscriber::set_default(ErrorCount(logged.clone()));
+    (logged, subscriber)
+}
+
+async fn assert_live_panic_recovery(panic_on_read: bool) {
+    let (logged, _subscriber) = capture_panic_logs();
+    let mut phone = Phone::new(Route::Lan, None);
+    let handle = phone.start();
+    let mut dial = phone.connect().await;
+    assert!(phone.status.borrow().connected);
+    if panic_on_read {
+        dial.panic_on_read.store(true, Ordering::Relaxed);
+        dial.peer.write_u8(0).await.unwrap();
+    } else {
+        dial.writes.panic_on_write.store(true, Ordering::Relaxed);
+        handle.control().set_detail_interest(true);
+    }
+
+    let status = timeout(WAIT, phone.status.wait_for(|status| !status.connected))
+        .await
+        .expect("the live status should change after the panic")
+        .unwrap()
+        .clone();
+    assert_eq!(status.failure_kind, Some(ConnectionFailureKind::Internal));
+    assert!(status.error.is_some());
+    assert!(!status.retrying && !status.dialing);
+    assert_eq!(status.next_attempt_ms, None);
+    eof(&mut dial.peer).await;
+    assert!(timeout(WAIT, phone.dial.recv()).await.is_err());
+    phone.source.retry();
+    let _next_dial = phone.connect().await;
+    assert!(phone.status.borrow().connected);
+    assert_eq!(phone.status.borrow().failure_kind, None);
+    assert_eq!(
+        phone
+            .published
+            .lock_ok()
+            .iter()
+            .filter(|status| {
+                status.failure_kind == Some(ConnectionFailureKind::Internal)
+                    && !status.connected
+                    && !status.retrying
+            })
+            .count(),
+        1
+    );
+    assert_eq!(logged.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unknown_query_reply_tells_the_client_to_update_statglass() {
+    let answer = answer_space_volumes(statglass_proto::Answer::Unknown).await;
+    assert!(matches!(answer, Err(RemoteError::Unsupported(message)) if
+        message == "This host sent an answer this version can't read. Update StatGlass on this device."
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_host_worker_failure_is_distinct_from_a_query_refusal() {
+    use statglass_proto::{Answer, ErrorCode};
+    let failed = answer_space_volumes(Answer::Error {
+        code: ErrorCode::Internal,
+        message: "host query worker failed".into(),
+    })
+    .await;
+    assert!(
+        matches!(failed, Err(RemoteError::Internal(message)) if message == "host query worker failed")
+    );
+    let refused = answer_space_volumes(Answer::Error {
+        code: ErrorCode::Unknown,
+        message: "the host did not allow that query".into(),
+    })
+    .await;
+    assert!(
+        matches!(refused, Err(RemoteError::Refused(message)) if message == "the host did not allow that query")
+    );
+}
+
+async fn answer_space_volumes(
+    reply: statglass_proto::Answer,
+) -> Result<Vec<statglass_schema::disk_space::SpaceVolume>> {
+    use statglass_proto::Query;
+
+    let mut phone = Phone::new(Route::Lan, None);
+    let _handle = phone.start();
+    let mut dial = phone.connect().await;
+    let (answer, ()) = tokio::join!(phone.source.space_volumes(), async {
+        let Message::Request {
+            id,
+            query: Query::SpaceVolumes,
+        } = read(&mut dial.peer).await
+        else {
+            panic!("expected a disk volumes query");
+        };
+        send(&mut dial.peer, Message::Reply { id, answer: reply }).await;
+    });
+    answer
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_source_publishes_and_clears_both_incompatible_directions() {
+    let old = statglass_proto::MIN_COMPATIBLE - 1;
+    let new = statglass_proto::PROTO_VERSION + 1;
+    for (version, side) in [(old, IncompatibleSide::Host), (new, IncompatibleSide::App)] {
+        let mut phone = Phone::new(Route::Lan, None);
+        let _handle = phone.start();
+        let mut dial = phone.next_dial().await;
+        let mut hello = fixture_hello();
+        hello.min_compatible = version;
+        hello.proto_version = version;
+        send(&mut dial.peer, Message::Hello(Box::new(hello))).await;
+        let incompatible = timeout(WAIT, phone.status.wait_for(|status| status.incompatible))
+            .await
+            .unwrap()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            incompatible.failure_kind,
+            Some(ConnectionFailureKind::Incompatible)
+        );
+        assert_eq!(incompatible.incompatible_side, Some(side));
+        assert!(!incompatible.connected && !incompatible.retrying);
+        phone.source.retry();
+        let _next_dial = phone.connect().await;
+        let status = phone.status.borrow();
+        assert!(status.connected);
+        assert_eq!(status.incompatible_side, None);
+        assert_eq!(status.failure_kind, None);
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn retry_during_a_dial_does_not_replace_the_successful_session() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.next_dial().await;
     phone.source.retry();
@@ -654,9 +776,9 @@ async fn retry_during_a_dial_does_not_replace_the_successful_session() {
 
 #[tokio::test(start_paused = true)]
 async fn sync_cursor_floor_and_truncation_run_off_the_shared_runtime() {
-    let mut mirror = FakeMirror::new(PHONE_TIERS, true);
-    let mut calls = FakeMirror::observed(&mut mirror, None);
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::Full);
+    let mut mirror = FakeMirror::new(MINUTE_TIERS);
+    let mut calls = FakeMirror::observed(&mut mirror);
+    let mut phone = Phone::new(Route::Lan, Some(mirror));
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     history_available(&mut dial.peer).await;
@@ -690,148 +812,10 @@ async fn sync_cursor_floor_and_truncation_run_off_the_shared_runtime() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn recent_epoch_lookup_is_off_runtime_and_quiesce_drains_the_recent_write() {
-    let mut mirror = FakeMirror::new(PHONE_TIERS, true);
-    let (release, released) = std::sync::mpsc::channel();
-    let mut calls = FakeMirror::observed(&mut mirror, Some(released));
-    let (committed, mut commit) = oneshot::channel();
-    *mirror.recent.lock_ok() = Some(committed);
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::Off);
-    let handle = phone.start();
-    handle.control().set_detail_interest(true);
-    let mut dial = phone.connect().await;
-    history_available(&mut dial.peer).await;
-    assert!(matches!(
-        read(&mut dial.peer).await,
-        Message::RecentRequest { .. }
-    ));
-    recent_rows(&mut dial.peer).await;
-    let cursor = timeout(WAIT, calls.recv()).await.unwrap().unwrap();
-    let recent = timeout(WAIT, calls.recv()).await.unwrap().unwrap();
-    assert_eq!(
-        [cursor, recent],
-        [(MirrorCall::Cursor, true), (MirrorCall::Recent, true)]
-    );
-    let mut quiesced = phone.source.quiesce();
-    tokio::select! {
-        biased;
-        () = &mut quiesced => panic!("quiesce returned before the recent write committed"),
-        () = advance(Duration::from_secs(1)) => {}
-    }
-    assert_eq!(commit.try_recv(), Err(oneshot::error::TryRecvError::Empty));
-    assert_eq!(
-        dial.closed.try_recv(),
-        Err(oneshot::error::TryRecvError::Empty)
-    );
-    release.send(()).unwrap();
-    timeout(WAIT, quiesced).await.unwrap();
-    assert_eq!(commit.try_recv().unwrap(), Tier::S10);
-    assert_eq!(dial.closed.try_recv(), Ok(()));
-    eof(&mut dial.peer).await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn off_still_initializes_the_epoch_for_transient_recent_rows() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
-    let (tx, rx) = oneshot::channel();
-    *mirror.recent.lock_ok() = Some(tx);
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::Off);
-    let handle = phone.start();
-    handle.control().set_detail_interest(true);
-    let mut dial = phone.connect().await;
-    history_available(&mut dial.peer).await;
-    assert!(matches!(
-        read(&mut dial.peer).await,
-        Message::RecentRequest { .. }
-    ));
-    recent_rows(&mut dial.peer).await;
-    assert_eq!(timeout(WAIT, rx).await.unwrap().unwrap(), Tier::S10);
-    silence(&mut dial.peer).await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_recovered_epoch_lookup_clears_the_recent_history_error_with_sync_off() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
-    mirror.cursor_unavailable.store(true, Ordering::Relaxed);
-    let mut phone = Phone::new(Route::Lan, Some(mirror.clone()), SyncPolicy::Off);
-    let handle = phone.start();
-    handle.control().set_detail_interest(true);
-    let mut dial = phone.connect().await;
-    history_available(&mut dial.peer).await;
-    {
-        let status = timeout(
-            WAIT,
-            phone
-                .status
-                .wait_for(|status| status.history_error.is_some()),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        assert!(status.connected);
-        assert!(
-            status
-                .history_error
-                .as_deref()
-                .unwrap()
-                .contains("test cursor unavailable")
-        );
-    }
-    handle.control().set_detail_interest(false);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(interest) if !interest.detail));
-    mirror.cursor_unavailable.store(false, Ordering::Relaxed);
-    handle.control().set_detail_interest(true);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(interest) if interest.detail));
-    assert!(matches!(
-        read(&mut dial.peer).await,
-        Message::RecentRequest { .. }
-    ));
-    recent_rows(&mut dial.peer).await;
-    let status = timeout(
-        WAIT,
-        phone
-            .status
-            .wait_for(|status| status.history_error.is_none()),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert!(status.connected);
-}
-
-#[tokio::test(start_paused = true)]
-async fn opening_detail_keeps_a_pending_summary_recent_reply_and_refreshes_detail_afterward() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
-    let (tx, rx) = oneshot::channel();
-    *mirror.recent.lock_ok() = Some(tx);
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::SummaryOnly);
-    let handle = phone.start();
-    let mut dial = phone.connect().await;
-    history_available(&mut dial.peer).await;
-    sync_request(&mut dial.peer, Tier::M15).await; // Initializes the epoch before summary demand.
-    sync_page(&mut dial.peer, Tier::M15, 1, false).await;
-    phone.source.set_recent_interest(true);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(_)));
-    assert!(matches!(
-        read(&mut dial.peer).await,
-        Message::RecentRequest { .. }
-    ));
-    handle.control().set_detail_interest(true);
-    assert!(matches!(read(&mut dial.peer).await, Message::Interest(interest) if interest.detail));
-    advance(Duration::from_secs(2)).await;
-    recent_rows(&mut dial.peer).await;
-    assert_eq!(timeout(WAIT, rx).await.unwrap().unwrap(), Tier::S10);
-    assert!(matches!(
-        read(&mut dial.peer).await,
-        Message::RecentRequest { .. }
-    ));
-}
-
-#[tokio::test(start_paused = true)]
 async fn quiesce_waits_for_the_commit_then_closes_and_resumes_from_its_cursor() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
+    let mirror = FakeMirror::new(MINUTE_TIERS);
     let (entered, release) = mirror.block_next_ingest();
-    let mut phone = Phone::new(Route::Lan, Some(mirror.clone()), SyncPolicy::Full);
+    let mut phone = Phone::new(Route::Lan, Some(mirror.clone()));
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     history_available(&mut dial.peer).await;
@@ -875,7 +859,7 @@ async fn quiesce_waits_for_the_commit_then_closes_and_resumes_from_its_cursor() 
 
 #[tokio::test(start_paused = true)]
 async fn idle_quiesce_closes_within_five_seconds_and_resume_resets_backoff() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     // Fail two handshakes so the source has a backoff to reset.
     for _ in 0..2 {
@@ -925,7 +909,7 @@ async fn absent_route_classes_drop_and_redial_without_waiting_for_a_ping() {
             },
         ),
     ] {
-        let mut phone = Phone::new(route, None, SyncPolicy::Off);
+        let mut phone = Phone::new(route, None);
         let _handle = phone.start();
         let mut dial = phone.connect().await;
         let changed = Instant::now();
@@ -938,9 +922,9 @@ async fn absent_route_classes_drop_and_redial_without_waiting_for_a_ping() {
 
 #[tokio::test(start_paused = true)]
 async fn route_loss_closes_during_ingest_and_the_redial_uses_the_committed_cursor() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
+    let mirror = FakeMirror::new(MINUTE_TIERS);
     let (entered, release) = mirror.block_next_ingest();
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::Full);
+    let mut phone = Phone::new(Route::Lan, Some(mirror));
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     history_available(&mut dial.peer).await;
@@ -976,7 +960,7 @@ async fn route_loss_closes_during_ingest_and_the_redial_uses_the_committed_curso
 
 #[tokio::test(start_paused = true)]
 async fn known_available_route_gets_an_immediate_ping_and_drops_after_five_seconds_without_pong() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     let changed = Instant::now();
@@ -991,7 +975,7 @@ async fn known_available_route_gets_an_immediate_ping_and_drops_after_five_secon
 
 #[tokio::test(start_paused = true)]
 async fn repeated_path_notifications_do_not_extend_the_first_probe_deadline() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     let first_change = Instant::now();
@@ -1011,7 +995,7 @@ async fn repeated_path_notifications_do_not_extend_the_first_probe_deadline() {
 
 #[tokio::test(start_paused = true)]
 async fn a_path_probe_does_not_suspend_an_older_heartbeat_timeout() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     advance(Duration::from_secs(15)).await;
@@ -1028,9 +1012,9 @@ async fn a_path_probe_does_not_suspend_an_older_heartbeat_timeout() {
 
 #[tokio::test(start_paused = true)]
 async fn a_blocked_ingest_does_not_delay_a_path_ping_or_its_deadline() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
+    let mirror = FakeMirror::new(MINUTE_TIERS);
     let (entered, release) = mirror.block_next_ingest();
-    let mut phone = Phone::new(Route::Lan, Some(mirror), SyncPolicy::Full);
+    let mut phone = Phone::new(Route::Lan, Some(mirror));
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     history_available(&mut dial.peer).await;
@@ -1075,7 +1059,7 @@ async fn a_blocked_ingest_does_not_delay_a_path_ping_or_its_deadline() {
 
 #[tokio::test(start_paused = true)]
 async fn interest_waits_while_the_path_probe_can_time_out() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     dial.writes.remaining.store(1, Ordering::Relaxed);
@@ -1090,7 +1074,7 @@ async fn interest_waits_while_the_path_probe_can_time_out() {
 
 #[tokio::test(start_paused = true)]
 async fn a_valid_path_pong_keeps_the_session_when_the_following_write_stalls() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     dial.writes.remaining.store(1, Ordering::Relaxed);
@@ -1109,7 +1093,7 @@ async fn a_valid_path_pong_keeps_the_session_when_the_following_write_stalls() {
 
 #[tokio::test(start_paused = true)]
 async fn a_network_change_discards_a_stream_with_an_already_stalled_write() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let handle = phone.start();
     let mut dial = phone.connect().await;
     dial.writes.remaining.store(0, Ordering::Relaxed);
@@ -1126,7 +1110,7 @@ async fn a_network_change_discards_a_stream_with_an_already_stalled_write() {
 
 #[tokio::test(start_paused = true)]
 async fn a_route_preserving_change_gives_a_pending_flush_time_to_finish() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let handle = phone.start();
     let mut dial = phone.connect().await;
     dial.writes.flush.lock_ok().blocked = true;
@@ -1144,7 +1128,7 @@ async fn a_route_preserving_change_gives_a_pending_flush_time_to_finish() {
 
 #[tokio::test(start_paused = true)]
 async fn a_network_change_while_draining_rejects_the_older_promotion() {
-    let mirror = FakeMirror::new(PHONE_TIERS, true);
+    let mirror = FakeMirror::new(MINUTE_TIERS);
     let (entered, release) = mirror.block_next_ingest();
     let mut phone = Phone::with_routes(
         &[
@@ -1152,7 +1136,6 @@ async fn a_network_change_while_draining_rejects_the_older_promotion() {
             (Route::Tailscale, "studio.tail"),
         ],
         Some(mirror),
-        SyncPolicy::Full,
     );
     let _handle = phone.start();
     let lan = phone.next_dial().await;
@@ -1194,7 +1177,6 @@ async fn a_marker_winning_the_race_still_publishes_both_route_causes() {
             (Route::Tailscale, "studio.tail"),
         ],
         None,
-        SyncPolicy::Off,
     );
     let _handle = phone.start();
     let lan = phone.next_dial().await;
@@ -1237,7 +1219,7 @@ async fn a_marker_winning_the_race_still_publishes_both_route_causes() {
 
 #[tokio::test(start_paused = true)]
 async fn a_pong_from_a_previous_path_does_not_keep_the_latest_path_alive() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     let changed = Instant::now();
@@ -1257,7 +1239,7 @@ async fn a_pong_from_a_previous_path_does_not_keep_the_latest_path_alive() {
 
 #[tokio::test(start_paused = true)]
 async fn unknown_network_leaves_the_stream_running_without_a_path_probe() {
-    let mut phone = Phone::new(Route::Lan, None, SyncPolicy::Off);
+    let mut phone = Phone::new(Route::Lan, None);
     let _handle = phone.start();
     let mut dial = phone.connect().await;
     phone.source.report_network_change(UNKNOWN_NETWORK);

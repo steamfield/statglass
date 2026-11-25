@@ -5,7 +5,7 @@ use statglass_engine::{LiveHub, Source, SourceHandle, SourceSink, wall_ms};
 use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileEvent, MobileHost, MobileRemoteHost};
 use statglass_ipc::status::{RemoteConnection, connection_status};
-use statglass_ipc::vitals::{HostVitals, host_vitals};
+use statglass_ipc::vitals::{HostVitals, VitalsRateLimit, host_vitals};
 use statglass_schema::lock::LockExt;
 use statglass_schema::{HostId, HostRecord};
 use statglass_session::{
@@ -24,6 +24,7 @@ pub(super) struct HostEntry {
     pub(super) hub: LiveHub,
     pub(super) handle: Mutex<Option<SourceHandle>>,
     status: Mutex<Status>,
+    vitals_warnings: VitalsRateLimit,
 }
 
 pub(super) enum OpenError {
@@ -130,6 +131,7 @@ impl HostEntry {
                 hub: LiveHub::new(Default::default()),
                 handle: Mutex::default(),
                 status: Mutex::default(),
+                vitals_warnings: VitalsRateLimit::default(),
             }
         }))
     }
@@ -182,7 +184,12 @@ impl HostEntry {
                 ..Default::default()
             };
         };
-        let mut vitals = host_vitals(Some(frame), self.config.id, &self.source.host().info);
+        let mut vitals = host_vitals(
+            Some(frame),
+            self.config.id,
+            &self.source.host().info,
+            &self.vitals_warnings,
+        );
         vitals.as_of_ms = Some(self.source.clock().now_ms().unwrap_or_else(|| {
             // A frame gives us host time before the first heartbeat estimates the offset.
             let now = wall_ms();

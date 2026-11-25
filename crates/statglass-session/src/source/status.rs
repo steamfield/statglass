@@ -108,6 +108,7 @@ impl ConnectionFailureKind {
                 Self::IdentityChanged
             }
             RemoteError::Protocol(_) | RemoteError::Codec(_) => Self::Protocol,
+            RemoteError::Internal(_) => Self::Internal,
             RemoteError::Transport(_)
             | RemoteError::Io(_)
             | RemoteError::Busy(_)
@@ -232,6 +233,7 @@ impl ConnectionStatus {
         self.route_failures.clear();
         self.identity_changed = None;
         self.incompatible = false;
+        self.incompatible_side = None;
         self.remote_version = Some(remote_version);
     }
 
@@ -261,6 +263,16 @@ impl ConnectionStatus {
         self.waiting_for_network = false;
     }
 
+    pub(super) fn record_panic(&mut self) {
+        self.record_stopped();
+        self.error = Some("The remote session stopped unexpectedly".into());
+        self.failure_kind = Some(ConnectionFailureKind::Internal);
+        self.route_failures.clear();
+        self.identity_changed = None;
+        self.incompatible = false;
+        self.incompatible_side = None;
+    }
+
     /// Records a failed connection attempt. `single_route` is set for a single-target endpoint.
     pub(super) fn record_failure(&mut self, e: &RemoteError, single_route: Option<Route>) {
         self.connected = false;
@@ -275,9 +287,13 @@ impl ConnectionStatus {
             e,
             RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. }
         );
-        if let RemoteError::IncompatiblePeer { version, .. } = e {
-            self.remote_version = Some(version.clone());
-        }
+        self.incompatible_side = match e {
+            RemoteError::IncompatiblePeer { version, side, .. } => {
+                self.remote_version = Some(version.clone());
+                *side
+            }
+            _ => None,
+        };
         self.catching_up = false;
         self.retrying = e.retryable();
     }
@@ -300,7 +316,7 @@ mod tests {
             &crate::RemoteError::IncompatiblePeer {
                 version: "0.1.0".into(),
                 reason: "protocol 1 is below 2".into(),
-                side: None,
+                side: Some(super::IncompatibleSide::Host),
             },
             None,
         );
@@ -310,8 +326,16 @@ mod tests {
             Some(ConnectionFailureKind::Incompatible)
         );
         assert_eq!(status.remote_version.as_deref(), Some("0.1.0"));
+        assert_eq!(
+            status.incompatible_side,
+            Some(super::IncompatibleSide::Host)
+        );
+        let mut reconnected = status.clone();
+        reconnected.record_connected(crate::Route::Lan, "0.2.0".into());
+        assert_eq!(reconnected.incompatible_side, None);
         status.record_failure(&crate::RemoteError::Transport("offline".into()), None);
         assert!(!status.incompatible && status.retrying);
+        assert_eq!(status.incompatible_side, None);
         assert_eq!(
             status.failure_kind,
             Some(ConnectionFailureKind::Unreachable)

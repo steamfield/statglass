@@ -21,11 +21,12 @@ impl RemoteSource {
                 ErrorCode::HistoryUnavailable => RemoteError::HistoryUnavailable(message),
                 ErrorCode::InvalidArgument => RemoteError::InvalidArgument(message),
                 ErrorCode::Busy => RemoteError::Busy(message),
+                ErrorCode::Internal => RemoteError::Internal(message),
                 _ => RemoteError::Refused(message),
             }),
             // A newer host's answer this build cannot read.
             Answer::Unknown => Err(RemoteError::Unsupported(
-                "This host answered in a form this StatGlass can't read; update StatGlass on this Mac"
+                "This host sent an answer this version can't read. Update StatGlass on this device."
                     .into(),
             )),
             answer => pick(answer)
