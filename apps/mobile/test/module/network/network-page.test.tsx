@@ -119,6 +119,10 @@ test("Addresses keeps every reported IPv4 and IPv6 address, IPv4 first and the p
   ]);
 });
 
+/** A stacked value sits under its label; an inline one is right-aligned in the trailing column. */
+const stacked = (text: string) =>
+  expect(screen.getByText(text)).not.toHaveStyle({ textAlign: "right" });
+
 test("a full IPv6 address sits under its label instead of breaking in the value column", async () => {
   const transport = createMockTransport({ autoTick: false });
   const full = "2001:db8:85a3::8a2e:370:7334";
@@ -128,8 +132,13 @@ test("a full IPv6 address sits under its label instead of breaking in the value 
   });
   await openNetwork(transport);
   await publicIp("76.143.14.53");
-  expect(screen.getByLabelText(`IPv6, ${full}`)).toBeOnTheScreen();
-  expect(screen.queryByLabelText("IPv6")).not.toBeOnTheScreen();
+  expect(screen.getByLabelText("IPv6")).toHaveAccessibilityValue({
+    text: full,
+  });
+  stacked(full);
+  expect(screen.getByText("192.168.86.242")).toHaveStyle({
+    textAlign: "right",
+  });
 });
 
 test("at accessibility text sizes every address sits under its label", async () => {
@@ -140,11 +149,9 @@ test("at accessibility text sizes every address sits under its label", async () 
     data: addresses,
   });
   await openNetwork(transport);
-  expect(
-    await screen.findByLabelText("Public IP, 76.143.14.53")
-  ).toBeOnTheScreen();
-  expect(screen.getByLabelText("IPv4, 192.168.86.242")).toBeOnTheScreen();
-  expect(screen.getByLabelText("IPv6, 2001:db8::1")).toBeOnTheScreen();
+  await publicIp("76.143.14.53");
+  for (const address of ["192.168.86.242", "2001:db8::1", "76.143.14.53"])
+    stacked(address);
 });
 
 test("a pending public IP gets at most five polls, two seconds apart", async () => {

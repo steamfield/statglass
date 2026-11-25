@@ -6,7 +6,13 @@ import {
   useContext,
   useLayoutEffect,
 } from "react";
-import { Pressable, StyleSheet, View, type ViewProps } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type ViewProps,
+} from "react-native";
 import { Icon, type IconName } from "./icons";
 import { Text } from "./text";
 import { useThemeColors } from "./theme-colors";
@@ -23,7 +29,16 @@ export interface ListRowProps {
   accessibilityRole?: "button" | "link";
   accessibilityHint?: string;
   trailing?: ReactNode;
+  /** Put the value under the title even at standard text sizes, for values too long for the trailing column. */
+  stackValue?: boolean;
 }
+
+/**
+ * iOS's accessibility text sizes (AX Medium and up) start near 1.5x. There,
+ * as in Settings' value cells, the value moves under the title at full width
+ * so neither breaks mid-word.
+ */
+const ACCESSIBILITY_SCALE = 1.5;
 
 // A swipe action belongs to the row's existing VoiceOver focus target.
 export const ListRowActions = createContext<{
@@ -43,8 +58,12 @@ export function ListRow({
   accessibilityRole = "button",
   accessibilityHint,
   trailing,
+  stackValue = false,
 }: ListRowProps) {
   const colors = useThemeColors();
+  const { fontScale } = useWindowDimensions();
+  const stacked =
+    value !== undefined && (stackValue || fontScale >= ACCESSIBILITY_SCALE);
   const swipe = useContext(ListRowActions);
   const setRowCount = swipe?.setRowCount;
   useLayoutEffect(() => {
@@ -68,17 +87,13 @@ export function ListRow({
   const content = (
     <>
       {glyph && <Icon name={glyph} size={20} color={tint} />}
-      <View className="min-w-0 flex-1">
-        <Text variant="body" style={destructiveColor}>
-          {title}
-        </Text>
-        {subtitle && (
-          <Text variant="caption" style={destructiveColor}>
-            {subtitle}
-          </Text>
-        )}
-      </View>
-      {value !== undefined && (
+      <RowText
+        title={title}
+        subtitle={subtitle}
+        below={stacked ? value : undefined}
+        style={destructiveColor}
+      />
+      {value !== undefined && !stacked && (
         <Text variant="value" style={[styles.value, destructiveColor]}>
           {value}
         </Text>
@@ -110,6 +125,37 @@ export function ListRow({
         <View {...rowProps}>{content}</View>
       )}
       {trailing}
+    </View>
+  );
+}
+
+/** The title column: title, optional subtitle, and a value moved under them. */
+function RowText({
+  title,
+  subtitle,
+  below,
+  style,
+}: {
+  title: string;
+  subtitle: string | undefined;
+  below: string | undefined;
+  style: { color: string } | undefined;
+}) {
+  return (
+    <View className="min-w-0 flex-1">
+      <Text variant="body" style={style}>
+        {title}
+      </Text>
+      {subtitle && (
+        <Text variant="caption" style={style}>
+          {subtitle}
+        </Text>
+      )}
+      {below !== undefined && (
+        <Text variant="value" style={style}>
+          {below}
+        </Text>
+      )}
     </View>
   );
 }

@@ -258,6 +258,10 @@ it("clips the headerless scroll viewport between the two safe-area insets", asyn
 
 it("renders grouped labels, values, accessories and a destructive row", async () => {
   jest.spyOn(Native, "useColorScheme").mockReturnValue("light");
+  // The standard text size: at accessibility sizes values stack under titles.
+  jest
+    .spyOn(Native.Dimensions, "get")
+    .mockReturnValue({ width: 390, height: 844, scale: 3, fontScale: 1 });
   const open = jest.fn();
   const colors = colorsForScheme("light");
   await renderWithProviders(
