@@ -129,4 +129,5 @@ fi
 if [ -f crates/statglass-ssh/tests/docker_pair.rs ]; then
     cargo test -p statglass-ssh --features software-signer --test docker_pair -- --ignored || status=$?
 fi
+cargo test -p statglass-mobile --lib sessions::tests::docker::mobile_session -- --ignored --exact || status=$?
 exit "$status"

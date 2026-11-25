@@ -1,7 +1,6 @@
-//! The phone's hosts and their sessions: one `RemoteSource` over the russh dialer and a
-//! phone-policy `Mirror` per host, the live streams the app opens on them, and the
-//! commands that read them (phase 4 lane a).
+//! The phone's remote hosts, mirrors and live streams.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -10,86 +9,102 @@ use statglass_ipc::error::CommandError;
 use statglass_ipc::mobile::{MobileCall, MobileConfig, MobileHost};
 use statglass_session::network::LocalNetwork;
 use statglass_session::{RemoteSource, SyncPolicy};
+use statglass_ssh::{RusshDialer, Signer};
 use tokio::runtime::Handle;
 
 use crate::control::SessionControl;
 use crate::ffi::CoreEvents;
 
+mod commands;
+mod endpoint;
+mod host;
+mod live;
+mod phone_id;
+mod registry;
+#[cfg(test)]
+mod tests;
+
+use registry::Registry;
+
 /// Every host the core runs a session for.
 pub(crate) struct Sessions {
-    #[expect(
-        dead_code,
-        reason = "phase 4 lane a pushes live messages and events through it"
-    )]
-    events: Arc<dyn CoreEvents>,
+    registry: Arc<Registry>,
 }
 
 impl Sessions {
     pub(crate) fn new(events: Arc<dyn CoreEvents>) -> Self {
-        Self { events }
+        Self {
+            registry: Arc::new(Registry::new(events)),
+        }
     }
 
-    /// Opens the mirror store under `data_dir`, loads or creates the phone's own host
-    /// id there, and starts a source per host on `runtime`, signing with `signer`.
-    ///
-    /// # Errors
-    ///
-    /// The store or the phone id could not be opened, or a host is invalid.
+    /// Opens mirrors under `data_dir`, loads or creates the phone id and starts
+    /// a source per host on the core runtime.
     pub(crate) fn start(
         &self,
         runtime: Handle,
         data_dir: PathBuf,
         config: MobileConfig,
-        signer: Arc<dyn statglass_ssh::Signer>,
+        signer: Arc<dyn Signer>,
         sync: SyncPolicy,
     ) -> Result<(), CommandError> {
-        let _ = (runtime, data_dir, config, signer, sync);
-        Err(not_implemented())
+        self.registry.start(
+            runtime,
+            data_dir,
+            config.hosts,
+            Arc::new(RusshDialer::new(signer)),
+            sync,
+        )
     }
 
-    /// Replaces the hosts: stops sources for hosts no longer listed, starts new ones
-    /// with `sync`, and resizes every mirror's budget to its share of the total.
-    ///
-    /// # Errors
-    ///
-    /// The core has not started, or a host is invalid.
+    /// Replaces the configured hosts and recomputes their mirror budgets.
     pub(crate) fn set_hosts(
         &self,
         hosts: Vec<MobileHost>,
         sync: SyncPolicy,
     ) -> Result<(), CommandError> {
-        let _ = (crate::policy::host_budget_mb(hosts.len()), sync);
-        Err(not_implemented())
+        self.registry.set_hosts(hosts, sync)
     }
 
-    /// Answers a host, live or history call. `SetHosts`, `SetDataPolicy`,
-    /// `AuthorizedKeyLine` and `BuildInfo` are answered by the core itself.
-    ///
-    /// # Errors
-    ///
-    /// The call's typed failure.
+    /// Answers the host, live and history calls delegated by the core.
     pub(crate) async fn call(&self, call: MobileCall) -> Result<Value, CommandError> {
-        let _ = call;
-        Err(not_implemented())
+        self.registry.call(call).await
     }
 }
 
 impl SessionControl for Sessions {
     fn sources(&self) -> Vec<Arc<RemoteSource>> {
-        Vec::new()
+        self.registry.sources()
     }
 
     fn set_sync_policy(&self, policy: SyncPolicy) {
-        let _ = policy;
+        self.registry.set_sync_policy(policy);
     }
 
     fn network_changed(&self, net: LocalNetwork) {
-        let _ = net;
+        self.registry.network_changed(net);
     }
 }
 
-fn not_implemented() -> CommandError {
+fn invalid(message: impl Into<String>) -> CommandError {
+    CommandError::InvalidArgument {
+        message: message.into(),
+    }
+}
+
+fn internal(message: impl Into<String>) -> CommandError {
     CommandError::Internal {
-        message: "statglass-mobile sessions: not implemented".into(),
+        message: message.into(),
+    }
+}
+
+fn callback<T>(name: &str, invoke: impl FnOnce() -> T) -> Option<T> {
+    match catch_unwind(AssertUnwindSafe(invoke)) {
+        Ok(result) => Some(result),
+        Err(payload) => {
+            let error = crate::envelope::panicked(payload.as_ref());
+            tracing::error!(%error, callback = name, "mobile event callback");
+            None
+        }
     }
 }
