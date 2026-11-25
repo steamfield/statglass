@@ -10,7 +10,11 @@ import { memo, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { HostSwitcher } from "~/components/host-switcher";
 import { PerformanceExplainer } from "~/components/performance-explainer";
-import { Sidebar, type SidebarEntry } from "~/components/sidebar";
+import {
+  Sidebar,
+  type SidebarEntry,
+  type SidebarProps,
+} from "~/components/sidebar";
 import {
   HoverCard,
   HoverCardContent,
@@ -149,7 +153,9 @@ const SidebarFeedbackAction = memo(function SidebarFeedbackAction() {
  * Modules switched off, or that this build cannot run, are dimmed without a
  * value. Network and Disk show the sum of both directions.
  */
-export function LiveSidebar() {
+export function LiveSidebar({
+  onGroupRender,
+}: Pick<SidebarProps, "onGroupRender">) {
   const local = useIsLocalHost();
   const hostId = useHostId();
   // A remote host lists Containers when it reports cgroup groups (D-116).
@@ -276,6 +282,7 @@ export function LiveSidebar() {
 
   return (
     <Sidebar
+      onGroupRender={onGroupRender}
       hostSwitcher={<HostSwitcher />}
       groups={groups}
       active={pathname.split("/")[2] ?? "overview"}

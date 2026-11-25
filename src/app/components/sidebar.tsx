@@ -4,6 +4,8 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   memo,
+  Profiler,
+  type ProfilerOnRenderCallback,
   type ReactNode,
   useId,
   useLayoutEffect,
@@ -90,6 +92,8 @@ export interface SidebarProps {
   /** A second footer line under the sampling state (the Performance mode marker). */
   footerNote?: ReactNode;
   hostSwitcher?: ReactNode;
+  /** Optional React render probe for individual entry groups. */
+  onGroupRender?: ProfilerOnRenderCallback | undefined;
 }
 
 function intervalLabel(ms: number): string {
@@ -181,19 +185,19 @@ export function Sidebar({
   footerAction,
   footerNote,
   hostSwitcher,
+  onGroupRender,
 }: SidebarProps) {
-  const navRef = useRef<HTMLElement>(null);
+  const entriesRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
   const placed = useRef(false);
   const prevActive = useRef(active);
-  const hasHeadings = groups.some((g) => g.label);
   const layout = groups
     .map((g) => `${g.entries.length}:${g.label ?? ""}`)
     .join(",");
 
   // The selection is one pill that slides to the current row (framer's
   // `layoutId` move) instead of a fill on each row. Measured only when the
-  // route or group layout changes, or on resize because narrow hides headings.
+  // route or group layout changes, or when the sidebar crosses the breakpoint.
   // Only route changes under a visible pill slide.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `active` and `layout` stand in for the rows' positions
   useLayoutEffect(() => {
@@ -201,7 +205,7 @@ export function Sidebar({
     if (!pill) return;
 
     const place = (slide: boolean) => {
-      const row = navRef.current?.querySelector<HTMLElement>(
+      const row = entriesRef.current?.querySelector<HTMLElement>(
         "[data-sidebar-item][aria-current]"
       );
       if (!row) {
@@ -223,18 +227,21 @@ export function Sidebar({
     place(placed.current && prevActive.current !== active);
     prevActive.current = active;
 
-    if (!hasHeadings) return;
-    const onResize = () => place(false);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [active, hasHeadings, layout]);
+    // Matches Tailwind's max-sm variant, which hides the group headings.
+    const compact = window.matchMedia("(width < 40rem)");
+    const onBreakpointChange = () => place(false);
+    compact.addEventListener("change", onBreakpointChange);
+    return () => compact.removeEventListener("change", onBreakpointChange);
+  }, [active, layout]);
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
-    if (!keys.includes(e.key) || !navRef.current) return;
+    if (!keys.includes(e.key) || !entriesRef.current) return;
     const items = Array.from(
-      navRef.current.querySelectorAll<HTMLAnchorElement>("[data-sidebar-item]")
+      entriesRef.current.querySelectorAll<HTMLAnchorElement>(
+        "[data-sidebar-item]"
+      )
     );
     if (items.length === 0) return;
     const i = items.indexOf(document.activeElement as HTMLAnchorElement);
@@ -251,35 +258,39 @@ export function Sidebar({
   return (
     // biome-ignore lint/a11y/noNoninteractiveElementInteractions: arrow keys move focus between the links inside; the handler delegates to them
     <nav
-      ref={navRef}
       aria-label="Dashboard sections"
       onKeyDown={onKeyDown}
-      className={cn(
-        "relative flex h-full w-[220px] shrink-0 flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-2.5 pb-3 text-foreground max-sm:w-13 max-sm:px-2",
-        hasHeadings && "overflow-y-auto"
-      )}
+      className="flex h-full w-[220px] shrink-0 flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-2.5 pb-3 text-foreground max-sm:w-13 max-sm:px-2"
     >
-      <div
-        ref={pillRef}
-        aria-hidden
-        data-sidebar-pill
-        className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out max-sm:inset-x-2"
-      />
       <SidebarBrand />
-      {hostSwitcher}
-      {groups.map((g, gi) => (
-        <SidebarGroup
-          key={g.id}
-          label={g.label}
-          entries={g.entries}
-          first={gi === 0}
-          active={active}
-          onNavigate={onNavigate}
+      {hostSwitcher && <div className="shrink-0">{hostSwitcher}</div>}
+      <div
+        ref={entriesRef}
+        className="relative -mx-2.5 min-h-0 flex-1 scroll-py-0.5 overflow-y-auto px-2.5 py-0.5 max-sm:-mx-2 max-sm:px-2"
+      >
+        <div
+          ref={pillRef}
+          aria-hidden
+          data-sidebar-pill
+          className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out max-sm:inset-x-2"
         />
-      ))}
-      <div className="flex-1" />
-      {footerAction && <div className="pb-1.5">{footerAction}</div>}
-      <div className="flex flex-col gap-1 border-border-subtle border-t px-2 pt-2.5 max-sm:sr-only">
+        <div className="flex flex-col gap-0.5">
+          {groups.map((g, gi) => (
+            <SidebarGroup
+              key={g.id}
+              id={g.id}
+              label={g.label}
+              entries={g.entries}
+              first={gi === 0}
+              active={active}
+              onNavigate={onNavigate}
+              onRender={onGroupRender}
+            />
+          ))}
+        </div>
+      </div>
+      {footerAction && <div className="shrink-0 pb-1.5">{footerAction}</div>}
+      <div className="flex shrink-0 flex-col gap-1 border-border-subtle border-t px-2 pt-2.5 max-sm:sr-only">
         <div className="flex items-center gap-2">
           <SidebarStatusReadout status={status} />
           <span className="flex-1" />
@@ -378,17 +389,21 @@ const SidebarBrand = memo(function SidebarBrand() {
 });
 
 const SidebarGroup = memo(function SidebarGroup({
+  id,
   label,
   entries,
   first,
   active,
   onNavigate,
+  onRender,
 }: {
+  id: string;
   label?: string | undefined;
   entries: readonly SidebarEntry[];
   first: boolean;
   active: string;
   onNavigate?: ((href: string) => void) | undefined;
+  onRender?: ProfilerOnRenderCallback | undefined;
 }) {
   const headingId = useId();
   const spacing = first ? "pb-2" : "border-border-subtle border-t py-2";
@@ -412,8 +427,7 @@ const SidebarGroup = memo(function SidebarGroup({
     </ul>
   );
 
-  if (!label) return list;
-  return (
+  const content = label ? (
     <div className={spacing}>
       <h2
         id={headingId}
@@ -423,5 +437,15 @@ const SidebarGroup = memo(function SidebarGroup({
       </h2>
       {list}
     </div>
+  ) : (
+    list
+  );
+
+  return onRender ? (
+    <Profiler id={id} onRender={onRender}>
+      {content}
+    </Profiler>
+  ) : (
+    content
   );
 });
