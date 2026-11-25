@@ -1,6 +1,6 @@
 # Releasing StatGlass for iPhone
 
-Build on a Mac with Xcode and an iOS SDK that meets [Apple's upload requirements](https://developer.apple.com/news/upcoming-requirements/). Install the repo's Bun, Rust and CocoaPods prerequisites, including the `aarch64-apple-ios` and `aarch64-apple-ios-sim` Rust targets. Xcode needs the signing certificates and matching provisioning profiles for team `YWA9Q642YP`.
+Build on a Mac with Xcode and an iOS SDK that meets [Apple's upload requirements](https://developer.apple.com/news/upcoming-requirements/). Install the repo's Bun, Rust and CocoaPods prerequisites, including the `aarch64-apple-ios` and `aarch64-apple-ios-sim` Rust targets. Sign Xcode in to an account on team `YWA9Q642YP`; the export uses automatic signing with `-allowProvisioningUpdates`, so Xcode creates or downloads the Apple Distribution certificate and App Store profile itself.
 
 ## Build and check
 
@@ -11,7 +11,7 @@ make mobile-archive
 make mobile-release-check
 ```
 
-The first command regenerates `apps/mobile/ios/` and writes `StatGlass.xcarchive` and `StatGlass.ipa` to `apps/mobile/dist/ios/`. Keep the generated project and the device Rust library in that checkout for the second command. The version comes from `apps/mobile/package.json`. The build number is the commit count at `HEAD`. Check that it exceeds the most recent build you uploaded, especially after changing branches.
+The first command regenerates `apps/mobile/ios/` and writes `StatGlass.xcarchive` and `StatGlass.ipa` to `apps/mobile/dist/ios/`. The second checks both: the archive for its contents and the IPA for the distribution signature. Keep the generated project and the device Rust library in that checkout for the second command. The version comes from `apps/mobile/package.json`. The build number is the commit count at `HEAD`. Check that it exceeds the most recent build you uploaded, especially after changing branches.
 
 Read the Hermes SDK signature line in the checker output. If the vendor XCFramework has no signature, inspect the installed CocoaPods artifact before opening Organizer. The checker also prints advisory strings found in the app or Rust library. The import and load-command checks determine whether private APIs fail the archive check. [Apple's SDK requirements](https://developer.apple.com/support/third-party-SDK-requirements/)
 
