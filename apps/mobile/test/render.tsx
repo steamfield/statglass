@@ -5,6 +5,7 @@
 import { render } from "@testing-library/react-native";
 import type { ReactElement, ReactNode } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { DemoProvider } from "@/data/demo";
 import type { PhoneSettings } from "@/data/phone-settings";
 import type { PhoneTransport } from "@/data/seam";
 import { AppProviders } from "@/lib/providers";
@@ -52,7 +53,7 @@ export async function renderWithProviders(
           initialTransport={transport ? { transport, demo } : undefined}
           initialSettings={settings}
         >
-          {children}
+          <DemoProvider>{children}</DemoProvider>
         </AppProviders>
       </GestureHandlerRootView>
     );
