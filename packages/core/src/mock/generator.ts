@@ -292,10 +292,11 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     }
   }
 
-  // Network: 38.4 MB/s down is 26% of a 1.2 Gb/s link.
+  // Network: 38.4 MB/s down is 13% of a 2.4 Gb/s Wi-Fi 6E link, leaving room
+  // for the app bursts in net-apps.ts so "Of link" stays under 100%.
   add("network", "net.rx", { iface: "en0" }, 38.4e6, { noise: 18e6 });
   add("network", "net.tx", { iface: "en0" }, 1.2e6, { noise: 0.8e6 });
-  add("network", "net.link_rate", { iface: "en0" }, 1.2e9, { cadence: 60 });
+  add("network", "net.link_rate", { iface: "en0" }, 2.4e9, { cadence: 60 });
   if (flags.vpn) {
     add("network", "net.rx", { iface: "en7" }, 2.5e6, { noise: 1e6 });
     add("network", "net.tx", { iface: "en7" }, 0.4e6, { noise: 0.2e6 });

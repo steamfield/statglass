@@ -11,6 +11,8 @@ import { RangeControl } from "./range-control";
 /** Carries a failed status refresh to the frame while keeping its page mounted. */
 export const ModuleStatusNotice = createContext<ReactNode>(null);
 
+const HEADER_MAX_SCALE = 1.35;
+
 export function ModuleFrame({
   title,
   subtitle,
@@ -45,6 +47,8 @@ export function ModuleFrame({
           headerLargeTitle: false,
           ...(subtitle
             ? {
+                // UIKit stops scaling navigation bar titles near xxxLarge, so
+                // the two-line title stops there too and stays inside the bar.
                 headerTitle: () => (
                   <View className="min-w-0 items-center">
                     <Text
@@ -54,6 +58,7 @@ export function ModuleFrame({
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.75}
+                      maxFontSizeMultiplier={HEADER_MAX_SCALE}
                     >
                       {title}
                     </Text>
@@ -62,6 +67,7 @@ export function ModuleFrame({
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.75}
+                      maxFontSizeMultiplier={HEADER_MAX_SCALE}
                     >
                       {subtitle}
                     </Text>
