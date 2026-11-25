@@ -14,11 +14,11 @@ export function NetworkCard({ network, bars, ...chrome }: NetworkCardProps) {
   return (
     <ModuleCard
       {...chrome}
-      title={card.title}
+      card="network"
+      content={card}
       accent="net"
       headline={headline}
       spokenHeadline={card.spokenHeadline}
-      spokenDetails={chrome.compact ? "" : card.spoken}
       headlineContent={
         chrome.compact ? null : (
           <StatList

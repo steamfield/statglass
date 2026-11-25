@@ -20,6 +20,7 @@ import {
 import { useHosts } from "@/data/hosts-list";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
 import { Text } from "@/ui/text";
+import { RestoreNotice } from "@/welcome/restore-notice";
 import { HostRow } from "./host-row";
 
 /** Lists the visible local and remote hosts in the user's order. */
@@ -94,6 +95,7 @@ export function HostsList({
       }
       ListHeaderComponent={
         <View className="gap-2">
+          <RestoreNotice />
           {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
           {hosts.isError && (
             <Text

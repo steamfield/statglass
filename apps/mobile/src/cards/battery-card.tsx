@@ -13,13 +13,7 @@ const CHARGE_ROLE = "label";
 export function BatteryCard({ battery, source, ...chrome }: BatteryCardProps) {
   const card = batteryCard(battery, { powerSource: source });
   return (
-    <ModuleCard
-      {...chrome}
-      title={card.title}
-      accent="battery"
-      headline={card.headline}
-      spokenDetails={chrome.compact ? "" : card.spoken}
-    >
+    <ModuleCard {...chrome} card="battery" content={card} accent="battery">
       <BatteryDetails card={card} />
     </ModuleCard>
   );

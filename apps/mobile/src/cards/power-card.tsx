@@ -16,11 +16,10 @@ export function PowerCard({
   return (
     <ModuleCard
       {...chrome}
-      title={card.title}
+      card="power"
+      content={card}
       accent="power"
-      headline={card.headline}
       unit={card.headlineUnit}
-      spokenDetails={chrome.compact ? "" : card.spoken}
     >
       <StackBar segments={[...card.segments]} />
       <StatList layout="grid" items={card.items} />

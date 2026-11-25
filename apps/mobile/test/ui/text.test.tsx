@@ -51,29 +51,16 @@ it.each(Object.entries(variants))(
   }
 );
 
-it("accepts the phase 9 role alias and prefers variant when both are supplied", async () => {
-  const view = await render(
-    <>
-      <Text role="title">Alias only</Text>
-      <Text variant="body" role="title">
-        Both props
-      </Text>
-    </>
-  );
-
-  expect(view.getByRole("header", { name: "Alias only" })).toHaveStyle({
-    fontSize: 22,
-  });
-  expect(view.getByText("Both props")).toHaveStyle({ fontSize: 17 });
-  expect(view.queryByRole("header", { name: "Both props" })).toBeNull();
-});
-
-it("contains no Text role spreads in mobile source", () => {
+it("contains no Text role props or role spreads in mobile source", () => {
   const src = resolve(__dirname, "../../src");
+  const role = /<Text(?=\s)[^>]*\srole\s*=/;
   const spread = /\{\s*\.\.\.\s*\{\s*role\s*:/;
   const violations = readdirSync(src, { encoding: "utf8", recursive: true })
     .filter((file) => /\.[cm]?[jt]sx?$/.test(file))
-    .filter((file) => spread.test(readFileSync(join(src, file), "utf8")));
+    .filter((file) => {
+      const source = readFileSync(join(src, file), "utf8");
+      return role.test(source) || spread.test(source);
+    });
 
   expect(violations).toEqual([]);
 });

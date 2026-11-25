@@ -25,7 +25,13 @@ import { PowerCard } from "@/cards/power-card";
 import { UnavailableCard } from "@/cards/unavailable-card";
 
 const empty = initialHostLive("host");
-const chrome = { compact: false, onOpen: () => {}, onLongPress: () => {} };
+const chrome = {
+  compact: false,
+  onOpen: () => {},
+  onLongPress: () => {},
+  onToggleDensity: () => {},
+  stale: false,
+};
 
 test("CPU announces its chart, opens its page and opens the card menu", async () => {
   const onOpen = jest.fn();

@@ -11,13 +11,7 @@ export function CpuCard({ cpu, stream, ...chrome }: CpuCardProps) {
     chartLabel: stream?.ariaLabel,
   });
   return (
-    <ModuleCard
-      {...chrome}
-      title={card.title}
-      accent="cpu"
-      headline={card.headline}
-      spokenDetails={chrome.compact ? "" : card.spoken}
-    >
+    <ModuleCard {...chrome} card="cpu" content={card} accent="cpu">
       {stream && <StreamArea {...stream} />}
       <View className="gap-1">
         {card.bars.map((bar) => (
