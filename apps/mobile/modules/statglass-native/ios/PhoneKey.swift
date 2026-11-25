@@ -2,22 +2,12 @@ import Foundation
 import os
 import Security
 
-/// A typed failure of the Swift side, sent to JS as a coded exception (`NativeModuleError`
-/// in `src/StatglassNative.types.ts`).
+/// A failure of the native signer, with the Security framework's status when available.
 enum NativeFailure: Error, CustomStringConvertible {
   case keychain(osStatus: OSStatus, message: String)
   case secureEnclave(osStatus: OSStatus?, message: String)
   case camera(message: String)
   case localNetwork(message: String)
-
-  var code: String {
-    switch self {
-    case .keychain: return "ERR_STATGLASS_KEYCHAIN"
-    case .secureEnclave: return "ERR_STATGLASS_SECURE_ENCLAVE"
-    case .camera: return "ERR_STATGLASS_CAMERA"
-    case .localNetwork: return "ERR_STATGLASS_LOCAL_NETWORK"
-    }
-  }
 
   var description: String {
     switch self {

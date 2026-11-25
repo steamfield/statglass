@@ -47,6 +47,7 @@ cd "$mobile/ios" || fail "Expo prebuild did not create the iOS project"
 step "CocoaPods install" pod install
 # The Rust XCFramework contains only the arm64 simulator slice.
 step "Xcode simulator build" xcodebuild -workspace "$mobile/ios/StatGlass.xcworkspace" \
-  -scheme StatGlass -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' ARCHS=arm64 build
+  -scheme StatGlass -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath "$scratch/DerivedData" ARCHS=arm64 build
 
 printf '\nmobile-native-check: simulator build passed\n'

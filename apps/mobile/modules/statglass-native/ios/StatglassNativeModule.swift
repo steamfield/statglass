@@ -6,10 +6,19 @@ import os
 /// and events as module events, and drives the core's lifecycle from the app's state and
 /// network path. It never reads the JSON it carries.
 public class StatglassNativeModule: Module {
-  private let phoneKey = currentPhoneKey()
+  private struct State {
+    var core: MobileCore?
+    var destroyed = false
+    var hasLiveListeners = false
+    var loggedMissingLiveListener = false
+
+    var activeCore: MobileCore? { destroyed ? nil : core }
+  }
+
   private let snapshotCover = SnapshotCover()
-  private let hasLiveListeners = OSAllocatedUnfairLock(initialState: false)
-  private var core: MobileCore?
+  private let state = OSAllocatedUnfairLock(initialState: State())
+  private let calls = DispatchGroup()
+  private let logger = Logger(subsystem: "app.statglass", category: "native-module")
   private var lifecycle: AppLifecycle?
 
   public func definition() -> ModuleDefinition {
@@ -18,8 +27,8 @@ public class StatglassNativeModule: Module {
     Events("onLive", "onCoreEvent")
 
     OnCreate {
-      let core = MobileCore(signer: PhoneKeySigner(phoneKey), events: EventsBridge(self))
-      self.core = core
+      let core = MobileCore(signer: PhoneKeySigner(currentPhoneKey()), events: EventsBridge(self))
+      state.withLock { $0.core = core }
       let lifecycle = AppLifecycle(core: core)
       self.lifecycle = lifecycle
       lifecycle.start()
@@ -27,8 +36,20 @@ public class StatglassNativeModule: Module {
     }
 
     OnDestroy {
-      hasLiveListeners.withLock { $0 = false }
-      lifecycle?.stop()
+      state.withLock { $0.destroyed = true }
+      AppLifecycle.coreQueue.async { [lifecycle, state, calls] in
+        lifecycle?.stop()
+        // Calls already forwarded to Rust can retain the old core until they finish.
+        calls.wait()
+        let core = state.withLock { state in
+          let core = state.core
+          state.core = nil
+          return core
+        }
+        // Rust can wait for writers during drop. Release off-main and outside the lock.
+        withExtendedLifetime(core) {}
+      }
+      lifecycle = nil
       snapshotCover.stop()
     }
 
@@ -37,28 +58,32 @@ public class StatglassNativeModule: Module {
     }
 
     AsyncFunction("start") { (configJson: String, promise: Promise) in
-      guard let core else {
+      guard let core = state.withLock({ $0.activeCore }) else {
         promise.reject(Exceptions.AppContextLost())
         return
       }
       do {
-        _ = try phoneKey.publicKey()
         let dataDir = try Self.prepareDataDirectory()
         promise.resolve(core.start(dataDir: dataDir.path, configJson: configJson))
-      } catch let failure as NativeFailure {
-        promise.reject(failure.code, failure.description)
       } catch {
         promise.reject(error)
       }
-    }
+    }.runOnQueue(AppLifecycle.coreQueue)
 
     AsyncFunction("call") { (method: String, argsJson: String, promise: Promise) in
-      guard let core else {
-        promise.reject(Exceptions.AppContextLost())
-        return
-      }
-      Task {
-        promise.resolve(await core.call(method: method, argsJson: argsJson))
+      Task { [state, calls] in
+        var core = state.withLock { state in
+          let core = state.activeCore
+          if core != nil { calls.enter() }
+          return core
+        }
+        guard let result = await core?.call(method: method, argsJson: argsJson) else {
+          promise.reject(Exceptions.AppContextLost())
+          return
+        }
+        core = nil
+        calls.leave()
+        promise.resolve(result)
       }
     }
 
@@ -68,17 +93,31 @@ public class StatglassNativeModule: Module {
   }
 
   public override func didStartListening(event: String) {
-    if event == "onLive" { hasLiveListeners.withLock { $0 = true } }
+    if event == "onLive" { state.withLock { $0.hasLiveListeners = true } }
   }
 
   public override func didStopListening(event: String) {
-    if event == "onLive" { hasLiveListeners.withLock { $0 = false } }
+    if event == "onLive" { state.withLock { $0.hasLiveListeners = false } }
   }
 
   fileprivate func sendLive(stream: UInt32, message: String) -> Bool {
-    guard hasLiveListeners.withLock({ $0 }) else { return false }
+    let canSend = state.withLock { state in
+      guard !state.destroyed else { return false }
+      if state.hasLiveListeners { return true }
+      if !state.loggedMissingLiveListener {
+        state.loggedMissingLiveListener = true
+        logger.notice("Stopping live stream without a JavaScript listener")
+      }
+      return false
+    }
+    guard canSend else { return false }
     emit(event: "onLive", payload: ["stream": stream, "message": message] as [String: Any])
     return true
+  }
+
+  fileprivate func sendCoreEvent(_ event: String) {
+    guard state.withLock({ !$0.destroyed }) else { return }
+    emit(event: "onCoreEvent", payload: ["event": event])
   }
 
   private static func prepareDataDirectory() throws -> URL {
@@ -140,6 +179,6 @@ private final class EventsBridge: CoreEvents, @unchecked Sendable {
   }
 
   func event(eventJson: String) {
-    module?.emit(event: "onCoreEvent", payload: ["event": eventJson])
+    module?.sendCoreEvent(eventJson)
   }
 }
