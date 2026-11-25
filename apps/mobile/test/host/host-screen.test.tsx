@@ -1,9 +1,14 @@
-import { formatClock } from "@core/format";
 import type { LiveMsg } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
+import {
+  PHONE_CLOCK_OFFSET_MS,
+  PHONE_LAST_SEEN_MS,
+  phoneCommandFailures,
+} from "@core/mock/phone-errors";
 import { createMockTransport } from "@core/mock-transport";
 import { POPOVER_CARD_SERIES } from "@core/popover/series";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { ExpoRoot, router, Stack, usePathname } from "expo-router";
@@ -12,7 +17,6 @@ import { useState } from "react";
 import {
   AccessibilityInfo,
   Animated,
-  AppState,
   DeviceEventEmitter,
   Dimensions,
   Pressable,
@@ -44,28 +48,20 @@ const context = getMockContext({
 });
 
 const now = Date.UTC(2026, 10, 24, 15, 2);
-const initialAppState = AppState.currentState;
-let appStateListener: (state: "background" | "active" | "inactive") => void;
+let changeAppState: ReturnType<typeof mockAppState>;
 
 beforeEach(() => {
   jest.useFakeTimers({ now });
-  AppState.currentState = "active";
+  changeAppState = mockAppState();
   jest
     .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
     .mockResolvedValue(true);
   jest
     .spyOn(AccessibilityInfo, "addEventListener")
     .mockReturnValue({ remove: jest.fn() });
-  jest
-    .spyOn(AppState, "addEventListener")
-    .mockImplementation((type, listener) => {
-      if (type === "change") appStateListener = listener;
-      return { remove: jest.fn() };
-    });
 });
 
 afterEach(() => {
-  AppState.currentState = initialAppState;
   jest.useRealTimers();
 });
 
@@ -175,7 +171,6 @@ test("shows frame age, announces stale and offline reads, and undims after recov
   const cards = screen.getByLabelText("Module cards");
   expect(cards).toHaveStyle({ opacity: 1 });
   deliverFrames = false;
-
   await act(() => jest.advanceTimersByTime(2000));
   expect(screen.getByText("Live · LAN 2s")).toBeOnTheScreen();
   await act(() => jest.advanceTimersByTime(1000));
@@ -184,9 +179,13 @@ test("shows frame age, announces stale and offline reads, and undims after recov
   expect(announce).toHaveBeenCalledWith("Reconnecting");
 
   await act(() =>
-    transport.pushRemoteStatus(host, { state: "offline", last_seen_ms: now })
+    transport.pushRemoteStatus(host, {
+      state: "offline",
+      last_seen_ms: PHONE_LAST_SEEN_MS,
+      clock_offset_ms: PHONE_CLOCK_OFFSET_MS,
+    })
   );
-  const offline = `Offline since ${formatClock(now)}`;
+  const offline = "Offline since 14:02";
   expect(await screen.findByText(offline)).toBeOnTheScreen();
   expect(announce).toHaveBeenCalledWith(offline);
   expect(cards).toHaveStyle({ opacity: 0.5 });
@@ -219,19 +218,19 @@ test("backgrounding during setup cleans up a late stream and foregrounding subsc
   );
   await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
 
-  await act(() => appStateListener("background"));
+  await changeAppState("background");
   await act(() => jest.advanceTimersByTimeAsync(510));
   expect(transport.subscriberCount()).toBe(0);
-  await act(() => appStateListener("active"));
+  await changeAppState("active");
   expect(subscribe).toHaveBeenCalledTimes(2);
   await act(() => jest.advanceTimersByTimeAsync(510));
   await act(() => transport.tick());
   expect(await screen.findByText("Live · 1s")).toBeOnTheScreen();
   expect(transport.subscriberCount()).toBe(1);
-  await act(() => appStateListener("inactive"));
+  await changeAppState("inactive");
   expect(transport.subscriberCount()).toBe(0);
   transport.setDisplayIdle(true);
-  await act(() => appStateListener("active"));
+  await changeAppState("active");
   expect(await screen.findByText("Display asleep")).toBeOnTheScreen();
   await screenView.unmount();
 });
@@ -260,27 +259,34 @@ test("a remote source replacement resubscribes even before the old source sends 
   expect(subscribe.mock.lastCall?.[0]).toBe(remote.config.id);
 });
 
-test("a terminal subscribe error names the failure and stops retrying", async () => {
-  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const subscribe = jest.spyOn(transport, "subscribeLive").mockResolvedValue({
-    info: {
-      status: "error",
-      error: { kind: "unknown_host", host: MOCK_HOST_ID },
-    },
-    unsubscribe: () => {},
+test("a terminal remote authentication failure names the problem and stops retrying", async () => {
+  const host = "phone-no-longer-authorized";
+  const transport = createMockTransport({
+    scenarios: ["phone-errors"],
+    historyRows: 2,
   });
-  await renderWithProviders(
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${MOCK_HOST_ID}`)}
-    />,
-    { transport }
+  const removed = (await transport.listHosts())
+    .filter(({ id }) => id !== host)
+    .map(({ id }) => id);
+  transport.failNext("subscribeLive", phoneCommandFailures.revokedKey);
+  const subscribe = jest.spyOn(transport, "subscribeLive");
+  const view = await renderWithProviders(
+    <ExpoRoot context={context} location={new URL(`statglass:///${host}`)} />,
+    { transport, settings: { removed } }
   );
-  expect(
-    await screen.findByText("This host is no longer in your host list.")
-  ).toBeOnTheScreen();
-  await act(() => jest.advanceTimersByTimeAsync(15_000));
-  expect(subscribe).toHaveBeenCalledTimes(1);
+  try {
+    expect(
+      await screen.findByText(
+        "This iPhone is no longer authorized on no-longer-authorized"
+      )
+    ).toBeOnTheScreen();
+    const attempts = subscribe.mock.calls.length;
+    await act(() => jest.advanceTimersByTimeAsync(15_000));
+    expect(subscribe).toHaveBeenCalledTimes(attempts);
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
 });
 
 test("a failed remote status read dims the remote while the local host can still read Live", async () => {
@@ -293,10 +299,8 @@ test("a failed remote status read dims the remote while the local host can still
     ({ status }) => status.state === "connected"
   );
   if (!remote) throw new Error("The demo needs a connected host");
-  jest.spyOn(transport, "listRemoteHosts").mockRejectedValue({
-    kind: "remote_unreachable",
-    message: "Network unavailable",
-  });
+  transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
+  transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
   const view = await renderWithProviders(
     <ExpoRoot
       context={context}
@@ -307,7 +311,7 @@ test("a failed remote status read dims the remote while the local host can still
   try {
     expect(
       await screen.findByText(
-        "This host isn't connected, so its connection status can't be read now.",
+        "Couldn’t read connection status. Status endpoint unavailable.",
         {},
         { timeout: 2000 }
       )
@@ -425,18 +429,17 @@ test("motion events that leave the effective preference unchanged leave cards al
 
 test("repeated transient subscription failures log once per reason before recovery", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const originalSubscribe = transport.subscribeLive;
   const subscribe = jest.spyOn(transport, "subscribeLive");
   const log = jest.spyOn(console, "error").mockImplementation(() => {});
-  for (const reason of [
-    "Network unavailable",
-    "Network unavailable",
-    "Network changed",
-    "Network unavailable",
+  const { transientNetwork, networkChanged } = phoneCommandFailures;
+  for (const error of [
+    transientNetwork,
+    transientNetwork,
+    networkChanged,
+    transientNetwork,
   ]) {
-    subscribe.mockRejectedValueOnce(new Error(reason));
+    transport.failNext("subscribeLive", error);
   }
-  subscribe.mockImplementation(originalSubscribe);
   await renderWithProviders(
     <ExpoRoot
       context={context}

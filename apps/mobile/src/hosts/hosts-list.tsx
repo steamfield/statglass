@@ -1,10 +1,13 @@
 import type { HostId } from "@core/generated/types";
+import { PHONE_OFFLINE_TITLE } from "@core/phone-connection";
 import { failureReason } from "@core/remote-errors";
 import { useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useStatusAnnouncement } from "@/connection/use-status-announcement";
 import {
   type HostRetryFailure,
   useHostListUpdates,
+  useHostsWaitingForNetwork,
   useRefreshHosts,
 } from "@/data/hosts";
 import { useHosts } from "@/data/hosts-list";
@@ -24,6 +27,8 @@ export function HostsList({
 }) {
   useHostListUpdates();
   const hosts = useHosts();
+  const waitingForNetwork = useHostsWaitingForNetwork(hosts.data ?? []);
+  useStatusAnnouncement(waitingForNetwork ? PHONE_OFFLINE_TITLE : null);
   const refresh = useRefreshHosts();
   const { set } = usePhoneSettingsActions();
   const [refreshing, setRefreshing] = useState(false);
@@ -70,6 +75,11 @@ export function HostsList({
           </Text>
         )}
         <RetryErrors failures={retryErrors} />
+        {waitingForNetwork && (
+          <Text role="body" accessibilityLiveRegion="polite">
+            {PHONE_OFFLINE_TITLE}
+          </Text>
+        )}
         {hosts.isSuccess && hosts.data.length === 0 && (
           <View className="gap-3 py-4">
             <Text role="title">No hosts yet</Text>

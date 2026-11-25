@@ -85,7 +85,7 @@ it("keeps the host's pairing setup guidance", () => {
 it.each([
   [
     "remote_not_running",
-    "StatGlass isn't running on the other Mac",
+    "StatGlass isn’t running on the other Mac",
     "Open StatGlass on",
   ],
   [

@@ -1,16 +1,21 @@
 import type { CommandError, PairingFailure } from "@core/generated/types";
 import { commandError, commandErrorText } from "./command-error";
 
-export {
-  hostStatusSummary,
-  type PhoneAction,
-  type PhoneProblem,
-  type PhoneProblemKind,
-  type PhoneRemoteHostRecord,
-  type PhoneRemoteHostStatus,
-  phoneProblem,
-  type Tone,
-} from "./phone-connection";
+/** Recovery copy shared by the Mac and iPhone when a host stops monitoring. */
+export function macMonitoringAdvice(
+  kind: "app_not_running" | "monitoring_off",
+  host: string
+): { title: string; recovery: string } {
+  return kind === "app_not_running"
+    ? {
+        title: `StatGlass isn’t running on ${host}`,
+        recovery: `Open StatGlass on ${host}, then retry.`,
+      }
+    : {
+        title: `Remote monitoring is off on ${host}`,
+        recovery: `Turn on Allow remote monitoring in StatGlass Settings on ${host}, then retry.`,
+      };
+}
 
 const PAIRING_FAILURE_TEXT: Record<PairingFailure, string> = {
   denied: "The host declined the pairing request.",
@@ -77,22 +82,6 @@ export function remoteQueryText(error: unknown, what: string): string | null {
 
 export function isHostKeyError(error: CommandError): boolean {
   return error.kind === "host_key_unknown";
-}
-
-/** Recovery copy for a host whose StatGlass app or remote monitoring is off. */
-export function macMonitoringAdvice(
-  kind: "app_not_running" | "monitoring_off",
-  host: string
-): { title: string; recovery: string } {
-  return kind === "app_not_running"
-    ? {
-        title: `StatGlass isn't running on ${host}`,
-        recovery: `Open StatGlass on ${host}, then retry.`,
-      }
-    : {
-        title: `Remote monitoring is off on ${host}`,
-        recovery: `Turn on Allow remote monitoring in StatGlass Settings on ${host}, then retry.`,
-      };
 }
 
 /** Recovery copy follows typed command errors; SSH's diagnostic is kept separately. */

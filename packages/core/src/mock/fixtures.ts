@@ -64,6 +64,7 @@ export const SCENARIOS = [
   "host-backoff",
   "host-offline-history",
   "phone-errors",
+  "phone-sparkline-gap",
   "linux-identity-changed",
   "popover-compact",
   "power-disabled",

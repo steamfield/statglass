@@ -1,10 +1,12 @@
 import { formatPercent, formatRate } from "@core/format";
 import type { HostRecord, HostVitals, OsKind } from "@core/generated/types";
+import { hostStatusSummary, type Tone } from "@core/phone-connection";
 import { failureReason } from "@core/remote-errors";
 import { Pressable, useColorScheme, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { StatusWarning } from "@/connection/status-warning";
 import {
-  hostStatusLabel,
+  useClearOfflineHostReadings,
   useHostSparkline,
   useHostStatus,
   useHostVitals,
@@ -31,33 +33,35 @@ export function HostRow({
   onOpen: () => void;
 }) {
   const status = useHostStatus(host.id);
-  const vitals = useHostVitals(host.id);
+  const remote = status.isError ? null : (status.data?.status ?? null);
+  const connected = host.is_local || remote?.state === "connected";
+  const vitals = useHostVitals(host.id, connected);
   const pendingRemote = !host.is_local && status.isPending;
   const sparkline = useHostSparkline(host.id);
-  const connection = hostStatusLabel(
-    host.is_local,
-    status.isError ? null : (status.data ?? null)
-  );
-  const statusText = pendingRemote ? "Loading status…" : connection.text;
+  useClearOfflineHostReadings(host.id, connected);
+  const connection = host.is_local
+    ? { label: "Live", tone: "live" as const }
+    : hostStatusSummary(remote, { nowMs: Date.now() });
+  const statusText = pendingRemote ? "Loading status…" : connection.label;
   const statusError =
     !host.is_local && status.isError
       ? failureReason(status.error, "Pull down to reload.")
       : null;
   const platform = PLATFORMS[host.info.os];
-  const readings = headlineReadings(vitals.data);
-  const vitalsError = vitals.isError
-    ? `Vitals unavailable. ${failureReason(vitals.error, "Pull down to reload.")}`
-    : null;
-  const historyError = sparkline.isError
-    ? `CPU history unavailable. ${failureReason(sparkline.error, "Pull down to reload.")}`
-    : null;
+  const readings = headlineReadings(connected ? vitals.data : undefined);
+  const chart = connected ? sparkline.data : null;
+  const vitalsError = readError(connected ? vitals.error : null, "Vitals");
+  const historyError = readError(
+    connected ? sparkline.error : null,
+    "CPU history"
+  );
   const label = [
     host.display_name,
     platform.label,
     statusText,
     statusError,
     ...readings.map(({ label, value }) => `${label} ${value}`),
-    sparkline.data?.ariaLabel,
+    chart?.ariaLabel,
     vitalsError,
     historyError,
   ]
@@ -89,7 +93,7 @@ export function HostRow({
           </View>
         ))}
       </View>
-      {sparkline.data && <StreamArea {...sparkline.data} />}
+      {chart && <StreamArea {...chart} />}
       {vitalsError && (
         <Text role="caption" className="text-destructive!">
           {vitalsError}
@@ -102,6 +106,12 @@ export function HostRow({
       )}
     </Pressable>
   );
+}
+
+function readError(error: unknown, what: string) {
+  return error === null
+    ? null
+    : `${what} unavailable. ${failureReason(error, "Pull down to reload.")}`;
 }
 
 function headlineReadings(vitals: HostVitals | undefined) {
@@ -129,7 +139,7 @@ function HostRowHeader({
 }: {
   name: string;
   glyph: string;
-  tone: ReturnType<typeof hostStatusLabel>["tone"];
+  tone: Tone;
   text: string;
   error: string | null;
 }) {
@@ -154,18 +164,7 @@ function HostRowHeader({
           {tone === "live" && (
             <View className="size-1.5 rounded-full bg-live" />
           )}
-          {tone === "warning" && (
-            <Svg width={12} height={12} viewBox="0 0 14 14" accessible={false}>
-              <Path
-                d="M7 1.5 13 12H1z M7 5v2.5m0 2v.1"
-                fill="none"
-                stroke={colors["warning-ink"]}
-                strokeWidth={1.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-          )}
+          {tone === "warning" && <StatusWarning />}
           <Text
             role="caption"
             className={
