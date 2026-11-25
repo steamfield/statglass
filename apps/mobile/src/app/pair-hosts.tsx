@@ -1,10 +1,10 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { ScrollView } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useOptionalPhoneTransport } from "@/data/transport-context";
 import { PairSelection } from "@/handover/pair-selection";
 import { clearPairOffer, pairOffer } from "@/pairing/after-pair";
 import { PairAction } from "@/pairing/screens/action";
 import { isNativeTransport } from "@/transport";
+import { ScreenScroll } from "@/ui/screen-scroll";
 import { Text } from "@/ui/text";
 
 export default function PairHosts() {
@@ -17,12 +17,10 @@ export default function PairHosts() {
     router.replace("/(hosts)");
   }
   return (
-    <ScrollView
-      className="flex-1 bg-background"
+    <ScreenScroll
+      className="flex-1"
       contentContainerClassName="gap-4 px-6 pt-4 pb-safe-or-6"
-      contentInsetAdjustmentBehavior="automatic"
     >
-      <Stack.Screen options={{ title: "Also on this Mac" }} />
       {offer && isNativeTransport(core) ? (
         <PairSelection core={core} offer={offer} done={done} />
       ) : (
@@ -31,6 +29,6 @@ export default function PairHosts() {
           <PairAction label="Go to Hosts" onPress={done} />
         </>
       )}
-    </ScrollView>
+    </ScreenScroll>
   );
 }

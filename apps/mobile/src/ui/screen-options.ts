@@ -25,6 +25,9 @@ export function screenOptions(
     headerLargeTitleShadowVisible: false,
     headerTitleStyle: { ...titleStyle, fontSize: 17 },
     headerLargeTitleStyle: { ...titleStyle, fontSize: 34 * largeTitleScale },
+    // On iOS 27 the blur covers an expanded title. Keep the scroll-edge
+    // appearance clear while the compact bar retains systemChromeMaterial.
+    ...(largeTitle && { headerLargeStyle: { backgroundColor: "transparent" } }),
     headerBackVisible: false,
     ...(!root && {
       headerLeft: renderBack,
