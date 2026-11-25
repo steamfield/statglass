@@ -7,6 +7,7 @@ use std::sync::Arc;
 use rusqlite::params;
 use statglass_schema::{Event, EventDetail, Gap, GapReason, HostId, Module, SeriesKey, Tier};
 
+use super::rows::EventWrite;
 use super::{State, check_stats};
 use crate::blob;
 use crate::db::{tier_table, tier_width};
@@ -152,8 +153,7 @@ impl State {
     ) -> Result<()> {
         let epoch = page.epoch.to_string();
         for e in &page.events {
-            // Both lookups use the same key as their write, within the page's transaction.
-            let (changed, existed) = if let Some(source_id) = e.source_id {
+            let outcome = if let Some(source_id) = e.source_id {
                 if source_id <= 0 {
                     return Err(StoreError::Corrupt("invalid source event id".into()));
                 }
@@ -170,29 +170,30 @@ impl State {
                      WHERE excluded.source_seq > events.source_seq",
                     params![host_ref,e.ts_ms,e.kind,e.payload,seq,epoch,source_id,e.seq],
                 )? > 0;
-                (changed, existed)
+                match (changed, existed) {
+                    (false, _) => EventWrite::Unchanged,
+                    (true, true) => EventWrite::Updated,
+                    (true, false) => EventWrite::Inserted,
+                }
             } else {
-                let existed: bool = self.conn.prepare_cached(
-                    "SELECT EXISTS(SELECT 1 FROM events WHERE host_id = ?1 AND ts = ?2 AND kind = ?3)",
-                )?.query_row(params![host_ref, e.ts_ms, e.kind], |r| r.get(0))?;
-                (
-                    self.upsert_event(host_ref, e.ts_ms, &e.kind, &e.payload)?,
-                    existed,
-                )
+                self.upsert_event(host_ref, e.ts_ms, &e.kind, &e.payload)?
             };
-            if !changed {
+            if matches!(outcome, EventWrite::Unchanged) {
                 continue;
             }
             report.events_written += 1;
-            if !existed {
+            if e.kind == "alert" && matches!(outcome, EventWrite::Inserted) {
                 match ciborium::from_reader::<Event, _>(e.payload.as_slice()) {
                     Ok(event) if matches!(event.detail, EventDetail::Alert { .. }) => {
                         report.alerts_inserted.push(event);
                     }
                     Ok(_) => {}
-                    Err(error) => {
-                        tracing::debug!(%error, "skipping alert reporting for an unreadable event")
-                    }
+                    Err(error) => tracing::warn!(
+                        source_id = ?e.source_id,
+                        ts_ms = e.ts_ms,
+                        %error,
+                        "cannot decode a newly inserted remote alert"
+                    ),
                 }
             }
         }

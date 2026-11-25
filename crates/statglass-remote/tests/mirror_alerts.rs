@@ -1,12 +1,13 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
 use statglass_engine::{HISTORY_DB_FILE, HistoryStore};
 use statglass_proto::{Message, SyncPage};
 use statglass_remote::{Mirror, MirrorError, MirrorSink, page_to_wire};
 use statglass_schema::{
-    AlertCause, Cmp, Event, EventDetail, HostId, HostInfo, HostRecord, Labels, MetricId, OsKind,
-    SyncKinds, Tier, lock::LockExt,
+    AlertCause, Cmp, Cursor, Event, EventDetail, HostId, HostInfo, HostRecord, Labels, MetricId,
+    OsKind, SyncKinds, Tier, lock::LockExt,
 };
 use statglass_store::{Reader, Store, StoreConfig};
 use uuid::Uuid;
@@ -16,17 +17,28 @@ const TS: i64 = 1_788_220_800_000;
 #[test]
 fn mirror_delivers_alerts_once_and_only_after_commit() {
     let dir = tempfile::tempdir().unwrap();
-    let (mirror, host, page, alerts) = fixture(dir.path());
+    let (mirror, record, page, alerts) = fixture(dir.path());
+    let mirror = Arc::new(mirror);
+    let listener_mirror = Arc::downgrade(&mirror);
+    let host = record.id;
     let epoch = page.epoch;
+    let seq = page.last_seq;
     let db = dir.path().join(HISTORY_DB_FILE);
     let deliveries = Arc::new(Mutex::new(Vec::new()));
     let received = Arc::clone(&deliveries);
     mirror.set_alert_listener(Arc::new(move |epoch, inserted| {
+        let cursor = listener_mirror
+            .upgrade()
+            .unwrap()
+            .cursor(Tier::M1, epoch, SyncKinds::ALL)
+            .unwrap();
         let mut reader = Reader::open(&db).expect("open mirror reader inside the listener");
         let committed = reader
             .events(host, TS, TS + 60_000)
             .expect("read committed alerts");
-        received.lock_ok().push((epoch, inserted, committed));
+        received
+            .lock_ok()
+            .push((epoch, inserted, committed, cursor));
     }));
 
     mirror
@@ -49,12 +61,25 @@ fn mirror_delivers_alerts_once_and_only_after_commit() {
     mirror.ingest(empty, SyncKinds::ALL).unwrap();
     assert!(deliveries.lock_ok().is_empty());
 
-    mirror.ingest(page.clone(), SyncKinds::ALL).unwrap();
+    // A listener that re-enters a locked mirror would block the ingesting thread.
+    let (done, result) = mpsc::channel();
+    let ingest_mirror = Arc::clone(&mirror);
+    let first_page = page.clone();
+    let ingest = std::thread::spawn(move || {
+        done.send(ingest_mirror.ingest(first_page, SyncKinds::ALL))
+            .unwrap();
+    });
+    result
+        .recv_timeout(Duration::from_secs(2))
+        .expect("listener could read the mirror cursor")
+        .unwrap();
+    ingest.join().unwrap();
     let [later, earlier] = alerts;
     let expected = [(
         epoch,
         vec![later.clone(), earlier.clone()],
         vec![earlier, later],
+        Some(Cursor { epoch, seq }),
     )];
     assert_eq!(deliveries.lock_ok().as_slice(), &expected);
     mirror.ingest(page, SyncKinds::ALL).unwrap();
@@ -64,7 +89,7 @@ fn mirror_delivers_alerts_once_and_only_after_commit() {
 #[test]
 fn mirror_delivers_alerts_with_reused_source_ids_in_a_new_epoch() {
     let dir = tempfile::tempdir().unwrap();
-    let (mirror, _, page, alerts) = fixture(dir.path());
+    let (mirror, host, page, alerts) = fixture(dir.path());
     let deliveries = Arc::new(Mutex::new(Vec::new()));
     let received = Arc::clone(&deliveries);
     mirror.set_alert_listener(Arc::new(move |epoch, inserted| {
@@ -73,22 +98,26 @@ fn mirror_delivers_alerts_with_reused_source_ids_in_a_new_epoch() {
 
     let first = page.epoch;
     mirror.cursor(Tier::M1, first, SyncKinds::ALL).unwrap();
-    mirror.ingest(page.clone(), SyncKinds::ALL).unwrap();
+    let first_ids: Vec<_> = page.events.iter().map(|event| event.source_id).collect();
+    mirror.ingest(page, SyncKinds::ALL).unwrap();
 
-    let next = Uuid::new_v4();
+    let next_alerts = [alert(TS + 4000, 96.0), alert(TS + 3000, 98.0)];
+    let next_page = source_page(&dir.path().join("reset-source.sqlite"), &host, &next_alerts);
+    let next = next_page.epoch;
+    assert_ne!(first, next);
+    assert_eq!(
+        next_page
+            .events
+            .iter()
+            .map(|event| event.source_id)
+            .collect::<Vec<_>>(),
+        first_ids
+    );
     mirror.cursor(Tier::M1, next, SyncKinds::ALL).unwrap();
-    mirror
-        .ingest(
-            SyncPage {
-                epoch: next,
-                ..page
-            },
-            SyncKinds::ALL,
-        )
-        .unwrap();
+    mirror.ingest(next_page, SyncKinds::ALL).unwrap();
     assert_eq!(
         deliveries.lock_ok().as_slice(),
-        &[(first, alerts.to_vec()), (next, alerts.to_vec())]
+        &[(first, alerts.to_vec()), (next, next_alerts.to_vec())]
     );
 }
 
@@ -101,12 +130,12 @@ fn mirror_commits_alerts_without_a_listener() {
 
     let mut reader = Reader::open(&dir.path().join(HISTORY_DB_FILE)).unwrap();
     assert_eq!(
-        reader.events(host, TS, TS + 60_000).unwrap(),
+        reader.events(host.id, TS, TS + 60_000).unwrap(),
         [earlier, later]
     );
 }
 
-fn fixture(dir: &Path) -> (Mirror, HostId, SyncPage, [Event; 2]) {
+fn fixture(dir: &Path) -> (Mirror, HostRecord, SyncPage, [Event; 2]) {
     let host = HostRecord {
         id: HostId(Uuid::new_v4()),
         is_local: false,
@@ -125,14 +154,22 @@ fn fixture(dir: &Path) -> (Mirror, HostId, SyncPage, [Event; 2]) {
             kernel: None,
         },
     };
-    let source =
-        Store::open(StoreConfig::new(dir.join("source.sqlite"))).expect("open source store");
+    let alerts = [alert(TS + 1000, 93.0), alert(TS, 95.0)];
+    let page = source_page(&dir.join("source.sqlite"), &host, &alerts);
+    let history = Arc::new(HistoryStore::open(dir));
+    history
+        .register_host(&host)
+        .expect("register mirrored host");
+    (Mirror::new(history, host.id, 100), host, page, alerts)
+}
+
+fn source_page(path: &Path, host: &HostRecord, alerts: &[Event]) -> SyncPage {
+    let source = Store::open(StoreConfig::new(path)).expect("open source store");
     let writer = source.writer();
     writer
         .upsert_host(host.clone())
         .expect("register source host");
-    let alerts = [alert(TS + 1000, 93.0), alert(TS, 95.0)];
-    for event in &alerts {
+    for event in alerts {
         writer
             .record_event(host.id, event)
             .expect("record source alert");
@@ -146,11 +183,7 @@ fn fixture(dir: &Path) -> (Mirror, HostId, SyncPage, [Event; 2]) {
     let Message::SyncPage(page) = page_to_wire(read) else {
         panic!("expected a sync page with source alerts");
     };
-    let history = Arc::new(HistoryStore::open(dir));
-    history
-        .register_host(&host)
-        .expect("register mirrored host");
-    (Mirror::new(history, host.id, 100), host.id, page, alerts)
+    page
 }
 
 fn alert(ts_ms: i64, value: f32) -> Event {

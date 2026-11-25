@@ -73,16 +73,22 @@ impl State {
         if !self.in_txn {
             return Ok(());
         }
-        if !self.usage_pending.is_empty() {
-            self.apply(|s| s.flush_usage_pending())?;
-        }
+        let usage_flushed = if self.usage_pending.is_empty() {
+            Ok(())
+        } else {
+            self.apply(State::flush_usage_pending)
+        };
         self.in_txn = false;
         self.deadline = None;
         // Read accounting while the batch can still be rolled back on error.
-        let logical_bytes = match self.docker_used().and_then(|logical_bytes| {
-            self.commit_txn()?;
-            Ok(logical_bytes)
-        }) {
+        let commit_result =
+            usage_flushed
+                .and_then(|()| self.docker_used())
+                .and_then(|logical_bytes| {
+                    self.commit_txn()?;
+                    Ok(logical_bytes)
+                });
+        let logical_bytes = match commit_result {
             Ok(logical_bytes) => logical_bytes,
             Err(e) => {
                 // The batch is lost. Remember what it covered, then resynchronise in-memory
