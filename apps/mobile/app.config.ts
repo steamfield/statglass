@@ -79,7 +79,7 @@ export function expoConfigFor(
       appleTeamId: identity.teamId,
       buildNumber: identity.buildNumber,
       supportsTablet: false,
-      config: { usesNonExemptEncryption: true }, // D-156
+      config: { usesNonExemptEncryption: true }, // D-158
       icon: {
         light: "./assets/icon-light.png",
         dark: "./assets/icon-dark.png",

@@ -3,7 +3,7 @@ import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
 
 /**
- * The header's addresses (D-093, D-153): the host's IPv4 (its IPv6
+ * The header's addresses (D-093, D-155): the host's IPv4 (its IPv6
  * when it has no IPv4) and the public address. Each copies on click.
  * Nothing shows until the local address is read.
  */

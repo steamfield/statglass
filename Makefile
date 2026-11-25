@@ -132,7 +132,7 @@ mobile-rust-check:
 mobile-native-check:
 	scripts/mobile/native-check.sh
 
-# Release .xcarchive and App Store .ipa in apps/mobile/dist/ios. Never uploads (D-156).
+# Release .xcarchive and App Store .ipa in apps/mobile/dist/ios. Never uploads (D-158).
 mobile-archive:
 	scripts/mobile/archive.sh
 

@@ -27,7 +27,7 @@ info="$app/Info.plist"
 plutil -lint -s -- "$info" || fail "invalid or missing $info"
 encryption=$(plist_value "$info" ITSAppUsesNonExemptEncryption bool) ||
   fail "missing or invalid ITSAppUsesNonExemptEncryption"
-[[ "$encryption" == true ]] || fail "ITSAppUsesNonExemptEncryption must be true (D-156)"
+[[ "$encryption" == true ]] || fail "ITSAppUsesNonExemptEncryption must be true (D-158)"
 for key in NSMicrophoneUsageDescription NSBonjourServices; do
   if plutil -extract "$key" raw "$info" >/dev/null 2>&1; then
     fail "$key must be absent"

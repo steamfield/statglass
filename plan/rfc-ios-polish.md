@@ -6,7 +6,7 @@ only after that review. The foundation (plan phase 7) and pairing (plan phase 8)
 written in full in the plan. This RFC says what they settle for the polish work.
 
 Related: [iPhone RFC](rfc-ios-app.md) (section numbers below refer to it), [design system](design-system.md),
-[decisions](decisions.md) (D-152 history from the host, D-153 network addresses), the run plan
+[decisions](decisions.md) (D-154 history from the host, D-155 network addresses), the run plan
 `plans/deliver-ios-app.md` (phases 7 to 9).
 
 ## 1. Problem
@@ -62,7 +62,7 @@ seams the polish would build on are unsettled:
 
 Plan phase 7 fixes those seams (section 6). Every other audit item is placed in section 9.
 
-The user then decided that the phone keeps no history (D-152). The host answers every
+The user then decided that the phone keeps no history (D-154). The host answers every
 history read with a bounded query, and the phone holds the answers in memory only. This
 removes the mirror and its sync policy, storage budget and failure states. That change also
 lands in plan phase 7 (section 6), and it changes sections 4.0, 4.4, 4.6 and 4.8.
@@ -164,7 +164,7 @@ scenario host checked in `apps/mobile/test/connection/`.
 | 3.1 Name not resolved, refused, unreachable | `name_not_resolved`, `refused`, `unreachable` | 7f | 7f rows |
 | 3.1 Low Data Mode, or cellular with "Live updates on cellular" off | Full demand runs as Compact; the pill says "Every 5 s on cellular". History still loads when asked | 7k (switch), 8d (policy), 11c (pill wording) | 7k bridge test; `tests/demand.rs`; 11c pill test |
 | 3.1 MagicDNS off, NAT64 | No UI; the route race and `getaddrinfo` handle them | phase 4 | existing dialer tests |
-| 3.2 Mac asleep | `offline`: dashes, no chart, "Offline since HH:MM" in host time. No history (D-152) | 7f, 7k | `hosts-list.test` exact strings, non-zero clock offset; 7k offline host makes no history call |
+| 3.2 Mac asleep | `offline`: dashes, no chart, "Offline since HH:MM" in host time. No history (D-154) | 7f, 7k | `hosts-list.test` exact strings, non-zero clock offset; 7k offline host makes no history call |
 | 3.2 StatGlass not running, monitoring off | `app_not_running`, `monitoring_off`, Retry | 7f | 7f rows |
 | 3.2 Agent stopped or updating | `agent_not_running`, "Retrying at HH:MM" | 7f | 7f row |
 | 3.2 Identity changed | `identity_changed`, Re-pair | 7f | 7f row |
@@ -187,7 +187,7 @@ scenario host checked in `apps/mobile/test/connection/`.
 | 3.8 Diagnostics | Rust logs to os_log, subsystem `app.statglass` | 7l | `logging.rs` test; one simulator log line |
 
 The states with no row here are placed in section 9: a corporate VPN, a changed LAN address
-(Bonjour), Low Power and thermal policy, and the Diagnostics export. D-152 makes several RFC 3
+(Bonjour), Low Power and thermal policy, and the Diagnostics export. D-154 makes several RFC 3
 rows moot: there is no mirror to corrupt, prune, back up or commit on kill, and no `not_synced`
 span, because the phone stores nothing.
 
@@ -309,7 +309,7 @@ drawn in 7 pt. The labelled ceiling keeps the scale honest, as the popover's CPU
 
 **Gaps, stale and offline.** A null bucket is a gap, never zero. A stale row (connected, frames
 late) dims to 50 %. An offline row shows dashes, no chart, and "Offline since HH:MM" in host
-time. Why not the last values, dimmed: the phone has no history behind them (D-152), and the
+time. Why not the last values, dimmed: the phone has no history behind them (D-154), and the
 errors audit (H4) found that stale values read as live. A time with dashes can't be mistaken.
 
 **Data.** Each visible row makes one `hostHistory` query for `cpu.total`, `mem.used`,
@@ -469,7 +469,7 @@ chevron.
 - Each row shows the OS glyph, name and status subtitle, and opens the host detail page.
 - Swipe-to-delete opens a confirmation: an action sheet whose "Remove <host>" is destructive
   and says this iPhone stops monitoring the host, whose history stays on the host (the phone
-  keeps none, D-152).
+  keeps none, D-154).
 - Press-hold-and-drag reorders through `ReorderList`, with haptics on pickup and drop and
   VoiceOver "Move up"/"Move down". The order persists in phone settings.
 
@@ -486,7 +486,7 @@ chevron.
 - **This iPhone:** the key line in a monospace caption with Copy, and App Lock.
 - **Data:** one switch, "Live updates on cellular", wired by 7k, with a footer: when it is
   off, the host screen updates every 5 s on cellular. "Sync history on cellular" is gone
-  (D-152).
+  (D-154).
 - **Appearance:** checkmark rows (System, Light, Dark), with no link-colored text. 8c moves
   applying the setting out of the route.
 - **About:** label/value rows, with values right-aligned in `value`, and the licenses link.
@@ -531,7 +531,7 @@ focused:
 | Stat strip | `apps/mobile/src/module/stat-strip.tsx` over core `series-stats.ts` formatting | Phone renderer, shared formatting |
 | Heat matrix, ring gauge | `packages/core/src/widget-models/heat-matrix.ts`, `ring-gauge.ts`; the desktop renders the models; phone twins | Shared widget models (`widget-model` skill) |
 | Sparkline variants: a compact `StreamArea` with a corner ceiling; `Sparkbars` (mirrored, sparkline scale) | `apps/mobile/src/widgets/` over the existing `streamAreaModel`/`mirrorBarsModel` | Phone twins of shared models; a model option is a fork listed in `packages/core/README.md` |
-| Phone `setProcessInterest` | Already built: `MobileCall::SetProcessInterest` in the plan 7 scaffold, `crates/statglass-mobile/src/sessions/processes.rs` in 8d | Shared Rust (stats now come in the history answer, D-152) |
+| Phone `setProcessInterest` | Already built: `MobileCall::SetProcessInterest` in the plan 7 scaffold, `crates/statglass-mobile/src/sessions/processes.rs` in 8d | Shared Rust (stats now come in the history answer, D-154) |
 
 Card content models (plan 7g) and the navigator theme (plan 7a) were in this table before the
 audits. They now land in the foundation.
@@ -554,7 +554,7 @@ Reanimated and Gesture Handler directly, as an L lane of its own.
 ## 6. Foundation (plan phase 7)
 
 Foundation runs before pairing, because the audits' fixes touch the files pairing builds on,
-and every chart builds on D-152's history path. Its thirteen lanes (a to l, with j split into j1 and j2) are disjoint and run
+and every chart builds on D-154's history path. Its thirteen lanes (a to l, with j split into j1 and j2) are disjoint and run
 in parallel. Full briefs are in the plan.
 
 | Lane | Lands | Audit items |
@@ -566,11 +566,11 @@ in parallel. Full briefs are in the plan.
 | e, native errors | Swift `NativeFailure` mapped to a typed `NativeError`; a fallible `public_key` (`phone_key_unavailable`); a Swift test package; typed `callCore` results | errors M1, M2, L6; arch M11; tests M9 |
 | f, connection states | `phoneProblem` and `hostStatusSummary` as the single status wording; every RFC 3 state reaching the hosts list and host page (section 4.0); the `phone-errors` scenario and `failNext` instead of 22 per-test overrides | arch I3; errors H3, M9, L2; tests H2, M3, M5, M6, M10 |
 | g, card models | `packages/core/src/popover/cards/` content models shared with the desktop popover; `WidgetAccent` moved | arch F2, M6; tests M1 (popover-cards, card-stack) |
-| h, network addresses | The `NetworkAddresses` query below (D-153) | the user's Network decision |
-| i, phone core without a mirror | No mirror store, sync policy or storage budget (the scaffold cuts the calls first); `live_allowed` for the cellular switch; host opens that can't fail on a store, and `open_error` for start failures (H2 reshaped); stale vitals cleared on offline (`as_of_ms`); the history client, skipping event kinds it can't decode; the Docker end-to-end facade test | errors H2, H4; tests M8; D-152 |
-| j1, host history read path | `Query::History` below: tier choice, clamps, the layout filter, recent rows up to now, events filtered by module, per-key stats | D-152 |
-| j2, host history concurrency | The per-session queue by chart key, the host-wide semaphore and cache on `HostServer`, the tick-timing test | D-152 |
-| k, phone history data | `useHostHistory` with a width budget and 30 s cache; unsupported and busy states; the one cellular switch, wired; the mock's answers | tests M7 (switch wired, not removed); D-152 |
+| h, network addresses | The `NetworkAddresses` query below (D-155) | the user's Network decision |
+| i, phone core without a mirror | No mirror store, sync policy or storage budget (the scaffold cuts the calls first); `live_allowed` for the cellular switch; host opens that can't fail on a store, and `open_error` for start failures (H2 reshaped); stale vitals cleared on offline (`as_of_ms`); the history client, skipping event kinds it can't decode; the Docker end-to-end facade test | errors H2, H4; tests M8; D-154 |
+| j1, host history read path | `Query::History` below: tier choice, clamps, the layout filter, recent rows up to now, events filtered by module, per-key stats | D-154 |
+| j2, host history concurrency | The per-session queue by chart key, the host-wide semaphore and cache on `HostServer`, the tick-timing test | D-154 |
+| k, phone history data | `useHostHistory` with a width budget and 30 s cache; unsupported and busy states; the one cellular switch, wired; the mock's answers | tests M7 (switch wired, not removed); D-154 |
 | l, logging and facade test | A `tracing` subscriber to os_log; a `MobileCore` facade unit test over a scripted dialer | errors H1; tests M8 |
 
 **F-wire: host-served network addresses (lane h).** This is a protocol addition and a one-way
@@ -594,7 +594,7 @@ lane. The UI lane only renders it.
 - **Host answer.** The interface is the egress interface, falling back to the primary. The
   answer carries the link speed when known, the IPv4 addresses, and the non-link-local IPv6
   addresses.
-- **Public IP follows D-093, widened by D-153.**
+- **Public IP follows D-093, widened by D-155.**
   - Every host looks up its own, Linux agents included, with no switch. The user accepted that
     a headless server now makes this request occasionally.
   - It is fetched on demand only (a client asked for the addresses), after the local read
@@ -614,7 +614,7 @@ lane. The UI lane only renders it.
   machine header and the popover Network card show addresses for remote hosts too. A host
   without the feature shows no address row.
 
-**F-history: the host answers history (lanes i, j and k; D-152).** The phone keeps no history.
+**F-history: the host answers history (lanes i, j and k; D-154).** The phone keeps no history.
 This is the second protocol addition, and also a one-way door.
 
 - **Why `Query`/`Answer` and not a new message pair.** A history read is a bounded one-shot
@@ -708,7 +708,7 @@ This is the second protocol addition, and also a one-way door.
 
 ## 7. Decisions already made (the user's)
 
-- **No history on the phone (2026-11-25, D-152).** The monitored host is the source of truth.
+- **No history on the phone (2026-11-25, D-154).** The monitored host is the source of truth.
   History comes from a host-served query and lives in memory only, dropped when the view
   unmounts. This reverses `plan/rfc-ios-app.md`'s mirror design (4.4, D-146) at the user's
   request. A 5 s hosts-list update is fine (10 s would be too), so `HostSummary` stays at 5 s.
@@ -736,7 +736,7 @@ This is the second protocol addition, and also a one-way door.
 - **The welcome screen is the front door.** It has a live labelled example preview, "Add a
   host" as the primary action and "Try demo hosts" as the secondary, setup guidance, and the
   first-run, demo-exit, restore and no-hosts states.
-- **Public IP on every host (2026-11-25, D-153).** Each host looks up its own public IP on
+- **Public IP on every host (2026-11-25, D-155).** Each host looks up its own public IP on
   demand, Linux agents included, with no switch; 24-hour cache, early re-lookup on a network
   change, 10-minute failure cache. The Mac shows local and public addresses for the remote
   hosts it monitors too (plan 8e).
@@ -798,7 +798,7 @@ stays with the phase 8 scaffold.
   active" to a non-VPN app, so it would be a guess. It surfaces as `timeout` or `unreachable`.
 - **RFC 3.1, LAN address changed (Bonjour):** out of scope. Phone discovery is not in 1.0, and
   the Tailscale route covers it.
-- **RFC 3.4, phone storage low; RFC 3.5, `not_synced` spans:** moot under D-152. The phone
+- **RFC 3.4, phone storage low; RFC 3.5, `not_synced` spans:** moot under D-154. The phone
   stores no history, so there is nothing to fill or leave unsynced.
 - **RFC 3.4, Low Power and thermal policy:** rejected for now. Demand is screen-scoped and
   nothing syncs, so this policy would only degrade the screen the user is looking at. Motion

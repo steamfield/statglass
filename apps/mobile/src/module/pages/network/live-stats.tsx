@@ -22,7 +22,7 @@ import { Text } from "@/ui/text";
 
 const NO_STATS = [] as const;
 
-/** "↓ Downloaded · 1 h": bytes from the host's range totals (D-155), never summed here. */
+/** "↓ Downloaded · 1 h": bytes from the host's range totals (D-157), never summed here. */
 function rangeTotals(stats: readonly SeriesHistoryStats[], spanMs: number) {
   const scope = formatSpan(spanMs);
   return NETWORK_HERO.totals.map(({ metric, label }) => {

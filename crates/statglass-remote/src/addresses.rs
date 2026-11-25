@@ -1,4 +1,4 @@
-//! Addresses supplied by the monitored host (D-093, D-153).
+//! Addresses supplied by the monitored host (D-093, D-155).
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr};

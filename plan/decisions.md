@@ -4785,7 +4785,7 @@ Date: 2026-11-24. Amends RFC `plan/rfc-ios-app.md` 2.4 and D-145.
 
 - The phone gains a non-Secure-Enclave key type (the RFC 2.2 Ed25519 fallback for hosts that refuse ECDSA): the pairing key may then follow the device key type.
 
-## D-152: The phone keeps no history; the host answers bounded history queries
+## D-154: The phone keeps no history; the host answers bounded history queries
 
 Date: 2026-11-25. The user's decision. Reverses the mirror design of RFC `plan/rfc-ios-app.md` 4.4 for the phone, supersedes D-146, and amends D-141 (the phone no longer uses `Mirror`) and the wire rule in D-141 ("the wire format does not change for 1.0"). One-way door (`plan/architecture.md`): the message shape below is additive and optional. Plan: `plans/deliver-ios-app.md` phase 7 lanes i, j1, j2 and k.
 
@@ -4815,7 +4815,7 @@ The phone mirrored each host's history into a per-host SQLite file (M1 for a day
 
 - Users ask for history of hosts while they are offline, or cellular history reads are measured to cost more than the mirror's sync did.
 
-## D-153: Hosts serve their network addresses to their clients
+## D-155: Hosts serve their network addresses to their clients
 
 Date: 2026-11-25. The user's decision, reversing the iPhone polish RFC's proposal (`plan/rfc-ios-polish.md` section 6). Extends D-093's address rules to remote clients. One-way door: additive and optional. Plan: `plans/deliver-ios-app.md` phase 7 lane h and phase 8 lane e.
 
@@ -4827,7 +4827,7 @@ Date: 2026-11-25. The user's decision, reversing the iPhone polish RFC's proposa
 4. **This widens D-093, and the user accepted it.** D-093 weighed the third-party request for the user's own Mac, where the user opened the Network page. Now a headless Linux server makes the same request occasionally, when a phone or a controlling Mac shows its addresses and the cache is cold or the host's network changed. On this Mac the public IP now follows the same 24-hour rule instead of the desktop's 10-minute refresh. There is no switch for it. The user accepted that tradeoff (2026-11-25).
 5. **The Mac shows these addresses for its remote hosts too** (the user's decision, 2026-11-25). One desktop command, `get_host_addresses`, answers this Mac from the shared resolver and a remote host through its session's `NetworkAddresses` query, replacing `get_network_addresses` and `get_public_ip`. The Network page address line, the Overview machine header and the popover Network card show addresses for every host. A host without `query.addresses.v1` shows no address row and no error. Plan: phase 8 lane e.
 
-## D-154: One Add a host flow on the iPhone
+## D-156: One Add a host flow on the iPhone
 
 Date: 2026-11-25. The user's decision. Updates RFC `plan/rfc-ios-app.md` sections 1.3, 1.4 and 2.4.
 
@@ -4835,21 +4835,21 @@ Date: 2026-11-25. The user's decision. Updates RFC `plan/rfc-ios-app.md` section
 
 Use one Add a host flow for offers from Pair iPhone on a Mac and from `sudo statglass-agent pair` on a host. Both offers support Scan QR and Paste code. The payload's `can_hand_over` field tells the phone whether the host can hand over other monitored hosts. The phone uses the OS field for display.
 
-## D-155: History answers carry range totals
+## D-157: History answers carry range totals
 
-Date: 2026-11-25. Follows D-152. One-way door: additive and optional. Plan: `plans/deliver-ios-app.md` phase 12 (the Network page strip).
-
-### Decision
-
-`WireSeriesStats` in the D-152 history answer gains `measured_ms` and `integral`, both optional and omitted when absent, and `SeriesHistoryStats` carries them to the phone. The host fills them from `statglass-store`'s `range_stats`, the function behind the desktop's `query_series_stats`: `measured_ms` is the time in the range with a reading outside the gaps that apply to the metric, and `integral` is the average times the measured seconds, `None` when nothing was measured. The phone's Network page shows Downloaded and Uploaded from them, with the measured time when it is shorter than the range, as the desktop strip does. The phone never integrates bucket averages itself (`data-boundary.md`): a host that predates this sends neither field, and the phone shows no totals for it. An older decoder ignores the new fields and a newer one reads their absence as `None`; `statglass-proto/tests/history_skew.rs` covers both directions.
-
-## D-156: StatGlass for iPhone ships on the App Store
-
-Date: 2026-11-25. Follows D-015, D-118, D-131, D-152. Plan: `plans/deliver-ios-app.md` phase 13.
+Date: 2026-11-25. Follows D-154. One-way door: additive and optional. Plan: `plans/deliver-ios-app.md` phase 12 (the Network page strip).
 
 ### Decision
 
-StatGlass for iPhone (`com.tryopendata.statglass.mobile`) is distributed through TestFlight and the App Store; the Mac app stays off the App Store (D-015). The listing is iPhone only (`supportsTablet: false`, reviewed in iPad compatibility mode), portrait only, named "StatGlass" (fallback "StatGlass Monitor"), category Utilities with Developer Tools second. The App Privacy label is Data Not Collected: metrics travel over SSH from the user's own hosts to the phone, the phone keeps no history (D-152), and nothing reaches the developer. The privacy policy and support page is `https://statglass.steamfield.io/docs/iphone` (`#privacy`, `#support`), linked from Settings > About.
+`WireSeriesStats` in the D-154 history answer gains `measured_ms` and `integral`, both optional and omitted when absent, and `SeriesHistoryStats` carries them to the phone. The host fills them from `statglass-store`'s `range_stats`, the function behind the desktop's `query_series_stats`: `measured_ms` is the time in the range with a reading outside the gaps that apply to the metric, and `integral` is the average times the measured seconds, `None` when nothing was measured. The phone's Network page shows Downloaded and Uploaded from them, with the measured time when it is shorter than the range, as the desktop strip does. The phone never integrates bucket averages itself (`data-boundary.md`): a host that predates this sends neither field, and the phone shows no totals for it. An older decoder ignores the new fields and a newer one reads their absence as `None`; `statglass-proto/tests/history_skew.rs` covers both directions.
+
+## D-158: StatGlass for iPhone ships on the App Store
+
+Date: 2026-11-25. Follows D-015, D-118, D-131, D-154. Plan: `plans/deliver-ios-app.md` phase 13.
+
+### Decision
+
+StatGlass for iPhone (`com.tryopendata.statglass.mobile`) is distributed through TestFlight and the App Store; the Mac app stays off the App Store (D-015). The listing is iPhone only (`supportsTablet: false`, reviewed in iPad compatibility mode), portrait only, named "StatGlass" (fallback "StatGlass Monitor"), category Utilities with Developer Tools second. The App Privacy label is Data Not Collected: metrics travel over SSH from the user's own hosts to the phone, the phone keeps no history (D-154), and nothing reaches the developer. The privacy policy and support page is `https://statglass.steamfield.io/docs/iphone` (`#privacy`, `#support`), linked from Settings > About.
 
 Versions: `CFBundleShortVersionString` comes from `apps/mobile/package.json` (1.0.0 for the first release, tagged `mobile-vX.Y.Z`); `CFBundleVersion` is `git rev-list --count HEAD` at archive time, passed as `STATGLASS_MOBILE_BUILD_NUMBER`, so every upload is monotonic.
 
@@ -4859,16 +4859,16 @@ Review access (the user's answer): demo mode only. The review notes explain "Try
 
 Builds are local only (D-118, D-131): `make mobile-archive` builds and exports, `make mobile-release-check` checks the archive, and the upload and submission are the user's steps (`.github/releasing-mobile.md`).
 
-## D-157: The phone's live ring starts with the host's recent five minutes
+## D-159: The phone's live ring starts with the host's recent five minutes
 
-Date: 2026-11-25. Follows D-152. The user's report: a host screen opened on a fresh connection drew only the frames received since the app connected, instead of a full chart window. No wire change.
+Date: 2026-11-25. Follows D-154. The user's report: a host screen opened on a fresh connection drew only the frames received since the app connected, instead of a full chart window. No wire change.
 
 ### Context
 
-D-152 removed the phone's mirror and said the live ring's backfill covers the newest minute. The ring had no source for that minute: a session refilled its ring only from a mirror (`refill_ring`), and without one it still counted the three sync tiers, never synced them and so never sent `RecentRequest`. Every phone chart drawn from the ring started empty on each connection, on hosts of every version.
+D-154 removed the phone's mirror and said the live ring's backfill covers the newest minute. The ring had no source for that minute: a session refilled its ring only from a mirror (`refill_ring`), and without one it still counted the three sync tiers, never synced them and so never sent `RecentRequest`. Every phone chart drawn from the ring started empty on each connection, on hosts of every version.
 
 ### Decision
 
 1. A `RemoteSource` without a mirror syncs no tiers. While live detail is on and its ring has not been refilled, it sends one `RecentRequest` for the last five minutes (retried after 5 s if no snapshot arrives) and refills the ring from the `RecentRows` reply through `statglass_store::history_recent`, on a new timeline, the way the desktop refills from its mirror. The snapshot is validated by the same function as the mirror's (`recent_rows::recent_buckets`) and held only in the ring. Detail stopping and starting again refills again.
 2. The phone subscribes with a five-minute backfill, the span the snapshot covers. Refilled rows are 10 s buckets, as on the desktop for a remote host; frames received after the connection are 1 s rows.
-3. Hosts of every version answer `RecentRequest`, so this needs no host update. Module pages still read bounded history queries (D-152), which need a host with `query.history.v1`.
+3. Hosts of every version answer `RecentRequest`, so this needs no host update. Module pages still read bounded history queries (D-154), which need a host with `query.history.v1`.

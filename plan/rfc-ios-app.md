@@ -1,8 +1,8 @@
 # RFC: StatGlass for iPhone
 
-> **Changed 2026-11-25 (the user's decision, D-152):** the phone no longer mirrors history. The
+> **Changed 2026-11-25 (the user's decision, D-154):** the phone no longer mirrors history. The
 > host answers bounded `Query::History` requests and the phone keeps answers in memory only.
-> Sections 3.4, 3.5, 4.4 and 4.5 still describe the mirror; read them with D-152 and
+> Sections 3.4, 3.5, 4.4 and 4.5 still describe the mirror; read them with D-154 and
 > `plan/rfc-ios-polish.md` section 6. The body below is unchanged.
 
 Status: Draft, revision 2, 2026-11-22. Revision 2 folds in a ce:devils-advocate architecture
@@ -258,7 +258,7 @@ restrict,expiry-time="202611221410Z",command="<helper> pair --nonce <n>" ssh-ed2
 newer versions, and pairing checks `ssh -V` output on the host when it can.
 
 On the phone, choose Add a host for either source. The offer carries the capability to hand over
-other monitored hosts (D-154).
+other monitored hosts (D-156).
 
 1. The phone scans the QR code or reads the pasted pairing text and previews the host and
    the six-character code. On confirmation, it generates its Secure Enclave key and dials

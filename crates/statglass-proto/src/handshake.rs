@@ -82,9 +82,9 @@ pub enum HandshakeError {
 pub const QUERY_FEATURE: &str = "query.v1";
 /// Source-owned durable interval attribution and bounded process pages (D-120).
 pub const USAGE_HISTORY_FEATURE: &str = "query.usage-history.v1";
-/// Source-owned history for charts (D-152).
+/// Source-owned history for charts (D-154).
 pub const HISTORY_QUERY_FEATURE: &str = "query.history.v1";
-/// Addresses on the host's network (D-153).
+/// Addresses on the host's network (D-155).
 pub const ADDRESSES_QUERY_FEATURE: &str = "query.addresses.v1";
 
 /// The features this build offers: every `SyncPage` row kind it knows.
