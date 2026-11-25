@@ -8,6 +8,7 @@ mod expiry;
 use crate::device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice};
 use sha2::{Digest, Sha256};
 use std::{
+    borrow::Cow,
     fs::{self, DirBuilder, File, OpenOptions, Permissions},
     io::{self, Read, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
@@ -42,10 +43,19 @@ impl AuthorizedKeys {
         Self { path }
     }
 
-    fn install(&self, token: &str, line: String, key: &str) -> Result<(), DeviceKeysError> {
+    fn install(
+        &self,
+        token: &str,
+        line: String,
+        key: &str,
+        expiry: Option<&expiry::PairingExpiry>,
+    ) -> Result<(), DeviceKeysError> {
         let key = key.trim_end_matches('=').as_bytes();
         self.edit(true, |current| {
-            for entry in entries(current) {
+            let current = expiry.map_or(Cow::Borrowed(current), |expiry| {
+                Cow::Owned(expiry.prune(current))
+            });
+            for entry in entries(&current) {
                 let same_key = entry.key.strip_suffix(b"=").unwrap_or(entry.key) == key;
                 if same_key && entry.token != token.as_bytes() {
                     return Err(DeviceKeysError::Invalid(
@@ -68,7 +78,7 @@ impl AuthorizedKeys {
             {
                 return Ok(Some(current.to_vec()));
             }
-            let mut next = without_token(current, token);
+            let mut next = without_token(&current, token);
             // Place the entry before an unterminated final line to keep its bytes intact.
             let end = next
                 .iter()
@@ -172,7 +182,7 @@ impl DeviceKeys for AuthorizedKeys {
             "restrict,command=\"{command}\" {KEY_TYPE} {key_text} {}\n",
             comment.trim_end()
         );
-        self.install(&token, line, &key_text)?;
+        self.install(&token, line, &key_text, None)?;
         Ok(tag)
     }
 
@@ -190,11 +200,12 @@ impl DeviceKeys for AuthorizedKeys {
         let token = pairing_token(nonce)?;
         let key = encode_key(key)?;
         let command = escape_option(command)?;
-        let expiry = expiry::format(expires_ms)?;
+        let expiry = expiry::PairingExpiry::new()?;
+        let deadline = expiry.format(expires_ms)?;
         let line = format!(
-            "restrict,expiry-time=\"{expiry}\",command=\"{command}\" {KEY_TYPE} {key} {token}\n"
+            "restrict,expiry-time=\"{deadline}\",command=\"{command}\" {KEY_TYPE} {key} {token}\n"
         );
-        self.install(&token, line, &key)
+        self.install(&token, line, &key, Some(&expiry))
     }
 
     fn remove_pairing(&self, nonce: &str) -> Result<bool, DeviceKeysError> {

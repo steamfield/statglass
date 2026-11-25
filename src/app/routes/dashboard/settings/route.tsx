@@ -14,6 +14,7 @@ import { CommandLinePanel } from "./_components/command-line-panel";
 import { GeneralPanel } from "./_components/general-panel";
 import { MenuBarPanel } from "./_components/menu-bar-panel";
 import { ModulesPanel } from "./_components/modules-panel";
+import { PairedDevicesPanel } from "./_components/paired-devices/panel";
 import { SamplingPanel } from "./_components/sampling-panel";
 
 const TEMPERATURE = [
@@ -95,7 +96,7 @@ export default function SettingsRoute() {
             <SettingsPanel title="Remote monitoring">
               <SettingsRow
                 label="Allow remote monitoring"
-                sub="Other Macs signed in over SSH as your user can view this Mac while StatGlass is running."
+                sub="Other Macs signed in over SSH as your user and iPhones you've paired can view this Mac while StatGlass is running."
               >
                 <Switch
                   aria-label="Allow remote monitoring"
@@ -106,6 +107,7 @@ export default function SettingsRoute() {
                 />
               </SettingsRow>
             </SettingsPanel>
+            <PairedDevicesPanel />
             <CommandLinePanel enabled={settings.cli_access?.enabled ?? true} />
           </div>
         </div>
