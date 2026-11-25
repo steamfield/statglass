@@ -86,9 +86,10 @@ Test cases:
 
 ### Phase 2: this Mac sets rules and delivers remote alerts
 
-Demo: `cargo test -p statglass remote_alert` and `cargo test -p statglass-remote alert` (non-zero counts): commands read and replace a fake agent's rules with each refusal mapped; inserted alert events from a mirrored page are delivered once, back history is Timeline-only, late ones go out as one catch-up message.
+Demo: `cargo test -p statglass remote_delivery`, `cargo test -p statglass remote_rules` and `cargo test -p statglass-remote alert` (non-zero counts): commands read and replace a fake agent's rules with each refusal mapped; inserted alert events from a mirrored page are delivered once, back history is Timeline-only, late ones go out as one catch-up message.
 Depends on: phase 1
 Scaffold: ffc76868
+Tag: remote-alerts-phase-2
 Phase scaffold (orchestrator, when phase 1 tags): `IngestReport.alerts_inserted: Vec<Event>` (always empty until lane a); `pub type AlertListener = Arc<dyn Fn(Uuid, Vec<Event>) + Send + Sync>` and `Mirror::set_alert_listener(&self, listener: AlertListener)`, with `Mirror::ingest` calling it after the durable commit when `alerts_inserted` is non-empty (epoch = the page's epoch); `RemoteError::Stale(String)`.
 Test cases:
 - Store: a page with two new alert events and one non-alert event reports exactly the two alerts in `alerts_inserted`, decoded; replaying the same page reports none; a same-source event updated with a higher `source_seq` is not reported as inserted.
@@ -113,9 +114,9 @@ Depends on: phase 2
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | src/core/mock/remote-alerts.ts | | | gpt-6.2-sol | pending | | |
-| b | M | src/app/routes/dashboard/alerts/ | | | gpt-6.2-sol | pending | | |
-| c | M | src-tauri/src/alerts/remote_alert_flow_tests.rs, src-tauri/src/alerts/mod.rs | phase 2 lanes | | gpt-6.2-sol | pending | | flow tests pass, each watched failing once |
+| a | L | src/app/routes/dashboard/alerts/, src/app/routes/dashboard/route.tsx, src/app/routes/dashboard/_components/live-sidebar.tsx, src/core/alerts.ts, src/core/alerts.test.ts, src/core/remote-alert-rules.ts, src/core/mock/commands.ts, src/core/mock/fixtures.ts, src/core/mock/remote-alerts.ts, src/core/mock/remote-updates.ts, tests/e2e/remote-alerts.spec.ts | contracts, plan/design-system.md | | gpt-6.2-sol | pending | | page, mock, Vitest and Playwright pass; screenshots compared |
+| b | M | (folded into a) | | | gpt-6.2-sol | cut | | |
+| c | M | (covered by phase 2 tests) | | | gpt-6.2-sol | cut | | |
 
 (Briefs written during phase 2.)
 
@@ -123,3 +124,5 @@ Depends on: phase 2
 - Plan critique (sonnet DA): demo filter could run zero tests (fixed: `--test alert_rules`, count checked). `recent_alerts` move unfinished: rejected, `src-tauri/src/history.rs` delegates to the engine since the scaffold. Lanes span two capabilities: accepted deviation, lanes already running. Lane b tests on new metrics: steered to existing metrics. Golden revision test: added to lane b by steer. A newer-build rule with an extra field decodes as Known and loses the field on re-save: accepted limitation (agents update from this Mac, so the agent is rarely newer).
 - 2026-11-24: User asked for test coverage per ce:writing-tests with the remote boundary mocked. Running phase 2 lanes get `tests-addendum.md` as a followup with their review fixes (fake peer over duplex, recording sender, fake clock, whole-result assertions, boundary cases, each test watched failing once). Added phase 3 lane c: cross-lane flow tests (a fake agent's synced page through the real Mirror, listener, delivery and floor to a recording sender; the rule commands against a fake peer). Phase 3 frontend lanes test through the mock transport plus one Playwright journey.
 - 2026-11-24: User asked whether "no feature flag" was a misunderstanding (they expected a PostHog rollout flag). The flag RFC revision 3 dropped was a Hello capability bit in the wire handshake, not a rollout flag; it was dropped because remote Macs would also advertise it, and an old agent's `Unsupported` answer already gives the same signal (D-117). The repo has no PostHog or any telemetry, so no decision rested on it; D-140 stands.
+- 2026-11-24: Phase 2 reviews found and fixed: first alert after pairing was Timeline-only (floor now set at registration); catch-up grouped per page instead of per pass; floors outlived host removal; repeated rule names in catch-up text; agent-clock fired_at; a newer build's added rule field stripped on save (Known now requires an exact CBOR round trip, D-140 amended); undecodable alerts dropped at debug level; a post-COMMIT read and a usage-flush failure that could store a page without reporting its alerts. Rejected for code: Rust-side refusal of saves with id-less newer entries (ids are a frozen wire field; the page disables saving instead); a separate error kind for Answer::Unknown (the page gates the update action on the host's agent_update status).
+- 2026-11-24: Phase 3 is one lane: the mock and the page are coupled through the tests, so lane b is folded into a. Lane c is cut: lane 2b's tests drive a real SyncPage through the real Mirror, listener and Timeline path with only notification and destination sends faked, and lane 2c's tests drive both commands through a fake peer on the query wire.
