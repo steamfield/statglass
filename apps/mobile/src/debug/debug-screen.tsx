@@ -228,12 +228,12 @@ function useDebugCpu(
 function DebugReading({ host, error }: { host: HostId; error: string | null }) {
   useHostLiveSubscription(host);
   const status = useHostConnection(host, true);
-  const failure = useLiveFailure(host);
   const recovering = useHostLive(
     host,
     (state) => state.stale || state.connection === "reconnecting"
   );
   const remote = status.isError ? undefined : status.data?.status;
+  const failure = useLiveFailure(host, remote);
   const connected = remote?.state === "connected";
   const cpu = useDebugCpu(host, remote?.state, status.isError);
   const readError = status.isError ? connectionStatusError(status.error) : null;
