@@ -639,6 +639,69 @@ fn last_wake_is_the_latest_closed_sleep_in_the_week() {
 }
 
 #[test]
+fn desktop_history_auto_reads_ten_second_rows_within_a_day() {
+    let dir = temp_dir("history-auto");
+    let history = History::open(dir.path());
+    let record = local_record();
+    let writer = history.register_host(&record).unwrap();
+    let key = SeriesKey::bare(MetricId::from_static("cpu.total"));
+    let series: Arc<[SeriesKey]> = vec![key.clone()].into();
+    for (tier, bucket_ts, stats) in [
+        (Tier::S10, NOW, vec![10.0, 30.0, 20.0]),
+        (Tier::S10, NOW + 10_000, vec![20.0, 40.0, 30.0]),
+        (Tier::M1, NOW, vec![40.0, 60.0, 50.0]),
+    ] {
+        writer
+            .write_bucket(BucketRow {
+                host: record.id,
+                tier,
+                bucket_ts,
+                series: series.clone(),
+                stats,
+            })
+            .unwrap();
+    }
+    writer.flush().unwrap();
+    let request = HistoryRequest {
+        host: record.id,
+        selectors: vec![statglass_schema::SeriesSelector {
+            metric: key.metric.clone(),
+            labels: Labels::new(),
+        }],
+        from_ms: NOW,
+        to_ms: NOW + 60_000,
+        tier: TierRequest::Auto,
+        max_points: 60,
+    };
+    assert_eq!(
+        history.history(&request, Vec::new, |_, bucket_ms| bucket_ms),
+        Ok(HistoryPage {
+            tier: Tier::S10,
+            bucket_ms: 10_000,
+            series: vec![crate::ipc::HistorySeries {
+                key,
+                hold_ms: 10_000,
+                points: vec![
+                    crate::ipc::HistoryPoint {
+                        t: NOW,
+                        min: 10.0,
+                        max: 30.0,
+                        avg: 20.0,
+                    },
+                    crate::ipc::HistoryPoint {
+                        t: NOW + 10_000,
+                        min: 20.0,
+                        max: 40.0,
+                        avg: 30.0,
+                    },
+                ],
+            }],
+            gaps: vec![],
+        }),
+    );
+}
+
+#[test]
 fn history_pages_carry_each_series_hold() {
     let history = History::unavailable();
     let request = HistoryRequest {

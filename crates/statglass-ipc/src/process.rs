@@ -1,7 +1,11 @@
 //! Live process rows, app quit targets and a per-batch refusal supplied by the app.
 //!
 //! When the registry has no refusal source, `LiveProcess::refusal` is `None` because
-//! no rule was applied. [`live_quit_set`] computes the quit targets over the whole batch.
+//! no rule was applied.
+//!
+//! [`live_quit_set`] computes `LiveProcess::app_quit` over the whole batch. Every view
+//! that offers Quit for an app reads that decision. The process table reads it
+//! directly, and per-app usage and recorded tables look it up by app name.
 
 use std::collections::{HashMap, HashSet};
 
@@ -81,9 +85,49 @@ pub struct LiveProcess {
     pub app: String,
     /// Quit on this process's app acts on it: the app's running main executables when it
     /// has any, otherwise every process of the app. Decided over the whole sample, before
-    /// the view's limit (`app_quit::live_quit_set`); per-app and recorded tables quit
+    /// the view's limit (`live_quit_set`); per-app and recorded tables quit
     /// through it by app name.
     pub app_quit: bool,
+}
+
+/// The indices into `procs` (one app's processes, all running) that Quit on the app acts
+/// on: its main executables alone when there are any (one per running instance of the
+/// app), since quitting them quits the app and signalling its helpers first would cut a
+/// graceful quit short; otherwise every process. Empty when `procs` is.
+fn quit_targets<P>(procs: &[P], main: impl Fn(&P) -> bool) -> Vec<usize> {
+    let mains: Vec<usize> = procs
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| main(p))
+        .map(|(i, _)| i)
+        .collect();
+    if mains.is_empty() {
+        (0..procs.len()).collect()
+    } else {
+        mains
+    }
+}
+
+/// The `(pid, start_time_us)` of every row in `rows` that Quit on its app acts on. Rows
+/// group by app name, or by their own name when they have no app, and every row in the
+/// batch counts as running.
+pub fn live_quit_set(rows: &[ProcessSample]) -> HashSet<(i32, i64)> {
+    let mut groups: HashMap<&str, Vec<&ProcessSample>> = HashMap::new();
+    for r in rows {
+        groups
+            .entry(r.app.as_deref().unwrap_or(&r.name))
+            .or_default()
+            .push(r);
+    }
+    groups
+        .values()
+        .flat_map(|members| {
+            quit_targets(members, |r| r.app_main)
+                .into_iter()
+                .filter_map(|i| members.get(i))
+                .map(|r| (r.pid, r.start_time_us))
+        })
+        .collect()
 }
 
 impl LiveProcess {
@@ -131,97 +175,8 @@ impl LiveProcess {
 
 #[cfg(test)]
 mod tests {
-    use super::LiveProcess;
+    use super::{LiveProcess, live_quit_set, quit_targets};
     use statglass_engine::{ProcessSample, ProcessSort, ProcessView};
-
-    fn sample(pid: i32, name: &str, app_main: bool, cpu_pct: f32) -> ProcessSample {
-        ProcessSample {
-            pid,
-            start_time_us: i64::from(pid),
-            name: name.into(),
-            app: Some("Safari".into()),
-            app_main,
-            cpu_pct,
-            mem_bytes: 0,
-            compressed_bytes: None,
-            threads: 1,
-            idle_wakeups_per_s: 0.0,
-            energy: 0.0,
-            energy_j: 0.0,
-            interval_s: 1.0,
-            disk_read_bps: 0.0,
-            disk_write_bps: 0.0,
-            net_rx_bps: None,
-            net_tx_bps: None,
-            gpu_pct: None,
-            ports: None,
-            user: "me".into(),
-        }
-    }
-
-    #[test]
-    fn quit_targets_come_from_the_whole_batch_before_the_limit() {
-        let rows = [
-            sample(1, "Safari", true, 0.1),
-            sample(2, "Safari Web Content", false, 90.0),
-        ];
-        let view = ProcessView {
-            limit: Some(1),
-            sort: vec![ProcessSort::Cpu],
-            ..ProcessView::default()
-        };
-        let picked = LiveProcess::select(&rows, &view, &|_, _, _| None);
-        assert_eq!(picked.len(), 1);
-        assert_eq!(picked[0].pid, 2);
-        assert_eq!(picked[0].app, "Safari");
-        assert!(!picked[0].app_quit, "the cut main is still the quit target");
-    }
-}
-
-/// The indices into `procs` (one app's processes, all running) that Quit on the app acts
-/// on: its main executables alone when there are any (one per running instance of the
-/// app), since quitting them quits the app and signalling its helpers first would cut a
-/// graceful quit short; otherwise every process. Empty when `procs` is.
-fn quit_targets<P>(procs: &[P], main: impl Fn(&P) -> bool) -> Vec<usize> {
-    let mains: Vec<usize> = procs
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| main(p))
-        .map(|(i, _)| i)
-        .collect();
-    if mains.is_empty() {
-        (0..procs.len()).collect()
-    } else {
-        mains
-    }
-}
-
-/// The `(pid, start_time_us)` of every row in `rows` that Quit on its app acts on. Rows
-/// group by app name, or by their own name when they have no app, and every row in the
-/// batch counts as running.
-pub fn live_quit_set(rows: &[ProcessSample]) -> HashSet<(i32, i64)> {
-    let mut groups: HashMap<&str, Vec<&ProcessSample>> = HashMap::new();
-    for r in rows {
-        groups
-            .entry(r.app.as_deref().unwrap_or(&r.name))
-            .or_default()
-            .push(r);
-    }
-    groups
-        .values()
-        .flat_map(|members| {
-            quit_targets(members, |r| r.app_main)
-                .into_iter()
-                .filter_map(|i| members.get(i))
-                .map(|r| (r.pid, r.start_time_us))
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod quit_tests {
-    use super::{live_quit_set, quit_targets};
-    use statglass_engine::ProcessSample;
 
     /// Whether each process is its app's main executable.
     fn targets(mains: &[bool]) -> Vec<usize> {
@@ -308,5 +263,29 @@ mod quit_tests {
             sample(3, "Foo", Some("Foo"), true),
         ];
         assert_eq!(live_quit_set(&rows), keys(&[1, 3]));
+    }
+
+    #[test]
+    fn quit_targets_come_from_the_whole_batch_before_the_limit() {
+        let rows = [
+            ProcessSample {
+                cpu_pct: 0.1,
+                ..sample(1, "Safari", Some("Safari"), true)
+            },
+            ProcessSample {
+                cpu_pct: 90.0,
+                ..sample(2, "Safari Web Content", Some("Safari"), false)
+            },
+        ];
+        let view = ProcessView {
+            limit: Some(1),
+            sort: vec![ProcessSort::Cpu],
+            ..ProcessView::default()
+        };
+        let picked = LiveProcess::select(&rows, &view, &|_, _, _| None);
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].pid, 2);
+        assert_eq!(picked[0].app, "Safari");
+        assert!(!picked[0].app_quit, "the cut main is still the quit target");
     }
 }

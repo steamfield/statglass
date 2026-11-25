@@ -44,7 +44,8 @@ impl Stream {
                 }
             }
             BusMsg::Processes(p) => self.on_processes(p.ts_ms, &p.rows)?,
-            // Events reach windows as the `event-recorded` Tauri event (state.rs).
+            // Each app delivers events through its own event path. The desktop sends
+            // the `event-recorded` Tauri event from `src-tauri/src/state.rs`.
             BusMsg::Event(_) => {}
         }
         Ok(())
