@@ -111,10 +111,11 @@ The phase scaffold also declares `mod remote_delivery;` and `mod remote_rules;` 
 
 Demo: `bun run dev:fast`, select the mock Linux host, open Alerts.
 Depends on: phase 2
+Scaffold: 0bc3f0b6 (no phase scaffold: the contracts are the generated bindings from phase 2)
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | L | src/app/routes/dashboard/alerts/, src/app/routes/dashboard/route.tsx, src/app/routes/dashboard/_components/live-sidebar.tsx, src/core/alerts.ts, src/core/alerts.test.ts, src/core/remote-alert-rules.ts, src/core/mock/commands.ts, src/core/mock/fixtures.ts, src/core/mock/remote-alerts.ts, src/core/mock/remote-updates.ts, tests/e2e/remote-alerts.spec.ts | contracts, plan/design-system.md | | gpt-6.2-sol | pending | | page, mock, Vitest and Playwright pass; screenshots compared |
+| a | L | src/app/routes/dashboard/alerts/, src/app/routes/dashboard/route.tsx, src/app/routes/dashboard/_components/live-sidebar.tsx, src/core/alerts.ts, src/core/alerts.test.ts, src/core/remote-alert-rules.ts, src/core/mock/commands.ts, src/core/mock/fixtures.ts, src/core/mock/remote-alerts.ts, src/core/mock/remote-updates.ts, tests/e2e/remote-alerts.spec.ts | contracts, plan/design-system.md | | gpt-6.2-sol | running | foreman/ra-3a | page, mock, Vitest and Playwright pass; screenshots compared |
 | b | M | (folded into a) | | | gpt-6.2-sol | cut | | |
 | c | M | (covered by phase 2 tests) | | | gpt-6.2-sol | cut | | |
 
