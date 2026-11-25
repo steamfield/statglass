@@ -6,19 +6,40 @@ function rejection(code: string, message: string) {
 }
 
 test.each([
-  ["ERR_STATGLASS_KEYCHAIN", "keychain"],
-  ["ERR_STATGLASS_SECURE_ENCLAVE", "secureEnclave"],
-  ["ERR_STATGLASS_CAMERA", "camera"],
-  ["ERR_STATGLASS_LOCAL_NETWORK", "localNetwork"],
-])("recognizes %s with or without an OSStatus", (code, kind) => {
-  expect(
-    toNativeModuleError(rejection(code, "unavailable (OSStatus -25300)"))
-  ).toEqual({ kind, osStatus: -25300, message: "unavailable" });
-  expect(toNativeModuleError(rejection(code, "unavailable"))).toEqual({
-    kind,
-    osStatus: null,
-    message: "unavailable",
-  });
+  [
+    "ERR_STATGLASS_KEYCHAIN",
+    "Could not load the phone key (OSStatus -25300)",
+    {
+      kind: "keychain",
+      osStatus: -25300,
+      message: "Could not load the phone key",
+    },
+  ],
+  [
+    "ERR_STATGLASS_KEYCHAIN",
+    "Could not sign with the phone key (OSStatus -25308)",
+    {
+      kind: "keychain",
+      osStatus: -25308,
+      message: "Could not sign with the phone key",
+    },
+  ],
+  [
+    "ERR_STATGLASS_SECURE_ENCLAVE",
+    "Could not create the phone key (OSStatus -50)",
+    {
+      kind: "secureEnclave",
+      osStatus: -50,
+      message: "Could not create the phone key",
+    },
+  ],
+  [
+    "ERR_STATGLASS_CAMERA",
+    "Could not access the camera",
+    { kind: "camera", osStatus: null, message: "Could not access the camera" },
+  ],
+])("decodes %s with message %s", (code, message, expected) => {
+  expect(toNativeModuleError(rejection(code, message))).toEqual(expected);
 });
 
 test.each([
@@ -26,6 +47,10 @@ test.each([
   ["a string", "ERR_STATGLASS_KEYCHAIN"],
   ["null", null],
   ["an unknown code", rejection("ERR_STATGLASS_OTHER", "unavailable")],
+  [
+    "the retired Local Network code",
+    rejection("ERR_STATGLASS_LOCAL_NETWORK", "unavailable"),
+  ],
   ["a malformed rejection", { code: "ERR_STATGLASS_KEYCHAIN" }],
 ])("ignores %s", (_description, value) => {
   expect(toNativeModuleError(value)).toBeNull();

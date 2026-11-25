@@ -50,27 +50,26 @@ pub struct RouteFailure {
 
 impl ConnectionFailureKind {
     /// How actionable this cause is from this Mac; lower wins when targets fail
-    /// differently (local_offline, tailscale_down, monitoring_off, app_not_running,
-    /// agent_not_running, refused, timeout, no_route, name_not_resolved, unreachable, then
-    /// the blocking kinds).
+    /// differently. An unavailable phone key blocks every route. Network and host
+    /// causes are ranked after that.
     pub fn priority(self) -> u8 {
         match self {
-            Self::LocalOffline => 0,
-            Self::TailscaleDown => 1,
-            Self::MonitoringOff => 2,
-            Self::AppNotRunning => 3,
-            Self::AgentNotRunning => 4,
-            Self::Refused => 5,
-            Self::Timeout => 6,
-            Self::NoRoute => 7,
-            Self::NameNotResolved => 8,
-            Self::Unreachable => 9,
-            Self::Authentication => 10,
-            Self::HostKey => 11,
-            Self::Incompatible => 12,
-            Self::IdentityChanged => 13,
-            Self::Protocol => 14,
-            Self::PhoneKeyUnavailable => 15,
+            Self::PhoneKeyUnavailable => 0,
+            Self::LocalOffline => 1,
+            Self::TailscaleDown => 2,
+            Self::MonitoringOff => 3,
+            Self::AppNotRunning => 4,
+            Self::AgentNotRunning => 5,
+            Self::Refused => 6,
+            Self::Timeout => 7,
+            Self::NoRoute => 8,
+            Self::NameNotResolved => 9,
+            Self::Unreachable => 10,
+            Self::Authentication => 11,
+            Self::HostKey => 12,
+            Self::Incompatible => 13,
+            Self::IdentityChanged => 14,
+            Self::Protocol => 15,
             Self::Internal => 16,
         }
     }
@@ -96,6 +95,8 @@ impl ConnectionFailureKind {
                 .unwrap_or(Self::Unreachable),
             RemoteError::Timeout(_) => Self::Timeout,
             RemoteError::Authentication(_) => Self::Authentication,
+            RemoteError::PhoneKeyUnavailable(_) => Self::PhoneKeyUnavailable,
+            RemoteError::SignerInternal(_) => Self::Internal,
             RemoteError::Pairing(_) => Self::Refused,
             RemoteError::HostKey(_) => Self::HostKey,
             RemoteError::AgentNotRunning(_) => Self::AgentNotRunning,

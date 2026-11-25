@@ -3,7 +3,7 @@ use crate::{
     SignerError, SoftwareSigner,
     test_server::{End, Event, Script, Server},
 };
-use statglass_session::{RemoteCommand, Route, STDERR_TAIL_BYTES};
+use statglass_session::{ConnectionFailureKind, RemoteCommand, Route, STDERR_TAIL_BYTES};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpSocket},
@@ -378,8 +378,8 @@ struct FailedSignature {
 }
 
 impl Signer for FailedSignature {
-    fn public_key(&self) -> &[u8] {
-        self.key.public_key()
+    fn public_key(&self) -> BoxFuture<'_, std::result::Result<&[u8], SignerError>> {
+        Box::pin(async { Ok(self.key.public_key()) })
     }
 
     fn sign(&self, _: Vec<u8>) -> BoxFuture<'static, std::result::Result<Vec<u8>, SignerError>> {
@@ -397,8 +397,8 @@ impl Signer for FailedSignature {
 struct WrongMessage(Arc<SoftwareSigner>);
 
 impl Signer for WrongMessage {
-    fn public_key(&self) -> &[u8] {
-        self.0.public_key()
+    fn public_key(&self) -> BoxFuture<'_, std::result::Result<&[u8], SignerError>> {
+        Box::pin(async { Ok(self.0.public_key()) })
     }
 
     fn sign(&self, _: Vec<u8>) -> BoxFuture<'static, std::result::Result<Vec<u8>, SignerError>> {
@@ -415,8 +415,13 @@ async fn wrong_message_signature_is_rejected_locally_before_signed_auth() {
         &server.endpoint,
     )
     .await;
-    assert!(
-        matches!(error, RemoteError::Authentication(detail) if detail == "127.0.0.1: invalid signature: signature does not verify with the signer's public key")
+    assert_eq!(
+        ConnectionFailureKind::from_error(&error),
+        ConnectionFailureKind::Internal
+    );
+    assert_eq!(
+        error.to_string(),
+        "127.0.0.1: invalid signature: signature does not verify with the signer's public key"
     );
     assert_eq!(
         server.finish().await,
@@ -427,8 +432,8 @@ async fn wrong_message_signature_is_rejected_locally_before_signed_auth() {
 struct InvalidPublicKey(Vec<u8>);
 
 impl Signer for InvalidPublicKey {
-    fn public_key(&self) -> &[u8] {
-        &self.0
+    fn public_key(&self) -> BoxFuture<'_, std::result::Result<&[u8], SignerError>> {
+        Box::pin(async { Ok(self.0.as_slice()) })
     }
 
     fn sign(&self, _: Vec<u8>) -> BoxFuture<'static, std::result::Result<Vec<u8>, SignerError>> {
@@ -454,14 +459,19 @@ async fn invalid_public_points_report_the_signing_key_error_without_tcp() {
             result = listener.accept() => panic!("invalid public key opened TCP: {result:?}"),
             error = dial_error(&dialer, &endpoint) => error,
         };
-        assert!(
-            matches!(error, RemoteError::Authentication(detail) if detail == "127.0.0.1: the signing key's public key is not a 65-byte uncompressed P-256 point")
+        assert_eq!(
+            ConnectionFailureKind::from_error(&error),
+            ConnectionFailureKind::Internal
+        );
+        assert_eq!(
+            error.to_string(),
+            "127.0.0.1: the signing key's public key is not a 65-byte uncompressed P-256 point"
         );
     }
 }
 
 #[tokio::test]
-async fn malformed_and_unavailable_signatures_keep_the_authentication_cause() {
+async fn malformed_and_unavailable_signatures_keep_their_causes() {
     let key = Arc::new(SoftwareSigner::generate());
     for (malformed_der, prefix) in [
         (true, "127.0.0.1: invalid signature: P-256 DER:"),
@@ -476,7 +486,14 @@ async fn malformed_and_unavailable_signatures_keep_the_authentication_cause() {
             malformed_der,
         }));
         let error = dial_error(&dialer, &server.endpoint).await;
-        assert!(matches!(error, RemoteError::Authentication(detail) if detail.starts_with(prefix)));
+        let expected = if malformed_der {
+            ConnectionFailureKind::Internal
+        } else {
+            ConnectionFailureKind::PhoneKeyUnavailable
+        };
+        assert_eq!(ConnectionFailureKind::from_error(&error), expected);
+        let detail = error.to_string();
+        assert!(detail.starts_with(prefix), "{detail}");
         assert_eq!(
             server.finish().await,
             [Event::AuthOffer("statglass".into()), Event::TcpClosed]

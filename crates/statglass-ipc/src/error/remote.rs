@@ -35,6 +35,9 @@ impl From<RemoteError> for CommandError {
         let message = error.to_string();
         match error {
             RemoteError::Authentication(_) => Self::RemoteAuth { message },
+            RemoteError::PhoneKeyUnavailable(_) | RemoteError::SignerInternal(_) => {
+                Self::Internal { message }
+            }
             RemoteError::HostKey(_) => Self::HostKeyUnknown { message },
             RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. } => {
                 Self::RemoteIncompatible { message }

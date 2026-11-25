@@ -12,7 +12,6 @@ const kinds = new Map<string, NativeModuleErrorKind>([
   ["ERR_STATGLASS_KEYCHAIN", "keychain"],
   ["ERR_STATGLASS_SECURE_ENCLAVE", "secureEnclave"],
   ["ERR_STATGLASS_CAMERA", "camera"],
-  ["ERR_STATGLASS_LOCAL_NETWORK", "localNetwork"],
 ]);
 
 /**

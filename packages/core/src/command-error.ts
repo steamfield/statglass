@@ -1,10 +1,12 @@
 import type { CommandError } from "@core/generated/types";
+import { isNativeError, nativeErrorText } from "./native-errors";
 import { CommandFailure } from "./transport/query";
 
 function isCommandError(error: unknown): error is CommandError {
   return (
     typeof error === "object" &&
     error !== null &&
+    !("source" in error && error.source === "native") &&
     "kind" in error &&
     typeof error.kind === "string"
   );
@@ -32,6 +34,7 @@ export function errorTone(error: unknown): "status" | "error" {
     case "store_too_new":
     case "remote_host":
     case "remote_unsupported":
+    case "remote_refused":
       return "status";
     default:
       return "error";
@@ -41,10 +44,11 @@ export function errorTone(error: unknown): "status" | "error" {
 /**
  * What a failed command tells the user: the bounded message Rust attached
  * (never a `CommandFailure`'s kind-prefixed text), or `fallback` for a kind
- * without one. A rejected IPC call keeps its own text, since that is the only
- * diagnostic there is; anything without text reads as `fallback`.
+ * without one. A typed native rejection gets its phone wording. Other rejected
+ * IPC calls keep their message, if present.
  */
 export function commandErrorText(error: unknown, fallback: string): string {
+  if (isNativeError(error)) return nativeErrorText(error).title;
   const typed = commandError(error);
   if (typed) {
     return "message" in typed && typed.message ? typed.message : fallback;

@@ -2,8 +2,8 @@
 //! the FFI contract with `apps/mobile/modules/statglass-native`; nothing here reaches
 //! TypeScript, which sees only the JSON the core sends through [`CoreEvents`].
 
-/// Why the native signer could not sign. Rust maps every case to an authentication
-/// failure that keeps the message (`statglass_ssh::SignerError`).
+/// Why the native signer could not supply a key or signature. The dialer can report
+/// a local key failure separately from the host's authentication decision.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum NativeSignerError {
     /// The key is missing or the Keychain or Secure Enclave would not hand it over.

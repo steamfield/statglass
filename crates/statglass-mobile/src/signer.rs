@@ -28,16 +28,23 @@ impl NativeSignerAdapter {
 }
 
 impl Signer for NativeSignerAdapter {
-    fn public_key(&self) -> &[u8] {
-        if let Some(cached) = self.public_key.get() {
-            return cached;
-        }
-        if let Ok(key) = self.native.public_key()
-            && matches!(key.as_slice(), [4, coordinates @ ..] if coordinates.len() == 64)
-        {
-            return self.public_key.get_or_init(|| key);
-        }
-        self.public_key.get().map_or(&[], Vec::as_slice)
+    fn public_key(&self) -> BoxFuture<'_, Result<&[u8], SignerError>> {
+        Box::pin(async {
+            if let Some(cached) = self.public_key.get() {
+                return Ok(cached.as_slice());
+            }
+            let native = self.native.clone();
+            let key = tokio::task::spawn_blocking(move || native.public_key())
+                .await
+                .map_err(task_error)?
+                .map_err(native_error)?;
+            if !matches!(key.as_slice(), [4, coordinates @ ..] if coordinates.len() == 64) {
+                return Err(SignerError::Invalid(
+                    "expected a 65-byte uncompressed P-256 public key".into(),
+                ));
+            }
+            Ok(self.public_key.get_or_init(|| key).as_slice())
+        })
     }
 
     fn sign(&self, data: Vec<u8>) -> BoxFuture<'static, Result<Vec<u8>, SignerError>> {
@@ -45,17 +52,21 @@ impl Signer for NativeSignerAdapter {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || native.sign(data))
                 .await
-                .map_err(|error| {
-                    SignerError::Unavailable(format!("running native signer: {error}"))
-                })?
-                .map_err(|error| match error {
-                    NativeSignerError::Unavailable { message }
-                    | NativeSignerError::Unexpected { message } => {
-                        SignerError::Unavailable(message)
-                    }
-                    NativeSignerError::Refused { message } => SignerError::Refused(message),
-                })
+                .map_err(task_error)?
+                .map_err(native_error)
         })
+    }
+}
+
+fn task_error(error: tokio::task::JoinError) -> SignerError {
+    SignerError::Internal(format!("running native signer: {error}"))
+}
+
+fn native_error(error: NativeSignerError) -> SignerError {
+    match error {
+        NativeSignerError::Unavailable { message } => SignerError::Unavailable(message),
+        NativeSignerError::Unexpected { message } => SignerError::Internal(message),
+        NativeSignerError::Refused { message } => SignerError::Refused(message),
     }
 }
 
@@ -87,26 +98,31 @@ pub(crate) fn authorized_key_line(
 mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
+    use serde_json::{Value, json};
     use statglass_schema::lock::LockExt;
+    use statglass_session::{ConnectionFailureKind, RemoteError, Route, RouteError};
     use statglass_ssh::SoftwareSigner;
+    use tokio::sync::Notify;
 
     use super::*;
+    use crate::{CoreEvents, MobileCore};
 
     struct SoftwareNative {
         signer: SoftwareSigner,
-        public_key: Mutex<Vec<u8>>,
+        public_key: Mutex<Option<Vec<u8>>>,
         key_reads: AtomicUsize,
         runtime_thread: std::thread::ThreadId,
     }
 
     impl SoftwareNative {
         fn new(signer: SoftwareSigner) -> Self {
-            let public_key = Mutex::new(signer.public_key().to_vec());
+            let public_key = signer.public_key().to_vec();
             Self {
                 signer,
-                public_key,
+                public_key: Mutex::new(Some(public_key)),
                 key_reads: AtomicUsize::new(0),
                 runtime_thread: std::thread::current().id(),
             }
@@ -116,7 +132,12 @@ mod tests {
     impl NativeSigner for SoftwareNative {
         fn public_key(&self) -> Result<Vec<u8>, NativeSignerError> {
             self.key_reads.fetch_add(1, Ordering::Relaxed);
-            Ok(self.public_key.lock_ok().clone())
+            self.public_key
+                .lock_ok()
+                .clone()
+                .ok_or_else(|| NativeSignerError::Unavailable {
+                    message: "fixture key is missing".into(),
+                })
         }
 
         fn sign(&self, data: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {
@@ -128,6 +149,7 @@ mod tests {
     }
 
     type NativeFailure = fn(String) -> NativeSignerError;
+    type SignerFailure = fn(String) -> SignerError;
 
     struct FailingNative {
         key: Vec<u8>,
@@ -144,17 +166,138 @@ mod tests {
         }
     }
 
+    struct FailedPublicKey(NativeFailure, &'static str);
+
+    impl NativeSigner for FailedPublicKey {
+        fn public_key(&self) -> Result<Vec<u8>, NativeSignerError> {
+            Err((self.0)(self.1.into()))
+        }
+
+        fn sign(&self, _: Vec<u8>) -> Result<Vec<u8>, NativeSignerError> {
+            panic!("an unavailable public key cannot sign");
+        }
+    }
+
+    #[derive(Default)]
+    struct StatusEvents(Notify);
+
+    impl CoreEvents for StatusEvents {
+        fn live(&self, _: u32, _: String) -> bool {
+            false
+        }
+
+        fn event(&self, _: String) {
+            self.0.notify_one();
+        }
+    }
+
+    #[test]
+    fn mobile_core_publishes_local_signer_failures() {
+        let unavailable: NativeFailure = |message| NativeSignerError::Unavailable { message };
+        let cases: [(NativeFailure, &str, &str); 3] = [
+            (
+                unavailable,
+                "Could not load the phone key (OSStatus -25300)",
+                "phone_key_unavailable",
+            ),
+            (
+                unavailable,
+                "Could not load the phone key (OSStatus -25308)",
+                "phone_key_unavailable",
+            ),
+            (
+                |message| NativeSignerError::Unexpected { message },
+                "callback failed",
+                "internal",
+            ),
+        ];
+        let config = json!({
+            "hosts": [{
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "Studio",
+                "user": "monitor",
+                "targets": [{"route": "lan", "host": "studio.local"}],
+                "host_keys": [{"algorithm": "ssh-ed25519", "sha256": "SHA256:unused"}],
+                "command": {"kind": "restricted"}
+            }],
+            "data": {"live_on_cellular": false}
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        for (failure, diagnostic, kind) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let events = Arc::new(StatusEvents::default());
+            let core = MobileCore::new(
+                Arc::new(FailedPublicKey(failure, diagnostic)),
+                events.clone(),
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(
+                    &core.start(dir.path().display().to_string(), config.to_string())
+                )
+                .unwrap(),
+                json!({"status": "ok", "data": null})
+            );
+            let connection = runtime.block_on(async {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    loop {
+                        let json = core.call("list_remote_hosts".into(), "null".into()).await;
+                        let reply = serde_json::from_str::<Value>(&json).unwrap();
+                        assert_eq!(reply["status"], "ok", "{reply}");
+                        let connection = &reply["data"][0]["connection"];
+                        if !connection["failure"].is_null() {
+                            break connection.clone();
+                        }
+                        events.0.notified().await;
+                    }
+                })
+                .await
+                .expect("core publishes the failed connection")
+            });
+            assert_eq!(connection["failure"], kind, "{connection}");
+            assert!(
+                connection["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains(diagnostic)),
+                "{connection}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_route_timeout_does_not_hide_an_unavailable_phone_key() {
+        let lan = RouteError {
+            route: Route::Lan,
+            host: "studio.local".into(),
+            error: RemoteError::Timeout("LAN timed out".into()),
+        };
+        let tailnet = RouteError {
+            route: Route::Tailscale,
+            host: "studio.tailnet".into(),
+            error: RemoteError::PhoneKeyUnavailable("Phone key unavailable".into()),
+        };
+        assert_eq!(
+            ConnectionFailureKind::from_error(&RemoteError::Routes(vec![lan, tailnet])),
+            ConnectionFailureKind::PhoneKeyUnavailable
+        );
+    }
+
     #[tokio::test]
     async fn signs_off_the_runtime_thread_with_the_cached_key() {
         let native = Arc::new(SoftwareNative::new(SoftwareSigner::generate()));
         let adapter = NativeSignerAdapter::new(native.clone());
         assert_eq!(native.key_reads.load(Ordering::Relaxed), 0);
-        assert_eq!(adapter.public_key(), native.signer.public_key());
+        assert_eq!(
+            adapter.public_key().await.unwrap(),
+            native.signer.public_key()
+        );
 
         let message = b"SSH authentication request";
         let der = adapter.sign(message.to_vec()).await.unwrap();
         let signature = Signature::from_der(&der).unwrap();
-        let public = VerifyingKey::from_sec1_bytes(adapter.public_key()).unwrap();
+        let public = VerifyingKey::from_sec1_bytes(adapter.public_key().await.unwrap()).unwrap();
         public.verify(message, &signature).unwrap();
 
         assert_eq!(native.key_reads.load(Ordering::Relaxed), 1);
@@ -163,47 +306,62 @@ mod tests {
     #[tokio::test]
     async fn a_key_created_after_start_can_authenticate() {
         let native = Arc::new(SoftwareNative::new(SoftwareSigner::generate()));
-        native.public_key.lock_ok().clear();
+        *native.public_key.lock_ok() = None;
         let adapter = NativeSignerAdapter::new(native.clone());
-        assert!(adapter.public_key().is_empty());
+        assert!(matches!(
+            adapter.public_key().await,
+            Err(SignerError::Unavailable(_))
+        ));
 
         let public = native.signer.public_key();
         let mut wrong_prefix = public.to_vec();
         wrong_prefix[0] = 2;
         for malformed in [wrong_prefix, public[..64].to_vec()] {
-            *native.public_key.lock_ok() = malformed;
-            assert!(adapter.public_key().is_empty());
+            *native.public_key.lock_ok() = Some(malformed);
+            assert!(matches!(
+                adapter.public_key().await,
+                Err(SignerError::Invalid(_))
+            ));
         }
 
-        *native.public_key.lock_ok() = public.to_vec();
-        assert_eq!(adapter.public_key(), public);
+        *native.public_key.lock_ok() = Some(public.to_vec());
+        assert_eq!(adapter.public_key().await.unwrap(), public);
 
         let message = b"SSH authentication after pairing";
         let der = adapter.sign(message.to_vec()).await.unwrap();
         let signature = Signature::from_der(&der).unwrap();
-        let key = VerifyingKey::from_sec1_bytes(adapter.public_key()).unwrap();
+        let key = VerifyingKey::from_sec1_bytes(adapter.public_key().await.unwrap()).unwrap();
         key.verify(message, &signature).unwrap();
     }
 
     #[tokio::test]
     async fn signing_errors_keep_the_native_message_and_refusal() {
-        let cases: [(NativeFailure, bool); 3] = [
-            (|message| NativeSignerError::Unavailable { message }, false),
-            (|message| NativeSignerError::Unexpected { message }, false),
-            (|message| NativeSignerError::Refused { message }, true),
+        let cases: [(NativeFailure, SignerFailure); 3] = [
+            (
+                |message| NativeSignerError::Unavailable { message },
+                SignerError::Unavailable,
+            ),
+            (
+                |message| NativeSignerError::Unexpected { message },
+                SignerError::Internal,
+            ),
+            (
+                |message| NativeSignerError::Refused { message },
+                SignerError::Refused,
+            ),
         ];
-        for (error, refused) in cases {
+        for (error, expected) in cases {
             let adapter = NativeSignerAdapter::new(Arc::new(FailingNative {
                 key: SoftwareSigner::generate().public_key().to_vec(),
                 error,
             }));
-            match (refused, adapter.sign(vec![]).await.unwrap_err()) {
-                (true, SignerError::Refused(message))
-                | (false, SignerError::Unavailable(message)) => {
-                    assert_eq!(message, "native failure detail");
-                }
-                result => panic!("wrong signer failure: {result:?}"),
-            }
+            let actual = adapter.sign(vec![]).await.unwrap_err();
+            let expected = expected("native failure detail".into());
+            assert_eq!(
+                std::mem::discriminant(&actual),
+                std::mem::discriminant(&expected)
+            );
+            assert_eq!(actual.to_string(), expected.to_string());
         }
     }
 
