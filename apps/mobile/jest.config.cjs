@@ -83,6 +83,9 @@ module.exports = {
     "^@/(.*)$": "<rootDir>/src/$1",
     // Test helpers, so tests in subdirectories reach them without `../`.
     "^@test/(.*)$": "<rootDir>/test/$1",
+    // The bundled Reanimated mock loads the native runtime and throws under
+    // jest-expo; expo-router's testing library requires it, so send it to the stub.
+    "^react-native-reanimated/mock$": "<rootDir>/test/reanimated-stub.ts",
     ...presetMappings(),
     ...pinnedMappings(),
   },

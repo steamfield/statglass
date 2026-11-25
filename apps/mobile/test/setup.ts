@@ -12,3 +12,6 @@ jest.mock(
   "react-native-safe-area-context",
   () => require("react-native-safe-area-context/jest/mock").default
 );
+
+// Reanimated's native runtime is unavailable too; charts render still.
+jest.mock("react-native-reanimated", () => require("./reanimated-stub"));
