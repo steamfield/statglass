@@ -130,6 +130,37 @@ fn alert_rules_reply_preserves_raw_cbor_for_an_unknown_condition() {
 }
 
 #[test]
+fn alert_rules_reply_preserves_a_known_condition_with_an_extra_field() {
+    let rule = disk_rule(2, "/");
+    let Value::Map(mut fields) = Value::serialized(&rule).unwrap() else {
+        panic!("expected a rule map");
+    };
+    fields.push((text("notify_when_cleared"), Value::Bool(true)));
+    let newer = Value::Map(fields);
+    assert_eq!(newer.deserialized::<AlertRule>().unwrap(), rule);
+
+    let wire = wire_message(
+        "Reply",
+        REPLY_ID,
+        "answer",
+        map([
+            ("a", text("AlertRules")),
+            (
+                "v",
+                map([
+                    ("revision", REVISION.into()),
+                    ("rules", Value::Array(vec![newer.clone()])),
+                ]),
+            ),
+        ]),
+    );
+    let body = fixture("reply_rule_extra_field", &wire);
+    let decoded = decode_message(&body).unwrap();
+    assert_eq!(decoded, reply(vec![RuleEntry::Unknown(newer)]));
+    assert_eq!(encode_message(&decoded).unwrap(), body);
+}
+
+#[test]
 fn alert_rules_reply_keeps_known_rules_on_both_sides_of_an_unknown_one() {
     let reply = reply(vec![
         RuleEntry::Known(disk_rule(1, "/")),

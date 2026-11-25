@@ -13,6 +13,8 @@ use super::AlertDestinationsView;
 use crate::error::CommandError;
 use crate::state::AppState;
 
+pub use super::remote_rules::*;
+
 /// Sent to every window when a destination is saved or deleted, or a delivery to one
 /// finishes, so the Alerts page updates without a refetch.
 #[derive(Clone, Debug, Serialize, specta::Type, Event)]

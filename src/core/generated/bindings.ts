@@ -418,6 +418,8 @@ export const commands = {
 	 *  `invalid_argument` with the reason when `destination` is invalid.
 	 */
 	alertDestinationTest: (destination: Destination) => typedError<DeliveryOutcome, CommandError>(__TAURI_INVOKE("alert_destination_test", { destination })),
+	remoteAlertRules: (host: HostId) => typedError<RemoteAlertRules, CommandError>(__TAURI_INVOKE("remote_alert_rules", { host })),
+	setRemoteAlertRules: (host: HostId, baseRevision: RulesRevision, rules: AlertRule[], keep: string[]) => typedError<RemoteAlertRules, CommandError>(__TAURI_INVOKE("set_remote_alert_rules", { host, baseRevision, rules, keep })),
 };
 
 /** Events */
@@ -917,6 +919,8 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "remote_busy"; message: string } |
 /**  A connected, current host does not offer what was asked (its edition or setup). */
 { kind: "remote_unsupported"; message: string } |
+/**  The host's alert rules changed. Reload them before saving again. */
+{ kind: "remote_rules_changed"; message: string } |
 /**
  *  The Linux host has too little free space for the agent's history budget plus the
  *  low-disk reserve.
@@ -2635,6 +2639,10 @@ export type NetworkSpan = {
 /**  MB/s or Mb/s. */
 export type NetworkUnit = "bytes_per_sec" | "bits_per_sec";
 
+export type NewerRule = {
+	id: string | null,
+};
+
 export type OnboardingPatch = {
 	completed?: boolean | null,
 };
@@ -2936,6 +2944,12 @@ export type RemoteAccessSettings = {
  */
 export type RemoteAgentLayout = "system" | "user";
 
+export type RemoteAlertRules = {
+	revision: number,
+	rules: AlertRule[],
+	newer: NewerRule[],
+};
+
 /**  Whether the agent's login can use the Docker socket to name containers. */
 export type RemoteDockerAccess =
 /**  No Docker socket on the host. */
@@ -3065,6 +3079,9 @@ export type RrJob = {
 	started_ms: number,
 	peers: HostId[],
 };
+
+/**  The agent's opaque rule revision crosses IPC as a JavaScript number. */
+export type RulesRevision = number;
 
 export type SamplingPatch = {
 	interval_ms?: number | null,
