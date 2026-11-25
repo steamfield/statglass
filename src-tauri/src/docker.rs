@@ -1,5 +1,4 @@
 //! Typed Docker shell. No arbitrary endpoint or command crosses IPC.
-mod error;
 pub mod launch;
 use crate::{AppState, commands::spawn_blocking, error::CommandError, settings::SettingsPatch};
 use statglass_schema::{docker::*, lock::LockExt};

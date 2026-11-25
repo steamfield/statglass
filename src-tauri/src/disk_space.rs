@@ -2,7 +2,6 @@
 //! `AppState::disk_space`; a remote host's run on that host and are asked for over its
 //! session (D-117). The service lives in `statglass-engine`; this module adapts it to
 //! commands and Reveal in Finder, which is this Mac only.
-use statglass_engine::disk_space::SpaceError;
 use statglass_remote::RemoteError;
 use statglass_schema::HostId;
 use statglass_schema::disk_space::{
@@ -14,14 +13,6 @@ use tauri::State;
 use crate::commands::spawn_blocking;
 use crate::error::CommandError;
 use crate::state::{AppState, Route};
-
-impl From<SpaceError> for CommandError {
-    fn from(e: SpaceError) -> Self {
-        Self::DiskSpace {
-            message: e.to_string(),
-        }
-    }
-}
 
 /// Whether this build can scan (false in the sandboxed App Store edition).
 pub const fn available() -> bool {

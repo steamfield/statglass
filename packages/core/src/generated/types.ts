@@ -563,7 +563,11 @@ export type CommandError = { kind: "update"; message: string } |
  *  The public address lookup failed: offline, the service unreachable or timing
  *  out, or an answer that is not an address (a captive portal).
  */
-{ kind: "public_ip"; message: string };
+{ kind: "public_ip"; message: string } |
+/**  The other Mac is reachable but StatGlass is not running there. */
+{ kind: "remote_not_running"; message: string } |
+/**  The other Mac's StatGlass has remote monitoring turned off. */
+{ kind: "remote_monitoring_off"; message: string };
 
 export type Condition =
 /**  Any series matching `series` compared with `value` in the metric's unit. */
@@ -2517,7 +2521,11 @@ export type RemoteDockerAccess =
 /**  There is a socket this login cannot use; containers show by short id. */
 "unreadable" | "readable";
 
-export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "host_key" | "agent_not_running" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down";
+export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "host_key" | "agent_not_running" |
+/**  The other Mac answered SSH but its StatGlass app is not running. */
+"app_not_running" |
+/**  The other Mac's StatGlass has remote monitoring turned off. */
+"monitoring_off" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down";
 
 export type RemoteHostConfig = {
 	id: string,
@@ -3071,7 +3079,7 @@ export type TierRequest =
  *  10 s buckets while they cover the start of the range (24 h); otherwise 1 min while
  *  minutes cover it (7 days), else 15 min.
  */
-"auto" | "s10" | "m1";
+"auto" | "s10" | "m1" | "m15";
 
 export type UnitSettings = {
 	temperature: TemperatureUnit,

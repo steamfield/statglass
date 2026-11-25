@@ -22,11 +22,13 @@ mod backoff;
 mod control;
 #[cfg(test)]
 mod dial_tests;
+mod policy;
 mod queries;
 mod recent;
 mod status;
 use backoff::Backoff;
 use control::Control;
+pub use policy::{NETWORK_CHANGE_PROBE, SourceOptions, SyncPolicy};
 pub use status::{ConnectionFailureKind, ConnectionStatus, RouteFailure};
 
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;

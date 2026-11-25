@@ -48,6 +48,16 @@ pub trait MirrorSink: Send + Sync + 'static {
     fn ring_history(&self, _now_ms: i64) -> Option<statglass_store::HistoryResult> {
         None
     }
+    /// The tiers a session syncs into this sink, finest first. The default is the
+    /// desktop's; a phone mirror keeps fewer ([`crate::MirrorPolicy`]).
+    fn sync_tiers(&self) -> &[Tier] {
+        &[Tier::S10, Tier::M1, Tier::M15]
+    }
+    /// Whether the detail view asks for recent rows before the first sync page, rather
+    /// than after sync completes. False keeps the desktop's order.
+    fn recent_first(&self) -> bool {
+        false
+    }
     fn history_floor(&self, tier: Tier, now_ms: i64) -> i64 {
         now_ms.saturating_sub(match tier {
             Tier::S10 => 86_400_000,

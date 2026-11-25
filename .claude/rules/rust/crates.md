@@ -30,13 +30,14 @@ statglass-store         -> schema
 statglass-engine        -> schema, collect, store
 statglass-session       -> schema, proto, store, engine
 statglass-ssh           -> session
+statglass-ipc           -> schema, store, engine, session (never remote)
 statglass-remote        -> schema, proto, store, engine, session
 statglass-remote-helper -> remote
 statglass-notify        -> schema
 statglass-query         -> schema
 statglass-cli           -> query, schema
 statglass-agent         -> schema, proto, store, engine, remote
-statglass (src-tauri)   -> schema, proto, store, engine, remote, query, notify
+statglass (src-tauri)   -> schema, proto, store, engine, remote, query, notify, ipc
 statglass-mobile        -> schema, proto, store, engine (never remote)
 ```
 
@@ -65,6 +66,12 @@ can proceed autonomously within their agreed scope.
   Its `conformance` feature is the suite every dialer runs against a live host.
 - `statglass-ssh` is the phone's russh dialer and its `Signer` seam (the Secure Enclave
   on a device). It depends on `statglass-session` only.
+- `statglass-ipc` is the platform-neutral command layer and live producer shared by the
+  desktop and the phone: `CommandError` and every `From<crate error>` it needs, the live
+  registry, history and events queries, host vitals, connection status and process rows.
+  It never depends on `statglass-remote`, `tauri` or `tauri-specta`: an error of a crate
+  it cannot see (`AgentInstallError`) maps through a function in its caller. Every type it
+  exposes derives `specta::Type` and reaches the bindings through the desktop's exporter.
 - `statglass-remote` owns the OpenSSH dialer (`OpenSshDialer`), controller-side
   management (install, trust, control), host serving and `Mirror` storage
   synchronization; it re-exports the moved session names so its callers' imports do
@@ -79,8 +86,8 @@ can proceed autonomously within their agreed scope.
   headless agent can link it later. It is synchronous; callers run it off their thread.
 - `statglass-mobile` is the iPhone app's UniFFI facade (`.claude/rules/rust/mobile.md`).
   It never depends on `statglass-remote`, which spawns processes and serves hosts;
-  `statglass-session`, `statglass-ssh` and the planned `statglass-ipc` (IPC types, live
-  producer, `CommandError`) give it what it needs (RFC `plan/rfc-ios-app.md` 4.2).
+  `statglass-session`, `statglass-ssh` and `statglass-ipc` (IPC types, live producer,
+  `CommandError`) give it what it needs (RFC `plan/rfc-ios-app.md` 4.2).
 - `src-tauri` is a thin shell: commands, windows, tray, settings ownership. Business logic
   that isn't Tauri-specific belongs in a crate, where it is testable without a webview.
 

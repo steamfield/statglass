@@ -66,16 +66,16 @@ async fn read_or_write(
             {
                 return Ok(RemoteUpdateStatus::unsupported());
             }
-            let target = probe.target()?;
+            let target = probe.target().map_err(agent_install_error)?;
             match policy {
                 Some((check, install)) => {
                     control::agent_update_policy(&alias, &target, check, install)
                         .await
-                        .map_err(Into::into)
+                        .map_err(agent_install_error)
                 }
                 None => control::agent_update_status(&alias, &target)
                     .await
-                    .map_err(Into::into),
+                    .map_err(agent_install_error),
             }
         }
         HostProbe::Mac(probe) => {

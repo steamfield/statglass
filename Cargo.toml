@@ -24,6 +24,7 @@ statglass-notify = { path = "crates/statglass-notify" }
 statglass-mobile = { path = "crates/statglass-mobile" }
 statglass-session = { path = "crates/statglass-session" }
 statglass-ssh = { path = "crates/statglass-ssh" }
+statglass-ipc = { path = "crates/statglass-ipc" }
 
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"

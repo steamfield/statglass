@@ -13,6 +13,7 @@ mod endpoint;
 mod error;
 mod mirror;
 mod mirror_error;
+pub mod mirror_policy;
 mod mirror_sink;
 pub mod network;
 mod pages;
@@ -26,16 +27,18 @@ pub use clock::HostClock;
 pub use command::RemoteCommand;
 pub use connect::{DIAL_TIMEOUT_MS, HANDSHAKE_TIMEOUT, PROMOTION_DEBOUNCE, ROUTE_GRACE, connect};
 pub use dialer::{
-    AGENT_NOT_RUNNING, BoxFuture, Close, DialFailure, DialedStream, Dialer, HandshakeFailure,
-    STDERR_TAIL_BYTES, StderrTail, marker_error,
+    AGENT_NOT_RUNNING, APP_NOT_RUNNING, BoxFuture, Close, DialFailure, DialedStream, Dialer,
+    HandshakeFailure, MONITORING_OFF, STDERR_TAIL_BYTES, StderrTail, marker_error,
 };
 pub use endpoint::{Endpoint, MAX_TARGETS, PinnedHostKey, Route, Target};
 pub use error::{RemoteError, Result, RouteError, UnreachableKind};
 pub use mirror::{Mirror, SyncWatermark};
 pub use mirror_error::MirrorError;
+pub use mirror_policy::{MirrorPolicy, PHONE_MIRROR_HOST_MB, PHONE_MIRROR_TOTAL_MB};
 pub use mirror_sink::MirrorSink;
 pub use pages::{page_from_wire, page_to_wire};
 pub use session::SshSession;
 pub use source::{
-    ConnectionFailureKind, ConnectionStatus, RemoteSource, RouteFailure, StatusCallback,
+    ConnectionFailureKind, ConnectionStatus, NETWORK_CHANGE_PROBE, RemoteSource, RouteFailure,
+    SourceOptions, StatusCallback, SyncPolicy,
 };

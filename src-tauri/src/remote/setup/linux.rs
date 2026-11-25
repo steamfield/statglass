@@ -33,7 +33,7 @@ pub(in crate::remote) fn preparation(
     probe: &LinuxProbe,
     saved: &BTreeMap<HostId, SavedHost>,
 ) -> Result<RemoteHostPreparation, CommandError> {
-    let target = probe.target()?;
+    let target = probe.target().map_err(agent_install_error)?;
     let existing = probe.existing();
     let existing_version = existing
         .and_then(|e| e.version.as_ref())
@@ -156,13 +156,17 @@ pub(in crate::remote) async fn install_agent(
         (Some(_), None) => Ok(Installed::Existing),
         (Some(_), Some(_)) if is_newer(existing_version(probe)) => Ok(Installed::Existing),
         (Some(_), Some(b)) => {
-            agent_install::update(alias, probe, &b.bytes, &b.sha256).await?;
+            agent_install::update(alias, probe, &b.bytes, &b.sha256)
+                .await
+                .map_err(agent_install_error)?;
             Ok(Installed::Updated)
         }
         (None, Some(b)) => {
             match agent_install::install(alias, probe, &b.bytes, &b.sha256, AGENT_BUDGET_MB).await {
                 Ok(_) => Ok(Installed::fresh(probe)),
-                Err(e) => Err(recover(alias, Installed::fresh(probe), e.into()).await),
+                Err(e) => {
+                    Err(recover(alias, Installed::fresh(probe), agent_install_error(e)).await)
+                }
             }
         }
         (None, None) => Err(CommandError::RemoteAgentConflict {
@@ -251,7 +255,10 @@ pub(super) async fn add(
     let installed = install_agent(alias, &probe, binary.as_ref()).await?;
     let attempt = async {
         check_setup_cancel(cancel)?;
-        let command = probe.target()?.remote_command();
+        let command = probe
+            .target()
+            .map_err(agent_install_error)?
+            .remote_command();
         let session =
             setup_step(cancel, connect(&config, command.clone(), state.local, None)).await?;
         let mut record = HostRecord::from_identity(session.hello.host.clone(), false);
@@ -367,7 +374,8 @@ async fn perform_update(
             agent_install::UpdateStep::Restarting => UpdatePhase::Restarting,
         });
     })
-    .await?;
+    .await
+    .map_err(agent_install_error)?;
     reconnect(phase, || {
         if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
             source.retry();
@@ -419,7 +427,7 @@ pub(in crate::remote) fn check_restart(
     saved: &RemoteCommand,
     id: HostId,
 ) -> Result<AgentTarget, CommandError> {
-    let target = probe.target()?;
+    let target = probe.target().map_err(agent_install_error)?;
     if let Some(mismatch) = layout_mismatch(saved, &target) {
         return Err(CommandError::RemoteAgentConflict {
             message: format!("StatGlass did not restart the agent: {mismatch}"),
@@ -478,7 +486,7 @@ pub(in crate::remote) async fn uninstall_saved(saved: &SavedHost, purge: bool) -
             ProbeFor::Existing,
         )
         .await?;
-        let target = probe.target()?;
+        let target = probe.target().map_err(agent_install_error)?;
         if let Some(mismatch) = layout_mismatch(&saved.command, &target) {
             return Ok(Some(format!(
                 "The host was removed, but StatGlass left its agent installed: {mismatch}."

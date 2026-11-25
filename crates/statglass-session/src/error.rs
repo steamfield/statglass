@@ -35,6 +35,14 @@ pub enum RemoteError {
     /// restarts it.
     #[error("StatGlass agent is not running on {0}")]
     AgentNotRunning(String),
+    /// The other Mac answered SSH but its StatGlass app is not running
+    /// ([`APP_NOT_RUNNING`](crate::APP_NOT_RUNNING)). Retryable: the app may be opened.
+    #[error("StatGlass isn't running on {0}")]
+    AppNotRunning(String),
+    /// The other Mac's StatGlass has remote monitoring turned off
+    /// ([`MONITORING_OFF`](crate::MONITORING_OFF)). Retryable: the setting may be turned on.
+    #[error("Remote monitoring is off on {0}")]
+    MonitoringOff(String),
     #[error("invalid remote message: {0}")]
     Protocol(String),
     /// A query (D-117) the host is too busy or slow to answer now. Retryable.

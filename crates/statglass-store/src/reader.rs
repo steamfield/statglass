@@ -203,6 +203,12 @@ impl Reader {
         let tier = match q.tier {
             TierChoice::Fixed(t) => t,
             TierChoice::Auto => self.auto_tier(host_ref, q.from_ms, q.to_ms)?,
+            // Scaffold stub: phase 3 lane b resolves it.
+            TierChoice::Covered(_) => {
+                return Err(StoreError::Usage(
+                    "covered tier choice not implemented".into(),
+                ));
+            }
         };
         let width = tier_width(tier)?;
         let gaps = self.gaps_in(host_ref, q.from_ms, q.to_ms)?;
@@ -635,6 +641,12 @@ pub fn history_recent(q: &HistoryQuery, recent: &[BucketRow]) -> Result<HistoryR
         TierChoice::Fixed(t) => t,
         TierChoice::Auto if q.to_ms - q.from_ms <= Retention::default().s10_ms => Tier::S10,
         TierChoice::Auto => Tier::M1,
+        // Scaffold stub: phase 3 lane b resolves it.
+        TierChoice::Covered(_) => {
+            return Err(StoreError::Usage(
+                "covered tier choice not implemented".into(),
+            ));
+        }
     };
     let width = tier_width(tier)?;
     if q.to_ms <= q.from_ms || q.selectors.is_empty() {

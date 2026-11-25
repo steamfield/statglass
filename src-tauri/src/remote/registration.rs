@@ -313,6 +313,8 @@ fn map_failure_kind(kind: statglass_remote::ConnectionFailureKind) -> RemoteFail
         statglass_remote::ConnectionFailureKind::AgentNotRunning => {
             RemoteFailureKind::AgentNotRunning
         }
+        statglass_remote::ConnectionFailureKind::AppNotRunning => RemoteFailureKind::AppNotRunning,
+        statglass_remote::ConnectionFailureKind::MonitoringOff => RemoteFailureKind::MonitoringOff,
         statglass_remote::ConnectionFailureKind::Incompatible => RemoteFailureKind::Incompatible,
         statglass_remote::ConnectionFailureKind::IdentityChanged => {
             RemoteFailureKind::IdentityChanged

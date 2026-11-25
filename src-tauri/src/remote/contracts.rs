@@ -41,6 +41,10 @@ pub enum RemoteFailureKind {
     Authentication,
     HostKey,
     AgentNotRunning,
+    /// The other Mac answered SSH but its StatGlass app is not running.
+    AppNotRunning,
+    /// The other Mac's StatGlass has remote monitoring turned off.
+    MonitoringOff,
     Incompatible,
     IdentityChanged,
     Protocol,

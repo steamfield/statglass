@@ -28,6 +28,7 @@ fn both(lan: RemoteError, tailscale: RemoteError) -> RemoteError {
 const ONLINE: LocalNetwork = LocalNetwork {
     online: true,
     tailscale_up: true,
+    lan_up: true,
 };
 
 #[test]
@@ -138,6 +139,8 @@ fn priority_orders_causes_by_what_this_mac_can_fix() {
     let order = [
         K::LocalOffline,
         K::TailscaleDown,
+        K::MonitoringOff,
+        K::AppNotRunning,
         K::AgentNotRunning,
         K::Refused,
         K::Timeout,
@@ -163,6 +166,7 @@ fn tailscale_down_on_this_mac_outranks_a_lan_name_miss() {
     status.apply_network(LocalNetwork {
         online: true,
         tailscale_up: false,
+        lan_up: true,
     });
     assert_eq!(status.failure_kind, Some(K::TailscaleDown));
     assert_eq!(status.route_failures[0].kind, K::NameNotResolved);
@@ -182,6 +186,7 @@ fn offline_overrides_every_route_and_an_uncombined_network_error() {
     let offline = LocalNetwork {
         online: false,
         tailscale_up: false,
+        lan_up: false,
     };
     status.apply_network(offline);
     assert_eq!(status.failure_kind, Some(K::LocalOffline));
@@ -217,6 +222,7 @@ fn blocking_failures_survive_an_offline_probe() {
     status.apply_network(LocalNetwork {
         online: false,
         tailscale_up: false,
+        lan_up: false,
     });
     assert_eq!(status.failure_kind, Some(K::HostKey));
 }

@@ -68,7 +68,7 @@ pub use types::{
     BucketRow, CapTrim, CursorPage, CursorRead, FILL_MINUTES, FILL_ROLLED, FillMeasurement,
     HistoryQuery, HistoryResult, IngestReport, NetApp, NetBucket, NetByApp, NetSpan, PageEvent,
     PageGap, PageLayout, PageRow, Point, ProcResolution, ProcRow, ProcessesAt, PruneReport,
-    Retention, SeriesPoints, SessionStart, TierChoice,
+    Retention, SeriesPoints, SessionStart, TierChoice, TierCoverage,
 };
 pub use writer::NET_NEW_NAMES_PER_HOUR;
 #[cfg(feature = "write-stats")]

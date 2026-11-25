@@ -108,6 +108,14 @@ impl HandshakeFailure {
 /// The line `statglass-agent serve` prints to stderr when its daemon is not running.
 pub const AGENT_NOT_RUNNING: &str = "statglass-agent: not running";
 
+/// The line the Mac's `statglass-remote-helper` prints to stderr when the app is not
+/// running there. Recognized by [`marker_error`] from phase 3 lane c.
+pub const APP_NOT_RUNNING: &str = "statglass-remote-helper: not running";
+
+/// The line the Mac's `statglass-remote-helper` prints to stderr when the app runs with
+/// remote monitoring off. Recognized by [`marker_error`] from phase 3 lane c.
+pub const MONITORING_OFF: &str = "statglass-remote-helper: remote monitoring off";
+
 /// Marker lines the shared handshake checks before asking the dialer (phase 5 adds more).
 pub fn marker_error(target: &Target, stderr: &str) -> Option<RemoteError> {
     stderr
