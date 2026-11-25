@@ -47,19 +47,19 @@ impl MobileCore {
 
     /// Starts the runtime and a session per host in `config_json` (a `MobileConfig`),
     /// keeping mirrors and the phone's id under `data_dir`. Envelope data: `null`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `invalid_argument` for an invalid config and `internal` if the core
+    /// already started or could not load the phone id or create the runtime.
     pub fn start(&self, data_dir: String, config_json: String) -> String {
         envelope::run_result(|| {
             let config: MobileConfig = parse("MobileConfig", &config_json)?;
             let runtime = self.runtime()?;
             let signer = Arc::new(NativeSignerAdapter::new(self.signer.clone()));
             let data = config.data;
-            self.sessions.start(
-                runtime,
-                PathBuf::from(data_dir),
-                config,
-                signer,
-                self.lifecycle.sync_policy(),
-            )?;
+            self.sessions
+                .start(runtime, PathBuf::from(data_dir), config, signer)?;
             // The cellular setting decides the policy once the first path arrives.
             self.lifecycle.set_data_policy(&*self.sessions, data);
             Ok(())
@@ -68,35 +68,43 @@ impl MobileCore {
 
     /// Answers one `MobileCall`, given as its `method` tag and its `args` as JSON
     /// (`null` or empty for a call without arguments).
+    ///
+    /// # Errors
+    ///
+    /// Returns `invalid_argument` for an invalid method or arguments and `internal`
+    /// before startup or if the call task fails. Individual commands can return
+    /// other `CommandError` kinds.
     pub async fn call(&self, method: String, args_json: String) -> String {
         let request = match parse_call(&method, &args_json) {
             Ok(request) => request,
             Err(error) => return envelope::encode::<()>(Err(error)),
         };
-        let Some(runtime) = self.runtime.get().map(|r| r.handle().clone()) else {
+        let Some(runtime) = self.runtime.get().filter(|_| self.sessions.is_started()) else {
             return envelope::encode::<()>(Err(not_started()));
         };
-        let (sessions, lifecycle, signer) = (
-            self.sessions.clone(),
-            self.lifecycle.clone(),
-            self.signer.clone(),
-        );
-        let task = runtime.spawn(async move {
-            match request {
-                MobileCall::BuildInfo => to_value(crate::build_info::current()),
-                MobileCall::SetHosts { hosts } => sessions
-                    .set_hosts(hosts, lifecycle.sync_policy())
-                    .map(|()| Value::Null),
-                MobileCall::SetDataPolicy(data) => {
+        let sessions = self.sessions.clone();
+        let task = match request {
+            MobileCall::SetHosts { hosts } => {
+                runtime.spawn_blocking(move || sessions.set_hosts(hosts).map(|()| Value::Null))
+            }
+            MobileCall::AuthorizedKeyLine { comment } => {
+                let signer = self.signer.clone();
+                runtime.spawn_blocking(move || {
+                    authorized_key_line(&*signer, &comment).map(Value::String)
+                })
+            }
+            MobileCall::BuildInfo => {
+                runtime.spawn(async { to_value(crate::build_info::current()) })
+            }
+            MobileCall::SetDataPolicy(data) => {
+                let lifecycle = self.lifecycle.clone();
+                runtime.spawn(async move {
                     lifecycle.set_data_policy(&*sessions, data);
                     Ok(Value::Null)
-                }
-                MobileCall::AuthorizedKeyLine { comment } => {
-                    authorized_key_line(&*signer, &comment).map(Value::String)
-                }
-                other => sessions.call(other).await,
+                })
             }
-        });
+            other => runtime.spawn(async move { sessions.call(other).await }),
+        };
         envelope::encode(joined(task.await))
     }
 
@@ -298,5 +306,31 @@ mod tests {
             panic!("an unknown method must be an invalid argument");
         };
         assert!(message.contains("drop_tables"), "{message}");
+    }
+
+    #[test]
+    fn a_failed_start_leaves_calls_unavailable_until_start_succeeds() {
+        let core = core();
+        let dir = tempfile::tempdir().unwrap();
+        let phone_id = dir.path().join("phone-id");
+        let path = dir.path().display().to_string();
+        let config = json!({ "hosts": [], "data": { "sync_on_cellular": false } }).to_string();
+        let build_info = || {
+            let result = futures_lite_block_on(core.call("build_info".into(), "".into()));
+            serde_json::from_str::<Value>(&result).unwrap()
+        };
+
+        assert_eq!(build_info()["error"]["kind"], "internal");
+        std::fs::write(&phone_id, "invalid phone id").unwrap();
+        let failed = core.start(path.clone(), config.clone());
+        assert_eq!(
+            serde_json::from_str::<Value>(&failed).unwrap()["error"]["kind"],
+            "internal"
+        );
+        assert_eq!(build_info()["error"]["kind"], "internal");
+
+        std::fs::remove_file(phone_id).unwrap();
+        assert!(ok_null(&core.start(path, config)));
+        assert_eq!(build_info()["status"], "ok");
     }
 }

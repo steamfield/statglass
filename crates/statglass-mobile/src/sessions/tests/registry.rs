@@ -23,7 +23,6 @@ async fn phone_identity_is_private_stable_and_never_replaces_a_corrupt_file() {
             data.clone(),
             MobileConfig::default(),
             Arc::new(SoftwareSigner::generate()),
-            SyncPolicy::Off,
         )
     };
 
@@ -40,10 +39,7 @@ async fn phone_identity_is_private_stable_and_never_replaces_a_corrupt_file() {
         fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    assert!(matches!(
-        start(&first),
-        Err(CommandError::InvalidArgument { .. })
-    ));
+    assert!(matches!(start(&first), Err(CommandError::Internal { .. })));
     drop(first);
 
     let second = Sessions::new(fixture.events.clone());
@@ -86,7 +82,7 @@ async fn empty_and_invalid_host_lists_leave_the_current_roster_intact() {
     }
     fixture.events.events.lock_ok().clear();
     sessions
-        .set_hosts(vec![first.clone(), second.clone()], SyncPolicy::Off)
+        .set_hosts(vec![first.clone(), second.clone()])
         .unwrap();
     assert_eq!(
         *fixture.events.events.lock_ok(),
@@ -105,7 +101,7 @@ async fn empty_and_invalid_host_lists_leave_the_current_roster_intact() {
         vec![second.clone(), second.clone()],
     ] {
         assert!(matches!(
-            sessions.set_hosts(hosts, SyncPolicy::Off),
+            sessions.set_hosts(hosts),
             Err(CommandError::InvalidArgument { .. })
         ));
         assert_eq!(
@@ -125,7 +121,7 @@ async fn removing_a_host_closes_the_session_and_keeps_the_private_mirror() {
     fixture.sessions.call(subscribe(host.id, 9)).await.unwrap();
     assert_eq!(fixture.message("caps").await.0, 9);
 
-    fixture.sessions.set_hosts(vec![], SyncPolicy::Off).unwrap();
+    fixture.sessions.set_hosts(vec![]).unwrap();
     assert_eq!(
         fixture
             .sessions
@@ -168,7 +164,7 @@ async fn replacement_waits_for_the_old_transport_and_uses_the_latest_host_list()
     replacement.targets[0].host = "intermediate.local".into();
     fixture
         .sessions
-        .set_hosts(vec![replacement.clone()], SyncPolicy::Off)
+        .set_hosts(vec![replacement.clone()])
         .unwrap();
     timeout(WAIT, &mut old.closing)
         .await
@@ -191,7 +187,7 @@ async fn replacement_waits_for_the_old_transport_and_uses_the_latest_host_list()
     replacement.targets[0].host = "latest.local".into();
     fixture
         .sessions
-        .set_hosts(vec![replacement.clone()], SyncPolicy::Off)
+        .set_hosts(vec![replacement.clone()])
         .unwrap();
     assert!(
         fixture.dials.try_recv().is_err(),
@@ -377,11 +373,11 @@ async fn concurrent_sets_deliver_rosters_in_order() {
     let sessions = Arc::new(fixture.sessions);
     let earlier = tokio::task::spawn_blocking({
         let (sessions, first) = (sessions.clone(), first.clone());
-        move || sessions.set_hosts(vec![first], SyncPolicy::Off).unwrap()
+        move || sessions.set_hosts(vec![first]).unwrap()
     });
     timeout(WAIT, entered).await.unwrap().unwrap();
     sessions
-        .set_hosts(vec![first.clone(), second.clone()], SyncPolicy::Off)
+        .set_hosts(vec![first.clone(), second.clone()])
         .unwrap();
     release.send(()).unwrap();
     earlier.await.unwrap();
@@ -404,10 +400,7 @@ async fn retry_recovers_a_configured_host_after_its_mirror_directory_recovers() 
     dial.handshake(&original).await;
     let mut updated = original.clone();
     updated.name = "Updated host".into();
-    fixture
-        .sessions
-        .set_hosts(vec![updated.clone()], SyncPolicy::Off)
-        .unwrap();
+    fixture.sessions.set_hosts(vec![updated.clone()]).unwrap();
     timeout(WAIT, &mut dial.closing).await.unwrap().unwrap();
     fixture.events.events.lock_ok().clear();
     let path = fixture
@@ -524,10 +517,7 @@ async fn growing_from_two_to_eleven_hosts_rebuilds_the_old_mirrors_at_the_new_bu
         vec![u64::from(crate::policy::host_budget_mb(2)); 2]
     );
 
-    fixture
-        .sessions
-        .set_hosts(hosts.clone(), SyncPolicy::Off)
-        .unwrap();
+    fixture.sessions.set_hosts(hosts.clone()).unwrap();
     for dial in &mut old {
         timeout(WAIT, &mut dial.closing)
             .await

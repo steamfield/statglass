@@ -21,7 +21,6 @@ async fn mobile_session() {
                 ..Default::default()
             },
             fixture.key.clone(),
-            SyncPolicy::Full,
         )
         .unwrap();
     sessions.call(subscribe(host, 17)).await.unwrap();

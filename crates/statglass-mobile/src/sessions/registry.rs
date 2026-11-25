@@ -14,6 +14,8 @@ use crate::ffi::CoreEvents;
 use super::{callback, host::HostEntry, internal, invalid, live::Live, phone_id};
 
 mod roster;
+#[cfg(test)]
+mod tests;
 
 pub(super) struct Registry {
     pub(super) events: Arc<dyn CoreEvents>,
@@ -26,7 +28,7 @@ pub(super) struct Registry {
 #[derive(Default)]
 struct State {
     run: Option<Run>,
-    policy: Option<SyncPolicy>,
+    policy: SyncPolicy,
     network: Option<LocalNetwork>,
     recent: bool,
     roster_events: VecDeque<Vec<HostRecord>>,
@@ -51,7 +53,6 @@ struct Context {
     data_dir: PathBuf,
     phone: HostId,
     dialer: Arc<dyn Dialer>,
-    sync: SyncPolicy,
 }
 
 impl Context {
@@ -70,7 +71,6 @@ impl Context {
             events,
             SourceOptions {
                 runtime: Some(self.runtime.clone()),
-                sync: self.sync,
                 ..Default::default()
             },
         )
@@ -87,18 +87,21 @@ impl Registry {
         }
     }
 
+    pub(super) fn is_started(&self) -> bool {
+        self.state.lock_ok().run.is_some()
+    }
+
     pub(super) fn start(
         self: &Arc<Self>,
         runtime: Handle,
         data_dir: PathBuf,
         hosts: Vec<MobileHost>,
         dialer: Arc<dyn Dialer>,
-        sync: SyncPolicy,
     ) -> Result<(), CommandError> {
         {
             let _update = self.updates.lock_ok();
-            if self.state.lock_ok().run.is_some() {
-                return Err(invalid("the mobile core has already started"));
+            if self.is_started() {
+                return Err(internal("the mobile core has already started"));
             }
             validate(&hosts)?;
             let mut run = Run {
@@ -107,7 +110,6 @@ impl Registry {
                     runtime,
                     data_dir,
                     dialer,
-                    sync,
                 },
                 desired: Vec::new(),
                 entries: HashMap::new(),
@@ -116,7 +118,7 @@ impl Registry {
             };
             let new = self.open_hosts(&run.context, &hosts, hosts.len());
             let mut state = self.state.lock_ok();
-            self.apply_hosts(&mut run, hosts, new, state.controls(sync));
+            self.apply_hosts(&mut run, hosts, new, state.controls());
             state.run = Some(run);
             state.queue_roster();
         }
@@ -124,11 +126,7 @@ impl Registry {
         Ok(())
     }
 
-    pub(super) fn set_hosts(
-        self: &Arc<Self>,
-        hosts: Vec<MobileHost>,
-        sync: SyncPolicy,
-    ) -> Result<(), CommandError> {
+    pub(super) fn set_hosts(self: &Arc<Self>, hosts: Vec<MobileHost>) -> Result<(), CommandError> {
         validate(&hosts)?;
         {
             let _update = self.updates.lock_ok();
@@ -146,7 +144,7 @@ impl Registry {
             };
             let new = self.open_hosts(&context, &missing, hosts.len());
             let mut state = self.state.lock_ok();
-            let controls = state.controls(sync);
+            let controls = state.controls();
             let run = state.run.as_mut().ok_or_else(not_started)?;
             self.apply_hosts(run, hosts, new, controls);
             state.queue_roster();
@@ -183,7 +181,6 @@ impl Registry {
         }
 
         run.open_errors.retain(|id, _| desired.contains(id));
-        run.context.sync = controls.sync;
         run.desired = hosts;
         for opened in new {
             let _ = self.install(run, opened, controls);
@@ -287,7 +284,7 @@ impl Registry {
             let opened = context.open(host.clone(), budget, registry.events.clone());
             let update = registry.updates.lock_ok();
             let mut state = registry.state.lock_ok();
-            let controls = state.controls(context.sync);
+            let controls = state.controls();
             let Some(run) = state.run.as_mut() else {
                 return;
             };
@@ -329,9 +326,8 @@ impl Registry {
 
     pub(super) fn set_sync_policy(&self, policy: SyncPolicy) {
         let mut state = self.state.lock_ok();
-        state.policy = Some(policy);
-        if let Some(run) = &mut state.run {
-            run.context.sync = policy;
+        state.policy = policy;
+        if let Some(run) = &state.run {
             for (_, source) in run.sources() {
                 source.set_sync_policy(policy);
             }
@@ -376,7 +372,7 @@ impl Registry {
             };
             let opened = context.open(host, budget, self.events.clone());
             let mut state = self.state.lock_ok();
-            let controls = state.controls(context.sync);
+            let controls = state.controls();
             let run = state.run.as_mut().ok_or_else(not_started)?;
             let result = self.install(run, (id, opened), controls);
             state.queue_roster();
@@ -449,9 +445,9 @@ impl State {
         }
     }
 
-    fn controls(&self, sync: SyncPolicy) -> Controls {
+    fn controls(&self) -> Controls {
         Controls {
-            sync: self.policy.unwrap_or(sync),
+            sync: self.policy,
             network: self.network,
             recent: self.recent,
         }

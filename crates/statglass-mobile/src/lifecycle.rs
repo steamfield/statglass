@@ -43,17 +43,12 @@ impl Lifecycle {
         }
     }
 
-    /// The sync policy for the current path and data policy, for sources started now.
-    pub(crate) fn sync_policy(&self) -> SyncPolicy {
-        self.state.lock_ok().sync
-    }
-
     /// Whether sources started now should remain parked.
     #[cfg_attr(
         not(test),
         expect(
             dead_code,
-            reason = "phase integration reads this when starting sources"
+            reason = "follow-up: sources added by set_hosts while backgrounded are not parked"
         )
     )]
     pub(crate) fn backgrounded(&self) -> bool {
@@ -406,7 +401,6 @@ mod tests {
     fn sync_policy_updates_once_per_change_and_stays_put_while_offline() {
         let lifecycle = Lifecycle::new();
         let sessions = TestSessions::default();
-        assert_eq!(lifecycle.sync_policy(), SyncPolicy::Full);
         let cellular = NetworkPath {
             satisfied: true,
             expensive: true,
@@ -419,7 +413,6 @@ mod tests {
 
         lifecycle.path_changed(&sessions, cellular);
         lifecycle.path_changed(&sessions, cellular);
-        assert_eq!(lifecycle.sync_policy(), SyncPolicy::Off);
         lifecycle.path_changed(
             &sessions,
             NetworkPath {
@@ -431,15 +424,12 @@ mod tests {
             sync_on_cellular: true,
         };
         lifecycle.set_data_policy(&sessions, allowed);
-        assert_eq!(lifecycle.sync_policy(), SyncPolicy::Off);
         assert_eq!(*sessions.policies.lock_ok(), [SyncPolicy::Off]);
 
         lifecycle.path_changed(&sessions, cellular);
-        assert_eq!(lifecycle.sync_policy(), SyncPolicy::SummaryOnly);
         lifecycle.set_data_policy(&sessions, DataPolicy::default());
         lifecycle.set_data_policy(&sessions, allowed);
         lifecycle.path_changed(&sessions, wifi);
-        assert_eq!(lifecycle.sync_policy(), SyncPolicy::Full);
         assert_eq!(
             *sessions.policies.lock_ok(),
             [

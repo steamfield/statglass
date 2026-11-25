@@ -18,16 +18,17 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::timeout;
 
 use super::{CoreEvents, Sessions, endpoint};
+use crate::control::SessionControl;
 
 mod docker;
 mod history;
 mod live;
 mod registry;
 
-const WAIT: Duration = Duration::from_secs(5);
+pub(super) const WAIT: Duration = Duration::from_secs(5);
 const NOW: i64 = 1_788_220_800_000;
 
-fn host(n: u8) -> MobileHost {
+pub(super) fn host(n: u8) -> MobileHost {
     MobileHost {
         id: HostId(format!("00000000-0000-0000-0000-{n:012x}").parse().unwrap()),
         name: format!("Mac {n}"),
@@ -139,16 +140,16 @@ impl CoreEvents for Recorder {
     }
 }
 
-struct Fixture {
-    sessions: Sessions,
+pub(super) struct Fixture {
+    pub(super) sessions: Sessions,
     events: Arc<Recorder>,
     messages: mpsc::UnboundedReceiver<(u32, Value)>,
-    dials: mpsc::UnboundedReceiver<Dial>,
+    pub(super) dials: mpsc::UnboundedReceiver<Dial>,
     dir: tempfile::TempDir,
 }
 
 impl Fixture {
-    fn start(hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
+    pub(super) fn start(hosts: Vec<MobileHost>, sync: SyncPolicy) -> Self {
         Self::start_in(tempfile::tempdir().unwrap(), hosts, sync)
     }
 
@@ -166,6 +167,9 @@ impl Fixture {
             event_ready: Notify::new(),
         });
         let sessions = Sessions::new(events.clone());
+        if sync != SyncPolicy::Full {
+            sessions.set_sync_policy(sync);
+        }
         let (dials, connections) = mpsc::unbounded_channel();
         sessions
             .registry
@@ -174,7 +178,6 @@ impl Fixture {
                 dir.path().into(),
                 hosts,
                 Arc::new(PeerDialer(dials)),
-                sync,
             )
             .unwrap();
         Self {
@@ -186,7 +189,7 @@ impl Fixture {
         }
     }
 
-    async fn next_dial(&mut self) -> Dial {
+    pub(super) async fn next_dial(&mut self) -> Dial {
         timeout(WAIT, self.dials.recv())
             .await
             .expect("next dial")
@@ -228,11 +231,11 @@ impl Fixture {
 
 struct PeerDialer(mpsc::UnboundedSender<Dial>);
 
-struct Dial {
+pub(super) struct Dial {
     peer: DuplexStream,
-    target: String,
-    closing: oneshot::Receiver<()>,
-    finish_close: oneshot::Sender<()>,
+    pub(super) target: String,
+    pub(super) closing: oneshot::Receiver<()>,
+    pub(super) finish_close: oneshot::Sender<()>,
 }
 
 struct CloseGate(oneshot::Sender<()>, oneshot::Receiver<()>);
@@ -280,7 +283,7 @@ impl Dialer for PeerDialer {
 }
 
 impl Dial {
-    async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
+    pub(super) async fn handshake(&mut self, host: &MobileHost) -> statglass_proto::RemoteInterest {
         codec::write(
             &mut self.peer,
             &Message::Hello(Box::new(Hello {
