@@ -25,6 +25,7 @@ use statglass_schema::{HostRecord, lock::LockExt};
 use tauri::State;
 
 use crate::error::{CommandError, PairingFailure};
+use crate::handover::HandoverState;
 pub use status::{PairedDeviceInfo, PairingOffer, PairingStatus};
 use status::{
     device_keys_error, monitoring_off_status, pairing_error, pairing_message, unavailable,
@@ -43,6 +44,7 @@ struct LocalPairing {
     keys: Result<Arc<AuthorizedKeys>, String>,
     seen: DeviceSeenLog,
     monitoring_off: Mutex<HashMap<String, i64>>,
+    key_edits: Mutex<()>,
 }
 
 impl PairingState {
@@ -71,6 +73,7 @@ impl PairingState {
             enabled: AtomicBool::new(false),
             seen: device_seen(data_dir),
             monitoring_off: Mutex::default(),
+            key_edits: Mutex::default(),
         };
         if self.local.set(Arc::new(local)).is_err() {
             tracing::warn!("iPhone pairing was already initialized");
@@ -120,6 +123,17 @@ impl PairingState {
             .map_err(|error| {
                 unavailable(format!("The pairing command could not finish. {error}"))
             })?
+    }
+
+    pub(crate) async fn with_device_keys<T: Send + 'static>(
+        &self,
+        task: impl FnOnce(&AuthorizedKeys) -> Result<T, CommandError> + Send + 'static,
+    ) -> Result<T, CommandError> {
+        self.run(move |local| {
+            let _edit = local.key_edits.lock_ok();
+            task(local.keys()?)
+        })
+        .await
     }
 }
 
@@ -186,6 +200,7 @@ impl LocalPairing {
     }
 
     fn decision(&self, nonce: &str, approve: bool) -> Result<PairingStatus, CommandError> {
+        let _edit = approve.then(|| self.key_edits.lock_ok());
         let mut monitoring_off = self.monitoring_off.lock_ok();
         if monitoring_off.contains_key(nonce) {
             return Ok(monitoring_off_status());
@@ -333,11 +348,17 @@ pub async fn paired_devices(
 pub async fn revoke_device(
     tag: String,
     state: State<'_, PairingState>,
+    handover: State<'_, HandoverState>,
 ) -> Result<bool, CommandError> {
     let tag = DeviceTag::parse(&tag)
         .ok_or_else(|| pairing_message(PairingFailure::Invalid, "Invalid paired device tag."))?;
+    let handover = handover.inner().clone();
     state
-        .run(move |local| local.keys()?.revoke(tag).map_err(device_keys_error))
+        .with_device_keys(move |keys| {
+            let removed = keys.revoke(tag).map_err(device_keys_error)?;
+            handover.record_revocations(tag)?;
+            Ok(removed)
+        })
         .await
 }
 
@@ -396,8 +417,10 @@ pub(crate) mod tests {
             enabled: AtomicBool::new(false),
             seen: device_seen(dir),
             monitoring_off: Mutex::default(),
+            key_edits: Mutex::default(),
         };
         mock_builder()
+            .manage(HandoverState::default())
             .manage(PairingState {
                 local: OnceLock::from(Arc::new(local)),
             })
@@ -477,7 +500,7 @@ pub(crate) mod tests {
         assert!(paired_devices(app.state()).await.unwrap().is_empty());
         state.set_enabled(true);
         assert!(matches!(
-            revoke_device("invalid".into(), app.state()).await,
+            revoke_device("invalid".into(), app.state(), app.state()).await,
             Err(CommandError::Pairing { .. })
         ));
 
@@ -551,8 +574,16 @@ pub(crate) mod tests {
         assert_eq!(devices[0].name, "Travel iPhone");
         assert_eq!(devices[0].last_seen_ms, Some(now - 1));
         assert!(devices[0].fingerprint.starts_with("SHA256:"));
-        assert!(revoke_device(tag.to_string(), app.state()).await.unwrap());
-        assert!(!revoke_device(tag.to_string(), app.state()).await.unwrap());
+        assert!(
+            revoke_device(tag.to_string(), app.state(), app.state())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !revoke_device(tag.to_string(), app.state(), app.state())
+                .await
+                .unwrap()
+        );
         assert!(paired_devices(app.state()).await.unwrap().is_empty());
 
         let denied = make_offer(now);

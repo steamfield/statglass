@@ -186,6 +186,56 @@ impl RemoteManager {
             .map(|h| h.record.clone())
             .collect()
     }
+    pub(crate) fn handover_hosts(&self) -> Vec<crate::handover::RemoteHost> {
+        let saved: Vec<_> = self.saved.lock_ok().values().cloned().collect();
+        let statuses = self.statuses.lock_ok();
+        saved
+            .into_iter()
+            .map(|host| {
+                let os = if host.is_linux() { "Linux" } else { "macOS" };
+                let status = statuses.get(&host.record.id);
+                let alias = status
+                    .filter(|status| status.state == RemoteState::Connected)
+                    .and_then(|status| match status.route {
+                        Some(RemoteRoute::Lan) => host.config.lan.clone(),
+                        Some(RemoteRoute::Tailscale) => host.config.tailscale.clone(),
+                        None => None,
+                    });
+                let aliases = if status.is_some_and(|status| status.identity_changed.is_some()) {
+                    Err(
+                        "This host’s identity changed. Re-pair it before editing device access."
+                            .into(),
+                    )
+                } else {
+                    let mut aliases = Vec::new();
+                    for alias in alias.into_iter().chain(
+                        host.config
+                            .lan
+                            .iter()
+                            .chain(host.config.tailscale.iter())
+                            .cloned(),
+                    ) {
+                        if !aliases.contains(&alias) {
+                            aliases.push(alias);
+                        }
+                    }
+                    Ok(aliases)
+                };
+                crate::handover::RemoteHost {
+                    input: statglass_remote::ssh_config::HandoverInput {
+                        host_id: host.record.id,
+                        name: host.config.name,
+                        os: format!("{os} {}", host.record.info.os_version),
+                        lan: host.config.lan,
+                        tailscale: host.config.tailscale,
+                    },
+                    enabled: host.config.enabled,
+                    aliases,
+                    command: host.command,
+                }
+            })
+            .collect()
+    }
     /// Where the host's mirror is complete through. Blocking: reads the mirror's store.
     pub(crate) fn sync_watermark(
         &self,

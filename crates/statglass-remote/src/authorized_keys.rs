@@ -42,6 +42,40 @@ impl AuthorizedKeys {
         Self { path }
     }
 
+    /// The enrolled device keys and names to provision when a controller adds a host.
+    pub fn list_device_keys(
+        &self,
+    ) -> Result<Vec<(DeviceTag, String, EcdsaP256Public)>, DeviceKeysError> {
+        self.read_devices(|tag, name, blob| {
+            let key = EcdsaP256Public(blob.strip_prefix(KEY_HEADER)?.try_into().ok()?);
+            (DeviceTag::from_key(&key) == tag).then_some((tag, name, key))
+        })
+    }
+
+    fn read_devices<T>(
+        &self,
+        mut view: impl FnMut(DeviceTag, String, Vec<u8>) -> Option<T>,
+    ) -> Result<Vec<T>, DeviceKeysError> {
+        let Some(file) = key_io(
+            read_keys(&self.path, libc::O_NONBLOCK),
+            "reading",
+            &self.path,
+        )?
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(entries(&file.bytes)
+            .filter_map(|entry| {
+                let tag = DeviceTag::parse(
+                    std::str::from_utf8(entry.token.strip_prefix(DEVICE.as_bytes())?).ok()?,
+                )?;
+                let blob = decoded_blob(entry.key)?;
+                let name = sanitize_name(&String::from_utf8_lossy(entry.name));
+                view(tag, name, blob)
+            })
+            .collect())
+    }
+
     fn install(
         &self,
         token: &str,
@@ -142,28 +176,14 @@ impl AuthorizedKeys {
 
 impl DeviceKeys for AuthorizedKeys {
     fn list_devices(&self) -> Result<Vec<PairedDevice>, DeviceKeysError> {
-        let Some(file) = key_io(
-            read_keys(&self.path, libc::O_NONBLOCK),
-            "reading",
-            &self.path,
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        Ok(entries(&file.bytes)
-            .filter_map(|entry| {
-                let tag = DeviceTag::parse(
-                    std::str::from_utf8(entry.token.strip_prefix(DEVICE.as_bytes())?).ok()?,
-                )?;
-                let blob = decoded_blob(entry.key)?;
-                let digest = encode_base64(&Sha256::digest(blob));
-                Some(PairedDevice {
-                    tag,
-                    name: sanitize_name(&String::from_utf8_lossy(entry.name)),
-                    fingerprint: format!("SHA256:{}", digest.trim_end_matches('=')),
-                })
+        self.read_devices(|tag, name, blob| {
+            let digest = encode_base64(&Sha256::digest(blob));
+            Some(PairedDevice {
+                tag,
+                name,
+                fingerprint: format!("SHA256:{}", digest.trim_end_matches('=')),
             })
-            .collect())
+        })
     }
 
     fn add_device(
@@ -476,6 +496,28 @@ impl Drop for StagedFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_the_sec1_key_for_an_enrolled_device() {
+        use p256::elliptic_curve::sec1::ToSec1Point;
+
+        let dir = tempfile::tempdir().unwrap();
+        let keys = AuthorizedKeys::at(dir.path().join("authorized_keys"));
+        let secret = p256::SecretKey::from_slice(&[1; 32]).unwrap();
+        let point = secret.public_key().to_sec1_point(false);
+        let key = EcdsaP256Public(point.as_bytes().try_into().unwrap());
+        keys.add_pairing(&key, &"a".repeat(32), 2_000_000_000_000, "/helper pair")
+            .unwrap();
+        assert!(keys.list_device_keys().unwrap().is_empty());
+        keys.remove_pairing(&"a".repeat(32)).unwrap();
+        let tag = keys
+            .add_device(&key, "Travel iPhone", "/helper restricted")
+            .unwrap();
+        assert_eq!(
+            keys.list_device_keys().unwrap(),
+            [(tag, "Travel iPhone".into(), key)]
+        );
+    }
 
     #[test]
     fn current_users_authorized_keys_uses_the_passwd_home() {

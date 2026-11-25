@@ -1,7 +1,7 @@
 //! Install/remove one registered source; generation guards reject old callbacks.
 use super::*;
 use crate::live::RecentFeed;
-use statglass_remote::OpenSshDialer;
+use statglass_remote::{OpenSshDialer, StatusCallback};
 
 struct RemoteRecent(Arc<RemoteSource>);
 
@@ -32,36 +32,12 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     let mirror = Arc::new(Mirror::new(history.store(), id, budget_mb));
     let generation = Uuid::new_v4();
     state.remotes.generations.lock_ok().insert(id, generation);
-    let handle = app.clone();
-    let linux = saved.is_linux();
-    // The version this callback last saw; callbacks run on every live frame, so
-    // only a change reaches the saved hosts and the disk.
-    let known = Mutex::new(saved.last_agent_version.clone());
-    let cb = Arc::new(move |s: statglass_remote::ConnectionStatus| {
-        let state = handle.state::<AppState>();
-        if state.remotes.generations.lock_ok().get(&id) != Some(&generation) {
-            return;
-        }
-        let last = {
-            let mut known = known.lock_ok();
-            if let Some(version) = &s.remote_version
-                && known.as_ref() != Some(version)
-            {
-                *known = Some(version.clone());
-                remember_version(&handle, id, version);
-            }
-            known.clone()
-        };
-        if publish_status(&state.remotes, id, generation, s, linux, last) {
-            super::progress::emit_changed(&handle);
-        }
-    });
     let source = RemoteSource::new(
         saved.record.clone(),
         state.local,
         Arc::<OpenSshDialer>::default(),
         saved.endpoint().endpoint(),
-        cb,
+        status_callback(app.clone(), &saved, generation),
         Some(mirror.clone()),
     );
     source.set_controller_on_battery(state.host(state.local)?.hub().status().on_battery);
@@ -114,6 +90,42 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     state.live.replace_host(entry);
     state.emit_hosts_changed(app);
     Ok(())
+}
+
+fn status_callback(app: AppHandle, saved: &SavedHost, generation: Uuid) -> StatusCallback {
+    let id = saved.record.id;
+    let linux = saved.is_linux();
+    // Only a new version reaches the saved hosts and their file.
+    let known = Mutex::new(saved.last_agent_version.clone());
+    let connected_route = Mutex::new(None);
+    Arc::new(move |s| {
+        let state = app.state::<AppState>();
+        if state.remotes.generations.lock_ok().get(&id) != Some(&generation) {
+            return;
+        }
+        let last = {
+            let mut known = known.lock_ok();
+            if let Some(version) = &s.remote_version
+                && known.as_ref() != Some(version)
+            {
+                *known = Some(version.clone());
+                remember_version(&app, id, version);
+            }
+            known.clone()
+        };
+        let route = s.connected.then_some(s.route).flatten();
+        if publish_status(&state.remotes, id, generation, s, linux, last) {
+            super::progress::emit_changed(&app);
+        }
+        let mut previous = connected_route.lock_ok();
+        if route != *previous
+            && route.is_some()
+            && let Some(handover) = app.try_state::<crate::handover::HandoverState>()
+        {
+            handover.connected(id);
+        }
+        *previous = route;
+    })
 }
 
 /// Status and rr connection identity change under the same status lock.

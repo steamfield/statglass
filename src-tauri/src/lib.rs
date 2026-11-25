@@ -217,7 +217,7 @@ pub fn run() {
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
             app.manage(pairing::PairingState::default());
-            app.manage(handover::HandoverState);
+            app.manage(handover::HandoverState::default());
             app_menu::install(app.handle())?;
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]
