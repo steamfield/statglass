@@ -5,6 +5,7 @@ this release. Each fixture has a unique directory, removed even after failure.
 """
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -148,6 +149,67 @@ class BiomeRules(unittest.TestCase):
                        "@/lib/providers", "@core/format", "./render"):
             with self.subTest(module=module):
                 self.assert_allowed(f'import {{ x }} from "{module}";\n', directory="apps/mobile/test")
+
+    def test_mobile_native_imports_belong_to_transport(self):
+        for module in ("@native/statglass-native", "@native/statglass-native/src/StatglassNativeModule",
+                       "@/../modules/statglass-native", "@/lock/../../modules/statglass-native"):
+            with self.subTest(module=module):
+                source = f'import {{ getStatglassNative }} from "{module}";\n'
+                self.assert_rejected(source, directory="apps/mobile/src/lock")
+        self.assert_allowed('import { getStatglassNative } from "@native/statglass-native";\n',
+                            directory="apps/mobile/src/transport")
+        self.assert_allowed('import { __setNativeForTests } from "@native/statglass-native";\n',
+                            directory="apps/mobile/test/transport")
+
+    def test_mobile_widgets_and_cards_are_render_only(self):
+        for directory in ("apps/mobile/src/widgets", "apps/mobile/src/cards"):
+            for module in ("@/data", "@/data/live", "@/transport", "@/transport/device",
+                           "expo-router", "expo-router/testing-library", "@tanstack/react-query",
+                           "@native/statglass-native", "../x", "react-dom"):
+                with self.subTest(directory=directory, module=module):
+                    self.assert_rejected(f'import {{ x }} from "{module}";\n', directory=directory)
+            self.assert_allowed('import { View } from "react-native";\n'
+                                'import { Text } from "@/ui/text";\n', directory=directory)
+        self.assert_allowed('import { usePhoneTransport } from "@/data/transport-context";\n',
+                            directory="apps/mobile/src/lock")
+
+    def test_mobile_tests_use_the_native_seam_instead_of_jest_mock(self):
+        comment = r"//[^\n]*|/\*.*?\*/"
+        gap = rf"(?:\s|{comment})*"
+        tokens = re.compile(
+            rf'''(?P<native_mock>\bjest{gap}\.{gap}(?:mock|doMock|unstable_mockModule){gap}\({gap}'''
+            r'''["'`](?:[^"'`]*/)?statglass-native(?:[/"'`]))'''
+            rf'''|{comment}|(["'`])(?:\\.|(?!\2)[^\\])*\2''',
+            flags=re.S,
+        )
+        for directory in ("apps/mobile/src", "apps/mobile/test", "apps/mobile/modules"):
+            matches = [str(path.relative_to(ROOT)) for path in sorted((ROOT / directory).rglob("*"))
+                       if path.suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+                       and any(token.lastgroup == "native_mock" for token in tokens.finditer(path.read_text()))]
+            self.assertEqual(matches, [])
+
+    def test_mobile_native_imports_enforced_on_writes(self):
+        hook = ROOT / ".claude/hooks/enforce-boundaries.sh"
+        native_import = 'import { getStatglassNative } from "@native/statglass-native";'
+        for directory, source, denied in (
+            ("src/lock", native_import, True),
+            ("src/lock", native_import.replace('from ', 'from /* module entry point */ '), True),
+            ("src/lock", native_import.replace('@native/', '@/../modules/'), True),
+            ("src/lock", native_import.replace('@native/', '@/lock/../../modules/'), True),
+            ("src/lock", f"// {native_import}\n/* {native_import} */", False),
+            ("src/transport", native_import, False),
+            ("test/transport", native_import, False),
+        ):
+            with self.subTest(directory=directory, source=source):
+                payload = {"tool_name": "Write", "tool_input": {
+                    "file_path": f"apps/mobile/{directory}/probe.ts", "content": source,
+                }}
+                result = subprocess.run(
+                    ["bash", str(hook)], input=json.dumps(payload), cwd=ROOT,
+                    capture_output=True, text=True, check=True,
+                )
+                decision = json.loads(result.stdout).get("hookSpecificOutput") if result.stdout else None
+                self.assertEqual(decision and decision["permissionDecision"], "deny" if denied else None)
 
     def test_desktop_rejects_react_native_and_expo(self):
         for directory in ("src/app", "src/app/widgets", "src/desktop-transport"):

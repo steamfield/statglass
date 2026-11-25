@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mobile checks that run without Xcode, so Linux CI runs all of them: Biome,
 # the theme drift check, the Node script tests, route types, tsc, jest,
-# the iOS JS export, Expo's dependency check and the single-React check.
+# the iOS JS export, Expo's dependency and doctor checks, and the single-React check.
 # Run from anywhere; every step runs from the repo root or apps/mobile.
 set -euo pipefail
 
@@ -47,6 +47,9 @@ rm -rf "$export_dir"
 
 step "expo install --check"
 (cd "$mobile" && bunx expo install --check)
+
+step "expo-doctor"
+(cd "$mobile" && bunx expo-doctor@1.21.8)
 
 step "single React"
 node scripts/mobile/single-react.mjs "$export_dir"

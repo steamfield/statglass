@@ -4,12 +4,12 @@ import type {
   MobileLiveRequest,
   SubscriptionInfo,
 } from "@core/generated/types";
-import { jest } from "@jest/globals";
-import type {
-  StatglassNativeEvents,
-  StatglassNativeModule,
+import { afterEach, jest } from "@jest/globals";
+import {
+  __setNativeForTests,
+  type StatglassNativeEvents,
+  type StatglassNativeModule,
 } from "@native/statglass-native";
-import * as moduleLoader from "@native/statglass-native/src/StatglassNativeModule";
 import { NativeModule } from "expo";
 
 export function ok(data: unknown): string {
@@ -48,5 +48,9 @@ export class FakeNative
 }
 
 export function installNative(native: StatglassNativeModule | null) {
-  jest.spyOn(moduleLoader, "getStatglassNative").mockReturnValue(native);
+  __setNativeForTests(native);
 }
+
+afterEach(() => {
+  __setNativeForTests(undefined);
+});
