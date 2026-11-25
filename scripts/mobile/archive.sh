@@ -76,8 +76,10 @@ step "archive build $STATGLASS_MOBILE_BUILD_NUMBER" xcodebuild \
   -destination generic/platform=iOS -archivePath "$archive" \
   DEVELOPMENT_TEAM="$team" CODE_SIGN_STYLE=Automatic CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO archive
 # Automatic signing creates the Apple Distribution certificate and App Store profile on
-# the team's account when this Mac has none; it never uploads (D-158).
-step "export App Store IPA" xcodebuild -exportArchive -archivePath "$archive" \
+# the team's account when this Mac has none; it never uploads (D-158). The IPA step runs
+# /usr/bin/rsync, whose receiving side is found on PATH; Homebrew's rsync 3.x rejects its
+# options ("Copy failed"), so the export sees only system tools.
+step "export App Store IPA" env PATH=/usr/bin:/bin:/usr/sbin:/sbin xcodebuild -exportArchive -archivePath "$archive" \
   -exportOptionsPlist "$options" -exportPath "$scratch/export" -allowProvisioningUpdates
 
 shopt -s nullglob

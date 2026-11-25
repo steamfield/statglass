@@ -261,6 +261,8 @@ pass "local export only"
 # trailing backslash.
 sed -n '/-exportArchive/,/[^\\]$/p' scripts/mobile/archive.sh | grep -q -- -allowProvisioningUpdates ||
   fail "the export must let Xcode create a missing distribution certificate"
+grep -q -- '-exportArchive' <(grep -- 'PATH=/usr/bin:/bin:/usr/sbin:/sbin xcodebuild' scripts/mobile/archive.sh) ||
+  fail "the export must run with system tools only (Homebrew rsync breaks the IPA copy)"
 pass "export provisions its own signing"
 
 printf 'release-check-test: %d cases passed\n' "$passed"
