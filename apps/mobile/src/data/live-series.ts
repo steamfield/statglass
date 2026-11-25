@@ -24,7 +24,9 @@ const MODULE_PAGE_METRICS = [
   // Network page: interfaces list.
   "net.rx",
   "net.tx",
-  // Power & Sensors page: rings and thermal zones.
+  // Power & Sensors page: named rails where the host has no CPU split, rings
+  // and thermal zones.
+  "power.sensor",
   "thermal.cpu",
   "thermal.gpu",
   "thermal.hottest",
