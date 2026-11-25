@@ -2,11 +2,12 @@
 //! on stdout and never starts a second writer of the daemon's history.
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use serde_json::{Value, json};
-use statglass_engine::identity;
+use statglass_engine::{EngineParts, NoScaleStore, identity};
 use statglass_proto::{Message, RemoteInterest};
 use statglass_remote::agent_install::{StepOutcome, UninstallReport, UninstallStep};
 use statglass_remote::{AgentLayout, AgentPaths, ServedHost};
@@ -191,7 +192,7 @@ pub async fn sample(seconds: Option<u64>) -> anyhow::Result<Value> {
             record,
             Settings::agent_default(),
             None,
-            names,
+            EngineParts::platform_with(Arc::new(NoScaleStore), names),
             None,
             Vec::new(),
         )?;

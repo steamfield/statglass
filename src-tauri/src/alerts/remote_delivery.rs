@@ -1,6 +1,6 @@
 //! Delivery of alert events inserted into a Linux agent's mirror (RFC 5.3).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use statglass_remote::{Mirror, MirrorAlertBatch};
 use statglass_schema::lock::LockExt;
 use statglass_schema::settings::UnitSettings;
-use statglass_schema::{Event, HostId, HostRecord};
+use statglass_schema::{AlertCause, Event, EventDetail, HostId, HostRecord};
 use tauri::{AppHandle, Runtime};
 use uuid::Uuid;
 
@@ -29,14 +29,15 @@ struct HostFloors {
     /// A rebuilt mirror can insert events already delivered from its predecessor.
     mirror_epoch: Uuid,
     floor_ms: i64,
+    pending: Vec<LateAlert>,
 }
 
 struct FloorState {
     floors: Floors,
     dirty: bool,
-    pending: BTreeMap<HostId, Vec<LateAlert>>,
 }
 
+#[derive(Deserialize, Serialize)]
 pub(super) struct LateAlert {
     pub event: Event,
     pub local_ms: i64,
@@ -55,18 +56,13 @@ enum Action {
     CatchUp,
 }
 
-fn decide(batch: &Batch<'_>, now_ms: i64, offset_ms: i64, floors: &Floors) -> Vec<(Action, i64)> {
-    let floor = floors
-        .get(&batch.host)
-        .filter(|host| host.mirror_epoch == batch.mirror_epoch)
-        .map(|host| host.floor_ms);
+fn decide(events: &[Event], now_ms: i64, offset_ms: i64, floor_ms: i64) -> Vec<(Action, i64)> {
     let fresh_after = now_ms.saturating_sub(FRESH_MS);
-    batch
-        .events
+    events
         .iter()
         .map(|event| {
             let local_ms = event.ts_ms.saturating_sub(offset_ms);
-            let action = if floor.is_none_or(|floor| local_ms < floor) {
+            let action = if local_ms < floor_ms {
                 Action::PublishOnly
             } else if local_ms < fresh_after {
                 Action::CatchUp
@@ -78,6 +74,21 @@ fn decide(batch: &Batch<'_>, now_ms: i64, offset_ms: i64, floors: &Floors) -> Ve
         .collect()
 }
 
+fn has_finite_alert_values(event: &Event) -> bool {
+    let EventDetail::Alert { cause, .. } = &event.detail else {
+        return false;
+    };
+    match cause {
+        AlertCause::ProcessCpu { cpu_pct, .. } => cpu_pct.is_finite(),
+        AlertCause::Threshold {
+            value, threshold, ..
+        } => value.is_finite() && threshold.is_finite(),
+        AlertCause::ThermalState { .. }
+        | AlertCause::HostOffline { .. }
+        | AlertCause::HostBack { .. } => true,
+    }
+}
+
 pub(crate) struct RemoteDelivery {
     path: PathBuf,
     state: Mutex<FloorState>,
@@ -87,7 +98,8 @@ impl RemoteDelivery {
     pub(crate) fn forget(&self, host: HostId) {
         let mut state = self.state.lock_ok();
         state.dirty |= state.floors.remove(&host).is_some();
-        state.pending.remove(&host);
+        // If the write fails and the app exits before a retry, the old entry can
+        // still be read when this host is paired again.
         self.persist(&mut state);
     }
 
@@ -102,27 +114,35 @@ impl RemoteDelivery {
             state: Mutex::new(FloorState {
                 floors,
                 dirty: false,
-                pending: BTreeMap::new(),
             }),
         }
     }
 
-    fn register(&self, host: HostId, mirror_epoch: Uuid, floor_ms: i64) {
+    fn register(
+        &self,
+        host: HostId,
+        mirror_epoch: Uuid,
+        floor_ms: i64,
+        catch_up: impl FnOnce(&[LateAlert]),
+    ) {
         let mut state = self.state.lock_ok();
-        if state
-            .floors
-            .get(&host)
-            .is_none_or(|floor| floor.mirror_epoch != mirror_epoch)
-        {
-            state.floors.insert(
-                host,
-                HostFloors {
+        match state.floors.entry(host) {
+            Entry::Vacant(entry) => {
+                entry.insert(HostFloors {
                     mirror_epoch,
                     floor_ms,
-                },
-            );
-            state.pending.remove(&host);
-            state.dirty = true;
+                    pending: Vec::new(),
+                });
+                state.dirty = true;
+            }
+            Entry::Occupied(mut entry) if entry.get().mirror_epoch != mirror_epoch => {
+                let floor = entry.get_mut();
+                floor.finish_catch_up(catch_up);
+                floor.mirror_epoch = mirror_epoch;
+                floor.floor_ms = floor_ms;
+                state.dirty = true;
+            }
+            Entry::Occupied(_) => {}
         }
         self.persist(&mut state);
     }
@@ -131,6 +151,8 @@ impl RemoteDelivery {
         if state.dirty {
             match write_floors(&self.path, &state.floors) {
                 Ok(()) => state.dirty = false,
+                // A later batch or registration retries. An exit before a
+                // successful write can lose pending events already in the mirror.
                 Err(error) => tracing::warn!(
                     path = %self.path.display(), "saving remote alert floors: {error:#}"
                 ),
@@ -146,29 +168,35 @@ impl RemoteDelivery {
         sinks: &impl AlertSinks,
         catch_up: impl FnOnce(&[LateAlert]),
     ) {
-        let (actions, late) = {
-            let mut state = self.state.lock_ok();
-            self.persist(&mut state);
-            let actions = decide(&batch, now_ms, offset_ms, &state.floors);
-            for (event, (action, local_ms)) in batch.events.iter().zip(&actions) {
-                if matches!(action, Action::CatchUp) {
-                    state
-                        .pending
-                        .entry(batch.host)
-                        .or_default()
-                        .push(LateAlert {
-                            event: event.clone(),
-                            local_ms: *local_ms,
-                        });
-                }
-            }
-            let late = if batch.caught_up {
-                state.pending.remove(&batch.host).unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            (actions, late)
+        let mut state = self.state.lock_ok();
+        let Some(floor) = state.floors.get_mut(&batch.host) else {
+            return;
         };
+        if floor.mirror_epoch != batch.mirror_epoch {
+            return;
+        }
+        let actions = decide(batch.events, now_ms, offset_ms, floor.floor_ms);
+        let previous_len = floor.pending.len();
+        for (event, (action, local_ms)) in batch.events.iter().zip(&actions) {
+            if matches!(action, Action::CatchUp) {
+                // JSON cannot round-trip non-finite numbers. Keep a malformed
+                // event in the Timeline without making the floor file unreadable.
+                if !has_finite_alert_values(event) {
+                    tracing::warn!(
+                        host = %batch.host,
+                        ts_ms = event.ts_ms,
+                        "skipping malformed remote alert for catch-up"
+                    );
+                    continue;
+                }
+                floor.pending.push(LateAlert {
+                    event: event.clone(),
+                    local_ms: *local_ms,
+                });
+            }
+        }
+        state.dirty |= floor.pending.len() != previous_len;
+        self.persist(&mut state);
 
         for (event, (action, _)) in batch.events.iter().zip(actions) {
             match action {
@@ -176,9 +204,27 @@ impl RemoteDelivery {
                 Action::Announce => announce(sinks, event),
             }
         }
-        if !late.is_empty() {
-            catch_up(&late);
+        if batch.caught_up
+            && let Some(floor) = state.floors.get_mut(&batch.host)
+            && floor.finish_catch_up(catch_up)
+        {
+            state.dirty = true;
+            self.persist(&mut state);
         }
+    }
+}
+
+impl HostFloors {
+    fn finish_catch_up(&mut self, catch_up: impl FnOnce(&[LateAlert])) -> bool {
+        if self.pending.is_empty() {
+            return false;
+        }
+        // Keep the pending group on disk until it has been handed to the sinks.
+        // An exit during this handoff can replay the group, and a background send
+        // can still be interrupted after the group has been cleared.
+        catch_up(&self.pending);
+        self.pending.clear();
+        true
     }
 }
 
@@ -188,40 +234,15 @@ fn read_floors(path: &Path) -> anyhow::Result<Floors> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Floors::new()),
         Err(error) => return Err(error).context("reading the floor file"),
     };
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StoredFloor {
-        Current(HostFloors),
-        Legacy {
-            mirror_epoch: Uuid,
-            source_epochs: BTreeMap<Uuid, i64>,
-        },
-    }
-    let stored: BTreeMap<HostId, StoredFloor> =
-        serde_json::from_slice(&bytes).context("decoding the floor file")?;
-    Ok(stored
-        .into_iter()
-        .filter_map(|(host, floor)| {
-            let floor = match floor {
-                StoredFloor::Current(floor) => floor,
-                StoredFloor::Legacy {
-                    mirror_epoch,
-                    source_epochs,
-                } => HostFloors {
-                    mirror_epoch,
-                    floor_ms: source_epochs.into_values().min()?,
-                },
-            };
-            Some((host, floor))
-        })
-        .collect())
+    serde_json::from_slice(&bytes).context("decoding the floor file")
 }
 
 fn write_floors(path: &Path, floors: &Floors) -> anyhow::Result<()> {
     let json = serde_json::to_vec(floors).context("encoding the floor file")?;
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).context("creating the alert state directory")?;
-    }
+    let dir = path
+        .parent()
+        .context("the floor file has no parent directory")?;
+    fs::create_dir_all(dir).context("creating the alert state directory")?;
     let temporary = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
     let mut file = OpenOptions::new()
         .write(true)
@@ -240,12 +261,17 @@ fn write_floors(path: &Path, floors: &Floors) -> anyhow::Result<()> {
     {
         tracing::warn!(path = %temporary.display(), %error, "removing the temporary floor file");
     }
-    result
+    result?;
+    fs::File::open(dir)
+        .and_then(|dir| dir.sync_all())
+        .context("syncing the alert state directory")
 }
 
 pub(crate) struct MirrorAlerts<R: Runtime> {
     pub app: AppHandle<R>,
     pub host: HostRecord,
+    pub generation: Uuid,
+    pub generations: fn(&AppHandle<R>) -> &Mutex<BTreeMap<HostId, Uuid>>,
     pub alerts: fn(&AppHandle<R>) -> &AlertsService,
     pub units: fn(&AppHandle<R>) -> UnitSettings,
     pub clock: Box<dyn Fn() -> (i64, Option<i64>) + Send + Sync>,
@@ -266,7 +292,9 @@ pub(crate) fn wire_mirror_alerts<R: Runtime>(
     if let Some(epoch) = registered_epoch {
         controller
             .delivery()
-            .register(controller.host.id, epoch, registered_at);
+            .register(controller.host.id, epoch, registered_at, |late| {
+                controller.sinks(&history, 0).catch_up(late);
+            });
     }
     mirror.set_alert_listener(Arc::new(move |batch| {
         controller.on_mirrored_alerts(&history, batch, registered_at, registered_epoch);
@@ -297,17 +325,15 @@ impl<R: Runtime> MirrorAlerts<R> {
     ) {
         let (now_ms, remote_ms) = (self.clock)();
         let offset_ms = remote_ms.map_or(0, |remote| remote.saturating_sub(now_ms));
-        let alerts = (self.alerts)(&self.app);
-        let sinks = ShellSinks {
-            app: &self.app,
-            alerts,
-            history,
-            host: self.host.clone(),
-            units: (self.units)(&self.app),
-            outputs: self.outputs.clone(),
-            offset_ms,
-        };
-        let Some(mirror_epoch) = self.mirror_epoch(history) else {
+        let mirror_epoch = self.mirror_epoch(history);
+        let sinks = self.sinks(history, offset_ms);
+        // Removal invalidates the generation before forgetting the floor. Keep the
+        // guard through delivery so a callback cannot recreate a forgotten floor.
+        let generations = (self.generations)(&self.app).lock_ok();
+        if generations.get(&self.host.id) != Some(&self.generation) {
+            return;
+        }
+        let Some(mirror_epoch) = mirror_epoch else {
             for event in &batch.alerts {
                 sinks.publish(event);
             }
@@ -315,9 +341,12 @@ impl<R: Runtime> MirrorAlerts<R> {
         };
         if registered_epoch != Some(mirror_epoch) {
             let floor = registered_epoch.map_or(registered_at, |_| now_ms);
-            self.delivery().register(self.host.id, mirror_epoch, floor);
+            self.delivery()
+                .register(self.host.id, mirror_epoch, floor, |late| {
+                    sinks.catch_up(late)
+                });
         }
-        alerts.remote_delivery.receive(
+        self.delivery().receive(
             Batch {
                 host: self.host.id,
                 mirror_epoch,
@@ -329,6 +358,18 @@ impl<R: Runtime> MirrorAlerts<R> {
             &sinks,
             |late| sinks.catch_up(late),
         );
+    }
+
+    fn sinks<'a>(&'a self, history: &'a History, offset_ms: i64) -> ShellSinks<'a, R> {
+        ShellSinks {
+            app: &self.app,
+            alerts: (self.alerts)(&self.app),
+            history,
+            host: self.host.clone(),
+            units: (self.units)(&self.app),
+            outputs: self.outputs.clone(),
+            offset_ms,
+        }
     }
 }
 

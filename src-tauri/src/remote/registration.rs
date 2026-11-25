@@ -58,7 +58,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         cb,
         Some(mirror.clone()),
     );
-    wire_alert_listener(app, &saved, &source, &mirror, &history);
+    wire_alert_listener(app, &saved, &source, &mirror, &history, generation);
     source.set_controller_on_battery(state.host(state.local)?.hub().status().on_battery);
     state.live.register_recent_source(id, source.clone());
     state.remotes.sources.lock_ok().insert(id, source.clone());
@@ -112,6 +112,7 @@ fn wire_alert_listener(
     source: &RemoteSource,
     mirror: &Mirror,
     history: &Arc<History>,
+    generation: Uuid,
 ) {
     let clock = source.clock();
     wire_mirror_alerts(
@@ -121,6 +122,8 @@ fn wire_alert_listener(
         MirrorAlerts {
             app: app.clone(),
             host: saved.record.clone(),
+            generation,
+            generations: |app| &app.state::<AppState>().inner().remotes.generations,
             alerts: |app| &app.state::<AppState>().inner().alerts,
             units: |app| app.state::<AppState>().settings.settings().units,
             clock: Box::new(move || (statglass_engine::wall_ms(), clock.now_ms())),
@@ -157,9 +160,11 @@ fn publish_status(
     };
     let refreshed_watermark = mirror_sink.map(|sink| sink.sync_watermark());
 
-    let mut statuses = manager.statuses.lock_ok();
-    // A host removed or re-registered meanwhile keeps its newer status.
-    if manager.generations.lock_ok().get(&id) == Some(&generation) {
+    // A host removed or re-registered meanwhile keeps its newer status. Wait for
+    // the generation lock before taking statuses, so reads can proceed during alert delivery.
+    let generations = manager.generations.lock_ok();
+    if generations.get(&id) == Some(&generation) {
+        let mut statuses = manager.statuses.lock_ok();
         let mut previous = statuses.get(&id).cloned().unwrap_or_default();
         manager.apply_update(id, &mut previous);
         manager.apply_rr(id, &mut previous);

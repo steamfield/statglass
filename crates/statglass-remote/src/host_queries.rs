@@ -88,7 +88,8 @@ impl SpaceAccess {
     }
 }
 
-pub(crate) fn unsupported() -> Answer {
+/// The standard refusal for a host query this host cannot answer.
+pub fn unsupported() -> Answer {
     Answer::Error {
         code: ErrorCode::Unsupported,
         message: "This host does not answer that query".into(),

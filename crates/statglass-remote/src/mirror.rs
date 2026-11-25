@@ -12,7 +12,6 @@ use uuid::Uuid;
 /// Alerts inserted by a durable page and whether the minute tier caught up.
 #[derive(Debug, PartialEq)]
 pub struct MirrorAlertBatch {
-    pub epoch: Uuid,
     pub alerts: Vec<statglass_schema::Event>,
     pub caught_up: bool,
 }
@@ -98,13 +97,14 @@ impl MirrorSink for Mirror {
                 Ok((page.tier, row.bucket_ts, layout.series.clone()))
             })
             .collect::<Result<_, MirrorError>>()?;
-        let epoch = page.epoch;
         let report = self
             .history
             .writer()
             .map_err(MirrorError::from)?
             .ingest_page_durable(self.host, page)
             .map_err(MirrorError::from)?;
+        // A crash after this commit and before the listener runs can leave a
+        // Timeline event without a notification. A replay dedupes the event.
         // Record coverage only AFTER its rows and cursor are durably committed.
         for key in &written {
             if !current.committed.contains(key) {
@@ -124,7 +124,6 @@ impl MirrorSink for Mirror {
             let listener = self.alert_listener.lock_ok().clone();
             if let Some(listener) = listener {
                 listener(MirrorAlertBatch {
-                    epoch,
                     alerts: report.alerts_inserted,
                     caught_up,
                 });
