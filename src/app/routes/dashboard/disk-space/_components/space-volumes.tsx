@@ -68,39 +68,44 @@ export function SpaceVolumes({
                 : null,
             totalBytes: v.total_bytes,
           }))}
-          action={(row) => (
-            <div className="flex justify-end gap-1.5">
-              {reportVolume === row.id && scanningVolume !== row.id && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onOpen(row.id)}
-                >
-                  Open report
-                </Button>
-              )}
-              {scanningVolume === row.id ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label={`Show the scan of ${row.name}`}
-                  onClick={() => onOpen(row.id)}
-                >
-                  Show scan
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant={row.id === primaryMount ? "default" : "outline"}
-                  disabled={busy}
-                  aria-label={`Scan ${row.name}`}
-                  onClick={() => onScan(row.id)}
-                >
-                  {reportVolume === row.id ? "Scan again" : "Scan"}
-                </Button>
-              )}
-            </div>
-          )}
+          action={(row) => {
+            const primary = row.id === primaryMount;
+            const showReport =
+              reportVolume === row.id && scanningVolume !== row.id;
+            return (
+              <div className="flex justify-end gap-1.5">
+                {showReport && (
+                  <Button
+                    size="sm"
+                    variant={primary ? "default" : "ghost"}
+                    onClick={() => onOpen(row.id)}
+                  >
+                    Open report
+                  </Button>
+                )}
+                {scanningVolume === row.id ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={`Show the scan of ${row.name}`}
+                    onClick={() => onOpen(row.id)}
+                  >
+                    Show scan
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant={primary && !showReport ? "default" : "outline"}
+                    disabled={busy}
+                    aria-label={`Scan ${row.name}`}
+                    onClick={() => onScan(row.id)}
+                  >
+                    {reportVolume === row.id ? "Scan again" : "Scan"}
+                  </Button>
+                )}
+              </div>
+            );
+          }}
         />
       </section>
       {protectedOnes.length > 0 && (

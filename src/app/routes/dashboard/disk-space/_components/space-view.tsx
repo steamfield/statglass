@@ -71,6 +71,7 @@ function HostSpace({
   const [include, setInclude] = useState<ReadonlySet<string>>(new Set());
   const kept = report.data ?? null;
   const { screen, ended } = spaceScreen(status.data, kept, vol);
+  const landingLoading = useLandingLoading(volumes, highlights, screen.mode);
   const busy = scan.starting || scanning;
   const start = (mount: string) => {
     onVol(mount);
@@ -91,6 +92,7 @@ function HostSpace({
         <VolumeList
           query={volumes}
           highlights={highlights}
+          loading={landingLoading}
           vol={vol}
           include={include}
           onInclude={(key, on) => setInclude((prev) => toggled(prev, key, on))}
@@ -114,6 +116,21 @@ function HostSpace({
       )}
     </SpaceShell>
   );
+}
+
+function useLandingLoading(
+  volumes: ReturnType<typeof useSpaceVolumes>,
+  highlights: ReturnType<typeof useSpaceHighlights>,
+  mode: ReturnType<typeof spaceScreen>["screen"]["mode"]
+) {
+  const [settled, setSettled] = useState(false);
+  const loading =
+    volumes.isPending ||
+    highlights.isPending ||
+    (!settled && (volumes.isFetching || highlights.isFetching));
+  // Keep the picker available on return from a scan or report during a refresh.
+  if (mode === "volumes" && !loading && !settled) setSettled(true);
+  return loading;
 }
 
 function toggled(prev: ReadonlySet<string>, key: string, on: boolean) {
@@ -154,39 +171,37 @@ function SpaceMessage({
 function VolumeList({
   query,
   highlights,
+  loading,
   vol,
   ...props
 }: {
   query: ReturnType<typeof useSpaceVolumes>;
   highlights: ReturnType<typeof useSpaceHighlights>;
+  loading: boolean;
   vol: string | null;
 } & Omit<ComponentProps<typeof SpaceVolumes>, "volumes" | "primaryMount">) {
   const noun = useHostNoun();
-  const [settled, setSettled] = useState(false);
-  if (
-    query.isPending ||
-    highlights.isPending ||
-    (!settled && (query.isFetching || highlights.isFetching))
-  )
-    return <InlineMessage tone="status">Loading volumes…</InlineMessage>;
-  // After the first render, refreshes must preserve focus and open disclosures.
-  if (!settled) setSettled(true);
-  if (query.isError && !query.data)
+  if (loading || !query.data)
     return (
       <InlineMessage tone="status">
-        {volumeErrorText(query.error, noun)}
+        {!loading && query.isError
+          ? volumeErrorText(query.error, noun)
+          : "Loading volumes…"}
       </InlineMessage>
     );
 
   const volumes = query.data;
   const boot = volumes.find((volume) => volume.is_boot);
   const selected = volumes.find((volume) => volume.mount === vol);
-  const summary = highlights.isSuccess ? highlights.data : null;
+  const summary = highlights.data ?? null;
+  const hasBootReport = boot !== undefined && props.reportVolume === boot.mount;
   const showSummary =
     boot !== undefined &&
+    !hasBootReport &&
     (vol === null || selected?.is_boot === true) &&
     summary !== null &&
     summary.folders.length > 0;
+  const primaryVolume = hasBootReport ? boot : (selected ?? boot);
   return (
     <>
       {showSummary && (
@@ -198,7 +213,7 @@ function VolumeList({
       )}
       <SpaceVolumes
         volumes={volumes}
-        primaryMount={showSummary ? null : ((selected ?? boot)?.mount ?? null)}
+        primaryMount={showSummary ? null : (primaryVolume?.mount ?? null)}
         {...props}
       />
     </>
