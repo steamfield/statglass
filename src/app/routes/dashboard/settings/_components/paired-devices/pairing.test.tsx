@@ -141,6 +141,46 @@ it("announces a pending iPhone without making the countdown a live region", asyn
   }
 });
 
+it("shows monitoring guidance when an open pairing is withdrawn", async () => {
+  vi.useFakeTimers();
+  try {
+    const mock = createMockTransport({ autoTick: false });
+    await unwrap(mock.updateSettings({ remote_access: { enabled: true } }));
+    renderWithProviders(<PairedDevicesPanel />, { transport: mock });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Pair iPhone" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+    expect(screen.getByRole("button", { name: "Approve" })).toBeVisible();
+
+    await act(() =>
+      unwrap(mock.updateSettings({ remote_access: { enabled: false } }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(1100));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again."
+    );
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("returns monitoring guidance when approval races with disabling monitoring", async () => {
+  const mock = createMockTransport({ autoTick: false });
+  await unwrap(mock.updateSettings({ remote_access: { enabled: true } }));
+  const { nonce } = await unwrap(mock.pairingStart());
+  await unwrap(mock.updateSettings({ remote_access: { enabled: false } }));
+  const status = await unwrap(mock.pairingApprove(nonce));
+  expect(status).toEqual({
+    kind: "failed",
+    message:
+      "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again.",
+  });
+  await unwrap(mock.updateSettings({ remote_access: { enabled: true } }));
+  expect(await unwrap(mock.pairingStatus(nonce))).toEqual(status);
+});
+
 it("refreshes paired devices when polling recovers a committed approval", async () => {
   vi.useFakeTimers();
   try {

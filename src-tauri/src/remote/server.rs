@@ -3,7 +3,6 @@ use super::*;
 use crate::pairing::{PairingState, device_seen};
 use statglass_engine::disk_space::SpaceService;
 use statglass_proto::pairing::{PairError, PairReply};
-use statglass_remote::PairingHost;
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     let path = saved_path(app)?;
@@ -110,9 +109,10 @@ fn control<R: tauri::Runtime>(
     match request {
         ControlRequest::PairStart { .. }
         | ControlRequest::PairStatus { .. }
-        | ControlRequest::PairAbandon { .. } => {
-            pairing_response(app.state::<PairingState>().host(), request, now_ms)
-        }
+        | ControlRequest::PairAbandon { .. } => app
+            .state::<PairingState>()
+            .control_reply(request, now_ms)
+            .unwrap_or_else(pairing_unavailable),
         request => other(request),
     }
 }
@@ -184,14 +184,7 @@ fn app_control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
     }
 }
 
-fn pairing_response(
-    host: Option<&PairingHost>,
-    request: ControlRequest,
-    now_ms: i64,
-) -> ControlResponse {
-    if let Some(host) = host {
-        return host.control_reply(request, now_ms);
-    }
+fn pairing_unavailable() -> ControlResponse {
     ControlResponse {
         ok: false,
         message: PairError::Unavailable.to_string(),
@@ -262,6 +255,9 @@ pub fn refresh_metrics(app: &AppHandle, enabled: bool) {
 }
 
 pub fn shutdown(app: &AppHandle) {
+    if let Some(pairing) = app.try_state::<PairingState>() {
+        pairing.shutdown();
+    }
     let state = app.state::<AppState>();
     if let Some(task) = state.remotes.rr_task.lock_ok().take() {
         task.abort();

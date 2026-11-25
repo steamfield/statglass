@@ -383,7 +383,10 @@ async fn pairing_forced_refuses_an_expired_nonce_even_with_an_admitted_ssh_key()
     let offer = host_state
         .offer(host(), Duration::from_secs(1), NOW)
         .unwrap();
-    let ssh_now = jiff::Timestamp::from_millisecond(NOW).unwrap();
+    // The relay sees an expired offer at the same instant that sshd still
+    // admits the key, as it can when an on-disk deadline outlasts the offer.
+    let now_ms = offer.expires_ms + 1;
+    let ssh_now = jiff::Timestamp::from_millisecond(now_ms).unwrap();
     let zone =
         jiff::tz::TimeZone::tzif("localtime", &std::fs::read("/etc/localtime").unwrap()).unwrap();
     let local_now = ssh_now.to_zoned(zone).strftime("%Y%m%d%H%M%S").to_string();
@@ -395,8 +398,20 @@ async fn pairing_forced_refuses_an_expired_nonce_even_with_an_admitted_ssh_key()
         .split('"')
         .next()
         .unwrap();
+    let future_expiry = "20991231235959";
+    std::fs::write(
+        &key_file,
+        line.replacen(
+            &format!("expiry-time=\"{expiry}\""),
+            &format!("expiry-time=\"{future_expiry}\""),
+            1,
+        ),
+    )
+    .unwrap();
+    let line = std::fs::read_to_string(&key_file).unwrap();
+    assert!(line.contains(&format!("expiry-time=\"{future_expiry}\"")));
     assert!(
-        expiry > local_now.as_str(),
+        future_expiry > local_now.as_str(),
         "sshd's local clock still admits the key"
     );
     assert!(line.contains(&format!("/helper pair --nonce {}", offer.nonce)));
@@ -416,7 +431,7 @@ async fn pairing_forced_refuses_an_expired_nonce_even_with_an_admitted_ssh_key()
     let server = async {
         let (mut stream, request) = request(&listener).await;
         assert!(matches!(request, ControlRequest::PairStart { .. }));
-        let response = host_state.control_reply(request, offer.expires_ms);
+        let response = host_state.control_reply(request, now_ms);
         write_control(&mut stream, &response).await;
     };
     let (code, (), ()) = tokio::time::timeout(Duration::from_secs(20), async {
@@ -429,10 +444,7 @@ async fn pairing_forced_refuses_an_expired_nonce_even_with_an_admitted_ssh_key()
     .await
     .unwrap();
     assert_eq!(code, 2);
-    assert_eq!(
-        host_state.pending(&offer.nonce, offer.expires_ms),
-        PairReply::Expired
-    );
+    assert_eq!(host_state.pending(&offer.nonce, now_ms), PairReply::Expired);
     assert!(std::fs::read_to_string(key_file).unwrap().is_empty());
 }
 

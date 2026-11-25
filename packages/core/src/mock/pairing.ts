@@ -52,11 +52,15 @@ const PHONE: PairedDeviceInfo = {
 
 type MockOffer = { offer: PairingOffer; status: PairingStatus };
 
-function currentStatus(entry: MockOffer): PairingStatus {
+function currentStatus(entry: MockOffer, enabled = true): PairingStatus {
   const { status, offer } = entry;
   if (status.kind !== "waiting" && status.kind !== "pending") return status;
   const now = Date.now();
   if (now >= offer.expires_ms) return { kind: "expired" };
+  if (!enabled) {
+    entry.status = { kind: "failed", message: MONITORING_OFF };
+    return entry.status;
+  }
   return now >= offer.expires_ms - TTL_MS + SCAN_MS
     ? {
         kind: "pending",
@@ -135,30 +139,13 @@ export function createMockPairing(
       const entry = offers.get(nonce);
       if (!entry)
         return ok({ kind: "failed", message: "Unknown pairing offer." });
-      const enabled = await monitoringEnabled(this);
-      const status = currentStatus(entry);
-      if (
-        !enabled &&
-        (status.kind === "waiting" || status.kind === "pending")
-      ) {
-        entry.status = { kind: "denied" };
-        return ok(entry.status);
-      }
-      return ok(status);
+      return ok(currentStatus(entry, await monitoringEnabled(this)));
     },
     async pairingApprove(this: Pick<Transport, "getSettings">, nonce) {
       commands.record("pairing_approve", nonce);
       const entry = offers.get(nonce);
       if (!entry) return pairingFailure("Unknown pairing offer.");
-      if (!(await monitoringEnabled(this))) {
-        const status = currentStatus(entry);
-        entry.status =
-          status.kind === "waiting" || status.kind === "pending"
-            ? { kind: "denied" }
-            : status;
-        return pairingFailure(MONITORING_OFF);
-      }
-      const status = currentStatus(entry);
+      const status = currentStatus(entry, await monitoringEnabled(this));
       if (status.kind === "waiting")
         return pairingFailure("No iPhone is waiting for approval.");
       if (status.kind !== "pending") return ok(status);

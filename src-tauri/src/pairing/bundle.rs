@@ -12,11 +12,11 @@ use statglass_proto::pairing::{BundleHost, BundleHostKey, BundleRoute, BundleTar
 use statglass_remote::pairing::usable_interface_addresses;
 use statglass_schema::HostRecord;
 
+pub(super) const MONITORING_OFF: &str =
+    "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again.";
+
 pub(super) fn check_monitoring(enabled: bool) -> anyhow::Result<()> {
-    ensure!(
-        enabled,
-        "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again."
-    );
+    ensure!(enabled, "{MONITORING_OFF}");
     Ok(())
 }
 
