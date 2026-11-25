@@ -55,6 +55,18 @@ const fn entry(
 /// Every alertable metric, in the order the metric picker lists them.
 pub const ALERT_METRICS: &[AlertMetric] = &[
     entry("cpu.total", "CPU usage", Cmp::Gt, 90.0, 300, 1.0, 100.0),
+    AlertMetric {
+        default_label: Some(("window", "5")),
+        ..entry(
+            "cpu.loadavg",
+            "Load average",
+            Cmp::Gt,
+            4.0,
+            300,
+            0.1,
+            1000.0,
+        )
+    },
     entry("gpu.util", "GPU usage", Cmp::Gt, 90.0, 300, 1.0, 100.0),
     entry(
         "mem.pressure",
@@ -77,6 +89,10 @@ pub const ALERT_METRICS: &[AlertMetric] = &[
         1.0,
         1e6,
     ),
+    AlertMetric {
+        default_label: Some(("stall", "some")),
+        ..entry("mem.psi", "Memory stall", Cmp::Gt, 10.0, 120, 0.01, 100.0)
+    },
     entry(
         "thermal.hottest",
         "Hottest sensor",
@@ -153,5 +169,44 @@ mod tests {
             Some(("vol", "/"))
         );
         assert_eq!(alert_metric("cpu.user"), None);
+    }
+
+    #[test]
+    fn linux_metrics_have_the_expected_defaults_and_picker_order() {
+        for (after, expected) in [
+            (
+                "cpu.total",
+                AlertMetric {
+                    metric: "cpu.loadavg",
+                    label: "Load average",
+                    default_op: Cmp::Gt,
+                    default_value: 4.0,
+                    default_for_secs: 300,
+                    min: 0.1,
+                    max: 1000.0,
+                    default_label: Some(("window", "5")),
+                },
+            ),
+            (
+                "mem.swap_out",
+                AlertMetric {
+                    metric: "mem.psi",
+                    label: "Memory stall",
+                    default_op: Cmp::Gt,
+                    default_value: 10.0,
+                    default_for_secs: 120,
+                    min: 0.01,
+                    max: 100.0,
+                    default_label: Some(("stall", "some")),
+                },
+            ),
+        ] {
+            assert_eq!(alert_metric(expected.metric), Some(&expected));
+            assert!(
+                ALERT_METRICS
+                    .windows(2)
+                    .any(|pair| { pair[0].metric == after && pair[1].metric == expected.metric })
+            );
+        }
     }
 }

@@ -19,12 +19,19 @@ const MEMORY_PREFIX: &str = "mem.";
 /// "72 W"), rpm and pages per second with thousands separators ("4,000 rpm",
 /// "1,000 pages/s"), Celsius in the temperature setting as whole degrees ("95 °C",
 /// "203 °F"), and bytes in GB, or in GiB for `mem.*` when the memory setting is binary,
-/// with at most one decimal ("20 GB", "3.7 GiB"). Any other unit, and a metric this
-/// build does not know, reads as a whole number with thousands separators. Halves round
-/// away from zero, as the client rounds them; a value that is not finite reads as "—".
+/// with at most one decimal ("20 GB", "3.7 GiB"). Memory stall and load average retain
+/// fractional digits. Other units and unknown metrics read as whole numbers with thousands
+/// separators. Halves round away from zero in the whole-number formats. A value that is
+/// not finite reads as "—".
 pub fn format_value(metric: &str, value: f32, units: &UnitSettings) -> String {
     if !value.is_finite() {
         return MISSING.to_owned();
+    }
+    if metric == "mem.psi" {
+        return format!("{value}%");
+    }
+    if metric == "cpu.loadavg" {
+        return group_decimal(&value.to_string());
     }
     let value = f64::from(value);
     match catalog_unit(metric) {
@@ -86,18 +93,27 @@ fn trimmed_decimal(value: f64) -> String {
 /// `value` rounded to a whole number with a comma between each group of three digits
 /// ("12,500").
 fn grouped(value: f64) -> String {
-    let rounded = whole(value);
-    let (sign, digits) = match rounded.strip_prefix('-') {
+    group_decimal(&whole(value))
+}
+
+/// Adds separators to the integer part of an already formatted value.
+fn group_decimal(text: &str) -> String {
+    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
+    let (sign, digits) = match whole.strip_prefix('-') {
         Some(digits) => ("-", digits),
-        None => ("", rounded.as_str()),
+        None => ("", whole),
     };
-    let mut out = String::with_capacity(rounded.len() + digits.len() / 3);
+    let mut out = String::with_capacity(text.len() + digits.len() / 3);
     out.push_str(sign);
     for (index, digit) in digits.chars().enumerate() {
         if index > 0 && (digits.len() - index) % 3 == 0 {
             out.push(',');
         }
         out.push(digit);
+    }
+    if !fraction.is_empty() {
+        out.push('.');
+        out.push_str(fraction);
     }
     out
 }

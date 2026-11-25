@@ -293,9 +293,18 @@ fn builtin_cpu_threshold(event: &Event) -> Option<f32> {
 /// "Fan speed (Fan 1)". A metric missing from `ALERT_METRICS` reads as its id.
 fn series_label(metric: &str, labels: &Labels) -> String {
     let label = alert_metric(metric).map_or(metric, |m| m.label);
-    match series_name(metric, labels) {
-        Some(name) => format!("{label} ({name})"),
-        None => label.to_owned(),
+    match (metric, labels.iter().next()) {
+        ("mem.psi", Some(("stall", "some"))) => label.to_owned(),
+        ("mem.psi", None) => format!("{label} (any)"),
+        ("cpu.loadavg", Some(("window", window)))
+            if !window.is_empty() && window.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            format!("{label} ({window} min)")
+        }
+        _ => match series_name(metric, labels) {
+            Some(name) => format!("{label} ({name})"),
+            None => label.to_owned(),
+        },
     }
 }
 

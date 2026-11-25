@@ -140,6 +140,51 @@ describe("ruleSummary", () => {
     ).toBe("Free disk space (/) below 20 GB");
   });
 
+  it("describes memory stall without the default stall label", () => {
+    expect(
+      ruleSummary(
+        rule("mem.psi", [["stall", "some"]], "gt", 10, 120),
+        CELSIUS_DECIMAL
+      )
+    ).toBe("Memory stall above 10% for 2 min");
+    expect(
+      ruleSummary(
+        rule("mem.psi", [["stall", "full"]], "gt", 10, 120),
+        CELSIUS_DECIMAL
+      )
+    ).toBe("Memory stall (full) above 10% for 2 min");
+  });
+
+  it("names the load average window and leaves the threshold unitless", () => {
+    expect(
+      ruleSummary(
+        rule("cpu.loadavg", [["window", "5"]], "gt", 4, 300),
+        CELSIUS_DECIMAL
+      )
+    ).toBe("Load average (5 min) above 4 for 5 min");
+  });
+
+  it("keeps fractional memory stall and load average thresholds in the sentence", () => {
+    expect(
+      ruleSummary(
+        rule("mem.psi", [["stall", "some"]], "gt", Math.fround(0.01), 120),
+        CELSIUS_DECIMAL
+      )
+    ).toBe("Memory stall above 0.01% for 2 min");
+    expect(
+      ruleSummary(
+        rule("cpu.loadavg", [["window", "5"]], "gt", Math.fround(0.1), 300),
+        CELSIUS_DECIMAL
+      )
+    ).toBe("Load average (5 min) above 0.1 for 5 min");
+  });
+
+  it("distinguishes a rule watching any memory stall series from the default", () => {
+    expect(
+      ruleSummary(rule("mem.psi", [], "gt", 10, 120), CELSIUS_DECIMAL)
+    ).toBe("Memory stall (any) above 10% for 2 min");
+  });
+
   it("follows the memory unit for memory and the temperature unit", () => {
     const swap = rule("mem.swap_used", [], "gt", 4e9, 300);
     expect(ruleSummary(swap, CELSIUS_DECIMAL)).toBe(

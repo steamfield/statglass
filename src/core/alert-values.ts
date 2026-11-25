@@ -1,8 +1,8 @@
 /**
  * Alert rule values in the user's units: one measured or threshold value as
  * text ("84%", "4,000 rpm", "20 GB"), and a threshold converted between its
- * catalog unit and the unit the rule dialog shows (°F, GB, GiB). The text
- * matches Rust's `statglass_notify::format_value` for the same value.
+ * catalog unit and the unit the rule dialog shows (°F, GB, GiB). Rust's
+ * `statglass_notify::format_value` uses the same units and grouping.
  */
 import {
   bytesParts,
@@ -29,6 +29,9 @@ const WATTS_DECIMAL_BELOW = 10;
 
 /** Significant digits an f32 holds; more only shows binary rounding noise. */
 const F32_DIGITS = 7;
+const loadAverage = new Intl.NumberFormat("en-US", {
+  maximumSignificantDigits: F32_DIGITS,
+});
 
 const BYTES_PER_GB = 1e9;
 const BYTES_PER_GIB = 2 ** 30;
@@ -67,7 +70,8 @@ function formatShortBytes(bytes: number, unit: ByteDisplayUnit): string {
 /**
  * One value of `metric` in the user's units: "84%", "203 °F", "3.7 GiB",
  * "4,000 rpm", "1,000 pages/s", "6.5 W". A missing value reads "—"; a
- * metric this build has no unit for reads as a grouped integer.
+ * metric this build has no unit for reads as a grouped integer. Memory stall
+ * and load average retain fractional digits.
  */
 export function formatAlertValue(
   metric: string,
@@ -75,6 +79,10 @@ export function formatAlertValue(
   units: DisplayUnits
 ): string {
   if (!isPresent(value)) return MISSING;
+  if (metric === "mem.psi") {
+    return formatPercent(value, { significantDigits: F32_DIGITS });
+  }
+  if (metric === "cpu.loadavg") return loadAverage.format(value);
   switch (catalogUnit(metric)) {
     case "percent":
       return formatPercent(value);
