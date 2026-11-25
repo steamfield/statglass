@@ -58,11 +58,12 @@ export function ConditionPanel({
   const id = useId();
   const change = (c: Parameters<typeof withChange>[1]) =>
     onChange(withChange(form, c, units));
+  const direction = form.op === "gt" || form.op === "ge" ? "gt" : "lt";
   const now = (
     <NowLine
       metric={form.metric}
       labels={form.labels}
-      op={form.op}
+      op={direction}
       units={units}
     />
   );
@@ -73,7 +74,7 @@ export function ConditionPanel({
         <SegmentedControl
           ariaLabel="When it is"
           options={COMPARISONS}
-          value={form.op}
+          value={direction}
           onChange={(op) => change({ op })}
         />
       </SettingsRow>

@@ -9,6 +9,7 @@
  */
 import type {
   AlertDestinationsView,
+  AlertRule,
   ByteCount,
   Capabilities,
   CapabilitiesChanged,
@@ -64,6 +65,7 @@ import type {
   NetworkByApp,
   ProcessesAt,
   ProcessView,
+  RemoteAlertRules,
   RemoteHostConfig,
   RemoteHostPreparation,
   RemoteHostRecord,
@@ -72,6 +74,7 @@ import type {
   RemoteSshHostTrust,
   RemoteUpdateStatus,
   RrJob,
+  RulesRevision,
   SensorDump,
   SeriesSelector,
   SeriesStats,
@@ -225,6 +228,13 @@ export interface Transport {
   updateRemoteAgent(id: string): Promise<CommandResult<null>>;
   /** Restart a saved Linux host's agent service; it keeps its identity and history. */
   restartRemoteAgent(id: string): Promise<CommandResult<null>>;
+  remoteAlertRules(host: HostId): Promise<CommandResult<RemoteAlertRules>>;
+  setRemoteAlertRules(
+    host: HostId,
+    baseRevision: RulesRevision,
+    rules: AlertRule[],
+    keep: string[]
+  ): Promise<CommandResult<RemoteAlertRules>>;
   /** The dashboard host-update notice last dismissed, `{variant}:{version}` (D-123). */
   hostUpdateNoticeDismissed(): Promise<CommandResult<string | null>>;
   dismissHostUpdateNotice(key: string): Promise<CommandResult<null>>;
