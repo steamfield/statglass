@@ -33,6 +33,8 @@ const PLATFORMS: Record<OsKind, { label: string; icon: IconName }> = {
   unknown: { label: "Unknown OS", icon: "ellipsis" },
 };
 
+const SPARKBARS_HEIGHT = 36;
+
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function useRowOpacity(stale: boolean) {
@@ -169,25 +171,17 @@ function Readings({
   network: ReturnType<typeof useHostSparkline>["network"];
 }) {
   const colors = useThemeColors();
+  const { fontScale } = useWindowDimensions();
   if (readings.length === 0) return null;
-  const charts = [
-    cpu && <StreamArea variant="spark" {...cpu} />,
-    memory && <StreamArea variant="spark" {...memory} />,
-    network && <NetworkReading data={network} />,
-  ];
-  // One metric per line, figure left and its chart filling the rest: three
-  // side-by-side columns leave each chart too narrow to read on a phone.
+  // Three figures across the top, then each chart at the card's full width.
+  // At accessibility sizes the figures stack so none has to shrink.
+  const stacked = fontScale >= 1.35;
   return (
-    <View className="gap-2">
-      {readings.map(({ label, value, accent }, i) => (
-        <View key={label} className="flex-row items-center gap-3">
-          <View className="w-2/5 min-w-0">
-            <Text
-              variant="caption"
-              maxFontSizeMultiplier={2}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-            >
+    <View className="gap-3">
+      <View className={stacked ? "gap-2" : "flex-row gap-3"}>
+        {readings.map(({ label, value, accent }) => (
+          <View key={label} className={stacked ? "" : "min-w-0 flex-1"}>
+            <Text variant="caption" numberOfLines={1}>
               {label}
             </Text>
             <Text
@@ -199,9 +193,15 @@ function Readings({
               {value}
             </Text>
           </View>
-          <View className="min-w-0 flex-1">{charts[i]}</View>
+        ))}
+      </View>
+      {(cpu || memory || network) && (
+        <View className="gap-2">
+          {cpu && <StreamArea variant="spark" {...cpu} />}
+          {memory && <StreamArea variant="spark" {...memory} />}
+          {network && <NetworkReading data={network} />}
         </View>
-      ))}
+      )}
     </View>
   );
 }
@@ -214,16 +214,30 @@ function NetworkReading({
   const [width, setWidth] = useState(0);
   const { fontScale } = useWindowDimensions();
   return (
-    <View onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}>
-      <Sparkbars data={data} height={36} accessibilityLabel={data.ariaLabel} />
-      {data.bands.length > 0 && (
-        <GapBands
-          bands={data.bands}
-          widthPx={width}
-          height={36}
-          fontScale={fontScale}
+    <View className="flex-row gap-1">
+      {/* Each half's ceiling, as the area charts label theirs. */}
+      <View className="justify-between" style={{ height: SPARKBARS_HEIGHT }}>
+        <Text variant="axis">↑ {formatRate(data.upMax)}</Text>
+        <Text variant="axis">↓ {formatRate(data.downMax)}</Text>
+      </View>
+      <View
+        className="min-w-0 flex-1"
+        onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
+      >
+        <Sparkbars
+          data={data}
+          height={SPARKBARS_HEIGHT}
+          accessibilityLabel={data.ariaLabel}
         />
-      )}
+        {data.bands.length > 0 && (
+          <GapBands
+            bands={data.bands}
+            widthPx={width}
+            height={SPARKBARS_HEIGHT}
+            fontScale={fontScale}
+          />
+        )}
+      </View>
     </View>
   );
 }
