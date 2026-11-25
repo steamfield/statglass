@@ -134,7 +134,7 @@ impl LocalPairing {
 
     fn check_monitoring(&self) -> Result<(), CommandError> {
         bundle::check_monitoring(self.enabled.load(Ordering::Relaxed))
-            .map_err(|error| unavailable(error.to_string()))
+            .map_err(|error| pairing_message(PairingFailure::MonitoringOff, error.to_string()))
     }
 
     fn start(&self) -> Result<PairingOffer, CommandError> {
@@ -463,7 +463,7 @@ pub(crate) mod tests {
         let app = app(dir.path());
         let state = app.state::<PairingState>();
         assert!(
-            matches!(pairing_start(app.state()).await, Err(CommandError::Pairing { reason: PairingFailure::Unavailable, message })
+            matches!(pairing_start(app.state()).await, Err(CommandError::Pairing { reason: PairingFailure::MonitoringOff, message })
             if message.contains("Allow remote monitoring"))
         );
         assert!(paired_devices(app.state()).await.unwrap().is_empty());
@@ -590,13 +590,13 @@ pub(crate) mod tests {
             };
             let guidance = bundle::check_monitoring(false).unwrap_err().to_string();
             assert!(
-                matches!(result, Ok(PairingStatus::Failed { message, .. }) if message == guidance)
+                matches!(result, Ok(PairingStatus::Failed { reason: PairingFailure::MonitoringOff, message }) if message == guidance)
             );
             assert_eq!(host.status(&withdrawn.nonce, now), PairReply::Denied);
             state.set_enabled(true);
             assert!(matches!(
                 pairing_status(withdrawn.nonce, app.state()).await.unwrap(),
-                PairingStatus::Failed { message, .. } if message == guidance
+                PairingStatus::Failed { reason: PairingFailure::MonitoringOff, message } if message == guidance
             ));
         }
         assert!(paired_devices(app.state()).await.unwrap().is_empty());

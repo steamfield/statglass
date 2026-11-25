@@ -34,7 +34,14 @@ pub mod transaction {
 pub fn main() -> ExitCode {
     init_logging();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match cli::parse(&args).and_then(run) {
+    let command = match cli::parse(&args) {
+        Err(error) if args.first().is_some_and(|arg| arg == "pair") => {
+            eprintln!("statglass-agent: {error:#}\n\n{}", cli::USAGE);
+            return ExitCode::from(2);
+        }
+        command => command,
+    };
+    match command.and_then(run) {
         Ok(code) => code,
         Err(e) => {
             eprintln!("statglass-agent: {e:#}");

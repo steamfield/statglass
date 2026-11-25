@@ -9,6 +9,11 @@ pub fn run(nonce: &str) -> i32 {
         eprintln!("{HELPER_COMMAND_NOT_ALLOWED}");
         return 2;
     }
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::WARN)
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .try_init();
     let result = (|| {
         let paths = SocketPaths::for_current_user()?;
         let runtime = tokio::runtime::Builder::new_current_thread()

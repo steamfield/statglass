@@ -5553,6 +5553,7 @@ dependencies = [
  "statglass-remote",
  "tempfile",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

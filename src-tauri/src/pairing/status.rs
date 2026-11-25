@@ -81,7 +81,7 @@ impl From<PairReply> for PairingStatus {
 
 pub(super) fn monitoring_off_status() -> PairingStatus {
     PairingStatus::Failed {
-        reason: PairingFailure::Unavailable,
+        reason: PairingFailure::MonitoringOff,
         message: MONITORING_OFF.into(),
     }
 }

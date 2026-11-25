@@ -52,7 +52,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 [dev-dependencies]
 p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic", "ecdsa", "pkcs8", "std"] }
 statglass-ssh = { workspace = true, features = ["software-signer"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["process", "test-util"] }
 
 [lints]
 workspace = true

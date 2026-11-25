@@ -183,9 +183,101 @@ it("shows monitoring guidance when an open pairing is withdrawn", async () => {
     );
     await act(() => vi.advanceTimersByTimeAsync(1100));
     expect(screen.getByRole("alert")).toHaveTextContent(
+      "Remote monitoring is off on this host."
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again."
     );
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("shows the monitoring-off reason and recovery before opening an offer", async () => {
+  const mock = createMockTransport({ autoTick: false });
+  const { user } = renderWithProviders(<PairedDevicesPanel />, {
+    transport: mock,
+  });
+  await user.click(screen.getByRole("button", { name: "Pair iPhone" }));
+  const alert = await within(screen.getByRole("dialog")).findByRole("alert");
+  expect(alert).toHaveTextContent("Remote monitoring is off on this host.");
+  expect(alert).toHaveTextContent("Turn on Allow remote monitoring");
+  expect(screen.queryByRole("img", { name: "Pairing QR code" })).toBeNull();
+});
+
+it("shows the typed reason with detail when polling or approval fails", async () => {
+  vi.useFakeTimers();
+  try {
+    const mock = createMockTransport({ autoTick: false });
+    await unwrap(mock.updateSettings({ remote_access: { enabled: true } }));
+    let failStatus = false;
+    renderWithProviders(<PairedDevicesPanel />, {
+      transport: {
+        ...mock,
+        pairingStatus: async (nonce) =>
+          failStatus
+            ? {
+                status: "error",
+                error: {
+                  kind: "pairing",
+                  reason: "unknown",
+                  message: "The offer was withdrawn.",
+                },
+              }
+            : mock.pairingStatus(nonce),
+        pairingApprove: async () => ({
+          status: "error",
+          error: {
+            kind: "pairing",
+            reason: "used",
+            message: "A decision was already recorded.",
+          },
+        }),
+      },
+    });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Pair iPhone" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    let alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("The pairing code has already been used.");
+    expect(alert).toHaveTextContent("A decision was already recorded.");
+
+    failStatus = true;
+    await act(() => vi.advanceTimersByTimeAsync(1100));
+    alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(
+      "The host does not recognize this pairing code."
+    );
+    expect(alert).toHaveTextContent("The offer was withdrawn.");
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("expires a pending offer and removes the approval controls", async () => {
+  vi.useFakeTimers();
+  try {
+    const mock = createMockTransport({ autoTick: false });
+    await unwrap(mock.updateSettings({ remote_access: { enabled: true } }));
+    renderWithProviders(<PairedDevicesPanel />, { transport: mock });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Pair iPhone" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+    expect(screen.getByRole("button", { name: "Approve" })).toBeVisible();
+
+    vi.setSystemTime(Date.now() + 600_000);
+    await act(() => vi.advanceTimersByTimeAsync(1100));
+    expect(screen.getByText(/Pairing expired\./)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
   } finally {
     vi.useRealTimers();
   }
@@ -199,7 +291,7 @@ it("returns monitoring guidance when approval races with disabling monitoring", 
   const status = await unwrap(mock.pairingApprove(nonce));
   expect(status).toEqual({
     kind: "failed",
-    reason: "unavailable",
+    reason: "monitoring_off",
     message:
       "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again.",
   });

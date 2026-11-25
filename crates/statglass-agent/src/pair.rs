@@ -26,8 +26,8 @@ use tokio::time::Instant;
 /// Offers a pairing for `ttl` and asks for approval on this terminal.
 pub fn interactive(
     ttl: Duration,
-    _targets: &[BundleTarget],
-    _port: Option<u16>,
+    targets: &[BundleTarget],
+    port: Option<u16>,
 ) -> anyhow::Result<()> {
     let user = EffectiveUser::lookup().context("locating the pairing account")?;
     let uid = rustix::process::geteuid().as_raw();
@@ -44,7 +44,7 @@ pub fn interactive(
     let runtime = runtime()?;
     let result = runtime.block_on(async {
         let interrupt = pairing_interrupt().context("listening for terminal signals")?;
-        let host = bundle::bundle(layout, &paths, user.name).await?;
+        let host = bundle::bundle(layout, &paths, user.name, targets, port).await?;
         let pairing = Arc::new(PairingHost::new(
             Arc::new(AuthorizedKeys::for_current_user()?),
             commands(layout, &paths, &env)?,
@@ -395,6 +395,44 @@ mod tests {
         ] {
             assert!(parse_pair(args).is_err(), "{args:?}");
         }
+    }
+
+    #[test]
+    fn pairing_cli_preserves_all_four_targets_in_order_and_the_published_port() {
+        let parsed = parse_pair(&[
+            "pair",
+            "--target",
+            "lan=127.0.0.1",
+            "--port",
+            "65535",
+            "--target",
+            "tailscale=100.64.1.1",
+            "--target",
+            "lan=office.local",
+            "--target",
+            "tailscale=fd7a:115c:a1e0::1",
+        ])
+        .unwrap();
+        use statglass_proto::pairing::BundleRoute::{Lan, Tailscale};
+        assert_eq!(
+            parsed,
+            Command::Device(DeviceCommand::Pair {
+                ttl_s: 600,
+                port: Some(65535),
+                targets: [
+                    (Lan, "127.0.0.1"),
+                    (Tailscale, "100.64.1.1"),
+                    (Lan, "office.local"),
+                    (Tailscale, "fd7a:115c:a1e0::1"),
+                ]
+                .into_iter()
+                .map(|(route, host)| BundleTarget {
+                    route,
+                    host: host.into()
+                })
+                .collect(),
+            })
+        );
     }
 
     #[test]
