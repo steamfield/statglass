@@ -2,6 +2,7 @@ use statglass_remote::{AuthorizedKeys, DeviceKeys, DeviceTag, EcdsaP256Public, P
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
+use std::process::Command;
 
 // The P-256 generator, encoded as a SEC1 point and as an OpenSSH public key.
 const POINT: [u8; 65] = [
@@ -31,6 +32,11 @@ fn mode(path: &Path) -> u32 {
         .permissions()
         .mode()
         & 0o777
+}
+
+fn localtime() -> jiff::tz::TimeZone {
+    let bytes = fs::read("/etc/localtime").expect("read the host's sshd time zone");
+    jiff::tz::TimeZone::tzif("localtime", &bytes).expect("parse the host's sshd time zone")
 }
 
 #[test]
@@ -90,9 +96,7 @@ fn pairing_key_has_local_time_expiry_through_seconds_and_its_own_tag() {
     assert!(!keys.remove_pairing(NONCE).unwrap());
     assert!(!path.parent().unwrap().exists());
     let timestamp: jiff::Timestamp = "2025-01-02T03:04:59.999+05:30".parse().unwrap();
-    let expiry = timestamp
-        .to_zoned(jiff::tz::TimeZone::system())
-        .strftime("%Y%m%d%H%M%S");
+    let expiry = timestamp.to_zoned(localtime()).strftime("%Y%m%d%H%M%S");
     let key = EcdsaP256Public(POINT);
     keys.add_pairing(&key, NONCE, timestamp.as_millisecond(), PAIR_COMMAND)
         .unwrap();
@@ -109,6 +113,47 @@ fn pairing_key_has_local_time_expiry_through_seconds_and_its_own_tag() {
     assert!(keys.remove_pairing(NONCE).unwrap());
     assert!(!keys.remove_pairing(NONCE).unwrap());
     assert_eq!(keys.list_devices().unwrap()[0].tag, tag);
+}
+
+#[test]
+fn pairing_expiry_uses_localtime_despite_a_conflicting_process_tz() {
+    let timestamp: jiff::Timestamp = "2025-01-02T03:04:59.999Z".parse().unwrap();
+    if let Some(path) = std::env::var_os("STATGLASS_TEST_PAIRING_KEYS_PATH") {
+        AuthorizedKeys::at(path.into())
+            .add_pairing(
+                &EcdsaP256Public(POINT),
+                NONCE,
+                timestamp.as_millisecond(),
+                PAIR_COMMAND,
+            )
+            .unwrap();
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("authorized_keys");
+    let host_time = timestamp.to_zoned(localtime());
+    let process_tz = if host_time.offset().seconds() == 0 {
+        "America/New_York"
+    } else {
+        "UTC"
+    };
+    let child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "pairing_expiry_uses_localtime_despite_a_conflicting_process_tz",
+        ])
+        .env("STATGLASS_TEST_PAIRING_KEYS_PATH", &path)
+        .env("TZ", process_tz)
+        .output()
+        .unwrap();
+    assert!(child.status.success(), "{child:?}");
+    let expected = format!("expiry-time=\"{}\"", host_time.strftime("%Y%m%d%H%M%S"));
+    let line = fs::read_to_string(path).unwrap();
+    assert!(
+        line.contains(&expected),
+        "{line:?} does not contain {expected:?}"
+    );
 }
 
 #[test]

@@ -449,6 +449,32 @@ fn seen_log_keeps_the_latest_timestamp_through_reopens() {
     assert_eq!(DeviceSeenLog::new(path).read().get(&tag), Some(&1234));
 }
 
+#[test]
+fn seen_log_compacts_past_64_kib_and_preserves_latest_times() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("seen");
+    let held = std::fs::File::create(&path).unwrap();
+    held.lock().unwrap();
+    let log = DeviceSeenLog::new(path.clone());
+    let phone = DeviceTag::parse("7F3A2C").unwrap();
+    let tablet = DeviceTag::parse("0BADC0").unwrap();
+    for time in 0..1600 {
+        log.record(phone, time);
+        log.record(tablet, 1600 - time);
+    }
+    let size_before = std::fs::metadata(&path).unwrap().len();
+    assert!(size_before > 64 * 1024, "compaction must skip a locked log");
+    let before = log.read();
+    assert_eq!(before, [(phone, 1599), (tablet, 1600)].into());
+    drop(held);
+
+    log.record(phone, 5);
+    assert!(std::fs::metadata(&path).unwrap().len() < 64 * 1024);
+    let compacted = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(compacted.lines().filter(|line| !line.is_empty()).count(), 2);
+    assert_eq!(DeviceSeenLog::new(path).read(), before);
+}
+
 #[tokio::test]
 async fn a_held_advisory_log_lock_cannot_stall_a_restricted_session() {
     let dir = tempfile::tempdir().unwrap();

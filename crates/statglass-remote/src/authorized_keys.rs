@@ -1,8 +1,10 @@
 //! The file-backed [`DeviceKeys`]: StatGlass's edits to `~/.ssh/authorized_keys` (RFC
 //! `plan/rfc-ios-app.md` 2.5). Only `statglass-mobile:` and `statglass-pairing:` lines
 //! are added or removed; every other line is kept byte for byte.
-//! Pairing expiries use the host's local time through seconds, the format sshd reads
+//! Pairing expiries use the host's /etc/localtime zone through seconds, the format sshd reads
 //! starting with OpenSSH 7.7. The pairing protocol also checks its UTC deadline.
+mod expiry;
+
 use crate::device_keys::{DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice};
 use sha2::{Digest, Sha256};
 use std::{
@@ -188,18 +190,7 @@ impl DeviceKeys for AuthorizedKeys {
         let token = pairing_token(nonce)?;
         let key = encode_key(key)?;
         let command = escape_option(command)?;
-        let local = jiff::tz::TimeZone::try_system().map_err(|error| {
-            DeviceKeysError::Invalid(format!("could not identify the host's time zone: {error}"))
-        })?;
-        let expiry = jiff::Timestamp::from_millisecond(expires_ms)
-            .map_err(|error| DeviceKeysError::Invalid(format!("invalid pairing expiry: {error}")))?
-            .to_zoned(local);
-        if expiry.year() < 1970 {
-            return Err(DeviceKeysError::Invalid(
-                "pairing expiry predates 1970".into(),
-            ));
-        }
-        let expiry = expiry.strftime("%Y%m%d%H%M%S");
+        let expiry = expiry::format(expires_ms)?;
         let line = format!(
             "restrict,expiry-time=\"{expiry}\",command=\"{command}\" {KEY_TYPE} {key} {token}\n"
         );

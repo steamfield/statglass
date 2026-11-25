@@ -8,7 +8,7 @@ use statglass_schema::{HostId, Tier, usage::UsageKey};
 use statglass_session::{ForcedToken, codec};
 use std::{
     env, fs,
-    os::unix::fs::{PermissionsExt, symlink},
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     time::{Duration, Instant},
@@ -236,7 +236,9 @@ impl Sshd {
                     "-ec",
                     r#"
                 install -m 600 /fixture/host /etc/ssh/fixture_host_key
-                install -m 755 /fixture/statglass-agent /usr/local/bin/statglass-agent
+                if [ -f /fixture/statglass-agent ]; then
+                    install -m 755 /fixture/statglass-agent /usr/local/bin/statglass-agent
+                fi
                 install -d -o statglass -g statglass -m 700 /home/statglass/.ssh
                 cp --preserve=mode /keys/managed-keys /home/statglass/.ssh/managed-keys
                 chown statglass:statglass /home/statglass/.ssh/managed-keys
@@ -326,6 +328,176 @@ fn public_key(pem: &Path) -> EcdsaP256Public {
             .try_into()
             .expect("SEC1 point is 65 bytes"),
     )
+}
+
+fn linux_pairing_writer(output: &Path) -> PathBuf {
+    let worktree = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("locate the worktree");
+    let owner = fs::metadata(output).expect("read fixture ownership");
+    let build = checked(
+        Command::new("docker")
+            .args(["run", "--rm", "-w", "/w"])
+            .arg("-e")
+            .arg(format!("HOST_UID={}", owner.uid()))
+            .arg("-e")
+            .arg(format!("HOST_GID={}", owner.gid()))
+            .args([
+                "-e",
+                "HOME=/tmp",
+                "-e",
+                "CARGO_PROFILE_DEV_DEBUG=0",
+                "-e",
+                "CARGO_PROFILE_TEST_DEBUG=0",
+                "-e",
+                "CARGO_INCREMENTAL=0",
+                "-e",
+                "CARGO_TARGET_DIR=/usr/local/cargo/target-linux",
+                "-v",
+                "statglass-linux-cargo:/usr/local/cargo",
+                "-v",
+                "statglass-linux-rustup:/usr/local/rustup",
+            ])
+            .arg("-v")
+            .arg(format!("{}:/w:ro", worktree.display()))
+            .args([
+                "rust:1.99-bookworm",
+                "scripts/linux-test-entry.sh",
+                "cargo",
+                "test",
+                "--locked",
+                "-p",
+                "statglass-remote",
+                "--test",
+                "docker_restricted",
+                "--no-run",
+                "--message-format=json",
+            ]),
+    );
+    let stdout = String::from_utf8_lossy(&build.stdout);
+    let executable = stdout
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|message| message["target"]["name"] == "docker_restricted")
+        .find_map(|message| message["executable"].as_str().map(PathBuf::from))
+        .expect("find the test executable in Cargo's build output");
+    checked(
+        Command::new("docker")
+            .args([
+                "run",
+                "--rm",
+                "-v",
+                "statglass-linux-cargo:/usr/local/cargo:ro",
+            ])
+            .arg("-v")
+            .arg(format!("{}:/output", output.display()))
+            .args(["statglass-ssh-docker", "cp"])
+            .arg(executable)
+            .arg("/output/pairing-writer"),
+    );
+    PathBuf::from("/keys/pairing-writer")
+}
+
+#[test]
+#[ignore = "requires the OpenSSH Docker image and fixture keys from make ssh-docker-test"]
+fn utc_sshd_admits_pairing_written_with_a_western_process_tz() {
+    const NONCE: &str = "00112233445566778899aabbccddeeff";
+    const NAME: &str = "utc_sshd_admits_pairing_written_with_a_western_process_tz";
+    const COMMAND: &str = "/bin/echo pairing-admitted";
+    if let Ok(expires_ms) = env::var("STATGLASS_TEST_WRITE_PAIRING_EXPIRES_MS") {
+        let point = fs::read("/tmp/pairing.sec1").unwrap().try_into().unwrap();
+        AuthorizedKeys::at("/home/statglass/.ssh/authorized_keys".into())
+            .add_pairing(
+                &EcdsaP256Public(point),
+                NONCE,
+                expires_ms.parse().unwrap(),
+                COMMAND,
+            )
+            .unwrap();
+        return;
+    }
+
+    let fixture_dir = tempfile::tempdir().unwrap();
+    let keys = tempfile::tempdir().unwrap();
+    let client = tempfile::tempdir().unwrap();
+    checked(
+        Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+            .arg(fixture_dir.path().join("host")),
+    );
+    let readiness_key = client.path().join("readiness");
+    let pairing_key = client.path().join("pairing");
+    for key in [&readiness_key, &pairing_key] {
+        checked(
+            Command::new("openssl")
+                .args([
+                    "genpkey",
+                    "-algorithm",
+                    "EC",
+                    "-pkeyopt",
+                    "ec_paramgen_curve:P-256",
+                    "-out",
+                ])
+                .arg(key),
+        );
+    }
+    fs::write(keys.path().join("pairing.sec1"), public_key(&pairing_key).0).unwrap();
+    let writer = linux_pairing_writer(keys.path());
+    // The fixture's ordinary restricted key is the readiness probe. The pairing
+    // key is installed only by the test writer inside the same host as sshd.
+    let device = public_key(&readiness_key);
+    AuthorizedKeys::at(keys.path().join("managed-keys"))
+        .add_device(&device, "Fixture", "/bin/true")
+        .unwrap();
+    let sshd = Sshd::start(fixture_dir.path(), keys.path());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !sshd.ssh(&readiness_key, "version").status.success() {
+        assert!(
+            Instant::now() < deadline,
+            "sshd did not accept its readiness key"
+        );
+    }
+    let utc = checked(Command::new("docker").args(["exec", &sshd.container, "date", "+%z"]));
+    assert_eq!(utc.stdout, b"+0000\n");
+    checked(Command::new("docker").args([
+        "exec",
+        &sshd.container,
+        "install",
+        "-m",
+        "755",
+        writer.to_str().unwrap(),
+        "/tmp/pairing-writer",
+    ]));
+    checked(Command::new("docker").args([
+        "exec",
+        &sshd.container,
+        "install",
+        "-m",
+        "644",
+        "/keys/pairing.sec1",
+        "/tmp/pairing.sec1",
+    ]));
+    let expires_ms = jiff::Timestamp::now().as_millisecond() + 5 * 60 * 1000;
+    checked(
+        Command::new("docker")
+            .args([
+                "exec",
+                "--user",
+                "statglass",
+                "--env",
+                "TZ=America/Los_Angeles",
+                "--env",
+            ])
+            .arg(format!(
+                "STATGLASS_TEST_WRITE_PAIRING_EXPIRES_MS={expires_ms}"
+            ))
+            .arg(&sshd.container)
+            .args(["/tmp/pairing-writer", "--ignored", "--exact", NAME]),
+    );
+    let result = sshd.ssh(&pairing_key, "pair");
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(result.stdout, b"pairing-admitted\n");
 }
 
 async fn assert_seen_with_a_custom_data_dir(
