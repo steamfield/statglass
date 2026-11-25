@@ -2,7 +2,7 @@
 
 Skill: deliver. Profile: deliver. On resume, re-read shared/lane-dag.md before anything else.
 plan_graph: /Users/riley/.claude/plugins/cache/claude-essentials/ce/6.0.4/shared/scripts/plan_graph.py
-Started: 2026-11-24. Timebox: none. Landing branch: deliver/ios-app.
+Status: done (2026-11-25), phases 1-6; phases 7-8 not run. Started: 2026-11-24. Timebox: none. Landing branch: deliver/ios-app.
 Worktree: /Users/riley/Projects/statglass/.claude/worktrees/deliver-ios-app
 Gate: `make agent-config-check agent-config-test agent-hooks-test verification-test architecture-check architecture-test rust-check appstore-check rust-test bindings-check mobile-check mobile-rust-check && bun run check` (about 10 min; `make check` minus `updater-patch-test`, which fails in any worktree nested under the main checkout and runs once from main after the merge; `bun run check` alone is 68 s).
 Commits: conventional commit subjects are enforced by the commit hook (`type(scope): subject`). Filtered tests: `bun run test -- <path>` (desktop and packages/core), `bun run --cwd apps/mobile test -- <path>` (mobile, jest-expo), `cargo test -p <crate> <filter>` (Rust). Typecheck: `bun run typecheck`.

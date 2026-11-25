@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## StatGlass for iPhone, RFC phases 0 to 4 built (2026-11-25)
+
+`plans/deliver-ios-app.md` landed phases 1 to 6 (tags `ios-app-phase-1` to `ios-app-phase-6`): the `apps/mobile` Expo workspace, the shared `statglass-session` and IPC crates, the UniFFI mobile core with a Swift native module and TypeScript transport, restricted phone sessions with QR pairing on hosts (the Mac's Pair iPhone flow and paired-devices settings), and the phone UI on demo data.
+
+- Verified: the combined gate (950 Rust, 2834 frontend and 194 mobile tests, bindings, rust, architecture and mobile Rust checks, `ssh-docker-test` including pairing over sshd, `mobile-native-check`). In the iOS Simulator the debug screen streamed live CPU over russh from a Linux agent in an OpenSSH container and resumed after backgrounding. Every lane, the final diff and the final-review fixes were reviewed.
+- Open: plan phases 7 (pairing in the app with live hosts) and 8 (the Mac handing other hosts to the phone); Face ID and Secure Enclave on a physical device, TestFlight and the App Store; the follow-ups in the plan's Log (NAT64 literals, the 7-day cellular sync cap, hosts added in the background, revoke not closing an open stream, the `ssh-key` swap, `rust-linux-check` not run here); the pairing code is read from the Mac's own QR, so it can't tell a phone that scanned a photo of the screen apart.
+
 ## StatGlass for iPhone accepted; agent guidance for mobile and shared code (D-140 to D-150) (2026-11-24)
 
 The iPhone RFC (`plan/rfc-ios-app.md`, revision 2) is accepted: its ten section 10 decisions and the answers to its open questions are D-140 to D-150. The run that builds it is `plans/deliver-ios-app.md` (RFC phases 0 to 4, verified in the iOS Simulator). This entry covers phase 1 lane c, the agent setup every later lane and Codex run follows.
