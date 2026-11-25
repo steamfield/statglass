@@ -1,22 +1,9 @@
 import { layoutMarkers } from "@core/chart-math";
+import type { ChartAnnotationData } from "@core/widget-models/chart-annotation";
 import { cn } from "~/lib/utils";
 
-export interface ChartAnnotationProps {
-  /** When the annotated moment happened (ms epoch); the chart positions it. */
-  tsMs: number;
-  /** "ANE 1.4 W · Photos face analysis". */
-  label: string;
-  /**
-   * `marker`: a 20 px vertical rule then the label (power chart).
-   * `pill`: a bordered label on the card surface (battery chart).
-   */
-  variant?: "marker" | "pill";
-  /**
-   * `end` puts the marker after the label, for a box anchored by its right
-   * edge so a label near the plot's right edge doesn't run past it.
-   */
-  align?: "start" | "end";
-}
+/** A labelled marker inside a chart; the shared annotation data. */
+export type ChartAnnotationProps = ChartAnnotationData;
 
 /**
  * Labelled marker inside a chart. Render-only: the chart wraps it

@@ -1,3 +1,4 @@
+import { type PopoverCard, popoverSlots } from "@core/popover/card-order";
 import { windowMean } from "@core/series-stats";
 import { MINUTE_MS } from "@core/time-grid";
 import { useState } from "react";
@@ -27,7 +28,6 @@ import { PopoverOptions } from "./_components/popover-options";
 import { PopoverScroll } from "./_components/popover-scroll";
 import { POPOVER_CARDS, usePopoverDensity } from "./_hooks/use-popover-density";
 import { usePopoverSize } from "./_hooks/use-popover-size";
-import { type PopoverCard, popoverSlots } from "./_lib/card-order";
 import { samplingPill } from "./_lib/sampling-pill";
 
 const CARDS: Record<

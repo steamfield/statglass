@@ -1,13 +1,12 @@
 import { clamp01 } from "@core/chart-math";
+import type { MeterTrackData } from "@core/widget-models/meter-track";
 import { cn } from "~/lib/utils";
 
-export interface MeterTrackProps {
-  /**
-   * Fill as a fraction of the track, clamped to 0..1. `null` is a missing
-   * measurement: the track is drawn empty, never a zero-width fill that
-   * reads as a real 0.
-   */
-  fraction: number | null;
+/**
+ * Props of the bar meter: the shared data contract plus the desktop's CSS
+ * fill, height, classes and tween.
+ */
+export interface MeterTrackProps extends MeterTrackData {
   /** CSS background of the fill. Defaults to the accent in scope (`--a`). */
   fill?: string;
   height?: "h-1" | "h-1.5";

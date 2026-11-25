@@ -1,34 +1,15 @@
 import { clamp01 } from "@core/chart-math";
 import { cssPercent } from "@core/format";
+import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
 import { ChartLoading } from "./chart-loading";
-import { type Accent, accentVars, rampColor } from "./lib/accent";
+import { accentVars, rampColor } from "./lib/accent";
 import styles from "./lib/scroll-layer.module.css";
 import { useTickScroll } from "./lib/use-tick-scroll";
 
-export interface MirrorBarsProps {
-  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
-  loading?: boolean;
-  /** Upload (or read) per interval, drawn above the baseline. `null` is a gap. */
-  up: readonly (number | null)[];
-  /** Download (or write), drawn below. Same length as `up`. */
-  down: readonly (number | null)[];
-  intervalMs: number;
-  /** Timestamp of the last bar; when it advances by one interval the bars slide. */
-  tEndMs?: number | undefined;
-  accent: Accent;
-  ariaLabel: string;
-  /**
-   * Scale ceilings per side. The owner holds them steady across ticks
-   * (`useNiceCeiling`), so the bars never rescale every second.
-   */
-  upMax: number;
-  downMax: number;
-  /** Heights in px of the two halves (18 above, 30 below). */
-  upHeight?: number;
-  downHeight?: number;
-}
+/** Props of the mirrored bars: the shared data contract. */
+export type MirrorBarsProps = MirrorBarsData;
 
 function heights(values: readonly (number | null)[], max: number, h: number) {
   return values.map((v) =>

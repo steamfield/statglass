@@ -2,9 +2,9 @@
  * Sample props for the Overview, CPU, Power and popover widgets. Used by the
  * widget tests and the dev gallery only.
  */
+import { FIXTURE_T_END, seededWalk } from "@core/widget-models/fixtures/charts";
 import { createElement } from "react";
 import type { CoreTilesProps } from "../core-tiles";
-import type { InlineBarProps } from "../inline-bar";
 import type { LegendProps } from "../legend";
 import type { MetricCardProps } from "../metric-card";
 import type { ProcessListRow } from "../process-list";
@@ -15,6 +15,20 @@ import type { StatListProps } from "../stat-list";
 import { StreamArea } from "../stream-area";
 import { residencyLabel, residencySegments } from "./residency";
 
+export {
+  BATTERY_STAT_GRID,
+  GPU_STAT_GRID,
+  INLINE_BAR,
+  MEMORY_STACK,
+  POPOVER_CPU_ROWS,
+  POWER_STACK_BAR,
+  POWER_STAT_GRID,
+} from "@core/widget-models/fixtures/bars";
+export {
+  POPOVER_CPU_STREAM,
+  POPOVER_GPU_STREAM,
+} from "@core/widget-models/fixtures/charts";
+
 function procs(rows: [string, string, string][]): ProcessListRow[] {
   return rows.map(([initial, name, value], i) => ({
     id: `${name}-${i}`,
@@ -24,25 +38,6 @@ function procs(rows: [string, string, string][]): ProcessListRow[] {
   }));
 }
 
-/** Seeded walk: 60 values around `base`. */
-function walk(n: number, seed: number, base: number, noise: number) {
-  let s = seed;
-  const r = () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-  let v = base;
-  const out: number[] = [];
-  for (let i = 0; i < n; i++) {
-    v += (r() - 0.5) * noise;
-    v += (base - v) * 0.2;
-    out.push(Math.round(Math.max(1, v) * 10) / 10);
-  }
-  return out;
-}
-
-const T_END = 1_759_617_600_000; // Sun Oct 4 2026 22:40 UTC-ish; any fixed ms epoch
-
 function sampleChart(
   accent: MetricCardProps["accent"],
   label: string,
@@ -50,8 +45,8 @@ function sampleChart(
 ) {
   return createElement(StreamArea, {
     accent,
-    series: [{ key: accent, values: walk(60, 9, base, 10), step: 1 }],
-    tEndMs: T_END,
+    series: [{ key: accent, values: seededWalk(60, 9, base, 10), step: 1 }],
+    tEndMs: FIXTURE_T_END,
     intervalMs: 5000,
     height: 88,
     yMax: 100,
@@ -222,47 +217,6 @@ export const RING_GAUGE: RingGaugeProps = {
   size: 88,
 };
 
-export const INLINE_BAR: InlineBarProps = {
-  label: "P-cluster",
-  value: "3.2 GHz",
-  fraction: 0.71,
-  accent: "cpu",
-};
-
-export const POPOVER_CPU_ROWS: InlineBarProps[] = [
-  { label: "User", value: "12.4%", fraction: 0.124, layout: "row" },
-  {
-    label: "System",
-    value: "5.6%",
-    fraction: 0.056,
-    layout: "row",
-    rampStep: 2,
-  },
-];
-
-export const POPOVER_CPU_STREAM = {
-  series: [{ key: "cpu.total", values: walk(60, 5, 18, 9), step: 1 as const }],
-  tEndMs: T_END,
-  intervalMs: 1000,
-  yMax: 40,
-  accent: "cpu" as const,
-  height: 52,
-  ariaLabel: "CPU, last 60 seconds, 18%",
-  ceilingLabel: "40%",
-  windowLabel: "60s",
-  gridlines: [20],
-};
-
-export const POPOVER_GPU_STREAM = {
-  series: [{ key: "gpu.util", values: walk(60, 9, 36, 10), step: 1 as const }],
-  tEndMs: T_END,
-  intervalMs: 1000,
-  yMax: 80,
-  accent: "gpu" as const,
-  height: 40,
-  ariaLabel: "GPU, last 60 seconds, 36%",
-};
-
 export const LEGEND: LegendProps = {
   items: [
     { label: "User", value: "12.4%", step: 1 },
@@ -288,105 +242,6 @@ export const CORE_TILES: CoreTilesProps = {
       freq: "1.0 GHz",
       cores: [52, 38, 44, 29].map((load, i) => ({ id: `E${i}`, load })),
     },
-  ],
-};
-
-/**
- * The second segment is "App", not "Active", so the numbers
- * reconcile with the Overview (v1-local-monitor.md 4.3).
- */
-export const MEMORY_STACK: StackBarProps = {
-  accent: "mem",
-  showLegend: true,
-  segments: [
-    {
-      key: "wired",
-      label: "Wired",
-      value: "3.9 GB",
-      fraction: 3.9 / 24,
-      step: 1,
-    },
-    {
-      key: "app",
-      label: "App",
-      value: "11.6 GB",
-      fraction: 11.6 / 24,
-      step: 2,
-    },
-    {
-      key: "compressed",
-      label: "Compressed",
-      value: "2.1 GB",
-      fraction: 2.1 / 24,
-      step: "hatch",
-    },
-    {
-      key: "cached",
-      label: "Cached files",
-      value: "4.0 GB",
-      fraction: 4 / 24,
-      step: 4,
-    },
-    {
-      key: "free",
-      label: "Free",
-      value: "2.4 GB",
-      fraction: 2.4 / 24,
-      step: "track",
-    },
-  ],
-  extraLegend: [{ label: "Swap", value: "512 MB" }],
-};
-
-export const POWER_STACK_BAR: StackBarProps = {
-  accent: "power",
-  segments: [
-    { key: "cpu", label: "CPU", value: "6.4 W", fraction: 6.4 / 14.8, step: 1 },
-    { key: "gpu", label: "GPU", value: "3.1 W", fraction: 3.1 / 14.8, step: 2 },
-    { key: "ane", label: "ANE", value: "0.0 W", fraction: 0, step: "hatch" },
-    {
-      key: "dram",
-      label: "DRAM",
-      value: "0.9 W",
-      fraction: 0.9 / 14.8,
-      step: 3,
-    },
-    {
-      key: "rest",
-      label: "Rest of system",
-      value: "4.4 W",
-      fraction: 4.4 / 14.8,
-      step: "track",
-    },
-  ],
-};
-
-export const POWER_STAT_GRID: StatListProps = {
-  layout: "grid",
-  accent: "power",
-  items: [
-    { label: "CPU", value: "6.4 W", swatch: 1 },
-    { label: "GPU", value: "3.1 W", swatch: 2 },
-    { label: "ANE", value: "0.0 W", swatch: "hatch", muted: true },
-    { label: "DRAM", value: "0.9 W", swatch: 3 },
-  ],
-};
-
-export const GPU_STAT_GRID: StatListProps = {
-  layout: "grid",
-  items: [
-    { label: "Freq", value: "1.1 GHz" },
-    { label: "Power", value: "3.1 W" },
-    { label: "Cores", value: "20" },
-  ],
-};
-
-export const BATTERY_STAT_GRID: StatListProps = {
-  layout: "grid",
-  items: [
-    { label: "Remaining", value: "6:12" },
-    { label: "Health", value: "94%" },
-    { label: "Cycles", value: "212" },
   ],
 };
 

@@ -1,3 +1,4 @@
+import type { SwatchStep } from "@core/widget-models/tokens";
 import { cn } from "~/lib/utils";
 import {
   type Accent,
@@ -7,8 +8,7 @@ import {
   rampColor,
 } from "./lib/accent";
 
-/** A ramp step, the empty track (a "free" remainder), or no swatch at all. */
-export type SwatchStep = RampStep | "track" | "none";
+export type { SwatchStep };
 
 export interface LegendItem {
   label: string;

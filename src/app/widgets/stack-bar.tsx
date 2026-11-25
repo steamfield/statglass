@@ -1,36 +1,15 @@
 import { clamp01 } from "@core/chart-math";
-import { Legend, type SwatchStep } from "./legend";
-import { type Accent, accentVars, rampBackground } from "./lib/accent";
+import type {
+  StackBarData,
+  StackBarSegment,
+} from "@core/widget-models/stack-bar";
+import { Legend } from "./legend";
+import { accentVars, rampBackground } from "./lib/accent";
 
-export interface StackBarSegment {
-  key: string;
-  label: string;
-  /** Formatted value for the legend and the accessible name ("3.9 GB"). */
-  value: string;
-  /**
-   * Share of the whole bar. Segments are laid out in order. `null` is a
-   * missing measurement: the segment is left out of the bar (its legend row
-   * shows the missing value), and a bar with nothing measured is an empty
-   * track.
-   */
-  fraction: number | null;
-  /** `track` draws the remainder (free memory, rest of system power). */
-  step: SwatchStep;
-  /** A color in place of the ramp step (frequency residency states). */
-  color?: string;
-}
+export type { StackBarSegment };
 
-export interface StackBarProps {
-  segments: StackBarSegment[];
-  /** Defaults to the accent in scope (the card's `--a`). */
-  accent?: Accent;
-  showLegend?: boolean;
-  legendColumns?: "inline" | 1 | 2;
-  /** Extra legend rows with no segment (popover memory "Swap"). */
-  extraLegend?: { label: string; value: string }[];
-  /** Overrides the generated accessible name. */
-  ariaLabel?: string;
-}
+/** Props of the composition bar: the shared data contract. */
+export type StackBarProps = StackBarData;
 
 /**
  * Composition bar, 10 px with 1 px gaps (memory, power, frequency residency). A

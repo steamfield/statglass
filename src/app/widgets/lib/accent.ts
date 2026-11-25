@@ -1,23 +1,12 @@
+import type { Accent, RampStep } from "@core/widget-models/tokens";
 import type { CSSProperties } from "react";
 
 /**
- * Module accent tokens (design-system.md "Module accents"). Each maps to
- * `--color-<accent>` (fill) and `--color-<accent>-ink` (lines, text, thin
- * marks; darker in light mode).
+ * Module accent tokens (design-system.md "Module accents") and ramp steps
+ * are shared with the phone. Each accent maps to `--color-<accent>` (fill)
+ * and `--color-<accent>-ink` (lines, text, thin marks; darker in light mode).
  */
-export type Accent =
-  | "cpu"
-  | "cpu-2"
-  | "gpu"
-  | "mem"
-  | "power"
-  | "temp"
-  | "net"
-  | "disk"
-  | "battery";
-
-/** Ramp step of the card accent: 100%, 60%, 35%, 20%, or a diagonal hatch. */
-export type RampStep = 1 | 2 | 3 | 4 | "hatch";
+export type { Accent, RampStep };
 
 /** Corner the card glow comes from. CardGrid assigns these by index. */
 export type Corner = "tl" | "tr" | "bl" | "br";
