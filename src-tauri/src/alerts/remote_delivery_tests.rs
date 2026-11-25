@@ -19,6 +19,7 @@ use crate::alerts::fire::announce_catch_up;
 use crate::ipc::EventRecorded;
 
 const HOST: HostId = HostId(Uuid::from_u128(1));
+const GENERATION: Uuid = Uuid::from_u128(2);
 const MIRROR_EPOCH: Uuid = Uuid::from_u128(7);
 const START: i64 = 1_800_000_000_000;
 
@@ -63,11 +64,9 @@ impl Mirrored {
                 kernel: None,
             },
         };
-        let app = tauri::test::mock_app();
-        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
-            .events(tauri_specta::collect_events![EventRecorded])
-            .mount_events(&app);
-        let alerts = AlertsService::open(dir.path());
+        let seen = Arc::new(Mutex::new(Seen::default()));
+        let app = Self::open_app(dir.path(), seen.clone());
+        let alerts = app.state::<AlertsService>();
         let destination = Destination {
             id: Uuid::from_u128(8),
             name: "Webhook".into(),
@@ -84,15 +83,6 @@ impl Mirrored {
                 ..destination.clone()
             })
             .unwrap();
-        app.manage(alerts);
-        let seen = Arc::new(Mutex::new(Seen::default()));
-        let timeline = seen.clone();
-        app.listen("event-recorded", move |event| {
-            timeline
-                .lock_ok()
-                .timeline
-                .push(serde_json::from_str(event.payload()).unwrap());
-        });
         let history = Arc::new(History::open(dir.path()));
         history.register_host(&host).unwrap();
         let mirror = Mirror::new(history.store(), HOST, 100);
@@ -113,6 +103,21 @@ impl Mirrored {
         fixture
     }
 
+    fn open_app(dir: &Path, seen: Arc<Mutex<Seen>>) -> tauri::App<tauri::test::MockRuntime> {
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events![EventRecorded])
+            .mount_events(&app);
+        app.manage(AlertsService::open(dir));
+        app.manage(Mutex::new(BTreeMap::from([(HOST, GENERATION)])));
+        app.listen("event-recorded", move |event| {
+            seen.lock_ok()
+                .timeline
+                .push(serde_json::from_str(event.payload()).unwrap());
+        });
+        app
+    }
+
     fn open_source(dir: &Path, host: &HostRecord, name: &str) -> Store {
         let source = Store::open(StoreConfig::new(dir.join(name))).unwrap();
         source.writer().upsert_host(host.clone()).unwrap();
@@ -130,6 +135,8 @@ impl Mirrored {
             MirrorAlerts {
                 app: self.app.handle().clone(),
                 host: self.host.clone(),
+                generation: GENERATION,
+                generations: |app| app.state::<Mutex<BTreeMap<HostId, Uuid>>>().inner(),
                 alerts: |app| app.state::<AlertsService>().inner(),
                 units: |_| Settings::default().units,
                 clock: Box::new(move || {
@@ -184,6 +191,18 @@ impl Mirrored {
         std::mem::take(&mut *self.seen.lock_ok())
     }
 
+    fn forget(&self) {
+        self.app
+            .state::<AlertsService>()
+            .remote_delivery
+            .forget(HOST);
+        assert!(
+            !read_floors(&self.dir.path().join(FLOORS_FILE))
+                .unwrap()
+                .contains_key(&HOST)
+        );
+    }
+
     fn expected(&self, text: Option<AlertText>, time: i64, events: &[Event]) -> Seen {
         Seen {
             sends: text
@@ -220,6 +239,154 @@ fn group_text(body: &str) -> AlertText {
         rule: None,
         kind: "catch_up",
     }
+}
+
+#[test]
+fn pending_late_alerts_survive_restart_and_are_sent_once_when_caught_up() {
+    let offset = 7_200_000;
+    let mut fixture = Mirrored::new(true, offset);
+    fixture.now.store(START + FRESH_MS + 10, Ordering::Relaxed);
+    let events = [alert(START + offset), alert(START + 1 + offset)];
+    let page = fixture.page(&events, true);
+    fixture.ingest(page.clone());
+    assert_eq!(fixture.take(), fixture.expected(None, 0, &events));
+
+    fixture.app = Mirrored::open_app(fixture.dir.path(), fixture.seen.clone());
+    fixture.wire(true, -offset);
+    fixture.ingest(page);
+    assert_eq!(fixture.take(), Seen::default());
+    fixture.receive(&[], false);
+    assert_eq!(
+        fixture.take(),
+        fixture.expected(
+            Some(group_text(
+                "While this Mac was away, m1-linux raised 2 alerts: CPU load average above 4 (twice)",
+            )),
+            START + 1,
+            &[]
+        )
+    );
+
+    fixture.app = Mirrored::open_app(fixture.dir.path(), fixture.seen.clone());
+    fixture.wire(true, 0);
+    fixture.receive(&[], false);
+    assert_eq!(fixture.take(), Seen::default());
+}
+
+#[test]
+fn a_nonfinite_alert_does_not_poison_saved_catch_up() {
+    let mut fixture = Mirrored::new(true, 0);
+    fixture.now.store(START + FRESH_MS + 10, Ordering::Relaxed);
+    let mut malformed = alert(START);
+    let EventDetail::Alert {
+        cause: AlertCause::Threshold { value, .. },
+        ..
+    } = &mut malformed.detail
+    else {
+        unreachable!()
+    };
+    *value = f32::INFINITY;
+    let events = [malformed, alert(START + 1)];
+    fixture.receive(&events, true);
+    assert_eq!(fixture.take(), fixture.expected(None, 0, &events));
+
+    fixture.app = Mirrored::open_app(fixture.dir.path(), fixture.seen.clone());
+    fixture.wire(true, 0);
+    fixture.receive(&[], false);
+    assert_eq!(
+        fixture.take(),
+        fixture.expected(
+            Some(group_text(
+                "While this Mac was away, m1-linux raised an alert: CPU load average above 4",
+            )),
+            START + 1,
+            &[]
+        )
+    );
+    fixture.receive(&[], false);
+    assert_eq!(fixture.take(), Seen::default());
+}
+
+#[test]
+fn changing_the_mirror_epoch_flushes_pending_alerts_and_resets_the_floor() {
+    let mut fixture = Mirrored::new(true, 0);
+    let reset_at = START + FRESH_MS + 10;
+    fixture.now.store(reset_at, Ordering::Relaxed);
+    let pending = [alert(START)];
+    fixture.receive(&pending, true);
+    assert_eq!(fixture.take(), fixture.expected(None, 0, &pending));
+    fixture.wire(true, 0);
+    assert_eq!(fixture.take(), Seen::default(), "same epoch");
+
+    fixture.history.reset(reset_at).unwrap();
+    fixture.history.register_host(&fixture.host).unwrap();
+    // The replay came from before the new floor. Only the held group is announced.
+    fixture.cursor = None;
+    fixture.receive(&[], true);
+    assert_eq!(
+        fixture.take(),
+        fixture.expected(
+            Some(group_text(
+                "While this Mac was away, m1-linux raised an alert: CPU load average above 4",
+            )),
+            START,
+            &pending
+        )
+    );
+    let fresh = [alert(reset_at)];
+    fixture.receive(&fresh, false);
+    assert_eq!(
+        fixture.take(),
+        fixture.expected(Some(single_text()), reset_at, &fresh)
+    );
+    fixture.receive(&[], false);
+    assert_eq!(fixture.take(), Seen::default());
+}
+
+#[test]
+fn forgetting_a_host_clears_pending_alerts_and_ignores_later_batches() {
+    let mut fixture = Mirrored::new(true, 0);
+    fixture.now.store(START + FRESH_MS + 10, Ordering::Relaxed);
+    let pending = [alert(START)];
+    fixture.receive(&pending, true);
+    assert_eq!(fixture.take(), fixture.expected(None, 0, &pending));
+
+    fixture.forget();
+    fixture.receive(&[alert(START + 1)], false);
+    assert_eq!(fixture.take(), Seen::default());
+    fixture.wire(true, 0);
+    fixture.receive(&[], false);
+    assert_eq!(fixture.take(), Seen::default());
+}
+
+#[test]
+fn a_removed_registration_cannot_recreate_its_alert_floor() {
+    let mut fixture = Mirrored::new(true, 0);
+    // An epoch mismatch would send the old callback through register again.
+    fixture.history.reset(START).unwrap();
+    fixture.history.register_host(&fixture.host).unwrap();
+    fixture
+        .app
+        .state::<Mutex<BTreeMap<HostId, Uuid>>>()
+        .lock_ok()
+        .remove(&HOST);
+    fixture.forget();
+
+    let events = [alert(START)];
+    fixture.receive(&events, false);
+    assert_eq!(fixture.take(), Seen::default());
+    assert!(
+        read_floors(&fixture.dir.path().join(FLOORS_FILE))
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        fixture
+            .history
+            .read(|reader| reader.events(HOST, START, START + 1))
+            .unwrap(),
+        events
+    );
 }
 
 #[test]
@@ -274,16 +441,7 @@ fn readding_a_removed_host_keeps_alerts_from_its_absence_in_the_timeline() {
     let mut fixture = Mirrored::new(true, 0);
     fixture.receive(&[alert(START - 1)], false);
     fixture.take();
-    fixture
-        .app
-        .state::<AlertsService>()
-        .remote_delivery
-        .forget(HOST);
-    assert!(
-        !read_floors(&fixture.dir.path().join(FLOORS_FILE))
-            .unwrap()
-            .contains_key(&HOST)
-    );
+    fixture.forget();
     fixture.now.store(START + FRESH_MS + 10, Ordering::Relaxed);
     fixture.wire(true, 0);
     let absent = [alert(START + 1)];
@@ -446,6 +604,10 @@ fn receive(delivery: &RemoteDelivery, now: i64, timestamps: &[i64]) -> Vec<Step>
     receive_for(delivery, HOST, now, None, timestamps)
 }
 
+fn register(delivery: &RemoteDelivery, host: HostId, epoch: Uuid, floor: i64) {
+    delivery.register(host, epoch, floor, |_| panic!("unexpected catch-up"));
+}
+
 #[test]
 fn reregistering_preserves_the_floor_and_each_host_has_its_own() {
     let dir = tempfile::tempdir().unwrap();
@@ -453,8 +615,8 @@ fn reregistering_preserves_the_floor_and_each_host_has_its_own() {
     let other_host = HostId(Uuid::from_u128(3));
     let historical = START - 1;
     let future = START + 1;
-    delivery.register(HOST, MIRROR_EPOCH, START);
-    delivery.register(other_host, MIRROR_EPOCH, future + 1);
+    register(&delivery, HOST, MIRROR_EPOCH, START);
+    register(&delivery, other_host, MIRROR_EPOCH, future + 1);
     assert_eq!(
         receive(&delivery, START, &[historical, future]),
         [
@@ -468,7 +630,7 @@ fn reregistering_preserves_the_floor_and_each_host_has_its_own() {
         receive_for(&delivery, other_host, future, None, &[future]),
         [Step::Publish(future)]
     );
-    delivery.register(HOST, MIRROR_EPOCH, future);
+    register(&delivery, HOST, MIRROR_EPOCH, future);
     assert_eq!(
         receive(&delivery, future, &[historical, START]),
         [
@@ -484,7 +646,7 @@ fn reregistering_preserves_the_floor_and_each_host_has_its_own() {
 fn fresh_alerts_are_individual_and_late_alerts_share_one_catch_up() {
     let dir = tempfile::tempdir().unwrap();
     let delivery = RemoteDelivery::open(dir.path());
-    delivery.register(HOST, MIRROR_EPOCH, START);
+    register(&delivery, HOST, MIRROR_EPOCH, START);
     let boundary = START + FRESH_MS;
     let now = boundary + FRESH_MS;
     let stale = boundary - 1;
@@ -508,7 +670,7 @@ fn fresh_alerts_are_individual_and_late_alerts_share_one_catch_up() {
 fn a_batch_of_only_late_alerts_has_one_catch_up() {
     let dir = tempfile::tempdir().unwrap();
     let delivery = RemoteDelivery::open(dir.path());
-    delivery.register(HOST, MIRROR_EPOCH, START);
+    register(&delivery, HOST, MIRROR_EPOCH, START);
     let late = START + 30_000;
     assert_eq!(
         receive(&delivery, late + FRESH_MS + 1, &[START, late]),
@@ -529,7 +691,7 @@ fn clocks_two_hours_ahead_or_behind_preserve_the_floor_and_freshness() {
         let stale = START + offset;
         let now = START + FRESH_MS + 1;
         let fresh = now + offset;
-        delivery.register(HOST, MIRROR_EPOCH, START);
+        register(&delivery, HOST, MIRROR_EPOCH, START);
         assert_eq!(
             receive_for(&delivery, HOST, now, Some(offset), &[back, stale, fresh],),
             [
@@ -548,9 +710,9 @@ fn clocks_two_hours_ahead_or_behind_preserve_the_floor_and_freshness() {
 fn floors_survive_reload_in_a_private_file() {
     let dir = tempfile::tempdir().unwrap();
     let delivery = RemoteDelivery::open(dir.path());
-    delivery.register(HOST, MIRROR_EPOCH, START);
+    register(&delivery, HOST, MIRROR_EPOCH, START);
     let other = HostId(Uuid::from_u128(5));
-    delivery.register(other, MIRROR_EPOCH, START + 1);
+    register(&delivery, other, MIRROR_EPOCH, START + 1);
     drop(delivery);
 
     let path = dir.path().join(FLOORS_FILE);
@@ -590,7 +752,7 @@ fn rebuilding_a_mirror_keeps_replayed_alerts_in_the_timeline() {
         let history = crate::history::History::open(&mirror_dir);
         let mirror_epoch = history.read(|reader| Ok(reader.epoch())).unwrap();
         history.close();
-        delivery.register(HOST, mirror_epoch, now);
+        register(delivery, HOST, mirror_epoch, now);
         receive_in_mirror(delivery, HOST, mirror_epoch, now, None, &[timestamp])
     };
     assert_eq!(
@@ -621,7 +783,7 @@ fn a_floor_is_saved_on_the_next_batch_after_a_write_failure() {
     let delivery = RemoteDelivery::open(dir.path());
     fs::create_dir(&path).unwrap();
     let log = capture_floor_log(|| {
-        delivery.register(HOST, MIRROR_EPOCH, START);
+        register(&delivery, HOST, MIRROR_EPOCH, START);
         assert_eq!(
             receive(&delivery, START, &[START - 1]),
             [Step::Publish(START - 1)]
@@ -693,7 +855,7 @@ fn unreadable_and_corrupt_files_warn_and_start_fresh() {
         };
         let log = capture_floor_log(|| {
             let delivery = RemoteDelivery::open(dir.path());
-            delivery.register(HOST, MIRROR_EPOCH, START);
+            register(&delivery, HOST, MIRROR_EPOCH, START);
             assert_eq!(
                 receive(&delivery, START, &[START - 2]),
                 [Step::Publish(START - 2)]
@@ -720,31 +882,6 @@ fn unreadable_and_corrupt_files_warn_and_start_fresh() {
             assert!(read_floors(&path).unwrap().contains_key(&HOST));
         }
     }
-}
-
-#[test]
-fn a_legacy_floor_file_keeps_the_oldest_floor_for_the_mirror() {
-    let dir = tempfile::tempdir().unwrap();
-    let legacy = serde_json::json!({
-        HOST.to_string(): {
-            "mirror_epoch": MIRROR_EPOCH,
-            "source_epochs": {
-                Uuid::from_u128(2).to_string(): START,
-                Uuid::from_u128(3).to_string(): START + 1,
-            }
-        }
-    });
-    fs::write(dir.path().join(FLOORS_FILE), legacy.to_string()).unwrap();
-    let delivery = RemoteDelivery::open(dir.path());
-    delivery.register(HOST, MIRROR_EPOCH, START + 2);
-    assert_eq!(
-        receive(&delivery, START + 2, &[START]),
-        [
-            Step::Notify(START),
-            Step::Deliver(START),
-            Step::Publish(START),
-        ]
-    );
 }
 
 #[test]
@@ -777,7 +914,7 @@ fn one_catch_up_notice_and_message_reach_each_sink() {
     let message = Message::from_alert_text(expected.clone(), "m1-linux", START + 1);
     let notifications = RefCell::new(Vec::new());
     let sent = RefCell::new(Vec::new());
-    alerts.remote_delivery.register(HOST, MIRROR_EPOCH, START);
+    register(&alerts.remote_delivery, HOST, MIRROR_EPOCH, START);
     alerts.remote_delivery.receive(
         Batch {
             host: HOST,

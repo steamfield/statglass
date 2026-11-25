@@ -35,12 +35,10 @@ fn only_the_final_minute_page_reports_an_empty_pass_completion() {
     mirror.ingest(other_tier, SyncKinds::ALL).unwrap();
     assert!(received.lock_ok().is_empty());
     page.more = false;
-    let epoch = page.epoch;
     mirror.ingest(page, SyncKinds::ALL).unwrap();
     assert_eq!(
         *received.lock_ok(),
         [MirrorAlertBatch {
-            epoch,
             alerts: vec![],
             caught_up: true
         }]
@@ -64,7 +62,7 @@ fn mirror_delivers_alerts_once_and_only_after_commit() {
         let cursor = listener_mirror
             .upgrade()
             .unwrap()
-            .cursor(Tier::M1, batch.epoch, SyncKinds::ALL)
+            .cursor(Tier::M1, epoch, SyncKinds::ALL)
             .unwrap();
         let mut reader = Reader::open(&db).expect("open mirror reader inside the listener");
         let committed = reader
@@ -109,7 +107,6 @@ fn mirror_delivers_alerts_once_and_only_after_commit() {
     let [later, earlier] = alerts;
     let expected = [(
         MirrorAlertBatch {
-            epoch,
             alerts: vec![later.clone(), earlier.clone()],
             caught_up: false,
         },
@@ -154,12 +151,10 @@ fn mirror_delivers_alerts_with_reused_source_ids_in_a_new_epoch() {
         deliveries.lock_ok().as_slice(),
         &[
             MirrorAlertBatch {
-                epoch: first,
                 alerts: alerts.to_vec(),
                 caught_up: true
             },
             MirrorAlertBatch {
-                epoch: next,
                 alerts: next_alerts.to_vec(),
                 caught_up: true
             },

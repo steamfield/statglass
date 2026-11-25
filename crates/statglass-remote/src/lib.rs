@@ -28,6 +28,7 @@ pub mod trust;
 
 pub use agent_layout::{AGENT_NOT_RUNNING, AgentEnv, AgentLayout, AgentPaths};
 pub use clock::HostClock;
+pub use host_queries::unsupported as unsupported_query;
 pub use host_server::{HostServer, InterestSet, ServedHost};
 pub use mirror_sink::MirrorSink;
 pub use pages::{page_from_wire, page_to_wire};

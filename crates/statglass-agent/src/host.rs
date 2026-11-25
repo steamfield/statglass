@@ -6,11 +6,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use statglass_engine::{
-    ContainerNames, EngineParts, HistoryStore, LiveHub, LocalSource, NoScaleStore, Source,
-    SourceHandle, SourceSink,
+    EngineParts, HistoryStore, LiveHub, LocalSource, Source, SourceHandle, SourceSink,
 };
-use statglass_proto::{Answer, ErrorCode, RemoteInterest, RuleEntry};
-use statglass_remote::{InterestSet, ServedHost};
+use statglass_proto::{Answer, RemoteInterest, RuleEntry};
+use statglass_remote::{InterestSet, ServedHost, unsupported_query};
 use statglass_schema::lock::LockExt;
 use statglass_schema::{Capabilities, Event, HostRecord, Settings};
 use statglass_store::Writer;
@@ -28,22 +27,17 @@ pub struct AgentHost {
 }
 
 impl AgentHost {
-    /// Starts this platform's engine for `record` into a new hub and, when history is
-    /// available, `store`. The agent learns no CPU power scales (`NoScaleStore`).
-    /// Containers are named through `names`.
+    /// Starts the engine for `record` with the given platform parts, into a new hub
+    /// and, when history is available, `store`.
     pub fn start(
         record: HostRecord,
         settings: Settings,
         store: Option<Writer>,
-        names: ContainerNames,
+        parts: EngineParts,
         data_dir: Option<PathBuf>,
         alert_history: Vec<Event>,
     ) -> anyhow::Result<Arc<Self>> {
-        let source = Arc::new(LocalSource::new(
-            record.clone(),
-            EngineParts::platform_with(Arc::new(NoScaleStore), names),
-            settings.clone(),
-        ));
+        let source = Arc::new(LocalSource::new(record.clone(), parts, settings.clone()));
         source.seed_alert_history(alert_history);
         let hub = LiveHub::default();
         let handle = Arc::clone(&source)
@@ -134,7 +128,9 @@ impl ServedHost for AgentHost {
     fn alert_rules(&self) -> Answer {
         self.alert_rules
             .as_ref()
-            .map_or_else(unsupported, |store| Answer::AlertRules(store.current()))
+            .map_or_else(unsupported_query, |store| {
+                Answer::AlertRules(store.current())
+            })
     }
 
     fn set_alert_rules(
@@ -144,7 +140,7 @@ impl ServedHost for AgentHost {
         keep: Vec<Uuid>,
     ) -> Answer {
         let Some(store) = &self.alert_rules else {
-            return unsupported();
+            return unsupported_query();
         };
         store.replace(base_revision, rules, keep, |settings| {
             if let Some(handle) = self.handle.lock_ok().as_ref() {
@@ -154,18 +150,15 @@ impl ServedHost for AgentHost {
     }
 }
 
-fn unsupported() -> Answer {
-    Answer::Error {
-        code: ErrorCode::Unsupported,
-        message: "This host does not answer that query".into(),
-    }
-}
-
 impl Drop for AgentHost {
     fn drop(&mut self) {
         self.stop();
     }
 }
+
+#[cfg(test)]
+#[path = "host_alert_tests.rs"]
+mod alert_tests;
 
 #[cfg(test)]
 mod tests {

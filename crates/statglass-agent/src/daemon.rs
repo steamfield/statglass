@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use statglass_engine::disk_space::SpaceService;
-use statglass_engine::{HistoryStore, identity, retention_for};
+use statglass_engine::{EngineParts, HistoryStore, NoScaleStore, identity, retention_for};
 use statglass_remote::{AgentPaths, HostServer};
 use statglass_schema::{HostId, HostRecord};
 use statglass_store::Writer;
@@ -67,7 +67,7 @@ pub async fn run(paths: &AgentPaths, system: bool) -> anyhow::Result<()> {
         record.clone(),
         settings,
         writer,
-        names,
+        EngineParts::platform_with(Arc::new(NoScaleStore), names),
         Some(paths.data_dir.clone()),
         alert_history,
     )?;

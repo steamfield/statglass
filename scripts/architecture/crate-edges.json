@@ -29,7 +29,7 @@
       "statglass-remote",
       "statglass-update"
     ],
-    "dev": []
+    "dev": ["statglass-collect"]
   },
   "statglass": {
     "normal": [
