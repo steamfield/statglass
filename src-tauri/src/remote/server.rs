@@ -1,6 +1,7 @@
 //! Tauri adapters for local metrics/control servers and their lifecycle.
 use super::*;
 use statglass_engine::disk_space::SpaceService;
+use statglass_proto::pairing::{PairError, PairReply};
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     let path = saved_path(app)?;
@@ -86,6 +87,7 @@ fn control_response(app: &AppHandle, ok: bool, message: String) -> ControlRespon
         show_menu_bar_icon: Some(settings.general.show_menu_bar),
         launch_at_login: Some(settings.general.launch_at_login),
         updates: Some(super::update_controls::local_status(app)),
+        pairing: None,
     }
 }
 fn control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
@@ -151,6 +153,13 @@ fn control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
                 Err(e) => control_response(app, false, e.to_string()),
             }
         }
+        // Scaffold stubs: phase 5 lane c answers these from the app's `PairingState`.
+        ControlRequest::PairStart(_) | ControlRequest::PairStatus { .. } => ControlResponse {
+            pairing: Some(PairReply::Error {
+                error: PairError::Unavailable,
+            }),
+            ..control_response(app, false, PairError::Unavailable.to_string())
+        },
     }
 }
 

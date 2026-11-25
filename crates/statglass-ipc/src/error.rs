@@ -133,6 +133,9 @@ pub enum CommandError {
     /// The other Mac's StatGlass has remote monitoring turned off.
     #[error("{message}")]
     RemoteMonitoringOff { message: String },
+    /// Pairing a phone, or editing the paired devices, failed (RFC 2.4, 2.5).
+    #[error("pairing: {message}")]
+    Pairing { message: String },
 }
 
 impl CommandError {

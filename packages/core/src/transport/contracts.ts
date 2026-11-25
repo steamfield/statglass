@@ -62,6 +62,9 @@ import type {
   NavigateRequested,
   NetworkAddresses,
   NetworkByApp,
+  PairedDeviceInfo,
+  PairingOffer,
+  PairingStatus,
   ProcessesAt,
   ProcessView,
   RemoteHostConfig,
@@ -475,6 +478,20 @@ export interface Transport {
   onAlertDestinationsChanged(
     cb: (view: AlertDestinationsView) => void
   ): Unsubscribe;
+  /** Opens a pairing offer for a phone and returns its QR (RFC 2.4). */
+  pairingStart(): Promise<CommandResult<PairingOffer>>;
+  /** Where the offer `nonce` stands: waiting, a phone pending approval, or final. */
+  pairingStatus(nonce: string): Promise<CommandResult<PairingStatus>>;
+  /** Approves the phone waiting on `nonce` and installs its device key. */
+  pairingApprove(nonce: string): Promise<CommandResult<PairingStatus>>;
+  /** Denies the phone waiting on `nonce`; no device key is installed. */
+  pairingDeny(nonce: string): Promise<CommandResult<null>>;
+  /** Withdraws the offer `nonce` and removes its one-time pairing key. */
+  pairingCancel(nonce: string): Promise<CommandResult<null>>;
+  /** The phones paired with this Mac, with when each last connected. */
+  pairedDevices(): Promise<CommandResult<PairedDeviceInfo[]>>;
+  /** Removes the device `tag`'s key; false when no device has that tag. */
+  revokeDevice(tag: string): Promise<CommandResult<boolean>>;
   /** Open an http(s) URL in the default browser (sensor dump GitHub issue). */
   openUrl(url: string): Promise<void>;
   /** Close this window (onboarding Skip and Done). */

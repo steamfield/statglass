@@ -33,6 +33,11 @@ pub trait ServerProvider: Send + Sync + 'static {
     fn answer(&self, session: u64, query: statglass_proto::Query) -> statglass_proto::Answer;
     /// The session ended: release what its queries hold.
     fn end_session(&self, session: u64);
+    /// Where restricted connections record their device's last-seen time; `None` keeps
+    /// no log (the default, and every full-session host).
+    fn device_seen(&self) -> Option<&crate::DeviceSeenLog> {
+        None
+    }
 }
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 struct Release {

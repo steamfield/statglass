@@ -55,6 +55,12 @@ pub enum ControlRequest {
         show_menu_bar_icon: Option<bool>,
         launch_at_login: Option<bool>,
     },
+    /// The forced `pair` command relays the phone's first frame (RFC 2.4).
+    PairStart(statglass_proto::pairing::PairStart),
+    /// The forced `pair` command polls the decision, once a second.
+    PairStatus {
+        nonce: String,
+    },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ControlResponse {
@@ -69,6 +75,9 @@ pub struct ControlResponse {
     pub launch_at_login: Option<bool>,
     #[serde(default)]
     pub updates: Option<crate::control::RemoteUpdateStatus>,
+    /// The answer to `PairStart` or `PairStatus`; absent for every other request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pairing: Option<statglass_proto::pairing::PairReply>,
 }
 
 /// Binds an owner-only socket at `path`: its directory created or tightened to 0700, the
@@ -455,6 +464,7 @@ mod tests {
                 show_menu_bar_icon: None,
                 launch_at_login: None,
                 updates: None,
+                pairing: None,
             }),
             rx,
         ));

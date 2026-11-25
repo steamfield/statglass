@@ -17,6 +17,7 @@ pub mod mirror_policy;
 mod mirror_sink;
 pub mod network;
 mod pages;
+pub mod pairing;
 mod session;
 mod source;
 #[cfg(test)]
@@ -24,7 +25,7 @@ mod test_support;
 pub mod wire;
 
 pub use clock::HostClock;
-pub use command::RemoteCommand;
+pub use command::{ForcedToken, RemoteCommand};
 pub use connect::{DIAL_TIMEOUT_MS, HANDSHAKE_TIMEOUT, PROMOTION_DEBOUNCE, ROUTE_GRACE, connect};
 pub use dialer::{
     AGENT_NOT_RUNNING, APP_NOT_RUNNING, BoxFuture, Close, DialFailure, DialedStream, Dialer,
@@ -37,6 +38,7 @@ pub use mirror_error::MirrorError;
 pub use mirror_policy::{MirrorPolicy, PHONE_MIRROR_HOST_MB, PHONE_MIRROR_TOTAL_MB};
 pub use mirror_sink::MirrorSink;
 pub use pages::{page_from_wire, page_to_wire};
+pub use pairing::pair;
 pub use session::SshSession;
 pub use source::{
     ConnectionFailureKind, ConnectionStatus, NETWORK_CHANGE_PROBE, RemoteSource, RouteFailure,

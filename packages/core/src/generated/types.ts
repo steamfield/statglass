@@ -567,7 +567,9 @@ export type CommandError = { kind: "update"; message: string } |
 /**  The other Mac is reachable but StatGlass is not running there. */
 { kind: "remote_not_running"; message: string } |
 /**  The other Mac's StatGlass has remote monitoring turned off. */
-{ kind: "remote_monitoring_off"; message: string };
+{ kind: "remote_monitoring_off"; message: string } |
+/**  Pairing a phone, or editing the paired devices, failed (RFC 2.4, 2.5). */
+{ kind: "pairing"; message: string };
 
 export type Condition =
 /**  Any series matching `series` compared with `value` in the metric's unit. */
@@ -2258,6 +2260,36 @@ export type OverviewSettings = {
 	containers?: boolean,
 	hosts?: boolean,
 };
+
+/**  One phone with a key in this Mac's `authorized_keys`. */
+export type PairedDeviceInfo = {
+	tag: string,
+	name: string,
+	fingerprint: string,
+	/**  When the phone last connected; `None` when it never has. */
+	last_seen_ms: number | null,
+};
+
+/**  One open pairing, as the sheet shows it. */
+export type PairingOffer = {
+	nonce: string,
+	/**  The six-character code the phone shows back for the user to compare. */
+	code: string,
+	/**  The QR carrying the pairing payload, as an SVG document. */
+	qr_svg: string,
+	/**  The same payload as text, for pasting when the camera can't read the QR. */
+	text: string,
+	expires_ms: number,
+};
+
+/**  Where an open pairing stands. */
+export type PairingStatus =
+/**  No phone has used the QR yet. */
+{ kind: "waiting" } |
+/**  A phone used the QR and waits for the user's approval. */
+{ kind: "pending"; device_name: string; model: string; code: string } |
+/**  Approved: `device` is the new device's tag. */
+{ kind: "paired"; device: string } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; message: string };
 
 /**  Why Performance mode is in effect (D-088). */
 export type PerformanceReason = "off" |

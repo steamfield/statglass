@@ -64,7 +64,7 @@
 import type { MockTransport, MockTransportOptions } from "./mock/contracts";
 import { createMockDiskSpace } from "./mock/disk-space";
 import { createMockDocker } from "./mock/docker";
-import { createMockEmitters } from "./mock/emitters";
+import { createMockEmitters, mockEventSubscriptions } from "./mock/emitters";
 import { scenarioFlags } from "./mock/fixtures";
 
 export type {
@@ -86,6 +86,7 @@ export { cliLinkFixture } from "./mock/shell";
 import { MockAlertDestinations } from "./mock/alert-destinations";
 import { MockChannels } from "./mock/channels";
 import { MockCommands } from "./mock/commands";
+import { createMockPairing } from "./mock/pairing";
 import { MockPower } from "./mock/power";
 import { MockProcesses } from "./mock/processes";
 import { MockQueries } from "./mock/queries";
@@ -186,19 +187,14 @@ export function createMockTransport(
     ...remote.routeUsage(usage.methods),
     ...shell.methods,
     ...new MockAlertDestinations(commands, emitters, flags).methods,
+    ...createMockPairing(commands),
     ...settings.methods,
     ...store.methods,
     ...ring.methods,
     ...docker.methods,
     ...createMockDiskSpace(scenarios, now, remote.remotes, options.spaceScan),
     ...mockVisibility(power, stream, emitters),
-    onNavigateRequested: emitters.navigate.on,
-    onSettingsChanged: emitters.settings.on,
-    onHistoryHealthChanged: emitters.health.on,
-    onEventRecorded: emitters.event.on,
-    onCapabilitiesChanged: emitters.caps.on,
-    onHostsChanged: emitters.hosts.on,
-    onWindowAppearanceChanged: emitters.appearance.on,
+    ...mockEventSubscriptions(emitters),
     dispose() {
       for (const source of [docker, stream, remote]) source.dispose();
       for (const e of Object.values(emitters)) e.clear();

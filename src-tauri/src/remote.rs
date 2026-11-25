@@ -468,6 +468,7 @@ mod command_regressions {
                         show_menu_bar_icon: None,
                         launch_at_login: Some(login),
                         updates: None,
+                        pairing: None,
                     })
                 }),
                 async {

@@ -21,6 +21,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "std"] }
 uuid.workspace = true
+# `pair` prints the pairing QR in Unicode blocks on this terminal.
+qrcode.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -12,15 +12,18 @@ mod cli;
 mod commands;
 mod container_names;
 mod daemon;
+mod devices;
 mod host;
 mod maintenance;
+mod pair;
+mod restricted;
 mod settings;
 #[cfg(test)]
 #[path = "../tests/support/lock_test.rs"]
 mod test_support;
 mod update;
 
-use cli::Command;
+use cli::{Command, DeviceCommand};
 
 /// The update-transaction steps the reconnect integration test drives directly.
 pub mod transaction {
@@ -53,6 +56,9 @@ fn init_logging() {
 }
 
 fn run(command: Command) -> anyhow::Result<ExitCode> {
+    if let Command::Device(device) = &command {
+        return run_device_command(device);
+    }
     // Two workers: `set_interest` can block one for up to 200 ms while the engine
     // switches to its visible tick, which must not stall every other session.
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -66,6 +72,53 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
     // alive. Everything that must finish (the engine stop) was awaited above.
     runtime.shutdown_background();
     result
+}
+
+/// The pairing and paired-device commands. They run before the async runtime starts, so
+/// each may block or start its own.
+fn run_device_command(command: &DeviceCommand) -> anyhow::Result<ExitCode> {
+    let code = |code: i32| ExitCode::from(u8::try_from(code).unwrap_or(1));
+    match command {
+        DeviceCommand::Restricted {
+            device,
+            system,
+            socket,
+        } => restricted_paths(*system, socket.as_deref())
+            .and_then(|paths| restricted::run(device, &paths))
+            .map(code),
+        DeviceCommand::Pair { ttl_s } => {
+            pair::interactive(std::time::Duration::from_secs(*ttl_s)).map(|()| ExitCode::SUCCESS)
+        }
+        DeviceCommand::PairForced { nonce } => pair::forced(nonce).map(code),
+        DeviceCommand::Devices => devices::list().map(|()| ExitCode::SUCCESS),
+        DeviceCommand::RevokeDevice { tag } => devices::revoke(tag).map(|found| {
+            if found {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }),
+    }
+}
+
+/// The agent socket a restricted session bridges to: the layout's, or `socket` when the
+/// `authorized_keys` line names one. The agent binds no control socket.
+fn restricted_paths(
+    system: bool,
+    socket: Option<&std::path::Path>,
+) -> anyhow::Result<statglass_remote::SocketPaths> {
+    if let Some(socket) = socket {
+        return Ok(statglass_remote::SocketPaths {
+            control: socket.with_file_name("control.sock"),
+            metrics: socket.to_path_buf(),
+        });
+    }
+    let layout = if system {
+        statglass_remote::AgentLayout::System
+    } else {
+        statglass_remote::AgentLayout::User
+    };
+    statglass_remote::SocketPaths::agent(layout).context("resolving the agent's socket")
 }
 
 async fn dispatch(command: Command) -> anyhow::Result<ExitCode> {
@@ -163,6 +216,7 @@ async fn dispatch(command: Command) -> anyhow::Result<ExitCode> {
             println!("{}", reset?);
         }
         Command::Sample { seconds } => println!("{}", commands::sample(seconds).await?),
+        Command::Device(_) => anyhow::bail!("device commands run before the async runtime"),
     }
     Ok(ExitCode::SUCCESS)
 }

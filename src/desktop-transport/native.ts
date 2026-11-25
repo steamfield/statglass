@@ -6,6 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { nativeDiskSpace } from "./native-disk-space";
 import { nativeDocker } from "./native-docker";
 import { nativeHistory } from "./native-history";
+import { nativePairing } from "./native-pairing";
 import { nativeRemote } from "./native-remote";
 
 /** Turn Tauri's async unlisten into a synchronous one for effect cleanups. */
@@ -45,6 +46,7 @@ export function createTauriTransport(label: string): Transport {
       ),
     ...nativeDocker(),
     ...nativeDiskSpace(),
+    ...nativePairing(),
     listHosts: () => commands.listHosts(),
     ...nativeRemote(),
     getHost: (host) => commands.getHost(host),
