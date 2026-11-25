@@ -119,14 +119,16 @@ import sys
 
 args = sys.argv[1:]
 target = Path(args[args.index("--target-dir") + 1]) / "debug"
-if args[:4] == ["build", "--locked", "-p", "statglass-agent"]:
-    artifact = target / "statglass-agent"
+if args[:6] == ["build", "--locked", "-p", "statglass-agent", "-p", "statglass-remote-helper"]:
+    artifacts = ["statglass-agent", "statglass-remote-helper"]
 elif args[:6] == ["build", "--locked", "-p", "statglass-store", "--example", "seed"]:
-    artifact = target / "examples" / "seed"
+    artifacts = ["examples/seed"]
 else:
     raise SystemExit(f"unexpected cargo invocation: {args}")
-artifact.parent.mkdir(parents=True, exist_ok=True)
-artifact.touch()
+for relative in artifacts:
+    artifact = target / relative
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.touch()
 """
 
 

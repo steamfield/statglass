@@ -25,6 +25,41 @@ const DEVICE: &str = "statglass-mobile:";
 const PAIRING: &str = "statglass-pairing:";
 const KEY_HEADER: &[u8] = b"\0\0\0\x13ecdsa-sha2-nistp256\0\0\0\x08nistp256\0\0\0\x41";
 
+impl EcdsaP256Public {
+    /// The uncompressed public key as padded base64 SEC1.
+    pub fn to_base64(&self) -> String {
+        encode_base64(&self.0)
+    }
+
+    /// Decodes the SEC1 public key passed to the one-shot authorization commands.
+    pub fn from_base64(text: &str) -> Result<Self, DeviceKeysError> {
+        let key = matches!(text.len(), 87 | 88)
+            .then(|| decode_base64(text.as_bytes()))
+            .flatten()
+            .and_then(|point| <[u8; 65]>::try_from(point).ok())
+            .filter(|point| valid_key(point))
+            .map(Self);
+        key.ok_or_else(|| {
+            DeviceKeysError::Invalid("expected a base64 uncompressed P-256 public key".into())
+        })
+    }
+
+    /// Decodes the public key line the phone displays, ignoring its optional comment.
+    pub fn from_authorized_key(line: &str) -> Result<Self, DeviceKeysError> {
+        let mut fields = line.split_ascii_whitespace();
+        if !line.contains(['\r', '\n'])
+            && fields.next() == Some(KEY_TYPE)
+            && let Some(blob) = fields.next().and_then(|key| decoded_blob(key.as_bytes()))
+            && let Some(Ok(point)) = blob.strip_prefix(KEY_HEADER).map(<[u8; 65]>::try_from)
+        {
+            return Ok(Self(point));
+        }
+        Err(DeviceKeysError::Invalid(
+            "expected one ecdsa-sha2-nistp256 public key line".into(),
+        ))
+    }
+}
+
 /// One `authorized_keys` file, symlinks followed.
 pub struct AuthorizedKeys {
     path: PathBuf,
@@ -298,11 +333,19 @@ fn encode_base64(bytes: &[u8]) -> String {
 }
 
 fn decoded_blob(text: &[u8]) -> Option<Vec<u8>> {
+    let blob = decode_base64(text)?;
+    valid_key(blob.strip_prefix(KEY_HEADER)?).then_some(blob)
+}
+
+fn decode_base64(text: &[u8]) -> Option<Vec<u8>> {
     let mut bits = 0;
     let mut value = 0u16;
     let mut blob = Vec::new();
-    let text = text.strip_suffix(b"=").unwrap_or(text);
-    for byte in text {
+    let unpadded = text
+        .strip_suffix(b"==")
+        .or_else(|| text.strip_suffix(b"="))
+        .unwrap_or(text);
+    for byte in unpadded {
         let digit = BASE64.iter().position(|entry| entry == byte)? as u16;
         value = (value << 6) | digit;
         bits += 6;
@@ -311,8 +354,8 @@ fn decoded_blob(text: &[u8]) -> Option<Vec<u8>> {
             blob.push((value >> bits) as u8);
         }
     }
-    let point = blob.strip_prefix(KEY_HEADER)?;
-    (valid_key(point) && encode_base64(&blob).trim_end_matches('=').as_bytes() == text)
+    let canonical = encode_base64(&blob);
+    (canonical.as_bytes() == text || canonical.trim_end_matches('=').as_bytes() == text)
         .then_some(blob)
 }
 

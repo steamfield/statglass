@@ -31,8 +31,8 @@ start_fixture() {
         -e CARGO_TARGET_DIR=/usr/local/cargo/target-linux \
         rust:1.99-bookworm scripts/linux-test-entry.sh sh -ec \
         'export CARGO_BUILD_BUILD_DIR="$CARGO_TARGET_DIR"
-         cargo build --locked -p statglass-agent --target-dir /fixture/artifacts
-         mv /fixture/artifacts/debug/statglass-agent /fixture/server/
+         cargo build --locked -p statglass-agent -p statglass-remote-helper --target-dir /fixture/artifacts
+         mv /fixture/artifacts/debug/statglass-agent /fixture/artifacts/debug/statglass-remote-helper /fixture/server/
          if [ "$1" = --seed ]; then
              cargo build --locked -p statglass-store --example seed --target-dir /fixture/artifacts
              mv /fixture/artifacts/debug/examples/seed /fixture/server/
@@ -165,6 +165,9 @@ run_tests() {
     cargo test -p statglass-mobile --test network_addresses addresses_from_the_restricted_linux_agent -- --ignored --exact || status=$?
     cargo test -p statglass-mobile --test mobile_session mobile_core_streams_and_reads_host_history -- --ignored --exact || status=$?
     cargo test -p statglass-mobile --test docker_pair -- --ignored || status=$?
+    if [ -f crates/statglass-remote/tests/docker_handover.rs ]; then
+        cargo test -p statglass-remote --test docker_handover -- --ignored || status=$?
+    fi
     exit "$status"
 }
 

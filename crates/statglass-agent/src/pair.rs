@@ -16,7 +16,7 @@ use statglass_remote::{
 use std::future::Future;
 use std::io;
 use std::os::unix::fs::MetadataExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal::unix::{SignalKind, signal};
@@ -104,7 +104,7 @@ fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
         .context("starting the pairing runtime")
 }
 
-fn pairing_env(mut env: AgentEnv, home: PathBuf, uid: u32) -> AgentEnv {
+pub(crate) fn pairing_env(mut env: AgentEnv, home: PathBuf, uid: u32) -> AgentEnv {
     env.home = Some(home);
     env.xdg_runtime_dir = env.xdg_runtime_dir.filter(|path| {
         std::fs::symlink_metadata(path)
@@ -133,6 +133,15 @@ fn commands(
     paths: &AgentPaths,
     env: &AgentEnv,
 ) -> anyhow::Result<PairCommands> {
+    commands_at(layout, paths, env, None)
+}
+
+pub(crate) fn commands_at(
+    layout: AgentLayout,
+    paths: &AgentPaths,
+    env: &AgentEnv,
+    socket: Option<&Path>,
+) -> anyhow::Result<PairCommands> {
     let bin = shell_quote(
         paths
             .binary
@@ -145,13 +154,13 @@ fn commands(
             .context("the pairing runtime directory is not UTF-8")?,
         None => "",
     };
-    let at = match layout {
-        AgentLayout::System => "--system".into(),
-        AgentLayout::User => format!(
+    let at = match (layout, socket) {
+        (AgentLayout::System, None) => "--system".into(),
+        (_, socket) => format!(
             "--socket {}",
             shell_quote(
-                paths
-                    .socket
+                socket
+                    .unwrap_or(&paths.socket)
                     .to_str()
                     .context("the agent socket path is not UTF-8")?
             )
@@ -274,7 +283,6 @@ mod tests {
     use statglass_remote::{
         DeviceKeys, DeviceKeysError, DeviceTag, EcdsaP256Public, PairedDevice, control_request,
     };
-    use std::path::Path;
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     struct TestKeys {
