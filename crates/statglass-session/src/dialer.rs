@@ -109,19 +109,26 @@ impl HandshakeFailure {
 pub const AGENT_NOT_RUNNING: &str = "statglass-agent: not running";
 
 /// The line the Mac's `statglass-remote-helper` prints to stderr when the app is not
-/// running there. Recognized by [`marker_error`] from phase 3 lane c.
+/// running there.
 pub const APP_NOT_RUNNING: &str = "statglass-remote-helper: not running";
 
 /// The line the Mac's `statglass-remote-helper` prints to stderr when the app runs with
-/// remote monitoring off. Recognized by [`marker_error`] from phase 3 lane c.
+/// remote monitoring off.
 pub const MONITORING_OFF: &str = "statglass-remote-helper: remote monitoring off";
 
 /// Marker lines the shared handshake checks before asking the dialer (phase 5 adds more).
 pub fn marker_error(target: &Target, stderr: &str) -> Option<RemoteError> {
-    stderr
-        .lines()
-        .any(|line| line.trim() == AGENT_NOT_RUNNING)
-        .then(|| RemoteError::AgentNotRunning(target.host.clone()))
+    let has_line = |marker| stderr.lines().any(|line| line.trim() == marker);
+    let error = if has_line(MONITORING_OFF) {
+        RemoteError::MonitoringOff
+    } else if has_line(APP_NOT_RUNNING) {
+        RemoteError::AppNotRunning
+    } else if has_line(AGENT_NOT_RUNNING) {
+        RemoteError::AgentNotRunning
+    } else {
+        return None;
+    };
+    Some(error(target.host.clone()))
 }
 
 #[cfg(test)]
@@ -155,6 +162,24 @@ mod tests {
         ));
         assert!(marker_error(&target, "sh: statglass-agent: not found").is_none());
         assert!(marker_error(&target, "").is_none());
+    }
+
+    #[test]
+    fn only_whole_trimmed_helper_markers_are_recognized() {
+        let target = Target {
+            route: Route::Lan,
+            host: "studio.local".into(),
+        };
+        assert!(marker_error(&target, &format!("shell: {APP_NOT_RUNNING}")).is_none());
+        assert!(marker_error(&target, &format!("{MONITORING_OFF} since yesterday")).is_none());
+        assert!(matches!(
+            marker_error(&target, &format!("banner\n  {APP_NOT_RUNNING}\r\n")),
+            Some(RemoteError::AppNotRunning(host)) if host == target.host
+        ));
+        assert!(matches!(
+            marker_error(&target, &format!("{APP_NOT_RUNNING}\n  {MONITORING_OFF}\r\n")),
+            Some(RemoteError::MonitoringOff(host)) if host == target.host
+        ));
     }
 
     #[test]

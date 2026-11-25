@@ -1,12 +1,12 @@
 use crate::{
-    Dialer, Endpoint, HostClock, MirrorSink, PROMOTION_DEBOUNCE, RemoteError, Result, Route,
-    SshSession, codec, connect, wire,
+    Dialer, Endpoint, HostClock, MirrorSink, RemoteError, Result, Route, SshSession, codec,
+    connect, wire,
 };
 use statglass_engine::{
     BusMsg, EngineStatus, FrameLayout, LiveFrame, ProcessBatch, Source, SourceError, SourceHandle,
     SourceSink,
 };
-use statglass_proto::{Message, RemoteInterest, SyncRequest};
+use statglass_proto::{Message, RemoteInterest};
 use statglass_schema::{Capabilities, Cursor, HostId, HostRecord, SyncKinds, Tier, lock::LockExt};
 use std::{
     collections::{HashMap, HashSet},
@@ -22,13 +22,19 @@ mod backoff;
 mod control;
 #[cfg(test)]
 mod dial_tests;
+#[cfg(test)]
+mod phone_tests;
 mod policy;
 mod queries;
+mod quiesce;
 mod recent;
+mod route_watch;
 mod status;
 use backoff::Backoff;
 use control::Control;
 pub use policy::{NETWORK_CHANGE_PROBE, SourceOptions, SyncPolicy};
+use quiesce::{ActiveRun, MirrorWork, MirrorWrite, RunStatus};
+use route_watch::RouteWatch;
 pub use status::{ConnectionFailureKind, ConnectionStatus, RouteFailure};
 
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
@@ -40,6 +46,11 @@ struct ControlState {
     asleep: bool,
     retry: u64,
     network: u64,
+    local_network: Option<crate::network::LocalNetwork>,
+    sync: SyncPolicy,
+    backgrounded: bool,
+    quiesce: u64,
+    resumed: u64,
 }
 pub struct RemoteSource {
     record: HostRecord,
@@ -48,10 +59,12 @@ pub struct RemoteSource {
     endpoint: Endpoint,
     on_status: StatusCallback,
     mirror: Option<Arc<dyn MirrorSink>>,
+    options: SourceOptions,
     clock: HostClock,
     caps: Mutex<Capabilities>,
     status: Mutex<EngineStatus>,
     control: watch::Sender<ControlState>,
+    parked: watch::Sender<Option<u64>>,
     started: AtomicBool,
     controller_battery: AtomicBool,
     next_layout: AtomicU32,
@@ -67,7 +80,32 @@ impl RemoteSource {
         on_status: StatusCallback,
         mirror: Option<Arc<dyn MirrorSink>>,
     ) -> Arc<Self> {
-        let (control, _) = watch::channel(ControlState::default());
+        Self::with_options(
+            record,
+            local,
+            dialer,
+            endpoint,
+            on_status,
+            mirror,
+            SourceOptions::default(),
+        )
+    }
+
+    /// Creates a source with the caller's runtime, history policy and network probe.
+    pub fn with_options(
+        record: HostRecord,
+        local: HostId,
+        dialer: Arc<dyn Dialer>,
+        endpoint: Endpoint,
+        on_status: StatusCallback,
+        mirror: Option<Arc<dyn MirrorSink>>,
+        options: SourceOptions,
+    ) -> Arc<Self> {
+        let (control, _) = watch::channel(ControlState {
+            sync: options.sync,
+            ..Default::default()
+        });
+        let (parked, _) = watch::channel(None);
         Arc::new(Self {
             record,
             local,
@@ -75,10 +113,12 @@ impl RemoteSource {
             endpoint,
             on_status,
             mirror,
+            options,
             clock: HostClock::default(),
             caps: Mutex::new(Capabilities::default()),
             status: Mutex::new(EngineStatus::default()),
             control,
+            parked,
             started: AtomicBool::new(false),
             controller_battery: AtomicBool::new(false),
             next_layout: AtomicU32::new(1),
@@ -122,10 +162,6 @@ impl RemoteSource {
         self.control
             .send_modify(|s| s.retry = s.retry.wrapping_add(1));
     }
-    pub fn network_changed(&self) {
-        self.control
-            .send_modify(|s| s.network = s.network.wrapping_add(1));
-    }
 }
 impl Source for RemoteSource {
     fn host(&self) -> HostRecord {
@@ -139,6 +175,14 @@ impl Source for RemoteSource {
             return Err(SourceError::AlreadyStarted);
         }
         let source = self.clone();
+        let active = ActiveRun::new(self.parked.clone());
+        if let Some(runtime) = &self.options.runtime {
+            let task = runtime.spawn(run(source, sink, active));
+            return Ok(SourceHandle::new(Box::new(Control {
+                source: self,
+                runner: control::Runner::Task(task),
+            })));
+        }
         let thread = std::thread::Builder::new()
             .name(format!("remote-{}", self.record.id))
             .spawn(move || {
@@ -146,7 +190,7 @@ impl Source for RemoteSource {
                     .enable_all()
                     .build()
                 {
-                    Ok(rt) => rt.block_on(run(source, sink)),
+                    Ok(rt) => rt.block_on(run(source, sink, active)),
                     Err(e) => (source.on_status)(ConnectionStatus {
                         error: Some(e.to_string()),
                         ..Default::default()
@@ -155,42 +199,47 @@ impl Source for RemoteSource {
             })?;
         Ok(SourceHandle::new(Box::new(Control {
             source: self,
-            thread: Some(thread),
+            runner: control::Runner::Thread(Some(thread)),
         })))
     }
 }
-async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
+async fn run(source: Arc<RemoteSource>, sink: SourceSink, active: Arc<ActiveRun>) {
     let mut control = source.control.subscribe();
     let mut backoff = Backoff::new();
-    let mut replacement = None;
-    let mut status = ConnectionStatus::default();
+    let mut replacement: Option<Candidate> = None;
+    let mut final_status = RunStatus::new(&source.on_status);
+    let status = &mut final_status.status;
+    let mut resumed = 0;
+    let mut quiesced = 0;
     loop {
-        if control.borrow().stop {
+        let before = control.borrow_and_update().clone();
+        if before.stop {
             break;
         }
-        if control.borrow().asleep {
-            let _ = control.wait_for(|s| s.stop || !s.asleep).await;
+        if before.quiesce != quiesced {
+            if let Some(candidate) = replacement.take() {
+                candidate.session.close().await;
+            }
+            status.record_stopped();
+            (source.on_status)(status.clone());
+            quiesced = before.quiesce;
+            active.acknowledge(quiesced);
+        }
+        if before.resumed != resumed {
+            resumed = before.resumed;
+            backoff.reset();
+        }
+        if before.asleep || before.backgrounded {
+            replacement = None;
+            let _ = control.changed().await;
             continue;
         }
         status.begin_dial();
         (source.on_status)(status.clone());
-        let dial = async {
-            match replacement.take() {
-                Some(session) => Ok(session),
-                None => {
-                    connect(
-                        &*source.dialer,
-                        &source.endpoint,
-                        source.local,
-                        Some(source.record.id),
-                    )
-                    .await
-                }
-            }
-        };
         let result = tokio::select! {
-            result=dial=>result,
-            _=control.wait_for(|s|s.stop)=>break,
+            biased;
+            _ = control.wait_for(|s| s.interrupts(&before)) => continue,
+            result = next_session(&source, &mut replacement, before.network) => result,
         };
         let started = Instant::now();
         let result = match result {
@@ -201,19 +250,24 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
                 (source.on_status)(status.clone());
-                let mut stopping = source.control.subscribe();
-                tokio::select! {
-                    result=session_loop(&source,&sink,session,&mut control,&mut status)=>result,
-                    _=stopping.wait_for(|s|s.stop||s.asleep)=>{ if source.control.borrow().stop { break; } else {Ok(None)} },
-                }
+                session_loop(
+                    &source,
+                    &sink,
+                    session,
+                    &mut control,
+                    status,
+                    &before,
+                    Some(&active),
+                )
+                .await
             }
             Err(e) => Err(e),
         };
-        if control.borrow().stop {
-            break;
-        }
         // Taken before the network probe, so a network change after the probe ends the wait.
-        let before = control.borrow_and_update().clone();
+        let current = control.borrow_and_update().clone();
+        if current.interrupts(&before) || current.resumed != before.resumed {
+            continue;
+        }
         match result {
             Ok(Some(session)) => {
                 replacement = Some(session);
@@ -224,12 +278,15 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
             }
             Err(e) => {
                 status.record_failure(&e, source.endpoint.single_route());
-                status.apply_network(crate::network::probe());
+                if let Some(net) = source.probe_network() {
+                    status.apply_network(net);
+                }
                 if !e.retryable() {
                     status.schedule_retry(backoff.attempt(), None);
                     (source.on_status)(status.clone());
-                    let retry = control.borrow().retry;
-                    let _ = control.wait_for(|s| s.stop || s.retry != retry).await;
+                    let _ = control
+                        .wait_for(|s| s.interrupts(&before) || s.retry_requested_since(&before))
+                        .await;
                     continue;
                 }
             }
@@ -243,12 +300,30 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
         (source.on_status)(status.clone());
         tokio::select! {
             _ = tokio::time::sleep(wait.map_or(OFFLINE_FALLBACK, |(wait, _)| wait)) => {}
-            _ = control.wait_for(|now| ends_backoff(&before, now)) => {}
+            _ = control.wait_for(|now| ends_backoff(&current, now)) => {}
         }
     }
-    status.record_stopped();
-    (source.on_status)(status);
 }
+
+async fn next_session(
+    source: &RemoteSource,
+    replacement: &mut Option<Candidate>,
+    network: u64,
+) -> Result<SshSession> {
+    if let Some(candidate) = replacement.take()
+        && candidate.network == network
+    {
+        return Ok(candidate.session);
+    }
+    crate::connect::connect_routes(
+        &*source.dialer,
+        &source.endpoint,
+        source.local,
+        Some(source.record.id),
+    )
+    .await
+}
+
 /// How long an offline source waits for a network change before redialing anyway, in
 /// case the change notification never arrives.
 const OFFLINE_FALLBACK: Duration = Duration::from_secs(60);
@@ -257,7 +332,8 @@ const OFFLINE_FALLBACK: Duration = Duration::from_secs(60);
 fn ends_backoff(before: &ControlState, now: &ControlState) -> bool {
     now.stop
         || now.asleep != before.asleep
-        || now.retry != before.retry
+        || now.quiesce != before.quiesce
+        || now.retry_requested_since(before)
         || now.network != before.network
 }
 async fn session_loop(
@@ -266,7 +342,9 @@ async fn session_loop(
     mut session: SshSession,
     control: &mut watch::Receiver<ControlState>,
     status: &mut ConnectionStatus,
-) -> Result<Option<SshSession>> {
+    before: &ControlState,
+    active: Option<&Arc<ActiveRun>>,
+) -> Result<Option<Candidate>> {
     if !session.negotiated.features.contains("rows.stable-ids")
         || !session.negotiated.features.contains("live.metadata")
     {
@@ -276,27 +354,16 @@ async fn session_loop(
     }
     let epoch = session.hello.db_instance_uuid;
     let kinds = session.negotiated.sync_kinds();
-    let (mut messages, task) = codec::reader_task(session.reader);
-    let _reader = codec::AbortOnDrop(task);
+    let reader = std::mem::replace(&mut session.reader, Box::pin(tokio::io::empty()));
+    let (messages, task) = codec::reader_task(reader);
+    let mut reader = codec::AbortOnDrop(task);
     let initial = control.borrow_and_update().clone();
     let detail = initial.interest.detail;
-    codec::write(&mut session.writer, &Message::Interest(initial.interest)).await?;
-    codec::write(
-        &mut session.writer,
-        &Message::Ping {
-            nonce: 0,
-            t0_ms: statglass_engine::wall_ms(),
-        },
-    )
-    .await?;
-    let mut timer = tokio::time::interval(Duration::from_secs(1));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let (promotion_tx, mut promotion_rx) = tokio::sync::mpsc::channel(1);
     let answers = session
         .negotiated
         .features
         .contains(statglass_proto::QUERY_FEATURE);
-    let (_line, mut calls) = crate::calls::open(
+    let (line, calls) = crate::calls::open(
         &source.line,
         answers,
         session
@@ -310,32 +377,36 @@ async fn session_loop(
         source_timeline: None,
         timeline: source.next_timeline.fetch_add(1, Ordering::Relaxed),
         retry: initial.retry,
-        network: initial.network,
+        network: before.network,
+        route_watch: RouteWatch::default(),
         last_sync: Instant::now() - Duration::from_secs(600),
         last_ping: Instant::now(),
         ping_nonce: 0,
-        outstanding_ping: Some((0, Instant::now())),
+        outstanding_ping: None,
         page_bytes: 16 * 1024,
         unpruned_bytes: 0,
         unpruned_pages: 0,
-        tiers: [Tier::S10, Tier::M1, Tier::M15],
+        tiers: initial.sync.tiers(source.mirror.as_deref()),
+        sync_policy: initial.sync,
         next_tier: 0,
         in_flight: None,
         timed_out: HashMap::new(),
         history_available: false,
         history_failed: false,
+        mirror_epoch_ready: false,
         watermark_failed: false,
         floors: HashMap::new(),
         restart_cursor: HashSet::new(),
         last_recent: Instant::now() - Duration::from_secs(60),
-        promotion_tx,
-        promotion_task: None,
         pending: crate::calls::Pending::default(),
         recent_pending: false,
+        recent_due: false,
+        pending_interest: None,
         recent_timed_out: None,
         ring_filled: false,
         detail,
         clock_ready: false,
+        mirror_write: MirrorWrite::new(active.cloned()),
         epoch,
         kinds,
         source,
@@ -345,29 +416,40 @@ async fn session_loop(
         writer: &mut session.writer,
         route: session.route,
     };
-    loop {
-        if state.request_sync().await? {
-            continue;
-        }
-        let action = tokio::select! {
-            _ = state.control.changed() => state.control_changed().await?,
-            promoted = promotion_rx.recv(), if state.promotion_task.is_some() => state.promoted(promoted)?,
-            incoming = messages.recv() => state.incoming(incoming).await?,
-            Some(call) = calls.recv() => state.call(call).await?,
-            _ = timer.tick() => state.tick().await?,
-        };
-        match action {
-            SessionAction::Continue => {}
-            SessionAction::Stop => return Ok(None),
-            SessionAction::Replace(session) => return Ok(Some(*session)),
-        }
+    let result = state
+        .run_until_interrupted(initial, before, messages, calls)
+        .await;
+    let result = if state.route_watch.interrupted_write() {
+        Ok(None)
+    } else {
+        result
+    };
+    let quiescing = state.control.borrow().quiesce != before.quiesce;
+    let mut mirror_write = std::mem::take(&mut state.mirror_write);
+    drop(state);
+    drop(line);
+    if quiescing {
+        mirror_write.finish_interrupted(status).await;
+        reader.0.abort();
+        let _ = (&mut reader.0).await;
+        session.close().await;
+    } else {
+        drop(reader);
+        drop(session);
+        mirror_write.finish_interrupted(status).await;
     }
+    result
 }
 
 enum SessionAction {
     Continue,
     Stop,
     Replace(Box<SshSession>),
+}
+
+struct Candidate {
+    session: SshSession,
+    network: u64,
 }
 struct Session<'a> {
     /// The source's current layout, by its number. The source defines a layout just
@@ -378,6 +460,7 @@ struct Session<'a> {
     timeline: u32,
     retry: u64,
     network: u64,
+    route_watch: RouteWatch,
     last_sync: Instant,
     last_ping: Instant,
     ping_nonce: u64,
@@ -385,22 +468,24 @@ struct Session<'a> {
     page_bytes: u32,
     unpruned_bytes: usize,
     unpruned_pages: usize,
-    tiers: [Tier; 3],
+    tiers: &'a [Tier],
+    sync_policy: SyncPolicy,
     next_tier: usize,
     in_flight: Option<(Tier, Option<Cursor>, Instant)>,
     /// Tiers whose request timed out, and when: a late reply is dropped, not misread.
     timed_out: HashMap<Tier, Instant>,
     history_available: bool,
     history_failed: bool,
+    mirror_epoch_ready: bool,
     watermark_failed: bool,
     floors: HashMap<Tier, i64>,
     restart_cursor: HashSet<Tier>,
     last_recent: Instant,
-    promotion_tx: tokio::sync::mpsc::Sender<Result<SshSession>>,
-    promotion_task: Option<codec::AbortOnDrop>,
     /// Calls sent to the host awaiting their reply.
     pending: crate::calls::Pending,
     recent_pending: bool,
+    recent_due: bool,
+    pending_interest: Option<RemoteInterest>,
     recent_timed_out: Option<Instant>,
     /// The live ring was refilled from the mirror since live detail began: while no
     /// window watches, the ring holds summary frames, which measure nothing.
@@ -408,6 +493,7 @@ struct Session<'a> {
     /// Live detail as last sent, to tell when it starts.
     detail: bool,
     clock_ready: bool,
+    mirror_write: MirrorWrite,
     epoch: uuid::Uuid,
     kinds: SyncKinds,
     source: &'a Arc<RemoteSource>,
@@ -418,102 +504,33 @@ struct Session<'a> {
     route: Route,
 }
 impl Session<'_> {
-    async fn request_sync(&mut self) -> Result<bool> {
-        // No wire request IDs: never overlap requests for a tier awaiting a late reply.
-        while self.next_tier < self.tiers.len()
-            && self.timed_out.contains_key(&self.tiers[self.next_tier])
-        {
-            self.next_tier += 1;
-        }
-        if self.clock_ready
-            && self.source.clock.now_ms().is_some()
-            && self.history_available
-            && !self.history_failed
-            && !self.recent_pending
-            && self.in_flight.is_none()
-            && self.next_tier < self.tiers.len()
-            && let Some(mirror) = &self.source.mirror
-        {
-            let tier = self.tiers[self.next_tier];
-            let now = self
-                .source
-                .clock
-                .now_ms()
-                .unwrap_or_else(statglass_engine::wall_ms);
-            let after = if self.restart_cursor.remove(&tier) {
-                None
-            } else {
-                match mirror.cursor(tier, self.epoch, self.kinds) {
-                    Ok(cursor) => cursor,
-                    Err(error) => {
-                        self.history_failed = true;
-                        self.watermark_failed = false;
-                        self.status.history_error = Some(error.to_string());
-                        self.status.catching_up = false;
-                        (self.source.on_status)(self.status.clone());
-                        return Ok(true);
-                    }
-                }
-            };
-            let floor = mirror
-                .history_floor(tier, now)
-                .max(self.floors.get(&tier).copied().unwrap_or(i64::MIN));
-            codec::write(
-                &mut self.writer,
-                &Message::SyncRequest(SyncRequest {
-                    tier,
-                    after,
-                    max_rows: 2000,
-                    from_ms: Some(floor),
-                    max_bytes: Some(self.page_bytes),
-                }),
-            )
-            .await?;
-            self.in_flight = Some((tier, after, Instant::now()));
-            self.status.catching_up = true;
-            (self.source.on_status)(self.status.clone());
-            if self.next_tier == 0 {
-                self.last_sync = Instant::now();
-            }
-        }
-
-        Ok(false)
-    }
     async fn control_changed(&mut self) -> Result<SessionAction> {
         let next = self.control.borrow_and_update().clone();
-        if next.stop || next.asleep {
+        if next.stop || next.asleep || next.backgrounded {
             return Ok(SessionAction::Stop);
         }
         if next.retry != self.retry {
             return Ok(SessionAction::Stop);
         }
         self.retry = next.retry;
-        if next.network != self.network {
-            self.network = next.network;
-            if let Some(endpoint) = self.source.endpoint.better_than(self.route) {
-                // Debounced, cancellable promotion runs beside the old stream.
-                let tx = self.promotion_tx.clone();
-                let dialer = self.source.dialer.clone();
-                let local = self.source.local;
-                let expected = self.source.record.id;
-                self.promotion_task = Some(codec::AbortOnDrop(tokio::spawn(async move {
-                    tokio::time::sleep(PROMOTION_DEBOUNCE).await;
-                    let result = connect(&*dialer, &endpoint, local, Some(expected)).await;
-                    let _ = tx.send(result).await;
-                })));
-            }
+        if !self.check_route(&next).await? {
+            return Ok(SessionAction::Stop);
         }
         let detail_starts = next.interest.detail && !self.detail;
         self.detail = next.interest.detail;
         if !next.interest.detail {
             self.ring_filled = false;
-        } else if detail_starts && self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
-            // Sync now, so the recent snapshot that follows meets the durable rows and
-            // the ring refills without a hole.
-            self.next_tier = 0;
-            self.history_failed = false;
+            self.recent_due = false;
+        } else if detail_starts {
+            if self.recent_first() {
+                self.recent_due = true;
+            }
+            if self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
+                self.next_tier = 0;
+                self.history_failed = false;
+            }
         }
-        codec::write(&mut self.writer, &Message::Interest(next.interest)).await?;
+        self.pending_interest = Some(next.interest);
         Ok(SessionAction::Continue)
     }
 
@@ -541,15 +558,9 @@ impl Session<'_> {
         }
         Ok(())
     }
-    fn promoted(&mut self, promoted: Option<Result<SshSession>>) -> Result<SessionAction> {
-        self.promotion_task = None;
-        if let Some(Ok(replacement)) = promoted {
-            return Ok(SessionAction::Replace(Box::new(replacement)));
-        }
-        Ok(SessionAction::Continue)
-    }
     async fn call(&mut self, call: crate::calls::Call) -> Result<SessionAction> {
-        codec::write(self.writer, &self.pending.request(call)).await?;
+        let message = self.pending.request(call);
+        self.write(&message).await?;
         Ok(SessionAction::Continue)
     }
     #[expect(
@@ -600,18 +611,8 @@ impl Session<'_> {
                 }
                 if self.source_timeline.is_some_and(|t| t != frame.timeline) {
                     self.timeline = self.source.next_timeline.fetch_add(1, Ordering::Relaxed);
-                    if self.outstanding_ping.is_none() {
-                        self.ping_nonce = self.ping_nonce.wrapping_add(1);
-                        codec::write(
-                            &mut self.writer,
-                            &Message::Ping {
-                                nonce: self.ping_nonce,
-                                t0_ms: statglass_engine::wall_ms(),
-                            },
-                        )
-                        .await?;
-                        self.outstanding_ping = Some((self.ping_nonce, Instant::now()));
-                        self.last_ping = Instant::now();
+                    if self.outstanding_ping.is_none() && !self.route_watch.probing() {
+                        self.send_heartbeat().await?;
                     }
                 }
                 self.source_timeline = Some(frame.timeline);
@@ -693,6 +694,9 @@ impl Session<'_> {
             Message::Pong {
                 nonce, t_remote_ms, ..
             } => {
+                if self.path_pong(nonce) {
+                    return Ok(SessionAction::Continue);
+                }
                 if let Some((expected, sent)) = self.outstanding_ping.take() {
                     if nonce != expected {
                         return Err(RemoteError::Protocol("heartbeat nonce mismatch".into()));
@@ -760,35 +764,20 @@ impl Session<'_> {
                         .now_ms()
                         .unwrap_or_else(statglass_engine::wall_ms);
                     let kinds = self.kinds;
-                    let result = tokio::task::spawn_blocking(move || {
-                        let result = mirror
-                            .ingest(page, kinds)
-                            .and_then(|()| mirror.enforce_budget(now));
-                        if prune || result.is_err() {
-                            mirror.prune(now)?;
-                        }
-                        result
-                    })
-                    .await
-                    .map_err(|e| RemoteError::Transport(e.to_string()))?;
-                    if let Err(error) = result {
-                        self.history_failed = true;
-                        self.next_tier = self.tiers.len();
-                        self.last_sync = Instant::now();
-                        self.watermark_failed = false;
-                        self.status.history_error = Some(error.to_string());
-                        self.status.catching_up = false;
-                        (self.source.on_status)(self.status.clone());
-                    } else {
-                        self.watermark_failed = false;
-                        self.status.history_error = None;
-                    }
+                    self.mirror_write
+                        .start(MirrorWork::Page { more, requested }, move || {
+                            let result = mirror
+                                .ingest(page, kinds)
+                                .and_then(|()| mirror.enforce_budget(now));
+                            if prune || result.is_err() {
+                                mirror.prune(now)?;
+                            }
+                            result
+                        });
+                } else {
+                    self.mirror_write_finished(MirrorWork::Page { more, requested }, Ok(()))
+                        .await?;
                 }
-                if !more {
-                    self.next_tier += 1;
-                }
-                self.page_bytes = adapt_page_bytes(self.page_bytes, requested.elapsed());
-                tokio::task::yield_now().await;
             }
             Message::Truncated {
                 tier,
@@ -818,12 +807,10 @@ impl Session<'_> {
                 if tier != expected.0 {
                     return Err(RemoteError::Protocol("invalid truncation".into()));
                 }
-                if let Some(mirror) = &self.source.mirror
-                    && let Err(error) = mirror.truncated(tier, self.epoch, earliest_ts_ms)
-                {
-                    self.history_failed = true;
-                    self.watermark_failed = false;
-                    self.status.history_error = Some(error.to_string());
+                if let Some(mirror) = self.source.mirror.clone() {
+                    self.mirror_write.start(MirrorWork::Truncated, move || {
+                        mirror.truncated(tier, remote_epoch, earliest_ts_ms)
+                    });
                 }
                 self.floors.insert(tier, earliest_ts_ms);
                 self.restart_cursor.insert(tier);
@@ -849,16 +836,9 @@ impl Session<'_> {
                     ));
                 }
                 if let Some(mirror) = self.source.mirror.clone() {
-                    match mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows) {
-                        Err(error) => {
-                            self.watermark_failed = false;
-                            self.status.history_error = Some(error.to_string());
-                        }
-                        Ok(()) if !self.ring_filled && self.control.borrow().interest.detail => {
-                            self.refill_ring(mirror).await?;
-                        }
-                        Ok(()) => {}
-                    }
+                    self.mirror_write.start(MirrorWork::Recent, move || {
+                        mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows)
+                    });
                 }
             }
             Message::Error { message, .. } => {
@@ -904,18 +884,12 @@ impl Session<'_> {
                 "remote application heartbeat timed out".into(),
             ));
         }
-        if self.outstanding_ping.is_none() && self.last_ping.elapsed() >= Duration::from_secs(15) {
-            self.ping_nonce = self.ping_nonce.wrapping_add(1);
-            codec::write(
-                &mut self.writer,
-                &Message::Ping {
-                    nonce: self.ping_nonce,
-                    t0_ms: statglass_engine::wall_ms(),
-                },
-            )
-            .await?;
-            self.last_ping = Instant::now();
-            self.outstanding_ping = Some((self.ping_nonce, self.last_ping));
+        let probing = self.route_watch.probing();
+        if !probing
+            && self.outstanding_ping.is_none()
+            && self.last_ping.elapsed() >= Duration::from_secs(15)
+        {
+            self.send_heartbeat().await?;
         }
         if self.recent_pending && self.last_recent.elapsed() > Duration::from_secs(30) {
             self.recent_pending = false;
@@ -939,12 +913,19 @@ impl Session<'_> {
             self.status.catching_up = false;
             (self.source.on_status)(self.status.clone());
         }
+        if probing {
+            return Ok(SessionAction::Continue);
+        }
         let period = if self.source.controller_battery.load(Ordering::Relaxed) {
             300
         } else {
             60
         };
-        if self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
+        if !self.mirror_write.running()
+            && self.in_flight.is_none()
+            && !self.recent_pending
+            && self.next_tier >= self.tiers.len()
+        {
             if self.status.catching_up {
                 if let Some(mirror) = self.source.mirror.clone() {
                     let now = self
@@ -952,13 +933,9 @@ impl Session<'_> {
                         .clock
                         .now_ms()
                         .unwrap_or_else(statglass_engine::wall_ms);
-                    if let Err(error) = tokio::task::spawn_blocking(move || mirror.prune(now))
-                        .await
-                        .map_err(|e| RemoteError::Transport(e.to_string()))?
-                    {
-                        self.watermark_failed = false;
-                        self.status.history_error = Some(error.to_string());
-                    }
+                    self.mirror_write
+                        .start(MirrorWork::Prune, move || mirror.prune(now));
+                    return Ok(SessionAction::Continue);
                 }
                 self.status.catching_up = false;
                 (self.source.on_status)(self.status.clone());
@@ -968,7 +945,9 @@ impl Session<'_> {
                 self.history_failed = false;
             }
         }
-        self.request_recent().await?;
+        if !self.recent_first() {
+            self.request_recent().await?;
+        }
 
         Ok(SessionAction::Continue)
     }
@@ -1110,6 +1089,7 @@ mod tests {
             timeline: 1,
             retry: 0,
             network: 0,
+            route_watch: RouteWatch::default(),
             last_sync: Instant::now(),
             last_ping: Instant::now(),
             ping_nonce: 0,
@@ -1117,24 +1097,27 @@ mod tests {
             page_bytes: 16384,
             unpruned_bytes: 0,
             unpruned_pages: 0,
-            tiers: [Tier::S10, Tier::M1, Tier::M15],
+            tiers: &[Tier::S10, Tier::M1, Tier::M15],
+            sync_policy: SyncPolicy::Full,
             next_tier: 0,
             in_flight: None,
             timed_out: HashMap::new(),
             history_available: true,
             history_failed: false,
+            mirror_epoch_ready: false,
             watermark_failed: false,
             floors: HashMap::new(),
             restart_cursor: HashSet::new(),
             last_recent: Instant::now(),
-            promotion_tx: tokio::sync::mpsc::channel(1).0,
-            promotion_task: None,
             pending: crate::calls::Pending::default(),
             recent_pending: false,
+            recent_due: false,
+            pending_interest: None,
             recent_timed_out: None,
             ring_filled: false,
             detail: false,
             clock_ready: true,
+            mirror_write: MirrorWrite::default(),
             epoch: uuid::Uuid::from_u128(2),
             kinds: SyncKinds::default(),
             source,
@@ -1386,6 +1369,8 @@ mod tests {
         codec::write(&mut peer, &page(Tier::S10)).await.unwrap();
         let reply = codec::read(&mut reader).await;
         session.incoming(Some(reply)).await.unwrap();
+        let (work, result) = session.mirror_write.finish().await.unwrap();
+        session.mirror_write_finished(work, result).await.unwrap();
         assert_eq!(mirror.0.load(Ordering::SeqCst), 1);
         assert!(!session.history_failed);
     }
@@ -1590,6 +1575,8 @@ mod tests {
         for _ in 0..2 {
             session.recent_pending = true;
             session.incoming(Some(Ok(recent.clone()))).await.unwrap();
+            let (work, result) = session.mirror_write.finish().await.unwrap();
+            session.mirror_write_finished(work, result).await.unwrap();
         }
         assert_eq!(mirror.0.load(Ordering::SeqCst), 1, "refilled once");
         assert_ne!(
@@ -1611,6 +1598,8 @@ mod tests {
         assert_eq!(session.next_tier, session.tiers.len(), "no sync forced");
         session.recent_pending = true;
         session.incoming(Some(Ok(recent.clone()))).await.unwrap();
+        let (work, result) = session.mirror_write.finish().await.unwrap();
+        session.mirror_write_finished(work, result).await.unwrap();
         assert_eq!(mirror.0.load(Ordering::SeqCst), 1, "still refilled once");
 
         // Closing the window and opening it again syncs, then refills once more.
@@ -1621,6 +1610,8 @@ mod tests {
         assert_eq!(session.next_tier, 0, "detail starting forces a sync");
         session.recent_pending = true;
         session.incoming(Some(Ok(recent))).await.unwrap();
+        let (work, result) = session.mirror_write.finish().await.unwrap();
+        session.mirror_write_finished(work, result).await.unwrap();
         assert_eq!(mirror.0.load(Ordering::SeqCst), 2, "refilled again");
     }
     #[tokio::test]
@@ -1713,6 +1704,8 @@ mod tests {
                 session,
                 &mut control,
                 &mut ConnectionStatus::default(),
+                &ControlState::default(),
+                None,
             )
             .await
         });
@@ -1945,7 +1938,16 @@ mod tests {
         let task = tokio::spawn(async move {
             let mut control = runner.control.subscribe();
             let mut status = ConnectionStatus::default();
-            session_loop(&runner, &sink, session, &mut control, &mut status).await
+            session_loop(
+                &runner,
+                &sink,
+                session,
+                &mut control,
+                &mut status,
+                &ControlState::default(),
+                None,
+            )
+            .await
         });
         tokio::time::timeout(Duration::from_secs(2), done_rx)
             .await

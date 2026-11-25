@@ -1,5 +1,5 @@
 //! The engine's handle on a remote source: interest changes go to the session loop
-//! through the source's control channel, and stopping joins its thread.
+//! through the source's control channel. Stopping releases its runner.
 use super::RemoteSource;
 use statglass_engine::{EngineStatus, SourceControl};
 use statglass_schema::{Settings, lock::LockExt};
@@ -7,7 +7,12 @@ use std::sync::Arc;
 
 pub(super) struct Control {
     pub(super) source: Arc<RemoteSource>,
-    pub(super) thread: Option<std::thread::JoinHandle<()>>,
+    pub(super) runner: Runner,
+}
+
+pub(super) enum Runner {
+    Thread(Option<std::thread::JoinHandle<()>>),
+    Task(tokio::task::JoinHandle<()>),
 }
 impl SourceControl for Control {
     fn set_paused(&self, _paused: bool) {}
@@ -42,8 +47,13 @@ impl SourceControl for Control {
     }
     fn stop(&mut self) {
         self.source.control.send_modify(|s| s.stop = true);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        match &mut self.runner {
+            Runner::Thread(thread) => {
+                if let Some(thread) = thread.take() {
+                    let _ = thread.join();
+                }
+            }
+            Runner::Task(task) => task.abort(),
         }
     }
 }

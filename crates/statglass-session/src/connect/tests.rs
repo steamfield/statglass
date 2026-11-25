@@ -405,6 +405,72 @@ async fn stopped_agent_wins_when_all_failures_are_retryable() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn monitoring_off_then_stopped_app_win_over_a_stopped_agent_in_the_route_race() {
+    use crate::{AGENT_NOT_RUNNING, APP_NOT_RUNNING, ConnectionFailureKind, MONITORING_OFF};
+    for (last_marker, expected) in [
+        ("login banner", ConnectionFailureKind::AppNotRunning),
+        (MONITORING_OFF, ConnectionFailureKind::MonitoringOff),
+    ] {
+        let (dialer, endpoint, _) = fixture(vec![
+            Step {
+                stderr_on_close: AGENT_NOT_RUNNING,
+                ..Step::default()
+            },
+            Step {
+                stderr_on_close: APP_NOT_RUNNING,
+                ..Step::default()
+            },
+            Step {
+                stderr_on_close: last_marker,
+                ..Step::default()
+            },
+        ]);
+        let error = failed(connect(&dialer, &endpoint, LOCAL, None).await);
+        match expected {
+            ConnectionFailureKind::AppNotRunning => {
+                assert!(matches!(error, RemoteError::AppNotRunning(_)))
+            }
+            ConnectionFailureKind::MonitoringOff => {
+                assert!(matches!(error, RemoteError::MonitoringOff(_)))
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(ConnectionFailureKind::from_error(&error), expected);
+        assert!(error.retryable());
+        let message = match expected {
+            ConnectionFailureKind::AppNotRunning => {
+                format!("StatGlass isn't running on {}", endpoint.targets[1].host)
+            }
+            ConnectionFailureKind::MonitoringOff => {
+                format!("Remote monitoring is off on {}", endpoint.targets[2].host)
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!(error.to_string(), message);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn helper_markers_from_stderr_are_classified_before_the_dialer() {
+    use crate::{APP_NOT_RUNNING, ConnectionFailureKind, MONITORING_OFF};
+    for (marker, kind) in [
+        (APP_NOT_RUNNING, ConnectionFailureKind::AppNotRunning),
+        (MONITORING_OFF, ConnectionFailureKind::MonitoringOff),
+    ] {
+        let (dialer, endpoint, _) = fixture(vec![Step {
+            stderr: "login banner\n",
+            stderr_on_close: marker,
+            ..Step::default()
+        }]);
+        let error = failed(connect(&dialer, &endpoint, LOCAL, None).await);
+        assert_eq!(ConnectionFailureKind::from_error(&error), kind);
+        assert!(error.retryable());
+        assert!(error.to_string().ends_with(&endpoint.targets[0].host));
+        assert!(dialer.classified.lock_ok().is_empty());
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn address_fallback_waits_for_magic_dns_after_lan_fails() {
     let (dialer, endpoint, _) = fixture(vec![
         Step::fails(50, || RemoteError::Transport("offline".into())),

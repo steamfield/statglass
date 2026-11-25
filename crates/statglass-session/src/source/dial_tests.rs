@@ -1,11 +1,13 @@
 use super::*;
 use crate::test_support::{endpoint, fixture_hello};
-use crate::{BoxFuture, Close, DialFailure, DialedStream, Target};
+use crate::{
+    BoxFuture, Close, DialFailure, DialedStream, PROMOTION_DEBOUNCE, Target, network::LocalNetwork,
+};
 use tokio::{io::DuplexStream, sync::mpsc, time::timeout};
 
 const WAIT: Duration = Duration::from_secs(5);
 type Attempts = mpsc::UnboundedReceiver<(Target, Instant)>;
-type SessionTask = tokio::task::JoinHandle<Result<Option<SshSession>>>;
+type SessionTask = tokio::task::JoinHandle<Result<Option<Candidate>>>;
 
 struct FakeDialer {
     attempts: mpsc::UnboundedSender<(Target, Instant)>,
@@ -94,13 +96,21 @@ fn source(
     status: StatusCallback,
 ) -> (Arc<RemoteSource>, Attempts) {
     let (attempts, rx) = mpsc::unbounded_channel();
-    let source = RemoteSource::new(
+    let source = RemoteSource::with_options(
         HostRecord::from_identity(fixture_hello().host, false),
         HostId(uuid::Uuid::nil()),
         Arc::new(FakeDialer { attempts, accepted }),
         endpoint(routes),
         status,
         None,
+        SourceOptions {
+            probe: Some(Arc::new(|| LocalNetwork {
+                online: true,
+                tailscale_up: true,
+                lan_up: true,
+            })),
+            ..Default::default()
+        },
     );
     (source, rx)
 }
@@ -200,12 +210,25 @@ fn connected_source(
     let task = tokio::spawn(async move {
         let mut control = runner.control.subscribe();
         let mut status = ConnectionStatus::default();
-        session_loop(&runner, &sink(), session, &mut control, &mut status).await
+        session_loop(
+            &runner,
+            &sink(),
+            session,
+            &mut control,
+            &mut status,
+            &ControlState::default(),
+            None,
+        )
+        .await
     });
     (source, attempts, peer, task)
 }
 
-async fn network_change(source: &RemoteSource, peer: &mut DuplexStream) -> Instant {
+async fn network_change(
+    source: &RemoteSource,
+    peer: &mut DuplexStream,
+    attempts: &mut Attempts,
+) -> Instant {
     assert!(matches!(
         codec::read(peer).await.unwrap(),
         Message::Interest(_)
@@ -225,11 +248,31 @@ async fn network_change(source: &RemoteSource, peer: &mut DuplexStream) -> Insta
     .unwrap();
     let changed = Instant::now();
     source.network_changed();
+    let Message::Ping { nonce, t0_ms } = codec::read(peer).await.unwrap() else {
+        panic!("expected path Ping");
+    };
+    assert_eq!(Instant::now(), changed);
+    tokio::time::advance(PROMOTION_DEBOUNCE + Duration::from_millis(1)).await;
+    assert!(
+        attempts.try_recv().is_err(),
+        "promotion started before the path Pong"
+    );
+    let answered = Instant::now();
+    codec::write(
+        peer,
+        &Message::Pong {
+            nonce,
+            t0_ms,
+            t_remote_ms: 1,
+        },
+    )
+    .await
+    .unwrap();
     assert!(matches!(
         codec::read(peer).await.unwrap(),
         Message::Interest(_)
     ));
-    changed
+    answered
 }
 
 async fn expect_lan_dials(attempts: &mut Attempts, changed: Instant) {
@@ -259,7 +302,7 @@ async fn next_heartbeat(peer: &mut DuplexStream) {
 async fn a_network_change_debounces_then_races_all_better_targets_and_replaces_the_session() {
     let (source, mut attempts, mut peer, task) =
         connected_source(MIXED, TAILNET[0], Some("studio.lan"));
-    let changed = network_change(&source, &mut peer).await;
+    let changed = network_change(&source, &mut peer, &mut attempts).await;
     expect_lan_dials(&mut attempts, changed).await;
     let replacement = timeout(WAIT, task)
         .await
@@ -267,15 +310,15 @@ async fn a_network_change_debounces_then_races_all_better_targets_and_replaces_t
         .unwrap()
         .unwrap()
         .unwrap();
-    assert_eq!(replacement.target.host, "studio.lan");
-    assert_eq!(replacement.route, Route::Lan);
-    replacement.close().await;
+    assert_eq!(replacement.session.target.host, "studio.lan");
+    assert_eq!(replacement.session.route, Route::Lan);
+    replacement.session.close().await;
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_failed_promotion_leaves_the_original_session_serving() {
     let (source, mut attempts, mut peer, task) = connected_source(MIXED, TAILNET[0], None);
-    let changed = network_change(&source, &mut peer).await;
+    let changed = network_change(&source, &mut peer, &mut attempts).await;
     expect_lan_dials(&mut attempts, changed).await;
     next_heartbeat(&mut peer).await;
     source.control.send_modify(|state| state.stop = true);
@@ -294,7 +337,7 @@ async fn a_failed_promotion_leaves_the_original_session_serving() {
 async fn a_network_change_never_promotes_a_lan_or_races_same_route_targets() {
     for (routes, current) in [(MIXED, MIXED[0]), (TAILNET, TAILNET[0])] {
         let (source, mut attempts, mut peer, task) = connected_source(routes, current, None);
-        network_change(&source, &mut peer).await;
+        network_change(&source, &mut peer, &mut attempts).await;
         next_heartbeat(&mut peer).await;
         assert!(
             attempts.try_recv().is_err(),

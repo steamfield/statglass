@@ -200,7 +200,7 @@ fn summary(entries: &[(&str, &str)]) -> LocalNetwork {
 }
 
 #[test]
-fn a_carrier_nat_address_on_wifi_is_online_not_tailscale() {
+fn a_carrier_nat_address_on_wifi_is_online_and_on_lan_without_tailscale() {
     assert_eq!(
         summary(&[("en0", "100.72.1.5")]),
         LocalNetwork {
@@ -245,4 +245,45 @@ fn linux_tailscale0_counts_as_tailscale_not_online() {
             lan_up: false,
         }
     );
+}
+
+#[test]
+fn cellular_and_tunnels_leave_lan_down_until_a_usable_lan_address_appears() {
+    let cellular = ("pdp_ip0", "10.34.12.9");
+    let tailnet = ("utun3", "100.72.1.5");
+    let cellular_v6 = ("pdp_ip1", "2600:1700::2");
+    let vpn = ("utun4", "fd00::1");
+    let cellular_only = summary(&[cellular, tailnet, cellular_v6, vpn]);
+    assert_eq!(
+        cellular_only,
+        LocalNetwork {
+            online: true,
+            tailscale_up: true,
+            lan_up: false
+        }
+    );
+    for addr in [
+        "192.168.1.5",
+        "::ffff:10.0.0.3",
+        "fd00::2",
+        "2600:1700::3",
+        "8.8.4.4",
+    ] {
+        assert_eq!(
+            summary(&[cellular, tailnet, ("en0", addr)]),
+            LocalNetwork {
+                lan_up: true,
+                ..cellular_only
+            }
+        );
+    }
+    assert!(!summary(&[("en0", "fe80::2"), ("en0", "ff02::1"),]).lan_up);
+}
+
+#[test]
+fn hotspot_and_virtual_interfaces_leave_lan_down_until_physical_cgnat_appears() {
+    for name in ["bridge100", "vmenet0", "ap1", "anpi0"] {
+        assert!(!summary(&[(name, "172.20.10.1")]).lan_up, "{name}");
+    }
+    assert!(summary(&[("bridge100", "172.20.10.1"), ("en0", "100.72.1.5")]).lan_up);
 }
