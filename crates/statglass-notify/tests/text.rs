@@ -186,22 +186,64 @@ fn summary_names_the_series_a_labelled_rule_watches() {
 }
 
 #[test]
-fn memory_stall_summary_distinguishes_any_from_the_default_series() {
-    let some = rule(
-        "mem.psi",
-        Labels::single("stall", "some"),
-        Cmp::Gt,
-        10.0,
-        120,
-    );
-    assert_eq!(
-        rule_summary(&some, &CELSIUS_DECIMAL),
-        "Memory stall above 10% for 2 min"
-    );
-    assert_eq!(
-        summary("mem.psi", Cmp::Gt, 10.0, 120),
-        "Memory stall (any) above 10% for 2 min"
-    );
+fn series_and_values_match_the_alerts_page() {
+    // Keep these cases in step with src/core/alerts.test.ts.
+    for (metric, series, value, label, shown) in [
+        (
+            "mem.psi",
+            Some(("stall", "some")),
+            16.777217,
+            "Memory stall",
+            "16.77722%",
+        ),
+        (
+            "mem.psi",
+            Some(("stall", "full")),
+            10.0,
+            "Memory stall (full)",
+            "10%",
+        ),
+        ("mem.psi", None, 0.01, "Memory stall (any)", "0.01%"),
+        (
+            "cpu.loadavg",
+            Some(("window", "1")),
+            0.1,
+            "Load average (1 min)",
+            "0.1",
+        ),
+        (
+            "cpu.loadavg",
+            Some(("window", "5")),
+            1234.5,
+            "Load average (5 min)",
+            "1,234.5",
+        ),
+        (
+            "cpu.loadavg",
+            Some(("window", "15")),
+            2.0078125,
+            "Load average (15 min)",
+            "2.007812",
+        ),
+        ("cpu.loadavg", None, 4.25, "Load average", "4.25"),
+        ("mem.pressure", None, 80.5, "Memory pressure", "81%"),
+    ] {
+        let labels = series.map_or_else(Labels::new, |(key, value)| Labels::single(key, value));
+        let rule = rule(metric, labels.clone(), Cmp::Gt, value, 120);
+        assert_eq!(
+            rule_summary(&rule, &CELSIUS_DECIMAL),
+            format!("{label} above {shown} for 2 min")
+        );
+        let event = threshold(metric, labels, value, Cmp::Gt, value, 120);
+        assert_eq!(
+            alert_text(&event, &CELSIUS_DECIMAL),
+            fired(
+                "threshold",
+                "Memory is tight",
+                &format!("{label} {shown} · above {shown} for 2 min")
+            )
+        );
+    }
 }
 
 /// Memory follows the memory unit; disk space is always decimal GB, as Finder shows it.

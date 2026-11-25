@@ -2,7 +2,8 @@ import { commandError } from "@core/command-error";
 import type { AlertRule, RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
 import {
-  remoteRulesErrorText,
+  type RulesWriteAction,
+  remoteRulesWriteErrorText,
   rulesConnectionLost,
   rulesDisconnectedText,
 } from "@core/remote-alert-rules";
@@ -75,9 +76,9 @@ export function useRemoteAlertRules({ config, status }: RemoteHostRecord) {
       await client.cancelQueries({ queryKey: key });
       client.setQueryData(key, answer);
     },
-    onError: (error) => {
+    onError: async (error) => {
       if (commandError(error)?.kind === "remote_rules_changed") {
-        void client.invalidateQueries({ queryKey: key });
+        await client.invalidateQueries({ queryKey: key });
       }
     },
   });
@@ -88,11 +89,16 @@ export function useRemoteAlertRules({ config, status }: RemoteHostRecord) {
     rulesConnectionLost(save.error) && save.variables?.readCount === readCount;
   const disconnected =
     !connected || rulesConnectionLost(query.error) || writeDisconnected;
+  const staleReadFailed =
+    query.isError && commandError(save.error)?.kind === "remote_rules_changed";
+  const readFailure = staleReadFailed
+    ? "Couldn't load the latest rules."
+    : null;
   const reason = disconnected
     ? rulesDisconnectedText(config.name)
     : query.data?.newer.some(({ id }) => id === null)
       ? CANNOT_KEEP
-      : null;
+      : readFailure;
   const disabled =
     reason !== null ||
     !query.data ||
@@ -100,7 +106,10 @@ export function useRemoteAlertRules({ config, status }: RemoteHostRecord) {
     query.isFetching ||
     saving;
 
-  const write = async (rules: AlertRule[]): Promise<RulesWriteResult> => {
+  const write = async (
+    rules: AlertRule[],
+    action: RulesWriteAction
+  ): Promise<RulesWriteResult> => {
     if (disabled || !query.data || client.isMutating({ mutationKey: key })) {
       return {
         saved: false,
@@ -119,23 +128,19 @@ export function useRemoteAlertRules({ config, status }: RemoteHostRecord) {
           error,
         });
       }
-      // A connection failure is shown by the current availability state.
-      // It goes away when a fresh read succeeds.
+      // Availability handles failed reads and connection errors until a fresh read succeeds.
+      const current = client.getQueryState(key);
+      const refreshed =
+        current?.status === "success" && current.dataUpdateCount > readCount;
       return {
         saved: false,
-        error: rulesConnectionLost(error)
-          ? null
-          : remoteRulesErrorText(
-              error,
-              config.name,
-              "Couldn't save the rules."
-            ),
+        error: remoteRulesWriteErrorText(error, config.name, action, refreshed),
       };
     }
   };
 
   const reload: ReloadRulesAction | null =
-    connected && disconnected
+    connected && (disconnected || staleReadFailed)
       ? {
           run: () => void query.refetch({ cancelRefetch: false }),
           pending: query.isFetching,

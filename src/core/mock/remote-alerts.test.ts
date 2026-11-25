@@ -1,5 +1,6 @@
-import { ALERT_LIMITS } from "@core/generated/bindings";
+import { ALERT_LIMITS, type AlertRule } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
+import { unwrap } from "@core/transport";
 import { MOCK_HOST_ID, type ScenarioName } from "./fixtures";
 
 const LINUX = "remote-linux";
@@ -65,24 +66,57 @@ it("validates and serializes replacements, preserving only the requested newer r
     transport.setRemoteAlertRules(LINUX, revision, [changed], keep),
     transport.setRemoteAlertRules(LINUX, revision, [], []),
   ]);
-  expect(results).toEqual([
-    { status: "ok", data: { revision: revision + 1, rules: [changed], newer } },
-    {
-      status: "error",
-      error: {
-        kind: "remote_rules_changed",
-        message:
-          "The alert rules on this host changed. Reload them and try again.",
-      },
-    },
-  ]);
-  expect(await transport.remoteAlertRules(LINUX)).toEqual(results[0]);
-  expect(
-    await transport.setRemoteAlertRules(LINUX, revision + 1, [changed], [])
-  ).toEqual({
-    status: "ok",
-    data: { revision: revision + 2, rules: [changed], newer: [] },
+  const [applied, stale] = results;
+  if (applied?.status !== "ok") throw new Error(JSON.stringify(applied));
+  expect(applied.data).toEqual({
+    revision: expect.any(Number),
+    rules: [changed],
+    newer,
   });
+  expect(applied.data.revision).not.toBe(revision);
+  expect(stale).toEqual({
+    status: "error",
+    error: {
+      kind: "remote_rules_changed",
+      message:
+        "The alert rules on this host changed. Reload them and try again.",
+    },
+  });
+  expect(await transport.remoteAlertRules(LINUX)).toEqual(results[0]);
+  const dropped = await unwrap(
+    transport.setRemoteAlertRules(LINUX, applied.data.revision, [changed], [])
+  );
+  expect(dropped).toEqual({
+    revision: expect.any(Number),
+    rules: [changed],
+    newer: [],
+  });
+  expect(dropped.revision).not.toBe(applied.data.revision);
+});
+
+it("gives unchanged and restored rule lists the same safe revision", async () => {
+  const transport = mock(["linux-host"]);
+  const initial = await unwrap(transport.remoteAlertRules(LINUX));
+  const { revision, rules, newer } = initial;
+  const keep = newer.flatMap(({ id }) => (id === null ? [] : [id]));
+  const save = (base: number, rules: AlertRule[]) =>
+    unwrap(transport.setRemoteAlertRules(LINUX, base, rules, keep));
+  expect(Number.isSafeInteger(revision)).toBe(true);
+  const reordered = rules.map(({ enabled, ...rule }) => ({ enabled, ...rule }));
+  expect(await save(revision, reordered)).toEqual(initial);
+
+  const disabled = rules.map((rule, index) =>
+    index === 0 ? { ...rule, enabled: false } : rule
+  );
+  const toggled = await save(revision, disabled);
+  expect(toggled).toEqual({
+    revision: expect.any(Number),
+    rules: disabled,
+    newer,
+  });
+  expect(Number.isSafeInteger(toggled.revision)).toBe(true);
+  expect(toggled.revision).not.toBe(revision);
+  expect(await save(toggled.revision, rules)).toEqual(initial);
 });
 
 it("answers like an unsupported agent or a host that disappeared after the first read", async () => {

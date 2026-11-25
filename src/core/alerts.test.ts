@@ -140,51 +140,6 @@ describe("ruleSummary", () => {
     ).toBe("Free disk space (/) below 20 GB");
   });
 
-  it("describes memory stall without the default stall label", () => {
-    expect(
-      ruleSummary(
-        rule("mem.psi", [["stall", "some"]], "gt", 10, 120),
-        CELSIUS_DECIMAL
-      )
-    ).toBe("Memory stall above 10% for 2 min");
-    expect(
-      ruleSummary(
-        rule("mem.psi", [["stall", "full"]], "gt", 10, 120),
-        CELSIUS_DECIMAL
-      )
-    ).toBe("Memory stall (full) above 10% for 2 min");
-  });
-
-  it("names the load average window and leaves the threshold unitless", () => {
-    expect(
-      ruleSummary(
-        rule("cpu.loadavg", [["window", "5"]], "gt", 4, 300),
-        CELSIUS_DECIMAL
-      )
-    ).toBe("Load average (5 min) above 4 for 5 min");
-  });
-
-  it("keeps fractional memory stall and load average thresholds in the sentence", () => {
-    expect(
-      ruleSummary(
-        rule("mem.psi", [["stall", "some"]], "gt", Math.fround(0.01), 120),
-        CELSIUS_DECIMAL
-      )
-    ).toBe("Memory stall above 0.01% for 2 min");
-    expect(
-      ruleSummary(
-        rule("cpu.loadavg", [["window", "5"]], "gt", Math.fround(0.1), 300),
-        CELSIUS_DECIMAL
-      )
-    ).toBe("Load average (5 min) above 0.1 for 5 min");
-  });
-
-  it("distinguishes a rule watching any memory stall series from the default", () => {
-    expect(
-      ruleSummary(rule("mem.psi", [], "gt", 10, 120), CELSIUS_DECIMAL)
-    ).toBe("Memory stall (any) above 10% for 2 min");
-  });
-
   it("follows the memory unit for memory and the temperature unit", () => {
     const swap = rule("mem.swap_used", [], "gt", 4e9, 300);
     expect(ruleSummary(swap, CELSIUS_DECIMAL)).toBe(
@@ -206,6 +161,43 @@ describe("ruleSummary", () => {
 });
 
 describe("alertCauseLabel", () => {
+  it("matches the series and displayed values in Rust notifications", () => {
+    // Keep these cases in step with crates/statglass-notify/tests/text.rs.
+    const cases: [string, [string, string][], number, string, string][] = [
+      ["mem.psi", [["stall", "some"]], 16.777217, "Memory stall", "16.77722%"],
+      ["mem.psi", [["stall", "full"]], 10, "Memory stall (full)", "10%"],
+      ["mem.psi", [], 0.01, "Memory stall (any)", "0.01%"],
+      ["cpu.loadavg", [["window", "1"]], 0.1, "Load average (1 min)", "0.1"],
+      [
+        "cpu.loadavg",
+        [["window", "5"]],
+        1234.5,
+        "Load average (5 min)",
+        "1,234.5",
+      ],
+      [
+        "cpu.loadavg",
+        [["window", "15"]],
+        2.0078125,
+        "Load average (15 min)",
+        "2.007812",
+      ],
+      ["cpu.loadavg", [], 4.25, "Load average", "4.25"],
+      ["mem.pressure", [], 80.5, "Memory pressure", "81%"],
+    ];
+    for (const [metric, labels, value, label, shown] of cases) {
+      expect(
+        alertCauseLabel(
+          threshold(metric, labels, value, "gt", value, 120),
+          CELSIUS_DECIMAL
+        )
+      ).toBe(`${label} ${shown}`);
+      expect(
+        ruleSummary(rule(metric, labels, "gt", value, 120), CELSIUS_DECIMAL)
+      ).toBe(`${label} above ${shown} for 2 min`);
+    }
+  });
+
   it("names the metric, its series and the value in the user's units", () => {
     expect(
       alertCauseLabel(
@@ -244,6 +236,15 @@ describe("alertCauseLabel", () => {
 });
 
 describe("threshold display units", () => {
+  it("opens a fractional load average threshold at the summary's precision", () => {
+    expect(
+      thresholdToDisplay("cpu.loadavg", 2.0078125, CELSIUS_DECIMAL)
+    ).toEqual({
+      value: 2.007812,
+      unit: "",
+    });
+  });
+
   it("round-trips Celsius through °F", () => {
     expect(
       thresholdToDisplay("thermal.hottest", 95, FAHRENHEIT_BINARY)

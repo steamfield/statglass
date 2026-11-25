@@ -2,7 +2,7 @@
 //! agree with the client's formatters (`src/core/format`) on every alertable metric.
 
 use statglass_schema::settings::{MemoryUnit, TemperatureUnit, UnitSettings};
-use statglass_schema::{CATALOG, Unit};
+use statglass_schema::{CATALOG, Unit, alert_metric};
 
 /// What a value that was not measured (NaN or infinite) reads as, as on the client.
 const MISSING: &str = "\u{2014}";
@@ -19,22 +19,25 @@ const MEMORY_PREFIX: &str = "mem.";
 /// "72 W"), rpm and pages per second with thousands separators ("4,000 rpm",
 /// "1,000 pages/s"), Celsius in the temperature setting as whole degrees ("95 °C",
 /// "203 °F"), and bytes in GB, or in GiB for `mem.*` when the memory setting is binary,
-/// with at most one decimal ("20 GB", "3.7 GiB"). Memory stall and load average retain
-/// fractional digits. Other units and unknown metrics read as whole numbers with thousands
-/// separators. Halves round away from zero in the whole-number formats. A value that is
-/// not finite reads as "—".
+/// with at most one decimal ("20 GB", "3.7 GiB"). Percent and count entries with a
+/// significant-digit limit retain fractional digits and round ties to even. Other units
+/// and unknown metrics read as whole numbers with thousands separators. Halves round
+/// away from zero in the whole-number formats. A value that is not finite reads as "—".
 pub fn format_value(metric: &str, value: f32, units: &UnitSettings) -> String {
     if !value.is_finite() {
         return MISSING.to_owned();
     }
-    if metric == "mem.psi" {
-        return format!("{value}%");
-    }
-    if metric == "cpu.loadavg" {
-        return group_decimal(&value.to_string());
+    let unit = catalog_unit(metric);
+    if let Some(digits) = alert_metric(metric).and_then(|m| m.value_significant_digits) {
+        let shown = significant(value, digits);
+        return if unit == Some(Unit::Percent) {
+            format!("{shown}%")
+        } else {
+            shown
+        };
     }
     let value = f64::from(value);
-    match catalog_unit(metric) {
+    match unit {
         Some(Unit::Percent) => format!("{}%", whole(value)),
         Some(Unit::Watts) => format_watts(value),
         Some(Unit::Rpm) => format!("{} rpm", grouped(value)),
@@ -42,6 +45,35 @@ pub fn format_value(metric: &str, value: f32, units: &UnitSettings) -> String {
         Some(Unit::Celsius) => format_temperature(value, units.temperature),
         Some(Unit::Bytes) => format_bytes(value, binary_bytes(metric, units)),
         _ => grouped(value),
+    }
+}
+
+/// Round in scientific notation, then put the decimal point back for display.
+/// This keeps even very small values and matches Intl's half-even rounding.
+fn significant(value: f32, digits: u8) -> String {
+    if value == 0.0 {
+        return "0".to_owned();
+    }
+    let precision = usize::from(digits.saturating_sub(1));
+    let rounded = format!("{:.precision$e}", value.abs());
+    let (mantissa, exponent) = rounded.split_once('e').expect(":e prints an exponent");
+    let point = 1 + exponent.parse::<isize>().expect("an f32 exponent fits");
+    let offset = point.unsigned_abs();
+    let digits = mantissa.replace('.', "");
+    let digits = digits.trim_end_matches('0');
+    let shown = if point <= 0 {
+        format!("0.{}{digits}", "0".repeat(offset))
+    } else if offset >= digits.len() {
+        format!("{digits}{}", "0".repeat(offset - digits.len()))
+    } else {
+        let (whole, fraction) = digits.split_at(offset);
+        format!("{whole}.{fraction}")
+    };
+    let grouped = group_decimal(&shown);
+    if value < 0.0 {
+        format!("-{grouped}")
+    } else {
+        grouped
     }
 }
 

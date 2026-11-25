@@ -13,6 +13,27 @@ const DISK_ID = "c0ffee00-0000-4000-8000-0000000000e1";
 const MEMORY_ID = "c0ffee00-0000-4000-8000-0000000000e2";
 const NEWER_ID = "c0ffee00-0000-4000-8000-0000000000e3";
 const CPU_ID = "c0ffee00-0000-4000-8000-0000000000e4";
+const REVISION_MASK = (1n << 53n) - 1n;
+
+function rulesAnswer(
+  rules: AlertRule[],
+  newer: RemoteAlertRules["newer"]
+): RemoteAlertRules {
+  // Like the agent, hash the ordered list. Sort object keys so a caller's
+  // property insertion order has no effect. The mock only knows newer ids.
+  const content = JSON.stringify([rules, newer], (_key, value: unknown) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).sort(([a], [b]) => a.localeCompare(b, "en-US"))
+        )
+      : value
+  );
+  let hash = 0xcbf2_9ce4_8422_2325n;
+  for (const byte of new TextEncoder().encode(content)) {
+    hash = ((hash ^ BigInt(byte)) * 0x0100_0000_01b3n) & REVISION_MASK;
+  }
+  return { revision: Number(hash), rules, newer };
+}
 
 function fixtureRule(metric: string, id: string, name: string): AlertRule {
   const [definition] = availableMetrics([metric]);
@@ -22,14 +43,13 @@ function fixtureRule(metric: string, id: string, name: string): AlertRule {
 
 function initialRules(): RemoteAlertRules {
   const disk = fixtureRule("disk.free", DISK_ID, "Root disk running low");
-  return {
-    revision: 1,
-    rules: [
+  return rulesAnswer(
+    [
       { ...disk, for_secs: 300 },
       fixtureRule("mem.psi", MEMORY_ID, "Memory stalls"),
     ],
-    newer: [{ id: NEWER_ID }],
-  };
+    [{ id: NEWER_ID }]
+  );
 }
 
 function seedRecentAlert(peer: MockTransport, now: number) {
@@ -78,6 +98,7 @@ type AgentRules = {
 class MockRemoteAlerts {
   private readonly agents = new WeakMap<MockTransport, AgentRules>();
   private disconnected = false;
+  private staleInjected = false;
 
   constructor(
     private readonly remotes: MockRemotes,
@@ -118,7 +139,7 @@ class MockRemoteAlerts {
       });
     let state = this.agents.get(remote.peer);
     if (!state) {
-      state = { answer: { revision: 1, rules: [], newer: [] }, pending: null };
+      state = { answer: rulesAnswer([], []), pending: null };
       this.agents.set(remote.peer, state);
     }
     return ok({ peer: remote.peer, state });
@@ -161,11 +182,15 @@ class MockRemoteAlerts {
       if (
         host === LINUX &&
         this.scenarios.includes("linux-alerts-stale") &&
-        state.answer.revision === 1
+        !this.staleInjected
       ) {
-        state.answer.revision += 1;
-        state.answer.rules.push(
-          fixtureRule("cpu.total", CPU_ID, "CPU saturation")
+        this.staleInjected = true;
+        state.answer = rulesAnswer(
+          [
+            ...state.answer.rules,
+            fixtureRule("cpu.total", CPU_ID, "CPU saturation"),
+          ],
+          state.answer.newer
         );
       }
       return replaceRules(peer, state, baseRevision, rules, keep);
@@ -231,10 +256,9 @@ async function replaceRules(
       message: `Saving the alert rules: ${result.error.message}`,
     });
   if (result.status === "error") return result;
-  state.answer = {
-    revision: current.revision + 1,
-    rules: result.data.settings.alerts?.rules?.slice(0, known.length) ?? [],
-    newer,
-  };
+  state.answer = rulesAnswer(
+    result.data.settings.alerts?.rules?.slice(0, known.length) ?? [],
+    newer
+  );
   return ok(structuredClone(state.answer));
 }
