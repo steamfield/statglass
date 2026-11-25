@@ -930,12 +930,503 @@ pub const NETWORK_CHANGE_PROBE: Duration = Duration::from_secs(5);
 
 Demo: the app in the simulator, built with the XCFramework, opens a full session to this Mac over russh with a pre-installed key and shows live CPU on a debug screen.
 Depends on: phase 3
+Scaffold: 36dcbc94
+
+How the demo runs:
+- `scripts/mobile/build-rust-ios.sh` builds the XCFramework.
+- The app opens `statglass://debug`. The debug screen shows the phone's `authorized_keys` line, which goes into `~/.ssh/authorized_keys` on this Mac by hand.
+- With this Mac's address, user and `MacHelper` path filled in (prefilled from `EXPO_PUBLIC_STATGLASS_DEBUG_*`), Connect starts a full session over russh. The screen then shows the connection state and CPU updating at 1 Hz.
+- Pairing, restricted keys and the hosts list on real data are phase 7.
+
+Code facts this phase relies on (checked 2026-11-24 against 36dcbc94):
+
+**Facade**
+- `RemoteSource::with_options(record, local, dialer, endpoint, on_status, mirror, SourceOptions { runtime, sync, probe })` is the phone's way in.
+- Session controls:
+  - `set_sync_policy(SyncPolicy::{Full, SummaryOnly, Off})`
+  - `quiesce() -> BoxFuture<'static, ()>`
+  - `resume()`, which is idempotent
+  - `network_changed_with(LocalNetwork { online, tailscale_up, lan_up })`
+  - `set_recent_interest`
+- `Mirror::with_policy(history, host, MirrorPolicy::phone(budget_mb))` fixes the budget at construction; there is no setter. `PHONE_MIRROR_HOST_MB` is 25 and `PHONE_MIRROR_TOTAL_MB` is 250.
+- The desktop builds a source in `src-tauri/src/remote/registration.rs:14-80`. It opens one `History` per host under `mirrors/<id>/` with mode 0700, then `register_host`, then the `Mirror`, then the source.
+
+**ipc**
+- `LiveRegistry::subscribe(label, Arc<dyn LiveFeed>, Arc<dyn LiveSink>, LiveRequest)`. `LiveSink` is `{ send(LiveMsg) -> bool; id() -> u32 }`.
+- The `LiveFeed` pattern is `impl LiveFeed for HostEntry` in `src-tauri/src/hosts.rs`.
+- Other ipc functions used: `query_history(history, request, auto, recent, hold)`, `query_events`, `status::connection_status(&ConnectionStatus) -> RemoteConnection` and `vitals::host_vitals`.
+
+**ssh**
+- `RusshDialer::new(Arc<dyn Signer>)`.
+- `Signer::sign` returns ASN.1 DER, and `RusshSigner` converts it to the SSH blob. A `public_key()` that is not a 65-byte SEC1 point makes the dialer refuse the key.
+- `SoftwareSigner` is behind the `software-signer` feature, which is a dev-dependency of statglass-mobile.
+
+**Native module**
+- `requireOptionalNativeModule` and `NativeModule` are imported from `"expo"`; expo-modules-core is installed only in the root `node_modules`.
+- The XCFramework and the Swift bindings come from `scripts/mobile/build-rust-ios.sh` and are git-ignored (`apps/mobile/.gitignore:13-16`).
+- The app lock is `apps/mobile/src/lock/app-lock-gate.tsx`, which uses a JS `AppState` and `BlurView` cover. Lane 6a q3 moved the native snapshot cover here.
+- The About screen (`apps/mobile/src/app/settings/about.tsx`) shows only `Constants.expoConfig?.version`.
+
+#### Scaffold contracts (phase 4)
+
+**New crate edges**
+
+statglass-mobile → statglass-session, statglass-ipc and statglass-ssh, plus statglass-ssh again as a dev edge for `software-signer`. They are in `crate-edges.json`, and `make architecture-check` passes.
+- RFC 4.2 step 5 has the facade depend on ipc, for the command layer and the types the app already reads, and on session, for `RemoteSource` and `Mirror`.
+- The russh dialer and the `Signer` trait live in statglass-ssh.
+- statglass-mobile still never depends on statglass-remote.
+- tokio (`rt`, `rt-multi-thread`, `sync`, `time`, `macros`) and thiserror/tracing are existing workspace dependencies.
+- UniFFI's `tokio` feature is not used, because it would pull in async-compat. The core owns its runtime instead, and async exports await a `JoinHandle`, which works on any executor.
+
+**Scaffold-owned files.** No lane edits these. A change to them goes back through the orchestrator.
+- `crates/statglass-mobile/src/{lib,mobile_core,ffi,envelope}.rs` and `Cargo.toml`. `control.rs` is lane d's, with its methods fixed (see the table notes).
+- `crates/statglass-ipc/src/mobile.rs` and `src-tauri/src/facts.rs`, together with the regenerated `types.ts`
+- `crates/statglass-ssh/src/signer.rs`, for `authorized_key_line`
+- `apps/mobile/src/app/_layout.tsx` and `apps/mobile/src/app/debug.tsx`
+- `apps/mobile/src/transport/index.ts`, `apps/mobile/modules/statglass-native/index.ts` and `src/StatglassNative.types.ts`
+- the `@native/*` alias in `apps/mobile/{tsconfig.json,metro-resolve.cjs,jest.config.cjs}`
+- the `mobile-native-check` target in `Makefile`
+
+**Facade types in `statglass_ipc::mobile`.** These are serde and specta types registered with `.typ::<T>()` in `facts.rs`, so TypeScript gets them from `types.ts`:
+
+```rust
+pub struct MobileConfig { pub hosts: Vec<MobileHost>, pub data: DataPolicy }
+pub struct DataPolicy { pub sync_on_cellular: bool }            // Default: false
+pub struct MobileHost {
+    pub id: HostId, pub name: String, pub user: String, pub port: Option<u16>,
+    pub targets: Vec<MobileTarget>, pub host_keys: Vec<MobileHostKey>, pub command: MobileCommand,
+}
+pub struct MobileTarget { pub route: RemoteRoute, pub host: String }
+pub struct MobileHostKey { pub algorithm: String, pub sha256: String }
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MobileCommand { Restricted, MacHelper { path: String }, Agent { bin: String, system: bool, socket: Option<String> } }
+
+#[serde(tag = "method", content = "args", rename_all = "snake_case")]
+pub enum MobileCall {
+    BuildInfo, SetHosts { hosts: Vec<MobileHost> }, SetDataPolicy(DataPolicy),
+    AuthorizedKeyLine { comment: String },
+    ListHosts, ListRemoteHosts, GetHost { host: HostId }, GetCapabilities { host: HostId },
+    HostVitals { host: HostId }, SetHostsRecentInterest { on: bool }, RetryRemoteHost { host: HostId },
+    SubscribeLive(MobileLiveRequest), UnsubscribeLive { stream: u32 },
+    QueryHistory(HistoryRequest), QueryEvents { host: HostId, from_ms: i64, to_ms: i64 },
+}
+pub struct MobileLiveRequest {
+    pub host: HostId, pub stream: u32, pub backfill_ms: Option<i64>,
+    pub series: Option<Vec<SeriesSelector>>, pub min_period_ms: Option<u32>,
+}
+pub struct MobileRemoteHost {
+    pub id: HostId, pub name: String, pub os: OsKind, pub targets: Vec<MobileTarget>,
+    pub mirror_budget_mb: u32, pub connection: RemoteConnection,
+    pub last_seen_ms: Option<i64>, pub synced_through_ms: Option<i64>, pub next_attempt_ms: Option<i64>,
+    pub attempt: u32, pub dialing: bool, pub waiting_for_network: bool, pub clock_offset_ms: Option<i64>,
+    pub vitals: HostVitals, pub agent_version: Option<String>, pub identity_changed: Option<HostId>,
+}
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MobileEvent { HostsChanged { hosts: Vec<HostRecord> }, RemoteHostsChanged }
+```
+
+**UniFFI surface in `statglass-mobile`.** Every string a method returns is the desktop envelope, `{status:"ok",data}` or `{status:"error",error:CommandError}`. A panic becomes `internal`, through `catch_unwind` in `envelope.rs` for synchronous methods and through `JoinError` for spawned ones.
+
+```rust
+#[derive(uniffi::Object)] pub struct MobileCore { .. }
+#[uniffi::export] impl MobileCore {
+    #[uniffi::constructor] pub fn new(signer: Arc<dyn NativeSigner>, events: Arc<dyn CoreEvents>) -> Arc<Self>;
+    pub fn start(&self, data_dir: String, config_json: String) -> String;   // data: null
+    pub async fn call(&self, method: String, args_json: String) -> String;  // MobileCall; "" or "null" = no args
+    pub async fn quiesce(&self) -> String;                                  // data: null; resolves after mirror writes commit
+    pub fn resume(&self) -> String;                                         // data: null; returns at once
+    pub fn path_changed(&self, path: NetworkPath) -> String;                // data: null
+}
+#[uniffi::export] pub fn version() -> String;                               // envelope of BuildInfo { version, protocol_min, protocol_max }
+
+#[uniffi::export(with_foreign)] pub trait NativeSigner: Send + Sync {
+    fn public_key(&self) -> Vec<u8>;                                         // SEC1 uncompressed P-256, 65 bytes
+    fn sign(&self, data: Vec<u8>) -> Result<Vec<u8>, NativeSignerError>;     // ECDSA P-256 SHA-256, ASN.1 DER
+}
+#[derive(uniffi::Error)] pub enum NativeSignerError { Unavailable { message }, Refused { message }, Unexpected { message } }
+#[uniffi::export(with_foreign)] pub trait CoreEvents: Send + Sync {
+    fn live(&self, stream: u32, message_json: String) -> bool;               // LiveMsg JSON; false = listener gone
+    fn event(&self, event_json: String);                                     // MobileEvent JSON
+}
+#[derive(uniffi::Record)] pub struct NetworkPath { pub satisfied: bool, pub expensive: bool, pub constrained: bool }
+```
+
+`MobileCore::call` answers `BuildInfo`, `SetHosts`, `SetDataPolicy` and `AuthorizedKeyLine` itself and routes every other call to `Sessions::call`. `start` builds a multi-thread runtime named `statglass-core` on first use.
+
+**The seam between lanes a and d** (`control.rs`, scaffold-owned):
+
+```rust
+pub(crate) trait SessionControl: Send + Sync {
+    fn sources(&self) -> Vec<Arc<RemoteSource>>;   // the open host (one with a live stream) first
+    fn set_sync_policy(&self, policy: SyncPolicy);  // running sources and later ones
+    fn network_changed(&self, net: LocalNetwork);
+}
+```
+
+Lane a implements it on `Sessions`. Lane d calls it from `Lifecycle`, and its tests use a fake that holds real sources. Lane d removes the `#[expect(dead_code)]` on the trait.
+
+**Stub files**
+
+Lane a, `sessions.rs`. Every stub returns `CommandError::Internal`.
+
+```rust
+pub(crate) struct Sessions { .. }
+impl Sessions {
+    pub(crate) fn new(events: Arc<dyn CoreEvents>) -> Self;
+    pub(crate) fn start(&self, runtime: Handle, data_dir: PathBuf, config: MobileConfig,
+                        signer: Arc<dyn statglass_ssh::Signer>, sync: SyncPolicy) -> Result<(), CommandError>;
+    pub(crate) fn set_hosts(&self, hosts: Vec<MobileHost>, sync: SyncPolicy) -> Result<(), CommandError>;
+    pub(crate) async fn call(&self, call: MobileCall) -> Result<serde_json::Value, CommandError>;
+}
+impl SessionControl for Sessions { .. }
+```
+
+Lane d, `lifecycle.rs`, `policy.rs` and `signer.rs`:
+
+```rust
+pub(crate) struct Lifecycle { .. }
+impl Lifecycle {
+    pub(crate) fn new() -> Self;
+    pub(crate) fn sync_policy(&self) -> SyncPolicy;
+    pub(crate) fn quiesce(&self, sessions: &dyn SessionControl) -> BoxFuture<'static, ()>;
+    pub(crate) fn resume(&self, sessions: &dyn SessionControl);
+    pub(crate) fn path_changed(&self, sessions: &dyn SessionControl, path: NetworkPath);
+    pub(crate) fn set_data_policy(&self, sessions: &dyn SessionControl, data: DataPolicy);
+}
+pub(crate) fn sync_policy(path: Option<NetworkPath>, data: DataPolicy) -> SyncPolicy;   // stub: Full
+pub(crate) fn host_budget_mb(hosts: usize) -> u32;                                      // stub: 25
+pub(crate) struct NativeSignerAdapter { .. }   // impl statglass_ssh::Signer
+impl NativeSignerAdapter { pub(crate) fn new(native: Arc<dyn NativeSigner>) -> Self; }
+pub(crate) fn authorized_key_line(native: &dyn NativeSigner, comment: &str) -> Result<String, CommandError>;
+```
+
+**statglass-ssh.** The scaffold implements this one fully and tests it:
+
+```rust
+pub fn authorized_key_line(public_sec1: &[u8], comment: &str) -> Result<String, SignerError>;
+```
+
+It produces `ecdsa-sha2-nistp256 <base64> <comment>`, and a point that is not 65-byte uncompressed P-256 gives `Invalid`.
+
+**Native module** (`apps/mobile/modules/statglass-native/`)
+
+- `expo-module.config.json` declares `StatglassNativeModule` for Apple.
+- `ios/StatglassNative.podspec` depends on ExpoModulesCore, vendors `StatglassCore.xcframework`, compiles `**/*.swift` and targets iOS 16.
+- `src/StatglassNative.types.ts`, scaffold-owned:
+
+```ts
+interface LivePayload { stream: number; message: string }        // message: LiveMsg JSON
+interface CoreEventPayload { event: string }                      // event: MobileEvent JSON
+type StatglassNativeEvents = { onLive(p: LivePayload): void; onCoreEvent(p: CoreEventPayload): void };
+interface StatglassNativeModule extends NativeModule<StatglassNativeEvents> {
+  version(): string;                                               // the Rust version() envelope
+  start(configJson: string): Promise<string>;                      // Swift supplies data_dir
+  call(method: string, argsJson: string): Promise<string>;
+  setSnapshotCover(enabled: boolean): void;
+}
+type NativeModuleErrorKind = "keychain" | "secureEnclave" | "camera" | "localNetwork";
+interface NativeModuleError { kind: NativeModuleErrorKind; osStatus: number | null; message: string }
+```
+
+- Stubs lane b fills in:
+  - `src/StatglassNativeModule.ts`: `getStatglassNative(): StatglassNativeModule | null`. This one is already real: a cached `requireOptionalNativeModule`, which returns null in Jest and Expo Go.
+  - `src/native-error.ts`: `toNativeModuleError(error: unknown): NativeModuleError | null`
+  - `ios/StatglassNativeModule.swift`: `Name("StatglassNative")`, `Events("onLive","onCoreEvent")`, `Function version`, `AsyncFunction start` and `call`, and `Function setSnapshotCover`
+  - `ios/PhoneKey.swift`:
+    - `enum NativeFailure { keychain(osStatus:message:), secureEnclave(osStatus:message:), localNetwork(message:) }`
+    - `protocol PhoneKey { publicKey() throws -> Data; sign(_:) throws -> Data }`
+    - `SecureEnclaveKey`, `SimulatorKey`, and `currentPhoneKey()`, which chooses between them with `#if targetEnvironment(simulator)`
+  - `ios/AppLifecycle.swift`: `AppLifecycle { start(); stop() }` and `SnapshotCover { enabled; start(); stop() }`
+- `scripts/mobile/native-check.sh` is a stub that exits 1. `make mobile-native-check` runs it.
+
+**Transport skeleton** (`apps/mobile/src/transport/`). Every stub throws "not implemented (phase 4 lane c)".
+
+```ts
+interface NativeTransport extends PhoneTransport {
+  setHosts(hosts: MobileHost[]): Promise<CommandResult<null>>;
+  setDataPolicy(policy: DataPolicy): Promise<CommandResult<null>>;
+  authorizedKeyLine(comment: string): Promise<CommandResult<string>>;
+  buildInfo(): Promise<CommandResult<BuildInfo>>;
+  dispose(): void;
+}
+startNativeTransport(native: StatglassNativeModule, config: MobileConfig): Promise<CommandResult<NativeTransport>>;
+createNativeTransport(native: StatglassNativeModule): NativeTransport;
+isNativeTransport(t: PhoneTransport | null): t is NativeTransport;            // real
+parseEnvelope<T>(json: string): CommandResult<T>;
+createLiveStreams(native): LiveStreams;   // { open(host, onMsg, options?): Promise<LiveSubscription>; dispose(): void }
+toRemoteHostRecord(host: MobileRemoteHost): RemoteHostRecord;
+nativeBuildInfo(native: StatglassNativeModule | null): BuildInfo | null;
+protocolRangeText(info: BuildInfo): string;
+NativeCoreBridge(): null;                 // mounted in _layout.tsx; returns null until lane c
+```
+
+- `apps/mobile/src/app/debug.tsx` re-exports `DebugScreen` from `@/debug/debug-screen`, which is a stub that says "Not built yet". The route is registered in `_layout.tsx` as `debug`, so the deep link is `statglass://debug`.
+- `@native/*` maps to `apps/mobile/modules/*` in tsconfig, Metro and Jest, with a resolver test. It exists because Biome bans `../` imports in the app.
+
+Test cases:
+
+**Facade core (scaffold, passing)**
+- An unknown method gives `invalid_argument`.
+- A unit call parses with `""` or `"null"` args, and a call with args parses.
+- A panic inside `envelope::run` is an `internal` error envelope.
+- A `CommandError` keeps its kind in the envelope.
+- `version()` returns the envelope with the protocol range.
+- `authorized_key_line` on a bare point equals `SoftwareSigner`'s line and rejects malformed points.
+
+**Phase gate**
+- The demo above, recorded as simulator screenshots of the debug screen before and after Connect, plus the About screen.
+- `make mobile-native-check`, `make mobile-check`, `make mobile-rust-check`, `cargo test -p statglass-mobile` and `make architecture-check` pass.
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | L | crates/statglass-mobile/src/ | contracts | | gpt-6.2-sol | pending | | |
-| b | M | apps/mobile/modules/statglass-native/ | contracts | | gpt-6.2-sol | pending | | |
-| c | M | apps/mobile/src/transport/ | contracts | | gpt-6.2-sol | pending | | |
+| a | L | crates/statglass-mobile/src/sessions.rs, crates/statglass-mobile/src/sessions/, crates/statglass-mobile/tests/, scripts/ssh-docker/run.sh | contracts, RFC 4.2, src-tauri/src/remote/registration.rs, src-tauri/src/hosts.rs | sessions unit tests over a fake dialer; ignored Docker full-session test | gpt-6.2-sol | pending | | `cargo test -p statglass-mobile` passes with the lane a cases; `make ssh-docker-test` passes `mobile_session`; `make mobile-rust-check` and `make rust-check` clean |
+| b | M | apps/mobile/modules/statglass-native/ios/StatglassNativeModule.swift, apps/mobile/modules/statglass-native/ios/PhoneKey.swift, apps/mobile/modules/statglass-native/ios/AppLifecycle.swift, apps/mobile/modules/statglass-native/ios/StatglassNative.podspec, apps/mobile/modules/statglass-native/src/native-error.ts, apps/mobile/modules/statglass-native/src/StatglassNativeModule.ts, scripts/mobile/native-check.sh, apps/mobile/src/lock/snapshot-cover.ts, apps/mobile/src/lock/app-lock-gate.tsx, apps/mobile/test/native/ | contracts, RFC 3.8, 4.5, .claude/rules/mobile/native-module.md | native error parsing and snapshot-cover jest tests; simulator build | gpt-6.2-sol | pending | | `make mobile-native-check` passes and leaves no `apps/mobile/ios`; `make mobile-check` passes; simulator screenshot of the app switcher with the lock on |
+| c | M | apps/mobile/src/transport/envelope.ts, apps/mobile/src/transport/live-streams.ts, apps/mobile/src/transport/remote-hosts.ts, apps/mobile/src/transport/native-transport.ts, apps/mobile/src/transport/build-info.ts, apps/mobile/src/transport/native-core-bridge.tsx, apps/mobile/src/debug/, apps/mobile/src/app/settings/about.tsx, apps/mobile/test/transport/, apps/mobile/test/debug/, apps/mobile/test/settings/about.test.tsx | contracts, apps/mobile/src/data/seam.ts, packages/core/src/mock-transport.ts | transport jest tests over a fake native module; About and debug screen tests | gpt-6.2-sol | pending | | `make mobile-check` passes with the lane c cases; About and debug screens checked against `plan/design-system.md` and the settings screens, differences named |
+| d | M | crates/statglass-mobile/src/lifecycle.rs, crates/statglass-mobile/src/lifecycle/, crates/statglass-mobile/src/policy.rs, crates/statglass-mobile/src/signer.rs, crates/statglass-mobile/src/control.rs | contracts, RFC 4.4, 4.5, crates/statglass-session/src/source/quiesce.rs | lifecycle tests under paused time over a fake `SessionControl`; policy and signer unit tests | gpt-6.2-sol | pending | | `cargo test -p statglass-mobile` passes with the lane d cases; `make mobile-rust-check` and `make rust-check` clean |
+
+Notes on the table:
+- `control.rs` is listed under lane d only so that it can delete the trait's `#[expect(dead_code)]`. Lane d does not change the trait's methods.
+- Lane a's `Sessions` implements the trait exactly as it is in the scaffold.
+- Lane a is the largest lane because the session registry is one capability that cannot be split further: hosts, sources, mirrors, live sinks and the call mapping share one map. It stays within about twice lane d's size.
+- Lane b owns `app-lock-gate.tsx`; phase 6 lane a, which owned it before, has merged.
+- Lane c owns `about.tsx`, which comes out of phase 6 lane a's `settings/` the same way.
+- No phase 4 path overlaps phase 5's running lanes. Phase 5 lane c owns `packages/core/src/remote-connection*.ts`; lane c here reads them and does not edit them.
+
+#### Lane a brief
+
+- **Goal:** Make the core run real sessions. Each host gets a `RemoteSource` over the russh dialer, a phone-policy mirror, and live streams pushed through `CoreEvents`, and the phone's host, live and history calls are answered from them. This is everything the debug screen needs to show live CPU from this Mac.
+- **Interface:** the scaffold's `Sessions` (`new`, `start`, `set_hosts`, `call`) and `impl SessionControl for Sessions`. Extract into `sessions/` as it grows. A likely split is `sessions/{registry,endpoint,live,commands,phone_id}.rs`, each with its tests in `sessions/tests/`.
+- **Behavior:**
+  - **`start`**
+    - Creates `data_dir` with mode 0700.
+    - Loads or creates the phone's own `HostId` in `data_dir/phone-id`. A file that does not parse is an error and is never replaced silently.
+    - Then calls `set_hosts(config.hosts, sync)`.
+    - A second `start` gives `invalid_argument`.
+  - **`set_hosts`**
+    - Hosts no longer listed: stop the source, drop its live streams, and keep the mirror files on disk. Deleting them belongs to forgetting a host in phase 7.
+    - New hosts:
+      - Open `History` at `data_dir/mirrors/<id>/` (mode 0700) and `register_host`.
+      - Build `Mirror::with_policy(history.store(), id, MirrorPolicy::phone(crate::policy::host_budget_mb(hosts.len())))`.
+      - Build the source with `RemoteSource::with_options(record, phone_id, Arc::new(RusshDialer::new(signer)), endpoint, on_status, Some(mirror), SourceOptions { runtime: Some(handle), sync, ..Default::default() })`.
+    - A running host whose budget share changed is rebuilt with the new budget, because `Mirror`'s budget is fixed at construction.
+      - `set_hosts` is synchronous and does not wait for the rebuild. It spawns a task on the core runtime that awaits the old source's `quiesce()`, stops it, then opens the new mirror and source on the same directory.
+      - That way only one mirror writes a host's SQLite file at a time, and no write is cut off.
+      - A call for that host during the rebuild gets the old source's answer, or `unknown_host` in the instant between the two sources.
+    - Afterwards, emit `MobileEvent::HostsChanged` and `RemoteHostsChanged`.
+    - An invalid host gives `invalid_argument` and changes nothing. Invalid means no targets, an empty user, or a duplicate id.
+  - **Endpoint mapping**
+    - `MobileHost` maps to the session `Endpoint`: targets in order, user, port, and the remote command from `MobileCommand`.
+    - `MacHelper` runs the helper path, `Agent` runs the agent's `serve` command with `system` and `socket`, and `Restricted` sends no command.
+    - `host_keys` are passed to the dialer's host-key check.
+  - **Status**
+    - `on_status` keeps the latest `ConnectionStatus` per host.
+    - It emits `RemoteHostsChanged` only when the `MobileRemoteHost` it maps to changes. Live frames call it at 1 Hz, so a frame that changes nothing emits nothing.
+  - **`call`**
+    - `ListHosts` returns `HostRecord`s.
+    - `ListRemoteHosts` returns `MobileRemoteHost`s, built with `connection_status`, `host_vitals` and the mirror's `sync_watermark`.
+    - `GetHost` and `GetCapabilities` read the source's record and capabilities. An unknown host gives `unknown_host`.
+    - `HostVitals` and `RetryRemoteHost` call the source.
+    - `SetHostsRecentInterest { on }` calls `set_recent_interest` on every source.
+    - `QueryHistory` and `QueryEvents` go through `statglass_ipc` on the host's mirror history with `MirrorPolicy::phone`'s `auto_choice`. The blocking SQLite read runs in `spawn_blocking`.
+  - **Live**
+    - `SubscribeLive(req)` registers a `LiveSink` whose `send` calls `events.live(req.stream, json)` and whose `id()` is `req.stream`. It goes through a `LiveRegistry` with an `impl LiveFeed` for the phone's host entry, following `src-tauri/src/hosts.rs`.
+    - When `live` returns false, the stream ends and its registry entry goes.
+    - `UnsubscribeLive { stream }` ends that stream. An unknown stream is a no-op, not an error.
+    - The source with a live stream is the open host, which `SessionControl::sources()` lists first.
+  - **`SessionControl`** forwards `set_sync_policy` and `network_changed` (`network_changed_with`) to every source. `set_sync_policy` also records the policy for sources started later.
+  - **Docker test**
+    - Add `crates/statglass-mobile/tests/mobile_session.rs`, `#[ignore]`d, plus its `run.sh` entry.
+    - With `SoftwareSigner` and the key `run.sh` installs, `Sessions::start` against the Docker agent receives a live frame with `cpu.usage` through a recording `CoreEvents`.
+    - `QueryHistory` on the mirror then returns M1 rows after sync.
+- **Test cases:**
+  1. `start` creates `phone-id` once. A second core on the same directory reads the same id, and a corrupt `phone-id` gives an error and leaves the file as it was.
+  2. `set_hosts` with two hosts gives each a mirror with a 25 MB budget. Going to 11 hosts rebuilds every mirror at `250 / 11 = 22` MB, and each old source was quiesced before it stopped.
+  3. Removing a host stops its source, and a later `GetHost` for it gives `unknown_host`. Its mirror directory still exists.
+  4. An invalid host list (an empty user, or a duplicate id) gives `invalid_argument`, and the running hosts are unchanged.
+  5. `MobileCommand::{Restricted, MacHelper, Agent}` map to the endpoint commands the desktop uses for the same host kinds. This is a fixture comparison.
+  6. `SubscribeLive` on a host whose fake dialer streams frames calls `CoreEvents::live(stream, json)` in order, and the JSON decodes as `LiveMsg`.
+  7. `CoreEvents::live` returning false ends the stream: no further calls, and the registry entry is removed.
+  8. `UnsubscribeLive` on an unknown stream returns `null`.
+  9. `ListRemoteHosts` JSON matches `MobileRemoteHost` for a fixture status. Two `on_status` calls with the same status emit one `RemoteHostsChanged`.
+  10. `QueryHistory` on a seeded phone mirror resolves `auto` 24 h to M1 and 7 d to M15.
+  11. `SessionControl::sources()` lists the host with a live stream first, and `set_sync_policy(Off)` reaches a source started after the call.
+  12. The Docker test (`mobile_session`) streams `cpu.usage` and syncs M1.
+- **Decisions already made:**
+  - One `History` per host under `mirrors/<id>/`, as on the desktop.
+  - The phone id is a file in `data_dir`.
+  - Budgets are recomputed on every `set_hosts`, using lane d's `host_budget_mb`.
+  - Removing a host never deletes its mirror in this phase.
+  - There is no concurrency cap; the cap of 8 sessions and rotation are phase 7.
+- **Out of scope:**
+  - Lifecycle and path handling, the sync policy rule, and the signer (lane d).
+  - Swift (lane b) and TypeScript (lane c).
+  - Pairing and restricted-key behavior on hosts (phase 5).
+- **Done when:** the conditions in the table are met.
+
+#### Lane b brief
+
+- **Goal:** Make the native module real. Swift holds the phone's key and the Rust core, forwards calls and events unread, drives backgrounding, foregrounding and path changes, and covers the app-switcher snapshot when the app lock is on. A check proves it all builds for the simulator.
+- **Interface:** the scaffold's `StatglassNativeModule` TS interface and Swift stubs, `toNativeModuleError`, and `scripts/mobile/native-check.sh`. This lane adds `apps/mobile/src/lock/snapshot-cover.ts`, exporting `useSnapshotCover(enabled: boolean): void`.
+- **Behavior:**
+  - **Module lifecycle.** On `OnCreate`, build `MobileCore(signer: PhoneKeySigner(currentPhoneKey()), events: EventsBridge(module))`.
+    - `PhoneKeySigner` maps a `NativeFailure` to `NativeSignerError`: `keychain` and `secureEnclave` become `Unavailable` with the OSStatus in the message.
+    - `EventsBridge.live` sends `onLive { stream, message }` and returns false once the module has no listeners. `event` sends `onCoreEvent { event }`.
+  - **Calls**
+    - `start(configJson)` resolves `data_dir` to `Application Support/statglass` with file protection `completeUntilFirstUserAuthentication` and excluded from backup, then calls `core.start`.
+    - `call` forwards to `core.call`.
+    - `version` forwards to the UniFFI `version()`.
+    - Swift never parses the JSON it carries.
+  - **Keys**
+    - `SecureEnclaveKey` creates or loads a P-256 key with the tag `app.statglass.phone-key` (`kSecAttrTokenIDSecureEnclave`, `privateKeyUsage`, `ThisDeviceOnly`).
+    - `SimulatorKey` creates or loads a software P-256 key in the Keychain under the same tag with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+    - `publicKey()` is `SecKeyCopyExternalRepresentation` of the public key (65 bytes). `sign` is `SecKeyCreateSignature(.ecdsaSignatureMessageX962SHA256)`.
+  - **Errors.** A failure that reaches JS rejects with Expo code `ERR_STATGLASS_<KIND>`, where KIND is one of `KEYCHAIN`, `SECURE_ENCLAVE`, `CAMERA` or `LOCAL_NETWORK`, and the message `"<message> (OSStatus <n>)"`. `toNativeModuleError` turns that into `NativeModuleError`. Anything else gives `null`.
+  - **`AppLifecycle`**
+    - On `didEnterBackground`: `beginBackgroundTask`, then `await core.quiesce()`, then `endBackgroundTask`. The expiration handler also ends the task.
+    - On `willEnterForeground`: `core.resume()`.
+    - `NWPathMonitor` on a private queue calls `core.pathChanged(NetworkPath(satisfied:expensive:constrained:))` on every update, including the first.
+    - `start` runs from `OnCreate` and `stop` from `OnDestroy`.
+  - **`SnapshotCover`**
+    - When `enabled`, `willResignActive` puts a `UIVisualEffectView` (system material) over every foreground window scene before UIKit takes the snapshot. `didBecomeActive` removes it.
+    - `setSnapshotCover(enabled)` sets the flag.
+    - `useSnapshotCover(enabled)` calls `getStatglassNative()?.setSnapshotCover(enabled)` when `enabled` changes, and it is mounted in `app-lock-gate.tsx` with the lock setting.
+    - The JS blur in the gate stays for the in-app lock screen.
+    - RFC 3.8: the cover applies only while the app lock is on.
+  - **`native-check.sh`**
+    - Builds with `scripts/mobile/build-rust-ios.sh`, then runs `expo prebuild --platform ios --no-install` into `apps/mobile/ios`, then `pod install`, then `xcodebuild -workspace … -scheme StatGlass -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build`.
+    - A `trap` removes `apps/mobile/ios` on every exit, and the script fails if `apps/mobile/ios` already exists when it starts.
+    - It prints which step failed.
+- **Test cases:**
+  1. `toNativeModuleError` on a rejection coded `ERR_STATGLASS_KEYCHAIN` with `"item not found (OSStatus -25300)"` gives `{ kind: "keychain", osStatus: -25300, message: "item not found" }`.
+  2. Each of the four kinds parses, and `osStatus` is `null` when the message carries none.
+  3. A plain `Error`, a string, `null`, or an unknown code gives `null`.
+  4. `useSnapshotCover(true)` calls `setSnapshotCover(true)` once. Toggling it calls it with `false`, and re-rendering with the same value does not call it again. Tested with a fake module through Jest's module mock of `@native/statglass-native`.
+  5. With no native module (`getStatglassNative()` null), `useSnapshotCover` does nothing and does not throw.
+  6. `AppLockGate` with the lock on calls `setSnapshotCover(true)`, and with it off calls `setSnapshotCover(false)`. The existing app-lock tests still pass.
+  7. `make mobile-native-check` builds, and a pre-existing `apps/mobile/ios` makes it fail without deleting that directory.
+  8. Simulator check by hand: with the lock on, the app switcher shows the cover. With the lock off, it shows the app.
+- **Decisions already made:**
+  - A Secure Enclave key on a device and a Keychain `ThisDeviceOnly` software key in the simulator (RFC 4.5).
+  - Swift is plumbing only.
+  - The snapshot cover is native and lock-gated.
+  - Quiesce runs inside a background task.
+  - Native module tests are JS tests over the module boundary plus the simulator build. There is no XCTest target in this phase.
+- **Out of scope:**
+  - What the core does on quiesce, resume or a path change (lane d).
+  - The transport and screens (lane c).
+  - Camera and local-network permissions (phase 7; only the error kinds exist now).
+- **Done when:** the conditions in the table are met.
+
+#### Lane c brief
+
+- **Goal:** Make the phone's real transport. It implements the `PhoneTransport` seam over the native module so the existing screens could read a live host. On top of that, the debug screen runs the demo, the About screen shows the core's protocol range, and phone settings reach the core.
+- **Interface:** the scaffold's transport skeleton (`native-transport.ts`, `envelope.ts`, `live-streams.ts`, `remote-hosts.ts`, `build-info.ts`, `native-core-bridge.tsx`) and `DebugScreen`.
+- **Behavior:**
+  - **`parseEnvelope`** returns the `CommandResult` as is. Invalid JSON, or JSON without `status`, gives `{ status: "error", error: { kind: "internal", message } }` naming what arrived (its first 200 characters).
+  - **`startNativeTransport`** calls `native.start(JSON.stringify(config))`. A rejection the native module recognizes comes back as the thrown `NativeModuleError`, through `toNativeModuleError`; anything else is rethrown.
+  - **`createNativeTransport`**
+    - Each seam method calls `native.call(method, JSON.stringify(args))` with the snake_case `MobileCall` method name, then `parseEnvelope`.
+    - `listRemoteHosts` maps each `MobileRemoteHost` through `toRemoteHostRecord`.
+    - `onHostsChanged` and `onRemoteHostsChanged` subscribe to `onCoreEvent`. `HostsChanged` passes its hosts. `RemoteHostsChanged` refetches `listRemoteHosts` and passes the result, and a failed refetch is passed as the error result, not dropped.
+    - `dispose` removes every listener and ends every stream.
+  - **`createLiveStreams`**
+    - Stream ids start at 1 and are never reused within one transport.
+    - `open` registers the callback before calling `subscribe_live`, so the first message is never lost.
+    - An `onLive` for an unknown stream is ignored.
+    - `unsubscribe` sends `unsubscribe_live` and removes the callback even when the call fails.
+    - A failed `subscribe_live` rejects with the error envelope's `CommandError` and leaves no callback behind.
+  - **`toRemoteHostRecord`** fills the fields only a Mac controller has with their "none" values:
+    - `rr: null`, `update: null`, `last_update_failure: null` and `agent_update: { kind: "unknown" }`
+    - `config` built from `name`, `targets` and `mirror_budget_mb`
+    - Every other field is copied.
+  - **About**
+    - `nativeBuildInfo` parses `native.version()` and returns `BuildInfo`, or `null` without a module or on an error envelope.
+    - `protocolRangeText` gives `"3"` when min equals max and `"3 to 5"` otherwise.
+    - `about.tsx` adds "Core" (the version) and "Protocol" rows in the existing row style. Without a module, both read "Unavailable".
+  - **`NativeCoreBridge`**: while the chosen transport is native (`isNativeTransport`), it calls `setDataPolicy({ sync_on_cellular })` from phone settings on mount and on every change, and does nothing on the demo transport.
+    - Phone settings have no cellular toggle yet, so it reads `false` until phase 7 adds the toggle.
+  - **`DebugScreen`**
+    - A form with address, user, port, route and helper path, prefilled from `EXPO_PUBLIC_STATGLASS_DEBUG_{HOST,USER,PORT,HELPER}`.
+    - It shows the `authorized_keys` line as selectable `Text`. expo-clipboard is not a dependency, and this phase adds none.
+    - Connect starts the core with one `MacHelper` host, opens a live stream and shows the connection state and `cpu.usage`.
+    - With no native module, it says the debug screen needs a development build.
+    - It uses the shared `Text` roles and tokens. It is a developer screen and is never linked from the app's navigation.
+- **Test cases:**
+  1. `parseEnvelope` returns ok and error envelopes unchanged, and turns `"not json"` and `{"x":1}` into `internal` errors that quote the input.
+  2. `getHost(id)` sends `("get_host", '{"host":"<id>"}')`, and `listHosts()` sends `("list_hosts", "null")`. Every seam method's method name is checked against the `MobileCall` union with a type-level test, so a renamed variant fails `tsc`.
+  3. `subscribeLive` delivers two `onLive` payloads for its stream in order, ignores another stream's payload, and stops after `unsubscribe`.
+  4. Two subscriptions get different stream ids, and an unsubscribed id is not reused.
+  5. A `subscribe_live` error envelope rejects with that `CommandError` and leaves no callback.
+  6. `toRemoteHostRecord` fills the desktop-only fields with their none values for a fixture, and the rest equals the input. The output type-checks as `RemoteHostRecord`.
+  7. `RemoteHostsChanged` refetches and passes the hosts, and a failed refetch passes the error.
+  8. `dispose` removes the `onLive` and `onCoreEvent` listeners (the fake module's listener count goes to 0).
+  9. `nativeBuildInfo(null)` is `null`. `protocolRangeText` gives `"3"` and `"3 to 5"`.
+  10. The About screen shows the core version and "3 to 5" with a fake module, and "Unavailable" without one.
+  11. `NativeCoreBridge` calls `setDataPolicy` once on mount with a native transport and never with the demo transport.
+  12. `DebugScreen` without a module shows the development-build message, and with a fake module shows the key line and, after Connect, the CPU value from a pushed frame.
+- **Decisions already made:**
+  - `RemoteHostRecord` stays the shape the screens read; the facade returns `MobileRemoteHost`.
+  - Method names are `MobileCall`'s snake_case tags.
+  - Stream ids are chosen in JS.
+  - The debug screen is a hidden route reached by deep link.
+  - Choosing the native transport for paired hosts is phase 7; `PhoneTransportProvider` is unchanged.
+- **Out of scope:**
+  - Swift and the native error parser (lane b).
+  - Rust (lanes a and d).
+  - `packages/core/src/remote-connection*.ts` (phase 5 lane c).
+  - Pairing screens (phase 7).
+- **Done when:** the conditions in the table are met.
+
+#### Lane d brief
+
+- **Goal:** Make the core behave like a phone app. It quiesces on background and resumes on foreground, picks the sync policy from the network path and the cellular setting, keeps the phone's mirrors within 250 MB in total, and signs with the native key.
+- **Interface:** the scaffold's `Lifecycle`, `policy::{sync_policy, host_budget_mb}`, `NativeSignerAdapter` and `signer::authorized_key_line`, all over `SessionControl`. Extract lifecycle state into `lifecycle/` if needed.
+- **Behavior:**
+  - **`sync_policy(path, data)`**, the cellular SyncPolicy:
+
+    | Path | `sync_on_cellular` | SyncPolicy |
+    | --- | --- | --- |
+    | `None`, or not expensive and not constrained | any | `Full` |
+    | `expensive`, not constrained | true | `SummaryOnly` (M15 only) |
+    | `expensive` | false | `Off` |
+    | `constrained` (Low Data Mode) | any | `Off` |
+    | not `satisfied` | any | unchanged from the last policy; the dialer finds no route anyway |
+
+  - **`host_budget_mb(n)`** is `min(PHONE_MIRROR_HOST_MB, PHONE_MIRROR_TOTAL_MB / n)` for `n >= 1`, and `PHONE_MIRROR_HOST_MB` for 0.
+  - **`Lifecycle`** keeps the last `NetworkPath`, `DataPolicy`, the policy it derived, and a backgrounded flag, under `statglass_schema::lock`.
+    - `path_changed` and `set_data_policy` re-derive the policy and call `set_sync_policy` only when it changes.
+    - `path_changed` also calls `network_changed(LocalNetwork { online: path.satisfied, ..statglass_session::network::probe() })`.
+    - `quiesce` marks the core backgrounded, calls `quiesce()` on every source, and returns a future that resolves when all of them have. It resolves at once with no sources.
+    - `resume` clears the flag and calls `resume()` on each source in `sources()` order, so the open host dials first.
+    - A second `resume`, or a `resume` without a `quiesce`, is harmless; `RemoteSource::resume` is idempotent.
+    - A `quiesce` while already backgrounded quiesces again, which covers sources started since.
+  - **`NativeSignerAdapter`**
+    - `new` reads `native.public_key()` once.
+    - `sign` calls `native.sign` in `spawn_blocking`, because Swift may block on the Secure Enclave.
+    - It maps `Unavailable` and `Unexpected` to `SignerError::Unavailable` and `Refused` to `SignerError::Refused`, keeping the message.
+  - **`authorized_key_line`** is `statglass_ssh::authorized_key_line(&native.public_key(), comment)`, with `Invalid` mapped to `CommandError::Internal`.
+- **Test cases:**
+  1. `sync_policy` returns the value in the table for every combination of path (`None`, or each of `satisfied`, `expensive` and `constrained` on or off) and `sync_on_cellular`.
+  2. `host_budget_mb` gives 25 for 0, 1 and 10 hosts, 22 for 11 and 1 for 250. For every n from 1 to 300, `n * host_budget_mb(n) <= 250`, and the result is never 0 for n up to 250.
+  3. Under paused time, with a fake `SessionControl` holding real `RemoteSource`s over a failing fake dialer: `quiesce` resolves, and no dial happens while time advances 10 minutes.
+  4. After `resume`, each source dials once at once, with the open host's dial first.
+  5. `resume` twice dials once per source. `resume` with no `quiesce` before it does not drop a connected source.
+  6. `quiesce` with no sources resolves at once. Ordering against an in-flight ingest belongs to `RemoteSource::quiesce` and is already covered by `statglass-session`'s `source/phone_tests.rs`; its fake host is crate-private, so this lane does not test it again.
+  7. On an expensive path with `sync_on_cellular` off, `set_sync_policy(Off)` is applied. Turning the setting on applies `SummaryOnly`, and moving to Wi-Fi applies `Full`. Repeating the same path calls `set_sync_policy` once.
+  8. `path_changed` calls `network_changed` with `online` equal to `satisfied`.
+  9. `NativeSignerAdapter` over a fake native signer wrapping `SoftwareSigner` produces a DER signature that verifies with the public key. Each `NativeSignerError` maps to the `SignerError` variant above, keeping the message.
+  10. `authorized_key_line` matches `SoftwareSigner::authorized_key_line` for the same key, and a 64-byte public key gives `internal`.
+- **Decisions already made:**
+  - The cellular SyncPolicy is the table above; `SummaryOnly` means M15 only.
+  - The total is split evenly across hosts (RFC 5: 25 MB per host, 250 MB in total).
+  - The open host resumes first.
+  - Live data on cellular (`liveOnCellular`) is not restricted in this phase.
+- **Out of scope:**
+  - How sessions are kept and rebuilt (lane a; it calls `host_budget_mb`).
+  - The Swift notifications and `NWPathMonitor` (lane b).
+  - RFC 4.4's 7-day cellular cap on the first M15 sync, which needs a session floor override (follow-up).
+  - The concurrency cap and rotation (phase 7).
+- **Done when:** the conditions in the table are met.
 
 ### Phase 5: restricted sessions and pairing on hosts
 
@@ -1866,3 +2357,4 @@ None of these files is owned by a lane in phase 3, 5, 6 or 7:
 - 2026-11-24: lane 5b q3: granted a relay-generated attempt ID on ControlRequest::PairStart (local socket only; phone CBOR unchanged) so a timed-out PairStart retry gets the committed result while a second connection still gets Used; lane 5c must call the attempt-aware entry point. Granted a getifaddrs accessor in statglass-session network.rs, reached by the agent through statglass-remote pairing.rs (no new crate edge), replacing hostname -I. Tokio process in statglass-ssh dev-deps. Linux discovery assumes the stock sshd port and /etc/ssh host keys (follow-up: custom sshd config).
 - 2026-11-24: lane 5a q2: the helper expired-nonce regression (pair refuses an expired nonce even while sshd's local-time expiry still admits the line) moves to lane 5c, since pair::run is a stub until lane b lands.
 - 2026-11-24: phase 6 simulator QA (iPhone 18 Pro, demo, light and dark): host detail ticks at 1 Hz; an offline remote holds dimmed last readings; dark host screen matches the desktop popover in card order, accents, headlines and legends (difference left: phone sub-values regular vs desktop semibold, type differences allowed by RFC 4.6). Found: the hosts list shows identical static vitals for every demo host (mock hosts-dashboard fixture, desktop same); list says 'Offline' where detail says 'Offline since'; a gap between seeded history and live start in demo charts; demo has no path to pairing or out of demo, so the pairing back-out check moves to phase 7 QA. Reduce Motion / Low Power toggles not drivable in the simulator tool; covered by motion.test.tsx.
+- 2026-11-24: phase 4 scaffold (36dcbc94) and lane briefs written. Four lanes: the Rust facade is split along a scaffold-owned `SessionControl` trait into sessions (a) and lifecycle, policy and signer (d). New edges are statglass-mobile on session, ipc and ssh; the core owns its own tokio runtime, since UniFFI's tokio feature would add async-compat. Facade types live in `statglass_ipc::mobile` so the one specta exporter types them. statglass-ssh gains `authorized_key_line` for a bare SEC1 point. A `@native/*` alias exists because Biome bans `../` in the app. Placement of the cross-cutting items: native snapshot cover in lane b, lock-gated (RFC 3.8); cellular SyncPolicy and the 250 MB total (`min(25, 250 / n)`) in lane d; resume and quiesce, Rust side in lane d and Swift wiring in lane b; the About protocol range in lane c. Deferred: RFC 4.4's 7-day cap on the first M15 sync over cellular (it needs a session floor override), and `liveOnCellular`, the cap of 8 sessions and rotation (all phase 7).
