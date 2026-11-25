@@ -51,8 +51,7 @@ mod txn;
 mod usage;
 mod usage_prune;
 
-pub use discard::HistoryCacheEpoch;
-pub use intern::NET_NEW_NAMES_PER_HOUR;
+pub use {discard::HistoryCacheEpoch, intern::NET_NEW_NAMES_PER_HOUR};
 
 type Reply<T> = mpsc::SyncSender<Result<T>>;
 
