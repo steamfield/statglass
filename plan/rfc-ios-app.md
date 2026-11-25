@@ -1,5 +1,10 @@
 # RFC: StatGlass for iPhone
 
+> **Changed 2026-11-25 (the user's decision, D-152):** the phone no longer mirrors history. The
+> host answers bounded `Query::History` requests and the phone keeps answers in memory only.
+> Sections 3.4, 3.5, 4.4 and 4.5 still describe the mirror; read them with D-152 and
+> `plan/rfc-ios-polish.md` section 6. The body below is unchanged.
+
 Status: Draft, revision 2, 2026-11-22. Revision 2 folds in a ce:devils-advocate architecture
 review against the code (findings cited by file below), the decision that the popover is the
 phone's host screen, and an explicit inventory of what the two apps share. Nothing here is
