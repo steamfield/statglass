@@ -63,6 +63,10 @@ const cardActions: AccessibilityActionInfo[] = [
   { name: "toggleCompact", label: "Toggle compact" },
   { name: "open", label: "Open" },
 ];
+const moveToTopAction: AccessibilityActionInfo = {
+  name: "moveToTop",
+  label: "Move to top",
+};
 
 export const CardStack = memo(function CardStack({
   host,
@@ -150,6 +154,10 @@ export const CardStack = memo(function CardStack({
     });
   }
 
+  function moveToTop(card: PopoverCard) {
+    reorder([card, ...slots.map(slotId).filter((id) => id !== card)]);
+  }
+
   function showMenu(id: string) {
     if (!isHistoryModule(id) || modules[id] !== "on") return;
     const control = controls.get(id);
@@ -167,8 +175,7 @@ export const CardStack = memo(function CardStack({
       (index) => {
         if (index === 0) control.onToggleDensity();
         if (index === 1) control.onOpen();
-        if (index === 2)
-          reorder([id, ...slots.map(slotId).filter((card) => card !== id)]);
+        if (index === 2) moveToTop(id);
       }
     );
   }
@@ -185,7 +192,7 @@ export const CardStack = memo(function CardStack({
         onReorder={reorder}
         onReleaseWithoutMove={showMenu}
         renderItem={({ item, index, reorderAccessibility }) => {
-          const spacing = index === 0 ? "" : "pt-3";
+          const spacing = index === 0 ? "" : "pt-2";
           if (item.kind === "unavailable") {
             return (
               <View className={spacing}>
@@ -196,6 +203,10 @@ export const CardStack = memo(function CardStack({
           const { card } = item;
           const control = controls.get(card);
           if (!control) throw new Error(`Missing controls for ${card}`);
+          const moveActions = reorderAccessibility?.accessibilityActions ?? [];
+          const canMoveToTop = moveActions.some(
+            ({ name }) => name === "moveUp"
+          );
           return (
             <View className={spacing}>
               <LiveCard
@@ -208,13 +219,19 @@ export const CardStack = memo(function CardStack({
                 includeBattery={modules.battery === "on"}
                 accessibilityActions={[
                   ...cardActions,
-                  ...(reorderAccessibility?.accessibilityActions ?? []),
+                  ...moveActions,
+                  ...(canMoveToTop ? [moveToTopAction] : []),
                 ]}
                 onAccessibilityAction={(event) => {
                   const { nativeEvent } = event;
                   if (nativeEvent.actionName === "toggleCompact")
                     control.onToggleDensity();
                   else if (nativeEvent.actionName === "open") control.onOpen();
+                  else if (
+                    nativeEvent.actionName === "moveToTop" &&
+                    canMoveToTop
+                  )
+                    moveToTop(card);
                   else reorderAccessibility?.onAccessibilityAction?.(event);
                 }}
               />
