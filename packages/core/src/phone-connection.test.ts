@@ -1,7 +1,13 @@
 import { PHONE_LAST_SEEN_MS } from "./mock/phone-errors";
 import { createMockTransport } from "./mock-transport";
-import type { PhoneAction, PhoneProblemKind } from "./phone-connection";
-import { hostStatusSummary, phoneProblem } from "./remote-errors";
+import {
+  hostStatusSummary,
+  localNetworkProblem,
+  type PhoneAction,
+  type PhoneProblemKind,
+  type PhoneRemoteHostRecord,
+  phoneProblem,
+} from "./phone-connection";
 
 const cases = [
   [
@@ -48,7 +54,7 @@ const cases = [
   [
     "app-not-running",
     "app_not_running",
-    "StatGlass isn't running on app-not-running",
+    "StatGlass isn’t running on app-not-running",
     "retry",
     /Open StatGlass on app-not-running/,
     "StatGlass isn’t running",
@@ -136,7 +142,7 @@ const cases = [
   [
     "phone-key-unavailable",
     "phone_key_unavailable",
-    "Unlock this iPhone to connect",
+    "This iPhone’s key is unavailable",
     "retry",
     /Re-pair/,
     "iPhone key unavailable",
@@ -182,7 +188,7 @@ const cases = [
   string,
 ])[];
 
-async function fixture(name: string) {
+async function fixture(name: string): Promise<PhoneRemoteHostRecord> {
   const transport = createMockTransport({
     scenarios: ["phone-errors"],
     historyRows: 2,
@@ -203,7 +209,7 @@ it.each(cases)(
   "words the %s state",
   async (name, kind, title, action, recovery, short) => {
     const record = await fixture(name);
-    expect(phoneProblem(record, PHONE_LAST_SEEN_MS)).toEqual({
+    expect(phoneProblem(record)).toEqual({
       kind,
       title,
       action,
@@ -218,43 +224,71 @@ it.each(cases)(
 it("ignores old connection diagnostics on a connected host", async () => {
   const record = await fixture("open-error");
   record.status.state = "connected";
-  expect(phoneProblem(record, PHONE_LAST_SEEN_MS)).toBeNull();
+  expect(phoneProblem(record)).toBeNull();
   expect(
     hostStatusSummary(record.status, { nowMs: PHONE_LAST_SEEN_MS })
   ).toEqual({
     label: "Live",
     tone: "live",
-    stale: false,
+    kind: null,
   });
 });
 
-it("uses the scheduled attempt when an older waiting flag remains on a connecting host", async () => {
-  const { status } = await fixture("local-offline");
-  status.state = "connecting";
-  status.next_attempt_ms = new Date(2026, 10, 24, 14, 5).getTime();
-  expect(hostStatusSummary(status, { nowMs: PHONE_LAST_SEEN_MS }).label).toBe(
-    "Connecting · Retrying at 14:05"
-  );
-  status.identity_changed = "previous-identity";
-  expect(hostStatusSummary(status, { nowMs: PHONE_LAST_SEEN_MS }).label).toBe(
-    "Connecting · Retrying at 14:05"
-  );
+it("falls back to internal for an unexpected startup error without claiming the host key changed", async () => {
+  const record = await fixture("open-error");
+  record.status.open_error = {
+    kind: "host_key_unknown",
+    message: "Unknown key",
+  };
+  expect(phoneProblem(record)).toMatchObject({
+    kind: "internal",
+    title: "Couldn’t start the connection to open-error",
+    action: "retry",
+  });
 });
 
-it("uses Rust's host time for last seen and phone time for the next retry", async () => {
+it("shows last seen and the next retry together in host time", async () => {
   const { status } = await fixture("offline");
   const opts = { nowMs: PHONE_LAST_SEEN_MS };
   expect(hostStatusSummary(status, opts).label).toBe("Offline since 14:02");
   status.next_attempt_ms = new Date(2026, 10, 24, 14, 5).getTime();
   expect(hostStatusSummary(status, opts).label).toBe(
-    "Offline since 14:02 · Retrying at 14:05"
-  );
-  status.failure_kind = "timeout";
-  status.next_attempt_ms = null;
-  expect(hostStatusSummary(status, opts).label).toBe(
-    "Needs attention · Connection timed out · Offline since 14:02"
+    "Offline since 14:02 · Retrying at 14:07"
   );
 });
+
+it.each(["timeout", "no_route", "unreachable"] as const)(
+  "shows a previously seen host as offline after %s",
+  async (kind) => {
+    const record = await fixture("offline");
+    record.status.failure_kind = kind;
+    expect(phoneProblem(record)).toMatchObject({
+      kind: "offline",
+      tone: "muted",
+    });
+    expect(
+      hostStatusSummary(record.status, { nowMs: PHONE_LAST_SEEN_MS })
+    ).toMatchObject({
+      label: "Offline since 14:02",
+      tone: "muted",
+    });
+  }
+);
+
+it.each(["refused", "name_not_resolved"] as const)(
+  "keeps %s actionable for a previously seen host",
+  async (kind) => {
+    const record = await fixture("offline");
+    record.status.failure_kind = kind;
+    expect(phoneProblem(record)).toMatchObject({ kind, tone: "warning" });
+    expect(
+      hostStatusSummary(record.status, { nowMs: PHONE_LAST_SEEN_MS })
+    ).toMatchObject({
+      kind,
+      tone: "warning",
+    });
+  }
+);
 
 it("shows a fresh dial while the source retains the last network failure", async () => {
   const record = await fixture("local-offline");
@@ -264,8 +298,24 @@ it("shows a fresh dial while the source retains the last network failure", async
   record.status.last_seen_ms = PHONE_LAST_SEEN_MS;
   record.status.failure_kind = "local_offline";
   record.status.route_failures = [{ route: "lan", kind: "local_offline" }];
-  expect(phoneProblem(record, PHONE_LAST_SEEN_MS)).toBeNull();
+  expect(phoneProblem(record)).toBeNull();
   expect(
     hostStatusSummary(record.status, { nowMs: PHONE_LAST_SEEN_MS }).label
   ).toBe("Reconnecting");
+});
+
+it("seeds the agent's retry in phone time using the injected clock", async () => {
+  const { status } = await fixture("agent-not-running");
+  expect(status.next_attempt_ms).toBe(PHONE_LAST_SEEN_MS + 180_000);
+});
+
+it("gives native Local Network denial a Settings recovery", () => {
+  expect(localNetworkProblem()).toEqual({
+    kind: "local_network",
+    title: "StatGlass needs Local Network access",
+    short: "Local Network access needed",
+    recovery: "Allow Local Network access for StatGlass in Settings.",
+    action: "open_settings",
+    tone: "warning",
+  });
 });

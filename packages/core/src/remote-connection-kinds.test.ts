@@ -237,7 +237,7 @@ describe("remoteConnectionView for network causes", () => {
 it.each([
   [
     "app_not_running",
-    "StatGlass isn't running on Studio Mac",
+    "StatGlass isn’t running on Studio Mac",
     "Open StatGlass",
   ],
   [

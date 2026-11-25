@@ -25,6 +25,9 @@ const KEY_LINE = "ecdsa-sha2-nistp256 fake-public-key statglass-iphone";
 const SHA256 = `SHA256:${"A".repeat(43)}`;
 const CONNECTED: MobileRemoteHost = {
   ...REMOTE,
+  waiting_for_network: false,
+  next_attempt_ms: null,
+  identity_changed: null,
   connection: {
     state: "connected",
     route: "tailscale",
@@ -37,6 +40,8 @@ const CONNECTED: MobileRemoteHost = {
 };
 const CONNECTING: MobileRemoteHost = {
   ...CONNECTED,
+  dialing: true,
+  last_seen_ms: null,
   connection: { ...CONNECTED.connection, state: "connecting" },
 };
 

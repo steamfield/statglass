@@ -2,20 +2,26 @@ import type { HostId } from "@core/generated/types";
 import {
   hostStatusSummary,
   type PhoneRemoteHostStatus,
-} from "@core/remote-errors";
+} from "@core/phone-connection";
 import { useEffect, useState } from "react";
-import { AccessibilityInfo, Platform, View } from "react-native";
+import { View } from "react-native";
 import { shallow } from "zustand/shallow";
+import { useStatusAnnouncement } from "@/connection/use-status-announcement";
 import { useHostLive, useLastFrame, useLiveFailure } from "@/data/live";
 import { Text } from "@/ui/text";
 
 const routeNames = { lan: "LAN", tailscale: "Tailscale" };
 
 /** The remote status line used by both the host and module pages. */
-export function offlineLabel(remote: PhoneRemoteHostStatus | undefined) {
+export function remoteStatusLine(remote: PhoneRemoteHostStatus | undefined) {
   return remote && remote.state !== "connected"
-    ? hostStatusSummary(remote, { nowMs: Date.now() }).label
+    ? hostStatusSummary(remote, { nowMs: Date.now() })
     : null;
+}
+
+/** Compatibility for the module page until it uses remoteStatusLine directly. */
+export function offlineLabel(remote: PhoneRemoteHostStatus | undefined) {
+  return remoteStatusLine(remote)?.label ?? null;
 }
 
 /** Select connection changes that affect the page, leaving frame age to the pill. */
@@ -35,15 +41,18 @@ export function useConnection(
     shallow
   );
   const failure = useLiveFailure(host);
-  const offline = statusError ?? offlineLabel(remote) ?? failure;
+  const remoteLine = remoteStatusLine(remote);
+  const statusLine = statusError ?? remoteLine?.label ?? failure;
 
-  if (offline) {
+  if (statusLine) {
     return {
       state:
         !statusError && remote?.state === "connecting"
           ? "reconnecting"
           : "offline",
-      label: offline,
+      label: statusLine,
+      remoteState: statusError ? "status-read-failed" : remote?.state,
+      problemKind: remoteLine?.kind,
     } as const;
   }
   if (paused || idle) {
@@ -60,11 +69,21 @@ export function useConnection(
   const route = remote?.route ? routeNames[remote.route] : null;
   return {
     state: "live",
-    label: remote
-      ? hostStatusSummary(remote, { nowMs: Date.now() }).label
-      : "Live",
+    label: "Live",
     route,
   } as const;
+}
+
+function useConnectionAnnouncement(
+  connection: ReturnType<typeof useConnection>,
+  active: boolean
+) {
+  const { label, state, remoteState, problemKind } = connection;
+  const announce = active && (state === "offline" || state === "reconnecting");
+  useStatusAnnouncement(
+    announce ? label : null,
+    announce ? `${state}:${remoteState ?? ""}:${problemKind ?? ""}` : null
+  );
 }
 
 function useFrameAge(lastFrame: number | null) {
@@ -92,15 +111,7 @@ export function ConnectionPill({
   const lastFrame = useLastFrame(host);
   const live = state === "live" && lastFrame !== null;
   const age = useFrameAge(live && active ? lastFrame : null);
-  useEffect(() => {
-    if (
-      active &&
-      Platform.OS === "ios" &&
-      (state === "offline" || state === "reconnecting")
-    ) {
-      AccessibilityInfo.announceForAccessibility(label);
-    }
-  }, [active, label, state]);
+  useConnectionAnnouncement(connection, active);
 
   return (
     <View className="flex-row items-center gap-2 self-start rounded-full border border-border bg-card px-2.5 py-1">

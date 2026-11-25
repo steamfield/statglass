@@ -9,8 +9,8 @@ import {
   selectPower,
   selectPowerSource,
 } from "@core/live-selectors";
+import { phoneProblem } from "@core/phone-connection";
 import type { PopoverCard } from "@core/popover/card-order";
-import { phoneProblem } from "@core/remote-errors";
 import { useRouter } from "expo-router";
 import { memo, useEffect, useMemo, useState } from "react";
 import { Animated, Easing, ScrollView, View } from "react-native";
@@ -191,10 +191,10 @@ export function HostPage({
   const status = useHostConnection(host.id, active && !host.is_local);
   const record = status.isError ? null : status.data;
   const problem = record
-    ? phoneProblem(
-        { ...record, config: { ...record.config, name: host.display_name } },
-        Date.now()
-      )
+    ? phoneProblem({
+        ...record,
+        config: { ...record.config, name: host.display_name },
+      })
     : null;
   const connection = useConnection(
     host.id,

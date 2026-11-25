@@ -41,7 +41,11 @@ const failures = {
   "update-host": { failure_kind: "incompatible", incompatible_side: "host" },
   "update-app": { failure_kind: "incompatible", incompatible_side: "app" },
   incompatible: { failure_kind: "incompatible" },
-  "local-offline": { waiting_for_network: true },
+  "local-offline": {
+    state: "connecting",
+    failure_kind: "local_offline",
+    waiting_for_network: true,
+  },
   "phone-key-unavailable": { failure_kind: "phone_key_unavailable" },
   "open-error": {
     open_error: { kind: "invalid_argument", message: "Invalid SSH endpoint" },
@@ -53,7 +57,7 @@ const failures = {
   internal: { failure_kind: "internal" },
 } satisfies Record<string, Partial<PhoneRemoteHostStatus>>;
 
-export function seedPhoneErrors(remotes: MockRemotes): void {
+export function seedPhoneErrors(remotes: MockRemotes, now: () => number): void {
   for (const [name, status] of Object.entries(failures)) {
     const tailscale =
       name === "timeout" || name === "tailscale-down" ? name : null;
@@ -70,9 +74,7 @@ export function seedPhoneErrors(remotes: MockRemotes): void {
       linux ? ["linux"] : undefined
     );
     const nextAttemptMs =
-      name === "agent-not-running"
-        ? (record.status.last_seen_ms ?? Date.now()) + 3 * MINUTE_MS
-        : null;
+      name === "agent-not-running" ? now() + 3 * MINUTE_MS : null;
     // Keep the sample vitals to exercise the UI's handling of a stale reply.
     record.status = {
       ...record.status,

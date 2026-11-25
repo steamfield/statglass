@@ -6,6 +6,7 @@ import type {
   RemoteHostRecord,
   RemoteHostStatus,
 } from "./generated/types";
+import { macMonitoringAdvice } from "./remote-errors";
 
 export type Tone = "live" | "muted" | "warning";
 
@@ -57,44 +58,25 @@ export interface PhoneProblem {
   tone: Tone;
 }
 
-type HostProblemKind = Exclude<PhoneProblemKind, "local_network">;
+type ProblemVariant =
+  | PhoneProblemKind
+  | "invalid_endpoint"
+  | "open_failed"
+  | "protocol";
 type Advice = Pick<PhoneProblem, "title" | "recovery">;
 export const PHONE_OFFLINE_TITLE = "This iPhone is offline";
 
-/** Recovery copy shared by the Mac and iPhone when a host stops monitoring. */
-export function macMonitoringAdvice(
-  kind: "app_not_running" | "monitoring_off",
-  host: string
-): Advice {
-  return kind === "app_not_running"
-    ? {
-        title: `StatGlass isn't running on ${host}`,
-        recovery: `Open StatGlass on ${host}, then retry.`,
-      }
-    : {
-        title: `Remote monitoring is off on ${host}`,
-        recovery: `Turn on Allow remote monitoring in StatGlass Settings on ${host}, then retry.`,
-      };
-}
-
-const commandKinds: Partial<Record<CommandError["kind"], RemoteFailureKind>> = {
-  remote_auth: "authentication",
-  host_key_unknown: "host_key",
-  remote_identity: "identity_changed",
-  remote_incompatible: "incompatible",
-  remote_refused: "incompatible",
-  remote_unreachable: "unreachable",
-  remote_agent_not_running: "agent_not_running",
-  remote_not_running: "app_not_running",
-  remote_monitoring_off: "monitoring_off",
+const commandKinds: Partial<Record<CommandError["kind"], ProblemVariant>> = {
+  invalid_argument: "invalid_endpoint",
+  internal: "open_failed",
 };
 
 const failureProblem: Record<
   Exclude<
     RemoteFailureKind,
-    "authentication" | "incompatible" | "no_route" | "unreachable"
+    "authentication" | "incompatible" | "timeout" | "no_route" | "unreachable"
   >,
-  HostProblemKind
+  ProblemVariant
 > = {
   app_not_running: "app_not_running",
   monitoring_off: "monitoring_off",
@@ -103,8 +85,7 @@ const failureProblem: Record<
   host_key: "host_key_changed",
   name_not_resolved: "name_not_resolved",
   refused: "refused",
-  timeout: "timeout",
-  protocol: "internal",
+  protocol: "protocol",
   local_offline: "local_offline",
   tailscale_down: "tailscale_down",
   phone_key_unavailable: "phone_key_unavailable",
@@ -113,30 +94,11 @@ const failureProblem: Record<
 
 const updateProblem = { host: "update_host", app: "update_app" } as const;
 
-function typedFailure(status: PhoneRemoteHostStatus) {
-  if (status.open_error)
-    return commandKinds[status.open_error.kind] ?? "internal";
-  // Rust picks the most actionable failure when multiple routes fail.
-  return (
-    status.failure_kind ??
-    (status.route_failures.length === 1 ? status.route_failures[0]?.kind : null)
-  );
-}
-
 export function phoneWaitingForNetwork(status: PhoneRemoteHostStatus): boolean {
-  // Rust clears the wait flag when a retry is scheduled or starts dialing.
-  return (
-    status.state !== "connected" &&
-    status.state !== "disabled" &&
-    status.waiting_for_network &&
-    status.next_attempt_ms === null &&
-    !status.dialing
-  );
+  return status.waiting_for_network;
 }
 
-function hostProblemKind(
-  status: PhoneRemoteHostStatus
-): HostProblemKind | null {
+function problemVariant(status: PhoneRemoteHostStatus): ProblemVariant | null {
   if (
     status.state === "connected" ||
     status.state === "disabled" ||
@@ -144,11 +106,18 @@ function hostProblemKind(
   )
     return null;
   if (phoneWaitingForNetwork(status)) return "local_offline";
+  if (status.open_error)
+    return commandKinds[status.open_error.kind] ?? "open_failed";
   if (status.state === "error" && status.identity_changed !== null) {
     return "identity_changed";
   }
 
-  const failure = typedFailure(status);
+  // Rust picks the most actionable failure when multiple routes fail.
+  const failure =
+    status.failure_kind ??
+    (status.route_failures.length === 1
+      ? status.route_failures[0]?.kind
+      : null);
   if (failure) return classifyFailure(failure, status);
   if (status.state === "connecting") return null;
   return status.state === "offline" ? "offline" : "internal";
@@ -157,7 +126,7 @@ function hostProblemKind(
 function classifyFailure(
   failure: RemoteFailureKind,
   status: PhoneRemoteHostStatus
-): HostProblemKind {
+): ProblemVariant {
   switch (failure) {
     case "authentication":
       return status.last_seen_ms === null
@@ -167,6 +136,9 @@ function classifyFailure(
       return status.incompatible_side
         ? updateProblem[status.incompatible_side]
         : "incompatible";
+    // A host we have seen is offline when a timeout or network path failure leaves it unreachable.
+    case "timeout":
+      return status.last_seen_ms === null ? "timeout" : "offline";
     case "no_route":
     case "unreachable":
       return status.last_seen_ms === null ? "unreachable" : "offline";
@@ -175,14 +147,7 @@ function classifyFailure(
   }
 }
 
-const copy: Record<
-  HostProblemKind,
-  {
-    short: string;
-    action: PhoneAction | null;
-    advice(host: string, status: PhoneRemoteHostStatus): Advice;
-  }
-> = {
+const copy = {
   key_not_accepted: {
     short: "Key not accepted by sshd",
     action: "re_pair",
@@ -267,6 +232,14 @@ const copy: Record<
         "Open the Tailscale app and connect Tailscale to reach this host.",
     }),
   },
+  local_network: {
+    short: "Local Network access needed",
+    action: "open_settings",
+    advice: () => ({
+      title: "StatGlass needs Local Network access",
+      recovery: "Allow Local Network access for StatGlass in Settings.",
+    }),
+  },
   name_not_resolved: {
     short: "Host name not found",
     action: "retry",
@@ -325,7 +298,7 @@ const copy: Record<
     short: "iPhone key unavailable",
     action: "retry",
     advice: () => ({
-      title: "Unlock this iPhone to connect",
+      title: "This iPhone’s key is unavailable",
       recovery:
         "Unlock your iPhone and retry. Re-pair if the key is still unavailable.",
     }),
@@ -333,65 +306,78 @@ const copy: Record<
   internal: {
     short: "Connection failed",
     action: "retry",
-    advice: internalAdvice,
+    advice: (host) => ({
+      title: `StatGlass lost its connection to ${host}`,
+      recovery:
+        "Retry to start a new connection. If it fails again, close and reopen StatGlass and try again.",
+    }),
   },
-};
-
-function internalAdvice(host: string, status: PhoneRemoteHostStatus): Advice {
-  if (status.open_error?.kind === "invalid_argument") {
-    return {
+  invalid_endpoint: {
+    short: "Check connection settings",
+    action: "retry",
+    advice: (host) => ({
       title: `Check the connection settings for ${host}`,
       recovery: "Check the saved host address and SSH settings, then retry.",
-    };
-  }
-  if (status.open_error) {
-    return {
+    }),
+  },
+  open_failed: {
+    short: "Couldn’t start connection",
+    action: "retry",
+    advice: (host) => ({
       title: `Couldn’t start the connection to ${host}`,
       recovery: "Retry. If the problem continues, close and reopen StatGlass.",
-    };
-  }
-  if (typedFailure(status) === "protocol") {
-    return {
+    }),
+  },
+  protocol: {
+    short: "Couldn’t read host response",
+    action: "retry",
+    advice: (host) => ({
       title: `Couldn’t read the response from ${host}`,
       recovery: `Retry the connection. If it fails again, check the StatGlass versions on this iPhone and ${host}.`,
-    };
+    }),
+  },
+} satisfies Record<
+  ProblemVariant,
+  {
+    short: string;
+    action: PhoneAction | null;
+    advice(host: string, status: PhoneRemoteHostStatus): Advice;
   }
-  return {
-    title: `StatGlass lost its connection to ${host}`,
-    recovery:
-      "Retry to start a new connection. If it fails again, close and reopen StatGlass and try again.",
-  };
+>;
+
+function publicKind(variant: ProblemVariant): PhoneProblemKind {
+  switch (variant) {
+    case "invalid_endpoint":
+    case "open_failed":
+    case "protocol":
+      return "internal";
+    default:
+      return variant;
+  }
 }
 
-function problemTone(kind: HostProblemKind): Tone {
+function problemTone(kind: PhoneProblemKind): Tone {
   return kind === "offline" || kind === "local_offline" ? "muted" : "warning";
 }
 
-function problemShort(
-  kind: HostProblemKind,
-  status: PhoneRemoteHostStatus
-): string {
-  if (kind === "internal" && status.open_error) {
-    return status.open_error.kind === "invalid_argument"
-      ? "Check connection settings"
-      : "Couldn’t start connection";
-  }
-  if (kind === "internal" && typedFailure(status) === "protocol") {
-    return "Couldn’t read host response";
-  }
-  return copy[kind].short;
+/** Recovery to use when the native layer detects Local Network denial. */
+export function localNetworkProblem(): PhoneProblem {
+  const kind = "local_network";
+  const { short, action, advice } = copy[kind];
+  return { kind, short, action, tone: problemTone(kind), ...advice() };
 }
 
-export function phoneProblem(
-  { config, status }: PhoneRemoteHostRecord,
-  _nowMs: number
-): PhoneProblem | null {
-  const kind = hostProblemKind(status);
-  if (!kind) return null;
-  const { action, advice } = copy[kind];
+export function phoneProblem({
+  config,
+  status,
+}: PhoneRemoteHostRecord): PhoneProblem | null {
+  const variant = problemVariant(status);
+  if (!variant) return null;
+  const kind = publicKind(variant);
+  const { short, action, advice } = copy[variant];
   return {
     kind,
-    short: problemShort(kind, status),
+    short,
     action,
     tone: problemTone(kind),
     ...advice(config.name, status),
@@ -399,44 +385,40 @@ export function phoneProblem(
 }
 
 function problemLabel(
-  kind: HostProblemKind,
+  variant: ProblemVariant,
   status: PhoneRemoteHostStatus,
   tone: Tone
 ): string {
-  const short = problemShort(kind, status);
-  // MobileRemoteHost.last_seen_ms is already in the host's clock.
-  const offlineTime =
-    status.last_seen_ms === null
-      ? null
-      : `Offline since ${formatClock(status.last_seen_ms)}`;
-  if (kind === "offline") return offlineTime ?? short;
-  const label = tone === "warning" ? `Needs attention · ${short}` : short;
-  return kind === "timeout" && offlineTime
-    ? `${label} · ${offlineTime}`
-    : label;
+  if (variant === "offline" && status.last_seen_ms !== null) {
+    // MobileRemoteHost.last_seen_ms is already in the host's clock.
+    return `Offline since ${formatClock(status.last_seen_ms)}`;
+  }
+  const { short } = copy[variant];
+  return tone === "warning" ? `Needs attention · ${short}` : short;
 }
 
 export function hostStatusSummary(
   status: PhoneRemoteHostStatus | null,
   { nowMs }: { nowMs: number }
-): { label: string; tone: Tone; stale: boolean } {
+): { label: string; tone: Tone; kind: PhoneProblemKind | null } {
   if (!status)
-    return { label: "Status unavailable", tone: "muted", stale: false };
+    return { label: "Status unavailable", tone: "muted", kind: null };
   if (status.state === "connected")
-    return { label: "Live", tone: "live", stale: false };
+    return { label: "Live", tone: "live", kind: null };
   if (status.state === "disabled")
-    return { label: "Disabled", tone: "muted", stale: false };
+    return { label: "Disabled", tone: "muted", kind: null };
 
-  const kind = hostProblemKind(status);
+  const variant = problemVariant(status);
+  const kind = variant ? publicKind(variant) : null;
   const tone = kind ? problemTone(kind) : "muted";
   const connectingLabel =
     status.dialing && status.last_seen_ms !== null
       ? "Reconnecting"
       : "Connecting";
-  let label = kind ? problemLabel(kind, status, tone) : connectingLabel;
-  // MobileRemoteHost.next_attempt_ms uses the phone's wall clock.
+  let label = variant ? problemLabel(variant, status, tone) : connectingLabel;
+  // Compare against the phone clock, then format in the host clock.
   if (status.next_attempt_ms !== null && status.next_attempt_ms >= nowMs) {
-    label += ` · Retrying at ${formatClock(status.next_attempt_ms)}`;
+    label += ` · Retrying at ${formatClock(status.next_attempt_ms + (status.clock_offset_ms ?? 0))}`;
   }
-  return { label, tone, stale: status.last_seen_ms !== null };
+  return { label, tone, kind };
 }

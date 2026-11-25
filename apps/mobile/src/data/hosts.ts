@@ -1,15 +1,13 @@
 import type { HostId, HostRecord } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { hostClock } from "@core/host-clock";
-import { phoneWaitingForNetwork } from "@core/phone-connection";
-import { historyKeys, hostKeys } from "@core/query-keys";
 import {
-  failureReason,
-  hostStatusSummary,
   type PhoneRemoteHostRecord,
-  type PhoneRemoteHostStatus,
   phoneProblem,
-} from "@core/remote-errors";
+  phoneWaitingForNetwork,
+} from "@core/phone-connection";
+import { historyKeys, hostKeys } from "@core/query-keys";
+import { failureReason } from "@core/remote-errors";
 import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
@@ -125,16 +123,6 @@ export function useClearOfflineHostReadings(id: HostId, connected: boolean) {
   }, [cache, connected, id]);
 }
 
-/** Adapt the shared summary to the debug screen's existing label props. */
-export function hostStatusLabel(
-  local: boolean,
-  status: PhoneRemoteHostStatus | null
-) {
-  if (local) return { text: "Live", tone: "live" } as const;
-  const summary = hostStatusSummary(status, { nowMs: Date.now() });
-  return { text: summary.label, tone: summary.tone };
-}
-
 /** The last thirty minutes of CPU history. */
 export function useHostSparkline(id: HostId) {
   const transport = usePhoneTransport();
@@ -204,8 +192,7 @@ export function useRefreshHosts() {
       statuses.data
         ?.filter((record) => {
           return (
-            record.config.enabled &&
-            phoneProblem(record, Date.now())?.action === "retry"
+            record.config.enabled && phoneProblem(record)?.action === "retry"
           );
         })
         .map(({ config }) => config.id)

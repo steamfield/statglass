@@ -4,6 +4,7 @@
  */
 import { formatPercent } from "@core/format";
 import type { RemoteRoute } from "@core/generated/types";
+import { hostStatusSummary } from "@core/phone-connection";
 import { Stack } from "expo-router";
 import { useState } from "react";
 import {
@@ -13,7 +14,6 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import { hostStatusLabel } from "@/data/hosts";
 import { themeColors } from "@/theme.generated";
 import type { NativeTransport } from "@/transport/native-transport";
 import { Text } from "@/ui/text";
@@ -200,7 +200,7 @@ function DebugHostForm({
           )}
           <Text role="label" className="shrink">
             {remote
-              ? hostStatusLabel(false, remote).text
+              ? hostStatusSummary(remote, { nowMs: Date.now() }).label
               : connectionStatus(hasAttempt, connection.error)}
           </Text>
         </View>

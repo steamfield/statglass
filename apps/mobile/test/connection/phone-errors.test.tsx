@@ -4,6 +4,7 @@ import {
   phoneCommandFailures,
 } from "@core/mock/phone-errors";
 import { createMockTransport } from "@core/mock-transport";
+import { localNetworkProblem } from "@core/phone-connection";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
@@ -21,6 +22,7 @@ const context = getMockContext({
   "(hosts)/[host]/index": HostScreen,
   pair: () => <Text role="title">Pairing screen</Text>,
 });
+const localNetworkFixture = localNetworkProblem();
 
 beforeEach(() => {
   jest.useFakeTimers({ now: PHONE_LAST_SEEN_MS });
@@ -83,7 +85,7 @@ test.each([
   ["offline", "offline is offline", /awake and online/, "Retry"],
   [
     "app-not-running",
-    "StatGlass isn't running on app-not-running",
+    "StatGlass isn’t running on app-not-running",
     /Open StatGlass on app-not-running/,
     "Retry",
   ],
@@ -144,7 +146,7 @@ test.each([
   ],
   [
     "phone-key-unavailable",
-    "Unlock this iPhone to connect",
+    "This iPhone’s key is unavailable",
     /Unlock your iPhone and retry/,
     "Retry",
   ],
@@ -311,31 +313,60 @@ test("the Open Settings action opens iPhone Settings", async () => {
   const open = jest.spyOn(Linking, "openSettings").mockResolvedValue(undefined);
   const transport = createMockTransport({ historyRows: 2 });
   function SettingsHelp() {
-    return (
-      <ProblemBanner
-        host={MOCK_HOST_ID}
-        problem={{
-          kind: "local_network",
-          title: "StatGlass needs Local Network access",
-          short: "Local Network access needed",
-          recovery: "Allow Local Network access for StatGlass in Settings.",
-          action: "open_settings",
-          tone: "warning",
-        }}
-      />
-    );
+    return <ProblemBanner host={MOCK_HOST_ID} problem={localNetworkFixture} />;
   }
   const view = await renderWithProviders(
     <ExpoRoot context={getMockContext({ index: SettingsHelp })} location="/" />,
     { transport }
   );
   try {
+    expect(
+      screen.getByText("StatGlass needs Local Network access")
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByText("Allow Local Network access for StatGlass in Settings.")
+    ).toBeOnTheScreen();
     await fireEvent.press(
       await screen.findByRole("button", { name: "Open Settings" })
     );
     expect(open).toHaveBeenCalledTimes(1);
   } finally {
     await view.unmount();
+    transport.dispose();
+  }
+});
+
+test("announces the same problem once as two retry times are published", async () => {
+  const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+  announce.mockClear();
+  const { transport, unmount } = await openHost("agent-not-running");
+  try {
+    const id = "phone-agent-not-running";
+    await screen.findByText(/Retrying at/);
+    for (const [minute, label] of [
+      [6, "14:08"],
+      [7, "14:09"],
+    ] as const) {
+      await act(() => {
+        transport.pushRemoteStatus(id, {
+          next_attempt_ms: new Date(2026, 10, 24, 14, minute).getTime(),
+        });
+        transport.emitHostsChanged();
+      });
+      expect(
+        await screen.findByText(new RegExp(`Retrying at ${label}`))
+      ).toBeOnTheScreen();
+    }
+    expect(announce).toHaveBeenCalledTimes(1);
+    await act(() =>
+      transport.pushRemoteStatus(id, { failure_kind: "monitoring_off" })
+    );
+    expect(
+      await screen.findByText(/Needs attention · Remote monitoring is off/)
+    ).toBeOnTheScreen();
+    expect(announce).toHaveBeenCalledTimes(2);
+  } finally {
+    await unmount();
     transport.dispose();
   }
 });

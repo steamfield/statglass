@@ -1,11 +1,11 @@
 import { formatPercent, formatRate } from "@core/format";
 import type { HostRecord, HostVitals, OsKind } from "@core/generated/types";
-import { failureReason, type Tone } from "@core/remote-errors";
+import { hostStatusSummary, type Tone } from "@core/phone-connection";
+import { failureReason } from "@core/remote-errors";
 import { Pressable, useColorScheme, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { StatusWarning } from "@/connection/status-warning";
 import {
-  hostStatusLabel,
   useClearOfflineHostReadings,
   useHostSparkline,
   useHostStatus,
@@ -39,8 +39,10 @@ export function HostRow({
   const pendingRemote = !host.is_local && status.isPending;
   const sparkline = useHostSparkline(host.id);
   useClearOfflineHostReadings(host.id, connected);
-  const connection = hostStatusLabel(host.is_local, remote);
-  const statusText = pendingRemote ? "Loading status…" : connection.text;
+  const connection = host.is_local
+    ? { label: "Live", tone: "live" as const }
+    : hostStatusSummary(remote, { nowMs: Date.now() });
+  const statusText = pendingRemote ? "Loading status…" : connection.label;
   const statusError =
     !host.is_local && status.isError
       ? failureReason(status.error, "Pull down to reload.")

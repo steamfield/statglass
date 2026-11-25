@@ -69,7 +69,7 @@ import { createMockEmitters, mockEventSubscriptions } from "./mock/emitters";
 import { withFailures } from "./mock/failures";
 import { scenarioFlags } from "./mock/fixtures";
 import { createMockHostHistory } from "./mock/host-history";
-import { seedPhoneErrors } from "./mock/phone-errors";
+import { phoneSparklineFixture, seedPhoneErrors } from "./mock/phone-errors";
 
 export type {
   MockCall,
@@ -177,12 +177,14 @@ export function createMockTransport(
     if (retimed) stream.retime();
   };
   remote.seedScenario();
-  if (scenarios.includes("phone-errors")) seedPhoneErrors(remote);
+  if (scenarios.includes("phone-errors")) seedPhoneErrors(remote, now);
   return withFailures({
     kind: "mock",
     flags,
     calls: commands.calls,
-    hostHistory: createMockHostHistory(queries.methods),
+    hostHistory: scenarios.includes("phone-sparkline-gap")
+      ? phoneSparklineFixture
+      : createMockHostHistory(queries.methods),
     networkAddresses,
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,

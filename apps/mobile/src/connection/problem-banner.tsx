@@ -1,10 +1,7 @@
 import type { HostId } from "@core/generated/types";
+import type { PhoneAction, PhoneProblem } from "@core/phone-connection";
 import { hostKeys } from "@core/query-keys";
-import {
-  failureReason,
-  type PhoneAction,
-  type PhoneProblem,
-} from "@core/remote-errors";
+import { failureReason } from "@core/remote-errors";
 import { unwrap } from "@core/transport";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";

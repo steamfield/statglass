@@ -1,10 +1,8 @@
-import { withFailures } from "@core/mock/failures";
 import { MOCK_HOST_ID, type ScenarioName } from "@core/mock/fixtures";
 import {
   PHONE_CLOCK_OFFSET_MS,
   PHONE_LAST_SEEN_MS,
   phoneCommandFailures,
-  phoneSparklineFixture,
 } from "@core/mock/phone-errors";
 import { createMockTransport } from "@core/mock-transport";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
@@ -67,9 +65,9 @@ function demo() {
 }
 
 function sparklineDemo(scenarios: readonly ScenarioName[] = ["default"]) {
-  return withFailures({
-    ...createMockTransport({ scenarios, historyRows: 2 }),
-    hostHistory: phoneSparklineFixture,
+  return createMockTransport({
+    scenarios: [...scenarios, "phone-sparkline-gap"],
+    historyRows: 2,
   });
 }
 
@@ -544,7 +542,7 @@ test("shows the phone offline once only while every listed remote waits for the 
   expect(screen.getAllByText("Waiting for network")).toHaveLength(2);
 });
 
-test("shows the next agent retry in phone time beside its short reason", async () => {
+test("shows the next agent retry in host time beside its short reason", async () => {
   const transport = createMockTransport({
     scenarios: ["phone-errors"],
     historyRows: 2,
@@ -552,7 +550,7 @@ test("shows the next agent retry in phone time beside its short reason", async (
   await renderHosts(transport);
   expect(
     await screen.findByText(
-      "Needs attention · StatGlass agent isn’t running · Retrying at 14:03"
+      "Needs attention · StatGlass agent isn’t running · Retrying at 14:05"
     )
   ).toBeOnTheScreen();
 });
