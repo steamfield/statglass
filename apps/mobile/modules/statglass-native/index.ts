@@ -14,7 +14,10 @@ export type {
 
 let nativeForTests: StatglassNativeModule | null | undefined;
 
-/** Test seam for overriding the native module loader. */
+/**
+ * Test seam for overriding the native module loader: `undefined` restores the real
+ * module, `null` simulates a build without it.
+ */
 export function __setNativeForTests(
   native: StatglassNativeModule | null | undefined
 ): void {

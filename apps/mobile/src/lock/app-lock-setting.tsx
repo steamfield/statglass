@@ -6,8 +6,8 @@ import {
   usePhoneSettingsActions,
 } from "@/data/phone-settings";
 import { themeColors } from "@/theme.generated";
+import { setNativeSnapshotCover } from "@/transport/device";
 import { Text } from "@/ui/text";
-import { setNativeSnapshotCover } from "./snapshot-cover";
 
 /** Enables app lock only after iOS has authenticated the device owner. */
 export function AppLockSetting() {
