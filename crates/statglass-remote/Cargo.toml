@@ -27,6 +27,7 @@ p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic"
 
 [dev-dependencies]
 statglass-session = { workspace = true, features = ["conformance"] }
+statglass-ssh = { workspace = true, features = ["software-signer"] }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true
 

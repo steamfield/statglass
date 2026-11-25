@@ -5537,6 +5537,7 @@ dependencies = [
  "statglass-proto",
  "statglass-schema",
  "statglass-session",
+ "statglass-ssh",
  "statglass-store",
  "tempfile",
  "thiserror 2.0.21",
