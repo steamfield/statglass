@@ -44,7 +44,7 @@ export default function FirstLaunch() {
       <View className="grow justify-center gap-3 px-6 py-4">
         <Text
           accessibilityRole="header"
-          className="font-bold text-4xl text-foreground"
+          className="font-semibold text-4xl text-foreground"
         >
           StatGlass
         </Text>

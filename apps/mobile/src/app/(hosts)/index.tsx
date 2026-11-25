@@ -22,7 +22,7 @@ export default function HostsRoute() {
                   {
                     type: "custom",
                     hidesSharedBackground: true,
-                    element: <Text role="label">Demo</Text>,
+                    element: <Text variant="label">Demo</Text>,
                   },
                 ]
               : [],

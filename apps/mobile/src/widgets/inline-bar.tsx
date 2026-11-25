@@ -31,11 +31,11 @@ export function InlineBar(data: InlineBarData | { model: InlineBarModel }) {
             : "flex-row justify-between gap-2"
         }
       >
-        <Text role={ROW_TEXT_ROLE} className="shrink">
+        <Text variant={ROW_TEXT_ROLE} className="shrink">
           {label}
         </Text>
         <Text
-          role={ROW_TEXT_ROLE}
+          variant={ROW_TEXT_ROLE}
           className="shrink text-right"
           // NativeWind drops the CSS font-variant-numeric property.
           style={{

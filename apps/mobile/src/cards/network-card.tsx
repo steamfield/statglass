@@ -31,7 +31,7 @@ export function NetworkCard({ network, bars, ...chrome }: NetworkCardProps) {
         )
       }
     >
-      <Text role="caption">{card.subtitle}</Text>
+      <Text variant="caption">{card.subtitle}</Text>
       {bars && <MirrorBars {...bars} />}
     </ModuleCard>
   );

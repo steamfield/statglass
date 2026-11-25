@@ -85,9 +85,9 @@ export function HostRow({
       <View className="flex-row flex-wrap gap-x-4 gap-y-2">
         {readings.map(({ label, value }) => (
           <View key={label} className="min-w-16 grow">
-            <Text role="caption">{label}</Text>
+            <Text variant="caption">{label}</Text>
             {/** The NativeWind converter drops CSS font-variant-numeric. */}
-            <Text role="cardTitle" style={{ fontVariant: ["tabular-nums"] }}>
+            <Text variant="cardTitle" style={{ fontVariant: ["tabular-nums"] }}>
               {value}
             </Text>
           </View>
@@ -95,12 +95,12 @@ export function HostRow({
       </View>
       {chart && <StreamArea {...chart} />}
       {vitalsError && (
-        <Text role="caption" className="text-destructive!">
+        <Text variant="caption" className="text-destructive!">
           {vitalsError}
         </Text>
       )}
       {historyError && (
-        <Text role="caption" className="text-destructive!">
+        <Text variant="caption" className="text-destructive!">
           {historyError}
         </Text>
       )}
@@ -159,14 +159,14 @@ function HostRowHeader({
         </Svg>
       </View>
       <View className="min-w-0 flex-1">
-        <Text role="cardTitle">{name}</Text>
+        <Text variant="cardTitle">{name}</Text>
         <View className="flex-row items-center gap-1.5">
           {tone === "live" && (
             <View className="size-1.5 rounded-full bg-live" />
           )}
           {tone === "warning" && <StatusWarning />}
           <Text
-            role="caption"
+            variant="caption"
             className={
               tone === "warning" ? "shrink text-warning-ink" : "shrink"
             }
@@ -175,7 +175,7 @@ function HostRowHeader({
           </Text>
         </View>
         {error && (
-          <Text role="caption" className="text-destructive!">
+          <Text variant="caption" className="text-destructive!">
             {error}
           </Text>
         )}

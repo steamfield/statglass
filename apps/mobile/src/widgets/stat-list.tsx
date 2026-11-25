@@ -38,10 +38,10 @@ export function StatList({
     >
       {hero && (
         <View className="shrink">
-          <Text role="caption">{hero.label}</Text>
-          <Text role={FIGURE_ROLE} style={styles.figure}>
+          <Text variant="caption">{hero.label}</Text>
+          <Text variant={FIGURE_ROLE} style={styles.figure}>
             {hero.value}
-            {hero.unit && <Text role={DETAIL_ROLE}> {hero.unit}</Text>}
+            {hero.unit && <Text variant={DETAIL_ROLE}> {hero.unit}</Text>}
           </Text>
         </View>
       )}
@@ -58,12 +58,12 @@ export function StatList({
         >
           <View className="flex-row items-center gap-1.5">
             {item.swatch && <BarSwatch step={item.swatch} accent={accent} />}
-            <Text role="caption" className="shrink">
+            <Text variant="caption" className="shrink">
               {item.label}
             </Text>
           </View>
           <Text
-            role={grid ? DETAIL_ROLE : FIGURE_ROLE}
+            variant={grid ? DETAIL_ROLE : FIGURE_ROLE}
             className="shrink"
             style={[
               styles.figure,
@@ -72,9 +72,9 @@ export function StatList({
           >
             {item.value}
             {item.secondary && (
-              <Text role={DETAIL_ROLE}> {item.secondary}</Text>
+              <Text variant={DETAIL_ROLE}> {item.secondary}</Text>
             )}
-            {item.unit && <Text role={DETAIL_ROLE}> {item.unit}</Text>}
+            {item.unit && <Text variant={DETAIL_ROLE}> {item.unit}</Text>}
           </Text>
         </View>
       ))}

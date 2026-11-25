@@ -93,9 +93,9 @@ export function AppLockGate({ children }: { children: ReactNode }) {
           <View className="absolute inset-0 bg-overlay" />
           {active && (
             <View className="gap-3 rounded-xl border border-border bg-card p-4">
-              <Text role="title">StatGlass is locked</Text>
+              <Text variant="title">StatGlass is locked</Text>
               {error && (
-                <Text role="body" accessibilityRole="alert">
+                <Text variant="body" accessibilityRole="alert">
                   iOS couldn’t verify your identity. Try again.
                 </Text>
               )}
@@ -108,8 +108,8 @@ export function AppLockGate({ children }: { children: ReactNode }) {
                 className="min-h-[44px] justify-center rounded-lg bg-primary px-4 py-2 active:opacity-70 disabled:opacity-50"
               >
                 <Text
-                  role="body"
-                  className="font-semibold text-primary-foreground"
+                  variant="body"
+                  className="font-semibold! text-primary-foreground"
                 >
                   Unlock
                 </Text>

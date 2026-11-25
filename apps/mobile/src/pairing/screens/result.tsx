@@ -20,11 +20,11 @@ export function PairingFailure({
     error.kind === "pairing" && error.message !== title ? error.message : null;
   return (
     <>
-      <Text role="title" accessibilityRole="alert">
+      <Text variant="title" accessibilityRole="alert">
         {title}
       </Text>
-      {detail && <Text role="caption">{detail}</Text>}
-      <Text role="body">{recovery}</Text>
+      {detail && <Text variant="caption">{detail}</Text>}
+      <Text variant="body">{recovery}</Text>
       <PairAction label="Try again" onPress={retry} />
       <PairAction label="Done" secondary onPress={done} />
     </>
@@ -34,7 +34,7 @@ export function PairingFailure({
 export function PairingSuccess({ host, done }: { host: string; done(): void }) {
   return (
     <>
-      <Text role="title">{host} is paired</Text>
+      <Text variant="title">{host} is paired</Text>
       <PairAction label="View hosts" onPress={done} />
     </>
   );

@@ -9,9 +9,9 @@ import { Text } from "@/ui/text";
 function EventsHeading({ events }: { events: ReturnType<typeof useEvents> }) {
   return (
     <View className="gap-2">
-      <Text {...{ role: "title" }}>Events</Text>
+      <Text variant="title">Events</Text>
       {events.isSuccess && events.data?.length === 0 && (
-        <Text {...{ role: "label" }} accessibilityLiveRegion="polite">
+        <Text variant="label" accessibilityLiveRegion="polite">
           No events in this range
         </Text>
       )}
@@ -22,8 +22,8 @@ function EventsHeading({ events }: { events: ReturnType<typeof useEvents> }) {
 function EventRow({ event, showDate }: { event: Event; showDate: boolean }) {
   return (
     <View className="gap-0.5 border-border border-t py-2">
-      <Text {...{ role: "body" }}>{eventLabel(event)}</Text>
-      <Text {...{ role: "caption" }} className="tabular-nums">
+      <Text variant="body">{eventLabel(event)}</Text>
+      <Text variant="caption" className="tabular-nums">
         {formatHistoryTime(event.ts_ms, showDate)}
       </Text>
     </View>

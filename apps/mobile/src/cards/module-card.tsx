@@ -126,18 +126,18 @@ export function ModuleCard({
           <View className="flex-row items-center gap-2">
             <View className="flex-1 gap-2">
               <View className="flex-row flex-wrap items-baseline justify-between gap-x-2">
-                <Text role={CARD_TITLE_ROLE} className="max-w-full">
+                <Text variant={CARD_TITLE_ROLE} className="max-w-full">
                   {title}
                 </Text>
                 {!headlineContent && (
                   <Text
-                    role={HEADLINE_ROLE}
+                    variant={HEADLINE_ROLE}
                     className="ml-auto max-w-full text-right"
                     // NativeWind drops the CSS font-variant-numeric property.
                     style={{ fontVariant: ["tabular-nums"] }}
                   >
                     {headline}
-                    {unit && <Text role={UNIT_ROLE}> {unit}</Text>}
+                    {unit && <Text variant={UNIT_ROLE}> {unit}</Text>}
                   </Text>
                 )}
               </View>

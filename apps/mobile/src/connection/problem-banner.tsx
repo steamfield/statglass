@@ -80,7 +80,7 @@ export function ProblemBanner({
       <View className="flex-row items-center gap-1.5">
         {problem.tone === "warning" && <StatusWarning />}
         <Text
-          role="cardTitle"
+          variant="cardTitle"
           className={
             problem.tone === "warning" ? "shrink text-warning-ink" : "shrink"
           }
@@ -88,7 +88,7 @@ export function ProblemBanner({
           {problem.title}
         </Text>
       </View>
-      <Text role="body">{problem.recovery}</Text>
+      <Text variant="body">{problem.recovery}</Text>
       {action && (
         <Pressable
           accessibilityRole="button"
@@ -96,14 +96,17 @@ export function ProblemBanner({
           disabled={running}
           onPress={actOnProblem}
         >
-          <Text role="body" className="font-semibold text-primary-foreground">
+          <Text
+            variant="body"
+            className="font-semibold! text-primary-foreground"
+          >
             {actionLabel[action]}
           </Text>
         </Pressable>
       )}
       {actionFailure && (
         <Text
-          role="caption"
+          variant="caption"
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
           className="text-destructive!"

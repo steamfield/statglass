@@ -23,7 +23,7 @@ function Countdown({ expires }: { expires: number }) {
   }, [expires]);
   const seconds = Math.max(0, Math.ceil((expires - now) / 1000));
   return (
-    <Text role="label">
+    <Text variant="label">
       {seconds === 0 ? "Code expired" : `Expires in ${seconds}s`}
     </Text>
   );
@@ -53,21 +53,23 @@ export function Preview({
               strokeWidth={1.5}
             />
           </Svg>
-          <Text role="title" className="shrink">
+          <Text variant="title" className="shrink">
             {offer.name}
           </Text>
         </View>
-        <Text role="label">{offer.os}</Text>
-        <Text role="body">User {offer.user}</Text>
+        <Text variant="label">{offer.os}</Text>
+        <Text variant="body">User {offer.user}</Text>
         {offer.targets.map(({ route, host }) => (
-          <Text key={`${route}:${host}`} role="body">
+          <Text key={`${route}:${host}`} variant="body">
             {route === "lan" ? "LAN" : "Tailscale"} · {host}
           </Text>
         ))}
         {offer.can_hand_over && (
-          <Text role="body">This host can also add the hosts it monitors.</Text>
+          <Text variant="body">
+            This host can also add the hosts it monitors.
+          </Text>
         )}
-        <Text role="cardFigure">{offer.code}</Text>
+        <Text variant="cardFigure">{offer.code}</Text>
         <Countdown expires={offer.expires_ms} />
       </View>
       <PairAction label="Confirm" onPress={confirm} />

@@ -44,7 +44,7 @@ function ChartLegend({
               ),
             }}
           />
-          <Text {...{ role: "caption" }}>{labels[index]}</Text>
+          <Text variant="caption">{labels[index]}</Text>
         </View>
       ))}
     </View>
@@ -182,7 +182,7 @@ export function ScrubbableChart({
   return (
     <View className="gap-2">
       <ChartLegend series={plot.series} accent={plot.accent} labels={labels} />
-      {ceilingLabel && <Text {...{ role: "caption" }}>{ceilingLabel}</Text>}
+      {ceilingLabel && <Text variant="caption">{ceilingLabel}</Text>}
       <GestureDetector gesture={gesture}>
         <View
           accessible
@@ -219,13 +219,13 @@ export function ScrubbableChart({
       {time !== null && (
         <View className="flex-row flex-wrap items-center justify-between gap-x-3">
           <View className="py-1">
-            <Text {...{ role: "caption" }} className="tabular-nums">
+            <Text variant="caption" className="tabular-nums">
               {time}
             </Text>
             {values.map((value, index) => (
               <Text
                 key={chart.series[index]?.key}
-                {...{ role: "body" }}
+                variant="body"
                 className="tabular-nums"
               >
                 {value}
@@ -239,7 +239,7 @@ export function ScrubbableChart({
               onPress={clear}
               className="min-h-[44px] min-w-[44px] justify-center px-2 active:opacity-70"
             >
-              <Text {...{ role: "label" }} className="text-link">
+              <Text variant="label" className="text-link">
                 Clear pin
               </Text>
             </Pressable>

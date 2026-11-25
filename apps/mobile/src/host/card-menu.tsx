@@ -25,7 +25,7 @@ function MenuAction({
       className="min-h-[44px] justify-center border-border border-t py-2 active:opacity-70"
     >
       <Text
-        {...{ role: "body" }}
+        variant="body"
         className={onPress ? "text-foreground" : "text-muted-foreground"}
       >
         {label}
@@ -68,7 +68,7 @@ export function CardMenu({
             contentContainerClassName="px-5 pb-3 pt-5"
             bounces={false}
           >
-            <Text {...{ role: "title" }} className="pb-3">
+            <Text variant="title" className="pb-3">
               {HISTORY_MODULES[card].title} card
             </Text>
             <MenuAction

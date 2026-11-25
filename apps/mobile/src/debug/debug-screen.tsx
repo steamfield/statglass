@@ -54,7 +54,7 @@ export function DebugScreen() {
         {__DEV__ ? (
           <DebugCoreContent />
         ) : (
-          <Text role="body">{DEVELOPMENT_BUILD}</Text>
+          <Text variant="body">{DEVELOPMENT_BUILD}</Text>
         )}
       </View>
     </ScrollView>
@@ -65,9 +65,9 @@ function DebugCoreContent() {
   const core = useDebugCore();
   switch (core.status) {
     case "loading":
-      return <Text role="body">Reading the iPhone’s SSH key…</Text>;
+      return <Text variant="body">Reading the iPhone’s SSH key…</Text>;
     case "missing":
-      return <Text role="body">{DEVELOPMENT_BUILD}</Text>;
+      return <Text variant="body">{DEVELOPMENT_BUILD}</Text>;
     case "error":
       return <ErrorText>{core.message}</ErrorText>;
     case "ready":
@@ -113,18 +113,18 @@ function DebugHostForm({
   return (
     <>
       <View className="gap-2 rounded-xl border border-border bg-card p-3">
-        <Text role="cardTitle">authorized_keys</Text>
-        <Text role="label">
+        <Text variant="cardTitle">authorized_keys</Text>
+        <Text variant="label">
           Add this line to ~/.ssh/authorized_keys on the Mac.
         </Text>
-        <Text role="body" selectable>
+        <Text variant="body" selectable>
           {keyLine}
         </Text>
       </View>
       <View className="gap-3">
         {FIELDS.map(({ name, label }) => (
           <View key={name} className="gap-1">
-            <Text role="label">{label}</Text>
+            <Text variant="label">{label}</Text>
             <TextInput
               accessibilityLabel={label}
               autoCapitalize="none"
@@ -138,14 +138,14 @@ function DebugHostForm({
               value={fields[name]}
             />
             {name === "hostKey" && (
-              <Text role="caption">
+              <Text variant="caption">
                 For example, ssh-ed25519 followed by the SHA256 fingerprint.
               </Text>
             )}
           </View>
         ))}
         <View className="gap-1">
-          <Text role="label">Route</Text>
+          <Text variant="label">Route</Text>
           <View
             accessibilityRole="radiogroup"
             accessibilityLabel="Route"
@@ -162,11 +162,11 @@ function DebugHostForm({
                   setFields((current) => ({ ...current, route: value }))
                 }
               >
-                <Text role="body" className="shrink">
+                <Text variant="body" className="shrink">
                   {label}
                 </Text>
                 {fields.route === value && (
-                  <Text role="body" className="text-link" accessible={false}>
+                  <Text variant="body" className="text-link" accessible={false}>
                     ✓
                   </Text>
                 )}
@@ -182,7 +182,10 @@ function DebugHostForm({
           disabled={busy}
           onPress={connect}
         >
-          <Text role="body" className="font-semibold text-primary-foreground!">
+          <Text
+            variant="body"
+            className="font-semibold! text-primary-foreground!"
+          >
             Connect
           </Text>
         </Pressable>
@@ -267,14 +270,14 @@ function ConnectionReading({
     <View className="gap-1 rounded-xl border border-border bg-card p-3">
       <View className="flex-row items-center gap-2">
         {connected && <View className="size-1.5 rounded-full bg-live" />}
-        <Text role="label" className="shrink">
+        <Text variant="label" className="shrink">
           {label}
         </Text>
       </View>
       {error && <ErrorText>{error}</ErrorText>}
-      <Text role="label">CPU</Text>
+      <Text variant="label">CPU</Text>
       {/** The NativeWind converter drops CSS font-variant-numeric. */}
-      <Text role="cardFigure" style={{ fontVariant: ["tabular-nums"] }}>
+      <Text variant="cardFigure" style={{ fontVariant: ["tabular-nums"] }}>
         {formatPercent(cpu)}
       </Text>
     </View>
@@ -288,7 +291,11 @@ function connectionStatus(hasAttempt: boolean, error: string | null) {
 
 function ErrorText({ children }: { children: string | null | undefined }) {
   return (
-    <Text role="label" accessibilityRole="alert" className="text-destructive!">
+    <Text
+      variant="label"
+      accessibilityRole="alert"
+      className="text-destructive!"
+    >
       {children}
     </Text>
   );
