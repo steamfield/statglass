@@ -35,7 +35,13 @@ const CEILING_Y = 1;
 
 /** StreamArea for the phone; takes the same data as the desktop widget. */
 export function StreamArea(
-  data: StreamAreaData & { variant?: "chart" | "spark" }
+  data: StreamAreaData & {
+    variant?: "chart" | "spark";
+    /** Minimum ceiling-label width, so stacked charts share a left edge. */
+    gutterWidth?: number;
+    /** Reports the ceiling label's natural width. */
+    onGutterMeasure?: (width: number) => void;
+  }
 ) {
   const {
     accent,
@@ -46,6 +52,8 @@ export function StreamArea(
     tEndMs,
     variant = "chart",
     yMax,
+    gutterWidth,
+    onGutterMeasure,
   } = data;
   const spark = variant === "spark";
   const scheme = useColorScheme() === "dark" ? "dark" : "light";
@@ -78,9 +86,17 @@ export function StreamArea(
     <View>
       <View className="flex-row gap-1">
         {ceilingLabel && (
-          <Text variant="axis" style={styles.ceilingLabel}>
-            {ceilingLabel}
-          </Text>
+          // minWidth is a measured runtime value shared with sibling charts.
+          <View style={[styles.ceilingLabel, { minWidth: gutterWidth }]}>
+            <Text
+              variant="axis"
+              onLayout={({ nativeEvent }) =>
+                onGutterMeasure?.(nativeEvent.layout.width)
+              }
+            >
+              {ceilingLabel}
+            </Text>
+          </View>
         )}
         <View className="relative min-w-0 flex-1">
           <View
@@ -150,6 +166,7 @@ export function StreamArea(
 
 const styles = StyleSheet.create({
   ceilingLabel: {
+    alignItems: "flex-start",
     alignSelf: "flex-start",
     marginTop: CEILING_Y,
   },

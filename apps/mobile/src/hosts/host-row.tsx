@@ -6,7 +6,7 @@ import {
   type Tone,
 } from "@core/phone-connection";
 import { failureReason } from "@core/remote-errors";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -172,7 +172,14 @@ function Readings({
 }) {
   const colors = useThemeColors();
   const { fontScale } = useWindowDimensions();
+  const [gutters, setGutters] = useState<Record<string, number>>({});
   if (readings.length === 0) return null;
+  // The widest ceiling label sets one gutter, so the plots share a left edge.
+  const gutterWidth = Math.max(0, ...Object.values(gutters));
+  const measure = (key: string) => (width: number) =>
+    setGutters((current) =>
+      current[key] === width ? current : { ...current, [key]: width }
+    );
   // Three figures across the top, then each chart at the card's full width.
   // At accessibility sizes the figures stack so none has to shrink.
   const stacked = fontScale >= 1.35;
@@ -197,9 +204,29 @@ function Readings({
       </View>
       {(cpu || memory || network) && (
         <View className="gap-2">
-          {cpu && <StreamArea variant="spark" {...cpu} />}
-          {memory && <StreamArea variant="spark" {...memory} />}
-          {network && <NetworkReading data={network} />}
+          {cpu && (
+            <StreamArea
+              variant="spark"
+              {...cpu}
+              gutterWidth={gutterWidth}
+              onGutterMeasure={measure("cpu")}
+            />
+          )}
+          {memory && (
+            <StreamArea
+              variant="spark"
+              {...memory}
+              gutterWidth={gutterWidth}
+              onGutterMeasure={measure("memory")}
+            />
+          )}
+          {network && (
+            <NetworkReading
+              data={network}
+              gutterWidth={gutterWidth}
+              onGutterMeasure={measure("network")}
+            />
+          )}
         </View>
       )}
     </View>
@@ -208,17 +235,36 @@ function Readings({
 
 function NetworkReading({
   data,
+  gutterWidth,
+  onGutterMeasure,
 }: {
   data: NonNullable<ReturnType<typeof useHostSparkline>["network"]>;
+  gutterWidth: number;
+  onGutterMeasure: (width: number) => void;
 }) {
   const [width, setWidth] = useState(0);
+  const labels = useRef({ up: 0, down: 0 });
   const { fontScale } = useWindowDimensions();
+  const measure =
+    (half: "up" | "down") =>
+    ({ nativeEvent }: { nativeEvent: { layout: { width: number } } }) => {
+      labels.current[half] = nativeEvent.layout.width;
+      onGutterMeasure(Math.max(labels.current.up, labels.current.down));
+    };
   return (
     <View className="flex-row gap-1">
-      {/* Each half's ceiling, as the area charts label theirs. */}
-      <View className="justify-between" style={{ height: SPARKBARS_HEIGHT }}>
-        <Text variant="axis">↑ {formatRate(data.upMax)}</Text>
-        <Text variant="axis">↓ {formatRate(data.downMax)}</Text>
+      {/* Each half's ceiling, as the area charts label theirs. Height and
+          minWidth are runtime values: the bars' height and the shared gutter. */}
+      <View
+        className="items-start justify-between"
+        style={{ height: SPARKBARS_HEIGHT, minWidth: gutterWidth }}
+      >
+        <Text variant="axis" onLayout={measure("up")}>
+          ↑ {formatRate(data.upMax)}
+        </Text>
+        <Text variant="axis" onLayout={measure("down")}>
+          ↓ {formatRate(data.downMax)}
+        </Text>
       </View>
       <View
         className="min-w-0 flex-1"
