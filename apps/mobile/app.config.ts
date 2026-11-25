@@ -122,7 +122,8 @@ export function expoConfigFor(
       },
     },
     plugins: [
-      "expo-router",
+      // The generated /_sitemap screen crashes in Release (statglass:///_sitemap).
+      ["expo-router", { sitemap: false }],
       "expo-status-bar",
       "expo-localization",
       [

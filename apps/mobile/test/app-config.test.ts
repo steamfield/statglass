@@ -174,6 +174,10 @@ describe("Expo iOS config", () => {
     ]);
   });
 
+  test("turns off Expo Router's generated sitemap route", () => {
+    expect(config.extra?.router).toMatchObject({ sitemap: false });
+  });
+
   test("resolves the launch screen image and theme backgrounds", () => {
     expect(config.plugins).toContainEqual([
       "expo-splash-screen",
