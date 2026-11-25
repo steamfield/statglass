@@ -5,6 +5,7 @@
 import "@/global.css";
 import { type ErrorBoundaryProps, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { DemoLifetime } from "@/data/demo";
@@ -14,11 +15,16 @@ import { CoreProvider, NativeCoreBridge } from "@/transport";
 import { RouteErrorBoundary } from "@/ui/route-error-boundary";
 import { useAnnounceStartupFailure } from "@/ui/startup-failure";
 
+/** Keeps screen recovery inside the root providers and navigation stacks. */
+export const unstable_settings = { screenErrorBoundary: RouteErrorBoundary };
+
 /** Last resort for errors that reach the root, outside the app providers. */
 export function ErrorBoundary(props: ErrorBoundaryProps) {
   return (
     <SafeAreaProvider>
-      <RouteErrorBoundary {...props} />
+      <View className="flex-1 bg-background pt-safe">
+        <RouteErrorBoundary {...props} />
+      </View>
     </SafeAreaProvider>
   );
 }

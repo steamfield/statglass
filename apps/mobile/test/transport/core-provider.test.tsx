@@ -169,8 +169,12 @@ test("restarting the core effect clears the disposed selection and selects the r
   await view.rerender(<Tree visible={false} />);
   expect(screen.getByText("Transport cleared")).toBeOnTheScreen();
   expect(native.listenerCount("onCoreEvent")).toBe(0);
+  expect(
+    screen.getByText("Waiting", { includeHiddenElements: true })
+  ).toBeOnTheScreen();
   await view.rerender(<Tree visible />);
   expect(screen.getByText("Transport cleared")).toBeOnTheScreen();
+  expect(screen.getByText("Waiting")).toBeOnTheScreen();
   await act(() => next.resolve(ok(hosts)));
   expect(await screen.findByText("Native hosts")).toBeOnTheScreen();
   expect(native.start).toHaveBeenCalledTimes(1);
@@ -262,6 +266,9 @@ test("a late native start failure leaves the active demo available", async () =>
   native.start.mockReturnValueOnce(pending.promise);
   installNative(native);
   const log = jest.spyOn(console, "error").mockImplementation(() => undefined);
+  const announce = jest
+    .spyOn(AccessibilityInfo, "announceForAccessibility")
+    .mockClear();
   await renderRouter("./src/app", {
     initialUrl: "/demo?scenario=host-unreachable",
   });
@@ -277,6 +284,32 @@ test("a late native start failure leaves the active demo available", async () =>
     error,
   });
   expect(screen.getByRole("button", demoHost)).toBeOnTheScreen();
+  expect(announce).not.toHaveBeenCalled();
+});
+
+test("announces a different startup failure after retrying", async () => {
+  const native = new FakeNative();
+  const firstFailure = "Could not read the phone identity.";
+  const secondFailure = "Could not open the phone data directory.";
+  for (const message of [firstFailure, secondFailure]) {
+    native.start.mockResolvedValueOnce(
+      JSON.stringify({ status: "error", error: { kind: "internal", message } })
+    );
+  }
+  installNative(native);
+  jest.spyOn(console, "error").mockImplementation(() => undefined);
+  const announce = jest
+    .spyOn(AccessibilityInfo, "announceForAccessibility")
+    .mockClear();
+  await renderRouter("./src/app");
+  expect(await screen.findByText(firstFailure)).toBeOnTheScreen();
+  expect(announce.mock.calls).toEqual([["StatGlass couldn’t start"]]);
+  await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByText(secondFailure)).toBeOnTheScreen();
+  expect(announce.mock.calls).toEqual([
+    ["StatGlass couldn’t start"],
+    ["StatGlass couldn’t start"],
+  ]);
 });
 
 test("keeps a Swift rejection typed and shows its message", async () => {

@@ -108,6 +108,11 @@ export function CoreProvider({
       coreRef.current = null;
       selectTransport(null, false, core);
       core.dispose();
+      setState((current) =>
+        current.status === "ready" && current.core === core
+          ? { status: "starting" }
+          : current
+      );
     }
 
     async function start() {

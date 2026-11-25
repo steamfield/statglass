@@ -1,6 +1,8 @@
+/** A heading, optional explanation and Retry action for recoverable failures. */
 import { Pressable, View } from "react-native";
 import { Text } from "./text";
 
+/** Presents recovery copy and runs the supplied Retry action. */
 export function RetryPanel({
   title,
   detail,

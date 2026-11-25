@@ -223,6 +223,38 @@ test("retrying a failed host screen preserves the active demo and its route", as
   ).toBeOnTheScreen();
 });
 
+test("retrying a failed root-level screen preserves the active demo", async () => {
+  installNative(null);
+  let fails = true;
+  function Debug() {
+    const demo = useIsDemo();
+    usePhoneTransport();
+    if (fails) throw new Error("Debug screen failed");
+    return (
+      <ReactNative.Text>
+        {demo ? "Debug in demo" : "Debug outside demo"}
+      </ReactNative.Text>
+    );
+  }
+  jest.spyOn(console, "error").mockImplementation(() => undefined);
+  const view = await renderRouter(
+    { appDir: APP_DIR, overrides: { debug: Debug } },
+    { initialUrl: "/demo?scenario=host-unreachable" }
+  );
+  const demoHost = { name: /^unreachable,/ };
+  expect(await screen.findByRole("button", demoHost)).toBeOnTheScreen();
+  await act(() => router.push("/debug"));
+  expect(
+    await screen.findByRole("header", { name: "This screen couldn’t load" })
+  ).toBeOnTheScreen();
+  expect(view.getPathname()).toBe("/debug");
+  fails = false;
+  await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByText("Debug in demo")).toBeOnTheScreen();
+  await act(() => router.back());
+  expect(await screen.findByRole("button", demoHost)).toBeOnTheScreen();
+});
+
 test("retrying a failed settings screen preserves its place in the settings stack", async () => {
   installNative(null);
   let fails = true;

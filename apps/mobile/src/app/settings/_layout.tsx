@@ -3,10 +3,6 @@
  * large titles. Wiring only.
  */
 import { Stack } from "expo-router";
-import { RouteErrorBoundary } from "@/ui/route-error-boundary";
-
-export const ErrorBoundary = RouteErrorBoundary;
-export const unstable_settings = { screenErrorBoundary: ErrorBoundary };
 
 /** Stack for the settings sections. */
 export default function SettingsLayout() {

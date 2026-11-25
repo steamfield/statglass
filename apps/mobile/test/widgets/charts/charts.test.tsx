@@ -41,6 +41,8 @@ const layout = () =>
   });
 
 function TickChart() {
+  // Another consumer can create a shared value before the chart mounts.
+  Reanimated.useSharedValue(1);
   const [index, setIndex] = useState(0);
   const tick = [0, 1, 3, 4, 5][index] ?? 0;
   return (
@@ -320,7 +322,10 @@ describe("phone chart states and motion", () => {
       fireEvent.press(screen.getByRole("button", { name: "Advance chart" }));
     await layout();
     expect(timing).not.toHaveBeenCalled();
-    const translation = sharedValues.mock.results[0];
+    const translationIndex = sharedValues.mock.calls.findIndex(
+      ([initial]) => initial === 0
+    );
+    const translation = sharedValues.mock.results[translationIndex];
     if (translation?.type !== "return") throw new Error("No chart translation");
     const setTranslation = jest.spyOn(translation.value, "set");
     await advance();
