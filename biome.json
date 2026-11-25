@@ -706,6 +706,12 @@
       "includes": ["apps/mobile/**"],
       "linter": {
         "rules": {
+          "a11y": {
+            "useValidAriaRole": {
+              "level": "error",
+              "options": { "ignoreNonDom": true }
+            }
+          },
           "style": {
             "noRestrictedImports": {
               "level": "error",
