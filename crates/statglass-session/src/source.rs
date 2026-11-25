@@ -312,7 +312,7 @@ async fn run_loop(
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
                 (source.on_status)(status.clone());
-                let result = session_loop(
+                session_loop(
                     source,
                     sink,
                     session,
@@ -321,10 +321,7 @@ async fn run_loop(
                     &before,
                     Some(active),
                 )
-                .await;
-                // Nothing refills the ring until the next session says otherwise.
-                sink.live.set_refill_pending(false);
-                result
+                .await
             }
             Err(e) => Err(e),
         };
@@ -586,11 +583,11 @@ impl Session<'_> {
         self.detail = next.interest.detail;
         if !next.interest.detail {
             self.ring_filled = false;
-            self.sync_refill_pending();
         } else if detail_starts && self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
             self.next_tier = 0;
             self.history_failed = false;
         }
+        self.sync_refill_pending();
         self.pending_interest = Some(next.interest);
         Ok(SessionAction::Continue)
     }

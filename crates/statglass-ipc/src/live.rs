@@ -406,6 +406,20 @@ impl Stream {
             self.last_frame_ts = None;
         } else {
             if self.awaiting_refill && !self.feed.hub().refill_pending() {
+                if self
+                    .feed
+                    .hub()
+                    .backfill_anchor()
+                    .is_some_and(|(_, ring)| Some(ring) != self.timeline)
+                {
+                    // The refill landed while this frame, from before it, sat on the
+                    // bus: restart on the ring's new timeline, whose plan ends the
+                    // wait. The frame belongs to the old one and is dropped.
+                    self.catch_up()?;
+                    self.sent_until = i64::MIN;
+                    self.last_frame_ts = None;
+                    return Ok(());
+                }
                 // The refill the window waits for added nothing, so no new timeline
                 // follows to end the wait.
                 self.awaiting_refill = false;

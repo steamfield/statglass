@@ -1689,3 +1689,59 @@ async fn a_refill_that_adds_nothing_still_ends_the_wait() {
     feed.tick(&l, 23_000, 4.0);
     assert_eq!(drain(&rx).await, ["frame 1 @23000"], "the plan goes once");
 }
+
+/// The refill can land while a frame from before it still sits on the bus. That frame
+/// must not end the wait with an empty plan: the stream restarts on the ring's new
+/// timeline instead, so the window takes the whole range at once.
+#[tokio::test(start_paused = true)]
+async fn a_frame_from_before_the_refill_restarts_on_the_new_timeline() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    feed.hub.set_refill_pending(true);
+    feed.tick(&l, 20_000, 1.0);
+    let (s, rx, _) = sink();
+    let reg = registry(&["phone"]);
+    reg.subscribe("phone", feed.clone(), s, req(300_000))
+        .unwrap();
+    drain(&rx).await;
+
+    // A frame on the old timeline is published, then the refill moves the ring before
+    // the stream task reads it.
+    feed.tick(&l, 21_000, 2.0);
+    let history = statglass_store::HistoryResult {
+        tier: statglass_schema::Tier::S10,
+        bucket_ms: 10_000,
+        series: vec![statglass_store::SeriesPoints {
+            key: SeriesKey::bare(MetricId::from_static("cpu.total")),
+            points: [(0, 20.0), (10_000, 25.0)]
+                .into_iter()
+                .map(|(t, avg)| statglass_store::Point {
+                    t,
+                    min: avg,
+                    max: avg,
+                    avg,
+                })
+                .collect(),
+        }],
+        gaps: Vec::new(),
+    };
+    assert!(feed.hub.refill(&history, 1) > 0);
+    feed.hub.set_refill_pending(false);
+    let after = drain(&rx).await;
+    assert!(
+        after.iter().all(|m| !m.starts_with("plan 0")),
+        "no empty plan: {after:?}"
+    );
+    assert!(
+        after
+            .iter()
+            .any(|m| m.starts_with("plan ") && m.ends_with(" None")),
+        "the restart's plan ends the wait: {after:?}"
+    );
+    assert!(
+        after
+            .iter()
+            .any(|m| m.starts_with("backfill") && m.ends_with(" t1")),
+        "the ring's rows on the new timeline: {after:?}"
+    );
+}

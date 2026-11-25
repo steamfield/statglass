@@ -169,10 +169,12 @@ impl Session<'_> {
     }
 
     /// Tells open windows whether the ring still waits on a refill from the host's
-    /// recent rows (D-159): a session without a mirror whose host keeps history, before
+    /// recent rows (D-159): a session without a mirror whose host keeps history, while
+    /// live detail is on (the refill runs only then; cellular can withhold it), before
     /// its refill for this stretch of detail has run or its request has timed out.
     pub(super) fn sync_refill_pending(&self) {
         let pending = self.source.mirror.is_none()
+            && self.detail
             && self.history_available
             && !self.ring_filled
             && self.recent_timed_out.is_none();
