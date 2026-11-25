@@ -1,15 +1,24 @@
 # StatGlass for iPhone: App Store handoff
 
-Status on 2026-11-25, when `deliver/ios-app` merged to main. The code for StatGlass for
-iPhone 1.0.0 is done: RFC phases 0 to 4, the polish RFC (`plan/rfc-ios-polish.md`) and
-App Store readiness (plan phase 13) all landed, the final whole-branch review ran and its
-findings are fixed. What is left is signing, a device pass and App Store Connect work, all
-of which need the maintainer. The release runbook is `.github/releasing-mobile.md`; this
-file says what has and hasn't been done against it.
+Status on 2026-11-25, as of main at `5c82fc53` (the merge of the export and release-check
+fixes after `deliver/ios-app`). The code for StatGlass for iPhone 1.0.0 is done: RFC phases
+0 to 4, the polish RFC (`plan/rfc-ios-polish.md`) and App Store readiness (plan phase 13)
+all landed, and the final whole-branch review ran with its findings fixed. Signing works
+and a real App Store IPA passes `make mobile-release-check`. What is left is a rebuild,
+store screenshots, App Store Connect, the upload and a device pass. The release runbook is
+`.github/releasing-mobile.md`; this file says what has and hasn't been done against it.
 
-## Blocked on you, in order
+## Done
 
-### 1. Distribution certificate (done)
+- App icon: the heat-grid mark from the desktop's `src-tauri/icons/icon.png`, in light
+  (1024 px, no alpha, as the store icon requires), dark and tinted variants
+  (`apps/mobile/assets/icon-*.png`). The release check confirms `Assets.car` holds the
+  AppIcon and that no image is a placeholder.
+- The privacy and support page is live at
+  `https://statglass.steamfield.io/docs/iphone`, with both `#privacy` and `#support`
+  anchors.
+
+### Distribution certificate and export
 
 With your go-ahead, the export now passes `-allowProvisioningUpdates`, and on its first run
 Xcode created a cloud-managed "Apple Distribution: Riley Hilliard (YWA9Q642YP)" certificate
@@ -25,10 +34,37 @@ archive. Two lines in the output are expected: the Hermes SDK signature line (Co
 copy is unsigned; Xcode signs the embedded one) and the advisory strings
 `IOHIDEventSystemClient IOReport`, which are text in the Rust library, not imports.
 
-Build 1131 was cut before these fixes merged, so rebuild from main before uploading; the
-build number is the commit count and must exceed any build you already uploaded.
+Build 1131 was cut before these fixes merged, so rebuild from main before uploading
+(`make mobile-check`, `make mobile-archive`, `make mobile-release-check`; an agent can run
+these). The build number is the commit count and must exceed any build already uploaded;
+nothing has been uploaded yet.
 
-### 2. Device pass on the iPhone 13 Pro
+## Left to do, in order
+
+### 1. Rebuild and store screenshots
+
+Rebuild from main as above. Then five demo screens at 1206 x 2622 from the simulator (Hosts, host overview, CPU, Memory,
+Network), steps in the runbook. None are made yet. An agent can take them; they land in
+`apps/mobile/dist/store/`.
+
+### 2. App Store Connect (you)
+
+Follow the checklist in `.github/releasing-mobile.md`. Decisions already made (D-156,
+D-158): name StatGlass, Utilities with Developer Tools secondary, Data Not Collected,
+`ITSAppUsesNonExemptEncryption` true with France excluded from availability, review
+access through "Try demo hosts" only (the review notes are in the runbook).
+
+Nothing is created there yet. Still to do: the app record, the metadata above, the age
+rating, the Accessibility Nutrition Labels and the iPad compatibility-mode check.
+
+### 3. Upload (you)
+
+Validate and upload the rebuilt archive from Xcode Organizer, or open
+`apps/mobile/dist/ios/StatGlass.ipa` in Transporter; both use your Apple ID sign-in.
+`make mobile-archive` never uploads (D-158). Select the processed build in App Store
+Connect.
+
+### 4. Device pass on the iPhone 13 Pro
 
 The phone (UDID `00008110-001C30661ABA401E`) is registered; the install commands are in
 the `iphone-device-install` memory. Nothing has run on a physical device yet. Check:
@@ -45,18 +81,15 @@ the `iphone-device-install` memory. Nothing has run on a physical device yet. Ch
   NAT64 synthesis; it is unit-tested, not tried on a real IPv6-only network.
 - Face ID with App Lock on.
 
-### 3. App Store Connect
+TestFlight is the easiest way to run this on the uploaded build. This is the main risk
+left: a pairing or Secure Enclave bug found here means a code fix and a new build.
 
-Follow the checklist in `.github/releasing-mobile.md`. Decisions already made (D-156,
-D-158): name StatGlass, Utilities with Developer Tools secondary, Data Not Collected,
-`ITSAppUsesNonExemptEncryption` true with France excluded from availability, review
-access through "Try demo hosts" only (the review notes are in the runbook).
+### 5. Submit for review
 
-Still to do: the store screenshots (five demo screens at 1206 x 2622, steps in the
-runbook; none are made yet), the iPad compatibility-mode check, the age rating, and the
-Accessibility Nutrition Labels.
+After the device pass, submit the build. Then record the approved build's protocol range
+in `compat/mobile-protocol.json` and tag `mobile-v1.0.0` (runbook).
 
-### 4. Support contact
+### Support contact (optional)
 
 The support anchor at `/docs/iphone#support` points to GitHub issues. App Review accepts
 that, but if you want an email address there, add it to the docs page; the run did not
@@ -65,9 +98,10 @@ put your address anywhere public.
 ## Before real hosts work fully
 
 - Module-page history on the phone uses the `query.history.v1` host feature, which ships
-  in the macOS app and agent after 0.15.0. A 0.15.0 host connects and streams live data,
-  but its module pages show the "needs a newer StatGlass" state until it updates. Cut the
-  next macOS release (and agent) before or with the iPhone launch.
+  in the macOS app and agent after 0.15.0, still the latest release on 2026-11-25. A
+  0.15.0 host connects and streams live data, but its module pages show the "needs a
+  newer StatGlass" state until it updates. Cut the next macOS release (and agent) before
+  or with the iPhone launch.
 - Linux hosts inside a container show no network rows: the Linux collector skips veth
   interfaces on purpose. Not a phone bug.
 
@@ -99,5 +133,6 @@ put your address anywhere public.
 - A stash `p12-axis-verify` (one file, `packages/core/src/chart-math/axis-ticks.ts`, a
   debugging probe from phase 12) is left on the shared stash stack; drop it when
   convenient.
-- The docs site build needed its `@core` alias moved to `packages/core` (fixed on this
-  branch, in `docs-site/astro.config.mjs`).
+- The docs site build needed its `@core` alias moved to `packages/core` (fixed on main, in
+  `docs-site/astro.config.mjs`).
+- Tags `ios-app-phase-*` exist locally only; they were not pushed.
