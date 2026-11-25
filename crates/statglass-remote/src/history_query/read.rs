@@ -3,7 +3,7 @@ use statglass_proto::{
     Answer, CodecError, ErrorCode, HistoryAnswer, HistoryClamp, HistoryQuery, Message, WireEvent,
     WireHistorySeries, WireSeriesStats, encode_message,
 };
-use statglass_schema::{Catalog, HostId, SeriesKey, Tier, TimeRange, floor_to, is_js_safe};
+use statglass_schema::{Catalog, HostId, SeriesKey, TimeRange, floor_to, is_js_safe};
 use statglass_store::{
     BucketRow, HistoryQuery as StoreQuery, HistoryResult, StoreError, TierChoice, range_stats,
     tier_budget::tier_for_budget,
@@ -25,6 +25,8 @@ enum HistoryQueryError {
     Encode(#[from] CodecError),
     #[error("The history metadata exceeds the reply size limit")]
     Oversize,
+    #[error("The encoded reply was not a history answer")]
+    ReplyShape,
 }
 
 impl HistoryQueryError {
@@ -90,8 +92,6 @@ fn read_history(
         let coverage = reader.history_tier_coverage(host, q.to_ms)?;
         let tier = tier_for_budget(q.from_ms, q.to_ms, q.max_points, coverage);
         q.tier = TierChoice::Fixed(tier);
-        let source = if tier == Tier::M15 { Tier::M1 } else { tier };
-        let width = source.bucket_ms().unwrap_or(1);
         let events = match query.events_for {
             Some(module) => reader.event_rows(
                 host,
@@ -104,11 +104,15 @@ fn read_history(
             None => Vec::new(),
         };
         let mut complete_to_ms = None;
-        let snapshot = reader.history_snapshot(&q, Some(series_limit), || {
-            let from = floor_to(q.from_ms, width).max(now - RECENT_ROWS_MS);
+        let snapshot = reader.history_snapshot(&q, Some(series_limit), |grid| {
+            let from = grid.recent_base.max(now - RECENT_ROWS_MS);
             let rows = recent(from, q.to_ms.min(now));
             if rows.is_some() {
-                complete_to_ms = Some(q.to_ms.min(floor_to(closed_before, width)));
+                complete_to_ms = Some(
+                    q.to_ms
+                        .min(floor_to(closed_before, grid.recent_width))
+                        .max(q.from_ms),
+                );
             }
             rows.unwrap_or_default()
         })?;
@@ -122,14 +126,14 @@ fn read_history(
         clamped.push(HistoryClamp::Series);
     }
     let (mut read, durable_to_ms) = snapshot
-        .merge(q.max_points, closed_before)
+        .merge_chart(q.max_points, closed_before)
         .map_err(HistoryStoreError::from)?;
     let reply = HistoryAnswer {
         tier: read.tier,
         bucket_ms: read.bucket_ms,
         complete_to_ms: complete_to_ms.unwrap_or(durable_to_ms),
         stats: per_key_stats(&mut read, &q, &catalog, now),
-        series: wire_series(&read, &catalog, &hold),
+        series: wire_series(&read, &hold),
         gaps: read.gaps,
         events: events
             .into_iter()
@@ -145,10 +149,10 @@ fn read_history(
     };
     bounded_reply(reply, q.max_points, |budget, reply| {
         let (read, _) = snapshot
-            .merge(budget, closed_before)
+            .merge_chart(budget, closed_before)
             .map_err(HistoryStoreError::from)?;
         reply.bucket_ms = read.bucket_ms;
-        reply.series = wire_series(&read, &catalog, &hold);
+        reply.series = wire_series(&read, &hold);
         Ok(())
     })
 }
@@ -239,38 +243,18 @@ fn per_key_stats(
 
 fn wire_series(
     read: &HistoryResult,
-    catalog: &Catalog,
     hold: &impl Fn(&SeriesKey, i64) -> i64,
 ) -> Vec<WireHistorySeries> {
     read.series
         .iter()
-        .map(|s| {
-            let module = catalog.get(s.key.metric.as_str()).map(|d| d.module);
-            // Gaps and points are in start order. Walk the relevant gaps once per series.
-            let mut gaps = read
-                .gaps
-                .iter()
-                .filter(|g| g.module.is_none() || g.module == module)
-                .peekable();
-            let points = s
+        .map(|s| WireHistorySeries {
+            key: s.key.clone(),
+            hold_ms: hold(&s.key, read.bucket_ms),
+            points: s
                 .points
                 .iter()
-                .filter(|p| {
-                    while gaps
-                        .peek()
-                        .is_some_and(|g| g.end_ms.is_some_and(|end| end <= p.t))
-                    {
-                        gaps.next();
-                    }
-                    !gaps.peek().is_some_and(|g| g.start_ms <= p.t)
-                })
                 .map(|p| (p.t, p.avg, p.min, p.max))
-                .collect();
-            WireHistorySeries {
-                key: s.key.clone(),
-                hold_ms: hold(&s.key, read.bucket_ms),
-                points,
-            }
+                .collect(),
         })
         .collect()
 }
@@ -292,7 +276,7 @@ fn bounded_reply(
             ..
         } = message
         else {
-            unreachable!("the size check always encodes a history reply");
+            return Err(HistoryQueryError::ReplyShape);
         };
         reply = answer;
         if bytes <= HISTORY_MAX_ANSWER_BYTES {
@@ -321,7 +305,7 @@ fn bounded_reply(
 mod tests {
     use super::*;
     use crate::history_query::history_seed::{host_record, seed_by_retention};
-    use statglass_schema::{Gap, GapReason, Module, SeriesSelector};
+    use statglass_schema::{Gap, GapReason, Module, SeriesSelector, Tier};
     use std::cell::Cell;
     use std::sync::Arc;
 
@@ -432,6 +416,12 @@ mod tests {
         let disabled = run(&disabled_query, now, Some(vec![]));
         let fallback = run(&q, now, None);
         let boundary = run(&q, minute + 500, Some(vec![row(Tier::S10, minute)]));
+        let open_from = minute + 100;
+        let open_query = HistoryQuery {
+            from_ms: open_from,
+            ..q.clone()
+        };
+        let inside_open_bucket = run(&open_query, minute + 500, Some(vec![]));
         q.to_ms = Some(minute - 70_000);
         let ending_in_gap = run(&q, now, Some(vec![]));
         q.from_ms = minute - 7_200_000;
@@ -439,11 +429,19 @@ mod tests {
         q.max_points = 1;
         let slow = run(&q, now, Some(vec![row(Tier::M1, minute - 180_000)]));
         assert_eq!(
-            [disabled, fallback, boundary, ending_in_gap, slow],
+            [
+                disabled,
+                fallback,
+                boundary,
+                inside_open_bucket,
+                ending_in_gap,
+                slow
+            ],
             [
                 (Tier::S10, minute),
                 (Tier::S10, minute - 140_000),
                 (Tier::S10, minute - 10_000),
+                (Tier::S10, open_from),
                 (Tier::S10, minute - 70_000),
                 (Tier::M15, minute),
             ],

@@ -20,6 +20,13 @@ it("leaves the open minute for live data and completes a fixed past range", asyn
       status: "ok",
       data: { complete_to_ms: minute - 60_000 },
     });
+    const insideOpenMinute = minute + 100;
+    expect(
+      await transport.hostHistory({ ...request, from_ms: insideOpenMinute })
+    ).toMatchObject({
+      status: "ok",
+      data: { complete_to_ms: insideOpenMinute },
+    });
     expect(
       await transport.hostHistory({ ...request, to_ms: past })
     ).toMatchObject({

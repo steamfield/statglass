@@ -1,6 +1,6 @@
 //! Tier selection and captured history reads.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::Entry};
 use std::sync::Arc;
 
 use rusqlite::params;
@@ -9,6 +9,7 @@ use statglass_schema::{Gap, HostId, SeriesKey, SeriesSelector, Tier, floor_to};
 use super::{HistoryBucketRow, Merge, Positions, Reader, f32_at};
 use crate::db::{self, tier_width};
 use crate::error::{Result, StoreError};
+use crate::slots::Slots;
 use crate::types::{BucketRow, HistoryQuery, HistoryResult, Retention, TierChoice, TierCoverage};
 
 impl Reader {
@@ -35,17 +36,16 @@ impl Reader {
         &mut self,
         q: &HistoryQuery,
         max_series: Option<usize>,
-        recent: impl FnOnce() -> R,
+        recent: impl FnOnce(HistoryGrid) -> R,
     ) -> Result<HistorySnapshot<R>> {
         self.with_history_snapshot(|reader| {
             let host = reader.host_ref(q.host)?;
             let tier = reader.resolve_tier(host, q.from_ms, q.to_ms, q.tier)?;
-            let width = tier_width(tier)?;
+            let grid = HistoryGrid::new(tier, q.from_ms)?;
             let gaps = reader.gaps_in(host, q.from_ms, q.to_ms)?;
             let mut snapshot = HistorySnapshot {
                 query: q.clone(),
-                tier,
-                width,
+                grid,
                 gaps,
                 layouts: BTreeMap::new(),
                 rows: Vec::new(),
@@ -55,21 +55,16 @@ impl Reader {
             if q.to_ms <= q.from_ms || q.selectors.is_empty() {
                 return Ok(snapshot);
             }
-            let base = floor_to(q.from_ms, width);
-            snapshot.layouts = reader.history_layouts(host, tier, base, q.to_ms, &q.selectors)?;
+            let layouts = reader.history_layouts(host, tier, grid.base, q.to_ms, &q.selectors)?;
             if let Some(selection) = &mut snapshot.selection {
-                for layout in snapshot.layouts.values() {
+                for layout in layouts.values() {
                     selection.add(layout, &q.selectors, true);
                 }
-                snapshot
-                    .layouts
-                    .retain(|_, layout| layout.iter().any(|key| selection.keys.contains(key)));
             }
-            let positions = snapshot
-                .layouts
-                .iter()
-                .map(|(&id, layout)| {
-                    let indexes = layout
+            snapshot.layouts = layouts
+                .into_iter()
+                .filter_map(|(id, series)| {
+                    let positions: Vec<_> = series
                         .iter()
                         .enumerate()
                         .filter(|(_, key)| {
@@ -80,20 +75,21 @@ impl Reader {
                         })
                         .map(|(index, _)| index)
                         .collect();
-                    (id, indexes)
+                    (!positions.is_empty()).then_some((id, CapturedLayout { series, positions }))
                 })
                 .collect();
-            snapshot.rows = reader.history_bucket_rows(host, tier, base, q.to_ms, &positions)?;
+            snapshot.rows =
+                reader.history_bucket_rows(host, tier, grid.base, q.to_ms, &snapshot.layouts)?;
             #[cfg(test)]
             {
                 reader.history_rows_read = snapshot.rows.len();
             }
-            let recent = recent();
+            let recent = recent(grid);
             if let Some(selection) = &mut snapshot.selection {
                 for row in recent
                     .as_ref()
                     .iter()
-                    .filter(|row| in_recent_range(row, tier, base, q.to_ms))
+                    .filter(|row| in_recent_range(row, tier, grid.base, q.to_ms))
                 {
                     selection.add(&row.series, &q.selectors, false);
                 }
@@ -142,7 +138,7 @@ impl Reader {
         tier: Tier,
         from: i64,
         to: i64,
-        layouts: &BTreeMap<u32, Vec<usize>>,
+        layouts: &BTreeMap<u32, CapturedLayout>,
     ) -> Result<Vec<HistoryBucketRow>> {
         if layouts.is_empty() {
             return Ok(Vec::new());
@@ -172,14 +168,14 @@ impl Reader {
         while let Some(row) = rows.next()? {
             let ts = row.get(0)?;
             let layout_id = row.get(1)?;
-            let positions = layouts.get(&layout_id).ok_or_else(|| {
+            let layout = layouts.get(&layout_id).ok_or_else(|| {
                 StoreError::Corrupt(format!("row refers to missing layout {layout_id}"))
             })?;
             let blob = row.get_ref(2)?.as_blob().map_err(|error| {
                 StoreError::Corrupt(format!("bucket at {ts} has invalid stats: {error}"))
             })?;
-            let mut values = Vec::with_capacity(positions.len());
-            for &position in positions {
+            let mut values = Vec::with_capacity(layout.positions.len());
+            for &position in &layout.positions {
                 let start = position * 3;
                 let (Some(min), Some(max), Some(avg)) = (
                     f32_at(blob, start),
@@ -310,13 +306,48 @@ fn covered_tier(
     Ok(Tier::M15)
 }
 
+/// The persisted grid and the bounds of the tier read from the live hub.
+#[derive(Clone, Copy)]
+pub struct HistoryGrid {
+    tier: Tier,
+    width: i64,
+    base: i64,
+    pub recent_width: i64,
+    pub recent_base: i64,
+}
+
+impl HistoryGrid {
+    fn new(tier: Tier, from_ms: i64) -> Result<Self> {
+        let width = tier_width(tier)?;
+        let base = floor_to(from_ms, width);
+        let (recent_width, recent_base) = if tier == Tier::M15 {
+            let width = tier_width(Tier::M1)?;
+            (width, floor_to(from_ms, width))
+        } else {
+            (width, base)
+        };
+        Ok(Self {
+            tier,
+            width,
+            base,
+            recent_width,
+            recent_base,
+        })
+    }
+}
+
+struct CapturedLayout {
+    series: Arc<[SeriesKey]>,
+    /// Source indexes in the order in which each row's triples were packed.
+    positions: Vec<usize>,
+}
+
 /// Source buckets and gaps captured by one history read.
 pub struct HistorySnapshot<R> {
     query: HistoryQuery,
-    tier: Tier,
-    width: i64,
+    grid: HistoryGrid,
     gaps: Vec<Gap>,
-    layouts: BTreeMap<u32, Arc<[SeriesKey]>>,
+    layouts: BTreeMap<u32, CapturedLayout>,
     rows: Vec<HistoryBucketRow>,
     recent: Option<R>,
     selection: Option<HistorySelection>,
@@ -329,22 +360,34 @@ impl<R: AsRef<[BucketRow]>> HistorySnapshot<R> {
 
     /// Builds points and the newest closed source bucket end represented by them.
     pub fn merge(&self, budget: u32, now: i64) -> Result<(HistoryResult, i64)> {
+        self.merge_with_gaps(budget, now, &[])
+    }
+
+    /// Source buckets fully covered by a gap contribute no measurements to the chart.
+    /// A bucket that overlaps the boundary is kept as a single measured aggregate.
+    pub fn merge_chart(&self, budget: u32, now: i64) -> Result<(HistoryResult, i64)> {
+        self.merge_with_gaps(budget, now, &self.gaps)
+    }
+
+    fn merge_with_gaps(&self, budget: u32, now: i64, gaps: &[Gap]) -> Result<(HistoryResult, i64)> {
         let q = &self.query;
         let Some(recent) = &self.recent else {
             return Ok((
                 HistoryResult {
-                    tier: self.tier,
-                    bucket_ms: self.width,
+                    tier: self.grid.tier,
+                    bucket_ms: self.grid.width,
                     series: Vec::new(),
                     gaps: self.gaps.clone(),
                 },
                 q.from_ms,
             ));
         };
-        let mut merge = Merge::new(q, self.width, budget);
+        let slots = Slots::new(self.grid.base, q.to_ms, self.grid.width, budget);
+        let mut merge = Merge::new(q, slots);
         merge.closed_before = now;
+        merge.gaps = gaps;
         merge.keys = self.selection.as_ref().map(|s| &s.keys);
-        let recent = merge.recent(recent.as_ref(), self.tier);
+        let recent = merge.recent(recent.as_ref(), self.grid.tier);
         let recent_ts: HashSet<i64> = recent.iter().map(|r| r.bucket_ts).collect();
         let mut matches: HashMap<u32, Positions> = HashMap::new();
         for (ts, layout_id, stats, weight) in &self.rows {
@@ -356,18 +399,25 @@ impl<R: AsRef<[BucketRow]>> HistorySnapshot<R> {
                 && recent_ts.contains(ts)
                 && recent
                     .iter()
-                    .any(|r| r.bucket_ts == *ts && r.series == *layout)
+                    .any(|r| r.bucket_ts == *ts && r.series == layout.series)
             {
                 continue;
             }
-            let positions = matches.entry(*layout_id).or_insert_with(|| {
-                merge
-                    .positions(layout)
-                    .into_iter()
-                    .enumerate()
-                    .map(|(packed, (result, _))| (result, packed))
-                    .collect()
-            });
+            let positions = match matches.entry(*layout_id) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let mut positions = Vec::with_capacity(layout.positions.len());
+                    for (packed, &source) in layout.positions.iter().enumerate() {
+                        let key = layout.series.get(source).ok_or_else(|| {
+                            StoreError::Corrupt(format!(
+                                "layout {layout_id} lacks captured position {source}"
+                            ))
+                        })?;
+                        positions.push((merge.series_index(key), packed));
+                    }
+                    entry.insert(positions)
+                }
+            };
             merge.add(
                 *ts,
                 positions,
@@ -379,7 +429,7 @@ impl<R: AsRef<[BucketRow]>> HistorySnapshot<R> {
         let complete_to_ms = merge.complete_to_ms.min(q.to_ms);
         Ok((
             HistoryResult {
-                tier: self.tier,
+                tier: self.grid.tier,
                 bucket_ms: merge.slots.slot_w,
                 series: merge.finish(),
                 gaps: self.gaps.clone(),
@@ -475,8 +525,14 @@ mod tests {
             }],
         };
         let mut reader = Reader::open(&path).unwrap();
-        let snapshot = reader.history_snapshot(&q, Some(2), Vec::new).unwrap();
+        let mut snapshot = reader
+            .history_snapshot(&q, Some(2), |_| Vec::new())
+            .unwrap();
         assert_eq!(snapshot.rows[0].2.as_slice(), &[[1., 3., 2.], [7., 9., 8.]]);
+        // Change the packing order without changing the selected set or the source layout.
+        // Recomputing the packed indexes from the original layout would swap the results.
+        snapshot.layouts.get_mut(&1).unwrap().positions.swap(0, 1);
+        snapshot.rows[0].2.swap(0, 1);
         let (read, _) = snapshot.merge(1, 10_000).unwrap();
         assert_eq!(
             read.series

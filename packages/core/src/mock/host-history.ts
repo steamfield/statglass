@@ -12,9 +12,9 @@ export function createMockHostHistory(
       data: {
         tier: "m1",
         bucket_ms: MINUTE_MS,
-        complete_to_ms: Math.min(
-          request.to_ms ?? now,
-          floorTo(closedBefore, MINUTE_MS)
+        complete_to_ms: Math.max(
+          request.from_ms,
+          Math.min(request.to_ms ?? now, floorTo(closedBefore, MINUTE_MS))
         ),
         series: [],
         gaps: [],

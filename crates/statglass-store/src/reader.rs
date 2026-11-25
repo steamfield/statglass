@@ -204,7 +204,7 @@ impl Reader {
         q: &HistoryQuery,
         recent: impl FnOnce() -> R,
     ) -> Result<HistoryResult> {
-        self.history_snapshot(q, None, recent)?
+        self.history_snapshot(q, None, |_| recent())?
             .merge(q.max_points, i64::MAX)
             .map(|(result, _)| result)
     }
@@ -608,7 +608,7 @@ pub fn history_recent(q: &HistoryQuery, recent: &[BucketRow]) -> Result<HistoryR
             gaps: Vec::new(),
         });
     }
-    let mut merge = Merge::new(q, width, q.max_points);
+    let mut merge = Merge::new(q, Slots::new(q.from_ms, q.to_ms, width, q.max_points));
     let recent = merge.recent(recent, tier);
     merge.add_recent(&recent)?;
     Ok(HistoryResult {
@@ -629,19 +629,48 @@ struct Merge<'q> {
     /// Result series in key order.
     index: BTreeMap<SeriesKey, usize>,
     /// Per series, accumulators by slot index.
-    accs: Vec<BTreeMap<i64, Acc>>,
+    accs: Vec<SeriesMerge>,
+    gaps: &'q [Gap],
+    module_gaps: HashMap<Option<Module>, GapSpans>,
+}
+
+type GapSpans = Arc<[(i64, i64)]>;
+
+struct SeriesMerge {
+    slots: BTreeMap<i64, Acc>,
+    gaps: Option<GapSpans>,
+}
+
+fn gap_spans(gaps: &[Gap], module: Option<Module>) -> GapSpans {
+    let mut spans: Vec<(i64, i64)> = Vec::new();
+    for g in gaps
+        .iter()
+        .filter(|g| g.module.is_none() || g.module == module)
+    {
+        let end = g.end_ms.unwrap_or(i64::MAX);
+        if let Some((_, previous_end)) = spans.last_mut()
+            && g.start_ms <= *previous_end
+        {
+            *previous_end = (*previous_end).max(end);
+        } else {
+            spans.push((g.start_ms, end));
+        }
+    }
+    spans.into()
 }
 
 impl<'q> Merge<'q> {
-    fn new(q: &'q HistoryQuery, width: i64, budget: u32) -> Self {
+    fn new(q: &'q HistoryQuery, slots: Slots) -> Self {
         Self {
             q,
-            slots: Slots::new(q.from_ms, q.to_ms, width, budget),
+            slots,
             keys: None,
             closed_before: i64::MAX,
             complete_to_ms: q.from_ms,
             index: BTreeMap::new(),
             accs: Vec::new(),
+            gaps: &[],
+            module_gaps: HashMap::new(),
         }
     }
 
@@ -662,15 +691,31 @@ impl<'q> Merge<'q> {
                 |keys| keys.contains(key),
             );
             if selected {
-                let next = self.index.len();
-                let i = *self.index.entry(key.clone()).or_insert(next);
-                if i == self.accs.len() {
-                    self.accs.push(BTreeMap::new());
-                }
-                m.push((i, pos));
+                m.push((self.series_index(key), pos));
             }
         }
         m
+    }
+
+    fn series_index(&mut self, key: &SeriesKey) -> usize {
+        let next = self.index.len();
+        let index = *self.index.entry(key.clone()).or_insert(next);
+        if index == next {
+            let gaps = (!self.gaps.is_empty()).then(|| {
+                let module = Catalog::builtin()
+                    .get(key.metric.as_str())
+                    .map(|def| def.module);
+                self.module_gaps
+                    .entry(module)
+                    .or_insert_with(|| gap_spans(self.gaps, module))
+                    .clone()
+            });
+            self.accs.push(SeriesMerge {
+                slots: BTreeMap::new(),
+                gaps,
+            });
+        }
+        index
     }
 
     /// Adds one bucket row; `stat(i)` is the `i`th value of its `(min, max, avg)` triples.
@@ -682,6 +727,7 @@ impl<'q> Merge<'q> {
         weight: u32,
     ) -> Result<()> {
         let slot = self.slots.index(ts);
+        let end = ts.saturating_add(self.slots.unit_w * i64::from(weight));
         let mut measured = false;
         for &(i, pos) in positions {
             let (Some(min), Some(max), Some(avg)) =
@@ -696,11 +742,16 @@ impl<'q> Merge<'q> {
                 continue;
             }
             if let Some(a) = self.accs.get_mut(i) {
-                a.entry(slot).or_default().add(min, max, avg, weight);
+                if a.gaps.as_ref().is_some_and(|gaps| {
+                    let after = gaps.partition_point(|&(start, _)| start <= ts);
+                    after > 0 && gaps[after - 1].1 >= end
+                }) {
+                    continue;
+                }
+                a.slots.entry(slot).or_default().add(min, max, avg, weight);
                 measured = true;
             }
         }
-        let end = ts.saturating_add(self.slots.unit_w * i64::from(weight));
         if measured && end <= self.closed_before {
             self.complete_to_ms = self.complete_to_ms.max(end);
         }
@@ -732,7 +783,7 @@ impl<'q> Merge<'q> {
             let Some(slots) = self.accs.get_mut(i) else {
                 continue;
             };
-            let points: Vec<Point> = std::mem::take(slots)
+            let points: Vec<Point> = std::mem::take(&mut slots.slots)
                 .into_iter()
                 .map(|(slot, a)| self.slots.point(slot, &a, key.metric.as_str()))
                 .collect();
@@ -889,7 +940,9 @@ mod history_layout_tests {
         assert_eq!(read.series[0].points.last().unwrap().avg, 7.0);
 
         query.selectors[0].labels = Labels::new();
-        let snapshot = reader.history_snapshot(&query, Some(1), Vec::new).unwrap();
+        let snapshot = reader
+            .history_snapshot(&query, Some(1), |_| Vec::new())
+            .unwrap();
         let (limited, _) = snapshot.merge(query.max_points, 30 * DAY).unwrap();
         assert_eq!(reader.history_rows_read, expected_rows);
         assert!(snapshot.series_clamped());

@@ -296,13 +296,12 @@ fn history_heatmap_clamps_requested_and_matched_keys_and_reduces_oversized_repli
     assert_eq!(answer.clamped, [HistoryClamp::Series]);
 
     let from = NOW - 2 * HOUR + 10_500;
-    // The gap cuts through the first coarse slot and changes how its samples are
-    // weighted. A stat recomputed from the coarse grid would count different time.
+    // A gap within a source bucket changes the time weights used for range stats.
     let writer = store.writer().unwrap();
     writer
         .write_gap(
             host_record().id,
-            statglass_schema::Gap::module_disabled(from + 1, Some(from + 40_001), Module::Cpu),
+            statglass_schema::Gap::module_disabled(from + 1, Some(from + 5_001), Module::Cpu),
         )
         .unwrap();
     writer.flush().unwrap();
@@ -389,6 +388,39 @@ fn history_leaves_a_hole_for_a_midrange_gap() {
     assert_eq!(before.series[0].points.len() - points.len(), 10);
     assert!(points.iter().all(|p| !(start..end).contains(&p.0)));
     assert!(points.iter().any(|p| p.0 == end));
+}
+
+#[test]
+fn history_keeps_post_gap_measurements_in_a_slot_starting_inside_the_gap() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(HistoryStore::open(dir.path()));
+    let host = host_record();
+    let writer = store.register_host(&host).unwrap();
+    let cpu = key("cpu.total");
+    let layout: Arc<[SeriesKey]> = Arc::from([cpu.clone()]);
+    let from = NOW - 60_000;
+    let gap = statglass_schema::Gap::module_disabled(from, Some(from + 20_000), Module::Cpu);
+    writer.write_gap(host.id, gap).unwrap();
+    for (offset, stats) in [
+        (0, [80.0, 100.0, 90.0]),
+        (10_000, [70.0, 90.0, 80.0]),
+        (20_000, [15.0, 19.0, 17.0]),
+    ] {
+        writer
+            .write_bucket(statglass_store::BucketRow {
+                host: host.id,
+                tier: Tier::S10,
+                bucket_ts: from + offset,
+                series: layout.clone(),
+                stats: stats.to_vec(),
+            })
+            .unwrap();
+    }
+    writer.flush().unwrap();
+    let reply = ask(&server(store), request(from, NOW, &[cpu], 2));
+    assert_eq!(reply.bucket_ms, 30_000);
+    assert_eq!(reply.gaps, [gap]);
+    assert_eq!(reply.series[0].points, [(from, 17.0, 15.0, 19.0)]);
 }
 
 #[test]
@@ -750,9 +782,7 @@ fn history_breaks_equal_event_times_and_kinds_by_row_id() {
     )
     .unwrap();
     conn.execute_batch(
-        "DROP INDEX events_range;
-        CREATE INDEX events_range ON events (host_id, ts DESC, kind DESC, id);
-        INSERT INTO events (id, host_id, ts, kind, payload, seq)
+        "INSERT INTO events (id, host_id, ts, kind, payload, seq)
         VALUES (30, 1, 1000, 'power_spike', x'ff', 3),
                (10, 1, 1000, 'power_spike', x'ff', 2),
                (20, 1, 1000, 'power_spike', x'ff', 1);",
