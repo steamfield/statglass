@@ -157,11 +157,15 @@ async fn serve_until_signal(
     let mut term = signal(SignalKind::terminate()).context("installing the SIGTERM handler")?;
     let mut int = signal(SignalKind::interrupt()).context("installing the SIGINT handler")?;
     let (stop, stopped) = tokio::sync::watch::channel(false);
-    let server = statglass_remote::serve_metrics(
-        socket.to_path_buf(),
-        Arc::new(HostServer::new(host, history).with_space(Arc::new(SpaceService::new()))),
-        stopped,
-    );
+    let mut provider = HostServer::new(host, history).with_space(Arc::new(SpaceService::new()));
+    match crate::devices::seen_log() {
+        Ok(log) => provider = provider.with_device_seen(log),
+        Err(error) => tracing::warn!(
+            error = &*error as &dyn std::error::Error,
+            "locating device seen log"
+        ),
+    }
+    let server = statglass_remote::serve_metrics(socket.to_path_buf(), Arc::new(provider), stopped);
     tokio::pin!(server);
     tokio::select! {
         result = &mut server => {

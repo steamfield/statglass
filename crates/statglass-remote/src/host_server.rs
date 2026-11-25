@@ -1,9 +1,9 @@
 //! The metrics server for one host this process samples: the [`ServerProvider`] the app
 //! and the headless agent both serve over their metrics socket. [`ServedHost`] is the
 //! per-host data it reads; history comes from that host's [`HistoryStore`].
-use crate::ServerProvider;
 use crate::host_queries::SpaceAccess;
 use crate::status_to_wire;
+use crate::{DeviceSeenLog, ServerProvider};
 use statglass_engine::disk_space::SpaceService;
 use statglass_engine::{HistoryStore, LiveHub};
 use statglass_proto::{
@@ -62,6 +62,7 @@ pub struct HostServer<H> {
     host: Arc<H>,
     history: Arc<HistoryStore>,
     space: Option<SpaceAccess>,
+    device_seen: Option<DeviceSeenLog>,
 }
 
 impl<H: ServedHost> HostServer<H> {
@@ -70,12 +71,18 @@ impl<H: ServedHost> HostServer<H> {
             host,
             history,
             space: None,
+            device_seen: None,
         }
     }
     /// Answers space report queries from `service` (D-117); without it they are
     /// unsupported.
     pub fn with_space(mut self, service: Arc<SpaceService>) -> Self {
         self.space = Some(SpaceAccess::new(service));
+        self
+    }
+    /// Records connections made with restricted keys in `log`.
+    pub fn with_device_seen(mut self, log: DeviceSeenLog) -> Self {
+        self.device_seen = Some(log);
         self
     }
     pub(crate) fn host(&self) -> &H {
@@ -90,6 +97,10 @@ impl<H: ServedHost> HostServer<H> {
 }
 
 impl<H: ServedHost> ServerProvider for HostServer<H> {
+    fn device_seen(&self) -> Option<&DeviceSeenLog> {
+        self.device_seen.as_ref()
+    }
+
     fn hello(&self) -> Hello {
         Hello {
             proto_version: statglass_proto::PROTO_VERSION,

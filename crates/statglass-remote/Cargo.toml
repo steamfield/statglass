@@ -21,6 +21,7 @@ thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 libc = "0.2.190"
+p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic"] }
 # `DeviceTag::from_key`: the first bytes of the SHA-256 of a device key.
 sha2 = "0.10.9"
 
