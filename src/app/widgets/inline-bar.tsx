@@ -1,34 +1,12 @@
+import type { InlineBarData } from "@core/widget-models/inline-bar";
+import type { RampStep } from "@core/widget-models/tokens";
 import { cn } from "~/lib/utils";
-import {
-  type Accent,
-  accentVars,
-  type RampStep,
-  rampBackground,
-} from "./lib/accent";
+import { accentVars, rampBackground } from "./lib/accent";
 import { FIELD_LABEL } from "./lib/classes";
 import { MeterTrack } from "./meter-track";
 
-export interface InlineBarProps {
-  label: string;
-  /** Formatted value ("3.2 GHz", "42%"). */
-  value: string;
-  /**
-   * Fill as a fraction of the track. `null` is a missing measurement: the
-   * track is drawn empty, with no fill, never a zero-width fill that reads
-   * as a real 0. `"none"` means the bar has no meaning here (a Mac without
-   * fans): the value text stands alone and no track is drawn.
-   */
-  fraction: number | null | "none";
-  /** Defaults to the accent in scope (the card's `--a`). */
-  accent?: Accent;
-  rampStep?: RampStep;
-  /**
-   * `stacked`: field label and value over a 4 px bar (Overview, 04).
-   * `row`: label, right-aligned value, bar in one grid row (popover, 14).
-   * `wide`: label and value over a 6 px bar (popover memory pressure, battery).
-   */
-  layout?: "stacked" | "row" | "wide";
-}
+/** Props of the label, value and bar row: the shared data contract. */
+export type InlineBarProps = InlineBarData;
 
 function Track({
   fraction,

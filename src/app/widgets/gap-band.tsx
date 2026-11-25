@@ -1,8 +1,11 @@
 import { cssPercent } from "@core/format";
 import { PAUSE_EXPLANATION } from "@core/history-state";
 import { DAY_MS } from "@core/time-grid";
+import type { GapSpan } from "@core/widget-models/gap-band";
 import { Pause } from "lucide-react";
 import { cn } from "~/lib/utils";
+
+export type { GapSpan };
 
 export interface GapBandProps {
   fromMs: number;
@@ -79,16 +82,6 @@ export function GapBand({
       )}
     </div>
   );
-}
-
-/** A labelled span with no data, in ms epoch; JSON-serializable. */
-export interface GapSpan {
-  fromMs: number;
-  toMs: number;
-  label: string;
-  reason?: string | undefined;
-  closedDurationMs?: number | null;
-  showCaption?: boolean | undefined;
 }
 
 /**

@@ -3,7 +3,12 @@
   "compilerOptions": {
     "types": ["node"],
     "allowJs": true,
-    "checkJs": true
+    "checkJs": true,
+    "paths": {
+      "@core/*": ["../../packages/core/src/*"],
+      "@/*": ["./src/*"],
+      "@test/*": ["./test/*"]
+    }
   },
   "include": [
     "app.config.ts",

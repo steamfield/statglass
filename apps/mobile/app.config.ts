@@ -57,7 +57,15 @@ export function expoConfigFor(
       appleTeamId: identity.teamId,
       supportsTablet: false,
     },
-    plugins: ["expo-router", "expo-status-bar"],
+    plugins: [
+      "expo-router",
+      "expo-status-bar",
+      // The app lock asks for Face ID; iOS needs the reason in Info.plist.
+      [
+        "expo-local-authentication",
+        { faceIDPermission: "StatGlass uses Face ID to unlock the app." },
+      ],
+    ],
     experiments: { typedRoutes: true },
   };
 }

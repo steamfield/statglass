@@ -1,5 +1,6 @@
 import { splitGaps } from "@core/chart-math";
 import { cssPercent } from "@core/format";
+import type { StreamAreaData } from "@core/widget-models/stream-area";
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
 import {
@@ -11,15 +12,12 @@ import {
 } from "react";
 import { useReveal } from "~/lib/motion/reveal";
 import { cn } from "~/lib/utils";
-import {
-  type ChartAnnotationProps,
-  ChartAnnotations,
-} from "./chart-annotation";
+import { ChartAnnotations } from "./chart-annotation";
 import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
 import { ChartLoading } from "./chart-loading";
-import { GapBands, type GapSpan } from "./gap-band";
+import { GapBands } from "./gap-band";
 import { GapEdgeDot } from "./gap-edge-dot";
-import { type Accent, accentVars, rampColor } from "./lib/accent";
+import { accentVars, rampColor } from "./lib/accent";
 import styles from "./lib/scroll-layer.module.css";
 import { useTickScroll } from "./lib/use-tick-scroll";
 
@@ -32,70 +30,13 @@ export const DEFAULT_LINE_WEIGHT = 1.5;
 const DASH_PERIOD = DASH[0] + DASH[1];
 
 /**
- * Contract for the live area/line chart (design-system.md inventory). The
- * charts worker replaces the component body; keep the props shape.
+ * Contract for the live area/line chart (design-system.md inventory): the
+ * shared data contract plus the desktop's own overlay and labelling.
  */
-export interface StreamAreaProps {
-  /** History for this window is still arriving: draw the frame and the loading mark, no data. */
-  loading?: boolean;
-  /** Series drawn back to front. `null` is a gap: the line breaks there. */
-  series: {
-    key: string;
-    values: (number | null)[];
-    /** Ramp step of the accent; step 1 gets the area fill. */
-    step: 1 | 2 | 3 | 4;
-    /**
-     * Draw the area under the line (default). `false` is a bare line, as
-     * for per-app lines over a total.
-     */
-    fill?: boolean;
-    /** Hollow dots on the edges that border a gap (default true). */
-    edges?: boolean;
-    /** A dashed line, to tell apart two lines on the same ramp step. */
-    dash?: boolean;
-    /** Line width in px (default 1.5). */
-    weight?: number;
-    /** Opacity of the line and its area (default 1), for focus emphasis. */
-    opacity?: number;
-  }[];
-  /** Timestamp of the last value (ms epoch). Values are `intervalMs` apart. */
-  tEndMs: number;
-  intervalMs: number;
-  /** Y ceiling, already snapped (fixed 100, or a nice ceiling from the hook). */
-  yMax: number;
-  accent: Accent;
-  height: number;
-  ariaLabel?: string;
+export interface StreamAreaProps extends StreamAreaData {
   ariaLabelledBy?: string;
-  /** Corner label for the ceiling ("40%"), top left. */
-  ceilingLabel?: string;
-  /** Corner label for the window ("60s"), bottom right. */
-  windowLabel?: string;
-  /** Horizontal gridlines at these y values (the baseline is always drawn). */
-  gridlines?: readonly number[];
-  /** Y tick labels in a 32 px gutter on the left (100, 75, 50, 25). */
-  yTicks?: readonly { value: number; label: string }[];
-  /** Width of the y tick gutter, px (default 32; 48 for byte labels). */
-  gutter?: number | undefined;
-  /** X tick labels spread under the plot, oldest first ("−60s" … "now"). */
-  xTicks?: readonly string[];
-  /**
-   * Labelled gaps (sleep, paused) drawn as hatched bands over the plot;
-   * the parts outside the window are clipped.
-   */
-  gaps?: readonly GapSpan[];
-  /**
-   * A selected span as fractions of the plot width; the plot outside it is
-   * veiled. Null or absent: nothing is selected.
-   */
-  highlight?: { left: number; width: number } | null;
   /** Drawn over the plot area, sized to it (a brush layer). */
   overlay?: ReactNode;
-  /**
-   * Labelled markers at the top of the plot (power spikes, D-083); ones
-   * outside the window are dropped.
-   */
-  annotations?: readonly ChartAnnotationProps[];
 }
 
 interface Pt {
