@@ -154,7 +154,7 @@ fn control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
             }
         }
         // Scaffold stubs: phase 5 lane c answers these from the app's `PairingState`.
-        ControlRequest::PairStart(_) | ControlRequest::PairStatus { .. } => ControlResponse {
+        ControlRequest::PairStart { .. } | ControlRequest::PairStatus { .. } => ControlResponse {
             pairing: Some(PairReply::Error {
                 error: PairError::Unavailable,
             }),

@@ -60,6 +60,8 @@ pub enum RemoteError {
     /// The host's own refusal of a query (D-117), worded for the user.
     #[error("{0}")]
     Refused(String),
+    #[error(transparent)]
+    Pairing(#[from] PairingRefusal),
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -75,6 +77,17 @@ pub enum RemoteError {
     /// order; each keeps its own cause.
     #[error("{}", join_routes(.0))]
     Routes(Vec<RouteError>),
+}
+
+/// The host refused a pairing or the offer expired before the exchange finished.
+#[derive(Debug, thiserror::Error)]
+pub enum PairingRefusal {
+    #[error("The host declined the pairing request")]
+    Denied,
+    #[error("The pairing code expired")]
+    Expired,
+    #[error("{0}")]
+    Rejected(statglass_proto::pairing::PairError),
 }
 
 /// One target's failure inside [`RemoteError::Routes`].
@@ -110,6 +123,7 @@ impl RemoteError {
                 | Self::Protocol(_)
                 | Self::Unsupported(_)
                 | Self::Refused(_)
+                | Self::Pairing(_)
                 | Self::InvalidArgument(_)
         )
     }

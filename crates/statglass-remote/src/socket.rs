@@ -56,7 +56,12 @@ pub enum ControlRequest {
         launch_at_login: Option<bool>,
     },
     /// The forced `pair` command relays the phone's first frame (RFC 2.4).
-    PairStart(statglass_proto::pairing::PairStart),
+    PairStart {
+        #[serde(flatten)]
+        start: statglass_proto::pairing::PairStart,
+        /// Identifies one relay's retries over the owner-only control socket.
+        attempt: [u8; 16],
+    },
     /// The forced `pair` command polls the decision, once a second.
     PairStatus {
         nonce: String,

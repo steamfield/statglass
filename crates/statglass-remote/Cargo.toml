@@ -23,6 +23,7 @@ uuid.workspace = true
 libc = "0.2.190"
 # `DeviceTag::from_key`: the first bytes of the SHA-256 of a device key.
 sha2 = "0.10.9"
+p256 = { version = "=0.14.0", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
 
 [dev-dependencies]
 statglass-session = { workspace = true, features = ["conformance"] }
