@@ -4,7 +4,6 @@
 //! the `statglass-*` crates; see `state.rs` for the startup order and the API the tray and
 //! window code builds on.
 
-mod addresses;
 pub mod alerts;
 #[cfg(test)]
 mod alerts_tests;
@@ -22,6 +21,7 @@ mod error;
 mod export;
 pub mod facts;
 mod history;
+mod host_addresses;
 mod hosts;
 pub mod ipc;
 pub mod live;
@@ -108,8 +108,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::query_usage_by_app, commands::query_usage_series,
             commands::query_series_stats,
             commands::last_wake,
-            commands::get_network_addresses,
-            commands::get_public_ip,
+            host_addresses::get_host_addresses,
             commands::query_events,
             commands::query_heatmap,
             commands::export_csv,

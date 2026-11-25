@@ -5,6 +5,7 @@ import type {
   Event,
   HistoryGrowth,
   HistoryHealth,
+  HostDemand,
   LiveMsg,
   ProcessView,
   SeriesKey,
@@ -73,6 +74,8 @@ export interface MockTransport extends Transport, PhoneQueries {
   readonly flags: ScenarioFlags;
   /** Every command the app sent, in order. */
   readonly calls: MockCall[];
+  /** The last screen demand sent by the phone. */
+  demand(): readonly HostDemand[];
   failNext(
     method: keyof Transport | keyof PhoneQueries,
     error: CommandError

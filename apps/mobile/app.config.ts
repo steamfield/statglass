@@ -56,10 +56,21 @@ export function expoConfigFor(
       bundleIdentifier: identity.bundleId,
       appleTeamId: identity.teamId,
       supportsTablet: false,
+      infoPlist: {
+        NSLocalNetworkUsageDescription:
+          "StatGlass connects to your hosts on this network over SSH.",
+      },
     },
     plugins: [
       "expo-router",
       "expo-status-bar",
+      [
+        "expo-camera",
+        {
+          cameraPermission:
+            "StatGlass uses the camera to scan the pairing code shown on your Mac or server.",
+        },
+      ],
       // The app lock asks for Face ID; iOS needs the reason in Info.plist.
       [
         "expo-local-authentication",

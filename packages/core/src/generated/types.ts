@@ -653,6 +653,12 @@ export type DeliveryRecord = {
 	outcome: DeliveryOutcome,
 };
 
+export type DemandLevel =
+/**  A host summary every five seconds. */
+"compact" |
+/**  A live frame every tick. */
+"full";
+
 /**  One place a fired alert is sent to, saved in `alert-destinations.json`. */
 export type Destination = {
 	id: string,
@@ -1664,6 +1670,11 @@ export type HostAddressesInfo = {
 	as_of_ms: number,
 };
 
+export type HostDemand = {
+	host: HostId,
+	level: DemandLevel,
+};
+
 export type HostHistoryPage = {
 	tier: Tier,
 	bucket_ms: number,
@@ -2132,6 +2143,26 @@ export type MobileCall =
 { method: "authorized_key_line"; args: {
 	comment: string,
 } } |
+/**  `PairingPreview`. */
+{ method: "preview_pairing"; args: {
+	text: string,
+} } |
+/**  `PairedHost`. */
+{ method: "pair"; args: {
+	text: string,
+	device_name: string,
+	model: string,
+} } |
+/**  `null`. Removes a paired host. */
+{ method: "remove_host"; args: {
+	host: HostId,
+} } |
+/**  `PairingState`. */
+{ method: "pairing_state" } |
+/**  `null`. Replaces screen demand for all hosts. */
+{ method: "set_demand"; args: {
+	demand: HostDemand[],
+} } |
 /**  `HostRecord[]`, in the order the hosts were set. */
 { method: "list_hosts" } |
 /**  `MobileRemoteHost[]`, same order. */
@@ -2246,6 +2277,8 @@ export type MobileRemoteHost = {
 	targets: MobileTarget[],
 	connection: RemoteConnection,
 	open_error: CommandError | null,
+	/**  The live data level the core applies after evaluating data policy. */
+	demand: DemandLevel | null,
 	/**  Host clock, ms. */
 	last_seen_ms: number | null,
 	/**  End of the newest mirrored bucket on disk (host clock). */
@@ -2330,21 +2363,6 @@ export type ModuleSettings = {
  */
 export type NavigateRequested = {
 	route: string,
-};
-
-/**  The primary interface's addresses (`get_network_addresses`). */
-export type NetworkAddresses = {
-	/**  The interface carrying the default route, as `LiveStatus.primary_iface`. */
-	iface: string | null,
-	/**  Dotted quads, in the order the system lists them. */
-	ipv4: string[],
-	/**  Link-local addresses are left out. */
-	ipv6: string[],
-	/**
-	 *  The interface IPv4 internet traffic leaves through: a full-tunnel VPN's `utun`
-	 *  while `iface` stays on Wi-Fi, else usually `iface`. `None` without an IPv4 route.
-	 */
-	egress: string | null,
 };
 
 /**
@@ -2479,8 +2497,13 @@ export type PairedDeviceInfo = {
 	last_seen_ms: number | null,
 };
 
+export type PairedHost = {
+	id: HostId,
+	name: string,
+};
+
 /**  Why a pairing request failed. */
-export type PairingFailure = "denied" | "expired" | "used" | "unknown" | "unavailable" | "invalid";
+export type PairingFailure = "denied" | "expired" | "used" | "unknown" | "unavailable" | "monitoring_off" | "invalid";
 
 /**  One open pairing, as the sheet shows it. */
 export type PairingOffer = {
@@ -2494,6 +2517,23 @@ export type PairingOffer = {
 	expires_ms: number,
 };
 
+export type PairingPreview = {
+	host_id: HostId,
+	name: string,
+	os: string,
+	user: string,
+	targets: MobileTarget[],
+	code: string,
+	expires_ms: number,
+	can_hand_over: boolean,
+};
+
+export type PairingState = {
+	hosts: number,
+	/**  The phone was restored and needs to pair again. */
+	key_changed: boolean,
+};
+
 /**  Where an open pairing stands. */
 export type PairingStatus =
 /**  No phone has used the QR yet. */
@@ -2501,7 +2541,7 @@ export type PairingStatus =
 /**  A phone used the QR and waits for the user's approval. */
 { kind: "pending"; device_name: string; model: string; code: string } |
 /**  Approved: `device` is the new device's tag. */
-{ kind: "paired"; device: string } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; message: string };
+{ kind: "paired"; device: string } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; reason: PairingFailure; message: string };
 
 /**  Why Performance mode is in effect (D-088). */
 export type PerformanceReason = "off" |

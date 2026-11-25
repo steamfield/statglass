@@ -11,6 +11,9 @@ import type {
   HostVitals,
   MobileCall,
   MobileRemoteHost,
+  PairedHost,
+  PairingPreview,
+  PairingState,
   SubscriptionInfo,
 } from "@core/generated/types";
 import type { NativeError } from "@core/native-errors";
@@ -38,6 +41,11 @@ type MobileCallResult = {
   host_history: HostHistoryPage;
   network_addresses: HostAddressesInfo;
   set_process_interest: null;
+  preview_pairing: PairingPreview;
+  pair: PairedHost;
+  remove_host: null;
+  pairing_state: PairingState;
+  set_demand: null;
 };
 
 /**

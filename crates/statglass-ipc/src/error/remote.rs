@@ -16,6 +16,7 @@ pub enum PairingFailure {
     Used,
     Unknown,
     Unavailable,
+    MonitoringOff,
     Invalid,
 }
 
@@ -24,7 +25,7 @@ impl From<PairError> for PairingFailure {
         match error {
             PairError::Used => Self::Used,
             PairError::Unknown => Self::Unknown,
-            PairError::Unavailable => Self::Unavailable,
+            PairError::Unavailable | PairError::NotRunning | PairError::Busy => Self::Unavailable,
             PairError::Invalid => Self::Invalid,
         }
     }

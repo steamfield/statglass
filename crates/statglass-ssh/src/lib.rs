@@ -12,4 +12,4 @@ mod test_server;
 pub use dialer::{RusshConfig, RusshDialer};
 #[cfg(any(test, feature = "software-signer"))]
 pub use signer::SoftwareSigner;
-pub use signer::{Signer, SignerError, authorized_key_line, der_to_ssh_signature};
+pub use signer::{EphemeralSigner, Signer, SignerError, authorized_key_line, der_to_ssh_signature};

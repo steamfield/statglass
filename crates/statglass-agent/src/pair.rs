@@ -5,7 +5,9 @@ mod bundle;
 mod terminal;
 
 use anyhow::{Context, ensure};
-use statglass_proto::pairing::{PAIR_RECEIPT_GRACE, PairReply, PairingPayload, valid_nonce};
+use statglass_proto::pairing::{
+    BundleTarget, PAIR_RECEIPT_GRACE, PairReply, PairingPayload, valid_nonce,
+};
 use statglass_remote::{
     AGENT_COMMAND_NOT_ALLOWED, AgentEnv, AgentLayout, AgentPaths, AuthorizedKeys, ControlRequest,
     ControlResponse, PairCommands, PairingHost, command::shell_quote,
@@ -22,7 +24,11 @@ use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
 /// Offers a pairing for `ttl` and asks for approval on this terminal.
-pub fn interactive(ttl: Duration) -> anyhow::Result<()> {
+pub fn interactive(
+    ttl: Duration,
+    _targets: &[BundleTarget],
+    _port: Option<u16>,
+) -> anyhow::Result<()> {
     let user = EffectiveUser::lookup().context("locating the pairing account")?;
     let uid = rustix::process::geteuid().as_raw();
     let env = pairing_env(AgentEnv::from_process(), user.home, uid);
@@ -365,11 +371,11 @@ mod tests {
     fn pair_cli_parses_both_forms_and_defaults_to_ten_minutes() {
         assert!(matches!(
             parse_pair(&["pair"]).unwrap(),
-            Command::Device(DeviceCommand::Pair { ttl_s: 600 })
+            Command::Device(DeviceCommand::Pair { ttl_s: 600, targets, port: None }) if targets.is_empty()
         ));
         assert!(matches!(
             parse_pair(&["pair", "--ttl", "60"]).unwrap(),
-            Command::Device(DeviceCommand::Pair { ttl_s: 60 })
+            Command::Device(DeviceCommand::Pair { ttl_s: 60, targets, port: None }) if targets.is_empty()
         ));
         assert!(
             matches!(parse_pair(&["pair", "--nonce", "abc"]).unwrap(), Command::Device(DeviceCommand::PairForced { nonce }) if nonce == "abc")

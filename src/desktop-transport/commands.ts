@@ -2,7 +2,7 @@
 
 import { invoke as __TAURI_INVOKE, Channel } from "@tauri-apps/api/core";
 import * as __TAURI_EVENT from "@tauri-apps/api/event";
-import type { AlertDestinationsChanged, AlertDestinationsView, ByteCount, Capabilities, CapabilitiesChanged, CliLinkStatus, CommandError, DeliveryOutcome, Destination, DiskIoDevices, DiskIoPage, DiskIoRequest, DockerComparisonPage, DockerComparisonRequest, DockerContainer, DockerContainerAction, DockerEngine, DockerEventsPage, DockerEventsRequest, DockerHistoryPage, DockerHistoryRequest, DockerLogBatch, DockerLogsRequest, DockerRetainedPage, DockerRetainedRequest, DockerRuntimeKind, DockerSettings, DockerSnapshot, DockerStorageOperation, DockerStorageReview, DockerStorageSelection, DockerStorageView, Edition, Event, EventRecorded, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest, HistoricalUsageReply, HistoricalUsageRequest, HistoryHealth, HistoryHealthChanged, HistoryPage, HistoryRequest, HostId, HostRecord, HostVitals, HostsChanged, LiveMsg, Micros, Millis, NavigateRequested, NetworkAddresses, NetworkByApp, PairedDeviceInfo, PairingOffer, PairingStatus, ProcessResolution, ProcessSignalError, ProcessSort, RemoteHostConfig, RemoteHostPreparation, RemoteHostRecord, RemoteHostsChanged, RemoteSshConfigStatus, RemoteSshHostTrust, RemoteUpdateStatus, SensorDump, SeriesSelector, SeriesStats, SettingsChanged, SettingsPatch, SettingsSnapshot, SignalKind, SpaceFile, SpaceHighlight, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume, StarPromptAction, StarPromptChanged, StarPromptStatus, StoredProcess, SubscriptionInfo, UpdateStatus, UpdateStatusChanged, UsageByApp, UsageHistoryGrowth, UsageKey, UsageProcessReply, UsageProcessRequest, UsageSeries, WindowAppearance, WindowAppearanceChanged, WindowVisibilityChanged } from "@core/generated/types";
+import type { AlertDestinationsChanged, AlertDestinationsView, ByteCount, Capabilities, CapabilitiesChanged, CliLinkStatus, CommandError, DeliveryOutcome, Destination, DiskIoDevices, DiskIoPage, DiskIoRequest, DockerComparisonPage, DockerComparisonRequest, DockerContainer, DockerContainerAction, DockerEngine, DockerEventsPage, DockerEventsRequest, DockerHistoryPage, DockerHistoryRequest, DockerLogBatch, DockerLogsRequest, DockerRetainedPage, DockerRetainedRequest, DockerRuntimeKind, DockerSettings, DockerSnapshot, DockerStorageOperation, DockerStorageReview, DockerStorageSelection, DockerStorageView, Edition, Event, EventRecorded, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest, HistoricalUsageReply, HistoricalUsageRequest, HistoryHealth, HistoryHealthChanged, HistoryPage, HistoryRequest, HostAddressesInfo, HostId, HostRecord, HostVitals, HostsChanged, LiveMsg, Micros, Millis, NavigateRequested, NetworkByApp, PairedDeviceInfo, PairingOffer, PairingStatus, ProcessResolution, ProcessSignalError, ProcessSort, RemoteHostConfig, RemoteHostPreparation, RemoteHostRecord, RemoteHostsChanged, RemoteSshConfigStatus, RemoteSshHostTrust, RemoteUpdateStatus, SensorDump, SeriesSelector, SeriesStats, SettingsChanged, SettingsPatch, SettingsSnapshot, SignalKind, SpaceFile, SpaceHighlight, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume, StarPromptAction, StarPromptChanged, StarPromptStatus, StoredProcess, SubscriptionInfo, UpdateStatus, UpdateStatusChanged, UsageByApp, UsageHistoryGrowth, UsageKey, UsageProcessReply, UsageProcessRequest, UsageSeries, WindowAppearance, WindowAppearanceChanged, WindowVisibilityChanged } from "@core/generated/types";
 
 /** Commands */
 export const commands = {
@@ -259,16 +259,8 @@ export const commands = {
 	querySeriesStats: (host: HostId, metrics: string[], fromMs: Millis, toMs: Millis) => typedError<SeriesStats, CommandError>(__TAURI_INVOKE("query_series_stats", { host, metrics, fromMs, toMs })),
 	/**  When the host last woke, on its clock ([`crate::history::History::last_wake`]). */
 	lastWake: (host: HostId) => typedError<number | null, CommandError>(__TAURI_INVOKE("last_wake", { host })),
-	/**
-	 *  The addresses of the interface carrying the default route. Read from the system on
-	 *  each call; no network request. `remote_host` for a host other than this Mac.
-	 */
-	getNetworkAddresses: (host: HostId) => typedError<NetworkAddresses, CommandError>(__TAURI_INVOKE("get_network_addresses", { host })),
-	/**
-	 *  This Mac's public address, from an outside service over HTTPS (D-093). The one
-	 *  request StatGlass makes on its own; only the Network page asks, and only while shown.
-	 */
-	getPublicIp: () => typedError<string, CommandError>(__TAURI_INVOKE("get_public_ip")),
+	/**  The monitored host's local and public addresses. */
+	getHostAddresses: (host: HostId) => typedError<HostAddressesInfo, CommandError>(__TAURI_INVOKE("get_host_addresses", { host })),
 	/**
 	 *  Events (detector findings and fired alerts) with `from_ms <= ts < to_ms`, oldest
 	 *  first. New ones also arrive as the `event-recorded` event.

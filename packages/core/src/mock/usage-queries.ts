@@ -183,37 +183,36 @@ export class MockUsageQueries {
         )
     );
   };
-  readonly getNetworkAddresses: MockTransport["getNetworkAddresses"] = async (
+  readonly getHostAddresses: MockTransport["getHostAddresses"] = async (
     host
   ) => {
+    const iface = this.power.status.primary_iface;
     return this.commands.hostCommand(
-      "get_network_addresses",
+      "get_host_addresses",
       host,
       [host],
       {},
       () =>
         ok({
-          iface: this.power.status.primary_iface,
-          ipv4:
-            this.power.status.primary_iface === null ? [] : [MOCK_LOCAL_IPV4],
+          interface: iface,
+          link_mbps: null,
+          ipv4: iface === null ? [] : [MOCK_LOCAL_IPV4],
           ipv6: [],
-          egress: this.power.status.primary_iface,
+          public_ip:
+            iface === null
+              ? { state: "unknown" }
+              : { state: "known", detail: { ip: MOCK_PUBLIC_IP } },
+          as_of_ms: this.ring.now(),
         })
     );
   };
-  readonly getPublicIp: MockTransport["getPublicIp"] = async () => {
-    this.commands.record("get_public_ip");
-    return ok(MOCK_PUBLIC_IP);
-  };
-
   get methods() {
     return {
       ...this.durable.methods,
       queryNetworkByApp: this.queryNetworkByApp,
       queryUsageByApp: this.queryUsageByApp,
       queryUsageSeries: this.queryUsageSeries,
-      getNetworkAddresses: this.getNetworkAddresses,
-      getPublicIp: this.getPublicIp,
+      getHostAddresses: this.getHostAddresses,
     };
   }
 }

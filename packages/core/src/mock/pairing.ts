@@ -66,7 +66,11 @@ function currentStatus(
     return entry.status;
   }
   if (!enabled) {
-    entry.status = { kind: "failed", message: MONITORING_OFF };
+    entry.status = {
+      kind: "failed",
+      reason: "unavailable",
+      message: MONITORING_OFF,
+    };
     return entry.status;
   }
   return now >= offer.expires_ms - TTL_MS + SCAN_MS
@@ -145,7 +149,11 @@ export function createMockPairing(
       commands.record("pairing_status", nonce);
       const entry = offers.get(nonce);
       if (!entry)
-        return ok({ kind: "failed", message: "Unknown pairing offer." });
+        return ok({
+          kind: "failed",
+          reason: "unknown",
+          message: "Unknown pairing offer.",
+        });
       return ok(currentStatus(entry, now(), monitoringEnabled()));
     },
     async pairingApprove(nonce) {

@@ -61,6 +61,7 @@
  * user than `MOCK_USER`, and a signalled process leaves later process rows.
  */
 
+import type { HostDemand } from "./generated/types";
 import { createMockNetworkAddresses } from "./mock/addresses";
 import type { MockTransport, MockTransportOptions } from "./mock/contracts";
 import { createMockDiskSpace } from "./mock/disk-space";
@@ -93,6 +94,7 @@ import { MockCommands } from "./mock/commands";
 import { createMockPairing } from "./mock/pairing";
 import { MockPower } from "./mock/power";
 import { MockProcesses } from "./mock/processes";
+import { ok } from "./mock/protocol";
 import { MockQueries } from "./mock/queries";
 import { MockRemotes } from "./mock/remote";
 import { MockRing } from "./mock/ring";
@@ -185,7 +187,7 @@ export function createMockTransport(
     hostHistory: scenarios.includes("phone-sparkline-gap")
       ? phoneSparklineFixture
       : createMockHostHistory(queries.methods, now, remote.remotes),
-    networkAddresses: createMockNetworkAddresses(remote, now),
+    ...mockPhoneCommands(commands, remote, now),
     windowLabel: () => options.windowLabel ?? "dashboard",
     push: channels.push,
     subscriberCount: () => channels.live.size,
@@ -209,4 +211,28 @@ export function createMockTransport(
       for (const e of Object.values(emitters)) e.clear();
     },
   });
+}
+
+function mockPhoneCommands(
+  commands: MockCommands,
+  remote: MockRemotes,
+  now: () => number
+): Pick<
+  MockTransport,
+  "networkAddresses" | "setDemand" | "demand" | "pairingState"
+> {
+  let demand: HostDemand[] = [];
+  return {
+    networkAddresses: createMockNetworkAddresses(remote, now),
+    async setDemand(nextDemand) {
+      demand = nextDemand.map((entry) => ({ ...entry }));
+      commands.record("set_demand", demand);
+      return ok(null);
+    },
+    demand: () => demand,
+    async pairingState() {
+      commands.record("pairing_state");
+      return ok({ hosts: 0, key_changed: false });
+    },
+  };
 }

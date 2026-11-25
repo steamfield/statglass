@@ -11,6 +11,7 @@ export const REMOTE: MobileRemoteHost = {
     { route: "tailscale", host: "studio.tail.test" },
   ],
   open_error: null,
+  demand: null,
   connection: {
     state: "offline",
     route: "tailscale",

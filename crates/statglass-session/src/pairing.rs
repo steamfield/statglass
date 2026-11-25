@@ -328,6 +328,7 @@ mod tests {
             nonce: "55bb3aa9cf3c45d7df0b70dd41999f43".into(),
             code: "AAA222".into(),
             expires_ms: statglass_engine::wall_ms() + 60_000,
+            can_hand_over: false,
             host: BundleHost {
                 host_id: HOST,
                 name: "office".into(),

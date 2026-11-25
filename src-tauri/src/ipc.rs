@@ -441,20 +441,6 @@ pub struct SeriesStats {
     pub metrics: Vec<MetricStat>,
 }
 
-/// The primary interface's addresses (`get_network_addresses`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
-pub struct NetworkAddresses {
-    /// The interface carrying the default route, as `LiveStatus.primary_iface`.
-    pub iface: Option<String>,
-    /// Dotted quads, in the order the system lists them.
-    pub ipv4: Vec<String>,
-    /// Link-local addresses are left out.
-    pub ipv6: Vec<String>,
-    /// The interface IPv4 internet traffic leaves through: a full-tunnel VPN's `utun`
-    /// while `iface` stays on Wi-Fi, else usually `iface`. `None` without an IPv4 route.
-    pub egress: Option<String>,
-}
-
 /// What the history store can tell the UI about itself (D-057, D-059): the low-disk pause
 /// and the size-limit trim. Shared by every host, since they share one file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]

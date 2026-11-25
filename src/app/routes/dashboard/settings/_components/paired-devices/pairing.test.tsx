@@ -199,6 +199,7 @@ it("returns monitoring guidance when approval races with disabling monitoring", 
   const status = await unwrap(mock.pairingApprove(nonce));
   expect(status).toEqual({
     kind: "failed",
+    reason: "unavailable",
     message:
       "Turn on Allow remote monitoring in StatGlass Settings, then try pairing again.",
   });

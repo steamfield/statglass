@@ -8,8 +8,11 @@ use std::{
 };
 
 use anyhow::{Context, ensure};
-use statglass_proto::pairing::{BundleHost, BundleHostKey, BundleRoute, BundleTarget};
+use statglass_proto::pairing::{
+    BundleHost, BundleHostKey, BundleRoute, BundleTarget, PairingPayload,
+};
 use statglass_remote::network::usable_interface_addresses;
+use statglass_remote::{PairingError, PairingHost};
 use statglass_schema::HostRecord;
 
 pub(super) const MONITORING_OFF: &str =
@@ -18,6 +21,16 @@ pub(super) const MONITORING_OFF: &str =
 pub(super) fn check_monitoring(enabled: bool) -> anyhow::Result<()> {
     ensure!(enabled, "{MONITORING_OFF}");
     Ok(())
+}
+
+pub(super) fn offer(
+    host: &PairingHost,
+    bundle: BundleHost,
+    now_ms: i64,
+) -> Result<PairingPayload, PairingError> {
+    let mut payload = host.offer(bundle, Duration::ZERO, now_ms)?;
+    payload.can_hand_over = true;
+    Ok(payload)
 }
 
 pub(super) fn build(record: &HostRecord) -> anyhow::Result<BundleHost> {

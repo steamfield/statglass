@@ -37,7 +37,18 @@ test("puts the identity from the environment into the iOS config", () => {
     bundleIdentifier: "dev.example.glass",
     appleTeamId: "ABCDE12345",
     supportsTablet: false,
+    infoPlist: {
+      NSLocalNetworkUsageDescription:
+        "StatGlass connects to your hosts on this network over SSH.",
+    },
   });
+  expect(config.plugins).toContainEqual([
+    "expo-camera",
+    {
+      cameraPermission:
+        "StatGlass uses the camera to scan the pairing code shown on your Mac or server.",
+    },
+  ]);
   expect(config.userInterfaceStyle).toBe("automatic");
   expect(config.experiments).toEqual({ typedRoutes: true });
 });

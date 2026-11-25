@@ -91,6 +91,20 @@ pub enum MobileCall {
     SetDataPolicy(DataPolicy),
     /// `string`: the `authorized_keys` line for this phone's key.
     AuthorizedKeyLine { comment: String },
+    /// `PairingPreview`.
+    PreviewPairing { text: String },
+    /// `PairedHost`.
+    Pair {
+        text: String,
+        device_name: String,
+        model: String,
+    },
+    /// `null`. Removes a paired host.
+    RemoveHost { host: HostId },
+    /// `PairingState`.
+    PairingState,
+    /// `null`. Replaces screen demand for all hosts.
+    SetDemand { demand: Vec<HostDemand> },
     /// `HostRecord[]`, in the order the hosts were set.
     ListHosts,
     /// `MobileRemoteHost[]`, same order.
@@ -118,6 +132,47 @@ pub enum MobileCall {
         view: Option<ProcessView>,
         stream: Option<u32>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairingPreview {
+    pub host_id: HostId,
+    pub name: String,
+    pub os: String,
+    pub user: String,
+    pub targets: Vec<MobileTarget>,
+    pub code: String,
+    #[specta(type = JsSafeInt)]
+    pub expires_ms: i64,
+    pub can_hand_over: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairedHost {
+    pub id: HostId,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PairingState {
+    pub hosts: u32,
+    /// The phone was restored and needs to pair again.
+    pub key_changed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, specta::Type)]
+pub struct HostDemand {
+    pub host: HostId,
+    pub level: DemandLevel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DemandLevel {
+    /// A host summary every five seconds.
+    Compact,
+    /// A live frame every tick.
+    Full,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, specta::Type)]
@@ -209,6 +264,8 @@ pub struct MobileRemoteHost {
     pub targets: Vec<MobileTarget>,
     pub connection: RemoteConnection,
     pub open_error: Option<CommandError>,
+    /// The live data level the core applies after evaluating data policy.
+    pub demand: Option<DemandLevel>,
     /// Host clock, ms.
     #[specta(type = Option<statglass_schema::JsSafeInt>)]
     pub last_seen_ms: Option<i64>,

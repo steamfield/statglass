@@ -67,11 +67,14 @@ export class MockProcesses {
     view,
     stream
   ) => {
+    const args = [host, interested, view, stream];
     const forwarded = this.remote.forward(host, (peer) =>
       peer.setProcessInterest(MOCK_HOST_ID, interested, view, stream)
     );
-    if (forwarded) return forwarded;
-    const args = [host, interested, view, stream];
+    if (forwarded) {
+      this.commands.record("set_process_interest", ...args);
+      return forwarded;
+    }
     return this.commands.hostCommand(
       "set_process_interest",
       host,

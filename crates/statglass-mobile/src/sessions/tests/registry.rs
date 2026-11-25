@@ -477,6 +477,7 @@ async fn remote_status_uses_the_scaffold_json_and_does_not_repeat_unchanged_even
         json!([{
             "id": host.id, "name": host.name, "os": "mac_os", "targets": host.targets,
             "open_error": null,
+            "demand": null,
             "connection": {
                 "state": "error", "route": "tailscale", "sync": "idle",
                 "failure": "authentication", "incompatible_side": null,

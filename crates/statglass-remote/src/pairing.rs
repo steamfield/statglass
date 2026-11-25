@@ -143,6 +143,7 @@ impl PairingHost {
             nonce,
             code,
             expires_ms,
+            can_hand_over: false,
         })
     }
 

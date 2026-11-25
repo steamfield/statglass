@@ -5,6 +5,7 @@
 import type {
   BuildInfo,
   DataPolicy,
+  HostId,
   HostRecord,
   MobileConfig,
   MobileEvent,
@@ -14,6 +15,7 @@ import type {
 import type { CommandResult } from "@core/transport";
 import { unwrap } from "@core/transport/query";
 import type { StatglassNativeModule } from "@native/statglass-native";
+import type { PhonePairing } from "@/data/pairing-seam";
 import type { PhoneTransport } from "@/data/seam";
 import { callCore, parseEnvelope, parseEvent } from "./envelope";
 import { createLiveStreams } from "./live-streams";
@@ -23,6 +25,7 @@ import { toRemoteHostRecord } from "./remote-hosts";
 export interface NativeTransport extends PhoneTransport {
   /** Replaces the configured hosts and serializes writes on this transport. */
   setHosts(hosts: MobileHost[]): Promise<CommandResult<null>>;
+  removeHost(host: HostId): Promise<CommandResult<null>>;
   /** Updates the live data policy. */
   setDataPolicy(policy: DataPolicy): Promise<CommandResult<null>>;
   /** The `authorized_keys` line for this phone's key. */
@@ -114,6 +117,16 @@ export function createNativeTransport(
         method: "network_addresses",
         args: { host },
       }),
+    setDemand: (demand) =>
+      callCore(native, { method: "set_demand", args: { demand } }),
+    setProcessInterest: (host, interested, view, stream) =>
+      callCore(native, {
+        method: "set_process_interest",
+        args: { host, interested, view, stream },
+      }),
+    pairingState: () => callCore(native, { method: "pairing_state" }),
+    removeHost: (host) =>
+      callCore(native, { method: "remove_host", args: { host } }),
     setHosts(hosts) {
       // A debug screen can unmount during Connect or reopen during cleanup.
       const write = hostsPending.then(() =>
@@ -133,6 +146,15 @@ export function createNativeTransport(
       live.dispose();
     },
   };
+}
+
+export function nativePairing(_core: NativeTransport): PhonePairing {
+  const unavailable = async () =>
+    ({
+      status: "error",
+      error: { kind: "internal", message: "Pairing is not implemented" },
+    }) as const;
+  return { previewPairing: unavailable, pair: unavailable };
 }
 
 /** Whether `transport` is the native one (it carries the native-only calls). */
