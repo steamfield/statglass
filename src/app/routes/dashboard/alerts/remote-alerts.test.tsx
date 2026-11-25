@@ -16,7 +16,6 @@ const NAME = "linux-tailscale";
 const DISK = "Root disk running low";
 const MEMORY = "Memory stalls";
 const OFFLINE = `${NAME} is not connected`;
-const STALE = `The rules on ${NAME} changed. Reload them and try again.`;
 
 function mock({
   scenarios = ["linux-host"],
@@ -249,7 +248,9 @@ it("reloads after a stale save and keeps the draft for another try", async () =>
   await openNew(user);
   await nameDraft(user, "Pending CPU rule");
   await user.click(saveButton());
-  expect(await dialog().findByRole("alert")).toHaveTextContent(STALE);
+  expect((await dialog().findByRole("alert")).textContent).toBe(
+    `The rules on ${NAME} changed. The latest rules are loaded; save again to apply your edit.`
+  );
   expect(nameInput()).toHaveValue("Pending CPU rule");
   expect(
     await screen.findByText("CPU saturation", { exact: true })
@@ -261,6 +262,76 @@ it("reloads after a stale save and keeps the draft for another try", async () =>
   ).toBeChecked();
   expect(ruleSwitch("CPU saturation")).toBeChecked();
 });
+
+it("directs a stale toggle back to the rule's switch", async () => {
+  const { user } = await renderRemote(
+    mock({ scenarios: ["linux-alerts-stale"] })
+  );
+  await user.click(await screen.findByRole("switch", { name: DISK }));
+  expect((await rules().findByRole("alert")).textContent).toBe(
+    `The rules on ${NAME} changed. The latest rules are loaded. Use the switch to change the rule.`
+  );
+  expect(ruleSwitch(DISK)).toBeChecked();
+  await user.click(ruleSwitch(DISK));
+  await waitFor(() => expect(ruleSwitch(DISK)).not.toBeChecked());
+});
+
+it("directs a stale delete back to Delete", async () => {
+  const { user } = await renderRemote(
+    mock({ scenarios: ["linux-alerts-stale"] })
+  );
+  await user.click(await screen.findByRole("button", { name: `Edit ${DISK}` }));
+  await user.click(dialog().getByRole("button", { name: "Delete" }));
+  expect((await dialog().findByRole("alert")).textContent).toBe(
+    `The rules on ${NAME} changed. The latest rules are loaded. Click Delete again to remove the rule.`
+  );
+  expect(nameInput()).toHaveValue(DISK);
+  await user.click(dialog().getByRole("button", { name: "Delete" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("switch", { name: DISK })).not.toBeInTheDocument()
+  );
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it.each([
+  ["remote_busy", OFFLINE],
+  ["internal", "Couldn't load the latest rules."],
+] as const)(
+  "clears a %s refresh failure when the latest rules are loaded",
+  async (kind, notice) => {
+    const transport = mock({ scenarios: ["linux-alerts-stale"] });
+    const read = transport.remoteAlertRules;
+    const save = transport.setRemoteAlertRules;
+    let failNextRead = false;
+    transport.setRemoteAlertRules = async (...args) => {
+      const result = await save(...args);
+      failNextRead =
+        result.status === "error" &&
+        result.error.kind === "remote_rules_changed";
+      return result;
+    };
+    transport.remoteAlertRules = async (...args) => {
+      if (!failNextRead) return read(...args);
+      failNextRead = false;
+      return { status: "error", error: { kind, message: "Read failed" } };
+    };
+    const { user } = await renderRemote(transport);
+    await openNew(user);
+    await nameDraft(user, "Pending CPU rule");
+    await user.click(saveButton());
+    expect(await dialog().findByRole("alert")).toHaveTextContent(notice);
+    expect(saveButton()).toBeDisabled();
+    await user.click(dialog().getByRole("button", { name: "Reload rules" }));
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+    expect(dialog().queryByRole("alert")).not.toBeInTheDocument();
+    expect(nameInput()).toHaveValue("Pending CPU rule");
+    await user.click(saveButton());
+    expect(
+      await screen.findByRole("switch", { name: "Pending CPU rule" })
+    ).toBeChecked();
+    expect(ruleSwitch("CPU saturation")).toBeChecked();
+  }
+);
 
 it("keeps the last list readable after disconnecting and reads again on reconnect", async () => {
   const transport = mock({ scenarios: ["linux-alerts-offline"] });
@@ -467,7 +538,11 @@ it.each(["changed", "deleted"] as const)(
         route: "tailscale",
       })
     );
-    expect(await dialog().findByText(STALE, { exact: false })).toBeVisible();
+    expect(
+      await dialog().findByText(
+        `The rules on ${NAME} changed. Reload them and try again. Close this draft to see the latest rules.`
+      )
+    ).toBeVisible();
     expect(nameInput()).toHaveValue("My draft");
     expect(saveButton()).toBeDisabled();
     expect(dialog().getByRole("button", { name: "Delete" })).toBeDisabled();

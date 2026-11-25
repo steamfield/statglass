@@ -353,19 +353,32 @@ fn builtin_cpu_threshold(event: &Event) -> Option<f32> {
 /// The metric's label, with the watched series in parentheses when there is one:
 /// "Fan speed (Fan 1)". A metric missing from `ALERT_METRICS` reads as its id.
 fn series_label(metric: &str, labels: &Labels) -> String {
-    let label = alert_metric(metric).map_or(metric, |m| m.label);
-    match (metric, labels.iter().next()) {
-        ("mem.psi", Some(("stall", "some"))) => label.to_owned(),
-        ("mem.psi", None) => format!("{label} (any)"),
-        ("cpu.loadavg", Some(("window", window)))
-            if !window.is_empty() && window.bytes().all(|byte| byte.is_ascii_digit()) =>
-        {
-            format!("{label} ({window} min)")
+    let definition = alert_metric(metric);
+    let label = definition.map_or(metric, |m| m.label);
+    if let Some(def) = definition {
+        match labels.iter().next() {
+            None => {
+                if let Some(qualifier) = def.unlabelled_qualifier {
+                    return format!("{label} ({qualifier})");
+                }
+            }
+            Some((key, value)) if def.default_label.is_some_and(|(k, _)| key == k) => {
+                if def.bare_label_value == Some(value) {
+                    return label.to_owned();
+                }
+                if let Some(unit) = def.numeric_label_unit
+                    && !value.is_empty()
+                    && value.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    return format!("{label} ({value} {unit})");
+                }
+            }
+            _ => {}
         }
-        _ => match series_name(metric, labels) {
-            Some(name) => format!("{label} ({name})"),
-            None => label.to_owned(),
-        },
+    }
+    match series_name(metric, labels) {
+        Some(name) => format!("{label} ({name})"),
+        None => label.to_owned(),
     }
 }
 

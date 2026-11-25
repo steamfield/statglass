@@ -28,3 +28,26 @@ export function remoteRulesErrorText(
     return rulesChangedText(name);
   return commandErrorText(error, fallback);
 }
+
+const RULES_RELOADED = {
+  save: "The latest rules are loaded; save again to apply your edit.",
+  delete: "The latest rules are loaded. Click Delete again to remove the rule.",
+  toggle: "The latest rules are loaded. Use the switch to change the rule.",
+};
+
+export type RulesWriteAction = keyof typeof RULES_RELOADED;
+
+export function remoteRulesWriteErrorText(
+  error: unknown,
+  name: string,
+  action: RulesWriteAction,
+  refreshed: boolean
+): string | null {
+  if (rulesConnectionLost(error)) return null;
+  if (commandError(error)?.kind === "remote_rules_changed") {
+    return refreshed
+      ? `The rules on ${name} changed. ${RULES_RELOADED[action]}`
+      : null;
+  }
+  return remoteRulesErrorText(error, name, "Couldn't save the rules.");
+}

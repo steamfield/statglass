@@ -48,11 +48,6 @@ const SECONDS_WORDING_BELOW = 120;
 const FAN_METRIC = "fan.rpm";
 const FAN_LABEL = "fan";
 
-/** What a rule sentence calls `metric`: its alert label, else its id. */
-function metricLabel(metric: string): string {
-  return ALERT_METRICS.find((m) => m.metric === metric)?.label ?? metric;
-}
-
 /** "30 s" under two minutes, whole minutes rounded down from there. */
 function formatHold(secs: number): string {
   if (secs < SECONDS_WORDING_BELOW) return `${secs} s`;
@@ -66,13 +61,20 @@ function comparisonWord(op: Cmp): string {
 
 /** "Fan speed (Fan 1)", or just "Memory pressure" for every series. */
 function seriesLabel(metric: string, labels: Labels): string {
-  const selected = Object.fromEntries(labels);
-  const label = metricLabel(metric);
-  if (metric === "mem.psi") {
-    if (selected.stall === "some") return label;
-    if (labels.length === 0) return `${label} (any)`;
+  const definition = ALERT_METRICS.find((m) => m.metric === metric);
+  const label = definition?.label ?? metric;
+  const first = labels[0];
+  if (first === undefined) {
+    const qualifier = definition?.unlabelled_qualifier;
+    return qualifier ? `${label} (${qualifier})` : label;
   }
-  const name = seriesName(metric, selected);
+  const [key, value] = first;
+  if (
+    key === definition?.default_label?.[0] &&
+    value === definition.bare_label_value
+  )
+    return label;
+  const name = seriesName(metric, Object.fromEntries(labels));
   return name === null ? label : `${label} (${name})`;
 }
 
@@ -197,8 +199,8 @@ export function newRule(metric: AlertMetric, id: string): AlertRule {
 }
 
 /**
- * The display name of one series from its first label. Fans are numbered
- * from one and load average windows read in minutes.
+ * The display name of one series from its first label, with a catalog unit
+ * for numeric labels where configured. Fans are numbered from one.
  */
 export function seriesName(
   metric: string,
@@ -210,8 +212,13 @@ export function seriesName(
   if (metric === FAN_METRIC && key === FAN_LABEL && /^\d+$/.test(value)) {
     return `Fan ${Number(value) + 1}`;
   }
-  if (metric === "cpu.loadavg" && key === "window" && /^\d+$/.test(value)) {
-    return `${value} min`;
+  const definition = ALERT_METRICS.find((m) => m.metric === metric);
+  if (
+    definition?.numeric_label_unit &&
+    key === definition.default_label?.[0] &&
+    /^\d+$/.test(value)
+  ) {
+    return `${value} ${definition.numeric_label_unit}`;
   }
   return value;
 }

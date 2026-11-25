@@ -143,7 +143,8 @@ function RemoteRulesPanel({
   const toggle = async (id: string, enabled: boolean) => {
     setToggleError(null);
     const result = await write(
-      rules.map((rule) => (rule.id === id ? { ...rule, enabled } : rule))
+      rules.map((rule) => (rule.id === id ? { ...rule, enabled } : rule)),
+      "toggle"
     );
     if (!result.saved) setToggleError(result.error);
   };

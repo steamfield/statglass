@@ -35,7 +35,7 @@ test("shows the stale revision message and reloads the host’s rules", async ({
   await openRemoteAlerts(page, "linux-alerts-stale");
   const dialog = await draftRule(page);
   await expect(dialog.getByRole("alert")).toHaveText(
-    "The rules on linux-tailscale changed. Reload them and try again."
+    "The rules on linux-tailscale changed. The latest rules are loaded; save again to apply your edit."
   );
   await expect(dialog.getByRole("textbox", { name: "Name" })).toHaveValue(
     "Linux CPU watch"

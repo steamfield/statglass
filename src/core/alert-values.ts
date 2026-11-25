@@ -1,3 +1,5 @@
+/// <reference lib="es2023.intl" />
+
 /**
  * Alert rule values in the user's units: one measured or threshold value as
  * text ("84%", "4,000 rpm", "20 GB"), and a threshold converted between its
@@ -16,7 +18,11 @@ import {
   isPresent,
   MISSING,
 } from "@core/format";
-import { METRIC_UNITS, type UnitSettings } from "@core/generated/bindings";
+import {
+  ALERT_METRICS,
+  METRIC_UNITS,
+  type UnitSettings,
+} from "@core/generated/bindings";
 
 /** A threshold in the unit the user reads it in. */
 export interface DisplayThreshold {
@@ -29,9 +35,7 @@ const WATTS_DECIMAL_BELOW = 10;
 
 /** Significant digits an f32 holds; more only shows binary rounding noise. */
 const F32_DIGITS = 7;
-const loadAverage = new Intl.NumberFormat("en-US", {
-  maximumSignificantDigits: F32_DIGITS,
-});
+const significantFormatters = new Map<number, Intl.NumberFormat>();
 
 const BYTES_PER_GB = 1e9;
 const BYTES_PER_GIB = 2 ** 30;
@@ -67,6 +71,27 @@ function formatShortBytes(bytes: number, unit: ByteDisplayUnit): string {
   return `${parts.value.replace(/\.0$/, "")} ${parts.unit}`;
 }
 
+function significantDigitsFor(metric: string): number | null {
+  return (
+    ALERT_METRICS.find((entry) => entry.metric === metric)
+      ?.value_significant_digits ?? null
+  );
+}
+
+function formatSignificant(value: number, digits: number): string {
+  let formatter = significantFormatters.get(digits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", {
+      maximumSignificantDigits: digits,
+      roundingMode: "halfEven",
+    });
+    significantFormatters.set(digits, formatter);
+  }
+  // Recover the original f32 from its shortest JSON representation.
+  const stored = Math.fround(value);
+  return formatter.format(stored === 0 ? 0 : stored);
+}
+
 /**
  * One value of `metric` in the user's units: "84%", "203 °F", "3.7 GiB",
  * "4,000 rpm", "1,000 pages/s", "6.5 W". A missing value reads "—"; a
@@ -79,11 +104,13 @@ export function formatAlertValue(
   units: DisplayUnits
 ): string {
   if (!isPresent(value)) return MISSING;
-  if (metric === "mem.psi") {
-    return formatPercent(value, { significantDigits: F32_DIGITS });
+  const unit = catalogUnit(metric);
+  const digits = significantDigitsFor(metric);
+  if (digits !== null) {
+    const shown = formatSignificant(value, digits);
+    return unit === "percent" ? `${shown}%` : shown;
   }
-  if (metric === "cpu.loadavg") return loadAverage.format(value);
-  switch (catalogUnit(metric)) {
+  switch (unit) {
     case "percent":
       return formatPercent(value);
     case "celsius":
@@ -115,6 +142,13 @@ export function thresholdToDisplay(
 ): DisplayThreshold {
   const display = displayUnits(units);
   const unit = catalogUnit(metric);
+  const digits = significantDigitsFor(metric);
+  if (digits !== null) {
+    return {
+      value: Number(formatSignificant(value, digits).replaceAll(",", "")),
+      unit: UNIT_TEXT[unit ?? ""] ?? "",
+    };
+  }
   const toF32 = (shown: number) => Number(shown.toPrecision(F32_DIGITS));
   if (unit === "celsius") {
     return display.temperature === "F"

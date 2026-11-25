@@ -47,7 +47,10 @@ interface RemoteRuleEditor {
   rules: AlertRule[];
   disabled: boolean;
   reason: string | null;
-  write: (rules: AlertRule[]) => Promise<RulesWriteResult>;
+  write: (
+    rules: AlertRule[],
+    action: "save" | "delete"
+  ) => Promise<RulesWriteResult>;
   reload: ReloadRulesAction | null;
 }
 
@@ -128,11 +131,11 @@ function useRulesWrite(onClose: () => void, remote?: RemoteRuleEditor) {
       open.current = false;
     };
   }, []);
-  const write = async (rules: AlertRule[]) => {
+  const write = async (rules: AlertRule[], action: "save" | "delete") => {
     setSaving(true);
     setError(null);
     const result = remote
-      ? await remote.write(rules)
+      ? await remote.write(rules, action)
       : await writeLocalRules(() => update({ alerts: { rules } }));
     if (!open.current) return;
     setSaving(false);
@@ -187,8 +190,12 @@ function RuleEditor({
     clearError();
   };
   const save = () =>
-    void write(rulesWithSaved(rules, ruleFromForm(form, units)));
-  const remove = () => void write(rules.filter((r) => r.id !== form.id));
+    void write(rulesWithSaved(rules, ruleFromForm(form, units)), "save");
+  const remove = () =>
+    void write(
+      rules.filter((r) => r.id !== form.id),
+      "delete"
+    );
   return (
     <Dialog open onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent
