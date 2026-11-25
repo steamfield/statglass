@@ -17,8 +17,7 @@ crates/statglass-store/src/writer/mod.rs 700
 crates/statglass-store/src/writer/prune.rs 550
 crates/statglass-store/examples/seed.rs 1850
 src-tauri/src/commands.rs 700
-src-tauri/src/ipc.rs 800
-src-tauri/src/live.rs 750
+src-tauri/src/ipc.rs 550
 src-tauri/src/state.rs 600
 src-tauri/src/tray/mod.rs 600
 src-tauri/src/tray/model.rs 850

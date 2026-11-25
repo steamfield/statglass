@@ -6,11 +6,18 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use statglass_engine::{Bus, FrameLayout, LiveFrame, ProcessBatch, ProcessSort};
+use statglass_engine::{
+    Bus, BusMsg, FrameLayout, LiveFrame, ProcessBatch, ProcessSample, ProcessSort,
+};
 use statglass_schema::{Labels, MetricId, SeriesKey};
-use uuid::Uuid;
 
 use super::*;
+
+fn next_host() -> HostId {
+    static NEXT_HOST: AtomicU32 = AtomicU32::new(1);
+    let id = NEXT_HOST.fetch_add(1, Ordering::Relaxed);
+    HostId(format!("{id:032x}").parse().unwrap())
+}
 
 /// A host whose hub, status and capabilities the test drives, the way a source would.
 struct FakeFeed {
@@ -38,7 +45,7 @@ impl FakeFeed {
 
     fn with_bus(bus: Bus) -> Arc<Self> {
         let feed = Arc::new(Self {
-            host: HostId(Uuid::new_v4()),
+            host: next_host(),
             hub: LiveHub::new(bus),
             caps: Mutex::new(Capabilities {
                 revision: 1,

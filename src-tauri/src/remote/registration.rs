@@ -1,6 +1,16 @@
 //! Install/remove one registered source; generation guards reject old callbacks.
 use super::*;
+use crate::live::RecentFeed;
 use statglass_remote::OpenSshDialer;
+
+struct RemoteRecent(Arc<RemoteSource>);
+
+impl RecentFeed for RemoteRecent {
+    fn set_recent_interest(&self, on: bool) {
+        self.0.set_recent_interest(on);
+    }
+}
+
 pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandError> {
     let state = app.state::<AppState>();
     let id = saved.record.id;
@@ -55,7 +65,9 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         Some(mirror.clone()),
     );
     source.set_controller_on_battery(state.host(state.local)?.hub().status().on_battery);
-    state.live.register_recent_source(id, source.clone());
+    state
+        .live
+        .register_recent_source(id, Arc::new(RemoteRecent(source.clone())));
     state.remotes.sources.lock_ok().insert(id, source.clone());
     let entry = state.hosts.insert(saved.record.clone(), source);
     let synced_through_ms = mirror
@@ -241,6 +253,7 @@ pub(super) fn connection_status(
     linux: bool,
     last_version: Option<String>,
 ) -> RemoteHostStatus {
+    let connection = statglass_ipc::status::connection_status(&s);
     let agent_version = s.remote_version.or(last_version);
     RemoteHostStatus {
         agent_update: super::commands::agent_update(
@@ -248,43 +261,18 @@ pub(super) fn connection_status(
             agent_version.as_deref(),
             s.incompatible,
         ),
-        state: if s.connected {
-            RemoteState::Connected
-        } else if s.retrying {
-            RemoteState::Connecting
-        } else if s.error.is_some() {
-            RemoteState::Error
-        } else {
-            RemoteState::Offline
-        },
-        route: s.route.map(map_route),
+        state: connection.state,
+        route: connection.route,
         last_seen_ms: s.last_seen_ms.map(|m| m as f64),
         synced_through_ms: None,
-        error: s
-            .error
-            .or_else(|| s.connected.then_some(s.history_error.clone()).flatten()),
-        failure_kind: s.failure_kind.map(map_failure_kind),
-        route_failures: s
-            .route_failures
-            .iter()
-            .map(|failure| RemoteRouteFailure {
-                route: map_route(failure.route),
-                kind: map_failure_kind(failure.kind),
-            })
-            .collect(),
+        error: connection.message,
+        failure_kind: connection.failure,
+        route_failures: connection.route_failures,
         next_attempt_ms: s.next_attempt_ms.map(|ms| ms as f64),
         attempt: s.attempt,
         dialing: s.dialing,
         waiting_for_network: s.waiting_for_network,
-        sync: if s.history_error.is_some() {
-            RemoteSync::Unavailable
-        } else if s.catching_up {
-            RemoteSync::CatchingUp
-        } else if s.connected {
-            RemoteSync::Current
-        } else {
-            RemoteSync::Idle
-        },
+        sync: connection.sync,
         clock_offset_ms: s.clock_offset_ms as f64,
         vitals: HostVitals::default(),
         rr: None,
@@ -292,41 +280,6 @@ pub(super) fn connection_status(
         last_update_failure: None,
         agent_version,
         identity_changed: s.identity_changed.map(|id| id.to_string()),
-    }
-}
-
-fn map_route(route: statglass_remote::Route) -> RemoteRoute {
-    match route {
-        statglass_remote::Route::Lan => RemoteRoute::Lan,
-        statglass_remote::Route::Tailscale => RemoteRoute::Tailscale,
-    }
-}
-
-fn map_failure_kind(kind: statglass_remote::ConnectionFailureKind) -> RemoteFailureKind {
-    match kind {
-        statglass_remote::ConnectionFailureKind::Unreachable => RemoteFailureKind::Unreachable,
-        statglass_remote::ConnectionFailureKind::Timeout => RemoteFailureKind::Timeout,
-        statglass_remote::ConnectionFailureKind::Authentication => {
-            RemoteFailureKind::Authentication
-        }
-        statglass_remote::ConnectionFailureKind::HostKey => RemoteFailureKind::HostKey,
-        statglass_remote::ConnectionFailureKind::AgentNotRunning => {
-            RemoteFailureKind::AgentNotRunning
-        }
-        statglass_remote::ConnectionFailureKind::AppNotRunning => RemoteFailureKind::AppNotRunning,
-        statglass_remote::ConnectionFailureKind::MonitoringOff => RemoteFailureKind::MonitoringOff,
-        statglass_remote::ConnectionFailureKind::Incompatible => RemoteFailureKind::Incompatible,
-        statglass_remote::ConnectionFailureKind::IdentityChanged => {
-            RemoteFailureKind::IdentityChanged
-        }
-        statglass_remote::ConnectionFailureKind::Protocol => RemoteFailureKind::Protocol,
-        statglass_remote::ConnectionFailureKind::NameNotResolved => {
-            RemoteFailureKind::NameNotResolved
-        }
-        statglass_remote::ConnectionFailureKind::Refused => RemoteFailureKind::Refused,
-        statglass_remote::ConnectionFailureKind::NoRoute => RemoteFailureKind::NoRoute,
-        statglass_remote::ConnectionFailureKind::LocalOffline => RemoteFailureKind::LocalOffline,
-        statglass_remote::ConnectionFailureKind::TailscaleDown => RemoteFailureKind::TailscaleDown,
     }
 }
 

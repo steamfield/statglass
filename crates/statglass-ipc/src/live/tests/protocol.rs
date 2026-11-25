@@ -53,13 +53,13 @@ async fn frontend_protocol_fixture_matches_native_registry() {
     feed.tick(&layout, 1_503_000, 3.0);
     settle().await;
     let cancelled = trace(cancel_rx.try_iter());
-    let unknown = HostId(Uuid::nil());
+    let unknown = HostId(Default::default());
     let result = json!({
         "initial": initial, "after_frame": after_frame, "disconnected": disconnected, "cancelled": cancelled,
         "typed_failure": {"status": "error", "error": crate::error::CommandError::UnknownHost { host: unknown }},
     });
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/fixtures/live-protocol.json");
+        .join("../../tests/fixtures/live-protocol.json");
     if std::env::var_os("STATGLASS_UPDATE_PROTOCOL_FIXTURE").is_some() {
         std::fs::write(
             &path,

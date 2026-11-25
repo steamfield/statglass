@@ -2,15 +2,14 @@
 //! it gets back, and the store reads behind them. A caller says how `Auto` resolves for
 //! its store: the desktop keeps every tier (`TierChoice::Auto`), a phone mirror less
 //! (`TierChoice::Covered`).
-//!
-//! Scaffold: phase 3 lane a moves the history types from `src-tauri/src/ipc.rs`,
-//! `src-tauri/src/history/ipc.rs` and the store-only part of
-//! `src-tauri/src/history/queries.rs` here, replacing these stubs.
+
 use crate::error::CommandError;
 use serde::{Deserialize, Serialize};
 use statglass_engine::HistoryStore;
 use statglass_schema::{Event, Gap, HostId, JsSafeInt, SeriesKey, SeriesSelector, Tier};
-use statglass_store::{HistoryQuery, TierChoice};
+use statglass_store::{BucketRow, TierChoice};
+
+mod ipc;
 
 /// Which tier `query_history` reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -44,7 +43,8 @@ pub struct HistoryPage {
     /// The tier the points came from.
     pub tier: Tier,
     /// The width each point averages over, ms: the tier's bucket times the buckets merged
-    /// to stay under `max_points`. A point at `t` covers `[t, t + bucket_ms)`.
+    /// to stay under `max_points` (a 7d range at 1,008 points: 600,000, "10 MIN AVG"). A
+    /// point at `t` covers `[t, t + bucket_ms)`.
     #[specta(type = JsSafeInt)]
     pub bucket_ms: i64,
     pub series: Vec<HistorySeries>,
@@ -56,7 +56,17 @@ pub struct HistoryPage {
 pub struct HistorySeries {
     pub key: SeriesKey,
     pub points: Vec<HistoryPoint>,
-    /// How long a point stays current, ms (D-092).
+    /// How long a point stays current, ms (D-092): the hold of the slowest period the
+    /// series is sampled at, or the page's `bucket_ms` if that is larger. Consecutive
+    /// points no more than this apart are one line; further apart, there is a hole
+    /// between them. `gaps` stays the list of explicit holes.
+    ///
+    /// The period is the slowest under the current settings (the backed-off base tick,
+    /// the collector's idle cadence, Performance mode's slowdown), or, when the range
+    /// starts before the last time a period got faster in this app run (a shorter
+    /// sampling interval), the slowest under any settings this run, since the range's
+    /// earlier points were sampled under those. Settings persist across launches, so
+    /// earlier runs count as sampled under the settings this one started with.
     #[specta(type = JsSafeInt)]
     pub hold_ms: i64,
 }
@@ -71,47 +81,32 @@ pub struct HistoryPoint {
     pub avg: f32,
 }
 
-impl HistoryRequest {
-    /// The store query, with `Auto` read as [`TierChoice::Auto`] (the desktop).
-    pub fn to_query(&self) -> Result<HistoryQuery, CommandError> {
-        self.to_query_with(TierChoice::Auto)
-    }
-
-    /// The store query, with `Auto` read as `auto` (a phone mirror passes its policy's
-    /// `Covered` choice). Scaffold stub: not implemented until phase 3 lane a.
-    pub fn to_query_with(&self, auto: TierChoice) -> Result<HistoryQuery, CommandError> {
-        let _ = auto;
-        Err(not_implemented())
-    }
-}
-
-/// Per-series points from one tier of `host`'s history through now. Lane a fixes the
-/// exact parameters from the desktop caller it moves (`commands.rs` `query_history`).
-/// Scaffold stub: not implemented until phase 3 lane a.
+/// The stored tier plus `recent` bucket rows, which replace stored rows of the same
+/// bucket and layout. With the store unavailable, the recent rows alone answer.
+/// `hold` supplies each series' `hold_ms`. Blocking.
 pub fn query_history(
     history: &HistoryStore,
     request: &HistoryRequest,
     auto: TierChoice,
+    recent: impl Fn() -> Vec<BucketRow>,
+    hold: impl Fn(&SeriesKey, i64) -> i64,
 ) -> Result<HistoryPage, CommandError> {
-    let _ = (history, request, auto);
-    Err(not_implemented())
+    let query = request.to_query_with(auto)?;
+    Ok(ipc::history_page(
+        history.history_through_now(&query, recent)?,
+        hold,
+    ))
 }
 
-/// Events of `host` with `from_ms <= ts < to_ms`, oldest first. Lane a fixes the exact
-/// parameters from the desktop caller it moves (`commands.rs` `query_events`). Scaffold
-/// stub: not implemented until phase 3 lane a.
+/// Events of `host` with `from_ms <= ts < to_ms`, oldest first. Blocking.
 pub fn query_events(
     history: &HistoryStore,
     host: HostId,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Vec<Event>, CommandError> {
-    let _ = (history, host, from_ms, to_ms);
-    Err(not_implemented())
+    Ok(history.read(|r| r.events(host, from_ms, to_ms))?)
 }
 
-fn not_implemented() -> CommandError {
-    CommandError::Internal {
-        message: "not implemented".into(),
-    }
-}
+#[cfg(test)]
+mod tests;

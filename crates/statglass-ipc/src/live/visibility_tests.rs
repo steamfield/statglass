@@ -7,8 +7,8 @@ fn live_visibility_events_only_reach_the_window_that_changed() {
     let registry = LiveRegistry::new();
     let events = Arc::new(Mutex::new(Vec::new()));
     let received = events.clone();
-    registry.set_visibility_emitter(move |label, event| {
-        received.lock_ok().push((label.to_string(), event.visible));
+    registry.set_visibility_emitter(move |label, visible| {
+        received.lock_ok().push((label.to_string(), visible));
     });
     assert!(!registry.is_visible("dashboard"));
     registry.window_visible("dashboard", false);
@@ -65,7 +65,7 @@ fn a_slow_observer_does_not_hold_the_window_registry_lock() {
             });
             if boundary == "source" {
                 registry.register_recent_source(
-                    statglass_schema::HostId(uuid::Uuid::nil()),
+                    statglass_schema::HostId(Default::default()),
                     Arc::new(Feed(observer)),
                 );
             } else {
@@ -106,12 +106,12 @@ fn delayed_show_cannot_restore_recent_interest_or_visibility_after_hide() {
     }
     let registry = Arc::new(LiveRegistry::new());
     let feed = Arc::new(Feed(AtomicBool::new(false)));
-    registry.register_recent_source(statglass_schema::HostId(uuid::Uuid::nil()), feed.clone());
+    registry.register_recent_source(statglass_schema::HostId(Default::default()), feed.clone());
     registry.set_hosts_recent_interest("dashboard", true);
     let events = Arc::new(Mutex::new(Vec::new()));
     let received = events.clone();
-    registry.set_visibility_emitter(move |_, event| {
-        received.lock_ok().push(event.visible);
+    registry.set_visibility_emitter(move |_, visible| {
+        received.lock_ok().push(visible);
     });
     let (started, ready) = mpsc::channel();
     let (release, wait) = mpsc::channel();

@@ -18,7 +18,7 @@ use crate::ipc::{
     ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats, SettingsSnapshot,
     SubscriptionInfo, UsageByApp, UsageKey, WindowAppearance,
 };
-use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
+use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink, TauriSink};
 use crate::process_signal::{Micros, ProcessSignalError, SignalKind, SystemProcessOs};
 use crate::settings::SettingsPatch;
 use crate::state::{AppState, Route};
@@ -85,7 +85,7 @@ pub async fn subscribe_live(
 ) -> Result<SubscriptionInfo, CommandError> {
     let entry = state.host(host)?;
     let feed: Arc<dyn LiveFeed> = entry;
-    let sink: Arc<dyn LiveSink> = Arc::new(channel);
+    let sink: Arc<dyn LiveSink> = Arc::new(TauriSink(channel));
     let req = LiveRequest {
         backfill_ms: backfill_ms.map_or(DEFAULT_BACKFILL_MS, i64::from),
         series,
@@ -206,9 +206,7 @@ pub async fn query_events(
 ) -> Result<Vec<Event>, CommandError> {
     blocking(app, move |state| {
         state.host(host)?;
-        state
-            .history_for(host)?
-            .read(|r| r.events(host, from_ms.0, to_ms.0))
+        state.history_for(host)?.events(host, from_ms.0, to_ms.0)
     })
     .await
 }

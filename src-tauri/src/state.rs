@@ -175,7 +175,7 @@ impl AppState {
             )),
             local,
             hosts: HostRegistry::new(),
-            live: LiveRegistry::new(),
+            live: LiveRegistry::with_refusals(Arc::new(crate::process_signal::DesktopRefusals)),
             settings,
             star_prompt,
             alerts: crate::alerts::AlertsService::open(&data_dir),
