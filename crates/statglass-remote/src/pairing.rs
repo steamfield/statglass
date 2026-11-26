@@ -56,6 +56,15 @@ pub struct Handover {
     pub unavailable: Vec<UnavailableHost>,
 }
 
+/// The handover source's result and whether the phone received a local-only reply.
+pub struct HandoverSummary {
+    pub handover: Handover,
+    pub dropped: bool,
+}
+
+/// A reply and its host-side handover summary, captured together.
+pub type PairOutcome = (PairReply, Option<Arc<HandoverSummary>>);
+
 pub trait HandoverSource: Send + Sync {
     fn handover(&self, device: DeviceTag, key: &EcdsaP256Public, name: &str) -> Handover;
 }
@@ -103,8 +112,8 @@ enum Phase {
         key: EcdsaP256Public,
     },
     HandingOver,
-    RemovingPairingLine(PairReply),
-    Finished(PairReply),
+    RemovingPairingLine(PairOutcome),
+    Finished(PairOutcome),
 }
 
 const DEFAULT_TTL: Duration = Duration::from_secs(10 * 60);
@@ -234,7 +243,7 @@ impl PairingHost {
 
     /// The pairing client's view: `Waiting` until a final reply.
     pub fn status(&self, nonce: &str, now_ms: i64) -> PairReply {
-        self.view(nonce, now_ms, false)
+        self.view(nonce, now_ms, false).0
     }
 
     /// Withdraws the relay's start. A committed host decision remains available.
@@ -252,28 +261,43 @@ impl PairingHost {
             return reject(PairError::Used);
         }
         if matches!(offer.phase, Phase::Offered { .. } | Phase::Pending { .. }) {
-            offer.phase = Phase::RemovingPairingLine(PairReply::Expired);
+            offer.phase = Phase::RemovingPairingLine((PairReply::Expired, None));
         }
         offer.refresh(self.keys.as_ref(), nonce, now_ms);
-        offer.reply(false)
+        offer.outcome(false).0
     }
 
     /// The approver's view: `Pending` with the device and code until a final reply.
     pub fn pending(&self, nonce: &str, now_ms: i64) -> PairReply {
+        self.pending_with_summary(nonce, now_ms).0
+    }
+
+    /// The approver's reply and retained summary.
+    pub fn pending_with_summary(&self, nonce: &str, now_ms: i64) -> PairOutcome {
         self.view(nonce, now_ms, true)
     }
 
-    fn view(&self, nonce: &str, now_ms: i64, approver: bool) -> PairReply {
+    fn view(&self, nonce: &str, now_ms: i64, approver: bool) -> PairOutcome {
         let mut state = self.state.lock_ok();
         let Some(offer) = state.offers.get_mut(nonce) else {
-            return reject(PairError::Unknown);
+            return (reject(PairError::Unknown), None);
         };
         offer.refresh(self.keys.as_ref(), nonce, now_ms);
-        offer.reply(approver)
+        offer.outcome(approver)
     }
 
     /// Writes the device line, then removes the pairing line.
     pub fn approve(&self, nonce: &str, now_ms: i64) -> Result<PairReply, PairingError> {
+        self.approve_with_summary(nonce, now_ms)
+            .map(|(reply, _)| reply)
+    }
+
+    /// Approves the pairing and returns the reply and retained summary.
+    pub fn approve_with_summary(
+        &self,
+        nonce: &str,
+        now_ms: i64,
+    ) -> Result<PairOutcome, PairingError> {
         let source = self.handover.lock_ok().clone();
         let mut state = self.state.lock_ok();
         let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
@@ -291,34 +315,43 @@ impl PairingHost {
             hosts: vec![offer.host.clone()],
             unavailable: Vec::new(),
         };
-        if let Some(source) = source {
+        let summary = if let Some(source) = source {
             let (key, name) = (key.clone(), device_name.clone());
             offer.phase = Phase::HandingOver;
             drop(state);
-            add_handover(&mut reply, source.handover(device, &key, &name));
+            let handover = source.handover(device, &key, &name);
+            let dropped = add_handover(&mut reply, &handover);
             state = self.state.lock_ok();
-        }
+            Some(Arc::new(HandoverSummary { handover, dropped }))
+        } else {
+            None
+        };
         let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
-        offer.phase = Phase::RemovingPairingLine(reply);
+        offer.phase = Phase::RemovingPairingLine((reply, summary));
         self.finish_approval(offer, nonce)
     }
 
-    fn finish_approval(&self, offer: &mut Offer, nonce: &str) -> Result<PairReply, PairingError> {
+    fn finish_approval(&self, offer: &mut Offer, nonce: &str) -> Result<PairOutcome, PairingError> {
         offer.finish(self.keys.as_ref(), nonce)?;
         match &offer.phase {
-            Phase::Finished(reply) => Ok(reply.clone()),
-            Phase::HandingOver => Ok(PairReply::Waiting),
+            Phase::Finished(outcome) => Ok(outcome.clone()),
+            Phase::HandingOver => Ok((PairReply::Waiting, None)),
             _ => Err(PairError::Invalid.into()),
         }
     }
 
     /// Refuses the pairing, removes its line and returns the resulting reply.
     pub fn deny(&self, nonce: &str) -> Result<PairReply, PairingError> {
+        self.deny_with_summary(nonce).map(|(reply, _)| reply)
+    }
+
+    /// Denies an open offer or returns the completed outcome, including any summary.
+    pub fn deny_with_summary(&self, nonce: &str) -> Result<PairOutcome, PairingError> {
         let mut state = self.state.lock_ok();
         let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
         offer.deny_if_open();
         offer.finish(self.keys.as_ref(), nonce)?;
-        Ok(offer.reply(true))
+        Ok(offer.outcome(true))
     }
 
     /// Withdraws the offer and removes its line.
@@ -327,16 +360,16 @@ impl PairingHost {
     }
 
     /// Withdraws a still-open offer and returns its deadline for the caller's status note.
-    /// An already decided or unknown offer returns its current reply and no deadline.
-    pub fn withdraw_if_open(&self, nonce: &str, now_ms: i64) -> (PairReply, Option<i64>) {
+    /// An already decided or unknown offer returns its current outcome and no deadline.
+    pub fn withdraw_if_open(&self, nonce: &str, now_ms: i64) -> (PairOutcome, Option<i64>) {
         let mut state = self.state.lock_ok();
         let Some(offer) = state.offers.get_mut(nonce) else {
-            return (reject(PairError::Unknown), None);
+            return ((reject(PairError::Unknown), None), None);
         };
         offer.mark_expired(now_ms);
         let deadline = offer.deny_if_open().then_some(offer.expires_ms);
         offer.refresh(self.keys.as_ref(), nonce, now_ms);
-        (offer.reply(true), deadline)
+        (offer.outcome(true), deadline)
     }
 
     /// Withdraws unfinished offers and stops accepting new offers on this host.
@@ -361,13 +394,13 @@ impl PairingHost {
     }
 }
 
-fn add_handover(reply: &mut PairReply, handover: Handover) {
+fn add_handover(reply: &mut PairReply, handover: &Handover) -> bool {
     if let PairReply::Approved {
         hosts, unavailable, ..
     } = reply
     {
-        hosts.extend(handover.hosts);
-        *unavailable = handover.unavailable;
+        hosts.extend(handover.hosts.iter().cloned());
+        unavailable.clone_from(&handover.unavailable);
     }
     if let Err(error) = encode_pair_frame(reply)
         && let PairReply::Approved {
@@ -377,14 +410,16 @@ fn add_handover(reply: &mut PairReply, handover: Handover) {
         tracing::warn!(%error, "sending local-only pairing approval because the handover does not fit");
         hosts.truncate(1);
         unavailable.clear();
+        return true;
     }
+    false
 }
 
 impl Offer {
     fn start(&mut self, req: &PairStart, attempt: [u8; 16]) -> PairReply {
         if let Some(accepted) = self.attempt {
             return if attempt == accepted {
-                self.reply(false)
+                self.outcome(false).0
             } else if matches!(self.phase, Phase::Pending { .. }) {
                 reject(PairError::Busy)
             } else {
@@ -392,7 +427,7 @@ impl Offer {
             };
         }
         let Phase::Offered { pairing_key } = &self.phase else {
-            return self.reply(false);
+            return self.outcome(false).0;
         };
         let Ok(key) = validate_start(req) else {
             return reject(PairError::Invalid);
@@ -411,7 +446,7 @@ impl Offer {
 
     fn deny_if_open(&mut self) -> bool {
         if matches!(self.phase, Phase::Offered { .. } | Phase::Pending { .. }) {
-            self.phase = Phase::RemovingPairingLine(PairReply::Denied);
+            self.phase = Phase::RemovingPairingLine((PairReply::Denied, None));
             true
         } else {
             false
@@ -422,14 +457,14 @@ impl Offer {
         if now_ms >= self.expires_ms
             && matches!(self.phase, Phase::Offered { .. } | Phase::Pending { .. })
         {
-            self.phase = Phase::RemovingPairingLine(PairReply::Expired);
+            self.phase = Phase::RemovingPairingLine((PairReply::Expired, None));
         }
     }
 
     fn finish(&mut self, keys: &dyn DeviceKeys, nonce: &str) -> Result<(), DeviceKeysError> {
-        if let Phase::RemovingPairingLine(reply) = &self.phase {
+        if let Phase::RemovingPairingLine(outcome) = &self.phase {
             keys.remove_pairing(nonce)?;
-            self.phase = Phase::Finished(reply.clone());
+            self.phase = Phase::Finished(outcome.clone());
         }
         Ok(())
     }
@@ -444,19 +479,23 @@ impl Offer {
         }
     }
 
-    fn reply(&self, approver: bool) -> PairReply {
+    fn outcome(&self, approver: bool) -> PairOutcome {
         match &self.phase {
             Phase::Pending {
                 device_name, model, ..
-            } if approver => PairReply::Pending {
-                device_name: device_name.clone(),
-                model: model.clone(),
-                code: self.code.clone(),
-            },
-            Phase::Finished(reply) => reply.clone(),
-            Phase::RemovingPairingLine(PairReply::Denied) => PairReply::Denied,
-            Phase::RemovingPairingLine(PairReply::Expired) => PairReply::Expired,
-            _ => PairReply::Waiting,
+            } if approver => (
+                PairReply::Pending {
+                    device_name: device_name.clone(),
+                    model: model.clone(),
+                    code: self.code.clone(),
+                },
+                None,
+            ),
+            Phase::Finished(outcome) => outcome.clone(),
+            Phase::RemovingPairingLine((reply @ (PairReply::Denied | PairReply::Expired), _)) => {
+                (reply.clone(), None)
+            }
+            _ => (PairReply::Waiting, None),
         }
     }
 }
@@ -638,12 +677,68 @@ mod tests {
             unavailable: vec![source.unavailable.clone()],
         };
         assert!(pairing.approve(&nonce, NOW).is_err());
+        let (reply, summary) = pairing.pending_with_summary(&nonce, NOW);
+        assert_eq!(reply, PairReply::Waiting);
+        assert!(summary.is_none());
         fs::remove_dir(&path).unwrap();
         fs::rename(path.with_extension("saved"), &path).unwrap();
-        assert_eq!(pairing.approve(&nonce, NOW).unwrap(), expected);
-        assert_eq!(pairing.status(&nonce, NOW), expected);
-        assert_eq!(pairing.approve(&nonce, NOW).unwrap(), expected);
+        let assert_outcome = |(reply, summary): PairOutcome| {
+            assert_eq!(reply, expected);
+            let summary = summary.expect("an approved reply retains its summary");
+            assert_eq!(
+                summary.handover.hosts,
+                std::slice::from_ref(&source.offered)
+            );
+            assert_eq!(
+                summary.handover.unavailable,
+                std::slice::from_ref(&source.unavailable)
+            );
+            assert!(!summary.dropped);
+        };
+        assert_outcome(pairing.approve_with_summary(&nonce, NOW).unwrap());
+        let later = payload.expires_ms + 1;
+        pairing.expire(later);
+        assert_eq!(pairing.status(&nonce, later), expected);
+        assert_outcome(pairing.approve_with_summary(&nonce, later).unwrap());
+        let retained = pairing.pending_with_summary(&nonce, later);
         assert_eq!(source.calls.load(Ordering::Relaxed), 1);
+
+        let receipt_end = payload.expires_ms + RECEIPT_MS;
+        pairing.expire(receipt_end);
+        assert_outcome(retained);
+        assert!(matches!(
+            pairing.pending_with_summary(&nonce, receipt_end),
+            (
+                PairReply::Error {
+                    error: PairError::Unknown
+                },
+                None
+            )
+        ));
+    }
+
+    #[test]
+    fn approval_without_a_handover_source_has_no_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let pairing = host(Arc::new(AuthorizedKeys::at(
+            dir.path().join("authorized_keys"),
+        )));
+        let mac = bundle(1, "Mac");
+        let nonce = pairing
+            .offer(mac.clone(), Duration::ZERO, NOW)
+            .unwrap()
+            .nonce;
+        request(&pairing, &nonce);
+        let (reply, summary) = pairing.approve_with_summary(&nonce, NOW).unwrap();
+        assert_eq!(
+            reply,
+            PairReply::Approved {
+                device: DeviceTag::from_key(&device_key()).to_string(),
+                hosts: vec![mac],
+                unavailable: Vec::new(),
+            },
+        );
+        assert!(summary.is_none());
     }
 
     #[test]
@@ -700,24 +795,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let keys = Arc::new(AuthorizedKeys::at(dir.path().join("authorized_keys")));
         let pairing = host(keys.clone());
-        pairing.set_handover(Arc::new(|_: DeviceTag, _: &EcdsaP256Public, _: &str| {
-            Handover {
-                hosts: vec![bundle(
-                    2,
-                    &"x".repeat(statglass_proto::pairing::MAX_PAIR_FRAME_BYTES),
-                )],
+        let oversized = bundle(
+            2,
+            &"x".repeat(statglass_proto::pairing::MAX_PAIR_FRAME_BYTES),
+        );
+        let source_host = oversized.clone();
+        pairing.set_handover(Arc::new(
+            move |_: DeviceTag, _: &EcdsaP256Public, _: &str| Handover {
+                hosts: vec![source_host.clone()],
                 unavailable: Vec::new(),
-            }
-        }));
+            },
+        ));
         let mac = bundle(1, "Mac");
         let nonce = pairing
             .offer(mac.clone(), Duration::ZERO, NOW)
             .unwrap()
             .nonce;
         request(&pairing, &nonce);
-        let reply = pairing.approve(&nonce, NOW).unwrap();
+        let (reply, summary) = pairing.approve_with_summary(&nonce, NOW).unwrap();
         assert!(encode_pair_frame(&reply).is_ok());
         assert!(matches!(reply, PairReply::Approved { hosts, .. } if hosts == [mac]));
+        let summary = summary.unwrap();
+        assert!(summary.dropped);
+        assert_eq!(summary.handover.hosts, [oversized]);
+        assert!(summary.handover.unavailable.is_empty());
         assert_eq!(keys.list_devices().unwrap().len(), 1);
     }
 }

@@ -6,6 +6,7 @@ import type {
 } from "@core/generated/types";
 import type { Transport } from "../transport";
 import type { MockCommands } from "./commands";
+import type { createMockHandover } from "./handover";
 import { fail, ok } from "./protocol";
 import type { MockSettings } from "./settings";
 
@@ -93,10 +94,10 @@ export function createMockPairing(
   commands: MockCommands,
   settings: MockSettings,
   now: () => number,
-  handover: {
-    onApprove: (device: string) => void;
-    onRevoke: (device: string) => void;
-  }
+  handover: Pick<
+    ReturnType<typeof createMockHandover>,
+    "onApprove" | "onRevoke"
+  >
 ): Pick<
   Transport,
   | "pairingStart"
@@ -169,8 +170,11 @@ export function createMockPairing(
         return pairingFailure("invalid", "No iPhone is waiting for approval.");
       if (status.kind !== "pending") return ok(status);
       if (!devices.has(PHONE.tag)) devices.set(PHONE.tag, PHONE);
-      handover.onApprove(PHONE.tag);
-      entry.status = { kind: "paired", device: PHONE.tag };
+      entry.status = {
+        kind: "paired",
+        device: PHONE.tag,
+        ...handover.onApprove(PHONE.tag),
+      };
       return ok(entry.status);
     },
     pairingDeny: async (nonce) => deny(nonce, "pairing_deny"),

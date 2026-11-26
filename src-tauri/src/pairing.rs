@@ -208,28 +208,30 @@ impl LocalPairing {
         let host = self.host()?;
         let now_ms = wall_ms();
         if !self.enabled.load(Ordering::Relaxed) {
-            let (reply, deadline) = host.withdraw_if_open(nonce, now_ms);
+            let (outcome, deadline) = host.withdraw_if_open(nonce, now_ms);
             if let Some(deadline) = deadline {
                 monitoring_off.insert(nonce.into(), deadline);
                 return Ok(monitoring_off_status());
             }
-            return Ok(reply.into());
+            return Ok(PairingStatus::from_reply(outcome));
         }
-        let reply = if approve {
-            host.approve(nonce, now_ms).map_err(pairing_error)?
+        let outcome = if approve {
+            host.approve_with_summary(nonce, now_ms)
+                .map_err(pairing_error)?
         } else {
-            host.pending(nonce, now_ms)
+            host.pending_with_summary(nonce, now_ms)
         };
-        Ok(reply.into())
+        Ok(PairingStatus::from_reply(outcome))
     }
 
     fn deny(&self, nonce: &str) -> Result<PairingStatus, CommandError> {
         let monitoring_off = self.monitoring_off.lock_ok();
-        let reply = self.host()?.deny(nonce).map_err(pairing_error)?;
+        let host = self.host()?;
+        let outcome = host.deny_with_summary(nonce).map_err(pairing_error)?;
         Ok(if monitoring_off.contains_key(nonce) {
             monitoring_off_status()
         } else {
-            reply.into()
+            PairingStatus::from_reply(outcome)
         })
     }
 }
@@ -365,10 +367,11 @@ pub async fn revoke_device(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use statglass_proto::handover::{HandoverReason, UnavailableHost};
     use statglass_proto::pairing::{
-        BundleRoute, BundleTarget, PairReply, PairStart, decode_payload,
+        BundleRoute, BundleTarget, MAX_PAIR_FRAME_BYTES, PairReply, PairStart, decode_payload,
     };
-    use statglass_remote::{ControlRequest, EcdsaP256Public, PairCommands};
+    use statglass_remote::{ControlRequest, EcdsaP256Public, Handover, PairCommands};
     use statglass_schema::{HostId, HostInfo, OsKind};
     use tauri::{
         Manager,
@@ -382,6 +385,88 @@ pub(crate) mod tests {
         127, 155, 142, 231, 235, 74, 124, 15, 158, 22, 43, 206, 51, 87, 107, 49, 94, 206, 203, 182,
         64, 104, 55, 191, 81, 245,
     ];
+
+    struct TestHandover(BundleHost);
+
+    impl HandoverSource for TestHandover {
+        fn handover(&self, _: DeviceTag, _: &EcdsaP256Public, _: &str) -> Handover {
+            Handover {
+                hosts: vec![self.0.clone()],
+                unavailable: vec![UnavailableHost {
+                    host_id: HostId(uuid::Uuid::from_u128(2)),
+                    name: "Office server".into(),
+                    reason: HandoverReason::LanLiteral,
+                }],
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn pairing_commands_report_the_retained_handover_even_after_monitoring_turns_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = app(dir.path());
+        let state = app.state::<PairingState>();
+        let host = state.host().unwrap();
+        let local = state.local.get().unwrap();
+        let mac = BundleHost {
+            host_id: HostId(uuid::Uuid::nil()),
+            name: "This Mac".into(),
+            os: "macos".into(),
+            user: "test".into(),
+            port: None,
+            targets: vec![],
+            host_keys: vec![],
+        };
+        for (name, dropped) in [
+            ("build-server".into(), false),
+            ("x".repeat(MAX_PAIR_FRAME_BYTES), true),
+        ] {
+            state.set_enabled(true);
+            host.set_handover(Arc::new(TestHandover(BundleHost {
+                host_id: HostId(uuid::Uuid::from_u128(1)),
+                name: name.clone(),
+                ..mac.clone()
+            })));
+            let now = wall_ms();
+            let nonce = local.offer(mac.clone(), now).unwrap().nonce;
+            let response = host.control_reply(
+                ControlRequest::PairStart {
+                    start: PairStart {
+                        nonce: nonce.clone(),
+                        device_name: "Travel iPhone".into(),
+                        model: "iPhone 16".into(),
+                        device_key: DEVICE_KEY.into(),
+                    },
+                    attempt: [1; 16],
+                },
+                now,
+            );
+            assert_eq!(response.pairing, Some(PairReply::Waiting));
+            let expected = serde_json::json!({
+                "kind": "paired",
+                "device": DeviceTag::from_key(&EcdsaP256Public(DEVICE_KEY)).to_string(),
+                "hosts": [name],
+                "unavailable": [{
+                    "id": HostId(uuid::Uuid::from_u128(2)),
+                    "name": "Office server",
+                    "reason": "lan_literal",
+                }],
+                "dropped": dropped,
+            });
+            let assert_summary = |status: PairingStatus| {
+                assert_eq!(
+                    serde_json::to_value(status).unwrap(),
+                    expected,
+                    "incorrect approval summary (dropped = {dropped})"
+                );
+            };
+            assert_summary(pairing_approve(nonce.clone(), app.state()).await.unwrap());
+            state.set_enabled(false);
+            assert_summary(pairing_status(nonce.clone(), app.state()).await.unwrap());
+            assert_summary(pairing_approve(nonce.clone(), app.state()).await.unwrap());
+            assert_summary(pairing_deny(nonce, app.state()).await.unwrap());
+        }
+    }
 
     pub(crate) fn app(dir: &Path) -> tauri::App<MockRuntime> {
         let keys = Arc::new(AuthorizedKeys::at(dir.join("authorized_keys")));
@@ -560,11 +645,13 @@ pub(crate) mod tests {
         let tag = DeviceTag::from_key(&EcdsaP256Public(DEVICE_KEY));
         assert!(
             matches!(pairing_approve(first.nonce.clone(), app.state()).await.unwrap(),
-            PairingStatus::Paired { device } if device == tag.to_string())
+            PairingStatus::Paired { device, hosts, unavailable, dropped: false }
+                if device == tag.to_string() && hosts.is_empty() && unavailable.is_empty())
         );
         assert!(
             matches!(pairing_status(first.nonce, app.state()).await.unwrap(),
-            PairingStatus::Paired { device } if device == tag.to_string())
+            PairingStatus::Paired { device, hosts, unavailable, dropped: false }
+                if device == tag.to_string() && hosts.is_empty() && unavailable.is_empty())
         );
         device_seen(dir.path()).record(tag, now - 1);
         device_seen(dir.path()).record(tag, now - 10);

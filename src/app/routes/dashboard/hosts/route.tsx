@@ -15,6 +15,7 @@ import { useLocalUpdateStatus } from "~/hooks/use-local-update-status";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
 import { AddHostDialog } from "./_components/add-host-dialog";
+import { AddToIphone } from "./_components/add-to-iphone";
 import { LocalHostCard, RemoteHostCard } from "./_components/host-cards";
 import { HostsOfflineNotice } from "./_components/hosts-offline-notice";
 import { UpdateAllDialog } from "./_components/update-all-dialog";
@@ -52,6 +53,7 @@ export default function HostsRoute() {
                 Update all ({updatable})
               </Button>
             )}
+            {records.some((host) => host.config.enabled) && <AddToIphone />}
             <Button onClick={() => setAdding(true)}>Add host</Button>
           </div>
         }

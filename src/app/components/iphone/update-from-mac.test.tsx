@@ -1,7 +1,27 @@
 import { createMockTransport } from "@core/mock-transport";
 import { screen, within } from "@testing-library/react";
-import { renderWithProviders } from "../../../../../../../tests/test-utils";
-import { UpdateFromMac } from ".";
+import { renderWithProviders } from "@tests/test-utils";
+import type { ComponentProps } from "react";
+import { expectTypeOf } from "vitest";
+import type { PairingDialog } from "./pairing-dialog";
+import { UpdateFromMac } from "./update-from-mac";
+
+it("requires both controlled props for either dialog", () => {
+  type PairingProps = ComponentProps<typeof PairingDialog>;
+  type UpdateProps = ComponentProps<typeof UpdateFromMac>;
+  type OnOpenChange = (open: boolean) => void;
+  type OnPaired = () => void;
+  expectTypeOf<{ open: true }>().not.toExtend<UpdateProps>();
+  expectTypeOf<{ onOpenChange: OnOpenChange }>().not.toExtend<UpdateProps>();
+  expectTypeOf<{
+    onPaired: OnPaired;
+    open: true;
+  }>().not.toExtend<PairingProps>();
+  expectTypeOf<{
+    onPaired: OnPaired;
+    onOpenChange: OnOpenChange;
+  }>().not.toExtend<PairingProps>();
+});
 
 it("shows a fresh QR, included hosts, and the unavailable reason on open", async () => {
   const mock = createMockTransport({ autoTick: false });

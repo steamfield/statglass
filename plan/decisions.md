@@ -4922,3 +4922,13 @@ D-154 removed the phone's mirror and said the live ring's backfill covers the ne
 2. The phone subscribes with a five-minute backfill, the span the snapshot covers. Refilled rows are 10 s buckets, as on the desktop for a remote host; frames received after the connection are 1 s rows.
 3. Hosts of every version answer `RecentRequest`, so this needs no host update. Module pages still read bounded history queries (D-154), which need a host with `query.history.v1`.
 4. Until that refill lands, a phone chart loads the way a desktop chart does (D-133): frame and scan line, then the data settles in once. The session marks the hub `refill_pending` while it has no mirror, the host keeps history and this stretch of detail has not been refilled (cleared on the refill, a failed snapshot and a timed-out request). The flag does not wait for live detail itself, because a screen subscribes a frame before its demand reaches the session. A stream opened meanwhile with a backfill sends a `BackfillPlan` whose `earlier_start_ms` is the start of its window, so the window waits; the refill's new timeline restarts the stream with a plan that ends the wait, and a refill that added nothing, or none within `REFILL_WAIT_MS` (10 s, for detail withheld on cellular), ends it with an empty plan on the next frame. The phone's charts reveal through a Reanimated twin of `useReveal` (`apps/mobile/src/widgets/lib/reveal.ts`) on the enter token, still under Reduce Motion and Low Power Mode.
+
+## D-160: Tailnet literals hand over as Tailscale routes
+
+Date: 2026-11-26. Amends RFC `plan/rfc-ios-app.md` §2.4 (hosts that cannot be handed over). The user's report: pairing the iPhone with a Mac brought none of its remote hosts. The installed 0.15.0 predates handover; running the shipped resolver against the real hosts also refused one whose only SSH alias resolves to a Tailscale address (100.102.228.126) as `LanLiteral`.
+
+### Decision
+
+1. `handover_host` treats a `HostName` literal in 100.64.0.0/10 or fd7a:115c:a1e0::/48 as a tailnet peer: it is never `LanLiteral`, and its bundle target is labelled `tailscale` whichever alias slot (LAN or Tailscale) it came from, so the phone's route label and route race see it as the Tailscale route it is.
+2. The user's answer: a 100.64/10 address in an SSH config is in practice always a tailnet peer; a carrier-grade NAT address is not an SSH target. D-136's interface check (100.64/10 on a physical interface counts as carrier NAT) is about the local Mac's own connectivity and is unchanged.
+3. A tailnet literal still needs a stored host key, like any other route.

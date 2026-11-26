@@ -47,6 +47,23 @@ async function mount(
   return { ...view, source, select };
 }
 
+it("puts Add to iPhone before Add host in the Hosts header", async () => {
+  await mount({ scenarios: ["hosts-dashboard"] });
+  await waitFor(() => {
+    const pageHeader = screen
+      .getByRole("heading", { name: "Hosts" })
+      .closest("header");
+    if (!pageHeader)
+      throw new Error("Hosts heading is outside the page header");
+    const header = within(pageHeader);
+    const addToIphone = header.getByRole("button", { name: "Add to iPhone" });
+    const addHost = header.getByRole("button", { name: "Add host" });
+    expect(addToIphone.compareDocumentPosition(addHost)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+});
+
 it("renders a card for every host, and enables a disabled host", async () => {
   const { source } = await mount({ scenarios: ["hosts-dashboard"] });
   await screen.findByRole("region", { name: "studio" });

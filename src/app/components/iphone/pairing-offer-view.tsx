@@ -8,11 +8,27 @@ import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { DialogDescription, DialogFooter } from "~/components/ui/dialog";
 import { useTransport } from "~/lib/transport-context";
+import { HostLists } from "./handover-host-lists";
 
 const POLL_MS = 1000;
+type PendingDevice = Extract<PairingStatus, { kind: "pending" }>;
 
 function waiting(status: PairingStatus | undefined) {
   return !status || status.kind === "waiting" || status.kind === "pending";
+}
+
+function pendingDevice(status: PairingStatus | undefined) {
+  return status?.kind === "pending" ? status : undefined;
+}
+
+function pendingAnnouncement(
+  device: PendingDevice | undefined,
+  approving: boolean
+) {
+  if (!device) return null;
+  return approving
+    ? `Approving ${device.device_name}…`
+    : `${device.device_name} is waiting for approval.`;
 }
 
 export function PairingQr({
@@ -124,6 +140,20 @@ function PairingResult({ status }: { status: PairingStatus }) {
   }
 }
 
+function PairingHandover({ status }: { status: PairingStatus }) {
+  if (status.kind !== "paired") return null;
+  if (status.dropped) {
+    return (
+      <InlineMessage tone="note">
+        The host list was too large to send while pairing. To add the other
+        hosts, open Update iPhone on this Mac (Add to iPhone on the Hosts page)
+        and scan it from Update from Mac on your iPhone.
+      </InlineMessage>
+    );
+  }
+  return <HostLists hosts={status.hosts} unavailable={status.unavailable} />;
+}
+
 export function PairingOfferView({
   offer,
   onPaired,
@@ -148,12 +178,12 @@ export function PairingOfferView({
     retry: false,
   });
   const decide = useMutation({
-    mutationFn: async (decision: "approve" | "deny") => {
+    mutationFn: async (decision: PendingDevice | "deny") => {
       if (Date.now() >= offer.expires_ms)
         return unwrap(transport.pairingStatus(nonce));
-      if (decision === "approve")
-        return unwrap(transport.pairingApprove(nonce));
-      return unwrap(transport.pairingDeny(nonce));
+      return decision === "deny"
+        ? unwrap(transport.pairingDeny(nonce))
+        : unwrap(transport.pairingApprove(nonce));
     },
     onSuccess: async (result) => {
       await client.cancelQueries({ queryKey: statusKey });
@@ -163,6 +193,9 @@ export function PairingOfferView({
   });
   const current = status.data;
   const active = waiting(current);
+  const approval = decide.variables !== "deny" ? decide.variables : undefined;
+  const approving = decide.isPending ? approval : undefined;
+  const failedApproval = decide.isError ? approval : undefined;
 
   useEffect(() => {
     if (!active) return;
@@ -170,22 +203,28 @@ export function PairingOfferView({
     return () => clearInterval(timer);
   }, [active]);
 
-  if (current && !active) {
+  if (current && !active && !approving) {
     return (
-      <DialogDescription asChild>
-        <div>
-          <PairingResult status={current} />
-        </div>
-      </DialogDescription>
+      <>
+        <DialogDescription asChild>
+          <div>
+            <PairingResult status={current} />
+          </div>
+        </DialogDescription>
+        <PairingHandover status={current} />
+      </>
     );
   }
   const seconds = Math.max(0, Math.ceil((offer.expires_ms - now) / 1000));
   const pending =
-    !status.isError && current?.kind === "pending" ? current : null;
+    approving ??
+    (status.isError ? undefined : pendingDevice(current)) ??
+    failedApproval;
+  const canDecide = !status.isError && seconds > 0;
   return (
     <>
       <p role="status" className="sr-only">
-        {pending && `${pending.device_name} is waiting for approval.`}
+        {pendingAnnouncement(pending, Boolean(approving))}
       </p>
       {pending ? (
         <div className="wrap-anywhere min-w-0">
@@ -223,7 +262,7 @@ export function PairingOfferView({
           fallback="Couldn’t check pairing."
         />
       )}
-      {pending && seconds > 0 && (
+      {pending && (canDecide || approving) && (
         <DialogFooter>
           <Button
             variant="outline"
@@ -234,7 +273,7 @@ export function PairingOfferView({
           </Button>
           <Button
             disabled={decide.isPending}
-            onClick={() => decide.mutate("approve")}
+            onClick={() => decide.mutate(pending)}
           >
             Approve
           </Button>

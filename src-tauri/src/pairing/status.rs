@@ -1,10 +1,11 @@
 use crate::error::{CommandError, PairingFailure};
 use serde::Serialize;
 use statglass_proto::pairing::PairReply;
-use statglass_remote::{DeviceKeysError, PairingError};
+use statglass_remote::{DeviceKeysError, PairingError, pairing::PairOutcome};
 use statglass_schema::JsSafeInt;
 
 use super::bundle::MONITORING_OFF;
+use crate::handover::HandoverUnavailableInfo;
 
 /// One open pairing, as the sheet shows it.
 #[derive(Clone, Debug, Serialize, specta::Type)]
@@ -32,9 +33,15 @@ pub enum PairingStatus {
         model: String,
         code: String,
     },
-    /// Approved: `device` is the new device's tag.
+    /// Approved: `device` is the new device's tag. The rest is what this Mac handed over
+    /// with the approval, kept on the Mac (never on the wire): `hosts` names the remote hosts
+    /// sent to the phone (never this Mac), `unavailable` the ones that could not be, and
+    /// `dropped` is true when the list did not fit the reply and the phone got this Mac alone.
     Paired {
         device: String,
+        hosts: Vec<String>,
+        unavailable: Vec<HandoverUnavailableInfo>,
+        dropped: bool,
     },
     Denied,
     Expired,
@@ -55,8 +62,8 @@ pub struct PairedDeviceInfo {
     pub last_seen_ms: Option<i64>,
 }
 
-impl From<PairReply> for PairingStatus {
-    fn from(reply: PairReply) -> Self {
+impl PairingStatus {
+    pub(super) fn from_reply((reply, summary): PairOutcome) -> Self {
         match reply {
             PairReply::Waiting => Self::Waiting,
             PairReply::Pending {
@@ -68,7 +75,34 @@ impl From<PairReply> for PairingStatus {
                 model,
                 code,
             },
-            PairReply::Approved { device, .. } => Self::Paired { device },
+            PairReply::Approved { device, .. } => {
+                let (hosts, unavailable, dropped) = summary
+                    .map(|summary| {
+                        (
+                            summary
+                                .handover
+                                .hosts
+                                .iter()
+                                .map(|host| host.name.clone())
+                                .collect(),
+                            summary
+                                .handover
+                                .unavailable
+                                .iter()
+                                .cloned()
+                                .map(Into::into)
+                                .collect(),
+                            summary.dropped,
+                        )
+                    })
+                    .unwrap_or_default();
+                Self::Paired {
+                    device,
+                    hosts,
+                    unavailable,
+                    dropped,
+                }
+            }
             PairReply::Denied => Self::Denied,
             PairReply::Expired => Self::Expired,
             PairReply::Error { error } => Self::Failed {

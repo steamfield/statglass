@@ -2627,8 +2627,13 @@ export type PairingStatus =
 { kind: "waiting" } |
 /**  A phone used the QR and waits for the user's approval. */
 { kind: "pending"; device_name: string; model: string; code: string } |
-/**  Approved: `device` is the new device's tag. */
-{ kind: "paired"; device: string } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; reason: PairingFailure; message: string };
+/**
+ *  Approved: `device` is the new device's tag. The rest is what this Mac handed over
+ *  with the approval, kept on the Mac (never on the wire): `hosts` names the remote hosts
+ *  sent to the phone (never this Mac), `unavailable` the ones that could not be, and
+ *  `dropped` is true when the list did not fit the reply and the phone got this Mac alone.
+ */
+{ kind: "paired"; device: string; hosts: string[]; unavailable: HandoverUnavailableInfo[]; dropped: boolean } | { kind: "denied" } | { kind: "expired" } | { kind: "failed"; reason: PairingFailure; message: string };
 
 /**  Why Performance mode is in effect (D-088). */
 export type PerformanceReason = "off" |
