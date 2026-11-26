@@ -38,6 +38,7 @@ export function HostPage({
     connection.state === "offline" || connection.state === "reconnecting";
   return (
     <View
+      className="px-4"
       style={[styles.content, { width }]}
       onLayout={onLayout}
       accessibilityElementsHidden={!active}
@@ -64,7 +65,6 @@ export function HostPage({
 const styles = StyleSheet.create({
   content: {
     gap: 12,
-    paddingHorizontal: 16,
     paddingBottom: 20,
     paddingTop: 8,
   },

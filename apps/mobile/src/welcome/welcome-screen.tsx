@@ -2,8 +2,8 @@ import { useIsFocused, useRouter } from "expo-router";
 import type { JSX } from "react";
 import { View } from "react-native";
 import { useDemo } from "@/data/demo";
-import { PairAction } from "@/pairing/screens/action";
 import { useNativeCore } from "@/transport";
+import { Button } from "@/ui/button";
 import { ScreenScroll } from "@/ui/screen-scroll";
 import { StartupFailurePanel } from "@/ui/startup-failure";
 import { Text } from "@/ui/text";
@@ -33,9 +33,13 @@ export function WelcomeScreen(): JSX.Element {
       {error && <StartupFailurePanel />}
       <View className="gap-2">
         {!error && (
-          <PairAction label="Add a host" onPress={() => router.push("/pair")} />
+          <Button label="Add a host" onPress={() => router.push("/pair")} />
         )}
-        <PairAction label="Try demo hosts" secondary onPress={() => start()} />
+        <Button
+          label="Try demo hosts"
+          variant="secondary"
+          onPress={() => start()}
+        />
       </View>
     </ScreenScroll>
   );

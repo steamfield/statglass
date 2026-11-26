@@ -97,7 +97,7 @@ export function ProblemBanner({
         <Pressable
           key={action}
           accessibilityRole="button"
-          className="min-h-[44px] justify-center self-start px-4 py-2 active:opacity-70 disabled:opacity-50"
+          className="min-h-touch justify-center self-start px-4 py-2 active:opacity-70 disabled:opacity-50"
           disabled={running}
           onPress={() => void actOnProblem(action)}
         >

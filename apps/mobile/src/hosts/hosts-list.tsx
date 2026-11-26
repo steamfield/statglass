@@ -28,6 +28,7 @@ import {
   usePhoneTransport,
   useSetPhoneTransport,
 } from "@/data/transport-context";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 import { RestoreNotice } from "@/welcome/restore-notice";
 import { useReplaceWithWelcome } from "./first-launch-redirect";
@@ -150,21 +151,16 @@ export function HostsList({
                 Pair a Mac to view its live metrics and history, or explore the
                 demo hosts.
               </Text>
-              <Pressable
-                accessibilityRole="button"
+              <Button
+                label="Add a host"
                 accessibilityLabel="Add a host"
                 onPress={onPair}
-                className="min-h-[44px] justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70"
-              >
-                <Text variant="body" tone="onPrimary" weight="semibold">
-                  Add a host
-                </Text>
-              </Pressable>
+              />
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Try demo hosts"
                 onPress={tryDemo}
-                className="min-h-[44px] justify-center px-4 py-2 active:opacity-70"
+                className="min-h-touch justify-center px-4 py-2 active:opacity-70"
               >
                 <Text variant="body" tone="link">
                   Try demo hosts
