@@ -86,6 +86,7 @@ Row ids are the `id`s in `SETTINGS_CATALOG`. Each catalog row's element carries 
 ### Phase 1: Tabs and regrouped panels (MVP)
 
 Scaffold: 2f07cad1
+Tag: settings-tabs-phase-1
 Demo: `bun run dev:fast`, open `/?window=dashboard&route=/dashboard/settings`, switch tabs; open `/?window=dashboard&route=/dashboard/settings/monitoring%3Ffocus%3Dsample-interval`.
 Test cases (scaffold: `settings/tabs.test.tsx`, `~/lib/settings-links.test.ts`, `initial-route.test.ts`, and the existing settings tests moved to their tabs):
 - The six tabs render in order; bare path opens General with Startup, Appearance and Units and no Sampling.
