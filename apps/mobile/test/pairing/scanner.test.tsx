@@ -6,9 +6,9 @@ import { PermissionStatus } from "expo";
 import { Camera, CameraView } from "expo-camera";
 import * as Device from "expo-device";
 import { Linking } from "react-native";
-import { PairingProvider } from "@/data/pairing-context";
 import type { PhonePairing } from "@/data/pairing-seam";
 import { PairingFlow } from "@/pairing";
+import { PairingProvider } from "@/session/pairing";
 
 const granted = {
   status: PermissionStatus.GRANTED,

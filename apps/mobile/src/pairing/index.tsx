@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useEffectEvent } from "react";
 import { ActivityIndicator } from "react-native";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
-import { useSetPhoneTransport } from "@/data/transport-context";
+import { useSelectNativeCore } from "@/session/selection";
 import { useNativeCore, useNativeCoreStarting } from "@/transport";
 import { Button } from "@/ui/button";
 import { ScreenScroll } from "@/ui/screen-scroll";
@@ -25,7 +25,7 @@ export function PairScreen() {
   const router = useRouter();
   const { core, error } = useNativeCore();
   const starting = useNativeCoreStarting();
-  const selectTransport = useSetPhoneTransport();
+  const selectNativeCore = useSelectNativeCore();
   const cache = useQueryClient();
   const { set } = usePhoneSettingsActions();
 
@@ -36,7 +36,7 @@ export function PairScreen() {
         return;
       }
       if (core) {
-        selectTransport(core, false);
+        selectNativeCore();
         set((settings) =>
           settings.removed.includes(result.id)
             ? { removed: settings.removed.filter((host) => host !== result.id) }
@@ -46,7 +46,7 @@ export function PairScreen() {
       }
       afterPair(router, result);
     },
-    [cache, core, router, selectTransport, set]
+    [cache, core, router, selectNativeCore, set]
   );
 
   function done() {

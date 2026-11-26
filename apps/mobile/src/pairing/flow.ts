@@ -8,7 +8,7 @@ import { isNativeError, type NativeError } from "@core/native-errors";
 import type { CommandResult } from "@core/transport";
 import { deviceName, modelName } from "expo-device";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isDemoPairingCode, usePhonePairing } from "@/data/pairing-context";
+import { isDemoPairingCode, usePhonePairing } from "@/session/pairing";
 
 type Method = "scan" | "paste";
 export type CameraStep = "priming" | "granted" | "denied" | "unavailable";

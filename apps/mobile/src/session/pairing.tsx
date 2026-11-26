@@ -1,3 +1,4 @@
+/** Chooses the pairing implementation and reads the phone's native public key. */
 import { createMockPhonePairing } from "@core/mock/phone-pairing";
 import { failureReason } from "@core/remote-errors";
 import { unwrap } from "@core/transport";
@@ -9,22 +10,23 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { PhonePairing } from "@/data/pairing-seam";
 import {
-  isNativeTransport,
   type NativeTransport,
   nativePairing,
   useNativeCore,
+  useNativeHandle,
 } from "@/transport";
-import type { PhonePairing } from "./pairing-seam";
-import { useOptionalPhoneTransport } from "./transport-context";
 
 type ActivePairing = ReturnType<typeof nativePairing>;
 const PairingContext = createContext<ActivePairing | null>(null);
 
+/** Recognizes demo pairing codes in development builds. */
 export function isDemoPairingCode(text: string): boolean {
   return __DEV__ && text.startsWith("SGPDEMO:");
 }
 
+/** Supplies pairing for the started core, the demo or an injected implementation. */
 export function PairingProvider({
   children,
   pairing,
@@ -58,6 +60,10 @@ export function PairingProvider({
   );
 }
 
+/**
+ * Reads the active pairing implementation.
+ * @throws Outside PairingProvider.
+ */
 export function usePhonePairing(): ActivePairing {
   const pairing = useContext(PairingContext);
   if (pairing === null) {
@@ -72,10 +78,12 @@ type KeyRead = {
   result: { key: string } | { error: string };
 };
 
+/**
+ * Reads the phone's public key from the native transport and exposes a retry.
+ * @throws Outside PhoneTransportProvider.
+ */
 export function usePhonePublicKey() {
-  const transport = useOptionalPhoneTransport();
-  const { core } = useNativeCore();
-  const native = core ?? (isNativeTransport(transport) ? transport : null);
+  const native = useNativeHandle();
   const [attempt, setAttempt] = useState(0);
   const [read, setRead] = useState<KeyRead | null>(null);
 

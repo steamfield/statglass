@@ -18,13 +18,13 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { useNativeCore } from "@/transport";
-import type { PhoneTransport } from "./seam";
+import type { PhoneTransport } from "@/data/seam";
 import {
   useIsDemo,
   useOptionalPhoneTransport,
   useSetPhoneTransport,
-} from "./transport-context";
+} from "@/data/transport-context";
+import { useNativeCore } from "@/transport";
 
 type DemoTransport = PhoneTransport & { dispose(): void };
 
@@ -162,6 +162,10 @@ export function DemoProvider({
   return createElement(DemoContext.Provider, { value }, children);
 }
 
+/**
+ * Reads the demo session and its start and exit actions.
+ * @throws Outside DemoProvider.
+ */
 export function useDemo(): DemoSession {
   const demo = useContext(DemoContext);
   if (!demo) throw new Error("useDemo requires DemoProvider");

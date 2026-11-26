@@ -8,13 +8,13 @@ import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { fireEvent, screen } from "@testing-library/react-native";
 import { Pressable, Text } from "react-native";
-import { createDemoTransport } from "@/data/demo";
 import { useHosts } from "@/data/hosts-list";
 import {
   useIsDemo,
   usePhoneTransport,
   useSetPhoneTransport,
 } from "@/data/transport-context";
+import { createDemoTransport } from "@/session/demo";
 
 function HostNames() {
   const hosts = useHosts();

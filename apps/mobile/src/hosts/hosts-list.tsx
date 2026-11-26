@@ -24,10 +24,8 @@ import {
   useNativeRosterEmptied,
 } from "@/data/hosts-list";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
-import {
-  usePhoneTransport,
-  useSetPhoneTransport,
-} from "@/data/transport-context";
+import { usePhoneTransport } from "@/data/transport-context";
+import { useClearTransport } from "@/session/selection";
 import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 import { RestoreNotice } from "@/welcome/restore-notice";
@@ -52,13 +50,13 @@ export function HostsList({
   const rosterEmptied = useNativeRosterEmptied();
   const focused = useIsFocused();
   const transport = usePhoneTransport();
-  const setTransport = useSetPhoneTransport();
+  const clearTransport = useClearTransport();
   const replaceWithWelcome = useReplaceWithWelcome();
   useEffect(() => {
     if (!rosterEmptied || !focused) return;
-    setTransport(null, false, transport);
+    clearTransport(transport);
     replaceWithWelcome();
-  }, [focused, replaceWithWelcome, rosterEmptied, setTransport, transport]);
+  }, [clearTransport, focused, replaceWithWelcome, rosterEmptied, transport]);
   const hosts = useHosts();
   const pairing = useHostsPairingState();
   const waitingForNetwork = useHostsWaitingForNetwork(hosts.data ?? []);

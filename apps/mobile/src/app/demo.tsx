@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useRef } from "react";
-import { useDemo } from "@/data/demo";
+import { useDemo } from "@/session/demo";
 
 /** Starts a fresh demo session and opens its hosts list. */
 export default function DemoHosts() {

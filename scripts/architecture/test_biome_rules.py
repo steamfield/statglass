@@ -150,6 +150,18 @@ class BiomeRules(unittest.TestCase):
             with self.subTest(module=module):
                 self.assert_allowed(f'import {{ x }} from "{module}";\n', directory="apps/mobile/test")
 
+    def test_mobile_data_leaves_native_transport_composition_to_session(self):
+        for module in ("@/transport", "@/transport/native-transport"):
+            with self.subTest(module=module):
+                source = f'import {{ x }} from "{module}";\n'
+                self.assert_rejected(source, directory="apps/mobile/src/data")
+                self.assert_allowed(source, directory="apps/mobile/src/session")
+
+    def test_mobile_data_keeps_app_import_restrictions(self):
+        for module in ("@native/statglass-native", "react-dom", "@tauri-apps/api", "../x"):
+            with self.subTest(module=module):
+                self.assert_rejected(f'import {{ x }} from "{module}";\n', directory="apps/mobile/src/data")
+
     def test_mobile_native_imports_belong_to_transport(self):
         for module in ("@native/statglass-native", "@native/statglass-native/src/StatglassNativeModule",
                        "@/../modules/statglass-native", "@/lock/../../modules/statglass-native"):
@@ -172,6 +184,12 @@ class BiomeRules(unittest.TestCase):
                                 'import { Text } from "@/ui/text";\n', directory=directory)
         self.assert_allowed('import { usePhoneTransport } from "@/data/transport-context";\n',
                             directory="apps/mobile/src/lock")
+
+    def test_mobile_widgets_and_cards_reject_session_imports(self):
+        for directory in ("apps/mobile/src/widgets", "apps/mobile/src/cards"):
+            with self.subTest(directory=directory):
+                self.assert_rejected('import { useDemo } from "@/session/demo";\n',
+                                     directory=directory)
 
     def test_mobile_tests_use_the_native_seam_instead_of_jest_mock(self):
         comment = r"//[^\n]*|/\*.*?\*/"

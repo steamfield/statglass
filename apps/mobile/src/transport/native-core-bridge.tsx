@@ -4,15 +4,11 @@
  */
 import { useEffect, useRef } from "react";
 import { usePhoneSettings } from "@/data/phone-settings";
-import { useOptionalPhoneTransport } from "@/data/transport-context";
-import { useNativeCore } from "./core-provider";
-import { isNativeTransport } from "./native-transport";
+import { useNativeHandle } from "./native-handle";
 
 /** Pushes phone settings the core needs to the native transport. */
 export function NativeCoreBridge(): null {
-  const transport = useOptionalPhoneTransport();
-  const { core } = useNativeCore();
-  const target = core ?? (isNativeTransport(transport) ? transport : null);
+  const target = useNativeHandle();
   const liveOnCellular = usePhoneSettings(
     (settings) => settings.liveOnCellular
   );

@@ -6,9 +6,9 @@ import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { FakeNative, ok } from "@test/transport/fake-native";
 import { act, fireEvent, screen } from "@testing-library/react-native";
-import { PairingProvider } from "@/data/pairing-context";
 import type { PhonePairing } from "@/data/pairing-seam";
 import { PairingFlow } from "@/pairing";
+import { PairingProvider } from "@/session/pairing";
 import { createNativeTransport, nativePairing } from "@/transport";
 
 const press = (name: string) =>

@@ -1,8 +1,8 @@
 import { commandErrorText } from "@core/command-error";
 import { useState } from "react";
 import { Clipboard, View } from "react-native";
-import { usePhonePublicKey } from "@/data/pairing-context";
 import { AppLockSetting } from "@/lock/app-lock-setting";
+import { usePhonePublicKey } from "@/session/pairing";
 import { GroupedList, ListSection } from "@/ui/grouped-list";
 import { ListRow } from "@/ui/list-row";
 import { RetryPanel } from "@/ui/retry-panel";

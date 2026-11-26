@@ -1,13 +1,10 @@
 import { useRouter } from "expo-router";
-import {
-  useOptionalPhoneTransport,
-  useSetPhoneTransport,
-} from "@/data/transport-context";
 import { UpdateFlow } from "@/handover/update-flow";
+import { useSelectNativeCore } from "@/session/selection";
 import {
-  isNativeTransport,
   useNativeCore,
   useNativeCoreStarting,
+  useNativeHandle,
 } from "@/transport";
 import { ScreenScroll } from "@/ui/screen-scroll";
 import { StartupFailurePanel } from "@/ui/startup-failure";
@@ -15,15 +12,13 @@ import { Text } from "@/ui/text";
 
 export default function UpdateFromMac() {
   const router = useRouter();
-  const transport = useOptionalPhoneTransport();
-  const selectTransport = useSetPhoneTransport();
-  const { core, error } = useNativeCore();
+  const selectNativeCore = useSelectNativeCore();
+  const { error } = useNativeCore();
   const starting = useNativeCoreStarting();
-  const native = isNativeTransport(transport) ? transport : core;
+  const native = useNativeHandle();
 
   function done(applied: boolean) {
-    if (applied && native && native !== transport) {
-      selectTransport(native, false);
+    if (applied && selectNativeCore()) {
       router.replace("/(hosts)");
     } else if (router.canGoBack()) {
       router.back();
