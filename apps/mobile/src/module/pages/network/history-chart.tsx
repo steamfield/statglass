@@ -13,10 +13,11 @@ import {
 } from "@core/widget-models/chart-annotation";
 import { gapBandsModel } from "@core/widget-models/gap-band";
 import { memo, useMemo, useRef, useState } from "react";
-import { Pressable, useWindowDimensions, View } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import type { HistoryRange } from "@/data/history";
 import { useChartScrub } from "@/module/chart-scrub";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 import { ChartAnnotationBand } from "@/widgets/chart-annotations";
 import { GapBands } from "@/widgets/gap-bands";
@@ -286,15 +287,7 @@ export function NetworkHistoryChart({
             </Text>
           </View>
           {scrub.isPinned && (
-            <Pressable
-              accessibilityRole="button"
-              onPress={scrub.clear}
-              className="min-h-[44px] min-w-[44px] justify-center active:opacity-70"
-            >
-              <Text variant="label" tone="link">
-                Clear pin
-              </Text>
-            </Pressable>
+            <Button variant="link" label="Clear pin" onPress={scrub.clear} />
           )}
         </View>
       )}

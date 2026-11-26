@@ -6,7 +6,6 @@ import { FULL_TABLE } from "@core/process-interest";
 import { keyByLabel } from "@core/series-key";
 import { DAY_MS } from "@core/time-grid";
 import { useMemo, useState } from "react";
-import { View } from "react-native";
 import { shallow } from "zustand/shallow";
 import { useHostAddresses } from "@/data/addresses";
 import {
@@ -25,6 +24,7 @@ import { LiveProcessTable } from "@/module/live-process-table";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { Card } from "@/ui/card";
 import { NetworkHistoryChart } from "./history-chart";
 import { AddressList, InterfaceList, NetworkStats } from "./live-stats";
 
@@ -145,8 +145,8 @@ export function NetworkPage({
             stats={data?.stats}
             spanMs={displayedRange.toMs - displayedRange.fromMs}
           />
-          <View
-            className="gap-2 rounded-xl border border-border bg-card p-3"
+          <Card
+            className="gap-2"
             testID="history-plot-layout"
             onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
           >
@@ -165,7 +165,7 @@ export function NetworkPage({
               hostName={hostName}
               hasSamples={hasSamples}
             />
-          </View>
+          </Card>
           <InterfaceList host={host} live={live} />
           <AddressList rows={addresses.rows} />
         </>

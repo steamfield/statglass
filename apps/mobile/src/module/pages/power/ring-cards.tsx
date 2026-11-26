@@ -6,7 +6,8 @@ import {
 import type { Accent } from "@core/widget-models/tokens";
 import type { ReactNode } from "react";
 import { useWindowDimensions, View } from "react-native";
-import { CARD_SURFACE, CardGlow } from "@/cards/module-card";
+import { CardGlow } from "@/cards/module-card";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { RingGauge } from "@/widgets/ring-gauge";
 import { BarSwatch } from "@/widgets/stack-bar";
@@ -37,9 +38,7 @@ export function RingCard({
   const { fontScale } = useWindowDimensions();
   const model = ring && ringGaugeModel(ring, RING_GAUGE_DIMENSIONS[RING_SIZE]);
   return (
-    <View
-      className={`${CARD_SURFACE} gap-2 p-3 ${fontScale >= 1.5 ? "w-full" : "w-[48%]"}`}
-    >
+    <Card className={`gap-2 ${fontScale >= 1.5 ? "w-full" : "w-[48%]"}`}>
       <CardGlow accent={accent} />
       <View className="flex-row items-center gap-1.5">
         <BarSwatch accent={accent} step={1} />
@@ -53,6 +52,6 @@ export function RingCard({
         </View>
       )}
       {detail && <Text variant="caption">{detail}</Text>}
-    </View>
+    </Card>
   );
 }

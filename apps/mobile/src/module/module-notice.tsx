@@ -1,4 +1,5 @@
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 
 export function ModuleNotice({
@@ -21,15 +22,12 @@ export function ModuleNotice({
         {message}
       </Text>
       {onRetry && (
-        <Pressable
-          accessibilityRole="button"
+        <Button
+          variant="link"
+          label="Retry"
           onPress={onRetry}
-          className="min-h-[44px] min-w-[44px] justify-center self-start active:opacity-70"
-        >
-          <Text variant="label" tone="link">
-            Retry
-          </Text>
-        </Pressable>
+          className="self-start"
+        />
       )}
     </View>
   );

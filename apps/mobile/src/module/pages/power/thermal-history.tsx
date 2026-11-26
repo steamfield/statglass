@@ -8,13 +8,12 @@ import { heatmapBucketMs } from "@core/series-stats";
 import { gapBandsModel } from "@core/widget-models/gap-band";
 import { heatMatrixModel } from "@core/widget-models/heat-matrix";
 import { memo, useEffect, useMemo, useRef } from "react";
-import { View } from "react-native";
 import { shallow } from "zustand/shallow";
-import { CARD_SURFACE } from "@/cards/module-card";
 import { type HistoryRange, useHostHistory } from "@/data/history";
 import { useHostLive } from "@/data/live";
 import { HistoryNotice } from "@/module/history-notice";
 import { ModuleNotice } from "@/module/module-notice";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { HeatMatrix } from "@/widgets/heat-matrix";
 import { StatList } from "@/widgets/stat-list";
@@ -141,7 +140,7 @@ export const ThermalHistory = memo(function ThermalHistory({
     ({ kind }) => kind === "series" || kind === "bytes"
   );
   return (
-    <View className={`${CARD_SURFACE} gap-2 p-3`}>
+    <Card className="gap-2">
       <Text variant="cardTitle" accessibilityRole="header">
         {title}
       </Text>
@@ -168,6 +167,6 @@ export const ThermalHistory = memo(function ThermalHistory({
           }))}
         />
       )}
-    </View>
+    </Card>
   );
 });
