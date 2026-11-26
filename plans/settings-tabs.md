@@ -189,7 +189,7 @@ Test cases (each lane writes its own test file, listed in Owns):
 | a | M | src/app/routes/dashboard/settings/_lib/search.ts, src/app/routes/dashboard/settings/_lib/search.test.ts, src/app/routes/dashboard/settings/_components/settings-search.tsx, src/app/routes/dashboard/settings/_components/search-results.tsx, src/app/routes/dashboard/settings/search.test.tsx, src/app/routes/dashboard/settings/route.tsx | contracts, src/app/routes/dashboard/settings/_lib/catalog.ts | src/app/routes/dashboard/settings/tabs.test.tsx, src/app/routes/dashboard/settings/route.test.tsx | opus | pending | | search tests and existing settings tests pass |
 | b | M | src/app/routes/dashboard/settings/_components/history-meter.tsx, src/app/routes/dashboard/settings/_components/history-panel.tsx, src/app/routes/dashboard/settings/_components/clear-history-panel.tsx, src/app/routes/dashboard/settings/_hooks/use-history-size.ts, src/app/routes/dashboard/settings/_components/settings-link.tsx, src/app/routes/dashboard/settings/_components/menu-bar-panel.tsx, src/app/routes/dashboard/settings/_components/menu-bar-bars.tsx, src/app/routes/dashboard/settings/_components/menu-bar-values.tsx, src/app/routes/dashboard/settings/_components/menu-bar-items.tsx, src/app/routes/dashboard/settings/_components/sampling-panel.tsx, src/app/routes/dashboard/settings/_components/updates-panel.tsx, src/app/routes/dashboard/settings/links-and-meter.test.tsx | contracts | src/app/routes/dashboard/settings/tabs.test.tsx, src/app/routes/dashboard/settings/route.test.tsx, src/app/routes/dashboard/settings/reset-history.test.tsx | opus | pending | | link and meter tests and existing settings tests pass |
 
-#### Phase 2 lane a brief
+#### Lane 2a brief
 
 - Goal: search across every Settings tab, as in the prototype: results replace the tab body and are the real rows, so a match can be changed in place.
 - Interface: `matchSettings(query: string): SettingsMatch[]` in `_lib/search.ts`, pure, over `SETTINGS_CATALOG` and `SETTINGS_TABS`: split the query on whitespace, lower-case, and keep a row when every term occurs in `label + keywords + section title + tab label`; return `{ tab, sectionIds, rowIds }` per tab in tab order. Also pure: `searchStyles(matches): string`, the CSS that hides everything else (below). `SettingsSearch({ value, onChange })` (field) and `SearchResults({ query })` (body).
@@ -203,7 +203,7 @@ Test cases (each lane writes its own test file, listed in Owns):
 - Out of scope: Alerts or Hosts settings in search; URL state for the query.
 - Done when: `bun run test -- src/app/routes/dashboard/settings` passes including the new `search.test.tsx` (one test per Search case in Test cases above) and `_lib/search.test.ts`; typecheck and lint pass; check-lane clean.
 
-#### Phase 2 lane b brief
+#### Lane 2b brief
 
 - Goal: disabled-reason links and the History storage meter.
 - Interface: `SettingsLink({ tab, row, children })` in `_components/settings-link.tsx`, a react-router `Link` to `settingsHref(tab, row)` styled as an inline text link (underline on hover, `text-foreground`, no new accent). `useHistorySize()` in `_hooks/use-history-size.ts`, the one historySize query (move it from clear-history-panel.tsx unchanged: same key, `MINUTE_POLL_MS`), used by ClearHistoryPanel and the meter. `HistoryMeter({ history })`.
