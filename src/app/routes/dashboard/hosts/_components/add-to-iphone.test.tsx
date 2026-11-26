@@ -118,13 +118,27 @@ it("disables Add to iPhone while paired devices load", async () => {
   await waitForAction();
 });
 
+const readFailure = {
+  kind: "pairing",
+  reason: "unknown",
+  message: "Couldn’t read devices.",
+} as const;
+
+it("rechecks devices on click after a failed lookup and opens Update iPhone", async () => {
+  const mock = mockWithRemoteHosts();
+  mock.failNext("pairedDevices", readFailure);
+  const { user } = renderWithProviders(<HostsRoute />, { transport: mock });
+  await waitForAction();
+  await user.click(screen.getByRole("button", addButton));
+  expect(
+    await screen.findByRole("dialog", { name: "Update iPhone" })
+  ).toBeVisible();
+});
+
 it("opens Pair iPhone and shows its own failure when devices cannot be read", async () => {
   const mock = mockWithRemoteHosts();
-  mock.failNext("pairedDevices", {
-    kind: "pairing",
-    reason: "unknown",
-    message: "Couldn’t read devices.",
-  });
+  mock.failNext("pairedDevices", readFailure);
+  mock.failNext("pairedDevices", readFailure);
   const { user } = renderWithProviders(<HostsRoute />, { transport: mock });
   await waitForAction();
   await user.click(screen.getByRole("button", addButton));

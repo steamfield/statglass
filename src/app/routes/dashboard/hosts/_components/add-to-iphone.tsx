@@ -26,10 +26,6 @@ export function AddToIphone() {
   };
   const openDialog = async () => {
     if (devices.isFetching) return;
-    if (devices.isError) {
-      setDialog("pair");
-      return;
-    }
     // Device keys can change outside this dashboard, so check before choosing.
     const latest = await devices.refetch({ cancelRefetch: false });
     setDialog(latest.isSuccess && latest.data.length > 0 ? "update" : "pair");
