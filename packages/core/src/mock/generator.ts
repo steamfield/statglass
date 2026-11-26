@@ -3,10 +3,13 @@
  * a fixed sample value (the Overview cards, the CPU page's cores and
  * residency, the Power page's zones and power, the popover) the way its kind
  * of load does on a real Mac (`burst.ts`: CPU idles with spikes, network
- * idles between downloads, memory steps), and a backfill ends exactly on
- * those values, so a freshly opened mock window always shows the same
- * figures. CPU total and GPU util use fixed seeds, so their 60 s backfill is
- * always the same chart.
+ * idles between downloads, memory steps). The shapes run on wall-clock time
+ * from the ring's start (`anchorMs`), which sits on a calm moment of every
+ * shape, so a freshly opened mock window always shows the same figures and
+ * history buckets summarise the very rows the ring holds. Series are seeded
+ * by their key; series that move together (CPU time, the GPU, memory, a
+ * disk's transfers) share a seed, and totals and residency are derived from
+ * their parts (`derived-series.ts`).
  */
 import {
   HOLD_FACTOR,
@@ -17,7 +20,14 @@ import {
   type SeriesKey,
 } from "@core/generated/types";
 import { seriesKey, seriesKeyString } from "@core/series-key";
-import { type Shape, Shaper, scaled } from "./burst";
+import {
+  type Shape,
+  Shaper,
+  type SpanStats,
+  scaled,
+  shapeSecond,
+} from "./burst";
+import { clampRound, derive, isDerived } from "./derived-series";
 import {
   BACKGROUND_PROCESSES,
   E_CORES,
@@ -28,8 +38,8 @@ import {
   WIDE_LAYOUT_SERIES,
 } from "./fixtures";
 import { buildLinuxSpecs, LINUX_PROCESSES } from "./linux";
-import { rng } from "./rng";
-import { shapeOf } from "./series-shapes";
+import { rng, seedOf } from "./rng";
+import { diskSeed, isAdaptive, isAveraged, shapeOf } from "./series-shapes";
 
 export interface SeriesSpec {
   key: SeriesKey;
@@ -45,7 +55,10 @@ export interface SeriesSpec {
    * that must keep a sum (free and cached against used) swing negatively.
    */
   swing?: number;
-  /** Series on one seed move together (memory parts, GPU engines, a disk's ops). */
+  /**
+   * Series on one seed move together (CPU time, memory parts, GPU engines, a
+   * disk's ops); the default is the series key's own.
+   */
   seed: number;
   /** Sampled every `cadence` ticks (catalog 6.1); `null` in between. */
   cadence: number;
@@ -61,6 +74,13 @@ export interface SeriesSpec {
    * collector computes it.
    */
   sumOf?: number[];
+  /**
+   * A residency state that is a fixed share of this spec's value (its
+   * cluster's active %, the GPU's utilisation): `base` over that one's `base`.
+   */
+  shareOf?: number;
+  /** The idle state: what these states leave of 100%. */
+  restOf?: number[];
   /**
    * A collector with a period in time, not ticks (`self.cpu`'s catalog
    * period, `METRIC_PERIODS_MS`): it
@@ -80,50 +100,15 @@ export interface SeriesSpec {
   silent?: boolean;
 }
 
-/**
- * Series whose collectors slow to every 10 s with only the tray open: the
- * IOReport collector (cluster, GPU state and energy power), and network and
- * disk rates, which the default menu bar does not show.
- */
-const ADAPTIVE_METRICS = new Set([
-  "cpu.cluster.freq",
-  "cpu.cluster.active",
-  "cpu.cluster.residency",
-  "cpu.cluster.power",
-  "gpu.freq",
-  "gpu.residency",
-  "power.gpu",
-  "power.ane",
-  "power.dram",
-  "power.package",
-  "net.rx",
-  "net.tx",
-  "net.rx_total",
-  "net.tx_total",
-  "disk.read",
-  "disk.write",
-  "disk.read_total",
-  "disk.write_total",
-  "disk.read_ops",
-  "disk.write_ops",
-  "disk.read_timed_ops",
-  "disk.write_timed_ops",
-  "disk.read_time",
-  "disk.write_time",
-  "disk.read_ops_total",
-  "disk.write_ops_total",
-  "disk.read_timed_ops_total",
-  "disk.write_timed_ops_total",
-  "disk.read_time_total",
-  "disk.write_time_total",
-]);
-
 const GHZ = 1e9;
 
 /** P cores, then E cores, current % load. */
 const CORE_LOAD = [34, 22, 41, 18, 12, 9, 27, 15, 8, 6, 52, 38, 44, 29];
 
-/** "Cluster residency", % of the last 60 s per DVFS state. */
+/**
+ * "Cluster residency", % of the last 60 s per DVFS state. The active states
+ * sum to the cluster's active %, and the GPU's to its utilisation.
+ */
 const RESIDENCY: Record<string, Record<string, number>> = {
   P0: { 4512: 4, 3864: 9, 3204: 18, 2420: 10, 1924: 0, 1260: 0, idle: 59 },
   E0: { 2892: 6, 2160: 11, 1500: 0, 1020: 42, idle: 41 },
@@ -143,26 +128,10 @@ const ZONES: [string, number][] = [
   ["PMU2 tdie3", 48],
 ];
 
-type OptionalField = "max" | "swing" | "periodMs" | "perTick" | "silent";
-
-/** The optional fields `opts` sets, leaving absent ones out rather than undefined. */
-function optionalFields(
-  opts: Partial<Pick<SeriesSpec, OptionalField>>
-): Partial<Pick<SeriesSpec, OptionalField>> {
-  return {
-    ...(opts.max === undefined ? {} : { max: opts.max }),
-    ...(opts.swing === undefined ? {} : { swing: opts.swing }),
-    ...(opts.periodMs === undefined ? {} : { periodMs: opts.periodMs }),
-    ...(opts.perTick === undefined ? {} : { perTick: opts.perTick }),
-    ...(opts.silent ? { silent: true } : {}),
-  };
-}
-
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   const specs: SeriesSpec[] = [];
-  let seed = 1000;
   const add = (
     module: Module,
     metric: string,
@@ -170,37 +139,54 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     base: number,
     opts: Partial<Omit<SeriesSpec, "key" | "module" | "base">> = {}
   ) => {
+    const key = seriesKey(metric, labels);
+    // Exact optional types keep absent options out of `opts`, not undefined.
     specs.push({
-      key: seriesKey(metric, labels),
+      ...opts,
+      key,
       module,
       base,
       min: opts.min ?? 0,
       shape: opts.shape ?? shapeOf(metric),
-      seed: opts.seed ?? seed++,
+      seed: opts.seed ?? seedOf(seriesKeyString(key)),
       cadence: opts.cadence ?? 1,
-      ...optionalFields(opts),
-      idleCadence: ADAPTIVE_METRICS.has(metric) ? 10 : (opts.cadence ?? 1),
+      idleCadence: isAdaptive(metric) ? 10 : (opts.cadence ?? 1),
     });
   };
   // Totals over the reported parts, appended after them as the collectors do.
-  const total = (module: Module, metric: string, part: string) => {
-    const sumOf = specs.flatMap((s, i) => (s.key.metric === part ? [i] : []));
-    // Live values are derived; the history follows the first part's shape.
+  const total = (module: Module, metric: string, ...parts: string[]) => {
+    const sumOf = specs.flatMap((s, i) =>
+      parts.includes(s.key.metric) ? [i] : []
+    );
     const base = sumOf.reduce((n, i) => n + (specs[i] as SeriesSpec).base, 0);
-    const first = specs[sumOf[0] ?? -1];
-    add(module, metric, {}, base, first ? { seed: first.seed } : {});
-    (specs[specs.length - 1] as SeriesSpec).sumOf = sumOf;
+    add(module, metric, {}, base, { sumOf });
   };
   if (flags.linux) {
     buildLinuxSpecs(add, total, METRIC_PERIODS_MS["self.cpu"]);
     return specs;
   }
   const pct = { min: 0, max: 100 };
+  // Active states are shares of `source`'s value; idle is what they leave.
+  const residency = (
+    module: Module,
+    metric: string,
+    labels: Record<string, string>,
+    states: [string, number][],
+    source: number
+  ) => {
+    const active: number[] = [];
+    for (const [state, v] of states) {
+      const derived =
+        state === "idle" ? { restOf: active } : { shareOf: source };
+      if (state !== "idle") active.push(specs.length);
+      add(module, metric, { ...labels, state }, v, { ...pct, ...derived });
+    }
+  };
 
-  // CPU. Total is on the host's shared load seed.
+  // CPU. Total, user and system are on one seed, so the parts sum to it.
   add("cpu", "cpu.total", {}, 18, { seed: 5, min: 1, max: 100 });
-  add("cpu", "cpu.user", {}, 12.4, pct);
-  add("cpu", "cpu.system", {}, 5.6, pct);
+  add("cpu", "cpu.user", {}, 12.4, { seed: 5, ...pct });
+  add("cpu", "cpu.system", {}, 5.6, { seed: 5, ...pct });
   [...P_CORES, ...E_CORES].forEach((core, i) => {
     add("cpu", "cpu.load", { core }, CORE_LOAD[i] ?? 10, {
       ...pct,
@@ -233,11 +219,18 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     add("cpu", "cpu.cluster.power", { cluster: "E0" }, 0.6);
   }
   for (const [cluster, states] of Object.entries(RESIDENCY)) {
-    for (const [state, v] of Object.entries(states)) {
-      add("cpu", "cpu.cluster.residency", { cluster, state }, v, {
-        ...pct,
-      });
-    }
+    const active = specs.findIndex(
+      (s) =>
+        s.key.metric === "cpu.cluster.active" &&
+        s.key.labels.some(([k, v]) => k === "cluster" && v === cluster)
+    );
+    residency(
+      "cpu",
+      "cpu.cluster.residency",
+      { cluster },
+      Object.entries(states),
+      active
+    );
   }
 
   // GPU, on seed 9.
@@ -250,15 +243,19 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     min: 0.338 * GHZ,
     max: 1.6 * GHZ,
   });
-  for (const [state, v] of [
-    ["1578", 6],
-    ["1398", 12],
-    ["1098", 18],
-    ["720", 10],
-    ["idle", 54],
-  ] as const) {
-    add("gpu", "gpu.residency", { state }, v, pct);
-  }
+  residency(
+    "gpu",
+    "gpu.residency",
+    {},
+    [
+      ["1578", 5],
+      ["1398", 9],
+      ["1098", 14],
+      ["720", 8],
+      ["idle", 64],
+    ],
+    specs.findIndex((s) => s.key.metric === "gpu.util")
+  );
 
   // Memory, in bytes (decimal GB). On one seed, app + wired + compressed
   // stays used, and cached and free give up what used takes.
@@ -277,12 +274,19 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   add("memory", "mem.swap_in", {}, 0);
   add("memory", "mem.swap_out", {}, 0);
 
-  // Power.
+  // Power. The GPU's moves with the GPU; the package is the sum.
   add("power", "power.cpu", {}, 6.4);
-  add("power", "power.gpu", {}, 3.1);
+  add("power", "power.gpu", {}, 3.1, { seed: 9 });
   add("power", "power.ane", {}, 0);
   add("power", "power.dram", {}, 0.9);
-  add("power", "power.package", {}, 10.4);
+  total(
+    "power",
+    "power.package",
+    "power.cpu",
+    "power.gpu",
+    "power.ane",
+    "power.dram"
+  );
   add("power", "power.system", {}, 14.8);
   if (flags.cpuPowerSource !== null) {
     add("power", "power.cpu_source", {}, flags.cpuPowerSource);
@@ -313,8 +317,9 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     }
   }
 
-  // Network: a few MB/s of browsing and sync on a 2.4 Gb/s Wi-Fi 6E link, under
-  // the app bursts in net-apps.ts (a 30 MB/s Docker pull every 7 minutes).
+  // Network on a 2.4 Gb/s Wi-Fi 6E link: `base` is a download or upload
+  // burst's rate, over a low idle (`burst.ts`), under the app bursts in
+  // net-apps.ts (a 30 MB/s Docker pull every 7 minutes).
   add("network", "net.rx", { iface: "en0" }, 1.6e6);
   add("network", "net.tx", { iface: "en0" }, 0.3e6);
   add("network", "net.link_rate", { iface: "en0" }, 2.4e9, { cadence: 60 });
@@ -328,10 +333,10 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
 
   // Disk: 1 TB container, 612 GB free, Data 330 GB, System 58 GB. A device's
   // ops and request time burst with its bytes, on one seed per direction.
-  const diskSeed = (dev: string, metric: string) =>
-    (dev === "disk3" ? 300 : 302) + (metric.startsWith("disk.write") ? 1 : 0);
   const io = (dev: string, metric: string, base: number) =>
-    add("disk", metric, { dev }, base, { seed: diskSeed(dev, metric) });
+    add("disk", metric, { dev }, base, {
+      seed: diskSeed(dev === "disk3" ? 0 : 1, metric.startsWith("disk.write")),
+    });
   io(
     "disk3",
     "disk.read",
@@ -461,8 +466,15 @@ export class MockGenerator {
   /** Series whose reads fail: every tick is a gap. */
   readonly failing = new Set<number>();
   private tick = 0;
-  /** Time since the first tick, at each tick's interval: the shapes' clock. */
-  private elapsedMs = 0;
+  /** Wall-clock time of the last tick, or null before the first. */
+  private lastMs: number | null = null;
+  /** Scratch for an interval's mean, so a tick allocates nothing for it. */
+  private readonly span: SpanStats = { min: 0, avg: 0, max: 0 };
+  /**
+   * Wall-clock time the shapes' clock starts from (`shapeSecond`): the ring's
+   * start, its backfill's last row.
+   */
+  anchorMs = 0;
   /** No window shows anything: adaptive series run at `idleCadence`. */
   trayOnly = false;
   /** The sampling interval the next tick is taken at. */
@@ -488,11 +500,22 @@ export class MockGenerator {
   }
 
   /**
-   * One tick. `land` forces each series onto its sample value. Each stage is
-   * one pass that allocates only the arrays the row keeps: the phone demo
-   * backfills several hosts' rings at once under Hermes, which has no JIT.
+   * One tick, taken at wall-clock `atMs`, or one interval after the last
+   * tick when absent or not after it (a test's clock that stands still
+   * still sees the series move). `land` samples every series, as a backfill's last row
+   * does. Each stage is one pass that allocates only the arrays the row
+   * keeps: the phone demo backfills several hosts' rings at once under
+   * Hermes, which has no JIT.
    */
-  next(land = false): GeneratedRow {
+  next(land = false, atMs?: number): GeneratedRow {
+    const after =
+      this.lastMs === null ? this.anchorMs : this.lastMs + this.intervalMs;
+    const at =
+      atMs === undefined || (this.lastMs !== null && atMs <= this.lastMs)
+        ? after
+        : atMs;
+    this.lastMs = at;
+    const sec = shapeSecond(at, this.anchorMs);
     const n = this.specs.length;
     const cadences = new Array<number>(n);
     const values = new Array<number | null>(n);
@@ -500,25 +523,27 @@ export class MockGenerator {
       const spec = this.specs[i] as SeriesSpec;
       const cadence = this.cadenceOf(spec);
       cadences[i] = cadence;
-      values[i] = this.step(i, spec, land || this.tick % cadence === 0, land);
+      values[i] = this.step(i, spec, land || this.tick % cadence === 0, sec);
     }
     for (let i = 0; i < n; i++) {
-      const parts = (this.specs[i] as SeriesSpec).sumOf;
-      if (parts && (land || this.tick % (cadences[i] as number) === 0))
-        values[i] = sumOrNull(values, parts);
+      const spec = this.specs[i] as SeriesSpec;
+      if (
+        isDerived(spec) &&
+        (land || this.tick % (cadences[i] as number) === 0)
+      )
+        values[i] = derive(values, spec, this.specs);
     }
     const held = this.hold(values, cadences);
     this.tick++;
-    this.elapsedMs += this.intervalMs;
     return { values, held, cadences };
   }
 
-  /** One series' reading this tick, or null when unread. */
+  /** One series' reading at shape second `sec`, or null when unread. */
   private step(
     i: number,
     spec: SeriesSpec,
     sampled: boolean,
-    land: boolean
+    sec: number
   ): number | null {
     const readable = sampled && !this.failing.has(i);
     const metric = spec.key.metric;
@@ -528,22 +553,27 @@ export class MockGenerator {
       (metric === "net.rx" || metric === "net.tx")
     )
       return networkRateAt(this.tick);
-    if (!readable || spec.sumOf || spec.silent) return null;
-    const shaper = this.shapers[i] as Shaper;
-    const v = land
-      ? spec.base
-      : scaled(
-          shaper.at(Math.floor(this.elapsedMs / 1000)),
-          spec.base,
-          spec.swing
-        );
+    if (!readable || isDerived(spec) || spec.silent) return null;
+    const v = scaled(this.multiplier(i, sec), spec.base, spec.swing);
     const paced =
       spec.perTick === undefined
         ? v
         : v - spec.perTick * (1 - 1000 / this.intervalMs);
-    return round(
-      Math.min(spec.max ?? Infinity, Math.max(spec.min ?? -Infinity, paced))
-    );
+    return clampRound(paced, spec);
+  }
+
+  /**
+   * Series `i`'s multiplier on a tick at `sec`. A rate over a slow interval
+   * is its collector's counter delta: the mean over the seconds since the
+   * last tick, not the value at the instant.
+   */
+  private multiplier(i: number, sec: number): number {
+    const shaper = this.shapers[i] as Shaper;
+    const spec = this.specs[i] as SeriesSpec;
+    if (this.intervalMs < 2000 || !isAveraged(spec.key.metric))
+      return shaper.at(sec);
+    return shaper.stats(sec - this.intervalMs / 1000 + 1, sec + 1, this.span)
+      .avg;
   }
 
   /** Records this tick's readings and returns each series' held value. */
@@ -575,14 +605,16 @@ export class MockGenerator {
   }
 
   /**
-   * `n` rows of history ending on the sample values. The first `trayOnly`
-   * of them were taken with only the tray open.
+   * `n` rows of history, one interval apart and ending at `anchorMs` with
+   * every series sampled. The first `trayOnly` of them were taken with only
+   * the tray open.
    */
   backfill(n: number, trayOnly = 0): GeneratedRow[] {
     const rows: GeneratedRow[] = [];
     for (let i = 0; i < n; i++) {
       this.trayOnly = i < trayOnly;
-      rows.push(this.next(i === n - 1));
+      const at = this.anchorMs - (n - 1 - i) * this.intervalMs;
+      rows.push(this.next(i === n - 1, at));
     }
     this.trayOnly = false;
     return rows;
@@ -605,20 +637,6 @@ export class MockGenerator {
           : round(Math.max(0, p.cpu_pct * (0.85 + r() * 0.3))),
     }));
   }
-}
-
-/** The parts' rounded sum, or null when any part has no value this tick. */
-function sumOrNull(
-  values: readonly (number | null)[],
-  parts: readonly number[]
-): number | null {
-  let sum = 0;
-  for (const p of parts) {
-    const v = values[p];
-    if (v === null || v === undefined) return null;
-    sum += v;
-  }
-  return round(sum);
 }
 
 function round(v: number): number {

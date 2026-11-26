@@ -1,9 +1,10 @@
 /**
  * Typed command fixture: models server-side weighted request aggregation.
- * Throughput bursts as the live disk series do (`burst.ts`): each bucket is
- * the average of the burst shape over its seconds, on one seed per direction
- * so every device bursts together and keeps its ratio to the others.
- * Operation counts and request times stay at their sample values.
+ * Each device bursts as its live series do (`burst.ts`), on the same seeds
+ * and clock: a bucket's throughput and completions are its device's burst
+ * averaged over the bucket's seconds, so the page agrees with the device's
+ * `disk.read` history. Request time per completion stays at its sample value,
+ * and an all-device point weights it by each device's completions.
  */
 
 import type {
@@ -14,10 +15,10 @@ import type {
   Gap,
 } from "@core/generated/types";
 import { floorTo, MINUTE_MS } from "@core/time-grid";
-import { Shaper, type SpanStats } from "./burst";
+import { Shaper, type SpanStats, shapeSecond } from "./burst";
 import type { ScenarioName } from "./fixtures";
 import { mockBuckets } from "./protocol";
-import { seedOf } from "./rng";
+import { diskSeed } from "./series-shapes";
 
 export function mockDiskDevices(
   scenarios: readonly ScenarioName[]
@@ -68,28 +69,85 @@ function bucketWidth(request: DiskIoRequest): number {
   return bucket;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
-export function mockDiskIo(
+/** A device's sample rates in one direction: bytes/s, completions/s, ms per completion. */
+type Rates = [bps: number, ops: number, requestMs: number];
+
+/** One direction of a device: its sample rates and its live burst. */
+interface Transfers {
+  bps: number;
+  ops: number;
+  requestMs: number;
+  shaper: Shaper;
+}
+
+/** Read and write transfers of the devices a request covers, as the live specs have them. */
+function transfersOf(
+  request: DiskIoRequest,
+  scenarios: readonly ScenarioName[]
+): { read: Transfers[]; write: Transfers[] } {
+  const comparison = scenarios.includes("disk-io-comparison");
+  type Device = { index: number; read: Rates; write: Rates };
+  const internal: Device = {
+    index: 0,
+    read: [comparison ? 420e6 : 220e6, 5000, 0.15],
+    write: [comparison ? 90e6 : 48e6, 1200, 0.3],
+  };
+  const external: Device = {
+    index: 1,
+    read: [4e6, 80, 42],
+    write: [1e6, 30, 65],
+  };
+  const devices = (comparison ? [internal, external] : [internal]).filter(
+    ({ index }) =>
+      (request.device === null && comparison) ||
+      index === (request.device === "disk7" ? 1 : 0)
+  );
+  const idle = scenarios.includes("disk-io-no-ops") ? 0 : 1;
+  const side = (write: boolean): Transfers[] =>
+    devices.map((device) => {
+      const [bps, ops, requestMs] = write ? device.write : device.read;
+      return {
+        bps: idle * bps,
+        ops: idle * ops,
+        requestMs,
+        shaper: new Shaper("disk", diskSeed(device.index, write)),
+      };
+    });
+  return { read: side(false), write: side(true) };
+}
+
+/** One direction over `[a, b)` shape seconds: bytes and completions per second, and ms per completion. */
+function bucketOf(
+  transfers: readonly Transfers[],
+  a: number,
+  b: number,
+  span: SpanStats
+): { bps: number; ops: number; requestMs: number | null } {
+  let bps = 0;
+  let ops = 0;
+  let time = 0;
+  for (const t of transfers) {
+    const burst = t.shaper.stats(a, b, span).avg;
+    bps += t.bps * burst;
+    ops += t.ops * burst;
+    time += t.ops * burst * t.requestMs;
+  }
+  return { bps, ops, requestMs: ops > 0 ? time / ops : null };
+}
+
+/** The gaps a disk page shows: the host's, and the `disk-io-gap` scenario's. */
+function diskGaps(
   request: DiskIoRequest,
   scenarios: readonly ScenarioName[],
-  sharedGaps: readonly Gap[] = []
-): DiskIoPage {
-  const bucket = bucketWidth(request);
-  const first = floorTo(request.from_ms, bucket);
-  const points: DiskIoPoint[] = [];
-  const idle = scenarios.includes("disk-io-no-ops");
-  const unsupported = scenarios.includes("disk-io-unavailable");
-  let readBytes = 0;
-  let writeBytes = 0;
-  const gapFrom = request.to_ms - 90_000;
-  const gapTo = request.to_ms - MINUTE_MS;
-  const gaps = [
+  sharedGaps: readonly Gap[]
+): Gap[] {
+  return [
     ...sharedGaps.filter((g) => g.module === null || g.module === "disk"),
     ...(scenarios.includes("disk-io-gap")
       ? [
           {
-            start_ms: gapFrom,
-            end_ms: gapTo,
+            start_ms: request.to_ms - 90_000,
+            end_ms: request.to_ms - MINUTE_MS,
             module: "disk" as const,
             reason: "sleep" as const,
           },
@@ -99,68 +157,59 @@ export function mockDiskIo(
     (g) =>
       g.start_ms < request.to_ms && (g.end_ms ?? Infinity) > request.from_ms
   );
-  let coveredMs = 0;
-  const readShape = new Shaper("disk", seedOf("disk-io:read"));
-  const writeShape = new Shaper("disk", seedOf("disk-io:write"));
+}
+
+/**
+ * `query_disk_io` with the shapes' clock starting at `anchorMs` (the ring's
+ * start, `MockGenerator.anchorMs`).
+ */
+export function mockDiskIo(
+  request: DiskIoRequest,
+  scenarios: readonly ScenarioName[],
+  sharedGaps: readonly Gap[] = [],
+  anchorMs = request.to_ms
+): DiskIoPage {
+  const bucket = bucketWidth(request);
+  const unsupported = scenarios.includes("disk-io-unavailable");
+  const gaps = diskGaps(request, scenarios, sharedGaps);
+  const { read, write } = transfersOf(request, scenarios);
   const span: SpanStats = { min: 0, avg: 0, max: 0 };
-  for (let t = first; t < request.to_ms; t += bucket) {
+  const pointAt = (t: number): DiskIoPoint => {
     const missing = gaps.some(
       (g) => t + bucket > g.start_ms && t < (g.end_ms ?? Infinity)
     );
-    const slow = request.device === "disk7";
-    const all =
-      request.device === null && scenarios.includes("disk-io-comparison");
-    const readBurst = readShape.stats(t / 1000, (t + bucket) / 1000, span).avg;
-    const writeBurst = writeShape.stats(
-      t / 1000,
-      (t + bucket) / 1000,
-      span
-    ).avg;
-    const read = idle
-      ? 0
-      : (slow
-          ? 4e6
-          : scenarios.includes("disk-io-comparison")
-            ? 420e6
-            : 220e6) * readBurst;
-    const write = idle
-      ? 0
-      : (slow ? 1e6 : scenarios.includes("disk-io-comparison") ? 90e6 : 48e6) *
-        writeBurst;
-    const readOps = idle ? 0 : slow ? 80 : 5000;
-    const writeOps = idle ? 0 : slow ? 30 : 1200;
-    const p: DiskIoPoint = {
+    const a = shapeSecond(t, anchorMs);
+    const r = bucketOf(read, a, a + bucket / 1000, span);
+    const w = bucketOf(write, a, a + bucket / 1000, span);
+    const timed = !(missing || unsupported);
+    return {
       t,
-      read_bps: missing ? null : read + (all && !idle ? 4e6 * readBurst : 0),
-      write_bps: missing ? null : write + (all && !idle ? 1e6 * writeBurst : 0),
-      read_ops_per_sec:
-        missing || unsupported ? null : readOps + (all && !idle ? 80 : 0),
-      write_ops_per_sec:
-        missing || unsupported ? null : writeOps + (all && !idle ? 30 : 0),
-      read_request_ms:
-        missing || idle || unsupported
-          ? null
-          : all
-            ? (5000 * 0.15 + 80 * 42) / 5080
-            : slow
-              ? 42
-              : 0.15,
-      write_request_ms:
-        missing || idle || unsupported
-          ? null
-          : all
-            ? (1200 * 0.3 + 30 * 65) / 1230
-            : slow
-              ? 65
-              : 0.3,
+      read_bps: missing ? null : r.bps,
+      write_bps: missing ? null : w.bps,
+      read_ops_per_sec: timed ? r.ops : null,
+      write_ops_per_sec: timed ? w.ops : null,
+      read_request_ms: timed ? r.requestMs : null,
+      write_request_ms: timed ? w.requestMs : null,
     };
-    const seconds =
-      (Math.min(t + bucket, request.to_ms) - Math.max(t, request.from_ms)) /
-      1000;
-    if (!missing) coveredMs += seconds * 1000;
-    if (p.read_bps !== null) readBytes += p.read_bps * seconds;
-    if (p.write_bps !== null) writeBytes += p.write_bps * seconds;
+  };
+  const points: DiskIoPoint[] = [];
+  let readBytes = 0;
+  let writeBytes = 0;
+  let coveredMs = 0;
+  for (
+    let t = floorTo(request.from_ms, bucket);
+    t < request.to_ms;
+    t += bucket
+  ) {
+    const p = pointAt(t);
     points.push(p);
+    // A bucket outside a gap has both directions' bytes.
+    if (p.read_bps === null || p.write_bps === null) continue;
+    const ms =
+      Math.min(t + bucket, request.to_ms) - Math.max(t, request.from_ms);
+    coveredMs += ms;
+    readBytes += (p.read_bps * ms) / 1000;
+    writeBytes += (p.write_bps * ms) / 1000;
   }
   return {
     tier: "s10",

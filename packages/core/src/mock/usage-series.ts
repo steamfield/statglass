@@ -3,7 +3,7 @@
  * ranks first, each as one value per 10 s bucket. The mock keeps no per-bucket
  * history, so each bucket is the app's range average shaped by its kind of
  * load (`burst.ts`: CPU idles with spikes, memory steps, disk bursts), scaled
- * so the shape averages to 1 over a week.
+ * so the measured buckets average to the app's range average.
  * Mirrors `usage.rs`: buckets before counting started or after the newest
  * sample read `null` (unmeasured), GPU reads `null` where it was never
  * measured, and every value is a rate in the key's unit.
@@ -17,13 +17,13 @@ import type {
 } from "@core/generated/types";
 import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/types";
 import { floorTo } from "@core/time-grid";
-import { longRunMean, type Shape, Shaper, type SpanStats } from "./burst";
+import { type Shape, Shaper, type SpanStats } from "./burst";
 import { seedOf } from "./rng";
 
 /** The burst profile of each usage key. */
 const SHAPE_OF: Record<UsageKey, Shape> = {
   cpu: "load",
-  gpu: "load",
+  gpu: "gpu",
   energy: "load",
   memory: "level",
   disk: "disk",
@@ -76,21 +76,32 @@ export function mockUsageSeries({
     latest_ms: latestMs,
     apps: byApp.apps.map((a) => {
       const avg = averageOf(by, a, byApp.covered_ms);
-      const seed = seedOf(a.name);
-      const shaper = new Shaper(SHAPE_OF[by], seed);
-      const scale = avg / longRunMean(SHAPE_OF[by], seed);
+      const shaper = new Shaper(SHAPE_OF[by], seedOf(a.name));
       const span: SpanStats = { min: 0, avg: 0, max: 0 };
+      // Keyed by the bucket's start, so a bucket's shape is the same in any range.
+      const shape = Array.from({ length: n }, (_, i) => {
+        if (!covered(i)) return null;
+        const t = (from + i * BUCKET_MS) / 1000;
+        return Math.max(0, shaper.stats(t, t + BUCKET_MS / 1000, span).avg);
+      });
+      const scale = avg / meanOf(shape);
       return {
         name: a.name,
         avg,
-        values: Array.from({ length: n }, (_, i) => {
-          if (!covered(i)) return null;
-          // Keyed by the bucket's start, so a bucket reads the same in any range.
-          const t = (from + i * BUCKET_MS) / 1000;
-          const m = shaper.stats(t, t + BUCKET_MS / 1000, span).avg;
-          return Math.max(0, scale * m);
-        }),
+        values: shape.map((m) => (m === null ? null : scale * m)),
       };
     }),
   };
+}
+
+/** The mean of the measured values; 1 when none are, or all are zero. */
+function meanOf(values: readonly (number | null)[]): number {
+  let sum = 0;
+  let n = 0;
+  for (const v of values) {
+    if (v === null) continue;
+    sum += v;
+    n++;
+  }
+  return n > 0 && sum > 0 ? sum / n : 1;
 }

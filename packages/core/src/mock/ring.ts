@@ -34,6 +34,7 @@ export class MockRing {
     const gen = this.gen;
     const startInterval = options.intervalMs ?? 1000;
     gen.intervalMs = startInterval;
+    gen.anchorMs = startMs;
     const historyRows = options.historyRows ?? 600;
     const generated = gen.backfill(historyRows, Math.max(0, historyRows - 180));
     const en0 = (metric: string) =>

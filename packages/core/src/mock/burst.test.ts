@@ -3,6 +3,8 @@ import { Shaper } from "./burst";
 import { MOCK_HOST_ID, scenarioFlags } from "./fixtures";
 import { MockGenerator } from "./generator";
 import { mockHistory } from "./history";
+import { LINUX_MEM_TOTAL_BYTES } from "./linux";
+import { MockRing } from "./ring";
 
 const HOUR_S = 3600;
 const NOW = 1_760_000_005_000;
@@ -57,15 +59,154 @@ function correlation(a: number[], b: number[]): number {
 }
 
 describe("burst shapes in the live stream", () => {
-  it("repeats the same series for the same seed, and a backfill lands on the sample values", () => {
+  it("repeats the same series for the same seed", () => {
     const again = liveRun();
     expect(again.rows).toEqual(live.rows);
+  });
+
+  it("ends every fresh backfill on the same figures, continuing the shape instead of jumping", () => {
+    const ringAt = (now: number) =>
+      new MockRing(scenarioFlags(["default"]), () => now, { historyRows: 600 });
+    const a = ringAt(1_760_000_005_000);
+    const b = ringAt(1_790_123_456_789);
+    expect(b.rows.at(-1)?.values).toEqual(a.rows.at(-1)?.values);
+    // Calm series ease onto the boards' figures; bursty ones land where they are.
+    for (const [key, figure] of [
+      ["cpu.total", 18],
+      ["mem.used", 17.6e9],
+      ["gpu.util", 36],
+      ["thermal.hottest", 61],
+      ["power.package", 10.4],
+    ] as const)
+      expect(a.rows.at(-1)?.values[a.gen.indexOf(key)]).toBe(figure);
+    for (const key of ["net.rx_total", "disk.read{dev=disk3}", "cpu.total"]) {
+      const i = a.gen.indexOf(key);
+      const before = a.rows
+        .slice(-31, -1)
+        .map((r) => r.values[i])
+        .filter((v): v is number => v !== null && v !== undefined);
+      const last = a.rows.at(-1)?.values[i] as number;
+      expect(last).toBeLessThanOrEqual(2 * Math.max(...before));
+    }
+  });
+
+  it("varies between ticks at a 500 ms interval", () => {
     const gen = new MockGenerator(scenarioFlags([]));
-    const last = gen.backfill(600, 420).at(-1);
-    for (const key of ["cpu.total", "gpu.util", "mem.used", "net.rx_total"])
-      expect(last?.values[gen.indexOf(key)]).toBe(
-        gen.specs[gen.indexOf(key)]?.base
+    gen.intervalMs = 500;
+    const i = gen.indexOf("cpu.total");
+    const values = Array.from({ length: 20 }, () => gen.next().values[i]);
+    for (let k = 1; k < values.length; k++)
+      expect(values[k]).not.toBe(values[k - 1]);
+  });
+
+  it("reports a rate metric's mean over a slow interval, as the collectors do", () => {
+    const fast = new MockGenerator(scenarioFlags([]));
+    const slow = new MockGenerator(scenarioFlags([]));
+    slow.intervalMs = 5000;
+    const i = fast.indexOf("cpu.total");
+    const perSecond = Array.from(
+      { length: 600 },
+      () => fast.next().values[i] as number
+    );
+    for (let j = 0; j < 120; j++) {
+      const v = slow.next().values[i] as number;
+      if (j === 0) continue;
+      const window = perSecond.slice(5 * j - 4, 5 * j + 1);
+      expect(v).toBeCloseTo(mean(window), 1);
+    }
+  });
+});
+
+describe("series that move together in the live stream", () => {
+  it("keeps user and system CPU summing to the total", () => {
+    const [user, system, total] = ["cpu.user", "cpu.system", "cpu.total"].map(
+      live.series
+    ) as [(number | null)[], (number | null)[], (number | null)[]];
+    let checked = 0;
+    total.forEach((t, k) => {
+      if (t === null || t >= 100) return;
+      checked++;
+      expect((user[k] as number) + (system[k] as number)).toBeCloseTo(t, 1);
+    });
+    expect(checked).toBeGreaterThan(7000);
+    const linux = liveRun(["linux"]);
+    const parts = ["cpu.user", "cpu.system", "cpu.iowait"].map(linux.series);
+    linux.series("cpu.total").forEach((t, k) => {
+      if (t === null || t >= 100) return;
+      const sum = parts.reduce((n, p) => n + (p[k] as number), 0);
+      expect(sum).toBeCloseTo(t, 1);
+    });
+  });
+
+  it("sums package power from its parts and drives GPU power with the GPU", () => {
+    const parts = ["power.cpu", "power.gpu", "power.ane", "power.dram"].map(
+      live.series
+    );
+    live.series("power.package").forEach((p, k) => {
+      if (p === null) return;
+      expect(p).toBeCloseTo(
+        parts.reduce((n, s) => n + (s[k] as number), 0),
+        2
       );
+    });
+    expect(
+      correlation(
+        numbers(live.series("power.gpu")),
+        numbers(live.series("gpu.util"))
+      )
+    ).toBeGreaterThan(0.9);
+  });
+
+  it("keeps residency states summing to 100, idle when the engine idles", () => {
+    const gpu = live.series("gpu.util");
+    const states = live.gen.keys.flatMap((k, i) =>
+      k.metric === "gpu.residency" ? [i] : []
+    );
+    const idle = live.gen.indexOf("gpu.residency{state=idle}");
+    live.rows.forEach((row, k) => {
+      const sum = states.reduce((n, i) => n + (row.values[i] as number), 0);
+      expect(sum).toBeCloseTo(100, 1);
+      if ((gpu[k] as number) < 6) expect(row.values[idle]).toBeGreaterThan(90);
+    });
+    for (const cluster of ["P0", "E0"]) {
+      const of = live.gen.keys.flatMap((k, i) =>
+        k.metric === "cpu.cluster.residency" &&
+        k.labels.some(([key, v]) => key === "cluster" && v === cluster)
+          ? [i]
+          : []
+      );
+      const idleIdx = live.gen.indexOf(
+        `cpu.cluster.residency{cluster=${cluster},state=idle}`
+      );
+      const active = live.series(`cpu.cluster.active{cluster=${cluster}}`);
+      live.rows.forEach((row, k) => {
+        const sum = of.reduce((n, i) => n + (row.values[i] as number), 0);
+        expect(sum).toBeCloseTo(100, 1);
+        if ((active[k] as number) < 100)
+          expect(100 - (row.values[idleIdx] as number)).toBeCloseTo(
+            active[k] as number,
+            1
+          );
+      });
+    }
+  });
+
+  it("keeps a series' data when a scenario removes an earlier series", () => {
+    const smc = liveRun(["cpu-power-calibrated"]);
+    for (const key of ["power.cpu", "power.dram", "fan.rpm{fan=0}"])
+      expect(smc.series(key)).toEqual(live.series(key));
+  });
+
+  it("keeps Linux memory summing to MemTotal", () => {
+    const linux = liveRun(["linux"]);
+    const [used, cached, free] = ["mem.used", "mem.cached", "mem.free"].map(
+      linux.series
+    );
+    used?.forEach((u, k) => {
+      expect(
+        (u as number) + (cached?.[k] as number) + (free?.[k] as number)
+      ).toBeCloseTo(LINUX_MEM_TOTAL_BYTES, -3);
+    });
   });
 
   it("answers any second the same in any order, so live and history agree", () => {
@@ -161,10 +302,12 @@ describe("burst shapes in the live stream", () => {
 
   it("holds the GPU on long plateaus, then idles it with short spikes", () => {
     const gpu = numbers(live.series("gpu.util"));
-    const quarters = Array.from({ length: gpu.length / 900 }, (_, q) =>
-      gpu.slice(q * 900, q * 900 + 900)
+    // Ten-minute windows a minute apart: a plateau holds for one at least.
+    const windows = Array.from(
+      { length: Math.floor((gpu.length - 600) / 60) },
+      (_, q) => gpu.slice(q * 60, q * 60 + 600)
     );
-    const flat = quarters.filter(
+    const flat = windows.filter(
       (q) => Math.max(...q) - Math.min(...q) < 0.15 * 36
     );
     expect(flat.length).toBeGreaterThan(0);
@@ -232,10 +375,14 @@ describe("burst shapes in history", () => {
     for (const p of narrow) {
       if (value(p, "max") < 2 * idle) continue;
       spikes++;
-      const holder = wide.find((w) => w.t <= p.t && p.t < w.t + 1_800_000);
-      // The wide bucket samples its idle noise, so allow that much below.
+      // The store merges 10 s buckets to fit max_points, so the wide step
+      // need not be exactly 30 minutes: the holder is the last one started.
+      const holder = [...wide].reverse().find((w) => w.t <= p.t);
+      // The wide bucket samples the core's noise rather than reading every
+      // second, so allow its range (the load shape's slack in the tightness
+      // test, burst-consistency.test.ts) below.
       expect(holder && value(holder, "max")).toBeGreaterThanOrEqual(
-        value(p, "max") - 0.15 * 18
+        value(p, "max") - 0.25 * 18
       );
     }
     expect(spikes).toBeGreaterThan(20);

@@ -16,6 +16,7 @@ import type {
   Module,
 } from "@core/generated/types";
 import { HOUR_MS } from "@core/time-grid";
+import { diskSeed } from "./series-shapes";
 
 /** M1 cpufreq `scaling_available_frequencies`, MHz ascending. */
 const E_DVFS = [600, 972, 1332, 1704, 2064];
@@ -112,7 +113,7 @@ type Add = (
     silent?: boolean;
   }
 ) => void;
-type Total = (module: Module, metric: string, part: string) => void;
+type Total = (module: Module, metric: string, ...parts: string[]) => void;
 
 const GHZ = 1e9;
 const pct = { min: 0, max: 100 };
@@ -121,10 +122,11 @@ const pct = { min: 0, max: 100 };
 const CORE_LOAD = [4, 3, 2, 3, 2, 1, 1, 2];
 
 function cpu(add: Add) {
-  add("cpu", "cpu.total", {}, 3.1, { min: 0.5, max: 100 });
-  add("cpu", "cpu.user", {}, 2.0, pct);
-  add("cpu", "cpu.system", {}, 0.9, pct);
-  add("cpu", "cpu.iowait", {}, 0.4, pct);
+  // On one seed, so user + system + iowait is the total.
+  add("cpu", "cpu.total", {}, 3.3, { seed: 5, min: 0.5, max: 100 });
+  add("cpu", "cpu.user", {}, 2.0, { seed: 5, ...pct });
+  add("cpu", "cpu.system", {}, 0.9, { seed: 5, ...pct });
+  add("cpu", "cpu.iowait", {}, 0.4, { seed: 5, ...pct });
   add("cpu", "cpu.steal", {}, 0, pct);
   [...E_CORES, ...P_CORES].forEach((core, i) => {
     add("cpu", "cpu.load", { core }, CORE_LOAD[i] ?? 2, pct);
@@ -229,10 +231,9 @@ function disk(add: Add, total: Total) {
   ] as const;
   // A device's ops and request time burst with its bytes, on one seed per
   // device and direction.
-  const seed = (d: number, write: boolean) => 300 + 2 * d + (write ? 1 : 0);
   devices.forEach(([dev, read, write], d) => {
-    add("disk", "disk.read", { dev }, read, { seed: seed(d, false) });
-    add("disk", "disk.write", { dev }, write, { seed: seed(d, true) });
+    add("disk", "disk.read", { dev }, read, { seed: diskSeed(d, false) });
+    add("disk", "disk.write", { dev }, write, { seed: diskSeed(d, true) });
   });
   devices.forEach(([dev, , , readOps, writeOps, readMs, writeMs], d) => {
     for (const [metric, value] of [
@@ -244,7 +245,7 @@ function disk(add: Add, total: Total) {
       ["disk.write_time", writeOps * writeMs],
     ] as const)
       add("disk", metric, { dev }, value, {
-        seed: seed(d, metric.startsWith("disk.write")),
+        seed: diskSeed(d, metric.startsWith("disk.write")),
       });
   });
   for (const metric of DISK_METRICS) total("disk", `${metric}_total`, metric);

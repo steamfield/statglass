@@ -39,14 +39,16 @@ export class MockQueries {
           req,
           this.ring.gen.specs,
           this.ring.now(),
-          this.power.status.interval_ms
+          this.power.status.interval_ms,
+          this.ring.startMs
         )
       : mockHistory(
           req,
           this.ring.gen.specs,
           mockGaps(this.ring.flags, this.ring.startMs),
           this.ring.now(),
-          this.power.status.interval_ms
+          this.power.status.interval_ms,
+          this.ring.startMs
         );
   readonly listDiskIoDevices: MockTransport["listDiskIoDevices"] = async (
     host
@@ -81,7 +83,8 @@ export class MockQueries {
           mockDiskIo(
             request,
             this.options.scenarios ?? [],
-            mockGaps(this.ring.flags, this.ring.startMs)
+            mockGaps(this.ring.flags, this.ring.startMs),
+            this.ring.startMs
           )
         )
     );

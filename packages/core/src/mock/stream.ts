@@ -62,7 +62,7 @@ export class MockStream {
     // Adaptive collectors idle unless a window is taking frames.
     this.ring.gen.trayOnly = !this.power.receiving();
     this.ring.gen.intervalMs = this.power.status.interval_ms;
-    const { values, held, cadences } = this.ring.gen.next();
+    const { values, held, cadences } = this.ring.gen.next(false, ts);
     this.ring.withBursts(ts, values);
     this.ring.withBursts(ts, held);
     this.ring.pushRow(ts, values, cadences, this.power.status.interval_ms);
@@ -147,7 +147,7 @@ export class MockStream {
     this.ring.gen.intervalMs = interval;
     const from = Math.max(last + interval, untilMs - RING_SPAN_MS);
     for (let ts = from; ts <= untilMs; ts += interval) {
-      const row = this.ring.gen.next();
+      const row = this.ring.gen.next(false, ts);
       this.ring.pushRow(
         ts,
         this.ring.withBursts(ts, row.values),
