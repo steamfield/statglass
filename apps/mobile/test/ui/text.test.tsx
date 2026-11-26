@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expect, it } from "@jest/globals";
+import { mobileSources, openingTags } from "@test/helpers/source-scan";
 import { render } from "@testing-library/react-native";
 import { Text, type TextTone, type TextVariant } from "@/ui/text";
 
@@ -157,35 +158,11 @@ it("gives a proportional variant tabular numerals when asked", async () => {
   });
 });
 
-/** Every `<Text ...>` opening tag in a source file, braces and all. */
-function textOpeningTags(source: string): string[] {
-  const tags: string[] = [];
-  for (const match of source.matchAll(/<Text(?=[\s>])/g)) {
-    let depth = 0;
-    let end = match.index;
-    for (; end < source.length; end++) {
-      const char = source[end];
-      if (char === "{") depth++;
-      else if (char === "}") depth--;
-      else if (char === ">" && depth === 0 && source[end - 1] !== "=") break;
-    }
-    tags.push(source.slice(match.index, end));
-  }
-  return tags;
-}
-
-function mobileSources(): { file: string; source: string }[] {
-  const src = resolve(__dirname, "../../src");
-  return readdirSync(src, { encoding: "utf8", recursive: true })
-    .filter((file) => /\.[cm]?[jt]sx?$/.test(file))
-    .map((file) => ({ file, source: readFileSync(join(src, file), "utf8") }));
-}
-
 it("passes no colour, weight or numeral class to a Text in mobile source", () => {
   const owned =
     /\btext-(?:foreground|muted-foreground|fg-subtle|fg-faint|link|destructive|warning-ink|primary-foreground)(?![\w-])|\bfont-(?:thin|light|normal|medium|semibold|bold|extrabold|black)(?![\w-])|\btabular-nums(?![\w-])/g;
   const violations = mobileSources().flatMap(({ file, source }) =>
-    textOpeningTags(source).flatMap((tag) =>
+    openingTags(source, ["Text"]).flatMap((tag) =>
       (tag.match(owned) ?? []).map((name) => `${file}: ${name}`)
     )
   );
