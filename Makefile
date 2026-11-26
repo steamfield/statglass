@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test ssh-docker-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
+.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-perf rust-linux-check rust-linux-test remote-scripts-test ssh-docker-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
 .PHONY: verification-test updater-patch-test mobile-check mobile-rust-check mobile-native-check mobile-archive mobile-release-check mobile-release-check-test
 
@@ -34,6 +34,7 @@ help:
 	@echo "  make typecheck     tsc + cargo check"
 	@echo "  make check         Format check, lint, typecheck, tests, frontend + Rust (the pre-push hook runs this)"
 	@echo "  make bindings-check  Regenerate the bindings and fail if they differ from the commit"
+	@echo "  make rust-perf     Engine allocation and call budgets (perf-budget.json engine; real macOS collectors)"
 	@echo "  make e2e-perf      Playwright frontend perf gates (perf-budget.json frontend; macOS budgets)"
 	@echo "  make rust-check    cargo fmt --check + clippy -D warnings"
 	@echo "  make rust-portable-check  cargo check all portable workspace crates on the current host"
@@ -155,9 +156,16 @@ rust-fmt:
 rust-check: stub-dist
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets -- -D warnings
+	cargo clippy -p statglass-engine --test perf_gates -- -D warnings
 
 rust-test: stub-dist
 	cargo test --workspace
+
+# Engine allocation and OS-call budgets (perf-budget.json `engine`, D-062) with the
+# real macOS collectors. `test = false` keeps them out of `cargo test --workspace`;
+# the pre-push gate runs this when a push changes code that can move them.
+rust-perf: stub-dist
+	cargo test -p statglass-engine --test perf_gates
 
 # The sandboxed App Store edition (v3.2) must keep compiling: the feature drops the
 # private-API collectors at registration, compiles out the responsible-PID lookup and

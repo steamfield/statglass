@@ -21,7 +21,9 @@ Mac App Store and Homebrew distribution are outside this workflow.
    newer than the latest tag, or notes that do not name the version. It bumps
    `Cargo.toml`, `Cargo.lock`, `package.json` and `src-tauri/tauri.conf.json`, runs the
    manifest checks, and commits `chore(release): X.Y.Z`. After you confirm, it pushes
-   `main` through the pre-push gate, then creates and pushes the annotated tag.
+   that commit to `main` through the pre-push gate with `STATGLASS_PERF=1`, so both perf
+   stages run whatever the release changed, then creates and pushes the annotated tag
+   on that same commit.
 3. The tag starts the Release workflow. Linux jobs validate the versions and manifest
    and build both Linux agents. The `macos` job then waits for your approval: open
    the run (the script prints its URL, and GitHub notifies you) and approve the

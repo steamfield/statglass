@@ -66,7 +66,8 @@ cut() {
   release="$(git rev-parse HEAD)"
   git --no-pager log --oneline origin/main.."$release"
   confirm "Push main (runs the pre-push gate), then tag and push $tag?"
-  git push origin "$release:refs/heads/main"
+  # A release is always measured: the gate skips perf stages a push cannot move.
+  STATGLASS_PERF=1 git push origin "$release:refs/heads/main"
   git tag -a "$tag" -m "StatGlass $version" "$release"
   git push origin "refs/tags/$tag"
 

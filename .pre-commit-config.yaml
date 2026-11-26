@@ -102,9 +102,11 @@ repos:
         pass_filenames: false
 
   # Native macOS verification stays local; hosted CI uses Linux only. The whole
-  # `make check` (fmt, clippy, the appstore edition, cargo test with the engine
-  # perf gates, Biome, typecheck, Vitest), the bindings freshness check and the
-  # Playwright frontend perf gates, whose budgets are macOS numbers. Only
+  # `make check` (fmt, clippy, the appstore edition, cargo test, Biome,
+  # typecheck, Vitest) and the bindings freshness check, then the engine and
+  # Playwright perf gates (`make rust-perf`, `make e2e-perf`), whose budgets are
+  # macOS numbers, only when the push changes paths they measure
+  # (scripts/pre-push-check.sh; STATGLASS_PERF=1 forces them). Only
   # when the pushed commits touch code or manifests; docs-only pushes skip it.
   # docs-site/ is its own Bun project with its own gate (make -C docs-site
   # lint check test build) that none of these stages run, so site-only pushes
@@ -112,7 +114,7 @@ repos:
   - repo: local
     hooks:
       - id: macos-check
-        name: make check bindings-check e2e-perf (macOS)
+        name: make check bindings-check rust-perf e2e-perf (macOS)
         entry: bash scripts/pre-push-check.sh
         language: system
         stages: [pre-push]
