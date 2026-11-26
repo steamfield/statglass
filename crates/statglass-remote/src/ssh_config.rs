@@ -153,19 +153,7 @@ pub fn handover_host(
         os: remote.os.clone(),
         user: primary.alias.user.clone(),
         port: (primary.alias.port != 22).then_some(primary.alias.port),
-        targets: routes.into_iter().fold(Vec::new(), |mut targets, route| {
-            // Two aliases can resolve to one address; dialing it twice only doubles the race.
-            if !targets
-                .iter()
-                .any(|target: &BundleTarget| target.host == route.alias.hostname)
-            {
-                targets.push(BundleTarget {
-                    route: route.route,
-                    host: route.alias.hostname,
-                });
-            }
-            targets
-        }),
+        targets: bundle_targets(routes),
         host_keys,
     })
 }
@@ -180,7 +168,7 @@ struct ResolvedRoute {
 
 impl ResolvedRoute {
     fn tailnet_as_tailscale(mut self) -> Self {
-        if is_tailnet(&self.alias.hostname) {
+        if literal(&self.alias.hostname).is_some_and(|(ip, _)| is_tailnet(ip)) {
             self.route = BundleRoute::Tailscale;
         }
         self
@@ -319,31 +307,62 @@ fn collect_route_keys(routes: &[ResolvedRoute]) -> Result<HostKeys, SshConfigErr
     Ok(keys)
 }
 
+/// A `HostName` that is an IP literal, without its `%zone` and with an IPv4-mapped IPv6
+/// address as its IPv4 address, plus the zone.
+fn literal(host: &str) -> Option<(IpAddr, Option<&str>)> {
+    let (address, zone) = host
+        .split_once('%')
+        .map_or((host, None), |(address, zone)| (address, Some(zone)));
+    Some((address.parse::<IpAddr>().ok()?.to_canonical(), zone))
+}
+
 fn is_lan_literal(host: &str) -> bool {
-    if is_tailnet(host) {
-        return false;
-    }
-    let host = host.split_once('%').map_or(host, |(address, _)| address);
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => !is_tailnet(host) && (ip.is_private() || ip.is_link_local()),
-        Ok(IpAddr::V6(ip)) => {
-            ip.is_unicast_link_local()
-                || ip.is_unique_local()
-                || ip
-                    .to_ipv4_mapped()
-                    .is_some_and(|mapped| is_lan_literal(&mapped.to_string()))
-        }
-        Err(_) => false,
+    match literal(host) {
+        Some((ip, _)) if is_tailnet(ip) => false,
+        Some((IpAddr::V4(ip), _)) => ip.is_private() || ip.is_link_local(),
+        Some((IpAddr::V6(ip), _)) => ip.is_unicast_link_local() || ip.is_unique_local(),
+        None => false,
     }
 }
 
-/// Whether a literal is in Tailscale's address blocks (100.64.0.0/10, fd7a:115c:a1e0::/48).
-/// Such a peer is reached over Tailscale, so it hands over as a Tailscale route whichever
-/// alias slot it came from and is never a LAN literal (D-160).
-fn is_tailnet(host: &str) -> bool {
-    let host = host.split_once('%').map_or(host, |(address, _)| address);
-    host.parse::<IpAddr>()
-        .is_ok_and(|ip| classify_address(ip) == AddressClass::Tailscale)
+/// Whether an address is in Tailscale's blocks (100.64.0.0/10, fd7a:115c:a1e0::/48). Such a
+/// peer is reached over Tailscale, so it hands over as a Tailscale route whichever alias slot
+/// it came from and is never a LAN literal (D-160).
+fn is_tailnet(ip: IpAddr) -> bool {
+    classify_address(ip) == AddressClass::Tailscale
+}
+
+/// Whether two `HostName`s name the same target: equal addresses for literals, or the same
+/// name ignoring ASCII case.
+fn same_host(a: &str, b: &str) -> bool {
+    match (literal(a), literal(b)) {
+        (Some(a), Some(b)) => a == b,
+        (None, None) => a.eq_ignore_ascii_case(b),
+        _ => false,
+    }
+}
+
+/// Bundle targets in route order, one per host. A host both aliases reach keeps the first
+/// spelling and is labelled Tailscale if either route is, so dialing it is never doubled and
+/// a Tailscale route is never relabelled LAN.
+fn bundle_targets(routes: Vec<ResolvedRoute>) -> Vec<BundleTarget> {
+    let mut targets: Vec<BundleTarget> = Vec::new();
+    for route in routes {
+        match targets
+            .iter_mut()
+            .find(|target| same_host(&target.host, &route.alias.hostname))
+        {
+            Some(target) if route.route == BundleRoute::Tailscale => {
+                target.route = BundleRoute::Tailscale;
+            }
+            Some(_) => {}
+            None => targets.push(BundleTarget {
+                route: route.route,
+                host: route.alias.hostname,
+            }),
+        }
+    }
+    targets
 }
 
 pub struct HandoverInput {

@@ -214,7 +214,7 @@ fn hands_over_tailnet_literals_as_tailscale_routes() {
     let dir = tempfile::tempdir().unwrap();
     let config = config(
         dir.path(),
-        "Host cgnat\nHostName 100.127.8.9\nHost tail6\nHostName fd7a:115c:a1e0::1\nHost edge\nHostName 100.63.255.255\nHost tail\nHostName build.example.invalid\n",
+        "Host cgnat\nHostName 100.127.8.9\nHost tail6\nHostName fd7a:115c:a1e0::1\nHost edge\nHostName 100.63.255.255\nHost above\nHostName 100.128.0.1\nHost mapped\nHostName ::ffff:100.127.8.9\nHost tailcase\nHostName BUILD.example.invalid\nHost tail\nHostName build.example.invalid\n",
     );
     let (line, pin) = fixture_key(dir.path(), "ed25519");
     fs::write(
@@ -223,6 +223,8 @@ fn hands_over_tailnet_literals_as_tailscale_routes() {
             "100.127.8.9",
             "fd7a:115c:a1e0::1",
             "100.63.255.255",
+            "100.128.0.1",
+            "::ffff:100.127.8.9",
             "build.example.invalid",
         ]
         .map(|host| format!("{host} {line}"))
@@ -256,6 +258,18 @@ fn hands_over_tailnet_literals_as_tailscale_routes() {
     assert_eq!(
         targets("cgnat", Some("cgnat")),
         [target(BundleRoute::Tailscale, "100.127.8.9")]
+    );
+    assert_eq!(
+        targets("mapped", Some("cgnat")),
+        [target(BundleRoute::Tailscale, "::ffff:100.127.8.9")]
+    );
+    assert_eq!(
+        targets("tail", Some("tailcase")),
+        [target(BundleRoute::Tailscale, "build.example.invalid")]
+    );
+    assert_eq!(
+        targets("above", None),
+        [target(BundleRoute::Lan, "100.128.0.1")]
     );
     assert_eq!(
         targets("edge", None),
