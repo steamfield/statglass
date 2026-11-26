@@ -1,7 +1,39 @@
 import { createMockTransport } from "@core/mock-transport";
 import { screen, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { expectTypeOf } from "vitest";
 import { renderWithProviders } from "../../../../../../../tests/test-utils";
+import type { PairingDialog } from "../paired-devices/pairing-dialog";
+import { PairedDevicesPanel } from "../paired-devices/panel";
 import { UpdateFromMac } from ".";
+
+it("opens Update iPhone from the Paired devices settings", async () => {
+  const { user } = renderWithProviders(<PairedDevicesPanel />);
+  const panel = within(screen.getByRole("region", { name: "Paired devices" }));
+  expect(panel.getByText("Host list on iPhone")).toBeVisible();
+  await user.click(panel.getByRole("button", { name: "Update iPhone" }));
+  expect(
+    await screen.findByRole("img", { name: "iPhone update QR code" })
+  ).toBeVisible();
+  expect(screen.getByRole("dialog", { name: "Update iPhone" })).toBeVisible();
+});
+
+it("requires both controlled props for either dialog", () => {
+  type PairingProps = ComponentProps<typeof PairingDialog>;
+  type UpdateProps = ComponentProps<typeof UpdateFromMac>;
+  type OnOpenChange = (open: boolean) => void;
+  type OnPaired = () => void;
+  expectTypeOf<{ open: true }>().not.toExtend<UpdateProps>();
+  expectTypeOf<{ onOpenChange: OnOpenChange }>().not.toExtend<UpdateProps>();
+  expectTypeOf<{
+    onPaired: OnPaired;
+    open: true;
+  }>().not.toExtend<PairingProps>();
+  expectTypeOf<{
+    onPaired: OnPaired;
+    onOpenChange: OnOpenChange;
+  }>().not.toExtend<PairingProps>();
+});
 
 it("shows a fresh QR, included hosts, and the unavailable reason on open", async () => {
   const mock = createMockTransport({ autoTick: false });
