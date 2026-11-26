@@ -121,10 +121,15 @@ describe("Settings focus links", () => {
     await waitFor(() => expect(router.state.location.search).toBe(""));
   });
 
-  it("ignores a focus id that is not on the page", async () => {
+  it("ignores a focus id that is not on the page", {
+    timeout: 8000,
+  }, async () => {
     const { router } = renderAt("/history?focus=nope");
     await screen.findByRole("heading", { name: "Clear history" });
-    await waitFor(() => expect(router.state.location.search).toBe(""));
+    // An unknown id is dropped at the 3 s search deadline.
+    await waitFor(() => expect(router.state.location.search).toBe(""), {
+      timeout: 4000,
+    });
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 });

@@ -9,13 +9,6 @@ import { useCallback, useEffect, useRef } from "react";
 /** How long to keep looking for a row that hasn't rendered yet. */
 const FIND_DEADLINE_MS = 3000;
 
-/**
- * How long the page may go without a DOM change before the search gives up
- * early. A row that hasn't appeared once the tab stops rendering isn't
- * coming, and the link shouldn't hold its param for the full deadline.
- */
-const QUIET_MS = 500;
-
 /** How long a found row keeps `data-flash`; matches the keyframe in motion.css. */
 const FLASH_MS = 1400;
 
@@ -36,8 +29,7 @@ export function findSettingsRow(
 
 /**
  * Scrolls to the Settings row named by `focus` and flashes it, calling
- * `onDone` as soon as it is found, once the page has gone 500 ms without
- * rendering anything, or at the 3 s search deadline, whichever comes first.
+ * `onDone` as soon as it is found, or at the 3 s search deadline.
  * The flash runs for its full length even after `focus` clears.
  */
 export function useFocusRow(focus: string | null, onDone: () => void): void {
@@ -47,11 +39,9 @@ export function useFocusRow(focus: string | null, onDone: () => void): void {
 
   useEffect(() => {
     if (!focus) return;
-    let quietTimer = 0;
     const stop = () => {
       observer.disconnect();
       window.clearTimeout(deadlineTimer);
-      window.clearTimeout(quietTimer);
     };
     const finish = () => {
       stop();
@@ -65,16 +55,11 @@ export function useFocusRow(focus: string | null, onDone: () => void): void {
       finish();
       return true;
     };
-    const restartQuietTimer = () => {
-      window.clearTimeout(quietTimer);
-      quietTimer = window.setTimeout(finish, QUIET_MS);
-    };
     const observer = new MutationObserver(() => {
-      if (!tryFocus()) restartQuietTimer();
+      tryFocus();
     });
     const deadlineTimer = window.setTimeout(finish, FIND_DEADLINE_MS);
     if (tryFocus()) return;
-    restartQuietTimer();
     observer.observe(document.body, { childList: true, subtree: true });
     return stop;
   }, [focus, flashFor]);
