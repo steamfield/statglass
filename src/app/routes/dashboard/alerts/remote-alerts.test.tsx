@@ -561,7 +561,6 @@ it("offers an update when a required agent upgrade prevents the handshake", asyn
       kind: "required",
       installed: "0.0.9",
       target: "0.1.0",
-      via: "push",
     },
   });
   expect(await transport.remoteAlertRules(HOST)).toEqual({

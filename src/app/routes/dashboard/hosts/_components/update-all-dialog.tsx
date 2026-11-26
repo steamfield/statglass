@@ -7,12 +7,12 @@ import { useAgentUpdate } from "../_hooks/use-agent-update";
 type Outcome = { id: string; result: string };
 
 /**
- * Pushes this Mac's agent to each host in turn (the backend runs one at a
- * time). Each push restarts that host's service, so the list is confirmed
+ * Updates each host to this Mac's StatGlass in turn (the backend runs one at
+ * a time). Each update restarts StatGlass there, so the list is confirmed
  * first; results are one list, not a toast per host (design-system.md).
  * Offline hosts are listed but not attempted. The list is fixed when the
  * dialog opens: hosts drop out of the live list as they come back updated.
- * Closing the window mid-run stops after the push in flight.
+ * Closing the window mid-run stops after the update in flight.
  */
 export function UpdateAllDialog({
   remotes: initial,
@@ -61,11 +61,11 @@ export function UpdateAllDialog({
       onOpenChange={(open) => {
         if (!open) close();
       }}
-      title="Update agents"
+      title="Update hosts"
       description={
         finished
           ? `Requested on ${requested?.length ?? 0} of ${attempted}. Each host finishes the update on its own and reconnects.`
-          : "StatGlass installs this Mac’s agent on each host below. Each host’s service restarts, so its live readings pause briefly."
+          : "StatGlass installs this Mac’s version on each host below. StatGlass restarts on each one, so its live readings pause briefly."
       }
       itemsLabel="Hosts to update"
       items={remotes.map((remote) => {
@@ -87,7 +87,7 @@ export function UpdateAllDialog({
         };
       })}
       cancelLabel={finished ? null : "Cancel"}
-      confirmLabel={finished ? "Done" : running ? "Updating…" : "Update agents"}
+      confirmLabel={finished ? "Done" : running ? "Updating…" : "Update hosts"}
       onConfirm={finished ? close : () => void run()}
       busy={running}
       lockWhileBusy

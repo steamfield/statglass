@@ -9,7 +9,6 @@ const REMOTE_HOSTS_EVENT_PERIOD: Duration = Duration::from_millis(250);
 
 pub(super) struct TrackedUpdate {
     pub(super) token: Uuid,
-    via: AgentUpdateVia,
     progress: Option<AgentUpdateProgress>,
     failure: Option<AgentUpdateFailure>,
     reconnecting_at: Option<Instant>,
@@ -29,7 +28,6 @@ impl TrackedUpdate {
         if let Some(progress) = self.progress.take() {
             self.failure = Some(AgentUpdateFailure {
                 target: progress.target,
-                via: self.via,
                 message,
             });
         }
@@ -81,11 +79,10 @@ impl RemoteManager {
         &self,
         host: HostId,
         target: String,
-        via: AgentUpdateVia,
         changed: impl Fn(),
         work: impl FnOnce(Uuid) -> F,
     ) -> Result<(), CommandError> {
-        let token = self.begin_update(host, target, via)?;
+        let token = self.begin_update(host, target)?;
         changed();
         let _guard = self.operation.lock().await;
         if !self.set_update_phase(host, token, UpdatePhase::Probing) {
@@ -123,12 +120,7 @@ impl RemoteManager {
         }
     }
 
-    pub(super) fn begin_update(
-        &self,
-        host: HostId,
-        target: String,
-        via: AgentUpdateVia,
-    ) -> Result<Uuid, CommandError> {
+    pub(super) fn begin_update(&self, host: HostId, target: String) -> Result<Uuid, CommandError> {
         let mut updates = self.updates.lock_ok();
         if updates.get(&host).is_some_and(|u| u.progress.is_some()) {
             return Err(CommandError::RemoteBusy {
@@ -141,7 +133,6 @@ impl RemoteManager {
             host,
             TrackedUpdate {
                 token,
-                via,
                 progress: Some(AgentUpdateProgress {
                     target,
                     phase: UpdatePhase::Queued,
@@ -248,28 +239,16 @@ mod tests {
     }
     #[test]
     fn a_successful_connection_clears_a_failure_at_or_above_its_target() {
-        for via in [AgentUpdateVia::Push, AgentUpdateVia::AddHost] {
-            for version in ["1.0.0", "1.1.0"] {
-                let manager = RemoteManager::default();
-                let token = manager.begin_update(host(), "1.0.0".into(), via).unwrap();
-                manager.update_failed(host(), token, &failure("upload failed"));
-                manager.observe_update(host(), false, Some(version));
-                assert!(status(&manager).last_update_failure.is_some());
-                manager.observe_update(host(), true, Some("0.9.0"));
-                assert!(status(&manager).last_update_failure.is_some());
-                manager.observe_update(host(), true, Some(version));
-                assert!(status(&manager).last_update_failure.is_none());
-            }
-        }
-    }
-
-    #[test]
-    fn failures_retain_the_update_route_that_started_the_attempt() {
-        for via in [AgentUpdateVia::Push, AgentUpdateVia::AddHost] {
+        for version in ["1.0.0", "1.1.0"] {
             let manager = RemoteManager::default();
-            let token = manager.begin_update(host(), "1.0.0".into(), via).unwrap();
+            let token = manager.begin_update(host(), "1.0.0".into()).unwrap();
             manager.update_failed(host(), token, &failure("upload failed"));
-            assert_eq!(status(&manager).last_update_failure.unwrap().via, via);
+            manager.observe_update(host(), false, Some(version));
+            assert!(status(&manager).last_update_failure.is_some());
+            manager.observe_update(host(), true, Some("0.9.0"));
+            assert!(status(&manager).last_update_failure.is_some());
+            manager.observe_update(host(), true, Some(version));
+            assert!(status(&manager).last_update_failure.is_none());
         }
     }
 
@@ -277,19 +256,13 @@ mod tests {
     async fn queued_progress_is_visible_while_another_operation_holds_the_lock() {
         let manager = RemoteManager::default();
         let other_host = manager.operation.lock().await;
-        let update = manager.run_update(
-            host(),
-            "1.0.0".into(),
-            AgentUpdateVia::Push,
-            || {},
-            |_| async { Ok(()) },
-        );
+        let update = manager.run_update(host(), "1.0.0".into(), || {}, |_| async { Ok(()) });
         tokio::pin!(update);
         tokio::select! {
             result = &mut update => panic!("update skipped the operation lock: {result:?}"),
             () = tokio::task::yield_now() => {
                 assert_eq!(status(&manager).update.unwrap().phase, UpdatePhase::Queued);
-                assert!(matches!(manager.begin_update(host(), "1.0.0".into(), AgentUpdateVia::Push), Err(CommandError::RemoteBusy { .. })));
+                assert!(matches!(manager.begin_update(host(), "1.0.0".into()), Err(CommandError::RemoteBusy { .. })));
             }
         }
         drop(other_host);
@@ -299,9 +272,7 @@ mod tests {
     #[test]
     fn progress_clears_only_after_reconnect_with_the_target_version() {
         let manager = RemoteManager::default();
-        manager
-            .begin_update(host(), "1.0.0".into(), AgentUpdateVia::Push)
-            .unwrap();
+        manager.begin_update(host(), "1.0.0".into()).unwrap();
         manager
             .updates
             .lock_ok()
@@ -323,9 +294,7 @@ mod tests {
     #[test]
     fn automatic_updates_accept_a_successfully_installed_newer_release() {
         let manager = RemoteManager::default();
-        let token = manager
-            .begin_update(host(), "1.0.0".into(), AgentUpdateVia::Push)
-            .unwrap();
+        let token = manager.begin_update(host(), "1.0.0".into()).unwrap();
         manager.accept_newer_update(host(), token);
         manager.set_update_phase(host(), token, UpdatePhase::Reconnecting);
         manager.observe_update(host(), false, Some("1.1.0"));
@@ -341,9 +310,7 @@ mod tests {
     #[test]
     fn reconnect_deadline_moves_progress_to_failure_and_success_clears_it() {
         let manager = RemoteManager::default();
-        manager
-            .begin_update(host(), "1.0.0".into(), AgentUpdateVia::Push)
-            .unwrap();
+        manager.begin_update(host(), "1.0.0".into()).unwrap();
         let now = Instant::now();
         {
             let mut updates = manager.updates.lock_ok();
@@ -356,9 +323,7 @@ mod tests {
         let failed = status(&manager);
         assert!(failed.update.is_none());
         assert_eq!(failed.last_update_failure.unwrap().target, "1.0.0");
-        manager
-            .begin_update(host(), "1.0.0".into(), AgentUpdateVia::Push)
-            .unwrap();
+        manager.begin_update(host(), "1.0.0".into()).unwrap();
         assert!(status(&manager).last_update_failure.is_some());
         manager
             .updates
@@ -372,9 +337,7 @@ mod tests {
     #[test]
     fn update_errors_are_retained_and_stale_attempts_cannot_replace_progress() {
         let manager = RemoteManager::default();
-        let token = manager
-            .begin_update(host(), "1.0.0".into(), AgentUpdateVia::Push)
-            .unwrap();
+        let token = manager.begin_update(host(), "1.0.0".into()).unwrap();
         let error = CommandError::RemoteUnreachable {
             message: "upload interrupted".into(),
         };
@@ -387,9 +350,7 @@ mod tests {
                 .message
                 .contains("upload interrupted")
         );
-        manager
-            .begin_update(host(), "1.1.0".into(), AgentUpdateVia::Push)
-            .unwrap();
+        manager.begin_update(host(), "1.1.0".into()).unwrap();
         manager.update_failed(host(), token, &error);
         assert_eq!(status(&manager).update.unwrap().target, "1.1.0");
     }
@@ -401,7 +362,6 @@ mod tests {
             .run_update(
                 host(),
                 "1.0.0".into(),
-                AgentUpdateVia::Push,
                 || {},
                 |_| async {
                     Err(CommandError::RemoteUnreachable {
@@ -428,31 +388,25 @@ mod tests {
             let phases = Mutex::new(Vec::new());
             let record = || phases.lock_ok().push(status(manager).update.unwrap().phase);
             manager
-                .run_update(
-                    host(),
-                    "1.0.0".into(),
-                    AgentUpdateVia::Push,
-                    record,
-                    |token| async move {
-                        let mut steps = vec![];
-                        if upload {
-                            steps.push(UpdatePhase::Uploading {
-                                sent_bytes: 42,
-                                total_bytes: 42,
-                            });
-                        }
-                        steps.extend([
-                            UpdatePhase::Installing,
-                            UpdatePhase::Restarting,
-                            UpdatePhase::Reconnecting,
-                        ]);
-                        for phase in steps {
-                            manager.set_update_phase(host(), token, phase);
-                            record();
-                        }
-                        Ok(())
-                    },
-                )
+                .run_update(host(), "1.0.0".into(), record, |token| async move {
+                    let mut steps = vec![];
+                    if upload {
+                        steps.push(UpdatePhase::Uploading {
+                            sent_bytes: 42,
+                            total_bytes: 42,
+                        });
+                    }
+                    steps.extend([
+                        UpdatePhase::Installing,
+                        UpdatePhase::Restarting,
+                        UpdatePhase::Reconnecting,
+                    ]);
+                    for phase in steps {
+                        manager.set_update_phase(host(), token, phase);
+                        record();
+                    }
+                    Ok(())
+                })
                 .await
                 .unwrap();
             let mut expected = vec![UpdatePhase::Queued, UpdatePhase::Probing];

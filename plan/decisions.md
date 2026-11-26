@@ -4947,3 +4947,30 @@ Date: 2026-11-26. Amends RFC `plan/rfc-ios-app.md` §2.4 (hosts that cannot be h
 2. The user's answer: a 100.64/10 address in an SSH config is in practice always a tailnet peer; a carrier-grade NAT address is not an SSH target. D-136's interface check (100.64/10 on a physical interface counts as carrier NAT) is about the local Mac's own connectivity and is unchanged.
 3. A tailnet literal still needs a stored host key, like any other route.
 ||||||| 9d294def
+
+## D-162: Every host updates in place with one click
+
+Date: 2026-11-26. Amends D-123 (a Mac host is no longer reinstalled from Add host).
+
+The user's report: Reinstall on a Mac host's card opened Add host, where they expected
+the button to upgrade StatGlass on that host. D-123 split updates by OS: a Linux agent
+was pushed in place ("Update agent") and a Mac was reinstalled through Add host, with
+read-only fields and a "Check connection" then "Reinstall and connect" step. The user
+decided that split makes no sense from a UX perspective: any host behind this Mac
+updates with one click.
+
+### Decision
+
+1. `update_remote_agent` updates any saved host to this build's version in place. A Linux
+   host keeps the push path. A Mac goes through the existing Mac setup transaction
+   (`update_app` with its app and data backups, identity check against the saved host,
+   rollback on failure) with no setup dialog, and keeps its own menu-bar and
+   login-item settings: the update sends `Configure` with those fields unset.
+2. Mac updates report progress through the same per-host tracker as Linux pushes
+   (Probing, Installing, Restarting, Reconnecting) and clear on reconnecting at the
+   target version, so the card's "Updating to …" line and failure state work for both.
+3. `AgentUpdateVia` is removed from `AgentUpdate` and `AgentUpdateFailure`: with one
+   route there is nothing to distinguish. The card action is "Update to X" (or "Retry
+   update") for every OS, and Update all includes Macs.
+4. Add host no longer has a reinstall mode, and `add_remote_host` drops its `reinstall`
+   argument. A Mac already in the host list is still refused there.

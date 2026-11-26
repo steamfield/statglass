@@ -3,8 +3,8 @@ import { countNoun } from "@core/format";
 import {
   hostsNeedingUpdate,
   localUpdateTarget,
-  pushable,
   reachable,
+  updatable,
 } from "@core/remote-hosts";
 import { useState } from "react";
 import { CardGrid } from "~/components/card-grid";
@@ -32,8 +32,8 @@ export default function HostsRoute() {
   const [localUpdate] = useLocalUpdateStatus();
   const local = selection?.hosts.find((host) => host.is_local);
   const records = remotes.data ?? [];
-  const behind = records.filter(pushable);
-  const updatable = behind.filter(reachable).length;
+  const behind = records.filter(updatable);
+  const reachableBehind = behind.filter(reachable).length;
   const live = records.filter(isLiveHost).length + (local ? 1 : 0);
   const updates = hostsNeedingUpdate(records).length;
   const ids = [
@@ -48,9 +48,9 @@ export default function HostsRoute() {
         subtitle={subtitle}
         actions={
           <div className="flex gap-2">
-            {updatable >= 2 && (
+            {reachableBehind >= 2 && (
               <Button variant="outline" onClick={() => setUpdatingAll(true)}>
-                Update all ({updatable})
+                Update all ({reachableBehind})
               </Button>
             )}
             {records.some((host) => host.config.enabled) && <AddToIphone />}

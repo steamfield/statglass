@@ -142,13 +142,61 @@ pub async fn reset_remote_host_identity(
     linux::preparation(&alias, &probe, &saved)
 }
 
-/// Updates a saved Linux host's agent to the one this build bundles, keeping its
-/// identity and history; a failed update restores the previous agent.
+/// Updates a saved host to the StatGlass this build bundles, in place: a Linux host's
+/// agent is pushed, a Mac's StatGlass.app is replaced. Both keep the host's identity
+/// and history, and a failed update restores the previous version.
 #[tauri::command]
 #[specta::specta]
 pub async fn update_remote_agent(app: AppHandle, id: String) -> Result<(), CommandError> {
     let _maintenance = crate::updates::maintenance(&app)?;
-    linux::update_saved(app, id).await
+    let state = app.state::<AppState>();
+    let id = host_id(&id)?;
+    let app = &app;
+    run_update(
+        &state.remotes,
+        id,
+        || super::progress::emit_changed(app),
+        |token, saved| async move {
+            if saved.is_linux() {
+                linux::perform_update(app, id, token, saved).await
+            } else {
+                mac::update_in_place(app, id, token, saved).await
+            }
+        },
+    )
+    .await
+}
+
+/// The maintenance lock is held before taking the configuration snapshot, so a
+/// queued update uses the host's current routes and enabled state.
+pub(super) async fn run_update<F: std::future::Future<Output = Result<(), CommandError>>>(
+    manager: &RemoteManager,
+    id: HostId,
+    changed: impl Fn(),
+    work: impl FnOnce(Uuid, SavedHost) -> F,
+) -> Result<(), CommandError> {
+    const ENABLE_CONNECTION: &str = "Turn on this host's connection before updating it";
+    manager
+        .run_update(
+            id,
+            env!("CARGO_PKG_VERSION").into(),
+            changed,
+            |token| async move {
+                let saved = manager
+                    .saved
+                    .lock_ok()
+                    .get(&id)
+                    .cloned()
+                    .ok_or(CommandError::UnknownHost { host: id })?;
+                if !saved.config.enabled {
+                    return Err(CommandError::InvalidArgument {
+                        message: ENABLE_CONNECTION.into(),
+                    });
+                }
+                work(token, saved).await
+            },
+        )
+        .await
 }
 
 /// Restarts a saved Linux host's agent service, for a daemon that is stuck (history
@@ -296,7 +344,6 @@ pub async fn add_remote_host(
     install: bool,
     show_menu_bar: bool,
     setup_id: String,
-    reinstall: Option<HostId>,
 ) -> Result<RemoteHostRecord, CommandError> {
     let _maintenance = crate::updates::maintenance(&app)?;
     validate(&config)?;
@@ -329,9 +376,6 @@ pub async fn add_remote_host(
     .await?;
     let probe = match probe {
         HostProbe::Linux(probe) => {
-            if reinstall.is_some() {
-                return Err(CommandError::RemoteIdentity { message: "A Linux host answered where a Mac reinstall was requested. Check the SSH aliases; Re-pair the host first".into() });
-            }
             return linux::add(&app, &alias, *probe, config, install, &mut cancel).await;
         }
         HostProbe::Mac(probe) => probe,
@@ -342,7 +386,7 @@ pub async fn add_remote_host(
     let installation =
         mac::prepare_checked(
             probe,
-            reinstall,
+            None,
             &saved,
             |helper| async move {
                 setup_step(pending_cancel, wait_for_control(read_alias, &helper)).await
@@ -355,8 +399,11 @@ pub async fn add_remote_host(
         .connect_and_register(
             &app,
             config,
-            show_menu_bar,
-            reinstall,
+            mac::MacSettings {
+                show_menu_bar: Some(show_menu_bar),
+                launch_at_login: Some(true),
+            },
+            None,
             &mut before,
             &mut cancel,
         )

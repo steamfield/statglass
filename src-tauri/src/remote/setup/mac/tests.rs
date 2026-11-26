@@ -74,7 +74,7 @@ fn a_disabled_reinstall_reports_the_confirmed_version_without_needing_a_source_c
     let old = RemoteHostStatus {
         state: RemoteState::Disabled,
         agent_version: Some("0.0.9".into()),
-        agent_update: super::super::super::commands::agent_update(false, Some("0.0.9"), false),
+        agent_update: super::super::super::commands::agent_update(Some("0.0.9"), false),
         ..Default::default()
     };
     let mut statuses = BTreeMap::from([(id, old.clone()), (other, old)]);

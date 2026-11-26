@@ -145,33 +145,23 @@ async fn cancellation_drops_inflight_setup_before_it_can_register_a_host() {
 fn agent_update_states_compare_with_this_build() {
     use commands::agent_update_against as state;
     let this = "0.3.1";
-    assert_eq!(state(this, true, None, false), AgentUpdate::Unknown);
+    assert_eq!(state(this, None, false), AgentUpdate::Unknown);
     assert_eq!(
-        state(this, true, Some("0.3.0"), false),
+        state(this, Some("0.3.0"), false),
         AgentUpdate::Available {
             installed: "0.3.0".into(),
-            target: "0.3.1".into(),
-            via: AgentUpdateVia::Push
+            target: "0.3.1".into()
         }
     );
     assert_eq!(
-        state(this, false, Some("0.3.0"), false),
-        AgentUpdate::Available {
-            installed: "0.3.0".into(),
-            target: "0.3.1".into(),
-            via: AgentUpdateVia::AddHost
-        }
-    );
-    assert_eq!(
-        state(this, true, Some("0.2.0"), true),
+        state(this, Some("0.2.0"), true),
         AgentUpdate::Required {
             installed: "0.2.0".into(),
-            target: "0.3.1".into(),
-            via: AgentUpdateVia::Push
+            target: "0.3.1".into()
         }
     );
     assert_eq!(
-        state(this, true, Some("0.3.1"), false),
+        state(this, Some("0.3.1"), false),
         AgentUpdate::UpToDate {
             installed: "0.3.1".into()
         }
@@ -179,7 +169,7 @@ fn agent_update_states_compare_with_this_build() {
     // A newer host is never offered this build, even when it can't connect.
     for incompatible in [false, true] {
         assert_eq!(
-            state(this, true, Some("0.4.0"), incompatible),
+            state(this, Some("0.4.0"), incompatible),
             AgentUpdate::NewerThanThis {
                 installed: "0.4.0".into()
             }
@@ -187,7 +177,7 @@ fn agent_update_states_compare_with_this_build() {
     }
     // Fail-open like "Update agent" always was: a malformed version is offered it.
     assert!(matches!(
-        state(this, true, Some("garbage"), false),
+        state(this, Some("garbage"), false),
         AgentUpdate::Available { .. }
     ));
 }
@@ -195,7 +185,7 @@ fn agent_update_states_compare_with_this_build() {
 #[test]
 fn offline_hosts_keep_their_last_reported_version() {
     let offline = statglass_remote::ConnectionStatus::default();
-    let status = registration::connection_status(offline, true, Some("0.0.1".into()));
+    let status = registration::connection_status(offline, Some("0.0.1".into()));
     assert_eq!(status.agent_version.as_deref(), Some("0.0.1"));
     assert!(matches!(status.agent_update, AgentUpdate::Available { .. }));
 
@@ -205,15 +195,9 @@ fn offline_hosts_keep_their_last_reported_version() {
         error: Some("incompatible remote".into()),
         ..Default::default()
     };
-    let status = registration::connection_status(incompatible, false, Some("0.0.1".into()));
+    let status = registration::connection_status(incompatible, Some("0.0.1".into()));
     assert_eq!(status.agent_version.as_deref(), Some("0.0.2"));
-    assert!(matches!(
-        status.agent_update,
-        AgentUpdate::Required {
-            via: AgentUpdateVia::AddHost,
-            ..
-        }
-    ));
+    assert!(matches!(status.agent_update, AgentUpdate::Required { .. }));
 }
 
 #[test]

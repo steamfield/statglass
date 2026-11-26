@@ -91,7 +91,6 @@ describe("host card model", () => {
       kind: "required",
       installed: "0.0.1",
       target: "1.0.0",
-      via: "push",
     };
     expect(remoteHostCardModel(remote)).toMatchObject({
       status: "Update required",
@@ -150,16 +149,12 @@ describe("host card model", () => {
     [{ kind: "unknown" }, "unknown"],
     [{ kind: "up_to_date", installed: "1.0.0" }, "latest"],
     [{ kind: "newer_than_this", installed: "2.0.0" }, "newer"],
-    [
-      { kind: "available", installed: "0.9.0", target: "1.0.0", via: "push" },
-      "available",
-    ],
+    [{ kind: "available", installed: "0.9.0", target: "1.0.0" }, "available"],
     [
       {
         kind: "required",
         installed: "0.1.0",
         target: "1.0.0",
-        via: "add_host",
       },
       "required",
     ],
@@ -181,7 +176,6 @@ describe("host card model", () => {
     const remote = remoteFixture();
     remote.status.update = { target: "1.0.1", phase };
     remote.status.last_update_failure = {
-      via: "push",
       target: "1.0.0",
       message: "timeout",
     };
@@ -197,10 +191,8 @@ describe("host card model", () => {
       kind: "available",
       installed: "0.9.0",
       target: "1.0.0",
-      via: "push",
     };
     remote.status.last_update_failure = {
-      via: "push",
       target: "1.0.0",
       message: "timeout",
     };
@@ -294,7 +286,6 @@ describe("rr band", () => {
       kind: "required",
       installed: "0.1",
       target: "1.0",
-      via: "push",
     };
     expect(remoteHostCardModel(remote).rr).toBeNull();
   });

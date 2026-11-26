@@ -135,22 +135,12 @@ pub struct AgentUpdateProgress {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct AgentUpdateFailure {
-    pub via: AgentUpdateVia,
     pub target: String,
     pub message: String,
 }
 
 #[derive(Clone, Debug, Serialize, specta::Type, tauri_specta::Event)]
 pub struct RemoteHostsChanged {}
-/// How a host gets this Mac's version: a Linux agent is pushed in place ("Update
-/// agent"); a Mac is reinstalled from Add host.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentUpdateVia {
-    Push,
-    AddHost,
-}
-
 /// A host's installed StatGlass against the version this Mac bundles, which is the newest
 /// this Mac can install there (D-123).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -164,14 +154,12 @@ pub enum AgentUpdate {
     Available {
         installed: String,
         target: String,
-        via: AgentUpdateVia,
     },
     /// The host's protocol is incompatible: it cannot reconnect until it is upgraded
     /// from this Mac (D-119).
     Required {
         installed: String,
         target: String,
-        via: AgentUpdateVia,
     },
     /// The host is ahead; it is never downgraded. Updating this Mac catches up.
     NewerThanThis {
@@ -343,7 +331,6 @@ mod tests {
                 },
             }),
             last_update_failure: Some(AgentUpdateFailure {
-                via: AgentUpdateVia::Push,
                 target: "2.0".into(),
                 message: "upload failed".into(),
             }),
@@ -351,7 +338,6 @@ mod tests {
             agent_update: AgentUpdate::Available {
                 installed: "1.0".into(),
                 target: "2.0".into(),
-                via: AgentUpdateVia::Push,
             },
             identity_changed: Some("other-host".into()),
         };
@@ -360,8 +346,8 @@ mod tests {
             r#""route_failures":[{"route":"tailscale","kind":"refused"}],"next_attempt_ms":2000.0,"attempt":3,"dialing":true,"waiting_for_network":true,"sync":"unavailable","clock_offset_ms":-25.0,"#,
             r#""vitals":{"as_of_ms":null,"cpu_pct":12.5,"memory_pct":50.0,"load_1m":1.5,"cores":4,"memory_pressure":{"kind":"stall","some_pct":2.5},"disk_used_bytes":60,"disk_free_bytes":40,"disk_total_bytes":100,"disk_low":true,"net_rx_bps":20.0,"net_tx_bps":10.0},"#,
             r#""rr":{"command":"build","user":"alice","client_hostname":"client","started_ms":800,"peers":["00000000-0000-0000-0000-000000000000"]},"#,
-            r#""update":{"target":"2.0","phase":{"kind":"uploading","sent_bytes":10,"total_bytes":20}},"last_update_failure":{"via":"push","target":"2.0","message":"upload failed"},"#,
-            r#""agent_version":"1.0","agent_update":{"kind":"available","installed":"1.0","target":"2.0","via":"push"},"identity_changed":"other-host"}"#,
+            r#""update":{"target":"2.0","phase":{"kind":"uploading","sent_bytes":10,"total_bytes":20}},"last_update_failure":{"target":"2.0","message":"upload failed"},"#,
+            r#""agent_version":"1.0","agent_update":{"kind":"available","installed":"1.0","target":"2.0"},"identity_changed":"other-host"}"#,
         );
         assert_eq!(serde_json::to_string(&status).unwrap(), expected);
         let decoded: RemoteHostStatus = serde_json::from_str(expected).unwrap();

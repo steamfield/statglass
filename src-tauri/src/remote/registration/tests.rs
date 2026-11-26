@@ -11,7 +11,7 @@ fn live_facts_emit_nothing_and_a_state_change_emits_once() {
         connected: true,
         ..Default::default()
     };
-    publish_status(&manager, id, generation, status.clone(), true, None);
+    publish_status(&manager, id, generation, status.clone(), None);
     let mut events = 0;
     for seen in 1..=20 {
         status.last_seen_ms = Some(seen);
@@ -27,7 +27,6 @@ fn live_facts_emit_nothing_and_a_state_change_emits_once() {
             id,
             generation,
             status.clone(),
-            true,
             None,
         ));
     }
@@ -41,10 +40,9 @@ fn live_facts_emit_nothing_and_a_state_change_emits_once() {
         id,
         generation,
         status.clone(),
-        true,
         None,
     ));
-    events += usize::from(publish_status(&manager, id, generation, status, true, None));
+    events += usize::from(publish_status(&manager, id, generation, status, None));
     assert_eq!(events, 1);
 }
 
@@ -54,9 +52,7 @@ fn a_stale_generation_cannot_complete_an_update() {
     let id = HostId(Uuid::nil());
     let generation = Uuid::new_v4();
     manager.generations.lock_ok().insert(id, generation);
-    let token = manager
-        .begin_update(id, "1.0.0".into(), AgentUpdateVia::Push)
-        .unwrap();
+    let token = manager.begin_update(id, "1.0.0".into()).unwrap();
     manager.update_failed(id, token, &failure("upload failed"));
     let stale = Uuid::new_v4();
     let status = ConnectionStatus {
@@ -68,14 +64,7 @@ fn a_stale_generation_cannot_complete_an_update() {
         if removed {
             manager.generations.lock_ok().remove(&id);
         }
-        assert!(!publish_status(
-            &manager,
-            id,
-            stale,
-            status.clone(),
-            true,
-            None
-        ));
+        assert!(!publish_status(&manager, id, stale, status.clone(), None));
         let mut observed = RemoteHostStatus::default();
         manager.apply_update(id, &mut observed);
         assert!(
@@ -100,13 +89,12 @@ fn accumulated_clock_steps_emit_once() {
         id,
         generation,
         status.clone(),
-        false,
         None
     ));
     for offset in [400, 999, 1000, 1400, 1999, 2000, 1999, 1000] {
         status.clock_offset_ms = offset;
         assert_eq!(
-            publish_status(&manager, id, generation, status.clone(), false, None),
+            publish_status(&manager, id, generation, status.clone(), None),
             [1000, 2000].contains(&offset),
             "offset {offset}"
         );
@@ -152,7 +140,7 @@ fn every_new_failure_kind_crosses_the_boundary_with_its_routes() {
             ],
             ..Default::default()
         };
-        let mapped = connection_status(status, false, None);
+        let mapped = connection_status(status, None);
         assert_eq!(mapped.failure_kind, Some(expected));
         assert_eq!(
             mapped.route_failures,
@@ -187,11 +175,9 @@ fn a_route_failure_change_re_emits_status() {
         }],
         ..Default::default()
     };
-    publish_status(&manager, id, generation, status.clone(), false, None);
+    publish_status(&manager, id, generation, status.clone(), None);
     status.route_failures[0].kind = K::NoRoute;
-    assert!(publish_status(
-        &manager, id, generation, status, false, None
-    ));
+    assert!(publish_status(&manager, id, generation, status, None));
 }
 
 #[test]
@@ -206,7 +192,7 @@ fn retry_schedule_crosses_the_boundary() {
         waiting_for_network: false,
         ..Default::default()
     };
-    let mapped = connection_status(status, false, None);
+    let mapped = connection_status(status, None);
     assert_eq!(mapped.next_attempt_ms, Some(1_795_000_012_000.0));
     assert_eq!(mapped.attempt, 3);
     assert!(!mapped.dialing && !mapped.waiting_for_network);
@@ -217,7 +203,6 @@ fn retry_schedule_crosses_the_boundary() {
             waiting_for_network: true,
             ..Default::default()
         },
-        false,
         None,
     );
     assert!(waiting.dialing && waiting.waiting_for_network);
@@ -237,14 +222,13 @@ fn dialing_and_a_new_schedule_re_emit_but_the_attempt_count_alone_does_not() {
         attempt: 1,
         ..Default::default()
     };
-    publish_status(&manager, id, generation, status.clone(), false, None);
+    publish_status(&manager, id, generation, status.clone(), None);
     status.attempt = 2;
     assert!(!publish_status(
         &manager,
         id,
         generation,
         status.clone(),
-        false,
         None
     ));
     status.dialing = true;
@@ -254,7 +238,6 @@ fn dialing_and_a_new_schedule_re_emit_but_the_attempt_count_alone_does_not() {
         id,
         generation,
         status.clone(),
-        false,
         None
     ));
     status.dialing = false;
@@ -264,12 +247,9 @@ fn dialing_and_a_new_schedule_re_emit_but_the_attempt_count_alone_does_not() {
         id,
         generation,
         status.clone(),
-        false,
         None
     ));
     status.waiting_for_network = true;
     status.next_attempt_ms = None;
-    assert!(publish_status(
-        &manager, id, generation, status, false, None
-    ));
+    assert!(publish_status(&manager, id, generation, status, None));
 }

@@ -51,11 +51,11 @@ for (const theme of ["dark", "light"]) {
       path: `test-results/screens/hosts-versions-${theme}-${info.project.name}.png`,
     });
 
-    await page.getByRole("button", { name: "Update all (2)" }).click();
+    await page.getByRole("button", { name: "Update all (3)" }).click();
     const dialog = page.getByRole("alertdialog");
     await expect(dialog.getByText("Offline: not updated")).toBeVisible();
-    await dialog.getByRole("button", { name: "Update agents" }).click();
-    await expect(dialog.getByText(/Requested on 2 of 2/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Update hosts" }).click();
+    await expect(dialog.getByText(/Requested on 3 of 3/)).toBeVisible();
     await dialog.getByRole("button", { name: "Done" }).click();
 
     const nav = page.getByRole("navigation", { name: "Dashboard sections" });

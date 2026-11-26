@@ -174,7 +174,7 @@ it("rejects saved Mac identities as native setup does", async () => {
   }
 });
 
-it("reinstalls only the requested saved Mac and keeps its configuration and mirrored history", async () => {
+it("updates a saved Mac in place and keeps its configuration and mirrored history", async () => {
   const transport = createMockTransport({
     scenarios: ["hosts-outdated"],
     historyRows: 10,
@@ -184,27 +184,19 @@ it("reinstalls only the requested saved Mac and keeps its configuration and mirr
       (host) => host.os === "mac_os"
     );
     if (!mac) throw new Error("Missing Mac fixture");
-    const config = { ...mac.config, mirror_budget_mb: 731, enabled: false };
+    const config = { ...mac.config, mirror_budget_mb: 731 };
     await transport.updateRemoteHost(config);
     const before = await transport.historySize(config.id);
-    const result = await transport.addRemoteHost(
-      {
-        ...config,
-        name: "Unwanted rename",
-        mirror_budget_mb: 10,
-        enabled: true,
-      },
-      true,
-      true,
-      "same-id",
-      config.id
-    );
-    expect(result).toMatchObject({
+    expect(await transport.updateRemoteAgent(config.id)).toEqual({
       status: "ok",
-      data: {
-        config,
-        status: { state: "disabled", agent_update: { kind: "up_to_date" } },
-      },
+      data: null,
+    });
+    const after = (await transport.listRemoteHosts()).find(
+      (host) => host.config.id === config.id
+    );
+    expect(after).toMatchObject({
+      config,
+      status: { agent_update: { kind: "up_to_date" } },
     });
     expect(await transport.historySize(config.id)).toEqual(before);
     expect(await transport.listRemoteHosts()).toHaveLength(4);
@@ -213,7 +205,7 @@ it("reinstalls only the requested saved Mac and keeps its configuration and mirr
   }
 });
 
-it("retains accumulated mirrored samples through a Mac reinstall", async () => {
+it("retains accumulated mirrored samples through a Mac update", async () => {
   vi.useFakeTimers();
   const transport = createMockTransport({
     scenarios: ["hosts-outdated"],
@@ -245,13 +237,7 @@ it("retains accumulated mirrored samples through a Mac reinstall", async () => {
         status: "ok",
         data: { series: [{ points: expect.any(Array) }] },
       });
-      const result = await transport.addRemoteHost(
-        mac.config,
-        true,
-        true,
-        "history-reinstall",
-        mac.config.id
-      );
+      const result = await transport.updateRemoteAgent(mac.config.id);
       expect(result.status).toBe("ok");
       expect(await transport.queryHistory(request)).toEqual(before);
     } finally {
@@ -260,52 +246,5 @@ it("retains accumulated mirrored samples through a Mac reinstall", async () => {
   } finally {
     transport.dispose();
     vi.useRealTimers();
-  }
-});
-
-it("rejects a different saved Mac and an unsaved mismatched identity without adding either", async () => {
-  const transport = createMockTransport({
-    scenarios: ["hosts-outdated"],
-    historyRows: 1,
-  });
-  try {
-    const mac = (await transport.listRemoteHosts()).find(
-      (host) => host.os === "mac_os"
-    );
-    if (!mac) throw new Error("Missing Mac fixture");
-    const before = await transport.listRemoteHosts();
-    expect(
-      await transport.addRemoteHost(
-        mac.config,
-        true,
-        true,
-        "other-saved",
-        "different-id"
-      )
-    ).toEqual({
-      status: "error",
-      error: {
-        kind: "internal",
-        message: "This Mac is already in your host list",
-      },
-    });
-    expect(
-      await transport.addRemoteHost(
-        { ...mac.config, lan: "unknown-mac.local" },
-        true,
-        true,
-        "mismatched",
-        mac.config.id
-      )
-    ).toMatchObject({
-      status: "error",
-      error: {
-        kind: "remote_identity",
-        message: expect.stringContaining("different identity"),
-      },
-    });
-    expect(await transport.listRemoteHosts()).toEqual(before);
-  } finally {
-    transport.dispose();
   }
 });

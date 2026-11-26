@@ -1,53 +1,23 @@
 import type { RemoteHostConfig } from "@core/generated/types";
-import { fail, ok } from "./protocol";
+import { fail } from "./protocol";
 import type { MockRemotes } from "./remote";
-import { APP_VERSION, isLinuxAlias } from "./remote-linux";
+import { isLinuxAlias } from "./remote-linux";
 
-export function savedMacSetup(
-  remotes: MockRemotes,
-  config: RemoteHostConfig,
-  reinstall: string | null
-) {
+/** A Mac already in the host list is never added twice, as native setup refuses. */
+export function savedMacSetup(remotes: MockRemotes, config: RemoteHostConfig) {
   const alias = config.lan ?? config.tailscale ?? "";
-  if (isLinuxAlias(alias))
-    return reinstall
-      ? fail({
-          kind: "remote_identity",
-          message:
-            "A Linux host answered where a Mac reinstall was requested. Check the SSH aliases; Re-pair the host first",
-        })
-      : null;
-  const reported =
-    [...remotes.remotes.values()].find(
-      (remote) =>
-        remote.record.config.lan === alias ||
-        remote.record.config.tailscale === alias
-    )?.record.config.id ?? `remote-${alias}`;
-  const saved = reported ? remotes.remotes.get(reported) : undefined;
-  if (saved && reinstall !== reported)
-    return fail({
-      kind: "internal",
-      message: "This Mac is already in your host list",
-    });
-  if (!reinstall) return null;
-  if (reported !== reinstall)
-    return fail({
-      kind: "remote_identity",
-      message: `This Mac reports a different identity (${reported}) than the requested reinstall (${reinstall}). Re-pair the host first`,
-    });
-  if (!saved) return fail({ kind: "unknown_host", host: reinstall });
-  if (saved.record.os !== "mac_os")
-    return fail({
-      kind: "remote_identity",
-      message:
-        "A Mac answered where a Linux host was saved. Re-pair the host first",
-    });
-  remotes.pushRemoteStatus(reinstall, {
-    state: saved.record.config.enabled ? "connected" : "disabled",
-    agent_version: APP_VERSION,
-    agent_update: { kind: "up_to_date", installed: APP_VERSION },
-  });
-  return ok(saved.record);
+  if (isLinuxAlias(alias)) return null;
+  const saved = [...remotes.remotes.values()].some(
+    (remote) =>
+      remote.record.config.lan === alias ||
+      remote.record.config.tailscale === alias
+  );
+  return saved
+    ? fail({
+        kind: "internal",
+        message: "This Mac is already in your host list",
+      })
+    : null;
 }
 
 export async function setupCancelled(

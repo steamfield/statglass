@@ -50,7 +50,6 @@ it("polls live facts but emits rendered changes and accumulated clock steps", as
         last_update_failure: {
           message: "failed",
           target: "1.0.0",
-          via: "push",
         },
       },
       { state: "offline" },

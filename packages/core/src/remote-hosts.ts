@@ -98,7 +98,7 @@ export interface HostVersionState {
   icon: "check" | "up" | "error" | null;
   target: string | null;
   notes: string | null;
-  action: { kind: "push" | "add_host" | "settings"; label: string } | null;
+  action: { kind: "update" | "settings"; label: string } | null;
   progress: UpdatePhase | null;
 }
 
@@ -123,12 +123,11 @@ export function updatePhaseText(phase: UpdatePhase): string {
   }
 }
 
-/** Linux hosts behind this Mac that "Update agent" can push to over SSH. */
-export function pushable(remote: RemoteHostRecord): boolean {
+/** Hosts behind this Mac that an in-place update can bring to this Mac's version. */
+export function updatable(remote: RemoteHostRecord): boolean {
   const update = remote.status.agent_update;
   return (
     (update.kind === "available" || update.kind === "required") &&
-    update.via === "push" &&
     remote.config.enabled &&
     remote.status.identity_changed === null
   );
@@ -148,16 +147,12 @@ export function agentVersionState(remote: RemoteHostRecord): HostVersionState {
   const update = status.agent_update;
   const allowed = config.enabled && status.identity_changed === null;
   const canReach = allowed && reachable(remote);
-  const via =
-    status.last_update_failure?.via ?? ("via" in update ? update.via : null);
   const action = (
     label: string,
     canRun = canReach
   ): HostVersionState["action"] =>
-    canRun &&
-    via &&
-    (status.last_update_failure || via !== "push" || pushable(remote))
-      ? { kind: via, label }
+    canRun && (status.last_update_failure || updatable(remote))
+      ? { kind: "update", label }
       : null;
   const base: HostVersionState = {
     kind: "unknown",
@@ -208,11 +203,7 @@ export function agentVersionState(remote: RemoteHostRecord): HostVersionState {
         text: `Needs ${update.target} to connect`,
         target: update.target,
         notes: releaseUrl(update.target),
-        action: action(
-          update.via === "push"
-            ? `Update to ${update.target}`
-            : `Reinstall ${update.target}…`
-        ),
+        action: action(`Update to ${update.target}`),
       };
     case "available":
       return {
@@ -222,11 +213,7 @@ export function agentVersionState(remote: RemoteHostRecord): HostVersionState {
         target: update.target,
         notes: releaseUrl(update.target),
         text: `${installed} · ${update.target} available${status.state === "connected" ? "" : ", updates once reachable"}`,
-        action: action(
-          update.via === "push"
-            ? `Update to ${update.target}`
-            : `Reinstall ${update.target}…`
-        ),
+        action: action(`Update to ${update.target}`),
       };
   }
 }

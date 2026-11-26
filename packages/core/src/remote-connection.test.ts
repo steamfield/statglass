@@ -125,7 +125,6 @@ describe("remoteConnectionView", () => {
           kind: "required",
           installed: "0.1.0",
           target: "0.12.0",
-          via: "push",
         },
       }),
       now

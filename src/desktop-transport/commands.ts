@@ -112,7 +112,7 @@ export const commands = {
 	inspectRemoteSshHost: (alias: string) => typedError<RemoteSshHostTrust, CommandError>(__TAURI_INVOKE("inspect_remote_ssh_host", { alias })),
 	acceptRemoteSshHost: (token: string) => typedError<null, CommandError>(__TAURI_INVOKE("accept_remote_ssh_host", { token })),
 	prepareRemoteHost: (lan: string | null, tailscale: string | null) => typedError<RemoteHostPreparation, CommandError>(__TAURI_INVOKE("prepare_remote_host", { lan, tailscale })),
-	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string, reinstall: string | null) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId, reinstall })),
+	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId })),
 	cancelRemoteSetup: (setupId: string) => typedError<null, CommandError>(__TAURI_INVOKE("cancel_remote_setup", { setupId })),
 	updateRemoteHost: (config: RemoteHostConfig) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("update_remote_host", { config })),
 	/**
@@ -129,8 +129,9 @@ export const commands = {
 	 */
 	resetRemoteHostIdentity: (lan: string | null, tailscale: string | null) => typedError<RemoteHostPreparation, CommandError>(__TAURI_INVOKE("reset_remote_host_identity", { lan, tailscale })),
 	/**
-	 *  Updates a saved Linux host's agent to the one this build bundles, keeping its
-	 *  identity and history; a failed update restores the previous agent.
+	 *  Updates a saved host to the StatGlass this build bundles, in place: a Linux host's
+	 *  agent is pushed, a Mac's StatGlass.app is replaced. Both keep the host's identity
+	 *  and history, and a failed update restores the previous version.
 	 */
 	updateRemoteAgent: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("update_remote_agent", { id })),
 	/**

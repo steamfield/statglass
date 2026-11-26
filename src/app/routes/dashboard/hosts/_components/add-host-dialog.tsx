@@ -1,7 +1,6 @@
 import { commandErrorText } from "@core/command-error";
 import type {
   CommandError,
-  RemoteHostConfig,
   RemoteHostPreparation,
   RemoteSshHostTrust,
 } from "@core/generated/types";
@@ -28,16 +27,14 @@ export { HOST_INPUT } from "./host-input";
 export function AddHostDialog({
   open,
   onOpenChange,
-  reinstall,
 }: {
   open: boolean;
-  reinstall?: RemoteHostConfig;
   onOpenChange: (open: boolean) => void;
 }) {
   const transport = useTransport();
-  const [name, setName] = useState(reinstall?.name ?? "");
-  const [lan, setLan] = useState(reinstall?.lan ?? "");
-  const [tailscale, setTailscale] = useState(reinstall?.tailscale ?? "");
+  const [name, setName] = useState("");
+  const [lan, setLan] = useState("");
+  const [tailscale, setTailscale] = useState("");
   const [showMenuBar, setShowMenuBar] = useState(true);
   const [prepared, setPrepared] = useState<RemoteHostPreparation | null>(null);
   const [trust, setTrust] = useState<RemoteSshHostTrust | null>(null);
@@ -142,8 +139,6 @@ export function AddHostDialog({
     onOpenChange,
     lan,
     tailscale,
-    mirrorBudgetMb: reinstall?.mirror_budget_mb ?? 100,
-    reinstallHostId: reinstall?.id ?? null,
   });
   return (
     <Dialog
@@ -163,7 +158,6 @@ export function AddHostDialog({
         </DialogDescription>
         <AddHostFields
           busy={busy}
-          readOnly={reinstall !== undefined}
           name={name}
           setName={setName}
           lan={lan}
@@ -196,12 +190,6 @@ export function AddHostDialog({
           accept={accept}
         />
         <AddHostFooter
-          reinstall={
-            reinstall !== undefined &&
-            prepared !== null &&
-            prepared.kind === "mac" &&
-            !prepared.newer_installed
-          }
           phase={phase}
           busy={busy}
           cancel={cancel}

@@ -7,16 +7,14 @@ import { DialogFooter } from "~/components/ui/dialog";
 import type { SetupPhase } from "../_hooks/use-add-host-connection";
 
 /** The action a prepared host offers, and what it does. */
-function connectAction(prepared: RemoteHostPreparation, reinstall: boolean) {
+function connectAction(prepared: RemoteHostPreparation) {
   if (prepared.linux?.duplicate_of) return "Reset identity and connect";
-  if (reinstall) return "Reinstall and connect";
   if (prepared.installed && prepared.compatible) return "Connect";
   return prepared.installed ? "Update and connect" : "Install and connect";
 }
 
 export function AddHostFooter({
   phase,
-  reinstall = false,
   busy,
   cancel,
   trust,
@@ -28,7 +26,6 @@ export function AddHostFooter({
   prepare,
 }: {
   phase: SetupPhase;
-  reinstall?: boolean;
   busy: boolean;
   cancel: () => Promise<void>;
   trust: RemoteSshHostTrust | null;
@@ -53,7 +50,7 @@ export function AddHostFooter({
           disabled={busy}
           onClick={prepared.linux?.duplicate_of ? resetAndAdd : add}
         >
-          {connectAction(prepared, reinstall)}
+          {connectAction(prepared)}
         </Button>
       ) : (
         <Button

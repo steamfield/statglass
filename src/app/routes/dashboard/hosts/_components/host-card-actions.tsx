@@ -11,7 +11,6 @@ import { settingsHref } from "~/lib/settings-links";
 import { useTransport } from "~/lib/transport-context";
 import { useAgentUpdate } from "../_hooks/use-agent-update";
 import type { HostCardModel } from "../_lib/host-card-model";
-import { AddHostDialog } from "./add-host-dialog";
 import { RepairDialog } from "./host-agent-actions";
 
 /** Button text for a card's connection action; Retry reads "Trying…" while an attempt runs. */
@@ -38,7 +37,6 @@ export function HostCardActions({
   const navigate = useNavigate();
   const update = useAgentUpdate();
   const [repairing, setRepairing] = useState(false);
-  const [reinstalling, setReinstalling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trying =
@@ -77,10 +75,6 @@ export function HostCardActions({
       void navigate(settingsHref("about"));
       return;
     }
-    if (action.kind === "add_host") {
-      setReinstalling(true);
-      return;
-    }
     setError(await update.mutateAsync(model.id));
   };
   return (
@@ -116,13 +110,6 @@ export function HostCardActions({
       {error && <InlineMessage tone="error">{error}</InlineMessage>}
       {remote && repairing && (
         <RepairDialog remote={remote} close={() => setRepairing(false)} />
-      )}
-      {remote && reinstalling && (
-        <AddHostDialog
-          open
-          onOpenChange={setReinstalling}
-          reinstall={remote.config}
-        />
       )}
     </>
   );

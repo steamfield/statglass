@@ -4,6 +4,19 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## One-click host updates for Macs and Linux (D-162) (2026-11-26)
+
+A host card's version action now updates the host in place for every OS. Macs used to
+open Add host in a reinstall mode; `update_remote_agent` now runs the Mac app update
+transaction itself (backup, identity check, rollback) and keeps the remote Mac's menu-bar
+and login-item settings. `AgentUpdateVia` is gone, Update all includes Macs, and Add host
+lost its reinstall mode and the `reinstall` argument.
+
+- Verified: `make check`; `cargo test -p statglass remote`; the hosts route, update-all and
+  remote-hosts tests rewritten for the single action; the browser dev server on the mock
+  transport (`hosts-outdated`).
+- Open: the Mac path was not run against a real remote Mac from a packaged build.
+
 ## Settings redesign: tabs, search, reason links and the history meter (2026-11-26)
 
 `plans/settings-tabs.md` (tags `settings-tabs-phase-1`, `settings-tabs-phase-2`) replaced the two-column Settings page with six path tabs (`/dashboard/settings/<tab>`: General, Menu bar, Monitoring, History, Access, About) under a sticky tab band, following the approved prototype. `?focus=<row id>` scrolls to a row and flashes it, and every link into Settings (popover and sidebar explainers, host cards, the apps card) now names its tab and row. `_lib/catalog.ts` lists every section and row with search keywords; search (⌘F, Return opens the first result, Escape clears) renders the matching tabs' real panels and hides the rest with generated CSS, so a result is the working control. Disabled rows say what unlocks them as a link to that setting, and History leads with a storage meter whose projection is the Keep history row's. No Rust or settings types changed.
@@ -167,7 +180,8 @@ state, update progress and failures, and rr jobs with peer names. Cards keep rem
 in summary mode; recent interest stops when Hosts unmounts or the window hides. The
 settings dialog groups connection, mirrored history, updates and removal. Saved Macs
 reinstall through Add host with their identity and mirror budget preserved; their name
-and aliases are read-only there and remain editable in host settings.
+and aliases are read-only there and remain editable in host settings (replaced by
+one-click updates, D-162).
 
 Frontend review fixes consolidate the remote-status listener per window, suppress hidden
 event refetches, keep clock jitter out of history keys, isolate live figures from the card
