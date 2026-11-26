@@ -385,7 +385,9 @@ class HookTests(unittest.TestCase):
                         script.write_bytes(original)
                         script.chmod(0o755)
                     self.assertEqual(result.returncode, 2)
-                    self.assertIn(name, result.stderr)
+                    # The repair hint names the project's absolute path so it works from any cwd.
+                    self.assertIn(f"chmod +x '{self.root}/.claude/hooks/{name}'", result.stderr)
+                    self.assertIn(f"git -C '{self.root}' checkout --", result.stderr)
             with self.subTest(guard=name, breakage="no project dir, cwd outside any repo"):
                 result = self.run_wired(wired[name][1], payloads[name], self.scratch_dir())
                 self.assertEqual(result.returncode, 2)
