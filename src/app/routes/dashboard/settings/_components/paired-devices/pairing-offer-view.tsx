@@ -17,6 +17,20 @@ function waiting(status: PairingStatus | undefined) {
   return !status || status.kind === "waiting" || status.kind === "pending";
 }
 
+function pendingDevice(status: PairingStatus | undefined) {
+  return status?.kind === "pending" ? status : undefined;
+}
+
+function pendingAnnouncement(
+  device: PendingDevice | undefined,
+  approving: boolean
+) {
+  if (!device) return null;
+  return approving
+    ? `Approving ${device.device_name}…`
+    : `${device.device_name} is waiting for approval.`;
+}
+
 export function PairingQr({
   source,
   label = "Pairing QR code",
@@ -178,8 +192,9 @@ export function PairingOfferView({
   });
   const current = status.data;
   const active = waiting(current);
-  const approving =
-    decide.isPending && decide.variables !== "deny" ? decide.variables : null;
+  const approval = decide.variables !== "deny" ? decide.variables : undefined;
+  const approving = decide.isPending ? approval : undefined;
+  const failedApproval = decide.isError ? approval : undefined;
 
   useEffect(() => {
     if (!active) return;
@@ -202,11 +217,13 @@ export function PairingOfferView({
   const seconds = Math.max(0, Math.ceil((offer.expires_ms - now) / 1000));
   const pending =
     approving ??
-    (!status.isError && current?.kind === "pending" ? current : null);
+    (status.isError ? undefined : pendingDevice(current)) ??
+    failedApproval;
+  const canDecide = !status.isError && seconds > 0;
   return (
     <>
       <p role="status" className="sr-only">
-        {pending && `${pending.device_name} is waiting for approval.`}
+        {pendingAnnouncement(pending, Boolean(approving))}
       </p>
       {pending ? (
         <div className="wrap-anywhere min-w-0">
@@ -244,7 +261,7 @@ export function PairingOfferView({
           fallback="Couldn’t check pairing."
         />
       )}
-      {pending && (seconds > 0 || approving) && (
+      {pending && (canDecide || approving) && (
         <DialogFooter>
           <Button
             variant="outline"

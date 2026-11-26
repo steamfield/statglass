@@ -1,7 +1,7 @@
 use crate::error::{CommandError, PairingFailure};
 use serde::Serialize;
 use statglass_proto::pairing::PairReply;
-use statglass_remote::{DeviceKeysError, PairingError, PairingHost};
+use statglass_remote::{DeviceKeysError, PairingError, pairing::PairOutcome};
 use statglass_schema::JsSafeInt;
 
 use super::bundle::MONITORING_OFF;
@@ -63,7 +63,7 @@ pub struct PairedDeviceInfo {
 }
 
 impl PairingStatus {
-    pub(super) fn from_reply(reply: PairReply, host: &PairingHost, nonce: &str) -> Self {
+    pub(super) fn from_reply((reply, summary): PairOutcome) -> Self {
         match reply {
             PairReply::Waiting => Self::Waiting,
             PairReply::Pending {
@@ -76,8 +76,7 @@ impl PairingStatus {
                 code,
             },
             PairReply::Approved { device, .. } => {
-                let (hosts, unavailable, dropped) = host
-                    .handover_summary(nonce)
+                let (hosts, unavailable, dropped) = summary
                     .map(|summary| {
                         (
                             summary

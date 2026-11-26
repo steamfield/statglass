@@ -170,12 +170,10 @@ impl LocalPairing {
     fn offer(&self, bundle: BundleHost, now_ms: i64) -> Result<PairingOffer, CommandError> {
         self.check_monitoring()?;
         let host = self.host()?;
-        {
-            let mut monitoring_off = self.monitoring_off.lock_ok();
-            // Keep a receipt available while a decision or poll reads its reply and summary.
-            host.expire(now_ms);
-            monitoring_off.retain(|_, deadline| *deadline > now_ms);
-        }
+        host.expire(now_ms);
+        self.monitoring_off
+            .lock_ok()
+            .retain(|_, deadline| *deadline > now_ms);
         let payload = bundle::offer(host, bundle, now_ms).map_err(pairing_error)?;
         let text = encode_payload(&payload);
         let qr = match QrCode::new(&text) {
@@ -210,29 +208,30 @@ impl LocalPairing {
         let host = self.host()?;
         let now_ms = wall_ms();
         if !self.enabled.load(Ordering::Relaxed) {
-            let (reply, deadline) = host.withdraw_if_open(nonce, now_ms);
+            let (outcome, deadline) = host.withdraw_if_open(nonce, now_ms);
             if let Some(deadline) = deadline {
                 monitoring_off.insert(nonce.into(), deadline);
                 return Ok(monitoring_off_status());
             }
-            return Ok(PairingStatus::from_reply(reply, host, nonce));
+            return Ok(PairingStatus::from_reply(outcome));
         }
-        let reply = if approve {
-            host.approve(nonce, now_ms).map_err(pairing_error)?
+        let outcome = if approve {
+            host.approve_with_summary(nonce, now_ms)
+                .map_err(pairing_error)?
         } else {
-            host.pending(nonce, now_ms)
+            host.pending_with_summary(nonce, now_ms)
         };
-        Ok(PairingStatus::from_reply(reply, host, nonce))
+        Ok(PairingStatus::from_reply(outcome))
     }
 
     fn deny(&self, nonce: &str) -> Result<PairingStatus, CommandError> {
         let monitoring_off = self.monitoring_off.lock_ok();
         let host = self.host()?;
-        let reply = host.deny(nonce).map_err(pairing_error)?;
+        let outcome = host.deny_with_summary(nonce).map_err(pairing_error)?;
         Ok(if monitoring_off.contains_key(nonce) {
             monitoring_off_status()
         } else {
-            PairingStatus::from_reply(reply, host, nonce)
+            PairingStatus::from_reply(outcome)
         })
     }
 }
@@ -455,8 +454,9 @@ pub(crate) mod tests {
                 "dropped": dropped,
             });
             let assert_summary = |status: PairingStatus| {
-                assert!(
-                    serde_json::to_value(status).unwrap() == expected,
+                assert_eq!(
+                    serde_json::to_value(status).unwrap(),
+                    expected,
                     "incorrect approval summary (dropped = {dropped})"
                 );
             };

@@ -48,6 +48,9 @@ const offeredHosts = [
   [BUILD_SERVER, "build-server"],
   [LAB_MINI, "Lab Mini"],
 ] as const;
+const unavailableHosts: HandoverOffer["unavailable"] = [
+  { id: OFFICE_SERVER, name: "Office server", reason: "proxy_jump" },
+];
 
 export function createMockHandover(
   commands: MockCommands,
@@ -127,9 +130,7 @@ export function createMockHandover(
       provision(device);
       return {
         hosts: offeredHosts.map(([, name]) => name),
-        unavailable: [
-          { id: OFFICE_SERVER, name: "Office server", reason: "proxy_jump" },
-        ],
+        unavailable: unavailableHosts.map((host) => ({ ...host })),
         dropped: false,
       };
     },
@@ -148,9 +149,7 @@ export function createMockHandover(
         text,
         qr_svg: qrSvg,
         hosts: offeredHosts.map(([, name]) => name),
-        unavailable: [
-          { id: OFFICE_SERVER, name: "Office server", reason: "proxy_jump" },
-        ],
+        unavailable: unavailableHosts.map((host) => ({ ...host })),
         issued_ms: now(),
       });
     },
