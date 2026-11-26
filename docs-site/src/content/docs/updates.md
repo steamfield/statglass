@@ -5,7 +5,7 @@ group: Getting started
 order: 2
 ---
 
-Open Settings → General → Check now. When a new release is available, choose Install and restart. StatGlass verifies the download's updater signature before installing it, restarts, and keeps your history and settings.
+Open Settings → About → Check now. When a new release is available, choose Install and restart. StatGlass verifies the download's updater signature before installing it, restarts, and keeps your history and settings.
 
 ## Automatic updates
 
