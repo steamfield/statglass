@@ -76,11 +76,16 @@ for (const p of [
 test("quitting an app asks first, then keeps its group while a helper runs", async ({
   page,
 }) => {
-  await page.goto("/?window=dashboard&route=/dashboard/processes&ticks=0");
+  // A quit process leaves the table on the engine's next sample, so the test
+  // owns the clock: paused while it quits, then one 1 s tick (the full table
+  // asks for every sample) brings the batch without the main.
+  await page.clock.install();
+  await page.goto("/?window=dashboard&route=/dashboard/processes");
   const table = page.getByRole("table", { name: "Processes", exact: true });
   // Xcode's group holds its main (2214) and SourceKitService (2240).
   const xcode = table.locator('tr[data-name="Xcode"]').first();
   await expect(xcode).toContainText("2 processes");
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   await xcode.hover();
   await xcode
     .getByRole("button", { name: "Quit Xcode (2214)", exact: true })
@@ -88,6 +93,7 @@ test("quitting an app asks first, then keeps its group while a helper runs", asy
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toContainText("Quit Xcode?");
   await dialog.getByRole("button", { name: "Quit", exact: true }).click();
+  await page.clock.runFor(1000);
   await expect(page.getByText("Asked Xcode (2214) to quit")).toBeVisible();
   // The main is gone; the group stays and now reads as its one helper.
   await expect(
