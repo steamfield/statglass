@@ -11,8 +11,6 @@ import { Text } from "@/ui/text";
 import { WidgetAccent } from "@/widgets/accent";
 import { BarSwatch } from "@/widgets/stack-bar";
 
-export const CARD_SURFACE =
-  "overflow-hidden rounded-xl border border-border bg-card";
 export const CARD_TITLE_ROLE = "cardTitle";
 
 const STATUS_PATHS = {

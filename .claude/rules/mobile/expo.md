@@ -66,6 +66,9 @@ apps/mobile/
 - An inline `style` is for a runtime value (safe-area inset, measured size, Reanimated style) or a property with no utility, with a comment saying which.
 - Register third-party components for `className` once, in one module, since NativeWind silently drops it on unknown components.
 - Spacing, radii and card padding are mobile's own; do not copy desktop pixel values.
+- One spacing unit is 3.5 pt, because react-native-css sets rem to 14: `px-4` is 14 pt and `min-h-11` is 38.5 pt, not 44. `test/spacing-scale.test.mjs` pins both values.
+- Size a touch target with the `touch` token (`min-h-touch`, `min-w-touch`, `size-touch`, 44 pt), never `[44px]` or a spacing-scale class.
+- A card surface comes from `Card` or `PressableCard` and an action from `Button` (`src/ui/`); `test/ui/style-conventions.test.ts` fails on a hand-built copy of either.
 
 ## Platform
 
