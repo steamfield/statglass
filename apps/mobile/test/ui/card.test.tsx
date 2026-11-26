@@ -78,3 +78,17 @@ it("does not fire a disabled pressable card", async () => {
   await fireEvent.press(view.getByRole("button", { name: "GPU" }));
   expect(onPress).not.toHaveBeenCalled();
 });
+
+it("keeps a role and state the caller gives a pressable card", async () => {
+  const view = await render(
+    <PressableCard
+      accessibilityRole="checkbox"
+      accessibilityLabel="studio"
+      accessibilityState={{ checked: true }}
+      onPress={() => {}}
+    />
+  );
+
+  expect(view.getByRole("checkbox", { name: "studio" })).toBeChecked();
+  expect(view.queryByRole("button")).toBeNull();
+});

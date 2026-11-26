@@ -11,6 +11,8 @@ export interface ButtonProps {
   /** Filled (`primary`, the default), outlined on the card colour, or text only. */
   variant?: "primary" | "secondary" | "link" | undefined;
   disabled?: boolean | undefined;
+  /** The action is running: announced as busy, and inert like `disabled`. */
+  busy?: boolean | undefined;
   /** Layout classes only: width, margin, self-alignment. */
   className?: string | undefined;
   accessibilityLabel?: string | undefined;
@@ -32,15 +34,17 @@ export function Button({
   onPress,
   variant = "primary",
   disabled = false,
+  busy = false,
   className,
   accessibilityLabel,
   accessibilityHint,
   testID,
 }: ButtonProps): ReactElement {
+  const inert = disabled || busy;
   const classes = [
     BUTTON_CLASSES[variant],
     "active:opacity-70",
-    disabled && "opacity-50",
+    inert && "opacity-50",
     className,
   ]
     .filter(Boolean)
@@ -49,10 +53,10 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled: inert, busy }}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      disabled={disabled}
+      disabled={inert}
       onPress={onPress}
       testID={testID}
       className={classes}

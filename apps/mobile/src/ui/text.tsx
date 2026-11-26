@@ -83,7 +83,7 @@ export type TextProps = Omit<NativeTextProps, "role"> & {
   /** Fixed-width digits on a variant that doesn't already have them. */
   tabular?: boolean | undefined;
   /** Layout only. Colour, weight and numerals come from the props above. */
-  className?: string;
+  className?: string | undefined;
 };
 
 /** Renders a Dynamic Type variant with one theme tone. */

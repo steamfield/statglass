@@ -23,6 +23,17 @@ it("does not fire onPress while disabled and reports the disabled state", async 
   expect(button).toBeDisabled();
 });
 
+it("reports busy and does not fire onPress while busy", async () => {
+  const onPress = jest.fn();
+  const view = await render(<Button label="Connect" onPress={onPress} busy />);
+
+  const button = view.getByRole("button", { name: "Connect" });
+  await fireEvent.press(button);
+  expect(onPress).not.toHaveBeenCalled();
+  expect(button).toBeDisabled();
+  expect(button).toBeBusy();
+});
+
 it("is enabled unless disabled is set", async () => {
   const view = await render(<Button label="Pair" onPress={() => {}} />);
 

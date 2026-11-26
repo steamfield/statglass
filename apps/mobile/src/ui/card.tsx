@@ -42,7 +42,10 @@ export function Card({
   return <View {...props} className={classes} />;
 }
 
-/** A card that is one button, with a 44 pt minimum size and pressed feedback. */
+/**
+ * A card that is one control, with a 44 pt minimum size and pressed feedback.
+ * It is a button unless the caller gives another `accessibilityRole`.
+ */
 export function PressableCard({
   padding = "md",
   className,
@@ -58,6 +61,6 @@ export function PressableCard({
     .join(" ");
 
   return (
-    <Pressable {...props} accessibilityRole="button" className={classes} />
+    <Pressable accessibilityRole="button" {...props} className={classes} />
   );
 }
