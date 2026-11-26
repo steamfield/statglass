@@ -236,7 +236,43 @@ Depends on: phase 3
 | c | M | apps/mobile/test/ui/, apps/mobile/test/widgets/, apps/mobile/test/settings/hosts.test.tsx, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/test/reanimated-stub.ts | RFC 6 | | gpt-6.2-sol | pending | | no assertion reads a Reanimated stub's call arguments |
 | d | S | apps/mobile/test/app/, apps/mobile/test/debug/, apps/mobile/test/first-launch.test.tsx, apps/mobile/test/handover/, apps/mobile/test/pairing/, apps/mobile/test/settings/host-detail.test.tsx, apps/mobile/test/settings/persistence.test.tsx | RFC 6 | | gpt-6.2-sol | pending | | command failures come from failNext where the mock can produce them |
 
-(Test cases and briefs written during phase 3. Inline in this phase: `test/helpers/worklets-mock.ts` in the scaffold, the docs in RFC 7 and `make agent-config`. `test/transport/` builds reply envelopes by hand because the envelope is what it tests, and stays as it is; so do the `mock.results` reads outside `test/ui` and `test/widgets`, none of which is a Reanimated stub.)
+Phase 4 scaffold (inline, before dispatch): the `react-native-worklets` mock moves to `test/setup.ts` and its seven pasted copies under `test/module/` go, if the whole suite passes with it applied everywhere; otherwise it becomes `test/helpers/worklets-mock.ts` as RFC 6 says. Inline after the lanes merge: the RFC 7 docs (`.claude/rules/mobile/expo.md` structure list, `CLAUDE.md`'s `src/hooks`), `make agent-config` and `plan/PROGRESS.md`. `test/transport/` builds reply envelopes by hand because the envelope is what it tests, and stays as it is; so does `test/motion.test.tsx`, whose `mock.results` read is not a Reanimated stub.
+
+Test cases:
+
+- Lane a, new cases on a module page through `openModule` and a mock scenario, each asserting the text or accessibility label the screen gives: `sleep-gap` (the chart names the sleep gap), `clock-step`, `history-trimmed`, `history-corrupt` and `history-too-new` (the specific `history_unavailable` copy from `historyReadError`, and no Retry). A scenario that changes nothing a phone user can observe gets no test and is named in the hand-off.
+- Lane b, new cases: `sleep-gap` and `stale` on the host screen and the hosts list, asserting the status text and the gap label the row or card announces.
+- Every existing behavior stays covered: a test that loses a spy or a hand-built reply asserts the same visible outcome afterwards, and is revert-verified once (break the behavior, see the test fail, restore).
+- After the phase: `test/module/cpu/fixtures.tsx` is gone and no file under `test/module/` builds its own `ExpoRoot` context for `ModuleScreen`; `grep -rn 'mock.results' apps/mobile/test/ui apps/mobile/test/widgets` finds nothing; `grep -rn 'status: "error"' apps/mobile/test` names only files under `test/transport/` and sites the hand-offs list with the reason `failNext` cannot produce them.
+
+#### Lane a brief
+
+- Goal: the module tests share one set of helpers and take failures and gaps from the mock transport's own scenarios (RFC 6).
+- Behavior: move the helpers in `test/module/cpu/fixtures.tsx` to `test/helpers/module-screen.tsx`, widened to every module (`openModule(transport, module)`, `setModuleClock`, `layoutChart`, `watchHistory`, `watchHeld`, `reading`, `expectStat`, and a `waitForLiveSubscriber`), delete the old file, and have all seven files under `test/module/` use them instead of their own copies. A hand-built `status: "error"` reply becomes `transport.failNext(method, error)`; a hand-built history page becomes a scenario where one exists. A spy stays only where the test is about the request the phone sent or how often it sent it. Add the new cases above.
+- Edge cases: `failNext` fails one call; a test that needs every call to fail queues one failure per call it expects rather than replacing the method.
+- Out of scope: anything under `apps/mobile/src`; tests outside `test/module/`; `packages/core` (a scenario the mock lacks is reported, not added).
+- Done when: `bun run --cwd apps/mobile test -- test/module` passes, the mobile suite passes, and the hand-off lists each spy that stayed and why.
+
+#### Lane b brief
+
+- Goal: hosts, data, connection, demand and host-screen tests configure the mock transport instead of replacing its methods (RFC 6).
+- Behavior: in the owned files, a hand-built failure reply becomes `failNext`, and a hand-built history or status reply becomes a scenario or a mock option where one exists. Add the new cases above. Spies that count or inspect requests (polling cadence, demand registration, the series a row asks for) stay.
+- Out of scope: `apps/mobile/src`, `packages/core`, `test/host/card-stack.test.tsx` (lane c), `test/render.tsx`.
+- Done when: `bun run --cwd apps/mobile test -- test/hosts test/data test/connection test/demand test/host/host-screen.test.tsx` passes, the mobile suite passes, and the hand-off lists each hand-built reply that stayed and why.
+
+#### Lane c brief
+
+- Goal: no UI or widget test asserts on the arguments a Reanimated stub was called with (RFC 6).
+- Behavior: in the owned files, an assertion on `withTiming`, `withSpring`, `withRepeat`, `withDelay` or a `useSharedValue` result becomes an assertion on what the screen shows or what the component's callback changed (the saved order, the row's label, the selected segment). Where jest cannot observe the behavior at all (easing, duration, spring settings), delete the assertion and list the behavior in the hand-off for the simulator check. Assertions on the component's own outputs stay: `onChange`, `reorder`, `release`, `open`, the haptics call, `Alert.alert` and the action sheet. The reorder tests keep wrapping `react-native-reorderable-list` and the gesture stubs to reach their callbacks, but capture the gesture in a variable from the wrapper instead of reading `mock.results`. The two hand-built failure replies in `test/settings/hosts.test.tsx` become `failNext`. `test/reanimated-stub.ts` loses whatever exists only for a deleted assertion.
+- Out of scope: `apps/mobile/src`; `test/motion.test.tsx`.
+- Done when: `bun run --cwd apps/mobile test -- test/ui test/widgets test/settings/hosts.test.tsx test/host/card-stack.test.tsx` passes, the mobile suite passes, and the `mock.results` grep above finds nothing.
+
+#### Lane d brief
+
+- Goal: the remaining screens' tests produce command failures through `failNext` (RFC 6).
+- Behavior: in the owned files, each hand-built `status: "error"` reply (debug screen, first launch, query client, settings persistence and host detail, pairing flow, handover update and pair) becomes `transport.failNext(method, error)` when the method is on the mock transport. A failure that comes from `FakeNative` or tests the native envelope stays, and the hand-off says which.
+- Out of scope: `apps/mobile/src`, `test/transport/`, `test/render.tsx`.
+- Done when: `bun run --cwd apps/mobile test -- test/app test/debug test/first-launch.test.tsx test/handover test/pairing test/settings/host-detail.test.tsx test/settings/persistence.test.tsx` passes and the mobile suite passes.
 
 ## Log
 - 2026-11-25: gate timed on the untouched landing branch (cd73d960): all three parts exit 0 in 184 s wall.
