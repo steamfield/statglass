@@ -1,41 +1,25 @@
 import { formatBytes, MISSING } from "@core/format";
 import { METRIC_CODES } from "@core/generated/types";
-import { MEM_TOTAL_BYTES, MOCK_HOST_ID } from "@core/mock/fixtures";
+import { MEM_TOTAL_BYTES } from "@core/mock/fixtures";
 import { LINUX_MEM_TOTAL_BYTES } from "@core/mock/linux";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
-import { mockAppState } from "@test/helpers/mock-app-state";
-import { renderWithProviders } from "@test/render";
-import { act, fireEvent, screen } from "@testing-library/react-native";
-import { ExpoRoot, Stack } from "expo-router";
-import { getMockContext } from "expo-router/build/testing-library/mock-config";
-import { ModuleScreen } from "@/module";
+import {
+  layoutChart,
+  MODULE_TEST_NOW as now,
+  openModule,
+  setModuleClock,
+} from "@test/helpers/module-screen";
+import { act, screen } from "@testing-library/react-native";
 
-const context = getMockContext({
-  _layout: () => <Stack />,
-  "[host]/[module]": ModuleScreen,
-});
-const now = Date.UTC(2026, 10, 24, 15, 2);
-
-beforeEach(() => {
-  jest.useFakeTimers({ now });
-  mockAppState();
-});
+beforeEach(setModuleClock);
 afterEach(() => {
   jest.useRealTimers();
 });
 
 async function openMemory(transport: MockTransport) {
-  await renderWithProviders(
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${MOCK_HOST_ID}/memory`)}
-    />,
-    { transport }
-  );
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
+  await openModule(transport, "memory");
+  await layoutChart();
   await act(() => jest.advanceTimersByTimeAsync(1000));
   await act(() => transport.tick());
 }
@@ -238,9 +222,9 @@ test.each(["warn", "critical"] as const)(
 
 test("Memory tells the reader when the host is too old to answer history", async () => {
   const transport = createMockTransport({ autoTick: false });
-  jest.spyOn(transport, "hostHistory").mockResolvedValue({
-    status: "error",
-    error: { kind: "remote_unsupported", message: "No history feature" },
+  transport.failNext("hostHistory", {
+    kind: "remote_unsupported",
+    message: "No history feature",
   });
   await openMemory(transport);
   expect(
