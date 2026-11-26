@@ -69,8 +69,8 @@ export function SettingsPanel({
   after?: ReactNode;
   /**
    * `visible` leaves the panel unclipped, so a `sticky` row inside it can
-   * stick to the page scroll (the menu bar preview); that row rounds its
-   * own top corners.
+   * stick to the page scroll (the menu bar preview). A sticky row that is
+   * the panel's first child rounds its own top corners.
    */
   overflow?: "clip" | "visible";
   children?: ReactNode;
