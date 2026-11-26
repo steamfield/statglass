@@ -49,6 +49,16 @@
   --sf-reveal-scale: 0.97;
   transform-origin: 50% 50%;
 }
+/* The iPhone demo floats up into place: a long, soft settle from further away
+   than a card, out of a light blur. */
+[data-motion="float"] {
+  --sf-reveal-lift: 56px;
+  --sf-reveal-scale: 0.94;
+  --sf-reveal-blur: 6px;
+  --sf-reveal-duration: 1100ms;
+  --sf-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: 50% 60%;
+}
 [data-motion="drop"] {
   --sf-reveal-lift: 10px;
 }

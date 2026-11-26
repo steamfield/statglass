@@ -5,6 +5,7 @@ import { PopoverDemo } from "@/islands/PopoverDemo";
 import { DashboardDemo } from "@/islands/DashboardDemo";
 import { MenuBarItem } from "@/islands/MenuBarItem";
 import { MenuBarStyles } from "@/islands/MenuBarStyles";
+import { IPhoneDemo } from "@/islands/IPhoneDemo";
 import { MeterTrack } from "@statglass/widgets";
 
 // Facts on this page come from the README; keep them in step with it.
@@ -354,9 +355,46 @@ const primaryButton =
     </div>
   </section>
 
+  <section class="overflow-x-clip py-20 sm:py-24">
+    <div
+      data-reveal
+      class={`${section} grid items-center gap-12 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-20`}
+    >
+      <div data-motion class="min-w-0 space-y-4 lg:order-2 lg:max-w-xl">
+        <h2 class={h2}>Check on them from your iPhone.</h2>
+        <p class={body}>
+          StatGlass for iPhone shows live readings and charts from the Macs and
+          Linux servers you monitor. Scan a pairing code from StatGlass on your
+          Mac, or from <code>statglass-agent</code> on Linux, and the phone
+          connects to each host directly over SSH with read-only access. History
+          stays on your hosts, and the phone keeps none of it.
+        </p>
+        <p class="flex flex-wrap items-center gap-x-5 gap-y-3 pt-2">
+          <span class="inline-flex min-h-11 items-center rounded-control border border-border px-5 text-sm font-medium text-secondary-foreground">
+            Coming soon to the App Store
+          </span>
+          <a
+            href="/docs/iphone"
+            class="text-sm text-link underline underline-offset-2"
+          >
+            How pairing works
+          </a>
+        </p>
+      </div>
+      <div
+        data-motion="float"
+        data-nosnippet
+        class="justify-self-center lg:order-1"
+        style="--sf-reveal-delay: 120ms"
+      >
+        <IPhoneDemo client:visible />
+      </div>
+    </div>
+  </section>
+
   <section
     data-reveal
-    class={`${section} flex flex-wrap items-center justify-between gap-6 py-16 sm:py-20`}
+    class={`${section} flex flex-wrap items-center justify-between gap-6 border-t border-border py-16 sm:py-20`}
   >
     <p
       data-motion-part
