@@ -98,3 +98,20 @@ it("passes testID to the pressable", async () => {
     view.getByRole("button", { name: "Continue" })
   );
 });
+
+it.each([
+  ["primary", "text-primary-foreground"],
+  ["secondary", "text-foreground"],
+  ["link", "text-link"],
+] as const)("colours the %s label with %s alone", async (variant, colour) => {
+  const view = await render(
+    <Button label="Continue" variant={variant} onPress={() => {}} />
+  );
+
+  const classes = String(view.getByText("Continue").props.className).split(
+    /\s+/
+  );
+  expect(
+    classes.filter((name) => /^text-(?!left|center|right)/.test(name))
+  ).toEqual([colour]);
+});
