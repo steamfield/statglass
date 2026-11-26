@@ -184,6 +184,15 @@ it("can prepare an update with saved hosts while the webview is offline", async 
   }
 });
 
+it("hides Add to iPhone when no saved host connects automatically", async () => {
+  const mock = mockWithRemoteHosts();
+  for (const { config } of await mock.listRemoteHosts())
+    await mock.updateRemoteHost({ ...config, enabled: false });
+  renderWithProviders(<HostsRoute />, { transport: mock });
+  expect(await screen.findByText("studio")).toBeVisible();
+  expect(screen.queryByRole("button", addButton)).not.toBeInTheDocument();
+});
+
 it("hides Add to iPhone when there are no saved remote hosts", async () => {
   renderWithProviders(<HostsRoute />);
   expect(

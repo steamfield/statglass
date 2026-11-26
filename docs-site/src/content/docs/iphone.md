@@ -17,7 +17,7 @@ See [how to install StatGlass on a Mac](/docs/install) or [set up a Linux host](
 
 ### Hosts from your Mac
 
-When you pair with a Mac, StatGlass offers to add the Mac's saved remote hosts that have **Connect automatically** turned on in the Mac's host settings. To add hosts you save later, open **Settings → Paired devices → Update iPhone** on the Mac. On the iPhone, open **Settings → Hosts → Update from Mac**, scan the code, then review the list and tap **Apply updates**.
+When you pair with a Mac, StatGlass offers to add the Mac's saved remote hosts that have **Connect automatically** turned on in the Mac's host settings. To add hosts you save later, click **Add to iPhone** on the Mac's Hosts page, or open **Settings → Paired devices → Update iPhone**. On the iPhone, open **Settings → Hosts → Update from Mac**, scan the code, then review the list and tap **Apply updates**.
 
 The Mac can only share hosts the iPhone can connect to and verify over SSH. It skips hosts in these cases.
 
@@ -26,7 +26,7 @@ The Mac can only share hosts the iPhone can connect to and verify over SSH. It s
 - The Mac has no trusted host key in its SSH known-hosts files, such as `~/.ssh/known_hosts`. The iPhone needs that key to verify the host's identity.
 - The SSH alias can't be resolved, or its LAN and Tailscale aliases use a different user or port. The iPhone saves one user and port per host.
 
-To add a skipped host, pair it directly: run Pair iPhone on that Mac, or `statglass-agent pair` on that Linux host (see [Pair a host](#pair-a-host)).
+For a host skipped for a proxy or a LAN-only address, give it a Tailscale address or alias on the Mac, then update the iPhone again. For a host with no known key or an alias that can't be resolved, fix it on the Mac, or pair it directly: run Pair iPhone on that Mac, or `statglass-agent pair` on that Linux host (see [Pair a host](#pair-a-host)).
 
 ## Privacy
 

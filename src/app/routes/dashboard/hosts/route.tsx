@@ -53,7 +53,7 @@ export default function HostsRoute() {
                 Update all ({updatable})
               </Button>
             )}
-            {records.length > 0 && <AddToIphone />}
+            {records.some((host) => host.config.enabled) && <AddToIphone />}
             <Button onClick={() => setAdding(true)}>Add host</Button>
           </div>
         }

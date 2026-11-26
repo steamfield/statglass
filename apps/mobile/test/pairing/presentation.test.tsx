@@ -40,7 +40,7 @@ test("explains which hosts pairing with a Mac adds and how to get later addition
   for (const instruction of [
     "Create the code on a Mac running StatGlass to add it and the hosts it monitors, or on a Linux host running the agent.",
     "1. On the Mac, open StatGlass Settings › Paired devices › Pair iPhone. The Mac also offers to share the other hosts it monitors.",
-    "If you add more hosts on the Mac later, choose Settings › Hosts › Update from Mac on your iPhone.",
+    "If you add more hosts on the Mac later, click Add to iPhone on the Mac's Hosts page, then choose Settings › Hosts › Update from Mac on your iPhone and scan the code.",
   ]) {
     expect(screen.getByText(instruction)).toBeOnTheScreen();
   }

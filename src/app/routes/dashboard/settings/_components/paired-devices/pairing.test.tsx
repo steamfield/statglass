@@ -63,7 +63,7 @@ it("shows the Update from Mac note in place of the dropped host list", async () 
     const dialog = within(screen.getByRole("dialog"));
     expect(
       dialog.getByText(
-        "The host list was too large to send while pairing. On your iPhone, open Update from Mac to add the other hosts."
+        "The host list was too large to send while pairing. To add the other hosts, open Update iPhone on this Mac (Add to iPhone on the Hosts page) and scan it from Update from Mac on your iPhone."
       )
     ).toBeVisible();
     expect(dialog.queryByRole("list")).not.toBeInTheDocument();

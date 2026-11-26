@@ -145,8 +145,9 @@ function PairingHandover({ status }: { status: PairingStatus }) {
   if (status.dropped) {
     return (
       <InlineMessage tone="note">
-        The host list was too large to send while pairing. On your iPhone, open
-        Update from Mac to add the other hosts.
+        The host list was too large to send while pairing. To add the other
+        hosts, open Update iPhone on this Mac (Add to iPhone on the Hosts page)
+        and scan it from Update from Mac on your iPhone.
       </InlineMessage>
     );
   }

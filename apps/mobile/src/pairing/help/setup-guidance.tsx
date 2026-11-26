@@ -31,8 +31,9 @@ export function SetupGuidance() {
         <Text variant="body">4. Done.</Text>
       </View>
       <Text variant="body">
-        If you add more hosts on the Mac later, choose Settings › Hosts › Update
-        from Mac on your iPhone.
+        If you add more hosts on the Mac later, click Add to iPhone on the
+        Mac&apos;s Hosts page, then choose Settings › Hosts › Update from Mac on
+        your iPhone and scan the code.
       </Text>
       <View className="gap-2">
         <Text variant="title">Host doesn&apos;t have StatGlass yet?</Text>

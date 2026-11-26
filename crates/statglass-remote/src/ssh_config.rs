@@ -318,7 +318,6 @@ fn literal(host: &str) -> Option<(IpAddr, Option<&str>)> {
 
 fn is_lan_literal(host: &str) -> bool {
     match literal(host) {
-        Some((ip, _)) if is_tailnet(ip) => false,
         Some((IpAddr::V4(ip), _)) => ip.is_private() || ip.is_link_local(),
         Some((IpAddr::V6(ip), _)) => ip.is_unicast_link_local() || ip.is_unique_local(),
         None => false,
