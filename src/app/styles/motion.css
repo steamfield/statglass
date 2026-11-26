@@ -85,3 +85,26 @@
   transition: none;
   animation: none;
 }
+
+/* A Settings row a link brought into view (`useFocusRow` sets `data-flash`
+   for 1400ms). With motion allowed it fades from a primary tint; under
+   Reduce Motion or Performance mode it holds the selected tint instead. */
+[data-flash] {
+  background-color: var(--color-selected);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-performance]) [data-flash] {
+    background-color: transparent;
+    animation: settings-row-flash 1400ms var(--ease-out);
+  }
+}
+
+@keyframes settings-row-flash {
+  from {
+    background-color: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
