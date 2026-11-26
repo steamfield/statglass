@@ -1,12 +1,13 @@
 import { commandErrorText } from "@core/command-error";
 import type { DeviceIntentInfo } from "@core/generated/types";
 import { unwrap } from "@core/transport";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
+import { useDeviceIntents } from "../../_hooks/use-device-intents";
 
 function IntentRow({ intent }: { intent: DeviceIntentInfo }) {
   const operation = intent.op === "revoke" ? "Revoke" : "Install";
@@ -26,12 +27,7 @@ function IntentRow({ intent }: { intent: DeviceIntentInfo }) {
 
 export function DeviceIntents() {
   const transport = useTransport();
-  const intents = useQuery({
-    queryKey: ["device-intents"],
-    queryFn: () => unwrap(transport.deviceIntents()),
-    refetchInterval: 10000,
-    retry: false,
-  });
+  const intents = useDeviceIntents();
   const retry = useMutation({
     mutationFn: () => unwrap(transport.retryDeviceIntents()),
     onSettled: () => intents.refetch(),
@@ -44,6 +40,7 @@ export function DeviceIntents() {
   return (
     <>
       <SettingsRow
+        id="device-access"
         label="Device access on other hosts"
         sub={
           intents.isPending ? (

@@ -88,6 +88,7 @@ export function UpdateFromMac() {
   });
   return (
     <SettingsRow
+      id="iphone-host-list"
       label="Host list on iPhone"
       sub="Share the list of hosts this Mac monitors."
     >
