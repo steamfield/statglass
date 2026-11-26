@@ -179,7 +179,8 @@ fn rejects_unavailable_routes_in_the_required_precedence() {
     assert_eq!(reason("proxy", Some("jump")), HandoverReason::ProxyJump);
     assert_eq!(reason("jump", None), HandoverReason::ProxyJump);
     assert_eq!(reason("proxy", None), HandoverReason::ProxyCommand);
-    for literal in ["private", "cgnat", "linklocal"] {
+    assert_eq!(reason("cgnat", None), HandoverReason::NoHostKey);
+    for literal in ["private", "linklocal"] {
         assert_eq!(
             reason(literal, None),
             HandoverReason::LanLiteral,
@@ -206,6 +207,60 @@ fn rejects_unavailable_routes_in_the_required_precedence() {
         HandoverReason::Unresolvable
     );
     assert!(!marker.exists());
+}
+
+#[test]
+fn hands_over_tailnet_literals_as_tailscale_routes() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = config(
+        dir.path(),
+        "Host cgnat\nHostName 100.127.8.9\nHost tail6\nHostName fd7a:115c:a1e0::1\nHost edge\nHostName 100.63.255.255\nHost tail\nHostName build.example.invalid\n",
+    );
+    let (line, pin) = fixture_key(dir.path(), "ed25519");
+    fs::write(
+        dir.path().join("known hosts"),
+        [
+            "100.127.8.9",
+            "fd7a:115c:a1e0::1",
+            "100.63.255.255",
+            "build.example.invalid",
+        ]
+        .map(|host| format!("{host} {line}"))
+        .concat(),
+    )
+    .unwrap();
+    let targets = |lan, tail| {
+        let host = handover_host(&input(lan, tail), Some(&config)).unwrap();
+        assert_eq!(host.host_keys, std::slice::from_ref(&pin));
+        host.targets
+    };
+    let target = |route, host: &str| BundleTarget {
+        route,
+        host: host.into(),
+    };
+    assert_eq!(
+        targets("cgnat", None),
+        [target(BundleRoute::Tailscale, "100.127.8.9")]
+    );
+    assert_eq!(
+        targets("tail6", None),
+        [target(BundleRoute::Tailscale, "fd7a:115c:a1e0::1")]
+    );
+    assert_eq!(
+        targets("cgnat", Some("tail")),
+        [
+            target(BundleRoute::Tailscale, "100.127.8.9"),
+            target(BundleRoute::Tailscale, "build.example.invalid"),
+        ]
+    );
+    assert_eq!(
+        targets("cgnat", Some("cgnat")),
+        [target(BundleRoute::Tailscale, "100.127.8.9")]
+    );
+    assert_eq!(
+        targets("edge", None),
+        [target(BundleRoute::Lan, "100.63.255.255")]
+    );
 }
 
 #[test]

@@ -12,6 +12,7 @@ use statglass_proto::{
     pairing::{BundleHost, BundleHostKey, BundleRoute, BundleTarget},
 };
 use statglass_schema::HostId;
+use statglass_session::network::{AddressClass, classify_address};
 
 use crate::effective_user::EffectiveUser;
 
@@ -109,7 +110,8 @@ pub fn handover_host(
         (BundleRoute::Tailscale, &remote.tailscale),
     ] {
         if let Some(alias) = alias {
-            match ResolvedRoute::read(route, alias, config) {
+            match ResolvedRoute::read(route, alias, config).map(ResolvedRoute::tailnet_as_tailscale)
+            {
                 Ok(route) => routes.push(route),
                 Err(error) => {
                     unresolved = true;
@@ -151,13 +153,19 @@ pub fn handover_host(
         os: remote.os.clone(),
         user: primary.alias.user.clone(),
         port: (primary.alias.port != 22).then_some(primary.alias.port),
-        targets: routes
-            .into_iter()
-            .map(|route| BundleTarget {
-                route: route.route,
-                host: route.alias.hostname,
-            })
-            .collect(),
+        targets: routes.into_iter().fold(Vec::new(), |mut targets, route| {
+            // Two aliases can resolve to one address; dialing it twice only doubles the race.
+            if !targets
+                .iter()
+                .any(|target: &BundleTarget| target.host == route.alias.hostname)
+            {
+                targets.push(BundleTarget {
+                    route: route.route,
+                    host: route.alias.hostname,
+                });
+            }
+            targets
+        }),
         host_keys,
     })
 }
@@ -171,6 +179,13 @@ struct ResolvedRoute {
 }
 
 impl ResolvedRoute {
+    fn tailnet_as_tailscale(mut self) -> Self {
+        if is_tailnet(&self.alias.hostname) {
+            self.route = BundleRoute::Tailscale;
+        }
+        self
+    }
+
     fn read(route: BundleRoute, name: &str, config: Option<&Path>) -> Result<Self, SshConfigError> {
         let output = ssh_g(name, config)?;
         let fields = config_fields(&output);
@@ -305,12 +320,12 @@ fn collect_route_keys(routes: &[ResolvedRoute]) -> Result<HostKeys, SshConfigErr
 }
 
 fn is_lan_literal(host: &str) -> bool {
+    if is_tailnet(host) {
+        return false;
+    }
     let host = host.split_once('%').map_or(host, |(address, _)| address);
     match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => {
-            let [first, second, ..] = ip.octets();
-            ip.is_private() || ip.is_link_local() || (first == 100 && (64..=127).contains(&second))
-        }
+        Ok(IpAddr::V4(ip)) => !is_tailnet(host) && (ip.is_private() || ip.is_link_local()),
         Ok(IpAddr::V6(ip)) => {
             ip.is_unicast_link_local()
                 || ip.is_unique_local()
@@ -320,6 +335,15 @@ fn is_lan_literal(host: &str) -> bool {
         }
         Err(_) => false,
     }
+}
+
+/// Whether a literal is in Tailscale's address blocks (100.64.0.0/10, fd7a:115c:a1e0::/48).
+/// Such a peer is reached over Tailscale, so it hands over as a Tailscale route whichever
+/// alias slot it came from and is never a LAN literal (D-160).
+fn is_tailnet(host: &str) -> bool {
+    let host = host.split_once('%').map_or(host, |(address, _)| address);
+    host.parse::<IpAddr>()
+        .is_ok_and(|ip| classify_address(ip) == AddressClass::Tailscale)
 }
 
 pub struct HandoverInput {

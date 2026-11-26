@@ -38,6 +38,8 @@ Error model: `PairingStatus::Paired` gains the Mac-side handover summary: names 
 
 ### Phase 1: CGNAT routes hand over as Tailscale (MVP)
 
+Scaffold: 278782bc
+
 Demo: the scratch diagnostic (`scratchpad/handover-diag`) prints OK for all four of the user's saved hosts, Live Oak included, with Live Oak's target labelled tailscale.
 Test cases:
 - LAN alias resolving to 100.127.8.9 with no Tailscale alias: Ok, one target, route tailscale.
