@@ -48,7 +48,8 @@ export type HistoryRange = {
   toMs: number;
 } & ({ rolling: false } | { rolling: true; offsetMs: number });
 
-type RollingHistoryRange = Extract<HistoryRange, { rolling: true }>;
+/** A window that follows the host's clock and carries its offset. */
+export type RollingHistoryRange = Extract<HistoryRange, { rolling: true }>;
 
 function rollingRange(
   windowMs: number,

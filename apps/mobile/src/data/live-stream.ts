@@ -134,13 +134,10 @@ export function useCompactStream(
 ): StreamAreaData | null {
   const { values, tEndMs, intervalMs, windowMs, edgeMs, loading } =
     useCardSeriesWindow(host, seriesKey, MINUTE_MS);
-  const auto = useNiceCeiling(
-    values,
-    tEndMs,
+  const auto = useNiceCeiling(values, tEndMs, minCeiling, {
     intervalMs,
-    minCeiling,
-    `${host}:${seriesKey}:${windowMs}:${minCeiling}`
-  );
+    scope: `${host}:${seriesKey}:${windowMs}:${minCeiling}`,
+  });
   const ariaLabel = useLiveChartLabel(
     subject,
     windowMs,
@@ -192,20 +189,14 @@ export function useNetworkBars(host: HostId): MirrorBarsData | null {
   const up = useCardSeriesWindow(host, "net.tx_total", 48_000);
   const down = useCardSeriesWindow(host, "net.rx_total", 48_000);
   const { windowMs, loading, edgeMs } = up;
-  const upMax = useNiceCeiling(
-    up.values,
-    up.tEndMs,
-    up.intervalMs,
-    100_000,
-    `${host}:${windowMs}`
-  );
-  const downMax = useNiceCeiling(
-    down.values,
-    down.tEndMs,
-    down.intervalMs,
-    100_000,
-    `${host}:${windowMs}`
-  );
+  const upMax = useNiceCeiling(up.values, up.tEndMs, 100_000, {
+    intervalMs: up.intervalMs,
+    scope: `${host}:${windowMs}`,
+  });
+  const downMax = useNiceCeiling(down.values, down.tEndMs, 100_000, {
+    intervalMs: down.intervalMs,
+    scope: `${host}:${windowMs}`,
+  });
   const ready = edgeMs !== null || loading;
   return useMemo<MirrorBarsData | null>(
     () =>

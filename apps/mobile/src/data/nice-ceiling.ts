@@ -4,16 +4,23 @@ import { useMemo, useRef } from "react";
 
 const MIN_TICK_GAP_MS = 10_000;
 
+/** How often the chart's values advance, and what a held ceiling belongs to. */
+export interface CeilingOptions {
+  /** Twice this without a tick breaks the hold. */
+  intervalMs: number;
+  /** A new scope fits its values immediately. */
+  scope?: string;
+}
+
 /**
  * Raise a chart ceiling at once and step it down after a sustained drop.
- * A new scope fits its values immediately.
+ * The first three arguments match the desktop hook's.
  */
 export function useNiceCeiling(
   values: readonly (number | null)[],
   nowMs: number,
-  intervalMs: number,
   minCeiling: number,
-  scope?: string
+  { intervalMs, scope }: CeilingOptions
 ): number {
   const held = useRef<{
     scope: string | undefined;

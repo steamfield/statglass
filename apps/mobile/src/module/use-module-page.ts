@@ -3,7 +3,7 @@ import type { HostId, HostRecord } from "@core/generated/types";
 import type { PhoneRemoteHostStatus } from "@core/phone-connection";
 import { useState } from "react";
 import { useFocusDemand } from "@/data/demand";
-import { useHistoryRange } from "@/data/history";
+import { type RollingHistoryRange, useHistoryRange } from "@/data/history";
 import { useHosts } from "@/data/hosts-list";
 import { useConnection } from "@/data/live";
 
@@ -21,7 +21,7 @@ export interface ModulePage {
   connected: boolean;
   connection: Connection;
   live: boolean;
-  range: ReturnType<typeof useHistoryRange>;
+  range: RollingHistoryRange;
 }
 
 /** Prepare the page controls and register full demand for the focused host. */

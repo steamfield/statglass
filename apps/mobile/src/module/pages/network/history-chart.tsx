@@ -30,6 +30,8 @@ const DOWN_HEIGHT = 96;
 const HEIGHT = UP_HEIGHT + DOWN_HEIGHT + 1;
 const SUBJECT = "Network history, upload above the line, download below";
 const NO_VALUES: readonly (number | null)[] = [];
+// Rolling history refreshes once a minute, so a missed refresh breaks the hold.
+const REFRESH = { intervalMs: MINUTE_MS };
 const captionWidth = CHART_CAPTION_CHAR_WIDTH_PX * 1.4;
 const HistoryBars = memo(MirrorBarsPlot);
 
@@ -134,9 +136,8 @@ export function NetworkHistoryChart({
     { ...range, toMs: scrubEnd },
     (width * (scrubEnd - fromMs)) / span
   );
-  // Rolling history refreshes once a minute, so a missed refresh breaks the hold.
-  const upMax = useNiceCeiling(up, toMs, MINUTE_MS, minCeiling);
-  const downMax = useNiceCeiling(down, toMs, MINUTE_MS, minCeiling);
+  const upMax = useNiceCeiling(up, toMs, minCeiling, REFRESH);
+  const downMax = useNiceCeiling(down, toMs, minCeiling, REFRESH);
   const time =
     scrub.slot < 0
       ? null
