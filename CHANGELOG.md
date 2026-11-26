@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.16.0](https://github.com/steamfield/statglass/compare/v0.15.0...v0.16.0) - 2026-11-26
+
+### Added
+
+- Hosts serve their own network addresses (`get_host_addresses`, D-153): Network,
+  Overview and the popover card show a remote host's interface, local and public IP
+  through `AddressResolver`, with a host-owned public lookup opt-in, a 24-hour cache
+  and "Addresses unavailable" on failure.
+- Hosts answer bounded history queries (`query.history.v1`), bounded per session and
+  per host, with range totals in history answers (D-155).
+- Handover for StatGlass for iPhone: the pairing reply lists the Mac's other hosts,
+  and the Mac records an install intent per chosen host and applies it over SSH,
+  resolving aliases with `ssh -G` and host keys with `ssh-keygen -F`.
+- StatGlass for iPhone 1.0.0 (`apps/mobile`, D-140 to D-159), shipped separately
+  through the App Store.
+
+### Changed
+
+- The live session policy is shared by the desktop and the phone: bounded catch-up,
+  immediate stream rebind on a host change, and Reconnecting until a fresh frame.
+- Typed session failures and panic supervision in `statglass-session`.
+
+### Fixed
+
+- A window's refill wait no longer depends on live detail and ends after 10 s.
+- Remote history reads clamp the watermark to the request, scan the snapped grid and
+  keep post-gap slots; the answer cache admits only complete replies.
+- On Apple targets, IPv4 literals resolve through `getaddrinfo` for NAT64 networks.
+
 ## [0.15.0](https://github.com/steamfield/statglass/compare/v0.14.0...v0.15.0) - 2026-11-25
 
 ### Added
