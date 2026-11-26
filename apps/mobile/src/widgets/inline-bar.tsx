@@ -3,8 +3,7 @@ import {
   type InlineBarModel,
   inlineBarModel,
 } from "@core/widget-models/inline-bar";
-import { useColorScheme, useWindowDimensions, View } from "react-native";
-import { themeColors } from "@/theme.generated";
+import { useWindowDimensions, View } from "react-native";
 import { Text } from "@/ui/text";
 import { MeterTrackView } from "./meter-track";
 
@@ -17,7 +16,6 @@ export function InlineBar(data: InlineBarData | { model: InlineBarModel }) {
   const { fontScale } = useWindowDimensions();
   const row = layout === "row" && fontScale < 1.5;
   const muted = track?.fill === null || (layout !== "row" && !track);
-  const colors = themeColors[useColorScheme() ?? "light"];
   return (
     <View
       testID="inline-bar-layout"
@@ -36,12 +34,9 @@ export function InlineBar(data: InlineBarData | { model: InlineBarModel }) {
         </Text>
         <Text
           variant={ROW_TEXT_ROLE}
+          tone={muted ? "muted" : "default"}
+          tabular
           className="shrink text-right"
-          // NativeWind drops the CSS font-variant-numeric property.
-          style={{
-            color: colors[muted ? "muted-foreground" : "foreground"],
-            fontVariant: ["tabular-nums"],
-          }}
         >
           {value}
         </Text>

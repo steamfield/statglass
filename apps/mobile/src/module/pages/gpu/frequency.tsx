@@ -13,6 +13,7 @@ import { useMemo } from "react";
 import { useWindowDimensions, View } from "react-native";
 import { useConnection, useHostLive } from "@/data/live";
 import type { ModulePageProps } from "@/module/pages/index";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { RingGauge } from "@/widgets/ring-gauge";
 import { StackBar } from "@/widgets/stack-bar";
@@ -96,7 +97,7 @@ export function Frequency({
   const rows = useMemo(() => (stats ? residencyStats(stats) : null), [stats]);
   const span = spanWords(windowMs, null);
   return (
-    <View className="gap-2 rounded-xl border border-border bg-card p-3">
+    <Card className="gap-2">
       <Text variant="cardTitle" accessibilityRole="header">
         Frequency
       </Text>
@@ -116,6 +117,6 @@ export function Frequency({
           )
         )}
       </View>
-    </View>
+    </Card>
   );
 }

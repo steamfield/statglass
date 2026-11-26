@@ -7,7 +7,8 @@ import type {
 import { useState } from "react";
 import { View } from "react-native";
 import { usePhoneSettings } from "@/data/phone-settings";
-import { PairAction } from "@/pairing/screens/action";
+import { Button } from "@/ui/button";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import {
   type HandoverTransport,
@@ -74,20 +75,17 @@ export function UpdateSelection({
         </View>
       )}
       {removed.map((id) => (
-        <View
-          key={id}
-          className="gap-2 rounded-xl border border-border bg-card p-4"
-        >
+        <Card key={id} padding="lg" className="gap-2">
           <Text variant="body">{hostName(id)}</Text>
           <Text variant="caption">Removed on your Mac</Text>
           {applied && (
-            <PairAction
+            <Button
               label={
                 remove.isPending && remove.variables === id
                   ? "Removing…"
                   : `Remove ${hostName(id)}`
               }
-              secondary
+              variant="secondary"
               disabled={busy}
               onPress={() =>
                 remove.mutate(id, {
@@ -97,15 +95,11 @@ export function UpdateSelection({
               }
             />
           )}
-        </View>
+        </Card>
       ))}
       <UnavailableHosts hosts={diff.unavailable} />
       {error && (
-        <Text
-          variant="body"
-          accessibilityRole="alert"
-          className="text-destructive!"
-        >
+        <Text variant="body" accessibilityRole="alert" tone="destructive">
           {commandErrorText(
             error,
             "Couldn’t save the host changes. Try again."
@@ -113,21 +107,17 @@ export function UpdateSelection({
         </Text>
       )}
       {applied || !hasDiff ? (
-        <PairAction
-          label="Done"
-          disabled={busy}
-          onPress={() => done(applied)}
-        />
+        <Button label="Done" disabled={busy} onPress={() => done(applied)} />
       ) : (
         <>
-          <PairAction
+          <Button
             label={apply.isPending ? "Applying…" : "Apply updates"}
             disabled={busy || !hasChanges}
             onPress={() => apply.mutate(selected)}
           />
-          <PairAction
+          <Button
             label="Cancel"
-            secondary
+            variant="secondary"
             disabled={busy}
             onPress={cancel}
           />

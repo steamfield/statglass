@@ -19,26 +19,22 @@ import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { mockAppState } from "@test/helpers/mock-app-state";
+import {
+  layoutChart,
+  MODULE_TEST_NOW as now,
+  openModule,
+  setModuleClock,
+  waitForLiveSubscriber,
+  watchHistory,
+} from "@test/helpers/module-screen";
 import { renderWithProviders } from "@test/render";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import * as Haptics from "expo-haptics";
-import { ExpoRoot, Link, router, Stack } from "expo-router";
-import { getMockContext } from "expo-router/build/testing-library/mock-config";
+import { router } from "expo-router";
 import { AppState } from "react-native";
 import { createGestureController } from "react-native-gesture-handler/jest-utils";
-import { ModuleScreen } from "@/module";
 import { ModuleChart } from "@/module/module-chart";
 
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
-
-const context = getMockContext({
-  _layout: () => <Stack screenOptions={{ headerShown: false }} />,
-  "[host]/[module]": ModuleScreen,
-  settings: () => <Link href="/">Elsewhere</Link>,
-});
-const now = Date.UTC(2026, 10, 24, 15, 2);
 const record: Event = {
   ts_ms: now - MINUTE_MS,
   start_ms: now - MINUTE_MS,
@@ -51,23 +47,11 @@ const record: Event = {
   processes: ["kernel_task"],
 };
 
-beforeEach(() => {
-  jest.useFakeTimers({ now });
-  mockAppState();
-});
+beforeEach(setModuleClock);
 
 afterEach(() => {
   jest.useRealTimers();
 });
-
-function openModule(host = MOCK_HOST_ID, module = "cpu") {
-  return (
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${host}/${module}`)}
-    />
-  );
-}
 
 function emptyPage(
   request: HostHistoryRequest,
@@ -87,22 +71,12 @@ function emptyPage(
 
 type Read = MockTransport["hostHistory"];
 
+/** Lists the history requests the page sent; `answer` replaces the mock's reply. */
 function observeHistory(transport: MockTransport, answer?: Read) {
-  const read = jest.spyOn(transport, "hostHistory");
-  if (answer) read.mockImplementation(answer);
+  const read = answer
+    ? jest.spyOn(transport, "hostHistory").mockImplementation(answer)
+    : watchHistory(transport).read;
   return { read, charts: () => read.mock.calls.map(([request]) => request) };
-}
-
-async function layoutPlot() {
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
-}
-
-async function layoutAxis() {
-  await fireEvent(screen.getByTestId("history-chart-plot"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
 }
 
 const eventsReply =
@@ -151,8 +125,8 @@ test("quick ranges and More each ask once, and More stops at seven days", async 
     },
   };
   const history = observeHistory(transport, eventsReply([early, record]));
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  await openModule(transport, "cpu");
+  await layoutChart();
 
   expect(await screen.findAllByRole("tab")).toHaveLength(3);
   expect(screen.getByRole("tab", { name: "1h, History range" })).toBeSelected();
@@ -204,14 +178,14 @@ test("scrubbing reads the selected bucket, a long press pins a gap and plays a h
   const selection = jest
     .spyOn(Haptics, "impactAsync")
     .mockResolvedValue(undefined);
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  await openModule(transport, "cpu");
+  await layoutChart();
   await waitFor(() =>
     expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen()
   );
   const chart = screen.getByRole("adjustable", { name: "CPU history" });
   const from = history.charts().at(-1)?.from_ms ?? now - HOUR_MS;
-  await layoutAxis();
+  await layoutChart("history-chart-plot");
   expect(
     screen.getByRole("note", { name: PAUSE_EXPLANATION })
   ).toBeOnTheScreen();
@@ -248,13 +222,12 @@ test("loading resolves to explicit empty history and events", async () => {
   const transport = createMockTransport({
     autoTick: false,
     historyRows: 0,
+    latencyMs: 500,
+    // The host has no samples or events in the phone's requested hour.
+    now: () => now - 2 * HOUR_MS,
   });
-  observeHistory(transport, async (request) => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    return { status: "ok", data: emptyPage(request) };
-  });
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  await openModule(transport, "cpu");
+  await layoutChart();
   expect(screen.getByText("Loading history…")).toBeOnTheScreen();
   expect(await screen.findByText("No samples in this range")).toBeOnTheScreen();
   expect(screen.getByText("No events in this range")).toBeOnTheScreen();
@@ -269,10 +242,10 @@ test("the ceiling sits outside the plot and VoiceOver double-tap pins and clears
   const selection = jest
     .spyOn(Haptics, "impactAsync")
     .mockResolvedValue(undefined);
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  await openModule(transport, "cpu");
+  await layoutChart();
   const plot = await screen.findByRole("adjustable", { name: "CPU history" });
-  await layoutAxis();
+  await layoutChart("history-chart-plot");
   for (const tick of ["100%", "50%", "0%", "now"])
     expect(screen.getByText(tick)).toBeOnTheScreen();
   await waitFor(() =>
@@ -307,8 +280,8 @@ test("the right edge pins the last returned bucket time within the requested win
     data: cpuPage(request),
   }));
   jest.spyOn(Haptics, "impactAsync").mockResolvedValue(undefined);
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  await openModule(transport, "cpu");
+  await layoutChart();
   const plot = await screen.findByRole("adjustable", { name: "CPU history" });
   await waitFor(() =>
     expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen()
@@ -316,7 +289,7 @@ test("the right edge pins the last returned bucket time within the requested win
   const request = history.charts().at(-1);
   if (!request || request.to_ms === null)
     throw new Error("History request did not include an end");
-  await layoutAxis();
+  await layoutChart("history-chart-plot");
   const pin = createGestureController("history-pin");
   await act(() => {
     pin.begin({ x: 300 });
@@ -332,8 +305,8 @@ test("a foreground module refreshes both history and events as time advances", a
   const changeAppState = mockAppState();
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   const history = observeHistory(transport);
-  const view = await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  const view = await openModule(transport, "cpu");
+  await layoutChart();
   await waitFor(() => expect(history.charts()).toHaveLength(1));
   const end = history.charts().at(-1)?.to_ms ?? 0;
   await changeAppState("background");
@@ -377,8 +350,8 @@ test("a minute refresh keeps plotted samples, event rows, and the pinned reading
       },
     }));
     jest.spyOn(Haptics, "impactAsync").mockResolvedValue(undefined);
-    const view = await renderWithProviders(openModule(), { transport });
-    await layoutPlot();
+    const view = await openModule(transport, "cpu");
+    await layoutChart();
     try {
       expect(await screen.findByText(eventLabel(record))).toBeOnTheScreen();
       await waitFor(() =>
@@ -391,7 +364,7 @@ test("a minute refresh keeps plotted samples, event rows, and the pinned reading
       const value = {
         text: `${formatClockSeconds(request.from_ms)}, Total: 30%, System: No samples`,
       };
-      await layoutAxis();
+      await layoutChart("history-chart-plot");
       expect(screen.getByText("now")).toBeOnTheScreen();
       const pin = createGestureController("history-pin");
       await act(() => {
@@ -439,7 +412,7 @@ test("a failed remote status read explains why the module cannot load", async ()
   transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
   transport.failNext("listRemoteHosts", phoneCommandFailures.statusEndpoint);
   const history = jest.spyOn(transport, "hostHistory");
-  await renderWithProviders(openModule(remote.config.id), { transport });
+  await openModule(transport, "cpu", remote.config.id);
   expect(
     await screen.findByRole(
       "alert",
@@ -463,7 +436,7 @@ test("an offline host uses its last-seen host time on the module page", async ()
     autoTick: false,
     historyRows: 2,
   });
-  await renderWithProviders(openModule("phone-offline"), { transport });
+  await openModule(transport, "cpu", "phone-offline");
   expect(await screen.findByText("Offline since 14:02")).toBeOnTheScreen();
   expect(screen.queryByText(/Last synced through/)).toBeNull();
 });
@@ -493,8 +466,8 @@ test("network identifies both series before scrubbing and history mounts only vi
       }) satisfies Event
   );
   observeHistory(transport, eventsReply(events));
-  await renderWithProviders(openModule(MOCK_HOST_ID, "network"), { transport });
-  await layoutPlot();
+  await openModule(transport, "network");
+  await layoutChart();
   const first = events.at(0);
   const last = events.at(-1);
   if (!first || !last) throw new Error("The event list needs two endpoints");
@@ -518,8 +491,8 @@ test("the first query for a skewed remote uses its host clock for history and ev
   );
   if (!remote) throw new Error("The demo needs a host with clock skew");
   const history = observeHistory(transport);
-  await renderWithProviders(openModule(remote.config.id), { transport });
-  await layoutPlot();
+  await openModule(transport, "cpu", remote.config.id);
+  await layoutChart();
   await waitFor(() => expect(history.charts()).toHaveLength(1));
   const request = history.charts().at(-1);
   if (!request || request.to_ms === null)
@@ -535,12 +508,12 @@ test("the first query for a skewed remote uses its host clock for history and ev
 
 test("reports a locked history store once for the shared reply", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  observeHistory(transport, async () => ({
-    status: "error",
-    error: { kind: "history_unavailable", reason: { kind: "locked" } },
-  }));
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  transport.failNext("hostHistory", {
+    kind: "history_unavailable",
+    reason: { kind: "locked" },
+  });
+  await openModule(transport, "cpu");
+  await layoutChart();
   expect(
     await screen.findByText(
       /another copy of StatGlass has the history file open/,
@@ -557,7 +530,7 @@ test("reports a locked history store once for the shared reply", async () => {
 test("an unsupported module link gives an unavailable state without reading history", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   const read = jest.spyOn(transport, "hostHistory");
-  await renderWithProviders(openModule(MOCK_HOST_ID, "disk"), { transport });
+  await openModule(transport, "disk");
   expect(screen.getByText("This module isn’t available.")).toBeOnTheScreen();
   expect(read).not.toHaveBeenCalled();
 });
@@ -593,8 +566,8 @@ test("the stat strip keys Avg and Peak to the unlabelled lead series in the host
       ],
     },
   }));
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
+  await openModule(transport, "cpu");
+  await layoutChart();
   await waitFor(() =>
     expect(screen.getByLabelText("Avg")).toHaveAccessibilityValue({
       text: "12.5%",
@@ -631,9 +604,9 @@ test("colliding events appear in pill rows or a merged pill as well as in the ev
     })
   );
   observeHistory(transport, eventsReply(clustered));
-  await renderWithProviders(openModule(), { transport });
-  await layoutPlot();
-  await layoutAxis();
+  await openModule(transport, "cpu");
+  await layoutChart();
+  await layoutChart("history-chart-plot");
   const pills = await screen.findAllByLabelText(/^Build worker /);
   if (pills.length < clustered.length) {
     expect(screen.getByLabelText(/Build worker .*\+\d/)).toBeOnTheScreen();
@@ -646,9 +619,9 @@ test("colliding events appear in pill rows or a merged pill as well as in the ev
 test("the mock host filters a power spike out of Network history and events", async () => {
   const transport = createMockTransport({ autoTick: false });
   const read = jest.spyOn(transport, "hostHistory");
-  await renderWithProviders(openModule(MOCK_HOST_ID, "network"), { transport });
-  await layoutPlot();
-  await layoutAxis();
+  await openModule(transport, "network");
+  await layoutChart();
+  await layoutChart("history-chart-plot");
   expect(await screen.findByText("No events in this range")).toBeOnTheScreen();
   expect(screen.queryByText(/ANE.*Photos/)).not.toBeOnTheScreen();
   expect(read).toHaveBeenCalledWith(
@@ -659,7 +632,7 @@ test("the mock host filters a power spike out of Network history and events", as
 test("full process interest ranks grouped apps, shows the top ten, and stops on blur", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   const interest = jest.spyOn(transport, "setProcessInterest");
-  await renderWithProviders(openModule(MOCK_HOST_ID, "memory"), { transport });
+  await openModule(transport, "memory");
   await waitFor(() =>
     expect(interest).toHaveBeenCalledWith(
       MOCK_HOST_ID,
@@ -744,8 +717,8 @@ test("Linux power reports that its host does not measure process energy", async 
     autoTick: false,
     historyRows: 2,
   });
-  await renderWithProviders(openModule(MOCK_HOST_ID, "power"), { transport });
-  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await openModule(transport, "power");
+  await waitForLiveSubscriber(transport);
   await act(() => jest.advanceTimersByTimeAsync(1000));
   await act(() => transport.tick());
   expect(
@@ -763,10 +736,8 @@ test("a failed process interest request reports the transport failure", async ()
     kind: "internal",
     message: "Process stream unavailable.",
   } as const;
-  jest
-    .spyOn(transport, "setProcessInterest")
-    .mockResolvedValueOnce({ status: "error", error });
-  await renderWithProviders(openModule(), { transport });
+  transport.failNext("setProcessInterest", error);
+  await openModule(transport, "cpu");
   expect(
     await screen.findByRole("alert", {
       name: "Couldn’t load live processes. Process stream unavailable.",
@@ -781,7 +752,7 @@ test("a host that provides frames without processes shows their unavailable stat
   const interest = jest
     .spyOn(transport, "setProcessInterest")
     .mockResolvedValue({ status: "ok", data: null });
-  await renderWithProviders(openModule(), { transport });
+  await openModule(transport, "cpu");
   await waitFor(() => expect(interest).toHaveBeenCalled());
   expect(screen.getByText("Waiting for live processes…")).toBeOnTheScreen();
   await act(() => jest.advanceTimersByTimeAsync(1000));

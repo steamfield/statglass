@@ -6,6 +6,7 @@ import { type GapSpan, gapBandsModel } from "@core/widget-models/gap-band";
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
 
+/** The history window shared by the row cache and chart model. */
 export const SPARKLINE_MS = 30 * MINUTE_MS;
 export const SUMMARY_MS = 5_000;
 

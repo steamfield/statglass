@@ -1,3 +1,4 @@
+/** Ordered module cards and their controls on the host screen. */
 import type { HostRecord } from "@core/generated/types";
 import type { HostLive } from "@core/live-state";
 import { moduleState } from "@core/module-state";
@@ -16,7 +17,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { UnavailableCard } from "@/cards/unavailable-card";
-import { HISTORY_MODULES, isHistoryModule } from "@/data/history";
+import { isHistoryModule, MODULE_TITLES } from "@/data/history";
 import { useHostLive } from "@/data/live";
 import {
   usePhoneSettings,
@@ -52,7 +53,7 @@ const canMoveSlot = (slot: ReturnType<typeof popoverSlots>[number]) =>
   slot.kind === "card";
 const slotLabel = (slot: ReturnType<typeof popoverSlots>[number]) => {
   const id = slotId(slot);
-  return isHistoryModule(id) ? HISTORY_MODULES[id].title : "Disk";
+  return isHistoryModule(id) ? MODULE_TITLES[id] : "Disk";
 };
 const selectOrder = (settings: { cardOrder: PopoverCard[] | null }) =>
   settings.cardOrder;
@@ -68,6 +69,10 @@ const moveToTopAction: AccessibilityActionInfo = {
   label: "Move to top",
 };
 
+/**
+ * Render a host's module cards with their order and density controls.
+ * @throws If a card has no matching controls.
+ */
 export const CardStack = memo(function CardStack({
   host,
   dimmed,
@@ -166,7 +171,7 @@ export const CardStack = memo(function CardStack({
       {
         options: [
           compact[id] ? "Expand" : "Compact",
-          `Open ${HISTORY_MODULES[id].title}`,
+          `Open ${MODULE_TITLES[id]}`,
           "Move to top",
           "Cancel",
         ],

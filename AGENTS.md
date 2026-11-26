@@ -49,7 +49,7 @@ packages/
   core/src/                @statglass/core (~ @core/), shared by both apps: transport contract, mock, formatters, chart math
     generated/types.ts     tauri-specta types and constants. Generated, never hand-edit
 apps/
-  mobile/                  Expo app: src/app routes, src/hooks, src/widgets, src/transport, modules/statglass-native (Swift)
+  mobile/                  Expo app: src/app routes, src/data hooks, src/session, src/widgets, src/transport, modules/statglass-native (Swift)
 scripts/mobile/            mobile checks, iOS Rust check, XCFramework build
 plan/                      planning docs (owned by the planning process; read, don't restructure)
 ```

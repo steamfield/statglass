@@ -1,8 +1,7 @@
 import { batteryCard } from "@core/popover/cards";
-import { useColorScheme, View } from "react-native";
+import { View } from "react-native";
 import { ModuleCard } from "@/cards/module-card";
 import type { BatteryCardProps } from "@/cards/types";
-import { themeColors } from "@/theme.generated";
 import { Text } from "@/ui/text";
 import { WidgetAccent } from "@/widgets/accent";
 import { MeterTrack } from "@/widgets/meter-track";
@@ -37,17 +36,12 @@ export function BatteryDetails({
   card: ReturnType<typeof batteryCard>;
   showCharge?: boolean;
 }) {
-  const { foreground } = themeColors[useColorScheme() ?? "light"];
   return (
     <WidgetAccent value="battery">
       {showCharge && (
         <View className="flex-row flex-wrap justify-between gap-2">
           <Text variant={CHARGE_ROLE}>{card.title}</Text>
-          <Text
-            variant={CHARGE_ROLE}
-            // NativeWind drops the CSS font-variant-numeric property.
-            style={{ color: foreground, fontVariant: ["tabular-nums"] }}
-          >
+          <Text variant={CHARGE_ROLE} tone="default" tabular>
             {card.headline}
           </Text>
         </View>

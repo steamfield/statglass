@@ -1,4 +1,4 @@
-import { commandError, errorTone } from "@core/command-error";
+/** Memory composition, pressure and swap for a host. */
 import {
   formatBytes,
   formatMarketingMemory,
@@ -10,37 +10,33 @@ import type {
   HostInfo,
   SeriesHistoryStats,
 } from "@core/generated/types";
-import { historyGrid } from "@core/history-grid";
 import { currentLayout, keysOf } from "@core/live-selectors";
 import { MEMORY_PRESSURE_HERO, memoryUsedHero } from "@core/module-hero";
 import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { View } from "react-native";
-import { useFocusDemand } from "@/data/demand";
-import {
-  type HistoryRange,
-  historyReadError,
-  useHistoryRange,
-  useHostHistory,
-} from "@/data/history";
-import { useHosts } from "@/data/hosts-list";
+import { type ModuleRead, useModuleHistory } from "@/data/history";
 import {
   remoteStatusLine,
-  useConnection,
   useHostLive,
   useHostLiveSubscription,
 } from "@/data/live";
+import { HistoryNotice } from "@/module/history-notice";
 import { LiveProcessTable } from "@/module/live-process-table";
 import { ModuleChart } from "@/module/module-chart";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { useModulePage } from "@/module/use-module-page";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { MemoryComposition, SwapStats } from "./live-stats";
 
 const MEMORY_KEYS = ["mem.pressure", "mem.used", "mem.cached", "mem.swap_used"];
-const SELECTORS = MEMORY_KEYS.map((metric) => ({ metric, labels: [] }));
+const MEMORY_READ: ModuleRead = {
+  module: "memory",
+  selection: MEMORY_KEYS.map((metric) => ({ metric, labels: [] })),
+  gridKeys: MEMORY_KEYS,
+};
 const NO_EVENTS: readonly Event[] = [];
 const NO_STATS: readonly SeriesHistoryStats[] = [];
 const NO_GAPS: readonly Gap[] = [];
@@ -49,86 +45,6 @@ const MEMORY_LABELS: Record<string, string> = {
   "mem.used": "Used",
   "mem.pressure": "Pressure",
 };
-
-function MemoryHistoryNotice({
-  history,
-  hostName,
-  hasSamples,
-}: {
-  history: ReturnType<typeof useHostHistory>;
-  hostName: string | undefined;
-  hasSamples: boolean;
-}) {
-  const kind = commandError(history.error)?.kind;
-  const retryable =
-    kind === "remote_busy" ||
-    kind === "remote_unreachable" ||
-    kind === "internal";
-  const retryingBusy =
-    commandError(history.failureReason)?.kind === "remote_busy";
-  if (history.isPending || (history.isFetching && (retryable || retryingBusy)))
-    return <ModuleNotice message="Loading history…" />;
-  if (history.isError)
-    return (
-      <ModuleNotice
-        message={historyReadError(history.error, hostName)}
-        error={errorTone(history.error) === "error"}
-        onRetry={retryable ? () => void history.refetch() : undefined}
-      />
-    );
-  return hasSamples ? null : (
-    <ModuleNotice message="No samples in this range" />
-  );
-}
-
-function useMemoryHistory(
-  host: ModulePageProps["host"],
-  range: HistoryRange,
-  width: number | null,
-  connected: boolean
-) {
-  const history = useHostHistory(
-    host,
-    SELECTORS,
-    range,
-    width,
-    "memory",
-    connected
-  );
-  const windowMs = range.toMs - range.fromMs;
-  const previousWindow = useRef(windowMs);
-  const { isEnabled, isSuccess, isFetching, refetch } = history;
-  useEffect(() => {
-    const changed = previousWindow.current !== windowMs;
-    previousWindow.current = windowMs;
-    // A new range fetches on its own. Reopening a cached range also refreshes it.
-    if (changed && isEnabled && isSuccess && !isFetching)
-      void refetch({ cancelRefetch: false });
-  }, [isEnabled, isSuccess, isFetching, refetch, windowMs]);
-  const page = connected ? history.data?.page : undefined;
-  const displayedRange = history.data?.range ?? range;
-  const grid = useMemo(
-    () =>
-      page
-        ? historyGrid(
-            page,
-            MEMORY_KEYS,
-            displayedRange.fromMs,
-            displayedRange.toMs
-          )
-        : null,
-    [page, displayedRange]
-  );
-  const events = useMemo(
-    () =>
-      page?.events.filter(
-        ({ ts_ms }) =>
-          ts_ms >= displayedRange.fromMs && ts_ms <= displayedRange.toMs
-      ),
-    [page, displayedRange]
-  );
-  return { history, page, grid, displayedRange, events };
-}
 
 function memorySubtitle(info: HostInfo | undefined) {
   if (!info) return null;
@@ -145,30 +61,33 @@ function usePressureReported(host: ModulePageProps["host"]) {
   );
 }
 
+/** Render the host's memory history and current composition. */
 export function MemoryPage({
   host,
   range: defaultRange,
   remote,
 }: ModulePageProps) {
-  const [windowMs, setWindowMs] = useState(defaultRange);
-  const [width, setWidth] = useState<number | null>(null);
-  const record = useHosts().data?.find(({ id }) => id === host);
+  const {
+    windowMs,
+    setWindowMs,
+    width,
+    setWidth,
+    record,
+    connected,
+    connection,
+    live,
+    range,
+  } = useModulePage(host, remote, defaultRange);
   const total = record?.info.mem_total_bytes ?? null;
-  const connected = remote === undefined || remote.state === "connected";
-  const connection = useConnection(host, remote, null);
-  const live = connection.state === "live";
-  const clockOffsetMs = remote?.clock_offset_ms ?? 0;
-  const range = useHistoryRange(windowMs, clockOffsetMs);
   useHostLiveSubscription(host);
-  useFocusDemand(host, "full");
-  const data = useMemoryHistory(host, range, width, connected);
+  const history = useModuleHistory(host, MEMORY_READ, range, width, connected);
   return (
     <ModuleFrame
       title="Memory"
       subtitle={memorySubtitle(record?.info)}
       range={windowMs}
       onRange={setWindowMs}
-      events={data.events}
+      events={history.events}
       showDate={windowMs >= DAY_MS}
     >
       {connected ? (
@@ -180,16 +99,16 @@ export function MemoryPage({
             host={host}
             live={live}
             total={total}
-            stats={data.page?.stats ?? NO_STATS}
+            stats={history.data?.stats ?? NO_STATS}
           />
           <MemoryCharts
             key={windowMs}
             host={host}
-            remote={remote}
+            clockOffsetMs={range.offsetMs}
             live={live}
             hostName={record?.display_name}
             total={total}
-            data={data}
+            history={history}
             nowMs={range.toMs}
             onWidth={setWidth}
           />
@@ -206,21 +125,23 @@ export function MemoryPage({
 
 function MemoryCharts({
   host,
-  remote,
+  clockOffsetMs,
   live,
   hostName,
   total,
-  data: { history, page, grid, displayedRange, events },
+  history,
   nowMs,
   onWidth,
-}: Pick<ModulePageProps, "host" | "remote"> & {
+}: Pick<ModulePageProps, "host"> & {
+  clockOffsetMs: number;
   hostName: string | undefined;
   live: boolean;
   total: number | null;
-  data: ReturnType<typeof useMemoryHistory>;
+  history: ReturnType<typeof useModuleHistory>;
   nowMs: number;
   onWidth(width: number): void;
 }) {
+  const { data: page, grid, displayedRange, events } = history;
   const pressureReported = usePressureReported(host);
   const pressure =
     pressureReported ??
@@ -243,15 +164,15 @@ function MemoryCharts({
     range: displayedRange,
     nowMs: Math.max(nowMs, displayedRange.toMs),
     grid,
-    clockOffsetMs: remote?.clock_offset_ms ?? 0,
+    clockOffsetMs,
     loading: history.isPending,
     module: "memory",
     accent: "mem",
   } as const;
   return (
     <>
-      <View
-        className="gap-2 rounded-xl border border-border bg-card p-3"
+      <Card
+        className="gap-2"
         testID="history-plot-layout"
         onLayout={({ nativeEvent }) => onWidth(nativeEvent.layout.width)}
       >
@@ -267,13 +188,13 @@ function MemoryCharts({
           height={160}
           label={plot.subject}
         />
-        <MemoryHistoryNotice
-          history={history}
+        <HistoryNotice
+          query={history}
           hostName={hostName}
           hasSamples={hasSamples}
         />
-      </View>
-      <View className="gap-2 rounded-xl border border-border bg-card p-3">
+      </Card>
+      <Card className="gap-2">
         <Text variant="cardTitle" accessibilityRole="header">
           Swap
         </Text>
@@ -294,7 +215,7 @@ function MemoryCharts({
         {history.isSuccess && !hasSwapSamples && (
           <ModuleNotice message="No swap samples in this range" />
         )}
-      </View>
+      </Card>
     </>
   );
 }

@@ -54,7 +54,7 @@ export function ModuleFrame({
                     <Text
                       variant="body"
                       accessibilityRole="header"
-                      className="font-semibold!"
+                      weight="semibold"
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.75}

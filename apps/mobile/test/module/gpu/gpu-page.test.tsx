@@ -19,12 +19,8 @@ import {
   setModuleClock,
   watchHeld,
   watchHistory,
-} from "@test/module/cpu/fixtures";
+} from "@test/helpers/module-screen";
 import { act, fireEvent, screen } from "@testing-library/react-native";
-
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
 
 beforeEach(setModuleClock);
 afterEach(() => {

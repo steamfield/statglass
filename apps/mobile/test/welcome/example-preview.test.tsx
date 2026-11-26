@@ -12,8 +12,8 @@ import {
   testRouter,
 } from "expo-router/testing-library";
 import { AccessibilityInfo, AppState } from "react-native";
-import { DemoProvider } from "@/data/demo";
 import { AppProviders } from "@/lib/providers";
+import { DemoProvider } from "@/session/demo";
 import { Text } from "@/ui/text";
 import { ExamplePreview, WelcomeScreen } from "@/welcome/welcome-screen";
 

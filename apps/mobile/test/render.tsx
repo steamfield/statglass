@@ -5,11 +5,11 @@
 import { render } from "@testing-library/react-native";
 import type { ReactElement, ReactNode } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { DemoProvider } from "@/data/demo";
 import type { PhoneSettings } from "@/data/phone-settings";
 import type { PhoneTransport } from "@/data/seam";
 import { AppProviders } from "@/lib/providers";
 import { createQueryClient } from "@/lib/query-client";
+import { DemoProvider } from "@/session/demo";
 
 /**
  * A client with the app's defaults and cache garbage collection off, so no

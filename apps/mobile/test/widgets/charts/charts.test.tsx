@@ -1,21 +1,22 @@
 import { CHART_CAPTION_CHAR_WIDTH_PX } from "@core/widget-models/chart-annotation";
 import { POPOVER_CPU_STREAM } from "@core/widget-models/fixtures/charts";
-import { streamAreaModel } from "@core/widget-models/stream-area";
+import {
+  type StreamAreaSeries,
+  streamAreaModel,
+} from "@core/widget-models/stream-area";
 import { afterEach, describe, expect, it, jest } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { act, fireEvent, screen } from "@testing-library/react-native";
-import { useState } from "react";
 import {
   AccessibilityInfo,
   DeviceEventEmitter,
   Dimensions,
-  Pressable,
   processColor,
   StyleSheet,
   useColorScheme,
 } from "react-native";
 import * as Reanimated from "react-native-reanimated";
-import { motionDurations, themeColors } from "@/theme.generated";
+import { themeColors } from "@/theme.generated";
 import { StreamArea } from "@/widgets/stream-area";
 
 afterEach(() => {
@@ -39,23 +40,6 @@ const layout = () =>
   fireEvent(chart(), "layout", {
     nativeEvent: { layout: { x: 0, y: 0, width, height } },
   });
-
-function TickChart() {
-  // Another consumer can create a shared value before the chart mounts.
-  Reanimated.useSharedValue(1);
-  const [index, setIndex] = useState(0);
-  const tick = [0, 1, 3, 4, 5][index] ?? 0;
-  return (
-    <>
-      <StreamArea {...fixture} tEndMs={tEndMs + tick * intervalMs} />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Advance chart"
-        onPress={() => setIndex(index + 1)}
-      />
-    </>
-  );
-}
 
 describe("phone chart geometry", () => {
   it.each(["light", "dark"] as const)(
@@ -280,7 +264,28 @@ describe("phone chart geometry", () => {
 });
 
 describe("phone chart states and motion", () => {
-  it("keeps the frame busy while history loads and hides the marks", async () => {
+  it("draws a loading scan segment and stops the scan on unmount", async () => {
+    jest
+      .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
+      .mockResolvedValue(false);
+    const cancel = jest.spyOn(Reanimated, "cancelAnimation");
+    const { unmount } = await renderWithProviders(
+      <StreamArea {...fixture} loading />
+    );
+    await layout();
+    const plot = screen.getByRole("image", { name, busy: true });
+    const [segment] = plot.queryAll(
+      (element) =>
+        StyleSheet.flatten(element.props.style)?.backgroundColor ===
+        themeColors.light["cpu-ink"]
+    );
+    expect(segment).toBeVisible();
+    // The scan repeats forever, so leaving the screen has to cancel it.
+    await unmount();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a static loading baseline and hides readings and marks with Reduce Motion", async () => {
     jest
       .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
       .mockResolvedValue(true);
@@ -299,38 +304,6 @@ describe("phone chart states and motion", () => {
     expect(screen.queryByRole("note")).toBeNull();
     expect(screen.queryByText("CPU spike")).toBeNull();
     expect(repeat).not.toHaveBeenCalled();
-  });
-
-  it("scans the loading baseline and cancels that animation on unmount", async () => {
-    jest
-      .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
-      .mockResolvedValue(false);
-    const repeat = jest.spyOn(Reanimated, "withRepeat");
-    const delay = jest.spyOn(Reanimated, "withDelay");
-    const timing = jest.spyOn(Reanimated, "withTiming");
-    const cancel = jest.spyOn(Reanimated, "cancelAnimation");
-    const { unmount } = await renderWithProviders(
-      <StreamArea {...fixture} loading />
-    );
-    await layout();
-    expect(timing).toHaveBeenCalledWith(
-      width,
-      expect.objectContaining({ duration: motionDurations.scan })
-    );
-    expect(repeat).toHaveBeenCalledWith(
-      width,
-      -1,
-      false,
-      undefined,
-      Reanimated.ReduceMotion.Never
-    );
-    expect(delay).toHaveBeenCalledWith(
-      motionDurations.fast,
-      width,
-      Reanimated.ReduceMotion.Never
-    );
-    await unmount();
-    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it("multiplies gradient opacity by the series ramp step", async () => {
@@ -358,7 +331,7 @@ describe("phone chart states and motion", () => {
     expect(screen.queryByRole("note")).toBeNull();
   });
 
-  it("scrolls on the next tick and stops on gaps and when Reduce Motion is turned on", async () => {
+  it("shows the next tick without scrolling when Reduce Motion is turned on", async () => {
     jest
       .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
       .mockResolvedValue(false);
@@ -367,34 +340,32 @@ describe("phone chart states and motion", () => {
       .mockImplementationOnce((event, handler) =>
         DeviceEventEmitter.addListener(event, handler)
       );
-    const timing = jest.spyOn(Reanimated, "withTiming");
-    const sharedValues = jest.spyOn(Reanimated, "useSharedValue");
-    await renderWithProviders(<TickChart />);
-    const advance = () =>
-      fireEvent.press(screen.getByRole("button", { name: "Advance chart" }));
+    const cpu: StreamAreaSeries = { key: "cpu", step: 1, values: [0, 0] };
+    const { rerender } = await renderWithProviders(
+      <StreamArea {...fixture} series={[cpu]} />
+    );
     await layout();
-    expect(timing).not.toHaveBeenCalled();
-    const translationIndex = sharedValues.mock.calls.findIndex(
-      ([initial]) => initial === 0
-    );
-    const translation = sharedValues.mock.results[translationIndex];
-    if (translation?.type !== "return") throw new Error("No chart translation");
-    const setTranslation = jest.spyOn(translation.value, "set");
-    await advance();
-    expect(timing).toHaveBeenCalledTimes(1);
-    expect(timing).toHaveBeenCalledWith(
-      0,
-      expect.objectContaining({ duration: motionDurations.tick })
-    );
-    expect(setTranslation.mock.calls).toEqual([[5], [0]]);
-    timing.mockClear();
-    await advance();
-    expect(timing).not.toHaveBeenCalled();
+    const line = () =>
+      chart()
+        .queryAll((el) => el.type === "RNSVGPath")
+        .at(-1);
+    const previousLine = line();
+    expect(previousLine).toBeVisible();
+    const previousPath = previousLine?.props.d;
+
     await act(() => DeviceEventEmitter.emit("reduceMotionChanged", true));
-    await advance();
+    // The still renderer snaps to the same position even if scrolling runs.
+    const timing = jest.spyOn(Reanimated, "withTiming");
+    await rerender(
+      <StreamArea
+        {...fixture}
+        series={[{ ...cpu, values: [0, fixture.yMax] }]}
+        tEndMs={tEndMs + intervalMs}
+      />
+    );
+    const updatedLine = line();
+    expect(updatedLine).toBeVisible();
+    expect(updatedLine).not.toHaveProp("d", previousPath);
     expect(timing).not.toHaveBeenCalled();
-    await act(() => DeviceEventEmitter.emit("reduceMotionChanged", false));
-    await advance();
-    expect(timing).toHaveBeenCalledTimes(1);
   });
 });

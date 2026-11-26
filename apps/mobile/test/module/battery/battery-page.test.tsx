@@ -2,32 +2,20 @@ import "react-native-gesture-handler/jestSetup";
 
 import type { Event, LiveMsg } from "@core/generated/types";
 import { PAUSE_EXPLANATION } from "@core/history-state";
-import { MOCK_HOST_ID, PROCESSES } from "@core/mock/fixtures";
+import { PROCESSES } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
-import { mockAppState } from "@test/helpers/mock-app-state";
-import { renderWithProviders } from "@test/render";
+import {
+  layoutChart,
+  openModule,
+  setModuleClock,
+  waitForLiveSubscriber,
+} from "@test/helpers/module-screen";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import * as Localization from "expo-localization";
-import { ExpoRoot, Stack } from "expo-router";
-import { getMockContext } from "expo-router/testing-library";
-import { ModuleScreen } from "@/module";
 
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
-
-const context = getMockContext({
-  _layout: () => <Stack />,
-  "[host]/[module]": ModuleScreen,
-});
-const now = Date.UTC(2026, 10, 24, 15, 2);
-
-beforeEach(() => {
-  jest.useFakeTimers({ now });
-  mockAppState();
-});
+beforeEach(setModuleClock);
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -35,28 +23,14 @@ afterEach(() => {
 });
 
 async function openBattery(transport: ReturnType<typeof createMockTransport>) {
-  await renderWithProviders(
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${MOCK_HOST_ID}/battery`)}
-    />,
-    { transport }
-  );
-  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await openModule(transport, "battery");
+  await waitForLiveSubscriber(transport);
   await act(() => transport.tick());
 }
 
 async function layoutCharge() {
-  await fireEvent(
-    await screen.findByTestId("battery-charge-layout"),
-    "layout",
-    {
-      nativeEvent: { layout: { width: 310 } },
-    }
-  );
-  await fireEvent(screen.getByTestId("history-chart-plot"), "layout", {
-    nativeEvent: { layout: { width: 260 } },
-  });
+  await layoutChart("battery-charge-layout", 310);
+  await layoutChart("history-chart-plot", 260);
 }
 
 test("shows battery charge, capacity, signed power and energy-ranked processes", async () => {
@@ -201,10 +175,12 @@ test("shows the unavailable state on a host without a battery", async () => {
 
 test("retries a busy host, then distinguishes an empty history and its gap from current charge", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  const read = jest.spyOn(transport, "hostHistory").mockResolvedValue({
-    status: "error",
-    error: { kind: "remote_busy", message: "Try again" },
-  });
+  const read = jest.spyOn(transport, "hostHistory");
+  for (let attempt = 0; attempt < 3; attempt++)
+    transport.failNext("hostHistory", {
+      kind: "remote_busy",
+      message: "Try again",
+    });
   await openBattery(transport);
   await layoutCharge();
   expect(screen.getByText("Loading history…")).toBeOnTheScreen();

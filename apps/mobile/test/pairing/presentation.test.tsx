@@ -2,8 +2,8 @@ import { createMockPhonePairing } from "@core/mock/phone-pairing";
 import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { act, fireEvent, screen } from "@testing-library/react-native";
-import { PairingProvider } from "@/data/pairing-context";
 import { PairingFlow } from "@/pairing";
+import { PairingProvider } from "@/session/pairing";
 
 const press = (name: string) =>
   fireEvent.press(screen.getByRole("button", { name }));

@@ -20,18 +20,23 @@ scope are in `plan/rfc-ios-app.md`; what the two apps share is section 4.6 and
 ```
 apps/mobile/
   src/app/          # Expo Router routes: params, layout and wiring only
-  src/data/         # PhoneTransport seam and context, demo transport, phone settings store,
-                    #   and the data hooks (hosts list, vitals, live store, streams, history, events)
-  src/hosts/        # Hosts list rows
+  src/data/         # PhoneTransport seam and context, phone settings store, and the data hooks
+                    #   (hosts list, vitals, live store, streams, history, row sparklines, events)
+  src/transport/    # NativeTransport, the native core provider and device calls into statglass-native
+  src/session/      # Composes data and transport: demo mode, pairing, which transport is selected
+  src/hosts/        # Hosts list and its rows
   src/host/         # HostScreen: pager, header, connection pill, card stack, card menu
-  src/module/       # ModuleScreen: range control, scrubbable chart, events list
+  src/module/       # ModuleScreen: one page per module over useModulePage, range control, charts
   src/cards/        # Popover cards: presentational over core selectors, plus their prop types
   src/widgets/      # Widget twins (react-native-svg) over shared widget models; token colors
-  src/ui/           # Shared primitives such as the Dynamic Type Text roles
-  src/components/   # Phase 1 placeholders (action button, "not built yet")
+  src/ui/           # Shared primitives: Text roles, Button, Card, list rows, sheets, icons
+  src/connection/   # Connection problem banner, status warning and status announcements
+  src/welcome/      # First-launch screen, its example preview and the restore notice
+  src/pairing/      # "Add a host": the pairing flow and its screens
+  src/handover/     # Hosts handed over by the Mac: Update from Mac and the post-pairing selection
+  src/settings/     # Settings screens and host removal
   src/lock/         # App lock gate and background blur
   src/debug/        # Native core diagnostics shown on the debug screen
-  src/transport/    # NativeTransport and device calls into statglass-native
   src/lib/          # Providers, the QueryClient and small React Native utilities
   modules/statglass-native/  # Expo module: Swift, podspec, vendored XCFramework
   test/             # jest-expo + React Native Testing Library
@@ -56,6 +61,7 @@ apps/mobile/
 
 - Never import `react-dom`, `@tauri-apps/*`, `@desktop/*`, `~/` (the desktop's alias) or anything outside `apps/mobile` except through `@core/`; Biome and the write hook both reject it, because the desktop and phone render differently.
 - In app source, import `@native/*` only from `src/transport/`. Tests can use the native module's public test seam.
+- `src/data/` never imports `@/transport`; code that needs both lives in `src/session/`, and screens change the active transport through `useSelectNativeCore` and `useClearTransport` there. Biome rejects the import.
 - Widgets and cards receive data and navigation callbacks as props. Biome excludes `@/data`, `@/transport`, Expo Router and TanStack imports from those directories.
 - Install native-facing packages with `bunx expo install` so versions match the SDK; `expo install --check` in `make mobile-check` catches drift.
 - Resolve `react` and `react-native` only from `apps/mobile/node_modules`; the single-React check fails the export otherwise.
@@ -66,6 +72,9 @@ apps/mobile/
 - An inline `style` is for a runtime value (safe-area inset, measured size, Reanimated style) or a property with no utility, with a comment saying which.
 - Register third-party components for `className` once, in one module, since NativeWind silently drops it on unknown components.
 - Spacing, radii and card padding are mobile's own; do not copy desktop pixel values.
+- One spacing unit is 3.5 pt, because react-native-css sets rem to 14: `px-4` is 14 pt and `min-h-11` is 38.5 pt, not 44. `test/spacing-scale.test.mjs` pins both values.
+- Size a touch target with the `touch` token (`min-h-touch`, `min-w-touch`, `size-touch`, 44 pt), never `[44px]` or a spacing-scale class.
+- A card surface comes from `Card` or `PressableCard` and an action from `Button` (`src/ui/`); `test/ui/style-conventions.test.ts` fails on a hand-built copy of either.
 
 ## Platform
 

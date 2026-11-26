@@ -1,8 +1,34 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expect, it } from "@jest/globals";
+import { mobileSources, openingTags } from "@test/helpers/source-scan";
 import { render } from "@testing-library/react-native";
-import { Text, type TextVariant } from "@/ui/text";
+import { Text, type TextTone, type TextVariant } from "@/ui/text";
+
+const TONE_CLASSES = {
+  default: "text-foreground",
+  muted: "text-muted-foreground",
+  subtle: "text-fg-subtle",
+  faint: "text-fg-faint",
+  link: "text-link",
+  destructive: "text-destructive",
+  warning: "text-warning-ink",
+  onPrimary: "text-primary-foreground",
+} satisfies Record<TextTone, string>;
+
+const COLOUR_CLASSES: readonly string[] = Object.values(TONE_CLASSES);
+
+/** The classes a rendered Text carries, in order. */
+function classesOf(element: { props: { className?: unknown } }): string[] {
+  return String(element.props.className ?? "")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** The theme colour classes among them. A Text must carry exactly one. */
+function coloursOf(element: { props: { className?: unknown } }): string[] {
+  return classesOf(element).filter((name) => COLOUR_CLASSES.includes(name));
+}
 
 const variants = {
   largeTitle: [34, "600", "header"],
@@ -32,14 +58,11 @@ it.each(Object.entries(variants))(
       fontFamily: rounded ? "ui-rounded" : undefined,
       fontVariant: tabular ? ["tabular-nums"] : undefined,
     });
-    expect(text).toHaveProp(
-      "className",
-      expect.stringContaining(
-        ["label", "caption", "axis"].includes(variant)
-          ? "text-muted-foreground"
-          : "text-foreground"
-      )
-    );
+    expect(classesOf(text)).toEqual([
+      ["label", "caption", "axis"].includes(variant)
+        ? "text-muted-foreground"
+        : "text-foreground",
+    ]);
     if (variant === "axis") {
       expect(text).toHaveProp("maxFontSizeMultiplier", 1.5);
     } else {
@@ -50,6 +73,112 @@ it.each(Object.entries(variants))(
     );
   }
 );
+
+it.each(
+  (Object.entries(TONE_CLASSES) as [TextTone, string][]).flatMap(
+    ([tone, colour]) =>
+      (["caption", "body"] as const).map(
+        (variant) => [tone, variant, colour] as const
+      )
+  )
+)("renders the %s tone on %s as only %s", async (tone, variant, colour) => {
+  const view = await render(
+    <Text variant={variant} tone={tone}>
+      reading
+    </Text>
+  );
+
+  expect(coloursOf(view.getByText("reading"))).toEqual([colour]);
+});
+
+it("keeps the caller's layout classes after the tone class", async () => {
+  const view = await render(
+    <Text variant="label" tone="link" className="shrink text-right">
+      Clear pin
+    </Text>
+  );
+
+  expect(classesOf(view.getByText("Clear pin"))).toEqual([
+    "text-link",
+    "shrink",
+    "text-right",
+  ]);
+});
+
+it.each([
+  ["body", "semibold", "600"],
+  ["cardTitle", "regular", "400"],
+] as const)(
+  "renders %s at %s weight without a weight class",
+  async (variant, weight, fontWeight) => {
+    const view = await render(
+      <Text variant={variant} weight={weight}>
+        Retry
+      </Text>
+    );
+
+    const text = view.getByText("Retry");
+    expect(text).toHaveStyle({ fontWeight });
+    expect(classesOf(text).filter((name) => name.startsWith("font-"))).toEqual(
+      []
+    );
+  }
+);
+
+it("lets the caller's style override the weight", async () => {
+  const view = await render(
+    <Text variant="body" weight="semibold" style={{ fontWeight: "700" }}>
+      Retry
+    </Text>
+  );
+
+  expect(view.getByText("Retry")).toHaveStyle({ fontWeight: "700" });
+});
+
+it("gives a proportional variant tabular numerals when asked", async () => {
+  const view = await render(
+    <>
+      <Text variant="caption" tabular>
+        42 %
+      </Text>
+      <Text variant="caption">Idle</Text>
+      <Text variant="cardFigure" tabular>
+        3.2 GHz
+      </Text>
+    </>
+  );
+
+  expect(view.getByText("42 %")).toHaveStyle({ fontVariant: ["tabular-nums"] });
+  expect(view.getByText("Idle")).not.toHaveStyle({
+    fontVariant: ["tabular-nums"],
+  });
+  expect(view.getByText("3.2 GHz")).toHaveStyle({
+    fontVariant: ["tabular-nums"],
+    fontFamily: "ui-rounded",
+  });
+});
+
+it("passes no colour, weight or numeral class to a Text in mobile source", () => {
+  const owned =
+    /\btext-(?:foreground|muted-foreground|fg-subtle|fg-faint|link|destructive|warning-ink|primary-foreground)(?![\w-])|\bfont-(?:thin|light|normal|medium|semibold|bold|extrabold|black)(?![\w-])|\btabular-nums(?![\w-])/g;
+  const violations = mobileSources().flatMap(({ file, source }) =>
+    openingTags(source, ["Text"]).flatMap((tag) =>
+      (tag.match(owned) ?? []).map((name) => `${file}: ${name}`)
+    )
+  );
+
+  expect(violations).toEqual([]);
+});
+
+it("uses no important modifier on a class in mobile source", () => {
+  const important =
+    /(?<=["'`\s])(?:[a-z][\w:./[\]]*-[\w[\]./-]*!|![a-z][\w:]*-[\w-]+)(?=["'`\s])/g;
+  const violations = mobileSources().flatMap(({ file, source }) =>
+    (source.match(important) ?? []).map((name) => `${file}: ${name}`)
+  );
+
+  expect(violations).toEqual([]);
+});
 
 it("contains no Text role props or role spreads in mobile source", () => {
   const src = resolve(__dirname, "../../src");

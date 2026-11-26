@@ -160,7 +160,7 @@ export function StreamArea(
         </View>
       </View>
       {!spark && windowLabel && (
-        <Text variant="caption" className="self-end text-fg-faint tabular-nums">
+        <Text variant="caption" tone="faint" tabular className="self-end">
           {windowLabel}
         </Text>
       )}

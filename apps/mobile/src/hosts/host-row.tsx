@@ -7,18 +7,19 @@ import {
 } from "@core/phone-connection";
 import { failureReason } from "@core/remote-errors";
 import { useRef, useState } from "react";
-import { Pressable, useWindowDimensions, View } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   withTiming,
 } from "react-native-reanimated";
 import { StatusWarning } from "@/connection/status-warning";
+import { useHostSparkline } from "@/data/host-sparkline";
 import {
   useClearOfflineHostReadings,
-  useHostSparkline,
   useHostStatus,
   useHostVitals,
 } from "@/data/hosts";
+import { PressableCard } from "@/ui/card";
 import { Icon, type IconName } from "@/ui/icons";
 import { useMotion } from "@/ui/motion";
 import { Text } from "@/ui/text";
@@ -34,8 +35,6 @@ const PLATFORMS: Record<OsKind, { label: string; icon: IconName }> = {
 };
 
 const SPARKBARS_HEIGHT = 36;
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function useRowOpacity(stale: boolean) {
   const { fast } = useMotion();
@@ -123,39 +122,40 @@ export function HostRow({
     .filter(Boolean)
     .join(", ");
 
+  // The wrapper animates the stale fade while the card handles pressed opacity.
   return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onOpen}
-      className="min-h-[44px] gap-2 rounded-xl border border-border bg-card p-3 active:opacity-70"
-      style={opacity}
-    >
-      <HostRowHeader
-        name={host.display_name}
-        icon={platform.icon}
-        tone={connection.tone}
-        text={connection.label}
-      />
-      {statusError && (
-        <Text variant="caption" className="text-destructive!">
-          {statusError}
-        </Text>
-      )}
-      <Readings
-        readings={readings}
-        cpu={cpu}
-        memory={memory}
-        network={network}
-      />
-      {[vitalsError, historyError, summaryError]
-        .filter(Boolean)
-        .map((error) => (
-          <Text key={error} variant="caption" className="text-destructive!">
-            {error}
+    <Animated.View style={opacity}>
+      <PressableCard
+        accessibilityLabel={label}
+        onPress={onOpen}
+        className="gap-2"
+      >
+        <HostRowHeader
+          name={host.display_name}
+          icon={platform.icon}
+          tone={connection.tone}
+          text={connection.label}
+        />
+        {statusError && (
+          <Text variant="caption" tone="destructive">
+            {statusError}
           </Text>
-        ))}
-    </AnimatedPressable>
+        )}
+        <Readings
+          readings={readings}
+          cpu={cpu}
+          memory={memory}
+          network={network}
+        />
+        {[vitalsError, historyError, summaryError]
+          .filter(Boolean)
+          .map((error) => (
+            <Text key={error} variant="caption" tone="destructive">
+              {error}
+            </Text>
+          ))}
+      </PressableCard>
+    </Animated.View>
   );
 }
 
@@ -398,7 +398,8 @@ function HostRowHeader({
         {tone === "warning" && <StatusWarning />}
         <Text
           variant="caption"
-          className={tone === "warning" ? "shrink text-warning-ink" : "shrink"}
+          tone={tone === "warning" ? "warning" : undefined}
+          className="shrink"
         >
           {text}
         </Text>

@@ -24,10 +24,9 @@ import {
   useNativeRosterEmptied,
 } from "@/data/hosts-list";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
-import {
-  usePhoneTransport,
-  useSetPhoneTransport,
-} from "@/data/transport-context";
+import { usePhoneTransport } from "@/data/transport-context";
+import { useClearTransport } from "@/session/selection";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 import { RestoreNotice } from "@/welcome/restore-notice";
 import { useReplaceWithWelcome } from "./first-launch-redirect";
@@ -51,13 +50,13 @@ export function HostsList({
   const rosterEmptied = useNativeRosterEmptied();
   const focused = useIsFocused();
   const transport = usePhoneTransport();
-  const setTransport = useSetPhoneTransport();
+  const clearTransport = useClearTransport();
   const replaceWithWelcome = useReplaceWithWelcome();
   useEffect(() => {
     if (!rosterEmptied || !focused) return;
-    setTransport(null, false, transport);
+    clearTransport(transport);
     replaceWithWelcome();
-  }, [focused, replaceWithWelcome, rosterEmptied, setTransport, transport]);
+  }, [clearTransport, focused, replaceWithWelcome, rosterEmptied, transport]);
   const hosts = useHosts();
   const pairing = useHostsPairingState();
   const waitingForNetwork = useHostsWaitingForNetwork(hosts.data ?? []);
@@ -125,22 +124,14 @@ export function HostsList({
         <View className="gap-2">
           <RestoreNotice />
           {pairing.isError && (
-            <Text
-              variant="body"
-              accessibilityRole="alert"
-              className="text-destructive!"
-            >
+            <Text variant="body" accessibilityRole="alert" tone="destructive">
               Couldn’t check pairing.{" "}
               {failureReason(pairing.error, "Pull down to try again.")}
             </Text>
           )}
           {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
           {hosts.isError && (
-            <Text
-              variant="body"
-              accessibilityRole="alert"
-              className="text-destructive!"
-            >
+            <Text variant="body" accessibilityRole="alert" tone="destructive">
               Couldn’t load hosts.{" "}
               {failureReason(hosts.error, "Pull down to try again.")}
             </Text>
@@ -158,26 +149,18 @@ export function HostsList({
                 Pair a Mac to view its live metrics and history, or explore the
                 demo hosts.
               </Text>
-              <Pressable
-                accessibilityRole="button"
+              <Button
+                label="Add a host"
                 accessibilityLabel="Add a host"
                 onPress={onPair}
-                className="min-h-[44px] justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70"
-              >
-                <Text
-                  variant="body"
-                  className="font-semibold! text-primary-foreground"
-                >
-                  Add a host
-                </Text>
-              </Pressable>
+              />
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Try demo hosts"
                 onPress={tryDemo}
-                className="min-h-[44px] justify-center px-4 py-2 active:opacity-70"
+                className="min-h-touch justify-center px-4 py-2 active:opacity-70"
               >
-                <Text variant="body" className="text-link">
+                <Text variant="body" tone="link">
                   Try demo hosts
                 </Text>
               </Pressable>
@@ -200,11 +183,7 @@ function RetryErrors({ failures }: { failures: HostRetryFailure[] }) {
   const multiple = failures.length > 1;
   return (
     <View className="gap-1">
-      <Text
-        variant="body"
-        accessibilityRole="alert"
-        className="text-destructive!"
-      >
+      <Text variant="body" accessibilityRole="alert" tone="destructive">
         {multiple
           ? `Couldn't reconnect ${failures.length} hosts`
           : `Couldn't reconnect ${first.displayName}: ${first.reason}`}

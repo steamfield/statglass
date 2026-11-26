@@ -1,3 +1,4 @@
+/** Chart-range-independent scaling for live power rings. */
 import { niceCeiling } from "@core/chart-math";
 import type { HostId } from "@core/generated/types";
 import { seriesWindow } from "@core/live-state";

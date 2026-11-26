@@ -14,9 +14,7 @@ import { BATTERY_HERO } from "@core/module-hero";
 import { DAY_MS } from "@core/time-grid";
 import { useRouter } from "expo-router";
 import { memo, useMemo, useState } from "react";
-import { View } from "react-native";
 import { shallow } from "zustand/shallow";
-import { CARD_SURFACE } from "@/cards/module-card";
 import {
   useHistoryRange,
   useHostHistory,
@@ -25,6 +23,7 @@ import {
 import { useHostLive } from "@/data/live";
 import { HistoryNotice } from "@/module/history-notice";
 import { ModuleChart } from "@/module/module-chart";
+import { Card } from "@/ui/card";
 import { ListRow } from "@/ui/list-row";
 import { Text } from "@/ui/text";
 import { StatList } from "@/widgets/stat-list";
@@ -126,8 +125,8 @@ export function BatteryDayCard({
     [series]
   );
   return (
-    <View
-      className={`${CARD_SURFACE} gap-3 p-3`}
+    <Card
+      className="gap-3"
       testID="battery-charge-layout"
       onLayout={({ nativeEvent }) => onWidth(nativeEvent.layout.width)}
     >
@@ -184,7 +183,7 @@ export function BatteryDayCard({
           onPress={onOpenBattery}
         />
       )}
-    </View>
+    </Card>
   );
 }
 

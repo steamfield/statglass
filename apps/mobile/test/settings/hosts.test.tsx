@@ -5,7 +5,7 @@ import { createMockTransport } from "@core/mock-transport";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { FakeNative, ok } from "@test/transport/fake-native";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, screen } from "@testing-library/react-native";
 import { ExpoRoot, router, Stack } from "expo-router";
 import { getMockContext } from "expo-router/testing-library";
 import { ActionSheetIOS, Alert } from "react-native";
@@ -86,10 +86,7 @@ async function selectAction(menu: ReturnType<typeof showMenu>, index: number) {
   await act(() => last[1](index));
 }
 
-async function renderNativeHosts(
-  location = "/settings/hosts",
-  readStatuses = () => ok([])
-) {
+async function renderNativeHosts(location = "/settings/hosts") {
   const native = new FakeNative();
   const primary = hostRecord(scenarioFlags([]), Date.now());
   const backup = { ...primary, id: "backup", display_name: "Backup server" };
@@ -100,7 +97,7 @@ async function renderNativeHosts(
   });
   native.call.mockImplementation(async (method, args) => {
     if (method === "list_hosts") return ok(records);
-    if (method === "list_remote_hosts") return readStatuses();
+    if (method === "list_remote_hosts") return ok([]);
     if (method === "remove_host") {
       const { host } = JSON.parse(args) as { host: string };
       return remove(host);
@@ -232,24 +229,25 @@ test("shares the pending removal between the roster and host detail", async () =
 });
 
 test("explains a failed status read and retries the status query", async () => {
-  let available = false;
-  await renderNativeHosts("/settings/hosts", () =>
-    available
-      ? ok([])
-      : JSON.stringify({
-          status: "error",
-          error: { kind: "store", message: "The status service is busy." },
-        })
+  const transport = mockHosts();
+  transport.failNext("listRemoteHosts", {
+    kind: "store",
+    message: "The status service is busy.",
+  });
+  await renderWithProviders(
+    <ExpoRoot context={routes} location="/settings/hosts" />,
+    { transport }
   );
   expect(
     await screen.findByText("The status service is busy.")
   ).toBeOnTheScreen();
-  available = true;
   await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
-  await waitFor(() =>
-    expect(screen.queryByText("The status service is busy.")).toBeNull()
-  );
-  expect(hostRow("MacBook Pro")).toBeOnTheScreen();
+  expect(
+    await screen.findByRole("button", {
+      name: /^unreachable, Needs attention · Host unreachable/,
+    })
+  ).toBeOnTheScreen();
+  expect(screen.queryByText("The status service is busy.")).toBeNull();
 });
 
 test.each([

@@ -280,7 +280,7 @@ function ReorderRow({
 
   return (
     <GestureDetector gesture={hold}>
-      <View collapsable={false} className="min-h-[44px] justify-center">
+      <View collapsable={false} className="min-h-touch justify-center">
         {/* Keep the row's buttons reachable as separate VoiceOver targets. */}
         {!accessibilityOnItem && actions.length > 0 && (
           <View

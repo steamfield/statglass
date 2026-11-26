@@ -1,29 +1,20 @@
 import { formatHistoryTime, formatRate, MISSING } from "@core/format";
 import type { HostAddressesInfo } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
-import { createMockTransport, type MockTransport } from "@core/mock-transport";
+import { createMockTransport } from "@core/mock-transport";
 import { MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
-import { mockAppState } from "@test/helpers/mock-app-state";
-import { renderWithProviders } from "@test/render";
+import {
+  layoutChart,
+  MODULE_TEST_NOW as now,
+  openModule,
+  setModuleClock,
+} from "@test/helpers/module-screen";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { ExpoRoot, router, Stack } from "expo-router";
-import { getMockContext } from "expo-router/build/testing-library/mock-config";
+import { router } from "expo-router";
 import * as ReactNative from "react-native";
 import { createGestureController } from "react-native-gesture-handler/jest-utils";
-import { ModuleScreen } from "@/module";
-import { Text } from "@/ui/text";
 
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
-
-const context = getMockContext({
-  _layout: () => <Stack />,
-  "[host]/[module]": ModuleScreen,
-  elsewhere: () => <Text variant="body">Another screen</Text>,
-});
-const now = Date.UTC(2026, 10, 24, 15, 2);
 const addresses: HostAddressesInfo = {
   interface: "en0",
   link_mbps: 143,
@@ -44,23 +35,10 @@ beforeEach(() => {
   textAt(1);
 });
 
-beforeEach(() => {
-  jest.useFakeTimers({ now });
-  mockAppState();
-});
+beforeEach(setModuleClock);
 afterEach(() => {
   jest.useRealTimers();
 });
-
-function openNetwork(transport: MockTransport, host = MOCK_HOST_ID) {
-  return renderWithProviders(
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${host}/network`)}
-    />,
-    { transport }
-  );
-}
 
 const advance = (ms: number) => act(() => jest.advanceTimersByTimeAsync(ms));
 
@@ -77,7 +55,7 @@ test("the Network header names the interface and link, and Addresses lists each 
     status: "ok",
     data: addresses,
   });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   expect(await screen.findByText(header)).toBeOnTheScreen();
   expect(screen.getByText("Addresses")).toBeOnTheScreen();
   expect(screen.getByLabelText("IPv4")).toHaveAccessibilityValue({
@@ -105,7 +83,7 @@ test("Addresses keeps every reported IPv4 and IPv6 address, IPv4 first and the p
       ipv6: ["2001:db8::1", "2001:db8::2"],
     },
   });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await publicIp("76.143.14.53");
   const values = screen
     .getAllByLabelText(/^(IPv4|IPv6|Public IP)$/)
@@ -130,7 +108,7 @@ test("a full IPv6 address sits under its label instead of breaking in the value 
     status: "ok",
     data: { ...addresses, ipv6: [full] },
   });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await publicIp("76.143.14.53");
   expect(screen.getByLabelText("IPv6")).toHaveAccessibilityValue({
     text: full,
@@ -148,7 +126,7 @@ test("at accessibility text sizes every address sits under its label", async () 
     status: "ok",
     data: addresses,
   });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await publicIp("76.143.14.53");
   for (const address of ["192.168.86.242", "2001:db8::1", "76.143.14.53"])
     stacked(address);
@@ -160,7 +138,7 @@ test("a pending public IP gets at most five polls, two seconds apart", async () 
     status: "ok",
     data: { ...addresses, public_ip: { state: "pending" } },
   });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await publicIp("Looking up…");
   await advance(1999);
   expect(read).toHaveBeenCalledTimes(1);
@@ -182,7 +160,7 @@ test("blur stops address polling, and refocus immediately refreshes the address"
       data: { ...addresses, public_ip: { state: "pending" } },
     })
     .mockResolvedValue({ status: "ok", data: addresses });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await publicIp("Looking up…");
   await act(() => router.push("/elsewhere"));
   expect(await screen.findByText("Another screen")).toBeOnTheScreen();
@@ -202,7 +180,7 @@ test("polling stops when a previously pending public IP resolves", async () => {
       data: { ...addresses, public_ip: { state: "pending" } },
     })
     .mockResolvedValue({ status: "ok", data: addresses });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await publicIp("Looking up…");
   await advance(2000);
   await publicIp("76.143.14.53");
@@ -215,7 +193,7 @@ test("an unavailable public IP includes the host's reason as a VoiceOver hint", 
     autoTick: false,
     scenarios: ["linux-host"],
   });
-  await openNetwork(transport, "remote-linux");
+  await openModule(transport, "network", "remote-linux");
   await publicIp("Unavailable");
   expect(screen.getByHintText("curl not installed")).toBe(
     screen.getByLabelText("Public IP")
@@ -228,7 +206,7 @@ test("an unknown public IP state shows the unavailable wording", async () => {
     status: "ok",
     data: { ...addresses, public_ip: { state: "unknown" } },
   });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await publicIp("Unavailable");
   expect(screen.queryByHintText("curl not installed")).not.toBeOnTheScreen();
 });
@@ -239,7 +217,7 @@ test("a host without the address query falls back to the live interface and link
     scenarios: ["hosts-outdated"],
   });
   const read = jest.spyOn(transport, "networkAddresses");
-  await openNetwork(transport, "remote-nas");
+  await openModule(transport, "network", "remote-nas");
   await act(() => transport.tick());
   expect(await screen.findByText("end0 · 1.0 Gb/s link")).toBeOnTheScreen();
   expect(read).toHaveBeenCalledWith("remote-nas");
@@ -248,11 +226,11 @@ test("a host without the address query falls back to the live interface and link
 
 test("an address query failure shows the typed recovery wording", async () => {
   const transport = createMockTransport({ autoTick: false });
-  jest.spyOn(transport, "networkAddresses").mockResolvedValue({
-    status: "error",
-    error: { kind: "remote_busy", message: "timed out" },
+  transport.failNext("networkAddresses", {
+    kind: "remote_busy",
+    message: "timed out",
   });
-  await openNetwork(transport);
+  await openModule(transport, "network");
   expect(
     await screen.findByRole("alert", {
       name: "This host is busy or slow to answer, so its addresses can't be read now. Try again in a moment.",
@@ -268,7 +246,7 @@ test("a focused Network page reads addresses when its connecting host becomes re
   });
   transport.pushRemoteStatus("remote-linux", { state: "connecting" });
   const read = jest.spyOn(transport, "networkAddresses");
-  await openNetwork(transport, "remote-linux");
+  await openModule(transport, "network", "remote-linux");
   await screen.findByRole("tab", { name: "1h, History range" });
   expect(read).not.toHaveBeenCalled();
   await act(() =>
@@ -314,13 +292,9 @@ test("Network draws the two rates, direction ceilings and time ticks, and reads 
         clamped: [],
       },
     }));
-  await openNetwork(transport);
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
-  await fireEvent(screen.getByTestId("history-chart-plot"), "layout", {
-    nativeEvent: { layout: { width: 270 } },
-  });
+  await openModule(transport, "network");
+  await layoutChart();
+  await layoutChart("history-chart-plot", 270);
   expect(
     await screen.findByText(`↑ Upload · ${formatRate(500_000)}`)
   ).toBeOnTheScreen();
@@ -374,10 +348,8 @@ test("empty Network history explains that there are no samples to inspect", asyn
       clamped: [],
     },
   });
-  await openNetwork(transport);
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
+  await openModule(transport, "network");
+  await layoutChart();
   expect(await screen.findByText("No samples in this range")).toBeOnTheScreen();
   expect(screen.queryByText(/Drag to inspect/)).not.toBeOnTheScreen();
   expect(
@@ -412,10 +384,8 @@ test("Network shows the host's range totals and how long a short range was measu
       clamped: [],
     },
   });
-  await openNetwork(transport);
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
+  await openModule(transport, "network");
+  await layoutChart();
   await waitFor(() =>
     expect(screen.getByLabelText(/^↓ Downloaded · /)).toHaveAccessibilityValue({
       text: /GB in 11 min$/,
@@ -429,7 +399,7 @@ test("Network shows the host's range totals and how long a short range was measu
 test("Network shows live throughput and interfaces and ranks processes by rate", async () => {
   const transport = createMockTransport({ autoTick: false });
   const interest = jest.spyOn(transport, "setProcessInterest");
-  await openNetwork(transport);
+  await openModule(transport, "network");
   await waitFor(() =>
     expect(interest).toHaveBeenCalledWith(
       MOCK_HOST_ID,
@@ -464,10 +434,8 @@ test("Network shows live throughput and interfaces and ranks processes by rate",
 
 test("Network keeps visible history while the live readings reconnect", async () => {
   const transport = createMockTransport({ autoTick: false });
-  await openNetwork(transport);
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
+  await openModule(transport, "network");
+  await layoutChart();
   await advance(1000);
   await act(() => transport.tick());
   expect(screen.getByLabelText("Download")).toHaveAccessibilityValue({
@@ -487,29 +455,20 @@ test("Network keeps visible history while the live readings reconnect", async ()
 
 test("Network reports busy history after bounded retry and offers a working Retry", async () => {
   const transport = createMockTransport({ autoTick: false });
-  const hostHistory = transport.hostHistory;
-  let busy = true;
-  const read = jest
-    .spyOn(transport, "hostHistory")
-    .mockImplementation(async (request) =>
-      busy
-        ? {
-            status: "error",
-            error: { kind: "remote_busy", message: "Host busy" },
-          }
-        : hostHistory(request)
-    );
-  await openNetwork(transport);
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
+  const read = jest.spyOn(transport, "hostHistory");
+  for (let attempt = 0; attempt < 3; attempt++)
+    transport.failNext("hostHistory", {
+      kind: "remote_busy",
+      message: "Host busy",
+    });
+  await openModule(transport, "network");
+  await layoutChart();
   await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   await advance(2000);
   expect(
     await screen.findByRole("alert", { name: /^StatGlass on .+ is busy$/ })
   ).toBeOnTheScreen();
   expect(read).toHaveBeenCalledTimes(3);
-  busy = false;
   await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
   await waitFor(() =>
     expect(
@@ -543,10 +502,8 @@ test("a lower Network peak holds the previous scale for a minute", async () => {
         clamped: [],
       },
     }));
-  await openNetwork(transport);
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
+  await openModule(transport, "network");
+  await layoutChart();
   const firstCeiling = `↓ Download · ${formatRate(peak)}`;
   expect(await screen.findByText(firstCeiling)).toBeOnTheScreen();
   const chart = screen.getByRole("adjustable", {
@@ -577,10 +534,8 @@ test("a lower Network peak holds the previous scale for a minute", async () => {
 test("Network asks for one bar per six points of plot, like the desktop's narrow mirror charts", async () => {
   const transport = createMockTransport({ autoTick: false });
   const history = jest.spyOn(transport, "hostHistory");
-  await openNetwork(transport);
-  await fireEvent(await screen.findByTestId("history-plot-layout"), "layout", {
-    nativeEvent: { layout: { width: 300 } },
-  });
+  await openModule(transport, "network");
+  await layoutChart();
   await waitFor(() =>
     expect(history).toHaveBeenCalledWith(
       expect.objectContaining({ max_points: 50 })

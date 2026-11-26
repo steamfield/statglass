@@ -1,3 +1,4 @@
+/** CPU readings, history and per-core load for a host. */
 import { commandErrorText, errorTone } from "@core/command-error";
 import { clusterViews, coreCounts } from "@core/cpu-clusters";
 import { formatPercent } from "@core/format";
@@ -5,19 +6,26 @@ import type { HostInfo } from "@core/generated/types";
 import { CPU_HERO } from "@core/module-hero";
 import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
-import { useMemo, useState } from "react";
-import { View } from "react-native";
-import { useHistoryRange, useModuleHistory } from "@/data/history";
+import { useMemo } from "react";
+import { type ModuleRead, useModuleHistory } from "@/data/history";
 import { useHosts } from "@/data/hosts-list";
-import { remoteStatusLine, useConnection } from "@/data/live";
+import { remoteStatusLine } from "@/data/live";
 import { HistoryNotice } from "@/module/history-notice";
 import { LiveProcessTable } from "@/module/live-process-table";
 import { ModuleChart } from "@/module/module-chart";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { useModulePage } from "@/module/use-module-page";
+import { Card } from "@/ui/card";
 import { CoreLoad } from "./core-load";
 import { CpuStats } from "./stats";
+
+const CPU_READ: ModuleRead = {
+  module: "cpu",
+  selection: CPU_HERO.keys.map((metric) => ({ metric, labels: [] })),
+  gridKeys: CPU_HERO.keys,
+};
 
 function cpuSubtitle(info: HostInfo) {
   const { performance, efficiency, total } = coreCounts(info);
@@ -28,30 +36,34 @@ function cpuSubtitle(info: HostInfo) {
     : `${chip} · ${performance} performance + ${efficiency} efficiency cores`;
 }
 
+/** Render the host's CPU history and current readings. */
 export function CpuPage({
   host,
   range: defaultRange,
   remote,
 }: ModulePageProps) {
-  const [windowMs, setWindowMs] = useState(defaultRange);
-  const [width, setWidth] = useState<number | null>(null);
+  const {
+    windowMs,
+    setWindowMs,
+    width,
+    setWidth,
+    record,
+    connected,
+    connection,
+    live,
+    range,
+  } = useModulePage(host, remote, defaultRange);
+  // The roster query also supplies the topology notice and its retry.
   const hosts = useHosts();
-  const record = hosts.data?.find(({ id }) => id === host);
   const info = record?.info;
   const clusters = useMemo(
     () => clusterViews(info?.cpu_topology ?? []),
     [info?.cpu_topology]
   );
-  const connected = remote === undefined || remote.state === "connected";
-  const clockOffset = remote?.clock_offset_ms ?? 0;
-  const range = useHistoryRange(windowMs, clockOffset);
-  const connection = useConnection(host, remote, null);
   const liveIssue =
-    connection.state !== "live" && connection.label !== "Connecting"
-      ? connection.label
-      : null;
-  const history = useModuleHistory(host, "cpu", range, width, connected);
-  const { data, displayedRange, grid } = history;
+    !live && connection.label !== "Connecting" ? connection.label : null;
+  const history = useModuleHistory(host, CPU_READ, range, width, connected);
+  const { data, displayedRange, grid, events } = history;
   const series = useMemo(
     () =>
       CPU_HERO.lines(grid?.values ?? {}).map((line) => ({
@@ -63,15 +75,6 @@ export function CpuPage({
   const hasSamples = series.some(({ values }) =>
     values.some((value) => value !== null)
   );
-  const events = useMemo(
-    () =>
-      data?.events.filter(
-        ({ ts_ms }) =>
-          ts_ms >= displayedRange.fromMs && ts_ms <= displayedRange.toMs
-      ),
-    [data?.events, displayedRange]
-  );
-
   return (
     <ModuleFrame
       title="CPU"
@@ -85,8 +88,8 @@ export function CpuPage({
         <>
           {liveIssue && <ModuleNotice message={liveIssue} />}
           <CpuStats host={host} remote={remote} stats={data?.stats} />
-          <View
-            className="gap-2 rounded-xl border border-border bg-card p-3"
+          <Card
+            className="gap-2"
             testID="history-plot-layout"
             onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
           >
@@ -99,7 +102,7 @@ export function CpuPage({
               range={displayedRange}
               nowMs={Math.max(displayedRange.toMs, range.toMs)}
               events={events ?? []}
-              clockOffsetMs={clockOffset}
+              clockOffsetMs={range.offsetMs}
               height={160}
               accent="cpu"
               module="cpu"
@@ -112,7 +115,7 @@ export function CpuPage({
               hostName={record?.display_name}
               hasSamples={hasSamples}
             />
-          </View>
+          </Card>
           {clusters.length > 0 ? (
             <CoreLoad
               host={host}

@@ -18,15 +18,11 @@ import { gapBandsModel } from "@core/widget-models/gap-band";
 import type { StreamAreaSeries } from "@core/widget-models/stream-area";
 import type { Accent } from "@core/widget-models/tokens";
 import { useMemo, useState } from "react";
-import {
-  Pressable,
-  useColorScheme,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { useColorScheme, useWindowDimensions, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
 import type { HistoryRange } from "@/data/history";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 import { ChartAnnotationBand } from "@/widgets/chart-annotations";
 import { resolveColor } from "@/widgets/colors";
@@ -175,7 +171,7 @@ function ChartReadout({
   return (
     <View className="flex-row flex-wrap items-start justify-between gap-2">
       <View className="shrink gap-1">
-        <Text variant="caption" className="tabular-nums">
+        <Text variant="caption" tabular>
           {time}
         </Text>
         {values.map(({ key, label, figure }) => (
@@ -184,17 +180,7 @@ function ChartReadout({
           </Text>
         ))}
       </View>
-      {clear && (
-        <Pressable
-          accessibilityRole="button"
-          onPress={clear}
-          className="min-h-[44px] min-w-[44px] justify-center active:opacity-70"
-        >
-          <Text variant="label" className="text-link">
-            Clear pin
-          </Text>
-        </Pressable>
-      )}
+      {clear && <Button variant="link" label="Clear pin" onPress={clear} />}
     </View>
   );
 }

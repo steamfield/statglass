@@ -86,7 +86,8 @@ export function ConnectionPill({
       <Text
         variant="caption"
         accessibilityLiveRegion={active && state !== "live" ? "polite" : "none"}
-        className="shrink tabular-nums"
+        tabular
+        className="shrink"
       >
         {pillLabel(connection, status, live, active, age)}
       </Text>

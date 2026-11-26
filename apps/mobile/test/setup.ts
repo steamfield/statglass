@@ -28,3 +28,8 @@ jest.mock("expo-battery", () => ({
 
 // Reanimated's native runtime is unavailable too; charts render still.
 jest.mock("react-native-reanimated", () => require("./reanimated-stub"));
+
+// Gesture callbacks run as worklets, which need the native runtime as well.
+jest.mock("react-native-worklets", () =>
+  jest.requireActual("react-native-worklets/src/mock")
+);

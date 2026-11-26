@@ -1,3 +1,4 @@
+/** Dynamic Type text variants and their theme tones. */
 import {
   Text as NativeText,
   type TextProps as NativeTextProps,
@@ -44,12 +45,53 @@ const typography = StyleSheet.create({
   axis: { fontSize: 11, fontWeight: "400", fontVariant: ["tabular-nums"] },
 });
 
+/** A theme text colour. Each tone is one token, so light and dark follow the system. */
+export type TextTone =
+  | "default"
+  | "muted"
+  | "subtle"
+  | "faint"
+  | "link"
+  | "destructive"
+  | "warning"
+  | "onPrimary";
+
+const toneClasses = {
+  default: "text-foreground",
+  muted: "text-muted-foreground",
+  subtle: "text-fg-subtle",
+  faint: "text-fg-faint",
+  link: "text-link",
+  destructive: "text-destructive",
+  warning: "text-warning-ink",
+  onPrimary: "text-primary-foreground",
+} satisfies Record<TextTone, string>;
+
+const overrides = StyleSheet.create({
+  regular: { fontWeight: "400" },
+  semibold: { fontWeight: "600" },
+  tabular: { fontVariant: ["tabular-nums"] },
+});
+
+/** Props for a Dynamic Type variant with optional tone and typography overrides. */
 export type TextProps = Omit<NativeTextProps, "role"> & {
   variant: TextVariant;
+  /** Text colour. Label, caption and axis default to `muted`, every other variant to `default`. */
+  tone?: TextTone | undefined;
+  /** Overrides the variant's weight. */
+  weight?: "regular" | "semibold" | undefined;
+  /** Fixed-width digits on a variant that doesn't already have them. */
+  tabular?: boolean | undefined;
+  /** Layout only. Colour, weight and numerals come from the props above. */
+  className?: string | undefined;
 };
 
+/** Renders a Dynamic Type variant with one theme tone. */
 export function Text({
   variant,
+  tone,
+  weight,
+  tabular,
   className,
   style,
   maxFontSizeMultiplier,
@@ -61,15 +103,21 @@ export function Text({
     variant === "onboardingTitle";
   const muted =
     variant === "label" || variant === "caption" || variant === "axis";
-  const color = muted ? "text-muted-foreground" : "text-foreground";
+  const colour = toneClasses[tone ?? (muted ? "muted" : "default")];
+  const variantStyle = typography[variant];
 
   return (
     <NativeText
       accessibilityRole={heading ? "header" : undefined}
       {...rest}
-      className={className ? `${color} ${className}` : color}
+      className={className ? `${colour} ${className}` : colour}
       maxFontSizeMultiplier={variant === "axis" ? 1.5 : maxFontSizeMultiplier}
-      style={[typography[variant], style]}
+      style={[
+        variantStyle,
+        weight && overrides[weight],
+        tabular && !("fontVariant" in variantStyle) && overrides.tabular,
+        style,
+      ]}
     />
   );
 }

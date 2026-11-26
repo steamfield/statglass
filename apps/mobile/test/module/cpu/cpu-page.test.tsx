@@ -8,13 +8,6 @@ import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react-native";
-import {
   expectStat,
   layoutChart,
   openModule,
@@ -22,11 +15,14 @@ import {
   setModuleClock,
   watchHeld,
   watchHistory,
-} from "./fixtures";
-
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
+} from "@test/helpers/module-screen";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react-native";
 
 beforeEach(setModuleClock);
 afterEach(() => {
@@ -265,6 +261,7 @@ test("the CPU chart and heatmap each ask again when the range is picked again", 
 
 test("an unsupported per-core read leaves the CPU chart usable and identifies the affected host", async () => {
   const transport = createMockTransport({ autoTick: false });
+  // failNext cannot pick a request, and only the per-core read fails here.
   const original = transport.hostHistory.bind(transport);
   jest.spyOn(transport, "hostHistory").mockImplementation((request) =>
     request.events_for === "cpu"
@@ -327,9 +324,7 @@ test("a measured per-core bucket remains visible when a short pause crosses it",
     await screen.findByRole("image", { name: /1 of 1 cores with history/ })
   ).toBeOnTheScreen();
   expect(screen.queryByText("No samples in this range")).not.toBeOnTheScreen();
-  await fireEvent(screen.getByTestId("heat-gap-plot"), "layout", {
-    nativeEvent: { layout: { width: 200, height: 80 } },
-  });
+  await layoutChart("heat-gap-plot", 200, 80);
   expect(
     await screen.findByRole("note", { name: PAUSE_EXPLANATION })
   ).toBeOnTheScreen();
@@ -351,9 +346,13 @@ test("CPU explains a silent live stream while retaining historical data", async 
 
 test("CPU names a failed topology read without hiding total history", async () => {
   const transport = createMockTransport({ autoTick: false });
-  jest
-    .spyOn(transport, "listHosts")
-    .mockRejectedValue(new Error("The host list is unavailable."));
+  const error = {
+    kind: "internal",
+    message: "The host list is unavailable.",
+  } as const;
+  // The roster query retries an internal error once; both attempts fail.
+  transport.failNext("listHosts", error);
+  transport.failNext("listHosts", error);
   await openModule(transport, "cpu");
   await layoutChart();
   await act(() => jest.advanceTimersByTimeAsync(1100));

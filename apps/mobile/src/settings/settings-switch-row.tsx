@@ -11,7 +11,7 @@ export function SettingsSwitchRow({
 }) {
   const colors = useThemeColors();
   return (
-    <View className="min-h-[44px] flex-row items-center gap-3 px-4 py-2">
+    <View className="min-h-touch flex-row items-center gap-3 px-4 py-2">
       <Text
         variant="body"
         className="flex-1"

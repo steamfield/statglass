@@ -1,8 +1,10 @@
 import { BlurView } from "expo-blur";
 import { authenticateAsync } from "expo-local-authentication";
 import { type ReactNode, useEffect, useReducer, useRef } from "react";
-import { AppState, Pressable, useColorScheme, View } from "react-native";
+import { AppState, useColorScheme, View } from "react-native";
 import { usePhoneSettings } from "@/data/phone-settings";
+import { Button } from "@/ui/button";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import {
   initialLockState,
@@ -92,29 +94,20 @@ export function AppLockGate({ children }: { children: ReactNode }) {
           />
           <View className="absolute inset-0 bg-overlay" />
           {active && (
-            <View className="gap-3 rounded-xl border border-border bg-card p-4">
+            <Card padding="lg" className="gap-3">
               <Text variant="title">StatGlass is locked</Text>
               {error && (
                 <Text variant="body" accessibilityRole="alert">
                   iOS couldn’t verify your identity. Try again.
                 </Text>
               )}
-              <Pressable
-                accessibilityRole="button"
+              <Button
+                label="Unlock"
                 accessibilityLabel="Unlock StatGlass"
-                accessibilityState={{ disabled: prompting }}
                 disabled={prompting}
                 onPress={unlock}
-                className="min-h-[44px] justify-center rounded-lg bg-primary px-4 py-2 active:opacity-70 disabled:opacity-50"
-              >
-                <Text
-                  variant="body"
-                  className="font-semibold! text-primary-foreground"
-                >
-                  Unlock
-                </Text>
-              </Pressable>
-            </View>
+              />
+            </Card>
           )}
         </View>
       )}

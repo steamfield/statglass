@@ -176,6 +176,30 @@ test("unmounting a focused host releases its subscription", async () => {
   expect(transport.subscriberCount()).toBe(0);
 });
 
+test("a host that never sends a frame shows Reconnecting after three periods", async () => {
+  const transport = createMockTransport({
+    scenarios: ["stale"],
+    autoTick: false,
+    historyRows: 2,
+  });
+  try {
+    await renderWithProviders(
+      <ExpoRoot
+        context={context}
+        location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+      />,
+      { transport }
+    );
+    expect(await screen.findByText("Connecting")).toBeOnTheScreen();
+    await act(() => jest.advanceTimersByTimeAsync(2_000));
+    expect(screen.getByText("Connecting")).toBeOnTheScreen();
+    await act(() => jest.advanceTimersByTimeAsync(1_000));
+    expect(screen.getByText("Reconnecting")).toBeOnTheScreen();
+  } finally {
+    transport.dispose();
+  }
+});
+
 test("shows frame age, announces stale and offline reads, and undims after recovery", async () => {
   const transport = createMockTransport({
     scenarios: ["hosts-dashboard"],
@@ -187,6 +211,7 @@ test("shows frame age, announces stale and offline reads, and undims after recov
   );
   if (!remote) throw new Error("The demo needs a connected LAN host");
   const host = remote.config.id;
+  // The stale scenario is fixed at creation; this host stops and then resumes.
   let deliverFrames = true;
   const subscribeLive = transport.subscribeLive;
   jest

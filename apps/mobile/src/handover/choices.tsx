@@ -5,7 +5,8 @@ import type {
 } from "@core/generated/types";
 import { handoverReasonText } from "@core/remote-errors";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
+import { PressableCard } from "@/ui/card";
 import { Text } from "@/ui/text";
 
 export function useHostSelection(hosts: OfferedHost[]) {
@@ -37,12 +38,13 @@ export function HostChoices({
   return hosts.map((host) => {
     const checked = !excluded.has(host.id);
     return (
-      <Pressable
+      <PressableCard
         key={host.id}
         accessibilityRole="checkbox"
         accessibilityLabel={host.name}
         accessibilityState={{ checked, disabled }}
-        className="min-h-[44px] flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-2 active:opacity-70"
+        padding="none"
+        className="flex-row items-center gap-3 px-4 py-2"
         disabled={disabled}
         onPress={() => toggle(host.id)}
       >
@@ -51,11 +53,7 @@ export function HostChoices({
           className={`size-6 items-center justify-center rounded-md border ${checked ? "border-primary bg-primary" : "border-muted-foreground"}`}
         >
           {checked && (
-            <Text
-              variant="caption"
-              allowFontScaling={false}
-              className="text-primary-foreground!"
-            >
+            <Text variant="caption" allowFontScaling={false} tone="onPrimary">
               ✓
             </Text>
           )}
@@ -63,7 +61,7 @@ export function HostChoices({
         <Text variant="body" className="flex-1">
           {host.name}
         </Text>
-      </Pressable>
+      </PressableCard>
     );
   });
 }

@@ -13,6 +13,7 @@ export { setNativeSnapshotCover } from "./device";
 export { parseEnvelope } from "./envelope";
 export { createLiveStreams, type LiveStreams } from "./live-streams";
 export { NativeCoreBridge } from "./native-core-bridge";
+export { useNativeHandle } from "./native-handle";
 export {
   createNativeTransport,
   isNativeTransport,

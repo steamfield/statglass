@@ -16,13 +16,15 @@ import { heatMatrixModel } from "@core/widget-models/heat-matrix";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { shallow } from "zustand/shallow";
-import { type HistoryRange, useHostHistory } from "@/data/history";
-import { useConnection, useHostLive } from "@/data/live";
 import {
-  HistoryNotice,
+  type HistoryRange,
+  useHostHistory,
   useRefreshOnRangeChange,
-} from "@/module/history-notice";
+} from "@/data/history";
+import { useConnection, useHostLive } from "@/data/live";
+import { HistoryNotice } from "@/module/history-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { HeatMatrix } from "@/widgets/heat-matrix";
 
@@ -154,8 +156,8 @@ export function CoreLoad({
     ).map((band) => ({ ...band, showCaption: false }));
   }, [data, grid, model.columns]);
   return (
-    <View
-      className="gap-2 rounded-xl border border-border bg-card p-3"
+    <Card
+      className="gap-2"
       testID="core-heatmap-layout"
       onLayout={() => setLaidOut(true)}
     >
@@ -181,6 +183,6 @@ export function CoreLoad({
           />
         </>
       )}
-    </View>
+    </Card>
   );
 }

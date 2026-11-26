@@ -59,7 +59,7 @@ export function useOpenInTimeline(): OpenInTimeline {
     const alreadyActive =
       currentRange?.endMs === range.toMs &&
       currentRange.windowMs === range.toMs - range.fromMs;
-    if (applied || alreadyActive) navigate("/dashboard/timeline");
+    if (applied || alreadyActive) void navigate("/dashboard/timeline");
   };
 
   return { rangeFor, open, pending };

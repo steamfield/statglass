@@ -1,3 +1,4 @@
+/** History and live readings for the host's temperature sensors. */
 import { formatTemperature, type TemperatureUnits } from "@core/format";
 import type { HostId } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
@@ -7,20 +8,24 @@ import { labelOf, seriesKeyString } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
 import { gapBandsModel } from "@core/widget-models/gap-band";
 import { heatMatrixModel } from "@core/widget-models/heat-matrix";
-import { memo, useEffect, useMemo, useRef } from "react";
-import { View } from "react-native";
+import { memo, useMemo } from "react";
 import { shallow } from "zustand/shallow";
-import { CARD_SURFACE } from "@/cards/module-card";
-import { type HistoryRange, useHostHistory } from "@/data/history";
+import {
+  type HistoryRange,
+  useHostHistory,
+  useRefreshOnRangeChange,
+} from "@/data/history";
 import { useHostLive } from "@/data/live";
 import { HistoryNotice } from "@/module/history-notice";
 import { ModuleNotice } from "@/module/module-notice";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { HeatMatrix } from "@/widgets/heat-matrix";
 import { StatList } from "@/widgets/stat-list";
 
 const TEMPERATURE_DOMAIN = [20, 110] as const;
 
+/** Render a heatmap and current readings for available temperature sensors. */
 export const ThermalHistory = memo(function ThermalHistory({
   host,
   hostName,
@@ -63,15 +68,7 @@ export const ThermalHistory = memo(function ThermalHistory({
     range,
     rows.length ? { columns } : null
   );
-  const previousWindow = useRef(windowMs);
-  const { isEnabled, isFetching, isSuccess, refetch } = history;
-  useEffect(() => {
-    const changed = previousWindow.current !== windowMs;
-    previousWindow.current = windowMs;
-    if (changed && isEnabled && isSuccess && !isFetching) {
-      void refetch({ cancelRefetch: false });
-    }
-  }, [windowMs, isEnabled, isFetching, isSuccess, refetch]);
+  useRefreshOnRangeChange(windowMs, history);
   const data = history.data;
   const grid = useMemo(
     () =>
@@ -141,7 +138,7 @@ export const ThermalHistory = memo(function ThermalHistory({
     ({ kind }) => kind === "series" || kind === "bytes"
   );
   return (
-    <View className={`${CARD_SURFACE} gap-2 p-3`}>
+    <Card className="gap-2">
       <Text variant="cardTitle" accessibilityRole="header">
         {title}
       </Text>
@@ -168,6 +165,6 @@ export const ThermalHistory = memo(function ThermalHistory({
           }))}
         />
       )}
-    </View>
+    </Card>
   );
 });

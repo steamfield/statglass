@@ -1,3 +1,4 @@
+/** Power draw, sensors and battery history for a host. */
 import { cpuPowerNote } from "@core/cpu-power-source";
 import { formatHoursMinutes, formatWatts } from "@core/format";
 import type {
@@ -18,23 +19,17 @@ import { moduleState, unavailableText } from "@core/module-state";
 import { FULL_TABLE } from "@core/process-interest";
 import { parseLabels } from "@core/series-key";
 import { DAY_MS, MINUTE_MS } from "@core/time-grid";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { shallow } from "zustand/shallow";
-import { CARD_SURFACE } from "@/cards/module-card";
 import {
-  HISTORY_MODULES,
-  type HistoryRange,
-  useHistoryRange,
+  MODULE_TITLES,
+  type ModuleRead,
   useModuleHistory,
 } from "@/data/history";
-import { useHosts } from "@/data/hosts-list";
-import {
-  useConnection,
-  useHostLive,
-  useHostLiveSubscription,
-} from "@/data/live";
+import { useHostLive, useHostLiveSubscription } from "@/data/live";
 import { useTemperatureUnits } from "@/data/temperature-unit";
+import { useTemperatureEventLabel } from "@/module/event-labels";
 import { EventLabelContext } from "@/module/events-list";
 import { HistoryNotice } from "@/module/history-notice";
 import { LiveProcessTable } from "@/module/live-process-table";
@@ -44,9 +39,10 @@ import { ModuleNotice } from "@/module/module-notice";
 import { EmbeddedBatteryDay } from "@/module/pages/battery/battery-day";
 import type { ModulePageProps } from "@/module/pages/index";
 import { StatStrip } from "@/module/stat-strip";
+import { type ModulePage, useModulePage } from "@/module/use-module-page";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { BarSwatch } from "@/widgets/stack-bar";
-import { useEventsInRange, useTemperatureEventLabel } from "./history-events";
 import { PowerRings } from "./power-rings";
 import { ThermalHistory } from "./thermal-history";
 
@@ -57,6 +53,11 @@ const COMPONENTS = [
   { key: "dram", label: "DRAM" },
 ] as const;
 const SYSTEM_KEY = "power.system";
+const POWER_READ: ModuleRead = {
+  module: "power",
+  selection: POWER_HERO.keys.map((metric) => ({ metric, labels: [] })),
+  gridKeys: POWER_HERO.keys,
+};
 
 function subtitle(
   source: PowerSource | null,
@@ -118,20 +119,24 @@ function powerAvailability(caps: Capabilities | null) {
   };
 }
 
+/** Render available power and sensor sections for the host. */
 export function PowerPage({
   host,
   range: defaultRange,
   remote,
 }: ModulePageProps) {
-  const [windowMs, setWindowMs] = useState(defaultRange);
-  const [width, setWidth] = useState<number | null>(null);
-  const hostRecord = useHosts().data?.find(({ id }) => id === host);
-  const clockOffset = remote?.clock_offset_ms ?? 0;
-  const range = useHistoryRange(windowMs, clockOffset);
-  const connected = remote === undefined || remote.state === "connected";
+  const {
+    windowMs,
+    setWindowMs,
+    width,
+    setWidth,
+    record: hostRecord,
+    connected,
+    connection,
+    live,
+    range,
+  } = useModulePage(host, remote, defaultRange);
   useHostLiveSubscription(host);
-  const connection = useConnection(host, remote, null);
-  const live = connection.state === "live";
   const available = useHostLive(
     host,
     ({ capabilities }) => powerAvailability(capabilities),
@@ -139,28 +144,27 @@ export function PowerPage({
   );
   const history = useModuleHistory(
     host,
-    "power",
+    POWER_READ,
     range,
     width,
     connected && available.power
   );
   const units = useTemperatureUnits();
   const formatEvent = useTemperatureEventLabel(units);
-  const events = useEventsInRange(history.data?.events, history.displayedRange);
+  const { events } = history;
   const source = useHostLive(host, selectPowerSource);
   const remaining = useHostLive(host, (s) => held(s, "battery.time_remaining"));
   const system = useHostLive(host, (s) => (live ? held(s, SYSTEM_KEY) : null));
   const pCluster = hostRecord?.info.cpu_topology.find(
     ({ kind }) => kind !== "efficiency"
   );
-  const { title } = HISTORY_MODULES.power;
   const showSections = connected && available.message === null;
   const notice = powerNotice(connection, connected ? available.message : null);
 
   return (
     <EventLabelContext.Provider value={formatEvent}>
       <ModuleFrame
-        title={title}
+        title={MODULE_TITLES.power}
         subtitle={
           live && available.power ? subtitle(source, system, remaining) : null
         }
@@ -192,8 +196,6 @@ export function PowerPage({
                 onWidth={setWidth}
                 live={live}
                 range={range}
-                clockOffset={clockOffset}
-                events={events}
                 formatEvent={formatEvent}
               />
             )}
@@ -210,7 +212,7 @@ export function PowerPage({
               <EmbeddedBatteryDay
                 host={host}
                 hostName={hostRecord?.display_name}
-                clockOffset={clockOffset}
+                clockOffset={range.offsetMs}
                 live={live}
                 units={units}
               />
@@ -224,7 +226,7 @@ export function PowerPage({
 }
 
 function powerNotice(
-  connection: ReturnType<typeof useConnection>,
+  connection: ModulePage["connection"],
   unavailable: string | null
 ) {
   return unavailable ?? (connection.state === "live" ? null : connection.label);
@@ -237,8 +239,6 @@ function PowerDraw({
   onWidth,
   live,
   range,
-  clockOffset,
-  events,
   formatEvent,
 }: {
   host: HostId;
@@ -246,13 +246,10 @@ function PowerDraw({
   history: ReturnType<typeof useModuleHistory>;
   onWidth(width: number): void;
   live: boolean;
-  range: HistoryRange;
-  clockOffset: number;
-  events: readonly Event[] | undefined;
+  range: ModulePage["range"];
   formatEvent: (event: Event) => string;
 }) {
-  const { data, grid, displayedRange } = history;
-  const { title, accent } = HISTORY_MODULES.power;
+  const { data, grid, displayedRange, events } = history;
   const rails = useRailItems(host, live);
   const power = useHostLive(host, selectPower, shallow);
   const note = cpuPowerNote(live ? power.cpuSource : null);
@@ -286,13 +283,13 @@ function PowerDraw({
         items={items}
         stats={data?.stats ?? []}
       />
-      <View
-        className={`${CARD_SURFACE} gap-2 p-3`}
+      <Card
+        className="gap-2"
         testID="history-plot-layout"
         onLayout={({ nativeEvent }) => onWidth(nativeEvent.layout.width)}
       >
         <View className="flex-row items-center gap-1.5">
-          <BarSwatch accent={accent} step={1} />
+          <BarSwatch accent="power" step={1} />
           <Text variant="caption">System</Text>
         </View>
         <ModuleChart
@@ -305,11 +302,11 @@ function PowerDraw({
           nowMs={Math.max(range.toMs, displayedRange.toMs)}
           events={events ?? []}
           formatEvent={formatEvent}
-          clockOffsetMs={clockOffset}
+          clockOffsetMs={range.offsetMs}
           height={160}
-          accent={accent}
+          accent="power"
           module="power"
-          label={`${title} history`}
+          label={`${MODULE_TITLES.power} history`}
           grid={grid}
           loading={history.isPending}
         />
@@ -319,7 +316,7 @@ function PowerDraw({
           hasSamples={hasSamples}
         />
         {note && <Text variant="caption">{note}</Text>}
-      </View>
+      </Card>
     </>
   );
 }
