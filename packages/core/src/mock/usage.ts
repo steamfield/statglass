@@ -25,6 +25,7 @@ export const APP_OF: Record<string, string> = {
   "Google Chrome Helper (Renderer)": "Google Chrome",
   "Slack Helper": "Slack",
   "com.apple.WebKit.WebContent": "Safari",
+  claude: "Claude Code",
 };
 
 /**
@@ -60,7 +61,7 @@ export const EXITED: readonly [
   number,
   number,
 ][] = [
-  ["clang", "clang", 6120, 3.4, 180, 420, 12e6],
+  ["clang", "clang", 6120, 1.6, 70, 420, 12e6],
   ["Xcode", "ibtoold", 6188, 0.6, 35, 180, 0],
 ];
 

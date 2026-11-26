@@ -17,6 +17,7 @@ import type {
 } from "@core/generated/types";
 import { trayStyleMenuBar } from "@core/settings-patch";
 import { MINUTE_MS } from "../time-grid";
+import { IDLE_DAEMONS } from "./idle-daemons";
 import { LINUX_HOST_NAME, linuxCapabilities, linuxHostInfo } from "./linux";
 import { APP_OF } from "./usage";
 
@@ -467,30 +468,43 @@ export const BACKGROUND_PROCESSES: LiveProcess[] = [
   proc(1977, "Safari Web Content", 0.9, 0.09e9, 14, 38, 0.3, 0.05e6, "me"),
   proc(2010, "StatGlass", 0.3, 0.06e9, 9, 6, 0.1, 0, "me"),
   proc(2240, "SourceKitService", 0.8, 0.09e9, 6, 4, 0.2, 0.1e6, "me"),
+  proc(2301, "Docker Desktop", 0.6, 0.09e9, 21, 9, 0.2, 0, "me"),
+  proc(2333, "Dropbox", 0.4, 0.08e9, 64, 7, 0.1, 0.2e6, "me"),
+  proc(2368, "claude", 0.7, 0.09e9, 15, 6, 0.2, 0, "me"),
 ];
 
 /** About how many processes a working Mac runs; the perf gate's load (plan 7). */
 export const MOCK_PROCESS_COUNT = 800;
 
-const IDLE_NAMES = [
-  "com.apple.WebKit.WebContent",
-  "XPCService",
-  "mdworker_shared",
-  "distnoted",
-  "cfprefsd",
-  "trustd",
-  "secd",
-  "usernoted",
-  "nsurlsessiond",
-  "Code Helper (Renderer)",
-  "Google Chrome Helper (Renderer)",
-  "Slack Helper",
-  "containermanagerd",
-  "lsd",
-  "AMPDeviceDiscoveryAgent",
-  "CategoriesService",
+/** Apps that run many helpers, as a working Mac has them: `[name, user, count]`. */
+const IDLE_HELPERS: readonly (readonly [string, string, number])[] = [
+  ["Google Chrome Helper (Renderer)", "me", 26],
+  ["com.apple.WebKit.WebContent", "me", 13],
+  ["Code Helper (Renderer)", "me", 12],
+  ["mdworker_shared", "me", 7],
+  ["Slack Helper", "me", 5],
 ];
-const IDLE_USERS = ["me", "me", "root", "_spotlight"];
+
+/** One row per daemon, then the helpers, then second instances of the busiest daemons. */
+function idleNames(count: number): [string, string][] {
+  // A name the rows above already carry stays one process, so its row keeps its pid.
+  const named = new Set(
+    [...PROCESSES, ...BACKGROUND_PROCESSES].map((p) => p.name)
+  );
+  const daemons = IDLE_DAEMONS.flatMap(([user, names]) =>
+    names
+      .filter((name) => !named.has(name))
+      .map((name): [string, string] => [name, user])
+  );
+  const helpers = IDLE_HELPERS.flatMap(([name, user, n]) =>
+    Array.from({ length: n }, (): [string, string] => [name, user])
+  );
+  const rows = [...daemons, ...helpers];
+  return [...rows, ...daemons.slice(0, Math.max(0, count - rows.length))].slice(
+    0,
+    count
+  );
+}
 
 /**
  * Near-idle processes that fill the list out to `MOCK_PROCESS_COUNT`, so
@@ -498,23 +512,23 @@ const IDLE_USERS = ["me", "me", "root", "_spotlight"];
  * table) runs at a realistic size. Deterministic, and every figure stays
  * below the background rows', so no top-N list changes.
  */
-export const IDLE_PROCESSES: LiveProcess[] = Array.from(
-  {
-    length: MOCK_PROCESS_COUNT - PROCESSES.length - BACKGROUND_PROCESSES.length,
-  },
-  (_, i) =>
-    proc(
-      3000 + i * 7,
-      IDLE_NAMES[i % IDLE_NAMES.length] as string,
-      (i % 10) / 100,
-      (5 + (i % 40)) * 1e6,
-      1 + (i % 9),
-      i % 3,
-      0,
-      0,
-      IDLE_USERS[i % IDLE_USERS.length] as string
-    )
-);
+export const IDLE_PROCESSES: LiveProcess[] = idleNames(
+  MOCK_PROCESS_COUNT - PROCESSES.length - BACKGROUND_PROCESSES.length
+).map(([name, user], i) => {
+  // A fixed scramble of the index, so neighbouring rows don't step evenly.
+  const h = (i * 2_654_435_761) >>> 0;
+  return proc(
+    3000 + i * 7,
+    name,
+    (h % 9) / 100,
+    (3 + (h % 41)) * 1e6,
+    1 + (h % 9),
+    h % 3,
+    0,
+    0,
+    user
+  );
+});
 
 /**
  * `SignalRefusal::of` (`process_signal/mod.rs`) for a mock row, with the
