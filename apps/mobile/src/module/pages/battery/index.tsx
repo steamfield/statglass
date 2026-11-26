@@ -1,34 +1,37 @@
+/** Battery readings and charge history for a host. */
 import { formatPercent, formatWatts, MISSING, wattsParts } from "@core/format";
 import type { PowerSource } from "@core/generated/types";
+import { BATTERY_HERO } from "@core/module-hero";
 import { moduleState, unavailableText } from "@core/module-state";
 import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
-import { useState } from "react";
-import { useHistoryRange, useModuleHistory } from "@/data/history";
-import { useHosts } from "@/data/hosts-list";
+import { type ModuleRead, useModuleHistory } from "@/data/history";
 import {
   remoteStatusLine,
-  useConnection,
   useHostLive,
   useHostLiveSubscription,
 } from "@/data/live";
 import { useTemperatureUnits } from "@/data/temperature-unit";
+import { useTemperatureEventLabel } from "@/module/event-labels";
 import { EventLabelContext } from "@/module/events-list";
 import { LiveProcessTable } from "@/module/live-process-table";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
-import {
-  useEventsInRange,
-  useTemperatureEventLabel,
-} from "@/module/pages/power/history-events";
-import { RingCard, RingCards } from "@/module/pages/power/ring-cards";
-import { useWattRingCeiling } from "@/module/pages/power/watt-ring-ceiling";
+import { RingCard, RingCards } from "@/module/rings/ring-cards";
+import { useWattRingCeiling } from "@/module/rings/watt-ring-ceiling";
+import { useModulePage } from "@/module/use-module-page";
 import {
   BatteryDayCard,
   batteryTimeField,
   useBatteryReadings,
 } from "./battery-day";
+
+const BATTERY_READ: ModuleRead = {
+  module: "battery",
+  selection: BATTERY_HERO.keys.map((metric) => ({ metric, labels: [] })),
+  gridKeys: BATTERY_HERO.keys,
+};
 
 const SOURCE_TEXT: Record<PowerSource, string> = {
   battery: "On battery",
@@ -107,31 +110,35 @@ function BatteryRings({
   );
 }
 
+/** Render battery readings and the selected charge history range. */
 export function BatteryPage({
   host,
   range: defaultRange,
   remote,
 }: ModulePageProps) {
-  const [windowMs, setWindowMs] = useState(defaultRange);
-  const [width, setWidth] = useState<number | null>(null);
-  const hostName = useHosts().data?.find(({ id }) => id === host)?.display_name;
-  const connected = remote === undefined || remote.state === "connected";
-  const clockOffset = remote?.clock_offset_ms ?? 0;
-  const range = useHistoryRange(windowMs, clockOffset);
+  const {
+    windowMs,
+    setWindowMs,
+    width,
+    setWidth,
+    record,
+    connected,
+    connection,
+    live,
+    range,
+  } = useModulePage(host, remote, defaultRange);
   const units = useTemperatureUnits();
   useHostLiveSubscription(host);
-  const connection = useConnection(host, remote, null);
   const caps = useHostLive(host, (s) => s.capabilities);
   const state = moduleState(caps, null, "battery");
   const available = caps !== null && state === "on";
   const history = useModuleHistory(
     host,
-    "battery",
+    BATTERY_READ,
     range,
     width,
     connected && available
   );
-  const live = connection.state === "live";
   const readings = useBatteryReadings(host, live);
   const ceiling = useWattRingCeiling(
     host,
@@ -140,7 +147,7 @@ export function BatteryPage({
     readings.powerW,
     10
   );
-  const events = useEventsInRange(history.data?.events, history.displayedRange);
+  const { events } = history;
   const formatEvent = useTemperatureEventLabel(units);
   return (
     <EventLabelContext.Provider value={formatEvent}>
@@ -164,19 +171,17 @@ export function BatteryPage({
           />
         ) : (
           <>
-            {connection.state !== "live" && (
-              <ModuleNotice message={connection.label} />
-            )}
+            {!live && <ModuleNotice message={connection.label} />}
             {available && (
               <>
                 <BatteryRings readings={readings} ceiling={ceiling} />
                 <BatteryDayCard
-                  hostName={hostName}
+                  hostName={record?.display_name}
                   history={history}
                   onWidth={setWidth}
                   units={units}
                   readings={readings}
-                  clockOffset={clockOffset}
+                  clockOffset={range.offsetMs}
                   requestedTo={range.toMs}
                   events={events}
                   formatEvent={formatEvent}

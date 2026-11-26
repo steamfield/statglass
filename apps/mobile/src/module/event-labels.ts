@@ -1,21 +1,11 @@
+/** History event labels that follow the phone's temperature preference. */
 import { alertCauseLabel } from "@core/alerts";
 import { eventLabel } from "@core/events";
 import type { TemperatureUnits } from "@core/format";
 import type { Event } from "@core/generated/types";
-import { useCallback, useMemo } from "react";
-import type { HistoryRange } from "@/data/history";
+import { useCallback } from "react";
 
-export function useEventsInRange(
-  events: readonly Event[] | undefined,
-  { fromMs, toMs }: HistoryRange
-) {
-  // The host can start the read on an earlier tier boundary.
-  return useMemo(
-    () => events?.filter(({ ts_ms }) => ts_ms >= fromMs && ts_ms <= toMs),
-    [events, fromMs, toMs]
-  );
-}
-
+/** Format chart events using the selected units for temperature alerts. */
 export function useTemperatureEventLabel(units: TemperatureUnits) {
   return useCallback(
     (event: Event) => {

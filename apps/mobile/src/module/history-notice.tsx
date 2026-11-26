@@ -1,23 +1,11 @@
+/** Loading, retry and empty states for a module's history chart. */
 import { commandError, errorTone } from "@core/command-error";
-import { useEffect, useRef } from "react";
 import { historyReadError, type useHostHistory } from "@/data/history";
 import { ModuleNotice } from "@/module/module-notice";
 
 type Read = ReturnType<typeof useHostHistory>;
 
-/** Refresh a range picked again while its reply is still fresh in the cache. */
-export function useRefreshOnRangeChange(windowMs: number, query: Read) {
-  const previous = useRef(windowMs);
-  const { isEnabled, isFetching, isSuccess, refetch } = query;
-  useEffect(() => {
-    const changed = previous.current !== windowMs;
-    previous.current = windowMs;
-    if (changed && isEnabled && isSuccess && !isFetching) {
-      void refetch({ cancelRefetch: false });
-    }
-  }, [isEnabled, isFetching, isSuccess, refetch, windowMs]);
-}
-
+/** Show the current history query state beneath a chart. */
 export function HistoryNotice({
   query,
   hostName,

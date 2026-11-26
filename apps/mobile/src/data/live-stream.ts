@@ -1,10 +1,10 @@
+/** Chart windows and accessible labels for live host cards. */
 import { BRUSH_STEP_MS } from "@core/brush";
 import {
   chartLabel,
   hasChartReading,
   shouldRefreshFigures,
 } from "@core/chart-label";
-import { type CeilingState, nextCeiling } from "@core/chart-math";
 import { formatPercent } from "@core/format";
 import type { HostId } from "@core/generated/types";
 import {
@@ -21,6 +21,7 @@ import type { StreamAreaData } from "@core/widget-models/stream-area";
 import type { Accent } from "@core/widget-models/tokens";
 import { useMemo, useRef } from "react";
 import { useHostLive } from "./live";
+import { useNiceCeiling } from "./nice-ceiling";
 
 interface CardSeriesWindow extends SeriesWindow {
   windowMs: number;
@@ -69,27 +70,6 @@ function useCardSeriesWindow(host: HostId, key: string, baseMs: number) {
     };
   }, [key, baseMs]);
   return useHostLive(host, select, sameWindow);
-}
-
-function useCeiling(
-  values: readonly (number | null)[],
-  tsMs: number,
-  intervalMs: number,
-  scope: string,
-  floor: number
-) {
-  const held = useRef<{ scope: string; value: CeilingState } | null>(null);
-  const max = values.reduce<number | null>(
-    (peak, value) => (value === null ? peak : Math.max(peak ?? value, value)),
-    null
-  );
-  const previous = held.current?.scope === scope ? held.current.value : null;
-  const value = nextCeiling(previous, max, tsMs, {
-    minCeiling: floor,
-    maxTickGapMs: Math.max(10_000, 2 * intervalMs),
-  });
-  held.current = { scope, value };
-  return value.ceiling;
 }
 
 function useLiveChartLabel(
@@ -154,12 +134,12 @@ export function useCompactStream(
 ): StreamAreaData | null {
   const { values, tEndMs, intervalMs, windowMs, edgeMs, loading } =
     useCardSeriesWindow(host, seriesKey, MINUTE_MS);
-  const auto = useCeiling(
+  const auto = useNiceCeiling(
     values,
     tEndMs,
     intervalMs,
-    `${host}:${seriesKey}:${windowMs}:${minCeiling}`,
-    minCeiling
+    minCeiling,
+    `${host}:${seriesKey}:${windowMs}:${minCeiling}`
   );
   const ariaLabel = useLiveChartLabel(
     subject,
@@ -212,19 +192,19 @@ export function useNetworkBars(host: HostId): MirrorBarsData | null {
   const up = useCardSeriesWindow(host, "net.tx_total", 48_000);
   const down = useCardSeriesWindow(host, "net.rx_total", 48_000);
   const { windowMs, loading, edgeMs } = up;
-  const upMax = useCeiling(
+  const upMax = useNiceCeiling(
     up.values,
     up.tEndMs,
     up.intervalMs,
-    `${host}:${windowMs}`,
-    100_000
+    100_000,
+    `${host}:${windowMs}`
   );
-  const downMax = useCeiling(
+  const downMax = useNiceCeiling(
     down.values,
     down.tEndMs,
     down.intervalMs,
-    `${host}:${windowMs}`,
-    100_000
+    100_000,
+    `${host}:${windowMs}`
   );
   const ready = edgeMs !== null || loading;
   return useMemo<MirrorBarsData | null>(

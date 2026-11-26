@@ -16,12 +16,13 @@ import { heatMatrixModel } from "@core/widget-models/heat-matrix";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { shallow } from "zustand/shallow";
-import { type HistoryRange, useHostHistory } from "@/data/history";
-import { useConnection, useHostLive } from "@/data/live";
 import {
-  HistoryNotice,
+  type HistoryRange,
+  useHostHistory,
   useRefreshOnRangeChange,
-} from "@/module/history-notice";
+} from "@/data/history";
+import { useConnection, useHostLive } from "@/data/live";
+import { HistoryNotice } from "@/module/history-notice";
 import type { ModulePageProps } from "@/module/pages/index";
 import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";

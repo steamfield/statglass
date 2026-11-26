@@ -1,3 +1,4 @@
+/** Map module routes to their page components. */
 import type { HostId } from "@core/generated/types";
 import type { PhoneRemoteHostStatus } from "@core/phone-connection";
 import type { PopoverCard } from "@core/popover/card-order";
@@ -12,9 +13,9 @@ import { PowerPage } from "./power";
 /** The rolling window duration selected in the range control, in milliseconds. */
 export type HistoryRangeChoice = number;
 
+/** Host and default history range supplied by the module route. */
 export interface ModulePageProps {
   host: HostId;
-  module: PopoverCard;
   range: HistoryRangeChoice;
   remote: PhoneRemoteHostStatus | undefined;
 }
