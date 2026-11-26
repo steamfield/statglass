@@ -166,11 +166,16 @@ it("releases the lifted item without reordering when the indices match", async (
 });
 
 it("keeps a slight hold drift stationary but suppresses the menu after a drag returns to its start", async () => {
-  const pan = jest.spyOn(Gesture, "Pan");
+  const createPan = Gesture.Pan;
+  let pan: ReturnType<typeof createPan> | undefined;
+  jest.spyOn(Gesture, "Pan").mockImplementation(() => {
+    const gesture = createPan();
+    pan ??= gesture;
+    return gesture;
+  });
   const { callbacks, release, reorder } = await renderList();
-  const gesture = pan.mock.results[0];
-  if (gesture?.type !== "return") throw new Error("Expected a pan");
-  const { handlers, handlerTag } = gesture.value;
+  if (!pan) throw new Error("Expected a pan");
+  const { handlers, handlerTag } = pan;
   const manager = {
     handlerTag,
     begin() {},
@@ -250,10 +255,16 @@ it("removes pickup and move actions from pinned rows and gives the card button t
 });
 
 it("lifts before a release in the same frame as long-press recognition", async () => {
-  const longPress = jest.spyOn(Gesture, "LongPress");
+  const createLongPress = Gesture.LongPress;
+  let firstRowHold: ReturnType<typeof createLongPress> | undefined;
+  jest.spyOn(Gesture, "LongPress").mockImplementation(() => {
+    const gesture = createLongPress();
+    firstRowHold ??= gesture;
+    return gesture;
+  });
   const { callbacks, impact, release } = await renderList();
-  const created = longPress.mock.results[0];
-  if (created?.type !== "return") {
+  const hold = firstRowHold;
+  if (!hold) {
     throw new Error("Expected a long press for the first row");
   }
 
@@ -261,7 +272,7 @@ it("lifts before a release in the same frame as long-press recognition", async (
   Reflect.set(globalThis, "_WORKLET", true);
   try {
     await act(() => {
-      fireGestureHandler(created.value, [
+      fireGestureHandler(hold, [
         { state: State.BEGAN },
         { state: State.ACTIVE },
         { state: State.END },
