@@ -1,12 +1,11 @@
 import { niceCeiling } from "@core/chart-math/nice-ceiling";
 import { formatPercent, formatRate } from "@core/format";
 import type { historyGrid } from "@core/history-grid";
-import { MINUTE_MS } from "@core/time-grid";
 import { type GapSpan, gapBandsModel } from "@core/widget-models/gap-band";
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
+import { SPARKLINE_MS } from "@/data/hosts";
 
-export const SPARKLINE_MS = 30 * MINUTE_MS;
 export const SUMMARY_MS = 5_000;
 
 export type Summary = {
