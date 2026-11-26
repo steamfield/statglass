@@ -39,6 +39,7 @@ Error model: `PairingStatus::Paired` gains the Mac-side handover summary: names 
 ### Phase 1: CGNAT routes hand over as Tailscale (MVP)
 
 Scaffold: 278782bc
+Tag: handover-phase-1
 
 Demo: the scratch diagnostic (`scratchpad/handover-diag`) prints OK for all four of the user's saved hosts, Live Oak included, with Live Oak's target labelled tailscale.
 Test cases:
@@ -51,7 +52,7 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | S | crates/statglass-remote/src/ssh_config.rs, crates/statglass-remote/tests/ssh_config.rs, plan/decisions.md | contracts | crates/statglass-remote/tests/ssh_config.rs | opus | pending | | ssh_config tests pass, revert-verified |
+| a | S | crates/statglass-remote/src/ssh_config.rs, crates/statglass-remote/tests/ssh_config.rs, plan/decisions.md | contracts | crates/statglass-remote/tests/ssh_config.rs | opus | merged | | ssh_config tests pass, revert-verified |
 
 #### Lane a brief
 
@@ -68,10 +69,51 @@ Depends on: phase 1
 | b | M | packages/core/src/query-keys.ts, src/app/routes/dashboard/settings/_components/paired-devices/panel.tsx, src/app/routes/dashboard/hosts/route.tsx, src/app/routes/dashboard/hosts/route.test.tsx, src/app/routes/dashboard/hosts/_components/add-to-iphone.tsx, src/app/routes/dashboard/hosts/_components/add-to-iphone.test.tsx, src/app/routes/dashboard/settings/_components/update-from-mac/index.tsx, src/app/routes/dashboard/settings/_components/update-from-mac/update-from-mac.test.tsx, src/app/routes/dashboard/settings/_components/paired-devices/pairing-dialog.tsx | contracts, src/app/routes/dashboard/settings/_components/paired-devices/panel.tsx | | opus | pending | | brief's tests pass |
 | c | S | apps/mobile/src/pairing/screens/choose-method.tsx, apps/mobile/src/pairing/help/, apps/mobile/test/pairing/, docs-site/src/content/docs/iphone.md, docs-site/src/content/docs/linux-hosts.md | contracts | | sonnet | pending | | brief's tests pass, mobile-check clean |
 
-(Briefs written while phase 1 runs.)
+#### Lane a brief (Mac approval summary)
+
+- Goal: after the user approves a phone in Settings › Paired devices › Pair iPhone, the dialog says which of this Mac's hosts went to the iPhone and which couldn't, so a handover that sent nothing is visible on the Mac.
+- Interface: `PairingStatus::Paired { device, hosts: Vec<String>, unavailable: Vec<HandoverUnavailableInfo>, dropped: bool }` (scaffold, `src-tauri/src/pairing/status.rs`). `HandoverUnavailableInfo` and its `From<UnavailableHost>` are in `src-tauri/src/handover.rs` (read-only). `HostLists` from `src/app/routes/dashboard/settings/_components/handover-host-lists.tsx` (read-only) renders the lists.
+- Behavior:
+  - `PairingHost::approve` (`crates/statglass-remote/src/pairing.rs`) keeps the `Handover` the source returned on the offer, Mac-side only (never in `PairReply` or on the wire), plus `dropped = true` when `add_handover` falls back to this Mac alone because the reply didn't fit. Every later status poll and late retry of that offer returns the same summary.
+  - Mapping to `PairingStatus::Paired`: `hosts` = names of the handed-over hosts (the source's list, which never contains this Mac), `unavailable` = the source's unavailable list, `dropped` as above. No handover source: empty lists, `dropped: false`.
+  - Dialog, paired state: "iPhone paired." then `HostLists` with `hosts`/`unavailable`. Its empty text ("No other hosts are included.") shows only when this Mac has saved remote hosts, or always; pick the simpler, and say which. `dropped`: an InlineMessage (tone note) "The host list was too large to send while pairing. On your iPhone, open Update from Mac to add the other hosts." in place of the lists.
+  - While approve is in flight, the dialog keeps showing the pending device (name, model, code) with Approve and Deny disabled. A concurrent status poll that returns `waiting` (the offer's `HandingOver` phase) must not flip the view back to the QR.
+  - Mock: `createMockHandover`'s `onApprove` returns the summary (hosts `build-server`, `Lab Mini`; one unavailable host `Office server` with reason `lan_literal`), and the mock `pairingApprove`/`pairingStatus` return it in the paired status. Keep the existing intents behavior.
+- Tests to write: Rust unit tests in `crates/statglass-remote/src/pairing.rs` tests: summary present on the approved offer, kept across a later status call, `dropped` set when a large handover truncates (reuse the existing oversized-handover test fixture if there is one), no source gives empty. `src-tauri` mapping test in `status.rs` or `pairing.rs` tests. Vitest in `pairing.test.tsx`: approved shows included and unavailable hosts with reason text; `dropped` shows the note and no lists; a `waiting` poll during approval keeps the pending view. `mock-transport.test.ts` updated for the summary.
+- Decisions already made: no new `HandoverReason`; intent-log failures stay `Unresolvable`. No wire change.
+- Out of scope: the Hosts page, Update from Mac, the phone.
+- Done when: `cargo test -p statglass-remote pairing`, `cargo test -p statglass pairing`, `bun run test -- src/app/routes/dashboard/settings packages/core/src/mock-transport.test.ts`, `bun run typecheck`, `make bindings-check`, `cargo clippy -p statglass-remote -p statglass --all-targets -- -D warnings` pass.
+
+#### Lane b brief (Hosts page "Add to iPhone")
+
+- Goal: the Hosts page offers a direct way to put this Mac's hosts on the iPhone.
+- Interface: new `AddToIphone` in `src/app/routes/dashboard/hosts/_components/add-to-iphone.tsx`, rendered in the Hosts `PageHeader` actions before "Add host" as an outline button labelled "Add to iPhone". `PairingDialog` and `UpdateFromMac` gain an optional controlled mode (`open`, `onOpenChange`, and no built-in trigger when controlled) so the Hosts page can open them without their Settings triggers; their Settings rendering is unchanged. Move the paired-devices query key out of `panel.tsx` into `@core/query-keys` (follow that file's existing pattern and naming) and use it in both places.
+- Behavior:
+  - Paired devices known and non-empty: the button opens the Update from Mac dialog.
+  - None paired: it opens the Pair iPhone dialog; after a pairing completes, the devices query is invalidated (as Settings does) so the next click opens Update from Mac.
+  - While `pairedDevices` is loading the button is disabled; if it errors, the button opens Pair iPhone, which shows its own failure (for example Remote Login off or monitoring off).
+  - Show the button only when the Mac has at least one saved remote host (`useRemoteHosts` data non-empty); with none there is nothing to hand over.
+- Tests to write: `add-to-iphone.test.tsx` with the mock transport: no devices opens Pair iPhone; a device opens Update from Mac (QR and included hosts visible); loading disabled; no remote hosts hides it. `route.test.tsx`: the button sits in the header. `update-from-mac.test.tsx`: the Settings row still opens it (existing tests keep passing).
+- Decisions already made: reuse the dialogs; no new flow, copy or state machine.
+- Out of scope: approval summary (lane a), the phone, styling outside the button.
+- Done when: `bun run test -- src/app/routes/dashboard/hosts src/app/routes/dashboard/settings`, `bun run typecheck`, `bunx biome check src packages/core/src` pass.
+
+#### Lane c brief (phone copy and docs)
+
+- Goal: a user adding hosts on the iPhone learns that pairing with a Mac brings all of that Mac's hosts, and how to add a Linux host that no Mac monitors.
+- Interface: `ChooseMethod` (`apps/mobile/src/pairing/screens/choose-method.tsx`) and `SetupGuidance` (`apps/mobile/src/pairing/help/`).
+- Behavior:
+  - `ChooseMethod` explanation: "Create the code on a Mac running StatGlass to add it and the hosts it monitors, or on a Linux host running the agent." (Keep it one sentence; adjust wording to fit the screen's voice.)
+  - `SetupGuidance` gains, or rewords to include: on a Mac, Settings › Paired devices › Pair iPhone, and that the Mac also shares its other hosts; for hosts added on the Mac later, Settings › Update from Mac on the iPhone; for a Linux host with no Mac, run `statglass-agent pair` on it over SSH and scan the QR printed in the terminal (or paste the text).
+  - Docs `iphone.md` "Pair a host" gains a short subsection "Hosts from your Mac": pairing with a Mac offers its saved remote hosts; Update from Mac for later additions; which hosts can't be shared and why (an alias using ProxyJump or ProxyCommand, a host reachable only at a LAN address with no Tailscale route, no saved host key in `known_hosts`); tailnet addresses (100.x) count as Tailscale. `linux-hosts.md` gets one line pointing at `statglass-agent pair` for adding the host to an iPhone.
+- Tests to write: update or add jest tests under `apps/mobile/test/pairing/` asserting the new copy renders (follow the existing tests there).
+- Decisions already made: copy only; no new screens, routes or native calls. Follow `rules/mobile/expo.md` (Text roles, no colour literals).
+- Out of scope: the "no hosts shared" post-pair line, Rust, the desktop.
+- Done when: `bun run --cwd apps/mobile test -- pairing`, `make mobile-check` pass.
 
 ## Log
 
 - 2026-11-26: Diagnosis. `/Applications/StatGlass.app` 0.15.0 lacks `src-tauri/src/handover/` (`git cat-file -e v0.15.0:src-tauri/src/handover/bundle.rs` fails); handover landed on main after the tag. No `device-intents.jsonl` was ever written. The scratch diagnostic using the shipped `handover_host` resolved m1-linux, M4 Mini and Plex Server and refused Live Oak as `LanLiteral` (100.102.228.126).
 - Plan critique (devils-advocate, 8 findings). Applied: 1 (truncation fallback: Mac-side summary with `dropped`, kept on the offer), 2 (summary excludes this Mac by construction; `HandingOver` returns `Waiting` mid-approval, which lane 2a must keep from flipping the dialog back to the QR), 4 (reuse `classify_address`), 5 (dedupe targets; the phone's display record keeps the first target per route, accepted as display-only), 6 (lane 2a owns the mock handover wiring), 7 (lane 2b owns the paired-devices query key move to `@core/query-keys`, loading/error states named), 8 (D-136 reference; phase 1 tests). Accepted without change: 3 (intent-log failures reported as `Unresolvable`; a new reason is a wire change for a local-disk failure). Release order: 0.16.0 on main lacks phase 1; the report tells the user.
+- Phase 1 boundary review (4 findings, all fixed in 721ddcc6): dedupe dropped a Tailscale label on a shared host, compared raw strings, no 100.128.0.1 edge case, redundant tailnet check. Both new guards revert-verified (label upgrade disabled; mask loosened to `second >= 64`). Tagged handover-phase-1.
 - Phase 2 tests are written by the lanes from the case lists in their briefs, rather than in the scaffold. These are small UI and status changes, and the cases are listed in full; reviewed per lane.

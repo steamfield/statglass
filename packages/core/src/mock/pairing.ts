@@ -170,7 +170,13 @@ export function createMockPairing(
       if (status.kind !== "pending") return ok(status);
       if (!devices.has(PHONE.tag)) devices.set(PHONE.tag, PHONE);
       handover.onApprove(PHONE.tag);
-      entry.status = { kind: "paired", device: PHONE.tag };
+      entry.status = {
+        kind: "paired",
+        device: PHONE.tag,
+        hosts: [],
+        unavailable: [],
+        dropped: false,
+      };
       return ok(entry.status);
     },
     pairingDeny: async (nonce) => deny(nonce, "pairing_deny"),

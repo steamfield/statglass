@@ -5,6 +5,7 @@ use statglass_remote::{DeviceKeysError, PairingError};
 use statglass_schema::JsSafeInt;
 
 use super::bundle::MONITORING_OFF;
+use crate::handover::HandoverUnavailableInfo;
 
 /// One open pairing, as the sheet shows it.
 #[derive(Clone, Debug, Serialize, specta::Type)]
@@ -32,9 +33,15 @@ pub enum PairingStatus {
         model: String,
         code: String,
     },
-    /// Approved: `device` is the new device's tag.
+    /// Approved: `device` is the new device's tag. The rest is what this Mac handed over
+    /// with the approval, kept on the Mac (never on the wire): `hosts` names the remote hosts
+    /// sent to the phone (never this Mac), `unavailable` the ones that could not be, and
+    /// `dropped` is true when the list did not fit the reply and the phone got this Mac alone.
     Paired {
         device: String,
+        hosts: Vec<String>,
+        unavailable: Vec<HandoverUnavailableInfo>,
+        dropped: bool,
     },
     Denied,
     Expired,
@@ -68,7 +75,13 @@ impl From<PairReply> for PairingStatus {
                 model,
                 code,
             },
-            PairReply::Approved { device, .. } => Self::Paired { device },
+            // Phase 2 lane a fills the summary from the offer's kept handover.
+            PairReply::Approved { device, .. } => Self::Paired {
+                device,
+                hosts: Vec::new(),
+                unavailable: Vec::new(),
+                dropped: false,
+            },
             PairReply::Denied => Self::Denied,
             PairReply::Expired => Self::Expired,
             PairReply::Error { error } => Self::Failed {

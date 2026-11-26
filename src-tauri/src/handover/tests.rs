@@ -397,7 +397,7 @@ async fn pairing_approval_and_revoke_commands_use_the_durable_log() {
         now,
     );
     assert_eq!(reply.pairing, Some(PairReply::Waiting));
-    let PairingStatus::Paired { device } =
+    let PairingStatus::Paired { device, .. } =
         pairing_approve(nonce.clone(), app.state()).await.unwrap()
     else {
         panic!("the pending iPhone should be approved")

@@ -560,11 +560,11 @@ pub(crate) mod tests {
         let tag = DeviceTag::from_key(&EcdsaP256Public(DEVICE_KEY));
         assert!(
             matches!(pairing_approve(first.nonce.clone(), app.state()).await.unwrap(),
-            PairingStatus::Paired { device } if device == tag.to_string())
+            PairingStatus::Paired { device, .. } if device == tag.to_string())
         );
         assert!(
             matches!(pairing_status(first.nonce, app.state()).await.unwrap(),
-            PairingStatus::Paired { device } if device == tag.to_string())
+            PairingStatus::Paired { device, .. } if device == tag.to_string())
         );
         device_seen(dir.path()).record(tag, now - 1);
         device_seen(dir.path()).record(tag, now - 10);

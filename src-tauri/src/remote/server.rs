@@ -379,7 +379,7 @@ mod tests {
             })
             .await;
             assert_eq!(reply.pairing, Some(PairReply::Waiting));
-            let PairingStatus::Paired { device } =
+            let PairingStatus::Paired { device, .. } =
                 pairing_approve(second.nonce.clone(), app.state())
                     .await
                     .unwrap()
