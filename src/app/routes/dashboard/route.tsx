@@ -16,6 +16,7 @@ import {
 import { HostClockContext } from "~/lib/host-clock";
 import { useHostSelection } from "~/lib/host-selection";
 import { usePageEntrance } from "~/lib/motion/page-entrance";
+import { isSettingsPath } from "~/lib/settings-links";
 import { useTransport } from "~/lib/transport-context";
 import { HostStoreProvider, useHostId } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
@@ -122,11 +123,9 @@ export default function DashboardLayout() {
     (host) => host.config.id === hostId
   );
   const { pathname } = useLocation();
-  const metricPage = ![
-    "/dashboard/hosts",
-    "/dashboard/settings",
-    "/dashboard/alerts",
-  ].includes(pathname);
+  const metricPage =
+    !["/dashboard/hosts", "/dashboard/alerts"].includes(pathname) &&
+    !isSettingsPath(pathname);
   const useSelectedHost =
     metricPage || isLinuxAlertsPage(pathname, remote?.os, selection, hostId);
   const hasRemote = remote !== undefined;

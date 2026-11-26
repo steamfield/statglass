@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { useHostSelection } from "~/lib/host-selection";
+import { isSettingsPath } from "~/lib/settings-links";
 
 // Host selection follows its own context; metric-only sidebar updates do not
 // need to rebuild the closed selection menu on every sample.
@@ -23,10 +24,7 @@ export const HostSwitcher = memo(function HostSwitcher() {
         value={selection.selected}
         onValueChange={(id) => {
           selection.select(id);
-          if (
-            pathname === "/dashboard/hosts" ||
-            pathname === "/dashboard/settings"
-          )
+          if (pathname === "/dashboard/hosts" || isSettingsPath(pathname))
             void navigate("/dashboard/overview");
         }}
       >
