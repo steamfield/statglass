@@ -22,10 +22,6 @@ import {
 } from "@test/module/cpu/fixtures";
 import { act, fireEvent, screen } from "@testing-library/react-native";
 
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
-
 beforeEach(setModuleClock);
 afterEach(() => {
   jest.useRealTimers();

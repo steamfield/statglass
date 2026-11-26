@@ -24,10 +24,6 @@ import {
   watchHistory,
 } from "./fixtures";
 
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
-
 beforeEach(setModuleClock);
 afterEach(() => {
   jest.useRealTimers();

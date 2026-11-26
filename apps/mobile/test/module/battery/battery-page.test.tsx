@@ -14,10 +14,6 @@ import { ExpoRoot, Stack } from "expo-router";
 import { getMockContext } from "expo-router/testing-library";
 import { ModuleScreen } from "@/module";
 
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
-
 const context = getMockContext({
   _layout: () => <Stack />,
   "[host]/[module]": ModuleScreen,

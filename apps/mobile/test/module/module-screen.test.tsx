@@ -29,10 +29,6 @@ import { createGestureController } from "react-native-gesture-handler/jest-utils
 import { ModuleScreen } from "@/module";
 import { ModuleChart } from "@/module/module-chart";
 
-jest.mock("react-native-worklets", () =>
-  jest.requireActual("react-native-worklets/src/mock")
-);
-
 const context = getMockContext({
   _layout: () => <Stack screenOptions={{ headerShown: false }} />,
   "[host]/[module]": ModuleScreen,
