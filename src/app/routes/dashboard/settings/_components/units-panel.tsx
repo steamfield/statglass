@@ -2,7 +2,12 @@
  * The Units panel on the General tab: temperature, network rate and memory
  * units, each with a live example in the selected unit.
  */
-import { formatBytes, formatRate, formatTemperature } from "@core/format";
+import {
+  displayUnits,
+  formatBytes,
+  formatRate,
+  formatTemperature,
+} from "@core/format";
 import type {
   MemoryUnit,
   NetworkUnit,
@@ -38,6 +43,7 @@ function showsAs(example: string): string {
 /** "Units" settings panel: how temperatures, network rates and memory read. */
 export function UnitsPanel({ units }: { units: Settings["units"] }) {
   const write = useWriteSettings();
+  const display = displayUnits(units);
   return (
     <SettingsPanel id="units" title="Units">
       <SettingsRow
@@ -45,7 +51,7 @@ export function UnitsPanel({ units }: { units: Settings["units"] }) {
         label="Temperature"
         sub={showsAs(
           formatTemperature(EXAMPLE_CELSIUS, {
-            units: units.temperature === "fahrenheit" ? "F" : "C",
+            units: display.temperature,
           })
         )}
       >
@@ -61,7 +67,7 @@ export function UnitsPanel({ units }: { units: Settings["units"] }) {
         label="Network rate"
         sub={showsAs(
           formatRate(EXAMPLE_BYTES_PER_SECOND, {
-            units: units.network === "bits_per_sec" ? "Mbps" : "MBps",
+            units: display.rate,
           })
         )}
       >
@@ -77,7 +83,7 @@ export function UnitsPanel({ units }: { units: Settings["units"] }) {
         label="Memory"
         sub={showsAs(
           formatBytes(EXAMPLE_BYTES, {
-            units: units.memory === "binary" ? "GiB" : "GB",
+            units: display.bytes,
           })
         )}
       >

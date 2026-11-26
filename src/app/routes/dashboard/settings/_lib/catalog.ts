@@ -214,14 +214,14 @@ export const SETTINGS_CATALOG: readonly CatalogSection[] = [
         keywords: "iphone phone mobile qr pair ios paired devices list revoke",
       },
       {
-        id: "iphone-host-list",
-        label: "Host list on iPhone",
-        keywords: "iphone hosts share sync update phone",
-      },
-      {
         id: "device-access",
         label: "Device access on other hosts",
         keywords: "pending device updates revoke install retry iphone",
+      },
+      {
+        id: "iphone-host-list",
+        label: "Host list on iPhone",
+        keywords: "iphone hosts share sync update phone",
       },
     ],
   },
