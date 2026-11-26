@@ -20,7 +20,10 @@ type RangeKey = (typeof RANGES)[number]["key"];
 
 const LABEL = "text-[13px] leading-4 font-normal text-muted-foreground";
 
-/** UIKit's segmented control: a thumb that slides to the chosen segment. */
+/**
+ * UIKit's segmented control: a thumb that slides to the chosen segment.
+ * Exposed as a pair of toggle buttons, so it works with Tab and Space.
+ */
 function Segmented({
   value,
   onChange,
@@ -31,7 +34,7 @@ function Segmented({
   const index = RANGES.findIndex((r) => r.key === value);
   return (
     <div
-      role="radiogroup"
+      role="group"
       aria-label="Chart range"
       className="relative grid grid-cols-2 rounded-[10px] bg-white/[0.07] p-0.5"
     >
@@ -44,8 +47,7 @@ function Segmented({
         <button
           key={range.key}
           type="button"
-          role="radio"
-          aria-checked={range.key === value}
+          aria-pressed={range.key === value}
           onClick={() => onChange(range.key)}
           className={`relative h-8 text-[13px] ${range.key === value ? "font-semibold text-foreground" : "font-normal text-secondary-foreground"}`}
         >

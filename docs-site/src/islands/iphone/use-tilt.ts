@@ -36,6 +36,7 @@ export function useTilt<S extends HTMLElement>() {
     const pointer: Angles = { x: 0, y: 0 };
     const scroll: Angles = { x: 0, y: 0 };
     let squared = false;
+    let scrolled = true;
     let frame = 0;
 
     const target = (): Angles => {
@@ -48,8 +49,22 @@ export function useTilt<S extends HTMLElement>() {
     const write = () => {
       stageEl.style.setProperty("--rx", `${now.x.toFixed(2)}deg`);
       stageEl.style.setProperty("--ry", `${now.y.toFixed(2)}deg`);
+      stageEl.style.setProperty("--ry-n", now.y.toFixed(2));
+    };
+    // Reads layout once per frame, not once per scroll event.
+    const measure = () => {
+      if (!scrolled) return;
+      scrolled = false;
+      const rect = stageEl.getBoundingClientRect();
+      const viewport = window.innerHeight || 1;
+      // -1 as the stage's centre enters at the bottom, 1 as it leaves at the top.
+      const travel = 1 - ((rect.top + rect.height / 2) / viewport) * 2;
+      const p = Math.max(-1, Math.min(1, travel));
+      scroll.x = p * SCROLL.x;
+      scroll.y = -p * SCROLL.y;
     };
     const step = () => {
+      measure();
       const t = target();
       now.x += (t.x - now.x) * EASE;
       now.y += (t.y - now.y) * EASE;
@@ -67,13 +82,7 @@ export function useTilt<S extends HTMLElement>() {
     };
 
     const onScroll = () => {
-      const rect = stageEl.getBoundingClientRect();
-      const viewport = window.innerHeight || 1;
-      // -1 as the stage's centre enters at the bottom, 1 as it leaves at the top.
-      const travel = 1 - ((rect.top + rect.height / 2) / viewport) * 2;
-      const p = Math.max(-1, Math.min(1, travel));
-      scroll.x = p * SCROLL.x;
-      scroll.y = -p * SCROLL.y;
+      scrolled = true;
       update();
     };
     const onMove = (event: PointerEvent) => {

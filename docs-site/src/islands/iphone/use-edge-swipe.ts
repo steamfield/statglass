@@ -5,6 +5,19 @@ const EDGE = 28;
 /** Release past this share of the width, or faster than this, completes. */
 const COMMIT_SHARE = 0.35;
 const COMMIT_SPEED = 0.5; // points per ms
+/** A finger that held still this long before lifting has no speed left. */
+const STALE_MS = 100;
+
+/** Whether a drag released here goes back, rather than springing back. */
+export function commitsBack(drag: {
+  dx: number;
+  width: number;
+  v: number;
+  sinceMoveMs: number;
+}): boolean {
+  const v = drag.sinceMoveMs > STALE_MS ? 0 : drag.v;
+  return drag.dx > drag.width * COMMIT_SHARE || v > COMMIT_SPEED;
+}
 
 /**
  * The interactive pop gesture: drag from the screen's left edge and the top
@@ -92,12 +105,12 @@ export function useEdgeSwipe(
 
     const onUp = (event: PointerEvent) => {
       if (!drag || event.pointerId !== drag.id) return;
-      const { top, below, dx, v, width } = drag;
+      const { top, below, dx, v, width, t } = drag;
       drag = null;
       // Let the transitions run from the dragged position.
       top.style.transition = "";
       if (below) below.style.transition = "";
-      if (dx > width * COMMIT_SHARE || v > COMMIT_SPEED) {
+      if (commitsBack({ dx, width, v, sinceMoveMs: event.timeStamp - t })) {
         latest.current.onBack();
         requestAnimationFrame(() => {
           top.style.transform = "";
@@ -109,15 +122,23 @@ export function useEdgeSwipe(
       }
     };
 
+    // The browser or the system took the gesture: never navigate on that.
+    const onCancel = (event: PointerEvent) => {
+      if (!drag || event.pointerId !== drag.id) return;
+      release(drag.top);
+      release(drag.below);
+      drag = null;
+    };
+
     root.addEventListener("pointerdown", onDown);
     root.addEventListener("pointermove", onMove);
     root.addEventListener("pointerup", onUp);
-    root.addEventListener("pointercancel", onUp);
+    root.addEventListener("pointercancel", onCancel);
     return () => {
       root.removeEventListener("pointerdown", onDown);
       root.removeEventListener("pointermove", onMove);
       root.removeEventListener("pointerup", onUp);
-      root.removeEventListener("pointercancel", onUp);
+      root.removeEventListener("pointercancel", onCancel);
     };
   }, [container]);
 }

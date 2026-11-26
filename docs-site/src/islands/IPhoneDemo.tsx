@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, type ReactNode, useEffect, useRef } from "react";
 import { BackButton } from "@/islands/iphone/chrome";
 import { CpuScreen } from "@/islands/iphone/CpuScreen";
 import { HostScreen } from "@/islands/iphone/HostScreen";
@@ -12,6 +12,26 @@ import { type Route, usePhoneNav } from "@/islands/iphone/use-phone-nav";
 
 /** Longest a pop waits for its transition before dropping the screen. */
 const POP_FALLBACK_MS = 600;
+
+/**
+ * A covered screen keeps its last frame: only the screen on top (and one
+ * leaving) re-renders at 1 Hz, as on the phone.
+ */
+const Frozen = memo(
+  ({ children }: { live: boolean; children: ReactNode }) => children,
+  (_, next) => !next.live
+);
+
+/** Slides a pushed screen in from the right, once, as it mounts. */
+function slideIn(el: HTMLElement | null) {
+  if (!el || el.dataset.entered !== undefined) return;
+  el.dataset.entered = "";
+  if (!matchMedia("(prefers-reduced-motion: no-preference)").matches) return;
+  el.animate?.([{ transform: "translateX(100%)" }, { transform: "none" }], {
+    duration: 500,
+    easing: "cubic-bezier(0.32, 0.72, 0, 1)",
+  });
+}
 
 function titleOf(route: Route): string {
   if (route.screen === "hosts") return "Hosts";
@@ -29,7 +49,6 @@ export function IPhoneDemo() {
   const { ref, series, tEndMs } = usePhoneHosts();
   const nav = usePhoneNav();
   const stackRef = useRef<HTMLDivElement>(null);
-  useEdgeSwipe(stackRef, nav.stack.length > 1, nav.pop);
 
   // A popped screen leaves on its transition; drop it when that ends, or
   // straight away when there is no transition (reduced motion).
@@ -40,22 +59,33 @@ export function IPhoneDemo() {
     return () => clearTimeout(timer);
   }, [leavingKey, nav.settle]);
 
-  // Keyboard users land on the new screen's back button after a push.
+  // Keyboard users stay in the phone as screens change: on the new screen's
+  // back button after a push, on the uncovered screen's after a pop (or its
+  // first control on the hosts list).
   const depth = nav.stack.length;
-  const focusAfterPush = useRef(false);
+  const keepFocus = useRef(false);
   useEffect(() => {
-    if (!focusAfterPush.current) return;
-    focusAfterPush.current = false;
+    if (!keepFocus.current) return;
+    keepFocus.current = false;
     const top = stackRef.current?.querySelector<HTMLElement>(
-      ':scope > [data-state="top"] [data-back]'
+      ':scope > [data-state="top"]'
     );
-    top?.focus({ preventScroll: true });
+    const target =
+      top?.querySelector<HTMLElement>("[data-back]") ??
+      top?.querySelector<HTMLElement>("button");
+    target?.focus({ preventScroll: true });
   }, [depth]);
+  const focusInside = () =>
+    stackRef.current?.contains(document.activeElement) ?? false;
   const push = (route: Route) => {
-    focusAfterPush.current =
-      stackRef.current?.contains(document.activeElement) ?? false;
+    keepFocus.current = focusInside();
     nav.push(route);
   };
+  const pop = () => {
+    keepFocus.current = focusInside();
+    nav.pop();
+  };
+  useEdgeSwipe(stackRef, nav.stack.length > 1, pop);
 
   const entries = nav.leaving ? [...nav.stack, nav.leaving] : nav.stack;
   return (
@@ -69,6 +99,7 @@ export function IPhoneDemo() {
         <div
           ref={stackRef}
           className="absolute inset-0 select-none"
+          style={{ touchAction: "pan-y pinch-zoom" }}
           role="group"
           aria-label="StatGlass for iPhone, demo with simulated data"
         >
@@ -77,7 +108,7 @@ export function IPhoneDemo() {
             const top = !leaving && index === nav.stack.length - 1;
             const below = nav.stack[index - 1];
             const back = below ? (
-              <BackButton label={titleOf(below.route)} onPress={nav.pop} />
+              <BackButton label={titleOf(below.route)} onPress={pop} />
             ) : null;
             const route = entry.route;
             const host =
@@ -88,6 +119,7 @@ export function IPhoneDemo() {
             return (
               <div
                 key={entry.key}
+                ref={entry.key === 0 ? undefined : slideIn}
                 data-layer=""
                 data-state={leaving ? "leaving" : top ? "top" : "below"}
                 data-pushed={entry.key === 0 ? undefined : ""}
@@ -99,28 +131,30 @@ export function IPhoneDemo() {
                   }
                 }}
               >
-                {route.screen === "hosts" ? (
-                  <HostsScreen
-                    series={series}
-                    tEndMs={tEndMs}
-                    onOpen={(id) => push({ screen: "host", host: id })}
-                  />
-                ) : host && data && route.screen === "host" ? (
-                  <HostScreen
-                    host={host}
-                    data={data}
-                    tEndMs={tEndMs}
-                    back={back}
-                    onOpenCpu={() => push({ screen: "cpu", host: host.id })}
-                  />
-                ) : host && data ? (
-                  <CpuScreen
-                    host={host}
-                    data={data}
-                    tEndMs={tEndMs}
-                    back={back}
-                  />
-                ) : null}
+                <Frozen live={top || leaving}>
+                  {route.screen === "hosts" ? (
+                    <HostsScreen
+                      series={series}
+                      tEndMs={tEndMs}
+                      onOpen={(id) => push({ screen: "host", host: id })}
+                    />
+                  ) : host && data && route.screen === "host" ? (
+                    <HostScreen
+                      host={host}
+                      data={data}
+                      tEndMs={tEndMs}
+                      back={back}
+                      onOpenCpu={() => push({ screen: "cpu", host: host.id })}
+                    />
+                  ) : host && data ? (
+                    <CpuScreen
+                      host={host}
+                      data={data}
+                      tEndMs={tEndMs}
+                      back={back}
+                    />
+                  ) : null}
+                </Frozen>
               </div>
             );
           })}

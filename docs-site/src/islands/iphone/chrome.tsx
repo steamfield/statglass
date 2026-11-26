@@ -34,9 +34,10 @@ export function BackButton({
   );
 }
 
+/** Settings, drawn for the look but not part of the demo, so dimmed. */
 export function GearButton() {
   return (
-    <span className={GLASS} aria-hidden="true">
+    <span className={`${GLASS} opacity-45`} aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
         <path
           d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"

@@ -11,6 +11,8 @@
 .stage {
   --rx: 6deg;
   --ry: 16deg;
+  /* --ry without its unit, for lengths: dividing angles isn't supported everywhere. */
+  --ry-n: 16;
   --scale: 0.68;
   --band: 5px;
   --bezel: 11px;
@@ -47,7 +49,7 @@
   border-radius: 50%;
   background: radial-gradient(closest-side, rgb(0 0 0 / 0.32), transparent);
   filter: blur(10px);
-  transform: translateX(calc(var(--ry) / 1deg * -1.2px));
+  transform: translateX(calc(var(--ry-n) * -1.2px));
   pointer-events: none;
 }
 
@@ -203,7 +205,6 @@
   inset: 0;
   background: var(--color-background);
   transition: transform var(--phone-nav) var(--phone-ease);
-  touch-action: pan-y;
 }
 
 .layer::after {
@@ -232,24 +233,15 @@
   box-shadow: -10px 0 30px rgb(0 0 0 / 0.45);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .layer[data-pushed][data-state="top"] {
-    animation: push-in var(--phone-nav) var(--phone-ease) backwards;
-  }
-}
-
-@keyframes push-in {
-  from {
-    transform: translateX(100%);
-  }
-}
-
 .scroll {
   position: absolute;
   inset: 0;
   overflow-y: auto;
   scrollbar-width: none;
-  overscroll-behavior-y: contain;
+  /* Horizontal drags belong to the swipe back; vertical ones scroll the
+     screen and then the page, and pinch still zooms. Set here as well as on
+     the stack, since a nested scroller doesn't inherit its parent's. */
+  touch-action: pan-y pinch-zoom;
 }
 
 .scroll::-webkit-scrollbar {

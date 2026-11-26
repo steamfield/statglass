@@ -16,36 +16,23 @@ type HostsState = { series: Record<string, HostSeries>; tEndMs: number };
  * frame (`useOnScreenInterval`).
  */
 export function usePhoneHosts() {
-  const [samplers] = useState(() =>
-    Object.fromEntries(
-      DEMO_HOSTS.filter((h) => h.enabled).map((h) => [
-        h.id,
-        createHostSampler(h),
-      ])
-    )
+  const [hosts] = useState(() =>
+    DEMO_HOSTS.filter((h) => h.enabled).map((h) => {
+      const next = createHostSampler(h);
+      return { id: h.id, next, first: initialSeries(h, next) };
+    })
   );
   const [state, setState] = useState<HostsState>(() => ({
-    series: Object.fromEntries(
-      DEMO_HOSTS.filter((h) => h.enabled).map((h) => [
-        h.id,
-        initialSeries(
-          h,
-          samplers[h.id] as ReturnType<typeof createHostSampler>
-        ),
-      ])
-    ),
+    series: Object.fromEntries(hosts.map((h) => [h.id, h.first])),
     tEndMs: 0,
   }));
   const ref = useOnScreenInterval(() =>
     setState((s) => ({
       series: Object.fromEntries(
-        Object.entries(s.series).map(([id, series]) => [
-          id,
-          advance(
-            series,
-            (samplers[id] as ReturnType<typeof createHostSampler>)()
-          ),
-        ])
+        hosts.map((h) => {
+          const series = s.series[h.id] ?? h.first;
+          return [h.id, advance(series, h.next())];
+        })
       ),
       tEndMs: Date.now(),
     }))
