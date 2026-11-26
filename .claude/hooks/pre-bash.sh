@@ -113,6 +113,39 @@ check_block_generated_writes() {
 
     [[ "$is_write" == "false" ]] && return 0
 
+    # The checks above look at the whole command, so `sed -i a.ts; grep x
+    # <generated>` reads as a write. Confirm per segment (split on ; && || | and
+    # newlines outside quotes). A command shlex can't parse, such as a heredoc
+    # with an odd quote, keeps the whole-command answer.
+    COMMAND="$command" python3 -I - <<'PY' || return 0
+import os, re, shlex, sys
+cmd = os.environ["COMMAND"]
+gen = r"(packages/core/src/generated|src/desktop-transport/commands\.ts)"
+try:
+    lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=";&|")
+    lex.whitespace_split = True
+    tokens = list(lex)
+except ValueError:
+    sys.exit(0)
+segments, seg = [], []
+for tok in tokens:
+    if tok and set(tok) <= set(";&|"):
+        segments.append(seg); seg = []
+    else:
+        seg.append(tok)
+segments.append(seg)
+for seg in segments:
+    if not seg or not any(re.search(gen, t) for t in seg):
+        continue
+    if any(t in ("cp", "mv", "tee", "install", "rsync") for t in seg):
+        sys.exit(0)
+    if "sed" in seg and any(t.startswith("-i") for t in seg[seg.index("sed") + 1:]):
+        sys.exit(0)
+    if re.search(r">>?\s*\S*" + gen, " ".join(seg)):
+        sys.exit(0)
+sys.exit(1)
+PY
+
     DENY_REASON="BLOCKED: don't write packages/core/src/generated/ or
 src/desktop-transport/commands.ts from a shell command.
 

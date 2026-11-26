@@ -258,11 +258,17 @@ class HookTests(unittest.TestCase):
             "cp /tmp/commands.ts src/desktop-transport/commands.ts",
             "echo x > packages/core/src/generated/types.ts",
             "sed -i '' 's/a/b/' src/desktop-transport/commands.ts",
+            "sed -i '' 's/a/b/; s/c/d/' packages/core/src/generated/types.ts",
+            "git status && cp /tmp/types.ts packages/core/src/generated/types.ts",
         ]:
             with self.subTest(command=command):
                 self.assertEqual(self.decision("pre-bash.sh", command).get("permissionDecision"), "deny")
+        # A write elsewhere in the command doesn't make a read of the bindings a write.
         for command in ["make bindings", "cat src/desktop-transport/commands.ts",
-                        "cp /tmp/native.ts src/desktop-transport/native.ts"]:
+                        "cp /tmp/native.ts src/desktop-transport/native.ts",
+                        "sed -n 1,5p src/a.ts; grep -iE 'x' packages/core/src/generated/types.ts",
+                        "sed -i '' 's/a/b/' packages/core/src/format.ts && head packages/core/src/generated/types.ts",
+                        "cp a.ts b.ts | grep -c x src/desktop-transport/commands.ts"]:
             with self.subTest(command=command):
                 self.assertNotEqual(self.decision("pre-bash.sh", command).get("permissionDecision"), "deny")
 
