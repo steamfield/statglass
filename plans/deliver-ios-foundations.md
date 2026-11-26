@@ -2,7 +2,7 @@
 
 Skill: deliver. Profile: deliver. On resume, re-read shared/lane-dag.md before anything else.
 plan_graph: /Users/riley/.claude/plugins/cache/claude-essentials/ce/6.0.4/shared/scripts/plan_graph.py
-Started: 2026-11-25. Timebox: none. Landing branch: deliver/ios-foundations.
+Status: done (2026-11-25); phases 1-4 landed and merged to main. Started: 2026-11-25. Timebox: none. Landing branch: deliver/ios-foundations.
 Worktree: /Users/riley/Projects/statglass/.claude/worktrees/deliver-ios-foundations
 Gate: `make mobile-check && bun run check && make architecture-check architecture-test agent-config-check agent-config-test agent-hooks-test` (timed on the scaffold parent; see Log). Rust, bindings and App Store gates are left out because no Rust, Swift or generated file changes; the pre-push hook still runs them. Filtered tests: `bun run --cwd apps/mobile test -- <path>`. Typecheck: `bun run --cwd apps/mobile typecheck`.
 Commits: conventional commit subjects are enforced by the commit hook (`type(scope): subject`).
