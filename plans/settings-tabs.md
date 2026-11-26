@@ -180,6 +180,7 @@ Route-level tests (tabs.test.tsx, route.test.tsx, reset-history.test.tsx) need l
 Demo: `bun run dev:fast`, Settings, press ⌘F, type "dark", "refresh", "ssh"; turn CPU off and follow the link from Menu bar; open History.
 Depends on: phase 1
 Scaffold: 411ea61d
+Tag: settings-tabs-phase-2
 
 Test cases (each lane writes its own test file, listed in Owns):
 - Search: typing "dark" shows the Appearance row with its working control and no other tab's rows; "refresh" finds Sample interval; "ssh" finds Allow remote monitoring; "fahrenheit" then clicking °F writes `{ units: { temperature: "fahrenheit" } }`; a status line says "1 setting matches “dark”" / "N settings match"; a query with no match says so and offers suggestion chips; Escape and the clear button return to the tab that was open; ⌘F (and Ctrl+F) focuses the field; "Open in <tab>" navigates to `settingsHref(tab, firstRowId)`; a matched row that never renders (Network history without per-app network) is neither shown nor counted.
