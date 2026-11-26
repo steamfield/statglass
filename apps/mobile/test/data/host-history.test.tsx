@@ -225,10 +225,7 @@ test("three busy replies keep loading until Retry can start a fresh round", asyn
   const transport = createMockTransport({ autoTick: false });
   const read = jest.spyOn(transport, "hostHistory");
   for (let attempt = 0; attempt < 6; attempt++) {
-    read.mockResolvedValueOnce({
-      status: "error",
-      error: { kind: "remote_busy", message: "busy" },
-    });
+    transport.failNext("hostHistory", { kind: "remote_busy", message: "busy" });
   }
   const [host] = await transport.listHosts();
   await renderWithProviders(modulePage(), { transport });
@@ -264,10 +261,8 @@ test("three busy replies keep loading until Retry can start a fresh round", asyn
 test("a Busy reply schedules no history reads while the app is backgrounded", async () => {
   const setAppState = mockAppState();
   const transport = createMockTransport({ autoTick: false });
-  const read = jest.spyOn(transport, "hostHistory").mockResolvedValueOnce({
-    status: "error",
-    error: { kind: "remote_busy", message: "busy" },
-  });
+  const read = jest.spyOn(transport, "hostHistory");
+  transport.failNext("hostHistory", { kind: "remote_busy", message: "busy" });
   await renderWithProviders(modulePage(), { transport });
   await screen.findByRole("tab", { name: "1h, History range" });
   await layout(300);
@@ -282,9 +277,10 @@ test("a Busy reply schedules no history reads while the app is backgrounded", as
 
 test("Retry recovers an open chart after a transient history failure", async () => {
   const transport = createMockTransport({ autoTick: false });
-  const read = jest.spyOn(transport, "hostHistory").mockResolvedValueOnce({
-    status: "error",
-    error: { kind: "remote_unreachable", message: "Connection dropped" },
+  const read = jest.spyOn(transport, "hostHistory");
+  transport.failNext("hostHistory", {
+    kind: "remote_unreachable",
+    message: "Connection dropped",
   });
   await renderWithProviders(modulePage(), { transport });
   await screen.findByRole("tab", { name: "1h, History range" });
@@ -302,9 +298,10 @@ test("Retry recovers an open chart after a transient history failure", async () 
 
 test("an unsupported host offers an update while its live CPU value changes", async () => {
   const transport = createMockTransport({ autoTick: false });
-  const read = jest.spyOn(transport, "hostHistory").mockResolvedValue({
-    status: "error",
-    error: { kind: "remote_unsupported", message: "history" },
+  const read = jest.spyOn(transport, "hostHistory");
+  transport.failNext("hostHistory", {
+    kind: "remote_unsupported",
+    message: "history",
   });
   const [host] = await transport.listHosts();
   await renderWithProviders(modulePage(), { transport });
@@ -425,9 +422,13 @@ test("a failed status refetch keeps the page and its selected range", async () =
   await selectWeek();
   await screen.findByText(/com\.docker\.backend at/);
 
-  const list = jest
-    .spyOn(transport, "listRemoteHosts")
-    .mockRejectedValue(new Error("status read failed"));
+  const list = jest.spyOn(transport, "listRemoteHosts");
+  const unreadableStatus = {
+    kind: "internal",
+    message: "status read failed",
+  } as const;
+  transport.failNext("listRemoteHosts", unreadableStatus);
+  transport.failNext("listRemoteHosts", unreadableStatus);
   await act(() => transport.pushRemoteStatus(host, { state: "connecting" }));
   await waitFor(() => expect(list).toHaveBeenCalled());
   await act(() => jest.advanceTimersByTimeAsync(1100));

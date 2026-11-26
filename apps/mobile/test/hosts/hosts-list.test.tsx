@@ -31,6 +31,7 @@ import FirstLaunch from "@/app/index";
 import { useHostSparkline } from "@/data/host-sparkline";
 import type { PhoneSettings } from "@/data/phone-settings";
 import type { PhoneTransport } from "@/data/seam";
+import { SUMMARY_MS } from "@/data/sparkline-model";
 import { themeColors } from "@/theme.generated";
 import { createNativeTransport } from "@/transport/native-transport";
 import { Text } from "@/ui/text";
@@ -350,6 +351,7 @@ test("describes three charts, their measured peaks and gaps, and labels the perc
   const transport = sparklineDemo();
   const [host] = await transport.listHosts();
   if (!host) throw new Error("Expected a host fixture");
+  // Hand-built so the peaks the labels announce are known values.
   jest.spyOn(transport, "hostHistory").mockImplementation(async (request) => {
     const series = [
       ["cpu.total", 5, 24],
@@ -426,6 +428,43 @@ test("connected rows dim when summaries stop and brighten when they resume", asy
     name: /^MacBook Pro, macOS, Live, CPU \d+%/,
   });
   expect(resumed.parent).not.toHaveStyle({ opacity: 0.5 });
+});
+
+test("a history sleep gap is announced on the live host row", async () => {
+  const transport = createMockTransport({
+    scenarios: ["sleep-gap"],
+    historyRows: 2,
+  });
+  await renderHosts(transport);
+  expect(await screen.findByText("Live")).toBeOnTheScreen();
+  expect(
+    await screen.findByRole("button", {
+      name: /^MacBook Pro, macOS, Live, .*CPU history over the last 30 minutes, peak \d+%, gaps in history.*Memory history over the last 30 minutes, peak \d+%, gaps in history.*Network history over the last 30 minutes, .*gaps in history$/,
+    })
+  ).toBeOnTheScreen();
+});
+
+test("a host whose sampler falls silent announces Stale on its row", async () => {
+  const transport = createMockTransport(
+    phoneDemoOptions({ scenarios: ["stale"], autoTick: false, historyRows: 2 })
+  );
+  try {
+    await renderHosts(transport);
+    await screen.findByRole("button", {
+      name: /^MacBook Pro, macOS, Live, CPU 22%.*CPU history/,
+    });
+    await act(() => jest.advanceTimersByTimeAsync(2 * SUMMARY_MS));
+    expect(screen.getByText("Live")).toBeOnTheScreen();
+    await act(() => jest.advanceTimersByTimeAsync(SUMMARY_MS));
+    expect(screen.getByText("Stale")).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", {
+        name: /^MacBook Pro, macOS, Stale, CPU 22%.*CPU history/,
+      })
+    ).not.toHaveAccessibleName(/gaps in history/);
+  } finally {
+    transport.dispose();
+  }
 });
 
 test("uses the host's ten-second cadence without inventing gaps", async () => {

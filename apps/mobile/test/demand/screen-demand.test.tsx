@@ -138,10 +138,11 @@ test("a failed demand update is retried and releases the host after blur", async
     expect(transport.demand()).toEqual([{ host: MOCK_HOST_ID, level: "full" }])
   );
   const interrupted = {
-    status: "error",
-    error: { kind: "internal", message: "Core queue interrupted" },
+    kind: "internal",
+    message: "Core queue interrupted",
   } as const;
-  send.mockResolvedValueOnce(interrupted).mockResolvedValueOnce(interrupted);
+  transport.failNext("setDemand", interrupted);
+  transport.failNext("setDemand", interrupted);
   await act(() => router.push("/settings"));
   await waitFor(() => expect(transport.demand()).toEqual([]));
   expect(send.mock.calls).toEqual([
@@ -366,12 +367,6 @@ test("a visible row recovers its summary subscription and updates readings and h
     message: "No history feature",
   });
   const subscribe = jest.spyOn(transport, "subscribeLive");
-  const vitals = await transport.hostVitals(MOCK_HOST_ID);
-  if (vitals.status !== "ok") throw new Error("Expected demo readings");
-  let cpu = 18;
-  jest
-    .spyOn(transport, "hostVitals")
-    .mockImplementation(async () => ok({ ...vitals.data, cpu_pct: cpu }));
   await renderWithProviders(
     <ExpoRoot context={routes} location={new URL("statglass:///hosts")} />,
     { transport }
@@ -384,15 +379,9 @@ test("a visible row recovers its summary subscription and updates readings and h
   expect(subscribe).toHaveBeenCalledTimes(1);
   await act(() => jest.advanceTimersByTimeAsync(5_000));
   expect(subscribe).toHaveBeenCalledTimes(2);
-  await act(() => {
-    cpu = 34;
-    pushSummary(transport, cpu);
-  });
+  await act(() => pushSummary(transport, 34));
   await screen.findByRole("button", { name: /Live, CPU 34%.*CPU history/ });
   await act(() => jest.advanceTimersByTimeAsync(5_000));
-  await act(() => {
-    cpu = 42;
-    pushSummary(transport, cpu);
-  });
+  await act(() => pushSummary(transport, 42));
   await screen.findByRole("button", { name: /Live, CPU 42%.*CPU history/ });
 });
