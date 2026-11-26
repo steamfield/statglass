@@ -55,12 +55,23 @@ const failures = {
   },
   protocol: { state: "connecting", failure_kind: "protocol" },
   internal: { failure_kind: "internal" },
+  "tailscale-ssh": {
+    failure_kind: "tailscale_ssh",
+    route_failures: [
+      { route: "lan", kind: "timeout" },
+      { route: "tailscale", kind: "tailscale_ssh" },
+    ],
+  },
 } satisfies Record<string, Partial<PhoneRemoteHostStatus>>;
 
 export function seedPhoneErrors(remotes: MockRemotes, now: () => number): void {
   for (const [name, status] of Object.entries(failures)) {
     const tailscale =
-      name === "timeout" || name === "tailscale-down" ? name : null;
+      name === "timeout" ||
+      name === "tailscale-down" ||
+      name === "tailscale-ssh"
+        ? name
+        : null;
     const linux = name === "agent-not-running";
     const record = remotes.addRemote(
       {

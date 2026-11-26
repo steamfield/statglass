@@ -450,6 +450,14 @@ async fn preferred_error_keeps_the_most_actionable_route_error() {
             K::Internal,
             "Native signer failed",
         ),
+        (
+            vec![
+                Step::fails(0, || RemoteError::Timeout("LAN timed out".into())),
+                Step::fails(50, || RemoteError::TailscaleSsh("100.64.0.2".into())),
+            ],
+            K::TailscaleSsh,
+            "Tailscale SSH answered on 100.64.0.2 instead of OpenSSH",
+        ),
     ] {
         let (dialer, endpoint, _) = fixture(steps);
         let error = failed(connect(&dialer, &endpoint, LOCAL, None).await);
@@ -460,6 +468,7 @@ async fn preferred_error_keeps_the_most_actionable_route_error() {
                     | (K::MonitoringOff, RemoteError::MonitoringOff(_))
                     | (K::PhoneKeyUnavailable, RemoteError::PhoneKeyUnavailable(_))
                     | (K::Internal, RemoteError::SignerInternal(_))
+                    | (K::TailscaleSsh, RemoteError::TailscaleSsh(_))
             ),
             "{error:?}"
         );

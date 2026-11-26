@@ -51,6 +51,8 @@ pub struct Script {
     pub withhold_exec_reply: bool,
     pub only_pin_ecdsa: bool,
     pub exit_before_output: Option<u32>,
+    /// The identification line the server sends, such as `SSH-2.0-Tailscale`.
+    pub server_id: Option<&'static str>,
 }
 
 pub struct Server {
@@ -99,12 +101,16 @@ impl Server {
                 socket: Some("/tmp/statglass test/agent.sock".into()),
             },
         };
-        let config = Arc::new(server::Config {
+        let mut config = server::Config {
             keys,
             auth_rejection_time: Duration::ZERO,
             auth_rejection_time_initial: Some(Duration::ZERO),
             ..Default::default()
-        });
+        };
+        if let Some(id) = script.server_id {
+            config.server_id = russh::SshId::Standard(id.into());
+        }
+        let config = Arc::new(config);
         let (event, events) = mpsc::unbounded_channel();
         let auth_gate = Arc::new(Notify::new());
         let handler = Handler {

@@ -317,6 +317,8 @@ impl HostKeyCheck {
 pub(crate) enum SessionError {
     #[error("host key does not match the paired key ({0})")]
     HostKey(String),
+    #[error("Tailscale SSH answered instead of OpenSSH")]
+    TailscaleSsh,
     #[error(transparent)]
     Ssh(#[from] russh::Error),
 }
@@ -325,6 +327,7 @@ impl SessionError {
     fn into_remote(self, host: &str) -> RemoteError {
         match self {
             Self::HostKey(_) => RemoteError::HostKey(format!("{host}: {self}")),
+            Self::TailscaleSsh => RemoteError::TailscaleSsh(host.into()),
             Self::Ssh(russh::Error::NoCommonAlgo {
                 kind: AlgorithmKind::Key,
                 ..
@@ -360,6 +363,20 @@ impl client::Handler for HostKeyCheck {
         }
     }
 
+    /// Refuses Tailscale SSH before authenticating: it ignores `authorized_keys`, so the
+    /// forced command would never run and the key would open a login shell instead.
+    async fn kex_done(
+        &mut self,
+        _: Option<&[u8]>,
+        _: &russh::Names,
+        session: &mut client::Session,
+    ) -> std::result::Result<(), Self::Error> {
+        if is_tailscale_ssh(session.remote_sshid()) {
+            return Err(SessionError::TailscaleSsh);
+        }
+        Ok(())
+    }
+
     async fn disconnected(
         &mut self,
         reason: client::DisconnectReason<Self::Error>,
@@ -367,6 +384,16 @@ impl client::Handler for HostKeyCheck {
         tracing::debug!(host = %self.host, ?reason, "russh session ended");
         Ok(())
     }
+}
+
+/// Whether an SSH identification line (`SSH-2.0-Tailscale`) names Tailscale's server.
+fn is_tailscale_ssh(id: &[u8]) -> bool {
+    let id = String::from_utf8_lossy(id);
+    let software = id.trim_end().splitn(3, '-').nth(2).unwrap_or_default();
+    software
+        .split([' ', '_'])
+        .next()
+        .is_some_and(|name| name.eq_ignore_ascii_case("tailscale"))
 }
 
 #[cfg(test)]

@@ -51,6 +51,8 @@ pub enum ConnectionFailureKind {
     AppNotRunning,
     /// The other Mac's StatGlass has remote monitoring turned off.
     MonitoringOff,
+    /// Tailscale SSH, not OpenSSH, answered on the host's Tailscale address.
+    TailscaleSsh,
     Incompatible,
     IdentityChanged,
     Protocol,
@@ -89,18 +91,19 @@ impl ConnectionFailureKind {
             Self::LocalOffline => 2,
             Self::TailscaleDown => 3,
             Self::MonitoringOff => 4,
-            Self::AppNotRunning => 5,
-            Self::AgentNotRunning => 6,
-            Self::Refused => 7,
-            Self::Timeout => 8,
-            Self::NoRoute => 9,
-            Self::NameNotResolved => 10,
-            Self::Unreachable => 11,
-            Self::Authentication => 12,
-            Self::HostKey => 13,
-            Self::Incompatible => 14,
-            Self::IdentityChanged => 15,
-            Self::Protocol => 16,
+            Self::TailscaleSsh => 5,
+            Self::AppNotRunning => 6,
+            Self::AgentNotRunning => 7,
+            Self::Refused => 8,
+            Self::Timeout => 9,
+            Self::NoRoute => 10,
+            Self::NameNotResolved => 11,
+            Self::Unreachable => 12,
+            Self::Authentication => 13,
+            Self::HostKey => 14,
+            Self::Incompatible => 15,
+            Self::IdentityChanged => 16,
+            Self::Protocol => 17,
         }
     }
 
@@ -132,6 +135,7 @@ impl ConnectionFailureKind {
             RemoteError::AgentNotRunning(_) => Self::AgentNotRunning,
             RemoteError::AppNotRunning(_) => Self::AppNotRunning,
             RemoteError::MonitoringOff(_) => Self::MonitoringOff,
+            RemoteError::TailscaleSsh(_) => Self::TailscaleSsh,
             RemoteError::Incompatible(_) | RemoteError::IncompatiblePeer { .. } => {
                 Self::Incompatible
             }

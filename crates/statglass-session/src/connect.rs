@@ -163,6 +163,7 @@ fn preferred_error(error: RemoteError) -> RemoteError {
     if matches!(
         kind,
         ConnectionFailureKind::MonitoringOff
+            | ConnectionFailureKind::TailscaleSsh
             | ConnectionFailureKind::AppNotRunning
             | ConnectionFailureKind::PhoneKeyUnavailable
             | ConnectionFailureKind::Internal

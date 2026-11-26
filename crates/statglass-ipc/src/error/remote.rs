@@ -66,7 +66,9 @@ impl From<RemoteError> for CommandError {
                 },
                 message,
             },
+            // Connection status carries the typed kind; a command only needs the sentence.
             RemoteError::Transport(_)
+            | RemoteError::TailscaleSsh(_)
             | RemoteError::Timeout(_)
             | RemoteError::Unreachable { .. }
             | RemoteError::Routes(_)

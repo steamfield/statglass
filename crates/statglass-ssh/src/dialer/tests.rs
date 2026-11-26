@@ -328,6 +328,29 @@ async fn unknown_pin_algorithm_fails_before_tcp_connect() {
 }
 
 #[tokio::test]
+async fn tailscale_ssh_is_named_and_refused_before_authentication() {
+    let key = Arc::new(SoftwareSigner::generate());
+    let dialer = RusshDialer::new(key.clone());
+    let script = Script {
+        server_id: Some("SSH-2.0-Tailscale"),
+        ..Script::default()
+    };
+    let server = Server::start(&key, script).await;
+    let error = dial_error(&dialer, &server.endpoint).await;
+    assert!(
+        matches!(&error, RemoteError::TailscaleSsh(host) if host == "127.0.0.1"),
+        "{error:?}"
+    );
+    assert_eq!(
+        ConnectionFailureKind::from_error(&error),
+        ConnectionFailureKind::TailscaleSsh
+    );
+    assert!(error.retryable());
+    // Tailscale SSH ignores authorized_keys, so the phone never offers its key there.
+    assert_eq!(server.finish().await, [Event::TcpClosed]);
+}
+
+#[tokio::test]
 async fn rejected_client_key_is_an_authentication_error() {
     let allowed = SoftwareSigner::generate();
     let dialer = RusshDialer::new(Arc::new(SoftwareSigner::generate()));

@@ -53,6 +53,11 @@ pub enum RemoteError {
     /// ([`MONITORING_OFF`](crate::MONITORING_OFF)). Retryable: the setting may be turned on.
     #[error("Remote monitoring is off on {0}")]
     MonitoringOff(String),
+    /// Tailscale SSH answered on the host's Tailscale address instead of OpenSSH. It
+    /// skips `authorized_keys`, so the phone's forced command never runs there. Retryable:
+    /// the host may turn it off (`tailscale set --ssh=false`), and another route may work.
+    #[error("Tailscale SSH answered on {0} instead of OpenSSH")]
+    TailscaleSsh(String),
     #[error("invalid remote message: {0}")]
     Protocol(String),
     /// A query (D-117) the host is too busy or slow to answer now. Retryable.
