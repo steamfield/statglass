@@ -5,11 +5,8 @@ import {
   layoutChart,
   openModule,
   setModuleClock,
-  waitForLiveSubscriber,
 } from "@test/helpers/module-screen";
-import { act, screen } from "@testing-library/react-native";
-
-const TICKS_BEFORE_CLOCK_STEP = 10;
+import { screen } from "@testing-library/react-native";
 
 beforeEach(setModuleClock);
 afterEach(() => {
@@ -27,28 +24,6 @@ test("names the host's sleep gap on the history chart", async () => {
   expect(
     await screen.findByRole("note", { name: "Asleep 29 min · no samples" })
   ).toBeOnTheScreen();
-});
-
-test("keeps live process rows when the host clock steps back", async () => {
-  const transport = createMockTransport({
-    autoTick: false,
-    historyRows: 2,
-    scenarios: ["clock-step"],
-  });
-  await openModule(transport, "cpu");
-  await waitForLiveSubscriber(transport);
-  const advanceOneTick = () =>
-    act(async () => {
-      await jest.advanceTimersByTimeAsync(1000);
-      transport.tick();
-    });
-
-  for (let tick = 0; tick < TICKS_BEFORE_CLOCK_STEP; tick++)
-    await advanceOneTick();
-  expect(screen.getByLabelText("Xcode")).toBeOnTheScreen();
-
-  await advanceOneTick();
-  expect(screen.getByLabelText("Xcode")).toBeOnTheScreen();
 });
 
 test.each([

@@ -350,6 +350,7 @@ test("CPU names a failed topology read without hiding total history", async () =
     kind: "internal",
     message: "The host list is unavailable.",
   } as const;
+  // The roster query retries an internal error once; both attempts fail.
   transport.failNext("listHosts", error);
   transport.failNext("listHosts", error);
   await openModule(transport, "cpu");
