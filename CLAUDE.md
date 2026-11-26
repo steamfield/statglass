@@ -155,11 +155,17 @@ If a fix doesn't resolve the issue after 2 attempts without running a new diagno
 
 ## README media
 
-The README's recordings live on the orphan `assets` branch under `media/`, not on main,
+The README's images live on the orphan `assets` branch under `media/`, not on main,
 so clones stay small; `scripts/install.sh` clones `--single-branch --branch main` so
-installs never fetch them. The README links `raw.githubusercontent.com/steamfield/statglass/assets/media/<name>.webp`.
+installs never fetch them. The README links `raw.githubusercontent.com/steamfield/statglass/assets/media/<name>.<ext>`.
+The README stays short and sends readers to the docs site (statglass.steamfield.io); how-to
+content goes in `docs-site/src/content/docs/`, not the README.
 
-- **Format:** animated WebP from an MP4 screen recording (GIF exports come out 2 to 3 times larger, and gifsicle/ffmpeg can't shrink them). Needs `brew install webp`; Homebrew's ffmpeg has no WebP encoder, so frames go through `img2webp`:
+- **Desktop screenshots:** static PNGs taken from the browser dev server on the mock transport
+  (never a real Mac's data), at device scale 2 and rendered at half width. The animated
+  desktop recordings came out too soft and were replaced; use stills unless a real screen
+  recording is made.
+- **Animated format:** animated WebP from an MP4 screen recording (GIF exports come out 2 to 3 times larger, and gifsicle/ffmpeg can't shrink them). Needs `brew install webp`; Homebrew's ffmpeg has no WebP encoder, so frames go through `img2webp`:
   ```bash
   ffmpeg -i in.mp4 frames/%04d.png
   img2webp -loop 0 -lossy -q 85 -m 4 -d 42 frames/*.png -o name.webp   # -d = 1000 / fps (42 for 24 fps)
