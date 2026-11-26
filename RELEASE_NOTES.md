@@ -1,33 +1,30 @@
-# StatGlass 0.16.0
+# StatGlass 0.16.1
 
 StatGlass is a free, open-source system monitor for Apple Silicon Macs running macOS
 26 or later.
 
-Your Macs and Linux hosts now serve everything StatGlass for iPhone needs, and remote
-hosts show their network addresses on this Mac.
+Remote Macs update in place with one click, Settings is split into tabs you can
+search, and every module chart reads out its values on hover.
 
 ## Changes
 
-- Network, Overview and the popover's Network card show a monitored remote host's own
-  interface, local and public IP, the same way they show this Mac's. A VPN is no
-  longer labelled `en0`. When the read fails the card says "Addresses unavailable",
-  and an older host shows its interface alone. Each host decides whether its public
-  IP is looked up.
-- Hosts answer history queries from StatGlass for iPhone, with range totals for the
-  module pages, so the phone's charts and pages work against this release. A 0.15.0
-  host still streams live data to the phone but asks to be updated for history.
-- When you pair an iPhone with this Mac, the phone can offer to add the Mac's other
-  saved hosts. For each one you choose, this Mac installs the phone's restricted key
-  over its own SSH access. Hosts it can't hand over (a `ProxyJump` or `ProxyCommand`
-  alias, a literal LAN address, or no stored host key) are listed on the phone with
-  the reason.
-- Linux agents get the same history and address answers.
+- A remote Mac host updates in place from its card's "Update to X" action, the same
+  as a Linux host, with a backup, an identity check and rollback, and it keeps its own
+  menu-bar and login-item settings. Update all now includes Macs.
+- Settings is split into tabs, with a search field (Cmd-F) that finds a setting on any
+  tab and lets you change it in the results. A disabled setting links to the setting
+  that turns it on, and the History tab opens on a meter of size on disk, projected
+  size and limit.
+- The CPU, GPU, Memory, Power & Sensors and Battery charts show a crosshair and the
+  values at that moment on hover, like the Network and Disk charts.
+- The Hosts page has Add to iPhone, which opens Update iPhone or Pair iPhone, and the
+  Mac shows which hosts went to the phone after you approve one.
+- Timeline's network lane draws upload and download as bars, and its top-processes
+  readout keeps the last answer while the next one loads.
 
 ## Fixes
 
-- A window's charts wait at most 10 seconds for the history refill after the stream
-  connects, instead of skipping the loading state or waiting on detail that never
-  turns on.
-- A remote stream catches up within a bounded window after a stall, rebinds at once
-  when its host changes, and shows Reconnecting until a fresh frame arrives.
-- Remote history reads stay within the requested range and keep slots after a gap.
+- A saved host reached over a Tailscale address is offered to the iPhone during
+  pairing instead of being refused as a LAN address.
+- The dashboard no longer slides the whole window up when the sidebar is scrolled to
+  its end at short window heights.

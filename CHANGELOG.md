@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.16.1](https://github.com/steamfield/statglass/compare/v0.16.0...v0.16.1) - 2026-11-26
+
+### Added
+
+- One-click in-place updates for Mac hosts (D-162): `update_remote_agent` updates any
+  saved host, running the Mac app update transaction (backup, identity check, rollback)
+  with per-host progress. Update all includes Macs.
+- Settings tabs at `/dashboard/settings/<tab>` with `?focus=<row>` links, search across
+  every tab (Cmd-F), disabled-reason links and a History storage meter.
+- Hover readouts on every module area chart, painted imperatively through
+  `usePaintedHover`.
+- Add to iPhone on the Hosts page, and a handover summary after approving an iPhone.
+
+### Changed
+
+- `AgentUpdateVia` and Add host's reinstall mode are removed.
+- Timeline's network lane draws bars; Apps in this range rolls while live.
+
+### Fixed
+
+- Tailscale literals hand over as Tailscale routes instead of being refused as LAN
+  literals (D-160).
+- The dashboard document no longer scrolls at short window heights.
+- `release.sh cut` pushes and tags the release commit by its hash.
+
 ## [0.16.0](https://github.com/steamfield/statglass/compare/v0.15.0...v0.16.0) - 2026-11-26
 
 ### Added
