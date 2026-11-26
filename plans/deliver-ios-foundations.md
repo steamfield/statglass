@@ -66,7 +66,7 @@ Each scaffold commits tests for every lane of its phase, so a lane's worktree ho
 
 ### Phase 1: text renders in the colour it asks for (MVP)
 
-Demo: Metro from this worktree with the simulator's Debug build, demo mode, open MacBook Pro, CPU, touch and hold the chart: "Clear pin" is cyan in light and dark. A history error on a module page is red.
+Demo: Metro from this worktree with the simulator's Debug build, demo mode, open MacBook Pro, CPU, touch and hold the chart: "Clear pin" is cyan in light and dark, and the hosts-list warning caption is amber.
 Scaffold: c1ec941b
 
 Test cases:
@@ -158,7 +158,7 @@ Rules shared by the three lanes:
 #### Lane a brief
 
 - Goal: the hosts list, host screen, connection banner, welcome screen, lock gate and routes use `Button`, `Card` and the touch token.
-- Behavior: the shared rules above, in the owned folders. Known sites: the "Add a host" filled button and the text-only action beside it in `hosts/hosts-list.tsx`; the host row card in `hosts/host-row.tsx` (`PressableCard`, `className="gap-2"`); the unlock button and its card in `lock/app-lock-gate.tsx`; `PairAction` in `welcome/welcome-screen.tsx` and `app/pair-hosts.tsx`; the banner action in `connection/problem-banner.tsx` (token only). In `host/host-page.tsx` the content's horizontal padding moves from the StyleSheet's 16 to the `px-4` class its neighbours use.
+- Behavior: the shared rules above, in the owned folders. Known sites: the "Add a host" filled button and the text-only action beside it in `hosts/hosts-list.tsx`; the host row card in `hosts/host-row.tsx`, an animated `Pressable` whose stale-row opacity moves to an `Animated.View` wrapper around a `PressableCard` (`className="gap-2"`), deleting `AnimatedPressable`; the unlock button and its card in `lock/app-lock-gate.tsx`; `PairAction` in `welcome/welcome-screen.tsx` and `app/pair-hosts.tsx`; the banner action in `connection/problem-banner.tsx` (token only). In `host/host-page.tsx` the content's horizontal padding moves from the StyleSheet's 16 to the `px-4` class its neighbours use.
 - Out of scope: the files other lanes own; any change to `Button` or `Card` themselves.
 - Done when: the filtered tests for the owned test folders pass; the mobile suite fails only in `test/ui/style-conventions.test.ts`; typecheck and Biome are clean; the hand-off lists every site left as a `Pressable` and why.
 
@@ -172,7 +172,7 @@ Rules shared by the three lanes:
 #### Lane c brief
 
 - Goal: settings, pairing, handover, the debug screen, the popover cards and the shared `ui` components use `Button`, `Card` and the touch token.
-- Behavior: the shared rules above, in the owned folders. Known sites: every `PairAction` in `pairing/` and `handover/` and in `test/handover/pair.test.tsx`; the card surfaces in `pairing/screens/preview.tsx`, `handover/update-selection.tsx`, `handover/choices.tsx` (`PressableCard`, `padding="none"`) and `debug/debug-screen.tsx`; `cards/module-card.tsx` and `cards/unavailable-card.tsx` render through `Card`/`PressableCard` while `CARD_SURFACE` stays exported; the Retry button in `ui/retry-panel.tsx` and the Connect button in `debug/debug-screen.tsx`; tokens in `settings/`, `ui/reorder-list.tsx`, `ui/segmented-control.tsx` and `ui/sheet.tsx`.
+- Behavior: the shared rules above, in the owned folders. Known sites: every `PairAction` in `pairing/` and `handover/` and in `test/handover/pair.test.tsx`; the card surfaces in `pairing/screens/preview.tsx`, `handover/update-selection.tsx`, `handover/choices.tsx` (`PressableCard` keeping its `checkbox` role, `padding="none"`) and `debug/debug-screen.tsx`; `cards/module-card.tsx` and `cards/unavailable-card.tsx` render through `Card`/`PressableCard` while `CARD_SURFACE` stays exported; the Retry button in `ui/retry-panel.tsx` and the Connect button in `debug/debug-screen.tsx` (`busy`); tokens in `settings/`, `ui/reorder-list.tsx`, `ui/segmented-control.tsx` and `ui/sheet.tsx`.
 - Out of scope: `ui/button.tsx`, `ui/card.tsx` and `ui/text.tsx` themselves; inline `minHeight: 44` styles (`ui/demo-badge.tsx`, `ui/swipe-row.tsx`).
 - Done when: the filtered tests for the owned test folders pass; the mobile suite fails only in `test/ui/style-conventions.test.ts`; typecheck and Biome are clean.
 
@@ -189,7 +189,36 @@ Depends on: phase 2
 
 Scaffold: `src/hosts/row-sparkline.ts` re-exports `useHostSparkline` from `@/data/hosts`, and its three importers (`src/hosts/host-row.tsx`, `test/hosts/hosts-list.test.tsx`, `test/demand/screen-demand.test.tsx`) move to the new path, so lane c moves the implementation without touching a file lane a or b owns. The Biome boundary cannot be in the scaffold, because `data` still imports `transport` there; lane a adds it with its fixtures once its own moves make it true.
 
-(Test cases and briefs written during phase 2.)
+Test cases:
+
+- `scripts/architecture/test_biome_rules.py` (lane a writes them with the override): an `@/transport` or `@/transport/native-transport` import in a file under `apps/mobile/src/data` is rejected; the same import under `apps/mobile/src/session` is allowed; `@native/statglass-native`, `react-dom`, `@tauri-apps/api` and `../x` are still rejected under `apps/mobile/src/data`.
+- `apps/mobile/test/session/selection.test.tsx` (lane a writes it, through the real providers and `FakeNative`): `useSelectNativeCore()` returns false and leaves the selection alone while the core has not started; returns true and selects the core when the demo or nothing is selected; returns false when the core is already selected. `useClearTransport()(expected)` clears the selection when `expected` is still selected and does nothing when another transport has been selected since.
+- `apps/mobile/test/transport/native-handle.test.tsx` (lane a writes it): `useNativeHandle()` is the started core when one exists, the selected transport when that is native and no core is exposed, and null for a demo session with no core.
+- Every existing mobile test passes. Lane a's moves change import paths in the tests it owns and nothing else in them; lane b changes only the `useModuleHistory` calls in its two tests; lane c changes no test.
+- After the phase: `grep -rn "useSetPhoneTransport" apps/mobile/src` names only files under `session/`, `transport/`, `debug/` and `data/transport-context.tsx`; `grep -rn "@/transport" apps/mobile/src/data` finds nothing; no file under `src/module/pages/` calls `useHistoryRange`, `useFocusDemand` or declares its own `HistoryNotice`; `data/hosts.ts` has no sparkline code.
+
+#### Lane a brief
+
+- Goal: `data` never imports `transport`, the code that composes them lives in `src/session/`, and screens change the active transport through two named intents (RFC 4).
+- Behavior: move `data/demo.ts` to `session/demo.ts` and `data/pairing-context.tsx` to `session/pairing.tsx` with their exports unchanged, and update every importer. Add `useNativeHandle` to `transport/native-handle.ts` (exported from `transport/index.ts`) and use it in `session/pairing.tsx`, `settings/data-settings.tsx`, `transport/native-core-bridge.tsx` and `app/update-from-mac.tsx`. Add `session/selection.ts` with `useSelectNativeCore` and `useClearTransport` as RFC 4 signs them; `pairing/index.tsx` and `app/update-from-mac.tsx` use the first, `hosts/hosts-list.tsx` the second. `app/pair-hosts.tsx`, `app/index.tsx` and `settings/host-removal.ts` keep `isNativeTransport`. Add the Biome override for `apps/mobile/src/data/**`, repeating every restriction the `apps/mobile/src/**` (non-transport) block carries and adding `@/transport` and `@/transport/**`, with the fixtures above.
+- Edge cases: `update-from-mac` navigates to the hosts list only when the selection changed (`useSelectNativeCore` returned true), and otherwise goes back as today. `pairing/index.tsx` still clears the paired host from `removed` and invalidates the host queries whenever a core exists, whether or not the selection changed. `hosts-list` clears with the transport it rendered with as `expected`.
+- Out of scope: merging the three providers; `CoreProvider`'s startup sequence; `settings/host-removal.ts`; anything under `src/module/` or `src/data/hosts.ts`.
+- Done when: the three test files above pass, the mobile suite passes, `bunx biome check apps/mobile` and typecheck are clean, and `make architecture-test` passes.
+
+#### Lane b brief
+
+- Goal: the six module pages start from `useModulePage` and read history through one `useModuleHistory` (RFC 5).
+- Behavior: add `module/use-module-page.ts` and change `useModuleHistory` in `data/history.ts` to the RFC 5 signature (it no longer calls `useFocusDemand`; `useModulePage` does, once). All six pages under `module/pages/` use both, and the memory and network pages use the shared `HistoryNotice`. `HISTORY_MODULES` becomes `MODULE_TITLES`; the power page names its accent itself. The ring cards and watt ring ceiling move to `module/rings/`, the temperature event label to `module/event-labels.ts`, and the phone's ceiling latch to `data/nice-ceiling.ts`, leaving one import from power to battery. `ModulePageProps.module` goes if nothing reads it. `useHostHistory` and `useRefreshOnRangeChange` stay for the secondary charts.
+- Edge cases: the request each page sends (series selection, range, width) and the moment it sends it are unchanged; `test/demand/screen-demand.test.tsx` holds the demand registration to once per page.
+- Out of scope: what a page shows when it is not live, where each page subscribes to live data, tick-rate re-renders (RFC 5's three left-alone items); `Card` and `Button` adoption (phase 2).
+- Done when: `bun run --cwd apps/mobile test -- test/module test/app/query-client.test.tsx test/demand` passes with no edit under `test/module`, the mobile suite passes, and no file under `module/` is over Biome's size limits.
+
+#### Lane c brief
+
+- Goal: `data/hosts.ts` holds the roster and status queries; the hosts-list row sparkline pipeline lives beside the row that draws it.
+- Behavior: move `useHostSparkline` and what only it uses (`ROW_METRICS`, `ROW_SERIES`, `sparklineKey`, `useRowSummaries`, `rowHistory`, `rowCharts`, `memoryPercent`) from `data/hosts.ts` to `hosts/row-sparkline.ts`, replacing the scaffold's re-export. A helper both halves use stays in `data/hosts.ts` and is exported from there. No behavior changes.
+- Out of scope: `hosts/host-row.tsx`, `hosts/hosts-list.tsx` and every test (the scaffold already moved their imports).
+- Done when: `bun run --cwd apps/mobile test -- test/hosts test/demand` passes unchanged, the mobile suite passes, and `data/hosts.ts` is under 250 lines or the hand-off says what keeps it over.
 
 ### Phase 4: tests configure the mock transport
 
@@ -211,3 +240,5 @@ Depends on: phase 3
 - 2026-11-25: lane 1/a asked (q1) whether it may edit two assertions in `test/widgets/bars/bars.test.tsx` that expected an inline colour on `StatList` values; it had moved `StatList` and `InlineBar` from the JS colour map to `tone`. Accepted: the tones are the same two tokens, and it drops a `useColorScheme` read from two 1 Hz widgets. The test file joins the lane's owned files for those assertions. `chart-annotations.tsx` and HostRow's accent inks keep their inline colours.
 - 2026-11-25: lane 1/a merged. Inline check restored `allowFontScaling={false}` on the handover checkmark (the run had swapped it for a 1.5x cap, a behaviour change the brief did not ask for) and shortened the two rewritten `bars.test.tsx` assertions. Lane review (opus): no findings. It noted `ui/list-row.tsx` still colours destructive rows inline from the JS colour map; left as is, inline colours are outside RFC 1.
 - 2026-11-25: lane 1/b merged. Inline check replaced a `styled` adapter for pressed-state `style` callbacks on `PressableCard` (no caller has one) with a narrower prop type that leaves the callback out, dropped a redundant `role`, and renamed the private surface constant so it does not read as the old `CARD_SURFACE` export. Accepted choices: `min-w-touch` on filled buttons and `PressableCard`; the spacing test reads the compiler options from `metro.config.cjs`. Lane review (opus): no findings; it confirmed the test matches the values Metro produces with and without the lightningcss pass.
+- 2026-11-25: phase 1 gate green on `31e16041` (639 mobile tests, 3089 desktop tests, 13 architecture fixtures). Simulator (iPhone 18 Pro, Debug build, demo mode): "Clear pin" is cyan in light and dark, the hosts-list warning is amber in both. The Debug build had Appearance pinned to Light in the app's own settings, which is why it ignored the device's dark mode; set to System. The demo line's "history error is red" was wrong: every mock history failure is `history_unavailable`, which `errorTone` renders as status text by design, so no demo scenario reaches a destructive tone on a module page. The destructive tone is covered by `test/ui/text.test.tsx`.
+- 2026-11-25: phase 1 boundary review (opus) returned four findings; all held and are fixed in `cfc70994`. `PressableCard` forced `accessibilityRole="button"` over the caller's, which would have broken the handover checkbox rows (now a default the caller overrides). `Button` could not report `busy`, which the debug screen's Connect button announces (now a `busy` prop, inert like `disabled`). `Text`'s `className` did not accept an explicit `undefined`. The host row is an animated `Pressable`, which `PressableCard` cannot carry; lane 2/a's brief wraps it in an `Animated.View` instead, and the style scan now reads `AnimatedPressable` tags too.
