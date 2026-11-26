@@ -15,30 +15,25 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useIsFocused } from "expo-router";
 import { useCallback, useContext, useMemo, useState } from "react";
 import { useWindowDimensions } from "react-native";
-import { RowVisibility, useFocusDemand } from "@/data/demand";
+import { QUERY_DEFAULTS } from "@/lib/query-client";
+import { RowVisibility, useFocusDemand } from "./demand";
 import {
   type HistoryRange,
   historyPointBudget,
   useHostHistory,
-} from "@/data/history";
-import {
-  ROW_METRICS,
-  ROW_SERIES,
-  SPARKLINE_MS,
-  sparklineKey,
-  useHostStatus,
-} from "@/data/hosts";
-import { useFocusedAppEffect } from "@/data/live";
-import { usePhoneTransport } from "@/data/transport-context";
-import { QUERY_DEFAULTS } from "@/lib/query-client";
+} from "./history";
+import { ROW_METRICS, ROW_SERIES, sparklineKey, useHostStatus } from "./hosts";
+import { useFocusedAppEffect } from "./live";
 import {
   appendSummary,
   networkSparkbars,
   percentSparkline,
+  SPARKLINE_MS,
   SUMMARY_MS,
   type Summary,
   sparkWindow,
 } from "./sparkline-model";
+import { usePhoneTransport } from "./transport-context";
 
 function useRowSummaries(
   id: HostId,

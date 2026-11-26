@@ -12,11 +12,11 @@ import { ExpoRoot, router, Stack, useLocalSearchParams } from "expo-router";
 import { getMockContext } from "expo-router/testing-library";
 import { Dimensions, Text, View } from "react-native";
 import { type ModuleRead, useModuleHistory } from "@/data/history";
+import { useHostSparkline } from "@/data/host-sparkline";
 import { useHostLiveSubscription } from "@/data/live";
 import { useProcessDemand } from "@/data/processes";
 import { HostScreen } from "@/host";
 import { HostsList } from "@/hosts/hosts-list";
-import { useHostSparkline } from "@/hosts/row-sparkline";
 import { useModulePage } from "@/module/use-module-page";
 
 const CPU_READ: ModuleRead = {

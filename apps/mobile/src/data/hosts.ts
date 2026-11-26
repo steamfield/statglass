@@ -6,7 +6,6 @@ import {
 } from "@core/phone-connection";
 import { historyKeys, hostKeys } from "@core/query-keys";
 import { failureReason } from "@core/remote-errors";
-import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useIsFocused } from "expo-router";
@@ -15,6 +14,7 @@ import { useWindowDimensions } from "react-native";
 import { RowVisibility } from "./demand";
 import { historyPointBudget } from "./history";
 import { useAppActive } from "./live";
+import { SPARKLINE_MS } from "./sparkline-model";
 import { useIsDemo, usePhoneTransport } from "./transport-context";
 
 const CPU = "cpu.total";
@@ -143,9 +143,6 @@ export function useHostVitals(id: HostId, connected: boolean) {
     enabled: focused && active && visible && connected,
   });
 }
-
-/** The history window shared by the row cache and chart model. */
-export const SPARKLINE_MS = 30 * MINUTE_MS;
 
 /** The cache key for a row sparkline at the given width. */
 export const sparklineKey = (id: HostId, width: number) =>

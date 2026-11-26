@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { StatusWarning } from "@/connection/status-warning";
+import { useHostSparkline } from "@/data/host-sparkline";
 import {
   useClearOfflineHostReadings,
   useHostStatus,
@@ -26,7 +27,6 @@ import { useThemeColors } from "@/ui/theme-colors";
 import { GapBands } from "@/widgets/gap-bands";
 import { Sparkbars } from "@/widgets/sparkbars";
 import { StreamArea } from "@/widgets/stream-area";
-import { useHostSparkline } from "./row-sparkline";
 
 const PLATFORMS: Record<OsKind, { label: string; icon: IconName }> = {
   mac_os: { label: "macOS", icon: "apple.logo" },

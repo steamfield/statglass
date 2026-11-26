@@ -239,7 +239,8 @@ export interface ModulePage {
   connected: boolean;
   connection: Connection;
   live: boolean;
-  range: HistoryRange;
+  /** Rolling, so pages read the host's clock offset from it. */
+  range: RollingHistoryRange;
 }
 /** The state every module page starts from. Also registers full demand for the host. */
 export function useModulePage(
@@ -332,8 +333,9 @@ has no gesture system, and the alternative is no drag coverage.
   in core; the math already does).
 - `data/hosts.ts` (507 lines) splits: the roster and status queries stay, and the row
   sparkline pipeline (`useHostSparkline` and what it uses) moves to
-  `src/hosts/row-sparkline.ts` beside `sparkline-model.ts`, which removes the upward
-  import from `data` into `hosts`.
+  `src/data/host-sparkline.ts`, with `sparkline-model.ts` beside it, which removes the
+  upward import from `data` into `hosts`. Both stay under `src/data/` because the hook
+  reads the transport, and `.claude/rules/mobile/expo.md` keeps data hooks there.
 - Dead exports go: `useModuleLiveValues` (`data/history.ts`) and `nativeHandover`
   (`transport/handover.ts`).
 - Docs: the structure list in `.claude/rules/mobile/expo.md` loses `src/components` and
