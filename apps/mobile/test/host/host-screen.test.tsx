@@ -176,6 +176,30 @@ test("unmounting a focused host releases its subscription", async () => {
   expect(transport.subscriberCount()).toBe(0);
 });
 
+test("a host whose sampler falls silent shows Reconnecting", async () => {
+  const transport = createMockTransport({
+    scenarios: ["stale"],
+    autoTick: false,
+    historyRows: 2,
+  });
+  try {
+    await renderWithProviders(
+      <ExpoRoot
+        context={context}
+        location={new URL(`statglass:///${MOCK_HOST_ID}`)}
+      />,
+      { transport }
+    );
+    expect(await screen.findByText("Connecting")).toBeOnTheScreen();
+    await act(() => jest.advanceTimersByTimeAsync(1_000));
+    await act(() => transport.tick());
+    await act(() => jest.advanceTimersByTimeAsync(2_000));
+    expect(screen.getByText("Reconnecting")).toBeOnTheScreen();
+  } finally {
+    transport.dispose();
+  }
+});
+
 test("shows frame age, announces stale and offline reads, and undims after recovery", async () => {
   const transport = createMockTransport({
     scenarios: ["hosts-dashboard"],

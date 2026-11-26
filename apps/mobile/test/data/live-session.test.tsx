@@ -1,4 +1,5 @@
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
+import { phoneCommandFailures } from "@core/mock/phone-errors";
 import { createMockTransport } from "@core/mock-transport";
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { mockAppState } from "@test/helpers/mock-app-state";
@@ -231,12 +232,9 @@ test("a connection-status read failure is shown as a local error", async () => {
       ({ status }) => status.state === "connected"
     );
     if (!remote) throw new Error("Missing connected remote fixture");
-    const readStatus = jest
-      .spyOn(transport, "listRemoteHosts")
-      .mockRejectedValue({
-        kind: "remote_unreachable",
-        message: "Network unavailable",
-      });
+    const readStatus = jest.spyOn(transport, "listRemoteHosts");
+    transport.failNext("listRemoteHosts", phoneCommandFailures.status);
+    transport.failNext("listRemoteHosts", phoneCommandFailures.status);
     const view = await renderWithProviders(
       <ExpoRoot
         context={context}
@@ -280,13 +278,10 @@ test("a recovered host shows Reconnecting while its stream is still in backoff",
       last_seen_ms: null,
     });
     const listenForStatus = jest.spyOn(transport, "onRemoteHostsChanged");
-    const subscribe = jest.spyOn(transport, "subscribeLive").mockResolvedValue({
-      info: {
-        status: "error",
-        error: { kind: "remote_busy", message: "Busy" },
-      },
-      unsubscribe() {},
-    });
+    const subscribe = jest.spyOn(transport, "subscribeLive");
+    const busy = { kind: "remote_busy", message: "Busy" } as const;
+    transport.failNext("subscribeLive", busy);
+    transport.failNext("subscribeLive", busy);
     const view = await renderWithProviders(
       <ExpoRoot context={context} location={new URL(`statglass:///${host}`)} />,
       { transport }
