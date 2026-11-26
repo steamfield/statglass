@@ -8,9 +8,7 @@ import { MISSING } from "@core/format";
 import type { Settings } from "@core/generated/types";
 import {
   approxSize,
-  DEFAULT_SERIES,
   type RetentionProjection,
-  retentionProjection,
   sizeLimitLabel,
 } from "@core/history-projection";
 import { RETENTION_DAYS, SIZE_LIMITS_MB } from "@core/settings-patch";
@@ -27,11 +25,8 @@ import { Switch } from "~/components/ui/switch";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useWriteSettings } from "~/hooks/use-write-settings";
-import { useSeriesCount } from "~/stores/live-selectors";
-import { useHistoryGrowth } from "../_hooks/use-history-size";
+import { useRetentionProjection } from "../_hooks/use-history-size";
 import { HistoryMeter } from "./history-meter";
-
-const BYTES_PER_MB = 1e6;
 
 /**
  * "History": the storage meter, retention, size limit and Network history,
@@ -69,24 +64,6 @@ export function HistoryPanel({ history }: { history: Settings["history"] }) {
       )}
     </SettingsPanel>
   );
-}
-
-/**
- * The projection for a retention choice under the current size limit, or
- * null while this Mac's measured growth loads.
- */
-function useRetentionProjection(
-  history: Settings["history"]
-): (days: number) => RetentionProjection | null {
-  const series = useSeriesCount() ?? DEFAULT_SERIES;
-  // Measured on this Mac; until an hour is recorded, the fill-test model. No
-  // figure while the measurement loads, so the fill test's never flashes first.
-  const growth = useHistoryGrowth();
-  const limitBytes = history.size_limit_mb * BYTES_PER_MB;
-  return (days) =>
-    growth.isPending
-      ? null
-      : retentionProjection(days, limitBytes, series, growth.data);
 }
 
 /** What a retention option costs: its size, or the limit that caps it. */

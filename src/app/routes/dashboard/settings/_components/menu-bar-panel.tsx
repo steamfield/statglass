@@ -162,7 +162,11 @@ export function MenuBarPanel({
     presence(m) === "present" && (modules[m]?.enabled ?? false);
   const moduleOffReason = (m: SettingsModule) =>
     reasonText(moduleReason(m, presence(m), enabled(m), noun));
-  const barsOff = BAR_MODULES.filter((m) => !enabled(m));
+  // Only modules this host has can be turned on; an absent one says so in
+  // its own value and item rows.
+  const barsOff = BAR_MODULES.filter(
+    (m) => presence(m) === "present" && !enabled(m)
+  );
 
   return (
     <SettingsPanel id="menu-bar" title="Menu bar" overflow="visible">

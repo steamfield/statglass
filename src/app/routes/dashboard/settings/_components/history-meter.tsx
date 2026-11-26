@@ -1,61 +1,92 @@
 /**
  * The History panel's storage meter: what is on disk now, what the chosen
- * retention grows to, and the size limit as the end of the track. The figures
- * come from `meterFigures`, a plain function of the two reads and the
- * settings; the component only draws them.
+ * retention grows or trims to, and the size limit as the end of the track.
+ * The figures come from `meterFigures`, a plain function of the two reads and
+ * the settings; the component only draws them.
  */
 import { formatBytes, MISSING } from "@core/format";
 import type { Settings } from "@core/generated/types";
 import {
   approxSize,
-  DEFAULT_SERIES,
   type RetentionProjection,
-  retentionProjection,
   sizeLimitLabel,
 } from "@core/history-projection";
-import { useSeriesCount } from "~/stores/live-selectors";
 import { rampBackground } from "~/widgets/lib/accent";
-import { useHistoryGrowth, useHistorySize } from "../_hooks/use-history-size";
+import {
+  useHistorySize,
+  useRetentionProjection,
+} from "../_hooks/use-history-size";
 
 const BYTES_PER_MB = 1e6;
-// A few pixels of fill on a 700 px track, so a fresh store still shows.
+// A few pixels of fill on a 700 px track, so a small store still shows.
 const MIN_WIDTH_PCT = 0.6;
+const DISK_SOLID = rampBackground(1, "var(--color-disk)");
 const DISK_HATCH = rampBackground("hatch", "var(--color-disk)");
+const DISK_FADED = rampBackground(3, "var(--color-disk)");
 
-/** Everything the meter prints and draws; null widths draw nothing. */
+/**
+ * One bar on the track, drawn from the left edge. The meter stacks two: the
+ * wider one behind, the narrower solid one in front.
+ */
+interface MeterBar {
+  pct: number;
+  background: string;
+}
+
+/** Everything the meter prints and draws; a null bar draws nothing. */
 interface MeterFigures {
   size: string;
   limit: string;
-  legend: string;
+  legend: { swatch: string; text: string };
   ariaLabel: string;
-  /** Recorded size as a percent of the limit, or null while unknown. */
-  fillPct: number | null;
-  /** Projected size as a percent of the limit, or null while unknown. */
-  projectionPct: number | null;
+  back: MeterBar | null;
+  front: MeterBar | null;
 }
 
-/** `bytes` as a percent of `limitBytes`, kept between the minimum and 100. */
+/** `bytes` as a percent of `limitBytes`, between the minimum and 100. */
 function widthPct(bytes: number, limitBytes: number): number {
   return Math.min(100, Math.max(MIN_WIDTH_PCT, (bytes / limitBytes) * 100));
 }
 
-/** "About 520 MB once 30 days are kept", or "…once the limit is reached". */
-function legendText(
-  projection: RetentionProjection | null,
-  retentionDays: number
-): string {
-  if (projection === null)
-    return `About ${MISSING} once ${retentionDays} days are kept`;
-  const until =
-    projection.limitedDays === null
-      ? `${retentionDays} days are kept`
-      : "the limit is reached";
-  return `About ${approxSize(projection.bytes)} once ${until}`;
+/** "once 30 days are kept", or "once the limit is reached". */
+function untilText(projection: RetentionProjection, days: number): string {
+  return projection.limitedDays === null
+    ? `once ${days} days are kept`
+    : "once the limit is reached";
 }
 
 /**
- * The meter's figures. `sizeBytes` and `projection` are null while their read
- * is pending or failed, and their figures show `MISSING` with no bar.
+ * The bars for what is known. Growing, the projection is hatched behind the
+ * recorded fill. Trimming, the fill stops at the projection and the part that
+ * goes is faded behind it.
+ */
+function meterBars(
+  sizeBytes: number | null,
+  projectionBytes: number | null,
+  limitBytes: number,
+  trimming: boolean
+): Pick<MeterFigures, "back" | "front"> {
+  // Nothing recorded draws nothing; the minimum width is for small stores.
+  const bar = (bytes: number | null, background: string) =>
+    bytes === null || bytes <= 0
+      ? null
+      : { pct: widthPct(bytes, limitBytes), background };
+  if (trimming) {
+    return {
+      back: bar(sizeBytes, DISK_FADED),
+      front: bar(projectionBytes, DISK_SOLID),
+    };
+  }
+  return {
+    back: bar(projectionBytes, DISK_HATCH),
+    front: bar(sizeBytes, DISK_SOLID),
+  };
+}
+
+/**
+ * The meter's figures. `sizeBytes` is null while its read is pending or
+ * failed, `projection` while the growth read is pending; their figures show
+ * `MISSING` with no bar.
  */
 function meterFigures({
   sizeBytes,
@@ -72,36 +103,24 @@ function meterFigures({
       ? MISSING
       : formatBytes(sizeBytes, { unit: "MB", decimals: 0 });
   const limit = sizeLimitLabel(history.size_limit_mb);
+  const days = history.retention_days;
+  const trimming =
+    sizeBytes !== null && projection !== null && projection.bytes < sizeBytes;
   const projected =
     projection === null ? MISSING : approxSize(projection.bytes);
+  const until =
+    projection === null
+      ? `once ${days} days are kept`
+      : untilText(projection, days);
   return {
     size,
     limit,
-    legend: legendText(projection, history.retention_days),
-    ariaLabel: `${size} used, growing to about ${projected} of a ${limit} limit`,
-    fillPct: sizeBytes === null ? null : widthPct(sizeBytes, limitBytes),
-    projectionPct:
-      projection === null ? null : widthPct(projection.bytes, limitBytes),
+    legend: trimming
+      ? { swatch: DISK_FADED, text: `Trimmed to about ${projected} ${until}` }
+      : { swatch: DISK_HATCH, text: `About ${projected} ${until}` },
+    ariaLabel: `${size} used, ${trimming ? "trimming" : "growing"} to about ${projected} of a ${limit} limit`,
+    ...meterBars(sizeBytes, projection?.bytes ?? null, limitBytes, trimming),
   };
-}
-
-/**
- * The size on disk and the retention projection, each null while its read
- * is pending or failed.
- */
-function useMeterReads(history: Settings["history"]) {
-  const size = useHistorySize();
-  const growth = useHistoryGrowth();
-  const series = useSeriesCount() ?? DEFAULT_SERIES;
-  const projection = growth.isSuccess
-    ? retentionProjection(
-        history.retention_days,
-        history.size_limit_mb * BYTES_PER_MB,
-        series,
-        growth.data
-      )
-    : null;
-  return { sizeBytes: size.data ?? null, projection };
 }
 
 /** One legend entry: a swatch and its text. */
@@ -118,12 +137,26 @@ function LegendItem({ swatch, text }: { swatch: string; text: string }) {
   );
 }
 
-const BAR =
-  "absolute inset-y-0 left-0 rounded-chip motion-safe:transition-[width] motion-safe:duration-(--motion-fast) motion-safe:ease-(--ease-out)";
+/** One bar on the track; its width eases when a figure changes. */
+function TrackBar({ bar }: { bar: MeterBar | null }) {
+  if (bar === null) return null;
+  return (
+    <div
+      className="absolute inset-y-0 left-0 rounded-chip motion-safe:transition-[width] motion-safe:duration-(--motion-fast) motion-safe:ease-(--ease-out)"
+      style={{ width: `${bar.pct}%`, background: bar.background }}
+    />
+  );
+}
 
 /** The storage meter at the top of the History panel. */
 export function HistoryMeter({ history }: { history: Settings["history"] }) {
-  const figures = meterFigures({ ...useMeterReads(history), history });
+  const size = useHistorySize();
+  const project = useRetentionProjection(history);
+  const figures = meterFigures({
+    sizeBytes: size.data ?? null,
+    projection: project(history.retention_days),
+    history,
+  });
   return (
     <div className="flex flex-col gap-2.5 border-border-subtle border-b px-4 pt-3.5 pb-3">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -139,25 +172,12 @@ export function HistoryMeter({ history }: { history: Settings["history"] }) {
         aria-label={figures.ariaLabel}
         className="relative h-2 rounded-chip bg-track"
       >
-        {figures.projectionPct !== null && (
-          <div
-            className={BAR}
-            style={{
-              width: `${figures.projectionPct}%`,
-              background: DISK_HATCH,
-            }}
-          />
-        )}
-        {figures.fillPct !== null && (
-          <div
-            className={`${BAR} bg-disk`}
-            style={{ width: `${figures.fillPct}%` }}
-          />
-        )}
+        <TrackBar bar={figures.back} />
+        <TrackBar bar={figures.front} />
       </div>
       <div className="flex flex-wrap gap-4 font-normal text-label text-muted-foreground">
-        <LegendItem swatch="var(--color-disk)" text="Recorded so far" />
-        <LegendItem swatch={DISK_HATCH} text={figures.legend} />
+        <LegendItem swatch={DISK_SOLID} text="Recorded so far" />
+        <LegendItem swatch={figures.legend.swatch} text={figures.legend.text} />
       </div>
     </div>
   );
