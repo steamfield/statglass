@@ -32,8 +32,9 @@ comparisons and say which.
 ## 2. Screenshot
 
 If the session has a simulator tool (an iOS Simulator MCP server or similar), attach it to
-the booted device and take screenshots and taps through it, so you can also navigate. Without
-one, use simctl and read the PNG:
+the booted device and take screenshots and taps through it, so you can also navigate. The
+tool asks the user to allow each device; when that request goes unanswered (the user is away
+from the machine), don't retry it, use simctl. Without one, use simctl and read the PNG:
 
 ```bash
 xcrun simctl io booted screenshot <scratch-dir>/home-dark.png
