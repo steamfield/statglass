@@ -225,8 +225,7 @@ export interface Transport {
     config: RemoteHostConfig,
     install: boolean,
     showMenuBar: boolean,
-    setupId: string,
-    reinstall?: HostId | null
+    setupId: string
   ): Promise<CommandResult<RemoteHostRecord>>;
   cancelRemoteSetup(setupId: string): Promise<CommandResult<null>>;
   updateRemoteHost(

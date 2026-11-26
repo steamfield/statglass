@@ -96,17 +96,16 @@ export const USAGE_PROCESS_PAGE_MAX = 100 as const;
  */
 export type AgentUpdate =
 /**  No version was ever reported. */
-{ kind: "unknown" } | { kind: "up_to_date"; installed: string } | { kind: "available"; installed: string; target: string; via: AgentUpdateVia } |
+{ kind: "unknown" } | { kind: "up_to_date"; installed: string } | { kind: "available"; installed: string; target: string } |
 /**
  *  The host's protocol is incompatible: it cannot reconnect until it is upgraded
  *  from this Mac (D-119).
  */
-{ kind: "required"; installed: string; target: string; via: AgentUpdateVia } |
+{ kind: "required"; installed: string; target: string } |
 /**  The host is ahead; it is never downgraded. Updating this Mac catches up. */
 { kind: "newer_than_this"; installed: string };
 
 export type AgentUpdateFailure = {
-	via: AgentUpdateVia,
 	target: string,
 	message: string,
 };
@@ -115,12 +114,6 @@ export type AgentUpdateProgress = {
 	target: string,
 	phase: UpdatePhase,
 };
-
-/**
- *  How a host gets this Mac's version: a Linux agent is pushed in place ("Update
- *  agent"); a Mac is reinstalled from Add host.
- */
-export type AgentUpdateVia = "push" | "add_host";
 
 /**  Why an alert fired. */
 export type AlertCause = { type: "process_cpu"; process: string; cpu_pct: number | null } | { type: "thermal_state"; state: ThermalState } |

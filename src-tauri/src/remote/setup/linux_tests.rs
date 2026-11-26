@@ -725,9 +725,7 @@ async fn queued_updates_use_current_routes_and_recheck_enabled_after_the_lock() 
 fn reconnect_is_armed_before_retry_can_report_success() {
     let manager = RemoteManager::default();
     let id = HostId(Uuid::nil());
-    let token = manager
-        .begin_update(id, "1.0.0".into(), AgentUpdateVia::Push)
-        .unwrap();
+    let token = manager.begin_update(id, "1.0.0".into()).unwrap();
     let order = std::cell::RefCell::new(Vec::new());
     reconnect(
         |phase| {

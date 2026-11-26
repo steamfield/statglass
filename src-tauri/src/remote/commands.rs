@@ -86,19 +86,14 @@ pub fn dismiss_host_update_notice(app: AppHandle, key: String) -> Result<(), Com
 }
 
 /// `installed` against this build's version, the one this Mac can put on the host.
-pub(super) fn agent_update(
-    linux: bool,
-    installed: Option<&str>,
-    incompatible: bool,
-) -> AgentUpdate {
-    agent_update_against(env!("CARGO_PKG_VERSION"), linux, installed, incompatible)
+pub(super) fn agent_update(installed: Option<&str>, incompatible: bool) -> AgentUpdate {
+    agent_update_against(env!("CARGO_PKG_VERSION"), installed, incompatible)
 }
 
 /// [`older_version`] is fail-open, so a malformed version is offered the update, as
 /// "Update agent" always has been; the install path keeps its own no-downgrade guard.
 pub(super) fn agent_update_against(
     this: &str,
-    linux: bool,
     installed: Option<&str>,
     incompatible: bool,
 ) -> AgentUpdate {
@@ -106,25 +101,12 @@ pub(super) fn agent_update_against(
         return AgentUpdate::Unknown;
     };
     let installed = installed.to_string();
-    let via = if linux {
-        AgentUpdateVia::Push
-    } else {
-        AgentUpdateVia::AddHost
-    };
     if older_version(&installed, this) {
         let target = this.to_string();
         if incompatible {
-            AgentUpdate::Required {
-                installed,
-                target,
-                via,
-            }
+            AgentUpdate::Required { installed, target }
         } else {
-            AgentUpdate::Available {
-                installed,
-                target,
-                via,
-            }
+            AgentUpdate::Available { installed, target }
         }
     } else if older_version(this, &installed) {
         AgentUpdate::NewerThanThis { installed }

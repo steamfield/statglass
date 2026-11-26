@@ -287,58 +287,7 @@ pub(super) async fn add(
 
 /// Replaces a saved Linux host's agent with the bundled one, keeping its identity and
 /// history, then reconnects. A failed update restores the previous agent.
-pub(super) async fn update_saved(app: AppHandle, id: String) -> Result<(), CommandError> {
-    let state = app.state::<AppState>();
-    let id = host_id(&id)?;
-    run_update(
-        &state.remotes,
-        id,
-        || super::super::progress::emit_changed(&app),
-        |token, saved| perform_update(&app, id, token, saved),
-    )
-    .await
-}
-
-/// The maintenance lock is held before taking the configuration snapshot.
-async fn run_update<F: std::future::Future<Output = Result<(), CommandError>>>(
-    manager: &RemoteManager,
-    id: HostId,
-    changed: impl Fn(),
-    work: impl FnOnce(Uuid, SavedHost) -> F,
-) -> Result<(), CommandError> {
-    const MAC_UPDATE: &str =
-        "Only Linux hosts run the StatGlass agent; update StatGlass on a Mac from Add host";
-    const ENABLE_CONNECTION: &str = "Turn on this host's connection before updating its agent";
-    manager
-        .run_update(
-            id,
-            env!("CARGO_PKG_VERSION").into(),
-            AgentUpdateVia::Push,
-            changed,
-            |token| async move {
-                let saved = manager
-                    .saved
-                    .lock_ok()
-                    .get(&id)
-                    .cloned()
-                    .ok_or(CommandError::UnknownHost { host: id })?;
-                if !saved.is_linux() {
-                    return Err(CommandError::InvalidArgument {
-                        message: MAC_UPDATE.into(),
-                    });
-                }
-                if !saved.config.enabled {
-                    return Err(CommandError::InvalidArgument {
-                        message: ENABLE_CONNECTION.into(),
-                    });
-                }
-                work(token, saved).await
-            },
-        )
-        .await
-}
-
-async fn perform_update(
+pub(super) async fn perform_update(
     app: &AppHandle,
     id: HostId,
     token: Uuid,
@@ -384,7 +333,7 @@ async fn perform_update(
     Ok(())
 }
 
-fn reconnect(phase: impl FnOnce(UpdatePhase), retry: impl FnOnce()) {
+pub(super) fn reconnect(phase: impl FnOnce(UpdatePhase), retry: impl FnOnce()) {
     phase(UpdatePhase::Reconnecting);
     retry();
 }

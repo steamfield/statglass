@@ -15,7 +15,7 @@ async function ready(page: Page) {
 }
 
 for (const theme of ["dark", "light"]) {
-  test(`saved Mac reinstall keeps its host and mirror budget (${theme})`, async ({
+  test(`saved Mac updates in place and keeps its host and mirror budget (${theme})`, async ({
     page,
   }, info) => {
     const errors: string[] = [];
@@ -32,20 +32,11 @@ for (const theme of ["dark", "light"]) {
     await dialog.getByLabel("Size limit", { exact: true }).fill("731");
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toHaveCount(0);
-    await card.getByRole("button", { name: /^Reinstall / }).click();
-    await expect(
-      dialog.getByLabel("LAN SSH alias", { exact: true })
-    ).toHaveValue("studio.local");
-    await dialog.getByRole("button", { name: "Check connection" }).click();
-    const reinstall = dialog.getByRole("button", {
-      name: "Reinstall and connect",
-    });
-    await expect(reinstall).toBeVisible();
     await page.screenshot({
-      path: `test-results/screens/hosts-reinstall-${theme}-${info.project.name}.png`,
+      path: `test-results/screens/hosts-mac-update-${theme}-${info.project.name}.png`,
       animations: "disabled",
     });
-    await reinstall.click();
+    await card.getByRole("button", { name: /^Update to / }).click();
     await expect(dialog).toHaveCount(0);
     await expect(card.getByText(/Latest/)).toBeVisible();
     await expect(

@@ -247,51 +247,29 @@ it("opens app Settings for This Mac's update", async () => {
   expect(view.router.state.location.pathname).toBe("/dashboard/settings/about");
 });
 
-it("reinstalls a Mac through Add host while preserving its identity and mirror budget", async () => {
+it("updates a Mac in place from its card without opening Add host", async () => {
   const view = await mount({ scenarios: ["hosts-outdated"] });
-  const studio = (await view.source.listRemoteHosts()).find(
-    (host) => host.config.name === "studio"
-  );
-  if (!studio) throw new Error("Missing studio fixture");
-  await act(() =>
-    view.source.updateRemoteHost({ ...studio.config, mirror_budget_mb: 500 })
-  );
-  await act(() =>
-    view.queryClient.invalidateQueries({ queryKey: hostKeys.remote() })
-  );
   const before = await view.source.listRemoteHosts();
   fireEvent.click(
     within(await screen.findByRole("region", { name: "studio" })).getByRole(
       "button",
-      { name: "Reinstall 0.1.0…" }
+      { name: "Update to 0.1.0" }
     )
   );
-  expect(screen.getByLabelText("Name")).toHaveValue("studio");
-  for (const name of ["Name", "LAN SSH alias", "Tailscale SSH alias"])
-    expect(screen.getByLabelText(name)).toHaveAttribute("readonly");
-  expect(
-    screen.getByText("Change aliases in this host's settings")
-  ).toBeVisible();
-  expect(screen.getByLabelText("LAN SSH alias")).toHaveValue("studio.local");
-  fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Reinstall and connect" })
-  );
   await waitFor(() =>
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(
+      view.source.calls
+        .filter((call) => call.command === "update_remote_agent")
+        .map((call) => call.args[0])
+    ).toEqual(["remote-studio"])
   );
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(
+    view.source.calls.some((call) => call.command === "add_remote_host")
+  ).toBe(false);
   expect(
     (await view.source.listRemoteHosts()).map((host) => host.config)
   ).toEqual(before.map((host) => host.config));
-  const call = view.source.calls.find(
-    (call) => call.command === "add_remote_host"
-  );
-  expect(call?.args[0]).toMatchObject({
-    id: "remote-studio",
-    mirror_budget_mb: 500,
-  });
-  expect(call?.args[1]).toBe(true);
-  expect(call?.args[4]).toBe(studio.config.id);
 });
 
 it("navigates once from the host name and leaves modified clicks in the current window", async () => {
@@ -315,40 +293,6 @@ it("navigates once from the host name and leaves modified clicks in the current 
   );
   expect(view.router.state.location.pathname).toBe("/dashboard/hosts");
   expect(view.select).not.toHaveBeenCalled();
-});
-
-it("keeps a newer Mac's probe facts and does not request a downgrade from Reinstall", async () => {
-  const view = await mount({ scenarios: ["hosts-outdated"] });
-  view.source.prepareRemoteHost = async () => ({
-    status: "ok",
-    data: {
-      kind: "mac",
-      installed: true,
-      compatible: true,
-      newer_installed: true,
-      host_id: "remote-studio",
-      name: "studio",
-      message: null,
-      linux: null,
-    },
-  });
-  fireEvent.click(
-    within(await screen.findByRole("region", { name: "studio" })).getByRole(
-      "button",
-      { name: "Reinstall 0.1.0…" }
-    )
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
-  await waitFor(() =>
-    expect(
-      view.source.calls.some((call) => call.command === "add_remote_host")
-    ).toBe(true)
-  );
-  expect(
-    view.source.calls.find((call) => call.command === "add_remote_host")
-      ?.args[1]
-  ).toBe(false);
 });
 
 it("shows shared rr jobs, the local job, and removes a disconnected band", async () => {

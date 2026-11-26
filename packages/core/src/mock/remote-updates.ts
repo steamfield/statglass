@@ -20,12 +20,11 @@ import {
 } from "./remote-network-scenarios";
 
 const OLD = "0.0.9";
-const behind = (via: "push" | "add_host"): AgentUpdate => ({
+const behind: AgentUpdate = {
   kind: "available",
   installed: OLD,
   target: APP_VERSION,
-  via,
-});
+};
 
 function seed(
   remotes: MockRemotes,
@@ -96,17 +95,17 @@ export function seedUpdateScenarios(
     for (const name of ["nas", "build-box"])
       seed(remotes, name, true, {
         agent_version: OLD,
-        agent_update: behind("push"),
+        agent_update: behind,
       });
     seed(remotes, "studio", false, {
       agent_version: OLD,
-      agent_update: behind("add_host"),
+      agent_update: behind,
     });
     seed(remotes, "pi", true, {
       state: "offline",
       route: null,
       agent_version: OLD,
-      agent_update: behind("push"),
+      agent_update: behind,
     });
   }
   if (scenarios.includes("host-incompatible"))
@@ -120,7 +119,6 @@ export function seedUpdateScenarios(
         kind: "required",
         installed: "0.0.1",
         target: APP_VERSION,
-        via: "push",
       },
     });
   if (scenarios.includes("host-newer"))
@@ -188,16 +186,15 @@ function seedMonitoringScenarios(
   if (scenarios.includes("host-updating")) {
     const record = seed(remotes, "updating", true, {
       agent_version: OLD,
-      agent_update: behind("push"),
+      agent_update: behind,
     });
     remotes.startUpdate(record.config.id);
   }
   if (scenarios.includes("host-update-failed"))
     seed(remotes, "failed", true, {
       agent_version: OLD,
-      agent_update: behind("push"),
+      agent_update: behind,
       last_update_failure: {
-        via: "push",
         target: APP_VERSION,
         message:
           "The host did not reconnect with the updated agent within three minutes",
@@ -306,7 +303,6 @@ export function seedRemoteScenarios(
           kind: "available",
           installed: "0.0.9",
           target: APP_VERSION,
-          via: "push",
         },
       };
     }
@@ -373,10 +369,9 @@ function seedGridScenarios(
     const record = seed(remotes, longName, true, {
       sync: "catching_up",
       agent_version: OLD,
-      agent_update: behind("push"),
+      agent_update: behind,
       route: "tailscale",
       last_update_failure: {
-        via: "push",
         target: APP_VERSION,
         message: "The update could not reconnect over either saved SSH route",
       },
@@ -403,7 +398,7 @@ function seedGridScenarios(
         route: null,
         error:
           "SSH connection failed: Permission denied (publickey). Tried production-backup.lan.example.test and production-backup.tailnet.example.test; verify your SSH agent and both aliases.",
-        agent_update: behind("push"),
+        agent_update: behind,
       }
     );
   }
@@ -421,7 +416,7 @@ function seedDashboard(
     }
     if (name === "build") {
       record.status.sync = "catching_up";
-      record.status.agent_update = behind("push");
+      record.status.agent_update = behind;
     }
     if (name === "offline")
       record.status = {

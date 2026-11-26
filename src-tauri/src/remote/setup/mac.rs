@@ -86,7 +86,7 @@ fn confirmed_version(
 ) -> RemoteHostStatus {
     let status = statuses.entry(id).or_default();
     status.agent_version = Some(version.into());
-    status.agent_update = super::super::commands::agent_update(false, Some(version), false);
+    status.agent_update = super::super::commands::agent_update(Some(version), false);
     status.clone()
 }
 
@@ -192,6 +192,79 @@ pub(super) async fn prepare(
     })
 }
 
+/// What setup writes into the other Mac's settings; `None` keeps the Mac's own choice.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct MacSettings {
+    pub(super) show_menu_bar: Option<bool>,
+    pub(super) launch_at_login: Option<bool>,
+}
+
+/// Replaces a saved Mac's StatGlass.app with this build's, keeping its identity,
+/// history and settings, then reconnects. A failed update restores the previous app.
+pub(super) async fn update_in_place(
+    app: &AppHandle,
+    id: HostId,
+    token: Uuid,
+    saved: SavedHost,
+) -> Result<(), CommandError> {
+    let state = app.state::<AppState>();
+    let phase = |phase| super::super::progress::phase(app, id, token, phase);
+    let config = saved.config;
+    let (alias, probe) = match probe_routes(
+        config.lan.clone(),
+        config.tailscale.clone(),
+        ProbeFor::Existing,
+    )
+    .await?
+    {
+        (alias, HostProbe::Mac(probe)) => (alias, probe),
+        (_, HostProbe::Linux(_)) => {
+            return Err(CommandError::RemoteIdentity {
+                message: "A Linux host answered where a Mac was saved. Check the SSH aliases"
+                    .into(),
+            });
+        }
+    };
+    let hosts = state.remotes.saved.lock_ok().clone();
+    // An update has no cancel button; the sender lives until the update returns.
+    let (_cancel_sender, mut cancel) = tokio::sync::watch::channel(false);
+    let pending_cancel = &mut cancel;
+    let read_alias = &alias;
+    let installation =
+        prepare_checked(
+            probe,
+            Some(id),
+            &hosts,
+            |helper| async move {
+                setup_step(pending_cancel, wait_for_control(read_alias, &helper)).await
+            },
+            |probe| {
+                phase(UpdatePhase::Installing);
+                Installation::prepare(&alias, probe, true)
+            },
+        )
+        .await?;
+    phase(UpdatePhase::Restarting);
+    let mut before = None;
+    let keep = MacSettings {
+        show_menu_bar: None,
+        launch_at_login: None,
+    };
+    let result = installation
+        .connect_and_register(app, config, keep, Some(id), &mut before, &mut cancel)
+        .await;
+    if let Err(error) = result {
+        return Err(installation.recover(before, error).await);
+    }
+    installation.finish().await;
+    super::linux::reconnect(phase, || {
+        if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
+            source.retry();
+        }
+    });
+    Ok(())
+}
+
 pub(super) struct Installation {
     alias: String,
     app_path: String,
@@ -247,7 +320,7 @@ impl Installation {
         &self,
         app: &AppHandle,
         mut config: RemoteHostConfig,
-        show_menu_bar: bool,
+        settings: MacSettings,
         reinstall: Option<HostId>,
         before: &mut Option<ControlResponse>,
         cancel: &mut tokio::sync::watch::Receiver<bool>,
@@ -273,8 +346,8 @@ impl Installation {
             &self.helper,
             &ControlRequest::Configure {
                 allow_remote_monitoring: true,
-                show_menu_bar_icon: Some(show_menu_bar),
-                launch_at_login: Some(true),
+                show_menu_bar_icon: settings.show_menu_bar,
+                launch_at_login: settings.launch_at_login,
             },
         )
         .await

@@ -72,11 +72,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
                 RemoteState::Disabled
             },
             synced_through_ms,
-            agent_update: super::commands::agent_update(
-                saved.is_linux(),
-                agent_version.as_deref(),
-                false,
-            ),
+            agent_update: super::commands::agent_update(agent_version.as_deref(), false),
             agent_version,
             ..Default::default()
         },
@@ -98,7 +94,6 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
 
 fn status_callback(app: AppHandle, saved: &SavedHost, generation: Uuid) -> StatusCallback {
     let id = saved.record.id;
-    let linux = saved.is_linux();
     // Only a new version reaches the saved hosts and their file.
     let known = Mutex::new(saved.last_agent_version.clone());
     let connected_route = Mutex::new(None);
@@ -118,7 +113,7 @@ fn status_callback(app: AppHandle, saved: &SavedHost, generation: Uuid) -> Statu
             known.clone()
         };
         let route = s.connected.then_some(s.route).flatten();
-        if publish_status(&state.remotes, id, generation, s, linux, last) {
+        if publish_status(&state.remotes, id, generation, s, last) {
             super::progress::emit_changed(&app);
         }
         let mut previous = connected_route.lock_ok();
@@ -164,12 +159,11 @@ fn publish_status(
     id: HostId,
     generation: Uuid,
     status: statglass_remote::ConnectionStatus,
-    linux: bool,
     last: Option<String>,
 ) -> bool {
     let connected = status.connected;
     let remote_version = status.remote_version.clone();
-    let mut next = connection_status(status, linux, last);
+    let mut next = connection_status(status, last);
     // Re-read durable mirror coverage only on state/sync transitions, and never while
     // holding the `statuses` or `mirrors` mutexes.
     let mirror_sink = {
@@ -294,17 +288,12 @@ fn remember_version(app: &AppHandle, id: HostId, version: &str) {
 
 pub(super) fn connection_status(
     s: statglass_remote::ConnectionStatus,
-    linux: bool,
     last_version: Option<String>,
 ) -> RemoteHostStatus {
     let connection = statglass_ipc::status::connection_status(&s);
     let agent_version = s.remote_version.or(last_version);
     RemoteHostStatus {
-        agent_update: super::commands::agent_update(
-            linux,
-            agent_version.as_deref(),
-            s.incompatible,
-        ),
+        agent_update: super::commands::agent_update(agent_version.as_deref(), s.incompatible),
         state: connection.state,
         route: connection.route,
         last_seen_ms: s.last_seen_ms.map(|m| m as f64),

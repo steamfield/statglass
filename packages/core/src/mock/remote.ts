@@ -329,16 +329,14 @@ export class MockRemotes {
     config,
     install,
     showMenuBar,
-    setupId,
-    reinstall = null
+    setupId
   ) => {
     this.commands.record(
       "add_remote_host",
       config,
       install,
       showMenuBar,
-      setupId,
-      reinstall
+      setupId
     );
     if (
       await setupCancelled(
@@ -351,7 +349,7 @@ export class MockRemotes {
         kind: "invalid_argument",
         message: "Setup cancelled. Remote settings were restored.",
       });
-    const savedMac = savedMacSetup(this, config, reinstall);
+    const savedMac = savedMacSetup(this, config);
     if (savedMac) return savedMac;
     const alias = config.lan ?? config.tailscale ?? "";
     if (alias.includes("dup") && !this.identityReset.has(alias))
