@@ -1,5 +1,5 @@
 import { SetupGuidance } from "@/pairing/help/setup-guidance";
-import { PairAction } from "./action";
+import { Button } from "@/ui/button";
 import { PairingStep } from "./pairing-step";
 
 export function ChooseMethod({ scan, paste }: { scan(): void; paste(): void }) {
@@ -9,8 +9,8 @@ export function ChooseMethod({ scan, paste }: { scan(): void; paste(): void }) {
       explanation="Create the code on the host you want to add."
       actions={
         <>
-          <PairAction label="Scan QR" onPress={scan} />
-          <PairAction label="Paste code" secondary onPress={paste} />
+          <Button label="Scan QR" onPress={scan} />
+          <Button label="Paste code" variant="secondary" onPress={paste} />
         </>
       }
     >

@@ -1,6 +1,6 @@
 import { commandErrorText } from "@core/command-error";
 import type { PairedHost } from "@core/generated/types";
-import { PairAction } from "@/pairing/screens/action";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 import { type HandoverTransport, useApplyHandover } from "./apply";
 import { HostChoices, UnavailableHosts, useHostSelection } from "./choices";
@@ -41,15 +41,15 @@ export function PairSelection({
         </Text>
       )}
       {count > 0 && (
-        <PairAction
+        <Button
           label={apply.isPending ? "Adding…" : "Add"}
           disabled={apply.isPending || selected.length === 0}
           onPress={() => apply.mutate(selected, { onSuccess: done })}
         />
       )}
-      <PairAction
+      <Button
         label="Skip"
-        secondary
+        variant="secondary"
         disabled={apply.isPending}
         onPress={done}
       />

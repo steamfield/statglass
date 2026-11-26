@@ -5,9 +5,9 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { ActivityIndicator } from "react-native";
 import type { CameraStep } from "@/pairing/flow";
-import { PairAction } from "@/pairing/screens/action";
 import { Paste } from "@/pairing/screens/paste";
 import { Scanner } from "@/pairing/screens/scanner";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 import type { HandoverTransport } from "./apply";
 import { UpdateSelection } from "./update-selection";
@@ -83,7 +83,7 @@ export function UpdateFlow({
         <>
           {status}
           {decode.isError && (
-            <PairAction
+            <Button
               label="Scan again"
               onPress={() => {
                 choose("scan");
@@ -120,13 +120,17 @@ export function UpdateFlow({
           <Text variant="body">
             Open Update iPhone in StatGlass Settings on your Mac.
           </Text>
-          <PairAction label="Scan QR" onPress={() => choose("scan")} />
-          <PairAction
+          <Button label="Scan QR" onPress={() => choose("scan")} />
+          <Button
             label="Paste code"
-            secondary
+            variant="secondary"
             onPress={() => choose("paste")}
           />
-          <PairAction label="Cancel" secondary onPress={() => done(false)} />
+          <Button
+            label="Cancel"
+            variant="secondary"
+            onPress={() => done(false)}
+          />
         </>
       );
   }

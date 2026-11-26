@@ -1,8 +1,8 @@
 import { nativeErrorText } from "@core/native-errors";
 import { pairingAdvice } from "@core/remote-errors";
 import type { PairingStep as FlowStep } from "@/pairing/flow";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
-import { PairAction } from "./action";
 import { PairingStep } from "./pairing-step";
 
 export function PairingFailure({
@@ -26,8 +26,8 @@ export function PairingFailure({
       tone="warning"
       actions={
         <>
-          <PairAction label="Try again" onPress={retry} />
-          <PairAction label="Done" secondary onPress={done} />
+          <Button label="Try again" onPress={retry} />
+          <Button label="Done" variant="secondary" onPress={done} />
         </>
       }
     >
@@ -41,7 +41,7 @@ export function PairingSuccess({ host, done }: { host: string; done(): void }) {
     <PairingStep
       title={`${host} is paired`}
       explanation="You can now view this host’s live metrics and history."
-      actions={<PairAction label="View hosts" onPress={done} />}
+      actions={<Button label="View hosts" onPress={done} />}
     />
   );
 }

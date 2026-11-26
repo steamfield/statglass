@@ -7,12 +7,12 @@ import { ActivityIndicator } from "react-native";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
 import { useSetPhoneTransport } from "@/data/transport-context";
 import { useNativeCore, useNativeCoreStarting } from "@/transport";
+import { Button } from "@/ui/button";
 import { ScreenScroll } from "@/ui/screen-scroll";
 import { StartupFailurePanel } from "@/ui/startup-failure";
 import { Text } from "@/ui/text";
 import { afterPair } from "./after-pair";
 import { usePairingFlow } from "./flow";
-import { PairAction } from "./screens/action";
 import { ChooseMethod } from "./screens/choose-method";
 import { PairingStep } from "./screens/pairing-step";
 import { Paste } from "./screens/paste";
@@ -123,7 +123,9 @@ export function PairingFlow({
         return (
           <PairingStep
             title="Reading pairing code…"
-            actions={<PairAction label="Cancel" secondary onPress={cancel} />}
+            actions={
+              <Button label="Cancel" variant="secondary" onPress={cancel} />
+            }
           >
             <ActivityIndicator accessibilityLabel="Reading pairing code" />
           </PairingStep>

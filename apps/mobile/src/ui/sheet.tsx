@@ -34,7 +34,7 @@ export function Sheet({
           </Text>
           <Pressable
             accessibilityRole="button"
-            className="min-h-[44px] min-w-[44px] items-center justify-center active:opacity-70"
+            className="min-h-touch min-w-touch items-center justify-center active:opacity-70"
             onPress={onClose}
           >
             <Text variant="body" weight="semibold">
