@@ -14,7 +14,7 @@ import { DAY_MS } from "@core/time-grid";
 import { gapBandsModel } from "@core/widget-models/gap-band";
 import { heatMatrixModel } from "@core/widget-models/heat-matrix";
 import { useMemo, useState } from "react";
-import { View } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import { shallow } from "zustand/shallow";
 import {
   type HistoryRange,
@@ -26,9 +26,17 @@ import { HistoryNotice } from "@/module/history-notice";
 import type { ModulePageProps } from "@/module/pages/index";
 import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
-import { HeatMatrix } from "@/widgets/heat-matrix";
+import {
+  type HeatColumns,
+  HeatMatrix,
+  scaled,
+  squareCellColumns,
+} from "@/widgets/heat-matrix";
 
-const columns = { columns: 60 };
+/** Room for "P11" and "100%" at the default text size. */
+const SIDES: HeatColumns = { label: 28, reading: 34 };
+// The card's p-3 on each side.
+const CARD_PADDING = 24;
 
 function HeatmapTimeScale({
   windowMs,
@@ -39,9 +47,10 @@ function HeatmapTimeScale({
   endMs: number;
   nowMs: number;
 }) {
+  const side = scaled(SIDES, useWindowDimensions().fontScale);
   return (
     <View className="flex-row items-center gap-2">
-      <View className="w-1/5" />
+      <View style={{ width: side.label }} />
       <View className="flex-1 flex-row justify-between gap-1">
         <Text variant="axis">−{formatDuration(windowMs)}</Text>
         <Text variant="axis">−{formatDuration(windowMs / 2)}</Text>
@@ -51,7 +60,7 @@ function HeatmapTimeScale({
             : formatHistoryTime(endMs, windowMs >= DAY_MS)}
         </Text>
       </View>
-      <View className="w-1/5" />
+      <View style={{ width: side.reading }} />
     </View>
   );
 }
@@ -74,7 +83,13 @@ export function CoreLoad({
   clusters: readonly ClusterView[];
   range: HistoryRange;
 }) {
-  const [laidOut, setLaidOut] = useState(false);
+  const [width, setWidth] = useState(0);
+  const laidOut = width > 0;
+  const { fontScale } = useWindowDimensions();
+  const count = laidOut
+    ? squareCellColumns(width - CARD_PADDING, SIDES, fontScale)
+    : 0;
+  const columns = useMemo(() => ({ columns: count }), [count]);
   const cores = useMemo(
     () =>
       clusters.flatMap(({ letter, cores }) =>
@@ -132,7 +147,7 @@ export function CoreLoad({
     })),
     timeline: {
       windowMs,
-      bucketMs: grid?.bucketMs ?? windowMs / columns.columns,
+      bucketMs: grid?.bucketMs ?? windowMs / Math.max(count, 1),
       endMs: grid?.endMs ?? null,
     },
     domain: [0, 100],
@@ -159,7 +174,7 @@ export function CoreLoad({
     <Card
       className="gap-2"
       testID="core-heatmap-layout"
-      onLayout={() => setLaidOut(true)}
+      onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
     >
       <Text variant="cardTitle" accessibilityRole="header">
         {title}
@@ -168,7 +183,12 @@ export function CoreLoad({
         <>
           {grid && data && (
             <>
-              <HeatMatrix model={model} height={0} gapBands={bands} />
+              <HeatMatrix
+                model={model}
+                height={0}
+                gapBands={bands}
+                sides={SIDES}
+              />
               <HeatmapTimeScale
                 windowMs={windowMs}
                 endMs={data.range.toMs}

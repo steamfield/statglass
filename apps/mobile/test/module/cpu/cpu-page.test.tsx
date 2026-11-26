@@ -71,6 +71,11 @@ function assertCpuStats(held: Record<string, number | null>, linux: boolean) {
   }
 }
 
+// The 300 pt card layoutChart reports, less padding and the label and reading
+// columns at the test renderer's font scale of 2, fits this many 10 pt cells
+// with 2 pt gaps.
+const HEAT_COLUMNS = 11;
+
 test("Mac CPU shows its live and range figures, two ramp series, and performance then efficiency cores", async () => {
   const transport = createMockTransport({ autoTick: false });
   const current = watchHeld(transport);
@@ -119,7 +124,7 @@ test("Mac CPU shows its live and range figures, two ramp series, and performance
     expect.objectContaining({
       events_for: null,
       series: ids.map((id) => ({ metric: "cpu.load", labels: [["core", id]] })),
-      max_points: 60,
+      max_points: HEAT_COLUMNS,
     })
   );
   const total = history.replies
@@ -217,7 +222,21 @@ test("a 64-core host draws every row within the heatmap’s column budget", asyn
     text: ids.map((id) => `${id} —`).join(", "),
   });
   expect(read).toHaveBeenCalledWith(
-    expect.objectContaining({ max_points: 60 })
+    expect.objectContaining({ max_points: HEAT_COLUMNS })
+  );
+});
+
+test("a wider heatmap card asks for more columns so cells stay square", async () => {
+  const transport = createMockTransport({ autoTick: false });
+  uniformTopology(transport, ["P0"]);
+  const { read } = watchHistory(transport);
+  await openModule(transport, "cpu");
+  await layoutChart();
+  await layoutChart("core-heatmap-layout", 600);
+  await waitFor(() =>
+    expect(read).toHaveBeenCalledWith(
+      expect.objectContaining({ events_for: null, max_points: 36 })
+    )
   );
 });
 
@@ -245,7 +264,7 @@ test("the CPU chart and heatmap each ask again when the range is picked again", 
       }));
   expect(rangeRequests(2)).toEqual(
     expect.arrayContaining([
-      { events: null, budget: 60, window: 5 * MINUTE_MS },
+      { events: null, budget: HEAT_COLUMNS, window: 5 * MINUTE_MS },
       { events: "cpu", window: 5 * MINUTE_MS },
     ])
   );
@@ -253,7 +272,7 @@ test("the CPU chart and heatmap each ask again when the range is picked again", 
   await waitFor(() => expect(read).toHaveBeenCalledTimes(6));
   expect(rangeRequests(4)).toEqual(
     expect.arrayContaining([
-      { events: null, budget: 60, window: HOUR_MS },
+      { events: null, budget: HEAT_COLUMNS, window: HOUR_MS },
       { events: "cpu", window: HOUR_MS },
     ])
   );
