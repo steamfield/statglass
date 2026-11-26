@@ -42,7 +42,9 @@ export function SettingsTabs({
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const underlineRef = useRef<HTMLSpanElement>(null);
-  const waiting = useDeviceIntents().data?.length ?? 0;
+  const intents = useDeviceIntents();
+  // A failed refetch keeps the last good data; the count shows nothing then.
+  const waiting = intents.isError ? 0 : (intents.data?.length ?? 0);
 
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -85,7 +87,7 @@ export function SettingsTabs({
             aria-label={
               tab.id === "access" ? waitingName(tab.label, waiting) : undefined
             }
-            className="flex h-9 shrink-0 items-center gap-1.5 font-medium text-body text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:text-foreground"
+            className="flex h-9 shrink-0 items-center gap-1.5 font-medium text-body text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-[state=active]:text-foreground"
           >
             {tab.label}
             {tab.id === "access" && waiting > 0 && (
@@ -96,7 +98,7 @@ export function SettingsTabs({
         <span
           ref={underlineRef}
           aria-hidden
-          className="pointer-events-none absolute bottom-0 left-0 h-0.5 bg-foreground motion-safe:transition-transform motion-safe:duration-(--motion-fast) motion-safe:ease-out"
+          className="pointer-events-none absolute bottom-0 left-0 h-0.5 bg-foreground motion-safe:transition-[transform,width] motion-safe:duration-(--motion-fast) motion-safe:ease-out"
         />
       </TabsPrimitive.List>
     </TabsPrimitive.Root>
