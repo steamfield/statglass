@@ -8,3 +8,7 @@
 @import "tailwindcss/utilities.css";
 @import "nativewind/theme";
 @import "./theme.generated.css";
+
+@theme {
+  --spacing-touch: 44px;
+}
