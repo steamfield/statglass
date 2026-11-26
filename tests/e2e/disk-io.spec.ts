@@ -137,7 +137,18 @@ test("Disk compares workload with request time and preserves brushed process ide
   await brush.focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("tooltip")).toContainText("Read request");
-  await expect(page.getByRole("tooltip")).toContainText("80 ops/s");
+  // The external drive completes about one operation a second, bursting with
+  // its throughput (10 s buckets: median 0.94, p90 1.34, max 47 ops/s).
+  await expect(page.getByRole("tooltip")).toContainText(/\d[\d.,]* ops\/s/);
+  const tip = (await page.getByRole("tooltip").textContent()) ?? "";
+  const ops = [...tip.matchAll(/(\d[\d,]*(?:\.\d+)?) ops\/s/g)].map((m) =>
+    Number((m[1] ?? "").replaceAll(",", ""))
+  );
+  expect(ops.length).toBeGreaterThan(0);
+  for (const v of ops) {
+    expect(v).toBeGreaterThan(0);
+    expect(v).toBeLessThanOrEqual(100);
+  }
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "Disk by app, selected 10 s" })

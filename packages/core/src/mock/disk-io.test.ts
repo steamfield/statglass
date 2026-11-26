@@ -19,10 +19,16 @@ describe("disk I/O fixtures", () => {
     expect(mockDiskDevices([]).default_device).toBe("disk3");
   });
   it("weights an all-device point by completions, not by device count", () => {
-    const p = mockDiskIo({ ...request, device: null }, ["disk-io-comparison"])
-      .points[0];
-    expect(p?.read_request_ms).toBeCloseTo((5000 * 0.15 + 80 * 42) / 5080);
-    expect(p?.read_request_ms).not.toBeCloseTo((0.15 + 42) / 2);
+    const page = (device: string | null) =>
+      mockDiskIo({ ...request, device }, ["disk-io-comparison"]).points[0];
+    const [p, fast, slow] = [page(null), page("disk3"), page("disk7")];
+    const ops = (x: typeof p) => x?.read_ops_per_sec ?? Number.NaN;
+    const ms = (x: typeof p) => x?.read_request_ms ?? Number.NaN;
+    expect(ops(p)).toBeCloseTo(ops(fast) + ops(slow));
+    expect(ms(p)).toBeCloseTo(
+      (ops(fast) * ms(fast) + ops(slow) * ms(slow)) / ops(p)
+    );
+    expect(ms(p)).not.toBeCloseTo((ms(fast) + ms(slow)) / 2);
   });
   it("keeps missing completion counts and true idle separate", () => {
     const idle = mockDiskIo(request, ["disk-io-no-ops"]).points[0];

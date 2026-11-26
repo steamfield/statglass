@@ -16,6 +16,7 @@ import type {
   Module,
 } from "@core/generated/types";
 import { HOUR_MS } from "@core/time-grid";
+import { diskSeed } from "./series-shapes";
 
 /** M1 cpufreq `scaling_available_frequencies`, MHz ascending. */
 const E_DVFS = [600, 972, 1332, 1704, 2064];
@@ -102,7 +103,8 @@ type Add = (
   labels: Record<string, string>,
   base: number,
   opts?: {
-    noise?: number;
+    seed?: number;
+    swing?: number;
     min?: number;
     max?: number;
     cadence?: number;
@@ -111,7 +113,7 @@ type Add = (
     silent?: boolean;
   }
 ) => void;
-type Total = (module: Module, metric: string, part: string) => void;
+type Total = (module: Module, metric: string, ...parts: string[]) => void;
 
 const GHZ = 1e9;
 const pct = { min: 0, max: 100 };
@@ -120,28 +122,27 @@ const pct = { min: 0, max: 100 };
 const CORE_LOAD = [4, 3, 2, 3, 2, 1, 1, 2];
 
 function cpu(add: Add) {
-  add("cpu", "cpu.total", {}, 3.1, { noise: 1.5, min: 0.5, max: 100 });
-  add("cpu", "cpu.user", {}, 2.0, { noise: 1, ...pct });
-  add("cpu", "cpu.system", {}, 0.9, { noise: 0.5, ...pct });
-  add("cpu", "cpu.iowait", {}, 0.4, { noise: 0.3, ...pct });
+  // On one seed, so user + system + iowait is the total.
+  add("cpu", "cpu.total", {}, 3.3, { seed: 5, min: 0.5, max: 100 });
+  add("cpu", "cpu.user", {}, 2.0, { seed: 5, ...pct });
+  add("cpu", "cpu.system", {}, 0.9, { seed: 5, ...pct });
+  add("cpu", "cpu.iowait", {}, 0.4, { seed: 5, ...pct });
   add("cpu", "cpu.steal", {}, 0, pct);
   [...E_CORES, ...P_CORES].forEach((core, i) => {
-    add("cpu", "cpu.load", { core }, CORE_LOAD[i] ?? 2, { noise: 3, ...pct });
+    add("cpu", "cpu.load", { core }, CORE_LOAD[i] ?? 2, pct);
   });
   for (const [window, v] of [
     ["1", 0.42],
     ["5", 0.36],
     ["15", 0.31],
   ] as const)
-    add("cpu", "cpu.loadavg", { window }, v, { noise: 0.08, cadence: 5 });
+    add("cpu", "cpu.loadavg", { window }, v, { cadence: 5 });
   add("cpu", "cpu.cluster.freq", { cluster: "E0" }, 1.33 * GHZ, {
-    noise: 0.3 * GHZ,
     min: 0.6 * GHZ,
     max: 2.064 * GHZ,
     cadence: 5,
   });
   add("cpu", "cpu.cluster.freq", { cluster: "P0" }, 1.06 * GHZ, {
-    noise: 0.4 * GHZ,
     min: 0.6 * GHZ,
     max: 3.204 * GHZ,
     cadence: 5,
@@ -150,15 +151,21 @@ function cpu(add: Add) {
     ["some", 1.2],
     ["full", 0],
   ] as const)
-    add("cpu", "cpu.psi", { stall }, v, { noise: 0.5, cadence: 5, ...pct });
+    add("cpu", "cpu.psi", { stall }, v, { cadence: 5, ...pct });
 }
 
 function memory(add: Add) {
-  const mem = { noise: 0.04e9 };
-  // used + cached + free is MemTotal (`linux/memory.rs`).
-  add("memory", "mem.used", {}, 7.0e9, mem);
-  add("memory", "mem.cached", {}, LINUX_MEM_TOTAL_BYTES - 7.0e9 - 1.2e9, mem);
-  add("memory", "mem.free", {}, 1.2e9, mem);
+  // used + cached + free is MemTotal (`linux/memory.rs`): on one seed, cached
+  // and free give up what used takes.
+  const used = 7.0e9;
+  const cached = LINUX_MEM_TOTAL_BYTES - used - 1.2e9;
+  const spare = (v: number) => ({
+    seed: 17,
+    swing: (-used * v) / (cached + 1.2e9),
+  });
+  add("memory", "mem.used", {}, used, { seed: 17 });
+  add("memory", "mem.cached", {}, cached, spare(cached));
+  add("memory", "mem.free", {}, 1.2e9, spare(1.2e9));
   add("memory", "mem.swap_used", {}, 2.05e9);
   add("memory", "mem.swap_in", {}, 0);
   add("memory", "mem.swap_out", {}, 0);
@@ -166,7 +173,7 @@ function memory(add: Add) {
     ["some", 0.4],
     ["full", 0.1],
   ] as const)
-    add("memory", "mem.psi", { stall }, v, { noise: 0.2, cadence: 5, ...pct });
+    add("memory", "mem.psi", { stall }, v, { cadence: 5, ...pct });
 }
 
 function sensors(add: Add) {
@@ -175,36 +182,35 @@ function sensors(add: Add) {
     ["3.8 V Rail Power", 2.6],
     ["AC Input Power", 7.1],
   ] as const)
-    add("power", "power.sensor", { name }, v, { noise: 0.4, cadence: 5 });
-  add("power", "power.system", {}, 7.0, { noise: 0.4 });
+    add("power", "power.sensor", { name }, v, { cadence: 5 });
+  add("power", "power.system", {}, 7.0);
   // No CPU-class sensor, so no `thermal.hottest`.
   for (const [name, v] of [
     ["NAND Flash Temperature", 40],
     ["WiFi/BT Module Temp", 42],
     ["nvme@nvme0/Composite", 38],
   ] as const)
-    add("sensors", "thermal.sensor", { name }, v, { noise: 0.5, cadence: 5 });
+    add("sensors", "thermal.sensor", { name }, v, { cadence: 5 });
   add("sensors", "fan.rpm", { fan: "macsmc_hwmon/0" }, 1702, {
-    noise: 20,
     cadence: 2,
   });
   add("sensors", "fan.max", { fan: "macsmc_hwmon/0" }, 4499, { cadence: 60 });
 }
 
 function network(add: Add, total: Total) {
-  add("network", "net.rx", { iface: "end0" }, 180e3, { noise: 90e3 });
-  add("network", "net.tx", { iface: "end0" }, 42e3, { noise: 20e3 });
+  add("network", "net.rx", { iface: "end0" }, 180e3);
+  add("network", "net.tx", { iface: "end0" }, 42e3);
   add("network", "net.link_rate", { iface: "end0" }, 1e9, { cadence: 60 });
-  add("network", "net.rx", { iface: "wlp1s0f0" }, 0.4e3, { noise: 0.3e3 });
-  add("network", "net.tx", { iface: "wlp1s0f0" }, 0.2e3, { noise: 0.1e3 });
+  add("network", "net.rx", { iface: "wlp1s0f0" }, 0.4e3);
+  add("network", "net.tx", { iface: "wlp1s0f0" }, 0.2e3);
   add("network", "net.link_rate", { iface: "wlp1s0f0" }, 866.7e6, {
     cadence: 60,
   });
   // Totals count physical interfaces only, so they come before the tunnel.
   total("network", "net.rx_total", "net.rx");
   total("network", "net.tx_total", "net.tx");
-  add("network", "net.rx", { iface: "tailscale0" }, 12e3, { noise: 8e3 });
-  add("network", "net.tx", { iface: "tailscale0" }, 9e3, { noise: 6e3 });
+  add("network", "net.rx", { iface: "tailscale0" }, 12e3);
+  add("network", "net.tx", { iface: "tailscale0" }, 9e3);
 }
 
 const DISK_METRICS = [
@@ -223,11 +229,13 @@ function disk(add: Add, total: Total) {
     ["sda", 3.2e6, 0.3e6, 26, 4, 2.4, 3.1],
     ["sdb", 0.6e6, 0.1e6, 6, 2, 9.5, 12],
   ] as const;
-  for (const [dev, read, write] of devices) {
-    add("disk", "disk.read", { dev }, read, { noise: read * 0.5 });
-    add("disk", "disk.write", { dev }, write, { noise: write * 0.5 });
-  }
-  for (const [dev, , , readOps, writeOps, readMs, writeMs] of devices) {
+  // A device's ops and request time burst with its bytes, on one seed per
+  // device and direction.
+  devices.forEach(([dev, read, write], d) => {
+    add("disk", "disk.read", { dev }, read, { seed: diskSeed(d, false) });
+    add("disk", "disk.write", { dev }, write, { seed: diskSeed(d, true) });
+  });
+  devices.forEach(([dev, , , readOps, writeOps, readMs, writeMs], d) => {
     for (const [metric, value] of [
       ["disk.read_ops", readOps],
       ["disk.write_ops", writeOps],
@@ -236,8 +244,10 @@ function disk(add: Add, total: Total) {
       ["disk.read_time", readOps * readMs],
       ["disk.write_time", writeOps * writeMs],
     ] as const)
-      add("disk", metric, { dev }, value);
-  }
+      add("disk", metric, { dev }, value, {
+        seed: diskSeed(d, metric.startsWith("disk.write")),
+      });
+  });
   for (const metric of DISK_METRICS) total("disk", `${metric}_total`, metric);
   total("disk", "disk.read_total", "disk.read");
   total("disk", "disk.write_total", "disk.write");
@@ -255,7 +265,7 @@ function disk(add: Add, total: Total) {
     ["some", 90],
     ["full", 86],
   ] as const)
-    add("disk", "disk.psi", { stall }, v, { noise: 3, cadence: 5, ...pct });
+    add("disk", "disk.psi", { stall }, v, { cadence: 5, ...pct });
 }
 
 const MIB = 1024 * 1024;
@@ -298,24 +308,20 @@ function cgroups(add: Add) {
     const labels = { kind, name };
     add("containers", "cgroup.cpu", labels, cpu, {
       ...every,
-      noise: cpu * 0.4,
       min: 0,
     });
-    add("containers", "cgroup.mem", labels, mem, { ...every, noise: mem / 50 });
+    add("containers", "cgroup.mem", labels, mem, every);
     if (max !== null) add("containers", "cgroup.mem_max", labels, max, every);
     add("containers", "cgroup.io_read", labels, read, {
       ...every,
-      noise: read,
       min: 0,
     });
     add("containers", "cgroup.io_write", labels, write, {
       ...every,
-      noise: write,
       min: 0,
     });
     add("containers", "cgroup.mem_psi", labels, psi, {
       ...every,
-      noise: psi,
       ...pct,
     });
   }
@@ -330,10 +336,10 @@ function cgroups(add: Add) {
     add("containers", metric, exited, 0, { ...every, silent: true });
   // The remainder: no `mem_max` or `mem_psi`, neither adds up.
   const other = { kind: "other", name: "_other" };
-  add("containers", "cgroup.cpu", other, 0.9, { ...every, noise: 0.3 });
-  add("containers", "cgroup.mem", other, 310 * MIB, { ...every, noise: MIB });
-  add("containers", "cgroup.io_read", other, 2e3, { ...every, noise: 2e3 });
-  add("containers", "cgroup.io_write", other, 9e3, { ...every, noise: 6e3 });
+  add("containers", "cgroup.cpu", other, 0.9, every);
+  add("containers", "cgroup.mem", other, 310 * MIB, every);
+  add("containers", "cgroup.io_read", other, 2e3, every);
+  add("containers", "cgroup.io_write", other, 9e3, every);
   add("containers", "cgroup.other_count", {}, 25, every);
 }
 
@@ -345,7 +351,7 @@ export function buildLinuxSpecs(add: Add, total: Total, selfPeriodMs: number) {
   network(add, total);
   disk(add, total);
   cgroups(add);
-  add("cpu", "self.cpu", {}, 0.1, { noise: 0.03, periodMs: selfPeriodMs });
+  add("cpu", "self.cpu", {}, 0.1, { periodMs: selfPeriodMs });
 }
 
 /**

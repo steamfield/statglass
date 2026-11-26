@@ -1,7 +1,9 @@
 /**
  * `query_history` for the mock transport: deterministic buckets around each
  * series' sample value, with the scenario's gaps cut out (slots inside a gap
- * are absent, never zero).
+ * are absent, never zero). A bucket summarises its series over the seconds
+ * it covers on the live rows' clock (`history-buckets.ts`), so a wide
+ * bucket's max keeps the spikes its average smooths out.
  */
 
 import {
@@ -17,11 +19,11 @@ import {
   type SeriesStats,
   type Tier,
 } from "@core/generated/types";
-import { seriesKeyString } from "@core/series-key";
 import { ceilTo, DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import { MOCK_HOST_ID, type ScenarioFlags } from "./fixtures";
 import type { SeriesSpec } from "./generator";
+import { HistoryBuckets } from "./history-buckets";
 import { mockBuckets } from "./protocol";
 import type { MockRing } from "./ring";
 import { rng, seedOf } from "./rng";
@@ -88,8 +90,8 @@ export function seedDemoRing(
     values: row.values.map(scale),
   }));
   const sample = ring.gen.next.bind(ring.gen);
-  ring.gen.next = (land) => {
-    const row = sample(land);
+  ring.gen.next = (land, atMs) => {
+    const row = sample(land, atMs);
     return { ...row, values: row.values.map(scale), held: row.held.map(scale) };
   };
 }
@@ -273,7 +275,8 @@ export function mockRecentHistory(
   req: HistoryRequest,
   specs: readonly SeriesSpec[],
   nowMs: number,
-  intervalMs: number
+  intervalMs: number,
+  anchorMs = nowMs
 ): HistoryPage {
   const tier =
     req.tier !== "auto"
@@ -281,7 +284,14 @@ export function mockRecentHistory(
       : req.to_ms - req.from_ms <= S10.kept_ms
         ? "s10"
         : "m1";
-  const page = mockHistory({ ...req, tier }, specs, [], nowMs, intervalMs);
+  const page = mockHistory(
+    { ...req, tier },
+    specs,
+    [],
+    nowMs,
+    intervalMs,
+    anchorMs
+  );
   const kept = nowMs - MOCK_RECENT_MS;
   return {
     ...page,
@@ -292,12 +302,17 @@ export function mockRecentHistory(
   };
 }
 
+/**
+ * `query_history` over `specs`, with the shapes' clock starting at
+ * `anchorMs` (the ring's start, `MockGenerator.anchorMs`).
+ */
 export function mockHistory(
   req: HistoryRequest,
   specs: readonly SeriesSpec[],
   gaps: readonly Gap[],
   nowMs: number,
-  intervalMs: number
+  intervalMs: number,
+  anchorMs = nowMs
 ): HistoryPage {
   const tier = mockTier(req, nowMs);
   // The store's merge (`Reader::history`) of the tier's buckets.
@@ -314,34 +329,26 @@ export function mockHistory(
   const inGap = (t: number) =>
     gaps.some((g) => t + step > g.start_ms && t < (g.end_ms ?? Infinity));
 
-  // A wider bucket's min and max span more seconds, so they sit further from
-  // its average: x1 at 10 s, about x1.8 at 1 min, x3 from 30 min, so the
-  // envelope on 7d and 30d reads as one.
-  const spread = Math.min(3, 1 + Math.log10(step / 10_000));
-
-  const series = specs
-    .filter((s) => req.selectors.some((sel) => matches(s.key, sel)))
-    .map((s) => {
-      const r = rng(seedOf(seriesKeyString(s.key)));
-      const amp = s.noise || Math.abs(s.base) * 0.05;
-      const points: HistoryPoint[] = [];
-      for (let t = start; t < req.to_ms && t <= nowMs; t += step) {
-        const wave = Math.sin(t / (3 * HOUR)) * 0.6 + (r() - 0.5) * 0.8;
-        if (inGap(t)) continue;
-        const avg = clamp(s.base + wave * amp, s);
-        points.push({
-          t,
-          avg,
-          min: clamp(avg - amp * 0.4 * spread * r(), s),
-          max: clamp(avg + amp * 0.6 * spread * r(), s),
-        });
-      }
-      return {
-        key: s.key,
-        points,
-        hold_ms: historyHoldMs(s, intervalMs, step),
-      };
+  const wanted = specs.flatMap((s, i) =>
+    req.selectors.some((sel) => matches(s.key, sel)) ? [i] : []
+  );
+  const buckets = new HistoryBuckets(specs, wanted, step, anchorMs, intervalMs);
+  const points = wanted.map((): HistoryPoint[] => []);
+  for (let t = start; t < req.to_ms && t <= nowMs; t += step) {
+    if (inGap(t)) continue;
+    buckets.fill(t);
+    wanted.forEach((i, j) => {
+      points[j]?.push(buckets.point(i, t));
     });
+  }
+  const series = wanted.map((i, j) => {
+    const s = specs[i] as SeriesSpec;
+    return {
+      key: s.key,
+      points: points[j] ?? [],
+      hold_ms: historyHoldMs(s, intervalMs, step),
+    };
+  });
 
   return {
     tier,
@@ -351,11 +358,6 @@ export function mockHistory(
       (g) => g.start_ms < req.to_ms && (g.end_ms ?? Infinity) > req.from_ms
     ),
   };
-}
-
-function clamp(v: number, s: SeriesSpec): number {
-  const c = Math.min(s.max ?? Infinity, Math.max(s.min ?? -Infinity, v));
-  return Math.round(c * 1000) / 1000;
 }
 
 /**
