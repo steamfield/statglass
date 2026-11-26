@@ -2,12 +2,17 @@ import "react-native-gesture-handler/jestSetup";
 
 import { formatTemperature, formatWatts, temperatureParts } from "@core/format";
 import type { Event } from "@core/generated/types";
-import { capabilities, MOCK_HOST_ID, PROCESSES } from "@core/mock/fixtures";
+import { capabilities, PROCESSES } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
-import { mockAppState } from "@test/helpers/mock-app-state";
-import { renderWithProviders } from "@test/render";
+import {
+  layoutChart,
+  MODULE_TEST_NOW as now,
+  openModule,
+  setModuleClock,
+  waitForLiveSubscriber,
+} from "@test/helpers/module-screen";
 import {
   act,
   fireEvent,
@@ -16,44 +21,17 @@ import {
   within,
 } from "@testing-library/react-native";
 import * as Localization from "expo-localization";
-import { ExpoRoot, Stack } from "expo-router";
-import { getMockContext } from "expo-router/testing-library";
-import { ModuleScreen } from "@/module";
 
-const context = getMockContext({
-  _layout: () => <Stack />,
-  "(hosts)/[host]/[module]": ModuleScreen,
-});
-const now = Date.UTC(2026, 10, 24, 15, 2);
-
-beforeEach(() => {
-  jest.useFakeTimers({ now });
-  mockAppState();
-});
+beforeEach(setModuleClock);
 
 afterEach(() => {
   jest.restoreAllMocks();
   jest.useRealTimers();
 });
 
-function openPower(host = MOCK_HOST_ID) {
-  return (
-    <ExpoRoot
-      context={context}
-      location={new URL(`statglass:///${host}/power`)}
-    />
-  );
-}
-
 async function tick(transport: ReturnType<typeof createMockTransport>) {
-  await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await waitForLiveSubscriber(transport);
   await act(() => transport.tick());
-}
-
-async function layout(testID: string, width = 310) {
-  await fireEvent(await screen.findByTestId(testID), "layout", {
-    nativeEvent: { layout: { width } },
-  });
 }
 
 test.each([
@@ -92,7 +70,7 @@ test.each([
       };
       return { ...reply, data: { ...reply.data, events: [alert] } };
     });
-    await renderWithProviders(openPower(), { transport });
+    await openModule(transport, "power");
     await tick(transport);
 
     for (const [name, celsius] of [
@@ -124,11 +102,9 @@ test.each([
     expect(
       screen.queryAllByText(new RegExp(`°${units === "F" ? "C" : "F"}`))
     ).toHaveLength(0);
-    await layout("history-plot-layout");
+    await layoutChart("history-plot-layout", 310);
     const chart = within(screen.getByTestId("history-plot-layout"));
-    await fireEvent(chart.getByTestId("history-chart-plot"), "layout", {
-      nativeEvent: { layout: { width: 310 } },
-    });
+    await layoutChart(chart.getByTestId("history-chart-plot"), 310);
     const label = `Alert · Hottest sensor ${formatTemperature(96, { units })}`;
     await waitFor(() => expect(screen.queryAllByText(label)).toHaveLength(2));
     expect(screen.getByLabelText(label)).toBeOnTheScreen();
@@ -171,10 +147,10 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
         },
       };
     });
-  await renderWithProviders(openPower(), { transport });
+  await openModule(transport, "power");
   await tick(transport);
-  await layout("history-plot-layout");
-  await layout("battery-charge-layout");
+  await layoutChart("history-plot-layout", 310);
+  await layoutChart("battery-charge-layout", 310);
   expect(await screen.findByText("CPU power: P cores")).toBeOnTheScreen();
   expect(
     screen.getByRole("header", { name: "Power & Sensors" })
@@ -209,9 +185,7 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
     screen.getByRole("adjustable", { name: "Power & Sensors history" })
   ).toBeOnTheScreen();
   const plot = within(screen.getByTestId("history-plot-layout"));
-  await fireEvent(plot.getByTestId("history-chart-plot"), "layout", {
-    nativeEvent: { layout: { width: 310 } },
-  });
+  await layoutChart(plot.getByTestId("history-chart-plot"), 310);
   expect(await plot.findByText("now")).toBeOnTheScreen();
   expect(plot.getByText(formatWatts(0))).toBeOnTheScreen();
   expect(plot.getByText("System")).toBeOnTheScreen();
@@ -283,7 +257,7 @@ test("draws named Linux sensors and rails with only the reported rings", async (
     historyRows: 2,
     scenarios: ["linux"],
   });
-  await renderWithProviders(openPower(), { transport });
+  await openModule(transport, "power");
   await tick(transport);
   expect(
     screen.getByRole("image", { name: "Temperature sensors" })
@@ -360,10 +334,10 @@ test("keeps colliding events as pills and filters the rounded history boundary",
     };
     return { ...reply, data: { ...reply.data, events: [early, ...events] } };
   });
-  await renderWithProviders(openPower(), { transport });
+  await openModule(transport, "power");
   await tick(transport);
-  await layout("history-plot-layout");
-  await layout("history-chart-plot", 200);
+  await layoutChart("history-plot-layout", 310);
+  await layoutChart("history-chart-plot", 200);
   for (const label of [
     "ANE 7.5 W",
     "Fans ramped up",
@@ -385,6 +359,7 @@ test("explains an unsupported thermal query without hiding live figures or syste
     historyRows: 2,
     scenarios: ["no-battery"],
   });
+  // failNext cannot pick a request, and only the thermal read fails here.
   const read = transport.hostHistory.bind(transport);
   jest.spyOn(transport, "hostHistory").mockImplementation(async (request) => {
     if (request.series[0]?.metric !== "thermal.zone") return read(request);
@@ -396,12 +371,17 @@ test("explains an unsupported thermal query without hiding live figures or syste
       },
     };
   });
-  await renderWithProviders(openPower(), { transport });
+  await openModule(transport, "power");
   await tick(transport);
-  await layout("history-plot-layout");
+  await layoutChart("history-plot-layout", 310);
   expect(
     await screen.findByText(/Update StatGlass on .* to see history/)
   ).toBeOnTheScreen();
+  await waitFor(() =>
+    expect(
+      screen.getByRole("adjustable", { name: "Power & Sensors history" })
+    ).not.toBeDisabled()
+  );
   expect(
     screen.getByRole("image", { name: "System draw (W)" })
   ).toHaveAccessibilityValue({ text: /^\d/ });
@@ -410,7 +390,7 @@ test("explains an unsupported thermal query without hiding live figures or syste
 
 test("opens the Battery module from the embedded charge history", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
-  await renderWithProviders(openPower(), { transport });
+  await openModule(transport, "power");
   await tick(transport);
   await fireEvent.press(screen.getByRole("button", { name: "Open Battery" }));
   expect(
@@ -435,7 +415,7 @@ test("refreshes thermal buckets when returning to the hour and explains a server
         data: { ...result.data, clamped: [{ kind: "series" }] },
       };
     });
-  await renderWithProviders(openPower(), { transport });
+  await openModule(transport, "power");
   await tick(transport);
   const hourReads = () =>
     read.mock.calls.filter(
@@ -464,7 +444,7 @@ test.each([false, true])(
     });
     const actual = capabilities(transport.flags, {});
     const read = jest.spyOn(transport, "hostHistory");
-    await renderWithProviders(openPower(), { transport });
+    await openModule(transport, "power");
     await tick(transport);
     await act(() =>
       transport.push({
@@ -509,7 +489,7 @@ test("shows passive cooling on a fanless Mac", async () => {
     historyRows: 2,
     scenarios: ["no-fans"],
   });
-  await renderWithProviders(openPower(), { transport });
+  await openModule(transport, "power");
   await tick(transport);
   expect(await screen.findByText("Passive cooling")).toBeOnTheScreen();
   expect(
