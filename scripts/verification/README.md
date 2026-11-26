@@ -1,8 +1,16 @@
 # Verification evidence
 
-The Git pre-push hook runs `bash scripts/pre-push-check.sh`. It executes the same
-three gates in order: `make check`, `make bindings-check`, `make e2e-perf`. It stops
-at the first failure and preserves its exit code through `tee`. Successful hook
+The Git pre-push hook runs `bash scripts/pre-push-check.sh`. It executes the gates in
+order: `make check`, `make bindings-check`, `make rust-perf`, `make e2e-perf`. It stops
+at the first failure and preserves its exit code through `tee`.
+
+The two perf stages measure real hardware and move with machine load, so they run only
+when the pushed range (`PRE_COMMIT_FROM_REF...PRE_COMMIT_TO_REF`) changes a path they
+measure: the engine and the crates it builds on for `rust-perf`, the production
+frontend build for `e2e-perf`, and the gate script, the Makefile or `perf-budget.json`
+for both. The path lists are at the top of the script. A skipped stage is recorded as
+`skipped`. A manual run, a push of a whole history, or `STATGLASS_PERF=1` runs both;
+`scripts/release.sh` sets it for the release commit. Successful hook
 output is also shown by pre-commit's `verbose` setting.
 
 Each invocation creates its own directory under `target/qa/pre-push/`:
@@ -12,8 +20,10 @@ Each invocation creates its own directory under `target/qa/pre-push/`:
 | `revision.txt` | HEAD at the start of the run |
 | `working-tree.txt` | Initial Git status; nonempty means this was not a clean-commit check |
 | `current-stage.txt` | Last stage started; this alone does not mean it finished |
-| `check.log`, `bindings-check.log`, `e2e-perf.log` | Combined stdout/stderr, written as each stage runs |
-| `stages.tsv` | Completed stage and exit code, one row per stage |
+| `perf-scope.txt` | `paths` when the perf stages were chosen from the pushed range, `all` otherwise |
+| `changed-files.txt` | The pushed range's changed files (empty for `all`) |
+| `check.log`, `bindings-check.log`, `rust-perf.log`, `e2e-perf.log` | Combined stdout/stderr, written as each stage runs |
+| `stages.tsv` | Completed stage and exit code, or `skipped`, one row per stage |
 | `result.txt` | Overall exit code, written on exit; absent while running or after an untrappable interruption |
 
 Pre-commit buffers terminal output until the hook finishes. During a long push,
