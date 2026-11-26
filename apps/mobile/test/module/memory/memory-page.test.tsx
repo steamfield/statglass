@@ -98,7 +98,7 @@ test("Mac Memory shows unified capacity, composition, pressure, host peaks and s
   expect(
     screen.getByRole("adjustable", { name: "Swap used" })
   ).toBeOnTheScreen();
-  const top = ["Xcode", "Safari", "com.docker.backend"];
+  const top = ["Xcode", "com.docker.backend", "Safari"];
   expect(
     screen.getAllByLabelText(/^(Xcode|Safari|com\.docker\.backend)$/)
   ).toEqual(top.map((name) => screen.getByLabelText(name)));

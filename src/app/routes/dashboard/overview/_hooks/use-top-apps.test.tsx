@@ -48,7 +48,7 @@ it.each([900_000, DAY_MS])(
       screen.getByText(windowMs === DAY_MS ? "history" : "live")
     ).toBeVisible();
     expect(
-      screen.getByText(windowMs === DAY_MS ? "Compiler: 30.0%" : "clang: 60.0%")
+      screen.getByText(windowMs === DAY_MS ? "Compiler: 30.0%" : "clang: 23.3%")
     ).toBeVisible();
     expect(screen.getAllByRole("listitem").length).toBeLessThanOrEqual(5);
   }

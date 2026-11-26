@@ -167,22 +167,22 @@ describe("Network page Apps card (D-089)", () => {
     expect(
       await screen.findByRole("heading", { name: "Apps, last 15 minutes" })
     ).toBeVisible();
-    // An earlier Docker burst is [NOW − 390 s, NOW − 360 s) = [T − 385 s, T − 355 s).
+    // An earlier Docker burst is [NOW − 510 s, NOW − 480 s) = [T − 505 s, T − 475 s).
     act(() => transport.tick());
     const brush = await screen.findByRole("slider", {
       name: "Select a time range",
     });
     act(() => brush.focus());
     // Focus starts on [T − 10 s, T), the newest bucket that has happened.
-    await user.keyboard("{ArrowLeft>37/}{Enter}{Shift>}{ArrowRight}{/Shift}");
+    await user.keyboard("{ArrowLeft>49/}{Enter}{Shift>}{ArrowRight}{/Shift}");
     expect(
       await screen.findByRole("heading", { name: "Apps, selected 20 s" })
     ).toBeVisible();
     await vi.waitFor(async () =>
       expect(names(await appsTable())[0]).toBe("DDocker Desktop")
     );
-    const from = formatClockSeconds(T - 380 * S);
-    const to = formatClockSeconds(T - 360 * S);
+    const from = formatClockSeconds(T - 500 * S);
+    const to = formatClockSeconds(T - 480 * S);
     expect(screen.getByTestId("selection-summary")).toHaveTextContent(
       new RegExp(`^${from} to ${to} · Click the chart or press Esc to clear$`)
     );

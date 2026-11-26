@@ -179,6 +179,18 @@ Remote alerts and remote menu-bar metrics remain future work. See the
 [implementation and acceptance record](plan/history-remote-landing.md) for measured
 coverage and remaining native checks.
 
+## StatGlass for iPhone
+
+A read-only iPhone app shows the same Macs and Linux hosts over SSH: live cards,
+module pages with history, and per-app usage. Pair it by scanning the QR code under
+**Settings → Paired devices** on the Mac (or from a Linux agent); with nothing paired it
+runs a demo with sample hosts. It is on its way to the App Store.
+
+<p>
+  <img src="https://raw.githubusercontent.com/steamfield/statglass/assets/media/ios-hosts.webp" width="380" alt="StatGlass for iPhone: the hosts list opening a Mac's live cards">
+  <img src="https://raw.githubusercontent.com/steamfield/statglass/assets/media/ios-modules.webp" width="380" alt="StatGlass for iPhone: the CPU and Network pages with an hour of history">
+</p>
+
 ## Resource use
 
 With only the menu bar showing, StatGlass samples every 2 seconds and uses under 1% of one core. Open a window and it samples every second (adjustable from 0.5 to 60 seconds) and uses 6 to 10%, depending on the page.
