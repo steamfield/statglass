@@ -98,6 +98,8 @@ function CliLinkRow() {
         : "Checking…";
   return (
     <SettingsRow
+      id="statglass-command"
+      nested
       label="statglass command"
       sub={<span role="status">{message}</span>}
     >
@@ -141,6 +143,8 @@ function SkillRow() {
   const { status: copied, copy } = useCopyToClipboard("settings");
   return (
     <SettingsRow
+      id="coding-agents"
+      nested
       label="Coding agents"
       sub={
         <span role="status">
@@ -170,8 +174,9 @@ function SkillRow() {
 export function CommandLinePanel({ enabled }: { enabled: boolean }) {
   const write = useWriteSettings();
   return (
-    <SettingsPanel title="Command line">
+    <SettingsPanel id="command-line" title="Command line">
       <SettingsRow
+        id="command-line-access"
         label="Allow command-line access"
         sub="Tools and coding agents running as you on this Mac can read StatGlass history, including your other machines. Read-only."
       >

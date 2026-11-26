@@ -32,7 +32,7 @@ test("Settings: interval, size limit and history notices", async ({
   const errors = trackConsoleErrors(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(
-    "/?window=dashboard&route=/dashboard/settings&theme=dark&ticks=0&scenario=low-disk,history-trimmed"
+    "/?window=dashboard&route=/dashboard/settings/history&theme=dark&ticks=0&scenario=low-disk,history-trimmed"
   );
   await expect(
     page.getByText(/History paused: disk almost full/)
@@ -41,6 +41,7 @@ test("Settings: interval, size limit and history notices", async ({
     page.getByText(/History trimmed to stay under 150 MB/)
   ).toBeVisible();
 
+  await page.getByRole("tab", { name: "Monitoring" }).click();
   await page.getByRole("radio", { name: "30s" }).click();
   await expect(page.getByRole("radio", { name: "30s" })).toHaveAttribute(
     "data-state",
@@ -48,6 +49,7 @@ test("Settings: interval, size limit and history notices", async ({
   );
   await expect(page.getByText("to 60s")).toBeVisible();
 
+  await page.getByRole("tab", { name: "History" }).click();
   await page.getByRole("combobox", { name: "Keep history" }).click();
   // Usage identities grow with retention, so the measured 90-day request
   // exceeds the default 750 MB cap and discloses its shorter effective span.

@@ -1,18 +1,20 @@
 import { commandErrorText } from "@core/command-error";
 import type { DeviceIntentInfo } from "@core/generated/types";
 import { unwrap } from "@core/transport";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { InlineMessage } from "~/components/inline-message";
 import { SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
+import { useDeviceIntents } from "../../_hooks/use-device-intents";
 
 function IntentRow({ intent }: { intent: DeviceIntentInfo }) {
   const operation = intent.op === "revoke" ? "Revoke" : "Install";
   const state = intent.state === "failed" ? "failed" : "pending";
   return (
     <SettingsRow
+      part="device-access"
       label={intent.host_name}
       sub={
         <span className="wrap-anywhere">
@@ -26,12 +28,7 @@ function IntentRow({ intent }: { intent: DeviceIntentInfo }) {
 
 export function DeviceIntents() {
   const transport = useTransport();
-  const intents = useQuery({
-    queryKey: ["device-intents"],
-    queryFn: () => unwrap(transport.deviceIntents()),
-    refetchInterval: 10000,
-    retry: false,
-  });
+  const intents = useDeviceIntents();
   const retry = useMutation({
     mutationFn: () => unwrap(transport.retryDeviceIntents()),
     onSettled: () => intents.refetch(),
@@ -44,6 +41,7 @@ export function DeviceIntents() {
   return (
     <>
       <SettingsRow
+        id="device-access"
         label="Device access on other hosts"
         sub={
           intents.isPending ? (
@@ -71,14 +69,18 @@ export function DeviceIntents() {
         )}
       </SettingsRow>
       {intents.isError && (
-        <InlineMessage tone="error" className="px-4 py-3">
-          {commandErrorText(intents.error, "Couldn’t read device updates.")}
-        </InlineMessage>
+        <div data-settings-part="device-access" className="px-4 py-3">
+          <InlineMessage tone="error">
+            {commandErrorText(intents.error, "Couldn’t read device updates.")}
+          </InlineMessage>
+        </div>
       )}
       {retry.isError && hasIntents && (
-        <InlineMessage tone="error" className="px-4 py-3">
-          {commandErrorText(retry.error, "Couldn’t retry device updates.")}
-        </InlineMessage>
+        <div data-settings-part="device-access" className="px-4 py-3">
+          <InlineMessage tone="error">
+            {commandErrorText(retry.error, "Couldn’t retry device updates.")}
+          </InlineMessage>
+        </div>
       )}
       {intents.data?.map((intent) => (
         <IntentRow key={`${intent.host}/${intent.device}`} intent={intent} />

@@ -9,7 +9,7 @@ StatGlass for iPhone shows live metrics and charts from your computers, includin
 
 ## Pair a host
 
-1. On a Mac, enable **Remote Login** in System Settings and **Allow remote monitoring** in StatGlass Settings. In **Paired devices**, click **Pair iPhone**. On Linux, run `~/.local/bin/statglass-agent pair` as the user who installed the agent, or `sudo /usr/local/bin/statglass-agent pair` for a system install.
+1. On a Mac, enable **Remote Login** in System Settings and **Allow remote monitoring** in StatGlass **Settings → Access**. Under **iPhones**, click **Pair iPhone**. On Linux, run `~/.local/bin/statglass-agent pair` as the user who installed the agent, or `sudo /usr/local/bin/statglass-agent pair` for a system install.
 2. On the iPhone, tap **Add a host**, then **Scan QR**. If you're using the full pairing text printed by the Linux agent, choose **Paste code**, paste the text and tap **Preview host**.
 3. Check the host details and tap **Confirm** on the iPhone. Compare the short code on both devices before approving on the Mac or Linux host. The iPhone gets read-only access to the host's monitoring data.
 
@@ -50,7 +50,7 @@ You can change these permissions in your iPhone's Settings.
 
 On the iPhone, open **Settings → Hosts**, select the host and tap **Remove**. In the confirmation sheet, tap **Remove _host name_**. This removes the saved connection from the iPhone and leaves history on the host.
 
-To revoke the iPhone's key on a Mac, open StatGlass **Settings → Paired devices**, click **Revoke** next to the iPhone and confirm. The Mac also queues revocation on the hosts it shared with the iPhone.
+To revoke the iPhone's key on a Mac, open StatGlass **Settings → Access**, and under **iPhones** click **Revoke** next to the iPhone and confirm. The Mac also queues revocation on the hosts it shared with the iPhone.
 
 On Linux, use the same agent path and account as when you paired. Run the agent with `devices` to find the iPhone's tag, then with `devices revoke TAG`, replacing `TAG` with that tag.
 

@@ -113,7 +113,9 @@ export function UpdateFromMac({
   return controlledOpen !== undefined ? (
     dialog
   ) : (
+    // Settings' Access tab row; the id is its Settings catalog row.
     <SettingsRow
+      id="iphone-host-list"
       label="Host list on iPhone"
       sub="Share the list of hosts this Mac monitors."
     >

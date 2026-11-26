@@ -4,6 +4,12 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Settings redesign: tabs, search, reason links and the history meter (2026-11-26)
+
+`plans/settings-tabs.md` (tags `settings-tabs-phase-1`, `settings-tabs-phase-2`) replaced the two-column Settings page with six path tabs (`/dashboard/settings/<tab>`: General, Menu bar, Monitoring, History, Access, About) under a sticky tab band, following the approved prototype. `?focus=<row id>` scrolls to a row and flashes it, and every link into Settings (popover and sidebar explainers, host cards, the apps card) now names its tab and row. `_lib/catalog.ts` lists every section and row with search keywords; search (⌘F, Return opens the first result, Escape clears) renders the matching tabs' real panels and hides the rest with generated CSS, so a result is the working control. Disabled rows say what unlocks them as a link to that setting, and History leads with a storage meter whose projection is the Keep history row's. No Rust or settings types changed.
+
+- Verified: `bun run check` and `bun run test:e2e` (614 specs) at each phase tag and after the final fixes; the browser dev server on the mock transport in light and dark (every tab, search for "dark", "refresh", "ssh", "bars", "install", "temp" and a no-match query, Return, the meter, the sticky menu-bar preview while scrolling). Every lane, the phase 1 boundary and the final diff were reviewed; findings and rejections are in the plan's Log.
+- Open: search matches catalog rows, so "temp" shows the whole "Values after the bars" block rather than its one temperature switch; the sticky preview was checked in dark only; not checked in the Tauri window.
 ## Hover readouts on module charts; Timeline polish (2026-11-26)
 
 Every module page's area chart (CPU, GPU, Memory, Power & Sensors, Battery) shows the crosshair and the shared chart tooltip on hover, as Network and Disk already did: the point's time and resolution, a row per series and a dot on each drawn line. `StreamHover` (`src/app/components/charts/`) paints it without re-rendering React through `usePaintedHover`, which `MirrorHover` now shares; `ModuleHistoryChart` takes the rows as an opt-in `readout` prop (the Overview's small charts have none), built by `heroReadout` in the desktop's `components/module-hero.ts` from measured values, so Memory's stacked cached line reads its own figure. On the Timeline, the tooltip's top-processes footer keeps its rows while the cursor moves between buckets instead of blanking to "Looking up"; Apps in this range is `rolling` while live, so it no longer collapses and refills every 10 s; and the network lane draws bars, upload above and download below, in the Network page's colours.
@@ -17,6 +23,7 @@ Every module page's area chart (CPU, GPU, Memory, Power & Sensors, Battery) show
 
 - Verified: `make rust-check bindings-check architecture-check`, `cargo test -p statglass-remote -p statglass`, `bun run check` (3107 tests), `make mobile-check` (665 tests); the shipped `handover_host` run against this Mac's real saved hosts and SSH config (all four resolve after the fix); the browser dev server on the mock transport for Add to iPhone, Update iPhone and the approved Pair iPhone summary. Every lane, the phase 1 boundary and the final diff were reviewed; findings and rejections are in the plan's Log.
 - Open: the phone copy was checked in jest only, not in the iOS Simulator; a real pairing from a release build to the iPhone has not been run; a host list large enough to drop the pairing handover may also exceed the Update iPhone QR's capacity (not measured).
+||||||| 8bce8031
 
 ## iPhone app foundations: styling primitives, session boundary, shared module prelude, mock-driven tests (2026-11-25)
 

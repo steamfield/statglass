@@ -1,6 +1,7 @@
 import type { ScenarioName } from "@core/mock/fixtures";
 import { screen, waitFor, within } from "@testing-library/react";
 import { Toaster } from "~/components/ui/sonner";
+import { settingsHref } from "~/lib/settings-links";
 import { renderWithProviders } from "../../../../../tests/test-utils";
 import SettingsRoute from "./route";
 
@@ -10,7 +11,7 @@ function renderSettings(scenarios: ScenarioName[]) {
       <SettingsRoute />
       <Toaster />
     </>,
-    { transportOptions: { scenarios } }
+    { route: settingsHref("history"), transportOptions: { scenarios } }
   );
 }
 

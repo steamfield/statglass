@@ -373,7 +373,10 @@ describe("Network page Apps card (D-089)", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("link", { name: "Turn it on in Settings" })
-    ).toHaveAttribute("href", "/dashboard/settings");
+    ).toHaveAttribute(
+      "href",
+      "/dashboard/settings/history?focus=network-history"
+    );
     const table = await screen.findByRole("table", {
       name: "Network by app, now",
     });

@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
  */
 
 const settingsUrl = (scenario?: string) =>
-  `/?window=dashboard&route=/dashboard/settings&theme=dark${scenario ? `&scenario=${scenario}` : ""}`;
+  `/?window=dashboard&route=/dashboard/settings/monitoring&theme=dark${scenario ? `&scenario=${scenario}` : ""}`;
 
 test("the Settings switch turns the mode on and off", async ({ page }) => {
   await page.goto(settingsUrl());

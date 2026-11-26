@@ -10,7 +10,7 @@ StatGlass lives in the menu bar. Click its item to open the popover, a compact c
 
 ## Menu bar styles
 
-The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip. StatGlass asks you to pick a style on first launch, and you can change it in Settings.
+The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip. StatGlass asks you to pick a style on first launch, and you can change it in Settings → Menu bar.
 
 ## The popover
 

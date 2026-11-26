@@ -75,16 +75,17 @@ for (const theme of THEMES) {
       const errors = trackConsoleErrors(page);
       await page.setViewportSize({ width: 1280, height: 860 });
       await page.goto(
-        `/?window=dashboard&route=/dashboard/settings&theme=${theme}&ticks=0`
+        `/?window=dashboard&route=/dashboard/settings/monitoring&theme=${theme}&ticks=0`
       );
       await expect(
         page.getByRole("heading", { name: "Modules" })
       ).toBeVisible();
-      await expect(page.getByText("148 MB")).toBeVisible();
       await page.screenshot({
         path: shot("settings", theme, info.project.name),
         fullPage: true,
       });
+      const tab = (name: string) => page.getByRole("tab", { name }).click();
+      await tab("Menu bar");
       // Own-item modes in the CPU separate item select (D-080, D-102).
       await page.getByRole("combobox", { name: "CPU separate item" }).click();
       await expect(
@@ -104,10 +105,12 @@ for (const theme of THEMES) {
       });
       await page.keyboard.press("Escape");
 
+      await tab("Monitoring");
       const disk = page.getByRole("switch", { name: "Disk enabled" });
       await expect(disk).toBeChecked();
       await disk.click();
       await expect(disk).not.toBeChecked();
+      await tab("Menu bar");
       await expect(
         page.getByRole("combobox", { name: "Disk separate item" })
       ).toBeDisabled();
@@ -115,10 +118,19 @@ for (const theme of THEMES) {
         page.getByRole("switch", { name: "Show disk used in the menu bar" })
       ).toBeDisabled();
 
-      await page.getByRole("button", { name: "Clear", exact: true }).click();
-      await page.getByRole("button", { name: "Clear history" }).click();
+      await tab("History");
+      await expect(
+        page.getByText("148 MB of recorded history on this Mac.")
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Clear history…" }).click();
+      await page
+        .getByRole("alertdialog")
+        .getByRole("button", { name: "Clear history" })
+        .click();
       await expect(page.getByRole("alertdialog")).toBeHidden();
-      await expect(page.getByText("0 MB", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("0 MB of recorded history on this Mac.")
+      ).toBeVisible();
       expect(errors).toEqual([]);
     });
   });

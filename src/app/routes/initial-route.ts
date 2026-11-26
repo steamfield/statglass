@@ -6,7 +6,7 @@
  *
  * A dashboard window Rust creates for `open_dashboard(route)` loads that
  * route as its URL path (`/dashboard/settings`), so the dashboard starts
- * there instead of Overview.
+ * there instead of Overview, with its query (a Settings `?focus=` row).
  */
 export function initialRoute(
   label: string,
@@ -18,6 +18,6 @@ export function initialRoute(
   if (allowOverride && override?.startsWith("/")) return override;
   if (label === "popover") return "/popover";
   if (label === "onboarding") return "/onboarding";
-  if (pathname.startsWith("/dashboard/")) return pathname;
+  if (pathname.startsWith("/dashboard/")) return pathname + search;
   return "/dashboard/overview";
 }

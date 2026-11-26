@@ -16,7 +16,7 @@ Recorded app usage shows the top ten app groups, sortable by CPU, GPU, RAM, esti
 
 ## How much disk it uses
 
-The default history size limit is 750 MB; change it in Settings. StatGlass keeps resource aggregates in 10-second buckets for 24 hours, one-minute buckets through 7 days and 15-minute buckets through 30 days. The amount of activity and your size limit determine how much history fits, so 30 days is not guaranteed.
+The default history size limit is 750 MB; change it in Settings → History. StatGlass keeps resource aggregates in 10-second buckets for 24 hours, one-minute buckets through 7 days and 15-minute buckets through 30 days. The amount of activity and your size limit determine how much history fits, so 30 days is not guaranteed.
 
 Per-process detail is kept only for processes that used at least 0.1% of a CPU core, any GPU, or 100 MB of RAM; app totals include every process. When history reaches the limit, the oldest process details and recorded app usage go first, and resource charts are trimmed only after that.
 

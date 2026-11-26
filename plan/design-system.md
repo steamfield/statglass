@@ -331,7 +331,7 @@ From opendata's `frontend-design-slop` skill, applied to StatGlass.
 | Desktop widgets | `board-<displayId>` window, route `/board/:display` | `BoardCanvas`, `WidgetFrame`, `SnapGuides`, `ResizeHandles`, `SizeReadout`, `EditPill`, widget components (`CoreHeatmap`, `MirrorBars`, `RingGauge`, `StackBar`) | v2.1 |
 | Onboarding | `onboarding` window, route `/onboarding` | `OnboardingShell`, `ModuleToggleList`, `TrayStyleOption`, `TrayPreview`, `ChipStatus`, `Checkbox` | v1.0 (combined and values options); v1.1 adds the graph-per-module option |
 | Empty, sleep gap and unsupported states | States inside `/dashboard/timeline`, module pages and Overview | `CollectingOverlay`, `GapBand`, `UnsupportedNotice`, `MiniModuleCard` | v1.0 |
-| Settings | `/dashboard/settings` | `SettingsSection`, `SettingsRow`, `ModuleSettingsTable`, `Select`, `Switch`, `SegmentedControl`, `HistorySizeRow` | v1.0; Menu bar panel (preview, bars, readouts, separate items) replaces the per-module select (D-102) |
+| Settings | `/dashboard/settings/<tab>` (General, Menu bar, Monitoring, History, Access, About), `?focus=<row id>` scrolls to and flashes a row | `SettingsTabs`, `SettingsSearch` (on `SearchField`), `SearchResults`, `SettingsPanel`, `SettingsRow`, `SettingsLink`, `HistoryMeter`, `ModuleSettingsTable`, `Select`, `Switch`, `SegmentedControl` | v1.0; Menu bar panel (preview, bars, readouts, separate items) replaces the per-module select (D-102); tabs, search over `_lib/catalog.ts`, reason links and the storage meter replace the two-column page (`plans/settings-tabs.md`) |
 | Popover panel | Component used by `/popover` | as the popover | v1.0 |
 | Dashboard sidebar | Component used by every `/dashboard/*` route | `Sidebar`, `SidebarItem`, `SidebarFooter` | v1.0 (Widgets entry hidden until v2.0) |
 | GPU page | `/dashboard/gpu` | `StatStrip`, `StreamArea`, `RingStatCard`, `InlineBar`, `StackBar` (frequency residency), `ProcessTable` (v1.2) | v1.0 |
@@ -399,12 +399,12 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `StatusPill` | Dot plus short label | yes | `{ state: 'live' \| 'paused' \| 'stale'; label }` |
 | `Sidebar`, `SidebarItem` | Dashboard navigation with live values; `attention` is a bordered count (a dot when collapsed) for something that needs the user, such as hosts behind this Mac; `busy` is a still live dot in the value slot for work in progress, such as a running space scan; a group's `label` titles it | no | `{ groups: { label?; items: { route; label; icon; value?: string; attention?: { count; label }; busy?: { label } }[] }[]; active }` |
 | `MachineHeader` | Illustration plus spec grid | no | `{ hostInfo: HostInfo; uptimeMs; lastWakeMs }` |
-| `PopoverHeader`, `PopoverFooter` | App title, interval pill, pause, settings; CTA row and self-CPU readout | no | `{ hostName; uptimeMs; intervalMs; paused; onPause; onSettings }`, `{ selfCpuPct; onOpenDashboard; onActivity }` |
+| `PopoverHeader`, `PopoverFooter` | App title, interval pill, pause, settings; CTA row and self-CPU readout | no | `{ hostName; uptimeMs; intervalMs; paused; onPause; onSettings; onPerformanceSettings }`, `{ selfCpuPct; onOpenDashboard; onActivity }` |
 | `StatGlassMark` | The brand mark (4 x 4 heat grid in the CPU accent, `brand/statglass-icon.svg`): popover header, onboarding title, top of the dashboard sidebar | no | `{ className }` |
 | `TrayPreview` | Simulated menu bar drawn from a `TrayLayout` (`trayLayout(menuBar, enabled, readings, units)`) | no | `{ layout: TrayLayout; clock?: string }` |
 | `TrayStyleOption` | Selectable card with TrayPreview | no | `{ style; title; description; recommended?: boolean; selected; onSelect }` |
 | `ModuleToggleList` | Module rows with swatch, description, switch | no | `{ modules: { id; label; description; enabled; available }[]; onToggle }` |
-| `SettingsRow` | Label, optional sub, control slot | no | `{ label; sub?: string; children }` |
+| `SettingsRow` | Label, optional sub, control slot; `id` is its catalog row (`data-settings-row`), `nested` indents it under the row it depends on, `part` ties untagged context to a catalog row for search | no | `{ label; sub?: ReactNode; htmlFor?; children; id?; nested?: boolean; part? }` |
 | `CollectingOverlay` | Empty-history notice over lanes | no | `{ startedMs; recordedMs; retentionDays }` |
 | `UnsupportedNotice` | Unknown-chip explanation with dump action | no | `{ modelId; hiddenModules: ModuleId[]; onShareDump }` |
 | `WidgetInspector`, `WidgetLibrary`, `ComposerPreview` | Composer panes | no | Defined in v2.0 against the widget manifest |

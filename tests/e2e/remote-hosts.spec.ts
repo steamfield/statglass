@@ -153,6 +153,7 @@ for (const theme of ["light", "dark"]) {
     await expect(
       page.getByRole("combobox", { name: "Selected machine" })
     ).toContainText("Studio Mac");
+    await page.getByRole("tab", { name: /^Access/ }).click();
     await expect(
       page.getByRole("switch", { name: "Allow remote monitoring", exact: true })
     ).toBeVisible();

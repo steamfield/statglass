@@ -113,7 +113,7 @@ test("dashboard pages, dialog and select run under the shipped CSP", async ({
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   // Settings: Radix select injects a <style> for its viewport.
-  await page.goto(`${ORIGIN}/dashboard/settings`);
+  await page.goto(`${ORIGIN}/dashboard/settings/menu-bar`);
   await page.getByRole("combobox").first().click();
   await expect(page.getByRole("listbox")).toBeVisible();
   await page.keyboard.press("Escape");

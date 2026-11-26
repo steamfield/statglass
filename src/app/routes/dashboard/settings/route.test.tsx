@@ -4,8 +4,14 @@ import { createMockTransport } from "@core/mock-transport";
 import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from "@core/star-prompt";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { Toaster } from "~/components/ui/sonner";
+import { settingsHref } from "~/lib/settings-links";
 import { renderWithProviders } from "../../../../../tests/test-utils";
 import SettingsRoute from "./route";
+
+/** Matches the element whose whole text is `text`, even when links split it. */
+const wholeText = (text: string) => (_: string, el: Element | null) =>
+  el?.textContent === text &&
+  ![...el.children].some((child) => child.textContent === text);
 
 const LIMITED = /Limited to about \d+ days by the 150 MB limit/;
 
@@ -29,7 +35,9 @@ const overhead = () => {
 
 describe("Settings menu bar", () => {
   it("offers each module its own-item modes and writes the choice", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("menu-bar"),
+    });
     await user.click(
       await screen.findByRole("combobox", { name: "CPU separate item" })
     );
@@ -54,7 +62,9 @@ describe("Settings menu bar", () => {
   });
 
   it("a value switch writes one readout and shows in the preview", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("menu-bar"),
+    });
     const power = await screen.findByRole("switch", {
       name: "Show power in the menu bar",
     });
@@ -74,7 +84,9 @@ describe("Settings menu bar", () => {
   });
 
   it("a bar segment writes only the bar it changed", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("menu-bar"),
+    });
     const bars = await screen.findByRole("toolbar", {
       name: "Bars in the menu bar",
     });
@@ -88,7 +100,9 @@ describe("Settings menu bar", () => {
   });
 
   it("disables what an off module would show, keeping the stored choice", async () => {
-    const { transport } = renderWithProviders(<SettingsRoute />);
+    const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("menu-bar"),
+    });
     await screen.findByRole("switch", { name: "Show power in the menu bar" });
     await act(() =>
       transport.updateSettings({ modules: { power: { enabled: false } } })
@@ -99,7 +113,9 @@ describe("Settings menu bar", () => {
     await waitFor(() => expect(temp).toBeDisabled());
     expect(temp).not.toBeChecked();
     expect(
-      screen.getAllByText("Turn on Power & Sensors in Modules to use this")
+      screen.getAllByText(
+        wholeText("Turn on Power & Sensors in Monitoring to use this")
+      )
     ).not.toHaveLength(0);
     expect(
       (await transport.getSettings()).settings.menu_bar?.readouts.temperature
@@ -107,7 +123,9 @@ describe("Settings menu bar", () => {
   });
 
   it("warns past the notch width and drops an empty combined item", async () => {
-    const { transport } = renderWithProviders(<SettingsRoute />);
+    const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("menu-bar"),
+    });
     await screen.findByRole("switch", { name: "Show power in the menu bar" });
     const WIDE = /hidden behind the camera on MacBooks with a notch/;
     expect(screen.queryByText(WIDE)).toBeNull();
@@ -146,7 +164,9 @@ describe("Settings menu bar", () => {
 
 describe("Settings Performance mode (D-088)", () => {
   it("lists what it changes, writes the switch and holds the battery row", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("monitoring"),
+    });
     const toggle = await screen.findByRole("switch", {
       name: "Performance mode",
     });
@@ -173,7 +193,9 @@ describe("Settings Performance mode (D-088)", () => {
     });
     await waitFor(() => expect(battery).toBeDisabled());
     expect(battery).toBeChecked();
-    expect(screen.getByText("Set by Performance mode")).toBeInTheDocument();
+    expect(
+      screen.getByText(wholeText("Set by Performance mode"))
+    ).toBeInTheDocument();
     // The stored value is kept, so turning the mode off restores it.
     expect(
       (await transport.getSettings()).settings.sampling.slow_on_battery
@@ -181,7 +203,9 @@ describe("Settings Performance mode (D-088)", () => {
   });
 
   it("names the next lever: own menu bar items before the interval", async () => {
-    const { transport } = renderWithProviders(<SettingsRoute />);
+    const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("monitoring"),
+    });
     await screen.findByRole("switch", { name: "Performance mode" });
     await transport.updateSettings({
       menu_bar: { items: { cpu: "graph" } },
@@ -202,6 +226,7 @@ describe("Settings Performance mode (D-088)", () => {
 
   it("is on and locked while Low Power Mode holds it", async () => {
     const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("monitoring"),
       transportOptions: { scenarios: ["low-power-mode"] },
     });
     const toggle = await screen.findByRole("switch", {
@@ -220,7 +245,9 @@ describe("Settings Performance mode (D-088)", () => {
 
 describe("Settings sampling and history", () => {
   it("offers every interval and follows the battery slow-down to it", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("monitoring"),
+    });
     await screen.findByText("Sample interval");
     for (const label of ["0.5s", "1s", "2s", "5s", "10s", "30s", "60s"]) {
       expect(screen.getByRole("radio", { name: label })).toBeInTheDocument();
@@ -235,7 +262,9 @@ describe("Settings sampling and history", () => {
   });
 
   it("includes retained process identities when a cap shortens requested history", async () => {
-    const { transport } = renderWithProviders(<SettingsRoute />);
+    const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
+    });
     await screen.findByText("Keep history");
     expect(screen.queryByText(LIMITED)).toBeNull();
 
@@ -260,6 +289,7 @@ describe("Settings sampling and history", () => {
 
   it("projects history from what this Mac's history measured", async () => {
     renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
       transportOptions: {
         historyGrowth: {
           measured_ms: 12 * 3_600_000,
@@ -275,6 +305,7 @@ describe("Settings sampling and history", () => {
 
   it("falls back to the fill-test model before an hour is recorded", async () => {
     const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
       transportOptions: { historyGrowth: null },
     });
     await waitFor(() =>
@@ -289,6 +320,7 @@ describe("Settings sampling and history", () => {
   it("measures StatGlass's CPU again after the interval changes", async () => {
     let t = 1_800_000_000_000;
     const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("monitoring"),
       transportOptions: { now: () => t },
     });
     const advance = (ms: number, ticks: number) =>
@@ -322,6 +354,7 @@ describe("Settings sampling and history", () => {
   it("quotes no CPU figure while sampling is paused", async () => {
     let t = 1_800_000_000_000;
     const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("monitoring"),
       transportOptions: { now: () => t },
     });
     await screen.findByText("Measuring StatGlass's CPU at 1s…");
@@ -339,7 +372,9 @@ describe("Settings sampling and history", () => {
   });
 
   it("Network history is on by default and turns off through update_settings (D-089)", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
+    });
     const toggle = await screen.findByRole("switch", {
       name: "Network history",
     });
@@ -363,16 +398,19 @@ describe("Settings sampling and history", () => {
 
   it("has no Network history row without per-app network access", async () => {
     renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
       transportOptions: { scenarios: ["no-process-network"] },
     });
-    await screen.findByRole("switch", { name: "Slow down on battery" });
+    await screen.findByRole("combobox", { name: "History size limit" });
     expect(
       screen.queryByRole("switch", { name: "Network history" })
     ).toBeNull();
   });
 
   it("starts at 750 MB and offers every supported history cap", async () => {
-    const { user } = renderWithProviders(<SettingsRoute />);
+    const { user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
+    });
     const control = await screen.findByRole("combobox", {
       name: "History size limit",
     });
@@ -386,12 +424,18 @@ describe("Settings sampling and history", () => {
   it("preserves a saved 150 MB cap when settings is reopened", async () => {
     const transport = createMockTransport();
     await transport.updateSettings({ history: { size_limit_mb: 150 } });
-    const first = renderWithProviders(<SettingsRoute />, { transport });
+    const first = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
+      transport,
+    });
     expect(
       await screen.findByRole("combobox", { name: "History size limit" })
     ).toHaveTextContent("150 MB");
     first.unmount();
-    renderWithProviders(<SettingsRoute />, { transport });
+    renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
+      transport,
+    });
     expect(
       await screen.findByRole("combobox", { name: "History size limit" })
     ).toHaveTextContent("150 MB");
@@ -402,7 +446,9 @@ describe("Settings sampling and history", () => {
   });
 
   it("writes the size limit through update_settings", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
+    });
     await user.click(
       await screen.findByRole("combobox", { name: "History size limit" })
     );
@@ -417,6 +463,7 @@ describe("Settings sampling and history", () => {
 
   it("shows the low-disk warning and the trim note, and drops them on the event", async () => {
     const { transport } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
       transportOptions: { scenarios: ["low-disk", "history-trimmed"] },
     });
     const warning = await screen.findByText(/History paused: disk almost full/);
@@ -442,6 +489,7 @@ describe("Settings sampling and history", () => {
 
   it("shows the unavailable banner when there is no store", async () => {
     renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("history"),
       transportOptions: { scenarios: ["history-unavailable"] },
     });
     expect(
@@ -456,7 +504,8 @@ describe("Settings feedback and support", () => {
       <>
         <SettingsRoute />
         <Toaster />
-      </>
+      </>,
+      { route: settingsHref("about") }
     );
     // After render: user-event installs its own clipboard during setup.
     const writeText = vi
@@ -495,7 +544,8 @@ describe("Settings feedback and support", () => {
       <>
         <SettingsRoute />
         <Toaster />
-      </>
+      </>,
+      { route: settingsHref("about") }
     );
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
       new Error("denied")

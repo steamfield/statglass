@@ -18,6 +18,7 @@
  *   --motion-stagger     40ms  delay step between entering items, index capped
  *   --motion-crossfade  150ms  keyed state swap, threshold colour change
  *   --motion-scan       900ms  one pass of the chart loading mark along the baseline
+ *   --motion-flash     1400ms  a Settings row a link brought into view fading out
  *   --ease-out          decelerating, no overshoot (also drives the `ease-out` utility)
  *   --ease-enter        quartic decelerate for page entrances: slower to land
  *                       than expo-out, so the settle is seen rather than a pop
@@ -50,6 +51,7 @@
   --motion-stagger: 0ms;
   --motion-crossfade: 0ms;
   --motion-scan: 0ms;
+  --motion-flash: 0ms;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -63,6 +65,7 @@
     --motion-stagger: 40ms;
     --motion-crossfade: 150ms;
     --motion-scan: 900ms;
+    --motion-flash: 1400ms;
   }
 }
 
@@ -79,9 +82,34 @@
   --motion-stagger: 0ms;
   --motion-crossfade: 0ms;
   --motion-scan: 0ms;
+  --motion-flash: 0ms;
 }
 
 :root[data-performance] [data-sonner-toast] {
   transition: none;
   animation: none;
+}
+
+/* A Settings row a link brought into view (`useFocusRow` sets `data-flash`
+   until the fade ends). With motion allowed it fades from a primary tint over
+   --motion-flash; under Reduce Motion or Performance mode it holds the
+   selected tint instead, for a fixed hold in `useFocusRow`. */
+[data-flash] {
+  background-color: var(--color-selected);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-performance]) [data-flash] {
+    background-color: transparent;
+    animation: settings-row-flash var(--motion-flash) var(--ease-out);
+  }
+}
+
+@keyframes settings-row-flash {
+  from {
+    background-color: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
 }

@@ -1,326 +1,195 @@
-import type { MenuBarSettings, Readout, Settings } from "@core/generated/types";
-import { READOUTS } from "@core/generated/types";
+/**
+ * The Menu bar tab's panel (D-102): whether the menu-bar icon shows, a live
+ * preview of it, then the three independent choices it is built from. Bars,
+ * the values printed after them, and modules' separate items. Every control
+ * writes a one-key patch.
+ */
+import type { MenuBarSettings, Settings } from "@core/generated/types";
 import {
   type ModulePresence,
   modulePresence,
   unavailableText,
 } from "@core/module-state";
-import {
-  barPatch,
-  itemModeLabel,
-  itemModes,
-  itemPatch,
-  menuBarOf,
-  readoutPatch,
-  SETTINGS_MODULES,
-  type SettingsModule,
-} from "@core/settings-patch";
+import { menuBarOf, type SettingsModule } from "@core/settings-patch";
 import {
   combinedWidthPt,
-  pctText,
-  rateLine,
-  readoutModule,
-  type TrayMarker,
-  type TrayReadings,
-  type TrayUnits,
-  tempText,
+  type TrayLayout,
   trayLayout,
   WIDE_ITEM_PT,
-  wattsText,
 } from "@core/tray-layout";
-import { SettingsPanel } from "~/components/settings-row";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
+import type { ReactNode } from "react";
+import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Switch } from "~/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { useHostNoun } from "~/hooks/use-host-record";
 import { useTrayReadings, useTrayUnits } from "~/hooks/use-tray-readings";
 import { useWriteSettings } from "~/hooks/use-write-settings";
-import { cn } from "~/lib/utils";
 import { useHost } from "~/stores/host-store";
-import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { MODULE_META } from "~/widgets/lib/module-meta";
-import { TrayMarkerIcon, TrayPreview } from "~/widgets/tray-preview";
+import { TrayPreview } from "~/widgets/tray-preview";
+import { BAR_MODULES, MenuBarBars } from "./menu-bar-bars";
+import { MenuBarItems } from "./menu-bar-items";
+import { MenuBarValues } from "./menu-bar-values";
+import { SettingsLink } from "./settings-link";
 
-const BAR_MODULES = ["cpu", "gpu", "memory"] as const;
+/**
+ * Why a module's menu-bar controls are disabled: the module can't run here
+ * (`absent`, with the presence text), or it is turned off in Monitoring.
+ * `ending` finishes the sentence ("to use this", "to show its bar").
+ */
+type DisabledReason =
+  | { kind: "absent"; text: string }
+  | { kind: "off"; modules: readonly SettingsModule[]; ending: string };
 
-const READOUT_ROWS: Record<
-  Readout,
-  { name: string; spoken: string; marker: TrayMarker }
-> = {
-  cpu: { name: "CPU", spoken: "CPU", marker: { kind: "label", text: "CPU" } },
-  gpu: { name: "GPU", spoken: "GPU", marker: { kind: "label", text: "GPU" } },
-  memory: {
-    name: "Memory",
-    spoken: "memory",
-    marker: { kind: "label", text: "MEM" },
-  },
-  temperature: {
-    name: "Hottest temperature",
-    spoken: "the hottest temperature",
-    marker: { kind: "none" },
-  },
-  power: {
-    name: "Power",
-    spoken: "power",
-    marker: { kind: "glyph", glyph: "bolt" },
-  },
-  network: {
-    name: "Network",
-    spoken: "network rates",
-    marker: { kind: "none" },
-  },
-  disk: {
-    name: "Disk used",
-    spoken: "disk used",
-    marker: { kind: "glyph", glyph: "drive" },
-  },
-  battery: {
-    name: "Battery",
-    spoken: "battery",
-    marker: { kind: "label", text: "BAT" },
-  },
-};
+const ROW_ENDING = "to use this";
 
-/** What the readout prints now, as the menu bar formats it. */
-function readoutValue(r: Readout, v: TrayReadings, units: TrayUnits): string {
-  switch (r) {
-    case "cpu":
-      return pctText(v.cpu);
-    case "gpu":
-      return pctText(v.gpu);
-    case "memory":
-      return pctText(v.mem);
-    case "temperature":
-      return tempText(v.temp, units.temperature);
-    case "power":
-      return wattsText(v.power);
-    case "network":
-      return `↑ ${rateLine(v.netUp, units.network)}  ↓ ${rateLine(v.netDown, units.network)}`;
-    case "disk":
-      return pctText(v.diskUsed);
-    case "battery":
-      return pctText(v.battery);
-  }
-}
-
-/** Why a module's controls are disabled, or null when they are not. */
-function offText(
+/** The reason a module's row is disabled, or null when it is not. */
+function moduleReason(
   m: SettingsModule,
   presence: ModulePresence,
   enabled: boolean,
   noun: "Mac" | "host"
-) {
+): DisabledReason | null {
   const absence = unavailableText(presence, noun);
-  if (absence !== null) return absence;
-  if (!enabled) return `Turn on ${MODULE_META[m].name} in Modules to use this`;
+  if (absence !== null) return { kind: "absent", text: absence };
+  if (!enabled) return { kind: "off", modules: [m], ending: ROW_ENDING };
   return null;
 }
 
-/** The marker column: the readout's marker as the menu bar draws it, muted. */
-function MarkerCell({ readout }: { readout: Readout }) {
-  const { marker } = READOUT_ROWS[readout];
+/** Why the bars of these off modules can't be picked, or null for none. */
+function barsReason(off: readonly SettingsModule[]): DisabledReason | null {
+  if (off.length === 0) return null;
+  const ending = off.length === 1 ? "to show its bar" : "to show their bars";
+  return { kind: "off", modules: off, ending };
+}
+
+/** "GPU", "GPU and Memory", "CPU, GPU and Memory". */
+function moduleNames(modules: readonly SettingsModule[]): string {
+  const names = modules.map((m) => MODULE_META[m].name);
+  const last = names.pop() ?? "";
+  return names.length === 0 ? last : `${names.join(", ")} and ${last}`;
+}
+
+/**
+ * A disabled reason as copy, or null for none. "Monitoring" links to the
+ * first named module's row there, so the fix is one click away.
+ */
+function reasonText(reason: DisabledReason | null): ReactNode {
+  if (reason === null) return null;
+  if (reason.kind === "absent") return reason.text;
+  const [first] = reason.modules;
   return (
-    <span
-      aria-hidden
-      className="flex w-5 shrink-0 items-center justify-center text-muted-foreground"
-    >
-      {readout === "network" ? (
-        <span className="font-tray text-label">↑↓</span>
-      ) : readout === "temperature" ? (
-        <span className="font-tray text-label">°</span>
-      ) : (
-        <TrayMarkerIcon marker={marker} />
-      )}
-    </span>
+    <>
+      Turn on {moduleNames(reason.modules)} in{" "}
+      <SettingsLink tab="monitoring" row={`module-${first}`}>
+        Monitoring
+      </SettingsLink>{" "}
+      {reason.ending}
+    </>
   );
 }
 
-const ROW =
-  "flex min-h-10 items-center gap-3 border-border-subtle border-b px-4 text-body";
+/** Show menu-bar icon, and while it is off, why the rest is locked. */
+function ShowIconRow({ shown }: { shown: boolean }) {
+  const write = useWriteSettings();
+  return (
+    <>
+      <SettingsRow
+        id="show-menu-bar-icon"
+        label="Show menu-bar icon"
+        sub="Open StatGlass from Finder to show its dashboard when hidden."
+      >
+        <Switch
+          checked={shown}
+          aria-label="Show menu-bar icon"
+          onCheckedChange={(on) => write({ general: { show_menu_bar: on } })}
+        />
+      </SettingsRow>
+      {!shown && (
+        <p className="border-border-subtle border-b px-4 py-2 font-normal text-muted-foreground text-small">
+          Turn on Show menu-bar icon to change what it shows.
+        </p>
+      )}
+    </>
+  );
+}
 
 /**
- * "Menu bar" (D-102): a live preview of the menu bar, then the three
- * independent choices it is built from. Bars, the values printed after
- * them, and modules' separate items. Every control writes a one-key patch.
+ * The menu bar as it would look now, stuck under the Settings header
+ * (`--settings-sticky-top`, set by the route) while the choices scroll.
+ */
+function MenuBarPreview({ layout }: { layout: TrayLayout }) {
+  const wide = combinedWidthPt(layout.combined) > WIDE_ITEM_PT;
+  return (
+    <div
+      data-testid="menu-bar-preview"
+      className="sticky top-[var(--settings-sticky-top,0px)] z-10 flex flex-col gap-2 border-border-subtle border-b bg-card px-4 py-3"
+    >
+      <TrayPreview layout={layout} />
+      {wide && (
+        <span className="font-normal text-muted-foreground text-small">
+          Wide items can end up hidden behind the camera on MacBooks with a
+          notch.
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Menu bar": the icon switch, the preview, then bars, values and separate
+ * items. While the icon is hidden those choices are kept but locked.
  */
 export function MenuBarPanel({
   modules,
   menuBar: stored,
+  general,
 }: {
   modules: Settings["modules"];
   menuBar: MenuBarSettings | undefined;
+  general: Settings["general"];
 }) {
   const menuBar = menuBarOf({ menu_bar: stored });
   const caps = useHost((s) => s.capabilities);
-  const write = useWriteSettings();
   const readings = useTrayReadings();
   const units = useTrayUnits();
   const noun = useHostNoun();
+  const iconShown = general.show_menu_bar ?? true;
+  const locked = !iconShown;
 
   const presence = (m: SettingsModule) =>
     modulePresence(caps?.modules[m], caps !== null);
   const enabled = (m: SettingsModule) =>
     presence(m) === "present" && (modules[m]?.enabled ?? false);
-
-  const layout = trayLayout(menuBar, enabled, readings, units);
-  const wide = combinedWidthPt(layout.combined) > WIDE_ITEM_PT;
-
-  const barsOn = BAR_MODULES.filter((m) => enabled(m) && menuBar.bars[m]);
-  const barsOff = BAR_MODULES.filter((m) => !enabled(m));
+  const moduleOffReason = (m: SettingsModule) =>
+    reasonText(moduleReason(m, presence(m), enabled(m), noun));
+  // Only modules this host has can be turned on; an absent one says so in
+  // its own value and item rows.
+  const barsOff = BAR_MODULES.filter(
+    (m) => presence(m) === "present" && !enabled(m)
+  );
 
   return (
-    <SettingsPanel title="Menu bar" overflow="visible">
-      <div
-        data-testid="menu-bar-preview"
-        className="sticky top-0 z-10 flex flex-col gap-2 rounded-t-card border-border-subtle border-b bg-card px-4 py-3"
-      >
-        <TrayPreview layout={layout} />
-        {wide && (
-          <span className="font-normal text-muted-foreground text-small">
-            Wide items can end up hidden behind the camera on MacBooks with a
-            notch.
-          </span>
-        )}
-      </div>
-
-      <div className="flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-body">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2">
-          <span>Bars</span>
-          {barsOff.length > 0 && (
-            <span className="font-normal text-muted-foreground text-small">
-              {barsOffText(barsOff)}
-            </span>
-          )}
-        </div>
-        <ToggleGroup
-          type="multiple"
-          size="sm"
-          aria-label="Bars in the menu bar"
-          value={[...barsOn]}
-          onValueChange={(next) => {
-            for (const m of BAR_MODULES) {
-              const on = next.includes(m);
-              if (on !== barsOn.includes(m)) write(barPatch(m, on));
-            }
-          }}
-        >
-          {BAR_MODULES.map((m) => (
-            <ToggleGroupItem
-              key={m}
-              value={m}
-              disabled={!enabled(m)}
-              className="px-2.5"
-            >
-              {MODULE_META[m].name}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
-      <div className={cn(FIELD_LABEL, "px-4 pt-3 pb-1")}>
-        Values after the bars
-      </div>
-      {READOUTS.map((r) => {
-        const m = readoutModule(r);
-        const off = offText(m, presence(m), enabled(m), noun);
-        const row = READOUT_ROWS[r];
-        const id = `settings-readout-${r}`;
-        return (
-          <div key={r} className={ROW}>
-            <MarkerCell readout={r} />
-            <div className="flex min-w-0 flex-1 flex-col py-2">
-              <label
-                htmlFor={id}
-                className={cn(off && "text-muted-foreground")}
-              >
-                {row.name}
-              </label>
-              {off && (
-                <span className="font-normal text-muted-foreground text-small">
-                  {off}
-                </span>
-              )}
-            </div>
-            {!off && (
-              <span className="figures whitespace-pre text-muted-foreground text-small">
-                {readoutValue(r, readings, units)}
-              </span>
-            )}
-            <Switch
-              id={id}
-              checked={!off && menuBar.readouts[r]}
-              disabled={off !== null}
-              aria-label={`Show ${row.spoken} in the menu bar`}
-              onCheckedChange={(on) => write(readoutPatch(r, on))}
-            />
-          </div>
-        );
-      })}
-
-      <div className={cn(FIELD_LABEL, "px-4 pt-3 pb-1")}>Separate items</div>
-      {SETTINGS_MODULES.map((m) => {
-        const off = offText(m, presence(m), enabled(m), noun);
-        const id = `settings-item-${m}`;
-        return (
-          <div key={m} className={ROW}>
-            <div className="flex min-w-0 flex-1 flex-col py-2">
-              <label
-                htmlFor={id}
-                className={cn(off && "text-muted-foreground")}
-              >
-                {MODULE_META[m].name}
-              </label>
-              {off && (
-                <span className="font-normal text-muted-foreground text-small">
-                  {off}
-                </span>
-              )}
-            </div>
-            <Select
-              value={off ? "off" : menuBar.items[m]}
-              disabled={off !== null}
-              onValueChange={(mode) =>
-                write(itemPatch(m, mode as MenuBarSettings["items"][typeof m]))
-              }
-            >
-              <SelectTrigger
-                id={id}
-                size="sm"
-                aria-label={`${MODULE_META[m].name} separate item`}
-                className="w-[150px] px-2 text-small"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {itemModes(m).map((mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {itemModeLabel(m, mode)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        );
-      })}
-      <p className="px-4 py-3 font-normal text-muted-foreground text-small">
-        Each gets its own place in the menu bar, left of the bars. ⌘-drag to
-        reorder.
-      </p>
+    <SettingsPanel id="menu-bar" title="Menu bar" overflow="visible">
+      <ShowIconRow shown={iconShown} />
+      <MenuBarPreview layout={trayLayout(menuBar, enabled, readings, units)} />
+      <MenuBarBars
+        bars={menuBar.bars}
+        enabled={enabled}
+        offReason={reasonText(barsReason(barsOff))}
+        locked={locked}
+      />
+      <MenuBarValues
+        readouts={menuBar.readouts}
+        offReason={moduleOffReason}
+        locked={locked}
+        readings={readings}
+        units={units}
+      />
+      <MenuBarItems
+        items={menuBar.items}
+        offReason={moduleOffReason}
+        locked={locked}
+      />
     </SettingsPanel>
   );
-}
-
-function barsOffText(off: readonly (typeof BAR_MODULES)[number][]): string {
-  const names = off.map((m) => MODULE_META[m].name);
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `Turn on ${list} in Modules to show ${names.length === 1 ? "its bar" : "their bars"}`;
 }
