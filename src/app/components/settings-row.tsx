@@ -11,7 +11,10 @@ export interface SettingsRowProps {
   children?: ReactNode;
   /** Settings catalog row id (`data-settings-row`), for search and focus links. */
   id?: string;
-  /** Indents a row that depends on the one above it, with a connector. */
+  /**
+   * Indents a row that depends on the one above it, with a connector, and
+   * marks it `data-nested` so search results can show it flat.
+   */
   nested?: boolean;
 }
 
@@ -32,6 +35,7 @@ export function SettingsRow({
   return (
     <div
       data-settings-row={id}
+      data-nested={nested ? "" : undefined}
       className={cn(
         "flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-body last:border-b-0",
         // 32 px inset with a hairline elbow from the row above.

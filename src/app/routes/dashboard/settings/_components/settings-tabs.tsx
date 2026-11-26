@@ -31,14 +31,18 @@ function waitingName(label: string, waiting: number): string | undefined {
 
 /**
  * The tab bar for Settings, controlled by `value`. Arrow keys move the
- * selection and activate the tab they land on.
+ * selection and activate the tab they land on. While `searching`, the
+ * results replace the tab panel, so the tabs leave the Tab order and stop
+ * pointing at a panel, but stay in the accessibility tree.
  */
 export function SettingsTabs({
   value,
   onValueChange,
+  searching = false,
 }: {
   value: SettingsTabId;
   onValueChange: (tab: SettingsTabId) => void;
+  searching?: boolean;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const underlineRef = useRef<HTMLSpanElement>(null);
@@ -76,6 +80,8 @@ export function SettingsTabs({
       <TabsPrimitive.List
         ref={listRef}
         aria-label="Settings sections"
+        // Radix also makes the list a Tab stop that hands focus to a tab.
+        tabIndex={searching ? -1 : undefined}
         className="relative flex gap-5 overflow-x-auto"
       >
         {SETTINGS_TABS.map((tab) => (
@@ -83,7 +89,8 @@ export function SettingsTabs({
             key={tab.id}
             value={tab.id}
             id={settingsTabTriggerId(tab.id)}
-            aria-controls={SETTINGS_TABPANEL_ID}
+            aria-controls={searching ? undefined : SETTINGS_TABPANEL_ID}
+            tabIndex={searching ? -1 : undefined}
             aria-label={
               tab.id === "access" ? waitingName(tab.label, waiting) : undefined
             }
