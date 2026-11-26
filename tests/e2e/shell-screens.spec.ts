@@ -231,6 +231,8 @@ test("fixed-range Overview headers stay aligned at 300 px through live ticks", a
   await expect(
     page.getByText("Loading chart history…", { exact: true })
   ).toHaveCount(0);
+  // Read each sample before the next tick can replace its network rate.
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   const network = page
     .getByRole("main")
     .getByRole("link", { name: "Network", exact: true });
