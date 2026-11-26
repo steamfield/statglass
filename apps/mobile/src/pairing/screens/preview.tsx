@@ -1,9 +1,10 @@
 import type { PairingPreview } from "@core/generated/types";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
+import { Button } from "@/ui/button";
+import { Card } from "@/ui/card";
 import { Icon, type IconName } from "@/ui/icons";
 import { Text } from "@/ui/text";
-import { PairAction } from "./action";
 import { PairingStep } from "./pairing-step";
 
 const GLYPHS = new Map<string, IconName>([["macos", "apple.logo"]]);
@@ -43,12 +44,12 @@ export function Preview({
       explanation="Confirm this is the host you want to add."
       actions={
         <>
-          <PairAction label="Confirm" onPress={confirm} />
-          <PairAction label="Cancel" secondary onPress={cancel} />
+          <Button label="Confirm" onPress={confirm} />
+          <Button label="Cancel" variant="secondary" onPress={cancel} />
         </>
       }
     >
-      <View className="gap-2 rounded-xl border border-border bg-card p-4">
+      <Card padding="lg" className="gap-2">
         <View className="flex-row items-center gap-2">
           <Icon name={glyph} size={20} />
           <Text variant="title" className="shrink">
@@ -67,7 +68,7 @@ export function Preview({
         )}
         <Text variant="cardFigure">{offer.code}</Text>
         <Countdown expires={offer.expires_ms} />
-      </View>
+      </Card>
     </PairingStep>
   );
 }

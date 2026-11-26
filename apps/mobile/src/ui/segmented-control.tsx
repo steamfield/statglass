@@ -50,7 +50,7 @@ export function SegmentedControl<V extends string | number>({
               accessibilityRole="tab"
               accessibilityLabel={`${label}, ${accessibilityLabel}`}
               accessibilityState={{ selected }}
-              className="min-h-[44px] min-w-[44px] flex-1 items-center justify-center px-1 py-2 active:opacity-70"
+              className="min-h-touch min-w-touch flex-1 items-center justify-center px-1 py-2 active:opacity-70"
               onPress={() => onChange(segment)}
             >
               <Text

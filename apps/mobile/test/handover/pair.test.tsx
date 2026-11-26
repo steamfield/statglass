@@ -15,8 +15,8 @@ import { PairingProvider } from "@/data/pairing-context";
 import { PairSelection } from "@/handover/pair-selection";
 import { PairingFlow } from "@/pairing";
 import { afterPair } from "@/pairing/after-pair";
-import { PairAction } from "@/pairing/screens/action";
 import { createNativeTransport, nativePairing } from "@/transport";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
 
 function offered(id: string, name: string): OfferedHost {
@@ -220,7 +220,7 @@ test.each([
     function Pair() {
       const router = useRouter();
       return (
-        <PairAction
+        <Button
           label="Finish pairing"
           onPress={() => afterPair(router, result)}
         />

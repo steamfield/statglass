@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { TextInput } from "react-native";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
-import { PairAction } from "./action";
 import { PairingStep } from "./pairing-step";
 
 const PAIRING_COPY = {
@@ -38,14 +38,10 @@ export function Paste({
       embedded={copy !== PAIRING_COPY}
       actions={
         <>
-          <PairAction
-            label={copy.submit}
-            disabled={checking}
-            onPress={submit}
-          />
-          <PairAction
+          <Button label={copy.submit} disabled={checking} onPress={submit} />
+          <Button
             label="Cancel"
-            secondary
+            variant="secondary"
             disabled={checking}
             onPress={cancel}
           />

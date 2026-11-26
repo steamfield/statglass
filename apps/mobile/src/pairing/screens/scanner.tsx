@@ -3,8 +3,8 @@ import { isDevice } from "expo-device";
 import { useEffect, useRef, useState } from "react";
 import { AppState, Linking, View } from "react-native";
 import type { CameraStep } from "@/pairing/flow";
+import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
-import { PairAction } from "./action";
 import { PairingStep, type PairingStepProps } from "./pairing-step";
 
 const PERMISSION_STEPS = {
@@ -38,12 +38,12 @@ function ScannerStep({
       actions={
         <>
           {action}
-          <PairAction
+          <Button
             label="Paste code"
-            secondary={!!action || step.embedded === true}
+            variant={action || step.embedded === true ? "secondary" : "primary"}
             onPress={paste}
           />
-          <PairAction label="Cancel" secondary onPress={cancel} />
+          <Button label="Cancel" variant="secondary" onPress={cancel} />
         </>
       }
     />
@@ -179,7 +179,7 @@ function CameraScanner({
         {...layout}
         title="Camera access is off"
         explanation={code.denied}
-        action={<PairAction label="Open Settings" onPress={openSettings} />}
+        action={<Button label="Open Settings" onPress={openSettings} />}
       >
         {settingsError && (
           <Text variant="caption" accessibilityRole="alert">
@@ -197,11 +197,7 @@ function CameraScanner({
         title={code.title}
         explanation={code.instructions}
         action={
-          <PairAction
-            label="Continue"
-            disabled={requesting}
-            onPress={request}
-          />
+          <Button label="Continue" disabled={requesting} onPress={request} />
         }
       />
     );

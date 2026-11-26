@@ -112,7 +112,7 @@ function RenameHost({ host }: { host: HostRecord }) {
           returnKeyType="done"
           placeholder="Name on this iPhone"
           placeholderTextColor={colors["muted-foreground"]}
-          className="min-h-[44px] px-4 py-2 text-[17px] text-foreground"
+          className="min-h-touch px-4 py-2 text-[17px] text-foreground"
         />
       </GroupedList>
       {invalid && (

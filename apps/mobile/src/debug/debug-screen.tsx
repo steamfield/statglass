@@ -19,6 +19,8 @@ import {
   useLiveFailure,
 } from "@/data/live";
 import type { NativeTransport } from "@/transport";
+import { Button } from "@/ui/button";
+import { Card } from "@/ui/card";
 import { StartupFailurePanel } from "@/ui/startup-failure";
 import { Text } from "@/ui/text";
 import { type DebugHostFields, debugHost } from "./debug-host";
@@ -112,7 +114,7 @@ function DebugHostForm({
 
   return (
     <>
-      <View className="gap-2 rounded-xl border border-border bg-card p-3">
+      <Card className="gap-2">
         <Text variant="cardTitle">authorized_keys</Text>
         <Text variant="label">
           Add this line to ~/.ssh/authorized_keys on the Mac.
@@ -125,7 +127,7 @@ function DebugHostForm({
         >
           {keyLine}
         </Text>
-      </View>
+      </Card>
       <View className="gap-3">
         {FIELDS.map(({ name, label }) => (
           <View key={name} className="gap-1">
@@ -134,7 +136,7 @@ function DebugHostForm({
               accessibilityLabel={label}
               autoCapitalize="none"
               autoCorrect={false}
-              className="min-h-[44px] rounded-xl border border-border bg-card px-3 py-2 text-[17px] text-foreground"
+              className="min-h-touch rounded-xl border border-border bg-card px-3 py-2 text-[17px] text-foreground"
               keyboardType={name === "port" ? "number-pad" : "default"}
               multiline={name === "hostKey"}
               onChangeText={(value) =>
@@ -151,10 +153,10 @@ function DebugHostForm({
         ))}
         <View className="gap-1">
           <Text variant="label">Route</Text>
-          <View
+          <Card
             accessibilityRole="radiogroup"
             accessibilityLabel="Route"
-            className="overflow-hidden rounded-xl border border-border bg-card"
+            padding="none"
           >
             {ROUTES.map(({ label, value }, index) => (
               <Pressable
@@ -162,7 +164,7 @@ function DebugHostForm({
                 accessibilityRole="radio"
                 accessibilityLabel={label}
                 accessibilityState={{ checked: fields.route === value }}
-                className={`min-h-[44px] flex-row items-center justify-between gap-3 px-4 py-2 active:bg-secondary ${index ? "border-border-subtle border-t" : ""}`}
+                className={`min-h-touch flex-row items-center justify-between gap-3 px-4 py-2 active:bg-secondary ${index ? "border-border-subtle border-t" : ""}`}
                 onPress={() =>
                   setFields((current) => ({ ...current, route: value }))
                 }
@@ -177,20 +179,14 @@ function DebugHostForm({
                 )}
               </Pressable>
             ))}
-          </View>
+          </Card>
         </View>
-        <Pressable
-          accessibilityRole="button"
+        <Button
+          label="Connect"
           accessibilityLabel="Connect"
-          accessibilityState={{ disabled: busy, busy }}
-          className="min-h-[44px] items-center justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70 disabled:opacity-50"
-          disabled={busy}
+          busy={busy}
           onPress={connect}
-        >
-          <Text variant="body" tone="onPrimary" weight="semibold">
-            Connect
-          </Text>
-        </Pressable>
+        />
         {formError && <ErrorText>{formError}</ErrorText>}
       </View>
       {attempt ? (
@@ -269,7 +265,7 @@ function ConnectionReading({
   connected?: boolean;
 }) {
   return (
-    <View className="gap-1 rounded-xl border border-border bg-card p-3">
+    <Card className="gap-1">
       <View className="flex-row items-center gap-2">
         {connected && <View className="size-1.5 rounded-full bg-live" />}
         <Text variant="label" className="shrink">
@@ -279,7 +275,7 @@ function ConnectionReading({
       {error && <ErrorText>{error}</ErrorText>}
       <Text variant="label">CPU</Text>
       <Text variant="cardFigure">{formatPercent(cpu)}</Text>
-    </View>
+    </Card>
   );
 }
 

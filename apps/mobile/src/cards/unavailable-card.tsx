@@ -1,13 +1,9 @@
 import { type UiModule, unavailableText } from "@core/module-state";
 import type { Accent } from "@core/widget-models/tokens";
-import { Pressable, View, type ViewProps } from "react-native";
-import {
-  CARD_SURFACE,
-  CARD_TITLE_ROLE,
-  CardGlow,
-  StatusIcon,
-} from "@/cards/module-card";
+import { View, type ViewProps } from "react-native";
+import { CARD_TITLE_ROLE, CardGlow, StatusIcon } from "@/cards/module-card";
 import type { UnavailableCardProps } from "@/cards/types";
+import { Card, PressableCard } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { BarSwatch } from "@/widgets/stack-bar";
 
@@ -49,7 +45,7 @@ export function UnavailableCardRow({
   onOpen?: () => void;
 } & Pick<ViewProps, "accessibilityActions" | "onAccessibilityAction">) {
   const label = `${title}, ${reason}`;
-  const className = `flex-row flex-wrap items-center justify-between gap-x-2 p-3 ${CARD_SURFACE}`;
+  const className = "flex-row flex-wrap items-center justify-between gap-x-2";
   const row = (
     <>
       <CardGlow accent={accent} />
@@ -66,19 +62,18 @@ export function UnavailableCardRow({
     </>
   );
   return onOpen ? (
-    <Pressable
-      accessibilityRole="button"
+    <PressableCard
       accessibilityLabel={label}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}
-      className={`min-h-[44px] ${className}`}
+      className={className}
       onPress={onOpen}
     >
       {row}
-    </Pressable>
+    </PressableCard>
   ) : (
-    <View accessible accessibilityLabel={label} className={className}>
+    <Card accessible accessibilityLabel={label} className={className}>
       {row}
-    </View>
+    </Card>
   );
 }

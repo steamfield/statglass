@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import type { ModuleCardProps } from "@/cards/types";
 import { themeColors } from "@/theme.generated";
+import { Card } from "@/ui/card";
 import { Icon } from "@/ui/icons";
 import { Text } from "@/ui/text";
 import { WidgetAccent } from "@/widgets/accent";
@@ -119,8 +120,8 @@ export function ModuleCard({
       : ("auto" as const),
   };
   return (
-    <View
-      className={CARD_SURFACE}
+    <Card
+      padding="none"
       {...(customActions && {
         accessible: true,
         accessibilityRole: "button" as const,
@@ -133,7 +134,7 @@ export function ModuleCard({
     >
       <Pressable
         {...pressableAccessibility}
-        className="min-h-[44px] gap-1 px-3 pt-3 pb-2"
+        className="min-h-touch gap-1 px-3 pt-3 pb-2"
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityValue={value}
@@ -172,7 +173,7 @@ export function ModuleCard({
           size={14}
         />
       </Pressable>
-    </View>
+    </Card>
   );
 }
 
