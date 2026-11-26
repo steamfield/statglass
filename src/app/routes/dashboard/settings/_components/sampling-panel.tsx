@@ -1,44 +1,19 @@
-import { formatBytes, formatPercent, MISSING } from "@core/format";
+/**
+ * The Monitoring tab's "Sampling" panel: Performance mode with what it
+ * changes (D-088), the sample interval with StatGlass's measured overhead,
+ * and the battery slow-down. History settings live in the History tab.
+ */
+import { formatPercent } from "@core/format";
 import type { PerformanceReason, Settings } from "@core/generated/types";
-import {
-  approxSize,
-  DEFAULT_SERIES,
-  retentionProjection,
-  sizeLimitLabel,
-} from "@core/history-projection";
-import { clearHistoryFailure } from "@core/history-state";
 import { slowestIntervalMs } from "@core/live-window";
 import { performanceChanges, performanceNextLever } from "@core/performance";
-import { historyKeys, hostKeys } from "@core/query-keys";
-import {
-  INTERVALS_MS,
-  RETENTION_DAYS,
-  SIZE_LIMITS_MB,
-} from "@core/settings-patch";
-import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { ConfirmDialog } from "~/components/confirm-dialog";
-import { HistoryNotices } from "~/components/history-notices";
+import { INTERVALS_MS } from "@core/settings-patch";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
-import { Button } from "~/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
-import { useCommandMutation } from "~/hooks/use-command-mutation";
-import { useHistoryHealth } from "~/hooks/use-history-health";
-import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useWriteSettings } from "~/hooks/use-write-settings";
-import { MINUTE_POLL_MS } from "~/lib/queries/timing";
-import { useTransport } from "~/lib/transport-context";
-import { useHost, useHostId } from "~/stores/host-store";
-import { useSampling, useSeriesCount } from "~/stores/live-selectors";
+import { useHost } from "~/stores/host-store";
+import { useSampling } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
 import { intervalLabel, selfCpuAverage } from "../_lib/overhead";
 
@@ -47,46 +22,18 @@ const INTERVAL_OPTIONS = INTERVALS_MS.map((ms) => ({
   label: intervalLabel(ms),
 }));
 
-const MB = (bytes: number) => formatBytes(bytes, { unit: "MB", decimals: 0 });
+const PERFORMANCE_CHANGES_ID = "settings-performance-changes";
 
 /**
- * "Sampling": Performance mode with what it changes (D-088),
- * interval, battery slow-down, retention with its projected size, the size
- * limit (D-059), Network history (D-089), history on disk, and the store's
- * low-disk and trim notices.
+ * "Sampling": Performance mode, then the interval and battery slow-down
+ * nested under it, since Performance mode overrides both.
  */
 export function SamplingPanel({
   sampling,
-  history,
 }: {
   sampling: Settings["sampling"];
-  history: Settings["history"];
 }) {
   const write = useWriteSettings();
-  // Measured, not a constant: `self.cpu` under the current sampling setup.
-  const overhead = useHost(selfCpuAverage);
-  // The interval in effect, which battery back-off can lengthen.
-  const liveInterval =
-    useHost((s) => s.status?.interval_ms) ?? sampling.interval_ms;
-  const series = useSeriesCount() ?? DEFAULT_SERIES;
-  const limitBytes = history.size_limit_mb * 1e6;
-  const limitText = sizeLimitLabel(history.size_limit_mb);
-  const transport = useTransport();
-  const hostId = useHostId();
-  // Measured on this Mac; until an hour is recorded, the fill-test model. No
-  // figure while the measurement loads, so the fill test's never flashes first.
-  const growth = useQuery({
-    queryKey: hostKeys.historyGrowth(hostId),
-    queryFn: () => unwrap(transport.historyGrowth(hostId)),
-  });
-  const projection = (days: number) =>
-    growth.isPending
-      ? null
-      : retentionProjection(days, limitBytes, series, growth.data);
-  const current = projection(history.retention_days);
-  const health = useHistoryHealth();
-  // Per-app network history needs NetworkStatistics (D-089); hidden without it.
-  const perAppNetwork = useProcessNetwork();
   const { performance } = useSampling();
   const modules = useSettings((s) => s.modules) ?? {};
   const menuBar = useSettings((s) => s.menu_bar);
@@ -94,11 +41,9 @@ export function SamplingPanel({
   const performanceOn = !!sampling.performance_mode || byLowPower;
 
   return (
-    <SettingsPanel
-      title="Sampling"
-      after={<HistoryNotices health={health.health} error={health.error} />}
-    >
+    <SettingsPanel id="sampling" title="Sampling">
       <SettingsRow
+        id="performance-mode"
         label="Performance mode"
         sub={
           byLowPower
@@ -110,7 +55,7 @@ export function SamplingPanel({
           checked={performanceOn}
           disabled={byLowPower}
           aria-label="Performance mode"
-          aria-describedby="settings-performance-changes"
+          aria-describedby={PERFORMANCE_CHANGES_ID}
           onCheckedChange={(on) =>
             write({ sampling: { performance_mode: on } })
           }
@@ -122,128 +67,79 @@ export function SamplingPanel({
           reason={performance}
         />
       </SettingsRow>
-      <SettingsRow
-        label="Sample interval"
-        sub={
-          overhead === "measuring" ? (
-            `Measuring StatGlass's CPU at ${intervalLabel(liveInterval)}…`
-          ) : overhead !== null ? (
-            <>
-              StatGlass uses about{" "}
-              <span className="figures">
-                {formatPercent(overhead, { decimals: 1 })}
-              </span>{" "}
-              CPU at {intervalLabel(liveInterval)}, this window included
-            </>
-          ) : null
-        }
-      >
-        <SegmentedControl
-          ariaLabel="Sample interval"
-          options={INTERVAL_OPTIONS}
-          value={String(sampling.interval_ms)}
-          onChange={(v) => write({ sampling: { interval_ms: Number(v) } })}
-        />
-      </SettingsRow>
-      <SettingsRow
-        label="Slow down on battery"
-        sub={performanceOn && "Set by Performance mode"}
-      >
-        <span className="font-normal text-muted-foreground text-small">
-          to{" "}
-          {intervalLabel(
-            slowestIntervalMs({ ...sampling, slow_on_battery: true })
-          )}
-        </span>
-        <Switch
-          checked={sampling.slow_on_battery || performanceOn}
-          disabled={performanceOn}
-          aria-label="Slow down on battery"
-          onCheckedChange={(on) => write({ sampling: { slow_on_battery: on } })}
-        />
-      </SettingsRow>
-      <SettingsRow
-        label="Keep history"
-        htmlFor="settings-retention"
-        sub={
-          current?.limitedDays != null &&
-          `Limited to about ${current.limitedDays} days by the ${limitText} limit`
-        }
-      >
-        <span className="figures text-muted-foreground text-small">
-          {current ? `about ${approxSize(current.bytes)}` : MISSING}
-        </span>
-        <Select
-          value={String(history.retention_days)}
-          onValueChange={(v) =>
-            write({ history: { retention_days: Number(v) } })
-          }
-        >
-          <SelectTrigger
-            id="settings-retention"
-            size="sm"
-            className="px-2 text-small"
-          >
-            <SelectValue>{history.retention_days} days</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {RETENTION_DAYS.map((d) => {
-              const p = projection(d);
-              return (
-                <SelectItem key={d} value={String(d)}>
-                  {d} days
-                  <span className="figures text-label text-muted-foreground">
-                    {p === null
-                      ? MISSING
-                      : p.limitedDays === null
-                        ? `about ${approxSize(p.bytes)}`
-                        : `${limitText}, about ${p.limitedDays} days`}
-                  </span>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </SettingsRow>
-      <SettingsRow label="History size limit" htmlFor="settings-size-limit">
-        <Select
-          value={String(history.size_limit_mb)}
-          onValueChange={(v) =>
-            write({ history: { size_limit_mb: Number(v) } })
-          }
-        >
-          <SelectTrigger
-            id="settings-size-limit"
-            size="sm"
-            className="px-2 text-small"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SIZE_LIMITS_MB.map((mb) => (
-              <SelectItem key={mb} value={String(mb)}>
-                {sizeLimitLabel(mb)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </SettingsRow>
-      {perAppNetwork && (
-        <SettingsRow
-          label="Network history"
-          sub="Keeps which apps used the network, in 10 s steps. Costs about 0.1% CPU when idle."
-        >
-          <Switch
-            checked={history.network_history !== false}
-            aria-label="Network history"
-            onCheckedChange={(on) =>
-              write({ history: { network_history: on } })
-            }
-          />
-        </SettingsRow>
-      )}
-      <HistoryOnDisk />
+      <SampleIntervalRow sampling={sampling} />
+      <SlowOnBatteryRow sampling={sampling} performanceOn={performanceOn} />
     </SettingsPanel>
+  );
+}
+
+/** Slow down on battery: the slowest interval it backs off to; Performance mode forces it on. */
+function SlowOnBatteryRow({
+  sampling,
+  performanceOn,
+}: {
+  sampling: Settings["sampling"];
+  performanceOn: boolean;
+}) {
+  const write = useWriteSettings();
+  return (
+    <SettingsRow
+      id="slow-on-battery"
+      nested
+      label="Slow down on battery"
+      sub={performanceOn && "Set by Performance mode"}
+    >
+      <span className="font-normal text-muted-foreground text-small">
+        to{" "}
+        {intervalLabel(
+          slowestIntervalMs({ ...sampling, slow_on_battery: true })
+        )}
+      </span>
+      <Switch
+        checked={sampling.slow_on_battery || performanceOn}
+        disabled={performanceOn}
+        aria-label="Slow down on battery"
+        onCheckedChange={(on) => write({ sampling: { slow_on_battery: on } })}
+      />
+    </SettingsRow>
+  );
+}
+
+/** The interval choice, with StatGlass's own CPU measured at the interval in effect. */
+function SampleIntervalRow({ sampling }: { sampling: Settings["sampling"] }) {
+  const write = useWriteSettings();
+  // Measured, not a constant: `self.cpu` under the current sampling setup.
+  const overhead = useHost(selfCpuAverage);
+  // The interval in effect, which battery back-off can lengthen.
+  const liveInterval =
+    useHost((s) => s.status?.interval_ms) ?? sampling.interval_ms;
+
+  return (
+    <SettingsRow
+      id="sample-interval"
+      nested
+      label="Sample interval"
+      sub={
+        overhead === "measuring" ? (
+          `Measuring StatGlass's CPU at ${intervalLabel(liveInterval)}…`
+        ) : overhead !== null ? (
+          <>
+            StatGlass uses about{" "}
+            <span className="figures">
+              {formatPercent(overhead, { decimals: 1 })}
+            </span>{" "}
+            CPU at {intervalLabel(liveInterval)}, this window included
+          </>
+        ) : null
+      }
+    >
+      <SegmentedControl
+        ariaLabel="Sample interval"
+        options={INTERVAL_OPTIONS}
+        value={String(sampling.interval_ms)}
+        onChange={(v) => write({ sampling: { interval_ms: Number(v) } })}
+      />
+    </SettingsRow>
   );
 }
 
@@ -270,7 +166,7 @@ function PerformanceChanges({
   });
   return (
     <div
-      id="settings-performance-changes"
+      id={PERFORMANCE_CHANGES_ID}
       className="-mt-2 basis-full pb-2.5 font-normal text-muted-foreground text-small"
     >
       <ul className="m-0 list-none p-0">
@@ -280,65 +176,5 @@ function PerformanceChanges({
       </ul>
       {next && <p className="m-0 mt-1.5">{next}</p>}
     </div>
-  );
-}
-
-/** Size on disk (refreshed every 60 s while shown) and Clear with a confirm. */
-function HistoryOnDisk() {
-  const transport = useTransport();
-  const hostId = useHostId();
-  const [confirming, setConfirming] = useState(false);
-  const size = useQuery({
-    queryKey: hostKeys.historySize(hostId),
-    queryFn: () => unwrap(transport.historySize(hostId)),
-    refetchInterval: MINUTE_POLL_MS,
-  });
-  const clearing = useCommandMutation(
-    (host: string) => transport.clearHistory(host),
-    {
-      name: "clear_history",
-      errorText: clearHistoryFailure,
-      invalidate: (host) => [
-        historyKeys.host(host),
-        hostKeys.historySize(host),
-      ],
-    }
-  );
-
-  const clear = async () => {
-    await clearing.mutateAsync(hostId).catch(() => undefined);
-    setConfirming(false);
-  };
-
-  const sizeText = size.data === undefined ? MISSING : MB(size.data);
-  return (
-    <SettingsRow label="History on disk">
-      <span className="figures text-fg-subtle text-small">{sizeText}</span>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={size.data === 0}
-        onClick={() => setConfirming(true)}
-      >
-        Clear
-      </Button>
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        className="sm:max-w-sm"
-        title="Clear history?"
-        description={
-          <>
-            Deletes the {sizeText} of history stored for this Mac. Live values
-            keep updating, and the Timeline starts again from now. This can't be
-            undone.
-          </>
-        }
-        confirmLabel="Clear history"
-        confirmVariant="destructive"
-        onConfirm={clear}
-        busy={clearing.isPending}
-      />
-    </SettingsRow>
   );
 }

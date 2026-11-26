@@ -22,7 +22,7 @@ export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
   const write = useWriteSettings();
 
   return (
-    <SettingsPanel title="Modules">
+    <SettingsPanel id="modules" title="Modules">
       <div className="flex min-h-[34px] items-center gap-3 border-border-subtle border-b px-4">
         <span className={cn(FIELD_LABEL, "flex-1")}>Module</span>
         <span className={cn(FIELD_LABEL, "w-[30px]")}>On</span>
@@ -30,6 +30,7 @@ export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
       {SETTINGS_MODULES.map((m) => (
         <ModuleToggleRow
           key={m}
+          rowId={`module-${m}`}
           module={m}
           checked={modules[m]?.enabled ?? false}
           absence={unavailableText(

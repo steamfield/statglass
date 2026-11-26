@@ -9,8 +9,7 @@ export function MonitoringTab() {
   return (
     <>
       <ModulesPanel modules={settings.modules} />
-      {/* Lane c moves the history rows to the History tab and drops `history`. */}
-      <SamplingPanel sampling={settings.sampling} history={settings.history} />
+      <SamplingPanel sampling={settings.sampling} />
     </>
   );
 }
