@@ -1,7 +1,9 @@
 /**
  * `query_usage_series` for the mock transport: the apps `mockUsageByApp`
  * ranks first, each as one value per 10 s bucket. The mock keeps no per-bucket
- * history, so each bucket is the app's range average with a steady wobble.
+ * history, so each bucket is the app's range average shaped by its kind of
+ * load (`burst.ts`: CPU idles with spikes, memory steps, disk bursts), scaled
+ * so the shape averages to 1 over a week.
  * Mirrors `usage.rs`: buckets before counting started or after the newest
  * sample read `null` (unmeasured), GPU reads `null` where it was never
  * measured, and every value is a rate in the key's unit.
@@ -15,6 +17,17 @@ import type {
 } from "@core/generated/types";
 import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/types";
 import { floorTo } from "@core/time-grid";
+import { longRunMean, type Shape, Shaper, type SpanStats } from "./burst";
+import { seedOf } from "./rng";
+
+/** The burst profile of each usage key. */
+const SHAPE_OF: Record<UsageKey, Shape> = {
+  cpu: "load",
+  gpu: "load",
+  energy: "load",
+  memory: "level",
+  disk: "disk",
+};
 
 /** An app's range average in the series' unit for `by`. */
 function averageOf(by: UsageKey, a: AppUsage, coveredMs: number): number {
@@ -61,18 +74,21 @@ export function mockUsageSeries({
     since_ms: sinceMs,
     complete_to_ms: floorTo(latestMs, BUCKET_MS),
     latest_ms: latestMs,
-    apps: byApp.apps.map((a, k) => {
+    apps: byApp.apps.map((a) => {
       const avg = averageOf(by, a, byApp.covered_ms);
+      const seed = seedOf(a.name);
+      const shaper = new Shaper(SHAPE_OF[by], seed);
+      const scale = avg / longRunMean(SHAPE_OF[by], seed);
+      const span: SpanStats = { min: 0, avg: 0, max: 0 };
       return {
         name: a.name,
         avg,
         values: Array.from({ length: n }, (_, i) => {
           if (!covered(i)) return null;
           // Keyed by the bucket's start, so a bucket reads the same in any range.
-          const t = (from + i * BUCKET_MS) / BUCKET_MS;
-          const wobble =
-            1 + 0.35 * Math.sin(t * 0.21 + k * 1.7) + 0.15 * Math.sin(t * 1.3);
-          return Math.max(0, avg * wobble);
+          const t = (from + i * BUCKET_MS) / 1000;
+          const m = shaper.stats(t, t + BUCKET_MS / 1000, span).avg;
+          return Math.max(0, scale * m);
         }),
       };
     }),

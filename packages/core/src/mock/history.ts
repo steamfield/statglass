@@ -1,7 +1,9 @@
 /**
  * `query_history` for the mock transport: deterministic buckets around each
  * series' sample value, with the scenario's gaps cut out (slots inside a gap
- * are absent, never zero).
+ * are absent, never zero). A bucket summarises its series' burst shape
+ * (`burst.ts`) over the seconds it covers, so a wide bucket's max keeps the
+ * spikes its average smooths out; constant series drift a little.
  */
 
 import {
@@ -19,6 +21,7 @@ import {
 } from "@core/generated/types";
 import { seriesKeyString } from "@core/series-key";
 import { ceilTo, DAY_MS, floorTo, HOUR_MS, MINUTE_MS } from "@core/time-grid";
+import { Shaper, type SpanStats, scaled } from "./burst";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import { MOCK_HOST_ID, type ScenarioFlags } from "./fixtures";
 import type { SeriesSpec } from "./generator";
@@ -314,27 +317,15 @@ export function mockHistory(
   const inGap = (t: number) =>
     gaps.some((g) => t + step > g.start_ms && t < (g.end_ms ?? Infinity));
 
-  // A wider bucket's min and max span more seconds, so they sit further from
-  // its average: x1 at 10 s, about x1.8 at 1 min, x3 from 30 min, so the
-  // envelope on 7d and 30d reads as one.
-  const spread = Math.min(3, 1 + Math.log10(step / 10_000));
-
   const series = specs
     .filter((s) => req.selectors.some((sel) => matches(s.key, sel)))
     .map((s) => {
-      const r = rng(seedOf(seriesKeyString(s.key)));
-      const amp = s.noise || Math.abs(s.base) * 0.05;
+      const point =
+        s.shape === "constant" ? driftingPoint(s, step) : shapedPoint(s, step);
       const points: HistoryPoint[] = [];
       for (let t = start; t < req.to_ms && t <= nowMs; t += step) {
-        const wave = Math.sin(t / (3 * HOUR)) * 0.6 + (r() - 0.5) * 0.8;
-        if (inGap(t)) continue;
-        const avg = clamp(s.base + wave * amp, s);
-        points.push({
-          t,
-          avg,
-          min: clamp(avg - amp * 0.4 * spread * r(), s),
-          max: clamp(avg + amp * 0.6 * spread * r(), s),
-        });
+        const p = point(t);
+        if (!inGap(t)) points.push(p);
       }
       return {
         key: s.key,
@@ -350,6 +341,44 @@ export function mockHistory(
     gaps: gaps.filter(
       (g) => g.start_ms < req.to_ms && (g.end_ms ?? Infinity) > req.from_ms
     ),
+  };
+}
+
+/** Buckets of a shaped series: its shape's min, average and max over the bucket. */
+function shapedPoint(s: SeriesSpec, step: number) {
+  const shaper = new Shaper(s.shape, s.seed);
+  const stats: SpanStats = { min: 0, avg: 0, max: 0 };
+  return (t: number): HistoryPoint => {
+    shaper.stats(t / 1000, (t + step) / 1000, stats);
+    const lo = scaled(stats.min, s.base, s.swing);
+    const hi = scaled(stats.max, s.base, s.swing);
+    return {
+      t,
+      avg: clamp(scaled(stats.avg, s.base, s.swing), s),
+      min: clamp(Math.min(lo, hi), s),
+      max: clamp(Math.max(lo, hi), s),
+    };
+  };
+}
+
+/**
+ * Buckets of a constant series: a slow sine within 5% of its value. A wider
+ * bucket's min and max sit further from its average: x1 at 10 s, about x1.8
+ * at 1 min, x3 from 30 min, so the envelope on 7d and 30d reads as one.
+ */
+function driftingPoint(s: SeriesSpec, step: number) {
+  const r = rng(seedOf(seriesKeyString(s.key)));
+  const amp = Math.abs(s.base) * 0.05;
+  const spread = Math.min(3, 1 + Math.log10(step / 10_000));
+  return (t: number): HistoryPoint => {
+    const wave = Math.sin(t / (3 * HOUR)) * 0.6 + (r() - 0.5) * 0.8;
+    const avg = clamp(s.base + wave * amp, s);
+    return {
+      t,
+      avg,
+      min: clamp(avg - amp * 0.4 * spread * r(), s),
+      max: clamp(avg + amp * 0.6 * spread * r(), s),
+    };
   };
 }
 

@@ -1,4 +1,10 @@
-/** Typed command fixture: models server-side weighted request aggregation. */
+/**
+ * Typed command fixture: models server-side weighted request aggregation.
+ * Throughput bursts as the live disk series do (`burst.ts`): each bucket is
+ * the average of the burst shape over its seconds, on one seed per direction
+ * so every device bursts together and keeps its ratio to the others.
+ * Operation counts and request times stay at their sample values.
+ */
 
 import type {
   DiskIoDevices,
@@ -8,8 +14,10 @@ import type {
   Gap,
 } from "@core/generated/types";
 import { floorTo, MINUTE_MS } from "@core/time-grid";
+import { Shaper, type SpanStats } from "./burst";
 import type { ScenarioName } from "./fixtures";
 import { mockBuckets } from "./protocol";
+import { seedOf } from "./rng";
 
 export function mockDiskDevices(
   scenarios: readonly ScenarioName[]
@@ -40,14 +48,11 @@ export function mockDiskDevices(
   };
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
-export function mockDiskIo(
-  request: DiskIoRequest,
-  scenarios: readonly ScenarioName[],
-  sharedGaps: readonly Gap[] = []
-): DiskIoPage {
-  // `disk_io.rs`: the store's merge of 10 s buckets, widened by doubling until
-  // the epoch-aligned runs from the one holding `from_ms` fit `max_points`.
+/**
+ * `disk_io.rs`: the store's merge of 10 s buckets, widened by doubling until
+ * the epoch-aligned runs from the one holding `from_ms` fit `max_points`.
+ */
+function bucketWidth(request: DiskIoRequest): number {
   const maxPoints = Math.max(1, request.max_points);
   let bucket = mockBuckets(
     request.from_ms,
@@ -60,6 +65,16 @@ export function mockDiskIo(
     maxPoints
   )
     bucket *= 2;
+  return bucket;
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
+export function mockDiskIo(
+  request: DiskIoRequest,
+  scenarios: readonly ScenarioName[],
+  sharedGaps: readonly Gap[] = []
+): DiskIoPage {
+  const bucket = bucketWidth(request);
   const first = floorTo(request.from_ms, bucket);
   const points: DiskIoPoint[] = [];
   const idle = scenarios.includes("disk-io-no-ops");
@@ -85,6 +100,9 @@ export function mockDiskIo(
       g.start_ms < request.to_ms && (g.end_ms ?? Infinity) > request.from_ms
   );
   let coveredMs = 0;
+  const readShape = new Shaper("disk", seedOf("disk-io:read"));
+  const writeShape = new Shaper("disk", seedOf("disk-io:write"));
+  const span: SpanStats = { min: 0, avg: 0, max: 0 };
   for (let t = first; t < request.to_ms; t += bucket) {
     const missing = gaps.some(
       (g) => t + bucket > g.start_ms && t < (g.end_ms ?? Infinity)
@@ -92,24 +110,29 @@ export function mockDiskIo(
     const slow = request.device === "disk7";
     const all =
       request.device === null && scenarios.includes("disk-io-comparison");
-    const wave = 1 + 0.15 * Math.sin(t / 17_000);
+    const readBurst = readShape.stats(t / 1000, (t + bucket) / 1000, span).avg;
+    const writeBurst = writeShape.stats(
+      t / 1000,
+      (t + bucket) / 1000,
+      span
+    ).avg;
     const read = idle
       ? 0
       : (slow
           ? 4e6
           : scenarios.includes("disk-io-comparison")
             ? 420e6
-            : 220e6) * wave;
+            : 220e6) * readBurst;
     const write = idle
       ? 0
       : (slow ? 1e6 : scenarios.includes("disk-io-comparison") ? 90e6 : 48e6) *
-        wave;
+        writeBurst;
     const readOps = idle ? 0 : slow ? 80 : 5000;
     const writeOps = idle ? 0 : slow ? 30 : 1200;
     const p: DiskIoPoint = {
       t,
-      read_bps: missing ? null : read + (all && !idle ? 4e6 * wave : 0),
-      write_bps: missing ? null : write + (all && !idle ? 1e6 * wave : 0),
+      read_bps: missing ? null : read + (all && !idle ? 4e6 * readBurst : 0),
+      write_bps: missing ? null : write + (all && !idle ? 1e6 * writeBurst : 0),
       read_ops_per_sec:
         missing || unsupported ? null : readOps + (all && !idle ? 80 : 0),
       write_ops_per_sec:

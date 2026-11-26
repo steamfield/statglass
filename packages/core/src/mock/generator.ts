@@ -1,10 +1,12 @@
 /**
- * Seeded series generator for the mock transport. Every series walks around
+ * Seeded series generator for the mock transport. Every series moves around
  * a fixed sample value (the Overview cards, the CPU page's cores and
- * residency, the Power page's zones and power, the popover), and a backfill
- * ends exactly on those values, so a freshly opened mock window always shows
- * the same figures. CPU total and GPU util use fixed seeds, so their 60 s
- * backfill is always the same chart.
+ * residency, the Power page's zones and power, the popover) the way its kind
+ * of load does on a real Mac (`burst.ts`: CPU idles with spikes, network
+ * idles between downloads, memory steps), and a backfill ends exactly on
+ * those values, so a freshly opened mock window always shows the same
+ * figures. CPU total and GPU util use fixed seeds, so their 60 s backfill is
+ * always the same chart.
  */
 import {
   HOLD_FACTOR,
@@ -15,6 +17,7 @@ import {
   type SeriesKey,
 } from "@core/generated/types";
 import { seriesKey, seriesKeyString } from "@core/series-key";
+import { type Shape, Shaper, scaled } from "./burst";
 import {
   BACKGROUND_PROCESSES,
   E_CORES,
@@ -25,11 +28,24 @@ import {
   WIDE_LAYOUT_SERIES,
 } from "./fixtures";
 import { buildLinuxSpecs, LINUX_PROCESSES } from "./linux";
-import { clampWalk, rng, type WalkSpec, walkStep } from "./rng";
+import { rng } from "./rng";
+import { shapeOf } from "./series-shapes";
 
-export interface SeriesSpec extends WalkSpec {
+export interface SeriesSpec {
   key: SeriesKey;
   module: Module;
+  /** The sample value: what a backfill lands on, and the shape's scale. */
+  base: number;
+  min?: number;
+  max?: number;
+  /** How the series moves around `base` (`burst.ts`). */
+  shape: Shape;
+  /**
+   * Units moved per unit of the shape's multiplier; `base` when absent. Parts
+   * that must keep a sum (free and cached against used) swing negatively.
+   */
+  swing?: number;
+  /** Series on one seed move together (memory parts, GPU engines, a disk's ops). */
   seed: number;
   /** Sampled every `cadence` ticks (catalog 6.1); `null` in between. */
   cadence: number;
@@ -127,6 +143,21 @@ const ZONES: [string, number][] = [
   ["PMU2 tdie3", 48],
 ];
 
+type OptionalField = "max" | "swing" | "periodMs" | "perTick" | "silent";
+
+/** The optional fields `opts` sets, leaving absent ones out rather than undefined. */
+function optionalFields(
+  opts: Partial<Pick<SeriesSpec, OptionalField>>
+): Partial<Pick<SeriesSpec, OptionalField>> {
+  return {
+    ...(opts.max === undefined ? {} : { max: opts.max }),
+    ...(opts.swing === undefined ? {} : { swing: opts.swing }),
+    ...(opts.periodMs === undefined ? {} : { periodMs: opts.periodMs }),
+    ...(opts.perTick === undefined ? {} : { perTick: opts.perTick }),
+    ...(opts.silent ? { silent: true } : {}),
+  };
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
@@ -143,30 +174,21 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
       key: seriesKey(metric, labels),
       module,
       base,
-      noise: opts.noise ?? 0,
       min: opts.min ?? 0,
-      ...(opts.max === undefined ? {} : { max: opts.max }),
+      shape: opts.shape ?? shapeOf(metric),
       seed: opts.seed ?? seed++,
       cadence: opts.cadence ?? 1,
-      ...(opts.periodMs === undefined ? {} : { periodMs: opts.periodMs }),
-      ...(opts.perTick === undefined ? {} : { perTick: opts.perTick }),
-      ...(opts.silent ? { silent: true } : {}),
+      ...optionalFields(opts),
       idleCadence: ADAPTIVE_METRICS.has(metric) ? 10 : (opts.cadence ?? 1),
     });
   };
   // Totals over the reported parts, appended after them as the collectors do.
   const total = (module: Module, metric: string, part: string) => {
     const sumOf = specs.flatMap((s, i) => (s.key.metric === part ? [i] : []));
-    // Live values are derived; base and noise shape the mock's history.
-    const of = (f: (s: SeriesSpec) => number) =>
-      sumOf.reduce((n, i) => n + f(specs[i] as SeriesSpec), 0);
-    add(
-      module,
-      metric,
-      {},
-      of((s) => s.base),
-      { noise: of((s) => s.noise) }
-    );
+    // Live values are derived; the history follows the first part's shape.
+    const base = sumOf.reduce((n, i) => n + (specs[i] as SeriesSpec).base, 0);
+    const first = specs[sumOf[0] ?? -1];
+    add(module, metric, {}, base, first ? { seed: first.seed } : {});
     (specs[specs.length - 1] as SeriesSpec).sumOf = sumOf;
   };
   if (flags.linux) {
@@ -175,13 +197,12 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   }
   const pct = { min: 0, max: 100 };
 
-  // CPU. Total uses series(60, 5, 18, 9).
-  add("cpu", "cpu.total", {}, 18, { noise: 9, seed: 5, min: 1, max: 100 });
-  add("cpu", "cpu.user", {}, 12.4, { noise: 6, ...pct });
-  add("cpu", "cpu.system", {}, 5.6, { noise: 3, ...pct });
+  // CPU. Total is on the host's shared load seed.
+  add("cpu", "cpu.total", {}, 18, { seed: 5, min: 1, max: 100 });
+  add("cpu", "cpu.user", {}, 12.4, pct);
+  add("cpu", "cpu.system", {}, 5.6, pct);
   [...P_CORES, ...E_CORES].forEach((core, i) => {
     add("cpu", "cpu.load", { core }, CORE_LOAD[i] ?? 10, {
-      noise: 22,
       ...pct,
     });
   });
@@ -190,46 +211,42 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     ["5", 3.1],
     ["15", 2.88],
   ] as const) {
-    add("cpu", "cpu.loadavg", { window }, v, { noise: 0.3, cadence: 5 });
+    add("cpu", "cpu.loadavg", { window }, v, { cadence: 5 });
   }
   add("cpu", "cpu.cluster.freq", { cluster: "P0" }, 3.2 * GHZ, {
-    noise: 0.5 * GHZ,
     min: 1.26 * GHZ,
     max: 4.512 * GHZ,
   });
   add("cpu", "cpu.cluster.freq", { cluster: "E0" }, 1.02 * GHZ, {
-    noise: 0.3 * GHZ,
     min: 1.02 * GHZ,
     max: 2.892 * GHZ,
   });
   add("cpu", "cpu.cluster.active", { cluster: "P0" }, 41, {
-    noise: 10,
     ...pct,
   });
   add("cpu", "cpu.cluster.active", { cluster: "E0" }, 59, {
-    noise: 10,
     ...pct,
   });
-  add("cpu", "cpu.cluster.power", { cluster: "P0" }, 5.8, { noise: 1.5 });
+  add("cpu", "cpu.cluster.power", { cluster: "P0" }, 5.8);
   // SMC CPU power (D-054) has no E-cluster key, so no E-cluster series.
   if (flags.cpuPowerSource === null) {
-    add("cpu", "cpu.cluster.power", { cluster: "E0" }, 0.6, { noise: 0.2 });
+    add("cpu", "cpu.cluster.power", { cluster: "E0" }, 0.6);
   }
   for (const [cluster, states] of Object.entries(RESIDENCY)) {
     for (const [state, v] of Object.entries(states)) {
       add("cpu", "cpu.cluster.residency", { cluster, state }, v, {
-        noise: v > 0 ? 3 : 0,
         ...pct,
       });
     }
   }
 
-  // GPU. Util uses series(60, 9, 36, 10).
-  add("gpu", "gpu.util", {}, 36, { noise: 10, seed: 9, min: 1, max: 100 });
-  add("gpu", "gpu.render", {}, 28, { noise: 8, ...pct });
-  add("gpu", "gpu.tiler", {}, 8, { noise: 3, ...pct });
+  // GPU, on seed 9.
+  add("gpu", "gpu.util", {}, 36, { seed: 9, min: 1, max: 100 });
+  // The engines and the clock move with utilisation.
+  add("gpu", "gpu.render", {}, 28, { seed: 9, ...pct });
+  add("gpu", "gpu.tiler", {}, 8, { seed: 9, ...pct });
   add("gpu", "gpu.freq", {}, 1.1 * GHZ, {
-    noise: 0.2 * GHZ,
+    seed: 9,
     min: 0.338 * GHZ,
     max: 1.6 * GHZ,
   });
@@ -240,30 +257,33 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     ["720", 10],
     ["idle", 54],
   ] as const) {
-    add("gpu", "gpu.residency", { state }, v, { noise: 3, ...pct });
+    add("gpu", "gpu.residency", { state }, v, pct);
   }
 
-  // Memory, in bytes (decimal GB).
-  const memNoise = { noise: 0.05e9 };
-  add("memory", "mem.used", {}, 17.6e9, memNoise);
-  add("memory", "mem.app", {}, 11.6e9, memNoise);
-  add("memory", "mem.wired", {}, 3.9e9, memNoise);
-  add("memory", "mem.compressed", {}, 2.1e9, memNoise);
-  add("memory", "mem.cached", {}, 4.0e9, memNoise);
-  add("memory", "mem.free", {}, 2.4e9, memNoise);
-  add("memory", "mem.pressure", {}, 42, { noise: 2, ...pct });
+  // Memory, in bytes (decimal GB). On one seed, app + wired + compressed
+  // stays used, and cached and free give up what used takes.
+  const mem = { seed: 17 };
+  const used = 17.6e9;
+  const spare = (v: number) => ({ ...mem, swing: (-used * v) / 6.4e9 });
+  add("memory", "mem.used", {}, used, mem);
+  add("memory", "mem.app", {}, 11.6e9, mem);
+  add("memory", "mem.wired", {}, 3.9e9, mem);
+  add("memory", "mem.compressed", {}, 2.1e9, mem);
+  add("memory", "mem.cached", {}, 4.0e9, spare(4.0e9));
+  add("memory", "mem.free", {}, 2.4e9, spare(2.4e9));
+  add("memory", "mem.pressure", {}, 42, { ...mem, swing: 84, ...pct });
   add("memory", "mem.pressure_level", {}, 0);
   add("memory", "mem.swap_used", {}, 512e6);
   add("memory", "mem.swap_in", {}, 0);
   add("memory", "mem.swap_out", {}, 0);
 
   // Power.
-  add("power", "power.cpu", {}, 6.4, { noise: 2.2 });
-  add("power", "power.gpu", {}, 3.1, { noise: 1.2 });
+  add("power", "power.cpu", {}, 6.4);
+  add("power", "power.gpu", {}, 3.1);
   add("power", "power.ane", {}, 0);
-  add("power", "power.dram", {}, 0.9, { noise: 0.2 });
-  add("power", "power.package", {}, 10.4, { noise: 2.5 });
-  add("power", "power.system", {}, 14.8, { noise: 3 });
+  add("power", "power.dram", {}, 0.9);
+  add("power", "power.package", {}, 10.4);
+  add("power", "power.system", {}, 14.8);
   if (flags.cpuPowerSource !== null) {
     add("power", "power.cpu_source", {}, flags.cpuPowerSource);
   }
@@ -271,22 +291,22 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   // Sensors: hidden on an unknown chip; no fans on a MacBook Air.
   if (!flags.unknownChip) {
     for (const [sensor, v] of ZONES) {
-      add("sensors", "thermal.zone", { sensor }, v, { noise: 1.5, cadence: 5 });
+      add("sensors", "thermal.zone", { sensor }, v, { cadence: 5 });
     }
-    add("sensors", "thermal.cpu", {}, 61, { noise: 1.5, cadence: 5 });
-    add("sensors", "thermal.gpu", {}, 54, { noise: 1.5, cadence: 5 });
-    add("sensors", "thermal.hottest", {}, 61, { noise: 1.5, cadence: 5 });
+    add("sensors", "thermal.cpu", {}, 61, { cadence: 5 });
+    add("sensors", "thermal.gpu", {}, 54, { cadence: 5 });
+    add("sensors", "thermal.hottest", {}, 61, { cadence: 5 });
     for (const [name, v] of [
       ["Battery", 31],
       ["SSD (NAND)", 38],
       ["Wi-Fi module", 44],
     ] as const) {
-      add("sensors", "thermal.sensor", { name }, v, { noise: 0.5, cadence: 5 });
+      add("sensors", "thermal.sensor", { name }, v, { cadence: 5 });
     }
     add("sensors", "thermal.state", {}, 0, { cadence: 2 });
     if (!flags.noFans) {
-      add("sensors", "fan.rpm", { fan: "0" }, 1840, { noise: 60, cadence: 2 });
-      add("sensors", "fan.rpm", { fan: "1" }, 1860, { noise: 60, cadence: 2 });
+      add("sensors", "fan.rpm", { fan: "0" }, 1840, { cadence: 2 });
+      add("sensors", "fan.rpm", { fan: "1" }, 1860, { cadence: 2 });
       add("sensors", "fan.max", { fan: "0" }, 5700, { cadence: 60 });
       add("sensors", "fan.max", { fan: "1" }, 5700, { cadence: 60 });
       add("sensors", "fan.mode", {}, 0, { cadence: 60 });
@@ -295,39 +315,36 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
 
   // Network: a few MB/s of browsing and sync on a 2.4 Gb/s Wi-Fi 6E link, under
   // the app bursts in net-apps.ts (a 30 MB/s Docker pull every 7 minutes).
-  add("network", "net.rx", { iface: "en0" }, 1.6e6, { noise: 1.2e6 });
-  add("network", "net.tx", { iface: "en0" }, 0.3e6, { noise: 0.2e6 });
+  add("network", "net.rx", { iface: "en0" }, 1.6e6);
+  add("network", "net.tx", { iface: "en0" }, 0.3e6);
   add("network", "net.link_rate", { iface: "en0" }, 2.4e9, { cadence: 60 });
   if (flags.vpn) {
-    add("network", "net.rx", { iface: "en7" }, 2.5e6, { noise: 1e6 });
-    add("network", "net.tx", { iface: "en7" }, 0.4e6, { noise: 0.2e6 });
+    add("network", "net.rx", { iface: "en7" }, 2.5e6);
+    add("network", "net.tx", { iface: "en7" }, 0.4e6);
     add("network", "net.link_rate", { iface: "en7" }, 1e9, { cadence: 60 });
   }
   total("network", "net.rx_total", "net.rx");
   total("network", "net.tx_total", "net.tx");
 
-  // Disk: 1 TB container, 612 GB free, Data 330 GB, System 58 GB.
-  add(
-    "disk",
+  // Disk: 1 TB container, 612 GB free, Data 330 GB, System 58 GB. A device's
+  // ops and request time burst with its bytes, on one seed per direction.
+  const diskSeed = (dev: string, metric: string) =>
+    (dev === "disk3" ? 300 : 302) + (metric.startsWith("disk.write") ? 1 : 0);
+  const io = (dev: string, metric: string, base: number) =>
+    add("disk", metric, { dev }, base, { seed: diskSeed(dev, metric) });
+  io(
+    "disk3",
     "disk.read",
-    { dev: "disk3" },
-    flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 420e6 : 220e6,
-    {
-      noise: flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 60e6 : 90e6,
-    }
+    flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 420e6 : 220e6
   );
-  add(
-    "disk",
+  io(
+    "disk3",
     "disk.write",
-    { dev: "disk3" },
-    flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 90e6 : 48e6,
-    {
-      noise: flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 10e6 : 25e6,
-    }
+    flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 90e6 : 48e6
   );
   if (flags.diskIoComparison) {
-    add("disk", "disk.read", { dev: "disk7" }, 4e6, { noise: 0.6e6 });
-    add("disk", "disk.write", { dev: "disk7" }, 1e6, { noise: 0.15e6 });
+    io("disk7", "disk.read", 4e6);
+    io("disk7", "disk.write", 1e6);
   }
   if (!flags.diskIoUnavailable) {
     const timings = (
@@ -345,7 +362,7 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
         ["disk.read_time", readOps * readMs],
         ["disk.write_time", writeOps * writeMs],
       ] as const)
-        add("disk", metric, { dev }, flags.diskIoNoOps ? 0 : value);
+        io(dev, metric, flags.diskIoNoOps ? 0 : value);
     };
     timings("disk3", 5000, 1200, 0.15, 0.3);
     if (flags.diskIoComparison) timings("disk7", 80, 30, 42, 65);
@@ -395,7 +412,6 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
 
   // Mostly per-tick work: 0.4% at 1 s, under 0.05% at 30 s.
   add("cpu", "self.cpu", {}, 0.4, {
-    noise: 0.1,
     periodMs: METRIC_PERIODS_MS["self.cpu"],
     perTick: 0.37,
   });
@@ -414,7 +430,7 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   // cost is the channel's and the ring's, not extra chart work.
   if (flags.wideLayout) {
     for (let i = 0; specs.length < WIDE_LAYOUT_SERIES; i++) {
-      add("sensors", "mock.pad", { i: String(i) }, 40, { noise: 1 });
+      add("sensors", "mock.pad", { i: String(i) }, 40);
     }
   }
   return specs;
@@ -437,7 +453,7 @@ export interface GeneratedRow {
 export class MockGenerator {
   readonly specs: SeriesSpec[];
   readonly keys: SeriesKey[];
-  private readonly state: { v: number; r: () => number }[];
+  private readonly shapers: Shaper[];
   private readonly last: (number | null)[];
   /** Tick of each series' last sample, and its hold in ticks then. */
   private readonly lastTick: number[];
@@ -445,6 +461,8 @@ export class MockGenerator {
   /** Series whose reads fail: every tick is a gap. */
   readonly failing = new Set<number>();
   private tick = 0;
+  /** Time since the first tick, at each tick's interval: the shapes' clock. */
+  private elapsedMs = 0;
   /** No window shows anything: adaptive series run at `idleCadence`. */
   trayOnly = false;
   /** The sampling interval the next tick is taken at. */
@@ -453,7 +471,7 @@ export class MockGenerator {
   constructor(private readonly flags: ScenarioFlags) {
     this.specs = buildSpecs(flags);
     this.keys = this.specs.map((s) => s.key);
-    this.state = this.specs.map((s) => ({ v: s.base, r: rng(s.seed) }));
+    this.shapers = this.specs.map((s) => new Shaper(s.shape, s.seed));
     this.last = this.specs.map(() => null);
     this.lastTick = this.specs.map(() => 0);
     this.holdTicks = this.specs.map(() => 0);
@@ -491,19 +509,17 @@ export class MockGenerator {
     }
     const held = this.hold(values, cadences);
     this.tick++;
+    this.elapsedMs += this.intervalMs;
     return { values, held, cadences };
   }
 
-  /** Walks one series a tick and returns its reading, or null when unread. */
+  /** One series' reading this tick, or null when unread. */
   private step(
     i: number,
     spec: SeriesSpec,
     sampled: boolean,
     land: boolean
   ): number | null {
-    const st = this.state[i] as { v: number; r: () => number };
-    if (spec.noise > 0) st.v = walkStep(st.v, st.r, spec);
-    if (land) st.v = spec.base;
     const readable = sampled && !this.failing.has(i);
     const metric = spec.key.metric;
     if (
@@ -513,11 +529,21 @@ export class MockGenerator {
     )
       return networkRateAt(this.tick);
     if (!readable || spec.sumOf || spec.silent) return null;
-    const scaled =
+    const shaper = this.shapers[i] as Shaper;
+    const v = land
+      ? spec.base
+      : scaled(
+          shaper.at(Math.floor(this.elapsedMs / 1000)),
+          spec.base,
+          spec.swing
+        );
+    const paced =
       spec.perTick === undefined
-        ? st.v
-        : st.v - spec.perTick * (1 - 1000 / this.intervalMs);
-    return round(clampWalk(scaled, spec));
+        ? v
+        : v - spec.perTick * (1 - 1000 / this.intervalMs);
+    return round(
+      Math.min(spec.max ?? Infinity, Math.max(spec.min ?? -Infinity, paced))
+    );
   }
 
   /** Records this tick's readings and returns each series' held value. */
