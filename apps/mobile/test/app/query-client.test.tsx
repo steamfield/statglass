@@ -80,6 +80,9 @@ function HistoryReadout() {
 test("mounted history drops the last transport’s data while the next transport loads", async () => {
   jest.useFakeTimers();
   mockAppState();
+  // The clocks give the two transports different pages: the first ends before
+  // 120000 and the second at the edge of the 120000 window. The second one's
+  // latency holds the loading state long enough to assert on it.
   const source = createMockTransport({
     historyRows: 1,
     autoTick: false,
