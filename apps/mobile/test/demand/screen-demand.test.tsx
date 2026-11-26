@@ -11,11 +11,11 @@ import { ExpoRoot, router, Stack, useLocalSearchParams } from "expo-router";
 import { getMockContext } from "expo-router/testing-library";
 import { Dimensions, Text, View } from "react-native";
 import { useHistoryRange, useModuleHistory } from "@/data/history";
-import { useHostSparkline } from "@/data/hosts";
 import { useHostLiveSubscription } from "@/data/live";
 import { useProcessDemand } from "@/data/processes";
 import { HostScreen } from "@/host";
 import { HostsList } from "@/hosts/hosts-list";
+import { useHostSparkline } from "@/hosts/row-sparkline";
 
 function CpuModule() {
   const { host } = useLocalSearchParams<{ host: string }>();

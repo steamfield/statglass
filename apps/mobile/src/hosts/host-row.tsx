@@ -15,7 +15,6 @@ import Animated, {
 import { StatusWarning } from "@/connection/status-warning";
 import {
   useClearOfflineHostReadings,
-  useHostSparkline,
   useHostStatus,
   useHostVitals,
 } from "@/data/hosts";
@@ -27,6 +26,7 @@ import { useThemeColors } from "@/ui/theme-colors";
 import { GapBands } from "@/widgets/gap-bands";
 import { Sparkbars } from "@/widgets/sparkbars";
 import { StreamArea } from "@/widgets/stream-area";
+import { useHostSparkline } from "./row-sparkline";
 
 const PLATFORMS: Record<OsKind, { label: string; icon: IconName }> = {
   mac_os: { label: "macOS", icon: "apple.logo" },
