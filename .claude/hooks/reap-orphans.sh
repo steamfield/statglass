@@ -170,10 +170,12 @@ run_hook() {
     phases=$({
         trap 'exit 143' TERM
         cat >/dev/null 2>&1   # hook payload; nothing in it is needed
-        time git_phase 2>&3
+        # Only kill_phase reports on stderr. Bash 5 writes an interrupted
+        # phase's `time` report to that phase's stderr, so the others get none.
+        time git_phase 2>/dev/null
         [[ -z "$roots" ]] && exit 0
-        time ps_phase 2>&3
-        time awk_phase 2>&3
+        time ps_phase 2>/dev/null
+        time awk_phase 2>/dev/null
         time kill_phase 2>&3
     } 3>&2 2>&1) || return $?
     [[ -n "$timing" && ! -p "$timing" ]] || return 0  # A FIFO can block an append.
