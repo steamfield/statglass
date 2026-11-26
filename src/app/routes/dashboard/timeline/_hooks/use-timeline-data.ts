@@ -7,7 +7,7 @@ import type {
   TierRequest,
 } from "@core/generated/types";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
-import { historyKeys, type RangeSpec } from "@core/query-keys";
+import { historyKeys, type RangeSpec, sameHost } from "@core/query-keys";
 import { DAY_MS, floorTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
+import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { type Bucket, combineSeries } from "../_lib/buckets";
@@ -288,7 +289,9 @@ const COMMIT_MARGIN_MS = 30_000;
  * 50 ms of cursor rest and cached per bucket. An answer fetched before the
  * bucket can have been committed (D-070) is not final: often `null`, because
  * the snapshots are still in the writer's open batch. It goes stale at once,
- * so the cursor's next visit asks again.
+ * so the cursor's next visit asks again. While the next bucket's answer is
+ * on its way the last one stays, so the tooltip's process rows change in
+ * place instead of blanking to "Looking up" on every bucket.
  */
 export function useProcessesAt(
   bucketT: number | null,
@@ -305,14 +308,16 @@ export function useProcessesAt(
     number,
     number,
   ];
+  const queryKey = historyKeys.processesAt(hostId, t, ms);
   const { data } = useQuery({
-    queryKey: historyKeys.processesAt(hostId, t, ms),
+    queryKey,
     queryFn: () => unwrap(transport.queryProcessesAt(hostId, t + ms / 2)),
     enabled: settledBucket !== null,
+    placeholderData: holdWhile(queryKey, sameHost),
     staleTime: (query) =>
       query.state.dataUpdatedAt >= t + ms + HISTORY_COMMIT_MS + COMMIT_MARGIN_MS
         ? Number.POSITIVE_INFINITY
         : 0,
   });
-  return settledBucket === bucket ? data : undefined;
+  return bucket === null ? undefined : data;
 }

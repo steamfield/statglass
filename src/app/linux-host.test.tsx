@@ -90,7 +90,12 @@ describe("a Linux host (D-116)", () => {
     });
     expect(chart.querySelector('[data-series="mem.used"]')).not.toBeNull();
     expect(chart.querySelector('[data-series="mem.cached"]')).not.toBeNull();
-    expect(within(card).getByText("Cached files")).toBeVisible();
+    // The legend's label; the hover tooltip holds a hidden copy.
+    expect(
+      within(card).getByText("Cached files", {
+        ignore: "script, style, [role=tooltip] *",
+      })
+    ).toBeVisible();
     expect(within(card).getByText("16.5 GB")).toBeInTheDocument();
     expect(
       within(card).getByRole("slider", { name: "Select a time range" })

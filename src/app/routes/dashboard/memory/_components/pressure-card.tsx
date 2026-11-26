@@ -1,7 +1,7 @@
 import { formatPercent } from "@core/format";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
-import { MEMORY_PRESSURE_HERO } from "~/components/module-hero";
+import { heroReadout, MEMORY_PRESSURE_HERO } from "~/components/module-hero";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
@@ -65,6 +65,7 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
         <ModuleHistoryChart
           chart={chart}
           lines={MEMORY_PRESSURE_HERO.lines(chart.series.values)}
+          readout={heroReadout(MEMORY_PRESSURE_HERO, chart.series.values)}
           yAxis={MEMORY_PRESSURE_HERO.yAxis}
           accent="mem"
           height={HEIGHT}

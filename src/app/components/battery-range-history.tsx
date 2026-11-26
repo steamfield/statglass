@@ -1,7 +1,7 @@
 import { formatPercent } from "@core/format";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
 import { InlineMessage } from "~/components/inline-message";
-import { BATTERY_HERO } from "~/components/module-hero";
+import { BATTERY_HERO, heroReadout } from "~/components/module-hero";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
 import { useModuleRange } from "~/stores/chart-range";
@@ -28,6 +28,7 @@ function ChargeHistory({ windowMs }: { windowMs: number }) {
       <ModuleHistoryChart
         chart={chart}
         lines={BATTERY_HERO.lines(chart.series.values)}
+        readout={heroReadout(BATTERY_HERO, chart.series.values)}
         yAxis={BATTERY_HERO.yAxis}
         accent="battery"
         height={140}

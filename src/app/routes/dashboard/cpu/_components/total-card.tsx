@@ -2,7 +2,7 @@ import { fixed, formatPercent, MISSING } from "@core/format";
 import { sk } from "@core/series-key";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
-import { CPU_HERO } from "~/components/module-hero";
+import { CPU_HERO, heroReadout } from "~/components/module-hero";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
@@ -102,6 +102,7 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
         <ModuleHistoryChart
           chart={chart}
           lines={CPU_HERO.lines(chart.series.values)}
+          readout={heroReadout(CPU_HERO, chart.series.values)}
           yAxis={CPU_HERO.yAxis}
           accent="cpu"
           height={HEIGHT}

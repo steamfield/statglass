@@ -1,7 +1,7 @@
 import { indexAt } from "@core/chart-math";
 import { formatHistoryTime, MISSING, resolutionLabel } from "@core/format";
 import { gapExplanation } from "@core/history-state";
-import { type RefObject, useLayoutEffect, useRef } from "react";
+import type { RefObject } from "react";
 import {
   ChartTooltipHead,
   ChartTooltipNote,
@@ -13,6 +13,7 @@ import {
   tooltipField,
 } from "~/components/charts/chart-tooltip";
 import { paintCrosshairs, plotLeft } from "~/components/charts/crosshair-line";
+import { usePaintedHover } from "~/components/charts/use-painted-hover";
 import type { GapSpan } from "~/widgets/gap-band";
 import { type Accent, accentVars, rampColor } from "~/widgets/lib/accent";
 
@@ -62,6 +63,10 @@ function hoverCaption(p: MirrorHoverProps, i: number) {
   };
 }
 
+/** The bar under the pointer, `fraction` across the plot. */
+const slotAt = (fraction: number, p: MirrorHoverProps) =>
+  indexAt(fraction, p.count);
+
 /** Fill and place the tooltip and crosshair for bar `i`, or hide them. */
 function paint(tip: HTMLElement, p: MirrorHoverProps, i: number | null) {
   const host = tip.parentElement;
@@ -109,41 +114,7 @@ function paint(tip: HTMLElement, p: MirrorHoverProps, i: number | null) {
  */
 export function MirrorHover(props: MirrorHoverProps) {
   const { upLabel, downLabel, accent } = props;
-  const latest = useRef(props);
-  const slot = useRef<number | null>(null);
-  const tipRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    latest.current = props;
-    if (tipRef.current) paint(tipRef.current, props, slot.current);
-  });
-
-  useLayoutEffect(() => {
-    const tip = tipRef.current;
-    const host = tip?.parentElement;
-    if (!tip || !host) return;
-    const move = (e: globalThis.PointerEvent) => {
-      const p = latest.current;
-      const box = p.plotRef.current?.getBoundingClientRect();
-      const next =
-        box && box.width > 0
-          ? indexAt((e.clientX - box.left) / box.width, p.count)
-          : null;
-      if (next === slot.current) return;
-      slot.current = next;
-      paint(tip, p, next);
-    };
-    const leave = () => {
-      slot.current = null;
-      paint(tip, latest.current, null);
-    };
-    host.addEventListener("pointermove", move);
-    host.addEventListener("pointerleave", leave);
-    return () => {
-      host.removeEventListener("pointermove", move);
-      host.removeEventListener("pointerleave", leave);
-    };
-  }, []);
+  const tipRef = usePaintedHover(props, slotAt, paint, props.plotRef);
 
   return (
     <ChartTooltipShell

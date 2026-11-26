@@ -38,6 +38,15 @@ export function PowerCard({ windowMs }: { windowMs: number }) {
         chart={chart}
         lines={[{ key: KEY, values: chart.series.values[KEY] ?? [], step: 1 }]}
         yAxis={WATTS_AXIS}
+        readout={[
+          {
+            key: KEY,
+            label: "Power",
+            step: 1,
+            values: chart.series.values[KEY] ?? [],
+            format: (w) => formatWatts(w),
+          },
+        ]}
         accent="gpu"
         height={140}
         subject="GPU power"

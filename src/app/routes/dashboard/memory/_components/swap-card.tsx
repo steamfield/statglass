@@ -59,6 +59,15 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
             format: fmt,
             gutter: BYTES_GUTTER,
           }}
+          readout={[
+            {
+              key: KEY,
+              label: "Used",
+              step: 1,
+              values: chart.series.values[KEY] ?? [],
+              format: fmt,
+            },
+          ]}
           accent="mem"
           height={HEIGHT}
           subject="Swap used"

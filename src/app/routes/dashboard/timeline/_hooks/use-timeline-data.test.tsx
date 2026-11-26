@@ -448,10 +448,25 @@ describe("useProcessesAt", () => {
     const { asked } = setup(old);
     await screen.findByText(`${old} none`);
     act(() => setBucket(other));
+    await waitFor(() => expect(asked()).toBe(2));
     await screen.findByText(`${other} none`);
     act(() => setBucket(old));
     await screen.findByText(`${old} none`);
     expect(asked()).toBe(2);
+  });
+
+  it("keeps the last answer while the next bucket's is on its way", async () => {
+    const a = bucket(NOW - 2 * 60 * MIN);
+    const b = bucket(NOW - 3 * 60 * MIN);
+    setup(a, true);
+    await screen.findByText(`${a} rows@${a + 5_000}`);
+
+    // The cursor moves: the tooltip keeps a's rows, never "pending", until
+    // b's answer replaces them.
+    act(() => setBucket(b));
+    expect(screen.getByText(`${b} rows@${a + 5_000}`)).toBeInTheDocument();
+    await screen.findByText(`${b} rows@${b + 5_000}`);
+    expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
   });
 
   it("asks again when a range switch changes the bucket width at the same start", async () => {

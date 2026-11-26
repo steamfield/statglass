@@ -20,7 +20,8 @@ export interface PlotSeries {
   metric: string;
   cols: SeriesColumns;
   accent: Accent;
-  look: "area" | "line" | "faint";
+  /** `bars`: one bar per bucket from the baseline, as the Network page draws. */
+  look: "area" | "line" | "faint" | "bars";
   envelope: boolean;
   direction?: "up" | "down";
   edges: number[];
@@ -109,7 +110,8 @@ export function buildLaneModel(
       }));
       break;
     case "network": {
-      // Each half has its own nice ceiling; both map onto [-1, 1].
+      // Each half has its own nice ceiling; both map onto [-1, 1]. Bars, as
+      // on the Network page: a rate per bucket, upload above, download below.
       domain = [-1, 1];
       out = plotted.map((m, i) => {
         const up = m.metric === "net.tx_total";
@@ -121,10 +123,10 @@ export function buildLaneModel(
           metric: m.metric,
           cols,
           accent,
-          look: "area",
-          envelope: true,
+          look: "bars",
+          envelope: false,
           direction: up ? "up" : "down",
-          edges: edges(i, cols),
+          edges: [],
         };
       });
       break;
