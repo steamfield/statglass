@@ -32,27 +32,28 @@
 # Test seams: REAP_ORPHANS_PS_FILE replaces the ps listing (lines of
 # "pid ppid etime command..."); REAP_ORPHANS_ROOTS replaces the checkout roots
 # (newline-separated); REAP_ORPHANS_SELF stands in for this hook's pid;
-# REAP_ORPHANS_DRY_RUN=1 sends no signals.
+# REAP_ORPHANS_DRY_RUN=1 sends no signals to candidates.
+# REAP_ORPHANS_TIMING appends durations in ms or status=interrupted to a local file.
 
-cat >/dev/null 2>&1   # hook payload; nothing in it is needed
+git_phase() {
+    hook_root=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)
+    roots=${REAP_ORPHANS_ROOTS-$(git -C "$hook_root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')}
+    roots="$hook_root"$'\n'"$roots"
+    roots=$(printf '%s' "$roots" | tr '\n' '|')
+}
 
-min_age=${REAP_ORPHANS_MIN_AGE:-120}
-
-hook_root=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)
-roots=${REAP_ORPHANS_ROOTS-$(git -C "$hook_root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')}
-roots="$hook_root"$'\n'"$roots"
-roots=$(printf '%s' "$roots" | tr '\n' '|')
-[[ -z "$roots" ]] && exit 0
-
-if [[ -n "${REAP_ORPHANS_PS_FILE:-}" ]]; then
-    listing=$(cat "$REAP_ORPHANS_PS_FILE" 2>/dev/null)
-else
-    listing=$(ps -ww -U "$(id -u)" -o pid=,ppid=,etime=,command= 2>/dev/null)
-fi
+ps_phase() {
+    if [[ -n "${REAP_ORPHANS_PS_FILE:-}" ]]; then
+        listing=$(cat "$REAP_ORPHANS_PS_FILE" 2>/dev/null)
+    else
+        listing=$(exec ps -ww -U "$(id -u)" -o pid=,ppid=,etime=,command= 2>/dev/null)
+    fi
+}
 
 # Output: "<ownership> <top pid> <tool> <pid> <pid>..." per candidate tree.
 # A mixed-checkout tree is also left alone rather than killing a sibling child.
-victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots" -v own="$hook_root" -v self="${REAP_ORPHANS_SELF:-$$}" '
+awk_phase() {
+    victims=$(printf '%s\n' "$listing" | awk -v min_age="${REAP_ORPHANS_MIN_AGE:-120}" -v roots="$roots" -v own="$hook_root" -v self="${REAP_ORPHANS_SELF:-$$}" '
     function secs(t,   d, n, p, s, i) {          # etime: [[dd-]hh:]mm:ss
         d = 0
         if (index(t, "-")) { d = substr(t, 1, index(t, "-") - 1); t = substr(t, index(t, "-") + 1) }
@@ -61,11 +62,11 @@ victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots"
         return d * 86400 + s
     }
     function base(p) { sub(/.*\//, "", p); return p }
-    function checkout_at(p, start,   i, match_root) {
+    function checkout_at(path,   i, match_root) {
         # Resolve nesting for this path occurrence, not for the whole command.
         match_root = ""
         for (i = 1; i <= nr; i++)
-            if (r[i] != "" && substr(cm[p], start, length(r[i]) + 1) == r[i] "/" && length(r[i]) > length(match_root)) match_root = r[i]
+            if (r[i] != "" && substr(path, 1, length(r[i]) + 1) == r[i] "/" && length(r[i]) > length(match_root)) match_root = r[i]
         return match_root
     }
     function names_checkout(p,   i) {
@@ -73,14 +74,15 @@ victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots"
             if (r[i] != "" && index(cm[p], r[i] "/")) return 1
         return 0
     }
-    function names_sibling(p,   start, root) {
-        for (start = 1; start <= length(cm[p]); start++) {
-            if (substr(cm[p], start, 1) != "/") continue
-            root = checkout_at(p, start)
+    function names_sibling(p,   rest, slash, root) {
+        rest = cm[p]
+        while ((slash = index(rest, "/")) != 0) {
+            rest = substr(rest, slash)
+            root = checkout_at(rest)
             if (root != "" && root != own) return 1
             # An enclosing root at this same occurrence is only a prefix. Continue
             # after the selected root so a separate sibling argument still counts.
-            if (root != "") start += length(root) - 1
+            rest = substr(rest, root == "" ? 2 : length(root) + 1)
         }
         return 0
     }
@@ -138,23 +140,66 @@ victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots"
             print (has_sibling(top) ? "sibling" : "own"), top, t subtree(top)
         }
     }')
+}
 
-[[ -z "$victims" ]] && exit 0
+kill_phase() {
+    [[ -z "$victims" ]] && return 0
 
-killed=""
-while read -r ownership top tool pids; do
-    if [[ "$ownership" == sibling ]]; then
-        echo "reap-orphans: left sibling-worktree orphan alone: $top $tool" >&2
-        continue
+    local killed="" ownership top tool pids action
+    while read -r ownership top tool pids; do
+        if [[ "$ownership" == sibling ]]; then
+            echo "reap-orphans: left sibling-worktree orphan alone: $top $tool" >&2
+            continue
+        fi
+        # shellcheck disable=SC2086  # $pids is a list
+        [[ -z "${REAP_ORPHANS_DRY_RUN:-}" ]] && kill -TERM $pids 2>/dev/null
+        killed+="${killed:+, }$top $tool"
+    done <<< "$victims"
+
+    if [[ -n "$killed" ]]; then
+        action="killed"
+        [[ -n "${REAP_ORPHANS_DRY_RUN:-}" ]] && action="would reap"
+        echo "reap-orphans: $action orphaned dev processes: $killed" >&2
     fi
-    # shellcheck disable=SC2086  # $pids is a list
-    [[ -z "${REAP_ORPHANS_DRY_RUN:-}" ]] && kill -TERM $pids 2>/dev/null
-    killed+="${killed:+, }$top $tool"
-done <<< "$victims"
+}
 
-if [[ -n "$killed" ]]; then
-    action="killed"
-    [[ -n "${REAP_ORPHANS_DRY_RUN:-}" ]] && action="would reap"
-    echo "reap-orphans: $action orphaned dev processes: $killed" >&2
+run_hook() {
+    set +m  # Keep the phase commands in the worker's group.
+    trap 'exit 143' TERM  # Let Bash reap its foreground child before exiting.
+    local TIMEFORMAT='%3R' phases git_ms ps_ms awk_ms kill_ms
+    phases=$({
+        trap 'exit 143' TERM
+        cat >/dev/null 2>&1   # hook payload; nothing in it is needed
+        time git_phase 2>&3
+        [[ -z "$roots" ]] && exit 0
+        time ps_phase 2>&3
+        time awk_phase 2>&3
+        time kill_phase 2>&3
+    } 3>&2 2>&1) || return $?
+    [[ -n "$timing" && ! -p "$timing" ]] || return 0  # A FIFO can block an append.
+    phases=${phases//[.,]/}
+    read -r git_ms ps_ms awk_ms kill_ms <<< "${phases//$'\n'/ }"
+    trap '' TERM  # Finish the timing record once the phases have completed.
+    printf 'git_ms=%d ps_ms=%d awk_ms=%d kill_ms=%d\n' \
+        "$((10#${git_ms:-0}))" "$((10#${ps_ms:-0}))" "$((10#${awk_ms:-0}))" "$((10#${kill_ms:-0}))" 2>/dev/null >> "$timing" || :
+}
+
+timing=${REAP_ORPHANS_TIMING:-} cancelled="" interrupted=""
+trap 'cancelled=1' HUP INT TERM
+exec 3>&2 2>/dev/null  # Hide job-control diagnostics. Keep worker stderr on fd 3.
+set -m
+run_hook <&0 2>&3 & worker=$!
+( set +m; trap 'exit 0' TERM
+    sleep 8 && kill -TERM -- "-$worker" && sleep 0.25 && kill -KILL -- "-$worker"
+) & timer=$!
+set +m
+if [[ -n "$cancelled" ]] || ! wait "$worker"; then
+    trap '' HUP INT TERM
+    kill -TERM -- "-$worker"
+    wait "$worker" || { interrupted=1; kill -KILL -- "-$worker"; }
 fi
+trap '' HUP INT TERM
+kill -TERM -- "-$timer"
+wait "$timer"
+[[ -z "$interrupted" || -z "$timing" || -p "$timing" ]] || printf 'status=interrupted\n' >> "$timing"
 exit 0
