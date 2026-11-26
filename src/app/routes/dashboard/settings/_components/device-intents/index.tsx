@@ -69,14 +69,18 @@ export function DeviceIntents() {
         )}
       </SettingsRow>
       {intents.isError && (
-        <InlineMessage tone="error" className="px-4 py-3">
-          {commandErrorText(intents.error, "Couldn’t read device updates.")}
-        </InlineMessage>
+        <div data-settings-part="device-access" className="px-4 py-3">
+          <InlineMessage tone="error">
+            {commandErrorText(intents.error, "Couldn’t read device updates.")}
+          </InlineMessage>
+        </div>
       )}
       {retry.isError && hasIntents && (
-        <InlineMessage tone="error" className="px-4 py-3">
-          {commandErrorText(retry.error, "Couldn’t retry device updates.")}
-        </InlineMessage>
+        <div data-settings-part="device-access" className="px-4 py-3">
+          <InlineMessage tone="error">
+            {commandErrorText(retry.error, "Couldn’t retry device updates.")}
+          </InlineMessage>
+        </div>
       )}
       {intents.data?.map((intent) => (
         <IntentRow key={`${intent.host}/${intent.device}`} intent={intent} />

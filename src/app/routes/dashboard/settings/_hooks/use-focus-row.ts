@@ -9,8 +9,12 @@ import { useCallback, useEffect, useRef } from "react";
 /** How long to keep looking for a row that hasn't rendered yet. */
 const FIND_DEADLINE_MS = 3000;
 
-/** How long a found row keeps `data-flash`; matches the keyframe in motion.css. */
-const FLASH_MS = 1400;
+/**
+ * How long a found row keeps `data-flash` when no fade runs (Reduce Motion,
+ * Performance mode), so the held tint is seen. With motion, the fade's own
+ * `animationend` (over `--motion-flash`) removes it.
+ */
+const FLASH_HOLD_MS = 1400;
 
 /**
  * The element carrying `data-settings-row="<id>"` under `root`, or null when
@@ -66,7 +70,8 @@ export function useFocusRow(focus: string | null, onDone: () => void): void {
 }
 
 /**
- * A stable function that sets `data-flash` on one element for `FLASH_MS`,
+ * A stable function that sets `data-flash` on one element until its fade ends
+ * (or for `FLASH_HOLD_MS` when none runs),
  * moving it off any element still flashing. The timer outlives focus
  * changes and is cleared on unmount.
  */
@@ -82,7 +87,15 @@ function useFlash(): (el: HTMLElement) => void {
     (el: HTMLElement) => {
       stop();
       el.setAttribute("data-flash", "");
-      flashing.current = { el, timer: window.setTimeout(stop, FLASH_MS) };
+      const onEnd = (event: AnimationEvent) => {
+        // Rows hold their own animations; only the flash's own end counts.
+        if (event.target !== el || event.animationName !== "settings-row-flash")
+          return;
+        el.removeEventListener("animationend", onEnd);
+        if (flashing.current?.el === el) stop();
+      };
+      el.addEventListener("animationend", onEnd);
+      flashing.current = { el, timer: window.setTimeout(stop, FLASH_HOLD_MS) };
     },
     [stop]
   );

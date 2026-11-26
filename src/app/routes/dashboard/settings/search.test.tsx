@@ -224,6 +224,51 @@ describe("Settings search navigation", () => {
     );
   });
 
+  it("does nothing on Return when the only match never renders", async () => {
+    const { user, router } = renderOn("general", {
+      transportOptions: { scenarios: ["no-process-network"] },
+    });
+    await search(user, "network history");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "No settings match “network history”."
+      )
+    );
+    await user.keyboard("{Enter}");
+    expect(searchField()).toHaveValue("network history");
+    expect(router.state.location.pathname).toBe(settingsHref("general"));
+  });
+
+  it("leaves search for a reason link to a row on the same tab", async () => {
+    const { user } = renderOn("about");
+    await user.click(
+      await screen.findByRole("switch", {
+        name: "Check for updates automatically",
+      })
+    );
+    await search(user, "install");
+    const install = row("install-updates") as HTMLElement;
+    await waitFor(() => expect(install).toBeVisible());
+    await user.click(
+      within(install).getByRole("link", {
+        name: "Check for updates automatically",
+      })
+    );
+    expect(searchField()).toHaveValue("");
+    await waitFor(() =>
+      expect(row("check-updates")?.scrollIntoView).toHaveBeenCalled()
+    );
+  });
+
+  it("adds no history entry when the open tab is clicked to leave search", async () => {
+    const { user, router } = renderOn("general");
+    await search(user, "dark");
+    const key = router.state.location.key;
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    expect(searchField()).toHaveValue("");
+    expect(router.state.location.key).toBe(key);
+  });
+
   it("does nothing on Return without a match", async () => {
     const { user, router } = renderOn("general");
     await search(user, "zebra");
@@ -307,10 +352,6 @@ describe("Settings search navigation", () => {
       )
     );
     expect(row("network-history")).toBeNull();
-    // The History group still mounts its panels, hidden with nothing to show.
-    expect(
-      document.querySelector('[data-search-group="history"]')
-    ).not.toBeVisible();
     expect(screen.queryByRole("link", { name: "Open in History" })).toBeNull();
   });
 });

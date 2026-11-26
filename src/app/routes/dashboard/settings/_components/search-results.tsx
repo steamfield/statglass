@@ -8,7 +8,11 @@
 import { type RefObject, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Button } from "~/components/ui/button";
-import { SETTINGS_TABS, settingsHref } from "~/lib/settings-links";
+import {
+  SETTINGS_TABS,
+  type SettingsTabId,
+  settingsHref,
+} from "~/lib/settings-links";
 import {
   GROUP_ATTR,
   matchedRowCount,
@@ -64,6 +68,23 @@ function useRenderedRows(rootRef: RefObject<HTMLElement | null>): RenderedRows {
     return () => observer.disconnect();
   }, [rootRef]);
   return rendered;
+}
+
+/**
+ * The first matched row that shows under the results `root`, with its tab:
+ * where Return and "Open in" lead. Before any panel renders it is the
+ * catalog's first match; null when nothing shows.
+ */
+export function firstShownMatch(
+  query: string,
+  root: HTMLElement | null
+): { tab: SettingsTabId; row: string } | null {
+  const rendered = root ? readRenderedRows(root) : null;
+  for (const match of matchSettings(query)) {
+    const row = match.rowIds.find((id) => rendered?.has(id) ?? true);
+    if (row) return { tab: match.tab, row };
+  }
+  return null;
 }
 
 /** How many matched rows show: the catalog count until any panel renders. */

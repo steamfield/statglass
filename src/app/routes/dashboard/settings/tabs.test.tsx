@@ -126,16 +126,19 @@ describe("Settings focus links", () => {
     await waitFor(() => expect(router.state.location.search).toBe(""));
   });
 
-  it("ignores a focus id that is not on the page", {
-    timeout: 8000,
-  }, async () => {
-    const { router } = renderAt("/history?focus=nope");
-    await screen.findByRole("heading", { name: "Clear history" });
-    // An unknown id is dropped at the 3 s search deadline.
-    await waitFor(() => expect(router.state.location.search).toBe(""), {
-      timeout: 4000,
-    });
-    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  it("ignores a focus id that is not on the page", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { router } = renderAt("/history?focus=nope");
+      await screen.findByRole("heading", { name: "Clear history" });
+      expect(router.state.location.search).toBe("?focus=nope");
+      // An unknown id is dropped at the 3 s search deadline.
+      act(() => vi.advanceTimersByTime(3000));
+      await waitFor(() => expect(router.state.location.search).toBe(""));
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

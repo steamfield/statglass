@@ -118,9 +118,34 @@ function meterFigures({
     legend: trimming
       ? { swatch: DISK_FADED, text: `Trimmed to about ${projected} ${until}` }
       : { swatch: DISK_HATCH, text: `About ${projected} ${until}` },
-    ariaLabel: `${size} used, ${trimming ? "trimming" : "growing"} to about ${projected} of a ${limit} limit`,
+    ariaLabel: meterLabel(size, projected, until, limit, trimming, {
+      size: sizeBytes !== null,
+      projection: projection !== null,
+    }),
     ...meterBars(sizeBytes, projection?.bytes ?? null, limitBytes, trimming),
   };
+}
+
+/**
+ * What the meter says aloud, from only the figures that are known: no
+ * direction without both reads, no placeholder glyph read out.
+ */
+function meterLabel(
+  size: string,
+  projected: string,
+  until: string,
+  limit: string,
+  trimming: boolean,
+  known: { size: boolean; projection: boolean }
+): string {
+  if (known.size && known.projection) {
+    return `${size} used, ${trimming ? "trimming" : "growing"} to about ${projected} of a ${limit} limit`;
+  }
+  if (known.size) return `${size} used of a ${limit} limit`;
+  if (known.projection) {
+    return `Size on disk unavailable, about ${projected} ${until}, ${limit} limit`;
+  }
+  return `Size on disk unavailable, ${limit} limit`;
 }
 
 /** One legend entry: a swatch and its text. */
@@ -158,7 +183,11 @@ export function HistoryMeter({ history }: { history: Settings["history"] }) {
     history,
   });
   return (
-    <div className="flex flex-col gap-2.5 border-border-subtle border-b px-4 pt-3.5 pb-3">
+    // Shares Keep history's projection, so search shows it with that row.
+    <div
+      data-settings-part="keep-history"
+      className="flex flex-col gap-2.5 border-border-subtle border-b px-4 pt-3.5 pb-3"
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <span className="text-figure">
           <b className="figures font-medium">{figures.size}</b> on disk now

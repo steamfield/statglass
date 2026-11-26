@@ -123,7 +123,7 @@ const SLOW_GROWTH: HistoryGrowth = {
 };
 
 describe("History storage meter", () => {
-  const track = () => screen.getByRole("img", { name: / used, / });
+  const track = () => screen.getByRole("img", { name: / limit$/ });
   const meterText = () => track().parentElement?.textContent ?? "";
   const barWidths = () =>
     [...track().children].map((bar) => (bar as HTMLElement).style.width);
@@ -222,20 +222,20 @@ describe("History storage meter", () => {
         name: "the size read fails",
         arrange: (t) =>
           t.failNext("historySize", { kind: "remote_busy", message: "busy" }),
-        label: /^— used, growing to about \d+ MB of a 750 MB limit$/,
+        label: /^Size on disk unavailable, about \d+ MB .+, 750 MB limit$/,
       },
       // No mock option holds a reply, so these reads never answer.
       {
         name: "the size read is pending",
         arrange: (t) =>
           Object.assign(t, { historySize: () => new Promise(() => {}) }),
-        label: /^— used, growing to about \d+ MB of a 750 MB limit$/,
+        label: /^Size on disk unavailable, about \d+ MB .+, 750 MB limit$/,
       },
       {
         name: "the growth read is pending",
         arrange: (t) =>
           Object.assign(t, { historyGrowth: () => new Promise(() => {}) }),
-        label: /^148 MB used, growing to about — of a 750 MB limit$/,
+        label: /^148 MB used of a 750 MB limit$/,
       },
     ]
   )("shows MISSING figures while $name", async ({ arrange, label }) => {

@@ -14,7 +14,7 @@ import {
   settingsHref,
 } from "~/lib/settings-links";
 import { cn } from "~/lib/utils";
-import { SearchResults } from "./_components/search-results";
+import { firstShownMatch, SearchResults } from "./_components/search-results";
 import { SettingsSearch } from "./_components/settings-search";
 import {
   SETTINGS_TABPANEL_ID,
@@ -23,7 +23,7 @@ import {
 } from "./_components/settings-tabs";
 import { TabContent } from "./_components/tab-content";
 import { useFocusRow } from "./_hooks/use-focus-row";
-import { matchSettings } from "./_lib/search";
+import { RESULTS_ATTR } from "./_lib/search";
 
 /** The single 760 px column the tab's panels or the search results sit in. */
 const BODY = "mt-5 flex max-w-[760px] flex-col gap-5";
@@ -45,7 +45,7 @@ export default function SettingsRoute() {
   const [headerRef, headerHeight] = useBorderBoxHeight<HTMLElement>();
   const [tabsRef, tabsHeight] = useBorderBoxHeight<HTMLDivElement>();
 
-  const [query, setQuery] = useTabSearch(tab);
+  const [query, setQuery] = useTabSearch(tab, focus);
   const searching = query.trim() !== "";
   const searchRef = useRef<HTMLInputElement>(null);
   const [panelRef, focusPanel] = usePendingFocus<HTMLDivElement>();
@@ -59,18 +59,20 @@ export default function SettingsRoute() {
     focusPanel();
   };
 
-  // Return in the field opens the first match's tab focused on it, as
-  // "Open in" does; with no match it does nothing.
+  // Return in the field opens the first result that shows, focused on it,
+  // as "Open in" does; with nothing showing it does nothing.
   const openFirst = () => {
-    const first = matchSettings(query)[0];
+    const root = document.querySelector<HTMLElement>(`[${RESULTS_ATTR}]`);
+    const first = firstShownMatch(query, root);
     if (!first) return;
     setQuery("");
-    void navigate(settingsHref(first.tab, first.rowIds[0]));
+    void navigate(settingsHref(first.tab, first.row));
   };
 
   const selectTab = (next: SettingsTabId) => {
     setQuery("");
-    void navigate(settingsHref(next));
+    // Leaving search for the tab already open adds no history entry.
+    if (next !== tab) void navigate(settingsHref(next));
   };
   const clearFocus = useCallback(
     () => void navigate(settingsHref(tab), { replace: true }),
@@ -135,13 +137,15 @@ export default function SettingsRoute() {
 
 /**
  * The search query, kept with the tab it was typed on. When the tab changes
- * from anywhere (a reason link, the sidebar, "Open in"), the query resets
- * during that render, so search never outlives the tab it started on.
+ * from anywhere (a reason link, the sidebar, "Open in"), or a link asks to
+ * focus a row (which may be on this tab, hidden by the results), the query
+ * resets during that render, so the tab panel is there to scroll to.
  */
-function useTabSearch(tab: SettingsTabId) {
+function useTabSearch(tab: SettingsTabId, focus: string | null) {
   const [typed, setTyped] = useState({ tab, query: "" });
-  if (typed.tab !== tab) setTyped({ tab, query: "" });
-  const query = typed.tab === tab ? typed.query : "";
+  const stale = typed.tab !== tab || (focus !== null && typed.query !== "");
+  if (stale) setTyped({ tab, query: "" });
+  const query = stale ? "" : typed.query;
   const setQuery = (next: string) => setTyped({ tab, query: next });
   return [query, setQuery] as const;
 }
