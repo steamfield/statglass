@@ -5,10 +5,10 @@ import { historyGrid } from "@core/history-grid";
 import { gapBands } from "@core/history-state";
 import { currentLayout, held } from "@core/live-selectors";
 import { labelOf, seriesKeyString } from "@core/series-key";
-import { heatmapBucketMs } from "@core/series-stats";
 import { gapBandsModel } from "@core/widget-models/gap-band";
 import { heatMatrixModel } from "@core/widget-models/heat-matrix";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
+import { useWindowDimensions } from "react-native";
 import { shallow } from "zustand/shallow";
 import {
   type HistoryRange,
@@ -20,10 +20,20 @@ import { HistoryNotice } from "@/module/history-notice";
 import { ModuleNotice } from "@/module/module-notice";
 import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
-import { HeatMatrix } from "@/widgets/heat-matrix";
+import {
+  type HeatColumns,
+  HeatMatrix,
+  squareCellColumns,
+} from "@/widgets/heat-matrix";
 import { StatList } from "@/widgets/stat-list";
 
 const TEMPERATURE_DOMAIN = [20, 110] as const;
+/** Room for "Zone 10" and "221 °F" at the default text size. */
+const ZONE_SIDES: HeatColumns = { label: 48, reading: 50 };
+/** Sensor names are longer; they wrap inside this column. */
+const SENSOR_SIDES: HeatColumns = { label: 96, reading: 50 };
+// The card's p-3 on each side.
+const CARD_PADDING = 24;
 
 /** Render a heatmap and current readings for available temperature sensors. */
 export const ThermalHistory = memo(function ThermalHistory({
@@ -61,12 +71,17 @@ export const ThermalHistory = memo(function ThermalHistory({
     };
   }, [layout]);
   const windowMs = range.toMs - range.fromMs;
-  const columns = Math.ceil(windowMs / heatmapBucketMs(windowMs, 0));
+  const sides = zones ? ZONE_SIDES : SENSOR_SIDES;
+  const [width, setWidth] = useState(0);
+  const { fontScale } = useWindowDimensions();
+  const count =
+    width > 0 ? squareCellColumns(width - CARD_PADDING, sides, fontScale) : 0;
+  const columns = useMemo(() => ({ columns: count }), [count]);
   const history = useHostHistory(
     host,
     selection,
     range,
-    rows.length ? { columns } : null
+    rows.length && count > 0 ? columns : null
   );
   useRefreshOnRangeChange(windowMs, history);
   const data = history.data;
@@ -138,11 +153,15 @@ export const ThermalHistory = memo(function ThermalHistory({
     ({ kind }) => kind === "series" || kind === "bytes"
   );
   return (
-    <Card className="gap-2">
+    <Card
+      className="gap-2"
+      testID="thermal-heatmap-layout"
+      onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
+    >
       <Text variant="cardTitle" accessibilityRole="header">
         {title}
       </Text>
-      <HeatMatrix model={display} height={0} gapBands={gaps} />
+      <HeatMatrix model={display} height={0} gapBands={gaps} sides={sides} />
       {clamped && (
         <ModuleNotice message="History is available for only some temperature sensors." />
       )}

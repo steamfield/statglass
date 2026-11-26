@@ -82,6 +82,20 @@ test("hatches a pause over a bucket that still has a measured average", async ()
   ).toBeOnTheScreen();
 });
 
+test("grows rows with fixed sides so cells stay square when history returns fewer columns", async () => {
+  const model = heatMatrixModel(HEAT_MATRIX_FIXTURE);
+  await renderWithProviders(
+    <HeatMatrix model={model} height={0} sides={{ label: 28, reading: 34 }} />
+  );
+  // Wide enough that each cell would be far wider than a 10 pt row.
+  await fireEvent(screen.getByTestId("heat-plot"), "layout", {
+    nativeEvent: { layout: { width: model.columns * 14 } },
+  });
+  const [cell] = screen.getAllByTestId("heat-cell");
+  expect(cell?.props.width).toBe(12);
+  expect(cell?.props.height).toBe(12);
+});
+
 test("announces a loading matrix without drawing missing buckets", async () => {
   const model = heatMatrixModel({ ...HEAT_MATRIX_FIXTURE, loading: true });
   await renderWithProviders(<HeatMatrix model={model} height={80} />);
