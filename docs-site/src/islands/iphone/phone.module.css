@@ -1,0 +1,291 @@
+/*
+ * The iPhone demo's device and navigation stack. Sizes are the iPhone 17
+ * Pro's in points (402 × 874 screen), drawn at full size and scaled, so the
+ * app inside lays out at a real phone's width.
+ *
+ * Navigation timing copies UIKit's push (about 500 ms on a critically damped
+ * curve) rather than the app's motion tokens: the screen should move like
+ * iOS, not like the desktop app.
+ */
+
+.stage {
+  --rx: 6deg;
+  --ry: 16deg;
+  /* --ry without its unit, for lengths: dividing angles isn't supported everywhere. */
+  --ry-n: 16;
+  --scale: 0.68;
+  --band: 5px;
+  --bezel: 11px;
+  --w: calc(402px + 2 * (var(--band) + var(--bezel)));
+  --h: calc(874px + 2 * (var(--band) + var(--bezel)));
+  --phone-nav: 0ms;
+  --phone-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  position: relative;
+  width: calc(var(--w) * var(--scale));
+  height: calc(var(--h) * var(--scale));
+  perspective: 2200px;
+  perspective-origin: 50% 40%;
+}
+
+@media (min-width: 640px) {
+  .stage {
+    --scale: 0.74;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stage {
+    --phone-nav: 500ms;
+  }
+}
+
+/* A contact shadow under the phone that slides opposite its turn. */
+.shadow {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: -5%;
+  height: 7%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.32), transparent);
+  filter: blur(10px);
+  transform: translateX(calc(var(--ry-n) * -1.2px));
+  pointer-events: none;
+}
+
+:global(.dark) .shadow {
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.7), transparent);
+}
+
+.phone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--w);
+  height: var(--h);
+  transform-origin: 0 0;
+  transform-style: preserve-3d;
+  transform: scale(var(--scale)) translateZ(0);
+  /* In 3D the flat, invisible boxes of the frame's wrappers sort in front of
+     the half of the screen that turns away and would take its taps. Only the
+     screen takes the pointer; elsewhere it falls through to the stage. */
+  pointer-events: none;
+}
+
+/* The turn pivots on the phone's centre, inside the scale. */
+.body {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+}
+
+/* Stacked outlines behind the band give the frame its 8 mm of depth. */
+.edge {
+  position: absolute;
+  inset: 0;
+  border-radius: 66px;
+  background: linear-gradient(
+    calc(100deg + var(--ry) * 3),
+    #1e1f21,
+    #46484b 45%,
+    #1b1c1e
+  );
+  transform: translateZ(calc(var(--i) * -1.6px));
+}
+
+.band {
+  position: absolute;
+  inset: 0;
+  border-radius: 66px;
+  padding: var(--band);
+  background:
+    linear-gradient(
+      calc(125deg + var(--ry) * 4),
+      rgb(255 255 255 / 0.32),
+      transparent 28%,
+      transparent 62%,
+      rgb(255 255 255 / 0.2) 82%,
+      transparent
+    ),
+    linear-gradient(160deg, #6a6c70, #2f3033 40%, #55575b 70%, #2a2b2e);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.22),
+    inset 0 0 0 2px rgb(0 0 0 / 0.35);
+}
+
+.bezel {
+  height: 100%;
+  border-radius: 61px;
+  padding: var(--bezel);
+  background: #050506;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+
+.screen {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 51px;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+/* Buttons sit halfway into the frame's depth, proud of its side. */
+.button {
+  position: absolute;
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #2a2b2e, #6b6d71 50%, #2a2b2e);
+  transform: translateZ(-6px);
+}
+
+.button[data-side="left"] {
+  left: -3px;
+}
+
+.button[data-side="right"] {
+  right: -3px;
+}
+
+.island {
+  position: absolute;
+  z-index: 40;
+  top: 11px;
+  left: 50%;
+  width: 126px;
+  height: 37px;
+  margin-left: -63px;
+  border-radius: 999px;
+  background: #000;
+  pointer-events: none;
+}
+
+/* Glass: a soft sheen whose angle follows the turn. */
+.glare {
+  position: absolute;
+  z-index: 50;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    calc(110deg + var(--ry) * 2),
+    rgb(255 255 255 / 0.1),
+    rgb(255 255 255 / 0.03) 30%,
+    transparent 46%
+  );
+  pointer-events: none;
+}
+
+.statusBar {
+  position: absolute;
+  z-index: 30;
+  inset: 0 0 auto;
+  height: 54px;
+  pointer-events: none;
+}
+
+.homeIndicator {
+  position: absolute;
+  z-index: 30;
+  bottom: 8px;
+  left: 50%;
+  width: 140px;
+  height: 5px;
+  margin-left: -70px;
+  border-radius: 999px;
+  background: var(--color-foreground);
+  pointer-events: none;
+}
+
+/* Navigation stack: one layer per screen. */
+.layer {
+  position: absolute;
+  inset: 0;
+  background: var(--color-background);
+  transition: transform var(--phone-nav) var(--phone-ease);
+}
+
+.layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--phone-nav) var(--phone-ease);
+}
+
+.layer[data-state="below"] {
+  transform: translateX(-30%);
+}
+
+.layer[data-state="below"]::after {
+  opacity: 1;
+}
+
+.layer[data-state="leaving"] {
+  transform: translateX(100%);
+}
+
+.layer[data-pushed] {
+  box-shadow: -10px 0 30px rgb(0 0 0 / 0.45);
+}
+
+.scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* Horizontal drags belong to the swipe back; vertical ones scroll the
+     screen and then the page, and pinch still zooms. Set here as well as on
+     the stack, since a nested scroller doesn't inherit its parent's. */
+  touch-action: pan-y pinch-zoom;
+}
+
+.scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* The navigation bar turns to material once content scrolls under it. */
+.navBar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  padding-top: 54px;
+  transition: background-color 150ms ease-out;
+}
+
+.navBar[data-scrolled] {
+  background: color-mix(in srgb, var(--color-background) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 0.5px 0 var(--color-border);
+}
+
+.navTitle {
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.navBar[data-scrolled] .navTitle,
+.navTitle[data-always] {
+  opacity: 1;
+}
+
+.largeTitle {
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .press {
+    transition: transform 150ms ease-out;
+  }
+}
+
+.press:active {
+  transform: scale(0.98);
+}
