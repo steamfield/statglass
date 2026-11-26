@@ -11,6 +11,8 @@ In Hosts, add the Linux server using its SSH alias or `user@address`, then choos
 
 Review the detected system, installation path, service account and history budget before installing. A normal account uses a systemd user service; a root SSH account uses a system service. If lingering is off, setup shows the command needed to keep a user service running after logout.
 
+To add this host directly to an iPhone, connect over SSH and run `~/.local/bin/statglass-agent pair` as the installing user or `sudo /usr/local/bin/statglass-agent pair` for a system install. See the [iPhone pairing steps](/docs/iphone#pair-a-host).
+
 ## What you see
 
 Select the host to view live metrics, stored history, per-app usage and disk space reports. Linux memory charts show used and cached memory. Containers show cgroup services and containers where available. Sensor, power and container details depend on the host's hardware and read permissions.
