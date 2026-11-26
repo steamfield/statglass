@@ -346,7 +346,9 @@ test("navigating replays the page entrance and slides the sidebar pill", async (
 });
 
 test("live ticks never replay an entrance", async ({ page }) => {
-  await page.clock.install();
+  const start = new Date("2026-11-10T12:00:00Z");
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(start.getTime() + 1000);
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await recordAnimations(page);
   await page.setViewportSize({ width: 1280, height: 833 });
@@ -355,22 +357,36 @@ test("live ticks never replay an entrance", async ({ page }) => {
     page.getByRole("heading", { name: "Overview", exact: true })
   ).toBeVisible();
   await expect.poll(() => entrances(page)).toBeGreaterThan(0);
+
+  const line = page
+    .getByRole("img", { name: /^CPU total and system/ })
+    .locator('[data-series="cpu.total"] [data-line]');
+  // The entrance window closes at 800 ms. The first tick and earlier backfill
+  // arrive at 1 s, so a chart reveal is still expected then.
+  await page.clock.runFor(900);
+  const beforeFirstTick = (await started(page)).length;
+  await page.clock.runFor(200);
+  await expect(line).toHaveAttribute("d", /\S/);
+  await chartsReady(page);
   await expect
     .poll(() => unexpectedRunning(page), { timeout: 4000 })
     .toEqual([]);
-
-  await page.evaluate(() => {
-    (window as unknown as { __anims: string[] }).__anims.length = 0;
-  });
-  // Ticks landed while the page was still opening.
   expect(await misplaced(page)).toEqual([]);
-
-  // Three ticks of fresh values re-render every card.
-  await page.clock.runFor(3000);
+  const settled = await started(page);
   expect(
-    (await started(page)).filter((n) =>
-      /page-enter|lift|fade|swap|reveal|scan/.test(n)
-    )
+    settled.slice(beforeFirstTick).filter((name) => name === "page-enter")
+  ).toEqual([]);
+
+  // Verify each tick reaches the chart before checking for replayed entrances.
+  for (let tick = 0; tick < 3; tick++) {
+    const before = (await line.getAttribute("d")) ?? "";
+    await page.clock.runFor(1000);
+    await expect(line).not.toHaveAttribute("d", before);
+  }
+  expect(
+    (await started(page))
+      .slice(settled.length)
+      .filter((n) => /page-enter|lift|fade|swap|reveal|scan/.test(n))
   ).toEqual([]);
   expect(await unexpectedRunning(page)).toEqual([]);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
