@@ -107,6 +107,20 @@ test("applying an update from demo opens the native hosts list", async () => {
   expect(router.getSegments()).toEqual(["(hosts)"]);
 });
 
+test("cancelling from demo returns to Hosts settings and stays in demo", async () => {
+  await installUpdateCore(true);
+  const router = await renderRouter("./src/app", { initialUrl: "/" });
+  await press("Try demo hosts");
+  await openUpdateFromSettings();
+
+  await press("Cancel");
+
+  expect(router.getPathname()).toBe("/settings/hosts");
+  await press("Back");
+  await press("Back");
+  expect(await screen.findByRole("button", { name: "Demo" })).toBeOnTheScreen();
+});
+
 test("applying an update on the native core returns to Hosts settings", async () => {
   await installUpdateCore(false);
   const router = await renderRouter("./src/app", { initialUrl: "/" });
