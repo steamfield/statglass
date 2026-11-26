@@ -1,7 +1,7 @@
 /**
  * The Settings search field in the page header, with a ⌘F hint while empty.
  * ⌘F or Ctrl+F on the page focuses and selects it; Escape in it clears the
- * query (`SearchField`).
+ * query (`SearchField`), and Return opens the first result.
  */
 import { type RefObject, useEffect } from "react";
 import { SearchField } from "~/components/search-field";
@@ -57,9 +57,12 @@ export function SettingsSearch({
   value,
   onChange,
   inputRef,
+  onEnter,
 }: {
   value: string;
   onChange: (value: string) => void;
+  /** Return in the field: open the first result. */
+  onEnter: () => void;
   /** The input, owned by the route so results can hand focus back to it. */
   inputRef: RefObject<HTMLInputElement | null>;
 }) {
@@ -72,6 +75,7 @@ export function SettingsSearch({
       placeholder="Search settings"
       label="Search settings"
       inputRef={inputRef}
+      onEnter={onEnter}
       className="w-full sm:w-55"
       hint={
         <kbd className="rounded-chip border border-border px-1 font-sans text-caption text-muted-foreground leading-4">

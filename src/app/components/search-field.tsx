@@ -17,6 +17,7 @@ export function SearchField({
   hint,
   inputRef,
   className,
+  onEnter,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -31,6 +32,8 @@ export function SearchField({
   inputRef?: RefObject<HTMLInputElement | null>;
   /** Classes for the wrapper; its default width is 224 px. */
   className?: string;
+  /** Called on Return, for a field that can jump to its first result. */
+  onEnter?: () => void;
 }) {
   const ownRef = useRef<HTMLInputElement>(null);
   const ref = inputRef ?? ownRef;
@@ -49,6 +52,13 @@ export function SearchField({
           if (e.key === "Escape" && value) {
             e.preventDefault();
             onChange("");
+          } else if (
+            e.key === "Enter" &&
+            onEnter &&
+            !e.nativeEvent.isComposing
+          ) {
+            e.preventDefault();
+            onEnter();
           }
         }}
         placeholder={placeholder}

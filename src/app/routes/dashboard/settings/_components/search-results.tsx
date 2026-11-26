@@ -22,6 +22,10 @@ import { TabContent } from "./tab-content";
 /** Queries offered when nothing matches. */
 const SUGGESTIONS = ["appearance", "interval", "history", "iphone"] as const;
 
+/** An inline link to another dashboard page, as SettingsLink draws one. */
+const PAGE_LINK =
+  "rounded-chip text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring";
+
 /** Row ids that rendered, or null before any section has rendered at all. */
 type RenderedRows = ReadonlySet<string> | null;
 
@@ -88,12 +92,9 @@ interface ResultsNavigation {
 /** What to try when nothing matches, and where other settings live. */
 function NoResults({ onSuggest }: Pick<ResultsNavigation, "onSuggest">) {
   return (
-    <div className="flex flex-col items-center gap-2.5 py-10 text-center font-normal text-muted-foreground text-small">
-      <span>
-        Alert rules and destinations are on the Alerts page. Per-host options
-        are on Hosts.
-      </span>
-      <div className="flex flex-wrap justify-center gap-1.5">
+    <div className="flex flex-col gap-3 font-normal text-muted-foreground text-small">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1">Try</span>
         {SUGGESTIONS.map((suggestion) => (
           <Button
             key={suggestion}
@@ -105,6 +106,17 @@ function NoResults({ onSuggest }: Pick<ResultsNavigation, "onSuggest">) {
           </Button>
         ))}
       </div>
+      <p>
+        Alert rules and destinations are on the{" "}
+        <Link to="/dashboard/alerts" className={PAGE_LINK}>
+          Alerts
+        </Link>{" "}
+        page. Per-host options are on{" "}
+        <Link to="/dashboard/hosts" className={PAGE_LINK}>
+          Hosts
+        </Link>
+        .
+      </p>
     </div>
   );
 }

@@ -141,11 +141,14 @@ describe("Settings search", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "No settings match “zebra”."
     );
-    expect(
-      screen.getByText(
-        "Alert rules and destinations are on the Alerts page. Per-host options are on Hosts."
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute(
+      "href",
+      "/dashboard/alerts"
+    );
+    expect(screen.getByRole("link", { name: "Hosts" })).toHaveAttribute(
+      "href",
+      "/dashboard/hosts"
+    );
     expect(rowsOnPage()).toEqual([]);
 
     const chips = ["appearance", "interval", "history", "iphone"];
@@ -204,6 +207,43 @@ describe("Settings search", () => {
     act(() => field.blur());
     await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
     expect(field).not.toHaveFocus();
+  });
+});
+
+describe("Settings search navigation", () => {
+  it("opens the first result on Return", async () => {
+    const { user, router } = renderOn("general");
+    await search(user, "refresh");
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(settingsHref("monitoring"))
+    );
+    expect(searchField()).toHaveValue("");
+    await waitFor(() =>
+      expect(row("sample-interval")?.scrollIntoView).toHaveBeenCalled()
+    );
+  });
+
+  it("does nothing on Return without a match", async () => {
+    const { user, router } = renderOn("general");
+    await search(user, "zebra");
+    await user.keyboard("{Enter}");
+    expect(searchField()).toHaveValue("zebra");
+    expect(router.state.location.pathname).toBe(settingsHref("general"));
+  });
+
+  it.each([
+    ["the open tab", "General", "Startup"],
+    ["another tab", "History", "Clear history"],
+  ])("leaves search for %s when it is clicked", async (_, name, heading) => {
+    const { user } = renderOn("general");
+    await search(user, "dark");
+    await user.click(screen.getByRole("tab", { name }));
+    expect(
+      await screen.findByRole("heading", { name: heading })
+    ).toBeInTheDocument();
+    expect(searchField()).toHaveValue("");
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("dims the tabs out of the Tab order but keeps them announced", async () => {

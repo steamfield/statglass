@@ -23,6 +23,7 @@ import {
 } from "./_components/settings-tabs";
 import { TabContent } from "./_components/tab-content";
 import { useFocusRow } from "./_hooks/use-focus-row";
+import { matchSettings } from "./_lib/search";
 
 /** The single 760 px column the tab's panels or the search results sit in. */
 const BODY = "mt-5 flex max-w-[760px] flex-col gap-5";
@@ -58,6 +59,15 @@ export default function SettingsRoute() {
     focusPanel();
   };
 
+  // Return in the field opens the first match's tab focused on it, as
+  // "Open in" does; with no match it does nothing.
+  const openFirst = () => {
+    const first = matchSettings(query)[0];
+    if (!first) return;
+    setQuery("");
+    void navigate(settingsHref(first.tab, first.rowIds[0]));
+  };
+
   const selectTab = (next: SettingsTabId) => {
     setQuery("");
     void navigate(settingsHref(next));
@@ -81,6 +91,7 @@ export default function SettingsRoute() {
             value={query}
             onChange={setQuery}
             inputRef={searchRef}
+            onEnter={openFirst}
           />
         }
       />
@@ -88,8 +99,10 @@ export default function SettingsRoute() {
         ref={tabsRef}
         className={cn(
           "sticky z-10",
-          // Only the tabs dim; the band stays opaque over content scrolling under it.
-          searching && "pointer-events-none [&_[role=tablist]]:opacity-35"
+          // Only the tabs dim; the band stays opaque over content scrolling
+          // under it. A click on any tab still leaves search for that tab.
+          searching &&
+            "[&_[role=tablist]:hover]:opacity-100 [&_[role=tablist]]:opacity-50 [&_[role=tablist]]:transition-opacity"
         )}
         style={{ top: `${headerHeight}px` }}
       >

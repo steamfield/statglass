@@ -119,14 +119,18 @@ for (const theme of THEMES) {
       ).toBeDisabled();
 
       await tab("History");
-      await expect(page.getByText(/^148 MB/)).toBeVisible();
+      await expect(
+        page.getByText("148 MB of recorded history on this Mac.")
+      ).toBeVisible();
       await page.getByRole("button", { name: "Clear history…" }).click();
       await page
         .getByRole("alertdialog")
         .getByRole("button", { name: "Clear history" })
         .click();
       await expect(page.getByRole("alertdialog")).toBeHidden();
-      await expect(page.getByText(/^0 MB/)).toBeVisible();
+      await expect(
+        page.getByText("0 MB of recorded history on this Mac.")
+      ).toBeVisible();
       expect(errors).toEqual([]);
     });
   });
