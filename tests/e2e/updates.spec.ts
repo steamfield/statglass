@@ -6,7 +6,7 @@ for (const theme of ["dark", "light"]) {
   }, info) => {
     await page.setViewportSize({ width: 1280, height: 860 });
     await page.goto(
-      `/?window=dashboard&route=/dashboard/settings&theme=${theme}&ticks=0&update=available`
+      `/?window=dashboard&route=/dashboard/settings/about&theme=${theme}&ticks=0&update=available`
     );
     const install = page.getByRole("button", { name: "Install and restart" });
     await install.scrollIntoViewIfNeeded();
@@ -25,7 +25,7 @@ for (const theme of ["dark", "light"]) {
   }, info) => {
     await page.setViewportSize({ width: 1280, height: 860 });
     await page.goto(
-      `/?window=dashboard&route=/dashboard/settings&theme=${theme}&ticks=0`
+      `/?window=dashboard&route=/dashboard/settings/about&theme=${theme}&ticks=0`
     );
     const automatic = page.getByRole("switch", {
       name: "Check for updates automatically",
@@ -38,7 +38,7 @@ for (const theme of ["dark", "light"]) {
       page.getByText("You’re running the latest version.")
     ).toBeVisible();
     await page
-      .getByRole("heading", { name: "General", exact: true })
+      .getByRole("heading", { name: "Updates", exact: true })
       .scrollIntoViewIfNeeded();
     await page.screenshot({
       path: `test-results/screens/updates-${theme}-${info.project.name}.png`,

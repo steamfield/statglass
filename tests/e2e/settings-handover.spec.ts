@@ -6,7 +6,7 @@ import {
   test,
 } from "@playwright/test";
 
-const settings = "/?window=dashboard&route=/dashboard/settings";
+const settings = "/?window=dashboard&route=/dashboard/settings/access";
 
 async function screenshotThemes(
   page: Page,
@@ -34,7 +34,7 @@ test("shows pending device updates and a fresh iPhone update sheet", async ({
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.clock.install();
   await page.goto(settings);
-  const panel = page.getByRole("region", { name: "Paired devices" });
+  const panel = page.getByRole("region", { name: "iPhones" });
   await expect(panel.getByText("Home iPhone", { exact: true })).toBeVisible();
   await expect(panel.getByText("Revoke failed · iPhone A1B2C3")).toBeVisible();
   await expect(panel.getByText("Host is offline.")).toBeVisible();

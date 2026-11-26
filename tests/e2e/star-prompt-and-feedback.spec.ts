@@ -60,7 +60,7 @@ for (const theme of ["light", "dark"] as const) {
   }) => {
     await page.setViewportSize(VIEWPORT);
     await page.goto(
-      `/?window=dashboard&route=/dashboard/settings&theme=${theme}&ticks=0`
+      `/?window=dashboard&route=/dashboard/settings/about&theme=${theme}&ticks=0`
     );
     await expect(
       page.getByRole("heading", { name: "Settings", exact: true })

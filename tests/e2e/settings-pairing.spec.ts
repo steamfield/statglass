@@ -1,6 +1,6 @@
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
 
-const settings = "/?window=dashboard&route=/dashboard/settings";
+const settings = "/?window=dashboard&route=/dashboard/settings/access";
 
 async function openPairing(page: Page) {
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
@@ -50,9 +50,9 @@ test("pairs and revokes an iPhone", async ({ page }, info) => {
   await monitoringOff.getByRole("button", { name: "Close" }).click();
 
   await enableMonitoring(page);
-  const panel = page.getByRole("region", { name: "Paired devices" });
+  const panel = page.getByRole("region", { name: "iPhones" });
   await expect(panel.getByText("Home iPhone")).toBeVisible();
-  const monitoring = page.getByRole("region", { name: "Remote monitoring" });
+  const monitoring = page.getByRole("region", { name: "Other Macs" });
   await monitoring.scrollIntoViewIfNeeded();
   await screenshotBothThemes(page, info, "remote-monitoring");
 
