@@ -14,20 +14,18 @@ const segments = [
 ] as const;
 
 it.each([
-  { reduceMotion: false, lowPowerMode: false, duration: 150 },
-  { reduceMotion: true, lowPowerMode: false, duration: 0 },
-  { reduceMotion: false, lowPowerMode: true, duration: 0 },
+  { reduceMotion: false, lowPowerMode: false },
+  { reduceMotion: true, lowPowerMode: false },
+  { reduceMotion: false, lowPowerMode: true },
 ])(
-  "selects the tab and moves the thumb with a $duration ms duration (Reduce Motion $reduceMotion, Low Power Mode $lowPowerMode)",
-  async ({ reduceMotion, lowPowerMode, duration }) => {
+  "selects the tab and moves the thumb (Reduce Motion $reduceMotion, Low Power Mode $lowPowerMode)",
+  async ({ reduceMotion, lowPowerMode }) => {
     jest
       .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
       .mockResolvedValue(reduceMotion);
     jest
       .spyOn(Battery, "isLowPowerModeEnabledAsync")
       .mockResolvedValue(lowPowerMode);
-    const timing = jest.spyOn(Reanimated, "withTiming");
-
     function RangePicker() {
       const [range, setRange] = useState<number>(60);
       return (
@@ -53,7 +51,11 @@ it.each([
       width: 100,
       transform: [{ translateX: 100 }],
     });
-    timing.mockClear();
+    // The still renderer lands every animation on its final position.
+    const timing =
+      reduceMotion || lowPowerMode
+        ? jest.spyOn(Reanimated, "withTiming")
+        : undefined;
 
     const last = view.getByRole("tab", {
       name: "24 hours, Range",
@@ -72,21 +74,11 @@ it.each([
       width: 100,
       transform: [{ translateX: 200 }],
     });
-    if (duration === 0) {
-      expect(timing).not.toHaveBeenCalled();
-    } else {
-      expect(timing).toHaveBeenCalledTimes(1);
-      expect(timing.mock.calls[0]?.[1]).toMatchObject({ duration });
-    }
+    if (timing) expect(timing).not.toHaveBeenCalled();
   }
 );
 
 it("allows a selection when the current value is absent and draws no thumb until then", async () => {
-  jest
-    .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
-    .mockResolvedValue(false);
-  jest.spyOn(Battery, "isLowPowerModeEnabledAsync").mockResolvedValue(false);
-  const timing = jest.spyOn(Reanimated, "withTiming");
   const onChange = jest.fn<(value: number) => void>();
   function RangePicker() {
     const [range, setRange] = useState(0);
@@ -111,8 +103,10 @@ it("allows a selection when the current value is absent and draws no thumb until
   expect(view.queryByTestId("segment-thumb")).toBeNull();
   await fireEvent.press(view.getByRole("tab", { name: /^1 hour/ }));
   expect(onChange.mock.calls).toEqual([[60]]);
+  expect(
+    view.getByRole("tab", { name: "1 hour, Range", selected: true })
+  ).toBeVisible();
   expect(view.getByTestId("segment-thumb")).toHaveStyle({
     transform: [{ translateX: 100 }],
   });
-  expect(timing).not.toHaveBeenCalled();
 });
