@@ -78,7 +78,10 @@ test("mixed density keeps focus and exposes expanded details without opening a d
     page.getByRole("button", { name: "Expand Containers" })
   ).toBeFocused();
   await page.getByRole("button", { name: "Popover options" }).click();
-  await page.getByRole("menuitem", { name: "Collapse all" }).click();
+  // Choose the item from the keyboard: a pointer click waits for the menu's
+  // entrance animation to hold still across frames, and on CI's WebKit that
+  // wait stalled until the test timed out (three tries out of three).
+  await page.getByRole("menuitem", { name: "Collapse all" }).press("Enter");
   await expect(page.getByText("User", { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Expand Containers" })
