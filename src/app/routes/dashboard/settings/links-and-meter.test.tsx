@@ -222,14 +222,14 @@ describe("History storage meter", () => {
         name: "the size read fails",
         arrange: (t) =>
           t.failNext("historySize", { kind: "remote_busy", message: "busy" }),
-        label: /^Size on disk unavailable, about \d+ MB .+, 750 MB limit$/,
+        label: /^About \d+ MB .+, 750 MB limit$/,
       },
       // No mock option holds a reply, so these reads never answer.
       {
         name: "the size read is pending",
         arrange: (t) =>
           Object.assign(t, { historySize: () => new Promise(() => {}) }),
-        label: /^Size on disk unavailable, about \d+ MB .+, 750 MB limit$/,
+        label: /^About \d+ MB .+, 750 MB limit$/,
       },
       {
         name: "the growth read is pending",

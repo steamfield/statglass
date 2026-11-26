@@ -142,11 +142,12 @@ export default function SettingsRoute() {
  * resets during that render, so the tab panel is there to scroll to.
  */
 function useTabSearch(tab: SettingsTabId, focus: string | null) {
-  const [typed, setTyped] = useState({ tab, query: "" });
-  const stale = typed.tab !== tab || (focus !== null && typed.query !== "");
-  if (stale) setTyped({ tab, query: "" });
+  const [typed, setTyped] = useState({ tab, focus, query: "" });
+  // Only a new focus resets: typing while one is still being looked for stays.
+  const stale = typed.tab !== tab || (focus !== null && focus !== typed.focus);
+  if (stale) setTyped({ tab, focus, query: "" });
   const query = stale ? "" : typed.query;
-  const setQuery = (next: string) => setTyped({ tab, query: next });
+  const setQuery = (next: string) => setTyped({ tab, focus, query: next });
   return [query, setQuery] as const;
 }
 

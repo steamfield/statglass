@@ -126,6 +126,68 @@ describe("Settings focus links", () => {
     await waitFor(() => expect(router.state.location.search).toBe(""));
   });
 
+  it("holds the flash for a while when no fade runs", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderAt("/monitoring?focus=sample-interval");
+      const row = await waitFor(() => {
+        const el = document.querySelector(
+          '[data-settings-row="sample-interval"]'
+        );
+        expect(el).toHaveAttribute("data-flash");
+        return el as HTMLElement;
+      });
+      act(() => vi.advanceTimersByTime(1000));
+      expect(row).toHaveAttribute("data-flash");
+      act(() => vi.advanceTimersByTime(500));
+      expect(row).not.toHaveAttribute("data-flash");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends the flash when its own fade ends", async () => {
+    const real = window.getComputedStyle;
+    const spy = vi
+      .spyOn(window, "getComputedStyle")
+      .mockImplementation((el, pseudo) => {
+        const style = real(el, pseudo);
+        if (!(el as Element).hasAttribute("data-flash")) return style;
+        // Only the flash hook reads a flashing row's style here.
+        return { animationName: "settings-row-flash" } as CSSStyleDeclaration;
+      });
+    try {
+      renderAt("/monitoring?focus=sample-interval");
+      const row = await waitFor(() => {
+        const el = document.querySelector(
+          '[data-settings-row="sample-interval"]'
+        );
+        expect(el).toHaveAttribute("data-flash");
+        return el as HTMLElement;
+      });
+      const end = (name: string) =>
+        Object.assign(new Event("animationend"), { animationName: name });
+      act(() => row.dispatchEvent(end("switch-thumb")));
+      expect(row).toHaveAttribute("data-flash");
+      act(() => row.dispatchEvent(end("settings-row-flash")));
+      expect(row).not.toHaveAttribute("data-flash");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps what is typed in search while a focus id is still looked for", async () => {
+    const { user } = renderAt("/history?focus=nope");
+    await screen.findByRole("heading", { name: "Clear history" });
+    await user.type(
+      screen.getByRole("textbox", { name: "Search settings" }),
+      "dark"
+    );
+    expect(
+      screen.getByRole("textbox", { name: "Search settings" })
+    ).toHaveValue("dark");
+  });
+
   it("ignores a focus id that is not on the page", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

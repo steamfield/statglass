@@ -127,8 +127,9 @@ function meterFigures({
 }
 
 /**
- * What the meter says aloud, from only the figures that are known: no
- * direction without both reads, no placeholder glyph read out.
+ * What the meter says aloud, from only the figures that are known (a read
+ * may be pending or failed): no direction without both, no placeholder read
+ * out.
  */
 function meterLabel(
   size: string,
@@ -143,9 +144,9 @@ function meterLabel(
   }
   if (known.size) return `${size} used of a ${limit} limit`;
   if (known.projection) {
-    return `Size on disk unavailable, about ${projected} ${until}, ${limit} limit`;
+    return `About ${projected} ${until}, ${limit} limit`;
   }
-  return `Size on disk unavailable, ${limit} limit`;
+  return `${limit} limit`;
 }
 
 /** One legend entry: a swatch and its text. */

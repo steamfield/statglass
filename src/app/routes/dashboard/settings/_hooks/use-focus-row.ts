@@ -69,19 +69,31 @@ export function useFocusRow(focus: string | null, onDone: () => void): void {
   }, [focus, flashFor]);
 }
 
+/** The fade's keyframes in motion.css. */
+const FLASH_KEYFRAMES = "settings-row-flash";
+
+/** The row flashing now, its hold timer (none while fading) and end listener. */
+interface Flashing {
+  el: HTMLElement;
+  timer: number | null;
+  onEnd: (event: AnimationEvent) => void;
+}
+
 /**
- * A stable function that sets `data-flash` on one element until its fade ends
- * (or for `FLASH_HOLD_MS` when none runs),
- * moving it off any element still flashing. The timer outlives focus
- * changes and is cleared on unmount.
+ * A stable function that sets `data-flash` on one element until its fade
+ * ends, or for `FLASH_HOLD_MS` when no fade runs (the held tint), moving it
+ * off any element still flashing. It is cleared on unmount.
  */
 function useFlash(): (el: HTMLElement) => void {
-  const flashing = useRef<{ el: HTMLElement; timer: number } | null>(null);
+  const flashing = useRef<Flashing | null>(null);
   const stop = useCallback(() => {
-    if (!flashing.current) return;
-    window.clearTimeout(flashing.current.timer);
-    flashing.current.el.removeAttribute("data-flash");
+    const current = flashing.current;
+    if (!current) return;
     flashing.current = null;
+    if (current.timer !== null) window.clearTimeout(current.timer);
+    current.el.removeEventListener("animationend", current.onEnd);
+    current.el.removeEventListener("animationcancel", current.onEnd);
+    current.el.removeAttribute("data-flash");
   }, []);
   const start = useCallback(
     (el: HTMLElement) => {
@@ -89,13 +101,15 @@ function useFlash(): (el: HTMLElement) => void {
       el.setAttribute("data-flash", "");
       const onEnd = (event: AnimationEvent) => {
         // Rows hold their own animations; only the flash's own end counts.
-        if (event.target !== el || event.animationName !== "settings-row-flash")
-          return;
-        el.removeEventListener("animationend", onEnd);
-        if (flashing.current?.el === el) stop();
+        if (event.target === el && event.animationName === FLASH_KEYFRAMES) {
+          stop();
+        }
       };
       el.addEventListener("animationend", onEnd);
-      flashing.current = { el, timer: window.setTimeout(stop, FLASH_HOLD_MS) };
+      el.addEventListener("animationcancel", onEnd);
+      const fades = getComputedStyle(el).animationName === FLASH_KEYFRAMES;
+      const timer = fades ? null : window.setTimeout(stop, FLASH_HOLD_MS);
+      flashing.current = { el, timer, onEnd };
     },
     [stop]
   );
