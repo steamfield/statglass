@@ -6,8 +6,8 @@ import { useNativeCore } from "@/transport";
 
 /**
  * Makes the started native core the active transport.
- * @returns Whether the selection changed. False if the core is still starting
- * or already selected.
+ * @returns Whether the selection changed. False when the core is not ready
+ * (starting, failed or missing) or is already selected.
  * @throws Outside PhoneTransportProvider.
  */
 export function useSelectNativeCore(): () => boolean {
