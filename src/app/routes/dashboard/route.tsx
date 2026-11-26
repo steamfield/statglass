@@ -178,7 +178,7 @@ export default function DashboardLayout() {
         <main
           ref={mainRef}
           data-stale={stale || undefined}
-          className="min-w-0 flex-1 overflow-y-auto px-3 pb-6 sm:px-6"
+          className="relative min-w-0 flex-1 overflow-y-auto px-3 pb-6 sm:px-6"
         >
           <DashboardShellContext.Provider value={shell}>
             <div ref={pageRef}>

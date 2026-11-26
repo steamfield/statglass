@@ -99,3 +99,29 @@ test("End scrolls to Disk space while the sidebar chrome stays pinned", async ({
   expect((await dragStrip.boundingBox())?.y).toBe(top.dragStrip);
   expect((await host.boundingBox())?.y).toBe(top.host);
 });
+
+test("only the sidebar entries and the page scroll at a short window height, never the document", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 520 });
+  // The page's enter transform contains the escaping content until it ends.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const route of ["cpu", "memory", "timeline"]) {
+    await page.goto(`/?route=/dashboard/${route}`);
+    // The process table's visually hidden live region sits far below the
+    // fold. Unless `main` is its containing block it escapes main's scroller,
+    // makes the document scrollable, and WebKit chains the sidebar's scroll
+    // into it, sliding the whole shell up.
+    await page
+      .getByRole("main")
+      .locator(".sr-only[aria-live]")
+      .first()
+      .waitFor({ state: "attached" });
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight
+    );
+    expect(overflow, route).toBe(0);
+  }
+});
