@@ -87,6 +87,14 @@ It changes commit behavior for everyone (formatting lands silently instead of
 failing the commit), so it waits for the maintainer's decision. The lane's patch is
 kept outside the repo for reference.
 
+Decided (2026-11-26): the maintainer chose the lint-staged pattern. Both hooks run
+through `scripts/pre-commit-restage.sh`, which re-stages the staged files a
+formatter fixed. A partially staged file is not re-staged: re-staging its fix
+makes pre-commit's restore of the stashed unstaged changes fail and leaves them
+only in its patch cache, so that file still fails the commit as before. Tests in
+`scripts/agent-hooks/test_precommit_restage.py`, including real `git commit` runs
+through pre-commit.
+
 ## 2. The reap-orphans Stop hook times out under load
 
 What happened: `reap-orphans.sh` (Stop, 10 s timeout) was cancelled 5 times, all

@@ -59,11 +59,16 @@ repos:
   # Tailwind classes, and lints (including the boundary rules) in one pass;
   # biome.json's files.includes already skips packages/core/src/generated/ and
   # src/desktop-transport/commands.ts.
+  #
+  # frontend-biome and cargo-fmt re-stage the staged files they fixed, so a
+  # formatting slip lands fixed instead of failing the commit. A partially
+  # staged file is not re-staged and still fails (scripts/pre-commit-restage.sh
+  # says why), and lint errors Biome can't fix still fail the commit.
   - repo: local
     hooks:
       - id: frontend-biome
         name: frontend biome
-        entry: bunx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true
+        entry: scripts/pre-commit-restage.sh bunx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true --
         language: system
         files: \.(ts|tsx|js|mjs|json|jsonc|css)$
         pass_filenames: true
@@ -82,10 +87,13 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt
-        entry: cargo fmt --all
+        # Files are passed only so the staged ones can be re-staged; cargo fmt
+        # still formats the workspace, and a fix to an unstaged file fails.
+        entry: scripts/pre-commit-restage.sh --no-pass cargo fmt --all --
         language: system
         files: \.rs$
-        pass_filenames: false
+        pass_filenames: true
+        require_serial: true
       - id: cargo-clippy
         name: cargo clippy
         entry: bash -c 'mkdir -p dist && cargo clippy --workspace --all-targets -- -D warnings'
