@@ -15,6 +15,19 @@ StatGlass for iPhone shows live metrics and charts from your computers, includin
 
 See [how to install StatGlass on a Mac](/docs/install) or [set up a Linux host](/docs/linux-hosts#installing-the-agent).
 
+### Hosts from your Mac
+
+When you pair with a Mac, StatGlass offers to add the Mac's saved remote hosts that have **Connect automatically** turned on in the Mac's host settings. To add hosts you save later, open **Settings → Paired devices → Update iPhone** on the Mac. On the iPhone, open **Settings → Hosts → Update from Mac**, scan the code, then review the list and tap **Apply updates**.
+
+The Mac can only share hosts the iPhone can connect to and verify over SSH. It skips hosts in these cases.
+
+- The SSH alias uses `ProxyJump` or `ProxyCommand`. The iPhone connects directly and can't use those proxy settings.
+- The SSH alias uses a private or link-local IP address directly and has no Tailscale route. The iPhone may be on a different network. Tailnet IP addresses in `100.64.0.0/10` (the Tailscale `100.x` range) or `fd7a:115c:a1e0::/48` count as Tailscale routes.
+- The Mac has no trusted host key in its SSH known-hosts files, such as `~/.ssh/known_hosts`. The iPhone needs that key to verify the host's identity.
+- The SSH alias can't be resolved, or its LAN and Tailscale aliases use a different user or port. The iPhone saves one user and port per host.
+
+To add a skipped host, pair it directly: run Pair iPhone on that Mac, or `statglass-agent pair` on that Linux host (see [Pair a host](#pair-a-host)).
+
 ## Privacy
 
 The iPhone app sends no data to the developer. It has no StatGlass account, analytics or ads. Live metrics and chart history come directly from your hosts over encrypted SSH. Your hosts keep the history. The iPhone holds readings temporarily in memory for display and saves no metric history.
