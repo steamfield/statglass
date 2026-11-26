@@ -101,11 +101,7 @@ export function UpdateSelection({
       ))}
       <UnavailableHosts hosts={diff.unavailable} />
       {error && (
-        <Text
-          variant="body"
-          accessibilityRole="alert"
-          className="text-destructive!"
-        >
+        <Text variant="body" accessibilityRole="alert" tone="destructive">
           {commandErrorText(
             error,
             "Couldn’t save the host changes. Try again."

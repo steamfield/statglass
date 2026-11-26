@@ -138,7 +138,7 @@ export function HostRow({
         text={connection.label}
       />
       {statusError && (
-        <Text variant="caption" className="text-destructive!">
+        <Text variant="caption" tone="destructive">
           {statusError}
         </Text>
       )}
@@ -151,7 +151,7 @@ export function HostRow({
       {[vitalsError, historyError, summaryError]
         .filter(Boolean)
         .map((error) => (
-          <Text key={error} variant="caption" className="text-destructive!">
+          <Text key={error} variant="caption" tone="destructive">
             {error}
           </Text>
         ))}
@@ -398,7 +398,8 @@ function HostRowHeader({
         {tone === "warning" && <StatusWarning />}
         <Text
           variant="caption"
-          className={tone === "warning" ? "shrink text-warning-ink" : "shrink"}
+          tone={tone === "warning" ? "warning" : undefined}
+          className="shrink"
         >
           {text}
         </Text>

@@ -1,19 +1,10 @@
 import type { StatListBase, StatListData } from "@core/widget-models/stat-list";
-import {
-  StyleSheet,
-  useColorScheme,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import { themeColors } from "@/theme.generated";
+import { useWindowDimensions, View } from "react-native";
 import { Text } from "@/ui/text";
 import { BarSwatch } from "./stack-bar";
 
 const FIGURE_ROLE = "cardFigure";
 const DETAIL_ROLE = "label";
-
-// NativeWind drops the CSS font-variant-numeric property.
-const styles = StyleSheet.create({ figure: { fontVariant: ["tabular-nums"] } });
 
 const ROW = "flex-row flex-wrap items-center justify-between gap-x-2";
 const LAYOUT = {
@@ -41,7 +32,6 @@ export function StatList({
   const { fontScale } = useWindowDimensions();
   const { container, row, value } =
     LAYOUT[layout === "grid" && fontScale >= 1.5 ? "rows" : layout];
-  const colors = themeColors[useColorScheme() ?? "light"];
   const valueClassName =
     layout === "legend" ? "ml-auto shrink text-right" : "shrink";
   return (
@@ -49,7 +39,7 @@ export function StatList({
       {hero && (
         <View className="shrink">
           <Text variant="caption">{hero.label}</Text>
-          <Text variant={FIGURE_ROLE} style={styles.figure}>
+          <Text variant={FIGURE_ROLE}>
             {hero.value}
             {hero.unit && <Text variant={DETAIL_ROLE}> {hero.unit}</Text>}
           </Text>
@@ -65,11 +55,9 @@ export function StatList({
           </View>
           <Text
             variant={value}
+            tone={item.muted ? "muted" : "default"}
+            tabular={value === "caption"}
             className={valueClassName}
-            style={[
-              styles.figure,
-              { color: colors[item.muted ? "muted-foreground" : "foreground"] },
-            ]}
           >
             {item.value}
             {item.secondary && (

@@ -27,7 +27,7 @@ function EventRow({ event, showDate }: { event: Event; showDate: boolean }) {
   return (
     <View className="gap-0.5 border-border border-t py-2">
       <Text variant="body">{formatEvent(event)}</Text>
-      <Text variant="caption" className="tabular-nums">
+      <Text variant="caption" tabular>
         {formatHistoryTime(event.ts_ms, showDate)}
       </Text>
     </View>

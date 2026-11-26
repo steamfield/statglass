@@ -36,11 +36,7 @@ export function PairSelection({
       />
       <UnavailableHosts hosts={offer.unavailable} />
       {apply.isError && (
-        <Text
-          variant="body"
-          accessibilityRole="alert"
-          className="text-destructive!"
-        >
+        <Text variant="body" accessibilityRole="alert" tone="destructive">
           {commandErrorText(apply.error, "Couldn’t add the hosts. Try again.")}
         </Text>
       )}

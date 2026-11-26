@@ -339,9 +339,10 @@ test("prints the power stat grid including a measured zero", async () => {
     expect(screen.getByText(item.label)).toBeOnTheScreen();
     expect(screen.getByText(item.value)).toBeOnTheScreen();
   }
-  const colors = themeColors.light;
-  expect(screen.getByText("6.4 W")).toHaveStyle({ color: colors.foreground });
-  expect(screen.getByText("0.0 W")).toHaveStyle({
-    color: colors["muted-foreground"],
-  });
+  const colourClasses = (value: string) =>
+    String(screen.getByText(value).props.className)
+      .split(/\s+/)
+      .filter((name) => /^text-(?!left|center|right)/.test(name));
+  expect(colourClasses("6.4 W")).toEqual(["text-foreground"]);
+  expect(colourClasses("0.0 W")).toEqual(["text-muted-foreground"]);
 });

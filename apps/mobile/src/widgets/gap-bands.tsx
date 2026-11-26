@@ -128,7 +128,8 @@ function GapCaption({
           )}
           <Text
             variant="caption"
-            className="shrink text-fg-subtle"
+            tone="subtle"
+            className="shrink"
             numberOfLines={position ? 1 : undefined}
           >
             {band.label}
