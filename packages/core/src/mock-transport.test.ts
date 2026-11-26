@@ -15,6 +15,47 @@ async function subscribe(
   return { t, msgs, sub };
 }
 
+it("returns the same handover summary on approval, polling and retry", async () => {
+  let now = NOW;
+  const transport = createMockTransport({ autoTick: false, now: () => now });
+  try {
+    await unwrap(
+      transport.updateSettings({ remote_access: { enabled: true } })
+    );
+    const { nonce, expires_ms } = await unwrap(transport.pairingStart());
+    now = expires_ms - 1;
+    const approve = () => unwrap(transport.pairingApprove(nonce));
+    const paired = await approve();
+    expect(paired).toEqual({
+      kind: "paired",
+      device: "D4A910",
+      hosts: ["build-server", "Lab Mini"],
+      unavailable: [
+        {
+          id: "a0b00000-0000-4000-8000-000000000003",
+          name: "Office server",
+          reason: "proxy_jump",
+        },
+      ],
+      dropped: false,
+    });
+    now = expires_ms;
+    expect(await unwrap(transport.pairingStatus(nonce))).toEqual(paired);
+    expect(await approve()).toEqual(paired);
+    const intents = await unwrap(transport.deviceIntents());
+    expect(
+      intents
+        .filter(({ device }) => device === "D4A910")
+        .map(({ host_name, op }) => [host_name, op])
+    ).toEqual([
+      ["build-server", "install"],
+      ["Lab Mini", "install"],
+    ]);
+  } finally {
+    transport.dispose();
+  }
+});
+
 describe("mock transport", () => {
   it("uses the transport clock for pairing offers, scans and expiry", async () => {
     let now = NOW;

@@ -1,4 +1,4 @@
-import { createMockTransport } from "@core/mock-transport";
+import { createMockTransport, type MockTransport } from "@core/mock-transport";
 import { unwrap } from "@core/transport";
 import {
   act,
@@ -9,6 +9,244 @@ import {
 } from "@testing-library/react";
 import { renderWithProviders } from "../../../../../../../tests/test-utils";
 import { PairedDevicesPanel } from "./panel";
+
+async function openPendingPairing(transport: MockTransport) {
+  await unwrap(transport.updateSettings({ remote_access: { enabled: true } }));
+  renderWithProviders(<PairedDevicesPanel />, { transport });
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Pair iPhone" }))
+  );
+  await act(() => vi.advanceTimersByTimeAsync(4000));
+}
+
+it("shows the included and unavailable hosts after approving an iPhone", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  const mock = createMockTransport({ autoTick: false });
+  try {
+    await openPendingPairing(mock);
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    expect(await screen.findByText("iPhone paired.")).toBeVisible();
+    const dialog = within(screen.getByRole("dialog"));
+    expect(
+      dialog.getByRole("heading", { name: "Included hosts" })
+    ).toBeVisible();
+    expect(dialog.getAllByRole("listitem")).toHaveLength(3);
+    expect(dialog.getByText("build-server")).toBeVisible();
+    expect(dialog.getByText("Lab Mini")).toBeVisible();
+    expect(
+      dialog.getByRole("heading", { name: "Unavailable hosts" })
+    ).toBeVisible();
+    expect(dialog.getByText("Office server")).toBeVisible();
+    expect(dialog.getByText("SSH uses a jump host.")).toBeVisible();
+  } finally {
+    mock.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("shows the Update from Mac note in place of the dropped host list", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  const mock = createMockTransport({ autoTick: false });
+  try {
+    await openPendingPairing({
+      ...mock,
+      pairingApprove: async (nonce) => {
+        const result = await mock.pairingApprove(nonce);
+        if (result.status === "ok" && result.data.kind === "paired") {
+          return { status: "ok", data: { ...result.data, dropped: true } };
+        }
+        return result;
+      },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    expect(await screen.findByText("iPhone paired.")).toBeVisible();
+    const dialog = within(screen.getByRole("dialog"));
+    expect(
+      dialog.getByText(
+        "The host list was too large to send while pairing. On your iPhone, open Update from Mac to add the other hosts."
+      )
+    ).toBeVisible();
+    expect(dialog.queryByRole("list")).not.toBeInTheDocument();
+    expect(
+      dialog.queryByText("No other hosts are included.")
+    ).not.toBeInTheDocument();
+  } finally {
+    mock.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("shows the empty host message when approval includes no other hosts", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  const mock = createMockTransport({ autoTick: false });
+  try {
+    await openPendingPairing({
+      ...mock,
+      pairingApprove: async (nonce) => {
+        const result = await mock.pairingApprove(nonce);
+        if (result.status === "ok" && result.data.kind === "paired") {
+          return {
+            status: "ok",
+            data: { ...result.data, hosts: [], unavailable: [] },
+          };
+        }
+        return result;
+      },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    expect(await screen.findByText("iPhone paired.")).toBeVisible();
+    expect(screen.getByText("No other hosts are included.")).toBeVisible();
+  } finally {
+    mock.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("keeps the pending device and approval error visible until polling reaches a final result", async () => {
+  vi.useFakeTimers();
+  const mock = createMockTransport({ autoTick: false });
+  let failedApproval = false;
+  let expireOffer = false;
+  let polledAfterFailure = false;
+  try {
+    await openPendingPairing({
+      ...mock,
+      pairingStatus: async (nonce) => {
+        if (!failedApproval) return mock.pairingStatus(nonce);
+        polledAfterFailure = true;
+        return {
+          status: "ok",
+          data: { kind: expireOffer ? "expired" : "waiting" },
+        };
+      },
+      pairingApprove: async () => {
+        failedApproval = true;
+        return {
+          status: "error",
+          error: {
+            kind: "pairing",
+            reason: "unavailable",
+            message: "Couldn’t remove the pairing key.",
+          },
+        };
+      },
+    });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(1100));
+    expect(polledAfterFailure).toBe(true);
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByRole("alert")).toHaveTextContent(
+      "Couldn’t remove the pairing key."
+    );
+    expect(dialog.getByText("Travel iPhone")).toBeVisible();
+    expect(dialog.getByText("iPhone 16")).toBeVisible();
+    expect(dialog.getByText("K7M2RX")).toBeVisible();
+    expect(dialog.getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(
+      dialog.queryByRole("img", { name: "Pairing QR code" })
+    ).not.toBeInTheDocument();
+
+    expireOffer = true;
+    await act(() => vi.advanceTimersByTimeAsync(1100));
+    expect(screen.getByText(/Pairing expired\./)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Approve" })
+    ).not.toBeInTheDocument();
+  } finally {
+    mock.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("keeps the pending device visible when a poll returns waiting during approval", async () => {
+  vi.useFakeTimers();
+  const mock = createMockTransport({ autoTick: false });
+  let finishApproval = () => {};
+  const approval = new Promise<void>((resolve) => {
+    finishApproval = resolve;
+  });
+  let finishPoll = () => {};
+  const poll = new Promise<void>((resolve) => {
+    finishPoll = resolve;
+  });
+  let handingOver = false;
+  let pollRequested = false;
+  try {
+    await openPendingPairing({
+      ...mock,
+      pairingStatus: async (nonce) => {
+        if (!handingOver) return mock.pairingStatus(nonce);
+        pollRequested = true;
+        await poll;
+        return { status: "ok", data: { kind: "waiting" } };
+      },
+      pairingApprove: async (nonce) => {
+        handingOver = true;
+        await approval;
+        handingOver = false;
+        return mock.pairingApprove(nonce);
+      },
+    });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    );
+    await act(() => vi.advanceTimersByTimeAsync(1100));
+    expect(pollRequested).toBe(true);
+    await act(async () => finishPoll());
+    await act(() => vi.runOnlyPendingTimersAsync());
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("Travel iPhone")).toBeVisible();
+    expect(dialog.getByText("iPhone 16")).toBeVisible();
+    expect(dialog.getByText("K7M2RX")).toBeVisible();
+    expect(dialog.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(dialog.getByRole("button", { name: "Deny" })).toBeDisabled();
+    expect(
+      dialog.queryByRole("img", { name: "Pairing QR code" })
+    ).not.toBeInTheDocument();
+    vi.useRealTimers();
+    await act(async () => finishApproval());
+    expect(await screen.findByText("iPhone paired.")).toBeVisible();
+  } finally {
+    finishPoll();
+    finishApproval();
+    mock.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("announces approval in progress for the pending device", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  const mock = createMockTransport({ autoTick: false });
+  let finishApproval = () => {};
+  const approval = new Promise<void>((resolve) => {
+    finishApproval = resolve;
+  });
+  try {
+    await openPendingPairing({
+      ...mock,
+      pairingApprove: async (nonce) => {
+        await approval;
+        return mock.pairingApprove(nonce);
+      },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled()
+    );
+    expect(
+      within(screen.getByRole("dialog")).getByRole("status")
+    ).toHaveTextContent("Approving Travel iPhone…");
+    finishApproval();
+    expect(await screen.findByText("iPhone paired.")).toBeVisible();
+  } finally {
+    finishApproval();
+    mock.dispose();
+    vi.useRealTimers();
+  }
+});
 
 it("cancels an offer that finishes after the sheet has closed", async () => {
   const mock = createMockTransport({ autoTick: false });

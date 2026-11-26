@@ -1,7 +1,7 @@
 use crate::error::{CommandError, PairingFailure};
 use serde::Serialize;
 use statglass_proto::pairing::PairReply;
-use statglass_remote::{DeviceKeysError, PairingError};
+use statglass_remote::{DeviceKeysError, PairingError, pairing::PairOutcome};
 use statglass_schema::JsSafeInt;
 
 use super::bundle::MONITORING_OFF;
@@ -62,8 +62,8 @@ pub struct PairedDeviceInfo {
     pub last_seen_ms: Option<i64>,
 }
 
-impl From<PairReply> for PairingStatus {
-    fn from(reply: PairReply) -> Self {
+impl PairingStatus {
+    pub(super) fn from_reply((reply, summary): PairOutcome) -> Self {
         match reply {
             PairReply::Waiting => Self::Waiting,
             PairReply::Pending {
@@ -75,13 +75,34 @@ impl From<PairReply> for PairingStatus {
                 model,
                 code,
             },
-            // Phase 2 lane a fills the summary from the offer's kept handover.
-            PairReply::Approved { device, .. } => Self::Paired {
-                device,
-                hosts: Vec::new(),
-                unavailable: Vec::new(),
-                dropped: false,
-            },
+            PairReply::Approved { device, .. } => {
+                let (hosts, unavailable, dropped) = summary
+                    .map(|summary| {
+                        (
+                            summary
+                                .handover
+                                .hosts
+                                .iter()
+                                .map(|host| host.name.clone())
+                                .collect(),
+                            summary
+                                .handover
+                                .unavailable
+                                .iter()
+                                .cloned()
+                                .map(Into::into)
+                                .collect(),
+                            summary.dropped,
+                        )
+                    })
+                    .unwrap_or_default();
+                Self::Paired {
+                    device,
+                    hosts,
+                    unavailable,
+                    dropped,
+                }
+            }
             PairReply::Denied => Self::Denied,
             PairReply::Expired => Self::Expired,
             PairReply::Error { error } => Self::Failed {
