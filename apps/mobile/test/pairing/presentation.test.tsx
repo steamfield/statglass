@@ -15,7 +15,7 @@ test("explains how to pair a Linux host directly and where to get the agent", as
     </PairingProvider>
   );
   for (const instruction of [
-    "For a Linux host no Mac monitors, connect over SSH. Run ~/.local/bin/statglass-agent pair as the user who installed the agent, or sudo /usr/local/bin/statglass-agent pair for a system install.",
+    "For a Linux host your Mac doesn't monitor or couldn't share, connect over SSH. Run ~/.local/bin/statglass-agent pair as the user who installed the agent, or sudo /usr/local/bin/statglass-agent pair for a system install.",
     "2. Scan the QR code shown on the Mac or printed in the Linux terminal, or paste the pairing text.",
     "3. Approve on the host.",
     "4. Done.",

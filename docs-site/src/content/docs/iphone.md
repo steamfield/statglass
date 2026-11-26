@@ -24,6 +24,9 @@ The Mac can only share hosts the iPhone can connect to and verify over SSH. It s
 - The SSH alias uses `ProxyJump` or `ProxyCommand`. The iPhone connects directly and can't use those proxy settings.
 - The SSH alias uses a private or link-local IP address directly and has no Tailscale route. The iPhone may be on a different network. Tailnet IP addresses in `100.64.0.0/10` (the Tailscale `100.x` range) or `fd7a:115c:a1e0::/48` count as Tailscale routes.
 - The Mac has no trusted host key in its SSH known-hosts files, such as `~/.ssh/known_hosts`. The iPhone needs that key to verify the host's identity.
+- The SSH alias can't be resolved, or its LAN and Tailscale aliases use a different user or port. The iPhone saves one user and port per host.
+
+To add a skipped host, pair it directly: run Pair iPhone on that Mac, or `statglass-agent pair` on that Linux host (see [Pair a host](#pair-a-host)).
 
 ## Privacy
 

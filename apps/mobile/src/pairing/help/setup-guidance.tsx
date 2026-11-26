@@ -12,7 +12,8 @@ export function SetupGuidance() {
           The Mac also offers to share the other hosts it monitors.
         </Text>
         <Text variant="body">
-          For a Linux host no Mac monitors, connect over SSH. Run{" "}
+          For a Linux host your Mac doesn't monitor or couldn't share, connect
+          over SSH. Run{" "}
           <Text variant="body" className="font-mono">
             ~/.local/bin/statglass-agent pair
           </Text>{" "}
