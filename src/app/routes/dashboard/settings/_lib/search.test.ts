@@ -65,6 +65,12 @@ describe("searchStyles", () => {
     );
   });
 
+  it("hides context tied to a row that didn't match", () => {
+    expect(css).toContain(
+      `${scope} [data-settings-part]:not([data-settings-part="network-history"]){display:none}`
+    );
+  });
+
   it("hides sections and tab groups that hold no rendered matched row", () => {
     expect(css).toContain(
       `${scope} [data-settings-section]:not(:has(${matched})){display:none}`
@@ -84,7 +90,7 @@ describe("searchStyles", () => {
   });
 
   it("drops the hairline under whatever shows last in a panel", () => {
-    const lastShown = `:not(:has(~ :is(${matched},:not([data-settings-row]))))`;
+    const lastShown = `:not(:has(~ :is(${matched},[data-settings-part="network-history"],:not([data-settings-row],[data-settings-part]))))`;
     const panel = `${scope} [data-settings-section] > h2 + div`;
     expect(css).toContain(`${panel} > ${lastShown}{border-bottom-width:0}`);
     expect(css).toContain(
@@ -93,7 +99,7 @@ describe("searchStyles", () => {
   });
 
   it("gives the first and last child showing the panel's corners", () => {
-    const shown = `:is(${matched},:not([data-settings-row]))`;
+    const shown = `:is(${matched},[data-settings-part="network-history"],:not([data-settings-row],[data-settings-part]))`;
     const panel = `${scope} [data-settings-section] > h2 + div`;
     expect(css).toContain(
       `${panel} > ${shown}:not(${shown} ~ *){border-top-left-radius:inherit;border-top-right-radius:inherit}`

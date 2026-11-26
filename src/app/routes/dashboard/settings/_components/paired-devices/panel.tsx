@@ -61,12 +61,15 @@ export function PairedDevicesPanel() {
         <PairingDialog onPaired={() => void refresh()} />
       </SettingsRow>
       {devices.isPending && (
-        <InlineMessage tone="status" className="px-4 py-3">
-          Loading paired devices…
-        </InlineMessage>
+        <div data-settings-part="iphone-access" className="px-4 py-3">
+          <InlineMessage tone="status">Loading paired devices…</InlineMessage>
+        </div>
       )}
       {devices.isError && (
-        <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <div
+          data-settings-part="iphone-access"
+          className="flex items-center justify-between gap-3 px-4 py-3"
+        >
           <InlineMessage tone="error">
             {commandErrorText(devices.error, "Couldn’t read paired devices.")}
           </InlineMessage>
@@ -80,15 +83,16 @@ export function PairedDevicesPanel() {
         </div>
       )}
       {devices.data?.length === 0 && (
-        <InlineMessage tone="status" className="px-4 py-3">
-          No paired devices.
-        </InlineMessage>
+        <div data-settings-part="iphone-access" className="px-4 py-3">
+          <InlineMessage tone="status">No paired devices.</InlineMessage>
+        </div>
       )}
       {devices.data?.map((device, _, list) => {
         const label = deviceLabel(device, list);
         return (
           <SettingsRow
             key={device.tag}
+            part="iphone-access"
             label={label}
             sub={
               <span title={device.fingerprint} className="figures">

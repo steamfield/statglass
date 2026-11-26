@@ -91,6 +91,28 @@ describe("Settings search", () => {
     );
   });
 
+  it("shows paired devices and pending updates only with the row they belong to", async () => {
+    const { user } = renderOn("general");
+    await search(user, "install");
+    await waitFor(() => expect(row("device-access")).toBeVisible());
+    expect(await screen.findByText("Lab Mini")).toBeVisible();
+    expect(
+      await screen.findByRole("button", {
+        name: "Revoke Home iPhone",
+        hidden: true,
+      })
+    ).not.toBeVisible();
+
+    await user.clear(searchField());
+    await user.type(searchField(), "paired");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Revoke Home iPhone" })
+      ).toBeVisible()
+    );
+    expect(screen.getByText("Lab Mini")).not.toBeVisible();
+  });
+
   it("changes a unit in place: “fahrenheit”, then °F", async () => {
     const { user, transport } = renderOn("about");
     await search(user, "fahrenheit");

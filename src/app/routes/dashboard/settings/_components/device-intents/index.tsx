@@ -14,6 +14,7 @@ function IntentRow({ intent }: { intent: DeviceIntentInfo }) {
   const state = intent.state === "failed" ? "failed" : "pending";
   return (
     <SettingsRow
+      part="device-access"
       label={intent.host_name}
       sub={
         <span className="wrap-anywhere">

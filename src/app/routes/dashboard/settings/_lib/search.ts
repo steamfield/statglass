@@ -92,11 +92,14 @@ export function matchedRowCount(matches: readonly SettingsMatch[]): number {
   return matches.reduce((count, match) => count + match.rowIds.length, 0);
 }
 
-/** A selector list naming each matched row. */
-function matchedRowsSelector(matches: readonly SettingsMatch[]): string {
+/** A selector list naming each matched row by `attr`. */
+function matchedRowsSelector(
+  matches: readonly SettingsMatch[],
+  attr = "data-settings-row"
+): string {
   return matches
     .flatMap((match) => match.rowIds)
-    .map((id) => `[data-settings-row="${id}"]`)
+    .map((id) => `[${attr}="${id}"]`)
     .join(",");
 }
 
@@ -108,16 +111,18 @@ function matchedRowsSelector(matches: readonly SettingsMatch[]): string {
  * drops the bottom hairline from whatever now shows last in a panel. The first
  * and last child showing take the panel's corner radius, so a filled child
  * (the menu-bar preview) doesn't draw square corners over it. Untagged
- * context (the menu-bar preview, notes, the device list) keeps showing in a
- * shown section. Empty matches give an empty sheet.
+ * context (the menu-bar preview, notes) keeps showing in a shown section;
+ * context tied to a row by `data-settings-part` (paired devices, pending
+ * device updates) shows only with that row. Empty matches give an empty sheet.
  */
 export function searchStyles(matches: readonly SettingsMatch[]): string {
   if (matches.length === 0) return "";
   const rows = matchedRowsSelector(matches);
+  const parts = matchedRowsSelector(matches, "data-settings-part");
   // A panel child that stays visible: a matched row or untagged context.
   // `:has()` can't nest, so "holds a matched row" is the whole test for a
   // section or group; rows only ever live in their own section.
-  const shown = `:is(${rows},:not([data-settings-row]))`;
+  const shown = `:is(${rows},${parts},:not([data-settings-row],[data-settings-part]))`;
   const lastShown = `:not(:has(~ ${shown}))`;
   const firstShown = `:not(${shown} ~ *)`;
   const blocks = BLOCK_ROW_IDS.map((id) => `[data-settings-row="${id}"]`).join(
@@ -125,6 +130,7 @@ export function searchStyles(matches: readonly SettingsMatch[]): string {
   );
   return [
     `${SCOPE} [data-settings-row]:not(${rows}){display:none}`,
+    `${SCOPE} [data-settings-part]:not(${parts}){display:none}`,
     `${SCOPE} [data-settings-section]:not(:has(${rows})){display:none}`,
     `${SCOPE} [${GROUP_ATTR}]:not(:has(${rows})){display:none}`,
     `${SCOPE} ${NESTED_ROW}{padding-left:${FLAT_ROW_PADDING}}`,

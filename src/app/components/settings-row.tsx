@@ -16,6 +16,11 @@ export interface SettingsRowProps {
    * marks it `data-nested` so search results can show it flat.
    */
   nested?: boolean;
+  /**
+   * Catalog row id this untagged row belongs to (`data-settings-part`), so
+   * search shows it only with that row: a paired device under iPhone access.
+   */
+  part?: string;
 }
 
 /**
@@ -30,12 +35,14 @@ export function SettingsRow({
   children,
   id,
   nested = false,
+  part,
 }: SettingsRowProps) {
   const Label = htmlFor ? "label" : "span";
   return (
     <div
       data-settings-row={id}
       data-nested={nested ? "" : undefined}
+      data-settings-part={part}
       className={cn(
         "flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-body last:border-b-0",
         // 32 px inset with a hairline elbow from the row above.
