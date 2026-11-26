@@ -392,7 +392,7 @@ describe("Settings sampling and history", () => {
       route: settingsHref("history"),
       transportOptions: { scenarios: ["no-process-network"] },
     });
-    await screen.findByRole("switch", { name: "Slow down on battery" });
+    await screen.findByRole("combobox", { name: "History size limit" });
     expect(
       screen.queryByRole("switch", { name: "Network history" })
     ).toBeNull();
