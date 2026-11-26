@@ -15,8 +15,8 @@ import {
 } from "~/components/ui/dialog";
 import { useTransport } from "~/lib/transport-context";
 
-import { HostLists } from "../handover-host-lists";
-import { PairingQr } from "../paired-devices/pairing-offer-view";
+import { HostLists } from "./handover-host-lists";
+import { PairingQr } from "./pairing-offer-view";
 
 function OfferError({
   message,

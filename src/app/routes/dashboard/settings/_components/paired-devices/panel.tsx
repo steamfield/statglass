@@ -7,12 +7,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ConfirmDialog } from "~/components/confirm-dialog";
 import { InlineMessage } from "~/components/inline-message";
+import { PairingDialog } from "~/components/iphone/pairing-dialog";
+import { UpdateFromMac } from "~/components/iphone/update-from-mac";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
 import { DeviceIntents } from "../device-intents";
-import { UpdateFromMac } from "../update-from-mac";
-import { PairingDialog } from "./pairing-dialog";
 
 function deviceName(device: PairedDeviceInfo): string {
   return device.name.trim() || `iPhone ${device.tag}`;

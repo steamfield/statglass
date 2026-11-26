@@ -8,7 +8,7 @@ import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
 import { DialogDescription, DialogFooter } from "~/components/ui/dialog";
 import { useTransport } from "~/lib/transport-context";
-import { HostLists } from "../handover-host-lists";
+import { HostLists } from "./handover-host-lists";
 
 const POLL_MS = 1000;
 type PendingDevice = Extract<PairingStatus, { kind: "pending" }>;

@@ -2,10 +2,10 @@ import { appKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
+import { PairingDialog } from "~/components/iphone/pairing-dialog";
+import { UpdateFromMac } from "~/components/iphone/update-from-mac";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
-import { PairingDialog } from "../../settings/_components/paired-devices/pairing-dialog";
-import { UpdateFromMac } from "../../settings/_components/update-from-mac";
 
 export function AddToIphone() {
   const transport = useTransport();

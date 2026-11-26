@@ -2,10 +2,10 @@ import { createMockTransport } from "@core/mock-transport";
 import { screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { expectTypeOf } from "vitest";
+import type { PairingDialog } from "~/components/iphone/pairing-dialog";
+import { UpdateFromMac } from "~/components/iphone/update-from-mac";
 import { renderWithProviders } from "../../../../../../../tests/test-utils";
-import type { PairingDialog } from "../paired-devices/pairing-dialog";
-import { PairedDevicesPanel } from "../paired-devices/panel";
-import { UpdateFromMac } from ".";
+import { PairedDevicesPanel } from "./panel";
 
 it("opens Update iPhone from the Paired devices settings", async () => {
   const { user } = renderWithProviders(<PairedDevicesPanel />);
