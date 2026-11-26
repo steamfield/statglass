@@ -1,6 +1,9 @@
 import type { CeilingLadder } from "@core/chart-math";
+import { DAY_MS } from "@core/time-grid";
 import { useAreaBrush } from "~/components/area-brush";
 import { ChartHistoryStatus } from "~/components/chart-history-status";
+import { CrosshairLine } from "~/components/charts/crosshair-line";
+import { type ReadoutRow, StreamHover } from "~/components/charts/stream-hover";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useChartLabel } from "~/hooks/use-chart-label";
 import type { ModuleChart } from "~/hooks/use-module-chart";
@@ -81,11 +84,19 @@ function useYAxis(
   return { yMax, gridlines, yTicks, gutter: axis.gutter };
 }
 
+/** Points across the plot, as `streamAreaModel` counts them. */
+function slotCount(lines: StreamAreaProps["series"]): number {
+  let slots = 2;
+  for (const l of lines) slots = Math.max(slots, l.values.length);
+  return slots;
+}
+
 /**
  * The history chart of a module page card (C1): the loading line, the area
  * chart with its gutter ticks, gap bands and x ticks, and, when the chart is
  * brushable, the brush and the selection line under it. The card owns the
- * lines it draws, their legend and the accessible name's figures.
+ * lines it draws, their legend and the accessible name's figures. With a
+ * `readout` it shows the hover crosshair and tooltip, one row per entry.
  */
 export function ModuleHistoryChart({
   chart,
@@ -96,6 +107,7 @@ export function ModuleHistoryChart({
   subject,
   now,
   annotations,
+  readout,
 }: {
   chart: ModuleChart;
   lines: StreamAreaProps["series"];
@@ -107,6 +119,8 @@ export function ModuleHistoryChart({
   /** The figures now ("now 3.1 W"); the name holds them for 10 s at a time. */
   now?: string;
   annotations?: StreamAreaProps["annotations"];
+  /** The hover tooltip's rows; without them the chart has no hover readout. */
+  readout?: readonly ReadoutRow[];
 }) {
   const { series, gaps } = chart;
   const loading = series.loading === true || series.ringLoading;
@@ -133,7 +147,28 @@ export function ModuleHistoryChart({
         {...y}
         xTicks={chart.xTicks}
         highlight={brush.highlight}
-        overlay={brush.overlay}
+        overlay={
+          readout && !loading ? (
+            <>
+              {brush.overlay}
+              <CrosshairLine paint height={height} />
+              <StreamHover
+                slots={slotCount(lines)}
+                tEndMs={series.tEndMs}
+                intervalMs={series.intervalMs}
+                yMax={y.yMax}
+                height={height}
+                rows={readout}
+                dots={lines}
+                gaps={gaps}
+                accent={accent}
+                dateLabels={!chart.live || chart.windowMs >= DAY_MS}
+              />
+            </>
+          ) : (
+            brush.overlay
+          )
+        }
         {...(annotations && { annotations })}
       />
       {chart.brush && (

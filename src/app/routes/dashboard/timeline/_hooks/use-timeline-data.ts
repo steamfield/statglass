@@ -7,14 +7,20 @@ import type {
   TierRequest,
 } from "@core/generated/types";
 import { HISTORY_COMMIT_MS } from "@core/history-state";
-import { historyKeys, type RangeSpec } from "@core/query-keys";
+import { historyKeys, type RangeSpec, sameHost } from "@core/query-keys";
 import { DAY_MS, floorTo } from "@core/time-grid";
 import { unwrap } from "@core/transport";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryKey,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHostClock } from "~/lib/host-clock";
+import { holdWhile } from "~/lib/queries/hold";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { type Bucket, combineSeries } from "../_lib/buckets";
@@ -280,6 +286,9 @@ function useDebounced<T>(value: T, ms: number): T {
   return settled;
 }
 
+/** The bucket start of the disabled key while no bucket is hovered. */
+const IDLE_T = -1;
+
 /** Slack after a commit is due before an answer counts as final. */
 const COMMIT_MARGIN_MS = 30_000;
 
@@ -288,7 +297,11 @@ const COMMIT_MARGIN_MS = 30_000;
  * 50 ms of cursor rest and cached per bucket. An answer fetched before the
  * bucket can have been committed (D-070) is not final: often `null`, because
  * the snapshots are still in the writer's open batch. It goes stale at once,
- * so the cursor's next visit asks again.
+ * so the cursor's next visit asks again. While the cursor moves to the next
+ * bucket of the same width, the last answer stays until the next lands, so
+ * the tooltip's rows change in place instead of blanking to "Looking up".
+ * Nothing is held across the cursor leaving the plot or a width change:
+ * the rows would describe another moment.
  */
 export function useProcessesAt(
   bucketT: number | null,
@@ -301,18 +314,30 @@ export function useProcessesAt(
   const local = useIsLocalHost();
   const bucket = bucketT === null || !local ? null : `${bucketT}:${bucketMs}`;
   const settledBucket = useDebounced(bucket, 50);
-  const [t, ms] = (settledBucket ?? "-1:0").split(":").map(Number) as [
+  const [t, ms] = (settledBucket ?? `${IDLE_T}:0`).split(":").map(Number) as [
     number,
     number,
   ];
+  const queryKey = historyKeys.processesAt(hostId, t, ms);
   const { data } = useQuery({
-    queryKey: historyKeys.processesAt(hostId, t, ms),
+    queryKey,
     queryFn: () => unwrap(transport.queryProcessesAt(hostId, t + ms / 2)),
     enabled: settledBucket !== null,
+    placeholderData: holdWhile(queryKey, sameHover),
     staleTime: (query) =>
       query.state.dataUpdatedAt >= t + ms + HISTORY_COMMIT_MS + COMMIT_MARGIN_MS
         ? Number.POSITIVE_INFINITY
         : 0,
   });
-  return settledBucket === bucket ? data : undefined;
+  const settledMs = settledBucket?.split(":")[1];
+  return bucket === null || settledMs !== `${bucketMs}` ? undefined : data;
+}
+
+/** The last answer may stand in: same host and width, cursor on the plot. */
+function sameHover(previous: QueryKey, next: QueryKey): boolean {
+  return (
+    sameHost(previous, next) &&
+    previous.at(-1) === next.at(-1) &&
+    previous.at(-2) !== IDLE_T
+  );
 }

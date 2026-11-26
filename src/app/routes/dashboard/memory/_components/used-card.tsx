@@ -1,7 +1,7 @@
 import { formatBytes, MISSING } from "@core/format";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
-import type { HeroChartSpec } from "~/components/module-hero";
+import { type HeroChartSpec, heroReadout } from "~/components/module-hero";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
 import { useHeld } from "~/hooks/use-ring";
@@ -56,6 +56,7 @@ export function UsedCard({
         <ModuleHistoryChart
           chart={chart}
           lines={spec.lines(chart.series.values)}
+          readout={heroReadout(spec, chart.series.values)}
           yAxis={spec.yAxis}
           accent="mem"
           height={HEIGHT}

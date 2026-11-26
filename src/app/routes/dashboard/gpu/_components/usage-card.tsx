@@ -1,7 +1,7 @@
 import { formatGhz, formatPercent, formatWatts } from "@core/format";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
-import { GPU_HERO } from "~/components/module-hero";
+import { GPU_HERO, heroReadout } from "~/components/module-hero";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useModuleChart } from "~/hooks/use-module-chart";
@@ -48,6 +48,7 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
         <ModuleHistoryChart
           chart={chart}
           lines={GPU_HERO.lines(chart.series.values)}
+          readout={heroReadout(GPU_HERO, chart.series.values)}
           yAxis={GPU_HERO.yAxis}
           accent="gpu"
           height={HEIGHT}

@@ -3,6 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { cssVar, useThemeVersion, withAlpha } from "~/components/charts/theme";
 import { gapEdgePoints } from "~/widgets/gap-edge-dot";
+import type { Column } from "../_lib/buckets";
 import type { PlotSeries } from "../_lib/lane-model";
 
 export interface LanePlotProps {
@@ -19,18 +20,94 @@ export interface LanePlotProps {
 
 const AREA_ALPHA = { area: 0.38, faint: 0.14, line: 0 } as const;
 
+/** Each bucket's bar fills 70% of its slot, starting at the bucket's start. */
+const BARS = uPlot.paths.bars?.({
+  size: [0.7, Number.POSITIVE_INFINITY],
+  align: 1,
+});
+
+/**
+ * A `bars` series in the Network page's colours: upload in ramp step 2,
+ * download in step 1, read from the theme so both pages match.
+ */
+function barSeries(el: HTMLElement, fill: string, up: boolean): uPlot.Series {
+  const ramp = parseFloat(cssVar(el, up ? "--ramp-2" : "--ramp-1"));
+  return {
+    stroke: "transparent",
+    width: 0,
+    fillTo: 0,
+    fill: withAlpha(fill, Number.isFinite(ramp) ? ramp / 100 : 1),
+    ...(BARS && { paths: BARS }),
+    points: { show: false },
+  };
+}
+
+/** The envelope's min and max columns: data for the band, never drawn. */
+const HIDDEN: uPlot.Series = { stroke: "transparent", points: { show: false } };
+
+/**
+ * A series' average line in the accent ink, with its area fill (a gradient
+ * from the baseline, flipped for a downward series) unless it is a bare line.
+ */
+function avgSeries(
+  look: keyof typeof AREA_ALPHA,
+  down: boolean,
+  fill: string,
+  ink: string,
+  baseline: number,
+  { points }: { points: uPlot.Series["points"] }
+): uPlot.Series {
+  return {
+    stroke: look === "faint" ? withAlpha(ink, 0.55) : ink,
+    width: 1.5,
+    fillTo: baseline,
+    ...(look !== "line" && {
+      fill: (u: uPlot) => {
+        const top = u.bbox.top;
+        const bottom = top + u.bbox.height;
+        const zero = u.valToPos(baseline, "y", true);
+        const a = AREA_ALPHA[look];
+        const g = u.ctx.createLinearGradient(
+          0,
+          down ? zero : top,
+          0,
+          down ? bottom : zero
+        );
+        g.addColorStop(0, withAlpha(fill, down ? 0.08 : a));
+        g.addColorStop(1, withAlpha(fill, down ? a : 0));
+        return g;
+      },
+    }),
+    ...(points && { points }),
+  };
+}
+
+/**
+ * A bar series' values with its breaks as `undefined`. uPlot sizes bars
+ * from the closest two x slots holding anything but `undefined`, and a
+ * gap's start is a `null` slot off the bucket grid: left in, a sleep
+ * starting 2 s into a minute bucket would shrink every bar to 2 s wide.
+ * Bars stand alone, so they need no break slots; the gap band marks it.
+ */
+const barValues = (col: Column) => col.map((v) => (v === null ? undefined : v));
+
 function toData(x: number[], series: PlotSeries[]): uPlot.AlignedData {
   return [
     x,
-    ...series.flatMap((s) => [s.cols.max, s.cols.min, s.cols.avg]),
+    ...series.flatMap((s) => [
+      s.cols.max,
+      s.cols.min,
+      s.look === "bars" ? barValues(s.cols.avg) : s.cols.avg,
+    ]),
   ] as uPlot.AlignedData;
 }
 
 /**
  * One Timeline lane on uPlot (canvas): per series an avg line in the accent
  * ink, an optional area fill, the min/max envelope, and hollow dots where the
- * line meets a gap. No axes or cursor: the lane stack draws one shared axis,
- * the gap bands and the crosshair over every lane.
+ * line meets a gap; or, for a `bars` series, one bar per bucket. No axes
+ * or cursor: the lane stack draws one shared axis, the gap bands and the
+ * crosshair over every lane.
  *
  * The plot is built once per shape (series count, domain, theme) and fed new
  * data with `setData` when a bucket closes.
@@ -70,47 +147,23 @@ export const LanePlot = memo(function LanePlot({
       const fill = cssVar(el, `--color-${s.accent}`);
       const ink = cssVar(el, `--color-${s.accent}-ink`) || fill;
       const base = 1 + k * 3;
-      const quiet = s.look === "faint";
       opts.push(
-        { stroke: "transparent", points: { show: false } },
-        { stroke: "transparent", points: { show: false } },
-        {
-          stroke: quiet ? withAlpha(ink, 0.55) : ink,
-          width: 1.5,
-          fillTo: baseline,
-          ...(s.look === "line"
-            ? {}
-            : {
-                fill:
-                  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
-                  (u: uPlot) => {
-                    const top = u.bbox.top;
-                    const bottom = top + u.bbox.height;
-                    const zero = u.valToPos(baseline, "y", true);
-                    const a = AREA_ALPHA[s.look];
-                    const down = s.direction === "down";
-                    const g = u.ctx.createLinearGradient(
-                      0,
-                      down ? zero : top,
-                      0,
-                      down ? bottom : zero
-                    );
-                    g.addColorStop(0, withAlpha(fill, down ? 0.08 : a));
-                    g.addColorStop(1, withAlpha(fill, down ? a : 0));
-                    return g;
-                  },
-              }),
-          points: gapEdgePoints(
-            ink,
-            background,
-            () => edgesRef.current[k] ?? []
-          ),
-        }
+        HIDDEN,
+        HIDDEN,
+        s.look === "bars"
+          ? barSeries(el, fill, s.direction !== "down")
+          : avgSeries(s.look, s.direction === "down", fill, ink, baseline, {
+              points: gapEdgePoints(
+                ink,
+                background,
+                () => edgesRef.current[k] ?? []
+              ),
+            })
       );
       if (s.envelope) {
         bands.push({
           series: [base, base + 1],
-          fill: withAlpha(fill, quiet ? 0.1 : 0.2),
+          fill: withAlpha(fill, s.look === "faint" ? 0.1 : 0.2),
         });
       }
     });

@@ -5,8 +5,9 @@ import { parseLabels } from "@core/series-key";
 import { useMemo } from "react";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ModuleHistoryChart } from "~/components/charts/module-history-chart";
+import type { ReadoutRow } from "~/components/charts/stream-hover";
 import { InlineMessage } from "~/components/inline-message";
-import { POWER_HERO } from "~/components/module-hero";
+import { heroReadout, POWER_HERO } from "~/components/module-hero";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { useEvents } from "~/hooks/use-events";
@@ -129,6 +130,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
               focus.seriesStyle
             )}
             yAxis={POWER_HERO.yAxis}
+            readout={chartReadout(heroReadout(POWER_HERO, series.values), apps)}
             accent="power"
             height={HEIGHT}
             subject={POWER_HERO.subject}
@@ -165,6 +167,23 @@ function chartSeries(
       fill: false,
       edges: false,
       ...style(a.name),
+    })),
+  ];
+}
+
+/** System first, then each app line in the legend's order. */
+function chartReadout(
+  system: readonly ReadoutRow[],
+  apps: readonly AppLine[]
+): ReadoutRow[] {
+  return [
+    ...system,
+    ...apps.map((a, i) => ({
+      key: `app:${a.name}`,
+      label: a.name,
+      step: appStyle(i).step,
+      values: a.values,
+      format: (w: number) => formatWattsFine(w),
     })),
   ];
 }

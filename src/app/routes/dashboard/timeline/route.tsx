@@ -253,6 +253,7 @@ export default function TimelineRoute() {
           sort={appSort}
           onSortChange={setAppSort}
           compare={comparing}
+          rolling={live}
         />
         <DockerTimelineLane from={data.fromMs} to={data.toMs} />
         <HeatmapCard units={units} onOpen={openHour} />

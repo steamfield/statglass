@@ -44,3 +44,50 @@ describe("buildLaneModel gap edges on long ranges", () => {
     expect(avg[nightSlot]).toBeNull();
   });
 });
+
+describe("buildLaneModel network lane", () => {
+  const NET = LANES.find((l) => l.id === "network");
+  if (!NET) throw new Error("no network lane");
+  const away = { fromMs: 24 * HOUR, toMs: 44 * HOUR, label: "away" };
+  const buckets = {
+    "net.tx_total": series([away]),
+    "net.rx_total": series([away]),
+  };
+  const HOLDS = { "net.tx_total": BUCKET, "net.rx_total": BUCKET };
+
+  it("draws bars, upload above the axis and download below, with no envelope or edge dots", () => {
+    const model = buildLaneModel(NET, buckets, HOLDS, BUCKET, [away]);
+    expect(model.domain).toEqual([-1, 1]);
+    expect(
+      model.series.map(({ metric, look, envelope, direction, edges }) => ({
+        metric,
+        look,
+        envelope,
+        direction,
+        edges,
+      }))
+    ).toEqual([
+      {
+        metric: "net.tx_total",
+        look: "bars",
+        envelope: false,
+        direction: "up",
+        edges: [],
+      },
+      {
+        metric: "net.rx_total",
+        look: "bars",
+        envelope: false,
+        direction: "down",
+        edges: [],
+      },
+    ]);
+    const [up, down] = model.series;
+    expect(
+      Math.max(...(up?.cols.avg ?? []).map((v) => v ?? 0))
+    ).toBeGreaterThan(0);
+    expect(Math.min(...(down?.cols.avg ?? []).map((v) => v ?? 0))).toBeLessThan(
+      0
+    );
+  });
+});
