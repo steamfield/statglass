@@ -318,7 +318,10 @@ The only gap reason any phone test renders is `paused`.
 - An assertion on a Reanimated stub's call arguments is replaced by an assertion on what
   the screen shows or what the callback changed (the saved order, the row's label). Where
   jest cannot observe the behaviour at all (easing, duration), the assertion is deleted
-  and the behaviour is listed for the simulator check.
+  and the behaviour is listed for the simulator check. Two kinds of stub assertion stay,
+  because the still renderer hides them and a regression is an accessibility or resource
+  bug: that no animation is scheduled (or Reanimated is told to reduce motion) under
+  Reduce Motion or Low Power Mode, and that an endless animation is cancelled on unmount.
 
 The reorder tests still wrap `react-native-reorderable-list` to reach its callbacks; jest
 has no gesture system, and the alternative is no drag coverage.
