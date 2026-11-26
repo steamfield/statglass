@@ -6,7 +6,6 @@ import { CPU_HERO } from "@core/module-hero";
 import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
 import { useMemo, useState } from "react";
-import { View } from "react-native";
 import { useHistoryRange, useModuleHistory } from "@/data/history";
 import { useHosts } from "@/data/hosts-list";
 import { remoteStatusLine, useConnection } from "@/data/live";
@@ -16,6 +15,7 @@ import { ModuleChart } from "@/module/module-chart";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { Card } from "@/ui/card";
 import { CoreLoad } from "./core-load";
 import { CpuStats } from "./stats";
 
@@ -85,8 +85,8 @@ export function CpuPage({
         <>
           {liveIssue && <ModuleNotice message={liveIssue} />}
           <CpuStats host={host} remote={remote} stats={data?.stats} />
-          <View
-            className="gap-2 rounded-xl border border-border bg-card p-3"
+          <Card
+            className="gap-2"
             testID="history-plot-layout"
             onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
           >
@@ -112,7 +112,7 @@ export function CpuPage({
               hostName={record?.display_name}
               hasSamples={hasSamples}
             />
-          </View>
+          </Card>
           {clusters.length > 0 ? (
             <CoreLoad
               host={host}

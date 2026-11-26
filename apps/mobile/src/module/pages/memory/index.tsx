@@ -16,7 +16,6 @@ import { MEMORY_PRESSURE_HERO, memoryUsedHero } from "@core/module-hero";
 import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View } from "react-native";
 import { useFocusDemand } from "@/data/demand";
 import {
   type HistoryRange,
@@ -36,6 +35,7 @@ import { ModuleChart } from "@/module/module-chart";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { MemoryComposition, SwapStats } from "./live-stats";
 
@@ -250,8 +250,8 @@ function MemoryCharts({
   } as const;
   return (
     <>
-      <View
-        className="gap-2 rounded-xl border border-border bg-card p-3"
+      <Card
+        className="gap-2"
         testID="history-plot-layout"
         onLayout={({ nativeEvent }) => onWidth(nativeEvent.layout.width)}
       >
@@ -272,8 +272,8 @@ function MemoryCharts({
           hostName={hostName}
           hasSamples={hasSamples}
         />
-      </View>
-      <View className="gap-2 rounded-xl border border-border bg-card p-3">
+      </Card>
+      <Card className="gap-2">
         <Text variant="cardTitle" accessibilityRole="header">
           Swap
         </Text>
@@ -294,7 +294,7 @@ function MemoryCharts({
         {history.isSuccess && !hasSwapSamples && (
           <ModuleNotice message="No swap samples in this range" />
         )}
-      </View>
+      </Card>
     </>
   );
 }

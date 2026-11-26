@@ -21,7 +21,6 @@ import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { shallow } from "zustand/shallow";
-import { CARD_SURFACE } from "@/cards/module-card";
 import {
   HISTORY_MODULES,
   type HistoryRange,
@@ -44,6 +43,7 @@ import { ModuleNotice } from "@/module/module-notice";
 import { EmbeddedBatteryDay } from "@/module/pages/battery/battery-day";
 import type { ModulePageProps } from "@/module/pages/index";
 import { StatStrip } from "@/module/stat-strip";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { BarSwatch } from "@/widgets/stack-bar";
 import { useEventsInRange, useTemperatureEventLabel } from "./history-events";
@@ -286,8 +286,8 @@ function PowerDraw({
         items={items}
         stats={data?.stats ?? []}
       />
-      <View
-        className={`${CARD_SURFACE} gap-2 p-3`}
+      <Card
+        className="gap-2"
         testID="history-plot-layout"
         onLayout={({ nativeEvent }) => onWidth(nativeEvent.layout.width)}
       >
@@ -319,7 +319,7 @@ function PowerDraw({
           hasSamples={hasSamples}
         />
         {note && <Text variant="caption">{note}</Text>}
-      </View>
+      </Card>
     </>
   );
 }

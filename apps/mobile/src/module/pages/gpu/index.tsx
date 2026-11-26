@@ -6,7 +6,6 @@ import { moduleState, unavailableText } from "@core/module-state";
 import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
 import { useMemo, useState } from "react";
-import { View } from "react-native";
 import { useFocusDemand } from "@/data/demand";
 import { useHistoryRange, useHostHistory } from "@/data/history";
 import { useHosts } from "@/data/hosts-list";
@@ -25,6 +24,7 @@ import { ModuleChart } from "@/module/module-chart";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { Frequency } from "./frequency";
 import { GpuStats } from "./stats";
@@ -171,8 +171,8 @@ export function GpuPage({
         {available && (
           <>
             <GpuStats host={host} remote={remote} stats={data?.page.stats} />
-            <View
-              className="gap-2 rounded-xl border border-border bg-card p-3"
+            <Card
+              className="gap-2"
               testID="history-plot-layout"
               onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
             >
@@ -193,7 +193,7 @@ export function GpuPage({
                   values.some((value) => value !== null)
                 )}
               />
-            </View>
+            </Card>
             <Frequency
               host={host}
               remote={remote}
@@ -201,7 +201,7 @@ export function GpuPage({
               stats={data?.page.stats}
               windowMs={windowMs}
             />
-            <View className="gap-2 rounded-xl border border-border bg-card p-3">
+            <Card className="gap-2">
               <Text variant="cardTitle" accessibilityRole="header">
                 Power
               </Text>
@@ -219,7 +219,7 @@ export function GpuPage({
               {powerMissing && (
                 <ModuleNotice message="No power samples in this range" />
               )}
-            </View>
+            </Card>
           </>
         )}
         {available && (
