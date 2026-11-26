@@ -23,10 +23,7 @@ export function RetryPanel({
         className="min-h-[44px] items-center justify-center rounded-xl bg-primary px-4 active:opacity-70"
         onPress={retry}
       >
-        <Text
-          variant="body"
-          className="font-semibold! text-primary-foreground!"
-        >
+        <Text variant="body" tone="onPrimary" weight="semibold">
           Retry
         </Text>
       </Pressable>

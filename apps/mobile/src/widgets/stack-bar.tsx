@@ -3,8 +3,7 @@ import {
   stackBarModel,
 } from "@core/widget-models/stack-bar";
 import type { Accent, ColorRef, SwatchStep } from "@core/widget-models/tokens";
-import { useColorScheme, useWindowDimensions, View } from "react-native";
-import { themeColors } from "@/theme.generated";
+import { useWindowDimensions, View } from "react-native";
 import { Text } from "@/ui/text";
 import { BarFill } from "./meter-track";
 
@@ -42,7 +41,6 @@ export function StackBar(data: StackBarData) {
   const { ariaLabel, empty, segments, legend } = stackBarModel(data);
   const { fontScale } = useWindowDimensions();
   const columns = fontScale >= 1.5 ? 1 : legendColumns;
-  const { foreground } = themeColors[useColorScheme() ?? "light"];
   return (
     <View className="gap-2">
       <View
@@ -91,12 +89,7 @@ export function StackBar(data: StackBarData) {
               >
                 {label}
               </Text>
-              <Text
-                variant="caption"
-                className="shrink"
-                // NativeWind drops the CSS font-variant-numeric property.
-                style={{ color: foreground, fontVariant: ["tabular-nums"] }}
-              >
+              <Text variant="caption" tone="default" tabular className="shrink">
                 {value}
               </Text>
             </View>

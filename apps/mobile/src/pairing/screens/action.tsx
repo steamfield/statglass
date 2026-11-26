@@ -23,11 +23,9 @@ export function PairAction({
     >
       <Text
         variant="body"
-        className={
-          secondary
-            ? "text-center"
-            : "text-center font-semibold! text-primary-foreground!"
-        }
+        tone={secondary ? undefined : "onPrimary"}
+        weight={secondary ? undefined : "semibold"}
+        className="text-center"
       >
         {label}
       </Text>

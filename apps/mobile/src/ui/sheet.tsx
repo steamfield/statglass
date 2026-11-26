@@ -37,7 +37,7 @@ export function Sheet({
             className="min-h-[44px] min-w-[44px] items-center justify-center active:opacity-70"
             onPress={onClose}
           >
-            <Text variant="body" className="font-semibold!">
+            <Text variant="body" weight="semibold">
               Done
             </Text>
           </Pressable>

@@ -171,7 +171,7 @@ function DebugHostForm({
                   {label}
                 </Text>
                 {fields.route === value && (
-                  <Text variant="body" className="text-link" accessible={false}>
+                  <Text variant="body" tone="link" accessible={false}>
                     ✓
                   </Text>
                 )}
@@ -187,10 +187,7 @@ function DebugHostForm({
           disabled={busy}
           onPress={connect}
         >
-          <Text
-            variant="body"
-            className="font-semibold! text-primary-foreground!"
-          >
+          <Text variant="body" tone="onPrimary" weight="semibold">
             Connect
           </Text>
         </Pressable>
@@ -281,10 +278,7 @@ function ConnectionReading({
       </View>
       {error && <ErrorText>{error}</ErrorText>}
       <Text variant="label">CPU</Text>
-      {/** The NativeWind converter drops CSS font-variant-numeric. */}
-      <Text variant="cardFigure" style={{ fontVariant: ["tabular-nums"] }}>
-        {formatPercent(cpu)}
-      </Text>
+      <Text variant="cardFigure">{formatPercent(cpu)}</Text>
     </View>
   );
 }
@@ -296,11 +290,7 @@ function connectionStatus(hasAttempt: boolean, error: string | null) {
 
 function ErrorText({ children }: { children: string | null | undefined }) {
   return (
-    <Text
-      variant="label"
-      accessibilityRole="alert"
-      className="text-destructive!"
-    >
+    <Text variant="label" accessibilityRole="alert" tone="destructive">
       {children}
     </Text>
   );

@@ -69,11 +69,7 @@ export function UpdateFlow({
     <ActivityIndicator accessibilityLabel="Reading update code" />
   ) : (
     decode.isError && (
-      <Text
-        variant="body"
-        accessibilityRole="alert"
-        className="text-destructive!"
-      >
+      <Text variant="body" accessibilityRole="alert" tone="destructive">
         {commandErrorText(
           decode.error,
           "Couldn’t read the update code. Try again."

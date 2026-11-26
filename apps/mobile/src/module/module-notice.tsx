@@ -16,7 +16,7 @@ export function ModuleNotice({
         variant="label"
         accessibilityLiveRegion="polite"
         accessibilityRole={error ? "alert" : undefined}
-        className={error ? "text-destructive" : ""}
+        tone={error ? "destructive" : undefined}
       >
         {message}
       </Text>
@@ -26,7 +26,7 @@ export function ModuleNotice({
           onPress={onRetry}
           className="min-h-[44px] min-w-[44px] justify-center self-start active:opacity-70"
         >
-          <Text variant="label" className="text-link">
+          <Text variant="label" tone="link">
             Retry
           </Text>
         </Pressable>

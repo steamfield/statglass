@@ -107,10 +107,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
                 onPress={unlock}
                 className="min-h-[44px] justify-center rounded-lg bg-primary px-4 py-2 active:opacity-70 disabled:opacity-50"
               >
-                <Text
-                  variant="body"
-                  className="font-semibold! text-primary-foreground"
-                >
+                <Text variant="body" tone="onPrimary" weight="semibold">
                   Unlock
                 </Text>
               </Pressable>

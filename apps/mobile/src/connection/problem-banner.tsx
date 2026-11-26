@@ -85,9 +85,8 @@ export function ProblemBanner({
           {problem.tone === "warning" && <StatusWarning />}
           <Text
             variant="cardTitle"
-            className={
-              problem.tone === "warning" ? "shrink text-warning-ink" : "shrink"
-            }
+            tone={problem.tone === "warning" ? "warning" : undefined}
+            className="shrink"
           >
             {problem.title}
           </Text>
@@ -102,7 +101,7 @@ export function ProblemBanner({
           disabled={running}
           onPress={() => void actOnProblem(action)}
         >
-          <Text variant="body" className="font-semibold!">
+          <Text variant="body" weight="semibold">
             {actionLabel[action]}
           </Text>
         </Pressable>
@@ -112,7 +111,8 @@ export function ProblemBanner({
           variant="caption"
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
-          className="px-4 py-3 text-destructive!"
+          tone="destructive"
+          className="px-4 py-3"
         >
           {actionFailure}
         </Text>

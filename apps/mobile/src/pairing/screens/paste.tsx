@@ -67,11 +67,7 @@ export function Paste({
         className="min-h-[88px] rounded-xl border border-input bg-card px-3 py-2 font-mono text-foreground"
       />
       {empty && (
-        <Text
-          variant="caption"
-          accessibilityRole="alert"
-          className="text-destructive!"
-        >
+        <Text variant="caption" accessibilityRole="alert" tone="destructive">
           {copy.empty}
         </Text>
       )}

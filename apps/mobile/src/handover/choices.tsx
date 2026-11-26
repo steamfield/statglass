@@ -51,11 +51,7 @@ export function HostChoices({
           className={`size-6 items-center justify-center rounded-md border ${checked ? "border-primary bg-primary" : "border-muted-foreground"}`}
         >
           {checked && (
-            <Text
-              variant="caption"
-              allowFontScaling={false}
-              className="text-primary-foreground!"
-            >
+            <Text variant="caption" allowFontScaling={false} tone="onPrimary">
               ✓
             </Text>
           )}

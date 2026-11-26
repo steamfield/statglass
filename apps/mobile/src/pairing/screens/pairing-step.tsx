@@ -29,7 +29,7 @@ export function PairingStep({
       <Text
         variant={embedded ? "title" : "onboardingTitle"}
         accessibilityRole={tone ? "alert" : "header"}
-        {...(tone === "warning" && { className: "text-warning-ink" })}
+        tone={tone === "warning" ? "warning" : undefined}
       >
         {title}
       </Text>

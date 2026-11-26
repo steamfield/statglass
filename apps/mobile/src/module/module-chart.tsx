@@ -175,7 +175,7 @@ function ChartReadout({
   return (
     <View className="flex-row flex-wrap items-start justify-between gap-2">
       <View className="shrink gap-1">
-        <Text variant="caption" className="tabular-nums">
+        <Text variant="caption" tabular>
           {time}
         </Text>
         {values.map(({ key, label, figure }) => (
@@ -190,7 +190,7 @@ function ChartReadout({
           onPress={clear}
           className="min-h-[44px] min-w-[44px] justify-center active:opacity-70"
         >
-          <Text variant="label" className="text-link">
+          <Text variant="label" tone="link">
             Clear pin
           </Text>
         </Pressable>

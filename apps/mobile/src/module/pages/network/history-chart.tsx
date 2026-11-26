@@ -291,7 +291,7 @@ export function NetworkHistoryChart({
               onPress={scrub.clear}
               className="min-h-[44px] min-w-[44px] justify-center active:opacity-70"
             >
-              <Text variant="label" className="text-link">
+              <Text variant="label" tone="link">
                 Clear pin
               </Text>
             </Pressable>

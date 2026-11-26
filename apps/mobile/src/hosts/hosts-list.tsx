@@ -125,22 +125,14 @@ export function HostsList({
         <View className="gap-2">
           <RestoreNotice />
           {pairing.isError && (
-            <Text
-              variant="body"
-              accessibilityRole="alert"
-              className="text-destructive!"
-            >
+            <Text variant="body" accessibilityRole="alert" tone="destructive">
               Couldn’t check pairing.{" "}
               {failureReason(pairing.error, "Pull down to try again.")}
             </Text>
           )}
           {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
           {hosts.isError && (
-            <Text
-              variant="body"
-              accessibilityRole="alert"
-              className="text-destructive!"
-            >
+            <Text variant="body" accessibilityRole="alert" tone="destructive">
               Couldn’t load hosts.{" "}
               {failureReason(hosts.error, "Pull down to try again.")}
             </Text>
@@ -164,10 +156,7 @@ export function HostsList({
                 onPress={onPair}
                 className="min-h-[44px] justify-center rounded-xl bg-primary px-4 py-2 active:opacity-70"
               >
-                <Text
-                  variant="body"
-                  className="font-semibold! text-primary-foreground"
-                >
+                <Text variant="body" tone="onPrimary" weight="semibold">
                   Add a host
                 </Text>
               </Pressable>
@@ -177,7 +166,7 @@ export function HostsList({
                 onPress={tryDemo}
                 className="min-h-[44px] justify-center px-4 py-2 active:opacity-70"
               >
-                <Text variant="body" className="text-link">
+                <Text variant="body" tone="link">
                   Try demo hosts
                 </Text>
               </Pressable>
@@ -200,11 +189,7 @@ function RetryErrors({ failures }: { failures: HostRetryFailure[] }) {
   const multiple = failures.length > 1;
   return (
     <View className="gap-1">
-      <Text
-        variant="body"
-        accessibilityRole="alert"
-        className="text-destructive!"
-      >
+      <Text variant="body" accessibilityRole="alert" tone="destructive">
         {multiple
           ? `Couldn't reconnect ${failures.length} hosts`
           : `Couldn't reconnect ${first.displayName}: ${first.reason}`}
