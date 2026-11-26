@@ -26,7 +26,7 @@ The Mac can only share hosts the iPhone can connect to and verify over SSH. It s
 - The Mac has no trusted host key in its SSH known-hosts files, such as `~/.ssh/known_hosts`. The iPhone needs that key to verify the host's identity.
 - The SSH alias can't be resolved, or its LAN and Tailscale aliases use a different user or port. The iPhone saves one user and port per host.
 
-For a host skipped for a proxy or a LAN-only address, give it a Tailscale address or alias on the Mac, then update the iPhone again. For a host with no known key or an alias that can't be resolved, fix it on the Mac, or pair it directly: run Pair iPhone on that Mac, or `statglass-agent pair` on that Linux host (see [Pair a host](#pair-a-host)).
+For a host skipped for a proxy, remove `ProxyJump` and `ProxyCommand` from every alias the host uses on the Mac, for example by pointing its Tailscale alias straight at the host's Tailscale address. For a host skipped for a LAN-only address, give it a Tailscale address or alias. Then update the iPhone again. For a host with no known key or an alias that can't be resolved, fix it on the Mac, or pair it directly: run Pair iPhone on that Mac, or `statglass-agent pair` on that Linux host (see [Pair a host](#pair-a-host)).
 
 ## Privacy
 
