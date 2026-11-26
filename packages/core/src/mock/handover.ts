@@ -1,4 +1,8 @@
-import type { DeviceIntentInfo, HandoverOffer } from "../generated/types";
+import type {
+  DeviceIntentInfo,
+  HandoverOffer,
+  PairingStatus,
+} from "../generated/types";
 import type { Transport } from "../transport";
 import type { MockCommands } from "./commands";
 import { ok } from "./protocol";
@@ -52,7 +56,12 @@ export function createMockHandover(
   Transport,
   "handoverBundleStart" | "deviceIntents" | "retryDeviceIntents"
 > & {
-  onApprove: (device: string) => void;
+  onApprove: (
+    device: string
+  ) => Pick<
+    Extract<PairingStatus, { kind: "paired" }>,
+    "hosts" | "unavailable" | "dropped"
+  >;
   onRevoke: (device: string) => void;
 } {
   let intents: DeviceIntentInfo[] = [
@@ -104,7 +113,7 @@ export function createMockHandover(
       attempts: 0,
     });
   };
-  const onApprove = (device: string) => {
+  const provision = (device: string) => {
     const installed = authorized.get(device) ?? new Set<string>();
     for (const [host, name] of offeredHosts) {
       if (installed.has(host)) continue;
@@ -114,7 +123,16 @@ export function createMockHandover(
     authorized.set(device, installed);
   };
   return {
-    onApprove,
+    onApprove(device) {
+      provision(device);
+      return {
+        hosts: offeredHosts.map(([, name]) => name),
+        unavailable: [
+          { id: OFFICE_SERVER, name: "Office server", reason: "proxy_jump" },
+        ],
+        dropped: false,
+      };
+    },
     onRevoke(device) {
       const installed = authorized.get(device);
       if (!installed) return;
@@ -125,7 +143,7 @@ export function createMockHandover(
     },
     async handoverBundleStart() {
       commands.record("handover_bundle_start");
-      for (const device of authorized.keys()) onApprove(device);
+      for (const device of authorized.keys()) provision(device);
       return ok<HandoverOffer>({
         text,
         qr_svg: qrSvg,

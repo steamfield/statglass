@@ -56,6 +56,12 @@ pub struct Handover {
     pub unavailable: Vec<UnavailableHost>,
 }
 
+/// The handover source's result and whether the phone received a local-only reply.
+pub struct HandoverSummary {
+    pub handover: Handover,
+    pub dropped: bool,
+}
+
 pub trait HandoverSource: Send + Sync {
     fn handover(&self, device: DeviceTag, key: &EcdsaP256Public, name: &str) -> Handover;
 }
@@ -91,6 +97,7 @@ struct Offer {
     expires_ms: i64,
     attempt: Option<[u8; 16]>,
     phase: Phase,
+    handover_summary: Option<Arc<HandoverSummary>>,
 }
 
 enum Phase {
@@ -177,6 +184,7 @@ impl PairingHost {
                 phase: Phase::Offered {
                     pairing_key: public,
                 },
+                handover_summary: None,
             },
         );
         Ok(PairingPayload {
@@ -263,6 +271,16 @@ impl PairingHost {
         self.view(nonce, now_ms, true)
     }
 
+    /// The host's retained summary once approval has finished.
+    pub fn handover_summary(&self, nonce: &str) -> Option<Arc<HandoverSummary>> {
+        let state = self.state.lock_ok();
+        let offer = state.offers.get(nonce)?;
+        if !matches!(offer.phase, Phase::Finished(PairReply::Approved { .. })) {
+            return None;
+        }
+        offer.handover_summary.clone()
+    }
+
     fn view(&self, nonce: &str, now_ms: i64, approver: bool) -> PairReply {
         let mut state = self.state.lock_ok();
         let Some(offer) = state.offers.get_mut(nonce) else {
@@ -291,14 +309,19 @@ impl PairingHost {
             hosts: vec![offer.host.clone()],
             unavailable: Vec::new(),
         };
-        if let Some(source) = source {
+        let summary = if let Some(source) = source {
             let (key, name) = (key.clone(), device_name.clone());
             offer.phase = Phase::HandingOver;
             drop(state);
-            add_handover(&mut reply, source.handover(device, &key, &name));
+            let handover = source.handover(device, &key, &name);
+            let dropped = add_handover(&mut reply, &handover);
             state = self.state.lock_ok();
-        }
+            Some(Arc::new(HandoverSummary { handover, dropped }))
+        } else {
+            None
+        };
         let offer = state.offers.get_mut(nonce).ok_or(PairError::Unknown)?;
+        offer.handover_summary = summary;
         offer.phase = Phase::RemovingPairingLine(reply);
         self.finish_approval(offer, nonce)
     }
@@ -361,13 +384,13 @@ impl PairingHost {
     }
 }
 
-fn add_handover(reply: &mut PairReply, handover: Handover) {
+fn add_handover(reply: &mut PairReply, handover: &Handover) -> bool {
     if let PairReply::Approved {
         hosts, unavailable, ..
     } = reply
     {
-        hosts.extend(handover.hosts);
-        *unavailable = handover.unavailable;
+        hosts.extend(handover.hosts.iter().cloned());
+        unavailable.clone_from(&handover.unavailable);
     }
     if let Err(error) = encode_pair_frame(reply)
         && let PairReply::Approved {
@@ -377,7 +400,9 @@ fn add_handover(reply: &mut PairReply, handover: Handover) {
         tracing::warn!(%error, "sending local-only pairing approval because the handover does not fit");
         hosts.truncate(1);
         unavailable.clear();
+        return true;
     }
+    false
 }
 
 impl Offer {
@@ -638,12 +663,54 @@ mod tests {
             unavailable: vec![source.unavailable.clone()],
         };
         assert!(pairing.approve(&nonce, NOW).is_err());
+        assert!(pairing.handover_summary(&nonce).is_none());
         fs::remove_dir(&path).unwrap();
         fs::rename(path.with_extension("saved"), &path).unwrap();
         assert_eq!(pairing.approve(&nonce, NOW).unwrap(), expected);
-        assert_eq!(pairing.status(&nonce, NOW), expected);
-        assert_eq!(pairing.approve(&nonce, NOW).unwrap(), expected);
+        let assert_summary = || {
+            let summary = pairing.handover_summary(&nonce).unwrap();
+            assert_eq!(
+                summary.handover.hosts,
+                std::slice::from_ref(&source.offered)
+            );
+            assert_eq!(
+                summary.handover.unavailable,
+                std::slice::from_ref(&source.unavailable)
+            );
+            assert!(!summary.dropped);
+        };
+        assert_summary();
+        let later = payload.expires_ms + 1;
+        pairing.expire(later);
+        assert_eq!(pairing.pending(&nonce, later), expected);
+        assert_eq!(pairing.status(&nonce, later), expected);
+        assert_summary();
+        assert_eq!(pairing.approve(&nonce, later).unwrap(), expected);
+        assert_summary();
         assert_eq!(source.calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn approval_without_a_handover_source_has_no_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let pairing = host(Arc::new(AuthorizedKeys::at(
+            dir.path().join("authorized_keys"),
+        )));
+        let mac = bundle(1, "Mac");
+        let nonce = pairing
+            .offer(mac.clone(), Duration::ZERO, NOW)
+            .unwrap()
+            .nonce;
+        request(&pairing, &nonce);
+        assert_eq!(
+            pairing.approve(&nonce, NOW).unwrap(),
+            PairReply::Approved {
+                device: DeviceTag::from_key(&device_key()).to_string(),
+                hosts: vec![mac],
+                unavailable: Vec::new(),
+            },
+        );
+        assert!(pairing.handover_summary(&nonce).is_none());
     }
 
     #[test]
@@ -700,15 +767,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let keys = Arc::new(AuthorizedKeys::at(dir.path().join("authorized_keys")));
         let pairing = host(keys.clone());
-        pairing.set_handover(Arc::new(|_: DeviceTag, _: &EcdsaP256Public, _: &str| {
-            Handover {
-                hosts: vec![bundle(
-                    2,
-                    &"x".repeat(statglass_proto::pairing::MAX_PAIR_FRAME_BYTES),
-                )],
+        let oversized = bundle(
+            2,
+            &"x".repeat(statglass_proto::pairing::MAX_PAIR_FRAME_BYTES),
+        );
+        let source_host = oversized.clone();
+        pairing.set_handover(Arc::new(
+            move |_: DeviceTag, _: &EcdsaP256Public, _: &str| Handover {
+                hosts: vec![source_host.clone()],
                 unavailable: Vec::new(),
-            }
-        }));
+            },
+        ));
         let mac = bundle(1, "Mac");
         let nonce = pairing
             .offer(mac.clone(), Duration::ZERO, NOW)
@@ -718,6 +787,10 @@ mod tests {
         let reply = pairing.approve(&nonce, NOW).unwrap();
         assert!(encode_pair_frame(&reply).is_ok());
         assert!(matches!(reply, PairReply::Approved { hosts, .. } if hosts == [mac]));
+        let summary = pairing.handover_summary(&nonce).unwrap();
+        assert!(summary.dropped);
+        assert_eq!(summary.handover.hosts, [oversized]);
+        assert!(summary.handover.unavailable.is_empty());
         assert_eq!(keys.list_devices().unwrap().len(), 1);
     }
 }
