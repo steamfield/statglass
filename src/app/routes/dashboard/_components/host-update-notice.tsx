@@ -10,6 +10,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useLocalUpdateStatus } from "~/hooks/use-local-update-status";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import { settingsHref } from "~/lib/settings-links";
 import { useTransport } from "~/lib/transport-context";
 
 const hosts = (n: number) => (n === 1 ? "1 host" : `${n} hosts`);
@@ -36,13 +37,13 @@ function noticeText(notice: Notice): {
       return {
         text: `StatGlass ${notice.version} is available. Update this Mac first, then your hosts.`,
         action: "Open Settings",
-        href: "/dashboard/settings",
+        href: settingsHref("about"),
       };
     case "local_restart":
       return {
         text: `StatGlass ${notice.version} is installing on this Mac. Update your hosts after it restarts.`,
         action: "Open Settings",
-        href: "/dashboard/settings",
+        href: settingsHref("about"),
       };
   }
 }

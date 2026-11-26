@@ -24,6 +24,7 @@ import { useModuleStates } from "~/hooks/use-module-states";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { openExternalUrl } from "~/lib/github-links";
 import { useHostSelection } from "~/lib/host-selection";
+import { settingsHref } from "~/lib/settings-links";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import {
@@ -308,7 +309,9 @@ export function LiveSidebar() {
           reason={sampling.performance}
           label={performanceLabel}
           side="right"
-          onOpenSettings={() => navigate("/dashboard/settings")}
+          onOpenSettings={() =>
+            navigate(settingsHref("monitoring", "performance-mode"))
+          }
           className="ml-3.5 self-start text-left font-normal text-label text-muted-foreground"
         >
           {performanceLabel}

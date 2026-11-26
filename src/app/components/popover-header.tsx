@@ -21,6 +21,8 @@ export interface PopoverHeaderProps {
   scrolled?: boolean;
   onPause: () => void;
   onSettings: () => void;
+  /** Opens the performance-mode setting, from the explainer on the status pill. */
+  onPerformanceSettings: () => void;
   options?: React.ReactNode;
 }
 
@@ -34,6 +36,7 @@ export function PopoverHeader({
   scrolled = false,
   onPause,
   onSettings,
+  onPerformanceSettings,
   options,
 }: PopoverHeaderProps) {
   return (
@@ -58,7 +61,7 @@ export function PopoverHeader({
         <PerformanceExplainer
           reason={performance}
           side="bottom"
-          onOpenSettings={onSettings}
+          onOpenSettings={onPerformanceSettings}
           label={status.label}
           className="rounded-full"
         >

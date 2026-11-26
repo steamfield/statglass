@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { InlineMessage } from "~/components/inline-message";
 import { Button } from "~/components/ui/button";
+import { settingsHref } from "~/lib/settings-links";
 import { useTransport } from "~/lib/transport-context";
 import { useAgentUpdate } from "../_hooks/use-agent-update";
 import type { HostCardModel } from "../_lib/host-card-model";
@@ -73,7 +74,7 @@ export function HostCardActions({
     if (!action) return;
     setError(null);
     if (action.kind === "settings") {
-      void navigate("/dashboard/settings");
+      void navigate(settingsHref("about"));
       return;
     }
     if (action.kind === "add_host") {

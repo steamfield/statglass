@@ -9,6 +9,7 @@ import { useHostRecord } from "~/hooks/use-host-record";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { useNow } from "~/hooks/use-now";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
+import { settingsHref } from "~/lib/settings-links";
 import { useTransport } from "~/lib/transport-context";
 import { cn } from "~/lib/utils";
 import { DockerPopoverSummary } from "~/routes/dashboard/containers/_components/docker-surfaces";
@@ -98,6 +99,11 @@ export default function PopoverRoute() {
         scrolled={scrolled}
         onPause={() => void transport.setPaused(!sampling.paused)}
         onSettings={() => void transport.openDashboard("/dashboard/settings")}
+        onPerformanceSettings={() =>
+          void transport.openDashboard(
+            settingsHref("monitoring", "performance-mode")
+          )
+        }
         options={<PopoverOptions setAll={density.setAll} />}
       />
       <PopoverScroll

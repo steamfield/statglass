@@ -654,6 +654,7 @@ export function AppComponentsSection() {
               paused={false}
               onPause={noop}
               onSettings={noop}
+              onPerformanceSettings={noop}
             />
             <div className="h-10" />
             <PopoverFooter
@@ -676,6 +677,7 @@ export function AppComponentsSection() {
               scrolled
               onPause={noop}
               onSettings={noop}
+              onPerformanceSettings={noop}
             />
           </GalleryItem>
           <GalleryItem name="SegmentedControl" usedIn="Settings">
