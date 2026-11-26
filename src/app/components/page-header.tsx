@@ -15,6 +15,8 @@ export interface PageHeaderProps {
    * focus to its top after scrolling there (Timeline opening a heatmap hour).
    */
   headingRef?: Ref<HTMLHeadingElement>;
+  /** The sticky header element, for a page that stacks a sticky band under it. */
+  headerRef?: Ref<HTMLElement>;
 }
 
 /**
@@ -34,9 +36,11 @@ export function PageHeader({
   subtitle,
   actions,
   headingRef,
+  headerRef,
 }: PageHeaderProps) {
   return (
     <header
+      ref={headerRef}
       data-tauri-drag-region="deep"
       className="sticky top-0 z-20 -mx-3 flex min-h-[73px] flex-wrap items-center gap-x-4 gap-y-2 border-border-subtle border-b bg-background px-3 pt-[37px] pb-0.5 sm:-mx-6 sm:px-6"
     >

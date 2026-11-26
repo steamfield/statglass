@@ -9,6 +9,10 @@ export interface SettingsRowProps {
   htmlFor?: string;
   /** The control: Switch, Select, SegmentedControl, a value and a button. */
   children?: ReactNode;
+  /** Settings catalog row id (`data-settings-row`), for search and focus links. */
+  id?: string;
+  /** Indents a row that depends on the one above it, with a connector. */
+  nested?: boolean;
 }
 
 /**
@@ -21,10 +25,20 @@ export function SettingsRow({
   sub,
   htmlFor,
   children,
+  id,
+  nested = false,
 }: SettingsRowProps) {
   const Label = htmlFor ? "label" : "span";
   return (
-    <div className="flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-body last:border-b-0">
+    <div
+      data-settings-row={id}
+      className={cn(
+        "flex min-h-12 flex-wrap items-center gap-3 border-border-subtle border-b px-4 text-body last:border-b-0",
+        // 32 px inset with a hairline elbow from the row above.
+        nested &&
+          "relative pl-8 before:absolute before:top-0 before:left-[22px] before:h-1/2 before:w-[7px] before:rounded-bl-mark before:border-border before:border-b before:border-l"
+      )}
+    >
       <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2">
         <Label htmlFor={htmlFor}>{label}</Label>
         {sub && (
@@ -46,9 +60,12 @@ export function SettingsPanel({
   title,
   after,
   overflow = "clip",
+  id,
   children,
 }: {
   title: string;
+  /** Settings catalog section id (`data-settings-section`). */
+  id?: string;
   after?: ReactNode;
   /**
    * `visible` leaves the panel unclipped, so a `sticky` row inside it can
@@ -60,7 +77,11 @@ export function SettingsPanel({
 }) {
   const titleId = useId();
   return (
-    <section aria-labelledby={titleId} className="flex flex-col gap-2.5">
+    <section
+      data-settings-section={id}
+      aria-labelledby={titleId}
+      className="flex flex-col gap-2.5"
+    >
       <h2 id={titleId} className="font-semibold text-heading">
         {title}
       </h2>

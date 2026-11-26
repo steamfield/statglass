@@ -1,6 +1,7 @@
 import type { CliLinkStatus } from "@core/generated/types";
 import { createMockTransport } from "@core/mock-transport";
 import { screen, waitFor } from "@testing-library/react";
+import { settingsHref } from "~/lib/settings-links";
 import { renderWithProviders } from "../../../../../../tests/test-utils";
 import SettingsRoute from "../route";
 import { CommandLinePanel } from "./command-line-panel";
@@ -22,7 +23,9 @@ const expectLink = (text: string) =>
 
 describe("Command line settings (D-126)", () => {
   it("the access switch is on by default and writes a one-key patch", async () => {
-    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const { transport, user } = renderWithProviders(<SettingsRoute />, {
+      route: settingsHref("access"),
+    });
     const toggle = await screen.findByRole("switch", {
       name: "Allow command-line access",
     });

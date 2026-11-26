@@ -1,117 +1,24 @@
-import type {
-  MemoryUnit,
-  NetworkUnit,
-  Settings,
-  TemperatureUnit,
-} from "@core/generated/types";
+import { useLocation } from "react-router";
 import { PageHeader } from "~/components/page-header";
-import { SegmentedControl } from "~/components/segmented-control";
-import { SettingsPanel, SettingsRow } from "~/components/settings-row";
-import { Switch } from "~/components/ui/switch";
-import { useWriteSettings } from "~/hooks/use-write-settings";
-import { useSettings } from "~/stores/settings-store";
-import { CommandLinePanel } from "./_components/command-line-panel";
-import { GeneralPanel } from "./_components/general-panel";
-import { MenuBarPanel } from "./_components/menu-bar-panel";
-import { ModulesPanel } from "./_components/modules-panel";
-import { PairedDevicesPanel } from "./_components/paired-devices/panel";
-import { SamplingPanel } from "./_components/sampling-panel";
-
-const TEMPERATURE = [
-  { value: "celsius", label: "°C" },
-  { value: "fahrenheit", label: "°F" },
-] as const satisfies readonly { value: TemperatureUnit; label: string }[];
-const NETWORK = [
-  { value: "bytes_per_sec", label: "MB/s" },
-  { value: "bits_per_sec", label: "Mb/s" },
-] as const satisfies readonly { value: NetworkUnit; label: string }[];
-const MEMORY = [
-  { value: "decimal", label: "GB" },
-  { value: "binary", label: "GiB" },
-] as const satisfies readonly { value: MemoryUnit; label: string }[];
-
-function UnitsPanel({ units }: { units: Settings["units"] }) {
-  const write = useWriteSettings();
-  return (
-    <SettingsPanel title="Units">
-      <SettingsRow label="Temperature">
-        <SegmentedControl
-          ariaLabel="Temperature unit"
-          options={TEMPERATURE}
-          value={units.temperature}
-          onChange={(temperature) => write({ units: { temperature } })}
-        />
-      </SettingsRow>
-      <SettingsRow label="Network rate">
-        <SegmentedControl
-          ariaLabel="Network unit"
-          options={NETWORK}
-          value={units.network}
-          onChange={(network) => write({ units: { network } })}
-        />
-      </SettingsRow>
-      <SettingsRow label="Memory">
-        <SegmentedControl
-          ariaLabel="Memory base"
-          options={MEMORY}
-          value={units.memory}
-          onChange={(memory) => write({ units: { memory } })}
-        />
-      </SettingsRow>
-    </SettingsPanel>
-  );
-}
+import { parseSettingsLocation } from "~/lib/settings-links";
+import { TabContent } from "./_components/tab-content";
 
 /**
- * Settings (plan 4.15). Every control reads the Rust-owned
- * settings mirror and writes one `update_settings` patch (D-050); nothing is
- * kept locally, so another window's change shows here at once.
+ * Settings (plan 4.15), one tab per path segment. Every control reads the
+ * Rust-owned settings mirror and writes one `update_settings` patch (D-050);
+ * nothing is kept locally, so another window's change shows here at once.
+ * Lane a adds the tab bar, sticky offsets and focus links
+ * (plans/settings-tabs.md).
  */
 export default function SettingsRoute() {
-  const settings = useSettings((s) => s);
-  const write = useWriteSettings();
+  const { pathname, search } = useLocation();
+  const { tab } = parseSettingsLocation(pathname, search);
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Settings" />
-      {settings && (
-        // Each panel enters on its own as the page opens (`usePageEntrance`).
-        <div
-          data-enter-group
-          className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] items-start gap-5"
-        >
-          <div data-enter-group className="flex flex-col gap-5">
-            <ModulesPanel modules={settings.modules} />
-            <MenuBarPanel
-              modules={settings.modules}
-              menuBar={settings.menu_bar}
-            />
-          </div>
-          <div data-enter-group className="flex flex-col gap-5">
-            <SamplingPanel
-              sampling={settings.sampling}
-              history={settings.history}
-            />
-            <UnitsPanel units={settings.units} />
-            <GeneralPanel general={settings.general} />
-            <SettingsPanel title="Remote monitoring">
-              <SettingsRow
-                label="Allow remote monitoring"
-                sub="Other Macs signed in over SSH as your user and iPhones you've paired can view this Mac while StatGlass is running."
-              >
-                <Switch
-                  aria-label="Allow remote monitoring"
-                  checked={settings.remote_access?.enabled ?? false}
-                  onCheckedChange={(enabled) =>
-                    write({ remote_access: { enabled } })
-                  }
-                />
-              </SettingsRow>
-            </SettingsPanel>
-            <PairedDevicesPanel />
-            <CommandLinePanel enabled={settings.cli_access?.enabled ?? true} />
-          </div>
-        </div>
-      )}
+      <div data-enter-group className="flex max-w-[760px] flex-col gap-5">
+        <TabContent tab={tab} />
+      </div>
     </div>
   );
 }

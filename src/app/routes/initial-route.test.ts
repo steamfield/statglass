@@ -24,6 +24,14 @@ describe("initialRoute", () => {
     expect(initialRoute("dashboard", "", false, "/")).toBe(
       "/dashboard/overview"
     );
+    expect(
+      initialRoute(
+        "dashboard",
+        "?focus=performance-mode",
+        false,
+        "/dashboard/settings/monitoring"
+      )
+    ).toBe("/dashboard/settings/monitoring?focus=performance-mode");
     // The popover's URL path never moves it off its own route.
     expect(initialRoute("popover", "", false, "/dashboard/cpu")).toBe(
       "/popover"

@@ -20,6 +20,8 @@ export interface ModuleToggleRowProps {
   switchLabel?: string;
   /** The onboarding list: 42 px rows in a well, an 11 px truncated sub. */
   dense?: boolean;
+  /** Settings catalog row id (`data-settings-row`). */
+  rowId?: string;
 }
 
 /**
@@ -34,6 +36,7 @@ export function ModuleToggleRow({
   onCheckedChange,
   switchLabel,
   dense = false,
+  rowId,
 }: ModuleToggleRowProps) {
   const meta = MODULE_META[module];
   const on = absence === null && checked;
@@ -42,6 +45,7 @@ export function ModuleToggleRow({
   const Row = dense ? "li" : "div";
   return (
     <Row
+      data-settings-row={rowId}
       className={cn(
         "flex items-center border-border-subtle border-b last:border-b-0",
         dense ? "h-[42px] gap-2.5 px-3" : "min-h-12 gap-3 px-4 text-body"

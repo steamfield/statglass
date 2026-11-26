@@ -84,7 +84,7 @@ export function appRoutes({
                 },
                 { path: "alerts", element: <AlertsRoute /> },
                 { path: "disk-space", element: <DiskSpaceRoute /> },
-                { path: "settings", element: <SettingsRoute /> },
+                { path: "settings/:tab?", element: <SettingsRoute /> },
                 { path: "hosts", element: <HostsRoute /> },
                 ...PENDING_PAGES.map((page) => ({
                   path: page,

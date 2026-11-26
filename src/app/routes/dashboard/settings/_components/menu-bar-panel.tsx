@@ -155,6 +155,8 @@ export function MenuBarPanel({
 }: {
   modules: Settings["modules"];
   menuBar: MenuBarSettings | undefined;
+  /** Show menu-bar icon (lane c moves its switch here). */
+  general?: Settings["general"];
 }) {
   const menuBar = menuBarOf({ menu_bar: stored });
   const caps = useHost((s) => s.capabilities);
