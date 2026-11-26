@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -9,6 +10,8 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+# Blocking guards: when one cannot be found, its settings.json wrapper must refuse the call.
+GUARDS = ("pre-bash.sh", "detect-secrets.sh", "enforce-boundaries.sh", "block-generated-edits.sh")
 
 
 class HookTests(unittest.TestCase):
@@ -298,6 +301,102 @@ class HookTests(unittest.TestCase):
         log.write_text("")
         self.hook("format-changed.sh", {})
         self.assertEqual(log.read_text(), "")
+
+    def wired(self, event):
+        """Map hook script name to (matcher, command) as settings.json wires it."""
+        settings = json.loads((ROOT / ".claude/settings.json").read_text())
+        found = {}
+        for group in settings["hooks"][event]:
+            for entry in group["hooks"]:
+                match = re.search(r"/\.claude/hooks/([\w-]+\.sh)", entry["command"])
+                if match:
+                    found[match.group(1)] = (group.get("matcher"), entry["command"])
+        return found
+
+    def guard_payloads(self):
+        def write(path, content):
+            return {"tool_name": "Write", "tool_input": {"file_path": str(self.root / path), "content": content}}
+        # Built at runtime so this file holds no literal for secret scanners to flag.
+        fake_key = "AKIA" + "A" * 16
+        return {
+            "pre-bash.sh": {"tool_name": "Bash", "tool_input": {"command": "git reset --hard"}},
+            "detect-secrets.sh": write("src/config.ts", f'export const key = "{fake_key}";\n'),
+            "enforce-boundaries.sh": write("packages/core/src/x.ts", 'import React from "react";\n'),
+            "block-generated-edits.sh": write("packages/core/src/generated/types.ts", "export {};\n"),
+        }
+
+    def run_wired(self, command, payload, cwd, project=None):
+        # Claude Code runs hook commands through sh; CLAUDE_PROJECT_DIR must not leak from the caller.
+        env = {k: v for k, v in self.env.items() if k != "CLAUDE_PROJECT_DIR"}
+        if project is not None:
+            env["CLAUDE_PROJECT_DIR"] = str(project)
+        return subprocess.run(["sh", "-c", command], input=json.dumps(payload), text=True,
+                              capture_output=True, cwd=cwd, env=env)
+
+    def scratch_dir(self):
+        directory = tempfile.TemporaryDirectory(prefix="statglass-hook-cwd-")
+        self.addCleanup(directory.cleanup)
+        return Path(directory.name).resolve()
+
+    def test_settings_wire_every_guard_for_the_tools_it_screens(self):
+        wired = self.wired("PreToolUse")
+        for name, payload in self.guard_payloads().items():
+            with self.subTest(guard=name):
+                self.assertIn(name, wired)
+                matcher = wired[name][0]
+                if matcher is not None:
+                    self.assertRegex(payload["tool_name"], f"^(?:{matcher})$")
+
+    def test_wired_guards_deny_from_every_resolution_path(self):
+        wired = self.wired("PreToolUse")
+        outside = self.scratch_dir()
+        other_repo = self.scratch_dir()
+        subprocess.run(["git", "init", "-q", str(other_repo)], env=self.env, check=True)
+        gitless = self.scratch_dir()
+        shutil.copytree(self.hooks, gitless / ".claude/hooks")
+        for label, cwd, project in [
+            ("checkout cwd", self.root, self.root),
+            ("non-repo cwd", outside, self.root),
+            ("other repo cwd", other_repo, self.root),
+            ("project without git", outside, gitless),
+        ]:
+            for name, payload in self.guard_payloads().items():
+                with self.subTest(path=label, guard=name):
+                    result = self.run_wired(wired[name][1], payload, cwd, project)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    decision = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
+                    self.assertEqual(decision.get("permissionDecision"), "deny")
+
+    def test_wired_guards_refuse_the_call_when_the_script_cannot_run(self):
+        wired = self.wired("PreToolUse")
+        payloads = self.guard_payloads()
+        for name in GUARDS:
+            script = self.hooks / name
+            original = script.read_bytes()
+            for breakage in ["missing", "not executable"]:
+                with self.subTest(guard=name, breakage=breakage):
+                    if breakage == "missing":
+                        script.unlink()
+                    else:
+                        script.chmod(0o644)
+                    try:
+                        result = self.run_wired(wired[name][1], payloads[name], self.root, self.root)
+                    finally:
+                        script.write_bytes(original)
+                        script.chmod(0o755)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(name, result.stderr)
+            with self.subTest(guard=name, breakage="no project dir, cwd outside any repo"):
+                result = self.run_wired(wired[name][1], payloads[name], self.scratch_dir())
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(name, result.stderr)
+
+    def test_convenience_wrapper_stays_quiet_when_its_script_is_missing(self):
+        (self.hooks / "reap-orphans.sh").unlink()
+        for event in ["Stop", "SubagentStop"]:
+            with self.subTest(event=event):
+                result = self.run_wired(self.wired(event)["reap-orphans.sh"][1], {}, self.root, self.root)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class HookEnvironmentTests(unittest.TestCase):

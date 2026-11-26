@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/pre-bash.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/pre-bash.sh\"; [ -x \"$h\" ] || exit 0; exec \"$h\""
+            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/pre-bash.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/pre-bash.sh\"; [ -x \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-bash.sh\"; [ -x \"$h\" ] || { echo \"StatGlass guard pre-bash.sh is missing or not executable (cwd $PWD, project ${CLAUDE_PROJECT_DIR:-unset}); the call is refused. Ask the user to run in their own shell: chmod +x .claude/hooks/pre-bash.sh, or git checkout -- .claude/hooks/pre-bash.sh\" >&2; exit 2; }; exec \"$h\""
           }
         ]
       },
@@ -30,15 +30,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/detect-secrets.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/detect-secrets.sh\"; [ -x \"$h\" ] || exit 0; exec \"$h\""
+            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/detect-secrets.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/detect-secrets.sh\"; [ -x \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/detect-secrets.sh\"; [ -x \"$h\" ] || { echo \"StatGlass guard detect-secrets.sh is missing or not executable (cwd $PWD, project ${CLAUDE_PROJECT_DIR:-unset}); the call is refused. Ask the user to run in their own shell: chmod +x .claude/hooks/detect-secrets.sh, or git checkout -- .claude/hooks/detect-secrets.sh\" >&2; exit 2; }; exec \"$h\""
           },
           {
             "type": "command",
-            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/enforce-boundaries.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/enforce-boundaries.sh\"; [ -x \"$h\" ] || exit 0; exec \"$h\""
+            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/enforce-boundaries.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/enforce-boundaries.sh\"; [ -x \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-boundaries.sh\"; [ -x \"$h\" ] || { echo \"StatGlass guard enforce-boundaries.sh is missing or not executable (cwd $PWD, project ${CLAUDE_PROJECT_DIR:-unset}); the call is refused. Ask the user to run in their own shell: chmod +x .claude/hooks/enforce-boundaries.sh, or git checkout -- .claude/hooks/enforce-boundaries.sh\" >&2; exit 2; }; exec \"$h\""
           },
           {
             "type": "command",
-            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/block-generated-edits.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/block-generated-edits.sh\"; [ -x \"$h\" ] || exit 0; exec \"$h\""
+            "command": "h=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/block-generated-edits.sh\"; [ -x \"$h\" ] || h=\"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/block-generated-edits.sh\"; [ -x \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/block-generated-edits.sh\"; [ -x \"$h\" ] || { echo \"StatGlass guard block-generated-edits.sh is missing or not executable (cwd $PWD, project ${CLAUDE_PROJECT_DIR:-unset}); the call is refused. Ask the user to run in their own shell: chmod +x .claude/hooks/block-generated-edits.sh, or git checkout -- .claude/hooks/block-generated-edits.sh\" >&2; exit 2; }; exec \"$h\""
           }
         ]
       },
