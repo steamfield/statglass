@@ -149,6 +149,7 @@ export const motionDurations = {
   stagger: 40,
   crossfade: 150,
   scan: 900,
+  flash: 1400,
 } as const;
 
 /** Control points for the desktop's cubic-bezier curves. */
