@@ -44,16 +44,25 @@ export function SettingsTabs({
   const underlineRef = useRef<HTMLSpanElement>(null);
   const waiting = useDeviceIntents().data?.length ?? 0;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure when the selection or the Access count changes the trigger widths
   useLayoutEffect(() => {
-    const active = listRef.current?.querySelector<HTMLElement>(
-      "[data-state=active]"
-    );
+    const list = listRef.current;
+    const active = document.getElementById(settingsTabTriggerId(value));
     const underline = underlineRef.current;
-    if (!active || !underline) return;
-    underline.style.width = `${active.offsetWidth}px`;
-    underline.style.transform = `translateX(${active.offsetLeft}px)`;
-  }, [value, waiting]);
+    if (!list || !active || !underline) return;
+    const place = () => {
+      underline.style.width = `${active.offsetWidth}px`;
+      underline.style.transform = `translateX(${active.offsetLeft}px)`;
+    };
+    place();
+    if (typeof ResizeObserver === "undefined") return;
+    // Any trigger resizing (the Access count appearing, fonts loading) can
+    // move the active one, so watch them all.
+    const observer = new ResizeObserver(place);
+    for (const trigger of list.querySelectorAll("[role=tab]")) {
+      observer.observe(trigger);
+    }
+    return () => observer.disconnect();
+  }, [value]);
 
   return (
     <TabsPrimitive.Root
