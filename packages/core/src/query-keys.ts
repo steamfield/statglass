@@ -273,6 +273,7 @@ export const appKeys = {
   edition: ["app", "edition"] as const,
   /** The `statglass` command's link on PATH (D-126). */
   cliLink: ["app", "cli-link"] as const,
+  pairedDevices: ["app", "paired-devices"] as const,
   /**
    * The alert destinations and their last deliveries, kept current by
    * `alert-destinations-changed` rather than read again.

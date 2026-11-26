@@ -1,6 +1,7 @@
 import { commandErrorText } from "@core/command-error";
 import { formatDateTime } from "@core/format";
 import type { PairedDeviceInfo } from "@core/generated/types";
+import { appKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,8 +13,6 @@ import { useTransport } from "~/lib/transport-context";
 import { DeviceIntents } from "../device-intents";
 import { UpdateFromMac } from "../update-from-mac";
 import { PairingDialog } from "./pairing-dialog";
-
-const devicesKey = ["paired-devices"] as const;
 
 function deviceName(device: PairedDeviceInfo): string {
   return device.name.trim() || `iPhone ${device.tag}`;
@@ -39,10 +38,12 @@ export function PairedDevicesPanel() {
     label: string;
   } | null>(null);
   const devices = useQuery({
-    queryKey: devicesKey,
+    queryKey: appKeys.pairedDevices,
     queryFn: () => unwrap(transport.pairedDevices()),
+    networkMode: "always",
   });
-  const refresh = () => client.invalidateQueries({ queryKey: devicesKey });
+  const refresh = () =>
+    client.invalidateQueries({ queryKey: appKeys.pairedDevices });
   const revoke = useMutation({
     mutationFn: (tag: string) => unwrap(transport.revokeDevice(tag)),
     onSuccess: async () => {
