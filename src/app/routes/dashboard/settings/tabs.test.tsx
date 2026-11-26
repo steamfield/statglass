@@ -8,6 +8,11 @@ import { renderWithProviders } from "../../../../../tests/test-utils";
 import { SETTINGS_CATALOG, sectionsOf } from "./_lib/catalog";
 import SettingsRoute from "./route";
 
+/** Matches the element whose whole text is `text`, even when links split it. */
+const wholeText = (text: string) => (_: string, el: Element | null) =>
+  el?.textContent === text &&
+  ![...el.children].some((child) => child.textContent === text);
+
 /** Renders Settings at a path under `/dashboard/settings` ("", "/history?focus=x"). */
 const renderAt = (rest: string) =>
   renderWithProviders(<SettingsRoute />, {
@@ -185,7 +190,7 @@ describe("Settings regrouped rows", () => {
     await user.click(check);
     await waitFor(() => expect(install).toBeDisabled());
     expect(
-      screen.getByText("Needs Check for updates automatically.")
+      screen.getByText(wholeText("Needs Check for updates automatically."))
     ).toBeInTheDocument();
     expect(transport.calls).toContainEqual({
       command: "update_settings",

@@ -8,6 +8,11 @@ import { settingsHref } from "~/lib/settings-links";
 import { renderWithProviders } from "../../../../../tests/test-utils";
 import SettingsRoute from "./route";
 
+/** Matches the element whose whole text is `text`, even when links split it. */
+const wholeText = (text: string) => (_: string, el: Element | null) =>
+  el?.textContent === text &&
+  ![...el.children].some((child) => child.textContent === text);
+
 const LIMITED = /Limited to about \d+ days by the 150 MB limit/;
 
 /** The innermost element whose whole text matches, for text split by spans. */
@@ -108,7 +113,9 @@ describe("Settings menu bar", () => {
     await waitFor(() => expect(temp).toBeDisabled());
     expect(temp).not.toBeChecked();
     expect(
-      screen.getAllByText("Turn on Power & Sensors in Monitoring to use this")
+      screen.getAllByText(
+        wholeText("Turn on Power & Sensors in Monitoring to use this")
+      )
     ).not.toHaveLength(0);
     expect(
       (await transport.getSettings()).settings.menu_bar?.readouts.temperature
@@ -186,7 +193,9 @@ describe("Settings Performance mode (D-088)", () => {
     });
     await waitFor(() => expect(battery).toBeDisabled());
     expect(battery).toBeChecked();
-    expect(screen.getByText("Set by Performance mode")).toBeInTheDocument();
+    expect(
+      screen.getByText(wholeText("Set by Performance mode"))
+    ).toBeInTheDocument();
     // The stored value is kept, so turning the mode off restores it.
     expect(
       (await transport.getSettings()).settings.sampling.slow_on_battery
