@@ -227,7 +227,7 @@ it("opens app Settings for This Mac's update", async () => {
   const card = within(await screen.findByRole("region", { name: "This Mac" }));
   expect(card.getByText(/StatGlass .* · 0.12.0 available/)).toBeInTheDocument();
   fireEvent.click(card.getByRole("button", { name: "Update" }));
-  expect(view.router.state.location.pathname).toBe("/dashboard/settings");
+  expect(view.router.state.location.pathname).toBe("/dashboard/settings/about");
 });
 
 it("reinstalls a Mac through Add host while preserving its identity and mirror budget", async () => {

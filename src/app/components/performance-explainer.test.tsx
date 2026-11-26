@@ -26,7 +26,7 @@ describe("Performance mode markers (D-088)", () => {
     await user.click(link);
     expect(transport.calls).toContainEqual({
       command: "open_dashboard",
-      args: ["/dashboard/settings"],
+      args: ["/dashboard/settings/monitoring?focus=performance-mode"],
     });
 
     act(() => transport.setLowPowerMode(false));
