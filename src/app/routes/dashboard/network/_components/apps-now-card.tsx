@@ -25,6 +25,7 @@ import {
   useProcessRows,
 } from "~/hooks/use-process-interest";
 import { useUnits } from "~/hooks/use-units";
+import { settingsHref } from "~/lib/settings-links";
 
 /** Groups listed before "Show all". */
 const TOP_GROUPS = 12;
@@ -81,7 +82,7 @@ export function AppsNowCard() {
         Network history is off, so there are no totals and the chart has no
         brush. Live rates still show.{" "}
         <Link
-          to="/dashboard/settings"
+          to={settingsHref("history", "network-history")}
           className="rounded-chip text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           Turn it on in Settings
