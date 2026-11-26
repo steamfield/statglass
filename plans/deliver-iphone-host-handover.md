@@ -63,6 +63,7 @@ Inline by the orchestrator. Classify with `statglass_session::network::classify_
 Demo: browser dev server on the mock transport. Settings › Paired devices › Pair iPhone, then the mock phone approves: the dialog lists included and unavailable hosts. Hosts page: "Add to iPhone" opens Update from Mac (paired) or Pair iPhone (no phone). In the simulator, the phone's Add a host screen shows the new copy.
 Depends on: phase 1
 Scaffold: d2e54b9a
+Tag: handover-phase-2
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
