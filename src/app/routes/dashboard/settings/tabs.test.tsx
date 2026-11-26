@@ -132,7 +132,7 @@ describe("Settings focus links", () => {
 describe("Settings regrouped rows", () => {
   it("Appearance is a segmented control that writes the choice", async () => {
     const { transport, user } = renderAt("/general");
-    const group = await screen.findByRole("group", { name: "Appearance" });
+    const group = await screen.findByRole("radiogroup", { name: "Appearance" });
     await user.click(within(group).getByRole("radio", { name: "Dark" }));
     await waitFor(() =>
       expect(transport.calls).toContainEqual({
