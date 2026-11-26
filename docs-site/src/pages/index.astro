@@ -1,9 +1,8 @@
 ---
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import { SITE } from "@/config";
-import { PopoverDemo } from "@/islands/PopoverDemo";
+import { HeroTray } from "@/islands/HeroTray";
 import { DashboardDemo } from "@/islands/DashboardDemo";
-import { MenuBarItem } from "@/islands/MenuBarItem";
 import { MenuBarStyles } from "@/islands/MenuBarStyles";
 import { IPhoneDemo } from "@/islands/IPhoneDemo";
 import { MeterTrack } from "@statglass/widgets";
@@ -92,17 +91,7 @@ const primaryButton =
         Free and open source. Apple Silicon Macs on macOS 26 or newer.
       </p>
     </div>
-    <div
-      data-nosnippet
-      class="flex w-full max-w-[360px] flex-col gap-1.5 justify-self-center"
-    >
-      <div data-motion="drop" style="--sf-reveal-delay: 260ms">
-        <MenuBarItem client:load />
-      </div>
-      <div data-motion="popover" style="--sf-reveal-delay: 480ms">
-        <PopoverDemo client:load />
-      </div>
-    </div>
+    <HeroTray client:load />
   </section>
 
   <section class="border-y border-border bg-well py-20 sm:py-24">

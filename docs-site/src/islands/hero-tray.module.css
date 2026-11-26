@@ -1,0 +1,41 @@
+/*
+ * The hero's menu bar and popover. On a wide screen with motion allowed the
+ * popover starts closed and a pointer opens it; everywhere else it is open
+ * from the first paint. The closed state applies only under the site's
+ * motion gate (html[data-motion-ready], set before first paint), so the
+ * server-rendered page never flashes the popover shut.
+ */
+
+.popover {
+  transform-origin: 80% 0;
+}
+
+/* The menu bar's highlight behind the clicked item, as macOS draws it. */
+.highlight {
+  position: absolute;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--color-foreground) 16%, transparent);
+  pointer-events: none;
+}
+
+.cursor {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45));
+}
+
+@media (min-width: 640px) and (prefers-reduced-motion: no-preference) {
+  .popover {
+    transition:
+      opacity 200ms var(--ease-out),
+      transform 320ms var(--ease-out);
+  }
+
+  :global(html[data-motion-ready]) .popover:not([data-open]) {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+}

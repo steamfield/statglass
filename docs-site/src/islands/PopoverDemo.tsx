@@ -22,7 +22,12 @@ const AUTOLOAD_QUERY = "(min-width: 640px)";
  * hero. Phones get the CPU card on simulated data and a button, because the
  * app is ~460 KB to download.
  */
-export function PopoverDemo() {
+export function PopoverDemo({
+  onReady,
+}: {
+  /** Called once the live popover has painted (or given up waiting). */
+  onReady?: () => void;
+} = {}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [wanted, setWanted] = useState(false);
   const [height, setHeight] = useState(POPOVER_COLLAPSED_HEIGHT);
@@ -44,6 +49,9 @@ export function PopoverDemo() {
   }, []);
   const frameRef = useDemoFrame(frame, wanted, onMessage);
   const ready = useFrameReady(frame, wanted);
+  useEffect(() => {
+    if (ready) onReady?.();
+  }, [ready, onReady]);
 
   return (
     <figure className="flex w-full flex-col items-center gap-3">
