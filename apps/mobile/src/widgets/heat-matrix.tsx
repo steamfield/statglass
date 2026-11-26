@@ -10,7 +10,42 @@ import { resolveColor } from "./colors";
 import { GapBands } from "./gap-bands";
 
 const CELL_HEIGHT = 10;
+/** Space between cells in a row, in points. */
+const CELL_GAP = 2;
+const ROW_GAP = 8;
 const SWATCH_WIDTH = 14;
+
+/** Fixed label and reading columns, in points at the default text size. */
+export interface HeatColumns {
+  label: number;
+  reading: number;
+}
+
+/** The side columns at the current Dynamic Type size. */
+export function scaled(columns: HeatColumns, fontScale: number): HeatColumns {
+  return {
+    label: columns.label * fontScale,
+    reading: columns.reading * fontScale,
+  };
+}
+
+/**
+ * How many columns of roughly square cells fit a matrix `width` points wide,
+ * after the label and reading columns and the gaps between them.
+ */
+export function squareCellColumns(
+  width: number,
+  columns: HeatColumns,
+  fontScale: number
+): number {
+  const { label, reading } = scaled(columns, fontScale);
+  const plot = width - label - reading - 2 * ROW_GAP;
+  return Math.max(1, Math.floor((plot + CELL_GAP) / (CELL_HEIGHT + CELL_GAP)));
+}
+
+function sideStyle(width: number | undefined) {
+  return width === undefined ? undefined : { width };
+}
 const GAP_PATTERN = "heat-gap";
 const GAP_FILL = `url(#${GAP_PATTERN})`;
 // A diagonal tile repeats every 4 pt across the stripes.
@@ -25,13 +60,20 @@ export function HeatMatrix({
   model,
   height,
   gapBands = [],
+  sides,
 }: {
   model: HeatMatrixModel;
   height: number;
   /** Labelled gaps drawn as one band over every row, as on the desktop. */
   gapBands?: readonly PlacedGapBand[];
+  /** Fixed label and reading columns; each is a fifth of the width without it. */
+  sides?: HeatColumns | undefined;
 }) {
   const [rowsBox, setRowsBox] = useState({ y: 0, height: 0 });
+  const [plotWidth, setPlotWidth] = useState(0);
+  const { fontScale } = useWindowDimensions();
+  const side = sides && scaled(sides, fontScale);
+  const sideClass = side ? "" : "w-1/5";
   const scheme = useColorScheme() ?? "light";
   const { cells, rows, columns, legend, loading, notice } = model;
   const reveal = useReveal(loading);
@@ -41,7 +83,9 @@ export function HeatMatrix({
     model.accent
   );
   const track = resolveColor({ kind: "token", name: "track" }, scheme);
-  const slotWidth = 100 / columns;
+  const slot = plotWidth / columns;
+  // A fixed gap once cells are wide enough to show it; slivers keep a ratio.
+  const cellWidth = slot > 3 * CELL_GAP ? slot - CELL_GAP : slot * 0.94;
   return (
     <View className="relative">
       <View
@@ -87,10 +131,23 @@ export function HeatMatrix({
               key={row.key}
               className={`flex-row items-center gap-2 ${row.startsGroup ? "mt-2" : ""}`}
             >
-              <Text variant="caption" className="w-1/5">
+              <Text
+                variant="caption"
+                className={sideClass}
+                style={sideStyle(side?.label)}
+              >
                 {row.label}
               </Text>
-              <Animated.View className="flex-1" style={reveal}>
+              <Animated.View
+                className="flex-1"
+                style={reveal}
+                onLayout={
+                  index === 0
+                    ? ({ nativeEvent }) =>
+                        setPlotWidth(nativeEvent.layout.width)
+                    : undefined
+                }
+              >
                 <Svg accessible={false} height={CELL_HEIGHT} width="100%">
                   <Defs>
                     <Pattern
@@ -117,8 +174,8 @@ export function HeatMatrix({
                       return (
                         <Rect
                           key={model.firstKey + col}
-                          x={`${col * slotWidth}%`}
-                          width={`${slotWidth * 0.94}%`}
+                          x={col * slot}
+                          width={cellWidth}
                           height={CELL_HEIGHT}
                           rx={1}
                           fill={paint}
@@ -135,7 +192,11 @@ export function HeatMatrix({
                     })}
                 </Svg>
               </Animated.View>
-              <Text variant="value" className="w-1/5 text-right">
+              <Text
+                variant="value"
+                className={`${sideClass} text-right`}
+                style={sideStyle(side?.reading)}
+              >
                 {row.current}
               </Text>
             </View>
@@ -148,6 +209,7 @@ export function HeatMatrix({
           bands={gapBands}
           top={rowsBox.y}
           height={rowsBox.height}
+          side={side}
         />
       )}
     </View>
@@ -162,10 +224,12 @@ function HeatGapOverlay({
   bands,
   top,
   height,
+  side,
 }: {
   bands: readonly PlacedGapBand[];
   top: number;
   height: number;
+  side: HeatColumns | undefined;
 }) {
   const { fontScale } = useWindowDimensions();
   const [widthPx, setWidthPx] = useState(0);
@@ -176,7 +240,7 @@ function HeatGapOverlay({
       // Measured position of the rows inside the matrix.
       style={{ top, height }}
     >
-      <View className="w-1/5" />
+      <View className={side ? "" : "w-1/5"} style={sideStyle(side?.label)} />
       <View
         className="flex-1 overflow-hidden"
         testID="heat-gap-plot"
@@ -189,7 +253,7 @@ function HeatGapOverlay({
           fontScale={fontScale}
         />
       </View>
-      <View className="w-1/5" />
+      <View className={side ? "" : "w-1/5"} style={sideStyle(side?.reading)} />
     </View>
   );
 }
