@@ -151,6 +151,7 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
   await tick(transport);
   await layoutChart("history-plot-layout", 310);
   await layoutChart("battery-charge-layout", 310);
+  await layoutChart("thermal-heatmap-layout");
   expect(await screen.findByText("CPU power: P cores")).toBeOnTheScreen();
   expect(
     screen.getByRole("header", { name: "Power & Sensors" })
@@ -241,6 +242,13 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
       request.series.map(({ metric }) => metric)
     )
   ).toContainEqual(Array.from({ length: 10 }, () => "thermal.zone"));
+  // The 300 pt card, less padding and the zone and reading columns at the test
+  // renderer's font scale of 2, fits this many 10 pt square cells.
+  expect(
+    history.mock.calls.find(
+      ([request]) => request.series[0]?.metric === "thermal.zone"
+    )?.[0].max_points
+  ).toBe(5);
   expect(
     history.mock.calls.some(
       ([request]) =>
@@ -374,6 +382,7 @@ test("explains an unsupported thermal query without hiding live figures or syste
   await openModule(transport, "power");
   await tick(transport);
   await layoutChart("history-plot-layout", 310);
+  await layoutChart("thermal-heatmap-layout");
   expect(
     await screen.findByText(/Update StatGlass on .* to see history/)
   ).toBeOnTheScreen();
@@ -417,6 +426,7 @@ test("refreshes thermal buckets when returning to the hour and explains a server
     });
   await openModule(transport, "power");
   await tick(transport);
+  await layoutChart("thermal-heatmap-layout");
   const hourReads = () =>
     read.mock.calls.filter(
       ([request]) =>

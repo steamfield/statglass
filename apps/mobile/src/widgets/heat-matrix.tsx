@@ -10,6 +10,8 @@ import { resolveColor } from "./colors";
 import { GapBands } from "./gap-bands";
 
 const CELL_HEIGHT = 10;
+/** Tallest a square cell grows when history returns fewer columns than fit. */
+const MAX_CELL_HEIGHT = 16;
 /** Space between cells in a row, in points. */
 const CELL_GAP = 2;
 const ROW_GAP = 8;
@@ -86,6 +88,12 @@ export function HeatMatrix({
   const slot = plotWidth / columns;
   // A fixed gap once cells are wide enough to show it; slivers keep a ratio.
   const cellWidth = slot > 3 * CELL_GAP ? slot - CELL_GAP : slot * 0.94;
+  // History may merge buckets into fewer columns than were asked for, so with
+  // fixed sides the row grows to keep cells square.
+  const cellHeight =
+    side && plotWidth > 0
+      ? Math.min(MAX_CELL_HEIGHT, Math.max(CELL_HEIGHT, cellWidth))
+      : CELL_HEIGHT;
   return (
     <View className="relative">
       <View
@@ -141,6 +149,7 @@ export function HeatMatrix({
               <Animated.View
                 className="flex-1"
                 style={reveal}
+                testID={index === 0 ? "heat-plot" : undefined}
                 onLayout={
                   index === 0
                     ? ({ nativeEvent }) =>
@@ -148,7 +157,7 @@ export function HeatMatrix({
                     : undefined
                 }
               >
-                <Svg accessible={false} height={CELL_HEIGHT} width="100%">
+                <Svg accessible={false} height={cellHeight} width="100%">
                   <Defs>
                     <Pattern
                       id={GAP_PATTERN}
@@ -176,7 +185,7 @@ export function HeatMatrix({
                           key={model.firstKey + col}
                           x={col * slot}
                           width={cellWidth}
-                          height={CELL_HEIGHT}
+                          height={cellHeight}
                           rx={1}
                           fill={paint}
                           fillOpacity={alpha ?? 1}
